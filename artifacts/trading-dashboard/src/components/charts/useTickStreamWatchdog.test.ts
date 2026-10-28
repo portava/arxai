@@ -119,6 +119,30 @@ describe("C3.4 — silence detection", () => {
   });
 });
 
+describe("inactive watchdog (no stream exists)", () => {
+  it("never reports stalled or asks for a reconnect while nothing is watched", async () => {
+    const { result } = renderHook(() => useTickStreamWatchdog({ ...OPTS, active: false }));
+    await act(async () => {
+      await wait(SILENCE_MS * 3);
+    });
+    expect(result.current.stalled).toBe(false);
+    expect(result.current.epoch).toBe(0);
+  });
+
+  it("withdraws a stall verdict when the stream stops being watched", async () => {
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useTickStreamWatchdog({ ...OPTS, active }),
+      { initialProps: { active: true } },
+    );
+    await act(async () => {
+      await wait(SILENCE_MS + TICK_MS * 3);
+    });
+    expect(result.current.stalled).toBe(true);
+    rerender({ active: false });
+    expect(result.current.stalled).toBe(false);
+  });
+});
+
 describe("C3.4 — stream lifecycle signals", () => {
   it("noteError marks stalled without forcing a reconnect on its own", () => {
     const { result } = renderHook(() => useTickStreamWatchdog(OPTS));

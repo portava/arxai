@@ -443,7 +443,13 @@ export function ARXNativeChart({
   // the chart sat frozen indefinitely while still presenting as live. The hook
   // owns silence detection and the reconnect signal; see its own file for the
   // detection rationale and timings.
-  const streamWatchdog = useTickStreamWatchdog();
+  // Only a candle source that HAS a tick stream (MT5 broker / Deriv) is watched:
+  // third-party sources and an empty feed never open one, so they can never be
+  // "reconnecting".
+  const tickSource = chartTickSource(data?.feedStatus?.source);
+  const streamWatchdog = useTickStreamWatchdog({
+    active: resolvedSymbol.length > 0 && tickSource != null,
+  });
 
   // Chart Brain v2 (Task 1) — centralized Chart Intelligence State. This is a
   // SEPARATE, non-blocking fetch from the candle query above: candles render
@@ -654,8 +660,6 @@ export function ARXNativeChart({
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
   }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext]);
-
-  const tickSource = chartTickSource(data?.feedStatus?.source);
 
   // ── Real-time forming-tip (Task #501). Subscribe to the SAME server SSE
   //    tick-stream the Scanner chart uses (Task #496) for the current
