@@ -142,4 +142,20 @@ describe("truth audit: a withheld read does not keep describing itself as curren
     expect(screen.getByTestId("ruby-market-read-reasoning-why").textContent).not.toContain("Buy bias");
   });
 
+  it.each(DEAD_STATES)("%s: late warning, evidence, timing rows and edge number are withheld", (_n, over, gate) => {
+    if (gate) mockUseScannerReadGate.mockReturnValue(gate);
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(over)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    expect(screen.queryByTestId("ruby-market-read-late")).toBeNull();
+    const evidence = screen.queryByTestId("ruby-market-read-evidence")?.textContent ?? "";
+    expect(evidence).not.toContain("Higher highs");
+    expect(evidence).not.toContain("Nothing notable yet");
+    const body = screen.getByTestId("ruby-market-read-body").textContent ?? "";
+    expect(body).not.toMatch(/entry window is open now/);
+    expect(body).not.toMatch(/\(\d+\/100\)/);
+    expect(screen.getByTestId("ruby-market-read-reasoning-evidence-momentum").textContent).not.toContain("Ready —");
+    // The read's own description is kept for context, but labelled as not current.
+    expect(screen.getByTestId("ruby-market-read-reasoning-evidence-structure").textContent).toMatch(/^When this read was built \(not current\):/);
+    expect(screen.getByTestId("ruby-market-read-what").textContent).toMatch(/^When this read was built \(not current\):/);
+  });
 });

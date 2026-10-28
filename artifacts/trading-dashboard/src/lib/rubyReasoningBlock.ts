@@ -68,6 +68,9 @@ export const NEWS_UNAVAILABLE_NOTE =
 
 const NOT_ENOUGH = "Not enough confirmed data to call this yet.";
 
+/** Prefix for a market-read line kept for context after the read stopped being current. */
+export const STALE_READ_PREFIX = "When this read was built (not current):";
+
 function clean(s: string | null | undefined): string {
   return (s ?? "").trim();
 }
@@ -175,15 +178,19 @@ export function buildReasoningFromMarketRead(
   // STRUCTURE, not a chart pattern — it belongs in the Structure row.
   const directionEvidence = downgraded ? "" : clean(chosen?.whyThisDirection);
   const structureBase = clean(chosen?.whatIsHappening);
+  // Downgraded / expired: the structure line is labelled as the read's own
+  // (no longer current) description, and its timing ("entry window is open
+  // now") is withheld — neither may read as a description of the market now.
   const structure = structureBase
-    ? directionEvidence
-      ? `${structureBase} ${directionEvidence}`
-      : structureBase
+    ? downgraded
+      ? `${STALE_READ_PREFIX} ${structureBase}`
+      : directionEvidence
+        ? `${structureBase} ${directionEvidence}`
+        : structureBase
     : NOT_ENOUGH;
-  const momentum = orElse(
-    chosen?.whyNow,
-    orElse(chosen?.timingState, NOT_ENOUGH),
-  );
+  const momentum = downgraded
+    ? "Timing withheld — this read is not current, so its entry timing no longer applies."
+    : orElse(chosen?.whyNow, orElse(chosen?.timingState, NOT_ENOUGH));
   // The market-read engine has no chart-pattern or trendline producer, so these
   // rows say so in every state (a "withheld until the feed confirms" variant
   // would promise an assessment that never comes; "none called out" would imply

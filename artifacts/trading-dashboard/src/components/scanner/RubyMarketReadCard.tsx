@@ -10,7 +10,7 @@ import { TruthEvidenceClasses } from "@/components/scanner/TruthEvidenceClasses"
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
-import { buildReasoningFromMarketRead } from "@/lib/rubyReasoningBlock";
+import { buildReasoningFromMarketRead, STALE_READ_PREFIX } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventRiskLine } from "@/lib/eventRiskCopy";
 import { useGetMeMarketEdge, getGetMeMarketEdgeQueryKey } from "@workspace/api-client-react";
@@ -340,6 +340,7 @@ export function RubyMarketReadCard({
   const withheldWhy = readExpired && !gate.downgraded
     ? "this read has expired"
     : "the live feed isn't confirmed";
+  const stale = (text: string): string => (downgraded ? `${STALE_READ_PREFIX} ${text}` : text);
 
   const chosen: RubyExplanationMode | null = explanation
     ? mode === "ADVANCED"
@@ -455,7 +456,7 @@ export function RubyMarketReadCard({
                     <Clock className="h-3 w-3" /> {feedRow.text}
                   </span>
                 </div>
-                {signal.late?.isLate && (
+                {!downgraded && signal.late?.isLate && (
                   <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-xs text-warning" data-testid="ruby-market-read-late">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>{signal.late.reason ?? "This move may be late — chasing it carries extra risk."}</span>
@@ -481,7 +482,17 @@ export function RubyMarketReadCard({
               </div>
 
               {/* Evidence breakdown */}
-              {signal.evidence && (
+              {/* A withheld read's for/against points describe the market when
+                  it was built, not now — say so rather than list them. */}
+              {signal.evidence && downgraded && (
+                <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-evidence">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">Evidence</div>
+                  <p className="mt-0.5 text-xs text-txt-muted">
+                    Evidence withheld — {withheldWhy}, so its for/against points are not current.
+                  </p>
+                </div>
+              )}
+              {signal.evidence && !downgraded && (
                 <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-evidence">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">Evidence</div>
                   <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
@@ -553,9 +564,14 @@ export function RubyMarketReadCard({
 
               {/* Reason chain */}
               <div className="space-y-2">
-                <ReasonRow label="What's happening" value={chosen.whatIsHappening} testid="ruby-market-read-what" />
-                <ReasonRow label="Why" value={chosen.why} />
-                <ReasonRow label="Why this market" value={chosen.whyThisMarket} />
+                {/* A withheld read keeps its context rows, labelled as the read's
+                    own (no longer current) description; its edge number and
+                    timing rows ("entry window is open now") are withheld. */}
+                <ReasonRow label="What's happening" value={stale(chosen.whatIsHappening)} testid="ruby-market-read-what" />
+                <ReasonRow label="Why" value={stale(chosen.why)} />
+                {!downgraded && (
+                  <ReasonRow label="Why this market" value={chosen.whyThisMarket} />
+                )}
                 {/* READABILITY CONTRACT (display-only): the directional rationale is
                     withheld when the shared scanner truth is downgraded
                     (insufficient / stale / delayed / blocked) — no "why this
@@ -563,15 +579,19 @@ export function RubyMarketReadCard({
                 {!downgraded && (
                   <ReasonRow label="Why this direction" value={chosen.whyThisDirection} />
                 )}
-                <ReasonRow label="Why now" value={chosen.whyNow} />
-                <ReasonRow label="Timing" value={chosen.timingState} />
+                {!downgraded && (
+                  <>
+                    <ReasonRow label="Why now" value={chosen.whyNow} />
+                    <ReasonRow label="Timing" value={chosen.timingState} />
+                  </>
+                )}
                 {/* READABILITY CONTRACT (display-only): the actionable trade idea
                     (entry / risk / what confirms / what invalidates / what to do
                     next) is withheld when the shared scanner truth is downgraded
                     (insufficient / stale / delayed / blocked) — no trade idea or
                     recommendation without a confirmed directional read. The
-                    read-only context rows above (what's happening / why / why this
-                    market / why now / timing) stay. */}
+                    read-only context rows above (what's happening / why) stay,
+                    labelled as not current. */}
                 {!downgraded && (
                   <>
                     <ReasonRow label="Entry" value={chosen.entryZone} />
