@@ -101,7 +101,9 @@ const SAFE_DEFAULT_CHECKLIST: CoachReport["preSessionChecklist"] = [
   { id: "risk_score_ok", label: "AI decision risk score is below your maximum", required: true, auto: false },
   { id: "sl_tp_set", label: "Stop loss and take profit are explicitly defined", required: true, auto: false },
   { id: "live_disabled", label: "Account mode checked: this session is paper practice, not live execution", required: true, auto: false },
-  { id: "paper_only", label: "Mode is PAPER_ONLY (no live execution attempted)", required: true, auto: true },
+  // The coach never reads the account mode (an armed LIVE_SHARED trader is
+  // not paper-only), so this auto item states only what the coach knows.
+  { id: "paper_only", label: "This coaching session sends no orders (it only reviews; your account mode is on the dashboard's Trading Permission card)", required: true, auto: true },
 ];
 
 const SAFE_DEFAULT_REVIEW_QUESTIONS = [

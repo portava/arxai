@@ -9,6 +9,7 @@ import { getGateStatus } from "../readiness/gate.js";
 import { getCriticalUnread } from "../alerts/alertManager.js";
 import { auditEvent } from "../systemHealth/audit.js";
 import { createAlert } from "../alerts/alertManager.js";
+import { readAccountLivePosture, type AccountLivePosture } from "../systemHealth/livePosture.js";
 
 export type BlockedAction = "START_PAPER_SESSION" | "START_AUTOPILOT" | "OPEN_PAPER_TRADE" | "ENABLE_LIVE_TRADING" | "USE_BROKER_EXECUTION";
 export type Severity = "INFO" | "WARN" | "BLOCK" | "CRITICAL";
@@ -23,9 +24,37 @@ export interface BlockedActionExplanation {
   recommendedFixes: string[];
   safeNextStep: string;
   links: { label: string; href: string }[];
+  /**
+   * Legacy constant kept for compatibility: it describes this explainer (it
+   * never enables live trading), NOT the account. The account's live-trading
+   * posture is `livePosture`, read from the same source as the cockpit.
+   */
   liveTradingStatus: "DISABLED";
+  livePosture: AccountLivePosture;
   generatedAt: string;
 }
+
+// What this explainer can truthfully say about live trading for THIS account:
+// the cockpit's own account-mode words, plus what the explainer itself does.
+function livePostureReasons(posture: AccountLivePosture): string[] {
+  return [
+    posture.plainEnglish,
+    "This help page cannot arm, enable or disable live trading for any account, and it places no orders.",
+  ];
+}
+function livePostureFixes(posture: AccountLivePosture): string[] {
+  switch (posture.state) {
+    case "LIVE_ARMED":
+      return ["Nothing to unlock: your account is already armed for live trading. Every live order still passes the server's risk checks and kill switches."];
+    case "LIVE_BLOCKED":
+      return ["Follow the account-mode message above; live orders stay blocked until it is resolved."];
+    case "NOT_LIVE":
+      return ["Live trading is set up by your operator and armed from MT5 Setup → Arm Live Trading, not from this help page."];
+    default:
+      return ["Open the Trading Permission card on your dashboard to see your account's live-trading status."];
+  }
+}
+const SAFETY = "This help never places orders and cannot change your account's live-trading status.";
 
 const LIVE_LINKS = [{ label: "Trading Cockpit", href: "/trading-cockpit" }];
 
@@ -33,32 +62,37 @@ function rank(s: Severity): number { return ({ INFO: 0, WARN: 1, BLOCK: 2, CRITI
 function highest(a: Severity, b: Severity): Severity { return rank(b) > rank(a) ? b : a; }
 
 export async function explainBlockedAction(action: BlockedAction, userId: number): Promise<BlockedActionExplanation> {
-  // Live trading + broker execution are PERMANENTLY disabled. Short-circuit.
+  // This explainer cannot enable live trading or broker execution. What it
+  // says about the account's live posture comes from the account-mode check
+  // (the same source as the cockpit), never from a constant.
   if (action === "ENABLE_LIVE_TRADING" || action === "USE_BROKER_EXECUTION") {
+    const livePosture = await readAccountLivePosture(userId);
     return persist({
       explanation_id: `expl_${randomUUID()}`,
       blockedAction: action,
       blockingSystems: ["AA", "NN"],
       highestSeverity: "BLOCK",
-      plainEnglishReasons: [
-        "This app is PAPER_ONLY. The internal safety core does not allow live trading.",
-        "The broker connector is read-only.",
+      plainEnglishReasons: livePostureReasons(livePosture),
+      technicalReasons: [
+        `accountMode=${livePosture.currentAccountMode ?? "UNKNOWN"} liveExecutionArmed=${livePosture.liveExecutionArmed ?? "UNKNOWN"} (source: /api/me/account-mode resolver, checked ${livePosture.checkedAt})`,
+        "help/why-blocked is read-only: it has no arm, enable or order path",
       ],
-      technicalReasons: ["safetyCore.canPlaceTrades is hard-locked to false", "NN forbidden permissions reject live execution"],
-      recommendedFixes: ["Use a paper session to practice. Live trading cannot be unlocked from this app."],
-      safeNextStep: "Open the Trading Cockpit and start a paper session.",
+      recommendedFixes: livePostureFixes(livePosture),
+      safeNextStep: "Check the Trading Permission card on your dashboard for your live-trading status.",
       links: LIVE_LINKS,
       liveTradingStatus: "DISABLED",
+      livePosture,
       generatedAt: new Date().toISOString(),
     });
   }
 
-  const [pre, active, gov, gate, critical] = await Promise.all([
+  const [pre, active, gov, gate, critical, livePosture] = await Promise.all([
     preflight().catch(() => null),
     getActiveSession(userId).catch(() => null),
     evaluateReadiness({ persist: false, userId }).catch(() => null),
     getGateStatus().catch(() => null),
     getCriticalUnread(userId).catch(() => []),
+    readAccountLivePosture(userId),
   ]);
 
   // AA — safety core / decision orchestrator. canPlaceTrades is permanently
@@ -153,12 +187,15 @@ export async function explainBlockedAction(action: BlockedAction, userId: number
     severity = highest(severity, "BLOCK");
   }
 
-  // AA always present as advisory context — confirms live trading is hard-locked.
+  // AA always present as advisory context: the paper decision core places
+  // no broker orders. That is a fact about AA, not about the account — the
+  // account's live posture is reported separately from the account-mode check.
   blockingSystems.add("AA");
   technical.push(`safetyCore.canPlaceTrades=${aaCanPlaceTrades}`);
   if (action === "START_PAPER_SESSION" || action === "START_AUTOPILOT" || action === "OPEN_PAPER_TRADE") {
-    technical.push("AA.appMode=PAPER_ONLY (live trading hard-locked off, paper actions allowed when other gates pass)");
+    technical.push("AA (paper decision core) sends no broker orders; paper actions are allowed when the other gates pass");
   }
+  technical.push(`accountMode=${livePosture.currentAccountMode ?? "UNKNOWN"} liveExecutionArmed=${livePosture.liveExecutionArmed ?? "UNKNOWN"} (source: /api/me/account-mode resolver, checked ${livePosture.checkedAt})`);
 
   if (plain.length === 0) {
     plain.push("No blocking conditions found. The action should be allowed in the cockpit.");
@@ -176,6 +213,7 @@ export async function explainBlockedAction(action: BlockedAction, userId: number
     safeNextStep,
     links,
     liveTradingStatus: "DISABLED",
+    livePosture,
     generatedAt: new Date().toISOString(),
   });
 }
@@ -201,7 +239,6 @@ async function persist(e: BlockedActionExplanation): Promise<BlockedActionExplan
 
 export async function explainTopic(topic: string, userId: number): Promise<{ help_id: string; topic: string; status: string; plainEnglishExplanation: string; reasonCodes: string[]; recommendedNextActions: string[]; relatedPages: string[]; safetyReminder: string; generatedAt: string }> {
   const t = (topic || "").toLowerCase();
-  const SAFETY = "Live trading is disabled. Acknowledgements do not enable live trading.";
 
   if (t.includes("can't start") || t.includes("cannot start") || t.includes("paper session")) {
     const exp = await explainBlockedAction("START_PAPER_SESSION", userId);
@@ -222,10 +259,12 @@ export async function explainTopic(topic: string, userId: number): Promise<{ hel
     return { help_id: `help_${randomUUID()}`, topic, status: "WARN", plainEnglishExplanation: "Market data is DEGRADED when DD reports unreliable feeds. Decisions become more cautious.", reasonCodes: ["DD.status=DEGRADED"], recommendedNextActions: ["Wait for the data feed to recover.", "Avoid running autopilot during a degraded feed."], relatedPages: ["/system-health"], safetyReminder: SAFETY, generatedAt: new Date().toISOString() };
   }
   if (t.includes("broker") || t.includes("read-only") || t.includes("readonly")) {
-    return { help_id: `help_${randomUUID()}`, topic, status: "INFO", plainEnglishExplanation: "The broker connector is read-only. Live execution is disabled in this app.", reasonCodes: ["KK.brokerMode=READ_ONLY", "AA.canPlaceTrades=false"], recommendedNextActions: ["Use paper sessions to practice."], relatedPages: ["/broker-readonly", "/trading-cockpit"], safetyReminder: SAFETY, generatedAt: new Date().toISOString() };
+    const posture = await readAccountLivePosture(userId);
+    return { help_id: `help_${randomUUID()}`, topic, status: "INFO", plainEnglishExplanation: `The Broker (read-only) page only reads account and position information; it cannot place, change or close orders. Live orders, when your account is armed, go through the separate live pipeline. ${posture.plainEnglish}`, reasonCodes: ["KK.brokerMode=READ_ONLY", "AA.canPlaceTrades=false", `accountMode=${posture.currentAccountMode ?? "UNKNOWN"}`], recommendedNextActions: livePostureFixes(posture), relatedPages: ["/broker-readonly", "/trading-cockpit"], safetyReminder: SAFETY, generatedAt: new Date().toISOString() };
   }
   if (t.includes("live") || t.includes("disabled")) {
-    return { help_id: `help_${randomUUID()}`, topic, status: "BLOCK", plainEnglishExplanation: "This app is PAPER_ONLY. Live trading cannot be enabled from here, by design.", reasonCodes: ["safetyCore.canPlaceTrades=false (locked)"], recommendedNextActions: ["Practice in paper mode."], relatedPages: ["/trading-cockpit"], safetyReminder: SAFETY, generatedAt: new Date().toISOString() };
+    const posture = await readAccountLivePosture(userId);
+    return { help_id: `help_${randomUUID()}`, topic, status: posture.state === "LIVE_ARMED" ? "INFO" : posture.state === "UNKNOWN" ? "WARN" : "BLOCK", plainEnglishExplanation: livePostureReasons(posture).join(" "), reasonCodes: [`accountMode=${posture.currentAccountMode ?? "UNKNOWN"}`, `liveExecutionArmed=${posture.liveExecutionArmed ?? "UNKNOWN"}`], recommendedNextActions: livePostureFixes(posture), relatedPages: ["/trading-cockpit"], safetyReminder: SAFETY, generatedAt: new Date().toISOString() };
   }
   if (t.includes("safest") || t.includes("next step") || t.includes("what should")) {
     return { help_id: `help_${randomUUID()}`, topic, status: "INFO", plainEnglishExplanation: "The safest next step is whatever the cockpit's 'Recommended next step' card suggests. It already accounts for alerts, readiness, and risk.", reasonCodes: ["RR.nextBestAction"], recommendedNextActions: ["Open the Trading Cockpit and follow the recommended action."], relatedPages: ["/trading-cockpit"], safetyReminder: SAFETY, generatedAt: new Date().toISOString() };

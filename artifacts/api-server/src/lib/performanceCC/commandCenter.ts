@@ -1,6 +1,10 @@
 // Build GG — AI Performance Command Center service.
 //
-// SAFETY: liveTradingStatus is hardcoded to "DISABLED". Reading-only.
+// SAFETY: reading-only. The legacy liveTradingStatus "DISABLED" constant (and
+// the governor's) describe this paper-performance view, not the account: an
+// armed LIVE_SHARED trader can trade live. The account's live posture is
+// returned as `livePosture`, worded from the same account-mode check as the
+// dashboard's Trading Permission card (lib/systemHealth/livePosture.ts).
 
 import { db } from "@workspace/db";
 import { listOwnEdges, listOwnMistakes } from "../learning/scopedMemory.js";
@@ -15,6 +19,7 @@ import {
 import { desc, eq } from "drizzle-orm";
 import { generateInsights } from "./insights.js";
 import { evaluateReadiness } from "../readiness/traderReadiness.js";
+import { readAccountLivePosture } from "../systemHealth/livePosture.js";
 
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
 // Learning memory (edges / mistake patterns) is the caller's own too.
@@ -119,6 +124,8 @@ export async function buildCommandCenter(userId: number) {
   // Build HH governor snapshot (read-only).
   let governor: Awaited<ReturnType<typeof evaluateReadiness>> | null = null;
   try { governor = await evaluateReadiness({ persist: false, userId }); } catch { governor = null; }
+  // The account's live posture (never throws; UNKNOWN when it cannot be read).
+  const livePosture = await readAccountLivePosture(userId);
 
   // Insights.
   const insightOut = generateInsights({
@@ -133,6 +140,8 @@ export async function buildCommandCenter(userId: number) {
     overallStatus,
     paperModeStatus,
     liveTradingStatus: "DISABLED" as const,
+    liveTradingStatusScope: "liveTradingStatus describes this paper-performance view only (it reads paper orders and places none); it is not your account's live-trading status — see livePosture.",
+    livePosture,
     totalPaperTrades: trades.length,
     totalClosedTrades: closed.length,
     winRate: Number(winRate.toFixed(2)),
