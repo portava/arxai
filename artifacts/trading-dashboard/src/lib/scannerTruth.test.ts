@@ -316,9 +316,11 @@ describe("source labels are user-safe", () => {
     expect(t.candles.sourceTechnical.length).toBeGreaterThan(0);
   });
 
-  it("labels broker-native feed as your broker", () => {
+  it("labels broker-native feed as the MT5 broker feed, never as the viewer's own", () => {
     const t = resolveScannerTruth(inputs({ feedStatus: feed({ source: "mt5_broker" }) }));
-    expect(t.candles.sourceLabel).toBe("Your broker feed");
+    expect(t.candles.sourceLabel).toBe("MT5 broker feed");
+    expect(t.candles.sourceLabel.toLowerCase()).not.toContain("your");
+    expect(t.dataHealth.sourceNote).not.toMatch(/your broker feed/i);
     expect(t.candles.tier).toBe("broker");
   });
 });

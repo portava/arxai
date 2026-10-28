@@ -422,7 +422,9 @@ async function buildChartFeed(
  */
 function friendlyFeedSource(source: string | null): string {
   if (!source) return "no source";
-  if (source === "mt5_broker") return "your broker's MetaTrader 5 feed";
+  // Never "your": the chart route has no viewer, and an unpinned MT5 read
+  // serves whichever bridge pushed last — possibly another user's terminal.
+  if (source === "mt5_broker") return "MetaTrader 5 broker bridge";
   if (source === "deriv" || source === "deriv_public") return "Deriv";
   if (source.startsWith("assistant_real:")) {
     const sub = source.slice("assistant_real:".length).trim();

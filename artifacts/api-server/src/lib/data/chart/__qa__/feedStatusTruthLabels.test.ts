@@ -4,6 +4,7 @@
 // formingTipSourceIsolation.test.ts). Each block pins one board claim:
 //   - "Last tick" carries the MT5 broker tick time the server observed.
 //   - "Latency" is the winning provider read time; nothing served → unknown.
+//   - Source copy never says "your" broker: the chart route has no viewer.
 //
 // Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
 //   src/lib/data/chart/__qa__/feedStatusTruthLabels.test.ts
@@ -113,4 +114,16 @@ test("Latency: a served feed reports the winning provider's read time only", asy
   ];
   const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
   assert.equal(out.feedStatus.latencyMs, 120);
+});
+
+test("Source copy: an MT5 series is never attributed to the viewer (the route knows no viewer)", async () => {
+  // GET /api/chart/candles calls getChartCandles without a user; the unpinned
+  // MT5 read serves whichever bridge pushed last (here user 42's bridge 7).
+  liveMt5(WEEKDAY_NOW);
+  const { chartSeriesAttribution } = await import("../brokerQuoteBinding.js");
+  const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60));
+  assert.equal(chartSeriesAttribution(out)?.userId, 42);
+  assert.equal(out.feedStatus.quality, "clean");
+  assert.doesNotMatch(out.feedStatus.message, /\byour\b/i);
+  assert.match(out.feedStatus.message, /MetaTrader 5 broker bridge/);
 });
