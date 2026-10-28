@@ -574,10 +574,13 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
     // Open P/L — same adapter as Dashboard/Open Trades; honest freshness qualifier.
     if (ctx.account.openPL != null) {
       const fresh = ctx.account.snapshotFreshness;
+      // Only a live/fresh snapshot reads bare; anything else (including an
+      // unavailable or unknown freshness) is qualified, never shown as current.
       const freshnessNote =
         fresh === "live" || fresh === "fresh" ? "" :
         fresh === "delayed" ? " (slightly delayed)" :
-        fresh === "stale" ? " (last known — may be stale)" : "";
+        fresh === "stale" ? " (last known — may be stale)" :
+        " (last known — freshness could not be confirmed)";
       lines.push(`Open floating P/L: ${fmtMoney(ctx.account.openPL, null)}${freshnessNote}.`);
     }
   } else if (ctx.account.openPositionsChecked === false) {
@@ -591,11 +594,18 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
     lines.push("No positions are currently open.");
   }
   if (ctx.isPrivileged && ctx.account.mt5) {
-    lines.push(
-      `Master MT5: balance ${fmtMoney(ctx.account.mt5.balance, ctx.account.mt5.currency)}, ` +
-        `equity ${fmtMoney(ctx.account.mt5.equity, ctx.account.mt5.currency)}, ` +
-        `open P/L ${fmtMoney(ctx.account.mt5.openPnl, ctx.account.mt5.currency)}.`,
-    );
+    const m = ctx.account.mt5;
+    if (m.snapshotStatus !== "FRESH" && m.snapshotStatus !== "STALE") {
+      // MISSING (or unrecognised): the pool reports 0s for a snapshot it never
+      // received — never show those as the account's balance.
+      lines.push("Master MT5: no account snapshot has been received, so balance, equity and open P/L are not available.");
+    } else {
+      lines.push(
+        `Master MT5${m.snapshotStatus === "STALE" ? " (last-known — the snapshot is stale)" : ""}: balance ${fmtMoney(m.balance, m.currency)}, ` +
+          `equity ${fmtMoney(m.equity, m.currency)}, ` +
+          `open P/L ${fmtMoney(m.openPnl, m.currency)}.`,
+      );
+    }
   } else if (ctx.account.allocation && ctx.account.allocation.allocated > 0) {
     lines.push(
       `Your ARX allocation: ${fmtMoney(ctx.account.allocation.available, null)} available of ` +
