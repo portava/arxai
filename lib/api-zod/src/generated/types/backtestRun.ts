@@ -5,7 +5,9 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { BacktestEvidence } from "./backtestEvidence";
 import type { BacktestRunDataSource } from "./backtestRunDataSource";
+import type { BacktestRunHistoryStatus } from "./backtestRunHistoryStatus";
 import type { BacktestRunIsVerified } from "./backtestRunIsVerified";
 import type { BacktestRunStatus } from "./backtestRunStatus";
 
@@ -31,6 +33,8 @@ export interface BacktestRun {
   status: BacktestRunStatus;
   isVerified: BacktestRunIsVerified;
   dataSource?: BacktestRunDataSource;
+  evidence?: BacktestEvidence;
+  historyStatus?: BacktestRunHistoryStatus;
   /** @nullable */
   aiSummary?: string | null;
   equityCurve?: number[];

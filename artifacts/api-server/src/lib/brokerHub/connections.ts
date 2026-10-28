@@ -150,6 +150,13 @@ export async function getConnection(connectionId: number, reader: Reader = db): 
   return rows[0] ?? null;
 }
 
+/** Lock the exact bridge while a server command target is validated. */
+export async function lockConnection(connectionId: number, reader: Reader): Promise<BrokerConnection | null> {
+  const [row] = await reader.select().from(mt5ConnectionTable)
+    .where(eq(mt5ConnectionTable.id, connectionId)).for("update");
+  return row ? toBrokerConnection(row) : null;
+}
+
 /** Connections across users, for operator views and platform health. */
 export function listConnections(q: ConnectionQuery = {}, reader: Reader = db): Promise<BrokerConnection[]> {
   return query([], q, reader);

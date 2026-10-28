@@ -73,13 +73,17 @@ export function feedConfidence(
       severity = "unknown";
   }
 
-  // A stale flag is never compatible with a "clean" verdict — downgrade it so a
-  // frozen feed can't masquerade as live.
-  if (fs.stale && severity === "clean") severity = "caution";
+  // Clean OHLC integrity alone does not establish current data. Keep the label
+  // and explanation consistent with the freshness flags, not just the colour.
+  const cleanButStale = fs.quality === "clean" && fs.stale;
+  const cleanButNotLive = fs.quality === "clean" && !fs.stale && fs.isLive !== true;
+  if (cleanButStale || cleanButNotLive) severity = "caution";
 
-  const statusLabel = QUALITY_LABEL[fs.quality] ?? "Unknown";
+  const statusLabel = cleanButStale ? "Stale" : cleanButNotLive ? "Not live" : QUALITY_LABEL[fs.quality] ?? "Unknown";
 
   const message =
+    cleanButStale ? "Stored candles are stale; a current feed is not confirmed." :
+    cleanButNotLive ? "These candles are not confirmed as a live feed." :
     fs.message?.trim() ||
     fs.warning?.trim() ||
     (severity === "clean"
@@ -195,15 +199,15 @@ export function providerInfo(source: string | null | undefined): FeedProviderInf
       label: "MT5 broker",
       tier: "broker",
       trustNote:
-        "Live bars straight from your MT5 broker bridge — the primary, highest-trust source. Matches the prices your broker fills against.",
+        "Candles supplied by the MT5 broker bridge, the primary broker-data source. Check feed status for freshness; actual execution prices can differ.",
     };
   }
-  if (source === "deriv") {
+  if (source === "deriv" || source === "deriv_public") {
     return {
-      label: "Deriv",
+      label: source === "deriv_public" ? "Deriv public data" : "Deriv",
       tier: "synthetic",
       trustNote:
-        "Deriv synthetic feed (algorithmic volatility indices). Real-time, but a synthetic instrument — not your broker's live bars.",
+        "Deriv synthetic instruments (algorithmic volatility indices). Check feed status for freshness; this source does not verify your broker's prices or order fills.",
     };
   }
   if (source.startsWith("assistant_real")) {

@@ -1,12 +1,19 @@
-import { useEffect, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { sameUniversePlaceholder } from "./scannerMapQuery";
+import { isScannerMapFresh, nextScannerMapFreshnessChange } from "./scannerMapFreshness";
+import { ScannerScreenToolbar } from "./ScannerScreenToolbar";
+import { DEFAULT_SCREEN, filterScreenRows, prepareScreenRows, resolveScreenScope, scannerScreenCsv,
+  validHeuristic, type ScannerScreen, type ScreenWatchlist } from "./scannerScreen";
 import { Radar, Loader2, RefreshCw, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useGetMeOpportunityMap, getGetMeOpportunityMapQueryKey } from "@workspace/api-client-react";
+import { useGetMeOpportunityMap, getGetMeOpportunityMapQueryKey, useGetWatchlists, getGetWatchlistsQueryKey } from "@workspace/api-client-react";
 import type {
   OpportunityMapRow,
   OpportunityMapRowCategory,
   OpportunityBestPicks,
+  OpportunitySkippedSymbol,
   OpportunitySkippedSymbolReason,
 } from "@workspace/api-client-react";
 import {
@@ -34,7 +41,7 @@ import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery
 // honest dataNote and empty buckets — this component renders that state and never
 // fabricates opportunities.
 
-type UniverseId = "all" | "forex" | "metals" | "crypto" | "stocks" | "synthetic";
+type UniverseId = "all" | "forex" | "metals" | "crypto" | "indices" | "synthetic";
 
 const CATEGORY_META: Record<
   OpportunityMapRowCategory,
@@ -149,6 +156,48 @@ function symbolKey(s: string | null | undefined): string | null {
   return resolveSymbol(raw)?.canonicalSymbol.toUpperCase() ?? raw.toUpperCase();
 }
 
+// Identity key for a row inside one map payload: the same market can appear
+// once per setup kind / category, so the symbol alone is not enough.
+function rowKey(row: OpportunityMapRow): string {
+  return `${symbolKey(row.symbol)}:${row.kind}:${row.category}`;
+}
+
+// A best-pick / comparison row may only be shown when its visible, live row
+// is on screen; otherwise the pick is withheld (null).
+function visibleLiveRow(
+  visible: ReadonlyMap<string, OpportunityMapRow>,
+  row: OpportunityMapRow | null | undefined,
+): OpportunityMapRow | null {
+  return row ? visible.get(rowKey(row)) ?? null : null;
+}
+
+// Row-level freshness. The current API has no per-row timestamp, but
+// `prepareScreenRows` honours one if a payload carries it, so the memo key and
+// the boundary timer below must see it too. Returns a signature that changes
+// whenever any row's verdict flips (or a stamp appears/changes), plus the
+// earliest instant a stamped row's verdict will flip. Cheap: one property read
+// per row when no row is stamped.
+function rowFreshness(rows: readonly OpportunityMapRow[], now: number): { key: string; next: number | null } {
+  let key = "";
+  let next: number | null = null;
+  for (const row of rows) {
+    const stamp = (row as OpportunityMapRow & { generatedAt?: unknown }).generatedAt;
+    if (stamp === undefined) { key += "-"; continue; }
+    if (typeof stamp !== "string") { key += "x"; continue; }
+    key += isScannerMapFresh(stamp, now) ? "1" : "0";
+    const change = nextScannerMapFreshnessChange(stamp, now);
+    if (change != null && (next == null || change < next)) next = change;
+  }
+  return { key, next };
+}
+
+// Stable empty fallbacks so a missing payload block does not produce a fresh
+// array on every render (which would defeat the memoized derivations below).
+const NO_ROWS: readonly OpportunityMapRow[] = [];
+const NO_SKIPPED_SYMBOLS: readonly OpportunitySkippedSymbol[] = [];
+const NO_WATCHLISTS: readonly ScreenWatchlist[] = [];
+const NO_ROW_FRESHNESS: ReturnType<typeof rowFreshness> = { key: "", next: null };
+
 // True when the broad-scan's scan timeframe matches the selected chart timeframe.
 // The scan timeframe arrives in API form ("M5"); the chart timeframe is the bus
 // display form ("15m") — normalize both to API form before comparing.
@@ -179,12 +228,15 @@ function dirBadgeVariant(d: OpportunityMapRow["direction"]): "default" | "destru
 
 // Honest "scanned at" label. The backend stamps `generatedAt` at the real scan
 // time and a cached read keeps that original stamp, so a Rescan within the cache
-// window shows when the scan was REALLY run — never a fake "now".
+// window shows when the scan was REALLY run — never a fake "now". The Intl
+// formatter is built once: constructing one per render is measurably costly and
+// `Date#toLocaleTimeString` with these options formats identically.
+const SCANNED_AT_FORMAT = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 function formatScannedAt(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return SCANNED_AT_FORMAT.format(d);
 }
 
 export function BroadScanOpportunityMap({
@@ -203,6 +255,12 @@ export function BroadScanOpportunityMap({
   onScanned?: (scanned: boolean) => void;
 }) {
   const { name } = useAssistantName();
+  const { user } = useCurrentUser();
+  const userId = user?.id ?? null;
+  const [screen, setScreen] = useState<ScannerScreen>({ ...DEFAULT_SCREEN });
+  const [exportNotice, setExportNotice] = useState("");
+  const watchlists = useGetWatchlists({ query: { queryKey: [...getGetWatchlistsQueryKey(), userId], enabled: userId !== null, staleTime: 60_000, refetchOnWindowFocus: true } });
+  const [refreshMs, setRefreshMs] = useState<10_000 | 60_000 | 0>(10_000);
   const params = useMemo(
     () => ({
       marketGroup,
@@ -213,8 +271,12 @@ export function BroadScanOpportunityMap({
 
   const { data, isLoading, isFetching, isError, refetch } = useGetMeOpportunityMap(params, {
     query: {
-      queryKey: getGetMeOpportunityMapQueryKey(params),
-      refetchOnWindowFocus: false,
+      queryKey: [...getGetMeOpportunityMapQueryKey(params), userId],
+      enabled: userId !== null,
+      placeholderData: (previous, query) => sameUniversePlaceholder(previous, query, marketGroup, userId),
+      refetchOnWindowFocus: true,
+      refetchInterval: refreshMs || false,
+      refetchIntervalInBackground: false,
     },
   });
 
@@ -248,6 +310,7 @@ export function BroadScanOpportunityMap({
     selectedVerdict && FEED_DEGRADED_VERDICTS.has(selectedVerdict) ? selectedVerdict : null;
   const selectedKey = symbolKey(selectedSymbol);
   const scanTimeframe = data?.timeframe ?? null;
+  const generatedAt = data?.generatedAt ?? null;
 
   const rawMap = data?.map ?? null;
   // Defensive complete-payload gate (Task #609): a truthy-but-partial map — one
@@ -263,13 +326,108 @@ export function BroadScanOpportunityMap({
     rawMap.best != null
       ? rawMap
       : null;
-  const bestVsSelected = data?.bestVsSelected ?? null;
-  const scannedAtLabel = formatScannedAt(data?.generatedAt);
-  // Skipped symbols + the universe total (M). `universeCount` is server-truth;
-  // we fall back to scanned + skipped so an older cached payload still reconciles.
-  const skippedSymbols = Array.isArray(data?.skippedSymbols) ? data.skippedSymbols : [];
-  const universeCount =
-    data?.universeCount ?? (map ? map.scannedCount + skippedSymbols.length : 0);
+  const mapRows = map?.rows ?? NO_ROWS;
+
+  // Freshness clock. The rows only need the boolean verdict, and that verdict
+  // can only change at one known instant per snapshot (generatedAt + max age,
+  // or the skew allowance for a stamp ahead of the clock), so instead of
+  // re-rendering the whole map every second the clock is re-read on each
+  // render and a single timer forces a render exactly at the boundary. The
+  // 30 s expiry rule itself is unchanged (`isScannerMapFresh`).
+  const now = Date.now();
+  const [freshnessTick, setFreshnessTick] = useState(0);
+  const snapshotFresh = !isError && isScannerMapFresh(generatedAt, now);
+  // Row stamps only matter while the snapshot itself is fresh (an expired or
+  // failed snapshot caps every row regardless), which is also when their own
+  // boundaries need a timer.
+  const rowsFreshness = snapshotFresh ? rowFreshness(mapRows, now) : NO_ROW_FRESHNESS;
+  const snapshotFreshnessChange = nextScannerMapFreshnessChange(generatedAt, now);
+  const nextFreshnessChange = snapshotFreshnessChange == null || (rowsFreshness.next != null && rowsFreshness.next < snapshotFreshnessChange)
+    ? rowsFreshness.next : snapshotFreshnessChange;
+  useEffect(() => {
+    if (nextFreshnessChange == null) return;
+    // Clamp to the platform's 32-bit timer range. The tick is a dependency so
+    // a timer that lands a hair early (or a clamped far boundary) re-arms from
+    // the render it triggered instead of leaving the verdict stuck.
+    const delay = Math.min(Math.max(0, nextFreshnessChange - Date.now()), 0x7fffffff);
+    const timer = setTimeout(() => setFreshnessTick((tick) => tick + 1), delay);
+    return () => clearTimeout(timer);
+  }, [nextFreshnessChange, freshnessTick]);
+
+  // The selected key only matters to the cap while there is a cap to apply, so
+  // a plain selection change (no degraded selected feed) keeps `capForRow` and
+  // everything derived from it stable.
+  const capKey = selectedFeedCap ? selectedKey : null;
+  const capForRow = useCallback((row: Pick<OpportunityMapRow, "symbol">): ScannerActionability | null => {
+    if (!snapshotFresh) return "FEED_LIMITED";
+    return capKey != null && symbolKey(row.symbol) === capKey ? selectedFeedCap : null;
+  }, [snapshotFresh, capKey, selectedFeedCap]);
+  const scannedAtLabel = useMemo(() => formatScannedAt(generatedAt), [generatedAt]);
+  const rawSkippedSymbols = data?.skippedSymbols;
+  const skippedSymbols = useMemo(
+    () => (Array.isArray(rawSkippedSymbols) ? rawSkippedSymbols : NO_SKIPPED_SYMBOLS),
+    [rawSkippedSymbols],
+  );
+  const universeCount = data?.universeCount ?? (map ? map.scannedCount + skippedSymbols.length : 0);
+  // Derived collections are memoized on their real inputs so a click (selection
+  // change), the react-query fetching flip, and the freshness timer only
+  // re-derive what actually moved. The freshness inputs are the boolean
+  // verdicts, not the raw clock, so a verdict flip still re-derives every row.
+  const watchlistData = watchlists.data ?? NO_WATCHLISTS;
+  const scope = useMemo(
+    // The raw query data, not the toolbar fallback: `undefined` (still loading
+    // or disabled) must keep reading as "unavailable", never as "no longer exists".
+    () => resolveScreenScope(screen.watchlistId, watchlists.data, watchlists.isError, mapRows, skippedSymbols),
+    [screen.watchlistId, watchlists.data, watchlists.isError, mapRows, skippedSymbols],
+  );
+  const preparedRows = useMemo(
+    // `now` is deliberately not a dependency: `prepareScreenRows` applies the
+    // same freshness rule to the same stamps, so `snapshotFresh` and the
+    // per-row freshness signature cover it.
+    () => prepareScreenRows(mapRows, generatedAt, now, isError, capForRow),
+    [mapRows, generatedAt, snapshotFresh, rowsFreshness.key, isError, capForRow],
+  );
+  const visibleRows = useMemo(() => filterScreenRows(preparedRows, screen, scope), [preparedRows, screen, scope]);
+  const visibleLiveRows = useMemo(
+    () => new Map(visibleRows.filter((entry) => entry.metricsAvailable).map(({ row }) => [rowKey(row), row])),
+    [visibleRows],
+  );
+  const visibleBest = (row: OpportunityMapRow | null | undefined) => visibleLiveRow(visibleLiveRows, row);
+  const rawBestVsSelected = data?.bestVsSelected ?? null;
+  const comparisonKey = symbolKey(rawBestVsSelected?.selectedSymbol);
+  // The server message can embed BOTH participants' numeric scores. A selected
+  // chart cap, older row or view filter must also withhold that hidden baseline.
+  const comparisonSelected = useMemo(
+    () => map?.rows.find((row) => symbolKey(row.symbol) === comparisonKey),
+    [map, comparisonKey],
+  );
+  const selectedBaselineAvailable = rawBestVsSelected?.selectedEdge == null ||
+    (validHeuristic(rawBestVsSelected.selectedEdge) && comparisonSelected != null && visibleBest(comparisonSelected) != null);
+  const comparisonMatchesSelection = comparisonKey === selectedKey;
+  const bestVsSelected = comparisonMatchesSelection && snapshotFresh && visibleRows.length > 0 && selectedBaselineAvailable && (!rawBestVsSelected?.best || visibleBest(rawBestVsSelected.best))
+    ? rawBestVsSelected : null;
+  const safeBest: OpportunityBestPicks | null = useMemo(() => map ? {
+    bestScalp: visibleLiveRow(visibleLiveRows, map.best.bestScalp), bestRetest: visibleLiveRow(visibleLiveRows, map.best.bestRetest),
+    bestMomentum: visibleLiveRow(visibleLiveRows, map.best.bestMomentum), bestReversal: visibleLiveRow(visibleLiveRows, map.best.bestReversal),
+  } : null, [map, visibleLiveRows]);
+  const exportRows = useCallback(() => {
+    // Recheck at the click boundary, even if the display clock has not ticked.
+    const clickedAt = Date.now();
+    const currentRows = filterScreenRows(prepareScreenRows(mapRows, generatedAt,
+      clickedAt, isError, capForRow), screen, scope);
+    if (!currentRows.length) { setExportNotice("No rows currently match. Refresh the scan or reset filters before exporting."); return; }
+    const csv = scannerScreenCsv(currentRows, { generatedAt,
+      timeframe: scanTimeframe, marketGroup, exportedAt: new Date(clickedAt).toISOString() });
+    let url: string | null = null;
+    try {
+      url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url; link.download = `arx-scanner-${new Date(clickedAt).toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setExportNotice(`Exported ${currentRows.length} visible rows with their original scan time. Unavailable metrics are blank.`);
+    } catch { setExportNotice("The browser could not download the export. Please try again."); }
+    finally { if (url) { const createdUrl = url; setTimeout(() => URL.revokeObjectURL(createdUrl), 1000); } }
+  }, [mapRows, generatedAt, isError, capForRow, screen, scope, scanTimeframe, marketGroup]);
 
   // A real scan exists once the server stamps a `generatedAt` or reports ≥1
   // scanned symbol. Report it up so the page's "scan exists" gate stays honest.
@@ -280,15 +438,15 @@ export function BroadScanOpportunityMap({
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4" data-testid="opportunity-map">
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2.5">
         <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
           <Radar className="h-[18px] w-[18px]" />
         </span>
-        <div>
+        <div className="min-w-0 flex-1 basis-48">
           <div className="text-[15px] font-semibold text-foreground">Opportunity Map</div>
           {map && (
             <div className="text-xs text-txt-muted" data-testid="opportunity-map-summary">
-              {map.scannedCount} of {universeCount} scanned · {map.liveCount} on live data
+              {map.scannedCount} of {universeCount} scanned · {map.liveCount} {snapshotFresh ? "on live data" : "live at last scan"}
               {skippedSymbols.length > 0 && (
                 <span data-testid="opportunity-map-skipped-count"> · {skippedSymbols.length} skipped</span>
               )}
@@ -296,10 +454,23 @@ export function BroadScanOpportunityMap({
             </div>
           )}
         </div>
+        <label className="ml-auto text-xs text-txt-muted">
+          Refresh
+          <select
+            aria-label="Scanner refresh interval"
+            className="ml-1 rounded border border-border bg-background p-1 text-foreground"
+            value={refreshMs}
+            onChange={(event) => setRefreshMs(Number(event.target.value) as 10_000 | 60_000 | 0)}
+          >
+            <option value={10000}>10 seconds</option>
+            <option value={60000}>1 minute</option>
+            <option value={0}>Manual</option>
+          </select>
+        </label>
         <Button
           size="sm"
           variant="outline"
-          className="ml-auto h-8 gap-1.5 px-2.5 text-xs"
+          className="h-8 gap-1.5 px-2.5 text-xs"
           disabled={isFetching}
           onClick={() => void refetch()}
           data-testid="opportunity-map-refresh"
@@ -308,6 +479,29 @@ export function BroadScanOpportunityMap({
           Rescan
         </Button>
       </div>
+
+      {map && isFetching && (
+        <p className="mt-2 text-xs text-txt-muted" role="status" data-testid="opportunity-map-updating">
+          Updating scan context… Current rows keep their original scan time.
+        </p>
+      )}
+      {map && !snapshotFresh && (
+        <div className="mt-3 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning" data-testid="opportunity-map-expired" role="status">
+          This scan needs a fresh check. Directions, scores and best picks stay hidden until a recent scan succeeds.
+        </div>
+      )}
+
+      <ScannerScreenToolbar screen={screen} onChange={setScreen} watchlists={watchlistData}
+        watchlistsUnavailable={watchlists.isError} marketGroup={marketGroup} timeframe={scanTimeframe}
+        visibleCount={visibleRows.length} totalCount={map?.rows.length ?? 0} onExport={exportRows} />
+      {scope.message && <p className="mt-2 text-xs text-warning" role="status">{scope.message}</p>}
+      {(scope.missingSymbols.length > 0 || scope.skippedCount > 0) && (
+        <p className="mt-2 text-xs text-txt-muted" data-testid="scanner-watchlist-coverage">
+          {scope.missingSymbols.length} watchlist symbols are outside this scan: {scope.missingSymbols.join(", ") || "none"}.
+          {" "}{scope.skippedCount} watchlist symbols were skipped; see scan reasons below. A view does not expand the scanner universe.
+        </p>
+      )}
+      {exportNotice && <p className="mt-2 text-xs text-txt-muted" role="status">{exportNotice}</p>}
 
       {/* Best vs selected */}
       {bestVsSelected?.message && (
@@ -366,7 +560,7 @@ export function BroadScanOpportunityMap({
       )}
 
       {/* Best picks */}
-      {map && <BestPicks best={map.best} onPick={onPick} />}
+      {map && snapshotFresh && <BestPicks best={safeBest} onPick={onPick} />}
 
       {/* Body */}
       <div className="mt-3">
@@ -380,15 +574,20 @@ export function BroadScanOpportunityMap({
           <p className="text-sm text-txt-secondary" data-testid="opportunity-map-empty">
             No opportunities to show for this market group right now.
           </p>
+        ) : visibleRows.length === 0 ? (
+          <p className="text-sm text-txt-secondary" data-testid="scanner-screen-empty">
+            No results match this view. Readiness, direction and score filters require a live-confirmed scan. Refresh or reset filters.
+          </p>
         ) : (
           <div className="space-y-3">
             {CATEGORY_ORDER.map((cat) => {
-              const rows = map.categories[cat] ?? [];
+              const entries = visibleRows.filter(({ row }) => row.category === cat);
+              const rows = entries.map(({ row }) => row);
               if (rows.length === 0) return null;
               // Group-honesty cap: a group whose EVERY row lacks live data shows
               // honest degraded header wording instead of the bucket's (possibly
               // affirmative) category label — never the reverse. Display-only.
-              const allDegraded = rows.every((r) => !r.hasLiveData);
+              const allDegraded = entries.every((entry) => !entry.metricsAvailable);
               const meta = allDegraded ? DEGRADED_GROUP_META : CATEGORY_META[cat];
               return (
                 <div
@@ -406,15 +605,16 @@ export function BroadScanOpportunityMap({
                     <span className="ml-auto text-xs text-txt-muted">{rows.length}</span>
                   </div>
                   <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                    {rows.map((r) => {
+                    {entries.map(({ row: r, metricsAvailable }) => {
                       const isSelectedRow =
                         selectedKey != null && symbolKey(r.symbol) === selectedKey;
                       return (
                         <OpportunityRowCard
                           key={`${r.symbol}-${r.kind}`}
                           row={r}
+                          selected={isSelectedRow}
                           onPick={onPick}
-                          feedCapOverride={isSelectedRow ? selectedFeedCap : null}
+                          feedCapOverride={capForRow(r) ?? (metricsAvailable ? null : "FEED_LIMITED")}
                           scanTimeframe={isSelectedRow ? scanTimeframe : null}
                           chartTimeframe={isSelectedRow ? chartTimeframe : null}
                         />
@@ -431,7 +631,9 @@ export function BroadScanOpportunityMap({
   );
 }
 
-function BestPicks({
+// Memoized: `best` is a memoized derivation in the parent and `onPick` is the
+// page's stable callback, so a selection click or fetching flip skips this grid.
+const BestPicks = memo(function BestPicks({
   best,
   onPick,
 }: {
@@ -467,21 +669,25 @@ function BestPicks({
             <span className="text-sm font-semibold text-foreground">{row!.displayName}</span>
             <Badge variant={dirBadgeVariant(row!.direction)} className="text-[10px]">{row!.direction}</Badge>
           </div>
-          <div className="text-[11px] text-txt-muted">Edge {Math.round(row!.edgeScore)}</div>
+          {validHeuristic(row!.edgeScore) && <div className="text-[11px] text-txt-muted" title="Heuristic score, not a win probability">Edge {Math.round(row!.edgeScore)}</div>}
         </button>
       ))}
     </div>
   );
-}
+});
 
-function OpportunityRowCard({
+const OpportunityRowCard = memo(OpportunityRowCardBase, sameOpportunityRowCardProps);
+
+function OpportunityRowCardBase({
   row,
   onPick,
+  selected = false,
   feedCapOverride = null,
   scanTimeframe = null,
   chartTimeframe = null,
 }: {
   row: OpportunityMapRow;
+  selected?: boolean;
   onPick?: (symbol: string) => void;
   // Cross-surface feed cap for the SELECTED symbol's row (Task #608). When the
   // selected chart's own feed verdict is degraded (FEED_LIMITED / ANALYSIS_ONLY /
@@ -528,7 +734,8 @@ function OpportunityRowCard({
     <button
       type="button"
       onClick={() => onPick?.(row.symbol)}
-      className="rounded-xl border border-border bg-background/40 p-2.5 text-left hover:border-primary/40"
+      className={`rounded-xl border p-2.5 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${selected ? "border-primary/60 bg-primary/10" : "border-border bg-background/40"}`}
+      aria-pressed={selected}
       data-testid={`opportunity-row-${row.symbol}`}
       data-actionability={action}
     >
@@ -579,14 +786,14 @@ function OpportunityRowCard({
       )}
       {live && (
         <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-txt-muted" data-testid={`opportunity-row-stats-${row.symbol}`}>
-          <span>Edge {Math.round(row.edgeScore)}</span>
-          <span>· Entry {Math.round(row.entryQuality)}</span>
+          {validHeuristic(row.edgeScore) && <span title="Heuristic score, not a win probability">Edge {Math.round(row.edgeScore)}</span>}
+          {validHeuristic(row.entryQuality) && <span>· Entry {Math.round(row.entryQuality)}</span>}
           {/* Feed-readiness, NOT a per-symbol execution score: this value is
               derived purely from the row's feed state (executionQualityFor —
               live > delayed > history > stale > awaiting > sim=0), so it is
               labelled "Feed" to stay honest rather than implying a fabricated
               per-trade execution quality. */}
-          <span>· Feed {Math.round(row.executionQuality)}</span>
+          {validHeuristic(row.executionQuality) && <span>· Feed {Math.round(row.executionQuality)}</span>}
           {row.newsRisk !== "none" && <span className="text-warning">· news {row.newsRisk}</span>}
         </div>
       )}
@@ -610,6 +817,26 @@ function OpportunityRowCard({
       </div>
     </button>
   );
+}
+
+// Every response (real JSON or fixture) arrives as brand-new row objects, so a
+// reference compare would re-render all cards on each refetch. Compare the
+// fields the card actually renders instead; `onPick` only ever reads
+// `row.symbol`, which is covered. Keep this list in step with the card body:
+// a field read there but missing here would render stale.
+const ROW_CARD_FIELDS = [
+  "symbol", "displayName", "direction", "category", "hasLiveData",
+  "edgeScore", "entryQuality", "executionQuality", "newsRisk", "reason",
+] as const satisfies readonly (keyof OpportunityMapRow)[];
+function sameOpportunityRowCardProps(
+  prev: Parameters<typeof OpportunityRowCardBase>[0],
+  next: Parameters<typeof OpportunityRowCardBase>[0],
+): boolean {
+  if (prev.selected !== next.selected || prev.onPick !== next.onPick ||
+    prev.feedCapOverride !== next.feedCapOverride || prev.scanTimeframe !== next.scanTimeframe ||
+    prev.chartTimeframe !== next.chartTimeframe) return false;
+  if (prev.row === next.row) return true;
+  return ROW_CARD_FIELDS.every((field) => prev.row[field] === next.row[field]);
 }
 
 export default BroadScanOpportunityMap;

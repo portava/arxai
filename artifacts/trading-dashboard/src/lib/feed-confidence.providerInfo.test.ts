@@ -10,13 +10,16 @@ import { describe, it, expect } from "vitest";
 import { providerInfo } from "./feed-confidence.js";
 
 describe("providerInfo — provider label + trust tier mapping", () => {
-  it("maps mt5_broker to the highest-trust broker tier", () => {
+  it("names the primary broker source without promising freshness or fills", () => {
     const info = providerInfo("mt5_broker");
     expect(info.label).toBe("MT5 broker");
     expect(info.tier).toBe("broker");
-    // trustNote must convey broker-primary / highest-trust honesty cues.
+    // Source identity does not by itself prove freshness or an execution price.
     expect(info.trustNote).toMatch(/broker/i);
     expect(info.trustNote).toMatch(/primary|highest-trust/i);
+    expect(info.trustNote).toMatch(/check feed status/i);
+    expect(info.trustNote).toMatch(/execution prices can differ/i);
+    expect(info.trustNote).not.toMatch(/live bars|matches the prices|highest-trust/i);
   });
 
   it("maps deriv to the synthetic tier (never broker)", () => {
@@ -26,6 +29,14 @@ describe("providerInfo — provider label + trust tier mapping", () => {
     // trustNote must say it's synthetic and explicitly NOT broker bars.
     expect(info.trustNote).toMatch(/synthetic/i);
     expect(info.trustNote).toMatch(/not your broker|not.*broker/i);
+    expect(info.trustNote).not.toMatch(/real.time/i);
+  });
+
+  it("names public Deriv data explicitly without broker trust", () => {
+    const info = providerInfo("deriv_public");
+    expect(info.label).toBe("Deriv public data");
+    expect(info.tier).toBe("synthetic");
+    expect(info.trustNote).toMatch(/not.*broker/i);
   });
 
   it("maps a named assistant_real provider to its pretty name on the thirdParty tier", () => {
@@ -76,6 +87,7 @@ describe("providerInfo — provider label + trust tier mapping", () => {
   it("never labels a non-broker source as the broker tier (honesty floor)", () => {
     const nonBroker = [
       "deriv",
+      "deriv_public",
       "assistant_real:twelve_data",
       "assistant_real:composite(twelve_data,polygon)",
       "some_new_provider",

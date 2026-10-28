@@ -1,3 +1,5 @@
+import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
+import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported } from "../lib/mt5/managementTargetProtocol.js";
 // Phase B — EA-facing LIVE execution endpoints.
 //
 // SAFETY (inviolable):
@@ -22,8 +24,10 @@ import { runBrokerAbsenceReconcile } from "../lib/live/brokerAbsenceReconcileRun
 import {
   pickupNextLiveCommand,
   recordLiveCommandResult,
-  findGhostClosedPositionIds,
+  reconcileGhostClosedPositions,
 } from "../lib/live/liveCommandPipeline.js";
+import { boundManagementTransportSymbol } from "../lib/selfTrade/managementTarget.js";
+import { reportedManagementIdentity } from "../lib/selfTrade/managementConsumers.js";
 import { resolveBrokerSymbolName } from "../lib/instruments/index.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
@@ -81,6 +85,53 @@ router.post("/mt5/live-commands-poll", bridgeAuthPerUserOnly, async (req: AugReq
     userId: conn.userId!,
     bridgeConnectionId: conn.id,
     bridgeAccountType: conn.accountType,
+    managementTargetSupported: managementTargetPollSupported(conn.capabilities, req.get(MANAGEMENT_TARGET_HEADER)),
+    prepareResponse: async (c, reader) => {
+      // Task #28 — expose TTL freshness to the EA. `secondsUntilExpiry` is
+      // computed server-side so the EA never has to parse ISO timestamps or
+      // trust its own wall-clock: if it is <= 0 the EA refuses the command with
+      // STALE_COMMAND_REJECTED. `expiresAt`/`serverTimestamp`/`ttlSeconds` are
+      // included for audit + forward-compat.
+      const nowMs = Date.now();
+      const expiresAtMs = c.expiresAt ? new Date(c.expiresAt).getTime() : null;
+      const secondsUntilExpiry = expiresAtMs != null
+        ? Math.floor((expiresAtMs - nowMs) / 1000)
+        : null;
+      // Transport-layer name translation: hand the EA the broker's EXACT,
+      // case-sensitive Market Watch symbol (e.g. "Volatility 75 Index") rather
+      // than ARX's internal uppercased/alias form. No-op for forex; verbatim
+      // fallback for anything not in the registry. Does NOT alter the stored
+      // command or any safety gate.
+      const brokerSymbol = boundManagementTransportSymbol(c) ?? await resolveBrokerSymbolName(c.symbol, reader);
+      return JSON.stringify({
+        command: {
+          commandId: c.commandId,
+          commandType: c.commandType,
+          symbol: brokerSymbol,
+          side: c.side,
+          orderType: c.orderType,
+          requestedVolume: c.requestedVolume,
+          stopLoss: c.stopLoss,
+          takeProfit: c.takeProfit,
+          // Task #30 — drafted reference price for the EA's slippage/deviation
+          // guard. Stored on payload at draft; null when the caller drafted no
+          // reference price (EA then skips the deviation leg, fail-open).
+          referencePrice: ((): number | null => {
+            const p = c.payload as Record<string, unknown> | null | undefined;
+            const v = p?.["referencePrice"];
+            return typeof v === "number" && v > 0 ? v : null;
+          })(),
+          payload: c.payload,
+          accountLogin: c.accountLogin,
+          brokerServer: c.brokerServer,
+          ttlSeconds: c.ttlSeconds,
+          expiresAt: c.expiresAt,
+          serverTimestamp: c.serverTimestamp,
+          secondsUntilExpiry,
+    },
+    ...LIVE_SAFETY_ENVELOPE,
+  });
+    },
   });
   if (result.refusalReason) {
     res.status(403).json({ error: result.refusalReason, ...LIVE_SAFETY_ENVELOPE });
@@ -90,51 +141,7 @@ router.post("/mt5/live-commands-poll", bridgeAuthPerUserOnly, async (req: AugReq
     res.json({ command: null, ...LIVE_SAFETY_ENVELOPE });
     return;
   }
-  const c = result.command;
-  // Task #28 — expose TTL freshness to the EA. `secondsUntilExpiry` is
-  // computed server-side so the EA never has to parse ISO timestamps or
-  // trust its own wall-clock: if it is <= 0 the EA refuses the command with
-  // STALE_COMMAND_REJECTED. `expiresAt`/`serverTimestamp`/`ttlSeconds` are
-  // included for audit + forward-compat.
-  const nowMs = Date.now();
-  const expiresAtMs = c.expiresAt ? new Date(c.expiresAt).getTime() : null;
-  const secondsUntilExpiry = expiresAtMs != null
-    ? Math.floor((expiresAtMs - nowMs) / 1000)
-    : null;
-  // Transport-layer name translation: hand the EA the broker's EXACT,
-  // case-sensitive Market Watch symbol (e.g. "Volatility 75 Index") rather
-  // than ARX's internal uppercased/alias form. No-op for forex; verbatim
-  // fallback for anything not in the registry. Does NOT alter the stored
-  // command or any safety gate.
-  const brokerSymbol = await resolveBrokerSymbolName(c.symbol);
-  res.json({
-    command: {
-      commandId: c.commandId,
-      commandType: c.commandType,
-      symbol: brokerSymbol,
-      side: c.side,
-      orderType: c.orderType,
-      requestedVolume: c.requestedVolume,
-      stopLoss: c.stopLoss,
-      takeProfit: c.takeProfit,
-      // Task #30 — drafted reference price for the EA's slippage/deviation
-      // guard. Stored on payload at draft; null when the caller drafted no
-      // reference price (EA then skips the deviation leg, fail-open).
-      referencePrice: ((): number | null => {
-        const p = c.payload as Record<string, unknown> | null | undefined;
-        const v = p?.["referencePrice"];
-        return typeof v === "number" && v > 0 ? v : null;
-      })(),
-      payload: c.payload,
-      accountLogin: c.accountLogin,
-      brokerServer: c.brokerServer,
-      ttlSeconds: c.ttlSeconds,
-      expiresAt: c.expiresAt,
-      serverTimestamp: c.serverTimestamp,
-      secondsUntilExpiry,
-    },
-    ...LIVE_SAFETY_ENVELOPE,
-  });
+  res.type("application/json").send(result.serializedResponse!);
 });
 
 // ── POST /api/mt5/live-command-result ──────────────────────────────────────
@@ -154,7 +161,7 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     typeof b["status"] === "string" ? b["status"]
     : typeof b["outcome"] === "string" ? b["outcome"]
     : null;
-  const allowedOutcomes = ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "STALE_COMMAND_REJECTED"] as const;
+  const allowedOutcomes = ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED", "LIVE_ACKNOWLEDGED", "LIVE_UNKNOWN", "LIVE_REJECTED", "LIVE_FAILED", "STALE_COMMAND_REJECTED"] as const;
   if (!commandId || !outcomeRaw || !(allowedOutcomes as readonly string[]).includes(outcomeRaw)) {
     res.status(400).json({ error: "INVALID_BODY", detail: "commandId and status required" });
     return;
@@ -170,14 +177,20 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     return;
   }
 
+  const terminal = normalizeTerminalResultEvidence(b, owned[0].commandType, owned[0].requestedVolume,
+    owned[0].brokerTicket ?? (owned[0].payload as Record<string, unknown> | null)?.brokerTicket as string | undefined);
+  // Acceptance/partial claims need versioned terminal evidence; otherwise unknown.
+  const unproven = !terminal && (outcome === "LIVE_PARTIALLY_FILLED" || outcome === "LIVE_ACKNOWLEDGED");
   const result = await recordLiveCommandResult({
     userId: conn.userId!,
     commandId,
-    outcome,
+    outcome: terminal?.outcome ?? (unproven ? "LIVE_UNKNOWN" : outcome),
+    terminalResultEvidence: terminal?.evidence,
     reportingBridgeConnectionId: conn.id,
-    brokerTicket: typeof b["brokerTicket"] === "string" || typeof b["brokerTicket"] === "number" ? String(b["brokerTicket"]) : null,
-    fillPrice: typeof b["fillPrice"] === "number" ? Number(b["fillPrice"]) : null,
-    executedVolume: typeof b["executedVolume"] === "number" ? Number(b["executedVolume"]) : null,
+    reportedExecutionIdentity: reportedManagementIdentity(b),
+    brokerTicket: terminal ? terminal.brokerTicket : typeof b["brokerTicket"] === "string" || typeof b["brokerTicket"] === "number" ? String(b["brokerTicket"]) : null,
+    fillPrice: terminal ? terminal.fillPrice : !unproven && typeof b["fillPrice"] === "number" ? Number(b["fillPrice"]) : null,
+    executedVolume: terminal ? terminal.executedVolume : !unproven && typeof b["executedVolume"] === "number" ? Number(b["executedVolume"]) : null,
     mt5Retcode: typeof b["mt5Retcode"] === "number" ? Number(b["mt5Retcode"]) : null,
     brokerMessage: typeof b["brokerMessage"] === "string" ? String(b["brokerMessage"]) : null,
     // EA-side preflight refusals (PreTradeBrokerGuard, lot ceiling, maintenance,
@@ -186,6 +199,10 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     // Capture it so the row surfaces the real cause instead of EA_REJECTED_NO_DETAIL.
     eaReason: typeof b["reason"] === "string" ? String(b["reason"]) : null,
   });
+  if (result.reason === "LIVE_RESULT_RECEIPT_CAPACITY") {
+    res.status(503).json({ ...result, ...LIVE_SAFETY_ENVELOPE });
+    return;
+  }
   // Position Guardian — a confirmed entry fill (full or partial) starts
   // protection checks on its ticket; a filled close re-checks the remainder.
   const resulting = result.ok
@@ -352,44 +369,7 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
   // initiate a close, only record one the broker already executed.
   let reconciledClosed = 0;
   try {
-    const openRows = await livePositionLedger.select(
-      {
-        id: livePositionColumns.id,
-        brokerTicket: livePositionColumns.brokerTicket,
-      },
-      { where: and(eq(livePositionColumns.userId, conn.userId!), isNull(livePositionColumns.closedAt)) },
-    );
-    if (openRows.length > 0) {
-      const filledCloses = await db.select({
-        payload: arxLiveCommandsTable.payload,
-        brokerTicket: arxLiveCommandsTable.brokerTicket,
-      }).from(arxLiveCommandsTable).where(and(
-        eq(arxLiveCommandsTable.userId, conn.userId!),
-        eq(arxLiveCommandsTable.commandType, "CLOSE_LIVE_POSITION"),
-        eq(arxLiveCommandsTable.status, "LIVE_FILLED"),
-      ));
-      const ghostIds = findGhostClosedPositionIds(
-        openRows.map((r) => ({ id: r.id, brokerTicket: r.brokerTicket ?? "" })),
-        filledCloses.map((c) => ({
-          brokerTicket: c.brokerTicket,
-          payload: c.payload as Record<string, unknown> | null,
-        })),
-      );
-      if (ghostIds.length > 0) {
-        await livePositionWriter.update(
-          {
-            closedAt: new Date(),
-            lastSyncedAt: new Date(),
-          },
-          and(
-            eq(livePositionColumns.userId, conn.userId!),
-            inArray(livePositionColumns.id, ghostIds),
-            isNull(livePositionColumns.closedAt),
-          ),
-        );
-        reconciledClosed = ghostIds.length;
-      }
-    }
+    reconciledClosed = await reconcileGhostClosedPositions(conn.userId!, snapshotNow);
   } catch (err) {
     req.log.warn({ err }, "sync-live-positions ghost-close reconciliation failed");
   }

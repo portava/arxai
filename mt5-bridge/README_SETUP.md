@@ -1,7 +1,7 @@
 # ARX MT5 DEMO connection setup — v1.31
 
 This kit is for **read-only connection checks on a DEMO account**. It contains
-`ReplitMT5BridgeEA_v131.mq5`, its `ArxDemoExecution.mqh` companion, the credential-free `ARX_DEMO_READ_ONLY.set` profile,
+`ReplitMT5BridgeEA_v131.mq5`, its `ArxDemoExecution.mqh` `ArxManagementTarget.mqh`, and `ArxTradeResult.mqh` companions, the credential-free `ARX_DEMO_READ_ONLY.set` profile,
 a WebRequest diagnostic script, and the three companion guides.
 
 The EA has execution code. Its local trading arms default off; the supplied
@@ -44,7 +44,7 @@ quotes/candles, or a passed broker lifecycle. Each needs observed evidence.
 ## Install and verify
 
 1. MT5 → File → Open Data Folder → `MQL5/Experts`. Copy
-   `ReplitMT5BridgeEA_v131.mq5` **and** `ArxDemoExecution.mqh` there, side by side.
+   `ReplitMT5BridgeEA_v131.mq5`, `ArxDemoExecution.mqh`, `ArxManagementTarget.mqh`, and `ArxTradeResult.mqh` there, side by side.
 2. Open this exact file in MetaEditor and compile. Record the actual compiler
    result; resolve errors before continuing. This kit contains source, not a
    precompiled or certified `.ex5`.

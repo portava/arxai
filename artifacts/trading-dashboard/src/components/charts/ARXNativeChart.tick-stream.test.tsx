@@ -25,7 +25,11 @@
 //   stubbed — everything CI cannot supply headlessly.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup, act } from "@testing-library/react";
+import { render, cleanup, act, fireEvent } from "@testing-library/react";
+import { useLayoutEffect } from "react";
+import { ChartViewLink } from "@/lib/chart-engine/chartViewLink";
+import { ChartLinkContext } from "./ChartLinkContext";
+import type { ChartOverlay } from "@/lib/chart-overlays";
 import type {
   ChartCandle,
   ChartCandlesResponse,
@@ -51,6 +55,17 @@ const adapterSpies = {
   updateActiveCandle: vi.fn(),
   setOverlays: vi.fn(),
   resetScale: vi.fn(),
+  resize: vi.fn(),
+  goToLatest: vi.fn(),
+  fitHistory: vi.fn(),
+  panBy: vi.fn(),
+  zoomBy: vi.fn(),
+  setViewLinkHandler: vi.fn(),
+  setLinkedTimeRange: vi.fn(),
+  setDrawings: vi.fn(),
+  setDrawingHandler: vi.fn(),
+  setDrawingInteraction: vi.fn(),
+  setScaleMode: vi.fn(),
   setReachStartHandler: vi.fn(),
   priceToCoordinate: vi.fn(() => null),
 };
@@ -199,7 +214,7 @@ function makeResponse(feedStatus: ChartFeedStatus): ChartCandlesResponse {
     makeCandle(NEWEST_OPEN_MS - M5_MS, 1.101),
     makeCandle(NEWEST_OPEN_MS, 1.102),
   ];
-  return { candles, feedStatus, warning: null } as unknown as ChartCandlesResponse;
+  return { symbol:SYMBOL,timeframe:TF,candles:candles.map(c=>({...c,source:feedStatus.source})), feedStatus, warning: null } as unknown as ChartCandlesResponse;
 }
 
 // Exactly the wire shape chartTickStream.ts emits for an accepted tick.
@@ -213,6 +228,7 @@ function formingBarEvent(opts: {
 }) {
   return {
     type: "forming_bar",
+    source: "mt5_broker",
     symbol: SYMBOL,
     timeframe: TF,
     bar: {
@@ -237,6 +253,7 @@ function formingBarEvent(opts: {
 function feedStatusEvent(opts: { marketFrozen: boolean; lastBrokerTimeMs: number | null }) {
   return {
     type: "feed_status",
+    source: "mt5_broker",
     symbol: SYMBOL,
     timeframe: TF,
     marketFrozen: opts.marketFrozen,
@@ -259,6 +276,7 @@ function renderChart() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   openedStreams = [];
   for (const fn of Object.values(adapterSpies)) (fn as ReturnType<typeof vi.fn>).mockClear();
   adapterSpies.priceToCoordinate.mockReturnValue(null);
@@ -277,6 +295,7 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
     expect(openedStreams).toHaveLength(1);
     const { url, withCredentials } = openedStreams[0]!;
     expect(url).toContain("/api/chart/tick-stream");
+    expect(url).toContain("source=mt5_broker");
     expect(url).toContain(`symbol=${SYMBOL}`);
     expect(url).toContain(`timeframe=${TF}`);
     // The component sends the session cookie with the stream.
@@ -441,7 +460,7 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
 
     // The closed-feed grade still governs the last-price label / dashed "Last"
     // line — only the tick gate moved off it.
-    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false });
+    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false, source: "mt5_broker" });
   });
 
   it("ignores malformed / wrong-type events without ticking the bar", () => {
@@ -573,6 +592,7 @@ describe("ARXNativeChart closed-market badge wiring", () => {
     // Switch to a different symbol: the effect re-runs, resets the badge, and
     // opens a fresh stream that has emitted no feed_status yet → badge gone.
     act(() => {
+      currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
       view.rerender(
         <ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} />,
       );
@@ -580,5 +600,160 @@ describe("ARXNativeChart closed-market badge wiring", () => {
     expect(view.container.querySelector(BADGE)).toBeNull();
     expect(openedStreams.length).toBeGreaterThan(1);
     expect(openedStreams[openedStreams.length - 1]!.url).toContain("symbol=GBPUSD");
+  });
+});
+
+
+describe("Smart Chart view controls", () => {
+  it("restores a linked peer range after each context reset without recreating the renderer",()=>{
+    const link=new ChartViewLink();link.configure({crosshair:false,range:true});let publish:any;
+    link.register("peer",{setViewLinkHandler:(fn:any)=>{publish=fn;}} as any);
+    const range={from:NEWEST_OPEN_SEC-600,to:NEWEST_OPEN_SEC};publish({kind:"range",range});
+    const tree=(symbol:string)=><ChartLinkContext.Provider value={link}><ARXNativeChart symbol={symbol} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/></ChartLinkContext.Provider>;
+    const view=render(tree(SYMBOL));expect(adapterSpies.setLinkedTimeRange).toHaveBeenLastCalledWith(range);
+    const clearIndex=adapterSpies.setCandles.mock.calls.length;
+    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+    view.rerender(tree("GBPUSD"));expect(adapterSpies.setLinkedTimeRange).toHaveBeenCalledTimes(2);
+    const clear=adapterSpies.setCandles.mock.calls.findIndex((args,index)=>index>=clearIndex&&args[0].length===0);
+    expect(adapterSpies.setLinkedTimeRange.mock.invocationCallOrder.at(-1)!).toBeGreaterThan(adapterSpies.setCandles.mock.invocationCallOrder[clear]!);
+    expect(adapterSpies.init).toHaveBeenCalledOnce();
+  });
+  it("does not reapply another instrument or explicit timeframe's overlays",()=>{
+    const rows=[{id:"same",symbol:SYMBOL},{id:"different-symbol",symbol:"GBPUSD"},{id:"different-tf",symbol:SYMBOL,timeframe:"H1"}].map(o=>({...o,type:"line",source:"position",price:1.1,label:o.id})) as ChartOverlay[];
+    const view=render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={rows}/>);
+    expect(adapterSpies.setOverlays.mock.lastCall?.[0].map((o:ChartOverlay)=>o.id)).toEqual(["same"]);
+    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+    view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} overlays={rows}/>);
+    expect(adapterSpies.setOverlays.mock.lastCall?.[0].map((o:ChartOverlay)=>o.id)).toEqual(["different-symbol"]);
+  });
+  it("reports timeframe selection in the click turn without a debounce timer",()=>{
+    const changed=vi.fn();
+    const view=render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} onTimeframeChange={changed} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    fireEvent.click(view.getByTestId("arx-native-tf-M15"));
+    expect(changed).toHaveBeenLastCalledWith("M15");
+    fireEvent.click(view.getByTestId("arx-native-tf-H1"));
+    expect(changed.mock.calls).toEqual([["M15"],["H1"]]);
+    expect(adapterSpies.init).toHaveBeenCalledOnce();
+  });
+  it("updates an uncontrolled selection immediately while retaining the chart instance",()=>{
+    const view=render(<ARXNativeChart symbol={SYMBOL} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    fireEvent.click(view.getByTestId("arx-native-tf-M15"));
+    expect(view.getByTestId("arx-native-tf-M15").getAttribute("aria-pressed")).toBe("true");
+    expect(adapterSpies.setTimeframe).toHaveBeenLastCalledWith("M15");
+    fireEvent.click(view.getByTestId("arx-native-tf-H1"));
+    expect(view.getByTestId("arx-native-tf-H1").getAttribute("aria-pressed")).toBe("true");
+    expect(adapterSpies.init).toHaveBeenCalledOnce();
+  });
+  it("renders safely without an overlays prop", () => {
+    render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} />);
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+    expect(adapterSpies.setCandles.mock.calls.length).toBeLessThan(4);
+  });
+  it("changes viewport and scale without restarting the renderer or stream", () => {
+    const view = renderChart();
+    fireEvent.click(view.getByRole("button", {name:"Latest",exact:true}));
+    fireEvent.click(view.getByRole("button", {name:"Fit history",exact:true}));
+    fireEvent.change(view.getByLabelText("Price scale"), {target:{value:"log"}});
+    expect(adapterSpies.goToLatest).toHaveBeenCalledOnce();
+    expect(adapterSpies.fitHistory).toHaveBeenCalledOnce();
+    expect(adapterSpies.setScaleMode).toHaveBeenLastCalledWith("log");
+    fireEvent.click(view.getByRole("button", {name:"Fullscreen",exact:true}));
+    expect(view.getByRole("button", {name:"Exit fullscreen",exact:true})).toBeTruthy();
+    fireEvent.keyDown(window,{key:"Escape"});
+    expect(view.getByRole("button", {name:"Fullscreen",exact:true})).toBeTruthy();
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+    expect(openedStreams).toHaveLength(1);
+  });
+  it("supports Home and End only inside the focused chart", () => {
+    const view = renderChart();
+    const chart=view.getByTestId("arx-native-canvas");
+    fireEvent.keyDown(chart,{key:"Home"});
+    fireEvent.keyDown(chart,{key:"End"});
+    expect(adapterSpies.fitHistory).toHaveBeenCalledOnce();
+    expect(adapterSpies.goToLatest).toHaveBeenCalledOnce();
+  });
+  it("pans/zooms on focused chart keys without intercepting modified or child input keys",()=>{
+    const view=renderChart(),chart=view.getByTestId("arx-native-canvas");
+    for(const key of ["ArrowLeft","ArrowRight","+","-"])fireEvent.keyDown(chart,{key});
+    expect(adapterSpies.panBy.mock.calls).toEqual([[-0.25],[0.25]]);expect(adapterSpies.zoomBy.mock.calls).toEqual([[0.75],[4/3]]);
+    fireEvent.keyDown(chart,{key:"+",ctrlKey:true});const input=document.createElement("input");chart.append(input);fireEvent.keyDown(input,{key:"ArrowLeft"});
+    expect(adapterSpies.panBy).toHaveBeenCalledTimes(2);expect(adapterSpies.zoomBy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("source-bound chart ticks", () => {
+  const event = () => formingBarEvent({ openTimeMs: NEWEST_OPEN_MS, open: 1.1, high: 1.2, low: 1.0, close: 1.15 });
+  it("clears a retained wrong-context response instead of relabeling its candles",()=>{
+    const view=renderChart(),old=openedStreams[0]!;
+    view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(adapterSpies.init).toHaveBeenCalledOnce();expect(adapterSpies.destroy).not.toHaveBeenCalled();
+    expect(adapterSpies.setCandles).toHaveBeenLastCalledWith([]);expect(old.closed).toBe(true);
+    expect(openedStreams).toHaveLength(1);
+  });
+  it("fences an old stream during the layout phase before its passive cleanup",()=>{
+    let old:MockEventSource|undefined,wasClosed:boolean|undefined;
+    function Probe({symbol}:{symbol:string}){
+      useLayoutEffect(()=>{if(old){wasClosed=old.closed;old.emit(event());}},[symbol]);
+      return <ARXNativeChart symbol={symbol} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>;
+    }
+    const view=render(<Probe symbol={SYMBOL}/>);old=openedStreams[0]!;
+    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+    view.rerender(<Probe symbol="GBPUSD"/>);
+    expect(wasClosed).toBe(false);expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();expect(old.closed).toBe(true);
+    expect(adapterSpies.init).toHaveBeenCalledOnce();
+  });
+  it("rebinds a same-provider source identity without recreating the chart",()=>{
+    const proof={symbol:SYMBOL,timeframe:TF,source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:new Date(NEWEST_OPEN_MS+M5_MS).toISOString()};
+    currentCandleResponse={...currentCandleResponse!,marketEvidence:proof};const view=renderChart(),old=openedStreams[0]!;
+    const first=adapterSpies.setCandles.mock.calls.length;
+    currentCandleResponse={...currentCandleResponse!,marketEvidence:{...proof,sourceIdentity:"b".repeat(64)}};
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(old.closed).toBe(true);expect(openedStreams).toHaveLength(2);expect(adapterSpies.init).toHaveBeenCalledOnce();
+    expect(adapterSpies.setCandles.mock.calls.slice(first).some(([rows])=>rows.length===0)).toBe(true);
+    act(()=>old!.emit(event()));expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
+  });
+  it("discards a half-finished drawing when the observed source identity changes",()=>{
+    const proof={symbol:SYMBOL,timeframe:TF,source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:new Date(NEWEST_OPEN_MS+M5_MS).toISOString()};
+    currentCandleResponse={...currentCandleResponse!,marketEvidence:proof};const view=renderChart();
+    fireEvent.change(view.getByRole("combobox",{name:"Drawing tool"}),{target:{value:"trend"}});
+    act(()=>adapterSpies.setDrawingHandler.mock.lastCall?.[0]?.({time:NEWEST_OPEN_SEC-600,price:1.1}));
+    currentCandleResponse={...currentCandleResponse!,marketEvidence:{...proof,sourceIdentity:"b".repeat(64)}};
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(adapterSpies.setDrawingHandler).toHaveBeenLastCalledWith(null);
+    fireEvent.change(view.getByRole("combobox",{name:"Drawing tool"}),{target:{value:"trend"}});
+    act(()=>adapterSpies.setDrawingHandler.mock.lastCall?.[0]?.({time:NEWEST_OPEN_SEC-300,price:1.2}));
+    expect(adapterSpies.setDrawings).toHaveBeenLastCalledWith([]);
+    act(()=>adapterSpies.setDrawingHandler.mock.lastCall?.[0]?.({time:NEWEST_OPEN_SEC,price:1.3}));
+    expect(adapterSpies.setDrawings.mock.lastCall?.[0]).toEqual([expect.objectContaining({start:{time:NEWEST_OPEN_SEC-300,price:1.2},end:{time:NEWEST_OPEN_SEC,price:1.3}})]);
+  });
+  it("rejects missing, wrong-source and wrong-context prices and status", () => {
+    renderChart();
+    const stream = openedStreams[0]!;
+    act(() => {
+      for (const patch of [{ source: undefined }, { source: "deriv_public" }, { source: "deriv" },
+        { symbol: "V75" }, { timeframe: "M1" }]) {
+        stream.emit({ ...event(), ...patch });
+        stream.emit({ ...feedStatusEvent({ marketFrozen: true, lastBrokerTimeMs: 0 }), ...patch });
+      }
+    });
+    expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
+  });
+  it("rebinds on provider switch and ignores already queued frames from the old stream", () => {
+    const view = renderChart();
+    const oldStream = openedStreams[0]!;
+    currentCandleResponse = makeResponse({ ...liveFeedStatus(), source: "deriv_public" } as ChartFeedStatus);
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} />);
+    expect(oldStream.closed).toBe(true);
+    expect(adapterSpies.setFeedState).toHaveBeenLastCalledWith(expect.objectContaining({ source: "deriv_public" }));
+    expect(openedStreams[1]!.url).toContain("source=deriv_public");
+    act(() => { oldStream.emit(event()); openedStreams[1]!.emit(event()); });
+    expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
+    act(() => { openedStreams[1]!.emit({ ...event(), source: "deriv_public" }); });
+    expect(adapterSpies.updateActiveCandle).toHaveBeenCalledTimes(1);
+  });
+  it("does not subscribe before an identified candle source exists", () => {
+    currentCandleResponse = makeResponse({ ...liveFeedStatus(), source: null } as unknown as ChartFeedStatus);
+    renderChart();
+    expect(openedStreams).toHaveLength(0);
   });
 });

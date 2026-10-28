@@ -28,14 +28,19 @@ export function isValidCandlestickPoint(p: SanitizableCandlePoint): boolean {
     Number.isFinite(p.open) &&
     Number.isFinite(p.high) &&
     Number.isFinite(p.low) &&
-    Number.isFinite(p.close)
+    Number.isFinite(p.close) &&
+    p.high >= Math.max(p.open, p.close, p.low) &&
+    p.low <= Math.min(p.open, p.close, p.high)
   );
 }
 
 export function sanitizeCandlestickData<T extends SanitizableCandlePoint>(
   points: readonly T[],
 ): T[] {
-  return points.filter(isValidCandlestickPoint);
+  const valid = points.filter(isValidCandlestickPoint);
+  if (valid.every((p, i) => i === 0 || p.time > valid[i - 1]!.time)) return valid;
+  // The renderer requires unique ascending times. Last valid observation wins.
+  return [...new Map(valid.map((p) => [p.time, p])).values()].sort((a, b) => a.time - b.time);
 }
 
 // Snap an arbitrary epoch-second onto a real candle bar present in the series.

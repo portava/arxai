@@ -29,6 +29,9 @@ import type {
 } from "@workspace/domain/signal-intelligence";
 import {
   scanSymbolTimeframe,
+  mapWithConcurrency,
+  ENRICHMENT_CONCURRENCY,
+  runWithScannerBudget,
   isApprovedScannerSymbol,
   decorateOpportunitiesWithHistory,
   decorateOpportunitiesWithNewsRisk,
@@ -38,6 +41,7 @@ import {
   type ScannerOpportunity,
   type UniverseId,
 } from "../marketScanner.js";
+import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 
 /** Timeframe the opportunity map reads at (aligns with the market-edge default). */
@@ -80,11 +84,13 @@ export function toInput(
   late: LateDetection | null,
 ): OpportunityInput {
   const isLate = !!late?.isLate;
+  const timingUnknown = opp.dataStatus === "live" &&
+    (opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL") && late === null;
   return {
     symbol: opp.symbol,
     displayName: opp.symbol,
-    direction: dirFromAction(opp.recommendedAction),
-    recommendedAction: actionInput(opp.recommendedAction),
+    direction: timingUnknown ? "NEUTRAL" : dirFromAction(opp.recommendedAction),
+    recommendedAction: timingUnknown ? "WAIT" : actionInput(opp.recommendedAction),
     setupType: opp.setupType,
     edgeScore: Math.round(effectiveOpportunityScore(opp)),
     entryQuality: Math.round(opp.entrySniperScore),
@@ -101,6 +107,7 @@ export function toInput(
     // row has no live data or lateness cannot be evaluated — never fabricated.
     isLate,
     reason:
+      (timingUnknown ? "Entry timing could not be verified with a fresh quote — wait for a new scan." : null) ??
       (isLate ? late?.reason : null) ??
       opp.finalRead?.headline ??
       opp.reasonForTrade ??
@@ -113,35 +120,34 @@ export function toInput(
  * Ruby Market Read uses (`computeLateDetection`). It is fed a live quote +
  * candles routed through the unified market data router (the same source the
  * scan itself read), plus the row's own entry/SL/TP. Only LIVE_FEED rows are
- * evaluated — anything without a live price returns null (honest "not late"
- * default, never a fabricated lateness verdict). Fail-soft on any IO error.
+ * evaluated — anything without a verified current quote returns null (unknown
+ * timing, not a claim that the entry is still timely). Unknown timing withholds directional readiness in toInput. Fail-soft
+ * on any IO error. A candle close never substitutes for a current quote.
  */
 async function latenessFor(opp: ScannerOpportunity): Promise<LateDetection | null> {
   if (opp.dataSource !== "LIVE_FEED") return null;
   const direction = dirFromAction(opp.recommendedAction);
   if (direction === "NEUTRAL") return null;
   try {
-    const [cr, qr] = await Promise.all([
-      routeCandles(opp.symbol, opp.timeframe, 30),
-      routeQuote(opp.symbol),
+    let cr!: Awaited<ReturnType<typeof routeCandles>>;
+    let qr!: Awaited<ReturnType<typeof routeQuote>>;
+    await Promise.all([
+      runWithScannerBudget(async () => { cr = await routeCandles(opp.symbol, opp.timeframe, 30); }),
+      runWithScannerBudget(async () => { qr = await routeQuote(opp.symbol); }),
     ]);
-    const candles: SignalCandle[] | null =
-      cr.ok && cr.candles.length > 0
-        ? cr.candles.map((c) => ({
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            time: c.time,
-          }))
-        : null;
-    const q = qr.ok ? qr.quote : null;
-    const currentPrice =
-      q?.last ??
-      (q?.bid != null && q?.ask != null ? (q.bid + q.ask) / 2 : null) ??
-      (candles && candles.length > 0 ? candles[candles.length - 1]!.close : null);
-    // No live price → cannot honestly judge lateness.
-    if (currentPrice == null) return null;
+    if (!opp.feedProvider || cr.primaryProvider !== opp.feedProvider ||
+        scannerRowSourceIdentity(opp) !== scannerSourceIdentity(cr)) return null;
+    const now = Date.now();
+    const prepared = prepareScannerCandles(cr, opp.symbol, opp.timeframe, now);
+    const quote = scannerQuoteFor(cr, qr, opp.symbol, now);
+    if (!prepared?.rawClosed.length || !quote) return null;
+    const candles: SignalCandle[] = prepared.rawClosed.map((c) => ({
+      open: c.open, high: c.high, low: c.low, close: c.close, time: c.time,
+    }));
+    const currentPrice = quote.mid;
+    if (![opp.entry, opp.stopLoss, opp.takeProfit].every((n) => Number.isFinite(n) && n > 0)) return null;
+    if (direction === "BUY" ? !(opp.stopLoss < opp.entry && opp.entry < opp.takeProfit)
+      : !(opp.takeProfit < opp.entry && opp.entry < opp.stopLoss)) return null;
     return computeLateDetection({
       direction,
       candles,
@@ -233,6 +239,8 @@ export interface OpportunityMapResponse {
 export async function buildOpportunityMapCore(
   args: OpportunityMapCoreArgs,
 ): Promise<OpportunityMapCore> {
+  // Age starts when inputs begin to be read, not after slow enrichment finishes.
+  const generatedAt = new Date().toISOString();
   const universe = args.universe;
   const timeframe = args.timeframe?.trim() || OPPORTUNITY_MAP_TIMEFRAME;
   const symbols = symbolsForUniverse(universe);
@@ -242,11 +250,11 @@ export async function buildOpportunityMapCore(
   // silently (Task #600). A universe of M symbols must always reconcile to
   // scannedCount + skippedSymbols.length === M, so the page can show an honest
   // "N of M scanned" with every missing symbol accounted for.
-  const scannedPairs = await Promise.all(
-    symbols.map(async (sym) => ({
+  const scannedPairs = await mapWithConcurrency(
+    symbols, ENRICHMENT_CONCURRENCY, async (sym) => ({
       sym,
       result: await scanSymbolTimeframe(sym, timeframe).catch(() => null),
-    })),
+    }),
   );
 
   // Classify each non-scanned symbol. Real-but-non-live reads (AWAITING_FEED /
@@ -281,7 +289,7 @@ export async function buildOpportunityMapCore(
   const decorated = decorateOpportunitiesWithFinalRead(withNews);
 
   // Real per-row lateness (live rows only); fail-soft to null per row.
-  const lateness = await Promise.all(decorated.map((o) => latenessFor(o)));
+  const lateness = await mapWithConcurrency(decorated, ENRICHMENT_CONCURRENCY, latenessFor);
   const inputs = decorated.map((o, i) => toInput(o, lateness[i] ?? null));
   const map = categorizeOpportunities(inputs);
 
@@ -297,7 +305,7 @@ export async function buildOpportunityMapCore(
     skippedSymbols,
     universeCount: symbols.length,
     dataNote,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
   };
 }
 

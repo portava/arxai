@@ -39,10 +39,13 @@ import {
   toApiTimeframe,
 } from "@/lib/chartCandlesQuery";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
+import { resolveSymbolTruthEvidence, symbolTruthDeadline } from "@/lib/symbolTruthEvidence";
 import type { ScannerTruth } from "@/lib/scannerTruth";
 
 export interface UseSymbolTruthResult {
-  /** Raw snapshot from the brain (null while loading / on error). */
+  /** Snapshot after the evidence cap (null while loading / on error / expired). */
   snapshot: MarketTruthResponse | null;
   /** The freshness/price/permission authority (shared #391 source). */
   scannerTruth: ScannerTruth | null;
@@ -56,8 +59,8 @@ export interface UseSymbolTruthResult {
   levels: TruthLevels | null;
   /**
    * Composed verdict with the one-way conservative cap already applied. When the
-   * frontend freshness authority (useScannerTruth) has RESOLVED and says the data
-   * is not actionable (insufficient candles for the timeframe, stale, delayed,
+   * frontend freshness authority (useScannerTruth) has not confirmed the data
+   * is actionable (insufficient candles for the timeframe, stale, delayed,
    * historical-only, or blocked), this is a READABILITY-CONTRACT chokepoint: the
    * directional read is neutralized — bias/stage → UNKNOWN, evidence cleared,
    * invalidation dropped, headline replaced with an honest "feed not confirmed"
@@ -73,19 +76,16 @@ export interface UseSymbolTruthResult {
   refetch: () => void;
 }
 
-const CAPPED_BEST_ACTION_TEXT =
-  "Watch only — the live feed isn't confirmed for a live entry right now.";
-const CAPPED_HEADLINE =
-  "The live feed isn't confirmed for this market right now, so there's no directional read to show.";
-
 export function useSymbolTruth(
   symbolDisplay: string,
   timeframe: string,
   opts?: { refetchInterval?: number; enabled?: boolean },
 ): UseSymbolTruthResult {
-  const symbol = (symbolDisplay || "").toUpperCase();
+  const symbol = (symbolDisplay || "").trim().toUpperCase();
   const canonicalTf = normalizeChartTimeframe(timeframe);
   const apiTf = toApiTimeframe(canonicalTf) as GetMeMarketTruthTf;
+  const { user } = useCurrentUser();
+  const enabled = (opts?.enabled ?? true) && symbol.length > 0 && user != null;
 
   const scanner = useScannerTruth(symbol, canonicalTf, {
     refetchInterval: opts?.refetchInterval,
@@ -96,46 +96,22 @@ export function useSymbolTruth(
     { tf: apiTf },
     {
       query: {
-        queryKey: getGetMeMarketTruthQueryKey(symbol, { tf: apiTf }),
-        enabled: (opts?.enabled ?? true) && symbol.length > 0,
+        queryKey: [...getGetMeMarketTruthQueryKey(symbol, { tf: apiTf }), { userId: user?.id ?? null }],
+        enabled,
         refetchInterval: opts?.refetchInterval ?? 15_000,
         staleTime: 5_000,
       },
     },
   );
 
-  const snapshot = snapQ.data ?? null;
+  const rawSnapshot = enabled ? snapQ.data ?? null : null;
   const scannerTruth = scanner.truth;
-
-  const { verdict, actionCapped } = useMemo(() => {
-    if (!snapshot) return { verdict: null as TruthVerdict | null, actionCapped: false };
-    const sv = snapshot.verdict;
-    // READABILITY CONTRACT (display-only chokepoint). The frontend freshness
-    // authority applies STRICTER, per-timeframe minimum-candle + age budgets than
-    // the server snapshot, so it can resolve a feed as not-actionable even when
-    // the server composed a directional verdict. When it has RESOLVED and says the
-    // data is not valid for a live read, NO directional bias/stage/evidence/best-
-    // action may show: we neutralize the whole directional read to an honest
-    // "feed not confirmed" state. One-way only (we never upgrade). This is
-    // display-only and never grants, bypasses, or weakens any trade gate.
-    const notActionable =
-      scannerTruth != null && scannerTruth.actionable === false;
-    if (!notActionable) return { verdict: sv, actionCapped: false };
-    return {
-      verdict: {
-        ...sv,
-        bias: "UNKNOWN" as const,
-        stage: "UNKNOWN" as const,
-        headline: CAPPED_HEADLINE,
-        evidenceFor: [],
-        evidenceAgainst: [],
-        invalidation: null,
-        bestAction: "WATCH_ONLY" as const,
-        bestActionText: CAPPED_BEST_ACTION_TEXT,
-      },
-      actionCapped: true,
-    };
-  }, [snapshot, scannerTruth]);
+  const nowMs = useEvidenceDeadline(symbolTruthDeadline(rawSnapshot));
+  const { snapshot, actionCapped } = useMemo(() => resolveSymbolTruthEvidence({
+    snapshot: rawSnapshot, symbol, apiTimeframe: apiTf, scannerTruth,
+    scannerLastCandleAt: scanner.feedStatus?.lastCandleTime ?? null,
+    scannerError: scanner.isError, snapshotError: snapQ.isError, nowMs,
+  }), [rawSnapshot, symbol, apiTf, scannerTruth, scanner.feedStatus, scanner.isError, snapQ.isError, nowMs]);
 
   return {
     snapshot,
@@ -145,7 +121,7 @@ export function useSymbolTruth(
     news: snapshot?.news ?? null,
     components: snapshot?.components ?? null,
     levels: snapshot?.levels ?? null,
-    verdict,
+    verdict: snapshot?.verdict ?? null,
     actionCapped,
     isLoading: scanner.isLoading || snapQ.isLoading,
     isError: scanner.isError || snapQ.isError,

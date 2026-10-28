@@ -3600,7 +3600,7 @@ export const ExecuteMissionProposalDraftResponse = zod
   );
 
 /**
- * @summary Run a deterministic historical/simulated BACKTEST for the mission's strategy via the shared backtest engine and persist an honestly-labelled result (Phase 9). Advisory only — a backtest can NEVER grant live permission or bypass any live gate. Focus-Lock + user/mission scoped.
+ * @summary Run a deterministic generated-price diagnostic for the mission strategy. These are not observed market prices; costs and chronological holdouts are not modelled. Persisted results cannot support promotion or strategy drift. Focus-Lock and user/mission scoped; never grants live permission.
 
  */
 export const RunMissionBacktestParams = zod.object({
@@ -3630,11 +3630,11 @@ export const RunMissionBacktestBody = zod
       .nullish(),
   })
   .describe(
-    "Phase 9 backtest request. Runs a deterministic historical\/simulated backtest for the named strategy; advisory only — never a live grant.\n",
+    "Generated-price diagnostic request. Prices are synthetic; this is not historical market validation and cannot support promotion or strategy drift.\n",
   );
 
 /**
- * @summary Aggregate a FORWARD test result from the mission's OWN executed-and-closed trade drafts (real realised outcomes only) and persist an honestly-labelled result with a small-sample warning when sparse (Phase 9). Never fabricates a forward record. Advisory only. User/mission scoped.
+ * @summary Aggregate a FORWARD test result from the mission's OWN executed-and-closed trade drafts, filtered by any supplied strategy, symbol and timeframe. Execution mode, risk coverage and net costs remain unverified. These diagnostics cannot support promotion or strategy drift. User/mission scoped.
 
  */
 export const AggregateMissionForwardParams = zod.object({
@@ -3648,7 +3648,7 @@ export const AggregateMissionForwardBody = zod
     timeframe: zod.string().nullish(),
   })
   .describe(
-    "Phase 9 forward-test request. Aggregates the mission's OWN closed trade drafts (real outcomes); all fields optional (derived from the drafts).\n",
+    "Aggregate the mission's own closed drafts. Optional fields are exact source filters, never display labels. Unfiltered mixed contexts are labelled Mixed.\n",
   );
 
 /**
@@ -3699,9 +3699,20 @@ export const ListMissionTestResultsResponse = zod.object({
         notes: zod.array(zod.string()),
         promotionEligible: zod.boolean(),
         createdAt: zod.string(),
+        evidence: zod
+          .object({
+            version: zod.literal(1),
+            source: zod.enum([
+              "generated_prices",
+              "closed_mission_drafts",
+              "unknown",
+            ]),
+            validation: zod.enum(["unverified"]),
+          })
+          .optional(),
       })
       .describe(
-        "An honestly-labelled, append-only mission test result. `kind` distinguishes BACKTEST (historical\/simulated) from FORWARD (real realised). `sampleWarning` is set when the sample is too small to be meaningful. Advisory only.\n",
+        "Append-only diagnostic history, projected through current evidence rules. Generated prices and unreconciled closed drafts remain unverified. Legacy verified and eligible flags are not trusted. Sample minima do not establish statistical significance; current diagnostics cannot support promotion or drift.\n",
       ),
   ),
 });
@@ -5237,6 +5248,18 @@ export const GetChartCandlesQueryParams = zod.object({
     .default(getChartCandlesQueryLimitDefault),
 });
 
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMin = 0;
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMax = 1;
+
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemRawScoreMin = 0;
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemRawScoreMax = 100;
+
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightedScoreMin = 0;
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightedScoreMax = 100;
+
+export const getChartCandlesResponseChartTruthScoreEvidenceCoverageMin = 0;
+export const getChartCandlesResponseChartTruthScoreEvidenceCoverageMax = 1;
+
 export const GetChartCandlesResponse = zod.object({
   symbol: zod.string(),
   displaySymbol: zod.string(),
@@ -5287,6 +5310,18 @@ export const GetChartCandlesResponse = zod.object({
   latencyMs: zod.number().nullable(),
   requestedLimit: zod.number(),
   candleCount: zod.number(),
+  marketEvidence: zod
+    .object({
+      symbol: zod.string(),
+      timeframe: zod.string(),
+      source: zod.string(),
+      sourceIdentity: zod.string(),
+      lastClosedCandleAt: zod.string(),
+    })
+    .nullish()
+    .describe(
+      "Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.",
+    ),
   candles: zod.array(
     zod
       .object({
@@ -5697,11 +5732,40 @@ export const GetChartCandlesResponse = zod.object({
           .object({
             key: zod.string(),
             label: zod.string(),
-            weight: zod.number().describe("Contribution weight (0–1"),
+            weight: zod
+              .number()
+              .min(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMin,
+              )
+              .max(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMax,
+              )
+              .describe("Contribution weight (0–1, sum=1.0)"),
             rawScore: zod
               .number()
-              .describe("Raw 0–100 score for this sub-metric"),
-            weightedScore: zod.number().describe("rawScore × weight"),
+              .min(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemRawScoreMin,
+              )
+              .max(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemRawScoreMax,
+              )
+              .nullable()
+              .describe(
+                "Measured 0–100 score; null when this property has not been measured",
+              ),
+            weightedScore: zod
+              .number()
+              .min(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemWeightedScoreMin,
+              )
+              .max(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemWeightedScoreMax,
+              )
+              .nullable()
+              .describe(
+                "rawScore × weight; null evidence earns no aggregate points",
+              ),
+            evidenceStatus: zod.enum(["measured", "unavailable"]),
             detail: zod
               .string()
               .describe("Plain-language explanation of the score"),
@@ -5710,6 +5774,12 @@ export const GetChartCandlesResponse = zod.object({
             "A single weighted sub-metric contributing to the Chart Truth Score.",
           ),
       ),
+      evidenceCoverage: zod
+        .number()
+        .min(getChartCandlesResponseChartTruthScoreEvidenceCoverageMin)
+        .max(getChartCandlesResponseChartTruthScoreEvidenceCoverageMax)
+        .describe("Fraction of total weight with measured evidence (0–1)"),
+      unmeasuredKeys: zod.array(zod.string()),
       primaryConcern: zod
         .string()
         .nullable()
@@ -5827,6 +5897,13 @@ export const getChartHistoryQueryTimeframeDefault = `M5`;
 export const getChartHistoryQueryLimitDefault = 500;
 export const getChartHistoryQueryLimitMax = 5000;
 
+export const getChartHistoryQuerySourceIdentityMin = 64;
+export const getChartHistoryQuerySourceIdentityMax = 64;
+
+export const getChartHistoryQuerySourceIdentityRegExp = new RegExp(
+  "^[a-f0-9]{64}$",
+);
+
 export const GetChartHistoryQueryParams = zod.object({
   symbol: zod.coerce.string().min(1).max(getChartHistoryQuerySymbolMax),
   timeframe: zod
@@ -5871,7 +5948,19 @@ export const GetChartHistoryQueryParams = zod.object({
     .describe(
       "Continuation — the source echoed by a previous page (keeps one coherent series).",
     ),
+  sourceIdentity: zod.coerce
+    .string()
+    .min(getChartHistoryQuerySourceIdentityMin)
+    .max(getChartHistoryQuerySourceIdentityMax)
+    .regex(getChartHistoryQuerySourceIdentityRegExp)
+    .optional()
+    .describe(
+      "Expected opaque source identity for strict chart continuation. This is not authorization; unverified historical sources return no bars.",
+    ),
 });
+
+export const getChartHistoryResponseHistoryEvidenceSourceIdentityRegExp =
+  new RegExp("^[a-f0-9]{64}$");
 
 export const GetChartHistoryResponse = zod
   .object({
@@ -5913,6 +6002,21 @@ export const GetChartHistoryResponse = zod
       .string()
       .nullable()
       .describe("The single source this page was served from (provenance)."),
+    historyEvidence: zod
+      .object({
+        symbol: zod.string(),
+        timeframe: zod.string(),
+        source: zod.string(),
+        sourceIdentity: zod
+          .string()
+          .regex(getChartHistoryResponseHistoryEvidenceSourceIdentityRegExp),
+        lastClosedCandleAt: zod.string(),
+        scope: zod.enum(["public_provider"]),
+      })
+      .nullish()
+      .describe(
+        "Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.",
+      ),
     candles: zod
       .array(
         zod.object({
@@ -6034,6 +6138,18 @@ export const GetMeChartIntelligenceQueryParams = zod.object({
     .max(getMeChartIntelligenceQueryLimitMax)
     .default(getMeChartIntelligenceQueryLimitDefault),
 });
+
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMin = 0;
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMax = 1;
+
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemRawScoreMin = 0;
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemRawScoreMax = 100;
+
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightedScoreMin = 0;
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightedScoreMax = 100;
+
+export const getMeChartIntelligenceResponseStateChartTruthScoreEvidenceCoverageMin = 0;
+export const getMeChartIntelligenceResponseStateChartTruthScoreEvidenceCoverageMax = 1;
 
 export const GetMeChartIntelligenceResponse = zod.object({
   state: zod
@@ -7240,11 +7356,40 @@ export const GetMeChartIntelligenceResponse = zod.object({
               .object({
                 key: zod.string(),
                 label: zod.string(),
-                weight: zod.number().describe("Contribution weight (0–1"),
+                weight: zod
+                  .number()
+                  .min(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMin,
+                  )
+                  .max(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMax,
+                  )
+                  .describe("Contribution weight (0–1, sum=1.0)"),
                 rawScore: zod
                   .number()
-                  .describe("Raw 0–100 score for this sub-metric"),
-                weightedScore: zod.number().describe("rawScore × weight"),
+                  .min(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemRawScoreMin,
+                  )
+                  .max(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemRawScoreMax,
+                  )
+                  .nullable()
+                  .describe(
+                    "Measured 0–100 score; null when this property has not been measured",
+                  ),
+                weightedScore: zod
+                  .number()
+                  .min(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightedScoreMin,
+                  )
+                  .max(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightedScoreMax,
+                  )
+                  .nullable()
+                  .describe(
+                    "rawScore × weight; null evidence earns no aggregate points",
+                  ),
+                evidenceStatus: zod.enum(["measured", "unavailable"]),
                 detail: zod
                   .string()
                   .describe("Plain-language explanation of the score"),
@@ -7253,6 +7398,16 @@ export const GetMeChartIntelligenceResponse = zod.object({
                 "A single weighted sub-metric contributing to the Chart Truth Score.",
               ),
           ),
+          evidenceCoverage: zod
+            .number()
+            .min(
+              getMeChartIntelligenceResponseStateChartTruthScoreEvidenceCoverageMin,
+            )
+            .max(
+              getMeChartIntelligenceResponseStateChartTruthScoreEvidenceCoverageMax,
+            )
+            .describe("Fraction of total weight with measured evidence (0–1)"),
+          unmeasuredKeys: zod.array(zod.string()),
           primaryConcern: zod
             .string()
             .nullable()
@@ -10020,6 +10175,31 @@ export const GetBacktestRunsResponse = zod.object({
       ]),
       isVerified: zod.enum(["UNVERIFIED", "VERIFIED"]),
       dataSource: zod.enum(["broker", "synthetic"]).optional(),
+      evidence: zod
+        .object({
+          version: zod.literal(1),
+          classification: zod.enum(["diagnostic"]),
+          verification: zod.enum(["unverified"]),
+          comparisonEligible: zod.literal(false),
+          source: zod.enum([
+            "generated_prices",
+            "unattested_broker_history",
+            "unknown",
+          ]),
+          pnlUnit: zod.enum(["price_units"]),
+          costs: zod.enum(["not_modelled"]),
+          holdout: zod.enum(["not_recorded"]),
+          limitations: zod.array(zod.string()),
+        })
+        .optional(),
+      historyStatus: zod
+        .enum([
+          "available_unattested",
+          "unavailable",
+          "ambiguous_source",
+          "invalid_bars",
+        ])
+        .optional(),
       aiSummary: zod.string().nullish(),
       equityCurve: zod.array(zod.number()).optional(),
       createdAt: zod.string(),
@@ -10087,6 +10267,31 @@ export const CreateBacktestRunResponse = zod.object({
   ]),
   isVerified: zod.enum(["UNVERIFIED", "VERIFIED"]),
   dataSource: zod.enum(["broker", "synthetic"]).optional(),
+  evidence: zod
+    .object({
+      version: zod.literal(1),
+      classification: zod.enum(["diagnostic"]),
+      verification: zod.enum(["unverified"]),
+      comparisonEligible: zod.literal(false),
+      source: zod.enum([
+        "generated_prices",
+        "unattested_broker_history",
+        "unknown",
+      ]),
+      pnlUnit: zod.enum(["price_units"]),
+      costs: zod.enum(["not_modelled"]),
+      holdout: zod.enum(["not_recorded"]),
+      limitations: zod.array(zod.string()),
+    })
+    .optional(),
+  historyStatus: zod
+    .enum([
+      "available_unattested",
+      "unavailable",
+      "ambiguous_source",
+      "invalid_bars",
+    ])
+    .optional(),
   aiSummary: zod.string().nullish(),
   equityCurve: zod.array(zod.number()).optional(),
   createdAt: zod.string(),
@@ -10123,6 +10328,31 @@ export const GetBacktestRunResponse = zod.object({
   ]),
   isVerified: zod.enum(["UNVERIFIED", "VERIFIED"]),
   dataSource: zod.enum(["broker", "synthetic"]).optional(),
+  evidence: zod
+    .object({
+      version: zod.literal(1),
+      classification: zod.enum(["diagnostic"]),
+      verification: zod.enum(["unverified"]),
+      comparisonEligible: zod.literal(false),
+      source: zod.enum([
+        "generated_prices",
+        "unattested_broker_history",
+        "unknown",
+      ]),
+      pnlUnit: zod.enum(["price_units"]),
+      costs: zod.enum(["not_modelled"]),
+      holdout: zod.enum(["not_recorded"]),
+      limitations: zod.array(zod.string()),
+    })
+    .optional(),
+  historyStatus: zod
+    .enum([
+      "available_unattested",
+      "unavailable",
+      "ambiguous_source",
+      "invalid_bars",
+    ])
+    .optional(),
   aiSummary: zod.string().nullish(),
   equityCurve: zod.array(zod.number()).optional(),
   createdAt: zod.string(),
@@ -10161,6 +10391,23 @@ export const GetBacktestChartSeriesParams = zod.object({
 });
 
 export const GetBacktestChartSeriesResponse = zod.object({
+  evidence: zod
+    .object({
+      version: zod.literal(1),
+      classification: zod.enum(["diagnostic"]),
+      verification: zod.enum(["unverified"]),
+      comparisonEligible: zod.literal(false),
+      source: zod.enum([
+        "generated_prices",
+        "unattested_broker_history",
+        "unknown",
+      ]),
+      pnlUnit: zod.enum(["price_units"]),
+      costs: zod.enum(["not_modelled"]),
+      holdout: zod.enum(["not_recorded"]),
+      limitations: zod.array(zod.string()),
+    })
+    .optional(),
   kind: zod.enum(["BACKTEST"]),
   label: zod.string(),
   initialBalance: zod.number(),
@@ -10173,6 +10420,16 @@ export const GetBacktestChartSeriesResponse = zod.object({
       equity: zod.number(),
       peak: zod.number(),
       drawdown: zod.number(),
+      grossPriceUnits: zod
+        .number()
+        .optional()
+        .describe(
+          "Cumulative unscaled P\/L independent of the plotting offset.",
+        ),
+      peakGrossPriceUnits: zod
+        .number()
+        .optional()
+        .describe("Running peak of cumulative unscaled P\/L."),
     }),
   ),
   markers: zod.array(
@@ -17657,7 +17914,7 @@ export const getMeOpportunityMapQueryTimeframeMax = 8;
 
 export const GetMeOpportunityMapQueryParams = zod.object({
   marketGroup: zod
-    .enum(["all", "forex", "metals", "crypto", "stocks", "synthetic"])
+    .enum(["all", "forex", "metals", "indices", "crypto", "synthetic"])
     .optional(),
   selectedSymbol: zod.coerce
     .string()
@@ -22958,6 +23215,64 @@ export const GetSelfTradeOverviewResponse = zod.object({
   totalAvailable: zod.number(),
   totalRealizedPnl: zod.number(),
   totalOpenPnl: zod.number(),
+  accounting: zod
+    .object({
+      status: zod.enum(["RECORDED", "INCOMPLETE", "UNAVAILABLE"]),
+      asOf: zod.string(),
+      dayStart: zod
+        .string()
+        .describe("Inclusive UTC start of the current reporting day."),
+      closedTrades: zod.number(),
+      recordedTrades: zod.number(),
+      unknownTrades: zod.number(),
+      unresolvedAccounting: zod.number(),
+      unknownCloseTime: zod.number(),
+      missingLedgers: zod.number().describe("Missing or invalid ledgers."),
+      unpostedTrades: zod
+        .number()
+        .describe(
+          "Numeric closed outcomes without exactly one matching ledger posting.",
+        ),
+      unreconciledLedgers: zod
+        .number()
+        .describe(
+          "Ledgers whose realized subtotal or posting currency does not reconcile.",
+        ),
+      unmatchedPostings: zod
+        .number()
+        .describe(
+          "Realized postings without one matching usable closed execution for the same agent.",
+        ),
+      recordedRealizedPnl: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded ledger subtotal in USD. An incomplete subtotal is not total realized performance.",
+        ),
+      recordedAvailableFunds: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded ledger subtotal in USD, not independently verified withdrawable or tradeable capital.",
+        ),
+      dailyRecordedPnl: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded execution P\/L subtotal from dayStart through asOf; unknown outcomes are excluded.",
+        ),
+      dailyLossUsed: zod
+        .number()
+        .nullable()
+        .describe(
+          "Nonnegative net recorded loss for the current UTC day; unavailable when coverage is incomplete.",
+        ),
+      notes: zod.array(zod.string()),
+    })
+    .optional()
+    .describe(
+      "Recorded book coverage, not broker verification. Subtotals exclude unknown values and do not assert a complete account balance or usable risk budget.",
+    ),
 });
 
 /**
@@ -23014,6 +23329,64 @@ export const GetSelfTradeAgentByIdResponse = zod.object({
     createdAt: zod.string(),
     updatedAt: zod.string(),
   }),
+  accounting: zod
+    .object({
+      status: zod.enum(["RECORDED", "INCOMPLETE", "UNAVAILABLE"]),
+      asOf: zod.string(),
+      dayStart: zod
+        .string()
+        .describe("Inclusive UTC start of the current reporting day."),
+      closedTrades: zod.number(),
+      recordedTrades: zod.number(),
+      unknownTrades: zod.number(),
+      unresolvedAccounting: zod.number(),
+      unknownCloseTime: zod.number(),
+      missingLedgers: zod.number().describe("Missing or invalid ledgers."),
+      unpostedTrades: zod
+        .number()
+        .describe(
+          "Numeric closed outcomes without exactly one matching ledger posting.",
+        ),
+      unreconciledLedgers: zod
+        .number()
+        .describe(
+          "Ledgers whose realized subtotal or posting currency does not reconcile.",
+        ),
+      unmatchedPostings: zod
+        .number()
+        .describe(
+          "Realized postings without one matching usable closed execution for the same agent.",
+        ),
+      recordedRealizedPnl: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded ledger subtotal in USD. An incomplete subtotal is not total realized performance.",
+        ),
+      recordedAvailableFunds: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded ledger subtotal in USD, not independently verified withdrawable or tradeable capital.",
+        ),
+      dailyRecordedPnl: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded execution P\/L subtotal from dayStart through asOf; unknown outcomes are excluded.",
+        ),
+      dailyLossUsed: zod
+        .number()
+        .nullable()
+        .describe(
+          "Nonnegative net recorded loss for the current UTC day; unavailable when coverage is incomplete.",
+        ),
+      notes: zod.array(zod.string()),
+    })
+    .optional()
+    .describe(
+      "Recorded book coverage, not broker verification. Subtotals exclude unknown values and do not assert a complete account balance or usable risk budget.",
+    ),
   settings: zod
     .union([
       zod.object({
@@ -23293,6 +23666,12 @@ export const GetSelfTradeExecutionsResponse = zod.object({
       closePrice: zod.number().nullish(),
       realizedPnl: zod.number().nullish(),
       blockReason: zod.string().nullish(),
+      managementNote: zod
+        .string()
+        .nullish()
+        .describe(
+          "Broker-confirmation or review status for an outstanding management request; never an execution confirmation.",
+        ),
       openedAt: zod.string().nullish(),
       filledAt: zod.string().nullish(),
       closedAt: zod.string().nullish(),

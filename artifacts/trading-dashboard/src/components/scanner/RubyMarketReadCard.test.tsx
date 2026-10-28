@@ -293,4 +293,15 @@ describe("RubyMarketReadCard — honest render states", () => {
     // No actionable levels over an unstable feed.
     expect(screen.queryByText("Levels")).toBeNull();
   });
+
+  it("withholds an early directional headline and reasoning until shared truth confirms the context", () => {
+    mockUseScannerReadGate.mockReturnValue({ truth: null, level: null, isFull: false, downgraded: true, reason: "Confirming market data." });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    expect(screen.getByTestId("ruby-market-read-confirming").textContent).toBe("Confirming market data.");
+    expect(screen.queryByTestId("ruby-market-read-headline")).toBeNull();
+    expect(screen.queryByTestId("ruby-market-read-reasoning")).toBeNull();
+    expect(screen.queryByTestId("ruby-market-read-best-action")).toBeNull();
+    expect(screen.queryByText("Levels")).toBeNull();
+  });
 });

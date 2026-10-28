@@ -1,3 +1,5 @@
+import { liveManagementPickupPredicate } from "../mt5/managementTargetProtocol.js";
+import { holdChangedSettlementEvidence, SettlementEvidenceHeld, enqueueResultSettlement, settleCommandJobs, settlementWorkerEnabled, assertSettlementClaim, StaleSettlementClaim, type SettlementClaim, type SettlementConsumer } from "./resultSettlementOutbox.js";
 // Phase A — Live command pipeline (per-user).
 //
 // PIPELINE: LIVE_DRAFT → LIVE_CONFIRMATION_REQUIRED → LIVE_APPROVED → dispatch
@@ -10,10 +12,17 @@
 // (`mt5DemoCommandsTable`). A demo command can never accidentally route as
 // live and vice versa.
 
+import { MANAGEMENT_TARGET_SOURCE, ManagementTargetError, createManagementDraft, assertManagementGeometry,
+  managementTargetFromCommand, isAgentManagementCommand, boundManagementTransportSymbol,
+  type ManagementTarget } from "../selfTrade/managementTarget.js";
+import { readBoundManagementRiskPosition, withBoundManagementClose, managementFullCloseScope,
+  type reportedManagementIdentity } from "../selfTrade/managementConsumers.js";
 import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
+import { resultReceiptScheduler, ResultReceiptCapacityError } from "./resultReceiptScheduler.js";
+import { AgentEntryAuthorityError, createAgentEntryDraft, type AgentAdmissionEnvelope, type AuthorityTransaction } from "../selfTrade/entryAuthority.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
@@ -104,13 +113,14 @@ import { logger } from "../logger.js";
 import { globalTradingSettingsTable, liveRiskDisclosureAcceptancesTable } from "@workspace/db";
 import {
   buildCommandIntegrityFields,
+  hasIntactCommandSignature,
   verifyCommandIntegrityForDispatch,
   recordLiveCommandReplayAttempt,
   recordLiveCommandDuplicateBlocked,
   DUPLICATE_LIVE_COMMAND_USER_MESSAGE,
   type CommandIntegrityFields,
 } from "../security/commandIntegrity.js";
-import { mirrorCriticalEvent } from "../security/events.js";
+import { mirrorCriticalEvent, recordCriticalSecurityEvent } from "../security/events.js";
 import { upsertAlertOnce } from "../../routes/meAlerts.js";
 import { type CommandActorType } from "@workspace/domain/security";
 
@@ -252,6 +262,8 @@ export function findGhostClosedPositionIds(
 ): number[] {
   const closedTickets = new Set<string>();
   for (const c of filledCloseCommands) {
+    // Projected bound commands must never degrade into this legacy matcher.
+    if (c.payload?.managementTargetV1 != null || c.payload?.agentOwnership != null || c.payload?.selfTradeSymbolBinding != null) continue;
     const pt = (c.payload ?? null)?.["brokerTicket"];
     if (typeof pt === "string" && pt) closedTickets.add(pt);
     if (typeof c.brokerTicket === "string" && c.brokerTicket) closedTickets.add(c.brokerTicket);
@@ -259,6 +271,361 @@ export function findGhostClosedPositionIds(
   return openPositions
     .filter((r) => typeof r.brokerTicket === "string" && closedTickets.has(r.brokerTicket))
     .map((r) => r.id);
+}
+
+/** Exact target for automatic management; the ordinary manual read is unchanged. */
+export async function readLiveModifyRiskPosition(row: ArxLiveCommand) {
+  if (isAgentManagementCommand(row)) return readBoundManagementRiskPosition(row);
+  const ticket = (row.payload as Record<string, unknown> | null)?.["brokerTicket"];
+  if (typeof ticket !== "string" || !ticket) return null;
+  const [p] = await livePositionLedger.select(
+    { entryPrice: livePositionColumns.entryPrice, stopLoss: livePositionColumns.stopLoss },
+    { where: and(eq(livePositionColumns.userId, row.userId), eq(livePositionColumns.brokerTicket, ticket)), limit: 1 },
+  );
+  return p ? { entryPrice: Number(p.entryPrice), stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null } : null;
+}
+
+/** Applies a reported full close only to its signed server target. Never sends an order. */
+export async function reconcileBoundManagementClose(command: ArxLiveCommand, now = new Date(), settlementClaim?: SettlementClaim) {
+  try {
+    const closedRows = await withBoundManagementClose(command, async (tx, target) =>
+      livePositionWriter.updateReturning({ closedAt: now, lastSyncedAt: now },
+        managementFullCloseScope(target), livePositionColumns, tx), db, settlementClaim);
+    return { closedRows, heldReason: null };
+  } catch (error) {
+    if (error instanceof StaleSettlementClaim || error instanceof SettlementEvidenceHeld) throw error;
+    const heldReason = error instanceof ManagementTargetError ? error.reason : "MANAGEMENT_LEDGER_READ_FAILED";
+    logger.warn({ commandId: command.commandId, heldReason }, "Automatic close receipt retained; ledger application held");
+    await recordExecutionEvent({ commandRowId: command.id, source: "arx", eventType: "MANAGEMENT_LEDGER_APPLICATION_HELD",
+      payload: { commandId: command.commandId, applied: false, reason: heldReason } });
+    return { closedRows: [], heldReason };
+  }
+}
+
+// An MVCC tuple token is a local optimistic-concurrency witness, not broker
+// ordering or terminal identity. Any snapshot/update/rewrite makes it stale.
+const positionVersionFields = {
+  revision: sql<string>`xmin::text || ':' || ctid::text`,
+  epoch: sql<string>`pg_current_xact_id()::text`,
+  age: sql<number>`age(xmin)`,
+};
+// xmin is 32-bit and ctid is recyclable. Require a recent unambiguous version
+// and a bounded full-XID interval; never use the token as permanent identity.
+function usablePositionVersion(
+  version: { revision: string; epoch: string; age: number } | undefined,
+  capturedEpoch?: unknown,
+) {
+  if (!version || version.age < 0 || version.age >= 1_000_000_000) return false;
+  if (capturedEpoch === undefined) return true;
+  if (typeof capturedEpoch !== "string" || !/^\d+$/.test(capturedEpoch))
+    return false;
+  const distance = BigInt(version.epoch) - BigInt(capturedEpoch);
+  return distance >= 0n && distance < 1_000_000_000n;
+}
+
+/** Idempotent cumulative-volume application for newly receipted manual closes.
+ * Position → command order matches the existing management path's suffix.
+ * Marker and position mutation share one transaction; no network operation.
+ */
+export async function reconcileManualResultPosition(
+  command: ArxLiveCommand,
+  now = new Date(),
+  settlementClaim?: SettlementClaim,
+) {
+  const payload = command.payload as Record<string, unknown> | null;
+  const ticket =
+    typeof payload?.["brokerTicket"] === "string"
+      ? payload["brokerTicket"]
+      : command.brokerTicket;
+  if (!ticket || isAgentManagementCommand(command))
+    return { closedRows: [], heldReason: "MANUAL_CLOSE_IDENTITY_UNAVAILABLE" };
+  return db.transaction(async (tx) => {
+    const [position] = await livePositionLedger.readForUpdate(
+      {
+        where: and(
+          eq(livePositionColumns.userId, command.userId),
+          eq(livePositionColumns.brokerTicket, ticket),
+        ),
+        limit: 1,
+      },
+      tx,
+    );
+    const [current] = await tx
+      .select()
+      .from(arxLiveCommandsTable)
+      .where(
+        and(
+          eq(arxLiveCommandsTable.id, command.id),
+          eq(arxLiveCommandsTable.userId, command.userId),
+        ),
+      )
+      .for("update");
+    const currentPayload = current?.payload as Record<string, unknown> | null;
+    const currentTicket =
+      typeof currentPayload?.["brokerTicket"] === "string"
+        ? currentPayload["brokerTicket"]
+        : current?.brokerTicket;
+    if (
+      !current ||
+      currentTicket !== ticket ||
+      current.commandType !== "CLOSE_LIVE_POSITION" ||
+      isAgentManagementCommand(current)
+    )
+      throw new SettlementEvidenceHeld("MANUAL_CLOSE_IDENTITY_CHANGED");
+    await assertSettlementClaim(tx, current, settlementClaim);
+    if (!hasIntactCommandSignature(current))
+      return { closedRows: [], heldReason: "MANUAL_CLOSE_SIGNATURE_INVALID" };
+    const basis = currentPayload?.manualClosePositionBasisV1 as
+      | Record<string, unknown>
+      | undefined;
+    const records = await tx.execute(
+      sql`select event_type,payload from execution_events where command_id=${current.id} order by sequence_no`,
+    );
+    const receipts = records.rows.filter(
+      (r: any) =>
+        r.payload?.applied === true &&
+        typeof r.payload?.reportFingerprint === "string",
+    );
+    if (!receipts.length)
+      return {
+        closedRows: [],
+        heldReason: "LEGACY_RESULT_WITHOUT_ATOMIC_RECEIPT",
+      };
+    if (!["LIVE_FILLED", "LIVE_PARTIALLY_FILLED"].includes(current.status))
+      return { closedRows: [], heldReason: null };
+    const receipt = receipts[receipts.length - 1] as any;
+    if (
+      receipt.payload.finalStatus !== current.status ||
+      receipt.payload.executedVolume !== current.executedVolume ||
+      receipt.payload.brokerTicket !== current.brokerTicket ||
+      current.brokerTicket !== ticket
+    )
+      return { closedRows: [], heldReason: "MANUAL_CLOSE_RECEIPT_MISMATCH" };
+    const applied = records.rows.filter(
+      (r: any) => r.event_type === "POSITION_RESULT_APPLIED",
+    ) as Array<{ payload: Record<string, unknown> }>;
+    if (!position)
+      return {
+        closedRows: [],
+        heldReason: "MANUAL_CLOSE_POSITION_UNAVAILABLE",
+      };
+    let prior = 0;
+    let expectedRevision = basis?.revision;
+    let expectedEpoch = basis?.revisionEpoch;
+    for (const mark of applied) {
+      const n = Number(mark.payload.cumulativeVolume);
+      if (
+        mark.payload.positionRowId !== position.id ||
+        !Number.isFinite(n) ||
+        n < 0
+      )
+        throw new SettlementEvidenceHeld("MANUAL_CLOSE_APPLICATION_EVIDENCE_INVALID");
+      if (n >= prior) {
+        prior = n;
+        expectedRevision = mark.payload.positionRevision;
+        expectedEpoch = mark.payload.positionRevisionEpoch;
+      }
+    }
+    // A legacy partial might already have shrunk the row without a marker.
+    // Do not guess an initial cumulative amount across an upgrade boundary.
+    const priorPartialUnmarked =
+      receipt.payload.previousStatus === "LIVE_PARTIALLY_FILLED" &&
+      !receipts.some(
+        (r: any) => r.payload.finalStatus === "LIVE_PARTIALLY_FILLED",
+      );
+    if (
+      !applied.length &&
+      (priorPartialUnmarked ||
+        records.rows.some(
+          (r: any) =>
+            r.event_type === "RESULT_LIVE_PARTIALLY_FILLED" &&
+            !r.payload?.reportFingerprint,
+        ))
+    )
+      return {
+        closedRows: [],
+        heldReason: "LEGACY_PARTIAL_APPLICATION_UNKNOWN",
+      };
+    if (
+      !basis ||
+      basis.positionRowId !== position.id ||
+      basis.userId !== current.userId ||
+      basis.brokerTicket !== ticket ||
+      basis.symbol !== position.symbol ||
+      basis.side !== position.side ||
+      basis.bridgeConnectionId !== position.bridgeConnectionId ||
+      basis.accountLogin !== position.accountLogin ||
+      basis.brokerServer !== position.brokerServer ||
+      basis.bridgeConnectionId !== current.bridgeConnectionId ||
+      basis.accountLogin !== current.accountLogin ||
+      basis.brokerServer !== current.brokerServer ||
+      basis.sourceCommandId !== position.sourceCommandId ||
+      basis.openedAt !== position.openedAt.toISOString()
+    )
+      return {
+        closedRows: [],
+        heldReason: "MANUAL_CLOSE_POSITION_BASIS_UNAVAILABLE",
+      };
+    const [version] = await livePositionLedger.select(
+      positionVersionFields,
+      { where: eq(livePositionColumns.id, position.id) },
+      tx,
+    );
+    if (
+      typeof expectedRevision !== "string" ||
+      typeof expectedEpoch !== "string" ||
+      version?.revision !== expectedRevision ||
+      !usablePositionVersion(version, expectedEpoch)
+    )
+      return {
+        closedRows: [],
+        heldReason: "MANUAL_CLOSE_POSITION_REVISION_CHANGED",
+      };
+    const total = Number(current.executedVolume);
+    const requested = Number(current.requestedVolume);
+    const initialVolume = Number(basis.volume);
+    const currentVolume = Number(position.volume);
+    if (
+      current.executedVolume == null ||
+      !Number.isFinite(requested) ||
+      requested <= 0 ||
+      !Number.isFinite(initialVolume) ||
+      initialVolume <= 0 ||
+      !Number.isFinite(currentVolume) ||
+      currentVolume <= 0 ||
+      !Number.isFinite(total) ||
+      total <= 0 ||
+      total > requested + LIVE_VOLUME_EPSILON ||
+      requested > initialVolume + LIVE_VOLUME_EPSILON ||
+      total + LIVE_VOLUME_EPSILON < prior
+    )
+      return { closedRows: [], heldReason: "MANUAL_CLOSE_VOLUME_UNVERIFIED" };
+    const delta = total - prior;
+    if (delta <= LIVE_VOLUME_EPSILON)
+      return { closedRows: [], heldReason: null };
+    if (position.closedAt != null)
+      return {
+        closedRows: [],
+        heldReason: "POSITION_ALREADY_CLOSED_WITHOUT_APPLICATION_MARKER",
+      };
+    if (
+      delta > currentVolume + LIVE_VOLUME_EPSILON ||
+      Math.abs(currentVolume - (initialVolume - prior)) > LIVE_VOLUME_EPSILON
+    )
+      return { closedRows: [], heldReason: "MANUAL_CLOSE_VOLUME_UNVERIFIED" };
+    const remaining = currentVolume - delta;
+    const closedRows =
+      remaining > LIVE_VOLUME_EPSILON
+        ? []
+        : await livePositionWriter.updateReturning(
+            { closedAt: now, lastSyncedAt: now },
+            and(
+              eq(livePositionColumns.id, position.id),
+              isNull(livePositionColumns.closedAt),
+            ),
+            livePositionColumns,
+            tx,
+          );
+    if (remaining > LIVE_VOLUME_EPSILON)
+      await livePositionWriter.update(
+        { volume: Math.round(remaining * 1e8) / 1e8, lastSyncedAt: now },
+        eq(livePositionColumns.id, position.id),
+        tx,
+      );
+    const [afterVersion] = await livePositionLedger.select(
+      positionVersionFields,
+      { where: eq(livePositionColumns.id, position.id) },
+      tx,
+    );
+    if (!afterVersion) throw new Error("MANUAL_CLOSE_POSITION_DISAPPEARED");
+    await recordExecutionEvent(
+      {
+        commandRowId: current.id,
+        source: "arx",
+        eventType: "POSITION_RESULT_APPLIED",
+        occurredAt: now,
+        payload: {
+          commandId: current.commandId,
+          positionRowId: position.id,
+          cumulativeVolume: total,
+          positionRevision: afterVersion.revision,
+          positionRevisionEpoch: afterVersion.epoch,
+          appliedVolume: delta,
+          reportFingerprint: receipt.payload.reportFingerprint,
+        },
+      },
+      tx,
+    );
+    return { closedRows, heldReason: null };
+  });
+}
+
+/** Snapshot repair shares the exact target checks used by result application. */
+export async function reconcileGhostClosedPositions(userId: number, snapshotNow = new Date()): Promise<number> {
+  let reconciledClosed = 0;
+  const openRows = await selectLiveOpenPositions(
+    {
+      id: livePositionColumns.id,
+      brokerTicket: livePositionColumns.brokerTicket,
+    },
+    { userId, basis: "UNCLOSED" },
+  );
+  if (openRows.length > 0) {
+    const filledCloses = await db.select().from(arxLiveCommandsTable).where(and(
+      eq(arxLiveCommandsTable.userId, userId),
+      eq(arxLiveCommandsTable.commandType, "CLOSE_LIVE_POSITION"),
+      eq(arxLiveCommandsTable.status, "LIVE_FILLED"),
+    ));
+    const openIds = new Set(openRows.map(position => position.id));
+    const openTickets = new Set(openRows.map(position => position.brokerTicket));
+    const receiptedManualIds = new Set<number>();
+    for (const command of filledCloses.filter(c=>!isAgentManagementCommand(c))) {
+      const payload = command.payload as Record<string, unknown> | null;
+      if (payload && Object.hasOwn(payload, "manualClosePositionBasisV1")) {
+        // New basis commands never fall back to ticket-only repair, including
+        // when their old target has closed and its ticket has since been reused.
+        receiptedManualIds.add(command.id);
+        const basis = payload.manualClosePositionBasisV1 as Record<string,unknown>|null;
+        if (!basis || typeof basis.positionRowId!=="number" || !openIds.has(basis.positionRowId)) continue;
+      } else if (!openTickets.has(typeof payload?.brokerTicket==="string" ? payload.brokerTicket : command.brokerTicket??"")) continue;
+      const receipt = await db.execute(sql`select id from execution_events where command_id=${command.id}
+        and payload->>'applied'='true' and payload->>'reportFingerprint' is not null limit 1`);
+      if (!receipt.rows.length) continue;
+      receiptedManualIds.add(command.id);
+      const result = await reconcileManualResultPosition(command,snapshotNow);
+      reconciledClosed += result.closedRows.length;
+    }
+    const ghostIds = findGhostClosedPositionIds(
+      openRows.map((r) => ({ id: r.id, brokerTicket: r.brokerTicket ?? "" })),
+      filledCloses.filter((c) => !isAgentManagementCommand(c) && !receiptedManualIds.has(c.id)).map((c) => ({
+        brokerTicket: c.brokerTicket,
+        payload: c.payload as Record<string, unknown> | null,
+      })),
+    );
+    if (ghostIds.length > 0) {
+      await livePositionWriter.update(
+        {
+          closedAt: new Date(),
+          lastSyncedAt: new Date(),
+        },
+        and(
+          eq(livePositionColumns.userId, userId),
+          inArray(livePositionColumns.id, ghostIds),
+          isNull(livePositionColumns.closedAt),
+        ),
+      );
+      reconciledClosed += ghostIds.length;
+    }
+    // Bound automatic results must never enter the legacy ticket-only repair.
+    // Reuse exact result evidence and row predicates, including after restart.
+    for (const command of filledCloses.filter(isAgentManagementCommand)) {
+      const target = managementTargetFromCommand(command);
+      if (!target || !openIds.has(target.positionRowId)) continue;
+      const result = await reconcileBoundManagementClose(command, snapshotNow);
+      reconciledClosed += result.closedRows.length;
+    }
+  }
+  return reconciledClosed;
 }
 
 // ── R2 S1 — pure UNKNOWN-semantics helpers ──────────────────────────────────
@@ -339,125 +706,10 @@ export function settleReservationForStatus(
 
 // ── R2 S2 — append-only execution_events writer ─────────────────────────────
 
-/** Shaped row for one execution_events insert (see lib/db executionEvents.ts). */
-export interface ExecutionEventRow {
-  commandRowId: number;
-  source: string;
-  eventType: string;
-  payload: Record<string, unknown>;
-  occurredAt: Date;
-}
-
-/**
- * PURE shaping/validation of an execution-event row. Refuses (with a reason,
- * never a throw) rather than fabricating an anchor or a type:
- *   - commandRowId must be a positive integer (the arx_live_commands PK);
- *   - source and eventType must be non-empty after trimming;
- *   - a missing occurredAt falls back to `now` (the caller's clock) — the
- *     received_at column is stamped by the DB independently.
- */
-export function buildExecutionEventRow(input: {
-  commandRowId: number | null | undefined;
-  source: string | null | undefined;
-  eventType: string | null | undefined;
-  payload?: Record<string, unknown> | null;
-  occurredAt?: Date | null;
-  now?: Date;
-}): { ok: true; row: ExecutionEventRow } | { ok: false; reason: string } {
-  const id = input.commandRowId;
-  if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) {
-    return { ok: false, reason: "EVENT_COMMAND_ROW_ID_INVALID" };
-  }
-  const source = (input.source ?? "").trim();
-  if (source === "") return { ok: false, reason: "EVENT_SOURCE_EMPTY" };
-  const eventType = (input.eventType ?? "").trim();
-  if (eventType === "") return { ok: false, reason: "EVENT_TYPE_EMPTY" };
-  return {
-    ok: true,
-    row: {
-      commandRowId: id,
-      source,
-      eventType,
-      payload: input.payload ?? {},
-      occurredAt: input.occurredAt ?? input.now ?? new Date(),
-    },
-  };
-}
-
-// execution_events writes go through raw parameterized SQL rather than the
-// drizzle table object: the schema barrel export (lib/db/src/schema/index.ts)
-// is a coordinator-owned registration, and evidence writing must neither
-// depend on that registration landing first nor ever break this module's
-// typecheck/dispatch. The INSERT computes the per-command sequence_no in the
-// statement itself; the unique(command_id, sequence_no) index turns a
-// concurrent-writer race into a unique violation, retried a bounded number
-// of times.
-const EXECUTION_EVENT_INSERT_ATTEMPTS = 3;
-
-/**
- * Append one evidence row to execution_events. BEST-EFFORT BY CONTRACT:
- * every failure path warns and returns — an evidence write must never fail,
- * delay, or throw into dispatch/result settlement.
- */
-async function recordExecutionEvent(input: {
-  commandRowId: number | null | undefined;
-  source: string;
-  eventType: string;
-  payload?: Record<string, unknown> | null;
-  occurredAt?: Date | null;
-}): Promise<void> {
-  try {
-    const shaped = buildExecutionEventRow(input);
-    if (!shaped.ok) {
-      logger.warn({
-        [PHASE_B_LIVE_LOG_PREFIX]: true,
-        event: "EXECUTION_EVENT_SKIPPED",
-        reason: shaped.reason, eventType: input.eventType,
-      }, "execution event refused by shaping — evidence not recorded");
-      return;
-    }
-    const { row } = shaped;
-    let payloadJson: string;
-    try {
-      payloadJson = JSON.stringify(row.payload);
-    } catch {
-      payloadJson = JSON.stringify({ unserializablePayload: true });
-    }
-    for (let attempt = 1; attempt <= EXECUTION_EVENT_INSERT_ATTEMPTS; attempt++) {
-      try {
-        await db.execute(sql`
-          insert into execution_events
-            (command_id, source, event_type, payload, occurred_at, sequence_no)
-          values (
-            ${row.commandRowId}, ${row.source}, ${row.eventType},
-            ${payloadJson}::jsonb, ${row.occurredAt},
-            (select coalesce(max(sequence_no), 0) + 1
-               from execution_events where command_id = ${row.commandRowId})
-          )
-        `);
-        return;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        const isSeqRace = /execution_events_command_seq_uq|duplicate key/.test(msg);
-        if (isSeqRace && attempt < EXECUTION_EVENT_INSERT_ATTEMPTS) continue;
-        logger.warn({
-          [PHASE_B_LIVE_LOG_PREFIX]: true,
-          event: "EXECUTION_EVENT_WRITE_FAILED",
-          commandRowId: row.commandRowId, eventType: row.eventType,
-          attempt, error: msg,
-        }, "execution event write failed — evidence not recorded (dispatch unaffected)");
-        return;
-      }
-    }
-  } catch (e) {
-    logger.warn({
-      [PHASE_B_LIVE_LOG_PREFIX]: true,
-      event: "EXECUTION_EVENT_WRITE_FAILED",
-      eventType: input.eventType,
-      error: e instanceof Error ? e.message : String(e),
-    }, "execution event write failed — evidence not recorded (dispatch unaffected)");
-  }
-}
+// Existing imports keep their public shaping helper; all appends share one lock.
+export { buildExecutionEventRow } from "./executionEvidence.js";
+export type { ExecutionEventRow } from "./executionEvidence.js";
+import { appendExecutionEvidence as recordExecutionEvent, executionReportFingerprint } from "./executionEvidence.js";
 
 // Global emergency-kill-switch pre-gate. POST /api/admin/trading/emergency-kill
 // engages global_trading_settings.emergency_kill_switch; dispatch consumes it
@@ -945,8 +1197,8 @@ export function failureStreakShouldLock(
 async function audit(args: {
   eventType: string; userId: number; message: string;
   symbol?: string; severity?: string; metadata?: Record<string, unknown>;
-}) {
-  await db.insert(liveTradingAuditTable).values({
+}, writer: Pick<typeof db, "insert"> = db) {
+  await writer.insert(liveTradingAuditTable).values({
     eventId: randomUUID(),
     eventType: args.eventType,
     severity: args.severity ?? "INFO",
@@ -1036,13 +1288,14 @@ export interface LiveDraftInput {
   selfTradeAgentId?: number | null;
   selfTradeDecisionId?: number | null;
   selfTradeAgentKey?: string | null;
+  selfTradeExecutionId?: number | null;
 }
 
 export interface LiveDraftRefusal {
   ok: false;
   reason:
     | "USER_NOT_ARMED_FOR_LIVE" | "KILL_SWITCH_ENGAGED"
-    | "INVALID_COMMAND_TYPE" | "INVALID_SIDE"
+    | "INVALID_COMMAND_TYPE" | "INVALID_SIDE" | "ENTRY_AUTHORITY_REFUSED"
     | "VOLUME_EXCEEDS_USER_MAX_LOT" | "VOLUME_EXCEEDS_MARKET_MAX_LOT"
     | "SYMBOL_NOT_ALLOWED" | "SYMBOL_NOT_LIVE_TRADABLE"
     | "SYMBOL_NOT_IN_ARX_FOCUS"
@@ -1678,6 +1931,7 @@ export async function createLiveOpsDraft(input: {
   // this, after verifying OWNER/ADMIN role, the confirmation phrase, and
   // read-only ownership. NEVER honored for OPEN / MODIFY / increase-exposure.
   killSwitchCloseBypass?: KillSwitchCloseBypass | null;
+  managementTarget?: ManagementTarget;
 }): Promise<{ ok: true; command: ArxLiveCommand } | { ok: false; reason: string; detail?: string }> {
   const arming = await getMyArming(input.userId);
   if (!arming || !arming.isArmed) return { ok: false, reason: "USER_NOT_ARMED_FOR_LIVE" };
@@ -1690,7 +1944,14 @@ export async function createLiveOpsDraft(input: {
     return { ok: false, reason: "KILL_SWITCH_ENGAGED" };
   }
 
-  const bridge = (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null;
+  const target = input.managementTarget;
+  if ((input.sourcePage === MANAGEMENT_TARGET_SOURCE || input.sourcePage === "INSTANT_MODIFY_SELF_TRADE") && !target)
+    return { ok: false, reason: "MANAGEMENT_TARGET_REQUIRED" };
+  if (target) {
+    try { assertManagementGeometry(target, input); }
+    catch (error) { if (error instanceof ManagementTargetError) return { ok: false, reason: error.reason }; throw error; }
+  }
+  const manualBridge = target ? null : (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null;
 
   const ownership = await resolveOwnershipFields({
     userId: input.userId,
@@ -1700,69 +1961,136 @@ export async function createLiveOpsDraft(input: {
 
   const commandId = `lvcmd_${randomUUID()}`;
   const opsOrderType = input.commandType === "CLOSE_LIVE_POSITION" ? "CLOSE" : "MODIFY";
-  const opsPayload: Record<string, unknown> = {
-    brokerTicket: input.brokerTicket,
-    newStopLoss: input.newStopLoss ?? null,
-    newTakeProfit: input.newTakeProfit ?? null,
-  };
-  // Task #743 Cluster D — stamp the bypass marker into the payload BEFORE the
-  // integrity hash is computed, so the marker is covered by the integrity
-  // envelope and cannot be forged after draft creation. Only stamped when the
-  // bypass actually applies (CLOSE + marker present).
-  if (bypassApplies && input.killSwitchCloseBypass) {
-    opsPayload["killSwitchCloseBypass"] = {
-      reason: input.killSwitchCloseBypass.reason,
-      source: input.killSwitchCloseBypass.source,
-      initiatorAdminId: input.killSwitchCloseBypass.initiatorAdminId,
-      initiatorRole: input.killSwitchCloseBypass.initiatorRole,
-      killSwitchEngagedAtDraft: !!arming.killSwitchEngaged,
-      stampedAt: new Date().toISOString(),
+  const insertOps = async (writer: typeof db | AuthorityTransaction, bridge: typeof manualBridge, entry?: ArxLiveCommand, manualBasis?: Record<string, unknown>) => {
+    const opsPayload: Record<string, unknown> = {
+      ...(target ? { managementTargetV1: target,
+        agentOwnership: (entry?.payload as Record<string, unknown> | null)?.agentOwnership,
+        selfTradeSymbolBinding: (entry?.payload as Record<string, unknown> | null)?.selfTradeSymbolBinding } : {}),
+      ...(manualBasis ? { manualClosePositionBasisV1: manualBasis } : {}),
+      brokerTicket: input.brokerTicket,
+      newStopLoss: input.newStopLoss ?? null,
+      newTakeProfit: input.newTakeProfit ?? null,
     };
+    // Task #743 Cluster D — stamp the bypass marker into the payload BEFORE the
+    // integrity hash is computed, so the marker is covered by the integrity
+    // envelope and cannot be forged after draft creation. Only stamped when the
+    // bypass actually applies (CLOSE + marker present).
+    if (bypassApplies && input.killSwitchCloseBypass) {
+      opsPayload["killSwitchCloseBypass"] = {
+        reason: input.killSwitchCloseBypass.reason,
+        source: input.killSwitchCloseBypass.source,
+        initiatorAdminId: input.killSwitchCloseBypass.initiatorAdminId,
+        initiatorRole: input.killSwitchCloseBypass.initiatorRole,
+        killSwitchEngagedAtDraft: !!arming.killSwitchEngaged,
+        stampedAt: new Date().toISOString(),
+      };
+    }
+    // AACI Security Phase 3 — stamp the integrity envelope on the ops command too
+    // (close/modify are sensitive live commands). Actor = the per-user owner.
+    const opsIntegrity: CommandIntegrityFields = buildCommandIntegrityFields({
+      commandId,
+      userId: input.userId,
+      commandType: input.commandType,
+      symbol: input.symbol,
+      side: input.side,
+      orderType: opsOrderType,
+      requestedVolume: input.volume,
+      stopLoss: input.newStopLoss ?? null,
+      takeProfit: input.newTakeProfit ?? null,
+      payload: opsPayload,
+      actorId: input.userId,
+      actorType: target ? "SELF_TRADE_AGENT" : "USER",
+    });
+    const [row] = await writer.insert(arxLiveCommandsTable).values({
+      commandId,
+      userId: input.userId,
+      bridgeConnectionId: bridge?.id ?? null,
+      accountLogin: bridge?.accountNumber ?? null,
+      brokerServer: bridge?.brokerName ?? null,
+      accountNumber: arming.accountNumberConfirmed,
+      commandType: input.commandType,
+      status: "LIVE_CONFIRMATION_REQUIRED",
+      symbol: input.symbol,
+      side: input.side,
+      orderType: opsOrderType,
+      requestedVolume: input.volume,
+      stopLoss: input.newStopLoss ?? null,
+      takeProfit: input.newTakeProfit ?? null,
+      sourcePage: target ? MANAGEMENT_TARGET_SOURCE : input.sourcePage ?? "LIVE_POSITION_OPS",
+      selfTradeAgentId: target?.agentId ?? null,
+      selfTradeDecisionId: target?.decisionId ?? null,
+      allocationId: ownership.allocationId,
+      cycleId: ownership.cycleId,
+      source: target ? MANAGEMENT_TARGET_SOURCE : ownership.source,
+      payload: opsPayload,
+      payloadHash: opsIntegrity.payloadHash,
+      integrityHash: opsIntegrity.integrityHash,
+      integrityKeyVersion: opsIntegrity.integrityKeyVersion,
+      integrityStatus: opsIntegrity.integrityStatus,
+      actorId: opsIntegrity.actorId,
+      actorType: opsIntegrity.actorType,
+      actionType: opsIntegrity.actionType,
+    }).returning();
+    return row!;
+  };
+  let row: ArxLiveCommand;
+  try {
+    row = target ? await createManagementDraft(target, (tx, facts, bridge) => insertOps(tx, bridge, facts.entry))
+      : input.commandType === "CLOSE_LIVE_POSITION"
+        ? await db.transaction(async (tx) => {
+            // The caller cannot supply this basis. Missing/ambiguous local evidence
+            // leaves protective dispatch available, but result volume application held.
+            const candidates = await livePositionLedger.readForUpdate(
+              {
+                where: and(
+                  eq(livePositionColumns.userId, input.userId),
+                  eq(livePositionColumns.brokerTicket, input.brokerTicket),
+                ),
+                limit: 2,
+              },
+              tx,
+            );
+            const p = candidates.length === 1 ? candidates[0] : undefined;
+            const version = p
+              ? (
+                  await livePositionLedger.select(
+                    positionVersionFields,
+                    { where: eq(livePositionColumns.id, p.id) },
+                    tx,
+                  )
+                )[0]
+              : undefined;
+            const basis =
+              p &&
+              usablePositionVersion(version) &&
+              p.closedAt == null &&
+              p.symbol === input.symbol &&
+              p.side === input.side &&
+              Number.isFinite(p.volume) &&
+              p.volume > 0
+                ? {
+                    positionRowId: p.id,
+                    userId: p.userId,
+                    brokerTicket: p.brokerTicket,
+                    symbol: p.symbol,
+                    side: p.side,
+                    bridgeConnectionId: p.bridgeConnectionId,
+                    accountLogin: p.accountLogin,
+                    brokerServer: p.brokerServer,
+                    sourceCommandId: p.sourceCommandId,
+                    openedAt: p.openedAt.toISOString(),
+                    volume: p.volume,
+                    revision: version!.revision,
+                    revisionEpoch: version!.epoch,
+                  }
+                : undefined;
+            return insertOps(tx, manualBridge, undefined, basis);
+          })
+        : await insertOps(db, manualBridge);
+  } catch (error) {
+    if (error instanceof ManagementTargetError) return { ok: false, reason: error.reason };
+    throw error;
   }
-  // AACI Security Phase 3 — stamp the integrity envelope on the ops command too
-  // (close/modify are sensitive live commands). Actor = the per-user owner.
-  const opsIntegrity: CommandIntegrityFields = buildCommandIntegrityFields({
-    commandId,
-    userId: input.userId,
-    commandType: input.commandType,
-    symbol: input.symbol,
-    side: input.side,
-    orderType: opsOrderType,
-    requestedVolume: input.volume,
-    stopLoss: input.newStopLoss ?? null,
-    takeProfit: input.newTakeProfit ?? null,
-    payload: opsPayload,
-    actorId: input.userId,
-    actorType: "USER",
-  });
-  const [row] = await db.insert(arxLiveCommandsTable).values({
-    commandId,
-    userId: input.userId,
-    bridgeConnectionId: bridge?.id ?? null,
-    accountLogin: bridge?.accountNumber ?? null,
-    brokerServer: bridge?.brokerName ?? null,
-    accountNumber: arming.accountNumberConfirmed,
-    commandType: input.commandType,
-    status: "LIVE_CONFIRMATION_REQUIRED",
-    symbol: input.symbol,
-    side: input.side,
-    orderType: opsOrderType,
-    requestedVolume: input.volume,
-    stopLoss: input.newStopLoss ?? null,
-    takeProfit: input.newTakeProfit ?? null,
-    sourcePage: input.sourcePage ?? "LIVE_POSITION_OPS",
-    allocationId: ownership.allocationId,
-    cycleId: ownership.cycleId,
-    source: ownership.source,
-    payload: opsPayload,
-    payloadHash: opsIntegrity.payloadHash,
-    integrityHash: opsIntegrity.integrityHash,
-    integrityKeyVersion: opsIntegrity.integrityKeyVersion,
-    integrityStatus: opsIntegrity.integrityStatus,
-    actorId: opsIntegrity.actorId,
-    actorType: opsIntegrity.actorType,
-    actionType: opsIntegrity.actionType,
-  }).returning();
 
   await audit({
     eventType: "LIVE_DRAFT_CREATED", userId: input.userId, symbol: input.symbol,
@@ -1868,7 +2196,8 @@ export async function createLiveDraft(
   // smuggle the bit through `payload`.
   const draftPayload: Record<string, unknown> = (() => {
     const raw = (input.payload ?? {}) as Record<string, unknown>;
-    const { allowNoStopLossThisDraft: _stripped, referencePrice: _rpStripped, ...safe } = raw;
+    const { allowNoStopLossThisDraft: _stripped, referencePrice: _rpStripped,
+      agentAdmissionV1: _admissionStripped, agentOwnership: _ownerStripped, ...safe } = raw;
     // referencePrice is set ONLY from the typed server-side argument, never
     // smuggled through client payload (stripped above).
     const withRef = typeof input.referencePrice === "number" && input.referencePrice > 0
@@ -1898,63 +2227,86 @@ export async function createLiveDraft(
   // HMAC signature) in the SAME insert. Advisory-additive: re-verified before
   // the 16-gate at dispatch. Actor = the per-user owner; SELF_TRADE_AGENT when
   // an agent originated the draft.
-  const draftActorType: CommandActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" : "USER";
-  const integrity: CommandIntegrityFields = buildCommandIntegrityFields({
-    commandId,
-    userId: input.userId,
-    commandType: input.commandType,
-    symbol: input.symbol,
-    side: input.side,
-    orderType: input.orderType,
-    requestedVolume: input.requestedVolume,
-    stopLoss: input.stopLoss ?? null,
-    takeProfit: input.takeProfit ?? null,
-    payload: draftPayload,
-    actorId: input.userId,
-    actorType: draftActorType,
-  });
+  const insertDraft = async (writer: typeof db | AuthorityTransaction, envelope?: AgentAdmissionEnvelope): Promise<ArxLiveCommand> => {
+    const signedPayload = envelope ? { ...draftPayload, agentAdmissionV1: envelope } : draftPayload;
+    const draftActorType: CommandActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" : "USER";
+    const integrity: CommandIntegrityFields = buildCommandIntegrityFields({
+      commandId,
+      userId: input.userId,
+      commandType: input.commandType,
+      symbol: input.symbol,
+      side: input.side,
+      orderType: input.orderType,
+      requestedVolume: input.requestedVolume,
+      stopLoss: input.stopLoss ?? null,
+      takeProfit: input.takeProfit ?? null,
+      payload: signedPayload,
+      actorId: input.userId,
+      actorType: draftActorType,
+    });
 
-  const [row] = await db.insert(arxLiveCommandsTable).values({
-    commandId,
-    userId: input.userId,
-    bridgeConnectionId: bridge?.id ?? null,
-    accountLogin: bridge?.accountNumber ?? null,
-    brokerServer: bridge?.brokerName ?? null,
-    accountNumber: arming.accountNumberConfirmed,
-    commandType: input.commandType,
-    status: "LIVE_CONFIRMATION_REQUIRED",
-    symbol: input.symbol,
-    side: input.side,
-    orderType: input.orderType,
-    requestedVolume: input.requestedVolume,
-    stopLoss: input.stopLoss ?? null,
-    takeProfit: input.takeProfit ?? null,
-    sourcePage: input.sourcePage ?? "LIVE_TRADE_TICKET",
-    allocationId: ownership.allocationId,
-    cycleId: ownership.cycleId,
-    source: ownership.source,
-    // Task #213 — self-trade agent/decision attribution (additive, nullable).
-    selfTradeAgentId: input.selfTradeAgentId ?? null,
-    selfTradeDecisionId: input.selfTradeDecisionId ?? null,
-    // R3 slice 5 — signal-provenance stamp (typed column; nullable). An
-    // unparseable caller value is stored as NULL — provenance is never
-    // fabricated; with a max_signal_age_ms bound configured the dispatch
-    // pre-gate then fail-closed refuses the entry.
-    signalTimestamp: (() => {
-      if (input.signalTimestamp == null) return null;
-      const d = new Date(input.signalTimestamp);
-      return Number.isFinite(d.getTime()) ? d : null;
-    })(),
-    rubyExplanationSummary: input.rubyExplanationSummary ?? null,
-    payload: draftPayload,
-    payloadHash: integrity.payloadHash,
-    integrityHash: integrity.integrityHash,
-    integrityKeyVersion: integrity.integrityKeyVersion,
-    integrityStatus: integrity.integrityStatus,
-    actorId: integrity.actorId,
-    actorType: integrity.actorType,
-    actionType: integrity.actionType,
-  }).returning();
+    const [row] = await writer.insert(arxLiveCommandsTable).values({
+      commandId,
+      userId: input.userId,
+      bridgeConnectionId: bridge?.id ?? null,
+      accountLogin: bridge?.accountNumber ?? null,
+      brokerServer: bridge?.brokerName ?? null,
+      accountNumber: arming.accountNumberConfirmed,
+      commandType: input.commandType,
+      status: "LIVE_CONFIRMATION_REQUIRED",
+      symbol: input.symbol,
+      side: input.side,
+      orderType: input.orderType,
+      requestedVolume: input.requestedVolume,
+      stopLoss: input.stopLoss ?? null,
+      takeProfit: input.takeProfit ?? null,
+      sourcePage: input.sourcePage ?? "LIVE_TRADE_TICKET",
+      allocationId: ownership.allocationId,
+      cycleId: ownership.cycleId,
+      source: ownership.source,
+      // Task #213 — self-trade agent/decision attribution (additive, nullable).
+      selfTradeAgentId: input.selfTradeAgentId ?? null,
+      selfTradeDecisionId: input.selfTradeDecisionId ?? null,
+      // R3 slice 5 — signal-provenance stamp (typed column; nullable). An
+      // unparseable caller value is stored as NULL — provenance is never
+      // fabricated; with a max_signal_age_ms bound configured the dispatch
+      // pre-gate then fail-closed refuses the entry.
+      signalTimestamp: (() => {
+        if (input.signalTimestamp == null) return null;
+        const d = new Date(input.signalTimestamp);
+        return Number.isFinite(d.getTime()) ? d : null;
+      })(),
+      rubyExplanationSummary: input.rubyExplanationSummary ?? null,
+      payload: signedPayload,
+      payloadHash: integrity.payloadHash,
+      integrityHash: integrity.integrityHash,
+      integrityKeyVersion: integrity.integrityKeyVersion,
+      integrityStatus: integrity.integrityStatus,
+      actorId: integrity.actorId,
+      actorType: integrity.actorType,
+      actionType: integrity.actionType,
+    }).returning();
+
+    return row;
+  };
+  let row: ArxLiveCommand;
+  try {
+    const agentOrigin = input.selfTradeAgentId != null || input.selfTradeDecisionId != null ||
+      input.selfTradeExecutionId != null || input.sourcePage === "INSTANT_SELF_TRADE";
+    row = agentOrigin ? await createAgentEntryDraft({
+      userId: input.userId, agentId: input.selfTradeAgentId!,
+      decisionId: input.selfTradeDecisionId!, executionId: input.selfTradeExecutionId!,
+      symbol: input.symbol, side: input.side, volume: input.requestedVolume,
+      stopLoss: input.stopLoss ?? null, takeProfit: input.takeProfit ?? null,
+      symbolBinding: draftPayload.selfTradeSymbolBinding,
+    }, insertDraft) : await insertDraft(db);
+  } catch (error) {
+    if (!(error instanceof AgentEntryAuthorityError)) throw error;
+    await audit({ eventType: "LIVE_DRAFT_REFUSED", severity: "WARNING", userId: input.userId,
+      symbol: input.symbol, message: `Agent entry draft refused: ${error.reason}`,
+      metadata: { reason: error.reason, executionId: input.selfTradeExecutionId ?? null } });
+    return { ok: false, reason: "ENTRY_AUTHORITY_REFUSED", detail: error.reason };
+  }
 
   await audit({
     eventType: "LIVE_DRAFT_CREATED", userId: input.userId, symbol: input.symbol,
@@ -1983,10 +2335,25 @@ export async function confirmLiveCommand(args: { userId: number; commandId: stri
   // the same draft both pass that read and both "succeed", producing two
   // LIVE_APPROVED transitions (and two audit rows) for one command. A null
   // return means a concurrent confirmer already claimed it.
-  const updated = await claimLiveCommandForConfirm(args.commandId, {
-    status: "LIVE_APPROVED",
-    confirmedAt: new Date(),
-  });
+  let updated: ArxLiveCommand | null;
+  try {
+    updated = await claimLiveCommandForConfirm(args.commandId, {
+      status: "LIVE_APPROVED", confirmedAt: new Date(),
+    }, row);
+  } catch (error) {
+    if (!(error instanceof AgentEntryAuthorityError) && !(error instanceof ManagementTargetError)) throw error;
+    // A refusal must not overwrite a command another caller already sent.
+    const [blocked] = await db.update(arxLiveCommandsTable).set({
+      status: "LIVE_BLOCKED", rejectionReason: error.reason, rejectedAt: new Date(),
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+      eq(arxLiveCommandsTable.userId, args.userId),
+      eq(arxLiveCommandsTable.status, "LIVE_CONFIRMATION_REQUIRED"))).returning();
+    if (!blocked) return { ok: false as const, reason: LIVE_CONFIRM_RACE_LOST, command: null };
+    await audit({ eventType: "LIVE_CONFIRM_BLOCKED", severity: "WARNING", userId: args.userId,
+      symbol: row.symbol, message: `Agent entry confirmation refused: ${error.reason}`,
+      metadata: { commandId: args.commandId, reason: error.reason } });
+    return { ok: false as const, reason: error.reason, command: blocked };
+  }
   if (!updated) {
     const [current] = await db.select({ status: arxLiveCommandsTable.status })
       .from(arxLiveCommandsTable)
@@ -2057,7 +2424,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           tamper: verify.verdict.tamper,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2114,7 +2484,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           allocationFreezeGate: true,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "ALLOCATION_FREEZE_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2162,7 +2535,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         operatorFundedPilotGate: true,
         at: pilotGate.evaluatedAt,
       } as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "OPERATOR_FUNDED_PILOT_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,
@@ -2239,7 +2615,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           platformStopSources: stop.sources,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "EMERGENCY_KILL_SWITCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2296,7 +2675,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           riskLockGate: true,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "RISK_LOCK_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2344,7 +2726,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           closeOnlyGate: true,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "CLOSE_ONLY_MODE_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2424,7 +2809,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           dispatchReferencePrice,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "PRICE_COLLAR_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2470,7 +2858,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             ? new Date(row.signalTimestamp).toISOString() : null,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "SIGNAL_AGE_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2555,7 +2946,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           maxClusterPositions: settings.maxClusterPositions,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "CLUSTER_EXPOSURE_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2621,7 +3015,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           detail: feedGate.detail,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "BROKER_FEED_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2712,7 +3109,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           runReadError,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "RECONCILIATION_FRESHNESS_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2798,7 +3198,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         arxFocusMarketLock: true,
         at: new Date().toISOString(),
       } as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     return { ok: false as const, reason: "LIVE_BLOCKED" as const,
       primaryReason: reason, blockReasons: [reason], command: blocked };
   }
@@ -2832,7 +3235,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           },
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       return { ok: false as const, reason: "LIVE_BLOCKED" as const,
         primaryReason: reason, blockReasons: [reason], command: blocked };
     }
@@ -2892,7 +3298,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           syntheticFloor: true,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       return { ok: false as const, reason: "LIVE_BLOCKED" as const,
         primaryReason: reason, blockReasons: [reason], command: blocked };
       }
@@ -2934,7 +3343,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           routingMode,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "MASTER_LIVE_USER_ACCESS_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2964,7 +3376,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           routingMode,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "MASTER_LIVE_DISPATCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2989,7 +3404,16 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // can surface their specific failure reason instead of "no bridge".
   // The explicit MOCK short-circuit below refuses dispatch before the
   // evaluator runs, so a MOCK row cannot ever satisfy live readiness.
-  const bridgePool = masterBoundBridgeId != null
+  const managementTarget = managementTargetFromCommand(row);
+  if (isAgentManagementCommand(row) && (!managementTarget ||
+      (masterBoundBridgeId != null ? managementTarget.bridgeConnectionId !== masterBoundBridgeId : managementTarget.bridgeOwnerUserId !== args.userId))) {
+    const reason = "MANAGEMENT_ROUTING_TARGET_CHANGED";
+    const [blocked] = await db.update(arxLiveCommandsTable).set({ status: "LIVE_BLOCKED", rejectionReason: reason, rejectedAt: new Date() })
+      .where(and(eq(arxLiveCommandsTable.commandId, args.commandId), eq(arxLiveCommandsTable.userId, args.userId), eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+    if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
+    return { ok: false as const, reason, primaryReason: reason, command: blocked };
+  }
+  const bridgePool = managementTarget ? [await getConnection(managementTarget.bridgeConnectionId)].filter((c) => c != null) : masterBoundBridgeId != null
     ? [await getConnection(masterBoundBridgeId)].filter((c) => c != null)
     : await listUserConnections(args.userId);
   const nonRevoked = bridgePool.filter((b) => !b.tokenRevokedAt);
@@ -3008,7 +3432,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // broker dispatch through. Distinct reason for operator clarity.
   if (bridge && bridge.mode === "MOCK") {
     const mockBlockReasons = ["MOCK_BRIDGE_NOT_LIVE_CAPABLE", "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"] as const;
-    const blocked = await db.update(arxLiveCommandsTable)
+    const [blocked] = await db.update(arxLiveCommandsTable)
       .set({
         status: "LIVE_BLOCKED",
         rejectionReason: "MOCK_BRIDGE_NOT_LIVE_CAPABLE",
@@ -3024,8 +3448,11 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         rejectedAt: new Date(),
         brokerMessage: `Bridge ${bridge.id} is a MOCK placeholder, not a real MT5 EA heartbeat. Attach EA v1.27 from your live MT5 terminal so a real heartbeat replaces the MOCK row.`,
       })
-      .where(eq(arxLiveCommandsTable.commandId, args.commandId))
+      .where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED")))
       .returning();
+    if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "LIVE_BLOCKED", userId: args.userId, symbol: row.symbol,
       message: `Live dispatch refused: MOCK_BRIDGE_NOT_LIVE_CAPABLE (bridge id=${bridge.id})`,
@@ -3035,7 +3462,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       reason: "LIVE_BLOCKED" as const,
       primaryReason: "MOCK_BRIDGE_NOT_LIVE_CAPABLE" as const,
       blockReasons: mockBlockReasons,
-      command: blocked[0],
+      command: blocked,
     };
   }
 
@@ -3177,7 +3604,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             realisedWeeklyLossUsd,
             at: new Date().toISOString(),
           } as unknown as Record<string, unknown>,
-        }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+        }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
         await audit({
           eventType: "WEEKLY_DRAWDOWN_BLOCKED", severity: "HIGH",
           userId: args.userId, symbol: row.symbol,
@@ -3277,7 +3707,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             userMaxExposurePerSymbolLots: userMaxExposurePerSymbol,
             at: new Date().toISOString(),
           } as unknown as Record<string, unknown>,
-        }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+        }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
         await audit({
           eventType: "LIVE_TRADE_BLOCKED_EXPOSURE_LIMIT", severity: "HIGH",
           userId: args.userId, symbol: row.symbol,
@@ -3332,16 +3765,15 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     // the stop as it is", so the resulting stop is the position's current one.
     let rgPosition: { entryPrice: number; stopLoss: number | null } | null = null;
     if (rgAction === "MODIFY") {
-      const ticket = (row.payload as Record<string, unknown> | null)?.["brokerTicket"];
-      if (typeof ticket === "string" && ticket) {
-        const [p] = await livePositionLedger.select(
-          { entryPrice: livePositionColumns.entryPrice, stopLoss: livePositionColumns.stopLoss },
-          {
-            where: and(eq(livePositionColumns.userId, args.userId), eq(livePositionColumns.brokerTicket, ticket)),
-            limit: 1,
-          },
-        );
-        rgPosition = p ? { entryPrice: Number(p.entryPrice), stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null } : null;
+      try { rgPosition = await readLiveModifyRiskPosition(row); }
+      catch (error) {
+        if (!(error instanceof ManagementTargetError)) throw error;
+        const [blocked] = await db.update(arxLiveCommandsTable).set({
+          status: "LIVE_BLOCKED", rejectionReason: error.reason, rejectedAt: new Date(),
+        }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+          eq(arxLiveCommandsTable.userId, args.userId), eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+        if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
+        return { ok: false as const, reason: error.reason, primaryReason: error.reason, command: blocked };
       }
     }
     const risk = await enforcePreTradeRisk({
@@ -3380,7 +3812,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           riskRules: risk.rules,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "PRE_TRADE_RISK_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -3425,7 +3860,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         bridgeConnectionId: bridge?.id ?? null,
         evaluatedAt: new Date().toISOString(),
       } as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,
@@ -3544,7 +3982,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       rejectionReason: reason,
       rejectedAt: new Date(),
       dispatchGateSnapshot: snapshot as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,
@@ -3590,7 +4031,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           routingMode,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -3644,7 +4088,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             routingMode,
             at: new Date().toISOString(),
           } as unknown as Record<string, unknown>,
-        }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+        }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
         await audit({
           eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
           userId: args.userId, symbol: row.symbol,
@@ -3704,7 +4151,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       accountLogin: bridge!.accountNumber,
       brokerServer: bridge!.brokerName,
       dispatchGateSnapshot: snapshot as unknown as Record<string, unknown>,
-    });
+    }, row);
     if (!sent) {
       // LOST THE RACE. A concurrent dispatcher already claimed this command.
       // Refuse fail-CLOSED: return BEFORE the EA mailbox mirror below so this
@@ -3886,28 +4333,31 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const isDup = /arx_live_commands_idem_active_uq|duplicate key/.test(msg);
-    const reason = isDup ? "DUPLICATE_LIVE_IDEMPOTENCY_KEY" : "DB_INSERT_FAILED";
+    const reason = e instanceof AgentEntryAuthorityError || e instanceof ManagementTargetError ? e.reason
+      : isDup ? "DUPLICATE_LIVE_IDEMPOTENCY_KEY" : "DB_INSERT_FAILED";
     // AACI Security Phase 3 — a duplicate-idempotency collision is a replayed /
     // double-submitted command. Record a redacted security event + admin alert
     // (best-effort) so duplicate live dispatch is observable.
     if (isDup) {
       void recordLiveCommandDuplicateBlocked({ userId: args.userId, commandId: args.commandId });
     }
-    // Release the reservation we just took — the live command did not
-    // make it to SENT_TO_MT5_LIVE so the master account should not be
-    // attributed those lots.
-    if (reservationId != null) {
-      try {
-        const { releaseReservation } = await import("../concurrency/exposureReservation.js");
-        await releaseReservation(reservationId);
-      } catch { /* audit-only failure */ }
-    }
+    // Only an unsent command may become BLOCKED. If commit/outcome is unknown
+    // or a concurrent caller already claimed it, preserve its state and exposure.
     const [blocked] = await db.update(arxLiveCommandsTable).set({
       status: "LIVE_BLOCKED",
       rejectionReason: reason,
       rejectedAt: new Date(),
       dispatchGateSnapshot: { ...snapshot, dbError: msg } as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+      eq(arxLiveCommandsTable.userId, args.userId),
+      eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+    if (blocked && reservationId != null) {
+      try {
+        const { releaseReservation } = await import("../concurrency/exposureReservation.js");
+        await releaseReservation(reservationId);
+      } catch { /* retain ambiguous exposure for reconciliation */ }
+    }
+    if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,
@@ -4106,7 +4556,10 @@ export async function pickupNextLiveCommand(args: {
   userId: number;
   bridgeConnectionId: number;
   bridgeAccountType: string | null;
-}): Promise<{ command: ArxLiveCommand | null; refusalReason: string | null }> {
+  managementTargetSupported?: boolean;
+  /** Server-owned read-only serializer; no broker/provider/network operations. */
+  prepareResponse: (command: ArxLiveCommand, reader: Pick<typeof db, "select">) => Promise<string>;
+}): Promise<{ command: ArxLiveCommand | null; refusalReason: string | null; serializedResponse?: string }> {
   // Re-validate accountType=LIVE at pickup.
   const acct = (args.bridgeAccountType ?? "").toLowerCase();
   if (acct !== "live" && acct !== "real") {
@@ -4118,17 +4571,9 @@ export async function pickupNextLiveCommand(args: {
   // elapsed during a network stall.
   await sweepExpiredLiveCommands({ userId: args.userId });
 
-  // Atomic single-consumer claim. We RETURNING the row that was
-  // transitioned in a single SQL update so two concurrent polls (or a
-  // replayed poll) cannot both receive the same command. The claim
-  // requires `pickedByEaAt IS NULL` so a previously-served command is
-  // never re-served.
-  //
-  // We select the candidate commandId first (oldest unpicked
-  // SENT_TO_MT5_LIVE for this user), then CAS-update it with both the
-  // status and the NULL pickedByEaAt guard. The update returns 0 rows
-  // if another poll won the race — we then return "no command" so the
-  // EA simply tries again next poll.
+  // Lock only one eligible command with SKIP LOCKED, prepare its exact wire
+  // response using this transaction's reader, then conditionally claim it.
+  // A serialization failure/oversize never consumes the pickup marker.
   // Bridge-binding invariant: a command dispatched and stamped with
   // bridgeConnectionId=B may ONLY be picked up by bridge B. Any other
   // live bridge for the same user polling /live-commands-poll receives
@@ -4136,34 +4581,36 @@ export async function pickupNextLiveCommand(args: {
   // cross-bridge account-mix-up risk where user U has two live MT5
   // bridges (e.g. two terminals on the same login) and the wrong one
   // races to claim the command.
-  const candidates = await db.select({ commandId: arxLiveCommandsTable.commandId })
-    .from(arxLiveCommandsTable)
-    .where(and(
+  const delivery = await db.transaction(async (tx) => {
+    const [candidate] = await tx.select().from(arxLiveCommandsTable).where(and(
       eq(arxLiveCommandsTable.userId, args.userId),
       eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
       isNull(arxLiveCommandsTable.pickedByEaAt),
       eq(arxLiveCommandsTable.bridgeConnectionId, args.bridgeConnectionId),
-    ))
-    .orderBy(arxLiveCommandsTable.id)
-    .limit(1);
-  const cand = candidates[0];
-  if (!cand) return { command: null, refusalReason: null };
-
-  // Atomic CAS claim — re-asserts the same bridge binding so a concurrent
-  // poll from a different bridge cannot win the race. We do NOT rewrite
-  // bridgeConnectionId on claim (would defeat the binding); we only stamp
-  // pickedByEaAt to mark the row as served exactly once.
-  const claimed = await db.update(arxLiveCommandsTable).set({
-    pickedByEaAt: new Date(),
-  }).where(and(
-    eq(arxLiveCommandsTable.commandId, cand.commandId),
-    eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
-    isNull(arxLiveCommandsTable.pickedByEaAt),
-    eq(arxLiveCommandsTable.bridgeConnectionId, args.bridgeConnectionId),
-  )).returning();
-  const updated = claimed[0];
-  if (!updated) return { command: null, refusalReason: null };
-  const row = updated;
+      liveManagementPickupPredicate(args.managementTargetSupported === true),
+      // Leave oversized rows unpicked; do not starve later manual protection.
+      sql`octet_length(to_jsonb(${arxLiveCommandsTable})::text) <= 64000`,
+    )).orderBy(arxLiveCommandsTable.id).limit(1).for("update", { skipLocked: true });
+    if (!candidate) return { command: null, refusalReason: null };
+    // Serialize while the row is locked, before CAS. No rejected/oversized
+    // response may consume pickedByEaAt, and formatting after commit cannot
+    // invalidate the EA parser's limit. Symbol mapping is a DB read only.
+    const serializedResponse = await args.prepareResponse(candidate, tx);
+    if (serializedResponse.length > 65_536)
+      return { command: null, refusalReason: "MT5_COMMAND_ENVELOPE_TOO_LARGE" };
+    const [command] = await tx.update(arxLiveCommandsTable).set({ pickedByEaAt: new Date() })
+      .where(and(
+        eq(arxLiveCommandsTable.commandId, candidate.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+        isNull(arxLiveCommandsTable.pickedByEaAt),
+        eq(arxLiveCommandsTable.bridgeConnectionId, args.bridgeConnectionId),
+        liveManagementPickupPredicate(args.managementTargetSupported === true),
+      )).returning();
+    return command ? { command, refusalReason: null, serializedResponse } : { command: null, refusalReason: null };
+  });
+  if (!delivery.command) return delivery;
+  const row = delivery.command;
 
   logger.warn({
     [PHASE_B_LIVE_LOG_PREFIX]: true,
@@ -4178,7 +4625,7 @@ export async function pickupNextLiveCommand(args: {
     payload: { commandId: row.commandId, bridgeConnectionId: args.bridgeConnectionId },
   });
 
-  return { command: updated, refusalReason: null };
+  return delivery;
 }
 
 /** Phase B — EA posts result for a SENT_TO_MT5_LIVE command. */
@@ -4284,6 +4731,11 @@ export function buildBridgedMt5CommandPayload(liveRow: {
     payload: liveRow.payload,
   });
   if (positionTicket) payload.positionTicket = positionTicket;
+  const managementTarget = managementTargetFromCommand(liveRow);
+  if (managementTarget) {
+    if (positionTicket !== managementTarget.brokerTicket) throw new ManagementTargetError("MANAGEMENT_TRANSPORT_TARGET_MISMATCH");
+    payload.managementTargetV1 = managementTarget;
+  }
   return payload;
 }
 
@@ -4299,7 +4751,7 @@ async function enqueueBridgedMt5Command(opts: {
   const { resolveBrokerSymbolName } = await import("../instruments/index.js");
   // Resolve to the broker's exact (case-sensitive) Market Watch symbol, same
   // as the live-poll path does, so the EA preflight resolves it cleanly.
-  const brokerSymbol = await resolveBrokerSymbolName(opts.liveRow.symbol);
+  const brokerSymbol = boundManagementTransportSymbol(opts.liveRow) ?? await resolveBrokerSymbolName(opts.liveRow.symbol);
 
   // Build the mirror payload (incl. the silent-close-failure guard around
   // `positionTicket`) via the pure, regression-tested helper.
@@ -4355,6 +4807,7 @@ const mt5ExecutionAdapter: ExecutionAdapter<Mt5DeliveryResult> = new Mt5EaBridge
 );
 
 export type BridgedLiveOutcome =
+  | "LIVE_ACKNOWLEDGED"
   | "LIVE_FILLED"
   | "LIVE_PARTIALLY_FILLED"
   | "LIVE_REJECTED"
@@ -4428,11 +4881,23 @@ export function mapBridgedLiveOutcome(input: {
   if (LIVE_FAILED_STATUS_RE.test(status)) {
     return statusLc.includes("reject") ? "LIVE_REJECTED" : "LIVE_FAILED";
   }
+  // Explicit uncertainty/acceptance is never promoted by an existing ticket.
+  if (["unknown","live_unknown"].includes(statusLc)) return "LIVE_UNKNOWN";
+  // Only an explicit acknowledgement. Unversioned PLACED/ACCEPTED keep their
+  // existing mapping: nothing yet resolves an ACK for pending orders.
+  if (["acknowledged","live_acknowledged"].includes(statusLc)) return "LIVE_ACKNOWLEDGED";
+  if (["partially_filled","live_partially_filled"].includes(statusLc))
+    return input.hasBrokerTicket && typeof input.executedVolume === "number" && Number.isFinite(input.executedVolume) && input.executedVolume>0 ? "LIVE_PARTIALLY_FILLED" : "LIVE_UNKNOWN";
   // R2 S5 — a ticket with a short fill is a PARTIAL, not a full fill. Checked
   // before the full-fill branch so a partial can never be recorded as
   // complete (spec §12: partial fills update exposure immediately).
   if (isPartialFill(input)) return "LIVE_PARTIALLY_FILLED";
   return input.hasBrokerTicket ? "LIVE_FILLED" : "LIVE_UNKNOWN";
+}
+
+function settlementConsumers(command: ArxLiveCommand): SettlementConsumer[] {
+  return ["EXPOSURE_RESERVATION", ...(command.commandType === "CLOSE_LIVE_POSITION"
+    ? [isAgentManagementCommand(command) ? "AGENT_CLOSE_POSITION" as const : "MANUAL_CLOSE_POSITION" as const] : [])];
 }
 
 export async function recordLiveCommandResult(args: {
@@ -4444,13 +4909,20 @@ export async function recordLiveCommandResult(args: {
   // R2 S1 — LIVE_UNKNOWN is the honest mapping of an ambiguous EA report
   // (success-looking status, no broker ticket): non-terminal, reservation
   // held, resolved only by reconciliation.
-  // R2 S5 — LIVE_ACKNOWLEDGED is accepted here but is NOT producible by
-  // mapBridgedLiveOutcome: the v1.5x EA posts only a settled result and has no
-  // ack signal. It is forward-declared for the bridge-v2 TRADE_TRANSACTION
-  // lifecycle (REQUEST/ORDER_ADD without a dealTicket), which can call this
-  // entry point directly once its lifecycle mapping lands.
-  outcome: "LIVE_FILLED" | "LIVE_PARTIALLY_FILLED" | "LIVE_ACKNOWLEDGED" | "LIVE_REJECTED" | "LIVE_FAILED" | "LIVE_UNKNOWN" | "STALE_COMMAND_REJECTED";
+  // Upgraded synchronous terminal reports distinguish placed/partial/unknown.
+  // ACK does not release reservations or certify settlement.
+  outcome:
+    | "LIVE_FILLED"
+    | "LIVE_PARTIALLY_FILLED"
+    | "LIVE_ACKNOWLEDGED"
+    | "LIVE_REJECTED"
+    | "LIVE_FAILED"
+    | "LIVE_UNKNOWN"
+    | "STALE_COMMAND_REJECTED";
   reportingBridgeConnectionId: number;
+  /** Only identity explicitly reported by the terminal; never filled from the current bridge. */
+  reportedExecutionIdentity?: ReturnType<typeof reportedManagementIdentity>;
+  terminalResultEvidence?: import("../mt5/terminalResultEvidence.js").TerminalResultEvidence;
   brokerTicket?: string | null;
   fillPrice?: number | null;
   executedVolume?: number | null;
@@ -4463,24 +4935,19 @@ export async function recordLiveCommandResult(args: {
   // Without capturing `reason` here, every EA preflight refusal collapsed to the
   // generic EA_REJECTED_NO_DETAIL sentinel even though the EA knew the exact cause.
   eaReason?: string | null;
-}): Promise<{ ok: boolean; command: ArxLiveCommand | null; reason?: string }> {
-  const row = await loadOwned(args.userId, args.commandId);
-  if (!row) return { ok: false, command: null, reason: "COMMAND_NOT_FOUND" };
-
-  // Bridge-binding invariant: only the bridge that the command was
-  // dispatched to (and that picked it up) may write its result. This
-  // closes the cross-bridge result-spoof window where bridge X could
-  // post FILLED for a command actually executed by bridge Y. Checked
-  // BEFORE the dedup branch so a spoofing bridge cannot even bump the
-  // duplicate counter.
-  if (row.bridgeConnectionId != null && row.bridgeConnectionId !== args.reportingBridgeConnectionId) {
-    return { ok: false, command: null, reason: "BRIDGE_BINDING_MISMATCH" };
-  }
-
-  // R2 S2 — the full reported broker evidence, retained verbatim on every
-  // path (applied, duplicate, late, conflicting). Previously the losing side
-  // of the first-write-wins CAS survived only as duplicateResultCount++ and
-  // the ticket/price/retcode were destroyed (audit G3).
+}): Promise<{
+  ok: boolean;
+  command: ArxLiveCommand | null;
+  reason?: string;
+  receiptPersisted?: boolean;
+  positionSettlement?: "APPLIED" | "HELD" | "PENDING" | "NOT_APPLICABLE";
+  settlementRecovery?: { workerEnabled: boolean; pending: boolean; held: boolean;
+    scope: "LATEST_ACCEPTED_COMMAND_STATE";
+    jobs: Array<{consumer: string;status: string;generation: number;completedGeneration: number | null;reason: string | null}> };
+  positionSettlementReason?: string;
+}> {
+  // Commit the outcome and durable evidence together. No position/agent locks
+  // are acquired here: post-commit consumers retain agent-first lock ordering.
   const reportedEvidence: Record<string, unknown> = {
     reportedOutcome: args.outcome,
     brokerTicket: args.brokerTicket ?? null,
@@ -4490,349 +4957,337 @@ export async function recordLiveCommandResult(args: {
     brokerMessage: args.brokerMessage ?? null,
     eaReason: args.eaReason ?? null,
     reportingBridgeConnectionId: args.reportingBridgeConnectionId,
+    reportedExecutionIdentity: args.reportedExecutionIdentity ?? [],
+    ...(args.terminalResultEvidence ? { terminalResultEvidence: args.terminalResultEvidence } : {}),
   };
 
-  // Task #28 — exactly-once: if the command is already in a terminal state
-  // this is a duplicate result POST (EA retried, or a result raced the TTL
-  // sweep). We acknowledge it with ok:true so the EA stops retrying, record
-  // the duplicate for audit, but NEVER re-apply the outcome. R2 S2: the
-  // reported payload is RETAINED as an execution event, not destroyed.
-  if (!LIVE_RESULT_APPLICABLE_STATUSES.includes(row.status as ArxLiveCommandStatus)) {
-    if (isTerminalLiveStatus(row.status as ArxLiveCommandStatus)) {
-      const [bumped] = await db.update(arxLiveCommandsTable).set({
-        duplicateResultCount: (row.duplicateResultCount ?? 0) + 1,
-        resultRecordedAt: row.resultRecordedAt ?? new Date(),
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
-      await audit({
-        eventType: "LIVE_RESULT_DUPLICATE_IGNORED", severity: "WARNING",
-        userId: args.userId, symbol: row.symbol,
-        message: `Duplicate live result ignored for ${args.commandId} (already ${row.status}); reported ${args.outcome}`,
-        metadata: { commandId: args.commandId, existingStatus: row.status, reportedOutcome: args.outcome },
-      });
-      await recordExecutionEvent({
-        commandRowId: row.id, source: "ea", eventType: "LATE_RESULT_RETAINED",
-        payload: { commandId: args.commandId, existingStatus: row.status, applied: false, ...reportedEvidence },
-      });
-      return { ok: true, command: bumped ?? row, reason: "DUPLICATE_IGNORED" };
-    }
-    // R2 S1 — a result arriving while the command rests in an epistemic state
-    // (LIVE_UNKNOWN / LIVE_RECONCILIATION_REQUIRED) is late broker evidence.
-    // It is retained for the reconciler and acknowledged so the EA stops
-    // retrying, but NEVER applied here: only reconciliation (R2 S3) may
-    // resolve an unknown outcome, and the reservation stays held meanwhile.
-    if (LIVE_EPISTEMIC_STATUSES.includes(row.status as ArxLiveCommandStatus)) {
-      await audit({
-        eventType: "LIVE_RESULT_RETAINED_UNKNOWN", severity: "CRITICAL",
-        userId: args.userId, symbol: row.symbol,
-        message: `Late live result retained for ${args.commandId} (currently ${row.status}); reported ${args.outcome} — reconciliation required to resolve`,
-        metadata: { commandId: args.commandId, existingStatus: row.status, reportedOutcome: args.outcome, brokerTicket: args.brokerTicket ?? null },
-      });
-      await recordExecutionEvent({
-        commandRowId: row.id, source: "ea", eventType: "LATE_RESULT_RETAINED",
-        payload: { commandId: args.commandId, existingStatus: row.status, applied: false, ...reportedEvidence },
-      });
-      return { ok: true, command: row, reason: "RESULT_RETAINED_FOR_RECONCILIATION" };
-    }
-    // Non-terminal but not SENT (e.g. DRAFT/APPROVED) — illegal result.
-    return { ok: false, command: null, reason: "BAD_STATE" };
-  }
+  const reportFingerprint = executionReportFingerprint(reportedEvidence);
+  // Bounded local scheduling avoids spending pool slots waiting on this same
+  // command. This is not acceptance: no reply succeeds before its own commit.
+  const weightBytes = Buffer.byteLength(JSON.stringify(reportedEvidence)) + Buffer.byteLength(args.commandId);
+  const persisted = await resultReceiptScheduler.run(args.userId, args.commandId, weightBytes, () => db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(arxLiveCommandsTable)
+      .where(
+        and(
+          eq(arxLiveCommandsTable.userId, args.userId),
+          eq(arxLiveCommandsTable.commandId, args.commandId),
+        ),
+      )
+      .for("update");
+    if (!row)
+      return { ok: false as const, command: null, reason: "COMMAND_NOT_FOUND" };
+    if (
+      row.bridgeConnectionId != null &&
+      row.bridgeConnectionId !== args.reportingBridgeConnectionId
+    )
+      return {
+        ok: false as const,
+        command: null,
+        reason: "BRIDGE_BINDING_MISMATCH",
+      };
 
-  // Map the EA outcome to the final command status. STALE_COMMAND_REJECTED
-  // becomes LIVE_EXPIRED (terminal); everything else is its own status
-  // (LIVE_UNKNOWN stays LIVE_UNKNOWN — non-terminal).
-  // R2 S5 — reclassify a short fill as PARTIAL using the row's authoritative
-  // requestedVolume. The EA reports executedVolume but not what was asked for,
-  // so this is the only place the comparison can be made honestly. A partial
-  // previously landed as a full LIVE_FILLED, which both overstated execution
-  // and FULFILLED the whole exposure reservation.
-  const effectiveOutcome: typeof args.outcome =
-    args.outcome === "LIVE_FILLED"
-      && isPartialFill({
+    const existing = await tx.execute(sql`select payload from execution_events
+      where command_id=${row.id} and payload->>'reportFingerprint'=${reportFingerprint} limit 1`);
+    if (existing.rows.length > 0) {
+      const oldPayload = existing.rows[0]?.payload as Record<string, unknown>;
+      if (oldPayload.settlementOutboxVersion !== 1) {
+        await enqueueResultSettlement(tx, row, reportFingerprint, settlementConsumers(row), true);
+      }
+      await holdChangedSettlementEvidence(tx, row);
+      // Exact retry is idempotent even after a restart: no new event, chain row,
+      // counter increment, outcome overwrite or partial-close side effect.
+      return {
+        ok: true as const,
+        command: row,
+        reason: "DUPLICATE_IGNORED",
+        applied: false as const,
+      };
+    }
+    if (row.status === "LIVE_ACKNOWLEDGED" || row.status === "LIVE_PARTIALLY_FILLED") {
+      const prior = await tx.execute(sql`select payload->'terminalResultEvidence' as evidence from execution_events
+        where command_id=${row.id} and payload->>'applied'='true' and payload ? 'terminalResultEvidence'
+        order by sequence_no desc limit 1`);
+      const before = prior.rows[0]?.evidence as import("../mt5/terminalResultEvidence.js").TerminalResultEvidence | undefined;
+      const { terminalEvidenceConflicts } = await import("../mt5/terminalResultEvidence.js");
+      // Exposure applied from versioned evidence is only ever advanced by
+      // versioned evidence that agrees with it. A later unversioned report
+      // cannot be checked, and a contradictory execution is never summed or
+      // replaced: both stay held for reconciliation. Legacy cumulative manual
+      // reports (no versioned prior) keep their own marker-based path.
+      if (before && (!args.terminalResultEvidence || terminalEvidenceConflicts(before, args.terminalResultEvidence)))
+        args = { ...args, outcome: "LIVE_UNKNOWN", brokerTicket: row.brokerTicket, fillPrice: row.fillPrice, executedVolume: row.executedVolume };
+    }
+    const effectiveOutcome: typeof args.outcome =
+      args.outcome === "LIVE_FILLED" &&
+      isPartialFill({
         hasBrokerTicket: args.brokerTicket != null,
         executedVolume: args.executedVolume ?? null,
         requestedVolume: row.requestedVolume,
       })
-      ? "LIVE_PARTIALLY_FILLED"
-      : args.outcome;
+        ? "LIVE_PARTIALLY_FILLED"
+        : args.outcome;
 
-  const finalStatus: ArxLiveCommandStatus =
-    effectiveOutcome === "STALE_COMMAND_REJECTED" ? "LIVE_EXPIRED" : effectiveOutcome;
+    const finalStatus: ArxLiveCommandStatus =
+      effectiveOutcome === "STALE_COMMAND_REJECTED"
+        ? "LIVE_EXPIRED"
+        : effectiveOutcome;
 
-  // Validate transition is legal.
-  assertCanTransition(row.status as ArxLiveCommandStatus, finalStatus);
-
-  const now = new Date();
-  const updates: Partial<typeof arxLiveCommandsTable.$inferInsert> = {
-    status: finalStatus,
-    resultRecordedAt: now,
-    brokerTicket: args.brokerTicket ?? null,
-    fillPrice: args.fillPrice ?? null,
-    executedVolume: args.executedVolume ?? null,
-    mt5Retcode: args.mt5Retcode ?? null,
-    brokerMessage: args.brokerMessage ?? null,
-  };
-  if (effectiveOutcome === "LIVE_FILLED") {
-    updates.filledAt = now;
-  } else if (effectiveOutcome === "LIVE_UNKNOWN") {
-    // R2 S1 — no terminal stamps: this is not a rejection, not an expiry,
-    // not a fill. The evidence columns above (retcode/brokerMessage/…) and
-    // the execution event carry what the EA reported; rejectionReason stays
-    // untouched so the row never claims a confident refusal it cannot prove.
-  } else if (effectiveOutcome === "LIVE_PARTIALLY_FILLED") {
-    // R2 S5 — real exposure exists, but the order is NOT complete: no
-    // filledAt (that would claim a full fill) and no rejectedAt (nothing was
-    // refused). executedVolume above carries the filled size; the remainder
-    // is still working and the reservation stays HELD.
-  } else if (effectiveOutcome === "LIVE_ACKNOWLEDGED") {
-    // R2 S5 — the broker saw the order; nothing is filled and nothing is
-    // refused. No terminal stamps of any kind (spec §20: acknowledged is not
-    // treated as filled).
-  } else if (effectiveOutcome === "STALE_COMMAND_REJECTED") {
-    updates.rejectedAt = now;
-    updates.expiredAt = now;
-    if (row.rejectionReason == null) updates.rejectionReason = "STALE_COMMAND_REJECTED";
-  } else {
-    updates.rejectedAt = now;
-    // Surface a clean rejection reason for the UI even when no explicit
-    // `rejectionReason` was set upstream. Without this, the row showed
-    // `rejection_reason = (none)` even though the EA returned a clear
-    // broker_message + mt5Retcode — masking the real broker rejection.
-    if (row.rejectionReason == null) {
-      // Task #30 — derive a clean, human-readable reason from the broker's MT5
-      // retcode dictionary first; fall back to the raw broker message, then a
-      // generic sentinel. Raw codes stay in mt5Retcode/brokerMessage columns.
-      const cleanMsg = args.brokerMessage?.trim();
-      const cleanEaReason = args.eaReason?.trim();
-      if (args.mt5Retcode != null) {
-        const entry = explainMt5Retcode(args.mt5Retcode);
-        updates.rejectionReason = entry.key === "UNKNOWN" && cleanMsg && cleanMsg.length > 0
-          ? cleanMsg
-          : entry.friendly;
-      } else if (cleanMsg && cleanMsg.length > 0) {
-        updates.rejectionReason = cleanMsg;
-      } else if (cleanEaReason && cleanEaReason.length > 0) {
-        // EA-side preflight refusals (no broker call → no retcode/brokerMessage)
-        // carry their precise cause ONLY in the `reason` field. Surface it so the
-        // row shows e.g. BROKER_RULE_SYMBOL_NOT_TRADABLE instead of "no detail".
-        updates.rejectionReason = cleanEaReason;
+    const applicable = LIVE_RESULT_APPLICABLE_STATUSES.includes(
+      row.status as ArxLiveCommandStatus,
+    );
+    const mayApply =
+      applicable &&
+      isAllowedLiveTransition(row.status as ArxLiveCommandStatus, finalStatus);
+    const retained =
+      applicable ||
+      isTerminalLiveStatus(row.status as ArxLiveCommandStatus) ||
+      LIVE_EPISTEMIC_STATUSES.includes(row.status as ArxLiveCommandStatus);
+    if (!retained)
+      return { ok: false as const, command: null, reason: "BAD_STATE" };
+    const now = new Date();
+    let updated = row;
+    if (mayApply) {
+      const updates: Partial<typeof arxLiveCommandsTable.$inferInsert> = {
+        status: finalStatus,
+        resultRecordedAt: now,
+        brokerTicket: args.brokerTicket ?? null,
+        fillPrice: args.fillPrice ?? null,
+        executedVolume: args.executedVolume ?? null,
+        mt5Retcode: args.mt5Retcode ?? null,
+        brokerMessage: args.brokerMessage ?? null,
+      };
+      if (effectiveOutcome === "LIVE_FILLED") {
+        updates.filledAt = now;
+      } else if (effectiveOutcome === "LIVE_UNKNOWN") {
+        // R2 S1 — no terminal stamps: this is not a rejection, not an expiry,
+        // not a fill. The evidence columns above (retcode/brokerMessage/…) and
+        // the execution event carry what the EA reported; rejectionReason stays
+        // untouched so the row never claims a confident refusal it cannot prove.
+      } else if (effectiveOutcome === "LIVE_PARTIALLY_FILLED") {
+        // R2 S5 — real exposure exists, but the order is NOT complete: no
+        // filledAt (that would claim a full fill) and no rejectedAt (nothing was
+        // refused). executedVolume above carries the filled size; the remainder
+        // is still working and the reservation stays HELD.
+      } else if (effectiveOutcome === "LIVE_ACKNOWLEDGED") {
+        // R2 S5 — the broker saw the order; nothing is filled and nothing is
+        // refused. No terminal stamps of any kind (spec §20: acknowledged is not
+        // treated as filled).
+      } else if (effectiveOutcome === "STALE_COMMAND_REJECTED") {
+        updates.rejectedAt = now;
+        updates.expiredAt = now;
+        if (row.rejectionReason == null)
+          updates.rejectionReason = "STALE_COMMAND_REJECTED";
       } else {
-        updates.rejectionReason = "EA_REJECTED_NO_DETAIL";
-      }
-    }
-  }
-
-  // Task #28 — CAS write: the status guard `= SENT_TO_MT5_LIVE` makes this
-  // first-write-wins. If a concurrent result post OR the TTL sweep already
-  // transitioned the row out of SENT_TO_MT5_LIVE between our read above and
-  // this write, the update matches 0 rows. We then re-read the now-terminal
-  // row and treat this post as a duplicate (DUPLICATE_IGNORED) — never
-  // overwriting the outcome that won the race. This closes the
-  // FILLED-then-REJECTED and result-vs-sweep races.
-  const [updated] = await db.update(arxLiveCommandsTable).set(updates)
-    .where(and(
-      eq(arxLiveCommandsTable.commandId, args.commandId),
-      eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
-    )).returning();
-
-  if (!updated) {
-    const current = await loadOwned(args.userId, args.commandId);
-    if (current && isTerminalLiveStatus(current.status as ArxLiveCommandStatus)) {
-      const [bumped] = await db.update(arxLiveCommandsTable).set({
-        duplicateResultCount: (current.duplicateResultCount ?? 0) + 1,
-        resultRecordedAt: current.resultRecordedAt ?? new Date(),
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
-      await audit({
-        eventType: "LIVE_RESULT_DUPLICATE_IGNORED", severity: "WARNING",
-        userId: args.userId, symbol: row.symbol,
-        message: `Duplicate live result lost CAS race for ${args.commandId} (now ${current.status}); reported ${args.outcome}`,
-        metadata: { commandId: args.commandId, existingStatus: current.status, reportedOutcome: args.outcome },
-      });
-      // R2 S2 — retain the losing side of the race: if the first-arriving
-      // result was wrong, this event is the evidence reconciliation needs.
-      await recordExecutionEvent({
-        commandRowId: current.id, source: "ea", eventType: "LATE_RESULT_RETAINED",
-        payload: { commandId: args.commandId, existingStatus: current.status, applied: false, lostCasRace: true, ...reportedEvidence },
-      });
-      return { ok: true, command: bumped ?? current, reason: "DUPLICATE_IGNORED" };
-    }
-    // R2 S1 — the race may also have been lost to the TTL sweep moving the
-    // row into LIVE_UNKNOWN: retain the evidence, never apply it here.
-    if (current && LIVE_EPISTEMIC_STATUSES.includes(current.status as ArxLiveCommandStatus)) {
-      await recordExecutionEvent({
-        commandRowId: current.id, source: "ea", eventType: "LATE_RESULT_RETAINED",
-        payload: { commandId: args.commandId, existingStatus: current.status, applied: false, lostCasRace: true, ...reportedEvidence },
-      });
-      return { ok: true, command: current, reason: "RESULT_RETAINED_FOR_RECONCILIATION" };
-    }
-    return { ok: false, command: current ?? null, reason: "CAS_CONFLICT" };
-  }
-
-  // Tamper-evident mirror of the broker order outcome — best-effort, never
-  // throws (cannot affect fill settlement). FILLED is ALLOWED; an UNKNOWN
-  // outcome is ATTEMPTED (no confirmed result exists to allow or deny);
-  // everything else is DENIED so a rejected/failed order is permanently
-  // chain-recorded.
-  await mirrorCriticalEvent({
-    eventType: "ORDER_RESULT", severity: "CRITICAL",
-    status: args.outcome === "LIVE_FILLED" ? "ALLOWED"
-      : args.outcome === "LIVE_UNKNOWN" ? "ATTEMPTED"
-      : "DENIED",
-    actorUserId: args.userId, actorType: "EA",
-    affectedObject: `arx_live_commands:${args.commandId}`,
-    message: `Live order result: ${args.outcome}`,
-    metadata: { commandId: args.commandId, symbol: row.symbol, outcome: args.outcome, hasBrokerTicket: !!args.brokerTicket },
-  });
-
-  // R2 S2 — the applied transition, with the full broker evidence.
-  await recordExecutionEvent({
-    commandRowId: updated.id, source: "ea", eventType: `RESULT_${finalStatus}`,
-    occurredAt: now,
-    payload: { commandId: args.commandId, applied: true, finalStatus, ...reportedEvidence },
-  });
-
-  // Settle the master-exposure reservation taken at dispatch time
-  // (pure rule: settleReservationForStatus — audit G1b).
-  //   FULFILL — confirmed fill (lots stay attributed via shared_trade_attribution).
-  //   RELEASE — confirmed non-execution (lots return to the pool).
-  //   HOLD    — UNKNOWN outcome: the reservation is deliberately NOT touched;
-  //             releasing an unconfirmed order under-counts the pool and can
-  //             over-expose the master account. Reconciliation settles it.
-  // The fulfil/release helpers act only on rows still in RESERVED, so
-  // duplicate EA callbacks are idempotent.
-  const settlement = settleReservationForStatus(finalStatus);
-  if (settlement === "HOLD") {
-    logger.error({
-      [PHASE_B_LIVE_LOG_PREFIX]: true,
-      event: "RESERVATION_HELD_UNKNOWN_OUTCOME",
-      commandId: args.commandId, outcome: args.outcome,
-    }, "exposure reservation HELD — outcome unknown, reconciliation required");
-  } else {
-    try {
-      const { fulfillReservationByCommandId, releaseReservationByCommandId } =
-        await import("../concurrency/exposureReservation.js");
-      if (settlement === "FULFILL") {
-        await fulfillReservationByCommandId(args.commandId);
-      } else {
-        await releaseReservationByCommandId(args.commandId);
-      }
-    } catch (e) {
-      logger.error({
-        [PHASE_B_LIVE_LOG_PREFIX]: true,
-        event: "RESERVATION_SETTLEMENT_FAILED",
-        commandId: args.commandId, outcome: args.outcome,
-        error: e instanceof Error ? e.message : String(e),
-      }, "failed to settle exposure reservation — manual reconciliation required");
-    }
-  }
-
-  // Task #28 (T003) — forced reconciliation of position close. When a
-  // CLOSE_LIVE_POSITION command fills, the broker has truly closed the
-  // position, so stamp the matching arx_live_positions row's `closedAt`
-  // immediately rather than waiting for the next sync-live-positions snapshot.
-  // This prevents "ghost" open rows that linger after a confirmed close.
-  // ALERT_ONLY-consistent: we only record broker-confirmed truth, never
-  // initiate a close ourselves.
-  if (args.outcome === "LIVE_FILLED" && row.commandType === "CLOSE_LIVE_POSITION") {
-    const closeTicket = typeof (row.payload as Record<string, unknown> | null)?.["brokerTicket"] === "string"
-      ? String((row.payload as Record<string, unknown>)["brokerTicket"])
-      : (args.brokerTicket ?? null);
-    if (closeTicket) {
-      try {
-        // A partial close (closed volume below what the position holds) only
-        // shrinks the position: it stays open, in the ledger and under the
-        // Position Guardian. Only a close of the whole volume stamps closedAt.
-        const [openRow] = await livePositionLedger.select(
-          { id: livePositionColumns.id, volume: livePositionColumns.volume },
-          {
-            where: and(
-              eq(livePositionColumns.userId, args.userId),
-              eq(livePositionColumns.brokerTicket, closeTicket),
-              isNull(livePositionColumns.closedAt),
-            ),
-            limit: 1,
-          },
-        );
-        const closedVolume = Number(args.executedVolume ?? row.requestedVolume);
-        const partial = openRow != null && Number.isFinite(closedVolume) && closedVolume > 0
-          && Number(openRow.volume) - closedVolume > LIVE_VOLUME_EPSILON;
-        if (partial) {
-          await livePositionWriter.update(
-            {
-              volume: Math.round((Number(openRow.volume) - closedVolume) * 1e8) / 1e8,
-              lastSyncedAt: now,
-            },
-            eq(livePositionColumns.id, openRow.id),
-          );
-        }
-        const closedRows = partial ? [] : await livePositionWriter.updateReturning(
-          {
-            closedAt: now,
-            lastSyncedAt: now,
-          },
-          and(
-            eq(livePositionColumns.userId, args.userId),
-            eq(livePositionColumns.brokerTicket, closeTicket),
-            isNull(livePositionColumns.closedAt),
-          ),
-          livePositionColumns,
-        );
-        if (closedRows.length > 0) {
-          await audit({
-            eventType: "LIVE_POSITION_CLOSED_RECONCILED", severity: "INFO",
-            userId: args.userId, symbol: row.symbol,
-            message: `Position ${closeTicket} marked closed from filled CLOSE command ${args.commandId}`,
-            metadata: { commandId: args.commandId, brokerTicket: closeTicket },
-          });
-          // Best-effort: if this closed position is a Profit Mission trade, record
-          // its realised outcome + missed-profit verdict against the executed
-          // mission draft. No-op for non-mission positions; never an execution
-          // path and never allowed to disturb the close-confirmation result.
-          try {
-            const closedPos = closedRows[0] as { floatingPl?: number | null } | undefined;
-            const realisedPnl =
-              typeof closedPos?.floatingPl === "number" && Number.isFinite(closedPos.floatingPl)
-                ? closedPos.floatingPl
-                : null;
-            const { recordMissionTradeCloseByBrokerTicket } = await import("../missionExitManager.js");
-            await recordMissionTradeCloseByBrokerTicket({
-              userId: args.userId,
-              brokerTicket: closeTicket,
-              realisedPnl,
-              nowMs: now.getTime(),
-            });
-          } catch (e) {
-            logger.error({
-              [PHASE_B_LIVE_LOG_PREFIX]: true,
-              event: "MISSION_TRADE_CLOSE_RECORD_FAILED",
-              commandId: args.commandId, brokerTicket: closeTicket,
-              error: e instanceof Error ? e.message : String(e),
-            }, "failed to record mission-trade close (advisory) — non-fatal");
+        updates.rejectedAt = now;
+        // Surface a clean rejection reason for the UI even when no explicit
+        // `rejectionReason` was set upstream. Without this, the row showed
+        // `rejection_reason = (none)` even though the EA returned a clear
+        // broker_message + mt5Retcode — masking the real broker rejection.
+        if (row.rejectionReason == null) {
+          // Task #30 — derive a clean, human-readable reason from the broker's MT5
+          // retcode dictionary first; fall back to the raw broker message, then a
+          // generic sentinel. Raw codes stay in mt5Retcode/brokerMessage columns.
+          const cleanMsg = args.brokerMessage?.trim();
+          const cleanEaReason = args.eaReason?.trim();
+          if (args.mt5Retcode != null) {
+            const entry = explainMt5Retcode(args.mt5Retcode);
+            updates.rejectionReason =
+              entry.key === "UNKNOWN" && cleanMsg && cleanMsg.length > 0
+                ? cleanMsg
+                : entry.friendly;
+          } else if (cleanMsg && cleanMsg.length > 0) {
+            updates.rejectionReason = cleanMsg;
+          } else if (cleanEaReason && cleanEaReason.length > 0) {
+            // EA-side preflight refusals (no broker call → no retcode/brokerMessage)
+            // carry their precise cause ONLY in the `reason` field. Surface it so the
+            // row shows e.g. BROKER_RULE_SYMBOL_NOT_TRADABLE instead of "no detail".
+            updates.rejectionReason = cleanEaReason;
+          } else {
+            updates.rejectionReason = "EA_REJECTED_NO_DETAIL";
           }
         }
-      } catch (e) {
-        logger.error({
-          [PHASE_B_LIVE_LOG_PREFIX]: true,
-          event: "LIVE_POSITION_CLOSE_RECONCILE_FAILED",
-          commandId: args.commandId, brokerTicket: closeTicket,
-          error: e instanceof Error ? e.message : String(e),
-        }, "failed to reconcile position closedAt after filled CLOSE");
       }
+
+      const [changed] = await tx
+        .update(arxLiveCommandsTable)
+        .set(updates)
+        .where(
+          and(
+            eq(arxLiveCommandsTable.id, row.id),
+            eq(arxLiveCommandsTable.userId, args.userId),
+            eq(arxLiveCommandsTable.status, row.status),
+          ),
+        )
+        .returning();
+      if (!changed) throw new Error("RESULT_STATUS_CLAIM_LOST");
+      updated = changed;
+    } else {
+      // Distinct additional reports, not HTTP retry count. The lock and SQL
+      // increment prevent the stale-read counter loss of simultaneous reports.
+      const [changed] = await tx
+        .update(arxLiveCommandsTable)
+        .set({
+          duplicateResultCount: sql`coalesce(${arxLiveCommandsTable.duplicateResultCount},0)+1`,
+        })
+        .where(eq(arxLiveCommandsTable.id, row.id))
+        .returning();
+      updated = changed!;
+    }
+    const eventType = mayApply
+      ? `RESULT_${finalStatus}`
+      : "LATE_RESULT_RETAINED";
+    await recordExecutionEvent(
+      {
+        commandRowId: row.id,
+        source: "ea",
+        eventType,
+        occurredAt: now,
+        payload: {
+          commandId: args.commandId,
+          applied: mayApply,
+          ...(mayApply
+            ? {
+                finalStatus,
+                previousStatus: row.status,
+                previousExecutedVolume: row.executedVolume,
+              }
+            : { existingStatus: row.status }),
+          ...reportedEvidence,
+          reportFingerprint,
+          settlementOutboxVersion: 1,
+        },
+      },
+      tx,
+    );
+    if (mayApply) await enqueueResultSettlement(tx, updated, reportFingerprint, settlementConsumers(updated));
+    else await holdChangedSettlementEvidence(tx, updated);
+    await audit(
+      {
+        eventType: mayApply
+          ? `LIVE_RESULT_${args.outcome}`
+          : "LIVE_RESULT_RETAINED",
+        severity: "CRITICAL",
+        userId: args.userId,
+        symbol: row.symbol,
+        message: `Live result ${mayApply ? "applied" : "retained"}: ${args.outcome}`,
+        metadata: {
+          commandId: args.commandId,
+          reportFingerprint,
+          applied: mayApply,
+          ...reportedEvidence,
+        },
+      },
+      tx,
+    );
+    // Use the existing redaction/hash-chain writer in this SAME transaction.
+    // A failed write or unknown hash rolls back the receipt and outcome; the
+    // caller must retry instead of receiving a false success acknowledgement.
+    const chained = await recordCriticalSecurityEvent(
+      {
+        eventType: "ORDER_RESULT",
+        severity: "CRITICAL",
+        status: !mayApply
+          ? "ATTEMPTED"
+          : finalStatus === "LIVE_FILLED"
+            ? "ALLOWED"
+            : [
+                  "LIVE_UNKNOWN",
+                  "LIVE_ACKNOWLEDGED",
+                  "LIVE_PARTIALLY_FILLED",
+                ].includes(finalStatus)
+              ? "ATTEMPTED"
+              : "DENIED",
+        actorUserId: args.userId,
+        actorType: "EA",
+        affectedObject: `arx_live_commands:${args.commandId}`,
+        message: `Live result ${mayApply ? "applied" : "retained"}: ${args.outcome}`,
+        metadata: {
+          commandId: args.commandId,
+          reportFingerprint,
+          applied: mayApply,
+          eventType,
+        },
+      },
+      tx,
+    );
+    if (!chained.currentHash) throw new Error("RESULT_AUDIT_HASH_UNAVAILABLE");
+    return {
+      ok: true as const,
+      command: updated,
+      row,
+      applied: mayApply,
+      finalStatus,
+      now,
+      reason: mayApply
+        ? undefined
+        : LIVE_EPISTEMIC_STATUSES.includes(row.status as ArxLiveCommandStatus)
+          ? "RESULT_RETAINED_FOR_RECONCILIATION"
+          : "DUPLICATE_IGNORED",
+    };
+  })).catch((error: unknown) => {
+    if (error instanceof ResultReceiptCapacityError) return { ok: false as const, command: null, reason: error.message };
+    throw error;
+  });
+  if (!persisted.ok)
+    return { ok: false, command: persisted.command, reason: persisted.reason, receiptPersisted: false };
+  const updated = persisted.command;
+  const row = updated;
+  const finalStatus = updated.status as ArxLiveCommandStatus;
+  const now = new Date();
+  // Each task already committed with the receipt. The synchronous path and
+  // opt-in recovery worker use identical fenced, idempotent consumers.
+  const { jobs, manualClosedRows } = await settleCommandJobs(updated.id, args.userId);
+  const positionJob = jobs.find(job => job.consumer !== "EXPOSURE_RESERVATION");
+  const settlementRecovery = {
+    scope: "LATEST_ACCEPTED_COMMAND_STATE" as const,
+    jobs: jobs.map(job => ({consumer:job.consumer,status:job.status,generation:job.generation,completedGeneration:job.completed_generation,reason:job.reason})),
+    workerEnabled: settlementWorkerEnabled(),
+    pending: jobs.some(job => ["PENDING", "LEASED", "RETRY"].includes(job.status)),
+    held: jobs.some(job => job.status === "HELD"),
+  };
+  let positionSettlement: "APPLIED" | "HELD" | "PENDING" | "NOT_APPLICABLE" = "NOT_APPLICABLE";
+  let positionSettlementReason: string | undefined;
+  if (row.commandType === "CLOSE_LIVE_POSITION" && ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED"].includes(finalStatus)) {
+    positionSettlement = positionJob?.status === "DONE" ? "APPLIED" : positionJob?.status === "HELD" ? "HELD" : "PENDING";
+    positionSettlementReason = positionJob?.reason ?? undefined;
+  }
+  // Advisory-only legacy callback is deliberately NOT an outbox consumer. Only
+  // the first synchronous actual row close may invoke it; recovery never does.
+  if (manualClosedRows.length > 0) {
+    try {
+      const closed = manualClosedRows[0] as { brokerTicket: string; floatingPl: number | null };
+      const { recordMissionTradeCloseByBrokerTicket } = await import("../missionExitManager.js");
+      await recordMissionTradeCloseByBrokerTicket({ userId: args.userId, brokerTicket: String(closed.brokerTicket),
+        realisedPnl: typeof closed.floatingPl === "number" && Number.isFinite(closed.floatingPl) ? closed.floatingPl : null,
+        nowMs: now.getTime() });
+    } catch (error) {
+      logger.error({ commandId: row.commandId, error: String(error) }, "Advisory mission close recording requires reconciliation");
     }
   }
+  if (!persisted.applied)
+    return {
+      ok: true,
+      command: updated,
+      reason: persisted.reason,
+      receiptPersisted: true,
+      positionSettlement,
+      positionSettlementReason,
+      settlementRecovery,
+    };
 
-  await audit({
-    eventType: `LIVE_RESULT_${args.outcome}`,
-    severity: args.outcome === "LIVE_FILLED" ? "CRITICAL" : "HIGH",
-    userId: args.userId, symbol: row.symbol,
-    message: `Live result ${args.outcome}: ticket=${args.brokerTicket ?? "?"} retcode=${args.mt5Retcode ?? "?"}`,
-    metadata: { commandId: args.commandId, brokerTicket: args.brokerTicket, mt5Retcode: args.mt5Retcode, brokerMessage: args.brokerMessage },
-  });
-  logger.warn({
-    [PHASE_B_LIVE_LOG_PREFIX]: true,
-    event: `LIVE_RESULT_${args.outcome}`,
-    commandId: args.commandId, userId: args.userId,
-    brokerTicket: args.brokerTicket, mt5Retcode: args.mt5Retcode,
-  }, "Phase B live result recorded");
+  logger.warn(
+    {
+      [PHASE_B_LIVE_LOG_PREFIX]: true,
+      event: `LIVE_RESULT_${args.outcome}`,
+      commandId: args.commandId,
+      userId: args.userId,
+      brokerTicket: args.brokerTicket,
+      mt5Retcode: args.mt5Retcode,
+    },
+    "Phase B live result recorded",
+  );
 
   // ── R3 slice 7 — FAILURE-STREAK BREAKER (best-effort, never gates) ───────
   // A terminal broker failure was just APPLIED (the CAS above won — this is
@@ -4848,29 +5303,40 @@ export async function recordLiveCommandResult(args: {
   // and is returned unchanged regardless of what happens here.
   if (finalStatus === "LIVE_FAILED" || finalStatus === "LIVE_REJECTED") {
     try {
-      const recentRows = await db.select({ status: arxLiveCommandsTable.status })
+      const recentRows = await db
+        .select({ status: arxLiveCommandsTable.status })
         .from(arxLiveCommandsTable)
-        .where(and(
-          eq(arxLiveCommandsTable.userId, args.userId),
-          eq(arxLiveCommandsTable.symbol, row.symbol),
-        ))
+        .where(
+          and(
+            eq(arxLiveCommandsTable.userId, args.userId),
+            eq(arxLiveCommandsTable.symbol, row.symbol),
+          ),
+        )
         .orderBy(desc(arxLiveCommandsTable.id))
         .limit(50);
-      const streak = countConsecutiveTerminalFailures(recentRows.map((r) => r.status));
+      const streak = countConsecutiveTerminalFailures(
+        recentRows.map((r) => r.status),
+      );
       if (failureStreakShouldLock(streak)) {
         const { riskLocksTable } = await import("@workspace/db");
         // Dedupe: one active FAILURE_STREAK lock per user at a time — the
         // 4th/5th consecutive failure must extend nothing and stack nothing.
-        const existing = await db.select({ id: riskLocksTable.id })
+        const existing = await db
+          .select({ id: riskLocksTable.id })
           .from(riskLocksTable)
-          .where(and(
-            eq(riskLocksTable.userId, args.userId),
-            eq(riskLocksTable.lockType, FAILURE_STREAK_LOCK_TYPE),
-            eq(riskLocksTable.isActive, true),
-            sql`(${riskLocksTable.endTime} is null or ${riskLocksTable.endTime} > ${now})`,
-          )).limit(1);
+          .where(
+            and(
+              eq(riskLocksTable.userId, args.userId),
+              eq(riskLocksTable.lockType, FAILURE_STREAK_LOCK_TYPE),
+              eq(riskLocksTable.isActive, true),
+              sql`(${riskLocksTable.endTime} is null or ${riskLocksTable.endTime} > ${now})`,
+            ),
+          )
+          .limit(1);
         if (!existing[0]) {
-          const lockEnd = new Date(now.getTime() + FAILURE_STREAK_LOCK_MINUTES * 60 * 1000);
+          const lockEnd = new Date(
+            now.getTime() + FAILURE_STREAK_LOCK_MINUTES * 60 * 1000,
+          );
           await db.insert(riskLocksTable).values({
             userId: args.userId,
             lockType: FAILURE_STREAK_LOCK_TYPE,
@@ -4882,8 +5348,10 @@ export async function recordLiveCommandResult(args: {
             relatedTradeId: args.commandId,
           });
           await audit({
-            eventType: "FAILURE_STREAK_LOCK_CREATED", severity: "HIGH",
-            userId: args.userId, symbol: row.symbol,
+            eventType: "FAILURE_STREAK_LOCK_CREATED",
+            severity: "HIGH",
+            userId: args.userId,
+            symbol: row.symbol,
             message: `Failure-streak breaker engaged: ${streak} consecutive terminal failures on ${row.symbol} — ${FAILURE_STREAK_LOCK_MINUTES}m ${FAILURE_STREAK_LOCK_TYPE} risk lock created`,
             metadata: {
               commandId: args.commandId,
@@ -4892,26 +5360,43 @@ export async function recordLiveCommandResult(args: {
               endTime: lockEnd.toISOString(),
             },
           });
-          logger.warn({
-            [PHASE_B_LIVE_LOG_PREFIX]: true,
-            event: "FAILURE_STREAK_LOCK_CREATED",
-            commandId: args.commandId, userId: args.userId,
-            symbol: row.symbol, streak,
-          }, "Failure-streak breaker engaged — FAILURE_STREAK risk lock created (entries blocked by the risk-lock pre-gate)");
+          logger.warn(
+            {
+              [PHASE_B_LIVE_LOG_PREFIX]: true,
+              event: "FAILURE_STREAK_LOCK_CREATED",
+              commandId: args.commandId,
+              userId: args.userId,
+              symbol: row.symbol,
+              streak,
+            },
+            "Failure-streak breaker engaged — FAILURE_STREAK risk lock created (entries blocked by the risk-lock pre-gate)",
+          );
         }
       }
     } catch (e) {
-      logger.warn({
-        [PHASE_B_LIVE_LOG_PREFIX]: true,
-        event: "FAILURE_STREAK_ACCOUNTING_FAILED",
-        commandId: args.commandId, userId: args.userId,
-        error: e instanceof Error ? e.message : String(e),
-      }, "failure-streak accounting failed — result recording unaffected");
+      logger.warn(
+        {
+          [PHASE_B_LIVE_LOG_PREFIX]: true,
+          event: "FAILURE_STREAK_ACCOUNTING_FAILED",
+          commandId: args.commandId,
+          userId: args.userId,
+          error: e instanceof Error ? e.message : String(e),
+        },
+        "failure-streak accounting failed — result recording unaffected",
+      );
     }
   }
 
-  return { ok: true, command: updated };
+  return {
+    ok: true,
+    command: updated,
+    receiptPersisted: true,
+    positionSettlement,
+    positionSettlementReason,
+    settlementRecovery,
+  };
 }
+
 
 export async function cancelLiveCommand(args: { userId: number; commandId: string; reason: string }) {
   const row = await loadOwned(args.userId, args.commandId);

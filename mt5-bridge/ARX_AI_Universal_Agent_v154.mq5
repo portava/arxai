@@ -59,6 +59,8 @@
 #property description "ARX AI Universal MT5 Agent v1.54 — supports ALL 21 native MT5 candle timeframes (M1-MN1) in producer + live v2 stream; CandleTimeframes input selects the streamed set (requires matching server enum)."
 
 #include <Trade\Trade.mqh>
+#include "ArxManagementTarget.mqh"
+#include "ArxTradeResult.mqh"
 
 //─── Connection inputs ─────────────────────────────────────────────
 input string  BridgeBaseUrl              = "";       // e.g. https://your.replit.app
@@ -277,6 +279,7 @@ string BuildCapabilitiesJson()
    s += "\"pendingOrderSync\":true,";
    s += "\"selfTest\":true,";
    s += "\"health\":true,";
+   s += "\"supportsManagementTargetV1\":true,";
    s += "\"commandIdempotency\":true,";
    s += "\"magicCommentTagging\":true,";
    // Honestly NOT implemented in this build → reported false so ARX hides them:
@@ -435,17 +438,27 @@ void PushSnapshots()
 void PollAndExecute()
 {
    string resp = GetJson("/api/mt5/commands");
-   if(StringLen(resp) == 0) return;
-   int pos = 0;
-   while(true) {
-      int s = StringFind(resp, "\"id\":", pos);
-      if(s < 0) break;
-      int sliceEnd = StringFind(resp, "},{", s);
-      if(sliceEnd < 0) sliceEnd = StringFind(resp, "}]", s);
-      if(sliceEnd < 0) sliceEnd = StringLen(resp);
-      string slice = StringSubstr(resp, s, sliceEnd - s + 1);
-      pos = sliceEnd + 1;
-      HandleCommand(slice);
+   string commands; bool found;
+   if(!ArxJsonMember(resp,"commands",commands,found) || !found ||
+      StringLen(commands)<2 || StringGetCharacter(commands,0)!='[') return;
+   // Validate the entire bounded batch before any command runs. A nested
+   // object/string containing `},{` or `id` is never a command boundary.
+   for(int pass=0;pass<2;pass++) {
+      int p=1, count=0; ArxJsonSpace(commands,p);
+      if(StringGetCharacter(commands,p)==']') return;
+      while(p<StringLen(commands)) {
+         int start=p;
+         if(StringGetCharacter(commands,p)!='{' || !ArxJsonValue(commands,p,1) || ++count>50) return;
+         if(pass==1) HandleCommand(StringSubstr(commands,start,p-start));
+         ArxJsonSpace(commands,p);
+         if(p>=StringLen(commands)) return;
+         ushort separator=StringGetCharacter(commands,p++);
+         if(separator==']') break;
+         if(separator!=',') return;
+         ArxJsonSpace(commands,p);
+      }
+      ArxJsonSpace(commands,p);
+      if(p!=StringLen(commands)) return;
    }
 }
 
@@ -463,16 +476,20 @@ void HandleCommand(const string slice)
 
    // ── Idempotency: never execute the same command twice ──
    if(WasCmdSeen(cmdId)) {
-      PostResultStruct(cmdId, "REJECTED", "DUPLICATE_COMMAND", 0,
-         "Command already processed.", "Duplicate commandId ignored (idempotency).",
-         action, "", "", 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      if(ReplayTradeEvidence(cmdId)) return;
+      PostResultStruct(cmdId,"LIVE_UNKNOWN","DUPLICATE_EVIDENCE_UNAVAILABLE",0,
+         "Command already attempted; execution evidence is unavailable.","RAM history is not durable settlement evidence.",
+         action,"","",0,0,0,0,0,0,0,0,0);
       return;
    }
 
    // ── Expiry: reject stale commands (retry/reconnect safety) ──
    long createdAtEpoch = JsonLong(slice, "createdAtEpoch");
    if(createdAtEpoch > 0) {
-      long ageSec = (long)TimeCurrent() - createdAtEpoch;
+      // createdAtEpoch is UTC; TimeCurrent() is broker time, so compare in GMT.
+      long nowEpoch = (long)TimeGMT();
+      if(nowEpoch <= 0) nowEpoch = (long)TimeCurrent();
+      long ageSec = nowEpoch - createdAtEpoch;
       if(ageSec > CommandExpirySeconds) {
          RememberCmd(cmdId);
          PostResultStruct(cmdId, "EXPIRED", "COMMAND_EXPIRED", 0,
@@ -810,20 +827,8 @@ void HandleOpenMarket(long cmdId, const string slice)
              ? trade.Buy(lot, p.resolvedSymbol, price, sl, tp, cmt)
              : trade.Sell(lot, p.resolvedSymbol, price, sl, tp, cmt);
 
-   if(ok && trade.ResultRetcode() == TRADE_RETCODE_DONE) {
-      lastSuccessAction = "OPEN_MARKET";
-      PostResultStruct(cmdId, "FILLED", "", (long)trade.ResultOrder(),
-         "Order filled.", StringFormat("retcode=%d deal=%I64u", trade.ResultRetcode(), trade.ResultDeal()),
-         "OPEN_MARKET", symbol, p.resolvedSymbol, lot, p.minVol, p.maxVol, p.stepVol,
-         p.bid, p.ask, p.tradeMode, p.fillingMode, p.stopsLevel);
-   } else {
-      lastErrorSeen = StringFormat("OPEN_MARKET %s retcode=%d", p.resolvedSymbol, trade.ResultRetcode());
-      PostResultStruct(cmdId, "REJECTED", "BROKER_REJECTED", 0,
-         "The broker rejected this order.",
-         StringFormat("retcode=%d comment=%s lastErr=%d", trade.ResultRetcode(), trade.ResultComment(), GetLastError()),
-         "OPEN_MARKET", symbol, p.resolvedSymbol, lot, p.minVol, p.maxVol, p.stepVol,
-         p.bid, p.ask, p.tradeMode, p.fillingMode, p.stopsLevel);
-   }
+   PostTradeEvidence(cmdId,"ENTRY",ok,0,lot);
+
 }
 
 //+------------------------------------------------------------------+
@@ -879,17 +884,15 @@ void HandleClosePosition(long cmdId, const string slice)
          "That position is no longer open.", StringFormat("ticket %I64u not found.", ticket),
          "CLOSE_POSITION", "", "", 0,0,0,0,0,0,0,0,0); return;
    }
-   bool ok = trade.PositionClose(ticket);
-   if(ok && trade.ResultRetcode() == TRADE_RETCODE_DONE) {
-      lastSuccessAction = "CLOSE_POSITION";
-      PostResultStruct(cmdId, "CLOSED", "", (long)trade.ResultOrder(),
-         "Position closed.", StringFormat("retcode=%d", trade.ResultRetcode()),
-         "CLOSE_POSITION", "", "", 0,0,0,0,0,0,0,0,0);
-   } else {
-      PostResultStruct(cmdId, "REJECTED", "BROKER_REJECTED", 0,
-         "The broker rejected the close.", StringFormat("retcode=%d comment=%s", trade.ResultRetcode(), trade.ResultComment()),
-         "CLOSE_POSITION", "", "", 0,0,0,0,0,0,0,0,0);
+   bool boundManagement; string managementReason;
+   if(!ArxManagementPreflight(slice,"CLOSE_POSITION",ticket,0,0,boundManagement,managementReason)) {
+      PostResultStruct(cmdId,"REJECTED",managementReason,0,"Automatic position target no longer matches this terminal.","",
+         "CLOSE_POSITION","","",0,0,0,0,0,0,0,0,0); return;
    }
+   double requested=PositionGetDouble(POSITION_VOLUME);
+   bool ok = trade.PositionClose(ticket);
+   PostTradeEvidence(cmdId,"CLOSE",ok,ticket,requested);
+
 }
 
 void HandlePartialClose(long cmdId, const string slice)
@@ -1048,14 +1051,14 @@ void HandleModifyProtection(long cmdId, const string slice)
    // Preserve existing SL or TP when one side is omitted (0 = "leave as is").
    if(sl == 0) sl = PositionGetDouble(POSITION_SL);
    if(tp == 0) tp = PositionGetDouble(POSITION_TP);
-   bool ok = trade.PositionModify(ticket, sl, tp);
-   if(ok && trade.ResultRetcode()==TRADE_RETCODE_DONE) {
-      lastSuccessAction="MODIFY_POSITION";
-      PostResultStruct(cmdId,"MODIFIED","",(long)ticket,"Stop loss / take profit updated.","",
-         "MODIFY_POSITION","","",0,0,0,0,0,0,0,0,0);
-   } else {
-      PostResultStruct(cmdId,"REJECTED","INVALID_STOPS",0,"Couldn't update SL/TP.",StringFormat("retcode=%d %s",trade.ResultRetcode(),trade.ResultComment()),"MODIFY_POSITION","","",0,0,0,0,0,0,0,0,0);
+   bool boundManagement; string managementReason;
+   if(!ArxManagementPreflight(slice,"MODIFY_POSITION",ticket,sl,tp,boundManagement,managementReason)) {
+      PostResultStruct(cmdId,"REJECTED",managementReason,0,"Automatic position target no longer matches this terminal.","",
+         "MODIFY_POSITION","","",0,0,0,0,0,0,0,0,0); return;
    }
+   bool ok = trade.PositionModify(ticket, sl, tp);
+   PostTradeEvidence(cmdId,"MODIFY",ok,ticket,0);
+
 }
 
 void HandleModifyPending(long cmdId, const string slice)
@@ -1368,6 +1371,33 @@ void PostPreflightReject(long cmdId, const string action, const string reqSym,
 //|  RESULT POSTERS                                                   |
 //+------------------------------------------------------------------+
 // Full structured result with all diagnostic fields.
+// Complete synchronous reports can be replayed only while retained in RAM.
+long g_tradeEvidenceIds[64];
+string g_tradeEvidenceBodies[64];
+int g_tradeEvidenceCount=0,g_tradeEvidenceNext=0;
+bool ReplayTradeEvidence(const long commandId)
+{
+   for(int i=0;i<g_tradeEvidenceCount;i++) if(g_tradeEvidenceIds[i]==commandId) {
+      PostJson("/api/mt5/command-result",g_tradeEvidenceBodies[i]); return true;
+   }
+   return false;
+}
+void PostTradeEvidence(const long commandId,const string kind,const bool ok,
+                       const ulong positionTicket,const double requested)
+{
+   int code=(int)trade.ResultRetcode();
+   ulong deal=trade.ResultDeal(),order=trade.ResultOrder();
+   double actualVolume=trade.ResultVolume(),price=trade.ResultPrice();
+   string outcome=ArxTradeResultOutcome(kind,ok,code,deal,order,requested,actualVolume,price);
+   ulong ticket=kind=="ENTRY"?order:positionTicket;
+   string body=StringFormat("{\"commandId\":%I64d,\"status\":\"%s\",\"mt5Ticket\":\"%I64u\",\"mt5PositionTicket\":\"%I64u\",%s,\"mt5Comment\":%s,\"eaVersion\":\"%s\"}",
+      commandId,outcome,ticket,positionTicket,ArxTradeResultFields(kind,ok,code,deal,order,requested,actualVolume,price),JsonEscape(trade.ResultComment()),EA_VERSION);
+   int slot=g_tradeEvidenceNext;
+   g_tradeEvidenceIds[slot]=commandId;g_tradeEvidenceBodies[slot]=body;
+   g_tradeEvidenceNext=(slot+1)%64;if(g_tradeEvidenceCount<64)g_tradeEvidenceCount++;
+   PostJson("/api/mt5/command-result",body);
+}
+
 void PostResultStruct(long cmdId, const string status, const string reasonCode, long mt5Ticket,
                       const string userMessage, const string adminMessage,
                       const string stage, const string requestedSymbol, const string resolvedSymbol,
@@ -1418,7 +1448,7 @@ string GetJson(const string path)
 {
    char post[]; char result[]; string respHeaders;
    string url = BridgeBaseUrl + path;
-   string reqHeaders = "X-MT5-Bridge-Token: " + BridgeToken + "\r\nAccept: application/json\r\n";
+   string reqHeaders = "X-MT5-Bridge-Token: " + BridgeToken + "\r\nAccept: application/json\r\nX-ARX-Management-Target: 1\r\n";
    ResetLastError();
    int code = WebRequest("GET", url, reqHeaders, 10000, post, result, respHeaders);
    if(code != 200) return "";

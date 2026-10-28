@@ -45,6 +45,8 @@ test("downloaded ZIP agrees with the manifest, hashes and real EA version", asyn
   assert.match(ea, /\/api\/mt5\/demo-commands-poll/);
   assert.match(manifest.note, /broker lifecycle evidence/);
   assert.ok(entries.has("ArxDemoExecution.mqh"));
+  assert.ok(entries.has("ArxManagementTarget.mqh"));
+  assert.ok(entries.has("ArxTradeResult.mqh"));
 });
 
 test("settings contain no credentials and keep every trading arm off", async () => {

@@ -142,10 +142,24 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // cap" probe no longer depends on lane ordering.
   { pkg: "@workspace/scripts", script: "test:one-click-concurrency" },
   // @workspace/api-server — DB-backed node:test safety + contract tests.
+  // Own disposable cluster: ignores inherited DATABASE_URL, disables TCP,
+  // removes fixtures on completion. Requires initdb/pg_ctl/createdb on PATH
+  // (or ARX_TEST_PG_BIN). A missing PostgreSQL runtime fails, never skips.
+  { pkg: "@workspace/api-server", script: "test:self-trade-entry-postgres" },
+  { pkg: "@workspace/api-server", script: "test:research-evidence-postgres" },
+  { pkg: "@workspace/api-server", script: "test:self-trade-management-postgres" },
+  { pkg: "@workspace/api-server", script: "test:mission-evidence:postgres" },
+  { pkg: "@workspace/api-server", script: "test:truth-memory-postgres" },
+  { pkg: "@workspace/api-server", script: "test:self-trade-accounting-postgres" },
+  { pkg: "@workspace/api-server", script: "test:backtest-evidence:postgres" },
+  { pkg: "@workspace/api-server", script: "test:result-evidence-postgres" },
   { pkg: "@workspace/api-server", script: "test:product-role" },
   { pkg: "@workspace/api-server", script: "test:mt5-broker-feed" },
   { pkg: "@workspace/api-server", script: "test:live-outcome-map" },
   { pkg: "@workspace/api-server", script: "test:bridged-close-ticket" },
+  // Scanner request races, shared budgets, quote honesty and fixture HTTP access.
+  { pkg: "@workspace/api-server", script: "test:scanner-quality" },
+  { pkg: "@workspace/api-server", script: "test:scanner-signal-integrity" },
   { pkg: "@workspace/api-server", script: "test:scanner-enrichment-concurrency" },
   { pkg: "@workspace/api-server", script: "test:scanner-truth-caps" },
   // Task #792 — thin-feed scanner honesty. Exercises the REAL scanner read path

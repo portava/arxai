@@ -672,9 +672,10 @@ describe("(14) the visible action label reveals the directional decision", () =>
       expect(result.consolidated.readId.length).toBeGreaterThan(0);
     });
 
-    it("readTimestamp is a positive integer in the recent past", () => {
+    it("readTimestamp uses the observation clock, defaulting to the current time", () => {
+      expect(resolveScannerTruth(inputs()).consolidated.readTimestamp).toBe(NOW);
       const before = Date.now();
-      const result = resolveScannerTruth(inputs());
+      const result = resolveScannerTruth(inputs({ nowMs: undefined }));
       const after = Date.now();
       expect(result.consolidated.readTimestamp).toBeGreaterThanOrEqual(before);
       expect(result.consolidated.readTimestamp).toBeLessThanOrEqual(after);

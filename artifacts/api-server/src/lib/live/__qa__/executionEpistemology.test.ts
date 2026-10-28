@@ -178,14 +178,15 @@ test("recordLiveCommandResult settles reservations ONLY through the pure matrix 
   const fnStart = pipelineSource.indexOf("export async function recordLiveCommandResult");
   assert.ok(fnStart > 0);
   const fnBody = pipelineSource.slice(fnStart);
-  assert.ok(
-    fnBody.includes("settleReservationForStatus(finalStatus)"),
-    "settlement must consult settleReservationForStatus",
-  );
-  assert.ok(
-    fnBody.includes("RESERVATION_HELD_UNKNOWN_OUTCOME"),
-    "the HOLD branch must exist (reservation held on unknown outcome)",
-  );
+  assert.ok(fnBody.includes("settleCommandJobs(updated.id, args.userId)"), "receipt must run its durable settlement intents");
+  assert.ok(fnBody.includes("enqueueResultSettlement(tx, updated"), "accepted receipt and intent must share the transaction");
+  const outbox = readFileSync(new URL("../resultSettlementOutbox.ts", import.meta.url), "utf8");
+  const exposure = outbox.slice(outbox.indexOf("async function reconcileExposure"), outbox.indexOf("export async function runClaimedSettlement"));
+  assert.match(exposure, /settleReservationForStatus\(\s*command.status/);
+  assert.match(exposure, /if \(action === "HOLD"\) return \{ heldReason: "OUTCOME_UNCONFIRMED" \}/);
+  assert.ok(exposure.indexOf('action === "HOLD"') < exposure.indexOf("update arx_dispatch_exposure_reservations"), "HOLD returns before exposure mutation");
+  assert.match(exposure, /user_id=\$\{command.userId\} and status='RESERVED'/);
+
 });
 
 test("sweepExpiredLiveCommands classifies through the pure helper and holds reservations on UNKNOWN (source pin)", () => {
@@ -247,12 +248,9 @@ test("buildExecutionEventRow refuses malformed rows with a reason, never a guess
 test("late/duplicate/conflicting broker results are RETAINED as events, not destroyed (source pin, audit G3)", () => {
   const fnStart = pipelineSource.indexOf("export async function recordLiveCommandResult");
   const fnBody = pipelineSource.slice(fnStart);
-  // Three retention sites: pre-CAS terminal duplicate, epistemic-state late
-  // result, and the lost-CAS-race branch (x2 — terminal and epistemic).
-  const retained = fnBody.split("\"LATE_RESULT_RETAINED\"").length - 1;
-  assert.ok(retained >= 3, `expected >=3 LATE_RESULT_RETAINED sites, found ${retained}`);
-  // The duplicate counter still exists (in-flight behavior unchanged) but the
-  // payload now also lands in execution_events.
+  assert.ok(fnBody.includes('"LATE_RESULT_RETAINED"'), "shared retained-report branch exists");
+  assert.ok(fnBody.includes("db.transaction"), "result and receipt share a transaction");
+  assert.ok(fnBody.includes("reportFingerprint"), "identical retries have durable report identity");
   assert.ok(fnBody.includes("duplicateResultCount"), "duplicate counter behavior unchanged");
   assert.ok(fnBody.includes("...reportedEvidence"), "the full reported payload is retained");
 });
@@ -263,7 +261,7 @@ test("every touched transition writes an execution event (source pin)", () => {
     "eventType: \"EA_PICKED_UP\"",
     "eventType: \"TTL_EXPIRED\"",
     "eventType: \"UNKNOWN_ENTERED_TTL_NO_RESULT\"",
-    "eventType: `RESULT_${finalStatus}`",
+    "`RESULT_${finalStatus}`",
   ]) {
     assert.ok(pipelineSource.includes(marker), `missing event write: ${marker}`);
   }

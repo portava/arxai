@@ -253,6 +253,11 @@ export interface PreviousSignalSnapshot {
 // ── The normalized signal object ─────────────────────────────────────────────
 
 export interface RubyMarketEdgeSignal {
+  /** First observation is not proof of when a setup formed. A read-side poll
+   * or failed persistence must never claim it saved durable continuity. */
+  continuity?: { basis: "source_bound_memory" | "current_observation"; saved: boolean };
+  /** Optional for compatibility; absent evidence cannot vote in a truth snapshot. */
+  marketEvidence?: import("../truth/truth.types.js").TruthReadEvidence | null;
   symbol: string;
   displayName: string;
   timeframe: string;

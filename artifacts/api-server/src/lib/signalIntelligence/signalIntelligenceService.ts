@@ -30,7 +30,9 @@ import type {
   SignalLifecycleStage,
   ConfidenceBand,
 } from "@workspace/domain/signal-intelligence";
-import { routeCandles, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
+import { prepareMarketRead, matchedMarketQuote, evidenceMatches, isCurrentBuild } from "../truth/marketReadEvidence.js";
+import { scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
+import { routeCandles, routeQuote, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
 import {
   scanSymbolTimeframe,
   decorateOpportunitiesWithNewsRisk,
@@ -38,11 +40,10 @@ import {
 } from "../marketScanner.js";
 import { evaluateScalpForSymbol } from "../scalp/scalpService.js";
 import type { ScalpResult } from "../scalp/scalpTypes.js";
-import { loadExecutionInput, currentPriceFor } from "../scalp/scalpServiceInputs.js";
+import { loadExecutionInput } from "../scalp/scalpServiceInputs.js";
 import { resolveSymbolFeedVerdict } from "../data/symbolFeedVerdict.js";
 import { hasRecentDerivTickFor } from "../data/providers/derivProvider.js";
-import { rawTrailingIntervalGap } from "../data/chart/candleNormalization.js";
-import { isChartTimeframe } from "../data/chart/timeframes.js";
+import type { TruthReadEvidence } from "@workspace/domain/truth";
 
 /** Default timeframe for a market-edge read (aligns with scanner/scalp). */
 export const DEFAULT_SIGNAL_TIMEFRAME = "M5";
@@ -97,11 +98,19 @@ function oppToScannerInput(opp: DecoratedOpportunity): SignalScannerInput {
   };
 }
 
-/** Load the per-user previous snapshot for the what-changed diff. */
+/** Private storage key, not a public timeframe. Legacy bare-timeframe rows lack
+ * provenance and remain history only. The existing text key allows durable
+ * source isolation without a schema migration or volatile process memory. */
+function memoryContextKey(evidence: TruthReadEvidence): string {
+  return `source-v1:${JSON.stringify([evidence.timeframe, evidence.source, evidence.sourceIdentity])}`;
+}
+
+/** Load the previous snapshot for this exact user/market/source context. */
 async function loadPreviousSnapshot(
   userId: number,
   symbol: string,
-  timeframe: string,
+  contextKey: string,
+  now: number,
 ): Promise<PreviousSignalSnapshot | null> {
   try {
     const rows = await db
@@ -111,12 +120,15 @@ async function loadPreviousSnapshot(
         and(
           eq(signalMemoryTable.userId, userId),
           eq(signalMemoryTable.symbol, symbol),
-          eq(signalMemoryTable.timeframe, timeframe),
+          eq(signalMemoryTable.timeframe, contextKey),
         ),
       )
       .limit(1);
     const row = rows[0];
-    if (!row) return null;
+    if (!row || row.userId !== userId || row.symbol !== symbol || row.timeframe !== contextKey) return null;
+    const generated = row.generatedAt.getTime();
+    const first = row.firstSeenAt?.getTime() ?? NaN;
+    if (!Number.isFinite(generated) || !Number.isFinite(first) || first > generated || generated > now) return null;
     return {
       bias: row.bias as SignalBias,
       direction: row.direction as SignalDirection,
@@ -139,7 +151,8 @@ async function loadPreviousSnapshot(
 async function persistSnapshot(
   userId: number,
   signal: RubyMarketEdgeSignal,
-): Promise<void> {
+  contextKey: string,
+): Promise<boolean> {
   try {
     const now = new Date();
     await db
@@ -147,7 +160,7 @@ async function persistSnapshot(
       .values({
         userId,
         symbol: signal.symbol,
-        timeframe: signal.timeframe,
+        timeframe: contextKey,
         bias: signal.bias,
         direction: signal.direction,
         regime: signal.regime,
@@ -178,8 +191,10 @@ async function persistSnapshot(
           updatedAt: now,
         },
       });
+    return true;
   } catch {
     // Best-effort continuity write. A failed persist must never fail the read.
+    return false;
   }
 }
 
@@ -224,37 +239,29 @@ export async function buildRubyMarketEdgeForUser(
       ? Promise.resolve(options.scalp)
       : evaluateScalpForSymbol(userId, { symbol, mode: "ANY" }).catch(() => null);
 
-  const [candleResult, opp, scalp, execution, price, previous] = await Promise.all([
+  const [candleResult, opp, scalp, execution, quoteResult] = await Promise.all([
     routeCandles(symbol, timeframe, SIGNAL_CANDLE_LIMIT),
     scanSymbolTimeframe(symbol, timeframe),
     scalpPromise,
     loadExecutionInput(userId),
-    currentPriceFor(symbol),
-    loadPreviousSnapshot(userId, symbol, timeframe),
+    routeQuote(symbol),
   ]);
 
-  // Real candles only (router never fabricates). Empty → honest blind read.
-  const candles: SignalCandle[] | null =
-    candleResult.ok && candleResult.candles.length > 0
-      ? candleResult.candles.map((c) => ({
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume ?? null,
-          time: c.time,
-        }))
-      : null;
-
-  let dataSource: string = candles ? "LIVE_FEED" : "AWAITING_FEED";
+  const now = Date.now();
+  const marketRead = prepareMarketRead(candleResult, symbol, timeframe, now);
+  const contextKey = marketRead ? memoryContextKey(marketRead.evidence) : null;
+  // Source identity exists only after the actual route resolves. A parallel
+  // user/symbol/timeframe-only lookup can import another provider's setup age.
+  const previous = contextKey ? await loadPreviousSnapshot(userId, symbol, contextKey, now) : null;
+  const candles: SignalCandle[] | null = marketRead?.openClosed ?? null;
+  const price = matchedMarketQuote(candleResult, quoteResult, symbol, now)?.mid ?? null;
+  let dataSource = marketRead?.trailingIntervals != null && marketRead.trailingIntervals <= 1 ? "LIVE_FEED" : "AWAITING_FEED";
   const derivBacked =
     (assetClass === "synthetic" || resolveDerivSymbol(symbol) !== null) &&
     (candleResult.primaryProvider === "deriv" ||
       candleResult.primaryProvider?.startsWith("deriv") === true);
-  if (candles && derivBacked) {
-    const trailingIntervals = isChartTimeframe(timeframe)
-      ? rawTrailingIntervalGap(candleResult.candles, candleResult.primaryProvider ?? null, timeframe)
-      : null;
+  if (marketRead && derivBacked) {
+    const trailingIntervals = marketRead.trailingIntervals;
     const verdict = resolveSymbolFeedVerdict({
       hasRecentTick: hasRecentDerivTickFor(symbol),
       trailingIntervals,
@@ -270,7 +277,9 @@ export async function buildRubyMarketEdgeForUser(
   // Scanner technical read — drop any SIMULATOR-tagged opp so sim data can't leak.
   let scanner: SignalScannerInput | null = null;
   let scannerOpp: DecoratedOpportunity | null = null;
-  if (opp && opp.dataSource !== "SIMULATOR") {
+  if (opp && marketRead && price != null && opp.symbol === symbol && opp.timeframe === timeframe &&
+      opp.featureSnapshot?.computedAt === marketRead.evidence.lastClosedCandleAt && opp.dataSource === "LIVE_FEED" && opp.sufficiency?.canShowTradeSetup &&
+      scannerRowSourceIdentity(opp) === marketRead.evidence.sourceIdentity && isCurrentBuild(opp.generatedAt, now)) {
     const [decorated] = await decorateOpportunitiesWithNewsRisk([opp]);
     scannerOpp = (decorated ?? opp) as DecoratedOpportunity;
     scanner = oppToScannerInput(scannerOpp);
@@ -279,7 +288,9 @@ export async function buildRubyMarketEdgeForUser(
     ? mapNewsRiskLevel(scannerOpp)
     : null;
 
-  const scalpInput: SignalScalpInput | null = scalp
+  const scalpInput: SignalScalpInput | null = scalp &&
+    evidenceMatches(scalp.marketEvidence, marketRead?.evidence, now, userId) &&
+    isCurrentBuild(scalp.generatedAt, now) && Date.parse(scalp.expiresAt) > now
     ? {
         flameStage: scalp.flame.flameStage,
         freshness: scalp.flame.freshness,
@@ -315,11 +326,13 @@ export async function buildRubyMarketEdgeForUser(
     execution: executionInput,
     newsRiskLevel,
     previous,
-    now: Date.now(),
+    now,
   });
 
-  if (!options.skipPersist) {
-    await persistSnapshot(userId, signal);
-  }
+  signal.marketEvidence = marketRead ? { ...marketRead.evidence, userId } : null;
+
+  const saved = !options.skipPersist && contextKey != null
+    ? await persistSnapshot(userId, signal, contextKey) : false;
+  signal.continuity = { basis: previous ? "source_bound_memory" : "current_observation", saved };
   return signal;
 }

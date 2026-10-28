@@ -726,10 +726,10 @@ paths:
       operationId: runMissionBacktest
       tags: [profit-missions]
       summary: >
-        Run a deterministic historical/simulated BACKTEST for the mission's
-        strategy via the shared backtest engine and persist an honestly-labelled
-        result (Phase 9). Advisory only — a backtest can NEVER grant live
-        permission or bypass any live gate. Focus-Lock + user/mission scoped.
+        Run a deterministic generated-price diagnostic for the mission strategy.
+        These are not observed market prices; costs and chronological holdouts are
+        not modelled. Persisted results cannot support promotion or strategy drift.
+        Focus-Lock and user/mission scoped; never grants live permission.
       parameters:
         - name: id
           in: path
@@ -742,7 +742,7 @@ paths:
             schema: { $ref: "#/components/schemas/MissionBacktestRequest" }
       responses:
         "201":
-          description: The persisted backtest result (historical/simulated label)
+          description: The persisted generated-price diagnostic (unverified)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MissionTestResult" }
@@ -773,9 +773,9 @@ paths:
       tags: [profit-missions]
       summary: >
         Aggregate a FORWARD test result from the mission's OWN executed-and-closed
-        trade drafts (real realised outcomes only) and persist an honestly-labelled
-        result with a small-sample warning when sparse (Phase 9). Never fabricates a
-        forward record. Advisory only. User/mission scoped.
+        trade drafts, filtered by any supplied strategy, symbol and timeframe.
+        Execution mode, risk coverage and net costs remain unverified. These
+        diagnostics cannot support promotion or strategy drift. User/mission scoped.
       parameters:
         - name: id
           in: path
@@ -2250,6 +2250,14 @@ paths:
           description: Continuation — the source echoed by a previous page (keeps one coherent series).
           schema:
             type: string
+        - name: sourceIdentity
+          in: query
+          description: Expected opaque source identity for strict chart continuation. This is not authorization; unverified historical sources return no bars.
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{64}$'
+            minLength: 64
+            maxLength: 64
       responses:
         "200":
           description: Paginated candle history with honest metadata
@@ -6950,7 +6958,7 @@ paths:
         - in: query
           name: marketGroup
           required: false
-          schema: { type: string, enum: [all, forex, metals, crypto, stocks, synthetic] }
+          schema: { type: string, enum: [all, forex, metals, indices, crypto, synthetic] }
         - in: query
           name: selectedSymbol
           required: false
@@ -11898,8 +11906,8 @@ components:
     MissionBacktestRequest:
       type: object
       description: >
-        Phase 9 backtest request. Runs a deterministic historical/simulated
-        backtest for the named strategy; advisory only — never a live grant.
+        Generated-price diagnostic request. Prices are synthetic; this is not
+        historical market validation and cannot support promotion or strategy drift.
       required: [strategyId, symbol, timeframe]
       properties:
         strategyId: { type: string }
@@ -11911,8 +11919,8 @@ components:
     MissionForwardRequest:
       type: object
       description: >
-        Phase 9 forward-test request. Aggregates the mission's OWN closed trade
-        drafts (real outcomes); all fields optional (derived from the drafts).
+        Aggregate the mission's own closed drafts. Optional fields are exact
+        source filters, never display labels. Unfiltered mixed contexts are labelled Mixed.
       properties:
         strategyKey: { type: string, nullable: true }
         symbol: { type: string, nullable: true }
@@ -11936,9 +11944,10 @@ components:
     MissionTestResult:
       type: object
       description: >
-        An honestly-labelled, append-only mission test result. `kind` distinguishes
-        BACKTEST (historical/simulated) from FORWARD (real realised). `sampleWarning`
-        is set when the sample is too small to be meaningful. Advisory only.
+        Append-only diagnostic history, projected through current evidence rules.
+        Generated prices and unreconciled closed drafts remain unverified. Legacy
+        verified and eligible flags are not trusted. Sample minima do not establish
+        statistical significance; current diagnostics cannot support promotion or drift.
       required:
         [id, missionId, kind, strategyKey, symbol, timeframe, label, sampleSize, isVerified, metrics, headline, notes, promotionEligible, createdAt]
       properties:
@@ -11957,6 +11966,13 @@ components:
         notes: { type: array, items: { type: string } }
         promotionEligible: { type: boolean }
         createdAt: { type: string }
+        evidence:
+          type: object
+          required: [version, source, validation]
+          properties:
+            version: { type: integer, enum: [1] }
+            source: { type: string, enum: [generated_prices, closed_mission_drafts, unknown] }
+            validation: { type: string, enum: [unverified] }
 
     MissionDriftResult:
       type: object
@@ -13853,24 +13869,26 @@ components:
     ChartTruthSubMetric:
       type: object
       description: A single weighted sub-metric contributing to the Chart Truth Score.
-      required: [key, label, weight, rawScore, weightedScore, detail]
+      required: [key, label, weight, rawScore, weightedScore, evidenceStatus, detail]
       properties:
         key: { type: string }
         label: { type: string }
-        weight: { type: number, description: Contribution weight (0–1, sum=1.0) }
-        rawScore: { type: number, description: Raw 0–100 score for this sub-metric }
-        weightedScore: { type: number, description: rawScore × weight }
+        weight: { type: number, minimum: 0, maximum: 1, description: "Contribution weight (0–1, sum=1.0)" }
+        rawScore: { type: [number, "null"], minimum: 0, maximum: 100, description: Measured 0–100 score; null when this property has not been measured }
+        weightedScore: { type: [number, "null"], minimum: 0, maximum: 100, description: rawScore × weight; null evidence earns no aggregate points }
+        evidenceStatus: { type: string, enum: [measured, unavailable] }
         detail: { type: string, description: Plain-language explanation of the score }
 
     ChartTruthScore:
       type: object
       description: |
         Weighted 10-sub-metric score (0–100) answering "is the data real, fresh,
-        correctly mapped/timed/mirrored/rendered?" Derived entirely from Phase 1
-        signals — never fabricated.
+        correctly mapped/timed/mirrored/rendered?" Only measured properties earn
+        points. Unavailable properties have null sub-scores and weights are not
+        redistributed. This is an earned evidence score, not a probability.
         Labels: Verified (95–100), Healthy (85–94), Usable-but-watch (75–84),
         Degraded (60–74), Read-blocked (<60).
-      required: [score, label, subMetrics, primaryConcern, note]
+      required: [score, label, subMetrics, evidenceCoverage, unmeasuredKeys, primaryConcern, note]
       properties:
         score: { type: number, description: Aggregate weighted 0–100 score }
         label:
@@ -13879,6 +13897,10 @@ components:
         subMetrics:
           type: array
           items: { $ref: "#/components/schemas/ChartTruthSubMetric" }
+        evidenceCoverage: { type: number, minimum: 0, maximum: 1, description: Fraction of total weight with measured evidence (0–1) }
+        unmeasuredKeys:
+          type: array
+          items: { type: string }
         primaryConcern: { type: ["string", "null"], description: Worst sub-metric detail, or null when all healthy }
         note: { type: string }
 
@@ -14045,6 +14067,16 @@ components:
         latencyMs: { type: ["number", "null"] }
         requestedLimit: { type: integer }
         candleCount: { type: integer }
+        marketEvidence:
+          type: ["object", "null"]
+          description: Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.
+          required: [symbol, timeframe, source, sourceIdentity, lastClosedCandleAt]
+          properties:
+            symbol: { type: string }
+            timeframe: { type: string }
+            source: { type: string }
+            sourceIdentity: { type: string }
+            lastClosedCandleAt: { type: string }
         candles:
           type: array
           items: { $ref: "#/components/schemas/ChartCandle" }
@@ -14079,6 +14111,17 @@ components:
         source:
           type: ["string", "null"]
           description: The single source this page was served from (provenance).
+        historyEvidence:
+          type: ["object", "null"]
+          description: Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.
+          required: [symbol, timeframe, source, sourceIdentity, lastClosedCandleAt, scope]
+          properties:
+            symbol: { type: string }
+            timeframe: { type: string }
+            source: { type: string }
+            sourceIdentity: { type: string, pattern: '^[a-f0-9]{64}$' }
+            lastClosedCandleAt: { type: string }
+            scope: { type: string, enum: [public_provider] }
         candles:
           type: array
           description: Ascending by time.
@@ -19437,6 +19480,20 @@ components:
         createdAt:      { type: string }
         updatedAt:      { type: string }
 
+    BacktestEvidence:
+      type: object
+      required: [version, classification, verification, comparisonEligible, source, pnlUnit, costs, holdout, limitations]
+      properties:
+        version: { type: integer, enum: [1] }
+        classification: { type: string, enum: [diagnostic] }
+        verification: { type: string, enum: [unverified] }
+        comparisonEligible: { type: boolean, enum: [false] }
+        source: { type: string, enum: [generated_prices, unattested_broker_history, unknown] }
+        pnlUnit: { type: string, enum: [price_units] }
+        costs: { type: string, enum: [not_modelled] }
+        holdout: { type: string, enum: [not_recorded] }
+        limitations: { type: array, items: { type: string } }
+
     BacktestRun:
       type: object
       required: [id, strategyId, symbol, timeframe, startTime, endTime, initialBalance, totalTrades, winningTrades, losingTrades, netProfitLoss, maxDrawdown, winRate, averageRr, expectancy, profitFactor, status, isVerified, createdAt]
@@ -19463,6 +19520,8 @@ components:
         # Which candle series fed the simulation: real broker bars or the
         # clearly-labeled deterministic synthetic generator.
         dataSource:     { type: string, enum: [broker, synthetic] }
+        evidence: { $ref: "#/components/schemas/BacktestEvidence" }
+        historyStatus: { type: string, enum: [available_unattested, unavailable, ambiguous_source, invalid_bars] }
         aiSummary:      { type: ["string", "null"] }
         equityCurve:
           type: array
@@ -19497,6 +19556,8 @@ components:
         equity:   { type: number }
         peak:     { type: number }
         drawdown: { type: number }
+        grossPriceUnits: { type: number, description: Cumulative unscaled P/L independent of the plotting offset. }
+        peakGrossPriceUnits: { type: number, description: Running peak of cumulative unscaled P/L. }
 
     BacktestTradeMarker:
       type: object
@@ -19515,6 +19576,7 @@ components:
       type: object
       required: [kind, label, initialBalance, finalBalance, maxDrawdown, equity, markers, summary]
       properties:
+        evidence: { $ref: "#/components/schemas/BacktestEvidence" }
         kind:           { type: string, enum: [BACKTEST] }
         label:          { type: string }
         initialBalance: { type: number }
@@ -22878,6 +22940,30 @@ components:
         totalAvailable: { type: number }
         totalRealizedPnl: { type: number }
         totalOpenPnl: { type: number }
+        accounting: { $ref: "#/components/schemas/SelfTradeAccountingCoverage" }
+
+    SelfTradeAccountingCoverage:
+      type: object
+      description: Recorded book coverage, not broker verification. Subtotals exclude unknown values and do not assert a complete account balance or usable risk budget.
+      required: [status, asOf, dayStart, closedTrades, recordedTrades, unknownTrades, unresolvedAccounting, unknownCloseTime, missingLedgers, unpostedTrades, unreconciledLedgers, unmatchedPostings, recordedRealizedPnl, recordedAvailableFunds, dailyRecordedPnl, dailyLossUsed, notes]
+      properties:
+        status: { type: string, enum: [RECORDED, INCOMPLETE, UNAVAILABLE] }
+        asOf: { type: string }
+        dayStart: { type: string, description: Inclusive UTC start of the current reporting day. }
+        closedTrades: { type: integer }
+        recordedTrades: { type: integer }
+        unknownTrades: { type: integer }
+        unresolvedAccounting: { type: integer }
+        unknownCloseTime: { type: integer }
+        missingLedgers: { type: integer, description: Missing or invalid ledgers. }
+        unpostedTrades: { type: integer, description: Numeric closed outcomes without exactly one matching ledger posting. }
+        unreconciledLedgers: { type: integer, description: Ledgers whose realized subtotal or posting currency does not reconcile. }
+        unmatchedPostings: { type: integer, description: Realized postings without one matching usable closed execution for the same agent. }
+        recordedRealizedPnl: { type: number, nullable: true, description: Recorded ledger subtotal in USD. An incomplete subtotal is not total realized performance. }
+        recordedAvailableFunds: { type: number, nullable: true, description: "Recorded ledger subtotal in USD, not independently verified withdrawable or tradeable capital." }
+        dailyRecordedPnl: { type: number, nullable: true, description: Recorded execution P/L subtotal from dayStart through asOf; unknown outcomes are excluded. }
+        dailyLossUsed: { type: number, nullable: true, description: Nonnegative net recorded loss for the current UTC day; unavailable when coverage is incomplete. }
+        notes: { type: array, items: { type: string } }
 
     SelfTradeAgent:
       type: object
@@ -22951,6 +23037,7 @@ components:
       required: [agent]
       properties:
         agent: { $ref: "#/components/schemas/SelfTradeAgent" }
+        accounting: { $ref: "#/components/schemas/SelfTradeAccountingCoverage" }
         settings:
           oneOf:
             - { $ref: "#/components/schemas/SelfTradeAgentSettings" }
@@ -23269,6 +23356,10 @@ components:
         closePrice: { type: number, nullable: true }
         realizedPnl: { type: number, nullable: true }
         blockReason: { type: string, nullable: true }
+        managementNote:
+          type: string
+          nullable: true
+          description: Broker-confirmation or review status for an outstanding management request; never an execution confirmation.
         openedAt: { type: string, nullable: true }
         filledAt: { type: string, nullable: true }
         closedAt: { type: string, nullable: true }

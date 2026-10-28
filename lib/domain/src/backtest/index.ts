@@ -17,6 +17,10 @@
 // SAFETY: pure, side-effect-free. Every aiSummary closes with the disclaimer
 // "Past performance does not guarantee future results."
 
+export * from "./evidence.js";
+export * from "./format.js";
+import { backtestDiagnosticSummary } from "./evidence.js";
+
 export interface BacktestCandle {
   time: string;
   open: number; high: number; low: number; close: number;
@@ -208,25 +212,19 @@ export function computeMetrics(
   };
 }
 
-// Spec rule: don't allow untested strategies to be marked verified without
-// enough data. We require ≥30 trades AND profitFactor > 1.0 (i.e., gross
-// wins must exceed gross losses) before VERIFIED. Caller may tighten further.
+// Retained as a sample-size reference, never an evidence or readiness gate.
 export const MIN_TRADES_FOR_VERIFICATION = 30;
 
-export function isVerificationEligible(m: { totalTrades: number; profitFactor: number }): boolean {
-  return m.totalTrades >= MIN_TRADES_FOR_VERIFICATION && m.profitFactor > 1.0;
+export function isVerificationEligible(_m: { totalTrades: number; profitFactor: number }): boolean {
+  // Counts and profit factor cannot prove provenance, execution realism,
+  // chronological holdout isolation or experiment reproducibility.
+  return false;
 }
 
 export function summarizeBacktest(opts: {
   strategyId: string; symbol: string; timeframe: string;
   metrics: BacktestRunMetrics;
+  dataSource?: unknown;
 }): string {
-  const { strategyId, symbol, timeframe, metrics } = opts;
-  const verified = isVerificationEligible(metrics);
-  const verdict = metrics.totalTrades < MIN_TRADES_FOR_VERIFICATION
-    ? `INSUFFICIENT DATA (${metrics.totalTrades}/${MIN_TRADES_FOR_VERIFICATION} trades — strategy cannot be marked verified yet)`
-    : verified
-      ? `Verification-eligible (PF ${metrics.profitFactor.toFixed(2)} > 1.0 over ${metrics.totalTrades} trades)`
-      : `NOT eligible for verification (PF ${metrics.profitFactor.toFixed(2)} ≤ 1.0)`;
-  return `Backtest of ${strategyId} on ${symbol} (${timeframe}): ${metrics.totalTrades} trades, win rate ${(metrics.winRate * 100).toFixed(1)}%, avg R:R ${metrics.averageRr.toFixed(2)}, net P&L ${metrics.netProfitLoss.toFixed(2)}, max drawdown ${metrics.maxDrawdown.toFixed(2)}, expectancy ${metrics.expectancy.toFixed(2)}, profit factor ${metrics.profitFactor.toFixed(2)}. ${verdict}. Past performance does not guarantee future results.`;
+  return backtestDiagnosticSummary({ ...opts, ...opts.metrics });
 }

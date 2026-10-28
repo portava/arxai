@@ -25,6 +25,8 @@
 // intervals the newest bar trails the current bar, plus — for synthetics — a
 // confirmed recent live tick), not from any hidden provider flag.
 
+import type { TruthReadEvidence } from "@workspace/domain/truth";
+import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
 import { routeCandles, classifySymbol, type AssetClass } from "../marketDataRouter.js";
 import {
   getDerivSymbolFeedStatus,
@@ -40,6 +42,7 @@ import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.
 import { buildFeedStatus, type FeedQuality } from "../freshness.js";
 import {
   getFormingBar,
+  isFormingTickSource,
   getFormingTickAgeMs,
   type FormingBarSnapshot,
 } from "./formingBarComposer.js";
@@ -86,6 +89,7 @@ export interface ChartFeedStatus {
 }
 
 export interface ChartCandlesResponse {
+  marketEvidence?: TruthReadEvidence | null;
   symbol: string;
   displaySymbol: string;
   timeframe: ChartTimeframe;
@@ -114,6 +118,7 @@ function resolveDisplaySymbol(symbol: string, assetClass: AssetClass): string {
 }
 
 interface BuiltFeed {
+  marketEvidence: TruthReadEvidence | null;
   assetClass: AssetClass;
   displaySymbol: string;
   source: string | null;
@@ -162,9 +167,10 @@ function buildFormingTipCandle(
  * `includeFormingTip` (default FALSE) is the ONLY switch that folds the live
  * forming-bar tip onto the newest bar. It is passed `true` ONLY by the chart
  * display/feed-status surfaces. Every analysis caller (chart-intelligence,
- * flame signal, timeframe agreement, market overview, Ruby) leaves it false so
- * they keep consuming closed bars exclusively. truthResult + chartTruthScore are
- * always computed on the closed bars BEFORE any tip is appended.
+ * flame signal, timeframe agreement, market overview, Ruby) leaves it false.
+ * A provider may already include its unfinished interval; analysis consumers
+ * must still respect completion flags. marketEvidence refers only to accepted
+ * closed bars; truthResult + chartTruthScore precede any appended display tip.
  */
 async function buildChartFeed(
   symbol: string,
@@ -246,12 +252,13 @@ async function buildChartFeed(
   // WS was not independently ticking that exact symbol. A genuinely
   // stale/historical feed is unaffected — trailing-interval staleness below
   // still demotes it honestly and keeps it entry-blocked.
-  const derivBacked = synthetic && (source === "deriv" || (source?.startsWith("deriv") ?? false));
+  const derivBacked = synthetic && (source?.startsWith("deriv") ?? false);
   const derivSymbolStatus = derivBacked ? getDerivSymbolFeedStatus(symbol) : null;
   const hasLiveTick = derivSymbolStatus?.hasRecentTick ?? false;
 
-  // Trailing-gap + last-CLOSED-candle are computed BEFORE any forming tip so
-  // they always describe provider truth (the tip would pin trailing to 0).
+  // Trailing-gap + newest provider candle precede any appended display tip.
+  // A provider forming bar can have a scheduled future closeTime; that is not
+  // the closed-bar observation carried separately in marketEvidence.
   const trailing = trailingIntervalGap(candles, timeframe, now);
   const lastCandle = candles[candles.length - 1] ?? null;
   const lastCandleTime = lastCandle ? lastCandle.closeTime : null;
@@ -265,20 +272,13 @@ async function buildChartFeed(
   // later naturally supersedes the tip (its openMs moves past the tip → ignore),
   // so there is never an orphan duplicate.
   //
-  // PROVIDER SCOPE (Theme C3.2): the append gate is deliberately NOT keyed on
-  // the winning candle source. It used to require `source === "mt5_broker"`,
-  // which froze every Deriv-fed chart between closed candles — up to a full
-  // interval of no motion on a perfectly healthy feed. The question that
-  // actually matters is "is there a REAL tick for this symbol's current
-  // interval", and getFormingBar already answers exactly that: a symbol with no
-  // folded ticks returns null and gets no tip. Basis stays coherent because the
-  // tip is folded from the same provider's stream that serves the closed bars
-  // beneath it (broker BID under broker candles, Deriv quotes under Deriv
-  // candles).
+  // The tip must share the winning history provider. Canonical symbols can
+  // exist at both MT5 and Deriv; a real tick from a different source is still
+  // the wrong price basis for this series. Unknown providers get no live tip.
   let formingTipPresent = false;
   let formingTickAgeMs: number | null = null;
-  if (includeFormingTip && lastCandle) {
-    const forming = getFormingBar(symbol, timeframe, now);
+  if (includeFormingTip && lastCandle && isFormingTickSource(source)) {
+    const forming = getFormingBar(symbol, timeframe, now, source);
     if (forming) {
       const tipOpenMs = forming.openMs;
       const lastClosedOpenMs = Date.parse(lastCandle.openTime);
@@ -308,7 +308,7 @@ async function buildChartFeed(
       }
       // tipOpenMs < lastClosedOpenMs → stale tip behind the closed feed; ignore.
       if (formingTipPresent) {
-        formingTickAgeMs = getFormingTickAgeMs(symbol, timeframe, now);
+        formingTickAgeMs = getFormingTickAgeMs(symbol, timeframe, now, source);
       }
     }
   }
@@ -376,7 +376,8 @@ async function buildChartFeed(
   // Phase 3: Chart Truth Score — derived from Phase 1 signals.
   const chartTruthScore = computeChartTruthScore(truthResult, status);
 
-  return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore };
+  return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore,
+    marketEvidence: prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null };
 }
 
 /**
@@ -387,7 +388,7 @@ async function buildChartFeed(
 function friendlyFeedSource(source: string | null): string {
   if (!source) return "no source";
   if (source === "mt5_broker") return "your broker's MetaTrader 5 feed";
-  if (source === "deriv") return "Deriv";
+  if (source === "deriv" || source === "deriv_public") return "Deriv";
   if (source.startsWith("assistant_real:")) {
     const sub = source.slice("assistant_real:".length).trim();
     return sub.length > 0 ? sub : "market-data provider";
@@ -443,6 +444,7 @@ export async function getChartCandles(
     candleCount: feed.candles.length,
     candles: feed.candles,
     feedStatus: feed.status,
+    marketEvidence: feed.marketEvidence,
     truthResult: feed.truthResult,
     chartTruthScore: feed.chartTruthScore,
   };

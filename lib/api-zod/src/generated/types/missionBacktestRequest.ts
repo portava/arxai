@@ -7,7 +7,7 @@
  */
 
 /**
- * Phase 9 backtest request. Runs a deterministic historical/simulated backtest for the named strategy; advisory only — never a live grant.
+ * Generated-price diagnostic request. Prices are synthetic; this is not historical market validation and cannot support promotion or strategy drift.
 
  */
 export interface MissionBacktestRequest {

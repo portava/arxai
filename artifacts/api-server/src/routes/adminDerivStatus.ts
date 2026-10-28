@@ -10,8 +10,8 @@
 //   - Sanitizes all error messages to strip any credential patterns.
 
 import { Router, type Request, type Response } from "express";
-import { getDerivFeedStatus } from "../lib/data/providers/derivProvider.js";
-import { getDerivWsClient } from "../lib/data/providers/derivWsClient.js";
+import { getDerivFeedStatus, getDerivSymbolFeedStatus, DERIV_SYNTHETIC_SYMBOLS } from "../lib/data/providers/derivProvider.js";
+import { getDerivFeedClient } from "../lib/data/providers/derivFeedClient.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
@@ -41,27 +41,24 @@ router.get("/admin/deriv-status", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const status = getDerivFeedStatus();
   // Runtime-discovery visibility (audit G1) — read straight from the client.
-  const client = getDerivWsClient();
+  const client = getDerivFeedClient();
   const discovery = client.getLastDiscovery();
   const discoveryValidation = client.getLastDiscoveryValidation();
 
   // Friendly blocker reasons for admin
   const blockers: string[] = [];
-  if (!status.appIdConfigured)    blockers.push("DERIV_APP_ID not configured in Replit Secrets.");
-  if (!status.apiTokenConfigured && status.mode !== "legacy")
-    blockers.push("DERIV_API_TOKEN not configured — required for new PAT API mode.");
-  // NOTE: no OTP flow exists — the invented OTP endpoint was removed. PAT auth
-  // happens via the WS `authorize` request; DERIV_ACCOUNT_ID is not consulted
-  // by the current client, so its absence is never reported as a blocker.
-  if (status.errorMessage?.includes("Unauthorized"))
-    blockers.push("Deriv authorize rejected the credentials — check that DERIV_APP_ID and DERIV_API_TOKEN are correct.");
-  if (status.errorMessage?.includes("not found"))
-    blockers.push("Deriv reported 'not found' — check DERIV_WS_URL and app id configuration.");
+  if (!status.configured) blockers.push("Public market data is disabled. Enable ARX_DERIV_PUBLIC_DATA_ENABLED in development configuration.");
+  if (status.mode === "public" && status.activeSymbolsError) blockers.push("Public discovery has not completed.");
+  if (status.errorMessage) blockers.push("The market-data connection is not ready; see the sanitized error below.");
 
   res.json({
     ok:            true,
     health:        status.healthSummary,
     mode:          status.mode,
+    source:        status.source,
+    authorized:    status.authorized,
+    tradingAvailable: false,
+    perSymbol: DERIV_SYNTHETIC_SYMBOLS.map(s => ({ symbol: s.symbol, ...getDerivSymbolFeedStatus(s.symbol) })),
     configured:    status.configured,
     connected:     status.connected,
     credentials: {
@@ -92,7 +89,7 @@ router.get("/admin/deriv-status", async (req, res) => {
     // `validation` is null until a non-empty discovery has completed; the
     // mismatch lists are reported verbatim, never auto-corrected.
     discovery: {
-      loaded:      discovery != null,
+      loaded:      client.isActiveSymbolsLoaded(),
       fetchedAt:   discovery?.fetchedAt ?? null,
       ageMs:       client.getLastDiscoveryAgeMs(),
       symbolCount: discovery ? discovery.symbols.length : null,
@@ -106,13 +103,10 @@ router.get("/admin/deriv-status", async (req, res) => {
     },
     message:          status.message,
     blockers,
-    setupInstructions: blockers.length > 0 ? [
-      "1. Go to developers.deriv.com and create an API app.",
-      "2. Add DERIV_APP_ID = your alphanumeric app ID to Replit Secrets.",
-      "3. Add DERIV_API_TOKEN = your PAT token (starts with pat_) to Replit Secrets.",
-      "4. Optionally add DERIV_ACCOUNT_ID if required.",
-      "5. Set DERIV_API_MODE=new (or leave unset for auto-detection).",
-      "6. Restart the server.",
+    setupInstructions: !status.configured ? [
+      "1. In the development workspace configuration, set ARX_DERIV_PUBLIC_DATA_ENABLED=true.",
+      "2. Restart the development server, then test the connection here.",
+      "Public quotes and candles need no app ID, token or account ID. This does not connect a trading account or enable orders.",
     ] : [],
   });
 });
@@ -120,7 +114,7 @@ router.get("/admin/deriv-status", async (req, res) => {
 // Active connection check — triggers ensureConnection and waits briefly
 router.post("/admin/deriv-status/check", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const client = getDerivWsClient();
+  const client = getDerivFeedClient();
   client.ensureConnection();
   // Wait up to 3s for connection
   await new Promise(r => setTimeout(r, 3000));
@@ -138,7 +132,7 @@ router.post("/admin/deriv-status/check", async (req, res) => {
 // for PAT/credential mismatches instead of a synthetic blocker message.
 router.post("/admin/deriv-status/probe", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const client = getDerivWsClient();
+  const client = getDerivFeedClient();
   const result = await client.probe();
   res.json({
     ok: true,

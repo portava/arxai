@@ -27,7 +27,7 @@ export interface AaciChartHandshake {
   HistoricalLiveMerge: ChartHandshakeVerdict;
   /** Broker price alignment — chart close vs MT5 bid/ask. */
   BrokerPriceAlignment: ChartHandshakeVerdict;
-  /** Render accuracy proxy (Phase 2) — outlier wicks, historic shift. */
+  /** Actual renderer evidence; source-bar shape alone cannot prove this. */
   RenderHealth: ChartHandshakeVerdict;
   /** Ruby read allowed — confidentReadAllowed from gate. */
   RubyReadAllowed: ChartHandshakeVerdict;
@@ -39,6 +39,15 @@ export interface AaciChartHandshake {
    * WARN when ≥1 WARN and no FAIL. FAIL when ≥1 FAIL.
    */
   overall: ChartHandshakeVerdict;
+
+  /**
+   * Rollup of the nine checks about the candle data itself, i.e. every field
+   * except RenderHealth. Server-side reads (Ruby) consume candles, not pixels,
+   * so client renderer telemetry they never use cannot gate them. This never
+   * turns an unmeasured RenderHealth into a PASS: `overall` still carries it,
+   * and a measured renderer FAIL still fails this rollup.
+   */
+  sourceOverall: ChartHandshakeVerdict;
 
   /** Compact Chart Truth Score (0–100) for AACI market-truth weighting. */
   chartTruthScore: number;
@@ -61,7 +70,7 @@ function boolToVerdict(pass: boolean, failMode: "FAIL" | "WARN" = "FAIL"): Chart
 /** Find a sub-metric raw score by key from the subMetrics array. */
 function subMetricScore(score: ChartTruthScore, key: string): number | null {
   const m = score.subMetrics.find((s) => s.key === key);
-  return m != null ? m.rawScore : null;
+  return m?.evidenceStatus === "measured" && Number.isFinite(m.rawScore) ? m.rawScore : null;
 }
 
 function scoreToVerdict(
@@ -69,7 +78,7 @@ function scoreToVerdict(
   passThreshold = 75,
   warnThreshold = 50,
 ): ChartHandshakeVerdict {
-  if (rawScore == null) return "WARN";
+  if (rawScore == null || !Number.isFinite(rawScore)) return "WARN";
   if (rawScore >= passThreshold) return "PASS";
   if (rawScore >= warnThreshold) return "WARN";
   return "FAIL";
@@ -80,7 +89,8 @@ function scoreToVerdict(
  *
  * Conservative: unknown evidence → WARN; clear gate failure → FAIL.
  * When `truthScore` is provided, per-sub-metric raw scores are used for
- * finer WARN/FAIL granularity. When absent, gate booleans alone decide.
+ * finer WARN/FAIL granularity. Missing measurements remain WARN even when
+ * the aggregate advisory gate has not failed.
  */
 export function buildChartHandshake(
   gate: ChartGateOutput,
@@ -90,33 +100,35 @@ export function buildChartHandshake(
 
   const OHLCIntegrity = truthScore
     ? scoreToVerdict(subMetricScore(truthScore, "ohlc_integrity"))
-    : boolToVerdict(gate.confidentReadAllowed, "WARN");
+    : "WARN";
 
   const TimeframeAccuracy = truthScore
     ? scoreToVerdict(subMetricScore(truthScore, "timeframe_accuracy"))
-    : boolToVerdict(gate.confidentReadAllowed, "WARN");
+    : "WARN";
 
-  const MirrorSync = boolToVerdict(gate.tradeConfirmationAllowed);
-
-  const FeedFreshness = boolToVerdict(gate.autonomousChartActionAllowed);
+  const FeedFreshness = !gate.autonomousChartActionAllowed ? "FAIL" : truthScore
+    ? scoreToVerdict(subMetricScore(truthScore, "feed_freshness")) : "WARN";
 
   const HistoricalLiveMerge = truthScore
     ? scoreToVerdict(subMetricScore(truthScore, "historical_live_merge"))
-    : boolToVerdict(gate.tradeConfirmationAllowed, "WARN");
+    : "WARN";
 
   const BrokerPriceAlignment = truthScore
     ? scoreToVerdict(subMetricScore(truthScore, "symbol_mirror_accuracy"))
-    : boolToVerdict(gate.tradeConfirmationAllowed, "WARN");
+    : "WARN";
+
+  const MirrorSync = gate.tradeConfirmationAllowed
+    ? rollup([HistoricalLiveMerge, BrokerPriceAlignment]) : "FAIL";
 
   const RenderHealth = truthScore
     ? scoreToVerdict(subMetricScore(truthScore, "render_accuracy"))
-    : boolToVerdict(gate.confidentReadAllowed, "WARN");
+    : "WARN";
 
   const RubyReadAllowed = boolToVerdict(gate.confidentReadAllowed);
 
   const SelfTradeChartAllowed = boolToVerdict(gate.selfTradeChartAllowed);
 
-  const all: ChartHandshakeVerdict[] = [
+  const source: ChartHandshakeVerdict[] = [
     ChartSource,
     OHLCIntegrity,
     TimeframeAccuracy,
@@ -124,10 +136,10 @@ export function buildChartHandshake(
     FeedFreshness,
     HistoricalLiveMerge,
     BrokerPriceAlignment,
-    RenderHealth,
     RubyReadAllowed,
     SelfTradeChartAllowed,
   ];
+  const all: ChartHandshakeVerdict[] = [...source, RenderHealth];
 
   return {
     ChartSource,
@@ -141,8 +153,10 @@ export function buildChartHandshake(
     RubyReadAllowed,
     SelfTradeChartAllowed,
     overall: rollup(all),
+    sourceOverall: rollup(RenderHealth === "FAIL" ? ["FAIL"] : source),
     chartTruthScore: gate.chartTruthScore,
     chartReadScore: gate.chartReadScore,
-    primaryBlockReason: gate.primaryBlockReason,
+    primaryBlockReason: gate.primaryBlockReason ?? (all.includes("WARN")
+      ? truthScore?.primaryConcern ?? "Some chart checks have no measured evidence." : null),
   };
 }

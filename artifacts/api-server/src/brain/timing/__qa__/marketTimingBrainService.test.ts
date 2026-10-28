@@ -6,6 +6,7 @@
 // injected so the composed read is fully deterministic and never touches a live
 // feed, the wall clock, or the database.
 
+import { marketFixture } from "../../../lib/truth/__qa__/marketEvidenceFixtures.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { computeTimingRead, type TimingBrainDeps } from "../marketTimingBrainService.js";
@@ -16,18 +17,7 @@ type NewsOverlay = Awaited<ReturnType<NonNullable<TimingBrainDeps["computeNewsHe
 type BroadFlow = Awaited<ReturnType<NonNullable<TimingBrainDeps["computeBroadFlowFn"]>>>;
 
 function candlesOk(n: number): CandlesResult {
-  const candles = Array.from({ length: n }, (_, i) => ({
-    time: new Date(Date.UTC(2026, 0, 5, 0, i)).toISOString(),
-    open: 100,
-    high: 100.5,
-    low: 99.5,
-    close: 100.2,
-    volume: 1000,
-  }));
-  return {
-    ok: true, symbol: "EURUSD", assetClass: "forex", candles,
-    primaryProvider: "test", attempts: [], userMessage: "", adminDetail: "",
-  };
+  return marketFixture({ count: n }).result;
 }
 
 const candlesEmpty: CandlesResult = {
@@ -36,11 +26,7 @@ const candlesEmpty: CandlesResult = {
 };
 
 function quoteOk(): QuoteResult {
-  return {
-    ok: true, symbol: "EURUSD", assetClass: "forex",
-    quote: { symbol: "EURUSD", bid: 1.0999, ask: 1.1001, spread: 0.0002, last: 1.1, timestamp: "" },
-    primaryProvider: "test", attempts: [], userMessage: "", adminDetail: "",
-  };
+  return marketFixture().quote;
 }
 
 const quoteEmpty: QuoteResult = {

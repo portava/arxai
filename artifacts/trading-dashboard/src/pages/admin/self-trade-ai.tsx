@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { STATUS_COLORS, type StatusTone } from "@/lib/design-tokens";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
+import { AccountingSummary } from "@/components/selfTrade/AccountingSummary";
 import { buildReasoningFromSelfTrade } from "@/lib/rubyReasoningBlock";
 import {
   useGetSelfTradeOverview,
@@ -101,8 +102,8 @@ function Tone({ tone, children }: { tone: StatusTone; children: React.ReactNode 
 }
 
 function usd(n: number | null | undefined): string {
-  const v = typeof n === "number" ? n : 0;
-  return v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+  return typeof n === "number" && Number.isFinite(n)
+    ? n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }) : "—";
 }
 
 function fmtTime(s: string | null | undefined): string {
@@ -157,7 +158,7 @@ function StatCard({ label, value, sub, tone = "neutral" }: { label: string; valu
   );
 }
 
-function OverviewTab() {
+export function OverviewTab() {
   const { data, isLoading, isError, refetch } = useGetSelfTradeOverview();
   if (isLoading) return <div className="py-10 text-center text-sm text-muted-foreground">Loading fleet overview…</div>;
   if (isError || !data) {
@@ -171,10 +172,10 @@ function OverviewTab() {
         <StatCard label="Total agents" value={String(data.totalAgents)} tone="info" />
         <StatCard label="Active" value={String(data.activeAgents)} tone="success" />
         <StatCard label="Funded" value={String(data.fundedAgents)} tone="premium" />
-        <StatCard label="Allocated" value={usd(data.totalAllocated)} sub={`${usd(data.totalAvailable)} available`} />
-        <StatCard label="Realized P&L" value={usd(data.totalRealizedPnl)} tone={data.totalRealizedPnl >= 0 ? "bullish" : "bearish"} />
-        <StatCard label="Open P&L" value={usd(data.totalOpenPnl)} tone={data.totalOpenPnl >= 0 ? "bullish" : "bearish"} />
+        <StatCard label="Recorded allocation" value={usd(data.totalAllocated)} sub={`${usd(data.totalAvailable)} recorded available`} />
+        <StatCard label="Recorded open P&L" value={usd(data.totalOpenPnl)} sub="Stored book value" />
       </div>
+      <AccountingSummary accounting={data.accounting} />
       <Card>
         <CardHeader><CardTitle className="text-sm">Fleet by status</CardTitle></CardHeader>
         <CardContent>
@@ -194,9 +195,9 @@ function OverviewTab() {
 }
 
 // ── Per-agent control panel (used inside Agents tab) ─────────────────────────
-function AgentDetailPanel({ agentId }: { agentId: number }) {
+export function AgentDetailPanel({ agentId }: { agentId: number }) {
   const qc = useQueryClient();
-  const { data: detail, isLoading } = useGetSelfTradeAgentById(agentId);
+  const { data: detail, isLoading, isError, refetch } = useGetSelfTradeAgentById(agentId);
   const { data: ledgerResp } = useGetSelfTradeAgentLedger(agentId);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -219,14 +220,15 @@ function AgentDetailPanel({ agentId }: { agentId: number }) {
     void qc.invalidateQueries({ queryKey: getGetSelfTradeAuditQueryKey() });
   }
 
-  if (isLoading || !detail) return <div className="py-6 text-center text-xs text-muted-foreground">Loading agent…</div>;
+  if (isLoading) return <div className="py-6 text-center text-xs text-muted-foreground">Loading agent…</div>;
+  if (isError || !detail) return <EmptyState title="Couldn't load agent" description="Current accounting coverage is unavailable." icon={<ShieldAlert className="h-8 w-8" />} action={{ label: "Retry", onClick: () => void refetch() }} />;
   const agent = detail.agent;
   const ledger = detail.ledger;
   const entries = (ledgerResp?.entries ?? []) as SelfTradeLedgerEntry[];
   const reasonOk = reason.trim().length >= 3;
   const amt = Number(amount);
   const amtOk = Number.isFinite(amt) && amt > 0;
-  const unfunded = !((ledger?.availableFunds ?? 0) > 0) && !((ledger?.allocatedFunds ?? 0) > 0);
+  const unfunded = ledger != null && Number.isFinite(ledger.availableFunds) && Number.isFinite(ledger.allocatedFunds) && ledger.availableFunds <= 0 && ledger.allocatedFunds <= 0;
 
   const mutErr = fund.error || defund.error || setAuto.error || setStat.error;
 
@@ -235,9 +237,9 @@ function AgentDetailPanel({ agentId }: { agentId: number }) {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard label="Status" value={agent.status} tone={statusTone(agent.status)} />
         <StatCard label="Autonomy" value={`L${agent.autonomyLevel}`} />
-        <StatCard label="Allocated" value={usd(ledger?.allocatedFunds)} sub={`${usd(ledger?.availableFunds)} available`} />
-        <StatCard label="Realized P&L" value={usd(ledger?.realizedPnl)} tone={(ledger?.realizedPnl ?? 0) >= 0 ? "bullish" : "bearish"} />
+        <StatCard label="Recorded allocation" value={usd(ledger?.allocatedFunds)} sub={`${usd(ledger?.availableFunds)} recorded available`} />
       </div>
+      <AccountingSummary accounting={detail.accounting} />
 
       {unfunded && (
         <Alert className="border-amber-500/30 bg-amber-500/5">
@@ -1234,7 +1236,10 @@ function AutonomousExecutionTab() {
                       <TableCell className={`text-right text-xs ${e.realizedPnl != null ? (e.realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400") : ""}`}>
                         {e.realizedPnl != null ? usd(e.realizedPnl) : "—"}
                       </TableCell>
-                      <TableCell className="max-w-[14rem] truncate text-xs text-muted-foreground">{e.blockReason ?? "—"}</TableCell>
+                      <TableCell className="max-w-[18rem] whitespace-normal text-xs text-muted-foreground">
+                        {e.managementNote && <span className="block text-amber-300">{e.managementNote}</span>}
+                        {e.blockReason ?? (e.managementNote ? null : "—")}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

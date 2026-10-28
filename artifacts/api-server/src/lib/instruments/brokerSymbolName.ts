@@ -107,12 +107,14 @@ let cache: Map<string, string> | null = null;
 let cachedAtMs = 0;
 const TTL_MS = 5 * 60 * 1000;
 
-async function getMap(): Promise<Map<string, string>> {
+type RegistryReader = Pick<typeof import("@workspace/db").db, "select">;
+
+async function getMap(reader?: RegistryReader): Promise<Map<string, string>> {
   const now = Date.now();
-  if (cache && now - cachedAtMs < TTL_MS) return cache;
+  if (!reader && cache && now - cachedAtMs < TTL_MS) return cache;
   const { db, symbolsTable } = await import("@workspace/db");
   const { logger } = await import("../logger.js");
-  const rows = await db
+  const rows = await (reader ?? db)
     .select({ symbol: symbolsTable.symbol, brokerSymbol: symbolsTable.brokerSymbol })
     .from(symbolsTable);
   const collisions = findCompactKeyCollisions(rows);
@@ -122,18 +124,20 @@ async function getMap(): Promise<Map<string, string>> {
       "broker_symbol_compact_key_collision: registry rows normalize to the same compact key with different broker symbols; resolution may be ambiguous",
     );
   }
-  cache = buildBrokerSymbolMap(rows);
-  cachedAtMs = now;
-  return cache;
+  const map = buildBrokerSymbolMap(rows);
+  // A transaction caller must neither acquire another pooled connection nor
+  // publish an uncommitted registry snapshot into the process cache.
+  if (!reader) { cache = map; cachedAtMs = now; }
+  return map;
 }
 
 /**
  * Translate an ARX-internal command symbol into the EXACT broker MT5 symbol.
  * No-op for forex; verbatim fallback for anything not in the registry.
  */
-export async function resolveBrokerSymbolName(stored: string): Promise<string> {
+export async function resolveBrokerSymbolName(stored: string, reader?: RegistryReader): Promise<string> {
   if (!stored || !stored.trim()) return stored;
-  const map = await getMap();
+  const map = await getMap(reader);
   return resolveFromMap(map, stored);
 }
 

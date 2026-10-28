@@ -79,8 +79,14 @@ export function checkOneClickConcurrency(): CheckResult {
   if (!/releaseReservation/.test(pipeline)) {
     violations.push("liveCommandPipeline.ts must call releaseReservation on dispatch failure");
   }
-  if (!/fulfillReservationByCommandId/.test(pipeline) || !/releaseReservationByCommandId/.test(pipeline)) {
-    violations.push("liveCommandPipeline.ts must settle reservations on EA result (fulfill/release-by-command-id)");
+  const resultBody = pipeline.slice(pipeline.indexOf("export async function recordLiveCommandResult"));
+  const outbox = read("artifacts/api-server/src/lib/live/resultSettlementOutbox.ts");
+  const resultExposure = outbox.slice(outbox.indexOf("async function reconcileExposure"), outbox.indexOf("export async function runClaimedSettlement"));
+  if (!resultBody.includes("enqueueResultSettlement(tx, updated") || !resultBody.includes("settleCommandJobs(updated.id, args.userId)") ||
+      !/settleReservationForStatus\(\s*command.status/.test(resultExposure) || !resultExposure.includes('action === "HOLD"') ||
+      !resultExposure.includes("user_id=${command.userId} and status='RESERVED'") ||
+      !resultExposure.includes("assertSettlementClaim(tx, command, claim)")) {
+    violations.push("result receipt must atomically enqueue and run fenced, owner-scoped resultExposure settlement through the existing HOLD/FULFILL/RELEASE matrix");
   }
   if (!/MASTER_ACCOUNT_NOT_MAPPED/.test(pipeline)) {
     violations.push("liveCommandPipeline.ts must FAIL CLOSED with MASTER_ACCOUNT_NOT_MAPPED when SHARED_MASTER_MT5 has no mapped master account");

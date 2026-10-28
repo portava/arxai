@@ -320,8 +320,9 @@ export const selfTradeDecisionsTable = pgTable("self_trade_decisions", {
 // - dispatch ≠ fill. A DISPATCHED row means the command reached the bridge; it
 //   becomes FILLED ONLY when a real brokerTicket + LIVE_FILLED arrives. Fills
 //   are never fabricated.
-// - The partial-unique index over active states blocks a second live dispatch
-//   for the same (agentId, idempotencyKey) — agent-layer exactly-once.
+// - Atomic entry admission locks the agent and checks every prior decision
+//   key, including terminal outcomes. The partial-unique index is a backstop
+//   for active keys; it is not the per-agent capacity or terminal-replay gate.
 export const SELF_TRADE_EXECUTION_STATUSES = [
   "PENDING_TICKET", // L1 prepare-only: draft staged, awaiting human confirm
   "DISPATCHED",     // sent to the bridge via the existing pipeline (NOT a fill)
@@ -375,9 +376,8 @@ export const selfTradeAgentExecutionsTable = pgTable("self_trade_agent_execution
   agentStatusIdx: index("self_trade_agent_executions_agent_status_idx").on(t.agentId, t.status),
   agentCreatedIdx: index("self_trade_agent_executions_agent_created_idx").on(t.agentId, t.createdAt),
   commandIdx: index("self_trade_agent_executions_command_idx").on(t.commandId),
-  // Agent-layer exactly-once: at most one active execution per (agent, key).
-  // Terminal states (REJECTED/BLOCKED/CLOSED/EXPIRED) are intentionally not
-  // covered so a fresh decision can re-attempt with a new key.
+  // Active-key backstop. entryReservation also checks terminal decision keys
+  // while holding the agent lock. A fresh decision must use a new key.
   idemActiveUq: uniqueIndex("self_trade_agent_executions_idem_active_uq")
     .on(t.agentId, t.idempotencyKey)
     .where(sql`status in ('PENDING_TICKET','DISPATCHED','FILLED')`),

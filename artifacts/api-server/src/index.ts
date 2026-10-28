@@ -1,3 +1,4 @@
+import { startResultSettlementWorker } from "./lib/live/resultSettlementWorker.js";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { ensureSafetyCoreInitialized } from "./lib/safetyCore";
@@ -138,6 +139,8 @@ ensureSafetyCoreInitialized()
       // dispatch freshness gate to be turned on at all (Ruling 10).
       // Opt-out via ARX_UNKNOWN_RECONCILER_ENABLED; disabling is logged loudly.
       startUnknownReconcilerWorker();
+      // Default OFF. Migration precedes release; this never sends broker work.
+      void startResultSettlementWorker();
       // MT5 candle-feed staleness + connectivity watchdog — raises an admin
       // alert when a previously-contributing symbol+timeframe series stops
       // pushing candles for longer than CANDLE_TTL (the chart then silently
@@ -182,9 +185,9 @@ ensureSafetyCoreInitialized()
       // before the first scanner pass. Non-blocking; lazy ensureConnection
       // remains the fallback. Never logs DERIV_APP_ID / DERIV_API_TOKEN.
       try {
-        if (process.env.DERIV_APP_ID && process.env.DERIV_APP_ID.trim()) {
-          import("./lib/data/providers/derivWsClient.js")
-            .then((m) => m.getDerivWsClient().ensureConnection())
+        if (process.env.ARX_DERIV_PUBLIC_DATA_ENABLED === "true" || process.env.DERIV_APP_ID?.trim()) {
+          import("./lib/data/providers/derivFeedClient.js")
+            .then((m) => m.getDerivFeedClient().ensureConnection())
             .catch((err) => logger.warn({ err: String(err) }, "Deriv WS eager bootstrap failed (non-fatal)"));
           import("./lib/data/providers/derivKeepAlive.js")
             .then((m) => m.startDerivKeepAlive())
