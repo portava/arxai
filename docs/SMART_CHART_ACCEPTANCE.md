@@ -276,9 +276,11 @@ is claimed without matching data, seed boundary and configuration.
 - Saving is local to the current browser/device, shared by users of that browser
   profile, and may be unavailable in restrictive browsing modes. It is not an
   account-backed cloud workspace or a backup service.
-- Scanner Chart still has its own renderer. Its shared sanitizer benefits from
-  this change, but the native renderer performance results must not be attributed
-  to Scanner Chart without its own migration and measurement.
+- Scanner now mounts the shared ARX Smart Chart with its original candle evidence
+  and a view-only bridge for existing Scanner controls. Earlier standalone native
+  renderer performance results must not be attributed to the integrated Scanner;
+  its own acceptance and measurement are separate. The old TradingView embeds
+  have also been removed from the four live-chart pages in this development branch.
 - The unused unified intelligence builder identified in the earlier audit is
   separate from the already active chart intelligence and rendering paths.
 
