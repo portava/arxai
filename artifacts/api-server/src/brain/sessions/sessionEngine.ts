@@ -80,12 +80,20 @@ export function analyzeSession(category: string, symbol: string): SessionAnalysi
     adjustedScore = Math.max(20, adjustedScore - 30);
   }
 
+  // The overlap window is scored 13:00-17:00 UTC (unchanged), but London
+  // closes at 16:00 UTC: the last hour is New York only and must not read as
+  // the highest-liquidity overlap.
+  const baseCaution =
+    sessionKey === "London/NY Overlap" && Math.floor(utcHour) >= 16
+      ? "London closed at 16:00 UTC — this hour is scored with the London/NY overlap window (13:00-17:00 UTC), but trading is New York only. USD pairs and US indices stay active; EUR/GBP liquidity is fading."
+      : sessionData.caution;
+
   return {
     session: sessionKey as any,
     utcHour: Math.round(utcHour * 10) / 10,
     liquidityLevel: sessionData.liquidity,
     recommendedMarkets: sessionData.best,
-    caution: isRecommended ? sessionData.caution : `${symbol} is not optimal for ${sessionKey} session. ${sessionData.caution}`,
+    caution: isRecommended ? baseCaution : `${symbol} is not optimal for ${sessionKey} session. ${baseCaution}`,
     sessionScore: adjustedScore,
   };
 }
