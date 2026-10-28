@@ -31,7 +31,47 @@ export type UnifiedPosition = {
   sourceCommandId: string | null;
   accountMode: "DEMO" | "LIVE";
   source: string;
+  /** When the bridge last reported this row (server: last_synced_at / mt5_state.lastSyncAt). */
+  observedAt?: string | null;
+  /** Server's absolute verdict on observedAt. Absent (older server) = unknown. */
+  freshness?: "FRESH" | "STALE" | "MISSING";
 };
+
+function fmtAgeShort(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m ago`;
+}
+
+export interface PositionReportState {
+  /** True only when the server marked the row FRESH. */
+  confirmed: boolean;
+  /** Status field text. */
+  status: string;
+  /** "Last reported" field text. */
+  lastReported: string;
+}
+
+// What the side card may say about whether this position is open right now.
+// The feed lists rows that passed the open-exposure predicate; "open now" is
+// only asserted when the bridge reported the row recently (server FRESH).
+export function positionReportState(p: Pick<UnifiedPosition, "observedAt" | "freshness">, nowMs = Date.now()): PositionReportState {
+  const observedMs = p.observedAt ? new Date(p.observedAt).getTime() : NaN;
+  const known = Number.isFinite(observedMs);
+  const lastReported = known
+    ? `${new Date(observedMs).toLocaleTimeString()} (${fmtAgeShort(nowMs - observedMs)})`
+    : "Not reported";
+  if (p.freshness === "FRESH" && known) {
+    return { confirmed: true, status: "Open — reported by bridge", lastReported };
+  }
+  if (known) {
+    return { confirmed: false, status: `Unconfirmed — last reported ${fmtAgeShort(nowMs - observedMs)}`, lastReported };
+  }
+  return { confirmed: false, status: "Unconfirmed — no bridge report time", lastReported };
+}
 
 interface Props {
   position: UnifiedPosition;
@@ -167,6 +207,7 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
   const rr = useMemo(() => calcRR(p.side, p.entryPrice, p.stopLoss, p.takeProfit), [p.side, p.entryPrice, p.stopLoss, p.takeProfit]);
 
   const openedAtLabel = p.openedAt ? new Date(p.openedAt).toLocaleString() : "—";
+  const report = positionReportState(p);
   const isLive = p.accountMode === "LIVE";
 
   const handleRefreshAnalysis = () => {
@@ -260,16 +301,21 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
           <Field label="Ticket" testid="text-position-ticket" value={p.brokerTicket ?? "—"} />
           <Field label="Lot size" testid="text-position-lot" value={p.lotSize?.toString() ?? "—"} />
           <Field label="Entry" testid="text-position-entry" value={p.entryPrice?.toString() ?? "—"} />
-          <Field label="Current" testid="text-position-current" value={p.currentPrice?.toString() ?? "—"} />
+          <Field label={report.confirmed ? "Current" : "Last reported price"} testid="text-position-current" value={p.currentPrice?.toString() ?? "—"} />
           <Field label="Stop loss" testid="text-position-sl" value={p.stopLoss?.toString() ?? "—"} />
           <Field label="Take profit" testid="text-position-tp" value={p.takeProfit?.toString() ?? "—"} />
-          <Field label="Floating P/L" testid="text-position-pnl" value={formatMoney(p.floatingPnl)}
-            valueClass={(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"} />
+          <Field label={report.confirmed ? "Floating P/L" : "Last reported P/L"} testid="text-position-pnl" value={formatMoney(p.floatingPnl)}
+            valueClass={p.floatingPnl == null ? "text-zinc-400" : p.floatingPnl >= 0 ? "text-emerald-300" : "text-rose-300"} />
           <Field label="Risk est." testid="text-position-risk" value={risk.text} title={risk.basis} />
           <Field label="R : R" testid="text-position-rr" value={rr} />
-          <Field label="Order type" testid="text-position-ordertype" value={p.side ? `MARKET_${p.side}` : "—"} />
+          {/* The unified feed carries no order type, so none is invented from the side. */}
+          <Field label="Order type" testid="text-position-ordertype" value="Not reported"
+            valueClass="text-zinc-400" title="The positions feed does not carry the order type that opened this position." />
+          <Field label="Last reported" testid="text-position-last-reported" value={report.lastReported}
+            valueClass={report.confirmed ? undefined : "text-amber-300"} />
           <Field label="Open time" testid="text-position-opentime" value={openedAtLabel} />
-          <Field label="Status" testid="text-position-status" value="OPEN" />
+          <Field label="Status" testid="text-position-status" value={report.status}
+            valueClass={report.confirmed ? undefined : "text-amber-300"} />
         </div>
 
         {isLive && (

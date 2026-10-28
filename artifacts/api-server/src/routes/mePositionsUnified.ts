@@ -41,6 +41,28 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Absolute per-row freshness. The relative stale-floor below only drops rows
+// that lag the NEWEST row, so when the whole bridge goes quiet every row still
+// passes it; each row therefore also carries when the bridge last reported it
+// and whether that is recent. The EA pushes a complete snapshot every ~5s, so
+// 30s matches the slot-summary snapshot window.
+export const UNIFIED_POSITION_FRESH_MS = 30_000;
+export type UnifiedPositionFreshness = "FRESH" | "STALE" | "MISSING";
+
+export function unifiedPositionFreshness(observedAt: Date | string | null | undefined, now = Date.now()): {
+  observedAt: string | null;
+  freshness: UnifiedPositionFreshness;
+} {
+  if (observedAt == null) return { observedAt: null, freshness: "MISSING" };
+  const d = observedAt instanceof Date ? observedAt : new Date(observedAt);
+  const ms = d.getTime();
+  if (!Number.isFinite(ms)) return { observedAt: null, freshness: "MISSING" };
+  return {
+    observedAt: d.toISOString(),
+    freshness: now - ms <= UNIFIED_POSITION_FRESH_MS ? "FRESH" : "STALE",
+  };
+}
+
 type DemoRaw = {
   ticket?: string | number | null;
   symbol?: string | null;
@@ -97,7 +119,9 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
     const t = r.observedAt ? new Date(r.observedAt).getTime() : 0;
     return t >= liveFloor;
   });
+  const nowMs = Date.now();
   const live = liveRows.map((r) => ({
+    ...unifiedPositionFreshness(r.observedAt, nowMs),
     scope: "live" as const,
     brokerTicket: r.ticket,
     symbol: r.symbol,
@@ -134,10 +158,14 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   const byTicket = new Map<string, typeof cmdRows[number]>();
   for (const c of cmdRows) if (c.brokerTicket) byTicket.set(String(c.brokerTicket), c);
 
+  // Demo rows come from one mt5_state snapshot; its lastSyncAt is when the
+  // bridge last reported all of them.
+  const demoObserved = unifiedPositionFreshness(demoState?.lastSyncAt ?? null, nowMs);
   const demo = positionsRaw.map((p) => {
     const ticket = p.ticket == null ? null : String(p.ticket);
     const matched = ticket ? byTicket.get(ticket) ?? null : null;
     return {
+      ...demoObserved,
       scope: "demo" as const,
       brokerTicket: ticket,
       symbol: p.symbol ?? null,

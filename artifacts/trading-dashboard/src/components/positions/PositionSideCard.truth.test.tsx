@@ -68,3 +68,36 @@ describe("PositionSideCard risk estimate", () => {
     expect(screen.getByTestId("text-position-risk").textContent).toBe("$100.00");
   });
 });
+
+describe("PositionSideCard status / order type / freshness", () => {
+  it("a row the bridge last reported 10 minutes ago is not asserted OPEN and shows its age", () => {
+    const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+    mount(pos({ symbol: "XAUUSD", lotSize: 0.1, entryPrice: 2400, stopLoss: 2390, observedAt: tenMinAgo, freshness: "STALE" }));
+    const status = screen.getByTestId("text-position-status").textContent ?? "";
+    expect(status).not.toBe("OPEN");
+    expect(status).toMatch(/^Unconfirmed — last reported 10m ago$/);
+    expect(screen.getByTestId("text-position-last-reported").textContent).toMatch(/10m ago/);
+    // The P/L and price labels say they are the last reported values.
+    expect(screen.getByText("Last reported P/L")).toBeTruthy();
+    expect(screen.getByText("Last reported price")).toBeTruthy();
+    expect(screen.queryByText("Floating P/L")).toBeNull();
+  });
+
+  it("a row with no freshness from the server is unconfirmed, never OPEN", () => {
+    mount(pos({}));
+    expect(screen.getByTestId("text-position-status").textContent).toBe("Unconfirmed — no bridge report time");
+  });
+
+  it("never invents an order type from the side", () => {
+    mount(pos({ side: "BUY" }));
+    const ot = screen.getByTestId("text-position-ordertype").textContent ?? "";
+    expect(ot).not.toBe("MARKET_BUY");
+    expect(ot).toBe("Not reported");
+  });
+
+  it("a freshly reported row reads open and keeps the live labels", () => {
+    mount(pos({ observedAt: new Date().toISOString(), freshness: "FRESH" }));
+    expect(screen.getByTestId("text-position-status").textContent).toBe("Open — reported by bridge");
+    expect(screen.getByText("Floating P/L")).toBeTruthy();
+  });
+});
