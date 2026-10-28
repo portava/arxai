@@ -13,7 +13,18 @@ type Coach = {
   suggestedRuleChanges: string[];
   confidenceCalibration: string;
   dataSource: string; generatedAt: string;
+  /** Server sets this when the trader has no journal rows at all. */
+  isEmpty?: boolean;
 };
+
+// The server reports "none" when no journal row carries a mistake tag. That is
+// an absence of data, not a scored result.
+export function mistakeLabel(raw: string | null | undefined): string {
+  if (typeof raw !== "string" || !raw.trim() || raw.trim().toLowerCase() === "none") {
+    return "No mistake tags recorded";
+  }
+  return raw;
+}
 
 // The coach summarises the trader's own Trade Journal rows. Name the source
 // the server reports; never assert one the response did not carry.
@@ -60,7 +71,24 @@ export default function AiCoach() {
       {err && <p className="text-sm text-rose-400">{err}</p>}
       {!coach && !err && <p className="text-sm text-muted-foreground">Loading coach summary…</p>}
 
-      {coach && (
+      {coach && coach.isEmpty === true && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">No journal entries to score yet</CardTitle>
+            <CardDescription>
+              Your trade journal has no rows, so there is nothing to call working or not working.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm">{coach.recommendedFocus}</p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Data source: {coachSourceLabel(coach.dataSource)} · checked {new Date(coach.generatedAt).toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {coach && coach.isEmpty !== true && (
         <>
           <div className="grid gap-4 md:grid-cols-2">
             <Card className="border-emerald-500/30">
@@ -82,7 +110,7 @@ export default function AiCoach() {
 
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Target className="h-5 w-5" /> Most common mistake</CardTitle></CardHeader>
-            <CardContent><p className="text-lg font-semibold">{coach.mostCommonMistake}</p></CardContent>
+            <CardContent><p className="text-lg font-semibold">{mistakeLabel(coach.mostCommonMistake)}</p></CardContent>
           </Card>
 
           <Card>
