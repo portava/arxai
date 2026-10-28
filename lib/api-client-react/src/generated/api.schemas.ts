@@ -10119,10 +10119,26 @@ export type TradeSnapshotSuggestions = {
 
 export interface TradeSnapshot {
   tradeId: number;
-  currentPrice: number;
-  rMultiple: number;
-  floatingPnl: number;
-  health: TradeHealth;
+  /**
+   * Last price from the market-data feed; null when no quote was available (never the entry price).
+   * @nullable
+   */
+  currentPrice: number | null;
+  /**
+   * Timestamp of the quote currentPrice came from; null when there is no quote.
+   * @nullable
+   */
+  quoteAt?: string | null;
+  /**
+   * Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.
+   * @nullable
+   */
+  priceUnavailableReason?: string | null;
+  /** @nullable */
+  rMultiple: number | null;
+  /** @nullable */
+  floatingPnl: number | null;
+  health: TradeHealth | null;
   primarySuggestion: string;
   invalidated: boolean;
   suggestions: TradeSnapshotSuggestions;

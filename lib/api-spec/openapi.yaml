@@ -19202,11 +19202,21 @@ components:
       required: [tradeId, currentPrice, rMultiple, floatingPnl, health, primarySuggestion, invalidated, suggestions]
       properties:
         tradeId: { type: integer }
-        currentPrice: { type: number }
-        rMultiple: { type: number }
-        floatingPnl: { type: number }
+        currentPrice:
+          type: ["number", "null"]
+          description: Last price from the market-data feed; null when no quote was available (never the entry price).
+        quoteAt:
+          type: ["string", "null"]
+          description: Timestamp of the quote currentPrice came from; null when there is no quote.
+        priceUnavailableReason:
+          type: ["string", "null"]
+          description: Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.
+        rMultiple: { type: ["number", "null"] }
+        floatingPnl: { type: ["number", "null"] }
         health:
-          $ref: "#/components/schemas/TradeHealth"
+          oneOf:
+            - { $ref: "#/components/schemas/TradeHealth" }
+            - { type: "null" }
         primarySuggestion: { type: string }
         invalidated: { type: boolean }
         suggestions:

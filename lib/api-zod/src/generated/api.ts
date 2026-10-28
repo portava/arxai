@@ -9926,14 +9926,34 @@ export const GetTradeSnapshotParams = zod.object({
 
 export const GetTradeSnapshotResponse = zod.object({
   tradeId: zod.number(),
-  currentPrice: zod.number(),
-  rMultiple: zod.number(),
-  floatingPnl: zod.number(),
-  health: zod.object({
-    score: zod.number(),
-    state: zod.enum(["healthy", "watching", "at_risk", "invalidated"]),
-    factors: zod.record(zod.string(), zod.number()),
-  }),
+  currentPrice: zod
+    .number()
+    .nullable()
+    .describe(
+      "Last price from the market-data feed; null when no quote was available (never the entry price).",
+    ),
+  quoteAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of the quote currentPrice came from; null when there is no quote.",
+    ),
+  priceUnavailableReason: zod
+    .string()
+    .nullish()
+    .describe(
+      "Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.",
+    ),
+  rMultiple: zod.number().nullable(),
+  floatingPnl: zod.number().nullable(),
+  health: zod.union([
+    zod.object({
+      score: zod.number(),
+      state: zod.enum(["healthy", "watching", "at_risk", "invalidated"]),
+      factors: zod.record(zod.string(), zod.number()),
+    }),
+    zod.null(),
+  ]),
   primarySuggestion: zod.string(),
   invalidated: zod.boolean(),
   suggestions: zod.object({

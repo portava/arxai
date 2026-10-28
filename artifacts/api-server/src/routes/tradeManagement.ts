@@ -70,6 +70,11 @@ router.post("/trade-management/:id/trail", async (req, res) => {
   const trade = await getTrade(id, req);
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
   const snap = await evaluateTrade(trade);
+  // No quote: a trail distance cannot be placed behind an unknown price.
+  if (snap.currentPrice == null) {
+    res.status(409).json({ error: "NO_CURRENT_QUOTE", message: snap.priceUnavailableReason });
+    return;
+  }
   const newStop = snap.suggestions.trail.newStop ?? trade.stopLoss;
   const updated = await manage(res, trade, { kind: "MOVE_STOP", newStop });
   if (!updated) return;
@@ -108,6 +113,12 @@ router.post("/trade-management/:id/close", async (req, res) => {
   void liveAllowed;
 
   const snap = await evaluateTrade(trade);
+  // No quote: closing would book the entry price and $0.00 as the result.
+  // Refuse instead of recording an invented close.
+  if (snap.currentPrice == null || snap.floatingPnl == null) {
+    res.status(409).json({ error: "NO_CURRENT_QUOTE", message: snap.priceUnavailableReason });
+    return;
+  }
   const status: "CLOSED_WIN" | "CLOSED_LOSS" = snap.floatingPnl >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
   const updated = await manage(res, trade, {
     kind: "CLOSE", status, pnl: Number(snap.floatingPnl.toFixed(2)), closedAt: new Date(),
