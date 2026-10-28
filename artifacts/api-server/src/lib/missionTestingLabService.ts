@@ -43,7 +43,7 @@ import {
 import type { Candle } from "./strategyEngine.js";
 import {
   GENERATED_PRICE_EVIDENCE, CLOSED_DRAFT_EVIDENCE, backtestToMissionMetrics,
-  projectMissionTestResult, roundMetric as round,
+  backtestRObservations, buildRStatisticsRecord, projectMissionTestResult, roundMetric as round,
 } from "./missionTestingEvidence.js";
 
 const KNOWN_STRATEGIES = [
@@ -183,6 +183,8 @@ export async function runMissionBacktest(args: RunBacktestArgs): Promise<Testing
 
   const sim = simulateBacktest(args.symbol, candles, signalFn, initialBalance);
   const metrics = backtestToMissionMetrics(sim.metrics, sim.trades, initialBalance);
+  // Sample uncertainty over trades with an observed R only (finite positive stop risk, finite P/L).
+  const robs = backtestRObservations(sim.trades);
   const summary = summarizeMissionTest({
     kind: "BACKTEST", strategyKey: strategyId, symbol: args.symbol,
     timeframe: args.timeframe, metrics, evidence: GENERATED_PRICE_EVIDENCE,
@@ -199,6 +201,7 @@ export async function runMissionBacktest(args: RunBacktestArgs): Promise<Testing
       seed, baseTimeMs, candleCount, minConfidence, initialBalance,
       symbol: args.symbol, timeframe: args.timeframe,
       costs: "not_modelled", chronologicalHoldout: "not_performed", pnlUnit: "price_units",
+      rStatistics: buildRStatisticsRecord(robs.values, robs.excludedCount),
     },
   });
   return { ok: true, result };
@@ -260,12 +263,14 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
   let equity = startingAmount;
   let peak = startingAmount;
   let maxDrawdownPct = 0;
+  // Exactly the rCount subset; missing R is never treated as 0R.
+  const rValues: number[] = [];
   for (const r of closed) {
     const pnl = r.pnl as number;
     if (pnl > 0) { winning += 1; grossWin += pnl; }
     else if (pnl < 0) { losing += 1; grossLoss += Math.abs(pnl); }
     if (r.rMultiple != null && Number.isFinite(r.rMultiple)) {
-      sumR += r.rMultiple; rCount += 1;
+      sumR += r.rMultiple; rCount += 1; rValues.push(r.rMultiple);
       if (r.rMultiple > 0) { winRSum += r.rMultiple; winRCount += 1; }
     }
     equity += pnl;
@@ -301,7 +306,8 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
     strategyKey, symbol, timeframe, metrics, summary,
     experiment: { version: 1, engine: "closed-draft-aggregate-v1", rObservedCount: rCount, closedDraftCount: total,
       filters: { strategyKey: args.strategyKey ?? null, symbol: args.symbol ?? null, timeframe: args.timeframe ?? null },
-      executionMode: "unverified", netCosts: "unverified" },
+      executionMode: "unverified", netCosts: "unverified",
+      rStatistics: buildRStatisticsRecord(rValues, total - rCount) },
   });
   return { ok: true, result };
 }

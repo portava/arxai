@@ -106,6 +106,26 @@ describe("F-honest — the backend matches the label", () => {
   });
 });
 
+describe("F-honest — the R uncertainty note is a sample interval, not a forecast", () => {
+  // Both note surfaces (this page's test-evidence-notes and MissionPerformanceView)
+  // render the server's notes verbatim, so the template is pinned at its source.
+  const evidence = read(resolve(ROOT, "artifacts/api-server/src/lib/missionTestingEvidence.ts"))
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
+    })
+    .join("\n");
+
+  it("states the iid assumption and that it is a sample interval, not a forecast", () => {
+    expect(evidence).toMatch(/Assumes independent, identically distributed trade outcomes; a sample interval, not a forecast/);
+  });
+
+  it("never calls the interval a confidence figure", () => {
+    expect(evidence).not.toMatch(/confidence/i);
+  });
+});
+
 describe("F-honest — F-build was NOT attempted", () => {
   // Explicitly out of scope. Pinning its absence keeps the labelling honest:
   // if a driver ever appears, this fails and the copy must be revisited FIRST.

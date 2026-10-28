@@ -45,6 +45,9 @@ test("legacy profitable backtests stay in history but cannot become promotion/dr
   assert.equal(history[0]!.isVerified, false);
   assert.equal(history[0]!.promotionEligible, false);
   assert.match(history[0]!.label, /unverified/);
+  assert.equal(history[0]!.notes.filter((n) => /R sample interval|R uncertainty unavailable/.test(n)).length, 1);
+  assert.match(history[0]!.notes.join(" "), /R uncertainty unavailable: no valid sample statistics/);
+  assert.doesNotMatch(history[0]!.notes.join(" "), /R to .*R around/);
   assert.deepEqual(await latestMissionTestResults(10, 1), { backtest: null, forward: null });
   assert.deepEqual(await listMissionTestResults(11, 1), []);
   const [stored] = await db.select().from(results);
@@ -67,6 +70,22 @@ test("actual generated-price runner persists reproducible diagnostic provenance 
   assert.equal(blob.experiment.seed, input.seed);
   assert.equal(blob.experiment.costs, "not_modelled");
   assert.equal(blob.experiment.chronologicalHoldout, "not_performed");
+  // Sample-uncertainty record: identical across runs and never vacuous.
+  type RStats = { version: number; status: string; n: number; excludedCount: number; mean: number; degreesOfFreedom: number; interval95: { method: string } };
+  const [storedB] = await db.select().from(results).where(eq(results.id, b.result.id));
+  const rsA = (blob.experiment as unknown as { rStatistics: RStats }).rStatistics;
+  const rsB = (storedB!.metricsJson as { experiment: { rStatistics: RStats } }).experiment.rStatistics;
+  assert.ok(a.result.metrics.totalTrades >= 2, `seed produced ${a.result.metrics.totalTrades} trades`);
+  assert.deepEqual(rsA, rsB);
+  assert.equal(rsA.version, 1);
+  assert.equal(rsA.status, "available", JSON.stringify(rsA));
+  assert.equal(rsA.interval95.method, "student_t");
+  assert.equal(rsA.degreesOfFreedom, rsA.n - 1);
+  assert.equal(rsA.n + rsA.excludedCount, a.result.metrics.totalTrades);
+  if (rsA.excludedCount === 0) assert.ok(Math.abs(rsA.mean - a.result.metrics.expectancyR) <= 5e-5);
+  else assert.match(a.result.notes.join(" "), /mean over \d+ observed trades; \d+ trades? without positive stop distance excluded/i);
+  assert.equal(a.result.notes.filter((n) => /R sample interval|R uncertainty unavailable/.test(n)).length, 1);
+  assert.ok(a.result.notes.some((n) => /^R sample interval \(95%, Student t, \d+ degrees of freedom\)/.test(n)), JSON.stringify(a.result.notes));
   assert.deepEqual(await latestMissionTestResults(10, 1), { backtest: null, forward: null });
   assert.deepEqual(await runMissionBacktest({ ...input, userId: 11 }), { ok: false, kind: "not_found" });
 });
@@ -98,6 +117,29 @@ test("mixed outcomes are labelled mixed and missing R is recorded without implyi
   assert.equal(experiment.rObservedCount, 1); assert.equal(experiment.closedDraftCount, 2);
   assert.match(r.result.headline, /1\/2 R observations/);
   assert.match(r.result.sampleWarning!, /R metrics are incomplete/);
+  assert.equal(r.result.promotionEligible, false);
+});
+
+test("forward aggregate records R uncertainty over exactly the observed-R subset", async () => {
+  await closed(1, { rMultiple: 1 }); await closed(2, { pnl: -5, rMultiple: -0.5 }); await closed(3, { rMultiple: null });
+  const r = await aggregateMissionForward({ userId: 10, missionId: 1 });
+  assert.equal(r.ok, true); if (!r.ok) return;
+  const [stored] = await db.select().from(results);
+  const experiment = (stored!.metricsJson as { experiment: { rObservedCount: number; closedDraftCount: number; rStatistics: Record<string, unknown> } }).experiment;
+  assert.equal(experiment.rObservedCount, 2); assert.equal(experiment.closedDraftCount, 3);
+  assert.deepEqual(experiment.rStatistics, {
+    version: 1, excludedCount: 1, status: "available", n: 2, mean: 0.25, sampleSd: 1.06066, standardError: 0.75,
+    degreesOfFreedom: 1, quantile: 12.706205,
+    interval95: { low: -9.279654, high: 9.779654, method: "student_t" }, includesZero: true,
+  });
+  const notes = r.result.notes.join(" ");
+  assert.match(notes, /2 of 3 closed trades/);
+  assert.match(notes, /2 observed R values/);
+  assert.match(notes, /includes 0R/);
+  assert.match(notes, /\(costs unverified\)/);
+  const [history] = await listMissionTestResults(10, 1);
+  assert.deepEqual(history!.notes, r.result.notes, "read-back projection matches the write-time projection");
+  assert.deepEqual(await listMissionTestResults(11, 1), []);
   assert.equal(r.result.promotionEligible, false);
 });
 

@@ -153,3 +153,103 @@ export function summarizeMissionTest(input: MissionTestSummaryInput): MissionTes
     notes,
   };
 }
+
+// ── R-expectancy sample uncertainty (n, SD, standard error, 95% interval) ─────
+//
+// Pure, deterministic, IO-free. Describes how much the sample mean of observed R
+// values could move under resampling. It assumes independent, identically
+// distributed trade outcomes (often false for trade sequences, which makes the
+// interval too narrow) and is a sample interval, not a forecast, a validation of
+// an edge or a statement about future returns.
+//
+// Method: two-sided 95% Student t interval, mean ± t(0.975, n-1) · s/√n, with an
+// embedded quantile table. Degrees of freedom between table rows step DOWN to the
+// nearest tabulated row, which gives a wider (conservative) interval.
+//
+// Deliberate deviation from the item-9 spec (which says "available for n>=2"):
+// the spec also forbids a zero-width interval, so identical observed values
+// ("no_variation", e.g. every trade at exactly +1R) and variation below the stored
+// 6-decimal precision ("interval_below_precision") are reported as unavailable
+// even when n>=2. The record also carries status, degreesOfFreedom and quantile
+// in addition to the spec's keys. Non-finite inputs are rejected, never coerced.
+
+/** Student t 0.975 quantiles (two-sided 95%), rounded to 6 decimals. */
+export const STUDENT_T_975: ReadonlyArray<readonly [df: number, quantile: number]> = [
+  [1, 12.706205], [2, 4.302653], [3, 3.182446], [4, 2.776445], [5, 2.570582],
+  [6, 2.446912], [7, 2.364624], [8, 2.306004], [9, 2.262157], [10, 2.228139],
+  [11, 2.200985], [12, 2.178813], [13, 2.160369], [14, 2.144787], [15, 2.131450],
+  [16, 2.119905], [17, 2.109816], [18, 2.100922], [19, 2.093024], [20, 2.085963],
+  [21, 2.079614], [22, 2.073873], [23, 2.068658], [24, 2.063899], [25, 2.059539],
+  [26, 2.055529], [27, 2.051831], [28, 2.048407], [29, 2.045230], [30, 2.042272],
+  [40, 2.021075], [50, 2.008559], [60, 2.000298], [80, 1.990063], [100, 1.983972],
+  [120, 1.979930], [200, 1.971896], [500, 1.964720], [1000, 1.962339],
+];
+
+/** t(0.975, df) from the embedded table, stepping down to the largest tabulated df <= input. */
+export function studentT975(df: number): number {
+  if (!Number.isSafeInteger(df) || df < 1) throw new RangeError(`studentT975: df must be a positive integer, got ${df}`);
+  let quantile = STUDENT_T_975[0]![1];
+  for (const [rowDf, q] of STUDENT_T_975) {
+    if (rowDf > df) break;
+    quantile = q;
+  }
+  return quantile;
+}
+
+/** Round to the stored 6-decimal precision; -0 becomes 0. Finite inputs only. */
+export function roundRStat(x: number): number {
+  const r = Math.round(x * 1e6) / 1e6;
+  return r === 0 ? 0 : r;
+}
+
+export type RObservationUnavailableReason =
+  | "insufficient_observations" | "non_finite_input" | "non_finite_result" | "interval_below_precision";
+
+export type RObservationSummary =
+  | {
+    status: "available"; n: number; mean: number; sampleSd: number; standardError: number;
+    degreesOfFreedom: number; quantile: number;
+    interval95: { low: number; high: number; method: "student_t" };
+    includesZero: boolean;
+  }
+  | { status: "unavailable"; n: number; reason: RObservationUnavailableReason }
+  | { status: "unavailable"; n: number; reason: "no_variation"; value: number };
+
+/**
+ * Summarise observed R values with a 95% Student t sample interval.
+ * Available only when n>=2, every value is finite, the sample varies and the
+ * rounded bounds differ; otherwise unavailable with a reason (never zero width).
+ */
+export function summarizeRObservations(values: readonly number[]): RObservationSummary {
+  const n = values.length;
+  for (const v of values) {
+    if (typeof v !== "number" || !Number.isFinite(v)) return { status: "unavailable", n, reason: "non_finite_input" };
+  }
+  if (n < 2) return { status: "unavailable", n, reason: "insufficient_observations" };
+  let sum = 0;
+  for (const v of values) sum += v;
+  const mean = sum / n;
+  let ss = 0;
+  for (const v of values) ss += (v - mean) * (v - mean);
+  if (!Number.isFinite(mean) || !Number.isFinite(ss)) return { status: "unavailable", n, reason: "non_finite_result" };
+  if (ss === 0) return { status: "unavailable", n, reason: "no_variation", value: roundRStat(values[0]!) };
+  const sd = Math.sqrt(ss / (n - 1));
+  const se = sd / Math.sqrt(n);
+  const degreesOfFreedom = n - 1;
+  const quantile = studentT975(degreesOfFreedom);
+  const low = mean - quantile * se;
+  const high = mean + quantile * se;
+  if (![sd, se, low, high].every(Number.isFinite)) return { status: "unavailable", n, reason: "non_finite_result" };
+  const r = {
+    mean: roundRStat(mean), sampleSd: roundRStat(sd), standardError: roundRStat(se),
+    low: roundRStat(low), high: roundRStat(high),
+  };
+  // A stored SD of 0 or equal stored bounds would read as a zero-width interval.
+  if (r.sampleSd <= 0 || r.high <= r.low) return { status: "unavailable", n, reason: "interval_below_precision" };
+  return {
+    status: "available", n, mean: r.mean, sampleSd: r.sampleSd, standardError: r.standardError,
+    degreesOfFreedom, quantile,
+    interval95: { low: r.low, high: r.high, method: "student_t" },
+    includesZero: r.low <= 0 && r.high >= 0,
+  };
+}
