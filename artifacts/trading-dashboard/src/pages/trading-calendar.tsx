@@ -13,11 +13,14 @@ interface CalendarDay {
   wins: number;
   losses: number;
   win_rate: number;
-  day_rating: "A" | "B" | "C" | "D" | "F";
+  /** null when nothing closed that day (not graded), and for live days (ARX does not grade them). */
+  day_rating: "A" | "B" | "C" | "D" | "F" | null;
   day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
   debriefs_created: number;
   learning_events_created: number;
   symbols_traded: string[];
+  /** The day is after today (UTC): it has not happened yet. */
+  is_future?: boolean;
 }
 interface CalendarResp { calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number } }
 interface DayDetailResp { day: { date: string; stats: any; trades: any[] } }
@@ -48,7 +51,8 @@ function mapLiveToCalendarResp(month: string, live: { days?: any[]; isEmpty?: bo
       wins: Number(d.wins ?? 0),
       losses: Number(d.losses ?? 0),
       win_rate: Number(d.winRate ?? 0),
-      day_rating: "C" as const,
+      // The live calendar does not grade days; no grade is shown.
+      day_rating: null,
       day_status: status,
       debriefs_created: 0,
       learning_events_created: 0,
@@ -113,7 +117,7 @@ export default function TradingCalendarPage() {
               total_trades: Number(d.tradesCount ?? 0),
               win_rate: Number(d.winRate ?? 0),
               profit_factor: "—",
-              day_rating: "—",
+              day_rating: null,
               top_lesson: null,
             },
             trades: Array.isArray(d.trades) ? d.trades.map((t: any) => ({
@@ -208,7 +212,9 @@ export default function TradingCalendarPage() {
                   >
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold">{Number(d.date.slice(8))}</span>
-                      <Badge variant="outline" className="text-[10px] px-1 py-0">{d.day_rating}</Badge>
+                      {d.day_rating ? (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0" data-testid={`day-rating-${d.date}`}>{d.day_rating}</Badge>
+                      ) : null}
                     </div>
                     <div className="mt-1 text-sm font-bold flex items-center gap-1">
                       {d.day_status === "WINNING_DAY" && <TrendingUp className="h-3 w-3" />}
@@ -217,7 +223,7 @@ export default function TradingCalendarPage() {
                       {d.total_trades > 0 ? d.net_pnl.toFixed(2) : "—"}
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-1">
-                      {d.total_trades > 0 ? `${d.total_trades}t · ${d.win_rate.toFixed(0)}%w` : "no trades"}
+                      {d.total_trades > 0 ? `${d.total_trades}t · ${d.win_rate.toFixed(0)}%w` : d.is_future ? "not yet" : "no trades"}
                     </div>
                     {(d.debriefs_created > 0 || d.learning_events_created > 0) && (
                       <div className="text-[10px] text-muted-foreground">
@@ -244,7 +250,7 @@ export default function TradingCalendarPage() {
                   <div><div className="text-muted-foreground text-xs">Trades</div><div className="font-bold">{day.data.day.stats.total_trades}</div></div>
                   <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{day.data.day.stats.win_rate.toFixed(1)}%</div></div>
                   <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold">{day.data.day.stats.profit_factor}</div></div>
-                  <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold">{day.data.day.stats.day_rating}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold" data-testid="day-detail-rating">{day.data.day.stats.day_rating ?? (day.data.day.stats.total_trades > 0 ? "Not rated" : "Not rated — no closed trades")}</div></div>
                 </div>
                 {day.data.day.stats.top_lesson && <div className="text-sm italic text-amber-300">📖 {day.data.day.stats.top_lesson}</div>}
                 <div className="space-y-2">

@@ -34,8 +34,15 @@ function ymd(d: Date | string | null | undefined): string | null {
   return dt.toISOString().slice(0, 10);
 }
 
-function rateDay(netPnl: number, trades: number, winRate: number): "A" | "B" | "C" | "D" | "F" {
-  if (trades === 0) return "F";
+export type DayRating = "A" | "B" | "C" | "D" | "F";
+
+/**
+ * A grade for the trades that closed on a day. null when nothing closed that
+ * day (including days that have not happened yet): there is nothing to grade,
+ * and "F" would read as a failed day.
+ */
+function rateDay(netPnl: number, trades: number, winRate: number): DayRating | null {
+  if (trades === 0) return null;
   if (netPnl > 0 && winRate >= 70) return "A";
   if (netPnl > 0 && winRate >= 50) return "B";
   if (netPnl >= 0) return "C";
@@ -77,7 +84,8 @@ export interface DailyStats {
   learning_events_created: number;
   mistake_tags: string[];
   top_lesson: string;
-  day_rating: "A" | "B" | "C" | "D" | "F";
+  /** null when no trade closed that day — not graded. */
+  day_rating: DayRating | null;
   day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
 }
 
@@ -370,6 +378,9 @@ export async function computeCalendarMonth(userId: number, month: string) {
     return { month, days: [], total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0 };
   }
   const daysInMonth = new Date(Date.UTC(year, m, 0)).getUTCDate();
+  // Days after today (UTC) have not happened: they are flagged, and are not
+  // counted as no-trade days.
+  const todayUtc = new Date().toISOString().slice(0, 10);
   const days = [];
   let totalPnl = 0;
   let totalTrades = 0;
@@ -380,14 +391,16 @@ export async function computeCalendarMonth(userId: number, month: string) {
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const stats = await computeDailyStats(userId, dateStr);
+    const isFuture = dateStr > todayUtc;
     totalPnl += stats.net_pnl;
     totalTrades += stats.total_trades;
     if (stats.day_status === "WINNING_DAY") winningDays += 1;
     else if (stats.day_status === "LOSING_DAY") losingDays += 1;
     else if (stats.day_status === "BREAK_EVEN_DAY") breakEvenDays += 1;
-    else noTradeDays += 1;
+    else if (!isFuture) noTradeDays += 1;
     days.push({
       date: dateStr,
+      is_future: isFuture,
       net_pnl: stats.net_pnl,
       total_trades: stats.total_trades,
       wins: stats.wins,

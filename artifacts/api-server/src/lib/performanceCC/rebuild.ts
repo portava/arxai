@@ -45,6 +45,11 @@ export async function rebuildSnapshots(userId: number, log: RebuildLogger) {
     for (let d = new Date(minDate); d <= maxDate; d.setUTCDate(d.getUTCDate() + 1)) {
       const dateStr = d.toISOString().slice(0, 10);
       const stats = await computeDailyStats(userId, dateStr);
+      // day_rating is null for a day with no closed trade (not graded). The
+      // snapshot column is NOT NULL and has always held its default "F" for
+      // such a day, next to dayStatus NO_TRADE_DAY; the stored value is kept
+      // as it was (the coach counts only A/B days).
+      const storedDayRating = stats.day_rating ?? "F";
       // Upsert.
       await db.insert(performanceDailySnapshotsTable).values({
         userId,
@@ -67,7 +72,7 @@ export async function rebuildSnapshots(userId: number, log: RebuildLogger) {
         symbolsTraded: stats.symbols_traded,
         mistakeTags: stats.mistake_tags,
         topLesson: stats.top_lesson,
-        dayRating: stats.day_rating,
+        dayRating: storedDayRating,
         dayStatus: stats.day_status,
         aiDecisionsCount: stats.ai_decisions_count,
         paperTradesOpened: stats.paper_trades_opened,
@@ -84,7 +89,7 @@ export async function rebuildSnapshots(userId: number, log: RebuildLogger) {
           profitFactor: stats.profit_factor, bestTradeId: stats.best_trade_id,
           worstTradeId: stats.worst_trade_id, symbolsTraded: stats.symbols_traded,
           mistakeTags: stats.mistake_tags, topLesson: stats.top_lesson,
-          dayRating: stats.day_rating, dayStatus: stats.day_status,
+          dayRating: storedDayRating, dayStatus: stats.day_status,
           aiDecisionsCount: stats.ai_decisions_count,
           paperTradesOpened: stats.paper_trades_opened,
           paperTradesClosed: stats.paper_trades_closed,
