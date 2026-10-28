@@ -96,10 +96,13 @@ function detectSessionType(ctx: Ctx, requested?: SessionType, relatedTradeId?: n
   if (requested) return requested;
   // Trade-linked invocation (e.g. from post-trade flow) → POST_TRADE_GUIDANCE.
   if (relatedTradeId != null) return "POST_TRADE_GUIDANCE";
-  // Hard violations in last 10 → RISK_WARNING wins (highest urgency).
-  if (ctx.recentViolations.some((v) => v.severity === "HARD")) return "RISK_WARNING";
-  // Readiness LOCKED/NOT_READY → DISCIPLINE_CHECK.
-  const rs = ctx.readiness?.status;
+  // A HARD violation recorded within the freshness window → RISK_WARNING wins
+  // (highest urgency). Violations carry no resolved flag, so an old row is a
+  // past event, never "a warning raised" now.
+  if (ctx.recentViolations.some((v) => v.severity === "HARD" && isFresh(v.createdAt, VIOLATION_FRESH_MS))) return "RISK_WARNING";
+  // A stored readiness check from the freshness window that came back
+  // LOCKED/NOT_READY → DISCIPLINE_CHECK. An older row is not today's state.
+  const rs = isFresh(ctx.readiness?.createdAt, READINESS_FRESH_MS) ? ctx.readiness?.status : undefined;
   if (rs === "LOCKED" || rs === "NOT_READY") return "DISCIPLINE_CHECK";
   // Low emotional or discipline pillar → CONFIDENCE_REBUILD.
   if (ctx.skill && (ctx.skill.emotionalControlScore < 40 || ctx.skill.disciplineScore < 40))
@@ -128,39 +131,72 @@ function compose(sessionType: SessionType, ctx: Ctx): {
 
   switch (sessionType) {
     case "RISK_WARNING": {
-      // Guard: a user can request RISK_WARNING manually with no HARD violations
-      // present. Fall back to a generic risk warning rather than throwing.
-      const v = ctx.recentViolations.find((x) => x.severity === "HARD")
+      // A user can request RISK_WARNING manually with no fresh (or no) HARD
+      // violation. Say exactly what is on file and how old it is rather than
+      // presenting a historical row as a warning raised now.
+      const now = Date.now();
+      const v = ctx.recentViolations.find((x) => x.severity === "HARD" && isFresh(x.createdAt, VIOLATION_FRESH_MS, now))
+            ?? ctx.recentViolations.find((x) => x.severity === "HARD")
             ?? ctx.recentViolations.find((x) => x.severity === "WARN")
             ?? null;
-      const ref = v ? `"${(v.message ?? v.violationType ?? "").slice(0, 120)}"` : "your recent risk indicators";
+      const fresh = v != null && isFresh(v.createdAt, VIOLATION_FRESH_MS, now);
+      const ref = v ? `"${(v.message || v.violationType || "").slice(0, 120)}"` : "";
+      const opener = !v
+        ? `No rule violation is on file. This is a risk review you asked for, not an alert. Before another trade, `
+        : fresh
+          ? `A ${v.severity} rule violation was recorded ${ageText(v.createdAt, now)}: ${ref}. Before another trade, pause for at least one full session, then `
+          : `No rule violation has been recorded in the last ${FRESH_WINDOW_LABEL}. The most recent one on file was recorded ${ageText(v.createdAt, now)}: ${ref}. This is a review of a past violation, not a new alert. Before your next trade, `;
       return {
         mainFocus: "Stop. Re-anchor to your rules.",
         mentorMessage:
-          `A risk warning was raised based on ${ref}. Before another trade, pause for at least one full session. ` +
-          `Open your rule contract, re-read the violated line out loud, and write — by hand — what you'll do differently the next session.`,
-        recommendedAction: "Pause trading. Re-read your rule contract. Write your correction.",
+          `${opener}open your rule contract, re-read the ${v ? "violated" : "most important"} line out loud, and write — by hand — what you'll do differently the next session.`,
+        recommendedAction: fresh
+          ? "Pause trading. Re-read your rule contract. Write your correction."
+          : "Re-read your rule contract. Write your correction.",
         relatedTradeId: null, relatedStrategyId: null,
         actions: [
-          { title: "Pause for one session",   description: "No new trades for the rest of today. Use the time to journal." },
+          ...(fresh ? [{ title: "Pause for one session", description: "No new trades for the rest of today. Use the time to journal." }] : []),
           { title: "Re-read rule contract",   description: "Open the violated rule. Read it out loud. Write your correction." },
           { title: "Submit a discipline debrief", description: "File a debrief explaining the violation honestly — no excuses." },
         ],
       };
     }
     case "DISCIPLINE_CHECK": {
-      const why = ctx.readiness?.status === "LOCKED" ? "you are LOCKED out by the safety system"
-                : ctx.readiness?.status === "NOT_READY" ? "your readiness check came back NOT_READY"
-                : "discipline indicators are slipping";
+      // The stored trading_readiness_checks row is a past self-check, not the
+      // live risk lock (that is the safety system's call). Describe it as a
+      // stored check with its age; an old row is not today's state.
+      const now = Date.now();
+      const r = ctx.readiness;
+      const flagged = r != null && (r.status === "LOCKED" || r.status === "NOT_READY");
+      const fresh = flagged && isFresh(r!.createdAt, READINESS_FRESH_MS, now);
+      if (flagged && fresh) {
+        return {
+          mainFocus: "Today is a no-trade discipline day.",
+          mentorMessage:
+            `Your readiness check recorded ${ageText(r!.createdAt, now)} came back ${r!.status}. The mentor will not negotiate this. ` +
+            `Whether trading is locked right now is decided by the live safety system, not the mentor. Use today for process work — review your last 10 trades, run an edge report, ` +
+            `complete a weekly review if you owe one. The trades will still be there tomorrow.`,
+          recommendedAction: "Complete process work. Do not place trades today.",
+          relatedTradeId: null, relatedStrategyId: null,
+          actions: [
+            { title: "Run an edge report",    description: "Generate or re-read an edge report. Look honestly." },
+            { title: "Review last 10 trades", description: "Read every debrief. Look for one repeat pattern." },
+          ],
+        };
+      }
+      const onFile = !r
+        ? "No readiness check is on file"
+        : `Your most recent readiness check was recorded ${ageText(r.createdAt, now)} and came back ${r.status}`;
       return {
-        mainFocus: "Today is a no-trade discipline day.",
+        mainFocus: "Run a fresh readiness check before you trade.",
         mentorMessage:
-          `${cap(why)}. The mentor will not negotiate this. Use today for process work — review your last 10 trades, run an edge report, ` +
-          `complete a weekly review if you owe one. The trades will still be there tomorrow.`,
-        recommendedAction: "Complete process work. Do not place trades today.",
+          `${onFile}${r && !isFresh(r.createdAt, READINESS_FRESH_MS, now) ? " — that is not today's state" : ""}. ` +
+          `Whether trading is locked right now is decided by the live safety system, not the mentor. Run a new readiness check, then do process work — review your last 10 trades, run an edge report, ` +
+          `complete a weekly review if you owe one.`,
+        recommendedAction: "Run a new readiness check. Complete process work before any trade.",
         relatedTradeId: null, relatedStrategyId: null,
         actions: [
-          { title: "Run an edge report",    description: "Generate or re-read an edge report. Look honestly." },
+          { title: "Run a readiness check", description: "Answer today's readiness questions so the result reflects today." },
           { title: "Review last 10 trades", description: "Read every debrief. Look for one repeat pattern." },
         ],
       };
@@ -252,7 +288,27 @@ function compose(sessionType: SessionType, ctx: Ctx): {
     }
   }
 }
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+// Rule violations and readiness checks are point-in-time rows; only rows from
+// the last 24 hours describe "now". Older rows are reported with their age.
+const VIOLATION_FRESH_MS = 24 * 60 * 60 * 1000;
+const READINESS_FRESH_MS = 24 * 60 * 60 * 1000;
+const FRESH_WINDOW_LABEL = "24 hours";
+function isFresh(at: Date | string | null | undefined, windowMs: number, nowMs = Date.now()): boolean {
+  if (at == null) return false;
+  const t = new Date(at).getTime();
+  return Number.isFinite(t) && nowMs - t <= windowMs && t <= nowMs + 60_000;
+}
+function ageText(at: Date | string | null | undefined, nowMs = Date.now()): string {
+  const t = at == null ? NaN : new Date(at).getTime();
+  if (!Number.isFinite(t)) return "at an unknown time";
+  const mins = Math.floor(Math.max(0, nowMs - t) / 60_000);
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  if (mins < 1) return "less than a minute ago";
+  if (mins < 60) return plural(mins, "minute");
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 48) return plural(hrs, "hour");
+  return plural(Math.floor(hrs / 24), "day");
+}
 
 function pickWeakestPillar(p: typeof traderSkillProfilesTable.$inferSelect | null) {
   if (!p) return { label: "discipline", score: 0 };
