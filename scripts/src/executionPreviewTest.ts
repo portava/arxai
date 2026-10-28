@@ -260,6 +260,53 @@ function baseInput(overrides: Partial<ExecutionPreviewInput> = {}): ExecutionPre
   check("estimator is deterministic", a === b);
 }
 
+// ── Metals / crypto / indices are NOT forex: no $10-per-pip FX lot ───────────
+// A loose six-letter / "contains USD" classifier priced XAUUSD at the FX lot
+// ($1,000 per 0.01 point at 1.00 lot) — a $0.30 gold spread showed as $30,000,
+// a $20 BTCUSD spread as ~$2,000,000, with no caveat. With no broker-reported
+// contract size the estimator must withhold the money figures and say why.
+{
+  const cases: Array<{ symbol: string; point: number; bid: number; ask: number }> = [
+    { symbol: "XAUUSD", point: 0.01, bid: 2380.0, ask: 2380.3 },
+    { symbol: "XAGUSD", point: 0.001, bid: 28.5, ask: 28.53 },
+    { symbol: "BTCUSD", point: 0.01, bid: 67000, ask: 67020 },
+    { symbol: "US30", point: 0.1, bid: 39000, ask: 39002 },
+  ];
+  for (const c of cases) {
+    const p = estimateExecutionPreview(baseInput({
+      symbol: c.symbol,
+      lots: 1,
+      spec: { ...fxSpec, point: c.point },
+      hasBrokerTruth: true,
+      quote: { bid: c.bid, ask: c.ask, quoteAgeMs: 500 },
+      atrPrice: (c.ask - c.bid) * 10,
+      entry: null,
+      stopLoss: c.bid - (c.ask - c.bid) * 20,
+      takeProfit: c.ask + (c.ask - c.bid) * 40,
+    }));
+    check(`${c.symbol}: not priced with the FX $10/pip model (moneyPerPoint withheld)`,
+      p.moneyPerPoint == null);
+    check(`${c.symbol}: spread cost money withheld, points still measured`,
+      p.spreadCost.money == null && p.spreadCost.points > 0);
+    check(`${c.symbol}: slippage / drawdown / break-even money withheld`,
+      p.slippage.expectedMoney == null && p.startingDrawdown.money == null && p.breakEven.money == null);
+    check(`${c.symbol}: after-cost and account-impact money withheld`,
+      p.afterCost.stopLossMoney == null && p.afterCost.takeProfitMoney == null &&
+      p.accountImpact.riskMoney == null);
+    check(`${c.symbol}: data quality degraded with a plain note saying why`,
+      p.dataQuality.degraded &&
+      p.dataQuality.notes.some((n) => /contract size/i.test(n)));
+  }
+  // Forex pairs (both halves real currencies, incl. a broker suffix) still priced,
+  // and the note says the money uses ARX's model, not a broker tick value.
+  for (const symbol of ["EURUSD", "GBPJPY", "EURUSD.raw"]) {
+    const p = estimateExecutionPreview(baseInput({ symbol }));
+    check(`${symbol}: forex contract model still prices money`, (p.moneyPerPoint ?? 0) > 0);
+    check(`${symbol}: money is labelled as ARX's standard contract model`,
+      p.dataQuality.notes.some((n) => /standard contract model/i.test(n)));
+  }
+}
+
 if (failures > 0) {
   console.error(`\nexecutionPreviewTest: ${failures} FAILED`);
   process.exit(1);
