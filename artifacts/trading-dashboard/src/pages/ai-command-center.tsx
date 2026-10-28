@@ -655,9 +655,19 @@ function MemoryTab() {
               {c.aiDecisionStats.sellCount} · HOLD{" "}
               {c.aiDecisionStats.holdCount})
             </div>
-            <div>
-              Blocked: {c.aiDecisionStats.blockedCount} · Decision→Trade:{" "}
+            {/* Not "Blocked": no safety-filter outcome is stored per
+                decision, so a trade call with no order may have been
+                refused, filtered by a setting, or never sent. */}
+            <div data-testid="decision-calls-without-order">
+              Trade calls with no demo order:{" "}
+              {typeof c.aiDecisionStats.tradeCallsWithoutOrder === "number"
+                ? `${c.aiDecisionStats.tradeCallsWithoutOrder}${typeof c.aiDecisionStats.tradeCalls === "number" ? ` of ${c.aiDecisionStats.tradeCalls}` : ""}`
+                : "—"}{" "}
+              · Decision→Trade:{" "}
               {c.aiDecisionStats.decisionToTradeRate.toFixed(1)}%
+            </div>
+            <div className="text-xs text-txt-secondary">
+              Why a call has no order is not recorded, so this is not a count of safety-filter blocks.
             </div>
             <div>
               Decision→Win rate:{" "}

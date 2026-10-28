@@ -85,12 +85,22 @@ export async function buildCommandCenter(userId: number) {
   const buyCount = decisions.filter(d => d.action === "BUY").length;
   const sellCount = decisions.filter(d => d.action === "SELL").length;
   const holdCount = decisions.filter(d => d.action === "HOLD").length;
-  const tradedDecisionIds = new Set(closed.map(t => t.decisionId).filter((x): x is number => x !== null));
-  const blockedCount = decisions.filter(d => d.shouldTrade && !tradedDecisionIds.has(d.id)).length;
+  // A decision was acted on when a paper order was opened against it — open
+  // or closed. A cancelled (voided) order is not a trade.
+  const actedDecisionIds = new Set(trades.filter(t => t.status !== "CANCELLED")
+    .map(t => t.decisionId).filter((x): x is number => x !== null));
+  const tradeCalls = decisions.filter(d => d.shouldTrade);
+  // Trade calls with no order. Why is not recorded per decision (a safety
+  // filter, a setting, or the call was never sent), so this is not a count
+  // of safety-filter blocks — and blockedCount, which claimed to be, is null.
+  const tradeCallsWithoutOrder = tradeCalls.filter(d => !actedDecisionIds.has(d.id)).length;
+  const actedDecisions = decisions.filter(d => actedDecisionIds.has(d.id));
+  // Win rate is over decisions whose order has closed: an open order has no result yet.
+  const closedDecisionIds = new Set(closed.map(t => t.decisionId).filter((x): x is number => x !== null));
   const winDecisionIds = new Set(wins.map(t => t.decisionId).filter((x): x is number => x !== null));
-  const tradedDecisions = decisions.filter(d => tradedDecisionIds.has(d.id));
-  const decisionToWinRate = tradedDecisions.length
-    ? (decisions.filter(d => winDecisionIds.has(d.id)).length / tradedDecisions.length) * 100
+  const closedDecisions = decisions.filter(d => closedDecisionIds.has(d.id));
+  const decisionToWinRate = closedDecisions.length
+    ? (decisions.filter(d => winDecisionIds.has(d.id)).length / closedDecisions.length) * 100
     : 0;
   const avgConfidence = decisions.length ? decisions.reduce((a, d) => a + d.confidence, 0) / decisions.length : 0;
   const avgRiskScore = decisions.length ? decisions.reduce((a, d) => a + d.riskScore, 0) / decisions.length : 0;
@@ -131,7 +141,8 @@ export async function buildCommandCenter(userId: number) {
   const insightOut = generateInsights({
     bestSymbol, worstSymbol, mostRepeatedMistake,
     totalTrades: closed.length, winRate, netPnl,
-    improvementScore, blockedTrades: blockedCount,
+    improvementScore,
+    tradeCalls: tradeCalls.length, tradeCallsWithoutOrder,
     decisionsCreated: decisions.length,
     learningEvents: learnings.length,
   });
@@ -156,11 +167,17 @@ export async function buildCommandCenter(userId: number) {
     aiDecisionStats: {
       decisionsCreated: decisions.length,
       buyCount, sellCount, holdCount,
-      blockedCount,
+      /** Decisions that said to trade. */
+      tradeCalls: tradeCalls.length,
+      /** Trade calls with no paper order (open or closed) against them. */
+      tradeCallsWithoutOrder,
+      /** Not measured: no safety-filter outcome is stored per decision. */
+      blockedCount: null,
+      blockedCountScope: "Not recorded: ARX does not store a safety-filter outcome per AI decision, so how many were blocked by a safety filter is unknown. tradeCallsWithoutOrder counts trade calls with no demo order, for any reason.",
       avgConfidence: Number(avgConfidence.toFixed(2)),
       avgRiskScore: Number(avgRiskScore.toFixed(2)),
       avgEdgeScore: Number(avgEdgeScore.toFixed(2)),
-      decisionToTradeRate: decisions.length ? Number(((tradedDecisions.length / decisions.length) * 100).toFixed(2)) : 0,
+      decisionToTradeRate: decisions.length ? Number(((actedDecisions.length / decisions.length) * 100).toFixed(2)) : 0,
       decisionToWinRate: Number(decisionToWinRate.toFixed(2)),
     },
     learningStats: {

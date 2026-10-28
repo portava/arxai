@@ -75,3 +75,30 @@ describe("Memory tab: autopilot today", () => {
     expect(screen.queryByTestId("autopilot-today-note")).toBeNull();
   });
 });
+
+describe("Memory tab: AI decision quality", () => {
+  it("does not call trade calls without an order 'Blocked'", () => {
+    h.data["ai-cc"] = {
+      commandCenter: commandCenter({
+        aiDecisionStats: {
+          decisionsCreated: 2, buyCount: 2, sellCount: 0, holdCount: 0, tradeCalls: 2, tradeCallsWithoutOrder: 1,
+          blockedCount: null, avgConfidence: 60, avgRiskScore: 30, avgEdgeScore: 0, decisionToTradeRate: 50, decisionToWinRate: 0,
+        },
+      }),
+      autopilot: AUTOPILOT_NONE_TODAY,
+    };
+    openMemory();
+    const row = screen.getByTestId("decision-calls-without-order");
+    expect(row.textContent).toMatch(/Trade calls with no demo order: 1 of 2/);
+    expect(screen.queryByText(/Blocked:/)).toBeNull();
+  });
+
+  it("an older server's 'blockedCount' (which counted open trades) is not shown as blocked", () => {
+    h.data["ai-cc"] = { commandCenter: commandCenter({
+      aiDecisionStats: { ...commandCenter().aiDecisionStats, blockedCount: 2 },
+    }), autopilot: AUTOPILOT_NONE_TODAY };
+    openMemory();
+    expect(screen.queryByText(/Blocked:/)).toBeNull();
+    expect(screen.getByTestId("decision-calls-without-order").textContent).toMatch(/—/);
+  });
+});

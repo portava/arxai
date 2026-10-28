@@ -8,7 +8,10 @@ interface InsightInputs {
   winRate: number;
   netPnl: number;
   improvementScore: number;
-  blockedTrades: number;
+  /** Decisions that said to trade. */
+  tradeCalls: number;
+  /** Trade calls with no paper order; the reason is not recorded per decision. */
+  tradeCallsWithoutOrder: number;
   decisionsCreated: number;
   learningEvents: number;
 }
@@ -35,9 +38,10 @@ export function generateInsights(i: InsightInputs): { insights: string[]; nextBe
     insights.push(`Most repeated mistake tag: "${i.mostRepeatedMistake}" — focus drill on avoiding it.`);
     nextBestActions.push(`Add a checklist item to catch "${i.mostRepeatedMistake}" before next entry.`);
   }
-  if (i.blockedTrades > 0 && i.decisionsCreated > 0) {
-    const pct = Math.round((i.blockedTrades / i.decisionsCreated) * 100);
-    insights.push(`${pct}% of AI decisions were blocked by safety filters — guardrails are active.`);
+  if (i.tradeCallsWithoutOrder > 0 && i.tradeCalls > 0) {
+    // Not "blocked by safety filters": no safety-filter outcome is stored per
+    // decision, so the reason a call has no order is unknown.
+    insights.push(`${i.tradeCallsWithoutOrder} of ${i.tradeCalls} AI trade calls have no demo order. Why is not recorded per call (a safety filter, a setting, or it was never sent), so this is not a count of safety blocks.`);
   }
   if (i.winRate >= 60 && i.netPnl > 0) {
     insights.push(`Paper win rate is healthy at ${i.winRate.toFixed(1)}% with positive net P&L.`);
