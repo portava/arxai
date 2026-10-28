@@ -66,6 +66,25 @@ export async function runExperiment(experimentId: string, ownerUserId: number) {
   const exp = await getExperiment(experimentId, ownerUserId);
   if (!exp) throw new Error("experiment not found");
   await db.update(strategyLabExperimentsTable).set({ status: "RUNNING", updatedAt: new Date() }).where(eq(strategyLabExperimentsTable.experimentId, experimentId));
+  try {
+    return await runExperimentBody(experimentId, exp);
+  } catch (err) {
+    // Truth: a run that dies must not stay RUNNING forever. Record FAILED with
+    // the reason, then rethrow so the caller still sees the error.
+    const message = err instanceof Error ? err.message : String(err);
+    try {
+      await db.update(strategyLabExperimentsTable)
+        .set({ status: "FAILED", resultSummary: { error: message, failedAt: new Date().toISOString() }, updatedAt: new Date() })
+        .where(eq(strategyLabExperimentsTable.experimentId, experimentId));
+    } catch { /* the original error is the one worth surfacing */ }
+    throw err;
+  }
+}
+
+async function runExperimentBody(
+  experimentId: string,
+  exp: NonNullable<Awaited<ReturnType<typeof getExperiment>>>,
+) {
   const scenarioIds = exp.scenarioIds as string[];
   const settings = runSettingsOf(exp.settings);
   const perScenario: { scenarioId: string; replayRunId: string; trades: number; netPnl: number; winRate: number; profitFactor: number; reportId: string; promote: boolean; review: boolean }[] = [];

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,9 @@ type Pos = {
   positionId: string; orderId: string; environment: string;
   symbol: string; direction: string; lotSize: number;
   entryPrice: number; currentPrice: number;
+  /** What currentPrice is (server-stated); absent from older servers. */
+  currentPriceBasis?: "SIMULATOR_QUOTE" | "NO_QUOTE" | "EXIT_PRICE";
+  currentPriceAsOf?: string;
   stopLoss?: number; takeProfit?: number;
   unrealizedPnL: number; realizedPnL: number; rMultiple: number;
   status: string; openedAt: string; closedAt?: string; closeReason?: string;
@@ -32,6 +36,31 @@ const STATUS_LABEL: Record<string, string> = {
   OPEN: "Open", CLOSED: "Closed", STOPPED_OUT: "Stopped out",
   TAKE_PROFIT_HIT: "Take profit", MANUALLY_CLOSED: "Closed",
 };
+const PNL_NUMBER_FIELDS = ["dailyPnL", "weeklyPnL", "openUnrealizedPnL", "winRate", "averageR", "maxDrawdown"] as const;
+// Only a body that carries every figure the tiles print is a P&L summary; an
+// error body ({ error }) is not rendered as "$undefined".
+function asPnl(v: unknown): Pnl | null {
+  if (v == null || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  return PNL_NUMBER_FIELDS.every((k) => typeof o[k] === "number" && Number.isFinite(o[k] as number)) ? (v as Pnl) : null;
+}
+
+const timeOf = (iso: string | undefined): string | null => {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : new Date(t).toLocaleTimeString();
+};
+// The card's price cell says what the price is: a live simulator mark ("Now"),
+// the last mark when the simulator had no quote, or a closed card's exit price.
+function priceCell(p: Pos): { label: string; sub: string } {
+  const at = timeOf(p.currentPriceAsOf);
+  if (p.status !== "OPEN") {
+    return { label: "Exit", sub: `closed ${timeOf(p.closedAt) ?? at ?? "(time not reported)"}` };
+  }
+  if (p.currentPriceBasis === "SIMULATOR_QUOTE" && at) return { label: "Now", sub: `sim quote ${at}` };
+  if (p.currentPriceBasis === "NO_QUOTE") return { label: "Last mark", sub: at ? `no simulator quote since ${at}` : "no simulator quote" };
+  return { label: "Last price", sub: "time not reported" };
+}
 const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 async function api(path: string, init?: RequestInit) {
@@ -45,14 +74,25 @@ export default function PositionsPage() {
   const [positions, setPositions] = useState<Pos[]>([]);
   const [pnl, setPnl] = useState<Pnl | null>(null);
   const [tab, setTab] = useState<"OPEN" | "CLOSED" | "INTENT" | "MT5">("OPEN");
+  // Why the latest poll failed (null when it succeeded), and when the book on
+  // screen was last loaded. After a failure the book is a cached copy.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
   async function load() {
-    const [r, s] = await Promise.all([
-      fetch("/api/oms/positions").then((x) => x.json()),
-      fetch("/api/pnl/summary").then((x) => x.json()),
-    ]);
-    setPositions(r.positions ?? []);
-    setPnl(s);
+    try {
+      const [pr, sr] = await Promise.all([fetch("/api/oms/positions"), fetch("/api/pnl/summary")]);
+      if (!pr.ok) throw new Error(`positions HTTP ${pr.status}`);
+      const r = (await pr.json()) as { positions?: unknown };
+      if (!Array.isArray(r?.positions)) throw new Error("positions response had no positions list");
+      const s: unknown = sr.ok ? await sr.json().catch(() => null) : null;
+      setPositions(r.positions as Pos[]);
+      setPnl(asPnl(s));
+      setLoadedAt(Date.now());
+      setLoadErr(null);
+    } catch (e) {
+      setLoadErr(e instanceof Error ? e.message : String(e));
+    }
   }
   useEffect(() => { void load(); const id = setInterval(load, 3000); return () => clearInterval(id); }, []);
 
@@ -83,6 +123,18 @@ export default function PositionsPage() {
         </div>
       </div>
 
+      {loadErr && (
+        <div data-testid="positions-load-error" className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {loadedAt == null
+            ? `Positions could not be loaded (${loadErr}).`
+            : `Could not refresh positions (${loadErr}). Showing the book as last loaded at ${new Date(loadedAt).toLocaleTimeString()}; it may have changed since.`}
+        </div>
+      )}
+
+      {loadedAt != null && !pnl && (
+        <p data-testid="positions-pnl-unavailable" className="text-xs text-txt-muted">P&amp;L summary unavailable — the server did not return a usable summary.</p>
+      )}
+
       {pnl && (
         <div className="grid gap-2 md:grid-cols-6">
           <Stat label="Daily" value={`$${pnl.dailyPnL}`} />
@@ -100,16 +152,20 @@ export default function PositionsPage() {
             {t === "OPEN" && "Open Simulated"}
             {t === "CLOSED" && "Closed"}
             {t === "INTENT" && "Live Tester Intent"}
-            {t === "MT5" && "Future MT5 Broker"}
+            {t === "MT5" && "MT5 Broker"}
           </Button>
         ))}
       </div>
 
       {tab === "MT5" ? (
-        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-txt-muted">
-          <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby">MT5 deferred</span>
-          Real broker positions route through the MT5 bridge. This panel activates once the bridge is connected.
+        <div data-testid="positions-mt5-panel" className="rounded-2xl border border-border bg-card p-6 text-sm text-txt-muted">
+          <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby">Not on this page</span>
+          This page lists the simulator book only and does not read broker positions, whether or not the MT5 bridge is connected.
+          {" "}MT5-confirmed positions are listed on{" "}
+          <Link href="/my-trades" className="text-primary underline">Open Trades</Link>.
         </div>
+      ) : loadedAt == null ? (
+        loadErr ? null : <p className="p-6 text-center text-sm text-txt-muted">Loading positions…</p>
       ) : visible.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-2">
           <EmptyState
@@ -134,7 +190,7 @@ export default function PositionsPage() {
               <div className="space-y-2 text-xs">
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <Stat small label="Entry" value={String(p.entryPrice)} />
-                  <Stat small label="Now" value={String(p.currentPrice)} />
+                  <Stat small label={priceCell(p).label} value={String(p.currentPrice)} sub={priceCell(p).sub} />
                   <Stat small label="SL" value={p.stopLoss ? String(p.stopLoss) : "—"} />
                   <Stat small label="TP" value={p.takeProfit ? String(p.takeProfit) : "—"} />
                 </div>
@@ -160,11 +216,12 @@ export default function PositionsPage() {
   );
 }
 
-function Stat({ label, value, small }: { label: string; value: string; small?: boolean }) {
+function Stat({ label, value, small, sub }: { label: string; value: string; small?: boolean; sub?: string }) {
   return (
     <div className={cn("rounded-xl border border-border bg-card", small ? "p-2" : "p-3")}>
       <p className="text-[10px] uppercase text-txt-muted">{label}</p>
       <p className={small ? "font-mono text-sm" : "text-lg font-bold"}>{value}</p>
+      {sub && <p className="text-[10px] text-txt-muted">{sub}</p>}
     </div>
   );
 }

@@ -164,9 +164,9 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
     <div className="space-y-4 pt-2">
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <p className="text-sm text-muted-foreground">
-            Run a strategy on the live simulator stream and grade the outcomes.
-            Observation only — no orders.
+          <p data-testid="forward-testing-description" className="text-sm text-muted-foreground">
+            Run a strategy on the synthetic market simulator (generated prices,
+            not market data) and grade the outcomes. Observation only — no orders.
           </p>
         </div>
         <Badge variant="outline">SHADOW</Badge>

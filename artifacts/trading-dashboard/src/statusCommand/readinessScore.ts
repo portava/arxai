@@ -186,17 +186,30 @@ export function computeReadinessScore(
     });
   }
 
-  // 9. Assistant Knowledge — uses optional knowledgeScore (0..100); maps to 0..10
+  // 9. Assistant Knowledge — uses optional knowledgeScore (0..100); maps to 0..10.
+  //    Not supplied (or not a finite number) → the audit was not measured here:
+  //    the section scores 0 and says so, never a default "100/100".
   {
-    const ks = opts?.knowledgeScore ?? 100;
-    const s = clamp(ks / 10);
-    sections.push({
-      id: "assistant-knowledge", title: "Assistant Knowledge",
-      score: s, max: 10,
-      level: s >= 8 ? "ready" : s >= 5 ? "attention" : "blocked",
-      summary: `Knowledge audit score: ${ks}/100.`,
-      evidence: [`knowledgeAudit=${ks}`],
-    });
+    const raw = opts?.knowledgeScore;
+    const ks = typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : null;
+    if (ks == null) {
+      sections.push({
+        id: "assistant-knowledge", title: "Assistant Knowledge",
+        score: 0, max: 10,
+        level: "unavailable",
+        summary: "Knowledge audit has not been run for this view, so this section is not scored.",
+        evidence: ["knowledgeAudit=not measured"],
+      });
+    } else {
+      const s = clamp(ks / 10);
+      sections.push({
+        id: "assistant-knowledge", title: "Assistant Knowledge",
+        score: s, max: 10,
+        level: s >= 8 ? "ready" : s >= 5 ? "attention" : "blocked",
+        summary: `Knowledge audit score: ${ks}/100.`,
+        evidence: [`knowledgeAudit=${ks}`],
+      });
+    }
   }
 
   // 10. Runtime Diagnostics — penalize recent error/failure activity

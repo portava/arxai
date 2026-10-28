@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+import { useTradingMode } from "@/hooks/useTradingMode";
+import { describeLiveExecutionPosture } from "./liveExecutionPosture";
 import { Copy, Lock, Plus, RefreshCw, Send, ShieldAlert, Trash2, X } from "lucide-react";
 import { isHeartbeatAgeSecondsOnline } from "@workspace/domain/broker-health/heartbeatPolicy";
 
@@ -172,6 +174,8 @@ function CommandsPanel({ conn }: { conn: Mt5Conn }) {
 
 export default function MyMt5Page() {
   const { toast } = useToast();
+  // From the account-mode envelope — never a hard-coded "read-only" claim.
+  const livePosture = describeLiveExecutionPosture(useTradingMode());
   const [conns, setConns] = useState<Mt5Conn[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -264,13 +268,10 @@ export default function MyMt5Page() {
         <p className="text-muted-foreground">Personal connections and sessions. Only you can see this data.</p>
       </div>
 
-      <Alert>
+      <Alert variant={livePosture.tone === "armed" ? "destructive" : "default"} data-testid="my-mt5-live-posture">
         <Lock className="h-4 w-4" />
-        <AlertTitle>Read-only mode is active</AlertTitle>
-        <AlertDescription>
-          live_locked = true · read_only_mode = true · allow_order_execution = false. No real orders will be placed
-          even if MT5 is connected.
-        </AlertDescription>
+        <AlertTitle>{livePosture.label}</AlertTitle>
+        <AlertDescription>{livePosture.detail}</AlertDescription>
       </Alert>
 
       {/* MT5 connections */}

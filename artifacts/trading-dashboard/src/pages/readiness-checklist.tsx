@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useTradingMode } from "@/hooks/useTradingMode";
+import { describeLiveExecutionPosture } from "./liveExecutionPosture";
 
 interface Item { item: string; status: "PASS" | "WARN" | "FAIL"; evidence: string; recommendedFix: string; }
 interface Section { name: string; items: Item[]; }
@@ -7,6 +9,9 @@ interface Checklist { checklist_id: string; generated_at: string; sections: Sect
 export default function ReadinessChecklist() {
   const [data, setData] = useState<Checklist | null>(null);
   const [loading, setLoading] = useState(false);
+  // Live posture comes from the account-mode envelope; this checklist itself
+  // never reads live-trading state.
+  const posture = describeLiveExecutionPosture(useTradingMode());
 
   async function load() {
     setLoading(true);
@@ -22,7 +27,13 @@ export default function ReadinessChecklist() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Readiness Checklist</h1>
         <div className="flex gap-2">
-          <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-mono">LIVE TRADING: DISABLED</span>
+          <span
+            className={`px-2 py-1 rounded text-xs font-mono ${posture.tone === "armed" ? "bg-red-100 text-red-700" : posture.tone === "unknown" ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-700"}`}
+            title={`${posture.detail} This checklist does not check live trading.`}
+            data-testid="readiness-live-posture"
+          >
+            {posture.label}
+          </span>
           <button onClick={load} disabled={loading} className="px-3 py-1 rounded bg-blue-600 text-white text-sm">{loading ? "Loading…" : "Refresh"}</button>
         </div>
       </div>

@@ -3,7 +3,7 @@ import { Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageShell } from "@/components/ss/PageShell";
-import { StatusPill } from "@/components/ss/StatusPill";
+import { StatusPill, type StatusKind } from "@/components/ss/StatusPill";
 import { LoadingState, EmptyState, ErrorState } from "@/components/ss/States";
 
 interface Experiment {
@@ -14,6 +14,23 @@ interface Experiment {
     perScenario?: { scenarioId: string; replayRunId: string; trades: number }[];
     recommendations?: { type: string; message: string }[];
   };
+}
+
+// The service stores PENDING → RUNNING → COMPLETED | FAILED (upper case).
+// Map each to a pill kind whose icon and accessible label match the text
+// shown; anything unrecognised is disclosed as unknown, never as pending.
+function experimentStatusPill(status: string): { kind: StatusKind; label: string; ariaLabel: string } {
+  const raw = (status ?? "").trim();
+  switch (raw.toUpperCase()) {
+    case "COMPLETED": return { kind: "ACTIVE", label: "COMPLETED", ariaLabel: "status: completed" };
+    case "RUNNING": return { kind: "PENDING", label: "RUNNING", ariaLabel: "status: running" };
+    case "FAILED": return { kind: "BLOCKED", label: "FAILED", ariaLabel: "status: failed" };
+    case "PENDING": return { kind: "PENDING", label: "PENDING", ariaLabel: "status: pending" };
+    default: {
+      const shown = raw === "" ? "UNKNOWN" : raw.toUpperCase();
+      return { kind: "INACTIVE", label: shown, ariaLabel: `status: unknown (${raw === "" ? "none reported" : raw})` };
+    }
+  }
 }
 
 export default function StrategyLab() {
@@ -73,7 +90,10 @@ export default function StrategyLab() {
             <CardContent className="pt-4">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="font-semibold text-sm">{e.title}</div>
-                <StatusPill status={e.status.toUpperCase() === "COMPLETED" ? "ACTIVE" : "PENDING"} label={e.status.toUpperCase()} size="xs" />
+                {(() => {
+                  const pill = experimentStatusPill(e.status);
+                  return <StatusPill status={pill.kind} label={pill.label} ariaLabel={pill.ariaLabel} size="xs" />;
+                })()}
               </div>
               <div className="text-xs text-muted-foreground font-mono mt-1">{e.experimentId}</div>
               {e.resultSummary?.scenariosRun != null && (

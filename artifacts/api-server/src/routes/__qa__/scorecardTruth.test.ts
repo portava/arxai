@@ -67,3 +67,13 @@ test("coach: the 'None' tag is not reported as the most common mistake", async (
   assert.equal(s["mostCommonMistake"], "none");
   assert.doesNotMatch(String(s["doingPoorly"]), /Most common mistake/);
 });
+
+test("headline counts entries with a recorded P&L so an unknown result is not read as $0", async () => {
+  const s = await get("/performance/scorecard", journal([{ pnl: null }, { pnl: null }]));
+  const h = s["headline"] as Record<string, unknown>;
+  assert.equal(h["totalTrades"], 2);
+  assert.equal(h["totalPnl"], 0);
+  assert.equal(h["tradesWithRecordedPnl"], 0);
+  const mixed = await get("/performance/scorecard", journal([{ pnl: 3 }, { pnl: null }, { pnl: 0, direction: "WAIT" }]));
+  assert.equal((mixed["headline"] as Record<string, unknown>)["tradesWithRecordedPnl"], 1);
+});

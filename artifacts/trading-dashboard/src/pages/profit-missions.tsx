@@ -860,6 +860,25 @@ function MissionJournal({ missionId }: { missionId: number }) {
 }
 
 // ── Battle Room header shell ──────────────────────────────────────────────────
+// Pace verdict for the Battle Room. math.onTrack is false whenever no time has
+// elapsed or nothing has been realised, so it is only a verdict for a mission
+// that is actually running and has recorded P/L. Every other case says what is
+// true instead of "Behind pace".
+const PACE_NOT_STARTED = new Set(["draft", "pending_approval"]);
+const PACE_PAUSED = new Set(["paused", "stopped_by_risk"]);
+const PACE_ENDED = new Set(["target_hit", "completed", "failed", "expired", "cancelled"]);
+function missionPaceLabel(mission: ProfitMission): string {
+  const m = mission.math;
+  if (!m) return "—";
+  if (m.invalid) return "Not measurable";
+  if (PACE_NOT_STARTED.has(mission.status)) return "Not started";
+  if (PACE_ENDED.has(mission.status)) return "Ended — not tracked";
+  if (PACE_PAUSED.has(mission.status)) return "Paused — not tracked";
+  if (!(m.elapsedDays > 0)) return "Too early to measure";
+  if (m.currentValue === m.startingAmount) return "No profit recorded yet";
+  return m.onTrack ? "On pace" : "Behind pace";
+}
+
 export function BattleRoomShell({ mission }: { mission: ProfitMission | null }) {
   const m = mission?.math;
   return (
@@ -915,7 +934,7 @@ export function BattleRoomShell({ mission }: { mission: ProfitMission | null }) 
           <Metric label="Current value" value={mission ? money(mission.currentValue) : "—"} />
           <Metric label="Mission class" value={mission?.feasibility?.unitAwareMissionClass ?? (m ? "—" : "—")} />
           <Metric label="Risk profile" value={mission ? mission.riskProfile : "—"} />
-          <Metric label="Pace status" value={m ? (m.onTrack ? "On pace" : "Behind pace") : "—"} />
+          <Metric label="Pace status" value={mission ? missionPaceLabel(mission) : "—"} testId="metric-pace-status" />
         </div>
       </CardContent>
     </Card>

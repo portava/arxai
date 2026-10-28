@@ -315,14 +315,21 @@ interface ReplaySession {
   replayId: string; symbol: string; timeframe: string;
   strategy?: string;
   candles: ReturnType<typeof marketSimulator.candlesFor>;
+  /** The simulator's candles are 1-minute bars whatever `timeframe` says. */
+  candleTimeframe: "M1";
+  /** Simulator spread captured at start; null when the symbol had no quote. */
+  spread: number | null;
   index: number;
   decisions: Array<{
-    candleIndex: number; aiAction: string; entry?: number;
+    candleIndex: number; candleTsIso: string; candlesAnalysed: number;
+    aiAction: string; entry?: number;
     stopLoss?: number; takeProfit?: number;
     confidenceScore: number; riskScore: number; reason: string;
   }>;
   startedAt: string;
 }
+/** Candles the replay analysis looks back over (same as analyzeMarket). */
+const REPLAY_WINDOW = 30;
 const replays = new Map<string, ReplaySession>();
 const REPLAY_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -336,10 +343,14 @@ setInterval(() => {
 
 export function replayStart(symbol: string, timeframe = "M15", strategy?: string) {
   const replayId = `replay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const candles = marketSimulator.candlesFor(symbol, 60);
+  // Copy the bars: the simulator mutates its forming candle in place, and a
+  // replay must not change under the user.
+  const candles = marketSimulator.candlesFor(symbol, 60).map((c) => ({ ...c }));
+  const q = marketSimulator.quote(symbol);
   const s: ReplaySession = {
     replayId, symbol, timeframe, strategy,
-    candles, index: 0, decisions: [], startedAt: new Date().toISOString(),
+    candles, candleTimeframe: "M1", spread: q ? q.spread : null,
+    index: 0, decisions: [], startedAt: new Date().toISOString(),
   };
   replays.set(replayId, s);
   return s;
@@ -347,16 +358,32 @@ export function replayStart(symbol: string, timeframe = "M15", strategy?: string
 export function replayStep(replayId: string, humanAction?: string) {
   const s = replays.get(replayId); if (!s) return null;
   if (s.index >= s.candles.length) return { ...s, finished: true };
-  const a = analyzeMarket(s.symbol, s.timeframe);
+  // Analyse the replayed candle: the candles up to and including candles[index]
+  // (never later ones), priced at that candle's close. Not the simulator's
+  // current window, which is the same for every step.
+  const candle = s.candles[s.index]!;
+  const bars = s.candles.slice(Math.max(0, s.index + 1 - REPLAY_WINDOW), s.index + 1);
+  const a = s.spread == null
+    ? analyzeMarketFromCandles(s.symbol, s.candleTimeframe, [], { mid: 0, spread: 0 }, "SIMULATOR")
+    : analyzeMarketFromCandles(
+        s.symbol, s.candleTimeframe,
+        bars.map((c) => ({ o: c.o, h: c.h, l: c.l, c: c.c })),
+        { mid: candle.c, spread: s.spread },
+        "SIMULATOR",
+      );
   const decision = {
-    candleIndex: s.index, aiAction: a.recommendedAction,
+    candleIndex: s.index, candleTsIso: candle.tsIso, candlesAnalysed: s.spread == null ? 0 : bars.length,
+    aiAction: a.recommendedAction,
     entry: (a.entryZone.low + a.entryZone.high) / 2,
     stopLoss: a.stopLoss, takeProfit: a.takeProfit,
     confidenceScore: a.confidenceScore, riskScore: a.riskScore,
     reason: a.reasonForTrade, humanAction,
   };
   s.decisions.push(decision); s.index += 1;
-  return { replayId: s.replayId, candleIndex: decision.candleIndex, decision, totalCandles: s.candles.length };
+  return {
+    replayId: s.replayId, candleIndex: decision.candleIndex, decision,
+    totalCandles: s.candles.length, finished: s.index >= s.candles.length,
+  };
 }
 export function replayStop(replayId: string) {
   const s = replays.get(replayId); if (!s) return null;

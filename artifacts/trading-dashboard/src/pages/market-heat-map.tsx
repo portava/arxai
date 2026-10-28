@@ -27,6 +27,19 @@ import {
 
 const MULTI_SYMBOLS = "EURUSD,GBPUSD,USDJPY,XAUUSD,GBPJPY,USDCAD";
 
+// ── Score formatting ────────────────────────────────────────────────────────
+// Every timing-brain score (trapProbability, fakeoutRisk, heat-source
+// confidence, …) is already on a 0–100 scale (lib/domain timing-brain types).
+// Print it as-is; never multiply by 100. A missing / non-finite value says so
+// instead of inventing a number.
+export function formatScorePct(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${Math.round(Math.min(100, Math.max(0, value)))}%`;
+}
+
+/** Trap probability (0–100) at or above which the danger ranking flags "Trap". */
+export const TRAP_BADGE_THRESHOLD = 50;
+
 // ── Colour helpers ───────────────────────────────────────────────────────────
 
 function heatBg(score: number): string {
@@ -197,7 +210,7 @@ function DataQualityBadge({ label }: { label: string }) {
 
 // ── Tab: Now ────────────────────────────────────────────────────────────────
 
-function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefined; isLoading: boolean; symbol: string }) {
+export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefined; isLoading: boolean; symbol: string }) {
   if (isLoading) return <TimingLoadingSkeleton />;
   if (!data) return <HonestEmpty message={`No timing data available for ${symbol || "the selected symbol"}.`} />;
 
@@ -250,7 +263,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
             <ScorePill label="Tradeability" value={Math.round(data.tradeabilityScore)} />
             <ScorePill label="Edge" value={Math.round(data.edgeScore)} />
             <ScorePill label="Danger" value={Math.round(data.dangerScore)} cls="border-rose-500/20" />
-            <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability)}%`} />
+            <ScorePill label="Trap prob." value={formatScorePct(data.trapProbability)} />
             <ScorePill label="Room to move" value={Math.round(data.roomToMove)} />
             <ScorePill
               label="Pressure"
@@ -310,7 +323,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Primary confidence</span>
-            <span className="font-mono tabular-nums">{Math.round(data.heatSource.primaryConfidence)}%</span>
+            <span className="font-mono tabular-nums">{formatScorePct(data.heatSource.primaryConfidence)}</span>
           </div>
           {data.heatSource.backup && (
             <>
@@ -321,7 +334,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
               {data.heatSource.backupConfidence != null && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Backup confidence</span>
-                  <span className="font-mono tabular-nums">{Math.round(data.heatSource.backupConfidence)}%</span>
+                  <span className="font-mono tabular-nums">{formatScorePct(data.heatSource.backupConfidence)}</span>
                 </div>
               )}
             </>
@@ -377,7 +390,7 @@ function sessionCardsFor(sessionName: string): SessionCardName[] {
   return SESSION_CARD_NAMES.filter((name) => n === name.toLowerCase());
 }
 
-function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
+export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
   const session = data?.session;
   const localTime = useViewerLocalTime();
   const activeSessionCards = session ? sessionCardsFor(session.sessionName) : [];
@@ -427,7 +440,7 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
                         <div className="space-y-0.5 text-muted-foreground">
                           <div>Kill zone: <span className="text-foreground">{session.killZone}</span></div>
                           <div>Heat bonus: <span className="text-foreground font-mono">+{session.sessionHeatBonus}</span></div>
-                          <div>Fakeout risk: <span className="text-foreground font-mono">{Math.round(session.fakeoutRisk)}%</span></div>
+                          <div>Fakeout risk: <span className="text-foreground font-mono">{formatScorePct(session.fakeoutRisk)}</span></div>
                         </div>
                       )}
                     </div>
@@ -557,7 +570,7 @@ function SessionCardLocalTime() {
   return <CardDescription className="text-xs" data-testid="session-card-local-time">Your local time: {localTime}</CardDescription>;
 }
 
-function SessionCard({
+export function SessionCard({
   session,
   compact = false,
 }: {
@@ -592,7 +605,7 @@ function SessionCard({
         )}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
           <ScorePill label="Heat bonus" value={`+${session.sessionHeatBonus}`} />
-          <ScorePill label="Fakeout risk" value={`${Math.round(session.fakeoutRisk)}%`} />
+          <ScorePill label="Fakeout risk" value={formatScorePct(session.fakeoutRisk)} />
           <ScorePill label="Trade bonus" value={`+${session.tradeabilityBonus}`} />
         </div>
         {session.bestSymbols.length > 0 && (
@@ -748,7 +761,7 @@ function BuySellWindowsTab({ data }: { data: MarketTimingRead | undefined }) {
 
 // ── Tab: Danger Windows ─────────────────────────────────────────────────────
 
-function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefined; results: MarketTimingRead[] }) {
+export function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefined; results: MarketTimingRead[] }) {
   return (
     <div className="space-y-4">
       {data && (
@@ -775,7 +788,7 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <ScorePill label="Danger score" value={Math.round(data.dangerScore)} cls={data.dangerScore >= 60 ? "border-rose-500/20" : ""} />
-              <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability)}%`} cls={data.trapProbability >= 50 ? "border-amber-500/20" : ""} />
+              <ScorePill label="Trap prob." value={formatScorePct(data.trapProbability)} cls={data.trapProbability >= TRAP_BADGE_THRESHOLD ? "border-amber-500/20" : ""} />
               <ScorePill label="Move stage" value={humanizeMoveStage(data.moveStage)} />
             </div>
             {data.newsOverlay.blocksTrade && (
@@ -822,7 +835,7 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
                     />
                   </div>
                   <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.dangerScore)}</span>
-                  {r.trapProbability >= 50 && (
+                  {r.trapProbability >= TRAP_BADGE_THRESHOLD && (
                     <Badge variant="outline" className="text-[9px] px-1 bg-amber-500/10 text-amber-400 border-amber-500/30">
                       Trap
                     </Badge>

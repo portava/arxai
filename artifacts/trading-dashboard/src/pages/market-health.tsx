@@ -60,6 +60,12 @@ type MarketDataStatus = {
   unavailableReason: string | null;
   features: { quotes: boolean; news: boolean; snapshots: boolean; economicCalendar: boolean; candles: boolean; currentEvents?: boolean };
   setupHint: string | null;
+  // Quality of the most recent quote payload and when it was observed. The
+  // server's freshnessState only says a provider call succeeded recently —
+  // news / calendar fetches count too — so it is not a quote-freshness verdict.
+  dataFreshness?: "REALTIME" | "DELAYED" | "UNAVAILABLE" | null;
+  dataSource?: string | null;
+  dataFreshnessAt?: string | null;
   rateLimitStatus?: {
     limited: boolean;
     retryAfterMs: number | null;
@@ -77,6 +83,47 @@ function freshnessBadgeColor(state: MarketDataStatus["freshnessState"]): string 
     case "UNAVAILABLE": return "bg-zinc-500/80 text-white";
     default: return "bg-zinc-500/80 text-white";
   }
+}
+
+// The badge the page shows. The client may only downgrade the server's
+// freshnessState: FRESH is shown only when a REAL-TIME quote was observed
+// within staleAfterMs. A delayed quote reads DELAYED; a recent success with no
+// recent quote observation (news / calendar / overview, or an old quote) reads
+// NO RECENT QUOTE.
+type ProviderDisplayState = MarketDataStatus["freshnessState"] | "DELAYED" | "NO RECENT QUOTE" | "NO PRICE DATA";
+function providerDisplayState(mds: MarketDataStatus): ProviderDisplayState {
+  if (mds.freshnessState !== "FRESH") return mds.freshnessState;
+  const at = mds.dataFreshnessAt ? Date.parse(mds.dataFreshnessAt) : NaN;
+  const age = Date.now() - at;
+  const recent = Number.isFinite(age) && age >= 0 && age <= mds.staleAfterMs;
+  if (!recent || mds.dataFreshness == null) return "NO RECENT QUOTE";
+  if (mds.dataFreshness === "REALTIME") return "FRESH";
+  if (mds.dataFreshness === "DELAYED") return "DELAYED";
+  return "NO PRICE DATA";
+}
+function providerDisplayColor(state: ProviderDisplayState): string {
+  switch (state) {
+    case "DELAYED": return "bg-amber-500/80 text-white";
+    case "NO RECENT QUOTE": return "bg-amber-500/70 text-white";
+    case "NO PRICE DATA": return "bg-zinc-500/80 text-white";
+    default: return freshnessBadgeColor(state);
+  }
+}
+// "Responding" is measured from fetch results, never from the adapter's
+// configured `connected` flag (a constant for every keyed provider).
+function respondingText(mds: MarketDataStatus): string {
+  switch (mds.freshnessState) {
+    case "FRESH": return `yes — last success ${ageString(mds.lastSuccessfulFetchAt)}`;
+    case "STALE": return `no recent success — last ${ageString(mds.lastSuccessfulFetchAt)}`;
+    case "ERROR": return "no — last attempt failed";
+    case "NEVER_FETCHED": return "not checked yet";
+    default: return "no — not configured";
+  }
+}
+function quoteQualityText(mds: MarketDataStatus): string {
+  if (!mds.dataFreshness || !mds.dataFreshnessAt) return "no quote observed";
+  const src = mds.dataSource ? ` (${mds.dataSource})` : "";
+  return `${mds.dataFreshness.toLowerCase()}${src}, ${ageString(mds.dataFreshnessAt)}`;
 }
 
 /** Tone for a resolved data verdict. Only "Live" reads as good. */
@@ -123,6 +170,9 @@ export default function MarketHealthPage() {
   const [mds, setMds] = useState<MarketDataStatus | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  // A failed status read is shown as a failure — never as "Loading…" and
+  // never by keeping the last status on screen as if it were current.
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // The ONE honest feed source — the same hook the scanner and chart consume.
   const { truth, feedStatus, isLoading, isError, refetch } = useScannerTruth(symbol, tf);
@@ -130,10 +180,18 @@ export default function MarketHealthPage() {
   const loadStatus = useCallback(async () => {
     try {
       const r = await fetch(`/api/me/market-data/status`, { credentials: "include" });
-      if (!r.ok) { setMds(null); return; }
+      if (!r.ok) {
+        setMds(null);
+        setStatusError(`Provider status could not be read (HTTP ${r.status}) at ${new Date().toLocaleTimeString()}.`);
+        return;
+      }
       const j = await r.json();
       setMds(j.status as MarketDataStatus);
-    } catch { /* keep last */ }
+      setStatusError(null);
+    } catch (e) {
+      setMds(null);
+      setStatusError(`Provider status could not be read (${(e as Error).message || "network error"}) at ${new Date().toLocaleTimeString()}.`);
+    }
   }, []);
 
   useEffect(() => {
@@ -154,10 +212,17 @@ export default function MarketHealthPage() {
       } else if (!j.ok) {
         setRefreshMessage(`Refresh failed: ${j.reason ?? "unknown"}.`);
       } else {
-        const okCount = (j.attempts as Array<{ ok: boolean }> ?? []).filter((a) => a.ok).length;
-        setRefreshMessage(`Refreshed — ${okCount} live probe(s) succeeded.`);
+        // ok:true only means a positive, non-stale price came back; a DELAYED
+        // quote is ok but not live. Count each quality separately.
+        const attempts = (j.attempts as Array<{ ok: boolean; freshness?: string }> | undefined) ?? [];
+        const realtime = attempts.filter((a) => a.ok && a.freshness === "REALTIME").length;
+        const delayed = attempts.filter((a) => a.ok && a.freshness === "DELAYED").length;
+        const other = attempts.length - realtime - delayed;
+        setRefreshMessage(
+          `Refreshed — ${attempts.length} probe(s): ${realtime} real-time, ${delayed} delayed, ${other} failed or unclassified.`,
+        );
       }
-      if (j.status) setMds(j.status as MarketDataStatus);
+      if (j.status) { setMds(j.status as MarketDataStatus); setStatusError(null); }
       refetch();
     } catch (e) {
       setRefreshMessage(`Refresh error: ${(e as Error).message}`);
@@ -185,11 +250,14 @@ export default function MarketHealthPage() {
       </div>
 
       {/* Phase: Market Data Freshness — honest provider status card */}
-      <Card>
+      <Card data-testid="card-market-data-provider">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             Market Data Provider
-            {mds && <Badge className={freshnessBadgeColor(mds.freshnessState)}>{mds.freshnessState}</Badge>}
+            {mds && (() => {
+              const state = providerDisplayState(mds);
+              return <Badge className={providerDisplayColor(state)} data-testid="badge-provider-freshness">{state}</Badge>;
+            })()}
             {mds?.rateLimitStatus?.limited && (
               <Badge
                 className="bg-amber-500/80 text-white"
@@ -206,15 +274,18 @@ export default function MarketHealthPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-xs space-y-1.5">
-          {!mds ? (
+          {!mds && statusError ? (
+            <p className="text-rose-300" data-testid="provider-status-error">{statusError}</p>
+          ) : !mds ? (
             <p className="text-muted-foreground">Loading provider status…</p>
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Provider</span><Badge variant="outline" className="text-[10px]">{mds.provider}</Badge></div>
-                <div className="flex justify-between gap-2"><span className="text-muted-foreground">Connected</span><span>{mds.connected ? "yes" : "no"}</span></div>
+                <div className="flex justify-between gap-2"><span className="text-muted-foreground">Responding</span><span data-testid="provider-responding">{respondingText(mds)}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Configured</span><span>{mds.configured ? "yes" : "no"}</span></div>
-                <div className="flex justify-between gap-2"><span className="text-muted-foreground">Candles</span><span>{mds.features?.candles ? "yes" : "no"}</span></div>
+                <div className="flex justify-between gap-2"><span className="text-muted-foreground">Candle support</span><span>{mds.features?.candles ? "yes" : "no"}</span></div>
+                <div className="flex justify-between gap-2"><span className="text-muted-foreground">Last quote</span><span className="font-mono" data-testid="provider-last-quote">{quoteQualityText(mds)}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Last success</span><span className="font-mono">{ageString(mds.lastSuccessfulFetchAt)}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Last attempt</span><span className="font-mono">{ageString(mds.lastAttemptedFetchAt)}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Stale after</span><span className="font-mono">{Math.round(mds.staleAfterMs / 60000)}m</span></div>
@@ -225,14 +296,14 @@ export default function MarketHealthPage() {
                   <span className="font-semibold">Unavailable reason:</span> {mds.unavailableReason}
                 </div>
               )}
-              {mds.lastError && mds.freshnessState !== "FRESH" && (
+              {mds.lastError && providerDisplayState(mds) !== "FRESH" && (
                 <div className="text-amber-300 break-words">
                   <span className="font-semibold">Last error:</span> {mds.lastError}
                   {mds.lastErrorAt && <span className="text-muted-foreground"> ({ageString(mds.lastErrorAt)})</span>}
                 </div>
               )}
               {mds.setupHint && <p className="text-muted-foreground">{mds.setupHint}</p>}
-              {refreshMessage && <p className="text-muted-foreground italic">{refreshMessage}</p>}
+              {refreshMessage && <p className="text-muted-foreground italic" data-testid="provider-refresh-message">{refreshMessage}</p>}
             </>
           )}
         </CardContent>

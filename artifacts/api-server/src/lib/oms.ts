@@ -75,6 +75,15 @@ export interface Position {
   lotSize: number;
   entryPrice: number;
   currentPrice: number;
+  /**
+   * What currentPrice is: SIMULATOR_QUOTE — marked from the simulator quote
+   * at currentPriceAsOf; NO_QUOTE — the simulator had no quote on the latest
+   * tick, so it is the last mark (as of currentPriceAsOf), not a live price;
+   * EXIT_PRICE — the position is closed and this is its exit (SL/TP/close)
+   * price, as of the close.
+   */
+  currentPriceBasis: "SIMULATOR_QUOTE" | "NO_QUOTE" | "EXIT_PRICE";
+  currentPriceAsOf: string;
   stopLoss?: number;
   takeProfit?: number;
   unrealizedPnL: number;
@@ -236,6 +245,7 @@ function submitToSimulator(orderId: string): { order: Order; position?: Position
     positionId: newId("pos"), orderId: o.orderId,
     environment: o.environment, symbol: o.symbol, direction: o.direction,
     lotSize: o.lotSize, entryPrice: fillPrice, currentPrice: fillPrice,
+    currentPriceBasis: "SIMULATOR_QUOTE", currentPriceAsOf: q.tsIso,
     stopLoss: o.stopLoss, takeProfit: o.takeProfit,
     unrealizedPnL: 0, realizedPnL: 0, rMultiple: 0,
     riskAmount: risk, status: "OPEN",
@@ -254,8 +264,10 @@ function pnlFor(p: Position): number {
 
 function tickPosition(p: Position) {
   if (p.status !== "OPEN") return;
-  const q = marketSimulator.quote(p.symbol); if (!q) return;
+  const q = marketSimulator.quote(p.symbol);
+  if (!q) { p.currentPriceBasis = "NO_QUOTE"; return; }
   p.currentPrice = p.direction === "BUY" ? q.bid : q.ask;
+  p.currentPriceBasis = "SIMULATOR_QUOTE"; p.currentPriceAsOf = q.tsIso;
   p.unrealizedPnL = pnlFor(p);
   p.rMultiple = p.riskAmount > 0 ? Number((p.unrealizedPnL / p.riskAmount).toFixed(2)) : 0;
   // SL / TP triggers using mid for fairness.
@@ -311,6 +323,7 @@ function closePosition(id: string, reason: PositionStatus = "MANUALLY_CLOSED", o
   p.rMultiple = p.riskAmount > 0 ? Number((p.realizedPnL / p.riskAmount).toFixed(2)) : 0;
   p.status = reason; p.closedAt = nowIso();
   p.closeReason = reason;
+  p.currentPriceBasis = "EXIT_PRICE"; p.currentPriceAsOf = p.closedAt;
   // Mark linked order CLOSED.
   const ord = orders.get(p.orderId); if (ord) { ord.status = "CLOSED"; ord.updatedAt = nowIso(); }
   audit("POSITION_CLOSED", `Closed ${p.symbol} ${p.direction} ${reason} pnl=${p.realizedPnL} R=${p.rMultiple}`, { positionId: id });

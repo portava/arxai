@@ -138,6 +138,9 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
     const total = journal.length;
     const winRate = total ? Math.round((wins / total) * 100) : 0;
     const pnl = journal.reduce((a, j) => a + (j.pnl ?? 0), 0);
+    // Entries whose P&L is actually known. totalPnl above treats a missing P&L
+    // as 0, so the client needs this count to tell "net $0" from "unknown".
+    const tradesWithRecordedPnl = journal.filter(hasRecordedOutcome).length;
 
     // Best/worst symbol rank recorded results only (a missing P&L is
     // unknown, not 0). "Best" must be net profitable and "worst" net losing,
@@ -187,7 +190,7 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
         LIVE_TESTER_INTENT: { trades: null, note: "Not read by this report — live intents are not tracked per user." },
         REAL_BROKER: { trades: null, status: "Not read by this report — real broker execution is deferred and has never executed." },
       },
-      headline: { winRate, totalPnl: Math.round(pnl * 100) / 100, totalTrades: total },
+      headline: { winRate, totalPnl: Math.round(pnl * 100) / 100, totalTrades: total, tradesWithRecordedPnl },
       bestSymbol, worstSymbol,
       strategyRanking,
       mistakeDistribution: Object.fromEntries(mistakeDist),

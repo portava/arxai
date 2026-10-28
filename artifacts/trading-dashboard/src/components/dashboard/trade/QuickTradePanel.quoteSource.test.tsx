@@ -50,6 +50,8 @@ describe("Quick Trade quote source", () => {
     expect(screen.getByTestId("trade-action-buy").textContent).not.toContain("1.08506");
     expect(screen.getByTestId("trade-action-sell").textContent).not.toContain("1.08494");
     expect(screen.getByTestId("quick-trade-quote-source").textContent).toMatch(/simulator/i);
+    // Ported from the parallel fix's test: the label never presents it as the broker's quote.
+    expect(screen.getByTestId("quick-trade-quote-source").textContent).toMatch(/not .*broker/i);
   });
 
   it("a quote with no stated source is not shown either", () => {

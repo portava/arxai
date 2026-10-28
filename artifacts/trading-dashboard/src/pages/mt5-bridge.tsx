@@ -157,16 +157,34 @@ export default function MT5BridgePage() {
     return { label: "Not connected", tone: "warning" };
   }, [checking, frozen, bridgeUp, onShared, shared?.availability, s, status.isError]);
 
-  const approved = (mode as any).approvalStatus === "APPROVED" || (mode as any).isLiveShared === true;
-  const approvalTone: Tone = frozen ? "danger" : approved ? "success" : "warning";
-  const approvalLabel = frozen ? "Frozen" : approved ? "Approved" : ((mode as any).approvalStatus ? "Pending" : "Checking");
+  // Approval / arming come from the account-mode envelope. Being in
+  // LIVE_SHARED mode is not approval, and a fresh heartbeat is not permission
+  // to execute: the envelope's blocked reason and liveExecutionArmed decide.
+  const env = (mode.envelope ?? null) as { userApprovalStatus?: string | null; liveExecutionArmed?: boolean } | null;
+  const approvalStatus = env?.userApprovalStatus ?? null;
+  const blockedReason = mode.cleanBlockedReason ?? null;
+  const liveArmed = mode.isLiveArmed === true;
+  const approved = approvalStatus === "APPROVED";
+  const approvalTone: Tone = frozen ? "danger" : blockedReason ? "warning" : approved ? "success" : "warning";
+  const approvalLabel = frozen ? "Frozen"
+    : !env ? "Unknown"
+    : blockedReason ? "Blocked"
+    : approved ? "Approved"
+    : approvalStatus === "NOT_REQUIRED" ? "Not required"
+    : "Not approved";
+  const liveAccessLabel = liveArmed ? "Enabled" : mode.isLiveShared ? "Live Shared · not armed" : "Not enabled";
 
   const routeLabel = (mode as any).cleanModeLabel ?? ((mode as any).isLiveShared ? "Live Shared MT5" : (mode as any).isDemo ? "Demo" : "Analysis Only");
   const bridgeHealthy = bridgeUp && !frozen;
   // A reporting bridge alone does not make execution available: the account
   // must be approved too. Approval is a separate field from the heartbeat.
-  const executionAvailable = bridgeHealthy && approved;
-  const executionLabel = executionAvailable ? "Available" : bridgeHealthy ? "Awaiting approval" : "Paused";
+  // Execution also needs live execution armed with no block reported.
+  const executionAvailable = bridgeHealthy && approved && liveArmed && !blockedReason;
+  const executionLabel = !bridgeHealthy ? "Paused"
+    : blockedReason ? "Blocked"
+    : !approved ? "Awaiting approval"
+    : !liveArmed ? "Not armed"
+    : "Available";
   // This page reads only the bridge heartbeat. It does not measure the price
   // feed, result reporting or position/account refresh, so it does not claim them.
   const NOT_CHECKED = "Not checked here";
@@ -206,7 +224,9 @@ export default function MT5BridgePage() {
   const rubyRead = frozen
     ? "Your account is currently risk-locked, so live execution is paused. Market analysis and the scanner stay available. Clear the lock from Risk Settings, then your route will reopen."
     : bridgeUp
-      ? `Your trading route is reporting. ${onShared ? "The shared MT5 bridge" : "Your own MT5 EA"} is connected. ${approved ? "" : `Your account approval is ${approvalLabel.toLowerCase()}, so live execution is not available yet. `}If it disconnects, ARX will pause live execution until the connection returns.`
+      ? (executionAvailable
+          ? `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected and your account mode has live execution armed with no block reported. Server safety gates still check every order. If it disconnects, ARX pauses live execution until the connection returns.`
+          : `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected, but live execution is not available on your account: ${blockedReason ? `blocked (${blockedReason})` : !approved ? `approval is ${approvalLabel.toLowerCase()}` : !liveArmed ? "live execution is not armed" : "not confirmed"}. You can still analyze the market and prepare ideas.`)
       : `${bridgeCopy} Live execution is paused until the bridge reports in. You can still analyze the market and prepare ideas.`;
 
   const activity: { time: string; event: string; tone: Tone; chip: string }[] = [];
@@ -339,7 +359,7 @@ export default function MT5BridgePage() {
         <SectionCard title="My Bridge Access" icon={UserCheck}>
           <div className="divide-y divide-border/60">
             <Row label="Approval" value={approvalLabel} tone={approvalTone} />
-            <Row label="Live Access" value={(mode as any).liveExecutionArmed ? "Enabled" : (mode as any).isLiveShared ? "Enabled" : "Not enabled"} tone={(mode as any).isLiveShared ? "success" : "muted"} />
+            <Row label="Live Access" value={liveAccessLabel} tone={liveArmed ? "success" : mode.isLiveShared ? "warning" : "muted"} />
             <Row label="Allocation" value={fmtMoney(allocation)} />
             <Row label="Allowed Markets" value={Array.isArray((mode as any).allowedSymbols) && (mode as any).allowedSymbols.length ? `${(mode as any).allowedSymbols.length} approved` : "All approved symbols"} />
             <Row label="Max Lot Size" value={(mode as any).maxLotSize != null ? String((mode as any).maxLotSize) : "Not available"} />
