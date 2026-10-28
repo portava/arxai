@@ -53,17 +53,32 @@ function notAvailable(detail: string): LayerReadiness {
 }
 
 // ── MARKET_DATA — provider chain health (read-only snapshot) ─────────────────
+// Only providers that serve prices count (an OpenAI or NewsAPI key is not
+// market data), and a provider's "healthy" flag is partly configuration, so
+// PASS also needs the snapshot's own symbol probes to have returned candles
+// and a quote for every probed symbol. No probe evidence is never a PASS.
+const MARKET_DATA_CATEGORIES: ReadonlySet<string> = new Set(["broker", "synthetic", "market_data"]);
 const marketDataAdapter: LayerAdapter = async () => {
   try {
     const snap = await getProviderHealthSnapshot();
-    const { healthy, degraded, failing } = snap.summary;
-    if (healthy === 0) {
-      return notAvailable(`no healthy provider (degraded=${degraded}, failing=${failing})`);
+    const market = (Array.isArray(snap.providers) ? snap.providers : [])
+      .filter((p) => MARKET_DATA_CATEGORIES.has(p.category));
+    const healthy = market.filter((p) => p.status === "healthy").length;
+    const degraded = market.filter((p) => p.status === "degraded").length;
+    const failing = market.filter((p) => p.status === "failing").length;
+    const probes = Array.isArray(snap.symbolProbes) ? snap.symbolProbes : [];
+    const candlesOk = probes.filter((p) => p.candles?.ok === true).length;
+    const quotesOk = probes.filter((p) => p.quote?.ok === true).length;
+    const counts = `market-data providers healthy=${healthy}, degraded=${degraded}, failing=${failing}; ` +
+      `probes candles ${candlesOk}/${probes.length}, quotes ${quotesOk}/${probes.length}`;
+    if (healthy === 0) return notAvailable(`no healthy market-data provider (${counts})`);
+    if (probes.length === 0) return notAvailable(`no symbol probe results (${counts})`);
+    if (candlesOk === 0 && quotesOk === 0) return notAvailable(`no probed symbol returned candles or a quote (${counts})`);
+    const missing = probes.filter((p) => p.candles?.ok !== true || p.quote?.ok !== true).map((p) => p.symbol);
+    if (degraded > 0 || failing > 0 || missing.length > 0) {
+      return { status: "WARN", detail: counts + (missing.length ? `; no data for ${missing.join(", ")}` : ""), ageMs: null };
     }
-    if (degraded > 0 || failing > 0) {
-      return { status: "WARN", detail: `healthy=${healthy}, degraded=${degraded}, failing=${failing}`, ageMs: null };
-    }
-    return { status: "PASS", detail: `healthy=${healthy}`, ageMs: null };
+    return { status: "PASS", detail: counts, ageMs: null };
   } catch {
     return notAvailable("provider health read failed");
   }
