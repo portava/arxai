@@ -260,3 +260,38 @@ describe("Affected Market Heat only shows symbols that were actually read", () =
     expect(strip.textContent).toMatch(/no timing read returned/i);
   });
 });
+
+describe("Affected Market Heat rows carry the read's data-quality marker", () => {
+  // Each timing read says how it was built (dataQuality.label): real candles +
+  // quotes, partial, a session-only estimate, or unavailable. The strip drew a
+  // grade and a green GO with no marker, so a session-only estimate looked
+  // like a real read.
+  it("marks each row with its quality and never colours a non-real read's permission", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "ecb", title: "ECB Press Conference", when: at(0, 13, 45), currency: "EUR", country: "Euro Area",
+        affectedSymbols: ["EURUSD", "EURJPY", "EURGBP"] }),
+    ] });
+    timing.data = { results: [
+      { symbol: "EURUSD", timingGrade: "A", entryPermission: "GO", heatScore: 60, generatedAt: "2026-10-28T08:59:00.000Z",
+        dataQuality: { label: "real" } },
+      { symbol: "EURJPY", timingGrade: "B", entryPermission: "GO", heatScore: 40, generatedAt: "2026-10-28T08:59:00.000Z",
+        dataQuality: { label: "basic_timing_estimate" } },
+      { symbol: "EURGBP", timingGrade: "B", entryPermission: "GO", heatScore: 40 },
+    ] };
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    fireEvent.click(within(row("ECB Press Conference")).getByText("ECB Press Conference"));
+    const strip = await screen.findByTestId("eco-heat-strip");
+    const rows = within(strip).getAllByTestId("eco-heat-row");
+    const bySym = (s: string) => rows.find((r) => r.textContent?.includes(s))!;
+    expect(bySym("EURUSD").textContent).toMatch(/real data/i);
+    expect(bySym("EURJPY").textContent).toMatch(/session-only estimate/i);
+    expect(bySym("EURGBP").textContent).toMatch(/data quality not reported/i);
+    // A GO from a non-real read is not painted green.
+    expect(bySym("EURUSD").className).toMatch(/emerald/);
+    expect(bySym("EURJPY").className).not.toMatch(/emerald/);
+    expect(bySym("EURGBP").className).not.toMatch(/emerald/);
+    // The strip says these are timing reads as of their calculation time.
+    expect(strip.textContent).toMatch(/calculated/i);
+  });
+});

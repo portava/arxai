@@ -232,7 +232,8 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
   // rows; blocked and missing symbols are named as such.
   type HeatEntry = {
     symbol?: string; timingGrade?: string; entryPermission?: string; heatScore?: number;
-    tradeabilityScore?: number; heatState?: string;
+    tradeabilityScore?: number; heatState?: string; generatedAt?: string;
+    dataQuality?: { label?: string };
     requestedSymbol?: string; blocked?: boolean; isApprovedMarket?: boolean;
   };
   const raw = (q.data as { results?: HeatEntry[] } | undefined)?.results;
@@ -243,6 +244,24 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
   const answered = new Set<string>([...results.map((r) => r.symbol!), ...blocked]);
   const missing = symbols.filter((s) => !answered.has(s));
   if (results.length === 0 && blocked.length === 0 && missing.length === 0) return null;
+
+  // Each read says how it was built. Only a read on real candles + quotes may
+  // carry the permission colour; anything else is drawn neutral and named.
+  const QUALITY_TEXT: Record<string, string> = {
+    real: "real data",
+    partial: "partial data",
+    basic_timing_estimate: "session-only estimate",
+    unavailable: "no market data",
+  };
+  const qualityOf = (r: HeatEntry) => r.dataQuality?.label ?? "";
+  const qualityText = (r: HeatEntry) => QUALITY_TEXT[qualityOf(r)] ?? "data quality not reported";
+  const calcTimes = results
+    .map((r) => (typeof r.generatedAt === "string" ? Date.parse(r.generatedAt) : NaN))
+    .filter((t) => Number.isFinite(t));
+  const oldestCalc = calcTimes.length > 0 ? new Date(Math.min(...calcTimes)) : null;
+  const calcLine = oldestCalc
+    ? `Timing reads calculated ${String(oldestCalc.getUTCHours()).padStart(2, "0")}:${String(oldestCalc.getUTCMinutes()).padStart(2, "0")} UTC${calcTimes.length < results.length ? " (some reads did not say when)" : ""}.`
+    : "Timing reads did not say when they were calculated.";
 
   const permColor: Record<string, string> = {
     GO: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
@@ -258,7 +277,7 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
       </div>
       <div className="flex flex-wrap gap-2">
         {results.map((r) => (
-          <div key={r.symbol} data-testid="eco-heat-row" className={cn("flex items-center gap-1.5 rounded border px-2 py-1 text-[11px]", permColor[r.entryPermission ?? ""] ?? "border-border text-txt-secondary")}>
+          <div key={r.symbol} data-testid="eco-heat-row" className={cn("flex items-center gap-1.5 rounded border px-2 py-1 text-[11px]", (qualityOf(r) === "real" ? permColor[r.entryPermission ?? ""] : undefined) ?? "border-border text-txt-secondary")}>
             <span className="font-mono font-semibold">{r.symbol}</span>
             <span className="text-txt-muted">|</span>
             <span className="font-bold">{r.timingGrade ?? "—"}</span>
@@ -267,11 +286,15 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
             {r.heatScore != null && (
               <span className="text-[10px] text-txt-muted">H:{r.heatScore}</span>
             )}
+            <span data-testid="eco-heat-quality" className="text-[10px] text-txt-muted">· {qualityText(r)}</span>
           </div>
         ))}
       </div>
       {results.length === 0 && (
         <p className="text-[11px] text-txt-muted">No timing read is available for these markets.</p>
+      )}
+      {results.length > 0 && (
+        <p data-testid="eco-heat-calc-time" className="mt-1 text-[11px] text-txt-muted">{calcLine}</p>
       )}
       {blocked.length > 0 && (
         <p className="mt-1 text-[11px] text-txt-muted">
