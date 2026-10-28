@@ -28,8 +28,11 @@ interface Check {
 export default function TradingReadinessPage() {
   const qc = useQueryClient();
   const [, setLocation] = useLocation();
+  // The self-report starts unanswered. Pre-filled values would be sent (and
+  // stored on "Start trading session") as the trader's own answers and earn
+  // the mental check a PASS that nobody gave.
   const [report, setReport] = useState<SelfReport>({
-    mentalState: 4, sleepQuality: 4, stressLevel: 2, confidenceLevel: 4,
+    mentalState: null, sleepQuality: null, stressLevel: null, confidenceLevel: null,
     strategyReady: false, riskRulesConfirmed: false,
   });
   const [sessionName, setSessionName] = useState("PRE_SESSION");
