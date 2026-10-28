@@ -38,6 +38,8 @@ import {
 import { PageTabs } from "@/components/ui/PageTabs";
 import { CompactAlert } from "@/components/ui/CompactAlert";
 import { MissionPerformanceView } from "@/components/missions/MissionPerformanceView";
+import { formatInstrumentPrice, observedPriceDecimals } from "@/lib/instrumentPriceFormat";
+import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 import {
   Target,
   Gauge,
@@ -950,9 +952,23 @@ function directionMeta(direction: MissionProposal["direction"]) {
   return { label: "No trade", cls: "text-muted-foreground", Icon: Minus };
 }
 
-function fmtPrice(n: number | null): string {
+/**
+ * Mission levels follow the one instrument display rule used on the chart and
+ * scanner: no thousands grouping, at least the symbol's own digits (5 for FX
+ * pairs, 3 for JPY pairs, else 2), and never fewer digits than the row's own
+ * levels actually carry — so 1.08500 is not shortened to 1.085 and a level that
+ * differs by one point never renders identically to its neighbour.
+ */
+export function formatMissionPrice(
+  symbol: string,
+  n: number | null | undefined,
+  rowLevels: ReadonlyArray<number | null | undefined>,
+): string {
   if (n == null || !Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 5 });
+  const bare = symbol.toUpperCase().replace(/^.*:/, "").replace(/[^A-Z]/g, "");
+  const base = candleDisplayPrecision([], bare);
+  const seen = observedPriceDecimals([n, ...rowLevels]);
+  return formatInstrumentPrice(n, Math.max(base, seen ?? 0));
 }
 
 // ── Agent Desk: the mission's specialist team (advisory roster) ───────────────
@@ -1005,8 +1021,10 @@ function MissionAgentDesk({ missionId }: { missionId: number }) {
 }
 
 // ── A single proposal row (read-only analysis artifact) ──────────────────────
-function ProposalRow({ p }: { p: MissionProposal }) {
+export function ProposalRow({ p }: { p: MissionProposal }) {
   const dir = directionMeta(p.direction);
+  const levels = [p.entryPlan.entryPrice, p.riskPlan.stopLoss, p.riskPlan.takeProfit];
+  const fmtLevel = (n: number | null | undefined) => formatMissionPrice(p.symbol, n, levels);
   const sMeta = PROPOSAL_STATUS_META[p.status] ?? {
     label: p.status,
     cls: "bg-muted text-muted-foreground",
@@ -1041,12 +1059,12 @@ function ProposalRow({ p }: { p: MissionProposal }) {
         </div>
         <div>
           <span className="text-muted-foreground">Entry</span>
-          <div>{fmtPrice(p.entryPlan.entryPrice)}</div>
+          <div>{fmtLevel(p.entryPlan.entryPrice)}</div>
         </div>
         <div>
           <span className="text-muted-foreground">Stop / Target</span>
           <div>
-            {fmtPrice(p.riskPlan.stopLoss)} / {fmtPrice(p.riskPlan.takeProfit)}
+            {fmtLevel(p.riskPlan.stopLoss)} / {fmtLevel(p.riskPlan.takeProfit)}
           </div>
         </div>
       </div>
@@ -1505,6 +1523,8 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const dir = directionMeta(draft.direction);
+  const draftLevels = [draft.entryPrice, draft.stopLoss, draft.takeProfit];
+  const fmtDraftLevel = (n: number | null | undefined) => formatMissionPrice(draft.symbol, n, draftLevels);
   const sMeta =
     DRAFT_STATUS_META[draft.effectiveStatus] ?? {
       label: draft.effectiveStatus,
@@ -1569,12 +1589,12 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
       <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
         <div>
           <span className="text-muted-foreground">Entry</span>
-          <div>{fmtPrice(draft.entryPrice ?? null)}</div>
+          <div>{fmtDraftLevel(draft.entryPrice)}</div>
         </div>
         <div>
           <span className="text-muted-foreground">Stop / Target</span>
           <div>
-            {fmtPrice(draft.stopLoss ?? null)} / {fmtPrice(draft.takeProfit ?? null)}
+            {fmtDraftLevel(draft.stopLoss)} / {fmtDraftLevel(draft.takeProfit)}
           </div>
         </div>
         <div>
