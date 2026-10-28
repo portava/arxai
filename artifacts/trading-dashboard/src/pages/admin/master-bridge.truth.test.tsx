@@ -105,3 +105,45 @@ describe("Master Bridge live banner follows the stored flags", () => {
     expect(alert.textContent).not.toMatch(/is off|are ON/);
   });
 });
+
+describe("Master Bridge loads that fail say so instead of showing an empty state", () => {
+  it("an ok:false unattributed list is 'could not be loaded', never 'All master fills are attributed.'", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": { body: current() },
+      "/api/admin/shared-master/unattributed": { status: 500, body: { ok: false, error: "unattributed_list_failed" } },
+    });
+    expect(screen.queryByText("All master fills are attributed.")).toBeNull();
+    const errs = screen.getAllByTestId("text-list-load-error").map((e) => e.textContent ?? "");
+    expect(errs.some((t) => t.includes("Unattributed master trades could not be loaded") && t.includes("unattributed_list_failed"))).toBe(true);
+    expect(screen.queryByText(/Unattributed master trades \(0\)/)).toBeNull();
+  });
+
+  it("a failed overview is not 'No master accounts configured.'", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": { body: current() },
+      "/api/admin/shared-master/overview": { status: 500, body: { ok: false, error: "overview_failed" } },
+      "/api/admin/shared-master/virtual-accounts": { reject: true },
+    });
+    expect(screen.queryByText("No master accounts configured.")).toBeNull();
+    expect(screen.queryByText("No virtual accounts yet.")).toBeNull();
+    const errs = screen.getAllByTestId("text-list-load-error").map((e) => e.textContent ?? "");
+    expect(errs.some((t) => t.includes("Master accounts could not be loaded"))).toBe(true);
+    expect(errs.some((t) => t.includes("Virtual accounts could not be loaded"))).toBe(true);
+    // The lists that did load still show their real empty state.
+    expect(screen.getByText("All master fills are attributed.")).toBeTruthy();
+  });
+
+  it("an ok:false detector response is not 'No bridge currently registered', and the env flag is not 'false'", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": { status: 500, body: { ok: false, error: "detector_failed" } },
+      "/api/admin/master-bridge/gate": { reject: true },
+    });
+    expect(screen.queryByText("No bridge currently registered with the system.")).toBeNull();
+    expect(screen.getByTestId("text-main-bridge-load-error").textContent).toContain("could not be loaded");
+    expect(screen.getByTestId("text-main-bridge-gate-error").textContent).toContain("could not be loaded");
+    const env = screen.getByTestId("kv-arx-live-broker-execution-enabled").textContent ?? "";
+    expect(env).toContain("could not be read");
+    expect(env).not.toContain("= false");
+    expect(env).not.toContain("will refuse");
+  });
+});

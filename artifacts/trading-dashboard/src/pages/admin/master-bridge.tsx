@@ -65,6 +65,23 @@ type GateVerdict = {
     | { decision: "PASS"; boundBridgeId: number }
     | { decision: "BLOCKED"; primaryReason: string; blockReasons: string[] };
 };
+// GET a JSON admin endpoint. A network failure, a non-2xx status, a non-JSON
+// body or an `ok:false` answer all throw — the caller shows "could not be
+// loaded", never an empty or "off" state.
+async function loadJson(path: string): Promise<Record<string, unknown>> {
+  const r = await fetch(path, { credentials: "include" });
+  let body: Record<string, unknown> | null = null;
+  try { body = (await r.json()) as Record<string, unknown> | null; } catch { body = null; }
+  if (!r.ok || !body || body.ok !== true) {
+    const why = typeof body?.error === "string" ? body.error : null;
+    throw new Error(`HTTP ${r.status}${why ? `: ${why}` : ""}`);
+  }
+  return body;
+}
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 function MainBridgeCurrentConnectedCard({
   onSettings,
 }: {
@@ -73,18 +90,30 @@ function MainBridgeCurrentConnectedCard({
 }) {
   const [main, setMain] = useState<MainBridge | null>(null);
   const [gate, setGate] = useState<GateVerdict | null>(null);
+  const [mainErr, setMainErr] = useState<string | null>(null);
+  const [gateErr, setGateErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   async function load() {
     setBusy(true);
     try {
-      const [m, g] = await Promise.all([
-        fetch("/api/admin/master-bridge/current", { credentials: "include" }).then((r) => r.json()),
-        fetch("/api/admin/master-bridge/gate", { credentials: "include" }).then((r) => r.json()),
+      const [m, g] = await Promise.allSettled([
+        loadJson("/api/admin/master-bridge/current"),
+        loadJson("/api/admin/master-bridge/gate"),
       ]);
-      setMain(m); setGate(g);
-      onSettings?.(m?.ok === true && m.masterLiveSettings?.readable === true ? m.masterLiveSettings : null);
-    } catch {
-      onSettings?.(null);
+      if (m.status === "fulfilled") {
+        const mb = m.value as unknown as MainBridge;
+        setMain(mb); setMainErr(null);
+        onSettings?.(mb.masterLiveSettings?.readable === true ? mb.masterLiveSettings : null);
+      } else {
+        setMain(null); setMainErr(errText(m.reason));
+        onSettings?.(null);
+      }
+      if (g.status === "fulfilled" && g.value.verdict) {
+        setGate(g.value as unknown as GateVerdict); setGateErr(null);
+      } else {
+        setGate(null);
+        setGateErr(g.status === "rejected" ? errText(g.reason) : "no verdict in the response");
+      }
     } finally { setBusy(false); }
   }
   useEffect(() => { void load(); }, []);
@@ -119,8 +148,18 @@ function MainBridgeCurrentConnectedCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
+        {typeof main?.liveBrokerExecutionEnabled !== "boolean" ? (
+          <div
+            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12px] text-warning"
+            data-testid="kv-arx-live-broker-execution-enabled"
+          >
+            <span className="font-medium">Backend live flag</span>{" "}
+            <span className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</span>{" "}
+            {mainErr ? "could not be read." : main ? "was not reported." : "checking…"}
+          </div>
+        ) : (
         <div
-          className={`rounded-md border px-3 py-2 text-[12px] ${main?.liveBrokerExecutionEnabled
+          className={`rounded-md border px-3 py-2 text-[12px] ${main.liveBrokerExecutionEnabled
             ? "border-success/40 bg-success/10 text-success"
             : "border-warning/40 bg-warning/10 text-warning"}`}
           data-testid="kv-arx-live-broker-execution-enabled"
@@ -129,12 +168,13 @@ function MainBridgeCurrentConnectedCard({
           <span className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</span>{" "}
           ={" "}
           <span className="font-mono">
-            {main?.liveBrokerExecutionEnabled ? "true" : "false"}
+            {main.liveBrokerExecutionEnabled ? "true" : "false"}
           </span>
-          {!main?.liveBrokerExecutionEnabled && (
+          {!main.liveBrokerExecutionEnabled && (
             <span className="ml-2">— live dispatch will refuse with <span className="font-mono">LIVE_BROKER_EXECUTION_DISABLED</span> regardless of bridge state.</span>
           )}
         </div>
+        )}
         {b ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Kv label="Bridge id" v={String(b.bridgeId)} mono />
@@ -151,12 +191,24 @@ function MainBridgeCurrentConnectedCard({
             <Kv label="algoTradingAllowed" v={String(b.algoTradingAllowed ?? "—")} mono />
             <Kv label="mode" v={b.mode} mono />
           </div>
-        ) : (
+        ) : mainErr ? (
+          <div className="text-danger" data-testid="text-main-bridge-load-error">
+            The bridge detector could not be loaded ({mainErr}). This page cannot
+            say which bridge is connected.
+          </div>
+        ) : main ? (
           <div className="text-warning/80">No bridge currently registered with the system.</div>
+        ) : (
+          <div className="text-muted-foreground">Loading the bridge detector…</div>
         )}
         {main && !main.detected && (
           <div className="text-[12px] text-warning">
             Detector blocked: <span className="font-mono">{main.primaryReason}</span>
+          </div>
+        )}
+        {gateErr && (
+          <div className="text-[12px] text-danger" data-testid="text-main-bridge-gate-error">
+            The master bridge gate verdict could not be loaded ({gateErr}).
           </div>
         )}
         {gate?.verdict.decision === "BLOCKED" && (
@@ -290,33 +342,52 @@ type Unattributed = {
   brokerMessage: string | null; createdAt: string;
 };
 
-const api = (path: string) =>
-  fetch(path, { credentials: "include" }).then((r) => r.json());
+type ListKey = "overview" | "virts" | "attrs" | "unattr";
+const NO_LIST_ERRORS: Record<ListKey, string | null> = { overview: null, virts: null, attrs: null, unattr: null };
+
+function ListLoadError({ what, err }: { what: string; err: string }) {
+  return (
+    <div className="text-sm text-danger" data-testid="text-list-load-error">
+      {what} could not be loaded ({err}). This is not an empty list.
+    </div>
+  );
+}
+function countLabel(rows: unknown[] | null): string {
+  return rows == null ? "" : ` (${rows.length})`;
+}
 
 export default function AdminMasterBridgePage() {
-  const [overview, setOverview] = useState<MasterOverview[]>([]);
-  const [virts, setVirts] = useState<VirtualAcc[]>([]);
-  const [attrs, setAttrs] = useState<Attribution[]>([]);
-  const [unattr, setUnattr] = useState<Unattributed[]>([]);
+  // null = not loaded (loading, or the last load failed — see listErr).
+  const [overview, setOverview] = useState<MasterOverview[] | null>(null);
+  const [virts, setVirts] = useState<VirtualAcc[] | null>(null);
+  const [attrs, setAttrs] = useState<Attribution[] | null>(null);
+  const [unattr, setUnattr] = useState<Unattributed[] | null>(null);
+  const [listErr, setListErr] = useState<Record<ListKey, string | null>>(NO_LIST_ERRORS);
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [liveSettings, setLiveSettings] = useState<MasterLiveSettings | null | undefined>(undefined);
 
   async function refresh() {
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
-      const [o, v, a, u] = await Promise.all([
-        api("/api/admin/shared-master/overview"),
-        api("/api/admin/shared-master/virtual-accounts"),
-        api("/api/admin/shared-master/attributions"),
-        api("/api/admin/shared-master/unattributed"),
+      const [o, v, a, u] = await Promise.allSettled([
+        loadJson("/api/admin/shared-master/overview"),
+        loadJson("/api/admin/shared-master/virtual-accounts"),
+        loadJson("/api/admin/shared-master/attributions"),
+        loadJson("/api/admin/shared-master/unattributed"),
       ]);
-      if (o.ok) setOverview(o.masters ?? []);
-      if (v.ok) setVirts(v.virtualAccounts ?? v.rows ?? []);
-      if (a.ok) setAttrs(a.attributions ?? a.rows ?? []);
-      if (u.ok) setUnattr(u.unattributed ?? u.rows ?? []);
-    } catch (e) {
-      setErr(String((e as Error).message ?? e));
+      const errs: Record<ListKey, string | null> = { ...NO_LIST_ERRORS };
+      // A list whose rows are missing from an ok answer was not loaded either.
+      function rowsOf<T>(r: PromiseSettledResult<Record<string, unknown>>, key: ListKey, ...fields: string[]): T[] | null {
+        if (r.status === "rejected") { errs[key] = errText(r.reason); return null; }
+        for (const f of fields) if (Array.isArray(r.value[f])) return r.value[f] as T[];
+        errs[key] = "no rows in the response";
+        return null;
+      }
+      setOverview(rowsOf<MasterOverview>(o, "overview", "masters"));
+      setVirts(rowsOf<VirtualAcc>(v, "virts", "virtualAccounts", "rows"));
+      setAttrs(rowsOf<Attribution>(a, "attrs", "attributions", "rows"));
+      setUnattr(rowsOf<Unattributed>(u, "unattr", "unattributed", "rows"));
+      setListErr(errs);
     } finally {
       setBusy(false);
     }
@@ -347,7 +418,6 @@ export default function AdminMasterBridgePage() {
 
       <MasterLiveSettingsAlert settings={liveSettings} />
 
-      {err && <div className="text-sm text-danger">{err}</div>}
 
       <Card>
         <CardHeader>
@@ -359,10 +429,12 @@ export default function AdminMasterBridgePage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {overview.length === 0 && (
+          {listErr.overview && <ListLoadError what="Master accounts" err={listErr.overview} />}
+          {overview == null && !listErr.overview && <div className="text-sm text-muted-foreground">Loading…</div>}
+          {overview?.length === 0 && (
             <div className="text-sm text-muted-foreground">No master accounts configured.</div>
           )}
-          {overview.length > 0 && (
+          {overview != null && overview.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="text-left text-muted-foreground">
@@ -412,7 +484,7 @@ export default function AdminMasterBridgePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Users className="w-4 h-4" /> Virtual accounts ({virts.length})
+            <Users className="w-4 h-4" /> Virtual accounts{countLabel(virts)}
           </CardTitle>
           <CardDescription>
             Per-user virtual ledger rows attributed to each master account.
@@ -420,8 +492,10 @@ export default function AdminMasterBridgePage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {virts.length === 0 && <div className="text-sm text-muted-foreground">No virtual accounts yet.</div>}
-          {virts.length > 0 && (
+          {listErr.virts && <ListLoadError what="Virtual accounts" err={listErr.virts} />}
+          {virts == null && !listErr.virts && <div className="text-sm text-muted-foreground">Loading…</div>}
+          {virts?.length === 0 && <div className="text-sm text-muted-foreground">No virtual accounts yet.</div>}
+          {virts != null && virts.length > 0 && (
             <div className="overflow-x-auto max-h-96">
               <table className="w-full text-xs">
                 <thead className="text-left text-muted-foreground sticky top-0 bg-background">
@@ -454,11 +528,13 @@ export default function AdminMasterBridgePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Recent attributions ({attrs.length})</CardTitle>
+          <CardTitle className="text-base">Recent attributions{countLabel(attrs)}</CardTitle>
         </CardHeader>
         <CardContent>
-          {attrs.length === 0 && <div className="text-sm text-muted-foreground">No attribution rows yet.</div>}
-          {attrs.length > 0 && (
+          {listErr.attrs && <ListLoadError what="Attributions" err={listErr.attrs} />}
+          {attrs == null && !listErr.attrs && <div className="text-sm text-muted-foreground">Loading…</div>}
+          {attrs?.length === 0 && <div className="text-sm text-muted-foreground">No attribution rows yet.</div>}
+          {attrs != null && attrs.length > 0 && (
             <div className="overflow-x-auto max-h-96">
               <table className="w-full text-xs">
                 <thead className="text-left text-muted-foreground sticky top-0 bg-background">
@@ -492,7 +568,7 @@ export default function AdminMasterBridgePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-warning" /> Unattributed master trades ({unattr.length})
+            <AlertTriangle className="w-4 h-4 text-warning" /> Unattributed master trades{countLabel(unattr)}
           </CardTitle>
           <CardDescription>
             Fills on the master account that ARX could not match to a
@@ -500,8 +576,10 @@ export default function AdminMasterBridgePage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {unattr.length === 0 && <div className="text-sm text-muted-foreground">All master fills are attributed.</div>}
-          {unattr.length > 0 && (
+          {listErr.unattr && <ListLoadError what="Unattributed master trades" err={listErr.unattr} />}
+          {unattr == null && !listErr.unattr && <div className="text-sm text-muted-foreground">Loading…</div>}
+          {unattr?.length === 0 && <div className="text-sm text-muted-foreground">All master fills are attributed.</div>}
+          {unattr != null && unattr.length > 0 && (
             <div className="overflow-x-auto max-h-96">
               <table className="w-full text-xs">
                 <thead className="text-left text-muted-foreground sticky top-0 bg-background">
