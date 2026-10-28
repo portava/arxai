@@ -14,8 +14,15 @@
 //  - Hide a session-only estimate (no candle data): that grade is not a read of
 //    this chart.
 //  - Always print the timeframe the grade belongs to.
+//  - Hide a read past Truth's 30-second component lifetime (or with no valid
+//    `generatedAt`): it is no longer current advice.
+//  - Request the SAME params as the Timing Intelligence card ({timeframe, tz})
+//    so, on a 15m chart, chip and card consume one query / one server cache
+//    entry and cannot disagree for cache-partition reasons.
 
 import { Flame } from "lucide-react";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
+import { useMemo } from "react";
 import {
   useGetTimingBrain,
   getGetTimingBrainQueryKey,
@@ -33,6 +40,46 @@ const SUPPORTED = new Set<string>(SUPPORTED_LIST);
 
 export function isTimingChipTimeframe(apiTf: string): apiTf is NonNullable<GetTimingBrainParams["timeframe"]> {
   return SUPPORTED.has(apiTf);
+}
+
+/**
+ * Lifetime of a timing read as current advice: the server Truth's
+ * COMPONENT_BUILD_TTL_MS (marketReadEvidence.ts), which Truth applies to the
+ * timing component. It bounds the read's compute time, not a quote age.
+ */
+export const TIMING_READ_MAX_AGE_MS = 30_000;
+
+/** When a timing read stops being current advice; NaN when its time is unknown. */
+export function timingReadExpiresAtMs(generatedAt: string | null | undefined): number {
+  const t = typeof generatedAt === "string" ? Date.parse(generatedAt) : Number.NaN;
+  return Number.isFinite(t) ? t + TIMING_READ_MAX_AGE_MS : Number.NaN;
+}
+
+/** True while the read is inside its advice lifetime (fail-closed on a bad time). */
+export function isTimingReadCurrent(generatedAt: string | null | undefined, nowMs: number): boolean {
+  const expiresAt = timingReadExpiresAtMs(generatedAt);
+  return Number.isFinite(expiresAt) && nowMs <= expiresAt;
+}
+
+/** The viewer's IANA time zone, or undefined when the runtime cannot say. */
+export function userTimingTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The ONE request shape for a timing-brain read, shared by the chart chip and
+ * the Timing Intelligence card so the same symbol/timeframe is a single client
+ * query and a single server cache entry (symbol|timeframe|tz).
+ */
+export function timingBrainParams(
+  timeframe: NonNullable<GetTimingBrainParams["timeframe"]>,
+  tz: string | undefined,
+): GetTimingBrainParams {
+  return tz ? { timeframe, tz } : { timeframe };
 }
 
 const TF_LABEL: Record<string, string> = {
@@ -85,7 +132,8 @@ function SupportedTimingChip({
   apiTf: NonNullable<GetTimingBrainParams["timeframe"]>;
   timeframeLabel: string;
 }) {
-  const params: GetTimingBrainParams = { timeframe: apiTf };
+  const tz = useMemo(() => userTimingTimezone(), []);
+  const params = useMemo(() => timingBrainParams(apiTf, tz), [apiTf, tz]);
   const q = useGetTimingBrain(symbol, params, {
     query: { queryKey: getGetTimingBrainQueryKey(symbol, params), refetchInterval: 30_000, staleTime: 20_000 },
   });
@@ -95,10 +143,15 @@ function SupportedTimingChip({
         timingGrade?: string;
         entryPermission?: string;
         heatScore?: number;
+        generatedAt?: string;
         dataQuality?: { hasCandleData?: boolean } | null;
       }
     | undefined;
+  const expiresAt = timingReadExpiresAtMs(read?.generatedAt);
+  const nowMs = useEvidenceDeadline(Number.isFinite(expiresAt) ? expiresAt + 1 : null);
   if (!read?.timingGrade || !read.entryPermission) return null;
+  // Past the advice lifetime (or no valid compute time): not current advice.
+  if (!isTimingReadCurrent(read.generatedAt, nowMs)) return null;
   // The server's echo is the authority on which timeframe this grade is for.
   if (read.timeframe !== apiTf) return null;
   // A session-only estimate is not a read of this chart's candles.
