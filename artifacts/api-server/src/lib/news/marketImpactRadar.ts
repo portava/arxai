@@ -34,6 +34,9 @@ import {
 import { getNewsIntelligence } from "./newsIntelligenceService.js";
 import { getEconomicCalendar, type CalendarProviderState } from "./economicCalendarProvider.js";
 import { FRED_PROVIDER } from "./calendar/fredCalendarProvider.js";
+import { isSyntheticSymbol as isSyntheticCalendarSymbol } from "./calendar/calendarSymbolMap.js";
+import { resolveCanonicalSymbol } from "../instruments/index.js";
+import { SYNTHETIC_EVENT_RISK_LABEL } from "@workspace/domain/truth";
 
 const DATE_SENTINEL_SUFFIX = "T00:00:00.000Z";
 
@@ -55,13 +58,24 @@ export interface MarketImpactRadarResult {
 }
 
 /**
- * Synthetic instruments are not driven by real-world economic events. We detect
- * the common Deriv synthetic families by name so the radar never pretends a
- * macro event moves a volatility index.
+ * Synthetic instruments are not driven by real-world economic events. The
+ * canonical instrument resolver is the authority (it classifies the scanner's
+ * own keys — "V75", "V75_1S", "1HZ75V" — which the old name-only regex missed,
+ * so the V75 truth read was given calendar wording); the shared calendar
+ * matcher and the original Deriv family names are kept so no alias that was
+ * caught before regresses.
  */
-function isSyntheticSymbol(symbol: string): boolean {
+export function isSyntheticSymbol(symbol: string): boolean {
   const s = symbol.toUpperCase();
+  let canonicalSynthetic = false;
+  try {
+    canonicalSynthetic = resolveCanonicalSymbol(symbol).assetClass === "synthetic";
+  } catch {
+    canonicalSynthetic = false;
+  }
   return (
+    canonicalSynthetic ||
+    isSyntheticCalendarSymbol(s) ||
     s.includes("VOLATILITY") ||
     s.includes("CRASH") ||
     s.includes("BOOM") ||
@@ -196,7 +210,7 @@ function buildSummary(
   unconfirmedToday: ReadonlySet<string> = new Set(),
 ): string {
   if (synthetic) {
-    return "This is a synthetic instrument — it is not driven by real-world economic events.";
+    return SYNTHETIC_EVENT_RISK_LABEL;
   }
   if (affecting.length === 0) {
     return providerConnected

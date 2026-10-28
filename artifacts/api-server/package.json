@@ -202,7 +202,7 @@
     "test:entry-sizer-quote-fx": "node --import tsx --test --test-force-exit src/lib/selfTrade/__qa__/entrySizerQuoteFx.test.ts",
     "test:market-heat-geography": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/symbolGeography.test.ts",
     "test:market-heat-verdict": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/heatVerdict.test.ts",
-    "test:market-heat-news-honesty": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/newsHonestyResolver.test.ts",
+    "test:market-heat-news-honesty": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/newsHonestyResolver.test.ts src/lib/heat/__qa__/heatNewsTimestamp.test.ts",
     "test:market-heat-news-events": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/newsRiskAndEvents.test.ts",
     "test:market-heat-filters": "node --import tsx --test --test-force-exit src/lib/heat/__qa__/marketHeatFilters.test.ts",
     "test:market-heat-radar-honesty": "node --import tsx --test --test-force-exit src/lib/news/__qa__/marketImpactRadarHonesty.test.ts",

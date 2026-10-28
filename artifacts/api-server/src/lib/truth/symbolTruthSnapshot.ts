@@ -39,6 +39,7 @@ import {
   type TruthReadEvidence,
   classifyTruthEvidence,
   expireTruthEvidence,
+  SYNTHETIC_EVENT_RISK_LABEL,
   type TruthEvidence,
 } from "@workspace/domain/truth";
 import type { RubyMarketEdgeSignal } from "@workspace/domain/signal-intelligence";
@@ -112,6 +113,13 @@ export interface TruthNews {
   riskUnchecked: boolean;
   /** Single clean-English disclaimer when no calendar provider is connected. */
   disclaimer: string | null;
+  /**
+   * Present (true) only for a synthetic market: scheduled economic events do
+   * not apply and the calendar is not consulted, so riskLabel is the shared
+   * SYNTHETIC_EVENT_RISK_LABEL, riskUnchecked is false, no events or
+   * disclaimer are carried, and the evidence reason is SYNTHETIC_NO_EVENT_MAPPING.
+   */
+  synthetic?: true;
 }
 
 export interface TruthData {
@@ -378,7 +386,21 @@ function eventRiskUnchecked(radar: RadarResult | null): boolean {
 const CALENDAR_UNCHECKED_RISK_LABEL = "Event risk is unavailable — the economic calendar could not be checked.";
 const CALENDAR_UNCHECKED_DISCLAIMER = "The economic calendar could not be checked, so scheduled events are not shown.";
 
-function buildNews(radar: RadarResult | null): TruthNews {
+function buildNews(radar: RadarResult | null, synthetic: boolean): TruthNews {
+  if (synthetic) {
+    // The calendar's state (not configured / failed / connected) says nothing
+    // about a market scheduled events do not move: never describe it as a
+    // missing or failed calendar, and never list world events beside it.
+    return {
+      providerConnected: radar?.radar.provider.connected ?? false,
+      events: [],
+      riskLabel: SYNTHETIC_EVENT_RISK_LABEL,
+      highImpactWindowActive: false,
+      riskUnchecked: false,
+      disclaimer: null,
+      synthetic: true,
+    };
+  }
   if (!radar) {
     // The radar read itself failed: whether a calendar is configured is not
     // known here, so never claim "not connected" — it could not be checked.
@@ -530,7 +552,10 @@ export async function buildSymbolTruthSnapshot(
   }
 
   // ── news ────────────────────────────────────────────────────────────────────
-  const newsBlock = buildNews(news);
+  // ONE synthetic authority (the canonical resolver) for the news copy and the
+  // verdict's event-risk input below.
+  const synthetic = classifySymbol(symbol) === "synthetic";
+  const newsBlock = buildNews(news, synthetic);
 
   // ── level geometry (from the scanner signal only) ──────────────────────────
   const hasScannerLevels = scannerUsable && scanner!.hasSufficientData;
@@ -579,7 +604,7 @@ export async function buildSymbolTruthSnapshot(
     price: data.price,
     highImpactWindowActive: newsBlock.highImpactWindowActive,
     // Synthetic instruments are immune to macro events (same rule as the radar).
-    eventRiskUnchecked: classifySymbol(symbol) !== "synthetic" && eventRiskUnchecked(news),
+    eventRiskUnchecked: !synthetic && eventRiskUnchecked(news),
     components: verdictComponents.map((c, i) => {
       const key = (["scanner", "flame", "timing", "scalp"] as const)[i];
       const input: TruthComponentInput = {

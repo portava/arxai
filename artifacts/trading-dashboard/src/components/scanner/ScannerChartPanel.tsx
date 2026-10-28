@@ -66,6 +66,7 @@ import { ChartFeedStatusBadge } from "@/components/charts/ChartFeedStatusBadge";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useToast } from "@/hooks/use-toast";
 import { humanizeReason } from "@/lib/humanize";
+import { eventRiskLine } from "@/lib/eventRiskCopy";
 import {
   type FeedStatus,
   type ChartDisplayStatus,
@@ -708,7 +709,10 @@ export function ScannerChartPanel() {
   // the chart can never disagree with the scanner rows or the Ruby read on the
   // same page. The smart-layers query above still drives the NON-news overlays
   // (structure, exec-cost, trade-health) and the overlay handshake below.
-  const { news, verdict: symbolVerdict } = useSymbolTruth(symbol, timeframe);
+  const { news, newsState, verdict: symbolVerdict } = useSymbolTruth(symbol, timeframe);
+  // ONE event-risk sentence for the Impact radar strip and the chart read's Risk
+  // row — identical to the market-read card's (lib/eventRiskCopy).
+  const eventRisk = eventRiskLine(news, newsState);
   // Directional CTA label for Plan Buy/Sell and the Eleanor button. Derived here
   // (after symbolVerdict is available) and forwarded to child surfaces so they all
   // agree on the same direction without independent bias lookups.
@@ -2764,6 +2768,17 @@ export function ScannerChartPanel() {
                 )}
               </div>
 
+              {/* The Economic-events layer is never silent: with no truth read it
+                  states that event risk is being checked / was not checked, in
+                  the same words as the market-read card. */}
+              {layerToggles.news && !news && (
+                <div className="space-y-1" data-testid="scanner-news-radar">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">Impact radar</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500" data-testid="scanner-news-radar-status">{eventRisk}</div>
+                </div>
+              )}
               {layerToggles.news && news && (
                 <div className="space-y-1" data-testid="scanner-news-radar">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -2845,6 +2860,7 @@ export function ScannerChartPanel() {
               canonicalAction={canonicalChartActionFinal}
               canonicalDirection={canonicalChartDirection}
               canonicalReadId={truth?.consolidated.readId}
+              newsRiskLabel={eventRisk}
             />
 
             {/* Chart Brain v2 Task 6 — your marked levels / zones / price alerts.

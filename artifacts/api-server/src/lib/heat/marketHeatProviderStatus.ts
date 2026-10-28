@@ -5,7 +5,7 @@
 // can't positively confirm as connected reports as not-connected. A missing
 // provider here NEVER becomes fake neutral heat downstream.
 
-import { getMarketStatus, getMarketProvider } from "../assistant/marketProvider.js";
+import { getMarketStatus, getMarketProvider, providerResultFetchedAt } from "../assistant/marketProvider.js";
 import { getEconomicCalendar } from "../news/economicCalendarProvider.js";
 import { routeCandles } from "../data/marketDataRouter.js";
 import {
@@ -39,6 +39,8 @@ export interface NewsProviderRead {
 export interface CalendarProviderRead {
   source: MarketHeatSource;
   connected: boolean;
+  /** Last successful calendar fetch (ISO), null when not connected. */
+  updatedAt: string | null;
   configured: boolean;
   eventCount: number;
   highImpactActive: boolean;
@@ -59,10 +61,12 @@ export async function readNewsProvider(): Promise<NewsProviderRead> {
   let probeConnected = false;
   let probeFailed = false;
   let probeItems: NewsRiskItem[] = [];
+  let probeFetchedAt: string | null = null;
   if (statusConnected) {
     try {
       const news = await getMarketProvider().getMarketNews("markets", 12);
       probeConnected = news.connected;
+      probeFetchedAt = news.connected ? providerResultFetchedAt(news) : null;
       probeItemCount = news.connected ? news.items.length : 0;
       probeItems = news.connected
         ? news.items.map((i) => ({
@@ -100,7 +104,10 @@ export async function readNewsProvider(): Promise<NewsProviderRead> {
   const topHeadlines: MarketHeatNewsHeadline[] = connected
     ? selectTopNewsHeadlines(probeItems, nowMs, 3)
     : [];
-  const updatedAt = status.lastSuccessfulFetchAt ?? null;
+  // The HEADLINE fetch time behind this probe — never the provider-wide
+  // lastSuccessfulFetchAt, which any quote/candle call moves — and only when
+  // the resolver confirmed the source connected. Unknown stays null.
+  const updatedAt = connected ? probeFetchedAt : null;
 
   return {
     source: {
@@ -142,9 +149,12 @@ export async function readCalendarProvider(
   let highImpactActive = false;
   let errored = false;
   let events: MarketHeatEvent[] = [];
+  let updatedAt: string | null = null;
   try {
     const snap = await getEconomicCalendar(symbol, nowMs);
     connected = snap.connected;
+    // Last SUCCESSFUL fetch only — a failed attempt is not a check.
+    updatedAt = snap.connected ? (snap.lastSuccessAt ?? null) : null;
     provider = snap.provider;
     errored = snap.status === "error";
     eventCount = snap.events.length;
@@ -190,7 +200,7 @@ export async function readCalendarProvider(
       status: sourceStatus,
       configured,
       connected,
-      updatedAt: null,
+      updatedAt,
       recordCount: eventCount,
       note: connected
         ? null
@@ -204,6 +214,7 @@ export async function readCalendarProvider(
     highImpactActive,
     provider,
     events,
+    updatedAt,
   };
 }
 

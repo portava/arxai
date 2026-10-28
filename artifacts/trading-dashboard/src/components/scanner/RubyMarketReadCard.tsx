@@ -11,6 +11,7 @@ import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromMarketRead } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
+import { eventRiskLine } from "@/lib/eventRiskCopy";
 import { useGetMeMarketEdge, getGetMeMarketEdgeQueryKey } from "@workspace/api-client-react";
 import type {
   RubyMarketReadExplanation,
@@ -177,7 +178,9 @@ export function RubyMarketReadCard({
   // the ONE per-symbol Truth Snapshot, so this card can never disagree with the
   // chart / scanner rows on the same page. The age is anchored to the DATA
   // timestamp (newest of lastTickAt / lastCandleAt), never the signal build time.
-  const { news, data: truthData, evidence: truthEvidence } = useSymbolTruth(symbol, chartTimeframe);
+  const { news, newsState, data: truthData, evidence: truthEvidence } = useSymbolTruth(symbol, chartTimeframe);
+  // ONE event-risk sentence for the News block AND the Risk row (eventRiskCopy).
+  const eventRisk = eventRiskLine(news, newsState);
   const dataUpdatedIso = useMemo(() => {
     const stamps = [truthData?.lastTickAt, truthData?.lastCandleAt]
       .map((s) => (s ? Date.parse(s) : NaN))
@@ -222,10 +225,10 @@ export function RubyMarketReadCard({
             downgraded,
             level,
             reason,
-            newsRiskLabel: news?.riskLabel ?? null,
+            newsRiskLabel: eventRisk,
           }, name)
         : null,
-    [explanation, signal, downgraded, level, reason, news?.riskLabel, name],
+    [explanation, signal, downgraded, level, reason, eventRisk, name],
   );
 
   return (
@@ -385,7 +388,7 @@ export function RubyMarketReadCard({
               <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-news">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">News &amp; economic impact</div>
                 <p className="mt-0.5 text-sm text-txt-secondary">
-                  {news ? news.riskLabel : "Event risk is loading…"}
+                  {eventRisk}
                 </p>
               </div>
 

@@ -12412,7 +12412,7 @@ components:
         heatScore: { type: number, description: "-100..+100" }
         direction: { type: string, enum: [bullish, bearish, neutral, unavailable] }
         intensity: { type: string, enum: [extreme, high, moderate, low, calm, unavailable] }
-        sourceStatus: { type: string, enum: [confirmed, price_only, delayed, stale, provider_missing, unavailable] }
+        sourceStatus: { type: string, enum: [confirmed, price_only, partial, delayed, stale, provider_missing, unavailable] }
         priceSource: { $ref: "#/components/schemas/MarketHeatSource" }
         newsSource: { $ref: "#/components/schemas/MarketHeatSource" }
         calendarSource: { $ref: "#/components/schemas/MarketHeatSource" }
@@ -15390,6 +15390,14 @@ components:
             or a configured calendar is not connected). Distinct from "no
             calendar configured". Absent on older servers; treat absent as false.
         disclaimer: { type: string, nullable: true }
+        synthetic:
+          type: boolean
+          description: >-
+            Present (true) only for a synthetic market: scheduled economic events
+            do not apply and the economic calendar is not consulted. riskLabel is
+            then the shared synthetic sentence, riskUnchecked is false and no
+            events or disclaimer are carried. Absent means not synthetic (or an
+            older server).
     TruthData:
       type: object
       required: [state, source, sourceLabel, price, lastCandleAt, lastTickAt]
@@ -15479,7 +15487,7 @@ components:
           type: string
           enum:
             [LIVE_FEED_OBSERVATION, MODEL_ESTIMATE, FEED_UNCONFIRMED,
-             CALENDAR_FETCH_TIME_UNKNOWN, FEED_STALE, EXPIRED, NO_FEED, NO_VALUE,
+             CALENDAR_FETCH_TIME_UNKNOWN, SYNTHETIC_NO_EVENT_MAPPING, FEED_STALE, EXPIRED, NO_FEED, NO_VALUE,
              NO_OBSERVATION_TIME, INVALID_TIMESTAMP, NO_CALENDAR, CALENDAR_UNCHECKED,
              COMPONENT_ABSENT, LEVELS_WITHHELD, INSUFFICIENT_DATA, UNCLASSIFIED]
         observedAt:
