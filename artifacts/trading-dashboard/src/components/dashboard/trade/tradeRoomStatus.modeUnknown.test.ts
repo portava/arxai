@@ -81,3 +81,17 @@ describe("Trade Command Room — a read envelope keeps its labels", () => {
     expect(page).not.toMatch(/canManualTrade \? "Approved" : "Pending"/);
   });
 });
+
+// The envelope was read: the user is not frozen, has no blocker, and
+// userCanManualTrade is false (account status not ACTIVE or items need review).
+// No risk lock was read, and the status bar already calls this state
+// "Waiting for approval" — the Risk Governor must not call it "Risk lock active".
+describe("Trade Command Room — read envelope, not yet approved, no blocker", () => {
+  it("Risk Governor names the same not-approved state as the status bar", () => {
+    const s = resolveTradeRoomStatus({ isLiveShared: true, isDemo: false, isFrozen: false, canManualTrade: false, cleanBlockedReason: null, cleanModeLabel: "Live (Shared Master MT5)" }, obs);
+    expect(s.rgStatus.label).not.toBe("Risk lock active");
+    expect(s.rgStatus).toEqual({ label: "Waiting for approval", tone: "warning" });
+    expect(s.gatesLabel).toBe(s.rgStatus.label);
+    expect(s.canTrade).toBe(false);
+  });
+});
