@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Sparkles, Loader2, Radar, ShieldOff } from "lucide-react";
-import type { UseAiChartOverlaysResult } from "@/hooks/useAiChartOverlays";
+import { scannerDataSourceLabel, type UseAiChartOverlaysResult } from "@/hooks/useAiChartOverlays";
 import { useAssistantName } from "@/lib/assistant-name";
 
 // ChartAiOverlayPanel — the legend / control surface for ARX Native Chart
@@ -34,22 +34,9 @@ function badgeLabel(badge: string): string {
   return STATUS_BADGE_LABELS[badge] ?? "Unrecognised status";
 }
 
-// Plain-English copy for the scanner's data-source tag. It names the source the
-// scanner read WHEN IT SCANNED, not the chart's current feed, so "live" is
-// always qualified as "scanned on". Unknown tokens never leak.
-const DATA_SOURCE_LABELS: Record<string, string> = {
-  LIVE_FEED: "Scanned on live feed",
-  LIVE_DELAYED: "Scanned on delayed feed",
-  STALE_FEED: "Scanned on stale feed",
-  SIMULATOR: "Simulated data",
-  AWAITING_FEED: "No market data yet",
-  HISTORY_READY_AWAITING_LIVE_TICK: "History only, no live tick yet",
-};
-
-function dataSourceLabel(source: string | null | undefined): string {
-  if (!source) return "Source not reported";
-  return DATA_SOURCE_LABELS[source] ?? "Unrecognised source";
-}
+// Plain-English copy for the scanner's data-source tag lives with the hook
+// (scannerDataSourceLabel) so the chip and the chart's line labels agree.
+const dataSourceLabel = scannerDataSourceLabel;
 
 const SCORE_TITLE =
   "Heuristic score, not a win probability: the scanner's average of setup quality, entry quality and inverted risk.";
