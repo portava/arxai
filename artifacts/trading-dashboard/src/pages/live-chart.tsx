@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
 import { readChartStorage, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
+import { restoreChartInterval } from "@/lib/chart-engine/chartIntervals";
 import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
 import {
   ARXNativeChart,
@@ -64,7 +65,7 @@ export default function LiveChartPage() {
   // the renderer — is the single source of truth for the timeframe on screen.
   const [timeframe, setTimeframe] = useState<ArxTimeframe>(()=>{
     const saved=readChartStorage("arx.chart.primaryTimeframe.v1");
-    return ["M1","M5","M15","M30","H1","H4","D1"].includes(String(saved)) ? saved as ArxTimeframe : "M15";
+    return restoreChartInterval(saved);
   });
   useEffect(()=>{writeChartStorage("arx.chart.primaryTimeframe.v1",timeframe);},[timeframe]);
   const onTimeframeChange = useCallback((tf: ArxTimeframe) => setTimeframe(tf), []);

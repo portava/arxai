@@ -1,3 +1,4 @@
+import { chartIntervalSeconds } from "./chartIntervals";
 import {
   createChart,
   CandlestickSeries,
@@ -988,8 +989,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   setTimeframe(timeframe: string): void {
-    const intervals: Record<string, number> = {M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400};
-    this.intervalSeconds = intervals[timeframe] ?? 0;
+    this.intervalSeconds = chartIntervalSeconds(timeframe) ?? 0;
   }
 
   setReachStartHandler(handler: (() => void) | null, thresholdBars?: number): void {

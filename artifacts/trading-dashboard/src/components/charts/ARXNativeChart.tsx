@@ -1,4 +1,5 @@
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
+import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation } from "@/lib/chart-engine/chartIntervals";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
@@ -107,15 +108,8 @@ const u = (p: string) => `${BASE}${p}`;
 
 export type ArxTimeframe = (typeof GetChartCandlesTimeframe)[keyof typeof GetChartCandlesTimeframe];
 
-const TIMEFRAMES: { id: ArxTimeframe; label: string }[] = [
-  { id: "M1", label: "M1" },
-  { id: "M5", label: "M5" },
-  { id: "M15", label: "M15" },
-  { id: "M30", label: "M30" },
-  { id: "H1", label: "H1" },
-  { id: "H4", label: "H4" },
-  { id: "D1", label: "D1" },
-];
+const TIMEFRAMES = CHART_QUICK_INTERVALS.map(id => ({id,label:id}));
+const MORE_TIMEFRAMES = CHART_INTERVALS.filter(id => !(CHART_QUICK_INTERVALS as readonly string[]).includes(id));
 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
@@ -179,7 +173,7 @@ function loadTimeframe(): ArxTimeframe {
   if (typeof window === "undefined") return DEFAULT_TF;
   let v: string | null = null;
   try { v = localStorage.getItem(TF_KEY); } catch { /* private storage unavailable */ }
-  return (TIMEFRAMES.some((t) => t.id === v) ? (v as ArxTimeframe) : DEFAULT_TF);
+  return restoreChartInterval(v, DEFAULT_TF);
 }
 
 // Mirror status — derived from feed quality + fetch state.
@@ -397,6 +391,7 @@ export function ARXNativeChart({
 
   const [internalTf, setInternalTf] = useState<ArxTimeframe>(() => loadTimeframe());
   const timeframe = controlledTf ?? internalTf;
+  const supportedTimeframe = isChartInterval(timeframe);
   // Per-view display zone; daily bars keep UTC labels. Display only.
   const displayZone = effectiveDisplayZone(preferences.timeZone, timeframe);
   const overlays = useMemo(() => suppliedOverlays.filter(overlay =>
@@ -442,7 +437,7 @@ export function ARXNativeChart({
     {
       query: {
         queryKey: getGetChartCandlesQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
-        enabled: resolvedSymbol.length > 0,
+        enabled: resolvedSymbol.length > 0 && supportedTimeframe,
         refetchInterval: 8000,
         staleTime: 4000,
       },
@@ -452,10 +447,10 @@ export function ARXNativeChart({
   const replay = useContext(ChartReplayContext);
   const [replayError,setReplayError] = useState<string | null>(null);
   const response: ChartCandlesResponse | undefined = query.data;
-  const data = useMemo(() => response?.symbol === resolvedSymbol && response.timeframe === timeframe
+  const data = useMemo(() => supportedTimeframe && response?.symbol === resolvedSymbol && response.timeframe === timeframe
     && response.candles.every(candle => candle.symbol === resolvedSymbol
       && candle.timeframe === timeframe && candle.source === response.feedStatus?.source)
-    ? response : undefined, [response, resolvedSymbol, timeframe]);
+    ? response : undefined, [response, resolvedSymbol, timeframe, supportedTimeframe]);
   const candles = data?.candles ?? [];
   const hasCandles = candles.length > 0;
 
@@ -517,14 +512,14 @@ export function ARXNativeChart({
     {
       query: {
         queryKey: getGetMeChartIntelligenceQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
-        enabled: resolvedSymbol.length > 0 && onIntelligenceChange != null,
+        enabled: resolvedSymbol.length > 0 && supportedTimeframe && onIntelligenceChange != null,
         refetchInterval: 8000,
         staleTime: 4000,
       },
     },
   );
   const intelligenceResponse = intelligenceQuery.data?.state;
-  const intelligenceState = intelligenceResponse?.symbol === resolvedSymbol && intelligenceResponse.timeframe === timeframe
+  const intelligenceState = supportedTimeframe && intelligenceResponse?.symbol === resolvedSymbol && intelligenceResponse.timeframe === timeframe
     ? intelligenceResponse : undefined;
 
   useEffect(() => {
@@ -1064,7 +1059,7 @@ export function ARXNativeChart({
   // wrong (M5) feed. This is a read-only verdict for the badge ONLY; the Level 5
   // context report below intentionally keeps using the raw conf.aiUsable.
   const { truth: badgeTruth } = useScannerTruth(
-    resolvedSymbol,
+    supportedTimeframe ? resolvedSymbol : "",
     normalizeChartTimeframe(timeframe),
   );
   const badgeAiUsableResolved = resolveFeedBadgeVerdict(
@@ -1291,6 +1286,14 @@ export function ARXNativeChart({
                 {tf.label}
               </Button>
             ))}
+            <select className="h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100" aria-label="More chart intervals" title="Additional intervals; weekly and monthly source boundaries are not yet supported"
+              value={(MORE_TIMEFRAMES as readonly string[]).includes(timeframe) ? timeframe : ""}
+              onChange={event => {if (isChartInterval(event.target.value)) setTimeframe(event.target.value);}}>
+              <option value="" disabled>More intervals</option>
+              {MORE_TIMEFRAMES.map(id => <option key={id} value={id}>{id}</option>)}
+              <option value="W1" disabled>W1 — source week boundaries not verified</option>
+              <option value="MN1" disabled>MN1 — calendar boundaries not verified</option>
+            </select>
             {hasCandles && (
               <Button
                 size="sm"
@@ -1309,6 +1312,7 @@ export function ARXNativeChart({
       </CardHeader>
 
       {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
+      {!supportedTimeframe && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the

@@ -1,9 +1,10 @@
 import { detectChartPatterns, findSwings, scanCandlestickCatalogue, isObservedDoji, CANDLE_DEFINITIONS, CANDLE_CRITERIA_VERSION, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
 import { resolveShootingStarTruth, detectEngulfing, resolveStructureBreakTruth, type DetectedPattern } from "@workspace/domain/market";
+import { chartIntervalSeconds, chartIntervalLimitation } from "./chartIntervals";
 
 export interface SmartChartAnalysisContext {
   symbol: string;
-  /** Canonical API timeframe, e.g. M5, H1, MN1. */
+  /** Canonical API timeframe; unsupported calendar contracts remain withheld. */
   timeframe: string;
   source: string | null;
   /** Observed opaque SHA-256 identity, never a locally invented identifier. */
@@ -61,15 +62,9 @@ export interface SmartChartAnalysisResult {
   catalogue?: { criteriaVersion:string; definedVariants:number; geometryFamilies:number; note:string };
 }
 
-const INTERVAL_SECONDS: Record<string, number> = {
-  M1: 60, M2: 120, M3: 180, M4: 240, M5: 300, M6: 360, M10: 600,
-  M12: 720, M15: 900, M20: 1200, M30: 1800, H1: 3600, H2: 7200,
-  H3: 10800, H4: 14400, H6: 21600, H8: 28800, H12: 43200,
-  D1: 86400, W1: 604800, MN1: 2592000,
-};
-/** Matches the existing normalized chart contract, including its 30-day MN1. */
+/** Matches supported fixed-duration contracts; never invent monthly closes. */
 export function smartChartIntervalSeconds(timeframe: string): number | null {
-  return INTERVAL_SECONDS[timeframe] ?? null;
+  return chartIntervalSeconds(timeframe);
 }
 const MAX_ANALYSIS_BARS = 600;
 const EVENT_LOOKBACK = 12;
@@ -141,6 +136,8 @@ export interface SmartChartSelectedWindow {
 export function selectSmartChartWindow(input:SmartChartAnalysisInput):SmartChartSelectedWindow {
   const key = contextKey(input);
   const unavailable = (reason:string):SmartChartSelectedWindow => ({status:"unavailable",reason,contextKey:key,asOf:null,coverage:{available:0,analyzed:0,truncated:false,note:null},bars:[]});
+  const intervalLimitation = chartIntervalLimitation(input.timeframe);
+  if (intervalLimitation) return unavailable(intervalLimitation);
   if (!validContext(input)) return unavailable("Analysis is waiting for this chart's original data-source evidence.");
   if (!finite(input.asOfMs) || input.asOfMs <= 0) return unavailable("The analysis observation time is unavailable.");
   const range = input.visibleRange;

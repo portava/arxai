@@ -64,22 +64,26 @@ vi.mock("@/lib/useChartDeepHistory", () => ({
 }));
 
 let candleResponse: unknown;
+let intelligenceResponse: unknown;
+const truthSymbols: string[] = [];
+const candleRequests: {timeframe:string;enabled:boolean}[]=[];
 vi.mock("@workspace/api-client-react", () => ({
-  useGetChartCandles: () => ({ data: candleResponse, isLoading: false, isError: false, isFetching: false }),
+  useGetChartCandles: (params:{timeframe:string},options:{query:{enabled:boolean}}) => {candleRequests.push({timeframe:params.timeframe,enabled:options.query.enabled});return { data: candleResponse, isLoading: false, isError: false, isFetching: false };},
   getGetChartCandlesQueryKey: () => ["chart-candles"],
-  useGetMeChartIntelligence: () => ({ data: undefined, error: null }),
+  useGetMeChartIntelligence: () => ({ data: intelligenceResponse, error: null }),
   getGetMeChartIntelligenceQueryKey: () => ["chart-intelligence"],
   GetChartCandlesTimeframe: { M1: "M1", M5: "M5", M15: "M15", M30: "M30", H1: "H1", H4: "H4", D1: "D1" },
 }));
 
 vi.mock("@/hooks/useScannerTruth", () => ({
-  useScannerTruth: () => ({ truth: null, feedStatus: null, isLoading: false, isError: false, refetch: () => {} }),
+  useScannerTruth: (symbol:string) => {truthSymbols.push(symbol);return { truth: null, feedStatus: null, isLoading: false, isError: false, refetch: () => {} };},
 }));
 
 vi.mock("@/components/scanner/SymbolExplorer", () => ({ SymbolExplorer: () => null }));
 
 import { ARXNativeChart } from "./ARXNativeChart";
 import { SmartChartLayout } from "./SmartChartLayout";
+import { CHART_INTERVALS, CHART_QUICK_INTERVALS } from "@/lib/chart-engine/chartIntervals";
 import { CHART_LAYOUT_KEY } from "@/lib/chart-engine/chartLayout";
 
 let frames: FrameRequestCallback[] = [];
@@ -129,6 +133,9 @@ beforeEach(() => {
   frames = [];
   streams = [];
   candleResponse = undefined;
+  intelligenceResponse = undefined;
+  candleRequests.length = 0;
+  truthSymbols.length = 0;
   localStorage.clear();
   documentHidden = false;
   Object.defineProperty(document, "hidden", { configurable: true, get: () => documentHidden });
@@ -156,6 +163,59 @@ afterEach(() => {
 });
 
 describe("deferred comparison engine init", () => {
+  it.each(CHART_INTERVALS)("restores saved %s without falling back and keeps the engine's interval", timeframe => {
+    localStorage.setItem("arx.nativeChart.timeframe",timeframe);
+    render(<ARXNativeChart symbol="EURUSD" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(screen.getByRole("region",{name:new RegExp(`EURUSD ${timeframe} price chart`)})).toBeTruthy();
+    expect(created[0]!.setTimeframe).toHaveBeenLastCalledWith(timeframe);
+    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:true});
+    if ((CHART_QUICK_INTERVALS as readonly string[]).includes(timeframe)) {
+      expect(screen.getByRole("button",{name:`${timeframe} timeframe`,exact:true}).getAttribute("aria-pressed")).toBe("true");
+    } else expect((screen.getByLabelText("More chart intervals") as HTMLSelectElement).value).toBe(timeframe);
+  });
+  it("selects additional intervals without remounting canvas, saves them and leaves source-dependent calendar intervals unavailable", () => {
+    render(<ARXNativeChart symbol="EURUSD" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const canvas=screen.getByTestId("arx-native-canvas"), select=screen.getByLabelText("More chart intervals") as HTMLSelectElement;
+    for (const timeframe of CHART_INTERVALS.filter(tf=>!(CHART_QUICK_INTERVALS as readonly string[]).includes(tf))) {
+      fireEvent.change(select,{target:{value:timeframe}});
+      expect(created[0]!.setTimeframe).toHaveBeenLastCalledWith(timeframe);
+      expect(candleRequests.at(-1)).toEqual({timeframe,enabled:true});
+      expect(localStorage.getItem("arx.nativeChart.timeframe")).toBe(timeframe);
+      expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
+    }
+    expect([...select.options].find(option=>option.value==="MN1")?.disabled).toBe(true);
+    fireEvent.change(select,{target:{value:"MN1"}});
+    expect(localStorage.getItem("arx.nativeChart.timeframe")).toBe("H12");
+    expect(inits()).toHaveLength(1);
+  });
+  it.each(["W1", "MN1"] as const)("withholds requested %s responses, cached intelligence and Truth queries", timeframe => {
+    candleResponse=liveResponse("EURUSD",timeframe);
+    intelligenceResponse={state:{symbol:"EURUSD",timeframe}};
+    const onIntelligenceChange=vi.fn();
+    render(<ARXNativeChart symbol="EURUSD" timeframe={timeframe} showFeedStatus={false} overlays={NO_OVERLAYS} onIntelligenceChange={onIntelligenceChange}/>);
+    expect(screen.getByText(/charts are unavailable until source-verified/)).toBeTruthy();
+    expect(created[0]!.setCandles.mock.calls.every(([bars])=>bars.length===0)).toBe(true);
+    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:false});
+    expect(truthSymbols.every(symbol=>symbol==="")).toBe(true);
+    expect(streams).toHaveLength(0);
+    expect(onIntelligenceChange).not.toHaveBeenCalled();
+  });
+  it.each(["W1", "MN1"] as const)("keeps saved native %s visible with its refusal", timeframe => {
+    localStorage.setItem("arx.nativeChart.timeframe",timeframe);
+    render(<ARXNativeChart symbol="EURUSD" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(screen.getByRole("region",{name:new RegExp(`EURUSD ${timeframe} price chart`)})).toBeTruthy();
+    expect(screen.getByText(/charts are unavailable until source-verified/)).toBeTruthy();
+    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:false});
+    expect(localStorage.getItem("arx.nativeChart.timeframe")).toBe(timeframe);
+  });
+  it.each(["W1", "MN1"] as const)("keeps saved comparison %s visible with its refusal", timeframe => {
+    localStorage.setItem(CHART_LAYOUT_KEY,JSON.stringify({count:2,comparisons:[{timeframe}]}));
+    render(<SmartChartLayout symbol="EURUSD"><p>Primary placeholder</p></SmartChartLayout>);
+    expect(screen.getByRole("region",{name:new RegExp(`EURUSD ${timeframe} price chart`)})).toBeTruthy();
+    expect(screen.getByText(/charts are unavailable until source-verified/)).toBeTruthy();
+    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:false});
+    expect(JSON.parse(localStorage.getItem(CHART_LAYOUT_KEY)!).comparisons[0].timeframe).toBe(timeframe);
+  });
   it("builds the primary engine in the mounting commit", () => {
     render(<ARXNativeChart symbol="EURUSD" timeframe="M5" showFeedStatus={false} overlays={NO_OVERLAYS} />);
     expect(inits()).toEqual(["1:init"]);
