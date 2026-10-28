@@ -138,3 +138,27 @@ test("the gated trust line for a clean feed never says the candles or mirror are
   const other = buildGatedTrustLine("M5", { available: true, stale: false, aiUsable: true, basis: "VERIFIED" });
   assert.equal(other, "M5 candles clean · read gated");
 });
+
+// ── Item: "Hold or close?" never assumes the position runs with the chart ───
+
+test("hold-or-close with a SELL against bullish evidence does not say the thesis holds", () => {
+  const s = state({ bias: "bullish" });
+  const r = buildRubyDraftRead(s, "hold-or-close", { side: "SELL", entry: 1.1, sl: 1.11, tp: 1.09 });
+  assert.equal(r.feedUsable, true, "fixture is a usable read");
+  assert.doesNotMatch(r.headline, /isn't broken/);
+  assert.equal(r.headline, "Evidence is leaning up — against your SELL; the chart no longer supports that side.");
+});
+
+test("hold-or-close with a BUY in line with bullish evidence says so, naming the side", () => {
+  const r = buildRubyDraftRead(state({ bias: "bullish" }), "hold-or-close", { side: "BUY", entry: 1.1, sl: 1.09, tp: 1.12 });
+  assert.equal(r.headline, "Evidence still leaning up — in line with your BUY; the thesis isn't broken yet.");
+  assert.ok(r.points.includes("Based on the BUY side sent with this question — your open positions were not checked."));
+});
+
+test("hold-or-close with no position side does not assume one and says positions were not checked", () => {
+  const r = buildRubyDraftRead(state({ bias: "bearish" }), "hold-or-close");
+  assert.doesNotMatch(r.headline, /isn't broken/);
+  assert.equal(r.headline,
+    "Evidence is leaning down. I don't know your position side: that supports a short and runs against a long.");
+  assert.ok(r.points.includes("I did not check your open positions — this restates the chart only."));
+});

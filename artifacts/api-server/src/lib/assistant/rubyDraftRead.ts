@@ -544,17 +544,40 @@ function answerWhatInvalidates(
   return r;
 }
 
-function answerHoldOrClose(state: ChartIntelligenceState): RubyDraftReadResult {
+function answerHoldOrClose(
+  state: ChartIntelligenceState,
+  draft?: RubyDraftReadDraft | null,
+): RubyDraftReadResult {
   const r = baseResult(state, "hold-or-close");
   // Read-only: this restates evidence; it never closes or modifies anything.
+  // The chart's direction says nothing about the user's position until the
+  // position side is known: evidence leaning up holds a long and breaks a
+  // short. Only the side sent with the question is used — open positions are
+  // not looked up here, and the answer says so.
+  const side = draft?.side ?? null;
   if (state.decisionState.vetoed || state.decisionFork.downgrade) {
     r.headline =
       "The read has deteriorated — manage risk tightly; I can't act for you.";
-  } else if (r.bias !== "neutral" && r.bias !== "unknown") {
-    r.headline = `Evidence still ${biasWord(r.bias)} — the thesis isn't broken yet.`;
-  } else {
+  } else if (r.bias === "bullish" || r.bias === "bearish") {
+    const supports = r.bias === "bullish" ? "BUY" : "SELL";
+    if (side === null) {
+      const [withSide, againstSide] = supports === "BUY" ? ["long", "short"] : ["short", "long"];
+      r.headline = `Evidence is ${biasWord(r.bias)}. I don't know your position side: that supports a ${withSide} and runs against a ${againstSide}.`;
+    } else if (side === supports) {
+      r.headline = `Evidence still ${biasWord(r.bias)} — in line with your ${side}; the thesis isn't broken yet.`;
+    } else {
+      r.headline = `Evidence is ${biasWord(r.bias)} — against your ${side}; the chart no longer supports that side.`;
+    }
+  } else if (r.bias === "neutral") {
     r.headline = "Edge is fading to balanced — no strong reason to stay exposed.";
+  } else {
+    r.headline = "The chart's direction is unclear right now — I can't say whether it supports your position.";
   }
+  r.points.push(
+    side === null
+      ? "I did not check your open positions — this restates the chart only."
+      : `Based on the ${side} side sent with this question — your open positions were not checked.`,
+  );
   const fork = state.decisionFork;
   if (fork.populated) {
     for (const e of fork.expectations.slice(0, 2)) {
@@ -619,7 +642,7 @@ export function buildRubyDraftRead(
 function computeDraftRead(
   state: ChartIntelligenceState,
   intent: RubyDraftIntent,
-  _draft?: RubyDraftReadDraft | null,
+  draft?: RubyDraftReadDraft | null,
 ): RubyDraftReadResult {
   try {
     if (!feedUsable(state)) return honestInsufficient(state, intent);
@@ -637,7 +660,7 @@ function computeDraftRead(
       case "what-invalidates":
         return answerWhatInvalidates(state);
       case "hold-or-close":
-        return answerHoldOrClose(state);
+        return answerHoldOrClose(state, draft);
       case "agent-consensus":
         return answerAgentConsensus(state);
       default:
