@@ -111,3 +111,14 @@ describe("My Account: personal bridge badge", () => {
     expect(screen.getByTestId("text-personal-bridge-note").textContent).toMatch(/does not check/i);
   });
 });
+
+describe("My Account: bridge preference load failure", () => {
+  it("says the preference could not be loaded instead of a skeleton forever", async () => {
+    stubFetch({ "/api/me/account-shell": shell(), "/api/me/bridge-preference": 500 });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("bridge-preference-card-error")).toBeTruthy());
+    expect(screen.getByTestId("bridge-preference-card-error").textContent).toMatch(/could not be loaded \(HTTP 500\)/i);
+    expect(screen.queryByTestId("bridge-preference-card-loading")).toBeNull();
+    expect(screen.queryByTestId("badge-personal-bridge-state")).toBeNull();
+  });
+});

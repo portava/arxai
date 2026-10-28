@@ -402,6 +402,22 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
     },
   });
 
+  if (q.error || (!q.isLoading && !q.data)) {
+    const why = q.error instanceof Error ? ` (${q.error.message})` : "";
+    return (
+      <Card data-testid="bridge-preference-card-error" className="rounded-2xl border-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Server className="h-4 w-4" /> Bridge Preference
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2 text-sm text-txt-secondary">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          Your bridge preference could not be loaded{why}. Reload the page to try again.
+        </CardContent>
+      </Card>
+    );
+  }
   if (q.isLoading || !q.data) {
     return (
       <Card data-testid="bridge-preference-card-loading" className="rounded-2xl border-border bg-card">
