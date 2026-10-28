@@ -18,7 +18,7 @@ import {
   economicEventsTable, tradingRuleContractsTable,
   weeklyPerformanceReviewsTable, vaultEventsTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod/v4";
 import { platformStop, readSafetyCorePosture, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -110,6 +110,15 @@ interface ChecklistItem {
   detail: string;
 }
 
+function riskLocksThatApply<T extends { userId: number | null; isActive: boolean; endTime: Date | string | null }>(
+  rows: T[], userId: number, now: Date,
+): T[] {
+  const nowMs = now.getTime();
+  return rows.filter((l) => l.isActive
+    && (l.userId === userId || l.userId == null)
+    && (l.endTime == null || new Date(l.endTime).getTime() > nowMs));
+}
+
 async function gatherSignals(userId: number) {
   // Both install-wide stops through platformStop() (unreadable → engaged):
   // the safety-core kill switch as before, and the platform emergency stop,
@@ -123,9 +132,18 @@ async function gatherSignals(userId: number) {
     }
     : null;
   const emergencyStopEngaged = stopSourceEngaged(stop, "platform_emergency_stop");
-  const activeLocks = await db.select().from(riskLocksTable).where(eq(riskLocksTable.isActive, true)).limit(10);
-  const brokerLog = await readLatestBrokerHealthLog();
   const now = new Date();
+  // Only the locks that would block THIS trader at the live gate: their own
+  // rows plus legacy ownerless rows, active and not yet past end_time — the
+  // scope and expiry of liveCommandPipeline's risk-lock pre-gate
+  // (activeRiskLockBlockReason). Another trader's lock is never counted or
+  // shown here. The same rule is re-applied to the rows read.
+  const activeLocks = riskLocksThatApply(await db.select().from(riskLocksTable).where(and(
+    eq(riskLocksTable.isActive, true),
+    or(eq(riskLocksTable.userId, userId), isNull(riskLocksTable.userId)),
+    or(isNull(riskLocksTable.endTime), gt(riskLocksTable.endTime, now)),
+  )).limit(10), userId, now);
+  const brokerLog = await readLatestBrokerHealthLog();
   const in2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
   const upcomingNews = await db.select().from(economicEventsTable)
     .where(and(gte(economicEventsTable.eventTime, now), lte(economicEventsTable.eventTime, in2h)))
