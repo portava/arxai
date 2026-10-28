@@ -66,14 +66,24 @@ export default function ReplaySimulator() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  // True while the last scenario-list read failed: the list is unknown, not empty.
+  const [listFailed, setListFailed] = useState(false);
 
   async function loadScenarios() {
     setLoading(true); setErr("");
     try {
-      const r = await fetch("/api/replay/scenarios").then(x => x.json());
-      setScenarios(r.scenarios ?? []);
-      if (!selected && r.scenarios?.[0]) setSelected(r.scenarios[0].scenarioId);
-    } catch (e) { setErr(`Failed to load scenarios: ${String(e)}`); }
+      const res = await fetch("/api/replay/scenarios");
+      const r = await res.json().catch(() => null) as { scenarios?: Scenario[]; error?: string } | null;
+      if (!res.ok || !r || !Array.isArray(r.scenarios)) {
+        throw new Error(r?.error ?? `HTTP ${res.status}`);
+      }
+      setScenarios(r.scenarios);
+      setListFailed(false);
+      if (!selected && r.scenarios[0]) setSelected(r.scenarios[0].scenarioId);
+    } catch (e) {
+      setListFailed(true);
+      setErr(`Replay scenarios could not be loaded: ${e instanceof Error ? e.message : String(e)}`);
+    }
     finally { setLoading(false); }
   }
   useEffect(() => { void loadScenarios(); }, []);
@@ -135,7 +145,7 @@ export default function ReplaySimulator() {
       </Card>
 
       {loading && !result && <LoadingState label="Loading scenarios…" />}
-      {!loading && scenarios.length === 0 && !result && (
+      {!loading && !listFailed && scenarios.length === 0 && !result && (
         <EmptyState
           title="No replay scenarios yet"
           description="Replay is simulation only and never places real trades. Create a synthetic scenario to start."
