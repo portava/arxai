@@ -482,4 +482,26 @@ describe("SelectedMarketPanel — labels describe what was observed", () => {
     expect(screen.getByTestId("badge-selected-bias").textContent).toBe("BUY");
     expect(screen.getByTestId("selected-market-levels")).toBeTruthy();
   });
+
+  it("an unchecked calendar never reads as a quiet day", () => {
+    for (const newsRisk of [
+      { riskLevel: "none", blockTrading: false, summary: "", calendarChecked: false,
+        calendarNote: "No economic-calendar provider is configured, so scheduled events were not checked." },
+      { riskLevel: "none", blockTrading: false, summary: "" },
+    ]) {
+      mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ newsRisk, upcomingEvents: [] }) }));
+      render(<SelectedMarketPanel />);
+      const text = screen.getByTestId("selected-market-panel").textContent ?? "";
+      expect(text).not.toContain("No medium/high impact events");
+      expect(screen.getByTestId("badge-selected-news-risk").textContent).toContain("unknown");
+      expect(screen.getByTestId("text-selected-calendar-note").textContent).toMatch(/not checked|could not be checked/);
+      cleanup();
+    }
+  });
+
+  it("a checked calendar with no events says so", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ upcomingEvents: [] }) }));
+    render(<SelectedMarketPanel />);
+    expect(screen.getByTestId("selected-market-panel").textContent).toContain("No medium/high impact events in the next 24h.");
+  });
 });

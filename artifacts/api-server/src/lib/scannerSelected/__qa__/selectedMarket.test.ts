@@ -23,7 +23,11 @@ import {
 } from "../selectedMarket.js";
 import type { SelectedMarketDeps } from "../selectedMarket.js";
 import type { ChartCandlesResponse, ChartFeedStatus } from "../../data/chart/chartDataService.js";
-import { SELECTED_ANALYSIS_WINDOW } from "../selectedMarket.js";
+import {
+  SELECTED_ANALYSIS_WINDOW,
+  filterEventRowsForSymbol,
+  CALENDAR_NOT_CONFIGURED_NOTE,
+} from "../selectedMarket.js";
 import { analyzeMarketFromCandles } from "../../aiBrain.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -606,4 +610,69 @@ test("the no-data envelope does not claim a Calm market", async () => {
   assert.ok(env.ok);
   if (!env.ok) return;
   assert.equal(env.highlights.volatilityLabel, "Unmeasured");
+});
+
+// ── The event list names only events that may move THIS symbol ───────────────
+// With no currency hints (V75, GER30) loadEventRows kept EVERY stored row, so
+// V75 listed EUR CPI and a BoJ decision under "events that may move V75"; and
+// an empty table read as a confirmed quiet day.
+const EVENT_ROWS = [
+  { externalId: "eur-cpi", eventName: "EUR CPI", country: "Euro Area", currency: "EUR", impactLevel: "HIGH", affectedSymbols: [] as string[], source: "fred" },
+  { externalId: "jpy-boj", eventName: "BoJ Rate Decision", country: "Japan", currency: "JPY", impactLevel: "HIGH", affectedSymbols: [] as string[], source: "fred" },
+  { externalId: "mock-nfp", eventName: "Non-Farm Payrolls", country: "United States", currency: "USD", impactLevel: "CRITICAL", affectedSymbols: [] as string[], source: "mock" },
+];
+
+test("filterEventRowsForSymbol: synthetic and unmapped symbols never inherit every stored event", () => {
+  assert.deepEqual(filterEventRowsForSymbol(EVENT_ROWS, "V75", []), []);
+  assert.deepEqual(filterEventRowsForSymbol(EVENT_ROWS, "GER30", []), []);
+  assert.deepEqual(filterEventRowsForSymbol(EVENT_ROWS, "EURUSD", ["EUR", "USD"]).map((r) => r.externalId), ["eur-cpi"],
+    "mock-provider rows are never listed as real events");
+  const tagged = [{ ...EVENT_ROWS[0]!, affectedSymbols: ["GER30"] }];
+  assert.deepEqual(filterEventRowsForSymbol(tagged, "GER30", []).map((r) => r.externalId), ["eur-cpi"]);
+});
+
+function loaderFromRows(calendar?: { checked: boolean; note: string | null }): SelectedMarketDeps["loadEventsFn"] {
+  return async (symbol, hints) => {
+    // The pre-fix loader kept every row when hints were empty; the builder must
+    // still never list another market's events for a synthetic symbol.
+    const rows = hints.length === 0 ? EVENT_ROWS : filterEventRowsForSymbol(EVENT_ROWS, symbol, hints);
+    const eventTime = new Date(Date.now() + 3 * 3600_000).toISOString();
+    return {
+      events: rows.map((r) => ({
+        externalId: r.externalId, title: r.eventName, currency: r.currency,
+        impactLevel: r.impactLevel as "HIGH", eventTime, minutesUntil: 180,
+      })),
+      scorerInput: [],
+      ...(calendar ? { calendar } : {}),
+    };
+  };
+}
+
+test("a synthetic market lists no economic events and says why", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () => makeChart(bullishBars(60, 1000, 0.5), { ...FRESH_FS, source: "deriv" })) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "V75", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: loaderFromRows({ checked: true, note: null }) },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.deepEqual(env.upcomingEvents, []);
+  assert.match(env.newsRisk.calendarNote ?? "", /Synthetic market/);
+});
+
+test("an unchecked calendar is never reported as checked", async () => {
+  for (const calendar of [{ checked: false, note: CALENDAR_NOT_CONFIGURED_NOTE }, undefined]) {
+    clearSelectedMarketCache();
+    const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+    const env = await getSelectedMarketSnapshot(
+      { symbolRaw: "EURUSD", refresh: true },
+      { getChartCandlesFn: stub, loadEventsFn: async () => ({ events: [], scorerInput: [], ...(calendar ? { calendar } : {}) }) },
+    );
+    assert.ok(env.ok);
+    if (!env.ok) return;
+    assert.equal(env.newsRisk.calendarChecked, false);
+    assert.ok((env.newsRisk.calendarNote ?? "").length > 0);
+    assert.doesNotMatch(env.newsRisk.summary, /No relevant/);
+  }
 });

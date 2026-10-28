@@ -48,7 +48,15 @@ export interface SnapshotOk {
     disclaimer: string;
   };
   upcomingEvents: SelectedMarketEvent[];
-  newsRisk: { riskLevel: string; blockTrading: boolean; summary: string };
+  newsRisk: {
+    riskLevel: string;
+    blockTrading: boolean;
+    summary: string;
+    /** true only when the calendar was actually checked (or does not apply). */
+    calendarChecked?: boolean;
+    /** Plain-English limit of the event list, or null. */
+    calendarNote?: string | null;
+  };
   // Additive truth fields (Task #518). dataAsOf = the DATA timestamp (newest
   // confirmed candle), distinct from generatedAt (analysis build time).
   dataSource?: string;

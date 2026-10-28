@@ -142,6 +142,14 @@ export function SelectedMarketPanel() {
     ? ok.readWithheldReason ?? NOT_LIVE_LEVELS_REASON
     : null;
 
+  // Downgrade-only: an empty event list reads as a quiet day only when the
+  // server says the calendar was actually checked.
+  const calendarChecked = ok?.newsRisk?.calendarChecked === true;
+  const calendarNote = ok
+    ? ok.newsRisk?.calendarNote
+      ?? (calendarChecked ? null : "The economic calendar could not be checked, so scheduled events are not shown.")
+    : null;
+
   const rubyNote = useMemo(() => {
     if (!ok) return null;
     if (readWithheldReason) return `No directional read right now. ${readWithheldReason}`;
@@ -366,10 +374,17 @@ export function SelectedMarketPanel() {
             <div className="rounded-xl border border-border bg-background/40 p-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-foreground">Upcoming events that may move {ok.symbol}</div>
-                <Badge variant="outline" className="text-[10px]">News risk: {ok.newsRisk?.riskLevel ?? "—"}</Badge>
+                <Badge variant="outline" className="text-[10px]" data-testid="badge-selected-news-risk">
+                  News risk: {calendarChecked ? ok.newsRisk?.riskLevel ?? "—" : "unknown"}
+                </Badge>
               </div>
+              {calendarNote && (
+                <div className="text-xs text-muted-foreground mb-1" data-testid="text-selected-calendar-note">{calendarNote}</div>
+              )}
               {(ok.upcomingEvents ?? []).length === 0
-                ? <div className="text-xs text-muted-foreground">No medium/high impact events in the next 24h.</div>
+                ? (calendarChecked && !calendarNote
+                  ? <div className="text-xs text-muted-foreground">No medium/high impact events in the next 24h.</div>
+                  : null)
                 : (
                   <ul className="text-xs space-y-1">
                     {(ok.upcomingEvents ?? []).map((e) => (
@@ -382,7 +397,7 @@ export function SelectedMarketPanel() {
                     ))}
                   </ul>
                 )}
-              {ok.newsRisk?.summary && (
+              {ok.newsRisk?.summary && ok.newsRisk.summary !== calendarNote && (
                 <div className="text-xs mt-2 text-warning">{ok.newsRisk.summary}</div>
               )}
             </div>

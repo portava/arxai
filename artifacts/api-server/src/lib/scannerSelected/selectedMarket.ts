@@ -40,9 +40,12 @@ import {
   evaluateMarketDataSufficiency,
   type MarketDataSufficiencyVerdict,
 } from "@workspace/domain/market";
-import { scoreNewsRisk } from "../news/calendar/newsRiskScorer.js";
+import { newsRiskUnavailable, scoreNewsRisk } from "../news/calendar/newsRiskScorer.js";
+import { isSyntheticSymbol as isSyntheticCalendarSymbol } from "../news/calendar/calendarSymbolMap.js";
+import { isCalendarProviderEnabled } from "../news/economicCalendarProvider.js";
+import { SYNTHETIC_EVENT_RISK_LABEL } from "@workspace/domain/truth";
 import type { EconomicEvent } from "../news/calendar/economicEvents.js";
-import { isSupported, normalizeSymbol } from "../instruments/index.js";
+import { isSupported, normalizeSymbol, resolveCanonicalSymbol } from "../instruments/index.js";
 import { getCache } from "../cache/cacheAdapter.js";
 
 // Namespace + TTL are intentionally hard-coded so the cache shape stays
@@ -153,6 +156,14 @@ export interface SelectedMarketResult {
     riskLevel: "none" | "low" | "medium" | "high";
     blockTrading: boolean;
     summary: string;
+    /**
+     * True only when a configured calendar supplied a non-empty stored window,
+     * or scheduled events do not apply (synthetic). false means the calendar
+     * was NOT checked: an empty event list is then not a confirmed quiet day.
+     */
+    calendarChecked: boolean;
+    /** Plain-English limit of the event list (not checked / synthetic / unmapped), or null. */
+    calendarNote: string | null;
   };
   /**
    * Honest data source for THIS envelope. Always the real market-data pipeline
@@ -335,10 +346,63 @@ function withheldExplanation(reason: string, newsReason: string): SelectedMarket
   };
 }
 
+/** Calendar check outcome for the selected symbol's event list. */
+export interface SelectedMarketCalendarStatus {
+  checked: boolean;
+  note: string | null;
+}
+
+export const CALENDAR_NOT_CONFIGURED_NOTE =
+  "No economic-calendar provider is configured, so scheduled events were not checked.";
+export const CALENDAR_EMPTY_WINDOW_NOTE =
+  "No economic-calendar events are stored for the next 24 hours. The calendar may not have been synced, so this is not a confirmed quiet day.";
+
+/** Synthetic markets are not moved by scheduled economic events. */
+export function isSyntheticEventSymbol(symbol: string): boolean {
+  try {
+    if (resolveCanonicalSymbol(symbol).assetClass === "synthetic") return true;
+  } catch {
+    // fall through to the calendar matcher
+  }
+  return isSyntheticCalendarSymbol(symbol);
+}
+
+interface EventRowLike {
+  currency: string;
+  affectedSymbols: unknown;
+  source?: string | null;
+}
+
+/**
+ * The stored calendar rows that may move `symbol`: a row whose currency is one
+ * of the symbol's currencies, or that names the symbol explicitly. With no
+ * currency mapping only explicitly tagged rows match (never every row), a
+ * synthetic market matches none, and rows written by the mock provider are
+ * never listed as real events.
+ */
+export function filterEventRowsForSymbol<R extends EventRowLike>(
+  rows: R[], symbol: string, currencyHints: string[],
+): R[] {
+  if (isSyntheticEventSymbol(symbol)) return [];
+  return rows.filter((r) => {
+    if (r.source === "mock") return false;
+    if (currencyHints.includes(r.currency)) return true;
+    const affected = r.affectedSymbols;
+    return Array.isArray(affected) && affected.some((s) => typeof s === "string" && s.toUpperCase() === symbol);
+  });
+}
+
 async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
   events: SelectedMarketEvent[];
   scorerInput: EconomicEvent[];
+  calendar?: SelectedMarketCalendarStatus;
 }> {
+  if (isSyntheticEventSymbol(symbol)) {
+    return { events: [], scorerInput: [], calendar: { checked: true, note: SYNTHETIC_EVENT_RISK_LABEL } };
+  }
+  if (!isCalendarProviderEnabled()) {
+    return { events: [], scorerInput: [], calendar: { checked: false, note: CALENDAR_NOT_CONFIGURED_NOTE } };
+  }
   const now = new Date();
   const until = new Date(now.getTime() + 24 * 3600 * 1000);
   const rows = await db.select().from(economicEventsTable)
@@ -346,12 +410,16 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
       gte(economicEventsTable.eventTime, now),
       lte(economicEventsTable.eventTime, until),
     ));
-  const matching = rows.filter((r) => {
-    if (currencyHints.length === 0) return true;
-    if (currencyHints.includes(r.currency)) return true;
-    const affected = (r.affectedSymbols ?? []) as unknown as string[];
-    return Array.isArray(affected) && affected.some((s) => s.toUpperCase() === symbol);
-  });
+  const realRows = rows.filter((r) => r.source !== "mock");
+  const calendar: SelectedMarketCalendarStatus = realRows.length === 0
+    ? { checked: false, note: CALENDAR_EMPTY_WINDOW_NOTE }
+    : {
+      checked: true,
+      note: currencyHints.length === 0
+        ? `No currency mapping for ${symbol}, so only calendar events tagged to ${symbol} are listed.`
+        : null,
+    };
+  const matching = filterEventRowsForSymbol(realRows, symbol, currencyHints);
   const sorted = matching
     .filter((r) => ["MEDIUM", "HIGH", "CRITICAL"].includes(String(r.impactLevel)))
     .sort((a, b) => +new Date(a.eventTime) - +new Date(b.eventTime));
@@ -363,6 +431,8 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
     eventTime: new Date(r.eventTime).toISOString(),
     minutesUntil: Math.round((+new Date(r.eventTime) - Date.now()) / 60000),
   }));
+  // The scorer reasons over exactly the events listed for this symbol, so the
+  // risk line and the list can never disagree about which events apply.
   const scorerInput: EconomicEvent[] = sorted.map((r) => ({
     id: r.externalId,
     title: r.eventName,
@@ -373,10 +443,10 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
     forecast: r.forecast ?? null,
     previous: r.previous ?? null,
     eventTime: new Date(r.eventTime).toISOString(),
-    affectedMarkets: (r.affectedSymbols ?? []) as unknown as string[],
+    affectedMarkets: [...((r.affectedSymbols ?? []) as unknown as string[]), symbol],
     source: r.source ?? "db",
   }));
-  return { events, scorerInput };
+  return { events, scorerInput, calendar };
 }
 
 function currencyHintsFor(symbol: string): string[] {
@@ -558,7 +628,11 @@ async function buildSelectedMarketSnapshot(
         disclaimer: "Decision support only — confirm live readiness and risk before trading.",
       },
       upcomingEvents: [],
-      newsRisk: { riskLevel: "none", blockTrading: false, summary: "" },
+      newsRisk: {
+        riskLevel: "none", blockTrading: false, summary: "",
+        calendarChecked: false,
+        calendarNote: "Scheduled events are not checked until market data is available for this market.",
+      },
       dataSource: a.dataSource,
       dataSourceLabel,
       dataState: "UNAVAILABLE",
@@ -598,8 +672,17 @@ async function buildSelectedMarketSnapshot(
   const levelsShown = readShown && !staleness.stale;
 
   const hints = currencyHintsFor(symbol);
-  const { events, scorerInput } = await deps.loadEventsFn(symbol, hints);
-  const news = scoreNewsRisk(symbol, scorerInput);
+  const loaded = await deps.loadEventsFn(symbol, hints);
+  // A loader that does not state the calendar's status has not checked it.
+  const calendar: SelectedMarketCalendarStatus = loaded.calendar
+    ?? { checked: false, note: "The economic calendar's status is unknown, so scheduled events could not be confirmed." };
+  const synthetic = isSyntheticEventSymbol(symbol);
+  const events = synthetic ? [] : loaded.events;
+  const news = synthetic
+    ? { ...scoreNewsRisk(symbol, []), reason: SYNTHETIC_EVENT_RISK_LABEL, riskLevel: "none" as const, blockTrading: false }
+    : calendar.checked
+      ? scoreNewsRisk(symbol, loaded.scorerInput)
+      : newsRiskUnavailable(symbol, calendar.note ?? CALENDAR_NOT_CONFIGURED_NOTE);
   const volatility = volatilityLabel(closed, a.marketBias);
   const highlights: SelectedMarketHighlights = {
     bias: readShown ? biasFromAction(a.recommendedAction) : "WAIT",
@@ -624,7 +707,11 @@ async function buildSelectedMarketSnapshot(
     highlights,
     explanation,
     upcomingEvents: events,
-    newsRisk: { riskLevel: news.riskLevel, blockTrading: news.blockTrading, summary: news.reason },
+    newsRisk: {
+      riskLevel: news.riskLevel, blockTrading: news.blockTrading, summary: news.reason,
+      calendarChecked: synthetic || calendar.checked,
+      calendarNote: synthetic ? SYNTHETIC_EVENT_RISK_LABEL : calendar.note,
+    },
     dataSource: a.dataSource,
     dataSourceLabel,
     dataState,
