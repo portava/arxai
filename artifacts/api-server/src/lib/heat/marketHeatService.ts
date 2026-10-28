@@ -101,17 +101,25 @@ function aggregatePrice(signals: PriceSignal[]): PriceSignal {
     (worst, s) => (order[s.freshness] > order[worst] ? s.freshness : worst),
     "LIVE",
   );
-  const newest = live.reduce<string | null>((acc, s) => {
-    if (!s.updatedAt) return acc;
-    if (!acc) return s.updatedAt;
-    return Date.parse(s.updatedAt) > Date.parse(acc) ? s.updatedAt : acc;
-  }, null);
+  // A tick stamp and a bar-open stamp measure different things, so they are
+  // never mixed: "tick" only when EVERY contributor is tick-stamped, otherwise
+  // the newest bar-open stamp among the bar-open contributors.
+  const allTick = live.every((s) => s.priceTimeBasis === "tick");
+  const priceTimeBasis: "tick" | "bar_open" = allTick ? "tick" : "bar_open";
+  const newest = live
+    .filter((s) => allTick || s.priceTimeBasis !== "tick")
+    .reduce<string | null>((acc, s) => {
+      if (!s.updatedAt) return acc;
+      if (!acc) return s.updatedAt;
+      return Date.parse(s.updatedAt) > Date.parse(acc) ? s.updatedAt : acc;
+    }, null);
   return {
     available: true,
     momentum,
     volatility,
     freshness,
     updatedAt: newest,
+    priceTimeBasis,
     source: live[0]!.source,
     candleCount: live.reduce((a, s) => a + s.candleCount, 0),
   };
@@ -199,6 +207,7 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
           volatility: price.volatility,
           freshness: price.freshness,
           updatedAt: price.updatedAt,
+          priceTimeBasis: price.priceTimeBasis,
           source: price.provider,
           candleCount: price.candleCount,
         },
@@ -239,6 +248,7 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
       volatility: read.volatility,
       freshness: read.freshness,
       updatedAt: read.updatedAt,
+      priceTimeBasis: read.priceTimeBasis,
       source: read.provider,
       candleCount: read.candleCount,
     };
@@ -404,6 +414,7 @@ export async function buildSymbolHeat(
       volatility: price.volatility,
       freshness: price.freshness,
       updatedAt: price.updatedAt,
+      priceTimeBasis: price.priceTimeBasis,
       source: price.provider,
       candleCount: price.candleCount,
     },

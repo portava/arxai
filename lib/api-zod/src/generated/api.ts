@@ -25858,6 +25858,12 @@ export const GetMarketHeatResponse = zod.object({
         })
         .describe("One data source's liveness for a heat verdict."),
       priceUpdatedAt: zod.string().nullish(),
+      priceTimeBasis: zod
+        .enum(["tick", "bar_open"])
+        .nullish()
+        .describe(
+          'What priceUpdatedAt measures. \"tick\" = the symbol\'s own last venue tick (when the price was observed); \"bar_open\" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as \"bar_open\".\n',
+        ),
       newsUpdatedAt: zod.string().nullish(),
       calendarUpdatedAt: zod.string().nullish(),
       confidence: zod.enum(["high", "medium", "low", "none"]),
@@ -25958,6 +25964,12 @@ export const GetMarketHeatResponse = zod.object({
           })
           .describe("One data source's liveness for a heat verdict."),
         priceUpdatedAt: zod.string().nullish(),
+        priceTimeBasis: zod
+          .enum(["tick", "bar_open"])
+          .nullish()
+          .describe(
+            'What priceUpdatedAt measures. \"tick\" = the symbol\'s own last venue tick (when the price was observed); \"bar_open\" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as \"bar_open\".\n',
+          ),
         newsUpdatedAt: zod.string().nullish(),
         calendarUpdatedAt: zod.string().nullish(),
         confidence: zod.enum(["high", "medium", "low", "none"]),
@@ -26059,6 +26071,12 @@ export const GetMarketHeatResponse = zod.object({
           })
           .describe("One data source's liveness for a heat verdict."),
         priceUpdatedAt: zod.string().nullish(),
+        priceTimeBasis: zod
+          .enum(["tick", "bar_open"])
+          .nullish()
+          .describe(
+            'What priceUpdatedAt measures. \"tick\" = the symbol\'s own last venue tick (when the price was observed); \"bar_open\" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as \"bar_open\".\n',
+          ),
         newsUpdatedAt: zod.string().nullish(),
         calendarUpdatedAt: zod.string().nullish(),
         confidence: zod.enum(["high", "medium", "low", "none"]),
@@ -26160,6 +26178,12 @@ export const GetMarketHeatResponse = zod.object({
           })
           .describe("One data source's liveness for a heat verdict."),
         priceUpdatedAt: zod.string().nullish(),
+        priceTimeBasis: zod
+          .enum(["tick", "bar_open"])
+          .nullish()
+          .describe(
+            'What priceUpdatedAt measures. \"tick\" = the symbol\'s own last venue tick (when the price was observed); \"bar_open\" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as \"bar_open\".\n',
+          ),
         newsUpdatedAt: zod.string().nullish(),
         calendarUpdatedAt: zod.string().nullish(),
         confidence: zod.enum(["high", "medium", "low", "none"]),

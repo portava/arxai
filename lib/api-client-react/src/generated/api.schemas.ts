@@ -1887,6 +1887,19 @@ export const MarketHeatVerdictSourceStatus = {
   unavailable: "unavailable",
 } as const;
 
+/**
+ * What priceUpdatedAt measures. "tick" = the symbol's own last venue tick (when the price was observed); "bar_open" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as "bar_open".
+
+ */
+export type MarketHeatVerdictPriceTimeBasis =
+  | (typeof MarketHeatVerdictPriceTimeBasis)[keyof typeof MarketHeatVerdictPriceTimeBasis]
+  | null;
+
+export const MarketHeatVerdictPriceTimeBasis = {
+  tick: "tick",
+  bar_open: "bar_open",
+} as const;
+
 export type MarketHeatVerdictConfidence =
   (typeof MarketHeatVerdictConfidence)[keyof typeof MarketHeatVerdictConfidence];
 
@@ -1915,6 +1928,9 @@ export interface MarketHeatVerdict {
   newsSource: MarketHeatSource;
   calendarSource: MarketHeatSource;
   priceUpdatedAt?: string | null;
+  /** What priceUpdatedAt measures. "tick" = the symbol's own last venue tick (when the price was observed); "bar_open" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as "bar_open".
+   */
+  priceTimeBasis?: MarketHeatVerdictPriceTimeBasis;
   newsUpdatedAt?: string | null;
   calendarUpdatedAt?: string | null;
   confidence: MarketHeatVerdictConfidence;

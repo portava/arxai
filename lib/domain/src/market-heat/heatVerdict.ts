@@ -90,6 +90,12 @@ export interface MarketHeatVerdict {
   newsSource: MarketHeatSource;
   calendarSource: MarketHeatSource;
   priceUpdatedAt: string | null;
+  /**
+   * What priceUpdatedAt measures: "tick" = the symbol's last venue tick (when
+   * the price was observed); "bar_open" = the newest bar's OPEN time (not the
+   * observation time). Absent/null → readers must treat it as "bar_open".
+   */
+  priceTimeBasis?: "tick" | "bar_open" | null;
   newsUpdatedAt: string | null;
   calendarUpdatedAt: string | null;
   confidence: MarketHeatConfidence;
@@ -110,6 +116,8 @@ export interface PriceSignal {
   volatility: number;
   freshness: "LIVE" | "DELAYED" | "STALE" | "UNAVAILABLE";
   updatedAt: string | null;
+  /** See MarketHeatVerdict.priceTimeBasis. */
+  priceTimeBasis?: "tick" | "bar_open" | null;
   source: string;
   candleCount: number;
 }
@@ -268,6 +276,7 @@ export function computeHeatVerdict(input: HeatVerdictInput): MarketHeatVerdict {
     newsSource,
     calendarSource,
     priceUpdatedAt: price.updatedAt,
+    priceTimeBasis: price.updatedAt ? price.priceTimeBasis ?? "bar_open" : null,
     newsUpdatedAt: news.updatedAt,
     calendarUpdatedAt: calendar.updatedAt,
     affectedSymbols: input.affectedSymbols,

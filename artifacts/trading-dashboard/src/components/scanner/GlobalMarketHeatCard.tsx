@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import {
   Flame,
   Loader2,
@@ -129,16 +130,61 @@ function mapTone(v: MarketHeatVerdict): { text: string; dot: string; label: stri
   return tone(v.intensity);
 }
 
-function freshness(updatedAt?: string | null): string {
+// The heat card requests ONE timeframe; bar-open stamps are labelled with it.
+export const HEAT_TIMEFRAME = "M15";
+
+// A stamp up to this far in the future is clock skew, read as "just now".
+const CLOCK_SKEW_TOLERANCE_MS = 5_000;
+
+/**
+ * Relative age of a stamp. Floors (3m31s is "3m ago", never "4m ago"), reads a
+ * small future skew as 0s, and refuses anything else non-sensical ("—").
+ */
+export function freshness(updatedAt?: string | null, nowMs: number = Date.now()): string {
   if (!updatedAt) return "never";
-  const ms = Date.now() - new Date(updatedAt).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return "—";
-  const s = Math.round(ms / 1000);
+  let ms = nowMs - new Date(updatedAt).getTime();
+  if (!Number.isFinite(ms)) return "—";
+  if (ms < 0) {
+    if (ms < -CLOCK_SKEW_TOLERANCE_MS) return "—";
+    ms = 0;
+  }
+  const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s ago`;
-  const m = Math.round(s / 60);
+  const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
+  const h = Math.floor(m / 60);
   return `${h}h ago`;
+}
+
+/**
+ * The price stamp, named by what it measures. A Deriv-style bar time is the
+ * bar's OPEN, not when its price was observed — so only a tick-basis stamp may
+ * read "Price Ns ago"; anything else (including a missing basis — downgrade
+ * only) reads "<TF> bar opened Nm ago".
+ */
+export function priceStampLabel(
+  verdict: Pick<MarketHeatVerdict, "priceUpdatedAt" | "priceTimeBasis">,
+  timeframe: string,
+  nowMs: number = Date.now(),
+): string {
+  if (!verdict.priceUpdatedAt) return "Price never";
+  const age = freshness(verdict.priceUpdatedAt, nowMs);
+  return verdict.priceTimeBasis === "tick" ? `Price ${age}` : `${timeframe} bar opened ${age}`;
+}
+
+/** Next instant any of these relative-age labels changes text (null: none). */
+export function nextHeatLabelChangeMs(stamps: ReadonlyArray<string | null | undefined>, nowMs: number): number | null {
+  let next: number | null = null;
+  for (const stamp of stamps) {
+    if (!stamp) continue;
+    const t = new Date(stamp).getTime();
+    if (!Number.isFinite(t)) continue;
+    const age = Math.max(0, nowMs - t);
+    const unit = age < 60_000 ? 1_000 : age < 3_600_000 ? 60_000 : 3_600_000;
+    const at = t + (Math.floor(age / unit) + 1) * unit;
+    next = next == null ? at : Math.min(next, at);
+  }
+  return next;
 }
 
 function eventTime(iso: string): string {
@@ -186,6 +232,7 @@ function ProviderRow({ status }: { status: MarketHeatProviderStatus }) {
 // ── Today's news risk — distinct surfaced section. Honest `unavailable` is gray,
 // never a fabricated "low risk" when the news provider is not connected. ───────
 function HeadlineRow({ h }: { h: MarketHeatNewsHeadline }) {
+  const nowMs = useEvidenceDeadline(nextHeatLabelChangeMs([h.publishedAt], Date.now()));
   return (
     <div className="flex items-start gap-2 rounded-md border border-border/50 bg-surface-1/30 px-2 py-1.5">
       <span
@@ -198,7 +245,7 @@ function HeadlineRow({ h }: { h: MarketHeatNewsHeadline }) {
       <span className="min-w-0 flex-1">
         <span className="block text-xs text-txt">{h.headline}</span>
         <span className="mt-0.5 block text-[10px] text-txt-muted">
-          {h.source ?? "unknown source"} · {freshness(h.publishedAt)}
+          {h.source ?? "unknown source"} · {freshness(h.publishedAt, nowMs)}
         </span>
       </span>
     </div>
@@ -300,6 +347,11 @@ function VerdictDetail({
   verdict: MarketHeatVerdict;
   onPickSymbol: (symbol: string) => void;
 }) {
+  // Relative-age labels re-render when their text would change, not only on
+  // the 120s refetch (they were up to 2 minutes behind the wall clock).
+  const nowMs = useEvidenceDeadline(nextHeatLabelChangeMs(
+    [verdict.priceUpdatedAt, verdict.newsUpdatedAt, verdict.calendarUpdatedAt], Date.now(),
+  ));
   return (
     <div className="space-y-2 rounded-lg border border-border/50 bg-surface-1/40 px-3 py-2 text-xs">
       <p className="text-txt-muted">{verdict.reason}</p>
@@ -314,9 +366,9 @@ function VerdictDetail({
         </ul>
       )}
       <div className="flex flex-wrap gap-1">
-        <span className="text-txt-muted">Price {freshness(verdict.priceUpdatedAt)}</span>
-        <span className="text-txt-muted">· News {freshness(verdict.newsUpdatedAt)}</span>
-        <span className="text-txt-muted">· Calendar {freshness(verdict.calendarUpdatedAt)}</span>
+        <span className="text-txt-muted" data-testid="heat-price-stamp">{priceStampLabel(verdict, HEAT_TIMEFRAME, nowMs)}</span>
+        <span className="text-txt-muted">· News {freshness(verdict.newsUpdatedAt, nowMs)}</span>
+        <span className="text-txt-muted">· Calendar {freshness(verdict.calendarUpdatedAt, nowMs)}</span>
       </div>
       {verdict.affectedSymbols.length > 0 && (
         <div className="flex flex-wrap gap-1 pt-1">
@@ -559,10 +611,10 @@ function WorldHeatMap({
 
 export function GlobalMarketHeatCard() {
   const { data, isLoading, isFetching, refetch, isError } = useGetMarketHeat(
-    { timeframe: "M15" },
+    { timeframe: HEAT_TIMEFRAME },
     {
       query: {
-        queryKey: getGetMarketHeatQueryKey({ timeframe: "M15" }),
+        queryKey: getGetMarketHeatQueryKey({ timeframe: HEAT_TIMEFRAME }),
         staleTime: 60_000,
         refetchInterval: 120_000,
       },
@@ -570,6 +622,7 @@ export function GlobalMarketHeatCard() {
   );
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const nowMs = useEvidenceDeadline(nextHeatLabelChangeMs([data?.generatedAt], Date.now()));
   const [macroView, setMacroView] = useState<"map" | "grid">("map");
   const onPickSymbol = (symbol: string) => setChartSymbol(symbol);
 
@@ -775,7 +828,7 @@ export function GlobalMarketHeatCard() {
           )}
 
           <p className="pt-1 text-[10px] text-txt-muted">
-            Updated {freshness(data.generatedAt)} · advisory only, never an execution gate.
+            Updated {freshness(data.generatedAt, nowMs)} · advisory only, never an execution gate.
           </p>
         </div>
       )}

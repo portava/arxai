@@ -1077,6 +1077,7 @@ export * from "./marketHeatVerdict";
 export * from "./marketHeatVerdictConfidence";
 export * from "./marketHeatVerdictDirection";
 export * from "./marketHeatVerdictIntensity";
+export * from "./marketHeatVerdictPriceTimeBasis";
 export * from "./marketHeatVerdictScope";
 export * from "./marketHeatVerdictSourceStatus";
 export * from "./marketImpactRadar";
