@@ -60,7 +60,7 @@ import { calendarEventWhen, describeCalendarCoverage } from "@/lib/calendarCover
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
-import { describeRiskCaps } from "./riskCapsSummary";
+import { riskCapsStatus } from "@/lib/riskCapsStatus";
 
 const money = (n: number | null | undefined) =>
   n == null ? "—" : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -430,7 +430,8 @@ export function TradingPermissionSummaryCard() {
       ? bridge.detail
       : mode.cleanUserMessage || "Your account is approved for trading.";
 
-  const riskCaps = describeRiskCaps(mode.envelope?.userRiskCaps ?? null);
+  // The same verdict as the Trade Command Room's Risk Governor (one helper).
+  const riskCaps = riskCapsStatus(mode.envelope, { failed: mode.isModeUnknown });
 
   return (
     <CockpitCard

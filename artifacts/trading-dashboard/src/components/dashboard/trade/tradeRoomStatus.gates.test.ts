@@ -31,8 +31,11 @@ describe("Trade Command Room — status labels without a measurement behind them
   });
 
   it("risk caps are never a constant 'Low'", () => {
-    expect(describeRiskCaps(null).label).toBe("Not loaded");
-    expect(describeRiskCaps({ maxLotSize: null, maxOpenTrades: null, maxDailyLossAmount: null }).label).toBe("None set");
+    // describeRiskCaps is the same verdict as riskCapsStatus (one helper for
+    // cockpit and trade room): "Checking" while nothing is loaded, never "Low".
+    expect(describeRiskCaps(null).label).toBe("Checking");
+    expect(describeRiskCaps({ maxLotSize: null, maxOpenTrades: null, maxDailyLossAmount: null }).label).toBe("No caps assigned");
+    expect(describeRiskCaps({ maxLotSize: null, maxOpenTrades: null, maxDailyLossAmount: null, allowedSymbols: ["EURUSD"] }).label).toBe("Caps assigned");
     const page = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../pages/trade-command-room.tsx"), "utf8");
     expect(page).not.toMatch(/riskLevel=["']Low["']/);
     expect(page).not.toMatch(/bridge=\{blocked \?/);

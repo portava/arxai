@@ -1,35 +1,26 @@
 // Risk caps → a plain value for a "Risk caps" row.
 //
-// The account-mode envelope always carries a `userRiskCaps` OBJECT (the server
-// builds it unconditionally); its fields may all be null. An object's presence
-// is therefore not evidence that any cap is set — only non-null fields are.
+// Kept for callers that hold only the caps object. It is the same verdict as
+// riskCapsStatus (lib/riskCapsStatus.ts) — the one helper every surface uses —
+// so it can never word the same caps differently. Surfaces that have the whole
+// envelope call riskCapsStatus directly, so the freeze state and a failed
+// account-mode check are reported too.
+
+import { riskCapsStatus, type RiskCapsStatus } from "@/lib/riskCapsStatus";
 
 export interface RiskCapsLike {
   maxLotSize: number | null;
   maxOpenTrades: number | null;
   maxDailyLossAmount: number | null;
+  allowedSymbols?: string[] | null;
 }
 
-export interface RiskCapsSummary {
-  label: string;
-  detail: string;
-  tone: "success" | "warning" | "muted";
-}
+export type RiskCapsSummary = RiskCapsStatus;
 
 export function describeRiskCaps(caps: RiskCapsLike | null | undefined): RiskCapsSummary {
-  if (!caps) {
-    return { label: "Not loaded", detail: "Your account risk caps could not be read.", tone: "muted" };
-  }
-  const parts: string[] = [];
-  if (caps.maxLotSize != null) parts.push(`max lot ${caps.maxLotSize}`);
-  if (caps.maxOpenTrades != null) parts.push(`max ${caps.maxOpenTrades} open trades`);
-  if (caps.maxDailyLossAmount != null) parts.push(`daily loss limit $${caps.maxDailyLossAmount}`);
-  if (parts.length === 0) {
-    return {
-      label: "None set",
-      detail: "No lot, open-trade or daily-loss cap is set on your account. Server-side risk checks still run on every order.",
-      tone: "warning",
-    };
-  }
-  return { label: `${parts.length} set`, detail: `Account caps: ${parts.join(", ")}.`, tone: "success" };
+  return riskCapsStatus(
+    caps
+      ? { userRiskCaps: { ...caps, allowedSymbols: caps.allowedSymbols ?? null }, userFrozenStatus: { isFrozen: false } }
+      : null,
+  );
 }
