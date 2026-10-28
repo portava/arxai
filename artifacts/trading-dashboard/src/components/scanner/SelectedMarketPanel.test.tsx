@@ -99,8 +99,8 @@ vi.mock("@/components/live/TradabilityBadge", () => ({
 // marker only when actually opened (default closed) so we never assert against,
 // or depend on, its internals.
 vi.mock("@/components/live/LiveTradeTicket", () => ({
-  LiveTradeTicket: (p: { open?: boolean }) =>
-    p.open ? <div data-testid="live-trade-ticket-stub" /> : null,
+  LiveTradeTicket: (p: { open?: boolean; feedWarning?: { warningTitle: string } | null }) =>
+    p.open ? <div data-testid="live-trade-ticket-stub">{p.feedWarning?.warningTitle ?? ""}</div> : null,
 }));
 
 // Imported AFTER the mocks (vi.mock is hoisted) so the component binds the stubs.
@@ -641,5 +641,28 @@ describe("SelectedMarketPanel — Highlights and the reasoning block print one l
     render(<SelectedMarketPanel />);
     expect(highlightsText()).toContain("1.10300 – 1.10360");
     expect(srText()).toContain("Entry 1.10300 – 1.10360, stop 1.10000, target 1.11000");
+  });
+});
+
+// Truth audit 2026-10-28 (round 3) — /api/chart/candles can fail for the
+// focused symbol while the selected-market snapshot still answers (it fetches
+// candles server-side). useScannerTruth then returns truth=null + isError.
+// The Scanner trade modal already says "Feed status couldn't be checked"; this
+// panel and the live ticket it opens said nothing, as if the feed were fine.
+describe("SelectedMarketPanel — a failed feed read is stated, not silent", () => {
+  it("the panel and the live ticket it opens both say the feed status couldn't be checked", () => {
+    mockUseScannerTruth.mockReturnValue({ truth: null, isError: true });
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ readWithheldReason: null }) }));
+    render(<SelectedMarketPanel />);
+    expect(screen.getByTestId("selected-market-feed-warning").textContent).toContain("Feed status couldn't be checked");
+    act(() => { screen.getByTestId("btn-open-ticket-buy").click(); });
+    expect(screen.getByTestId("live-trade-ticket-stub").textContent).toBe("Feed status couldn't be checked");
+  });
+
+  it("a feed read still in flight (truth null, no error) does not warn", () => {
+    mockUseScannerTruth.mockReturnValue({ truth: null, isError: false });
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ readWithheldReason: null }) }));
+    render(<SelectedMarketPanel />);
+    expect(screen.queryByTestId("selected-market-feed-warning")).toBeNull();
   });
 });

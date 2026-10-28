@@ -125,8 +125,10 @@ export function SelectedMarketPanel() {
   // Shared scanner feed-truth for the focused symbol/timeframe — same source the
   // header strip and chart read. Drives an honest, NON-BLOCKING feed warning on
   // this panel and inside the live ticket it opens. Never gates the trade.
-  const { truth: feedTruth } = useScannerTruth(activeSymbol, scannerTf);
-  const liveAffordance = resolveTradeAffordance(feedTruth, "live");
+  // A FAILED feed read (truth null + isError) is stated as "couldn't be
+  // checked", exactly as in the Scanner trade modal — never silence.
+  const { truth: feedTruth, isError: feedReadFailed } = useScannerTruth(activeSymbol, scannerTf);
+  const liveAffordance = resolveTradeAffordance(feedTruth, "live", { isError: feedReadFailed });
   const liveFeedWarning = liveAffordance.warningTitle
     ? { warningTitle: liveAffordance.warningTitle, warningDetail: liveAffordance.warningDetail }
     : null;

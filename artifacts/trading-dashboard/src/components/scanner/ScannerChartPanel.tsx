@@ -576,7 +576,7 @@ export function ScannerChartPanel() {
   }, [deepHistory.olderCandles, candles]);
   // Shared resolved truth — drives the live-price affordance so the chart can
   // never look more live/actionable than the header strip says it is.
-  const { truth } = useScannerTruth(symbol, timeframe);
+  const { truth, isError: feedReadFailed } = useScannerTruth(symbol, timeframe);
   // ONE display precision for this instrument (server-declared, widened by the
   // digits the loaded quotes carry) — the axis, badge, level labels and the
   // page header all format with it (lib/instrumentPriceFormat).
@@ -746,9 +746,12 @@ export function ScannerChartPanel() {
   // SAME resolved scanner-truth as the header/result rows, so a chart trade can
   // never be planned while implying the price is live when it is not. This warns
   // only — it never disables Confirm and never gates the 18-gate server pipeline.
+  // A FAILED feed read (truth null + isError) warns "Feed status couldn't be
+  // checked", as in the Scanner trade modal — never silence. Warning only.
   const chartAffordance = resolveTradeAffordance(
     truth,
     tradeMode === "live" ? "live" : tradeMode === "demo" ? "demo" : "read_only",
+    { isError: feedReadFailed },
   );
 
   const [lot, setLot] = useState<string>("0.01");
