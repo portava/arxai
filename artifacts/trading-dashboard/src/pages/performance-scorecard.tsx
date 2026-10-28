@@ -14,10 +14,11 @@ import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
 
 type Scorecard = {
-  environments: Record<string, { trades?: number | null; wins?: number; losses?: number; winRate?: number; pnl?: number; note?: string; status?: string }>;
+  environments: Record<string, { trades?: number | null; wins?: number; losses?: number; winRate?: number | null; pnl?: number; note?: string; status?: string }>;
   // tradesWithRecordedPnl: entries whose P/L is known. totalPnl counts a
   // missing P/L as 0, so this is what separates "net $0" from "unknown".
-  headline: { winRate: number; totalPnl: number; totalTrades: number; tradesWithRecordedPnl?: number };
+  // winRate is over decided trades (a recorded win or loss); null when none.
+  headline: { winRate: number | null; tradesDecided?: number; totalPnl: number; totalTrades: number; tradesWithRecordedPnl?: number };
   bestSymbol: string | null; worstSymbol: string | null;
   strategyRanking: Array<{ strategy: string; count: number; pnl: number }>;
   mistakeDistribution: Record<string, number>;
@@ -144,7 +145,7 @@ export default function PerformanceScorecard() {
           {/* Performance summary cards */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
             <MetricCard label="Net P/L" value={pnlUnknown ? "—" : money(s.headline.totalPnl)} tone={pnlUnknown ? "text-txt-muted" : pnlTone(s.headline.totalPnl)} />
-            <MetricCard label="Win Rate" value={pnlUnknown ? "—" : `${s.headline.winRate}%`} tone={pnlUnknown ? "text-txt-muted" : "text-foreground"} />
+            <MetricCard label="Win Rate" value={pnlUnknown || s.headline.winRate == null ? "—" : `${s.headline.winRate}%`} tone={pnlUnknown || s.headline.winRate == null ? "text-txt-muted" : "text-foreground"} />
             <MetricCard label="Wins" value={String(totals.wins)} tone="text-success" icon={<Trophy className="h-4 w-4 text-success" />} />
             <MetricCard label="Losses" value={String(totals.losses)} tone="text-danger" icon={<XCircle className="h-4 w-4 text-danger" />} />
             <MetricCard label="Total Trades" value={String(s.headline.totalTrades)} tone="text-foreground" />
@@ -160,7 +161,7 @@ export default function PerformanceScorecard() {
                 <p className="mt-2 text-sm text-txt-secondary" data-testid="performance-read">
                   {verdict}{" "}
                   {missingPnl > 0 ? <>{missingPnl} of {total} journal {missingPnl === 1 ? "entries has" : "entries have"} no P/L recorded yet and {missingPnl === 1 ? "is" : "are"} not counted in that result.{" "}</> : null}
-                  {pnlUnknown ? null : <>Win rate is {s.headline.winRate}%.{" "}</>}
+                  {pnlUnknown || s.headline.winRate == null ? null : <>Win rate is {s.headline.winRate}%{s.headline.tradesDecided != null ? <> across {s.headline.tradesDecided} decided {s.headline.tradesDecided === 1 ? "trade" : "trades"}</> : null}.{" "}</>}
                   {s.bestSymbol ? <>Your strongest symbol is <span className="text-success font-medium">{s.bestSymbol}</span>.</> : null}{" "}
                   {s.worstSymbol ? <>Watch <span className="text-danger font-medium">{s.worstSymbol}</span> — it’s been your weakest.</> : null}
                 </p>

@@ -133,10 +133,17 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
     const journal = await db.select().from(tradeJournalTable)
       .where(eq(tradeJournalTable.userId, userId));
 
-    const wins = journal.filter((j) => (j.pnl ?? 0) > 0).length;
-    const losses = journal.filter((j) => (j.pnl ?? 0) < 0).length;
+    // Win rate is over decided trades only: BUY/SELL rows with a recorded
+    // P&L that won or lost. WAIT rows, rows with no P&L and breakeven rows
+    // are not losses, so they never enter the denominator (it used to be
+    // every journal row, so 2 wins + 2 unrecorded rows read 50%). null when
+    // nothing is decided — unknown, not 0%.
+    const outcomes = journal.filter(hasRecordedOutcome);
+    const wins = outcomes.filter((j) => j.pnl > 0).length;
+    const losses = outcomes.filter((j) => j.pnl < 0).length;
+    const decided = wins + losses;
     const total = journal.length;
-    const winRate = total ? Math.round((wins / total) * 100) : 0;
+    const winRate: number | null = decided ? Math.round((wins / decided) * 100) : null;
     const pnl = journal.reduce((a, j) => a + (j.pnl ?? 0), 0);
     // Entries whose P&L is actually known. totalPnl above treats a missing P&L
     // as 0, so the client needs this count to tell "net $0" from "unknown".
@@ -183,14 +190,14 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
     return res.json({
       environments: {
         JOURNAL: {
-          trades: total, wins, losses, winRate, pnl: Math.round(pnl * 100) / 100,
+          trades: total, wins, losses, winRate, tradesDecided: decided, pnl: Math.round(pnl * 100) / 100,
           note: "All your journal entries. Journal entries record no environment, so paper, demo and live are not separated here.",
         },
         DEMO_SIMULATOR: { trades: null, note: "Not read by this report — demo simulator results are kept in a separate table." },
         LIVE_TESTER_INTENT: { trades: null, note: "Not read by this report — live intents are not tracked per user." },
         REAL_BROKER: { trades: null, status: "Not read by this report — real broker execution is deferred and has never executed." },
       },
-      headline: { winRate, totalPnl: Math.round(pnl * 100) / 100, totalTrades: total, tradesWithRecordedPnl },
+      headline: { winRate, tradesDecided: decided, totalPnl: Math.round(pnl * 100) / 100, totalTrades: total, tradesWithRecordedPnl },
       bestSymbol, worstSymbol,
       strategyRanking,
       mistakeDistribution: Object.fromEntries(mistakeDist),
@@ -217,15 +224,22 @@ router.get("/learning/performance", requireUser, async (req, res) => {
     const journal = await db.select().from(tradeJournalTable)
       .where(eq(tradeJournalTable.userId, userId));
     const total = journal.length;
-    const wins = journal.filter((j) => (j.pnl ?? 0) > 0).length;
+    // Same decided basis as the scorecard: losses are recorded losses (not
+    // every row that is not a win), and the win rate is null when no journal
+    // trade has a recorded win or loss.
+    const outcomes = journal.filter(hasRecordedOutcome);
+    const wins = outcomes.filter((j) => j.pnl > 0).length;
+    const losses = outcomes.filter((j) => j.pnl < 0).length;
+    const decided = wins + losses;
     return res.json({
-      totalTrades: total, wins, losses: total - wins,
-      winRate: total ? Math.round((wins / total) * 100) : 0,
+      totalTrades: total, wins, losses, tradesDecided: decided,
+      winRate: decided ? Math.round((wins / decided) * 100) : null,
       insightCount: insights.length,
       strengths: insights.filter((i) => i.insightType === "STRENGTH").length,
       weaknesses: insights.filter((i) => i.insightType === "WEAKNESS").length,
       patterns: insights.filter((i) => i.insightType === "PATTERN").length,
-      dataSource: "SIMULATOR",
+      // Trades come from the caller's trade journal, not the simulator.
+      dataSource: "TRADE_JOURNAL",
     });
   } catch (e) { return res.status(500).json({ error: String(e) }); }
 });
