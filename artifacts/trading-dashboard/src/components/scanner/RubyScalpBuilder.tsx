@@ -187,11 +187,14 @@ export function RubyScalpBuilder({
               </>
             ) : (
               <p className="text-sm text-txt-secondary" data-testid="scalp-builder-none">
+                {/* The server says why (missing data vs. nothing clean). These
+                    fallbacks only cover a response without a reason; the
+                    Builder scans on demand, so an empty scan is missing data. */}
                 {resp.noTradeReason
                   ? resp.noTradeReason
                   : resp.scanned > 0
-                    ? `${name} checked ${resp.scanned} markets and none fit your goal cleanly right now. Patience pays.`
-                    : "No scanned markets yet. Run a Broad Scan first, then build."}
+                    ? `${name} read ${resp.scanned} ${resp.scanned === 1 ? "market" : "markets"} and found no clean scalp for your goal right now.`
+                    : "No market in this group returned a live read just now, so nothing was checked against your goal. Try again shortly."}
               </p>
             )}
           </div>

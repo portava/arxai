@@ -460,10 +460,48 @@ async function buildRankInputs(
 }
 
 export function rankUnder(inputs: RankInput[], mode: ScalpMode): ScalpResult[] {
-  return inputs
-    .map((i) => evaluateScalp({ ...i.base, mode }))
+  return rankEvaluated(inputs.map((i) => evaluateScalp({ ...i.base, mode })));
+}
+
+function rankEvaluated(evaluated: ScalpResult[]): ScalpResult[] {
+  return evaluated
     .filter(isActionable)
     .sort((a, b) => b.qualityScore - a.qualityScore);
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Why the Builder has no pick, from what was actually evaluated. A market
+ * with no live read, no fresh price / broker specs (AWAITING_DATA), or that
+ * is closed / not tradeable was never checked against the user's goal, so
+ * "nothing matches your target" (and "try a smaller target") is only said
+ * when at least one market was evaluated on live data.
+ */
+export function builderNoTradeReason(
+  evaluated: ScalpResult[],
+  goal: "target" | "settings",
+): string {
+  const goalText = goal === "target" ? "your target" : "your settings";
+  const n = evaluated.length;
+  if (n === 0) {
+    return `No market in this group returned a live read just now, so nothing was checked against ${goalText}. This is missing data, not a verdict on ${goalText}. Try again shortly.`;
+  }
+  const noData = evaluated.filter((r) => r.status === "AWAITING_DATA").length;
+  const notTradeable = evaluated.filter(
+    (r) => r.status === "MARKET_CLOSED" || r.status === "SYMBOL_NOT_TRADEABLE",
+  ).length;
+  const checked = n - noData - notTradeable;
+  if (checked === 0) {
+    const why: string[] = [];
+    if (noData > 0) why.push(`${noData} had no live price or broker specs`);
+    if (notTradeable > 0) why.push(`${plural(notTradeable, "is", "are")} closed or not tradeable`);
+    return `None of the ${plural(n, "market", "markets")} in this group could be evaluated right now (${why.join(", ")}), so nothing was checked against ${goalText}. This is missing data, not a verdict on ${goalText}.`;
+  }
+  const skipped = n - checked;
+  return `${checked} of ${plural(n, "market", "markets")} had live data to evaluate${skipped > 0 ? ` (${skipped} could not be evaluated)` : ""}; none gave a clean scalp for ${goalText} right now. Try a wider market group or a different mode${goal === "target" ? ", or a smaller target" : ""}.`;
 }
 
 export interface ScalpRankArgs {
@@ -521,7 +559,8 @@ export async function buildScalp(userId: number, args: ScalpBuildArgs): Promise<
     targetProfitAmount: args.targetProfitAmount ?? null,
     riskPersonality: args.riskPersonality ?? null,
   });
-  const ranked = rankUnder(inputs, args.mode);
+  const evaluated = inputs.map((i) => evaluateScalp({ ...i.base, mode: args.mode }));
+  const ranked = rankEvaluated(evaluated);
   const primary = ranked[0] ?? null;
   const alternatives = ranked.slice(1, 4);
   // Agent Ecosystem advisory (Phase 0) — same bounded, advisory-only attach as
@@ -534,6 +573,6 @@ export async function buildScalp(userId: number, args: ScalpBuildArgs): Promise<
     scanned: inputs.length,
     noTradeReason: primary
       ? null
-      : "No clean scalp matches your target right now. Try a wider market group, a different mode, or a smaller target.",
+      : builderNoTradeReason(evaluated, args.targetProfitAmount != null ? "target" : "settings"),
   };
 }
