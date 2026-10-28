@@ -98,3 +98,23 @@ test("kill-zone description prints clock times, not decimal hours", () => {
     }
   }
 });
+
+test("16:30 UTC (London closed at 16:00, New York open) → session is New York, not London", () => {
+  atUtc(16, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.sessionName, "New York");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("14:30 UTC (both London and New York open) → London/NY Overlap", () => {
+  atUtc(14, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.sessionName, "London/NY Overlap");
+  } finally {
+    mock.timers.reset();
+  }
+});

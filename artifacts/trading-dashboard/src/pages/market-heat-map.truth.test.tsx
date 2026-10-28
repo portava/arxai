@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, within } from "@testing-library/react";
 import type { MarketTimingRead } from "@workspace/api-client-react";
-import { BySessionTab } from "./market-heat-map";
+import { BySessionTab, TodayTab } from "./market-heat-map";
 
 afterEach(() => {
   cleanup();
@@ -71,5 +71,29 @@ describe("By Session tab — UTC clock", () => {
     render(<BySessionTab data={makeRead()} />);
     expect(screen.queryByText(/16\.5:00/)).toBeNull();
     expect(screen.getByText(/16:30 UTC/)).toBeTruthy();
+  });
+});
+
+describe("Today tab — session cards", () => {
+  const isActive = (name: string) =>
+    within(screen.getByTestId(`session-card-${name}`)).queryByText("Active") != null;
+
+  it("London/NY Overlap lights BOTH the London and the New York card", () => {
+    render(<TodayTab data={makeRead({}, { sessionName: "London/NY Overlap" })} multiData={[]} />);
+    expect(isActive("London")).toBe(true);
+    expect(isActive("New York")).toBe(true);
+    expect(isActive("Asia")).toBe(false);
+  });
+
+  it("Sydney lights the Sydney card", () => {
+    render(<TodayTab data={makeRead({}, { sessionName: "Sydney" })} multiData={[]} />);
+    expect(isActive("Sydney")).toBe(true);
+    expect(isActive("London")).toBe(false);
+  });
+
+  it("a session that matches no card says so in plain words", () => {
+    render(<TodayTab data={makeRead({}, { sessionName: "24/7 Synthetic" })} multiData={[]} />);
+    for (const n of ["Sydney", "Asia", "London", "New York"]) expect(isActive(n)).toBe(false);
+    expect(screen.getByTestId("session-no-card").textContent).toContain("24/7 Synthetic");
   });
 });

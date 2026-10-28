@@ -136,8 +136,8 @@ function detectKillZone(hour: number): KillZoneDef | null {
 
 function detectSession(hour: number): SessionDef {
   const adjusted = hour % 24;
-  // London/NY overlap first (highest priority)
-  if (inWindow(13, 17, adjusted)) return SESSIONS.find((s) => s.name === "London")!;
+  // London (07:00-16:00 UTC) first; the caller relabels 13:00-16:00 as the
+  // London/NY overlap. After 16:00 London is closed, so New York is reported.
   if (inWindow(7, 16, adjusted)) return SESSIONS.find((s) => s.name === "London")!;
   if (inWindow(13, 22, adjusted)) return SESSIONS.find((s) => s.name === "New York")!;
   if (inWindow(0, 8, adjusted)) return SESSIONS.find((s) => s.name === "Asia")!;

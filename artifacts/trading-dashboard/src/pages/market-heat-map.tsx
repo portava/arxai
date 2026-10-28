@@ -331,9 +331,26 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
 
 // ── Tab: Today ─────────────────────────────────────────────────────────────
 
+const SESSION_CARD_NAMES = ["Sydney", "Asia", "London", "New York"] as const;
+type SessionCardName = (typeof SESSION_CARD_NAMES)[number];
+
+/**
+ * Which session cards the server's session name lights. The overlap label
+ * ("London/NY Overlap") means BOTH London and New York are open; any name that
+ * matches no card (weekend, synthetic 24/7) lights none.
+ */
+function sessionCardsFor(sessionName: string): SessionCardName[] {
+  const n = sessionName.toLowerCase();
+  if (n.includes("overlap") && n.includes("london") && (n.includes("ny") || n.includes("new york"))) {
+    return ["London", "New York"];
+  }
+  return SESSION_CARD_NAMES.filter((name) => n === name.toLowerCase());
+}
+
 function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
   const session = data?.session;
   const localTime = session?.userLocalTime;
+  const activeSessionCards = session ? sessionCardsFor(session.sessionName) : [];
 
   return (
     <div className="space-y-4">
@@ -351,12 +368,13 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
         <CardContent className="space-y-3">
           {session ? (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {["Asia", "London", "New York"].map((name) => {
-                  const isCurrent = session.sessionName.toLowerCase().includes(name.toLowerCase());
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                {SESSION_CARD_NAMES.map((name) => {
+                  const isCurrent = activeSessionCards.includes(name);
                   return (
                     <div
                       key={name}
+                      data-testid={`session-card-${name}`}
                       className={cn(
                         "rounded-lg border p-3 text-xs",
                         isCurrent
@@ -388,6 +406,11 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
                   );
                 })}
               </div>
+              {activeSessionCards.length === 0 && (
+                <p className="text-xs text-foreground" data-testid="session-no-card">
+                  Current session: {session.sessionName} — none of the session cards above is active.
+                </p>
+              )}
               <p className="text-xs text-muted-foreground leading-relaxed">{session.sessionDescription}</p>
             </>
           ) : (
