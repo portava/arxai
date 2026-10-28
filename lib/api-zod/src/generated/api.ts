@@ -4298,6 +4298,30 @@ export const GetPositionSizeResponse = zod.object({
   maxLotAllowed: zod.number(),
   finalLot: zod.number(),
   warning: zod.string().nullish(),
+  valueModel: zod
+    .enum([
+      "forex_usd_quote",
+      "forex_other_quote",
+      "synthetic_per_point",
+      "per_point",
+      "unknown_contract",
+    ])
+    .optional()
+    .describe(
+      "Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. unknown_contract = the symbol is not a known currency pair but was sized as one (XAUUSD, BTCUSD…); the lot is not usable.",
+    ),
+  estimate: zod
+    .boolean()
+    .optional()
+    .describe("true unless the model is the standard USD-quoted forex lot."),
+  valuePerUnitPerLot: zod
+    .number()
+    .optional()
+    .describe("The assumed money per 1.0 price move per 1.0 lot."),
+  basis: zod
+    .string()
+    .optional()
+    .describe("Plain-English statement of the sizing assumption, for display."),
 });
 
 /**

@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { PositionSizeResultValueModel } from "./positionSizeResultValueModel";
 
 export interface PositionSizeResult {
   riskAmount: number;
@@ -14,4 +15,12 @@ export interface PositionSizeResult {
   finalLot: number;
   /** @nullable */
   warning?: string | null;
+  /** Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. unknown_contract = the symbol is not a known currency pair but was sized as one (XAUUSD, BTCUSD…); the lot is not usable. */
+  valueModel?: PositionSizeResultValueModel;
+  /** true unless the model is the standard USD-quoted forex lot. */
+  estimate?: boolean;
+  /** The assumed money per 1.0 price move per 1.0 lot. */
+  valuePerUnitPerLot?: number;
+  /** Plain-English statement of the sizing assumption, for display. */
+  basis?: string;
 }

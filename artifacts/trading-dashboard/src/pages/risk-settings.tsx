@@ -300,6 +300,9 @@ export default function RiskSettings() {
   const [calcResult, setCalcResult] = useState<null | {
     riskAmount: number; stopDistance: number; suggestedLot: number;
     maxLotAllowed: number; finalLot: number; warning?: string | null;
+    // Which instrument-class value model sized the lot. Missing = not
+    // reported, so the lot is treated as an estimate.
+    valueModel?: string; estimate?: boolean; valuePerUnitPerLot?: number; basis?: string;
   }>(null);
   const [calcParams, setCalcParams] = useState<null | {
     symbol: string; accountBalance: number; riskPercent: number;
@@ -926,7 +929,7 @@ export default function RiskSettings() {
                   <CalculatorIcon size={16} /> Position Sizing Calculator
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Calculate optimal lot size based on your account and risk parameters.
+                  Estimate a lot size from your balance, risk % and stop distance. It uses an instrument-class value model, not your broker&apos;s contract specification.
                 </CardDescription>
               </CardHeader>
               <Form {...calcForm}>
@@ -1010,15 +1013,20 @@ export default function RiskSettings() {
                   <div className="space-y-1">
                     <StatRow label="Risk Amount" value={`$${calcResult.riskAmount.toFixed(2)}`} />
                     <StatRow label="Stop Distance" value={calcResult.stopDistance.toFixed(4)} />
-                    <StatRow label="Suggested Lot" value={calcResult.suggestedLot.toFixed(2)} />
+                    <StatRow label="Suggested Lot" value={calcResult.valueModel === "unknown_contract" ? "—" : calcResult.suggestedLot.toFixed(2)} />
                     <StatRow label="Max Allowed Lot" value={calcResult.maxLotAllowed.toFixed(2)} />
                     <div className="mt-3 pt-3 border-t border-border/50">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold">Final Lot Size</span>
-                        <span className="text-xl font-mono font-bold text-primary">
-                          {calcResult.finalLot.toFixed(2)}
+                        <span className="text-sm font-semibold" data-testid="sizer-final-label">
+                          {calcResult.estimate === false ? "Final Lot Size" : "Estimated Lot Size"}
+                        </span>
+                        <span className="text-xl font-mono font-bold text-primary" data-testid="sizer-final-lot">
+                          {calcResult.valueModel === "unknown_contract" ? "Not sized" : calcResult.finalLot.toFixed(2)}
                         </span>
                       </div>
+                      <p className="mt-2 text-xs text-muted-foreground" data-testid="sizer-basis">
+                        {calcResult.basis ?? "The sizing basis was not reported, so treat this lot as an estimate."}
+                      </p>
                     </div>
                     {calcResult.warning && (
                       <Alert className="mt-3 border-yellow-500/30 bg-yellow-500/5 py-2">

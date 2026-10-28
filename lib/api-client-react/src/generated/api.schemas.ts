@@ -9384,6 +9384,20 @@ export interface RiskAudit {
   cooldownActive: boolean;
 }
 
+/**
+ * Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. unknown_contract = the symbol is not a known currency pair but was sized as one (XAUUSD, BTCUSD…); the lot is not usable.
+ */
+export type PositionSizeResultValueModel =
+  (typeof PositionSizeResultValueModel)[keyof typeof PositionSizeResultValueModel];
+
+export const PositionSizeResultValueModel = {
+  forex_usd_quote: "forex_usd_quote",
+  forex_other_quote: "forex_other_quote",
+  synthetic_per_point: "synthetic_per_point",
+  per_point: "per_point",
+  unknown_contract: "unknown_contract",
+} as const;
+
 export interface PositionSizeResult {
   riskAmount: number;
   stopDistance: number;
@@ -9392,6 +9406,14 @@ export interface PositionSizeResult {
   finalLot: number;
   /** @nullable */
   warning?: string | null;
+  /** Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. unknown_contract = the symbol is not a known currency pair but was sized as one (XAUUSD, BTCUSD…); the lot is not usable. */
+  valueModel?: PositionSizeResultValueModel;
+  /** true unless the model is the standard USD-quoted forex lot. */
+  estimate?: boolean;
+  /** The assumed money per 1.0 price move per 1.0 lot. */
+  valuePerUnitPerLot?: number;
+  /** Plain-English statement of the sizing assumption, for display. */
+  basis?: string;
 }
 
 export type StrategyParameters = { [key: string]: unknown };
