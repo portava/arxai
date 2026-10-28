@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { MarketTruthResponse } from "@workspace/api-client-react";
 import { classifyTruthEvidence, type TruthEvidence } from "@workspace/domain/truth";
 import type { ScannerTruth } from "./scannerTruth";
-import { resolveSymbolTruthEvidence, SYMBOL_TRUTH_MAX_AGE_MS } from "./symbolTruthEvidence";
+import { resolveSymbolTruthEvidence, SYMBOL_TRUTH_MAX_AGE_MS, SYMBOL_TRUTH_NEWS_MAX_AGE_MS } from "./symbolTruthEvidence";
 
 // Client-side re-validation of the server's per-claim evidence classes. The
 // client may only DOWNGRADE: each claim keeps the weaker of the server class and
@@ -102,8 +102,17 @@ describe("evidence classes after the client cap", () => {
     expect(resolveSymbolTruthEvidence(junk).snapshot?.evidence).toBeUndefined();
   });
 
-  it("an expired snapshot is withdrawn entirely, classes included", () => {
-    const value = input(); value.nowMs += SYMBOL_TRUTH_MAX_AGE_MS + 1;
+  it("an expired snapshot loses every derived class but keeps the calendar class it still displays", () => {
+    const value = input(); const serverNews = value.snapshot!.evidence!.news;
+    value.nowMs += SYMBOL_TRUTH_MAX_AGE_MS + 1;
+    const evidence = resolveSymbolTruthEvidence(value).snapshot?.evidence;
+    expect(evidence?.news).toEqual(serverNews);
+    expect(evidence?.levels.evidenceClass).toBe("unavailable");
+    expect(evidence?.verdict.evidenceClass).toBe("unavailable");
+    expect(Object.values(evidence!.components).every((c) => c.evidenceClass === "unavailable")).toBe(true);
+  });
+  it("a snapshot too old even for its calendar state is withdrawn entirely, classes included", () => {
+    const value = input(); value.nowMs += SYMBOL_TRUTH_NEWS_MAX_AGE_MS + 1;
     expect(resolveSymbolTruthEvidence(value)).toEqual({ snapshot: null, actionCapped: true });
   });
   // Review 2026-10-27 finding 5: an unchecked calendar has its own reason.

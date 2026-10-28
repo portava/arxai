@@ -9,8 +9,9 @@
 // HONESTY: builders MUST preserve the upstream honesty gates. When a read is
 // downgraded / withheld (insufficient / stale / delayed / blocked) the Decision
 // becomes WAIT/conditional, the limitation is stated in Feed/Data, and no direction
-// or level is fabricated. If a news/calendar provider is missing we say
-// "news/calendar unavailable", never "low risk".
+// or level is fabricated. Event risk is stated exactly as checked: the page's
+// truth-read calendar label verbatim (lib/eventRiskCopy), "not assessed in this
+// read" when the read consulted no calendar, never "low risk" by omission.
 //
 // Pure module (no JSX) — keep it free of component exports so it stays testable and
 // Vite fast-refresh-safe.
@@ -29,6 +30,7 @@ import {
   isScalpAwaitingFeed,
   scalpTimeframeWords,
 } from "@/components/scanner/scalpLabels";
+import { EVENT_RISK_NOT_ASSESSED_IN_READ } from "@/lib/eventRiskCopy";
 
 export interface RubyReasoningEvidence {
   structure: string;
@@ -104,7 +106,12 @@ export interface MarketReadReasoningInput {
   level?: string | null;
   /** Human downgrade reason from the scanner-truth gate. */
   reason?: string | null;
-  /** Event-risk label from the per-symbol truth snapshot, or null when no provider. */
+  /**
+   * The event-risk sentence EXACTLY as the card's News & economic impact block
+   * prints it (lib/eventRiskCopy eventRiskLine: the server's calendar label
+   * verbatim, or the loading/unavailable wording). Appended verbatim to Risk so
+   * both rows always say the same thing. Absent → "not assessed in this read".
+   */
   newsRiskLabel?: string | null;
 }
 
@@ -123,7 +130,7 @@ export function buildReasoningFromMarketRead(
   const { explanation: exp, signal, downgraded } = input;
   const level = input.level ?? null;
   const reason = clean(input.reason);
-  const newsMissing = !clean(input.newsRiskLabel);
+  const eventRisk = orElse(input.newsRiskLabel, EVENT_RISK_NOT_ASSESSED_IN_READ);
 
   // The card chooses simple/advanced at render; for reasoning we read the simple
   // mode (most plain-English) and fall back to advanced if simple is empty.
@@ -219,7 +226,7 @@ export function buildReasoningFromMarketRead(
   }
 
   const riskBase = orElse(chosen?.risk, "Manage risk to your plan.");
-  const evidenceRisk = newsMissing ? `${riskBase} ${NEWS_UNAVAILABLE_NOTE}` : riskBase;
+  const evidenceRisk = `${riskBase} ${eventRisk}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   const confirmation = downgraded

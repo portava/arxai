@@ -307,4 +307,49 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.queryByTestId("ruby-market-read-best-action")).toBeNull();
     expect(screen.queryByText("Levels")).toBeNull();
   });
+
+describe("RubyMarketReadCard — one event-risk sentence (owner screenshot 2026-10-27)", () => {
+  function riskRow() {
+    return screen.getByTestId("ruby-market-read-reasoning-evidence-risk").textContent ?? "";
+  }
+  function newsBox() {
+    return screen.getByTestId("ruby-market-read-news").textContent ?? "";
+  }
+  it("a withdrawn truth read says 'not checked' in BOTH the News block and the Risk row — never 'loading'", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, newsState: "unavailable", data: null });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    const line = "Event risk not checked — the truth read is unavailable right now.";
+    expect(newsBox()).toContain(line);
+    expect(riskRow()).toContain(line);
+    expect(newsBox()).not.toMatch(/loading/i);
+    expect(riskRow()).not.toMatch(/loading/i);
+    expect(riskRow()).not.toContain("News/calendar unavailable");
+  });
+  it("an older mock/caller with no newsState and no news is never described as loading", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, data: null });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    expect(newsBox()).not.toMatch(/loading/i);
+  });
+  it("only a genuinely in-flight first fetch says 'Checking event risk…', in both places", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, newsState: "loading", data: null });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    expect(newsBox()).toContain("Checking event risk…");
+    expect(riskRow()).toContain("Checking event risk…");
+  });
+  it("the server's calendar label is printed verbatim in both places (V75, no calendar configured)", () => {
+    mockUseSymbolTruth.mockReturnValue({
+      news: { providerConnected: false, events: [], riskLabel: "No event calendar is connected.", highImpactWindowActive: false, riskUnchecked: false, disclaimer: "No economic-calendar provider is connected, so no scheduled events are shown." },
+      newsState: "available",
+      data: null,
+    });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="V75" timeframe="1m" />);
+    expect(newsBox()).toContain("No event calendar is connected.");
+    expect(riskRow()).toContain("No event calendar is connected.");
+    expect(riskRow()).not.toContain("News/calendar unavailable");
+  });
+});
 });
