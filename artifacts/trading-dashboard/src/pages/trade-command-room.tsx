@@ -19,7 +19,6 @@ import { Zap, Layers, ListChecks, Wrench } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useAssistantName } from "@/lib/assistant-name";
-import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
 import { useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey, useGetMeSharedAccountPositions, getGetMeSharedAccountPositionsQueryKey } from "@workspace/api-client-react";
 
 import { CockpitHeader } from "@/components/dashboard/cockpit/CockpitHeader";
@@ -31,6 +30,7 @@ import {
   TradeStatusBar, TradeHero, PositionsPanel, OrdersPanel,
   AdvancedPanel, RiskGovernorCard, DecisionStreamCard,
 } from "@/components/dashboard/trade/TradePanels";
+import { resolveTradeRoomStatus } from "@/components/dashboard/trade/tradeRoomStatus";
 
 type Opp = {
   symbol: string; timeframe: string; bias: string; recommendedAction: string;
@@ -128,26 +128,11 @@ export default function TradeCommandRoom() {
 
   // ── Mode / permission → plain English ───────────────────────────────
   const isLive = tradingMode.isLiveShared;
-  const blocked = Boolean(tradingMode.cleanBlockedReason);
-  const frozen = tradingMode.isFrozen;
-  const caps = resolveLiveActionCapabilities({
-    canManualTrade: tradingMode.canManualTrade,
-    isFrozen: frozen,
-    bridgeBlocked: blocked,
-  });
-  const canTrade = caps.canOpen;
-
-  const modeLabel = blocked ? "Bridge Disconnected" : frozen ? "Trading Paused" : isLive ? "LIVE · Shared Master MT5" : tradingMode.isDemo ? "Demo" : (tradingMode.cleanModeLabel || "Simulator");
-  const gatesLabel = blocked ? (tradingMode.cleanBlockedReason || "Bridge unavailable") : frozen ? "Trading paused" : canTrade ? "All safety gates enforced" : "Waiting for approval";
-  const blockedLabel = caps.blockedLabel;
+  const {
+    canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge,
+  } = resolveTradeRoomStatus(tradingMode);
 
   const heroDescription = `Place manual, ${name}-assisted, or advanced trades through your approved account route.`;
-  const connStatus = blocked ? "Disconnected" : isLive ? "LIVE" : tradingMode.isDemo ? "Demo" : "Sim";
-
-  // Risk governor (plain English + admin raw detail preserved)
-  const rgStatus = frozen || blocked ? { label: "Trading paused", tone: "warning" as const }
-    : canTrade ? { label: "Trading available", tone: "success" as const }
-    : { label: "Risk lock active", tone: "danger" as const };
 
   // ── Tabs ─────────────────────────────────────────────────────────────
   const quickTradeTab = (
@@ -207,7 +192,7 @@ export default function TradeCommandRoom() {
     <div className="space-y-4">
       <RiskGovernorCard
         statusLabel={rgStatus.label} statusTone={rgStatus.tone}
-        riskLevel="Low" bridge={blocked ? "Disconnected" : "Connected"}
+        riskLevel="Low" bridge={bridge}
         approval={tradingMode.canManualTrade ? "Approved" : "Pending"}
         isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
       />

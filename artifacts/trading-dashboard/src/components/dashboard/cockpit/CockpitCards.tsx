@@ -364,7 +364,8 @@ export function TradingPermissionSummaryCard() {
   const status = frozen
     ? { label: "Paused", tone: "warning" as const }
     : blocked
-      ? { label: "Bridge disconnected", tone: "danger" as const }
+      // An account/permission blocker from the server (never a heartbeat read).
+      ? { label: "Trading blocked", tone: "danger" as const }
       : waitingApproval
         ? { label: "Waiting for approval", tone: "warning" as const }
         : mode.canManualTrade

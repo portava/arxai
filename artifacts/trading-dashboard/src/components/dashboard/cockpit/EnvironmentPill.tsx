@@ -2,7 +2,7 @@
 // Picks exactly one state (never conflicting LIVE + Demo + Paused at once),
 // resolved from the unified trading-mode envelope. Read-only.
 
-import { CheckCircle2, AlertTriangle, PlugZap, Pause } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Lock, Pause } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { cn } from "@/lib/utils";
 
@@ -13,9 +13,14 @@ export function EnvironmentPill() {
     return <div className="h-7 w-40 animate-pulse rounded-full bg-secondary/40" />;
   }
 
-  // Priority: blocked/disconnected → frozen/paused → live → demo → sim.
+  // Priority: blocked → frozen/paused → live → demo → sim.
+  // cleanBlockedReason is an account / permission / arming blocker from the
+  // server's mode precedence (operator pause, tradingMode, live confirmation,
+  // master switch …). It never reads a bridge heartbeat, so the label names the
+  // block and the sub-line carries the server's own reason — never "Bridge
+  // Disconnected".
   const state = mode.cleanBlockedReason
-    ? { label: "Bridge Disconnected", dot: "bg-danger", text: "text-danger", icon: PlugZap, sub: mode.cleanBlockedReason }
+    ? { label: "Trading blocked", dot: "bg-danger", text: "text-danger", icon: Lock, sub: mode.cleanBlockedReason }
     : mode.isFrozen
       ? { label: "Trading Paused", dot: "bg-warning", text: "text-warning", icon: Pause, sub: mode.cleanUserMessage }
       : mode.isLiveShared
