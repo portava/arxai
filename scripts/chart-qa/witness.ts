@@ -59,6 +59,17 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
       };
     },
+    configuration(index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const scale = found.adapter.series.priceScale().options();
+      return {
+        scale: { mode: scale.mode, inverted: scale.invertScale },
+        studies: (found.adapter.analysis?.studies ?? []).map((study: any) => ({
+          config: { ...study.calculator.config },
+          lines: study.lines.map((line: any) => line.data().map((point: any) => ({ ...point }))),
+        })),
+      };
+    },
     // Expensive full snapshots are captured outside timed actions. No cached
     // checksum can conceal an in-place mutation or a hash collision.
     data(index = 0) {
