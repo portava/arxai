@@ -45,6 +45,8 @@ import {
 } from "@/components/ui/table";
 import { Gauge, Filter, History, SlidersHorizontal, TrendingUp } from "lucide-react";
 import { useAssistantName } from "@/lib/assistant-name";
+import { formatInstrumentPrice, observedPriceDecimals } from "@/lib/instrumentPriceFormat";
+import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function pct(n: number | null | undefined): string {
@@ -54,6 +56,18 @@ function pct(n: number | null | undefined): string {
 function num(n: number | null | undefined, digits = 0): string {
   if (n == null) return "—";
   return n.toFixed(digits);
+}
+/**
+ * A replay's planned levels at the instrument's display precision (the chart
+ * and mission rule): at least the symbol's own digits (5 for FX pairs, 3 for
+ * JPY pairs, else 2) and never fewer than the row's levels actually carry —
+ * never a fixed 5 decimals (XAUUSD 2345.12 is not "2345.12000").
+ */
+function levelPrice(symbol: string, n: number | null | undefined, rowLevels: ReadonlyArray<number | null | undefined>): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const bare = symbol.toUpperCase().replace(/^.*:/, "").replace(/[^A-Z]/g, "");
+  const seen = observedPriceDecimals([n, ...rowLevels]);
+  return formatInstrumentPrice(n, Math.max(candleDisplayPrecision([], bare), seen ?? 0));
 }
 
 const THRESHOLD_FIELDS: {
@@ -305,7 +319,10 @@ function MissedTab() {
         <Card><CardContent className="py-6 text-sm text-txt-secondary">No missed opportunities recorded yet.</CardContent></Card>
       ) : (
         <div className="space-y-3">
-          {replays.map((r) => (
+          {replays.map((r) => {
+            const levels = [r.whatRubySaw.plannedEntry, r.whatRubySaw.plannedStop, r.whatRubySaw.plannedTarget];
+            const px = (n: number | null | undefined) => levelPrice(r.symbol, n, levels);
+            return (
             <Card key={r.outcomeId} data-testid={`missed-${r.outcomeId}`}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-2">
@@ -323,9 +340,9 @@ function MissedTab() {
                   <KV k="Edge" v={num(r.whatRubySaw.edge, 1)} />
                   <KV k="Flame stage" v={r.whatRubySaw.flameStage ?? "—"} />
                   <KV k="News nearby" v={r.whatRubySaw.newsNearby ? "Yes" : "No"} />
-                  <KV k="Planned entry" v={num(r.whatRubySaw.plannedEntry, 5)} />
-                  <KV k="Planned stop" v={num(r.whatRubySaw.plannedStop, 5)} />
-                  <KV k="Planned target" v={num(r.whatRubySaw.plannedTarget, 5)} />
+                  <KV k="Planned entry" v={px(r.whatRubySaw.plannedEntry)} />
+                  <KV k="Planned stop" v={px(r.whatRubySaw.plannedStop)} />
+                  <KV k="Planned target" v={px(r.whatRubySaw.plannedTarget)} />
                 </div>
                 <div className="space-y-1 text-sm">
                   <div className="text-xs font-medium uppercase text-txt-secondary">How it moved</div>
@@ -336,7 +353,8 @@ function MissedTab() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
