@@ -162,15 +162,13 @@ export function buildReasoningFromMarketRead(
   }
 
   // ── Why ───────────────────────────────────────────────────────────────────
-  const why = orElse(
-    exp.headline,
-    orElse(
-      chosen?.why,
-      downgraded
-        ? `The live feed isn't confirmed, so ${assistantName} is holding back a directional call.`
-        : NOT_ENOUGH,
-    ),
-  );
+  // A downgraded / expired read never leads with its own directional headline
+  // ("ready — Buy bias") — Why states the hold-back and its cause instead.
+  const why = downgraded
+    ? reason
+      ? `${assistantName} is holding back a directional call: ${reason}`
+      : `The live feed isn't confirmed, so ${assistantName} is holding back a directional call.`
+    : orElse(exp.headline, orElse(chosen?.why, NOT_ENOUGH));
 
   // ── Evidence ────────────────────────────────────────────────────────────────
   // The direction evidence (e.g. "Higher highs / higher lows") is swing

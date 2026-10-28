@@ -335,6 +335,11 @@ export function RubyMarketReadCard({
   const reason = readExpired && !gate.downgraded
     ? `This ${name} read has expired — refresh for a current read.`
     : gate.reason;
+  // Why the read's own content is withheld, in one plain clause shared by the
+  // headline and the evidence block.
+  const withheldWhy = readExpired && !gate.downgraded
+    ? "this read has expired"
+    : "the live feed isn't confirmed";
 
   const chosen: RubyExplanationMode | null = explanation
     ? mode === "ADVANCED"
@@ -439,7 +444,9 @@ export function RubyMarketReadCard({
               <div className="rounded-xl border border-border bg-background/40 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-foreground" data-testid="ruby-market-read-headline">
-                    {explanation.headline}
+                    {downgraded
+                      ? `${symbol}: direction and timing withheld — ${withheldWhy}.`
+                      : explanation.headline}
                   </span>
                   <span
                     className={`ml-auto flex items-center gap-1 text-xs ${feedRow.tone}`}
