@@ -84,7 +84,7 @@ those controls has a visible box. It does not mistake a zero-size parent for a
 closed panel. A data-revision change fails this preservation workload, including
 an unrelated source/watchdog refresh: retain and diagnose that trial rather than
 silently excusing it or attributing its cost to the toggle.
-It separately reports second-rAF feedback. This is a rendering-opportunity proxy,
+It separately reports the second-rAF opportunity, which does not prove visible feedback. This is a rendering-opportunity proxy,
 not a hardware paint timestamp. Full canonical/rendered price arrays are captured
 outside timed actions before/after; all samples, warmups, long tasks and witness
 overhead remain in the result. No production application imports this observer.
@@ -92,7 +92,7 @@ overhead remain in the result. No production application imports this observer.
 **Inspect the returned `verdict`.** The script returns `FAIL` and retained partial
 samples on exceptions, missing observations, source changes or completion p95
 above 100 ms. A successful Playwright command/exit is only transport success.
-Save the entire result, including failed trials. Coordinate a quiet machine and
+Save the entire result, including failed trials. Pending arms and captured in-flight samples remain in the result if a timeout interrupts observation; the runner also retains its current sample identity if the page becomes unreadable. Coordinate a quiet machine and
 do not run builds/tests simultaneously with a measurement. Its 4× CPU column is
 throttling on the reported host, not a physical reference device or competitor.
 

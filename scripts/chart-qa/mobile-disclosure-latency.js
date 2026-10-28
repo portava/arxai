@@ -4,7 +4,7 @@ async outer => {
   const base = typeof CHART_QA_BASE_URL === 'string' ? CHART_QA_BASE_URL : 'http://127.0.0.1:4179';
   const REPS = 40, PASSES = 2, WARMUP = 2, LIMIT_MS = 100, TIMEOUT_MS = 5000;
   const result = {schemaVersion:1,verdict:'FAIL',base,viewport:{width:390,height:844},
-    method:'Trusted click capture; second-rAF feedback and source-preserving disclosure completion followed by a further animation frame. Rendering opportunity, not hardware paint.',
+    method:'Trusted click capture; second-rAF opportunity and source-preserving disclosure completion followed by a further animation frame. Rendering opportunity, not hardware paint.',
     workload:'Isolated production chart fixture; 5000 synthetic EURUSD M15 candles, no studies/drawings; automatic reader has no usable source evidence and is NOT profiled.',
     repetitions:{warmupsPerPass:WARMUP,repetitionsPerPass:REPS,passes:PASSES},targetCompletionP95Ms:LIMIT_MS,
     build:null,environment:null,runs:[],errors:[],externalRequests:[],failure:null};
@@ -20,7 +20,7 @@ async outer => {
     result.externalRequests.push(origin); return route.abort();
   });
   await page.addInitScript(() => {
-    const state = window.__mobileDisclosure = {armed:null,samples:[],longTasks:[]};
+    const state = window.__mobileDisclosure = {armed:null,inFlight:null,samples:[],longTasks:[]};
     try { new PerformanceObserver(entries => state.longTasks.push(...entries.getEntries().map(e=>({start:e.startTime,duration:e.duration})))).observe({type:'longtask',buffered:true}); }
     catch { state.longTasksUnsupported=true; }
     const preserved = (a,b) => {
@@ -63,18 +63,19 @@ async outer => {
       state.armed=null;
       const start=performance.now();
       const {before:baseline,...identity}=arm;
-      const sample={...identity,startedAt:start,trusted:event.isTrusted,feedbackMs:null,completionMs:null,completionFrame:null,witnessCostMs:0,lastWitness:null,failure:null};
+      const sample={...identity,startedAt:start,trusted:event.isTrusted,secondRafOpportunityMs:null,completionMs:null,completionFrame:null,witnessCostMs:0,lastWitness:null,failure:null};
+      state.inFlight=sample;
       let frame=0,firstEligibleFrame=null;
       const poll=()=>{
         frame++;
-        if(frame===2)sample.feedbackMs=performance.now()-start;
+        if(frame===2)sample.secondRafOpportunityMs=performance.now()-start;
         const began=performance.now(),seen=witness(arm);
         sample.witnessCostMs+=performance.now()-began;sample.lastWitness=seen;
         if(seen.pass){
-          if(firstEligibleFrame!==null && frame>firstEligibleFrame && frame>=2){sample.completionMs=performance.now()-start;sample.completionFrame=frame;state.samples.push(sample);return;}
+          if(firstEligibleFrame!==null && frame>firstEligibleFrame && frame>=2){sample.completionMs=performance.now()-start;sample.completionFrame=frame;state.samples.push(sample);state.inFlight=null;return;}
           firstEligibleFrame=frame;
         } else firstEligibleFrame=null;
-        if(performance.now()-start>=arm.timeoutMs){sample.failure=seen.reason??'completion timeout';state.samples.push(sample);return;}
+        if(performance.now()-start>=arm.timeoutMs){sample.failure=seen.reason??'completion timeout';state.samples.push(sample);state.inFlight=null;return;}
         requestAnimationFrame(poll);
       };
       requestAnimationFrame(poll);
@@ -113,10 +114,12 @@ async outer => {
           'Unexpected chart symbol, interval, style or source in the initial witness');
         for(let pass=1;pass<=PASSES;pass++)for(let rep=0;rep<WARMUP+REPS;rep++)for(const expanded of [true,false]){
           const arm={id:++sequence,cpuRate,pass,rep,record:rep>=WARMUP,control:expanded?'Open chart tools':'Close chart tools',expanded,timeoutMs:TIMEOUT_MS,before:run.before};
+          run.pendingSample=arm;
           await page.evaluate(a=>{window.__mobileDisclosure.armed=a;},arm);
           await button.click();
           await page.waitForFunction(id=>window.__mobileDisclosure.samples.some(s=>s.id===id),arm.id,{timeout:TIMEOUT_MS+2000});
           const sample=await page.evaluate(id=>window.__mobileDisclosure.samples.find(s=>s.id===id),arm.id);
+          run.pendingSample=null;
           check(!sample.failure,`${arm.control}: ${sample.failure}`);
         }
         run.after=await page.evaluate(()=>window.__arxChartQa.snapshot());
@@ -127,12 +130,12 @@ async outer => {
       finally {
         if(!run.after)run.after=await page.evaluate(()=>window.__arxChartQa?.snapshot()??null).catch(()=>null);
         if(!run.dataAfter)run.dataAfter=await page.evaluate(()=>window.__arxChartQa?.data()??null).catch(()=>null);
-        const observed=await page.evaluate(()=>({samples:window.__mobileDisclosure?.samples??[],longTasks:window.__mobileDisclosure?.longTasks??[],longTasksUnsupported:window.__mobileDisclosure?.longTasksUnsupported??false})).catch(()=>({samples:[],longTasks:[],longTasksUnsupported:true}));
+        const observed=await page.evaluate(()=>({samples:window.__mobileDisclosure?.samples??[],pendingArm:window.__mobileDisclosure?.armed??null,inFlight:window.__mobileDisclosure?.inFlight??null,longTasks:window.__mobileDisclosure?.longTasks??[],longTasksUnsupported:window.__mobileDisclosure?.longTasksUnsupported??false})).catch(()=>({samples:[],longTasks:[],longTasksUnsupported:true}));
         Object.assign(run,observed);
         for(const control of ['Open chart tools','Close chart tools']){
           const samples=run.samples.filter(s=>s.record&&s.control===control);
           const completed=samples.filter(s=>s.completionMs!==null),completion=stats(completed.map(s=>s.completionMs));
-          const item={control,expectedSamples:REPS*PASSES,recordedSamples:samples.length,feedback:stats(samples.filter(s=>s.feedbackMs!==null).map(s=>s.feedbackMs)),completion,witnessOverhead:stats(samples.map(s=>s.witnessCostMs)),failures:samples.filter(s=>s.failure).length,
+          const item={control,expectedSamples:REPS*PASSES,recordedSamples:samples.length,secondRafOpportunity:stats(samples.filter(s=>s.secondRafOpportunityMs!==null).map(s=>s.secondRafOpportunityMs)),completion,witnessOverhead:stats(samples.map(s=>s.witnessCostMs)),failures:samples.filter(s=>s.failure).length,
             meetsTarget:samples.length===REPS*PASSES && completed.length===samples.length && completion.p95!==null && completion.p95<=LIMIT_MS};
           run.summary.push(item);if(!item.meetsTarget)run.verdict='FAIL';
         }
