@@ -12,11 +12,12 @@ import { replayStart, replayStep } from "../aiBrain.js";
 test("each replay decision is tied to the candle at its index", () => {
   const s = replayStart("EURUSD", "M15");
   assert.ok(s.candles.length >= 3, "simulator seeds candle history");
-  const d0 = replayStep(s.replayId);
-  const d1 = replayStep(s.replayId);
-  const d2 = replayStep(s.replayId);
-  for (const [i, r] of [d0, d1, d2].entries()) {
-    assert.ok(r && "decision" in r && r.decision, `step ${i} returns a decision`);
+  const steps = [replayStep(s.replayId), replayStep(s.replayId), replayStep(s.replayId)];
+  const decisions = steps.map((r, i) => {
+    assert.ok(r && "decision" in r, `step ${i} returns a decision`);
+    return r;
+  });
+  for (const [i, r] of decisions.entries()) {
     const c = s.candles[i]!;
     assert.equal(r.decision.candleIndex, i);
     assert.equal(r.decision.candleTsIso, c.tsIso, "decision names the replayed candle");
@@ -24,7 +25,7 @@ test("each replay decision is tied to the candle at its index", () => {
     assert.equal(r.decision.candlesAnalysed, i + 1, "only candles up to the replayed one are analysed");
   }
   // The simulator's candles are 1-minute bars; the reason must not claim M15.
-  assert.match(d1!.decision.reason, / M1;/);
+  assert.match(decisions[1]!.decision.reason, / M1;/);
   assert.equal(s.candleTimeframe, "M1");
 });
 
