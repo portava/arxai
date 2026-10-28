@@ -18,6 +18,7 @@ export interface RubyQualityMetrics {
   rates: RubyQualityMetricsRates;
   timing: RubyQualityMetricsTiming;
   averages: RubyQualityMetricsAverages;
+  /** Top half of the ranking (at most 5); never lists a symbol that is in worstSymbols. */
   bestSymbols: RubyQualitySymbolSessionStat[];
   worstSymbols: RubyQualitySymbolSessionStat[];
   bestSessions: RubyQualitySymbolSessionStat[];
@@ -32,6 +33,7 @@ export interface RubyQualityMetrics {
   ignoredWarnings: number;
   avoidedBadTrades: number;
   missedOpportunities: number;
+  /** Buckets hold lo ≤ value < hi (the last also includes hi), so each row counts once. */
   confidenceVsOutcome: RubyQualityScoreBucket[];
   edgeVsOutcome: RubyQualityScoreBucket[];
 }

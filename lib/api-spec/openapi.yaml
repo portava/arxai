@@ -13460,11 +13460,16 @@ components:
       properties:
         totals:
           type: object
-          required: [tracked, resolved, pending, graded]
+          required: [tracked, resolved, pending, unresolved, graded]
           properties:
             tracked: { type: number }
             resolved: { type: number }
-            pending: { type: number }
+            pending:
+              type: number
+              description: PENDING rows only — still awaiting real evidence.
+            unresolved:
+              type: number
+              description: UNRESOLVED rows — no longer awaiting evidence and never graded.
             graded: { type: number }
         rates:
           type: object
@@ -13487,6 +13492,7 @@ components:
             mae: { type: number, nullable: true }
         bestSymbols:
           type: array
+          description: Top half of the ranking (at most 5); never lists a symbol that is in worstSymbols.
           items: { $ref: "#/components/schemas/RubyQualitySymbolSessionStat" }
         worstSymbols:
           type: array
@@ -13507,6 +13513,7 @@ components:
         missedOpportunities: { type: number }
         confidenceVsOutcome:
           type: array
+          description: Buckets hold lo ≤ value < hi (the last also includes hi), so each row counts once.
           items: { $ref: "#/components/schemas/RubyQualityScoreBucket" }
         edgeVsOutcome:
           type: array

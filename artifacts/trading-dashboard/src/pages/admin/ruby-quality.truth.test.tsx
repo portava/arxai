@@ -69,3 +69,31 @@ describe("Ruby Quality metrics — unmeasured rates", () => {
     expect(within(screen.getByTestId("stat-win-rate")).getByText("0.0%")).toBeTruthy();
   });
 });
+
+describe("Ruby Quality metrics — pending vs unresolved, best vs worst", () => {
+  it("Pending (awaiting evidence) and Unresolved are separate cards", () => {
+    state.metrics = emptyMetrics({
+      totals: { tracked: 4, resolved: 1, pending: 1, unresolved: 2, graded: 1 },
+    });
+    render(<AdminRubyQualityPage />);
+    expect(screen.getByTestId("stat-pending").textContent).toContain("1");
+    const unresolved = screen.getByTestId("stat-unresolved");
+    expect(unresolved.textContent).toContain("2");
+    expect(unresolved.textContent).not.toMatch(/awaiting/i);
+  });
+
+  it("an empty Worst list with graded signals does not say 'No graded signals yet'", () => {
+    const stat = { key: "EURUSD", graded: 3, wins: 2, winRate: 0.667, avgPnlR: 0.5 };
+    state.metrics = emptyMetrics({
+      totals: { tracked: 3, resolved: 3, pending: 0, unresolved: 0, graded: 3 },
+      rates: { winRate: 0.667, tpRate: null, slRate: null, lateRate: null },
+      bestSymbols: [stat], bestSessions: [{ ...stat, key: "london" }],
+    });
+    render(<AdminRubyQualityPage />);
+    const worst = screen.getByTestId("rank-worst-symbols");
+    expect(worst.textContent).not.toMatch(/No graded signals yet/);
+    expect(worst.textContent).toMatch(/one graded symbol/i);
+    const worstSessions = screen.getByTestId("rank-worst-sessions");
+    expect(worstSessions.textContent).toMatch(/one graded session/i);
+  });
+});

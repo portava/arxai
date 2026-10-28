@@ -24490,7 +24490,14 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
     totals: zod.object({
       tracked: zod.number(),
       resolved: zod.number(),
-      pending: zod.number(),
+      pending: zod
+        .number()
+        .describe("PENDING rows only — still awaiting real evidence."),
+      unresolved: zod
+        .number()
+        .describe(
+          "UNRESOLVED rows — no longer awaiting evidence and never graded.",
+        ),
       graded: zod.number(),
     }),
     rates: zod
@@ -24510,15 +24517,19 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
       mfe: zod.number().nullish(),
       mae: zod.number().nullish(),
     }),
-    bestSymbols: zod.array(
-      zod.object({
-        key: zod.string(),
-        graded: zod.number(),
-        wins: zod.number(),
-        winRate: zod.number(),
-        avgPnlR: zod.number().nullish(),
-      }),
-    ),
+    bestSymbols: zod
+      .array(
+        zod.object({
+          key: zod.string(),
+          graded: zod.number(),
+          wins: zod.number(),
+          winRate: zod.number(),
+          avgPnlR: zod.number().nullish(),
+        }),
+      )
+      .describe(
+        "Top half of the ranking (at most 5); never lists a symbol that is in worstSymbols.",
+      ),
     worstSymbols: zod.array(
       zod.object({
         key: zod.string(),
@@ -24557,20 +24568,24 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
     ignoredWarnings: zod.number(),
     avoidedBadTrades: zod.number(),
     missedOpportunities: zod.number(),
-    confidenceVsOutcome: zod.array(
-      zod.object({
-        bucket: zod.string(),
-        total: zod.number(),
-        wins: zod.number(),
-        losses: zod.number(),
-        winRate: zod
-          .number()
-          .nullable()
-          .describe(
-            "wins \/ (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).",
-          ),
-      }),
-    ),
+    confidenceVsOutcome: zod
+      .array(
+        zod.object({
+          bucket: zod.string(),
+          total: zod.number(),
+          wins: zod.number(),
+          losses: zod.number(),
+          winRate: zod
+            .number()
+            .nullable()
+            .describe(
+              "wins \/ (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).",
+            ),
+        }),
+      )
+      .describe(
+        "Buckets hold lo ≤ value < hi (the last also includes hi), so each row counts once.",
+      ),
     edgeVsOutcome: zod.array(
       zod.object({
         bucket: zod.string(),
