@@ -14,11 +14,12 @@
 import { Router } from "express";
 import {
   db, tradingRuleContractsTable, tradingRuleViolationsTable, sessionCommitmentsTable,
-  paperOrdersTable, vaultEventsTable,
+  paperOrdersTable, paperAccountsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
+import { paperPnl } from "../lib/paperExecution/paperPnl.js";
 
 const router = Router();
 const ACCOUNTABILITY_TAG = "Accountability layer — soft warnings to support discipline. Does not enforce hard trade locks or guarantee profits.";
@@ -249,6 +250,12 @@ router.post("/rule-contracts/:id/evaluate", requireUser, async (req, res): Promi
     const todays = await db.select().from(paperOrdersTable)
       .where(and(eq(paperOrdersTable.userId, userId), gte(paperOrdersTable.openedAt, startOfDay)))
       .orderBy(asc(paperOrdersTable.openedAt));
+    // Each order's own paper account: its starting balance is the basis of
+    // the per-trade risk percentage.
+    const accounts = await db.select({
+      id: paperAccountsTable.id, userId: paperAccountsTable.userId, startingBalance: paperAccountsTable.startingBalance,
+    }).from(paperAccountsTable).where(eq(paperAccountsTable.userId, userId));
+    const startingBalanceOf = new Map(accounts.filter((a) => a.userId === userId).map((a) => [a.id, a.startingBalance]));
 
     interface V { type: string; severity: "INFO"|"WARN"|"HARD"; message: string; tradeId?: number }
     const violations: V[] = [];
@@ -276,12 +283,25 @@ router.post("/rule-contracts/:id/evaluate", requireUser, async (req, res): Promi
           message: `${o.symbol} not in allowed symbols (${allowedSymbols.join(",")})` });
       }
       // OVER_RISK — risk per trade ≤ maxRiskPerTradePercent (architect fix #1a).
-      // risk$ = |entry - SL| × lotSize × 100 (same convention as paper P&L).
-      // Compared against the active paper account starting balance (10k synthetic basis).
+      // risk$ = the loss at the stop, sized at the instrument's contract size
+      // (paperPnl: 100,000 units per lot for a currency pair), as a share of
+      // the order's paper account starting balance. It used to be
+      // |entry − SL| × lots × 100 ÷ a fixed 10,000, which read a 1.00-lot,
+      // 50-pip EURUSD stop ($500, 5%) as 0.01%. When the risk cannot be sized
+      // or the account is not found, say so: the trade is not counted as
+      // within the rule.
       if (ct.maxRiskPerTradePercent != null && o.stopLoss != null) {
-        const riskDollars = Math.abs(o.entryPrice - o.stopLoss) * o.lotSize * 100;
-        const riskPct = riskDollars / 10_000;
-        if (riskPct > ct.maxRiskPerTradePercent) {
+        const atStop = paperPnl({ symbol: o.symbol, direction: o.direction, lots: o.lotSize, entry: o.entryPrice, price: o.stopLoss });
+        const balance = startingBalanceOf.get(o.paperAccountId) ?? null;
+        const unmeasured = atStop.amount == null
+          ? atStop.unavailableReason
+          : balance == null || !(balance > 0) ? `paper account ${o.paperAccountId} starting balance not found` : null;
+        const riskPct = unmeasured == null ? Math.abs(atStop.amount!) / balance! : null;
+        if (riskPct == null) {
+          tradeViols.push("RISK_UNMEASURED");
+          violations.push({ type: "RISK_UNMEASURED", severity: "INFO", tradeId: o.id,
+            message: `${o.symbol} risk per trade not checked against your ${(ct.maxRiskPerTradePercent*100).toFixed(2)}% limit: ${unmeasured}.` });
+        } else if (riskPct > ct.maxRiskPerTradePercent) {
           tradeViols.push("OVER_RISK");
           violations.push({ type: "OVER_RISK", severity: "HARD", tradeId: o.id,
             message: `${o.symbol} risk ${(riskPct*100).toFixed(2)}% exceeds limit ${(ct.maxRiskPerTradePercent*100).toFixed(2)}%` });
