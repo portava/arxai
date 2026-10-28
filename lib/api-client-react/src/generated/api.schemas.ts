@@ -9369,6 +9369,26 @@ export interface RiskLockResult {
   message: string;
 }
 
+/**
+ * Where the counts come from. LEGACY_TRADES_TABLE is the legacy simulated trades table, which takes no new rows since /execute-trade was retired.
+ */
+export type RiskAuditMeasuredFrom =
+  (typeof RiskAuditMeasuredFrom)[keyof typeof RiskAuditMeasuredFrom];
+
+export const RiskAuditMeasuredFrom = {
+  LEGACY_TRADES_TABLE: "LEGACY_TRADES_TABLE",
+} as const;
+
+/**
+ * The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance.
+ */
+export type RiskAuditBalanceSource =
+  (typeof RiskAuditBalanceSource)[keyof typeof RiskAuditBalanceSource];
+
+export const RiskAuditBalanceSource = {
+  PLACEHOLDER_1000: "PLACEHOLDER_1000",
+} as const;
+
 export interface RiskAudit {
   passed: boolean;
   reasonsBlocked: string[];
@@ -9382,6 +9402,12 @@ export interface RiskAudit {
   openTradesCount: number;
   losingStreak: number;
   cooldownActive: boolean;
+  /** True when daily / weekly loss, the losing streak and the cooldown were measured from closed rows. False or missing means they were not measured and must not be shown as 0 / clear. */
+  closedTradesMeasured?: boolean;
+  /** Where the counts come from. LEGACY_TRADES_TABLE is the legacy simulated trades table, which takes no new rows since /execute-trade was retired. */
+  measuredFrom?: RiskAuditMeasuredFrom;
+  /** The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance. */
+  balanceSource?: RiskAuditBalanceSource;
 }
 
 export interface PositionSizeResult {

@@ -156,33 +156,66 @@ function StatRow({ label, value, sub }: { label: string; value: React.ReactNode;
 
 // ── Live Audit Banner ────────────────────────────────────────────────────────
 
-function AuditBanner({ symbol }: { symbol?: string }) {
+/**
+ * What the legacy risk audit reads. Loss percentages and the losing streak
+ * are only real when the server says it measured closed rows.
+ */
+const RISK_AUDIT_SOURCE_NOTE =
+  "Counted from the legacy simulated trades table, which takes no new rows: trades you place now are not in it. " +
+  "Loss percentages are of a placeholder $1,000 balance, not your account. Shown for review only; orders are checked separately when placed.";
+
+type AuditVerdict = { tone: "pass" | "unmeasured" | "tripped"; headline: string };
+
+/** The banner may say a check passed only when the server measured it. */
+function riskAuditVerdict(audit: { passed: boolean; closedTradesMeasured?: boolean }): AuditVerdict {
+  if (!audit.passed) return { tone: "tripped", headline: "Legacy risk audit: a rule is tripped" };
+  if (audit.closedTradesMeasured !== true) {
+    return { tone: "unmeasured", headline: "Legacy risk audit: daily / weekly loss and losing streak were not measured" };
+  }
+  return { tone: "pass", headline: "Legacy risk audit: no rule tripped" };
+}
+
+export function AuditBanner({ symbol }: { symbol?: string }) {
   const auditParams = symbol ? { symbol } : {};
-  const { data: audit, isLoading } = useGetRiskAudit(
+  const { data: audit, isLoading, isError } = useGetRiskAudit(
     auditParams,
     { query: { queryKey: getGetRiskAuditQueryKey(auditParams), refetchInterval: 30_000 } }
   );
 
   if (isLoading) return <Skeleton className="h-16 w-full" />;
-  if (!audit) return null;
+  if (isError || !audit) {
+    return (
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-5 py-3 text-sm text-amber-300" data-testid="risk-audit-banner">
+        Risk audit could not be loaded.
+      </div>
+    );
+  }
+  const verdict = riskAuditVerdict(audit);
+  const measured = audit.closedTradesMeasured === true;
 
   return (
     <div
+      data-testid="risk-audit-banner"
       className={cn(
         "flex items-center gap-4 rounded-lg border px-5 py-3",
-        audit.passed
+        verdict.tone === "pass"
           ? "border-success/30 bg-success/10"
-          : "border-red-500/30 bg-red-500/5"
+          : verdict.tone === "unmeasured"
+            ? "border-amber-500/30 bg-amber-500/5"
+            : "border-red-500/30 bg-red-500/5"
       )}
     >
       <div className="shrink-0">
-        {audit.passed
+        {verdict.tone === "pass"
           ? <ShieldCheck className="h-8 w-8 text-success" />
-          : <ShieldX className="h-8 w-8 text-red-400" />}
+          : verdict.tone === "unmeasured"
+            ? <ShieldAlert className="h-8 w-8 text-amber-400" />
+            : <ShieldX className="h-8 w-8 text-red-400" />}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={cn("font-semibold text-sm", audit.passed ? "text-success" : "text-red-300")}>
-          {audit.passed ? "Trading conditions GREEN — all risk checks passed" : "Trading BLOCKED — risk rule violation"}
+        <p className={cn("font-semibold text-sm",
+          verdict.tone === "pass" ? "text-success" : verdict.tone === "unmeasured" ? "text-amber-300" : "text-red-300")}>
+          {verdict.headline}
         </p>
         {!audit.passed && (
           <p className="text-xs text-muted-foreground truncate mt-0.5">
@@ -195,11 +228,12 @@ function AuditBanner({ symbol }: { symbol?: string }) {
             ⚠ {audit.warnings[0]}
           </p>
         )}
+        <p className="text-xs text-muted-foreground mt-0.5">{RISK_AUDIT_SOURCE_NOTE}</p>
       </div>
       <div className="hidden md:flex gap-6 shrink-0 text-center">
         <div>
           <div className="text-xs text-muted-foreground">Daily Loss</div>
-          <div className="font-mono font-bold text-sm">{audit.dailyLossUsed.toFixed(1)}%</div>
+          <div className="font-mono font-bold text-sm">{measured ? `${audit.dailyLossUsed.toFixed(1)}%` : "not measured"}</div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">Trades Left</div>
@@ -1290,11 +1324,22 @@ export default function RiskSettings() {
 
 // ── Detailed Risk Audit Component ────────────────────────────────────────────
 
-function RiskAuditDetail() {
-  const { data: audit, isLoading, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
+export function RiskAuditDetail() {
+  const { data: audit, isLoading, isError, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
-  if (!audit) return null;
+  if (isError || !audit) {
+    return (
+      <Card className="border-border/50" data-testid="risk-audit-detail">
+        <CardContent className="p-6 text-sm text-amber-300 flex items-center justify-between gap-2">
+          Risk audit could not be loaded.
+          <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Retry</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  const measured = audit.closedTradesMeasured === true;
+  const notMeasured = <span className="text-muted-foreground">not measured</span>;
 
   return (
     <Card className="border-border/50">
@@ -1303,7 +1348,7 @@ function RiskAuditDetail() {
           <CardTitle className="text-base flex items-center gap-2">
             <Activity size={16} /> Live Risk Audit
           </CardTitle>
-          <CardDescription className="text-xs">Real-time evaluation of all risk rules — refreshes every 30s</CardDescription>
+          <CardDescription className="text-xs">{RISK_AUDIT_SOURCE_NOTE} Refreshes every 30s.</CardDescription>
         </div>
         <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Refresh</Button>
       </CardHeader>
@@ -1314,16 +1359,16 @@ function RiskAuditDetail() {
           </h4>
           <div className="space-y-1">
             <StatRow label="Risk Per Trade" value={`${audit.riskPercent}%`} />
-            <StatRow label="Daily Loss Used" value={`${audit.dailyLossUsed.toFixed(2)}%`} />
-            <StatRow label="Weekly Loss Used" value={`${audit.weeklyLossUsed.toFixed(2)}%`} />
+            <StatRow label="Daily Loss Used" value={measured ? `${audit.dailyLossUsed.toFixed(2)}%` : notMeasured} />
+            <StatRow label="Weekly Loss Used" value={measured ? `${audit.weeklyLossUsed.toFixed(2)}%` : notMeasured} />
             <StatRow label="Trades Remaining Today" value={audit.tradesRemaining} />
             <StatRow label="Open Trades" value={audit.openTradesCount} />
-            <StatRow label="Current Losing Streak" value={audit.losingStreak} />
+            <StatRow label="Current Losing Streak" value={measured ? audit.losingStreak : notMeasured} />
             <StatRow
               label="Cooldown"
               value={audit.cooldownActive
                 ? <span className="text-red-400">ACTIVE</span>
-                : <span className="text-success">Clear</span>}
+                : measured ? <span className="text-success">Clear</span> : notMeasured}
             />
           </div>
         </div>
@@ -1361,11 +1406,18 @@ function RiskAuditDetail() {
             </div>
           )}
 
-          {audit.passed && audit.warnings.length === 0 && (
+          {audit.passed && audit.warnings.length === 0 && measured && (
             <div className="flex flex-col items-center justify-center h-full gap-2 py-6">
               <ShieldCheck size={32} className="text-success" />
-              <p className="text-sm text-success font-semibold">All clear</p>
-              <p className="text-xs text-muted-foreground text-center">No blocked conditions or warnings</p>
+              <p className="text-sm text-success font-semibold">No rule tripped</p>
+              <p className="text-xs text-muted-foreground text-center">No blocked conditions or warnings in the legacy audit</p>
+            </div>
+          )}
+          {audit.passed && !measured && (
+            <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-unmeasured">
+              <ShieldAlert size={32} className="text-amber-400" />
+              <p className="text-sm text-amber-300 font-semibold">Not all rules were measured</p>
+              <p className="text-xs text-muted-foreground text-center">Daily / weekly loss, losing streak and cooldown were not measured, so they are not shown as passing.</p>
             </div>
           )}
         </div>

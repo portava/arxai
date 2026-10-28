@@ -5,6 +5,8 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { RiskAuditBalanceSource } from "./riskAuditBalanceSource";
+import type { RiskAuditMeasuredFrom } from "./riskAuditMeasuredFrom";
 
 export interface RiskAudit {
   passed: boolean;
@@ -19,4 +21,10 @@ export interface RiskAudit {
   openTradesCount: number;
   losingStreak: number;
   cooldownActive: boolean;
+  /** True when daily / weekly loss, the losing streak and the cooldown were measured from closed rows. False or missing means they were not measured and must not be shown as 0 / clear. */
+  closedTradesMeasured?: boolean;
+  /** Where the counts come from. LEGACY_TRADES_TABLE is the legacy simulated trades table, which takes no new rows since /execute-trade was retired. */
+  measuredFrom?: RiskAuditMeasuredFrom;
+  /** The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance. */
+  balanceSource?: RiskAuditBalanceSource;
 }

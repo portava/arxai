@@ -4278,6 +4278,24 @@ export const GetRiskAuditResponse = zod.object({
   openTradesCount: zod.number(),
   losingStreak: zod.number(),
   cooldownActive: zod.boolean(),
+  closedTradesMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when daily \/ weekly loss, the losing streak and the cooldown were measured from closed rows. False or missing means they were not measured and must not be shown as 0 \/ clear.",
+    ),
+  measuredFrom: zod
+    .enum(["LEGACY_TRADES_TABLE"])
+    .optional()
+    .describe(
+      "Where the counts come from. LEGACY_TRADES_TABLE is the legacy simulated trades table, which takes no new rows since \/execute-trade was retired.",
+    ),
+  balanceSource: zod
+    .enum(["PLACEHOLDER_1000"])
+    .optional()
+    .describe(
+      "The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance.",
+    ),
 });
 
 /**

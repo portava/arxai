@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { tradesTable } from "@workspace/db";
-import { eq, gte, and } from "drizzle-orm";
+import { eq, gte, and, inArray, type SQL } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { tradingDayStart } from "./riskGovernor/preTrade.js";
 
@@ -24,6 +24,24 @@ export interface RiskAuditInput {
   vol75ExtraConfidence?: boolean;
 }
 
+/**
+ * The statuses a closed row in the legacy trades table holds (schema
+ * comment, paperBook, tradeManager). Nothing writes a bare "CLOSED".
+ */
+export const LEGACY_CLOSED_TRADE_STATUSES = ["CLOSED_WIN", "CLOSED_LOSS"] as const;
+
+export interface RiskAuditOptions {
+  /**
+   * Count closed rows by the statuses the trades table really holds
+   * (LEGACY_CLOSED_TRADE_STATUSES). Without it the old filter status =
+   * "CLOSED" is kept; it matches no row, so daily / weekly loss and the
+   * losing streak read 0 and their checks pass unmeasured. The /risk/audit
+   * view sets it. The legacy /mt5/execute check does not: what that gate
+   * counts is an execution decision, left as it was.
+   */
+  countClosedRows?: boolean;
+}
+
 export interface RiskAuditResult {
   passed: boolean;
   reasonsBlocked: string[];
@@ -37,14 +55,27 @@ export interface RiskAuditResult {
   openTradesCount: number;
   losingStreak: number;
   cooldownActive: boolean;
+  /**
+   * True when daily / weekly loss, the losing streak and the cooldown were
+   * measured from closed rows (RiskAuditOptions.countClosedRows). False:
+   * they were not measured and read 0 / clear whatever the real P/L.
+   */
+  closedTradesMeasured: boolean;
+  /** Where the counts come from: the legacy simulated trades table (no new rows since /execute-trade was retired). */
+  measuredFrom: "LEGACY_TRADES_TABLE";
 }
 
 export async function computeRiskAudit(
   accountBalance: number,
-  input: RiskAuditInput
+  input: RiskAuditInput,
+  opts: RiskAuditOptions = {},
 ): Promise<RiskAuditResult> {
   const reasonsBlocked: string[] = [];
   const warnings: string[] = [];
+  const closedTradesMeasured = opts.countClosedRows === true;
+  const isClosed: SQL = closedTradesMeasured
+    ? inArray(tradesTable.status, [...LEGACY_CLOSED_TRADE_STATUSES])
+    : eq(tradesTable.status, "CLOSED");
 
   // The Risk Governor's trading day (owner decision 9): UTC midnight, not
   // server-local midnight. The trade-count source here is still the legacy
@@ -59,18 +90,24 @@ export async function computeRiskAudit(
   const todayClosed = await db
     .select()
     .from(tradesTable)
-    .where(and(gte(tradesTable.closedAt, todayStart), eq(tradesTable.status, "CLOSED")));
+    .where(and(gte(tradesTable.closedAt, todayStart), isClosed));
 
-  const dailyPnl = todayClosed.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  // A row whose P/L is UNKNOWN is left out of every P/L sum (trades schema).
+  const knownPnl = (t: { pnlStatus: string | null }) => t.pnlStatus !== "UNKNOWN";
+  const dailyUnknown = todayClosed.filter((t) => !knownPnl(t)).length;
+  if (dailyUnknown > 0) {
+    warnings.push(`${dailyUnknown} trade(s) closed today have no known P/L and are not counted in daily loss.`);
+  }
+  const dailyPnl = todayClosed.filter(knownPnl).reduce((s, t) => s + (t.pnl ?? 0), 0);
   const dailyLossUsed = dailyPnl < 0 ? (Math.abs(dailyPnl) / accountBalance) * 100 : 0;
 
   // ── Weekly closed P&L ─────────────────────────────────────────────────────
   const weekClosed = await db
     .select()
     .from(tradesTable)
-    .where(and(gte(tradesTable.closedAt, weekStart), eq(tradesTable.status, "CLOSED")));
+    .where(and(gte(tradesTable.closedAt, weekStart), isClosed));
 
-  const weeklyPnl = weekClosed.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const weeklyPnl = weekClosed.filter(knownPnl).reduce((s, t) => s + (t.pnl ?? 0), 0);
   const weeklyLossUsed = weeklyPnl < 0 ? (Math.abs(weeklyPnl) / accountBalance) * 100 : 0;
 
   // ── Open trades ───────────────────────────────────────────────────────────
@@ -91,13 +128,14 @@ export async function computeRiskAudit(
   const recentClosed = await db
     .select()
     .from(tradesTable)
-    .where(eq(tradesTable.status, "CLOSED"))
+    .where(isClosed)
     .orderBy(sql`${tradesTable.closedAt} DESC`)
     .limit(input.stopAfterLosingStreak + 2);
 
   let losingStreak = 0;
   for (const t of recentClosed) {
-    if ((t.pnl ?? 0) < 0) losingStreak++;
+    const lost = knownPnl(t) ? (t.pnl ?? 0) < 0 : t.status === "CLOSED_LOSS";
+    if (lost) losingStreak++;
     else break;
   }
   const cooldownActive = losingStreak >= input.stopAfterLosingStreak;
@@ -181,5 +219,7 @@ export async function computeRiskAudit(
     openTradesCount,
     losingStreak,
     cooldownActive,
+    closedTradesMeasured,
+    measuredFrom: "LEGACY_TRADES_TABLE",
   };
 }

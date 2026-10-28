@@ -156,7 +156,7 @@ router.get("/risk/audit", requireUser, async (req, res) => {
       stocksBlockEarnings: settings.stocksBlockEarnings,
       forexBlockEvents:    settings.forexBlockEvents,
       vol75ExtraConfidence: settings.vol75ExtraConfidence,
-    });
+    }, { countClosedRows: true });
     return res.json({ ...audit, balanceSource: "PLACEHOLDER_1000" });
   } catch (err) {
     req.log.error(err);
