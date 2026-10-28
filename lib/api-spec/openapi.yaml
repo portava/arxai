@@ -3176,13 +3176,54 @@ paths:
             default: 7
       responses:
         "200":
-          description: Events
+          description: >
+            Events. [] both when the provider listed nothing and when it could
+            not be read; the X-Calendar-Read header says which.
+          headers:
+            X-Calendar-Read:
+              description: "true only when a connected provider was read (an empty list then means none listed)."
+              schema: { type: string, enum: ["true", "false"] }
+            X-Calendar-Status:
+              schema: { type: string, enum: [ok, empty, missing, error] }
+            X-Calendar-Provider:
+              schema: { type: string }
+            X-Calendar-Checked-At:
+              schema: { type: string }
+            X-Calendar-Events-As-Of:
+              description: When the served events were fetched from the provider (absent when not read).
+              schema: { type: string }
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/EconomicEvent"
+
+  /news/calendar/envelope:
+    get:
+      operationId: getEconomicCalendarEnvelope
+      tags: [news]
+      summary: Upcoming economic events with the calendar read state in one read
+      parameters:
+        - name: currency
+          in: query
+          schema:
+            type: string
+        - name: impact
+          in: query
+          schema:
+            type: string
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 7
+      responses:
+        "200":
+          description: Events and whether the calendar was read
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EconomicCalendarEnvelope" }
 
   /economic-calendar/events:
     get:
@@ -19951,6 +19992,22 @@ components:
         windowEnd:         { type: string }
         windowCovered:     { type: boolean }
         note:              { type: ["string", "null"], description: "Plain statement when the window is not covered." }
+
+    EconomicCalendarEnvelope:
+      type: object
+      required: [read, status, provider, configured, eventsAsOf, checkedAt, note, windowDays, events]
+      properties:
+        read: { type: boolean, description: True only when a connected provider was read; an empty list then means none listed. }
+        status: { type: string, enum: [ok, empty, missing, error] }
+        provider: { type: string }
+        configured: { type: boolean }
+        eventsAsOf: { type: ["string", "null"], description: When the served events were fetched from the provider. }
+        checkedAt: { type: string }
+        note: { type: ["string", "null"], description: Plain-English reason the calendar was not read; null when it was. }
+        windowDays: { type: integer }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/EconomicEvent" }
 
     NewsRiskReportAge:
       type: object

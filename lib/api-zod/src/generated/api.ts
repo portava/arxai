@@ -10231,6 +10231,57 @@ export const GetEconomicCalendarResponse = zod.array(
 );
 
 /**
+ * @summary Upcoming economic events with the calendar read state in one read
+ */
+export const getEconomicCalendarEnvelopeQueryDaysDefault = 7;
+
+export const GetEconomicCalendarEnvelopeQueryParams = zod.object({
+  currency: zod.coerce.string().optional(),
+  impact: zod.coerce.string().optional(),
+  days: zod.coerce
+    .number()
+    .default(getEconomicCalendarEnvelopeQueryDaysDefault),
+});
+
+export const GetEconomicCalendarEnvelopeResponse = zod.object({
+  read: zod
+    .boolean()
+    .describe(
+      "True only when a connected provider was read; an empty list then means none listed.",
+    ),
+  status: zod.enum(["ok", "empty", "missing", "error"]),
+  provider: zod.string(),
+  configured: zod.boolean(),
+  eventsAsOf: zod
+    .string()
+    .nullable()
+    .describe("When the served events were fetched from the provider."),
+  checkedAt: zod.string(),
+  note: zod
+    .string()
+    .nullable()
+    .describe(
+      "Plain-English reason the calendar was not read; null when it was.",
+    ),
+  windowDays: zod.number(),
+  events: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      country: zod.string(),
+      currency: zod.string(),
+      impact: zod.enum(["low", "medium", "high"]),
+      actual: zod.string().nullish(),
+      forecast: zod.string().nullish(),
+      previous: zod.string().nullish(),
+      eventTime: zod.string(),
+      affectedMarkets: zod.array(zod.string()),
+      source: zod.string(),
+    }),
+  ),
+});
+
+/**
  * @summary Live upcoming events from the configured real economic-calendar
 provider (Trading Economics). Returns provider metadata + a
 window-filtered array of enriched events. `connected` is false when no

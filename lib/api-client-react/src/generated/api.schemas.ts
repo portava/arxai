@@ -11220,6 +11220,63 @@ export interface StoredCalendarCoverage {
   note: string | null;
 }
 
+export type EconomicCalendarEnvelopeStatus =
+  (typeof EconomicCalendarEnvelopeStatus)[keyof typeof EconomicCalendarEnvelopeStatus];
+
+export const EconomicCalendarEnvelopeStatus = {
+  ok: "ok",
+  empty: "empty",
+  missing: "missing",
+  error: "error",
+} as const;
+
+export type EconomicEventImpact =
+  (typeof EconomicEventImpact)[keyof typeof EconomicEventImpact];
+
+export const EconomicEventImpact = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+} as const;
+
+export interface EconomicEvent {
+  id: string;
+  title: string;
+  country: string;
+  currency: string;
+  impact: EconomicEventImpact;
+  /** @nullable */
+  actual?: string | null;
+  /** @nullable */
+  forecast?: string | null;
+  /** @nullable */
+  previous?: string | null;
+  eventTime: string;
+  affectedMarkets: string[];
+  source: string;
+}
+
+export interface EconomicCalendarEnvelope {
+  /** True only when a connected provider was read; an empty list then means none listed. */
+  read: boolean;
+  status: EconomicCalendarEnvelopeStatus;
+  provider: string;
+  configured: boolean;
+  /**
+   * When the served events were fetched from the provider.
+   * @nullable
+   */
+  eventsAsOf: string | null;
+  checkedAt: string;
+  /**
+   * Plain-English reason the calendar was not read; null when it was.
+   * @nullable
+   */
+  note: string | null;
+  windowDays: number;
+  events: EconomicEvent[];
+}
+
 /**
  * How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.
 
@@ -11360,32 +11417,6 @@ format it using Intl.DateTimeFormat with the user's browser locale.
    * @nullable
    */
   riskNote?: string | null;
-}
-
-export type EconomicEventImpact =
-  (typeof EconomicEventImpact)[keyof typeof EconomicEventImpact];
-
-export const EconomicEventImpact = {
-  low: "low",
-  medium: "medium",
-  high: "high",
-} as const;
-
-export interface EconomicEvent {
-  id: string;
-  title: string;
-  country: string;
-  currency: string;
-  impact: EconomicEventImpact;
-  /** @nullable */
-  actual?: string | null;
-  /** @nullable */
-  forecast?: string | null;
-  /** @nullable */
-  previous?: string | null;
-  eventTime: string;
-  affectedMarkets: string[];
-  source: string;
 }
 
 export type NewsRiskRiskLevel =
@@ -16793,6 +16824,12 @@ export type PostMarketNewsIntelligence400 = {
 };
 
 export type GetEconomicCalendarParams = {
+  currency?: string;
+  impact?: string;
+  days?: number;
+};
+
+export type GetEconomicCalendarEnvelopeParams = {
   currency?: string;
   impact?: string;
   days?: number;
