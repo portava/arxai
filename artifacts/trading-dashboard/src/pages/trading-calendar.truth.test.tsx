@@ -93,3 +93,59 @@ describe("Trading Calendar mode", () => {
     expect(body).not.toMatch(/from your live trades/);
   });
 });
+
+// A failed request is "could not be loaded" — never a crash, a blank board,
+// or a demo calendar shown in place of an unknown mode.
+describe("Trading Calendar failed loads", () => {
+  const SAFETY = { system: "performanceCommandCenter", liveTradingStatus: "DISABLED", mode: "REPORTING_ONLY" };
+  const paperDay = { date: `${month}-02`, net_pnl: 4, total_trades: 1, wins: 1, losses: 0, win_rate: 100, day_rating: "B", day_status: "WINNING_DAY", debriefs_created: 0, learning_events_created: 0, symbols_traded: ["EURUSD"] };
+  const paperCal = { calendar: { month, days: [paperDay], total_pnl: 4, total_trades: 1, winning_days: 1, losing_days: 0, no_trade_days: 0 } };
+
+  it("a 500 from the calendar route says the calendar could not be loaded", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("DEMO") },
+      "/api/performance/calendar": { status: 500, body: { ...SAFETY, error: "boom" } },
+    });
+    renderPage();
+    const err = await screen.findByTestId("calendar-load-error");
+    expect(err.textContent).toMatch(/could not be loaded/);
+    expect(document.body.textContent).not.toMatch(/Net P&L \(month\)/);
+  });
+
+  it("a 500 from the live calendar route says the calendar could not be loaded", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("LIVE") },
+      "/api/me/performance-calendar": { status: 500, body: { error: "boom" } },
+    });
+    renderPage();
+    expect((await screen.findByTestId("calendar-load-error")).textContent).toMatch(/could not be loaded/);
+    expect(document.body.textContent).not.toMatch(/No live trades recorded/);
+  });
+
+  it("a failed mode check is not shown as the demo calendar", async () => {
+    serve({
+      "/api/me/trading/mode": { status: 401, body: { ok: false, error: "NOT_AUTHENTICATED" } },
+      "/api/performance/calendar": { body: paperCal },
+    });
+    renderPage();
+    expect((await screen.findByTestId("calendar-mode-error")).textContent).toMatch(/could not be loaded/);
+    const body = document.body.textContent ?? "";
+    expect(body).not.toMatch(/from your demo trades/);
+    expect(body).not.toMatch(/from your live trades/);
+    expect(screen.queryByTestId("btn-rebuild")).toBeNull();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("performance"))).toBe(false);
+  });
+
+  it("a 500 from the day route says the day could not be loaded", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("DEMO") },
+      "/api/performance/calendar": { body: paperCal },
+      "/api/performance/day": { status: 500, body: { ...SAFETY, error: "boom" } },
+    });
+    renderPage();
+    (await screen.findByTestId(`day-${month}-02`)).click();
+    const err = await screen.findByTestId("day-load-error");
+    expect(err.textContent).toMatch(/could not be loaded/);
+    expect(err.textContent).toContain(`${month}-02`);
+  });
+});

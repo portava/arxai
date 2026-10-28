@@ -91,6 +91,14 @@ function mapLiveToCalendarResp(
   };
 }
 
+// Every read checks the HTTP status and the payload shape: an error body (a
+// 401, or a 500 carrying { error, ...SAFETY }) is a failed load, never data.
+async function readJson(url: string, init?: RequestInit): Promise<any> {
+  const r = await fetch(url, init);
+  if (!r.ok) throw new Error(`${url.split("?")[0]} failed: ${r.status}`);
+  return r.json();
+}
+
 export default function TradingCalendarPage() {
   const qc = useQueryClient();
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -103,7 +111,13 @@ export default function TradingCalendarPage() {
   // pick live vs paper rows (mePerformanceCalendar.ts loadClosedRows).
   const mode = useQuery<{ ok?: boolean; envelope?: { tradingMode?: string } }>({
     queryKey: ["trading-mode-for-calendar"],
-    queryFn: async () => (await fetch("/api/me/trading/mode", { credentials: "include" })).json(),
+    queryFn: async () => {
+      const j = await readJson("/api/me/trading/mode", { credentials: "include" });
+      if (j?.ok !== true || typeof j?.envelope?.tradingMode !== "string") {
+        throw new Error("/api/me/trading/mode returned no mode");
+      }
+      return j;
+    },
   });
   const isLive = mode.data?.envelope?.tradingMode === "LIVE";
 
@@ -117,21 +131,26 @@ export default function TradingCalendarPage() {
         const [y, m] = month.split("-").map(Number);
         const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
         const to = `${month}-${String(lastDay).padStart(2, "0")}`;
-        const live = await (await fetch(`/api/me/performance-calendar?from=${from}&to=${to}`, { credentials: "include" })).json();
+        const live = await readJson(`/api/me/performance-calendar?from=${from}&to=${to}`, { credentials: "include" });
+        if (!Array.isArray(live?.days)) throw new Error("/api/me/performance-calendar returned no days");
         return mapLiveToCalendarResp(month, live);
       }
-      const paper = await (await fetch(`/api/performance/calendar?month=${month}`)).json();
+      const paper = await readJson(`/api/performance/calendar?month=${month}`);
+      if (!Array.isArray(paper?.calendar?.days)) throw new Error("/api/performance/calendar returned no calendar");
       return { ...paper, notShownHere: paper?.currentAccountMode === "LIVE_SHARED" };
     },
   });
-  const notShownHere = cal.data?.notShownHere === true;
+  // A failed (re)load is shown as a failure, never over older data.
+  const calData = cal.isError ? undefined : cal.data;
+  const notShownHere = calData?.notShownHere === true;
 
   const day = useQuery<DayDetailResp>({
     queryKey: ["trading-calendar-day", selectedDate, isLive],
     enabled: !!selectedDate && mode.isSuccess,
     queryFn: async () => {
       if (isLive) {
-        const d = await (await fetch(`/api/me/performance-calendar/${selectedDate}`, { credentials: "include" })).json();
+        const d = await readJson(`/api/me/performance-calendar/${selectedDate}`, { credentials: "include" });
+        if (!Array.isArray(d?.trades)) throw new Error("/api/me/performance-calendar/:date returned no trades");
         // Map live day-agg → DayDetailResp shape the UI renders.
         return {
           day: {
@@ -153,7 +172,11 @@ export default function TradingCalendarPage() {
           },
         } as DayDetailResp;
       }
-      return (await fetch(`/api/performance/day?date=${selectedDate}`)).json();
+      const paperDay = await readJson(`/api/performance/day?date=${selectedDate}`);
+      if (!paperDay?.day?.stats || !Array.isArray(paperDay.day.trades)) {
+        throw new Error("/api/performance/day returned no day");
+      }
+      return paperDay;
     },
   });
 
@@ -162,7 +185,7 @@ export default function TradingCalendarPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trading-calendar"] }),
   });
 
-  const days = cal.data?.calendar.days ?? [];
+  const days = calData?.calendar.days ?? [];
   // Pad start so day-of-week aligns.
   const firstWeekday = days[0] ? new Date(days[0].date + "T00:00:00Z").getUTCDay() : 0;
 
@@ -174,7 +197,11 @@ export default function TradingCalendarPage() {
             <CalendarDays className="text-primary" /> Trading Calendar
           </h2>
           <div className="text-muted-foreground flex items-center gap-2 flex-wrap">
-            {notShownHere
+            {mode.isError
+              ? "Your trading mode could not be loaded."
+              : !mode.isSuccess
+              ? "Checking your trading mode…"
+              : notShownHere
               ? "Live trades on your shared account are not shown on this calendar."
               : isLive ? "Daily P&L and win rate from your live trades." : "Daily P&L, win rate, and AI activity from your demo trades."}
           </div>
@@ -187,7 +214,7 @@ export default function TradingCalendarPage() {
             className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm"
             data-testid="input-month"
           />
-          {!isLive && (
+          {mode.isSuccess && !isLive && (
             <Button onClick={() => rebuild.mutate()} disabled={rebuild.isPending} data-testid="btn-rebuild">
               <RefreshCcw className={`mr-2 h-4 w-4 ${rebuild.isPending ? "animate-spin" : ""}`} />
               Rebuild
@@ -195,6 +222,15 @@ export default function TradingCalendarPage() {
           )}
         </div>
       </div>
+
+      {mode.isError && (
+        <Card className="border-border" data-testid="calendar-mode-error">
+          <CardContent className="pt-4 text-sm text-muted-foreground">
+            Your trading mode could not be loaded, so this page can&apos;t tell whether to show your live or demo
+            calendar. Nothing is shown until it loads.
+          </CardContent>
+        </Card>
+      )}
 
       {notShownHere && (
         <Card className="border-border" data-testid="calendar-not-shown">
@@ -205,20 +241,20 @@ export default function TradingCalendarPage() {
         </Card>
       )}
 
-      {cal.data && !notShownHere && (
+      {calData && !notShownHere && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Net P&L (month)</CardTitle></CardHeader>
-            <CardContent><div className={`text-xl font-bold ${cal.data.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{cal.data.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
+            <CardContent><div className={`text-xl font-bold ${calData.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{calData.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Total Trades</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold">{cal.data.calendar.total_trades}</div></CardContent></Card>
+            <CardContent><div className="text-xl font-bold">{calData.calendar.total_trades}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Winning Days</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold text-emerald-400">{cal.data.calendar.winning_days}</div></CardContent></Card>
+            <CardContent><div className="text-xl font-bold text-emerald-400">{calData.calendar.winning_days}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Losing Days</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold text-rose-400">{cal.data.calendar.losing_days}</div></CardContent></Card>
+            <CardContent><div className="text-xl font-bold text-rose-400">{calData.calendar.losing_days}</div></CardContent></Card>
         </div>
       )}
 
-      {isLive && cal.data && !notShownHere && cal.data.calendar.total_trades === 0 && (
+      {isLive && calData && !notShownHere && calData.calendar.total_trades === 0 && (
         <Card className="border-border">
           <CardContent className="pt-4 text-sm text-muted-foreground">
             No live trades recorded yet for {month}. Live P&amp;L will appear here once you place and close live trades.
@@ -226,10 +262,14 @@ export default function TradingCalendarPage() {
         </Card>
       )}
 
-      {!notShownHere && <Card>
+      {!mode.isError && !notShownHere && <Card>
         <CardHeader><CardTitle>{month}</CardTitle></CardHeader>
         <CardContent>
-          {cal.isLoading ? (
+          {cal.isError ? (
+            <div className="text-sm text-rose-300" data-testid="calendar-load-error">
+              The calendar for {month} could not be loaded. Nothing is shown rather than an empty month.
+            </div>
+          ) : !calData ? (
             <Skeleton className="h-72 w-full" />
           ) : (
             <>
@@ -276,7 +316,11 @@ export default function TradingCalendarPage() {
         <Card data-testid="day-detail-card">
           <CardHeader><CardTitle className="flex items-center gap-2"><CalIcon className="h-4 w-4" /> {selectedDate} — Day Detail</CardTitle></CardHeader>
           <CardContent>
-            {day.isLoading ? <Skeleton className="h-32 w-full" /> : day.data ? (
+            {day.isLoading ? <Skeleton className="h-32 w-full" /> : day.isError ? (
+              <div className="text-sm text-rose-300" data-testid="day-load-error">
+                Details for {selectedDate} could not be loaded.
+              </div>
+            ) : day.data ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
                   <div><div className="text-muted-foreground text-xs">Net P&L</div><div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div></div>
