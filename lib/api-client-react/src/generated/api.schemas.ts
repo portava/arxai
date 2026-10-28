@@ -10084,6 +10084,19 @@ export interface TradeHealth {
   factors: TradeHealthFactors;
 }
 
+/**
+ * Which input was missing when a priced trade's P&L could not be sized.
+ * @nullable
+ */
+export type TradeSnapshotPnlDataQualityFlag =
+  | (typeof TradeSnapshotPnlDataQualityFlag)[keyof typeof TradeSnapshotPnlDataQualityFlag]
+  | null;
+
+export const TradeSnapshotPnlDataQualityFlag = {
+  MISSING_CONTRACT_SIZE: "MISSING_CONTRACT_SIZE",
+  MISSING_FX_CONVERSION: "MISSING_FX_CONVERSION",
+} as const;
+
 export interface SuggestionBreakEven {
   recommended: boolean;
   reason: string;
@@ -10136,8 +10149,21 @@ export interface TradeSnapshot {
   priceUnavailableReason?: string | null;
   /** @nullable */
   rMultiple: number | null;
-  /** @nullable */
+  /**
+   * Floating P&L in USD, contract-size aware (move x lots x contract size x quote->USD). Null when there is no price or the contract size / FX rate cannot be established.
+   * @nullable
+   */
   floatingPnl: number | null;
+  /**
+   * Why floatingPnl is null; null when it was sized.
+   * @nullable
+   */
+  pnlUnavailableReason?: string | null;
+  /**
+   * Which input was missing when a priced trade's P&L could not be sized.
+   * @nullable
+   */
+  pnlDataQualityFlag?: TradeSnapshotPnlDataQualityFlag;
   health: TradeHealth | null;
   primarySuggestion: string;
   invalidated: boolean;

@@ -19212,7 +19212,16 @@ components:
           type: ["string", "null"]
           description: Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.
         rMultiple: { type: ["number", "null"] }
-        floatingPnl: { type: ["number", "null"] }
+        floatingPnl:
+          type: ["number", "null"]
+          description: Floating P&L in USD, contract-size aware (move x lots x contract size x quote->USD). Null when there is no price or the contract size / FX rate cannot be established.
+        pnlUnavailableReason:
+          type: ["string", "null"]
+          description: Why floatingPnl is null; null when it was sized.
+        pnlDataQualityFlag:
+          type: ["string", "null"]
+          enum: [MISSING_CONTRACT_SIZE, MISSING_FX_CONVERSION, null]
+          description: Which input was missing when a priced trade's P&L could not be sized.
         health:
           oneOf:
             - { $ref: "#/components/schemas/TradeHealth" }

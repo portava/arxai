@@ -27,7 +27,13 @@ export type PaperTrade = typeof tradesTable.$inferSelect;
 export type PaperManagementStep =
   | { kind: "MOVE_STOP"; newStop: number }
   | { kind: "PARTIAL_CLOSE"; newLot: number }
-  | { kind: "CLOSE"; status: "CLOSED_WIN" | "CLOSED_LOSS"; pnl: number; closedAt: Date };
+  | {
+    kind: "CLOSE"; status: "CLOSED_WIN" | "CLOSED_LOSS"; closedAt: Date;
+    /** null only with pnlStatus "UNKNOWN": the P&L could not be sized. */
+    pnl: number | null;
+    pnlStatus?: "UNKNOWN" | null;
+    dataQualityFlag?: string | null;
+  };
 
 /** Persist one guardian-approved step; null when the trade no longer exists. */
 export async function applyPaperManagement(tradeId: number, step: PaperManagementStep): Promise<PaperTrade | null> {
@@ -35,7 +41,10 @@ export async function applyPaperManagement(tradeId: number, step: PaperManagemen
     ? { stopLoss: step.newStop }
     : step.kind === "PARTIAL_CLOSE"
       ? { lot: step.newLot }
-      : { status: step.status, pnl: step.pnl, closedAt: step.closedAt };
+      : {
+        status: step.status, pnl: step.pnl, closedAt: step.closedAt,
+        pnlStatus: step.pnlStatus ?? null, dataQualityFlag: step.dataQualityFlag ?? null,
+      };
   const [row] = await db.update(tradesTable).set(set).where(eq(tradesTable.id, tradeId)).returning();
   return row ?? null;
 }

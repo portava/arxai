@@ -76,4 +76,20 @@ describe("LiveTradeCard snapshot truth", () => {
     expect(screen.getByTestId("snap-r-1").textContent).toBe("0.10R");
     expect(screen.getByTestId("snap-quote-at-1").textContent).toMatch(/^Quote as of /);
   });
+
+  it("priced but P&L not sizable: P&L reads Unavailable with the server's reason, never $0.00", () => {
+    const pnlReason = "P&L unavailable: contract size for XAUUSD is unknown (no broker symbol spec and not a currency pair).";
+    h.snap = {
+      tradeId: 1, currentPrice: 2010, quoteAt: "2026-10-28T09:00:00.000Z", priceUnavailableReason: null,
+      rMultiple: 1, floatingPnl: null, pnlUnavailableReason: pnlReason, pnlDataQualityFlag: "MISSING_CONTRACT_SIZE",
+      health: { score: 72, state: "healthy", factors: {} },
+      suggestions: { breakEven: { recommended: false, reason: "x" }, trail: { recommended: false, reason: "x" }, partial: { recommended: false, reason: "x" }, earlyExit: { recommended: false, reason: "x" } },
+      primarySuggestion: "Hold — no action recommended.", invalidated: false,
+    };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("snap-current-1").textContent).toBe("2010.00000");
+    expect(screen.getByTestId("snap-pnl-1").textContent).toBe("Unavailable");
+    expect(screen.getByTestId("snap-pnl-unavailable-1").textContent).toBe(pnlReason);
+    expect(screen.queryByText("$0.00")).toBeNull();
+  });
 });

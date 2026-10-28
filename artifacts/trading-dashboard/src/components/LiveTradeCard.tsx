@@ -331,6 +331,9 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
             {currentPrice != null && quoteAt ? (
               <div className="text-[10px] text-muted-foreground" data-testid={`snap-quote-at-${trade.id}`}>Quote as of {new Date(quoteAt).toLocaleTimeString()}</div>
             ) : null}
+            {currentPrice != null && floatingPnl == null && snap.pnlUnavailableReason ? (
+              <div className="text-[10px] text-amber-300" data-testid={`snap-pnl-unavailable-${trade.id}`}>{snap.pnlUnavailableReason}</div>
+            ) : null}
             <div>
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="text-muted-foreground">Health</span>

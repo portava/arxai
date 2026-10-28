@@ -1708,6 +1708,7 @@ export * from "./tradeResult";
 export * from "./traderSkillProfile";
 export * from "./traderSkillProfileSkillLevel";
 export * from "./tradeSnapshot";
+export * from "./tradeSnapshotPnlDataQualityFlag";
 export * from "./tradeSnapshotSuggestions";
 export * from "./tradeStatus";
 export * from "./tradingPlaybook";

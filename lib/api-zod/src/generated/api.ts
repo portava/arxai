@@ -9945,7 +9945,26 @@ export const GetTradeSnapshotResponse = zod.object({
       "Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.",
     ),
   rMultiple: zod.number().nullable(),
-  floatingPnl: zod.number().nullable(),
+  floatingPnl: zod
+    .number()
+    .nullable()
+    .describe(
+      "Floating P&L in USD, contract-size aware (move x lots x contract size x quote->USD). Null when there is no price or the contract size \/ FX rate cannot be established.",
+    ),
+  pnlUnavailableReason: zod
+    .string()
+    .nullish()
+    .describe("Why floatingPnl is null; null when it was sized."),
+  pnlDataQualityFlag: zod
+    .union([
+      zod.literal("MISSING_CONTRACT_SIZE"),
+      zod.literal("MISSING_FX_CONVERSION"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Which input was missing when a priced trade's P&L could not be sized.",
+    ),
   health: zod.union([
     zod.object({
       score: zod.number(),
