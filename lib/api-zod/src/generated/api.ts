@@ -18507,8 +18507,18 @@ export const GetMeScalpBasketsResponse = zod.object({
       averageEntry: zod.number(),
       currentPrice: zod.number().nullable(),
       combinedFloatingPl: zod.number().nullable(),
-      breakEvenPrice: zod.number(),
+      breakEvenPrice: zod
+        .number()
+        .describe(
+          "Volume-weighted average entry. Spread, commission and swap are not included, so this is the break-even before costs, not a true break-even level.",
+        ),
       hasUnprotectedLeg: zod.boolean(),
+      digits: zod
+        .number()
+        .nullish()
+        .describe(
+          "The symbol's price digits from the broker spec, for formatting averageEntry and breakEvenPrice; null when the spec does not say.",
+        ),
       legs: zod.array(
         zod.object({
           ticket: zod.string().nullable(),
@@ -18686,8 +18696,18 @@ export const CreateMeScalpAddOnCheckResponse = zod.object({
       averageEntry: zod.number(),
       currentPrice: zod.number().nullable(),
       combinedFloatingPl: zod.number().nullable(),
-      breakEvenPrice: zod.number(),
+      breakEvenPrice: zod
+        .number()
+        .describe(
+          "Volume-weighted average entry. Spread, commission and swap are not included, so this is the break-even before costs, not a true break-even level.",
+        ),
       hasUnprotectedLeg: zod.boolean(),
+      digits: zod
+        .number()
+        .nullish()
+        .describe(
+          "The symbol's price digits from the broker spec, for formatting averageEntry and breakEvenPrice; null when the spec does not say.",
+        ),
       legs: zod.array(
         zod.object({
           ticket: zod.string().nullable(),

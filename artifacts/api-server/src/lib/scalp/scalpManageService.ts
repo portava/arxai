@@ -334,7 +334,12 @@ export async function getScalpBaskets(
       },
       personality,
     );
-    const basket = assembleBasket(g, flame, { personality, currentPrice, now });
+    const basket = assembleBasket(g, flame, {
+      personality, currentPrice, now,
+      // Broker spec digits only (same authority as the entry engine); null
+      // when the spec does not say — never the internal point floor.
+      digits: resolveScalpPricePrecision(spec)?.digits ?? null,
+    });
     return { basket, spec, execution };
   }));
 
@@ -442,7 +447,12 @@ export async function getAddOnCheck(
     personality,
   );
 
-  const basket = group ? assembleBasket(group, flame, { personality, currentPrice: refPrice, now }) : null;
+  const basket = group
+    ? assembleBasket(group, flame, {
+      personality, currentPrice: refPrice, now,
+      digits: resolveScalpPricePrecision(spec)?.digits ?? null,
+    })
+    : null;
   const addOn = basket ? basket.addOn : evaluateAddOn(flame, summary, personality);
 
   // Populate addOnsBlockedReason on the admin trace when the add-on is blocked

@@ -15164,8 +15164,14 @@ export interface ScalpBasket {
   averageEntry: number;
   currentPrice: number | null;
   combinedFloatingPl: number | null;
+  /** Volume-weighted average entry. Spread, commission and swap are not included, so this is the break-even before costs, not a true break-even level. */
   breakEvenPrice: number;
   hasUnprotectedLeg: boolean;
+  /**
+   * The symbol's price digits from the broker spec, for formatting averageEntry and breakEvenPrice; null when the spec does not say.
+   * @nullable
+   */
+  digits?: number | null;
   legs: ScalpBasketLeg[];
   flame: ScalpFlameRead;
   exit: ScalpExitVerdict;

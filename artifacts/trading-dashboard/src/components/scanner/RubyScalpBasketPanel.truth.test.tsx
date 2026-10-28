@@ -94,3 +94,60 @@ describe("Position Manager — positions that were not read are not shown as non
     expect(screen.queryByTestId("ruby-scalp-baskets-not-measured")).toBeNull();
   });
 });
+
+// Item: "Avg entry 1.0852666666666666" / "Break-even 1.0852666666666666" —
+// raw floats, and a "Break-even" that is only the average entry (no spread,
+// commission or swap).
+function twoLegBasket(digits: number | null | undefined): ScalpBasket {
+  const avg = (0.01 * 1.08512 + 0.02 * 1.08534) / 0.03;
+  return {
+    symbol: "EURUSD",
+    displayName: "EUR/USD",
+    direction: "BUY",
+    accountMode: "DEMO",
+    entryCount: 2,
+    totalVolume: 0.03,
+    averageEntry: avg,
+    currentPrice: 1.0855,
+    combinedFloatingPl: 0.7,
+    breakEvenPrice: avg,
+    hasUnprotectedLeg: false,
+    ...(digits === undefined ? {} : { digits }),
+    legs: [
+      { ticket: "1", side: "BUY", volume: 0.01, entryPrice: 1.08512, currentPrice: 1.0855, floatingPl: 0.38, stopLoss: 1.084, takeProfit: null, openedAt: null },
+      { ticket: "2", side: "BUY", volume: 0.02, entryPrice: 1.08534, currentPrice: 1.0855, floatingPl: 0.32, stopLoss: 1.084, takeProfit: null, openedAt: null },
+    ],
+    flame: { flameStage: "ACTIVE" },
+    exit: { urgency: "HOLD", action: "HOLD", headline: "Hold", detail: "", alertOnly: true },
+    addOn: {
+      recommendation: "DO_NOT_ADD", maxAddOns: 3, usedAddOns: 1, remainingAddOns: 0, allowed: false,
+      revengeGuardTriggered: false, requiresFreshConfirmation: true, profitCushion: 0, reason: "",
+    },
+    generatedAt: new Date().toISOString(),
+  } as unknown as ScalpBasket;
+}
+
+describe("Position Manager — average entry is formatted, break-even is qualified", () => {
+  it.each([
+    ["the server's digits", 5],
+    ["the legs' own price decimals when the server sends none", undefined],
+    ["the legs' own price decimals when the server sends null", null],
+  ])("formats to %s", async (_n, digits) => {
+    basketsFn.mockResolvedValueOnce({
+      baskets: [twoLegBasket(digits as number | null | undefined)],
+      accountMode: "DEMO",
+      positionsMeasured: true,
+      positionsNote: null,
+      generatedAt: new Date().toISOString(),
+    });
+    render(withClient(<RubyScalpBasketPanel />));
+    await waitFor(() => expect(screen.getAllByTestId("scalp-basket-row")).toHaveLength(1));
+    const row = screen.getByTestId("scalp-basket-row");
+    expect(row.textContent).not.toContain("1.0852666");
+    expect(screen.getByTestId("scalp-basket-avg-entry").textContent).toBe("1.08527");
+    expect(screen.getByTestId("scalp-basket-break-even").textContent).toBe("1.08527");
+    const label = screen.getByTestId("scalp-basket-break-even-label");
+    expect(label.textContent).toMatch(/before costs/i);
+    expect(label.getAttribute("title") ?? "").toMatch(/spread, commission and swap are not included/i);
+  });
+});

@@ -23253,8 +23253,13 @@ components:
         averageEntry: { type: number }
         currentPrice: { type: number, nullable: true }
         combinedFloatingPl: { type: number, nullable: true }
-        breakEvenPrice: { type: number }
+        breakEvenPrice:
+          type: number
+          description: Volume-weighted average entry. Spread, commission and swap are not included, so this is the break-even before costs, not a true break-even level.
         hasUnprotectedLeg: { type: boolean }
+        digits:
+          type: ["integer", "null"]
+          description: The symbol's price digits from the broker spec, for formatting averageEntry and breakEvenPrice; null when the spec does not say.
         legs:
           type: array
           items: { $ref: "#/components/schemas/ScalpBasketLeg" }
