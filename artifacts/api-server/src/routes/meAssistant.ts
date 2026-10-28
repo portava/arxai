@@ -883,6 +883,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
       direction: (side ?? draft?.side) ?? null,
       symbol,
       timeframe,
+      // The state this drawing was built from (enriched with the user's own
+      // broker quote), so the receipt records the read the user saw.
+      state: rubyCtx?.state,
     });
   }
 

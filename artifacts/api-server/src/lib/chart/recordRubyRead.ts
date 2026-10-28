@@ -21,6 +21,7 @@ import { buildChartIntelligenceState } from "../data/chart/chartIntelligence.js"
 import type { ChartIntelligenceState } from "../data/chart/chartIntelligence.js";
 import { isChartTimeframe } from "../data/chart/timeframes.js";
 import type { ChartTimeframe } from "../data/chart/timeframes.js";
+import { enrichStateWithUserBrokerQuote } from "../data/chart/userBrokerAlignment.js";
 import { buildRubyDraftRead } from "../assistant/rubyDraftRead.js";
 import type { RubyDraftIntent } from "../assistant/rubyDraftRead.js";
 import { getAssistantDisplayName } from "../assistant/assistantName.js";
@@ -48,6 +49,27 @@ export interface RecordRubyReadArgs {
   limit?: number;
   /** Optional pre-built state to avoid a second build on endpoints that have one. */
   state?: ChartIntelligenceState;
+}
+
+/**
+ * The chart state a receipt records: the same state the user's Ruby read is
+ * built from (buildRubyChartContext) — the intelligence state enriched with
+ * this user's own bound broker quote. Without the enrichment the mirror stays
+ * unmeasured, so the receipt would store a gated "syncing" read the user never
+ * saw. Fail-open to the unenriched state, exactly as the read path does.
+ */
+export async function buildReceiptState(args: {
+  userId: number;
+  symbol: string;
+  timeframe: ChartTimeframe;
+  limit: number;
+}): Promise<ChartIntelligenceState> {
+  const state = await buildChartIntelligenceState(args.symbol, args.timeframe, args.limit);
+  try {
+    return await enrichStateWithUserBrokerQuote(state, args);
+  } catch {
+    return state;
+  }
 }
 
 /**
@@ -133,11 +155,12 @@ export function recordRubyReadDecision(args: RecordRubyReadArgs): void {
       if (!args.state && !isChartTimeframe(tf)) return;
       const state =
         args.state ??
-        (await buildChartIntelligenceState(
-          args.symbol,
-          tf as ChartTimeframe,
-          args.limit ?? 300,
-        ));
+        (await buildReceiptState({
+          userId: args.userId,
+          symbol: args.symbol,
+          timeframe: tf as ChartTimeframe,
+          limit: args.limit ?? 300,
+        }));
       const draftRead = buildRubyDraftRead(
         state,
         args.draftReadIntent ?? "analyze",
