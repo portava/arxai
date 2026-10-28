@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, cleanup, within } from "@testing-library/react";
+import { render, screen, cleanup, within, act } from "@testing-library/react";
 import type { ScannerTruth } from "@/lib/scannerTruth";
 
 // ── SelectedMarketPanel honesty safety-net (follow-up to the Broad Scan locks) ──
@@ -453,5 +453,39 @@ describe("SelectedMarketPanel — Highlights agree with the reasoning block on a
     const badge = screen.getByTestId("badge-selected-bias").textContent ?? "";
     expect(badge).not.toBe("BUY");
     expect(badge).toContain(dataState === "STALE" ? "feed stale" : "feed syncing");
+  });
+});
+
+// Truth fix — "Data as of Xs ago" used dataAsOf (the newest provider bar's
+// closeTime, a FUTURE scheduled close for a forming bar) with negatives clamped
+// to 0, and was computed once per render with no ticking clock.
+describe("SelectedMarketPanel — 'Data as of' is an observed, advancing age", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  function liveSnapshot(dataAsOf: string) {
+    return { ...degradedOkSnapshot(), dataSource: "LIVE_FEED", dataState: "LIVE_CONFIRMED" as const, dataAsOf };
+  }
+
+  it("never reads 'Data as of 0s ago' for a forming bar's future close", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const now = Date.parse("2026-10-28T10:40:00.000Z"); vi.setSystemTime(now);
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveSnapshot(new Date(now + 10 * 60_000).toISOString()) }));
+    render(<SelectedMarketPanel />);
+    const label = () => screen.getByTestId("text-selected-last-updated").textContent ?? "";
+    expect(label()).not.toContain("0s ago");
+    expect(label()).toContain("Newest bar still forming");
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(label()).not.toContain("0s ago");
+  });
+
+  it("advances the age between renders", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const now = Date.parse("2026-10-28T10:40:00.000Z"); vi.setSystemTime(now);
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveSnapshot(new Date(now - 4_000).toISOString()) }));
+    render(<SelectedMarketPanel />);
+    const label = () => screen.getByTestId("text-selected-last-updated").textContent ?? "";
+    expect(label()).toBe("Data as of 4s ago");
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(label()).toBe("Data as of 1m ago");
   });
 });
