@@ -81,3 +81,18 @@ test("the live pipeline's synthetic-floor inputs are unchanged", async () => {
   const e = await getSymbolTradability("EURUSD", 1);
   assert.equal(e.dataProvider, "external");
 });
+
+// ── The label never names a data provider it did not observe ───────────────
+
+test("synthetic not on the list: the label/copy do not name Deriv (the router may serve it from the MT5 broker)", async () => {
+  settings = async () => ({ allowedSymbols: ["EURUSD"] });
+  const t = await getSymbolTradability("V75", 1);
+  assert.equal(t.mt5Tradable, "no");
+  assert.notEqual(t.badgeLabel, "Data-only via Deriv");
+  assert.equal(t.badgeLabel, "Analysis only");
+  assert.doesNotMatch(t.userMessage, /deriv/i);
+  assert.doesNotMatch(t.userMessage, /current MT5 bridge/i);
+  assert.match(t.userMessage, /not on your live market list/);
+  // The class-derived route label the live pipeline's synthetic floor reads stays.
+  assert.equal(t.dataProvider, "deriv");
+});

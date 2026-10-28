@@ -2,9 +2,12 @@
 // and "can the user actually place a live trade on it via MT5?".
 //
 // Resolution rules (intentionally conservative — over-blocking is safe):
-//   - dataProvider is derived from the unified market data router's chain.
-//     Synthetic → deriv. Forex/metals/indices/crypto/stocks → external
-//     (TwelveData / yahoo / assistant provider — anonymized as "external").
+//   - dataProvider is a route label derived from the ASSET CLASS only
+//     (synthetic → deriv; forex/metals/indices/crypto/stocks → external),
+//     not the provider that actually served the data — the router tries the
+//     MT5 broker first for every class. The live pipeline's synthetic floor
+//     reads it as a classification, so it stays; user-facing copy must not
+//     name a data source from it.
 //   - mt5Tradable is resolved against the same allowedSymbols list the
 //     16-gate Phase B evaluator uses (gate 13: SYMBOL_NOT_ALLOWED). If a
 //     userId is provided we read that user's settings; otherwise we fall
@@ -114,11 +117,9 @@ export async function getSymbolTradability(
   const executionProvider: ExecutionProvider = mt5Tradable === "yes" ? "mt5" : "none";
   const liveExecutionAllowed = mt5Tradable === "yes";
 
-  // Badge truthfully reflects WHY a market is data-only: Deriv-specific
-  // copy only when the data actually comes from Deriv (synthetics);
-  // for non-synthetic data-only markets (e.g. user hasn't added a forex
-  // pair to allowedSymbols) we use a provider-neutral "Analysis only"
-  // label so we never imply the data path that isn't real.
+  // Badge truthfully reflects WHY a market is analysis-only (not on the
+  // list, or outside ARX Focus) and stays provider-neutral: nothing here
+  // observes which feed served the data.
   let badgeLabel: BadgeLabel;
   let userMessage: string;
   if (mt5Tradable === "yes") {
@@ -128,9 +129,12 @@ export async function getSymbolTradability(
     if (onList && !arxFocus) {
       badgeLabel = "Analysis only";
       userMessage = `${symbol} is on ${listName} but is not one of the ARX Focus markets, so new live orders for it are refused.`;
-    } else if (dataProvider === "deriv") {
-      badgeLabel = "Data-only via Deriv";
-      userMessage = `${DEFAULT_ASSISTANT_NAME} can analyze this market, but live execution is not available through the current MT5 bridge.`;
+    } else if (assetClass === "synthetic") {
+      // Never name the data source here: `dataProvider` is a route label
+      // derived from the asset class, and the router may serve synthetics
+      // from the MT5 broker before Deriv.
+      badgeLabel = "Analysis only";
+      userMessage = `${symbol} is a synthetic index that is not on ${listName}, so live orders for it are refused. ${DEFAULT_ASSISTANT_NAME} can still analyze it.`;
     } else {
       badgeLabel = "Analysis only";
       userMessage = `${symbol} is not on ${listName}, so live orders for it are refused. You can still analyze it.`;
