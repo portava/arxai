@@ -1545,7 +1545,7 @@ function serializeCommand(r: typeof mt5CommandsTable.$inferSelect) {
   };
 }
 
-/** /mt5/status does not read positions; said plainly instead of a confident empty list. */
+// The status route does not read positions; said plainly instead of a confident empty list.
 const MT5_STATUS_POSITIONS_NOT_READ =
   "Open positions are not read by this status. See Live Trades or My Trades for broker-reported positions.";
 
