@@ -146,13 +146,20 @@ export async function propFirmStatus(userId: number) {
   const cfg: PropFirmConfig = { ...DEFAULT_PROP_FIRM, ...((settings.propFirm as Partial<PropFirmConfig> | null) ?? {}) };
   const ov = await riskOverview(userId, "PAPER");
   const equity = ov.budget.equity;
+  const equityMeasured = equity != null;
   const profit = equity != null ? equity - cfg.startingBalance : 0;
   const dailyDD = ov.budget.dailyRiskUsed;
   const totalDD = Math.max(0, -profit);
-  const passed: string[] = []; const failed: string[] = [];
-  if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
-  if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
-  if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
+  // Rules are checked only while the mode is on; a rule that needs the paper
+  // equity is not checked without it. Neither case is ever listed as passed.
+  const passed: string[] = []; const failed: string[] = []; const notEvaluated: string[] = [];
+  if (cfg.enabled) {
+    if (!equityMeasured) notEvaluated.push("PROFIT_TARGET");
+    else if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
+    if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
+    if (!equityMeasured) notEvaluated.push("TOTAL_DD");
+    else if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
+  }
   const status = !cfg.enabled ? "OFF" : failed.length ? "FAILED" : profit >= cfg.profitTarget ? "PASSED"
     : dailyDD > cfg.maxDailyDrawdownUsd * 0.7 || totalDD > cfg.maxTotalDrawdownUsd * 0.7 ? "WARNING" : "ACTIVE";
   return {
@@ -161,6 +168,11 @@ export async function propFirmStatus(userId: number) {
     dailyDrawdownRemainingUsd: r2(cfg.maxDailyDrawdownUsd - dailyDD),
     totalDrawdownRemainingUsd: r2(cfg.maxTotalDrawdownUsd - totalDD),
     passed, failed, status, equitySource: "paper_ledger" as const,
+    /** False while the mode is off: no rule was checked. */
+    rulesEvaluated: cfg.enabled,
+    /** Rules not checked because the paper equity could not be read. */
+    notEvaluated,
+    equityMeasured,
   };
 }
 
