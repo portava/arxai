@@ -124,7 +124,7 @@ export default function TradeCommandRoom() {
   // ── Mode / permission → plain English ───────────────────────────────
   const isLive = tradingMode.isLiveShared;
   const {
-    canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge,
+    canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge, approval,
   } = resolveTradeRoomStatus(tradingMode, bridgeObs);
 
   const heroDescription = `Place manual, ${name}-assisted, or advanced trades through your approved account route.`;
@@ -187,8 +187,8 @@ export default function TradeCommandRoom() {
     <div className="space-y-4">
       <RiskGovernorCard
         statusLabel={rgStatus.label} statusTone={rgStatus.tone}
-        riskCaps={riskCapsStatus(tradingMode.envelope)} bridge={bridge}
-        approval={tradingMode.canManualTrade ? "Approved" : "Pending"}
+        riskCaps={riskCapsStatus(tradingMode.envelope, { failed: tradingMode.isModeUnknown })} bridge={bridge}
+        approval={approval}
         isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
       />
       <DecisionStreamCard decisions={decisions} />

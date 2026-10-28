@@ -23,9 +23,15 @@ export interface RiskCapsStatus {
   detail: string;
 }
 
-export function riskCapsStatus(env: RiskCapsEnvelopeSlice | null | undefined): RiskCapsStatus {
+export function riskCapsStatus(
+  env: RiskCapsEnvelopeSlice | null | undefined,
+  opts: { failed?: boolean } = {},
+): RiskCapsStatus {
   if (!env) {
-    return { label: "Checking", tone: "muted", detail: "Account risk settings have not loaded yet." };
+    // A failed account-mode check is not "still loading".
+    return opts.failed
+      ? { label: "Could not be loaded", tone: "warning", detail: "Your account risk settings could not be loaded." }
+      : { label: "Checking", tone: "muted", detail: "Account risk settings have not loaded yet." };
   }
   if (env.userFrozenStatus.isFrozen) {
     return { label: "Lock active", tone: "danger", detail: "Your account is risk-locked; new trades are paused." };
