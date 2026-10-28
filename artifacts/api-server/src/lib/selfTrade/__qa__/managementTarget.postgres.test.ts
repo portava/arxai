@@ -2885,6 +2885,65 @@ it("protective stop move refuses a stop that no longer tightens the locked row",
   // Geometry drift is refused first by the existing target comparison.
   await denied(send(row), "MANAGEMENT_TARGET_CHANGED");
 });
+/** Another (manual) close/modify for the managed ticket, as the live pipeline records it. */
+async function manualTicketCommand(patch: Partial<typeof commands.$inferInsert>) {
+  await db.insert(commands).values({
+    commandId: "manual-modify-1",
+    userId: 9,
+    bridgeConnectionId: 1,
+    accountLogin: "A",
+    brokerServer: "Venue Company",
+    commandType: "MODIFY_LIVE_SLTP",
+    status: "LIVE_FILLED",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    orderType: "MODIFY",
+    requestedVolume: 0.1,
+    stopLoss: 1.091,
+    sourcePage: "INSTANT_MODIFY",
+    payload: { brokerTicket: "123" },
+    ...patch,
+  });
+}
+it("protective claim refuses a manual modify on the ticket sent after its evidence; the ordinary claim is unchanged", async () => {
+  // Ordinary claim: today's parity does not look at other ticket commands.
+  const ordinary = await approved();
+  const now = Date.now();
+  await db.update(positions).set({ lastSyncedAt: new Date(now) }).where(eq(positions.id, 1));
+  await manualTicketCommand({ sentToMt5At: new Date(now + 1_000), filledAt: new Date(now + 1_500) });
+  assert.equal((await send(ordinary))?.status, "SENT_TO_MT5_LIVE");
+  await resetFixture();
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await manualTicketCommand({ sentToMt5At: new Date(T.getTime() + 1_000), filledAt: new Date(T.getTime() + 1_500) });
+  await denied(send(row), "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE");
+  assert.equal(await commandStatus(row.commandId), "LIVE_APPROVED");
+});
+it("protective claim refuses while a manual command on the ticket is still in flight", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await manualTicketCommand({ status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date(T.getTime() - 10_000) });
+  await denied(send(row), "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT");
+  assert.equal(await commandStatus(row.commandId), "LIVE_APPROVED");
+});
+it("protective claim accepts a manual command that settled before its evidence, and ignores other tickets", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await manualTicketCommand({ sentToMt5At: new Date(T.getTime() - 10_000), filledAt: new Date(T.getTime() - 9_000) });
+  await manualTicketCommand({
+    commandId: "manual-other-ticket",
+    status: "SENT_TO_MT5_LIVE",
+    sentToMt5At: new Date(T.getTime() + 1_000),
+    payload: { brokerTicket: "999" },
+  });
+  assert.equal((await send(row))?.status, "SENT_TO_MT5_LIVE");
+});
 it("the 9-field protective scope reads only the exact row when another account reuses the ticket", async () => {
   await otherAccountRow(2);
   const scope = managementPositionScope({

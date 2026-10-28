@@ -506,7 +506,21 @@ export function evaluateProtectiveObservation(
       closedAt: row.closedAt instanceof Date ? row.closedAt.toISOString() : row.closedAt,
       reconcileState: row.reconcileState,
     });
-  // 2. Usable, current row time (same parsing as the ordinary rule).
+  // 2. The latest complete sweep listed the ticket. Checked before the row's
+  //    age and provenance: the sweep's absent bump stamps lastReliableSnapshotAt
+  //    without touching lastSyncedAt (routes/mt5Live.ts), so a ticket already
+  //    closed at the broker would otherwise read as stale (or "not from a
+  //    sweep") forever and this specific, terminal reason would be unreachable.
+  if (row.brokerAbsentSnapshotCount !== 0)
+    return no("PROTECTIVE_POSITION_ABSENT_AT_BROKER", {
+      ticket: row.brokerTicket,
+      count: row.brokerAbsentSnapshotCount,
+      firstAbsentAt:
+        row.firstBrokerAbsentAt instanceof Date
+          ? row.firstBrokerAbsentAt.toISOString()
+          : row.firstBrokerAbsentAt,
+    });
+  // 3. Usable, current row time (same parsing as the ordinary rule).
   const age = classifyObservationAge(row.lastSyncedAt, input.nowMs, maxAgeMs);
   if (!age.ok)
     return no(
@@ -522,19 +536,6 @@ export function evaluateProtectiveObservation(
       },
     );
   const observedAtMs = age.atMs;
-  // 3. The latest complete sweep listed the ticket. Checked before provenance:
-  //    the sweep's absent bump stamps lastReliableSnapshotAt without touching
-  //    lastSyncedAt (routes/mt5Live.ts), so such a row would otherwise read as
-  //    "not from a sweep" and the more specific reason would be unreachable.
-  if (row.brokerAbsentSnapshotCount !== 0)
-    return no("PROTECTIVE_POSITION_ABSENT_AT_BROKER", {
-      ticket: row.brokerTicket,
-      count: row.brokerAbsentSnapshotCount,
-      firstAbsentAt:
-        row.firstBrokerAbsentAt instanceof Date
-          ? row.firstBrokerAbsentAt.toISOString()
-          : row.firstBrokerAbsentAt,
-    });
   // 4. Written by a complete sweep, not a reconciler.
   if (parseObservationTime(row.lastReliableSnapshotAt) !== observedAtMs)
     return no("PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP", {
@@ -594,4 +595,105 @@ export function evaluateProtectiveObservation(
       detail: `currentPrice=${describe(row.currentPrice)} entryPrice=${describe(row.entryPrice)} volume=${describe(row.volume)}`,
     });
   return { ok: true, observedAtMs, ageMs: age.ageMs, sweepAtMs };
+}
+
+// ── Protective action: other close/modify commands on the same ticket ───────
+//
+// A manual (or any other) close/modify that was sent but has neither filled nor
+// been rejected may not be reflected yet by a sweep that is newer than its send
+// time; acting on top of it could double-close or move a stop the user just
+// moved. At the final claim, any command event at or after the observation the
+// claim was justified by means the evidence no longer describes the position.
+
+/** Settled command statuses (riskGovernor/enforce.ts LIVE_TERMINAL). */
+export const LIVE_COMMAND_TERMINAL_STATUSES: readonly string[] = [
+  "LIVE_FILLED",
+  "LIVE_REJECTED",
+  "LIVE_FAILED",
+  "LIVE_BLOCKED",
+  "LIVE_CANCELLED",
+  "LIVE_CLOSED",
+  "LIVE_EXPIRED",
+];
+
+export interface TicketCommandFacts {
+  commandId?: string | null;
+  /** Missing status is treated as not terminal (fail closed). */
+  status?: string | null;
+  sentToMt5At: unknown;
+  filledAt: unknown;
+  rejectedAt: unknown;
+}
+
+export type TicketCommandVerdict =
+  | { ok: true; latestAtMs: number | null }
+  | {
+      ok: false;
+      reason: Extract<
+        ProtectiveHoldReason,
+        "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT" | "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE"
+      >;
+      detail: Record<string, unknown>;
+    };
+
+/** Sent to the terminal, neither filled nor rejected, and not in a settled status. */
+export function ticketCommandInFlight(c: TicketCommandFacts): boolean {
+  return (
+    c.sentToMt5At != null &&
+    c.filledAt == null &&
+    c.rejectedAt == null &&
+    !LIVE_COMMAND_TERMINAL_STATUSES.includes(String(c.status ?? ""))
+  );
+}
+
+/**
+ * In flight first, then (when `evidenceAtMs` is given) ordering: every event of
+ * every sent command must be strictly before the evidence observation; a
+ * malformed event time or an unusable bound refuses.
+ */
+export function evaluateTicketCommands(
+  commands: readonly TicketCommandFacts[],
+  evidenceAtMs?: number | null,
+): TicketCommandVerdict {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  for (const c of commands)
+    if (ticketCommandInFlight(c))
+      return {
+        ok: false,
+        reason: "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT",
+        detail: {
+          commandId: c.commandId ?? null,
+          status: c.status ?? null,
+          sentAt: (() => {
+            const ms = parseObservationTime(c.sentToMt5At);
+            return ms == null ? describe(c.sentToMt5At) : iso(ms);
+          })(),
+        },
+      };
+  if (evidenceAtMs != null && !Number.isFinite(evidenceAtMs))
+    return {
+      ok: false,
+      reason: "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE",
+      detail: { commandId: null, observedAt: describe(evidenceAtMs), eventAt: null },
+    };
+  let latestAtMs: number | null = null;
+  for (const c of commands) {
+    if (c.sentToMt5At == null) continue; // never reached the terminal
+    for (const event of [c.sentToMt5At, c.filledAt, c.rejectedAt]) {
+      if (event == null) continue;
+      const eventMs = parseObservationTime(event);
+      if (eventMs != null) latestAtMs = Math.max(latestAtMs ?? eventMs, eventMs);
+      if (evidenceAtMs != null && (eventMs == null || eventMs >= evidenceAtMs))
+        return {
+          ok: false,
+          reason: "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE",
+          detail: {
+            commandId: c.commandId ?? null,
+            eventAt: eventMs == null ? describe(event) : iso(eventMs),
+            observedAt: iso(evidenceAtMs),
+          },
+        };
+    }
+  }
+  return { ok: true, latestAtMs };
 }

@@ -2,6 +2,7 @@
 // refuse with a structured reason. No database, network or broker access.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { explainProtectiveHold } from "@workspace/domain/self-trade";
 import {
   ENTRY_MAX_SPREAD_POINTS,
   ENTRY_MAX_ZONE_DEVIATION_POINTS,
@@ -11,6 +12,7 @@ import {
   evaluateEntryFreshFacts,
   evaluatePositionObservation,
   evaluateProtectiveObservation,
+  evaluateTicketCommands,
   futureToleranceMs,
   parseObservationTime,
   type EntryMarketObservation,
@@ -379,6 +381,36 @@ describe("protective observation evidence", () => {
         String(brokerAbsentSnapshotCount),
       );
   });
+  it("a position already closed at the broker reads as absent, not as a stale row", () => {
+    // The sweep stopped listing the ticket 5 minutes ago: lastSyncedAt froze
+    // there, every later sweep bumped the absent count and the marker is fresh.
+    const frozen = new Date(NOW - 300_000);
+    const v = evaluateProtectiveObservation(
+      input({
+        row: {
+          lastSyncedAt: frozen,
+          lastReliableSnapshotAt: new Date(NOW - 4_000),
+          brokerAbsentSnapshotCount: 1,
+          firstBrokerAbsentAt: new Date(NOW - 290_000),
+        },
+        connection: { lastPositionsSnapshotAt: new Date(NOW - 4_000) },
+      }),
+    );
+    assert.equal(why(v), "PROTECTIVE_POSITION_ABSENT_AT_BROKER");
+    assert.ok(!v.ok && v.detail.count === 1 && v.detail.ticket === "123");
+    for (const count of [2, 30])
+      assert.equal(
+        why(evaluateProtectiveObservation(input({ row: { lastSyncedAt: frozen, brokerAbsentSnapshotCount: count } }))),
+        "PROTECTIVE_POSITION_ABSENT_AT_BROKER",
+      );
+    // Closed / reconciled still wins over absence.
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ row: { lastSyncedAt: frozen, brokerAbsentSnapshotCount: 1, reconcileState: "CLOSED" } }))),
+      "PROTECTIVE_OBSERVATION_POSITION_CLOSED",
+    );
+    // A listed (count 0) stale row is still STALE: absence never masks age.
+    assert.equal(why(evaluateProtectiveObservation(input({ row: { lastSyncedAt: frozen, lastReliableSnapshotAt: frozen } }))), "PROTECTIVE_OBSERVATION_STALE");
+  });
   it("the complete-sweep marker must cover the row and be current", () => {
     assert.equal(
       why(evaluateProtectiveObservation(input({ connection: { lastPositionsSnapshotAt: new Date(T - 1) } }))),
@@ -410,6 +442,20 @@ describe("protective observation evidence", () => {
       why(evaluateProtectiveObservation(input({ connection: { lastHeartbeat: null } }))),
       "PROTECTIVE_BRIDGE_OFFLINE",
     );
+  });
+  it("a missing or future-dated heartbeat is explained as unverified, never as an age", () => {
+    const missing = evaluateProtectiveObservation(input({ connection: { lastHeartbeat: null } }));
+    assert.equal(why(missing), "PROTECTIVE_BRIDGE_OFFLINE");
+    const missingText = explainProtectiveHold(missing.ok ? "" : missing.reason, missing.ok ? {} : missing.detail);
+    assert.match(missingText, /no recorded heartbeat \(missing\)/);
+    assert.doesNotMatch(missingText, /unknown ?s old/);
+    const ahead = evaluateProtectiveObservation(input({ connection: { lastHeartbeat: new Date(NOW + 2_000) } }));
+    assert.equal(why(ahead), "PROTECTIVE_BRIDGE_OFFLINE");
+    const aheadText = explainProtectiveHold(ahead.ok ? "" : ahead.reason, ahead.ok ? {} : ahead.detail);
+    assert.match(aheadText, /2s ahead of the server clock/);
+    assert.doesNotMatch(aheadText, /-2s old/);
+    const old = evaluateProtectiveObservation(input({ connection: { lastHeartbeat: new Date(NOW - 75_000) } }));
+    assert.match(explainProtectiveHold(old.ok ? "" : old.reason, old.ok ? {} : old.detail), /75s old/);
   });
   it("the existing 90 s window applies unchanged: 90 001 ms stale, 89 999 ms ok", () => {
     const at = (ms: number) => ({
@@ -457,17 +503,21 @@ describe("protective observation evidence", () => {
       );
     assert.equal(why(evaluateProtectiveObservation(input({ commandEventTimes: [new Date(T - 1)] }))), "OK");
   });
-  it("rules run in a fixed order: closed, time, provenance, absence, newer, commands, marker, heartbeat, price", () => {
+  it("rules run in a fixed order: closed, absence, time, provenance, newer, commands, marker, heartbeat, price", () => {
     const bad = input({
-      row: { lastReliableSnapshotAt: null, brokerAbsentSnapshotCount: 2, currentPrice: null },
+      row: { lastSyncedAt: new Date(NOW - 600_000), lastReliableSnapshotAt: null, brokerAbsentSnapshotCount: 2, currentPrice: null },
       connection: { lastPositionsSnapshotAt: null, lastHeartbeat: null },
       mustBeAfterMs: T,
       commandEventTimes: ["garbage"],
     });
-    // Absence is reported before provenance: a sweep's absent bump stamps
-    // lastReliableSnapshotAt without lastSyncedAt, so the order matters.
+    // Absence is reported before the row's age and provenance: a ticket the
+    // sweep no longer lists never has lastSyncedAt refreshed (the absent bump
+    // stamps lastReliableSnapshotAt only), so it would otherwise always read
+    // as stale and the specific, terminal reason would be unreachable.
     assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_POSITION_ABSENT_AT_BROKER");
     bad.row.brokerAbsentSnapshotCount = 0;
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_STALE");
+    bad.row.lastSyncedAt = new Date(T);
     assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP");
     bad.row.lastReliableSnapshotAt = new Date(T);
     assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_NOT_NEWER");
@@ -489,6 +539,60 @@ describe("protective observation evidence", () => {
     assert.equal(
       why(evaluateProtectiveObservation(input({ row: { lastSyncedAt: new Date(ms), lastReliableSnapshotAt: null } }))),
       "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP",
+    );
+  });
+});
+
+// ── Ticket commands around protective evidence (in flight / after evidence) ──
+describe("ticket commands for a protective action", () => {
+  const T = NOW - 5_000;
+  const cmd = (patch: Record<string, unknown>) => ({
+    commandId: "manual-1",
+    status: "LIVE_FILLED",
+    sentToMt5At: new Date(T - 60_000),
+    filledAt: new Date(T - 59_000),
+    rejectedAt: null,
+    ...patch,
+  });
+  const why = (v: ReturnType<typeof evaluateTicketCommands>) => (v.ok ? "OK" : v.reason);
+  it("settled commands before the evidence pass and report the latest event time", () => {
+    const v = evaluateTicketCommands([cmd({}), cmd({ commandId: "m2", filledAt: null, rejectedAt: new Date(T - 10_000), status: "LIVE_REJECTED" })], T);
+    assert.deepEqual(v, { ok: true, latestAtMs: T - 10_000 });
+    assert.deepEqual(evaluateTicketCommands([], T), { ok: true, latestAtMs: null });
+  });
+  it("a sent command that has neither filled nor been rejected is in flight", () => {
+    for (const status of ["SENT_TO_MT5_LIVE", "LIVE_ACKNOWLEDGED", "LIVE_PARTIALLY_FILLED", "LIVE_UNKNOWN", "LIVE_RECONCILIATION_REQUIRED", undefined, null])
+      assert.equal(
+        why(evaluateTicketCommands([cmd({ status, filledAt: null })], null)),
+        "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT",
+        String(status),
+      );
+    const v = evaluateTicketCommands([cmd({ status: "SENT_TO_MT5_LIVE", filledAt: null })], null);
+    assert.ok(!v.ok && v.detail.commandId === "manual-1" && typeof v.detail.sentAt === "string");
+  });
+  it("a terminal status without a fill/reject time is settled, not in flight", () => {
+    for (const status of ["LIVE_EXPIRED", "LIVE_FAILED", "LIVE_CANCELLED", "LIVE_BLOCKED", "LIVE_CLOSED"])
+      assert.equal(why(evaluateTicketCommands([cmd({ status, filledAt: null })], T)), "OK", status);
+  });
+  it("an unsent command is not a broker-affecting event", () => {
+    assert.equal(why(evaluateTicketCommands([cmd({ status: "LIVE_APPROVED", sentToMt5At: null, filledAt: null })], T)), "OK");
+  });
+  it("any event at or after the evidence observation refuses; malformed refuses", () => {
+    assert.equal(why(evaluateTicketCommands([cmd({ filledAt: new Date(T) })], T)), "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE");
+    assert.equal(why(evaluateTicketCommands([cmd({ sentToMt5At: new Date(T + 1), filledAt: new Date(T + 2) })], T)), "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE");
+    assert.equal(why(evaluateTicketCommands([cmd({ filledAt: "garbage" })], T)), "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE");
+    assert.equal(why(evaluateTicketCommands([cmd({ filledAt: new Date(T - 1) })], T)), "OK");
+    // Without an evidence bound only the in-flight rule applies (the wait loop
+    // orders events itself through evaluateProtectiveObservation).
+    assert.equal(why(evaluateTicketCommands([cmd({ filledAt: new Date(T + 5) })], null)), "OK");
+  });
+  it("an unusable evidence bound refuses instead of being ignored", () => {
+    assert.equal(why(evaluateTicketCommands([], Number.NaN)), "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE");
+  });
+  it("in flight is reported before ordering", () => {
+    assert.equal(
+      why(evaluateTicketCommands([cmd({ filledAt: new Date(T + 5) }), cmd({ commandId: "m3", status: "SENT_TO_MT5_LIVE", filledAt: null })], T)),
+      "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT",
     );
   });
 });

@@ -48,11 +48,14 @@ export const PROTECTIVE_HOLD_REASONS = [
   "PROTECTIVE_HOLD_TERMINAL_UPGRADE_REQUIRED",
   // Evidence wait.
   "PROTECTIVE_HOLD_NO_FRESH_SWEEP",
+  "PROTECTIVE_HOLD_WAIT_BUDGET_USED",
+  "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT",
   "PROTECTIVE_HOLD_DEFERRED_TO_NEXT_CYCLE",
   "PROTECTIVE_HOLD_TRIGGER_CLEARED",
   // Claim / dispatch outcome.
   "PROTECTIVE_HOLD_CLAIM_RACE",
   "PROTECTIVE_HOLD_PIPELINE_REFUSED",
+  "PROTECTIVE_HOLD_REFUSED_WITH_COMMAND",
   "PROTECTIVE_HOLD_OUTCOME_UNCERTAIN",
   "PROTECTIVE_HOLD_INTERNAL_ERROR",
   // Bridge identity.
@@ -72,6 +75,7 @@ export const PROTECTIVE_HOLD_REASONS = [
   "PROTECTIVE_POSITION_ABSENT_AT_BROKER",
   "PROTECTIVE_OBSERVATION_NOT_NEWER",
   "PROTECTIVE_OBSERVATION_PREDATES_COMMAND",
+  "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE",
   "PROTECTIVE_SWEEP_MARKER_STALE",
   "PROTECTIVE_OBSERVATION_PRICE_INVALID",
   // Position identity.
@@ -242,14 +246,28 @@ function partialRule(p: ProtectivePositionFacts, i: ValidIntent): ProtectiveChec
   return OK;
 }
 
+const stopDetail = (p: ProtectivePositionFacts, s: number | null) => ({
+  action: "MODIFY_STOP",
+  newSl: s,
+  currentSl: p.stopLoss,
+  p: p.currentPrice,
+  side: p.side,
+});
+
+/** Removing the stop is a widening (isStopWidened / Guardian STOP_WOULD_WIDEN) and adds unbounded risk. */
+function stopRemovalRule(p: ProtectivePositionFacts, i: ValidIntent): ProtectiveCheck {
+  if (i.kind !== "MODIFY_STOP" || i.newStopLoss !== null) return OK;
+  return refuse("PROTECTIVE_STOP_NOT_TIGHTER", { ...stopDetail(p, null), problem: "stop removal" });
+}
+
 function stopRule(p: ProtectivePositionFacts, i: ValidIntent): ProtectiveCheck {
   if (i.kind !== "MODIFY_STOP") return OK;
-  const s = i.newStopLoss;
+  const removal = stopRemovalRule(p, i);
+  if (!removal.ok) return removal;
+  const s = i.newStopLoss as number;
   const c = p.stopLoss;
   const price = p.currentPrice;
-  const detail = { action: "MODIFY_STOP", newSl: s, currentSl: c, p: price, side: p.side };
-  // Removing the stop is a widening (isStopWidened / Guardian STOP_WOULD_WIDEN).
-  if (s === null) return refuse("PROTECTIVE_STOP_NOT_TIGHTER", { ...detail, problem: "stop removal" });
+  const detail = stopDetail(p, s);
   // Never at or through the price the stop triggers on.
   const through = p.side === "BUY" ? !(s < price - EPS_PRICE) : !(s > price + EPS_PRICE);
   if (through) return refuse("PROTECTIVE_STOP_THROUGH_PRICE", detail);
@@ -277,14 +295,21 @@ function takeProfitRule(p: ProtectivePositionFacts, i: ValidIntent): ProtectiveC
   return OK;
 }
 
-/** G1 — CLOSE never partial or over-volume; MODIFY never changes the take-profit. */
+// The standalone predicates below each apply a subset of
+// evaluateProtectiveGeometry's rules in the same order, so wherever one refuses
+// it names the reason the full geometry would. Only evaluateProtectiveGeometry
+// carries the whole guarantee (G1 ∧ G2 ∧ G3 + take-profit pin); the path and
+// the final claim use it, or doesNotLoosenStop for a stop move whose volume and
+// take-profit are pinned by the management target.
+
+/** G1 — CLOSE never over-volume or partial; MODIFY never removes the stop or changes the take-profit. */
 export function doesNotIncreaseExposure(
   position: ProtectivePositionFacts,
   intent: ProtectiveIntent,
 ): ProtectiveCheck {
   const s = shape(position, intent);
   if (!s.ok) return s;
-  for (const rule of [partialRule, reverseRule, takeProfitRule]) {
+  for (const rule of [reverseRule, partialRule, stopRemovalRule, takeProfitRule]) {
     const v = rule(s.position, s.intent);
     if (!v.ok) return v;
   }
@@ -311,7 +336,7 @@ export function doesNotLoosenStop(
   return stopRule(s.position, s.intent);
 }
 
-/** G1 ∧ G2 ∧ G3 in a fixed order: invalid → side → reverse → partial → stop → take-profit. */
+/** G1 ∧ G2 ∧ G3 in a fixed order: invalid → side → reverse → partial → stop (removal first) → take-profit. */
 export function evaluateProtectiveGeometry(
   position: ProtectivePositionFacts,
   intent: ProtectiveIntent,
@@ -515,6 +540,10 @@ const TEXT: Record<ProtectiveHoldReason, string> = {
     "This terminal's EA does not support exact-target management (supportsManagementTargetV1). Upgrade the EA or manage the position manually.",
   PROTECTIVE_HOLD_NO_FRESH_SWEEP:
     "No broker position snapshot newer than {heldAt} arrived within {waitedSec}s (last snapshot {ageSec}s old). ARX will not close or move a stop from old data. Manual controls and the stop held at the broker remain active.",
+  PROTECTIVE_HOLD_WAIT_BUDGET_USED:
+    "No broker position snapshot newer than {heldAt} is available, and the wait budget for this bridge was already used this cycle by an earlier held position (one sweep refreshes every position on the bridge). ARX will not close or move a stop from old data; it re-checks next cycle. Manual controls and the stop held at the broker remain active.",
+  PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT:
+    "A close/modify for this ticket ({commandId}, sent {sentAt}) is still in flight at the terminal and has neither filled nor been rejected. ARX will not act on top of a manual or pending order; it re-checks after that command settles. Manual controls and broker-side stops remain active.",
   PROTECTIVE_HOLD_DEFERRED_TO_NEXT_CYCLE:
     "Stop tightening is not urgent; it will be re-evaluated next cycle from a fresh snapshot. The stop held at the broker remains active.",
   PROTECTIVE_HOLD_TRIGGER_CLEARED:
@@ -523,6 +552,8 @@ const TEXT: Record<ProtectiveHoldReason, string> = {
     "Another cycle already claimed this position; no duplicate request was made.",
   PROTECTIVE_HOLD_PIPELINE_REFUSED:
     "The live pipeline refused the request before a command existed: {pipelineReason}. Nothing was sent to the broker.",
+  PROTECTIVE_HOLD_REFUSED_WITH_COMMAND:
+    "The live pipeline refused the request after command {commandId} was recorded: {pipelineReason}. The command is kept for reconciliation and is not retried; the position is not protected by this cycle. Manual controls and broker-side stops remain active.",
   PROTECTIVE_HOLD_OUTCOME_UNCERTAIN:
     "The request was handed to the live pipeline but its outcome is not yet proven ({message}); the claim is retained for review and no retry is made.",
   PROTECTIVE_HOLD_INTERNAL_ERROR:
@@ -556,6 +587,8 @@ const TEXT: Record<ProtectiveHoldReason, string> = {
     "The snapshot ({observedAt}) is not newer than the hold at {heldAt}; ARX will not act on the evidence it already refused.",
   PROTECTIVE_OBSERVATION_PREDATES_COMMAND:
     "A close/modify was sent to the terminal at {eventAt}; the snapshot ({observedAt}) predates it, so the stop or size may already differ.",
+  PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE:
+    "Another close/modify for this ticket ({commandId}) moved at {eventAt}, after the snapshot ({observedAt}) this action was justified by. The request is refused; the next cycle decides from a newer snapshot. Manual controls and broker-side stops remain active.",
   PROTECTIVE_SWEEP_MARKER_STALE:
     "The terminal's complete-snapshot marker is {ageMs}ms old or older than the row; the row cannot be trusted as part of a full sweep.",
   PROTECTIVE_OBSERVATION_PRICE_INVALID:
@@ -591,15 +624,39 @@ function render(value: unknown): string {
   return String(value);
 }
 
+/**
+ * A heartbeat with no time, or a time ahead of the server clock, has no age:
+ * the bridge is unverified, not "-2s old". Both stay holds.
+ */
+const HEARTBEAT_REASONS = new Set<string>(["PROTECTIVE_BRIDGE_OFFLINE", "PROTECTIVE_BRIDGE_HEARTBEAT_NOT_FRESH"]);
+const HEARTBEAT_MISSING_TEXT =
+  "The MT5 bridge has no recorded heartbeat (missing), so it cannot be verified online; nothing is sent. Broker-side stops remain active.";
+const HEARTBEAT_AHEAD_TEXT =
+  "The MT5 bridge heartbeat timestamp is {aheadSec}s ahead of the server clock, so its liveness is unverified; nothing is sent. Broker-side stops remain active.";
+
+function heartbeatTemplate(safe: Record<string, unknown>): string | null {
+  const ageMs = typeof safe.ageMs === "number" && Number.isFinite(safe.ageMs) ? safe.ageMs : null;
+  const ageSec = typeof safe.ageSec === "number" && Number.isFinite(safe.ageSec) ? safe.ageSec : null;
+  const age = ageMs ?? (ageSec == null ? null : ageSec * 1000);
+  if (age == null) return HEARTBEAT_MISSING_TEXT;
+  if (age < 0 || Object.is(age, -0)) {
+    safe.aheadSec = Math.max(1, Math.ceil(-age / 1000));
+    return HEARTBEAT_AHEAD_TEXT;
+  }
+  return null;
+}
+
 /** Operator-facing text. Placeholders come from the (redacted) detail; a missing value reads "unknown". */
 export function explainProtectiveHold(
   reason: ProtectiveHoldReason | string,
   detail: Record<string, unknown> | null | undefined,
 ): string {
   const safe = redactProtectiveDetail(detail);
+  const heartbeat = HEARTBEAT_REASONS.has(reason) ? heartbeatTemplate(safe) : null;
   if (safe.ageSec == null && typeof safe.ageMs === "number") safe.ageSec = Math.round(safe.ageMs / 1000);
   if (safe.waitedSec == null && typeof safe.waitedMs === "number") safe.waitedSec = Math.round(safe.waitedMs / 1000);
   const template =
+    heartbeat ??
     (TEXT as Record<string, string>)[reason] ??
     `Automatic protective management is held (${String(reason)}); nothing was sent. Manual controls and broker-side stops remain active.`;
   return template.replace(/\{([a-zA-Z]+)\}/g, (_m, key: string) => render(safe[key]));

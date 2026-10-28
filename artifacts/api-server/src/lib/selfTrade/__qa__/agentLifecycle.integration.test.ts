@@ -39,6 +39,10 @@ let connectionRow: Record<string, unknown> | undefined;
 let connectionReadThrows: boolean;
 /** Audit event types written this test, in order (the audit writer is a fixture). */
 let auditEvents: string[];
+/** The same audit rows with their reason text and afterState. */
+let auditRows: Array<{ eventType: string; reason?: string; afterState?: Record<string, unknown> }>;
+/** Further bridge connection rows (protective per-bridge cases). */
+let extraConnections: Record<string, unknown>[] = [];
 // Broker-affecting commands for the managed ticket (fresh-facts ordering check).
 let ticketCommands: Partial<ArxLiveCommand>[] = [];
 let entryCommand: ArxLiveCommand;
@@ -81,10 +85,10 @@ function queryFor(table: unknown) {
           rows = [{ id: 7, thesis: structuredClone(thesisRow) }];
         else if (table === connections) {
           if (connectionReadThrows) throw new Error("connection seam unavailable");
-          rows =
-            connectionRow && connectionRow.id === params[0]
-              ? [structuredClone(connectionRow)]
-              : [];
+          rows = [connectionRow, ...extraConnections]
+            .filter((c) => c && c.id === params[0])
+            .slice(0, 1)
+            .map((c) => structuredClone(c));
         } else if (
           table === commands &&
           dialect.sqlToQuery(predicate).sql.includes("->>'brokerTicket'")
@@ -120,11 +124,11 @@ const fakeDb = {
             // Every state update must use both execution ID and previous state.
             assert.match(sql, /"id" = \$1/);
             assert.match(sql, /"status" = \$2/);
-            if (execution.id !== params[0] || execution.status !== params[1])
-              return [];
+            const row = [execution, ...extraExecutions].find((e) => e.id === params[0]);
+            if (!row || row.status !== params[1]) return [];
             if (sql.includes("management_state")) {
               assert.match(sql, /"management_state" = \$3::jsonb/);
-              if (JSON.stringify(execution.managementState) !== params[2])
+              if (JSON.stringify(row.managementState) !== params[2])
                 return [];
             }
             if (
@@ -139,8 +143,8 @@ const fakeDb = {
                 "simulated database loss after broker acceptance",
               );
             }
-            Object.assign(execution, structuredClone(patch));
-            return [{ id: execution.id }];
+            Object.assign(row, structuredClone(patch));
+            return [{ id: row.id }];
           },
         }),
       }),
@@ -228,9 +232,13 @@ mock.module("../../positionGuardian/manage.js", {
 });
 mock.module("../audit.js", {
   namedExports: {
-    writeSelfTradeAudit: async (_db: unknown, row: { eventType: string }) => {
+    writeSelfTradeAudit: async (
+      _db: unknown,
+      row: { eventType: string; reason?: string; afterState?: Record<string, unknown> },
+    ) => {
       if (auditFails) throw new Error("audit unavailable");
       auditEvents.push(row.eventType);
+      auditRows.push(structuredClone(row));
     },
   },
 });
@@ -275,6 +283,7 @@ mock.module("../managementConsumers.js", {
   },
 });
 const { manageAgentPositions } = await import("../livePositionManager.js");
+const { createProtectiveCycle, drainProtectiveCycle } = await import("../protectiveActionPath.js");
 const { reconcileAgentExecutions } = await import("../agentReconciliation.js");
 const agent = { id: 5, agentKey: "alpha", autonomyLevel: 3 } as SelfTradeAgent;
 
@@ -325,6 +334,8 @@ beforeEach(() => {
   connectionRow = undefined;
   connectionReadThrows = false;
   auditEvents = [];
+  auditRows = [];
+  extraConnections = [];
   const synced = new Date();
   position = {
     id: 1,
@@ -779,9 +790,13 @@ describe("protective-action path from an observation hold", () => {
   const seams = () => ({
     protective: {
       now: () => clock,
+      // Virtual time: concurrent sleepers (one per bridge) wake together
+      // instead of adding up; a single sleeper advances the clock by ms.
       sleep: async (ms: number) => {
+        const wake = clock + ms;
         sleeps.push(ms);
-        clock += ms;
+        await Promise.resolve();
+        clock = Math.max(clock, wake);
         onSleep?.(sleeps.length);
       },
       readPlatformStop: async () => ({
@@ -926,12 +941,15 @@ describe("protective-action path from an observation hold", () => {
     await heldProtective("PROTECTIVE_HOLD_PLATFORM_STOP_ENGAGED");
     assert.equal(sleeps.length, 0);
   });
-  it("9. a manual command sent during the wait is ordered before the evidence", async () => {
+  it("9. a manual command settled during the wait is ordered before the evidence", async () => {
+    let filledAt: Date | undefined;
     onSleep = (poll) => {
-      if (poll === 1)
+      if (poll === 1) {
+        filledAt = new Date(clock);
         ticketCommands = [
-          { commandId: "manual-modify", sentToMt5At: new Date(clock), filledAt: null, rejectedAt: null },
+          { commandId: "manual-modify", status: "LIVE_FILLED", sentToMt5At: new Date(clock - 200), filledAt, rejectedAt: null },
         ];
+      }
       // A sweep older than the manual command is not evidence yet.
       if (poll === 2) sweepLands({ lastSyncedAt: new Date(clock - 1_500), lastReliableSnapshotAt: new Date(clock - 1_500) });
       if (poll === 4) sweepLands();
@@ -940,6 +958,32 @@ describe("protective-action path from an observation hold", () => {
     assert.equal(dispatches.length, 1);
     assert.equal(result.protective.acted, 1);
     assert.equal(sleeps.length, 4);
+    // The claim carries the newest ticket-command time it was ordered after.
+    const evidence = (execution.managementState as { pendingManagement: { protective: { evidence: { ticketCommandAt: string } } } })
+      .pendingManagement.protective.evidence;
+    assert.equal(evidence.ticketCommandAt, filledAt!.toISOString());
+  });
+  it("9b. a manual command still in flight holds at once, without waiting", async () => {
+    ticketCommands = [
+      { commandId: "manual-close", status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date(clock - 95_000), filledAt: null, rejectedAt: null },
+    ];
+    await heldProtective("PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT");
+    assert.equal(sleeps.length, 0);
+    const held = auditRows.find((r) => r.eventType === "PROTECTIVE_ACTION_HELD")!;
+    assert.match(held.reason!, /manual-close/);
+    assert.match(held.reason!, /in flight/);
+  });
+  it("9c. a manual command sent during the wait and not yet settled holds as in flight", async () => {
+    onSleep = (poll) => {
+      if (poll === 1)
+        ticketCommands = [
+          { commandId: "manual-modify", status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date(clock), filledAt: null, rejectedAt: null },
+        ];
+      // Even a sweep newer than the send time is not proof the modify is reflected.
+      if (poll === 2) sweepLands();
+    };
+    await heldProtective("PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT");
+    assert.equal(sleeps.length, 1);
   });
   it("10. a newer row written by a reconciler, not a sweep, is never evidence", async () => {
     onSleep = () => {
@@ -979,16 +1023,201 @@ describe("protective-action path from an observation hold", () => {
     await heldProtective("PROTECTIVE_HOLD_INTERNAL_ERROR");
     assert.equal(dispatches.length, 0);
   });
-  it("15. two held positions share one evidence deadline", async () => {
+  it("15. two held positions on one bridge share one evidence deadline; the later one says the budget was used", async () => {
     extraExecutions = [{ ...execution, id: 2, brokerTicket: "124" }];
     extraPositions = [{ ...position, id: 2, brokerTicket: "124" }];
+    const started = clock;
     const result = await manageAgentPositions(agent, 1, "admin", seams());
     assert.equal(result.held, 2);
     assert.equal(result.heldReasons.MANAGEMENT_OBSERVATION_STALE, 2);
-    assert.deepEqual(result.protective.held, { PROTECTIVE_HOLD_NO_FRESH_SWEEP: 2 });
-    assert.ok(clock - (result.protective.waitedMs - result.protective.waitedMs) <= Date.now() + 20_000);
-    assert.ok(sleeps.reduce((a, b) => a + b, 0) <= 20_000, String(sleeps));
+    assert.deepEqual(result.protective.held, {
+      PROTECTIVE_HOLD_NO_FRESH_SWEEP: 1,
+      PROTECTIVE_HOLD_WAIT_BUDGET_USED: 1,
+    });
+    assert.equal(clock - started, 20_000);
+    assert.equal(sleeps.reduce((a, b) => a + b, 0), 20_000, String(sleeps));
     assert.equal(dispatches.length, 0);
+    const texts = auditRows.filter((r) => r.eventType === "PROTECTIVE_ACTION_HELD").map((r) => r.reason!);
+    assert.equal(texts.length, 2);
+    assert.match(texts[0]!, /within 20s/);
+    assert.match(texts[1]!, /already used this cycle/);
+    assert.ok(texts.every((t) => !/within 0s/.test(t)), JSON.stringify(texts));
+  });
+  it("15b. a sweep that arrives during the first position's wait serves every position on the bridge", async () => {
+    commandRows = [{ ...entryCommand, commandId: "entry-2", brokerTicket: "124" }];
+    extraExecutions = [{ ...execution, id: 2, commandId: "entry-2", brokerTicket: "124" }];
+    extraPositions = [{ ...position, id: 2, brokerTicket: "124", sourceCommandId: "entry-2" }];
+    onSleep = (poll) => {
+      if (poll === 3) {
+        sweepLands();
+        Object.assign(extraPositions[0]!, {
+          lastSyncedAt: position.lastSyncedAt,
+          lastReliableSnapshotAt: position.lastReliableSnapshotAt,
+          brokerAbsentSnapshotCount: 0,
+        });
+      }
+    };
+    const result = await manageAgentPositions(agent, 1, "admin", seams());
+    assert.equal(result.protective.acted, 2);
+    assert.deepEqual(result.protective.held, {});
+    assert.equal(sleeps.length, 3);
+    assert.deepEqual(
+      dispatches.map((d) => (d as { intent: { selfTradeManagement: { executionId: number } } }).intent.selfTradeManagement.executionId),
+      [1, 2],
+    );
+  });
+  it("16. a position already closed at the broker holds as absent at once, without burning the wait", async () => {
+    // The sweep stopped listing the ticket: lastSyncedAt froze 91 s ago, each
+    // later sweep bumped the absent count and the bridge marker is fresh.
+    position.brokerAbsentSnapshotCount = 1;
+    position.lastReliableSnapshotAt = new Date(clock - 2_000);
+    connectionRow!.lastPositionsSnapshotAt = new Date(clock - 2_000);
+    await heldProtective("PROTECTIVE_POSITION_ABSENT_AT_BROKER");
+    assert.equal(sleeps.length, 0);
+    const held = auditRows.find((r) => r.eventType === "PROTECTIVE_ACTION_HELD")!;
+    assert.match(held.reason!, /did not list ticket 123/);
+  });
+  it("16b. a ticket that goes absent during the wait stops polling at once", async () => {
+    onSleep = (poll) => {
+      if (poll === 2) position.brokerAbsentSnapshotCount = 1;
+    };
+    await heldProtective("PROTECTIVE_POSITION_ABSENT_AT_BROKER");
+    assert.equal(sleeps.length, 2);
+  });
+  for (const [label, change, reason] of [
+    ["account number", { accountNumber: "other-login" }, "PROTECTIVE_BRIDGE_ACCOUNT_MISMATCH"],
+    ["server name cleared", { serverName: "" }, "PROTECTIVE_BRIDGE_ACCOUNT_MISMATCH"],
+    ["account type demo", { accountType: "demo" }, "PROTECTIVE_BRIDGE_NOT_LIVE"],
+    ["capability withdrawn", { capabilities: {} }, "PROTECTIVE_HOLD_TERMINAL_UPGRADE_REQUIRED"],
+    ["token revoked", { tokenRevokedAt: new Date() }, "PROTECTIVE_BRIDGE_REVOKED"],
+  ] as const)
+    it(`17. bridge identity is re-verified on the final record before the claim: ${label}`, async () => {
+      onSleep = (poll) => {
+        if (poll === 3) {
+          sweepLands();
+          Object.assign(connectionRow!, change);
+        }
+      };
+      await heldProtective(reason);
+    });
+  it("18. a pipeline refusal after the command exists is reported as a hold, and the command is kept", async () => {
+    submit = async () => ({ ok: false, error: "CLOSE_ONLY_GATE_BLOCKED", commandId: "cmd-9" });
+    onSleep = (poll) => {
+      if (poll === 3) sweepLands();
+    };
+    const result = await run();
+    assert.equal(dispatches.length, 1);
+    assert.equal(result.protective.acted, 0);
+    assert.deepEqual(result.protective.held, { PROTECTIVE_HOLD_REFUSED_WITH_COMMAND: 1 });
+    // Not rolled back: the command row exists and reconciliation settles it.
+    const memory = execution.managementState as { pendingManagement: { commandId: string } };
+    assert.equal(memory.pendingManagement.commandId, "cmd-9");
+    assert.ok(auditEvents.includes("MANAGEMENT_REFUSAL_WITH_COMMAND"));
+    const held = auditRows.find((r) => r.eventType === "PROTECTIVE_ACTION_HELD")!;
+    assert.match(held.reason!, /cmd-9/);
+    assert.match(held.reason!, /CLOSE_ONLY_GATE_BLOCKED/);
+  });
+  it("19. a missing heartbeat is explained as missing, a future one as ahead of the clock", async () => {
+    connectionRow!.lastHeartbeat = null;
+    await heldProtective("PROTECTIVE_BRIDGE_OFFLINE");
+    assert.match(auditRows.at(-1)!.reason!, /no recorded heartbeat \(missing\)/);
+    auditRows = [];
+    auditEvents = [];
+    connectionRow!.lastHeartbeat = new Date(clock + 2_000);
+    await heldProtective("PROTECTIVE_BRIDGE_OFFLINE");
+    assert.match(auditRows.at(-1)!.reason!, /2s ahead of the server clock/);
+    assert.doesNotMatch(auditRows.at(-1)!.reason!, /-2s old/);
+  });
+  // ── Cycle ordering (F1): ordinary dispatches first, protective waits after ──
+  const executionIdOf = (d: unknown) =>
+    (d as { intent: { selfTradeManagement: { executionId: number } } }).intent.selfTradeManagement.executionId;
+  /** A second FILLED execution of the same agent whose row is fresh and breached. */
+  function freshBreachedSecond(agentId = 5) {
+    commandRows = [{ ...entryCommand, commandId: "entry-2", brokerTicket: "124", selfTradeAgentId: agentId }];
+    extraExecutions = [{ ...execution, id: 2, agentId, commandId: "entry-2", brokerTicket: "124" }];
+    const synced = new Date(clock - 1_000);
+    extraPositions = [
+      { ...position, id: 2, brokerTicket: "124", sourceCommandId: "entry-2", lastSyncedAt: synced, lastReliableSnapshotAt: synced },
+    ];
+  }
+  it("20. a later position's justified exit dispatches before an earlier held position waits", async () => {
+    freshBreachedSecond();
+    let sleepsAtDispatch = -1;
+    submit = async () => {
+      sleepsAtDispatch = sleeps.length;
+      return { ok: true, commandId: "close-2" };
+    };
+    const result = await manageAgentPositions(agent, 1, "admin", seams());
+    assert.deepEqual(dispatches.map(executionIdOf), [2]);
+    assert.equal(sleepsAtDispatch, 0, "the ordinary exit never waited behind the held position");
+    assert.equal(result.evaluated, 1);
+    assert.equal(result.protective.queued, 1);
+    assert.deepEqual(result.protective.held, { PROTECTIVE_HOLD_NO_FRESH_SWEEP: 1 });
+    assert.equal(result.protective.waitedMs, 20_000);
+  });
+  it("21. with a cycle queue the manager never waits; a later agent's exit runs before any protective wait", async () => {
+    const agentB = { ...agent, id: 6 } as SelfTradeAgent;
+    freshBreachedSecond(6);
+    const cycle = createProtectiveCycle();
+    const a = await manageAgentPositions(agent, 1, "admin", { ...seams(), protectiveCycle: cycle });
+    assert.equal(sleeps.length, 0);
+    assert.equal(a.protective.queued, 1);
+    assert.equal(a.protective.considered, 0);
+    assert.equal(a.held, 1);
+    assert.equal(a.heldReasons.MANAGEMENT_OBSERVATION_STALE, 1);
+    const b = await manageAgentPositions(agentB, 1, "admin", { ...seams(), protectiveCycle: cycle });
+    assert.deepEqual(dispatches.map(executionIdOf), [2]);
+    assert.equal(sleeps.length, 0);
+    assert.equal(b.evaluated, 1);
+    assert.equal(cycle.candidates.length, 1);
+    const drained = await drainProtectiveCycle(cycle);
+    assert.deepEqual(drained.held, { PROTECTIVE_HOLD_NO_FRESH_SWEEP: 1 });
+    assert.equal(drained.bridges, 1);
+    assert.equal(drained.elapsedMs, 20_000);
+    assert.equal(cycle.candidates.length, 0);
+    assert.deepEqual(execution.managementState, {});
+  });
+  it("22. held positions on two bridges are waited on concurrently: one budget, not one per bridge", async () => {
+    // Second agent position on bridge 13 (its own entry, account and row).
+    connectionRow!.id = 12;
+    extraConnections = [{ ...liveConnection(), id: 13, accountNumber: "acct-13", brokerName: "company-13" }];
+    commandRows = [
+      { ...entryCommand, commandId: "entry-2", brokerTicket: "124", bridgeConnectionId: 13, accountLogin: "acct-13", brokerServer: "company-13" },
+    ];
+    extraExecutions = [{ ...execution, id: 2, commandId: "entry-2", brokerTicket: "124" }];
+    extraPositions = [
+      { ...position, id: 2, brokerTicket: "124", sourceCommandId: "entry-2", bridgeConnectionId: 13, accountLogin: "acct-13", brokerServer: "company-13" },
+    ];
+    const cycle = createProtectiveCycle();
+    await manageAgentPositions(agent, 1, "admin", { ...seams(), protectiveCycle: cycle });
+    const started = clock;
+    const drained = await drainProtectiveCycle(cycle);
+    assert.equal(drained.bridges, 2);
+    assert.deepEqual(drained.held, { PROTECTIVE_HOLD_NO_FRESH_SWEEP: 2 });
+    assert.equal(drained.waitedMs, 40_000, "each bridge waited its full window");
+    assert.equal(clock - started, 20_000, "but the windows overlapped");
+    assert.equal(drained.elapsedMs, 20_000);
+  });
+  it("23. a kill switch engaged after queueing still holds the deferred candidate", async () => {
+    const cycle = createProtectiveCycle();
+    await manageAgentPositions(agent, 1, "admin", { ...seams(), protectiveCycle: cycle });
+    arming = { isArmed: true, killSwitchEngaged: true };
+    const drained = await drainProtectiveCycle(cycle);
+    assert.deepEqual(drained.held, { PROTECTIVE_HOLD_USER_KILL_SWITCH: 1 });
+    assert.equal(sleeps.length, 0);
+    assert.equal(dispatches.length, 0);
+  });
+  it("23b. a platform stop engaged after queueing still holds the deferred candidate", async () => {
+    const cycle = createProtectiveCycle();
+    await manageAgentPositions(agent, 1, "admin", { ...seams(), protectiveCycle: cycle });
+    stopEngaged = true;
+    const drained = await drainProtectiveCycle(cycle);
+    assert.deepEqual(drained.held, { PROTECTIVE_HOLD_PLATFORM_STOP_ENGAGED: 1 });
+    assert.equal(dispatches.length, 0);
+  });
+  it("24. an empty cycle drains without any read", async () => {
+    const drained = await drainProtectiveCycle(createProtectiveCycle());
+    assert.deepEqual(drained, { considered: 0, acted: 0, waitedMs: 0, held: {}, bridges: 0, elapsedMs: 0 });
   });
   it("the user kill switch and disarmed state hold before any wait", async () => {
     arming = { isArmed: true, killSwitchEngaged: true };

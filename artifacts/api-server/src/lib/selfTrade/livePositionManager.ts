@@ -19,7 +19,8 @@
 // - A stale broker snapshot holds. The protective-action path
 //   (protectiveActionPath.ts) starts FROM that hold and never uses the refused
 //   observation: it may act only on a strictly newer, sweep-written row that
-//   passes a stricter standard (owner decision 2026-10-27).
+//   passes a stricter standard (owner decision 2026-10-27). The hold only
+//   queues the candidate; it runs after every ordinary evaluation/dispatch.
 
 import {
   livePositionLedger,
@@ -54,9 +55,11 @@ import {
   type PendingManagement,
 } from "./executionLifecycle.js";
 import {
-  runProtectiveActionPath,
+  createProtectiveCycle,
+  drainProtectiveCycle,
+  queueProtectiveCandidate,
+  type ProtectiveCycle,
   type ProtectivePathDeps,
-  type ProtectiveSharedDeadline,
 } from "./protectiveActionPath.js";
 
 export interface ManagePositionsResult {
@@ -70,9 +73,13 @@ export interface ManagePositionsResult {
   /**
    * Protective-action path (started from observation holds). `held` /
    * `evaluated` / `heldReasons` above keep their ordinary meaning; a protective
-   * dispatch is still counted there as the hold it started from.
+   * dispatch is still counted there as the hold it started from. `queued`
+   * counts candidates handed to the protective cycle; the other fields are
+   * filled only when this call drains its own cycle (no `protectiveCycle`
+   * option); otherwise the caller's drain reports them.
    */
   protective: {
+    queued: number;
     considered: number;
     waitedMs: number;
     acted: number;
@@ -83,6 +90,13 @@ export interface ManagePositionsResult {
 export interface ManagePositionsOptions {
   /** Injectable seams for the protective path (tests); production uses the defaults. */
   protective?: ProtectivePathDeps;
+  /**
+   * Cycle-scoped protective queue (autonomousCycle). Candidates are only
+   * collected here and the caller drains the cycle after every agent's
+   * ordinary evaluation and dispatch. Omitted: this call drains its own
+   * candidates after its ordinary loop, under one bounded wait budget.
+   */
+  protectiveCycle?: ProtectiveCycle;
 }
 
 // One durable claim per execution. Compare-and-set prevents overlapping cycles
@@ -289,11 +303,9 @@ export async function manageAgentPositions(
     alerted: 0,
     held: 0,
     heldReasons: {},
-    protective: { considered: 0, waitedMs: 0, acted: 0, held: {} },
+    protective: { queued: 0, considered: 0, waitedMs: 0, acted: 0, held: {} },
   };
-  // One sweep refreshes every row on a bridge, so every held position in this
-  // call shares one evidence deadline.
-  const protectiveDeadline: ProtectiveSharedDeadline = { deadlineMs: null };
+  const protectiveCycle = options.protectiveCycle ?? createProtectiveCycle();
 
   const filled = await db
     .select()
@@ -433,6 +445,8 @@ export async function manageAgentPositions(
     const readTicketCommands = () =>
       db
         .select({
+          commandId: arxLiveCommandsTable.commandId,
+          status: arxLiveCommandsTable.status,
           sentToMt5At: arxLiveCommandsTable.sentToMt5At,
           filledAt: arxLiveCommandsTable.filledAt,
           rejectedAt: arxLiveCommandsTable.rejectedAt,
@@ -469,41 +483,26 @@ export async function manageAgentPositions(
         "self-trade: management held on position observation",
       );
       // Protective-action path: not a bypass. The refused observation above is
-      // never used to act; the path waits for a strictly newer complete sweep
-      // and re-verifies identity and geometry against that row before any claim.
-      try {
-        const protective = await runProtectiveActionPath(
-          {
-            agent,
-            execution: e,
-            entry,
-            position: pos,
-            thesis,
-            memory: mgmt,
-            holdReason: observation.reason,
-            heldAtMs: nowMs,
-            actorUserId,
-            actorRole,
-            sharedDeadline: protectiveDeadline,
-          },
-          { readTicketCommands, ...(options.protective ?? {}) },
-        );
-        if (protective.status === "DISPATCHED") {
-          result.protective.considered++;
-          result.protective.waitedMs += protective.waitedMs;
-          result.protective.acted++;
-        } else if (protective.status === "HELD") {
-          result.protective.considered++;
-          result.protective.waitedMs += protective.waitedMs;
-          result.protective.held[protective.reason] =
-            (result.protective.held[protective.reason] ?? 0) + 1;
-        }
-      } catch (err) {
-        // The path fails closed on its own; this only keeps the cycle alive.
-        logger.error({ err, executionId: e.id }, "self-trade: protective path threw");
-        result.protective.held.PROTECTIVE_HOLD_INTERNAL_ERROR =
-          (result.protective.held.PROTECTIVE_HOLD_INTERNAL_ERROR ?? 0) + 1;
-      }
+      // never used to act. The candidate is only queued here and runs after
+      // every ordinary evaluation and dispatch (drainProtectiveCycle): it waits
+      // for a strictly newer complete sweep and re-verifies identity and
+      // geometry against that row before any claim.
+      queueProtectiveCandidate(protectiveCycle, {
+        ctx: {
+          agent,
+          execution: e,
+          entry,
+          position: pos,
+          thesis,
+          memory: mgmt,
+          holdReason: observation.reason,
+          heldAtMs: nowMs,
+          actorUserId,
+          actorRole,
+        },
+        deps: { readTicketCommands, ...(options.protective ?? {}) },
+      });
+      result.protective.queued++;
       continue;
     }
 
@@ -608,5 +607,14 @@ export async function manageAgentPositions(
     if (dispatchHeld(outcome)) result.held++;
   }
 
+  // Standalone call: drain this agent's candidates now, after its ordinary
+  // dispatches, under one bounded wait budget.
+  if (!options.protectiveCycle) {
+    const drained = await drainProtectiveCycle(protectiveCycle);
+    result.protective.considered = drained.considered;
+    result.protective.acted = drained.acted;
+    result.protective.waitedMs = drained.waitedMs;
+    result.protective.held = drained.held;
+  }
   return result;
 }
