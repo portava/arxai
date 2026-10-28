@@ -742,46 +742,74 @@ function MemoryTab() {
         </Card>
       </div>
 
-      <Card className="rounded-2xl border-border bg-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-success" /> Autopilot
-            — Read Only
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div>
-            <div className="text-txt-secondary text-xs">Cycles today</div>
-            <div className="font-bold">{a?.cycles_today ?? 0}</div>
-          </div>
-          <div>
-            <div className="text-txt-secondary text-xs">Opened today</div>
-            <div className="font-bold">
-              {a?.paper_trades_opened_today ?? 0}
-            </div>
-          </div>
-          <div>
-            <div className="text-txt-secondary text-xs">Closed today</div>
-            <div className="font-bold">
-              {a?.paper_trades_closed_today ?? 0}
-            </div>
-          </div>
-          <div>
-            <div className="text-txt-secondary text-xs">
-              Safety blocks today
-            </div>
-            <div className="font-bold">{a?.safety_blocks_today ?? 0}</div>
-          </div>
-          {a?.last_cycle && (
-            <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2">
-              Last cycle: {a.last_cycle.autopilot_cycle_id} —{" "}
-              {a.last_cycle.status} · opened{" "}
-              {a.last_cycle.paper_trades_opened} · rejected{" "}
-              {a.last_cycle.paper_trades_rejected}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <PaperAutopilotSummaryCard a={a} />
     </>
+  );
+}
+
+/** The paper autopilot (autopilot_cycles, lib/paperAutopilot) — a different
+ *  engine from the in-memory simulator autopilot that the Autopilot Control
+ *  Center reports. Each surface names the engine it reports. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function PaperAutopilotSummaryCard({ a }: { a: any }) {
+  return (
+    <Card className="rounded-2xl border-border bg-card">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-success" /> Paper autopilot
+          — read only
+        </CardTitle>
+        <p
+          className="text-xs text-txt-secondary"
+          data-testid="paper-autopilot-scope"
+        >
+          Cycles of the paper autopilot (paper-trade cycles saved to your
+          account). The simulator autopilot on the Autopilot Control Center
+          is a separate engine and is not counted here.
+        </p>
+      </CardHeader>
+      {!a ? (
+        <CardContent
+          className="text-sm text-txt-secondary"
+          data-testid="paper-autopilot-missing"
+        >
+          The paper autopilot summary was not returned, so today&apos;s cycles
+          and trades are unknown.
+        </CardContent>
+      ) : (
+      <CardContent className="text-sm grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <div className="text-txt-secondary text-xs">Cycles today</div>
+          <div className="font-bold">{a?.cycles_today ?? 0}</div>
+        </div>
+        <div>
+          <div className="text-txt-secondary text-xs">Opened today</div>
+          <div className="font-bold">
+            {a?.paper_trades_opened_today ?? 0}
+          </div>
+        </div>
+        <div>
+          <div className="text-txt-secondary text-xs">Closed today</div>
+          <div className="font-bold">
+            {a?.paper_trades_closed_today ?? 0}
+          </div>
+        </div>
+        <div>
+          <div className="text-txt-secondary text-xs">
+            Safety blocks today
+          </div>
+          <div className="font-bold">{a?.safety_blocks_today ?? 0}</div>
+        </div>
+        {a?.last_cycle && (
+          <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2">
+            Last cycle: {a.last_cycle.autopilot_cycle_id} —{" "}
+            {a.last_cycle.status} · opened{" "}
+            {a.last_cycle.paper_trades_opened} · rejected{" "}
+            {a.last_cycle.paper_trades_rejected}
+          </div>
+        )}
+      </CardContent>
+      )}
+    </Card>
   );
 }
