@@ -54,24 +54,32 @@ describe("assessStopLoss — pip size comes from the broker spec, never from the
     expect(r.ok).toBe(false);
   });
 
-  it("V75 with the broker spec (digits 4, point 0.0001) uses pip 0.0001 and accepts a 0.5 stop", () => {
+  // Round 3: a synthetics spec's 0.0001 point is a price step, not a pip
+  // (pip = point made the 8-pip floor 0.0008 on a 300000 price). The 0.5 stop
+  // is still neither blocked nor moved by an invented 0.8 floor, but the
+  // distance is no longer called checked.
+  it("V75 with the broker spec (digits 4, point 0.0001): no invented 0.8 floor, and the distance is not called checked", () => {
     const spec = stopLossInputsFromBrokerSpec({ digits: 4, point: 0.0001, category: "Synthetics", freshness: "FRESH" });
-    expect(spec.pipSize).toBe(0.0001);
+    expect(spec.pipSize).toBeNull();
+    expect(spec.priceStep).toBe(0.0001);
     const r = assessStopLoss({
-      symbol: "Volatility 75 Index", side: "BUY", entry: 300000, proposedSl: 299999.5, pipSize: spec.pipSize,
+      symbol: "Volatility 75 Index", side: "BUY", entry: 300000, proposedSl: 299999.5,
+      pipSize: spec.pipSize, pipSizeNote: spec.pipSizeNote, priceStep: spec.priceStep,
     });
-    expect(r.pipSize).toBe(0.0001);
-    expect(r.distanceChecked).toBe(true);
+    expect(r.pipSize).toBeNull();
+    expect(r.distanceChecked).toBe(false);
     expect(r.ok).toBe(true);
     expect(r.adjusted).toBe(false);
     expect(r.sl).toBe(299999.5);
+    expect(r.reason).toMatch(/could not be checked: the broker spec gives Synthetics symbols a 0\.0001 price step but no pip size/);
   });
 
   it("XAUUSD with the broker spec (digits 2, point 0.01) nudges beyond structure by 0.01, not 0.1", () => {
     const spec = stopLossInputsFromBrokerSpec({ digits: 2, point: 0.01, category: "Metals", freshness: "FRESH" });
-    expect(spec.pipSize).toBe(0.01);
+    expect(spec.priceStep).toBe(0.01);
     const r = assessStopLoss({
-      symbol: "XAUUSD", side: "BUY", entry: 2400, proposedSl: null, recentSwingLow: 2395, pipSize: spec.pipSize,
+      symbol: "XAUUSD", side: "BUY", entry: 2400, proposedSl: null, recentSwingLow: 2395,
+      pipSize: spec.pipSize, pipSizeNote: spec.pipSizeNote, priceStep: spec.priceStep,
     });
     expect(r.ok).toBe(true);
     expect(r.sl).toBeCloseTo(2394.99, 10);
@@ -125,5 +133,66 @@ describe("computeValidatedRR", () => {
   });
   it("computes reward/risk when the stop is at least one pip", () => {
     expect(computeValidatedRR(300000, 299999.5, 300010, 0.0001)).toBeCloseTo(20, 10);
+  });
+});
+
+// Truth audit 2026-10-28 (round 3) — MT5 specs define a pip only for forex
+// (10 points on 3/5-digit quotes). Using the point as the "pip" for crypto,
+// metals, indices and synthetics shrank the 8-pip floor and 3-pip slippage
+// buffer 10–100x (0.08 / 0.03 price units on BTCUSD) and let a 50-cent stop
+// on a 65,000 BTC price pass as "beyond an 8-pip floor" with R:R 1000.
+describe("non-forex broker specs give a price step, not a pip size", () => {
+  const btc = { digits: 2, point: 0.01, category: "Crypto", freshness: "FRESH" as const, spreadPoints: 10 };
+
+  it("BTCUSD: a 50-cent stop is not called checked against a pip floor, and no R:R is computed", () => {
+    const spec = stopLossInputsFromBrokerSpec(btc);
+    expect(spec.pipSize).toBeNull();
+    const r = assessStopLoss({
+      symbol: "BTCUSD", side: "BUY", entry: 65000, proposedSl: 64999.5, slippageBufferPips: 3,
+      spread: spec.spread, minStopDistance: spec.minStopDistance, freezeLevel: spec.freezeLevel,
+      pipSize: spec.pipSize, pipSizeNote: spec.pipSizeNote, priceStep: spec.priceStep,
+    });
+    expect(r.distanceChecked).toBe(false);
+    expect(r.reason).not.toMatch(/8-pip floor|pip 0\.01/);
+    expect(r.reason).toMatch(/could not be checked/);
+    expect(r.reason).toMatch(/0\.01 price step but no pip size/);
+    expect(computeValidatedRR(65000, 64999.5, 65500, spec.pipSize)).toBeNull();
+  });
+
+  it.each([
+    ["Metals", 2, 0.01],
+    ["Indices", 2, 0.01],
+    ["Synthetics", 4, 0.0001],
+    ["Crypto", 2, 0.01],
+  ])("%s spec: no pip size, the price step is kept and named", (category, digits, point) => {
+    const spec = stopLossInputsFromBrokerSpec({ digits, point, category, freshness: "FRESH" });
+    expect(spec.pipSize).toBeNull();
+    expect(spec.priceStep).toBe(point);
+    expect(spec.pipSizeNote).toBe(`the broker spec gives ${category} symbols a ${point} price step but no pip size`);
+  });
+
+  it("a spec with no category gives no pip size either", () => {
+    const spec = stopLossInputsFromBrokerSpec({ digits: 5, point: 0.00001, freshness: "FRESH" });
+    expect(spec.pipSize).toBeNull();
+    expect(spec.pipSizeNote).toMatch(/no market category/);
+  });
+
+  it("forex keeps its pip (10 points on 5-digit, 1 point on 2-digit JPY)", () => {
+    expect(stopLossInputsFromBrokerSpec({ digits: 5, point: 0.00001, category: "Forex Majors" }).pipSize).toBeCloseTo(0.0001, 12);
+    expect(stopLossInputsFromBrokerSpec({ digits: 2, point: 0.01, category: "Forex Minors" }).pipSize).toBe(0.01);
+    expect(stopLossInputsFromBrokerSpec({ digits: 5, point: 0.00001, category: "Forex Majors" }).pipSizeNote).toBeNull();
+  });
+
+  it("the broker's own stop level and spread still apply on a non-forex spec", () => {
+    const spec = stopLossInputsFromBrokerSpec({ ...btc, stopsLevel: 500 });
+    expect(spec.minStopDistance).toBe(5);
+    const r = assessStopLoss({
+      symbol: "BTCUSD", side: "BUY", entry: 65000, proposedSl: 64999.5,
+      spread: spec.spread, minStopDistance: spec.minStopDistance, pipSize: spec.pipSize, pipSizeNote: spec.pipSizeNote,
+    });
+    expect(r.adjusted).toBe(true);
+    expect(r.sl).toBe(64995);
+    expect(r.reason).toMatch(/broker's stop level/);
+    expect(r.reason).toMatch(/could not be checked/);
   });
 });
