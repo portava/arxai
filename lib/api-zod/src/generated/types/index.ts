@@ -437,6 +437,7 @@ export * from "./chartEvidenceReadDirection";
 export * from "./chartFastFlags";
 export * from "./chartFeedStatus";
 export * from "./chartFeedStatusAssetClass";
+export * from "./chartFeedStatusNotLiveReason";
 export * from "./chartFeedStatusQuality";
 export * from "./chartFiredAlert";
 export * from "./chartFiredAlertSeverity";

@@ -100,6 +100,14 @@ export interface ChartFeedStatus {
    * never changes the quality verdict on its own.
    */
   completenessReason: string | null;
+  /**
+   * Why the series is not live although its bars may be clean: the market is
+   * in its scheduled weekend close ("market_closed"), or the bars are the
+   * stored MT5 mirror with no bridge pushing them ("stored_history"). null
+   * when neither applies. Lets consumers that bucket freshness (e.g. the
+   * symbol snapshot's DELAYED) say what the chart says instead of "delayed".
+   */
+  notLiveReason?: "market_closed" | "stored_history" | null;
 }
 
 export interface ChartCandlesResponse {
@@ -450,6 +458,7 @@ async function buildChartFeed(
     feedReadinessState: derivSymbolStatus?.feedReadinessState ?? null,
     message,
     completenessReason: verdict.completenessReason,
+    notLiveReason: marketClosedAtMs != null ? "market_closed" : durableMirror ? "stored_history" : null,
   };
 
   // Phase 3: Chart Truth Score — derived from Phase 1 signals.

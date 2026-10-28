@@ -63,6 +63,14 @@ export interface SymbolSnapshot {
   lastPrice: number | null;
   lastCandleTime: string | null;
   freshness: SnapshotFreshness;
+  /**
+   * The chart's reason the series is not live (scheduled weekend close, or
+   * stored MT5 history with no bridge pushing), or null. freshness keeps its
+   * coarse bucket (a closed or stored series is DELAYED/STALE there, never
+   * REALTIME); this says what the state really is, so a reader never calls a
+   * closed market or stored history a "delayed" feed.
+   */
+  notLiveReason: "market_closed" | "stored_history" | null;
   /** Honest cause when degraded/unavailable; null when clean + AI-usable. */
   cause: string | null;
   /** User-safe message straight from the shared feed status. */
@@ -128,6 +136,7 @@ export async function getSymbolSnapshot(
       lastPrice,
       lastCandleTime: fs.lastCandleTime,
       freshness: deriveFreshness(fs),
+      notLiveReason: fs.notLiveReason ?? null,
       cause,
       message: fs.message,
     };
@@ -144,6 +153,7 @@ export async function getSymbolSnapshot(
       lastPrice: null,
       lastCandleTime: null,
       freshness: "UNAVAILABLE",
+      notLiveReason: null,
       cause: "Market data resolver error.",
       message: "Market data is unavailable for this symbol right now.",
     };

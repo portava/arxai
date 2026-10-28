@@ -3427,6 +3427,20 @@ export const ChartFeedStatusQuality = {
   unavailable: "unavailable",
 } as const;
 
+/**
+ * Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.
+
+ * @nullable
+ */
+export type ChartFeedStatusNotLiveReason =
+  | (typeof ChartFeedStatusNotLiveReason)[keyof typeof ChartFeedStatusNotLiveReason]
+  | null;
+
+export const ChartFeedStatusNotLiveReason = {
+  market_closed: "market_closed",
+  stored_history: "stored_history",
+} as const;
+
 export interface ChartFeedStatus {
   symbol: string;
   displaySymbol: string;
@@ -3465,6 +3479,12 @@ export interface ChartFeedStatus {
    */
   feedReadinessState?: string | null;
   message: string;
+  /**
+   * Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.
+
+   * @nullable
+   */
+  notLiveReason?: ChartFeedStatusNotLiveReason;
 }
 
 /**

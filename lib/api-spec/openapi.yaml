@@ -13796,6 +13796,15 @@ components:
           type: ["string", "null"]
           description: Deriv synthetic warm-up lifecycle state when applicable
         message: { type: string }
+        notLiveReason:
+          type: ["string", "null"]
+          enum: [market_closed, stored_history, null]
+          description: >
+            Why the series is not live although its bars may be clean: the
+            market is in its scheduled weekend close (market_closed), or the
+            bars are the stored MT5 mirror with no bridge pushing them
+            (stored_history). null when neither applies. Absent from older
+            servers.
 
     ChartMergeSeamReport:
       type: object

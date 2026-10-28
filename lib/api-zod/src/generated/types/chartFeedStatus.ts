@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ChartFeedStatusAssetClass } from "./chartFeedStatusAssetClass";
+import type { ChartFeedStatusNotLiveReason } from "./chartFeedStatusNotLiveReason";
 import type { ChartFeedStatusQuality } from "./chartFeedStatusQuality";
 
 export interface ChartFeedStatus {
@@ -46,4 +47,10 @@ export interface ChartFeedStatus {
    */
   feedReadinessState?: string | null;
   message: string;
+  /**
+   * Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.
+
+   * @nullable
+   */
+  notLiveReason?: ChartFeedStatusNotLiveReason;
 }

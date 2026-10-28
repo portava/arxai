@@ -5561,6 +5561,16 @@ export const GetChartCandlesResponse = zod.object({
       .nullish()
       .describe("Deriv synthetic warm-up lifecycle state when applicable"),
     message: zod.string(),
+    notLiveReason: zod
+      .union([
+        zod.literal("market_closed"),
+        zod.literal("stored_history"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
+      ),
   }),
   truthResult: zod
     .union([
@@ -5963,6 +5973,16 @@ export const GetChartFeedStatusResponse = zod.object({
     .nullish()
     .describe("Deriv synthetic warm-up lifecycle state when applicable"),
   message: zod.string(),
+  notLiveReason: zod
+    .union([
+      zod.literal("market_closed"),
+      zod.literal("stored_history"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
+    ),
 });
 
 /**
@@ -6326,6 +6346,16 @@ export const GetMeChartIntelligenceResponse = zod.object({
           .nullish()
           .describe("Deriv synthetic warm-up lifecycle state when applicable"),
         message: zod.string(),
+        notLiveReason: zod
+          .union([
+            zod.literal("market_closed"),
+            zod.literal("stored_history"),
+            zod.literal(null),
+          ])
+          .nullish()
+          .describe(
+            "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
+          ),
       }),
       currentCandle: zod.union([
         zod

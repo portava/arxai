@@ -64,6 +64,9 @@ export interface RubyContext {
       aiUsable: boolean;
       isLive: boolean;
       lastPrice: number | null;
+      /** The chart's reason the series is not live (weekend close, stored
+       *  history), or null. Absent on contexts built before it existed. */
+      notLiveReason?: "market_closed" | "stored_history" | null;
     } | null;
   } | null;
   bridge: {
@@ -407,14 +410,7 @@ export async function buildRubyContext(
       try {
         const { getSymbolSnapshot } = await import("../data/marketOverview.js");
         const snap = await getSymbolSnapshot(symbolUpper);
-        marketFeed = {
-          source: snap.source,
-          quality: snap.quality,
-          freshness: snap.freshness,
-          aiUsable: snap.aiUsable,
-          isLive: snap.isLive,
-          lastPrice: snap.lastPrice,
-        };
+        marketFeed = marketFeedFromSnapshot(snap);
       } catch {
         marketFeed = null;
       }
@@ -519,6 +515,30 @@ export function newsRiskStatement(
  * from state + time, so it naturally varies session-to-session and never
  * repeats an identical static greeting.
  */
+/**
+ * The briefing's per-symbol feed block from the shared symbol snapshot (the
+ * SAME resolver the chart uses), including the chart's not-live reason.
+ */
+export function marketFeedFromSnapshot(snap: {
+  source: string | null;
+  quality: string;
+  freshness: string;
+  aiUsable: boolean;
+  isLive: boolean;
+  lastPrice: number | null;
+  notLiveReason?: "market_closed" | "stored_history" | null;
+}): NonNullable<NonNullable<RubyContext["symbol"]>["marketFeed"]> {
+  return {
+    source: snap.source,
+    quality: snap.quality,
+    freshness: snap.freshness,
+    aiUsable: snap.aiUsable,
+    isLive: snap.isLive,
+    lastPrice: snap.lastPrice,
+    notLiveReason: snap.notLiveReason ?? null,
+  };
+}
+
 export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
   const lines: string[] = [];
 
@@ -565,7 +585,13 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
       // Each freshness verdict gets its own sentence: UNAVAILABLE means there
       // is nothing to read, and STALE data is not a current read.
       const sym = ctx.symbol.symbol;
-      if (mf.aiUsable && mf.freshness === "REALTIME") {
+      // A closed market or stored history is what the chart says it is —
+      // never a "delayed" or "stale" live feed.
+      if (mf.notLiveReason === "market_closed") {
+        lines.push(`${sym} is in its scheduled weekend close — no live data until the market reopens, so its chart is history, not a current read.`);
+      } else if (mf.notLiveReason === "stored_history") {
+        lines.push(`${sym} is showing stored broker candles with no bridge pushing it — not a live feed, so I'll read it as history only.`);
+      } else if (mf.aiUsable && mf.freshness === "REALTIME") {
         lines.push(`Live data for ${sym} is clean right now — I can read it confidently.`);
       } else if (mf.freshness === "REALTIME") {
         lines.push(`Market data for ${sym} is arriving in real time but isn't clean enough for a confident read — I'll read it cautiously.`);
