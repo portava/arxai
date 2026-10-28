@@ -838,14 +838,10 @@ export default function MarketScanner() {
 
   const symbolsTab = (
     <div className="space-y-3" data-testid="symbols-tab-content">
-      <p className="text-xs text-muted-foreground">
-        Search any market — forex pairs, metals, indices, crypto, stocks,
-        or Deriv synthetics (V10..V100, BOOM/CRASH/STEP). Pick one to
-        update Focus, the chart, and the trade ticket everywhere.
-      </p>
       <SymbolExplorer
         activeSymbol={symbolsTabActive}
         onSelect={(canonical) => setChartSymbol(canonical)}
+        scopeNote="Pick one to update Focus, the chart, and the trade ticket everywhere."
       />
     </div>
   );

@@ -19,7 +19,8 @@ import {
  * click-to-switch.
  *
  * Categories appear as horizontally scrollable chips with count badges
- * (Favorites · Forex · Metals · Indices · Crypto · Stocks · Synthetic …).
+ * (Favorites · Forex · Metals · Indices · Crypto · Synthetic); a category
+ * with no approved market gets no chip.
  * Only one category is active at a time; tapping a chip expands its
  * symbols in a compact grid below. Synthetic Indices stays visible even
  * when the Deriv feed is not configured — the status appears as a small
@@ -47,6 +48,46 @@ const CATEGORY_ORDER: Array<{ id: MarketType; label: string }> = [
   { id: "commodities", label: "Commodities" },
   { id: "synthetic", label: "Synthetic" },
 ];
+
+// Search examples shown in the placeholder. Each one must resolve to an
+// approved ARX Focus market (pinned by SymbolExplorer.truth.test.tsx) — the
+// placeholder never suggests a market that would answer "isn't in the
+// approved market list".
+export const SYMBOL_SEARCH_EXAMPLES = ["EURUSD", "gold", "V75", "btc", "us30"] as const;
+
+const SCOPE_WORDS: Record<MarketType, string> = {
+  forex: "forex pairs",
+  metals: "metals",
+  indices: "indices",
+  crypto: "crypto",
+  stocks: "stocks",
+  energy: "energy",
+  commodities: "commodities",
+  synthetic: "Deriv synthetics",
+};
+
+// Synthetic families named only when the registry holds at least one member.
+const SYNTHETIC_FAMILIES: Array<{ label: string; test: RegExp }> = [
+  { label: "Volatility", test: /^V\d+/ },
+  { label: "Boom/Crash", test: /^(BOOM|CRASH)\d+/ },
+  { label: "Jump", test: /^JUMP\d+/ },
+  { label: "Step", test: /^STEP/ },
+];
+
+/** What the symbol search covers, derived from the approved registry so the
+ *  copy can never promise a category or index family that does not exist. */
+export function approvedMarketScopeText(entries: SymbolEntry[] = SYMBOL_REGISTRY): string {
+  const groups = groupByMarketType(entries);
+  const parts = CATEGORY_ORDER.filter((g) => groups[g.id].length > 0).map((g) => {
+    if (g.id !== "synthetic") return SCOPE_WORDS[g.id];
+    const families = SYNTHETIC_FAMILIES
+      .filter((f) => groups.synthetic.some((e) => f.test.test(e.canonicalSymbol)))
+      .map((f) => f.label);
+    return families.length > 0 ? `${SCOPE_WORDS.synthetic} (${families.join(", ")})` : SCOPE_WORDS.synthetic;
+  });
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} or ${parts[parts.length - 1]}` : parts.join("");
+  return `Search the ${entries.length} approved markets — ${list}.`;
+}
 
 function loadJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -76,6 +117,9 @@ export interface SymbolExplorerProps {
   derivFeedConnecting?: boolean;
   /** Show dev-only diagnostics row (typed/resolved/source). */
   showDiagnostics?: boolean;
+  /** When set, a line above the search states what the search covers (from
+   *  the approved registry) followed by this note. */
+  scopeNote?: string;
 }
 
 export function SymbolExplorer(props: SymbolExplorerProps) {
@@ -180,6 +224,11 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
 
   return (
     <div className="space-y-2" data-testid="symbol-explorer">
+      {props.scopeNote != null && (
+        <p className="text-xs text-muted-foreground" data-testid="symbol-explorer-scope">
+          {approvedMarketScopeText()} {props.scopeNote}
+        </p>
+      )}
       {/* Search row */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]">
@@ -192,7 +241,7 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
               if (e.key === "Enter") { e.preventDefault(); submitTyped(); }
               if (e.key === "Escape") setQuery("");
             }}
-            placeholder="Search any market — EURUSD, gold, V75, btc, nas…"
+            placeholder={`Search approved markets — ${SYMBOL_SEARCH_EXAMPLES.join(", ")}…`}
             className="pl-7"
             data-testid="input-symbol-search"
             autoComplete="off"
