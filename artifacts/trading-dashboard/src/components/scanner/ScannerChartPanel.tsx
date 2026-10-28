@@ -63,6 +63,7 @@ import {
   actionabilityDisplayUi,
   resolveVisibleActionButtonLabel,
   biasToActionDirection,
+  reconcileLiftedActionDirection,
   type ScannerActionabilityDisplay,
   type ActionDirection,
 } from "@/lib/scannerActionability";
@@ -773,7 +774,10 @@ export function ScannerChartPanel() {
   // Directional CTA label for Plan Buy/Sell and the Eleanor button. Derived here
   // (after symbolVerdict is available) and forwarded to child surfaces so they all
   // agree on the same direction without independent bias lookups.
-  const canonicalChartDirection: ActionDirection = biasToActionDirection(symbolVerdict?.bias);
+  const canonicalChartDirection: ActionDirection = reconcileLiftedActionDirection(
+    biasToActionDirection(symbolVerdict?.bias),
+    liftedChartAction != null ? chartActionStore.getSide(symbol, timeframe) : null,
+  );
   // Re-run the overlay handshake on the CLIENT with the live chart facts: the
   // real chart-bus symbol and whether candles are actually loaded. The server
   // computes a data-side handshake assuming the chart is rendered for the

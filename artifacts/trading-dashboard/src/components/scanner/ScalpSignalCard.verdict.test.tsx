@@ -265,20 +265,20 @@ describe("ScalpSignalCard — AWAITING_DATA reasons and the lifted verdict", () 
         onActionability={spy}
       />,
     );
-    expect(spy).toHaveBeenCalledWith("V75", "5m", "READY_NOW");
+    expect(spy).toHaveBeenCalledWith("V75", "5m", "READY_NOW", "BUY");
     for (const call of spy.mock.calls) expect(call[1]).not.toBe("1m");
   });
 
   it("NO_SPECS publishes a retraction (null), so the header keeps its own data-only verdict", () => {
     const spy = vi.fn();
     render(<ScalpSignalCard result={noSpecs()} onActionability={spy} />);
-    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null);
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null, null);
   });
 
   it("a named feed reason is lifted as FEED_LIMITED under the engine timeframe", () => {
     const spy = vi.fn();
     render(<ScalpSignalCard result={noSpecs({ rejectReason: "NOT_LIVE" })} onActionability={spy} />);
-    expect(spy).toHaveBeenLastCalledWith("V75", "5m", "FEED_LIMITED");
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", "FEED_LIMITED", null);
   });
 
   it("an AWAITING_DATA with no named reason (older server) is FEED_LIMITED on the card but never lifted", () => {
@@ -289,7 +289,7 @@ describe("ScalpSignalCard — AWAITING_DATA reasons and the lifted verdict", () 
     expect(
       container.querySelector('[data-testid="scalp-card-V75"]')?.getAttribute("data-actionability"),
     ).toBe("FEED_LIMITED");
-    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null);
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null, null);
   });
 
   it("a READY verdict replaced by NO_SPECS on refresh is retracted, not left standing", () => {
@@ -300,9 +300,9 @@ describe("ScalpSignalCard — AWAITING_DATA reasons and the lifted verdict", () 
         onActionability={spy}
       />,
     );
-    expect(spy).toHaveBeenLastCalledWith("V75", "5m", "READY_NOW");
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", "READY_NOW", "BUY");
     rerender(<ScalpSignalCard result={noSpecs()} onActionability={spy} />);
-    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null);
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null, null);
   });
 });
 

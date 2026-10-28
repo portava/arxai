@@ -14,13 +14,14 @@ import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
 import { useMasterLiveAccess } from "@/components/live/MasterLiveAccessGuard";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
-import { seedInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { formatInstrumentPrice, resolveDisplayPricePrecision, seedInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { HistoricalCheckPanel } from "@/components/trading/HistoricalCheckPanel";
 import { NewsRiskCheckPanel } from "@/components/trading/NewsRiskCheckPanel";
 import { useAssistantName } from "@/lib/assistant-name";
 import { Zap } from "lucide-react";
+import { bridgeBlockReason as bridgeBlockReasonFor } from "./bridgeBlockReason";
 
 /**
  * Conservative fallback lot, used ONLY when the producing engine supplied no
@@ -48,11 +49,16 @@ type BridgeReadiness = {
   // Server-authoritative dispatch-gate fields (added by debug endpoint).
   // UI must use bridgeReady (not local heuristics) to gate submit so the
   // UI verdict matches what createDraftCommand will actually accept.
-  heartbeatFreshStrict?: boolean;
-  eaVersionAtLeast?: boolean;
-  bridgeReady?: boolean;
+  /** false = the server could not evaluate the dispatch gate for this read. */
+  gateEvaluated?: boolean;
+  // null = not measured (gate not evaluated); only true counts as a pass.
+  heartbeatFreshStrict?: boolean | null;
+  eaVersionAtLeast?: boolean | null;
+  bridgeReady?: boolean | null;
   bridgeBlockers?: string[];
   gateBlockers?: string[];
+  /** Demo execution armed for this account (MT5 Setup → Demo Execution Control); null/absent = not reported. */
+  armed?: boolean | null;
   eaInputs: {
     readOnlyMode: boolean | null;
     enableDemoExecution: boolean | null;
@@ -87,6 +93,59 @@ function seedPriceStr(n: number, precision: number | null | undefined): string {
   return seedInstrumentPrice(n, precision);
 }
 
+// Where the editable "Current price" value came from. The field is filled once
+// per open and never follows the market, so the ticket says what it holds: the
+// feed's last candle close (with its candle time, source and feed state), the
+// signal's entry level when no feed price exists, or the user's own edit.
+type CurrentPriceBasis =
+  | { kind: "signal" }
+  | { kind: "user" }
+  | {
+      kind: "feed";
+      value: number;
+      candleAt: string | null;
+      sourceLabel: string | null;
+      displayStatus: string;
+      isLive: boolean;
+    };
+
+const FEED_STATE_WORD: Record<string, string> = {
+  LIVE: "live",
+  STALE: "stale",
+  ANALYSIS_ONLY: "historical only",
+  FALLBACK_COMPOSITE: "on a fallback composite source",
+  UNAVAILABLE: "unavailable",
+};
+
+function utcClock(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(11, 19)} UTC` : null;
+}
+
+function currentPriceBasisText(
+  basis: CurrentPriceBasis,
+  hasValue: boolean,
+  latestClose: number | null,
+  precision: number | null | undefined,
+): string {
+  if (basis.kind === "user") return "Entered by you.";
+  if (basis.kind === "signal") {
+    return hasValue
+      ? "No feed price is available yet — this is the signal's entry level, not a current price."
+      : "No feed price is available yet.";
+  }
+  const at = utcClock(basis.candleAt);
+  const from = `from ${basis.sourceLabel ?? "the chart feed"}${at ? `, candle at ${at}` : ""}`;
+  const head = basis.isLive
+    ? `Last candle close ${from}.`
+    : `Not a live price — last candle close ${from}, while the feed is ${FEED_STATE_WORD[basis.displayStatus] ?? "not live"}.`;
+  const moved = latestClose != null && latestClose !== basis.value
+    ? ` Latest close is now ${formatInstrumentPrice(latestClose, precision)}.`
+    : "";
+  return `${head} Filled once when this ticket opened; it does not update while the ticket stays open.${moved}`;
+}
+
 type DemoCommand = {
   commandId: string;
   status: string;
@@ -104,8 +163,8 @@ const TERMINAL = new Set(["FILLED_DEMO", "REJECTED", "FAILED", "BLOCKED"]);
 // MARKET orders through the demo-command queue (POST /api/me/demo-commands
 // → /confirm → /dispatch) so they appear in Recent Demo Commands, Open
 // Demo Positions, and Latest Demo Trade Result on the MT5 Bridge page.
-// Pending order types are saved as drafts (EA does not yet execute pending
-// orders). Live mode is structurally blocked unless the user's live envelope
+// Pending order types are saved as drafts only (never sent to the broker); the
+// saved draft carries the server's reading of the bridge's pending support. Live mode is structurally blocked unless the user's live envelope
 // allows it AND they go through a separate protected confirm step.
 export function ScannerTradeModal({
   open, onClose, signal, defaultSide,
@@ -137,13 +196,18 @@ export function ScannerTradeModal({
   const [cmd, setCmd] = useState<DemoCommand | null>(null);
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [bridge, setBridge] = useState<BridgeReadiness | null>(null);
-  const [bridgeLoading, setBridgeLoading] = useState(false);
+  // Outcome of the most recent bridge-status request. "checking" until the
+  // first answer of this open; "failed" when the request errored — the bridge
+  // state is then UNKNOWN (never reported as "no bridge connected").
+  const [bridgeCheck, setBridgeCheck] = useState<"checking" | "failed" | "done">("checking");
+  const [bridgeCheckDetail, setBridgeCheckDetail] = useState<string | null>(null);
   const idempotencyKeyRef = useRef<string>(`sc-${signal.symbol}-${signal.timeframe ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
   const toastedTerminalRef = useRef<string | null>(null);
   // Tracks whether the editable "Current price" has been seeded from the shared
   // truth price for the current open. Lets us snap to the live price exactly
   // once when it resolves (cold open) without clobbering subsequent user edits.
   const currentPriceSeededRef = useRef(false);
+  const [priceBasis, setPriceBasis] = useState<CurrentPriceBasis>({ kind: "signal" });
   const { toast } = useToast();
   const [liveTicketOpen, setLiveTicketOpen] = useState(false);
   // Client-side hide of the LIVE SHARED button for unapproved users. Server
@@ -160,12 +224,13 @@ export function ScannerTradeModal({
   // explicit acknowledgement; a live one-click stays frictionless but the live
   // ticket carries a non-blocking feed warning. Called unconditionally (before
   // any early return) so hook order stays stable.
-  const { truth: feedTruth } = useScannerTruth(
+  const { truth: feedTruth, isError: feedReadFailed } = useScannerTruth(
     signal.symbol,
     normalizeChartTimeframe(signal.timeframe ?? "5m"),
   );
-  const demoAffordance = resolveTradeAffordance(feedTruth, "demo");
-  const liveAffordance = resolveTradeAffordance(feedTruth, "live");
+  // A failed feed read is an unknown feed, not a pending one → warn + demo ack.
+  const demoAffordance = resolveTradeAffordance(feedTruth, "demo", { isError: feedReadFailed });
+  const liveAffordance = resolveTradeAffordance(feedTruth, "live", { isError: feedReadFailed });
   const liveFeedWarning = liveAffordance.warningTitle
     ? { warningTitle: liveAffordance.warningTitle, warningDetail: liveAffordance.warningDetail }
     : null;
@@ -202,16 +267,29 @@ export function ScannerTradeModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    // A snapshot from an earlier open is not this open's bridge state.
+    setBridge(null);
+    setBridgeCheck("checking");
+    setBridgeCheckDetail(null);
+    // A failed request leaves the bridge state unknown: it is never shown as
+    // "no bridge connected", and the stale answer is dropped (submit stays
+    // blocked because bridgeReady needs a successful answer).
+    const failed = (detail: string) => {
+      if (cancelled) return;
+      setBridge(null);
+      setBridgeCheck("failed");
+      setBridgeCheckDetail(detail);
+    };
     async function load() {
       try {
-        setBridgeLoading(true);
         const r = await fetch(u("/api/me/demo-bridge-debug"), { credentials: "include" });
-        if (!r.ok) { if (!cancelled) setBridge(null); return; }
+        if (!r.ok) { failed(`HTTP ${r.status}`); return; }
         const j = await r.json();
         if (cancelled) return;
         setBridge(j.bridge ?? null);
-      } catch { if (!cancelled) setBridge(null); }
-      finally { if (!cancelled) setBridgeLoading(false); }
+        setBridgeCheck("done");
+        setBridgeCheckDetail(null);
+      } catch (e) { failed(String((e as Error)?.message ?? e)); }
     }
     void load();
     const t = setInterval(load, 5000);
@@ -236,24 +314,7 @@ export function ScannerTradeModal({
       )
     ),
   );
-  const bridgeBlockReason: string | null = (() => {
-    if (bridgeReady) return null;
-    if (!bridge || bridge.connectionId == null) return "No demo bridge connected. Open MT5 Setup and attach the ARX EA to a demo account.";
-    // Prefer server-provided blocker list when available.
-    const serverBlockers = [
-      ...(bridge.bridgeBlockers ?? []),
-      ...(bridge.gateBlockers ?? []),
-    ];
-    if (serverBlockers.length > 0) {
-      return `Bridge not dispatch-ready: ${serverBlockers.join(", ")}. Open MT5 Setup → Demo Execution Control or MT5 → EA → Inputs to fix.`;
-    }
-    if (bridge.heartbeatFreshStrict === false) return `Bridge heartbeat stale (${bridge.heartbeatAgeSeconds ?? "?"}s ≥ 15s strict window). Reattach the EA on the MT5 chart.`;
-    if (bridge.accountType !== "demo" && bridge.accountType !== "contest") return `Bridge account type is "${bridge.accountType ?? "unknown"}" — must be DEMO.`;
-    if (bridge.eaVersionAtLeast === false) return `EA version "${bridge.eaVersionReported ?? "unknown"}" is below the required 1.27. Open MT5 Setup and refresh/attach the active EA.`;
-    if (bridge.eaInputs.readOnlyMode === true) return "Selected bridge is read-only. In MT5 → EA → Inputs, set ReadOnlyMode=false.";
-    if (bridge.eaInputs.enableDemoExecution === false) return "Selected bridge has EnableDemoExecution=false. In MT5 → EA → Inputs, set EnableDemoExecution=true.";
-    return "Selected bridge is not dispatch-ready. Open MT5 Setup for details.";
-  })();
+  const bridgeBlockReason: string | null = bridgeBlockReasonFor(bridge, bridgeReady);
 
   // Reset internal state every time the modal opens for a new signal,
   // including a fresh idempotency key so a different signal can't reuse
@@ -277,6 +338,7 @@ export function ScannerTradeModal({
     setCmd(null);
     setStatusLog([]);
     currentPriceSeededRef.current = false;
+    setPriceBasis({ kind: "signal" });
     idempotencyKeyRef.current = `sc-${signal.symbol}-${signal.timeframe ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   }, [open, signal.symbol, signal.timeframe, signal.entry, signal.stopLoss, signal.takeProfit, defaultSide]);
 
@@ -288,6 +350,14 @@ export function ScannerTradeModal({
   useEffect(() => {
     if (!open || sharedLastClose == null || currentPriceSeededRef.current) return;
     setCurrentPrice(seedPriceStr(sharedLastClose, feedTruth?.candles.pricePrecision));
+    setPriceBasis({
+      kind: "feed",
+      value: sharedLastClose,
+      candleAt: feedTruth?.candles.lastTime ?? null,
+      sourceLabel: feedTruth?.candles.sourceLabel ?? null,
+      displayStatus: feedTruth?.displayStatus ?? "UNAVAILABLE",
+      isLive: feedTruth?.isLivePrice === true,
+    });
     currentPriceSeededRef.current = true;
   }, [open, sharedLastClose]);
 
@@ -304,6 +374,13 @@ export function ScannerTradeModal({
     const cp = num(currentPrice), ep = num(entryPrice), st = num(stopTriggerPrice), sli = num(stopLimitPrice);
     const slv = num(sl), tpv = num(tp);
     let effEntry: number | null = market ? cp : stopLimit ? sli : ep;
+    // Derived prices and distances print at the instrument's display precision
+    // (the same one the header and chart use); with none known, at the digits
+    // of the prices on this ticket — never an invented fixed 5 dp.
+    const pricePrecision: number | null =
+      feedTruth?.candles.pricePrecision ?? resolveDisplayPricePrecision(null, [cp, ep, st, sli, slv, tpv]);
+    const px = (v: number | null | undefined): string =>
+      v == null || !Number.isFinite(v) ? "—" : pricePrecision != null ? v.toFixed(pricePrecision) : String(v);
     if (!market && !stopLimit && ep == null) errors.push("Entry price required for limit/stop orders.");
     if (stopLimit && (st == null || sli == null)) errors.push("Stop trigger + stop limit prices required.");
 
@@ -331,7 +408,7 @@ export function ScannerTradeModal({
         assessedSl = assess.sl;
         if (assess.adjusted) {
           warnings.push(assess.reason);
-          slAdvice.push(`Suggested SL ${assess.sl?.toFixed(5) ?? "—"} (stop distance ${assess.stopDistance?.toFixed(5) ?? "—"}).`);
+          slAdvice.push(`Suggested SL ${px(assess.sl)} (stop distance ${px(assess.stopDistance)}).`);
         } else {
           slAdvice.push(assess.reason);
         }
@@ -349,8 +426,11 @@ export function ScannerTradeModal({
         if (rr < 1) warnings.push(`Risk/Reward ${rr.toFixed(2)} is below 1:1.`);
       }
     }
-    return { ok: errors.length === 0, errors, warnings, rr, riskPx, rewardPx, assessedSl, slAdvice };
-  }, [orderType, direction, market, stopLimit, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp, signal]);
+    return {
+      ok: errors.length === 0, errors, warnings, rr, riskPx, rewardPx, assessedSl, slAdvice,
+      riskPxText: px(riskPx), rewardPxText: px(rewardPx),
+    };
+  }, [orderType, direction, market, stopLimit, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp, signal, feedTruth?.candles.pricePrecision]);
 
   // Submit MARKET via demo-command queue (only flow EA actually executes
   // today). Sets source=MARKET_SCANNER + signalContext in payload so the
@@ -439,7 +519,7 @@ export function ScannerTradeModal({
       if (j.blocked) { setErr(`${j.reason ?? "Blocked"} (${j.checkId ?? "guard"})`); return; }
       if (j.ok) {
         setCmd({ commandId: `draft-${j.draftId}`, status: "DRAFT_SAVED", reason: j.reason ?? null });
-        setStatusLog((s) => [...s, `DRAFT_SAVED ${j.draftId}`]);
+        setStatusLog((s) => [...s, `DRAFT_SAVED ${j.draftId}${typeof j.pendingStatus === "string" ? ` (${j.pendingStatus})` : ""}`]);
       } else {
         setErr(String(j.error ?? "draft_failed"));
       }
@@ -612,7 +692,8 @@ export function ScannerTradeModal({
             {bridgeReady ? <RadioTower className="mt-0.5 h-3.5 w-3.5" /> : <Radio className="mt-0.5 h-3.5 w-3.5" />}
             <div className="min-w-0 flex-1">
               <div className="font-medium">
-                {bridgeLoading && !bridge ? "Checking active demo bridge…"
+                {bridgeCheck === "checking" ? "Checking active demo bridge…"
+                  : bridgeCheck === "failed" ? "Active demo bridge status unknown"
                   : bridgeReady ? "Active demo bridge ready"
                   : "Active demo bridge NOT ready"}
               </div>
@@ -626,7 +707,12 @@ export function ScannerTradeModal({
                   {bridge.eaInputs.enableDemoExecution === false ? " · EXEC_OFF" : ""}
                 </div>
               )}
-              {!bridgeReady && bridgeBlockReason && (
+              {bridgeCheck === "failed" && (
+                <div className="mt-1 opacity-90" data-testid="scanner-bridge-check-failed">
+                  The bridge status could not be checked{bridgeCheckDetail ? ` (${bridgeCheckDetail})` : ""}, so whether your EA is attached and ready is unknown. Demo orders stay blocked until the check succeeds; it retries every 5 seconds.
+                </div>
+              )}
+              {bridgeCheck === "done" && !bridgeReady && bridgeBlockReason && (
                 <div className="mt-1 opacity-90">{bridgeBlockReason}</div>
               )}
             </div>
@@ -653,7 +739,19 @@ export function ScannerTradeModal({
                 </div>
                 <div>
                   <Label className="text-xs">Current price</Label>
-                  <Input value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} placeholder="e.g. 1.0850" />
+                  <Input
+                    value={currentPrice}
+                    onChange={(e) => { setCurrentPrice(e.target.value); setPriceBasis({ kind: "user" }); }}
+                    placeholder="e.g. 1.0850"
+                    data-testid="scanner-trade-current-price"
+                  />
+                </div>
+                <div
+                  className={`col-span-2 -mt-1 text-[10px] ${priceBasis.kind === "feed" && priceBasis.isLive ? "text-muted-foreground" : "text-warning"}`}
+                  data-testid="scanner-trade-current-price-basis"
+                  data-basis={priceBasis.kind}
+                >
+                  {currentPriceBasisText(priceBasis, currentPrice.trim() !== "", sharedLastClose, feedTruth?.candles.pricePrecision)}
                 </div>
                 {!market && !stopLimit && (
                   <div className="col-span-2">
@@ -685,8 +783,8 @@ export function ScannerTradeModal({
 
               <SectionLabel>Risk / Reward</SectionLabel>
               <div className="rounded border border-border bg-card p-2 text-xs space-y-0.5">
-                <div className="flex justify-between"><span className="text-txt-secondary">Estimated risk (price units)</span><span className="font-mono">{validation.riskPx != null ? validation.riskPx.toFixed(5) : "—"}</span></div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Estimated reward (price units)</span><span className="font-mono">{validation.rewardPx != null ? validation.rewardPx.toFixed(5) : "—"}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Estimated risk (price units)</span><span className="font-mono" data-testid="scanner-trade-risk-px">{validation.riskPxText}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Estimated reward (price units)</span><span className="font-mono" data-testid="scanner-trade-reward-px">{validation.rewardPxText}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Risk / Reward</span><span className="font-mono">{validation.rr != null ? validation.rr.toFixed(2) : "—"}</span></div>
                 {/* Theme B — this is a hand-weighted heuristic sum, not a
                     calibrated probability. It is NOT rendered with a "%": an
@@ -704,9 +802,12 @@ export function ScannerTradeModal({
               </div>
 
               {!market && (
-                <div className="rounded bg-indigo-500/10 p-2 text-[11px] text-indigo-200 flex items-start gap-1.5">
+                <div
+                  className="rounded bg-indigo-500/10 p-2 text-[11px] text-indigo-200 flex items-start gap-1.5"
+                  data-testid="scanner-trade-pending-disclosure"
+                >
                   <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                  Pending orders save as validated drafts. The MT5 EA does not yet execute pending orders — nothing will be sent to your broker until that EA upgrade ships.
+                  Pending orders save as validated drafts only — this ticket never sends a pending order to your broker. After saving, the draft shows what your MT5 bridge reports about pending-order support.
                 </div>
               )}
 
@@ -775,6 +876,11 @@ export function ScannerTradeModal({
               {(cmd.status === "REJECTED" || cmd.status === "FAILED" || cmd.status === "BLOCKED") && (
                 <div className="rounded bg-danger/10 p-1.5 text-danger">
                   <span className="font-semibold">Reason:</span> <span className="font-mono">{cmd.reason ?? "unknown"}</span>
+                </div>
+              )}
+              {cmd.status === "DRAFT_SAVED" && (
+                <div className="rounded bg-indigo-500/10 p-1.5 text-indigo-200" data-testid="scanner-trade-draft-reason">
+                  {cmd.reason ?? "Draft saved. It has not been sent to your broker."}
                 </div>
               )}
               {!terminal && cmd.status !== "DRAFT_SAVED" && (

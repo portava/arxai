@@ -124,3 +124,38 @@ describe("RubyMarketReadCard mounts the evidence classes", () => {
     expect(screen.queryByTestId("ruby-market-read-evidence-classes")).toBeNull();
   });
 });
+
+describe("TruthEvidenceClasses — forming-bar close is not a data time", () => {
+  // The price / last-candle observedAt is the feed's candle CLOSE boundary. For
+  // a forming bar that boundary is in the future: it has not happened, so it
+  // must never be printed as the time the value was observed.
+  const WALL = Date.parse("2026-10-27T10:03:00.000Z");
+  const FUTURE_CLOSE = "2026-10-27T10:15:00.000Z";
+
+  it("labels a future close boundary as the scheduled bar close, not 'Data time'", () => {
+    const ev = classifyTruthEvidence({
+      nowMs: WALL,
+      data: { state: "LIVE_CONFIRMED", source: "mt5_broker", price: 1.1, lastCandleAt: FUTURE_CLOSE, lastTickAt: null },
+      news: { providerConnected: false },
+      components: {
+        scanner: { present: true, asOf: FUTURE_CLOSE },
+        flame: { present: false, asOf: null },
+        timing: { present: false, asOf: null },
+        scalp: { present: false, asOf: null },
+      },
+      levels: { withheld: true },
+      verdict: { bias: "BULLISH" },
+    });
+    render(<TruthEvidenceClasses evidence={ev} nowMs={WALL} />);
+    for (const k of ["price", "lastCandle", "scanner"]) {
+      const text = screen.getByTestId(`truth-evidence-classes-${k}`).textContent ?? "";
+      expect(text).not.toContain("Data time 10:15:00 UTC");
+      expect(text).toContain("still forming; it closes at 10:15:00 UTC");
+    }
+  });
+
+  it("keeps 'Data time' for a boundary that has already passed", () => {
+    render(<TruthEvidenceClasses evidence={evidence()} nowMs={NOW} />);
+    expect(screen.getByTestId("truth-evidence-classes-price").textContent).toContain("Data time 12:00:00 UTC.");
+  });
+});

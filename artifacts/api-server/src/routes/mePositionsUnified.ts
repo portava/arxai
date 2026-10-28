@@ -45,6 +45,28 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Absolute per-row freshness. The relative stale-floor below only drops rows
+// that lag the NEWEST row, so when the whole bridge goes quiet every row still
+// passes it; each row therefore also carries when the bridge last reported it
+// and whether that is recent. The EA pushes a complete snapshot every ~5s, so
+// 30s matches the slot-summary snapshot window.
+export const UNIFIED_POSITION_FRESH_MS = 30_000;
+export type UnifiedPositionFreshness = "FRESH" | "STALE" | "MISSING";
+
+export function unifiedPositionFreshness(observedAt: Date | string | null | undefined, now = Date.now()): {
+  observedAt: string | null;
+  freshness: UnifiedPositionFreshness;
+} {
+  if (observedAt == null) return { observedAt: null, freshness: "MISSING" };
+  const d = observedAt instanceof Date ? observedAt : new Date(observedAt);
+  const ms = d.getTime();
+  if (!Number.isFinite(ms)) return { observedAt: null, freshness: "MISSING" };
+  return {
+    observedAt: d.toISOString(),
+    freshness: now - ms <= UNIFIED_POSITION_FRESH_MS ? "FRESH" : "STALE",
+  };
+}
+
 router.get("/me/positions/all", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
@@ -87,7 +109,9 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
     const t = r.observedAt ? new Date(r.observedAt).getTime() : 0;
     return t >= liveFloor;
   });
+  const nowMs = Date.now();
   const live = liveRows.map((r) => ({
+    ...unifiedPositionFreshness(r.observedAt, nowMs),
     scope: "live" as const,
     brokerTicket: r.ticket,
     symbol: r.symbol,
@@ -128,7 +152,10 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   const demo = demoRows.map((p) => {
     const ticket = String(p.ticket);
     const matched = byTicket.get(ticket) ?? null;
+    // Each row carries when the broker snapshot last touched it.
+    const observed = unifiedPositionFreshness(p.observedAt ?? null, nowMs);
     return {
+      ...observed,
       scope: "demo" as const,
       brokerTicket: ticket,
       symbol: p.symbol,
@@ -140,8 +167,6 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
       takeProfit: num(p.takeProfit),
       floatingPnl: num(p.floatingPnl),
       openedAt: p.openedAt instanceof Date ? p.openedAt.toISOString() : null,
-      // When the broker snapshot last touched this row (null = never synced).
-      observedAt: p.observedAt instanceof Date ? p.observedAt.toISOString() : null,
       sourceCommandId: matched?.commandId ?? null,
       accountMode: "DEMO" as const,
       source: matched?.sourcePage ?? "MT5_DEMO_BRIDGE",

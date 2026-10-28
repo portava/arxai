@@ -177,6 +177,10 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   // such as V75/V25), so the margin/free-margin totals are a forex-only lower
   // bound — we never fabricate a synthetic-index margin.
   let marginEstimateIncomplete = false;
+  // True when a visible position's floating P/L was never reported by the
+  // bridge. Its row carries null (unknown, not $0.00) and openPnL is the sum
+  // of the KNOWN rows only, so the total is flagged as incomplete.
+  let openPnLIncomplete = false;
   const slotBalanceForPct = allocatedFunds + realisedPnl;
   const mapped = openPositions.map((p) => {
     const syncedMs = p.lastSyncedAt ? new Date(p.lastSyncedAt).getTime() : null;
@@ -187,7 +191,10 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     // Visible = not broker-confirmed-absent. A stale row stays visible (and
     // counted) whenever we lack a reliable snapshot proving it closed.
     const visible = !cls.brokerConfirmedAbsent;
-    const floating = p.floatingPl != null ? Number(p.floatingPl) : 0;
+    const floatingKnown = p.floatingPl != null && Number.isFinite(Number(p.floatingPl));
+    const floating = floatingKnown ? Number(p.floatingPl) : 0;
+    // Per-row wire value: null when the bridge never reported it.
+    const floatingWire: number | null = floatingKnown ? floating : null;
     const vol = Number(p.volume);
     const price = p.currentPrice != null ? Number(p.currentPrice) : Number(p.entryPrice);
     // Margin is estimable only for forex (known 100k contract size). For other
@@ -197,12 +204,14 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     const marginEst = forex ? estimateMarginUsd(vol, price, leverage) : 0;
     if (visible) {
       openPnL += floating;
+      if (!floatingKnown) openPnLIncomplete = true;
       usedMargin += marginEst;
       if (!forex) marginEstimateIncomplete = true;
     } else {
       stalePositionCount += 1;
     }
-    const profitPercentOfSlot = slotBalanceForPct > 0 ? (floating / slotBalanceForPct) * 100 : null;
+    const profitPercentOfSlot =
+      floatingKnown && slotBalanceForPct > 0 ? (floating / slotBalanceForPct) * 100 : null;
     return {
       brokerTicket: p.brokerTicket,
       symbol: p.symbol,
@@ -212,12 +221,12 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
       currentPrice: p.currentPrice != null ? Number(p.currentPrice) : null,
       stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null,
       takeProfit: p.takeProfit != null ? Number(p.takeProfit) : null,
-      grossProfit: floating,
+      grossProfit: floatingWire,
       // EA does not currently push swap/commission per-position; we surface
       // null honestly rather than zero so the UI can omit the row.
       swap: null as number | null,
       commission: null as number | null,
-      netProfit: floating,
+      netProfit: floatingWire,
       profitPercentOfSlot,
       openedAt: p.openedAt,
       lastUpdated: p.lastSyncedAt,
@@ -272,6 +281,7 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     marginSource: "ESTIMATED" as const,
     marginEstimateIncomplete,
     openPnL,
+    openPnLIncomplete,
     openPositionCount: positions.length,
     positions,
     stalePositions,

@@ -455,12 +455,42 @@ export function resolveRubyReadPanelState(
   // available, but the exact live setup is withheld. It takes precedence over a
   // generic "not confirmed" (it's the more specific, more honest state) and over
   // "confirmed" (the badge must never claim clean/AI while the setup is withheld).
-  const structuralOnly = isStructuralOnlyRead(read);
+  const structuralOnlyRead = isStructuralOnlyRead(read);
+  // CURRENT truth outranks a STORED structural tier when the truth has since
+  // degraded below what the read was produced on: the read's own freshness
+  // band (server `tradeHealthFreshness`) is fresher than the current shared
+  // truth for the same key, or the truth now has no data at all (blocked). The
+  // read's reason then describes a past state ("Live feed is delayed…") while
+  // the header says historical / no data — so the panel takes the current
+  // not-confirmed verdict and the truth's current reason. Downgrade-only: an
+  // unknown read band (older / scrubbed wire) keeps the structural verdict.
+  const readBand = read?.tradeHealthFreshness;
+  const truthBandRank: number | null =
+    truthLevel === "full"
+      ? FRESHNESS_RANK.LIVE_CONFIRMED
+      : truthLevel === "limited"
+        ? FRESHNESS_RANK.LIVE_DELAYED
+        : truthLevel === "historical_only"
+          ? FRESHNESS_RANK.HISTORICAL_ONLY
+          : truthLevel === "blocked"
+            ? FRESHNESS_RANK.AWAITING
+            : null;
+  const truthDegradedSinceRead =
+    structuralOnlyRead &&
+    truthBandRank != null &&
+    (truthLevel === "blocked" ||
+      (isFreshnessBand(readBand) && FRESHNESS_RANK[readBand] > truthBandRank));
+  const structuralOnly = structuralOnlyRead && !truthDegradedSinceRead;
 
   let verdict: RubyReadVerdict;
   if (structuralOnly) {
     verdict = "structural_only";
-  } else if (readInsufficient || effectiveAiUsable === false || actionFeedLimited) {
+  } else if (
+    truthDegradedSinceRead ||
+    readInsufficient ||
+    effectiveAiUsable === false ||
+    actionFeedLimited
+  ) {
     verdict = "not_confirmed";
   } else if (effectiveAiUsable === true) {
     verdict = "confirmed";

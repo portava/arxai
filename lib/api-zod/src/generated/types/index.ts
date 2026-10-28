@@ -631,6 +631,7 @@ export * from "./economicEvent";
 export * from "./economicEventImpact";
 export * from "./economicEventRecord";
 export * from "./economicEventRecordImpactLevel";
+export * from "./edgeBehaviourBasis";
 export * from "./edgeReport";
 export * from "./edgeReportStatus";
 export * from "./edgeScore";

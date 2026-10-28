@@ -4824,6 +4824,7 @@ paths:
                   warnings:
                     type: array
                     items: { $ref: "#/components/schemas/EdgeWarning" }
+                  behaviourBasis: { $ref: "#/components/schemas/EdgeBehaviourBasis" }
 
   /edge/strongest:
     get:
@@ -19375,6 +19376,17 @@ components:
         status:              { type: string, enum: [STRONG_EDGE, DEVELOPING_EDGE, WEAK_EDGE, NO_EDGE, INSUFFICIENT_DATA] }
         aiSummary:           { type: string }
         createdAt:           { type: string }
+        behaviourBasis:      { $ref: "#/components/schemas/EdgeBehaviourBasis" }
+
+    EdgeBehaviourBasis:
+      type: string
+      enum: [SLICE_DEBRIEFS, NOT_MEASURED, ACCOUNT_WIDE_LEGACY]
+      description: >-
+        What the report's discipline/emotional scores describe. SLICE_DEBRIEFS =
+        averaged over post-trade debriefs linked to this slice's trades;
+        NOT_MEASURED = no linked debrief, the stored 0s are placeholders;
+        ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's
+        debriefs. executionScoreAvg is not measured by debriefs.
 
     EdgeWarning:
       type: object

@@ -222,29 +222,59 @@ export function resolveScannerActionability(
  * a current data-only CAP (MARKET_CLOSED / FEED_LIMITED / ANALYSIS_ONLY)
  * dominates the lifted verdict unless the lifted verdict is a more severe cap.
  */
-// Data-cap verdicts, most severe first (mirrors resolveDataActionabilityCap).
-const DATA_CAP_RANK: Partial<Record<ScannerActionability, number>> = {
-  MARKET_CLOSED: 3,
-  FEED_LIMITED: 2,
-  ANALYSIS_ONLY: 1,
+//
+// DATA-CAP FLOOR: the data-only verdict is computed from the CURRENT chart truth
+// for this symbol+timeframe, while the lifted verdict is a card's read from
+// some earlier moment. When the current data-only verdict is itself a data cap
+// (FEED_LIMITED / ANALYSIS_ONLY / MARKET_CLOSED) that is more restrictive than
+// the lifted verdict, the cap wins — a lifted "Ready now" may never sit over a
+// feed the chart now reports stale or limited. Downgrade-only: a clean data-only
+// WAIT_FOR_CONFIRMATION (setup unknown) never overrides a lifted setup verdict.
+const DATA_CAP_VERDICTS: ReadonlySet<ScannerActionability> = new Set<ScannerActionability>([
+  "FEED_LIMITED",
+  "ANALYSIS_ONLY",
+  "MARKET_CLOSED",
+]);
+
+const SELECTED_ACTION_SEVERITY: Record<ScannerActionability, number> = {
+  READY_NOW: 0,
+  WAIT_FOR_CONFIRMATION: 1,
+  TOO_LATE: 2,
+  NO_CLEAN_SETUP: 2,
+  ANALYSIS_ONLY: 3,
+  FEED_LIMITED: 4,
+  MARKET_CLOSED: 5,
 };
 
 export function resolveSelectedSymbolActionability(
   lifted: ScannerActionability | null,
   dataOnlyFallback: ScannerActionability | null,
 ): ScannerActionability | null {
-  // DOWNGRADE-ONLY data floor: the lifted verdict is a one-shot setup read;
-  // the data-only verdict is the CURRENT feed state for this symbol+timeframe.
-  // When the current data caps the market (closed / feed limited / analysis
-  // only), that cap dominates any lifted setup verdict — the same rule
-  // resolveScannerActionability applies (data cap first, setup second) — so a
-  // lifted "Ready now" can never outlive a feed that has since stalled.
-  const dataCap = dataOnlyFallback != null ? DATA_CAP_RANK[dataOnlyFallback] : undefined;
-  if (lifted != null && dataCap != null) {
-    const liftedCap = DATA_CAP_RANK[lifted];
-    return liftedCap != null && liftedCap > dataCap ? lifted : dataOnlyFallback;
+  if (lifted == null) return dataOnlyFallback;
+  if (
+    dataOnlyFallback != null &&
+    DATA_CAP_VERDICTS.has(dataOnlyFallback) &&
+    SELECTED_ACTION_SEVERITY[dataOnlyFallback] > SELECTED_ACTION_SEVERITY[lifted]
+  ) {
+    return dataOnlyFallback;
   }
-  return lifted ?? dataOnlyFallback;
+  return lifted;
+}
+
+/**
+ * The side shown on the action label when a lifted card verdict may be in use.
+ * The label's side comes from the composed bias; when the card that lifted the
+ * verdict published its OWN side and that side disagrees with the bias, no side
+ * is shown (the neutral label) — "Buy now" may never sit over a SELL scalp.
+ * Downgrade-only: never invents a side the bias didn't already state.
+ */
+export function reconcileLiftedActionDirection(
+  biasDirection: ActionDirection,
+  liftedSide: ActionDirection | undefined,
+): ActionDirection {
+  if (biasDirection == null) return null;
+  if (liftedSide == null) return biasDirection;
+  return liftedSide === biasDirection ? biasDirection : null;
 }
 
 // ── One UI map: badge label + tone + copy + whether buttons may enable ───────

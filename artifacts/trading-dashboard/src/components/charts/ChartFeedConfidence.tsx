@@ -13,13 +13,16 @@
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
-import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
+import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { resolveFeedBadgeVerdict } from "@/lib/rubyReadPanelState";
 
 export interface ChartFeedConfidenceProps {
   /** Raw chart-bus symbol (may carry an exchange prefix like "FX:EURUSD"). */
   symbol: string;
-  /** Chart- or contract-style timeframe label. Defaults to M15. */
+  /**
+   * Chart- or contract-style timeframe label. Defaults to M15. Whatever it
+   * resolves to is shown on the chip, so the default is never hidden.
+   */
   timeframe?: string;
 }
 
@@ -33,10 +36,8 @@ export function ChartFeedConfidence({
   // verdict capping it. Normalize the timeframe first — useScannerTruth feeds it
   // to toApiTimeframe, which only understands chart-style ids ("15m"); a raw
   // contract label ("M15") would silently resolve the wrong (M5) feed.
-  const { truth, feedStatus, isLoading } = useScannerTruth(
-    bare,
-    normalizeChartTimeframe(timeframe),
-  );
+  const chartTimeframe = normalizeChartTimeframe(timeframe);
+  const { truth, feedStatus, isLoading } = useScannerTruth(bare, chartTimeframe);
 
   // Never flash a misleading "No feed" chip before the first result resolves.
   if (!bare || (isLoading && !feedStatus)) return null;
@@ -46,6 +47,7 @@ export function ChartFeedConfidence({
     <FeedConfidenceBadge
       feedStatus={feedStatus}
       aiUsableResolved={resolveFeedBadgeVerdict(truth?.analysis.level ?? null)}
+      timeframeLabel={toApiTimeframe(chartTimeframe)}
     />
   );
 }

@@ -15,6 +15,11 @@ import { useAssistantName } from "@/lib/assistant-name";
 // Ruby (those consumers land in a later task). EVERYTHING is generated from the
 // state object; nothing is hardcoded and no verdict is invented. PURE DISPLAY —
 // it never places, modifies, or closes a trade.
+//
+// FEED BASIS: the feed chip grades `state.truthState`, which the server builds
+// from CLOSED bars only (the forming tip is excluded). The chart header chip
+// grades the display feed (closed bars + live forming tip), so the chip says
+// "Closed bars · …" to make the different basis explicit.
 
 type ChartState = ChartIntelligenceResponse["state"];
 
@@ -203,8 +208,10 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
                   : "bg-zinc-800 text-zinc-400"
           }`}
           data-testid="pulse-feed"
+          data-basis="closed-bars"
+          title="Server grade of the closed bars this Chart Intelligence read was built from (the live forming bar is excluded). The chart header grades the display feed, including the forming bar, so the two can differ."
         >
-          {conf.statusLabel}
+          Closed bars · {conf.statusLabel}
         </span>
       </div>
 

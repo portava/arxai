@@ -14,6 +14,7 @@ import { evaluateMarketDataSufficiency, MIN_SUFFICIENT_CLOSED_BARS } from "@work
 import {
   resolveScannerActionability,
   SCANNER_ACTIONABILITY_UI,
+  type ActionDirection,
   type ScannerActionability,
 } from "@/lib/scannerActionability";
 import { RubyChartRead } from "@/components/scanner/RubyChartRead";
@@ -118,7 +119,12 @@ export function ScalpSignalCard({
   compact?: boolean;
   highlightLabel?: string;
   /** Publish (or retract with null) this card's verdict for symbol+timeframe. */
-  onActionability?: (symbol: string, timeframe: string, a: ScannerActionability | null) => void;
+  onActionability?: (
+    symbol: string,
+    timeframe: string,
+    a: ScannerActionability | null,
+    side?: ActionDirection,
+  ) => void;
 }) {
   const r = result;
   const { name } = useAssistantName();
@@ -203,10 +209,14 @@ export function ScalpSignalCard({
   const liftable =
     r.status !== "AWAITING_DATA" || (isScalpAwaitingFeed(r) && hasKnownScalpRejectReason(r));
   const published: ScannerActionability | null = liftable && !scalpExpired ? actionability : null;
+  // The scalp's OWN side, published alongside the verdict so the header can
+  // drop a contradicting side from its label (never add one).
+  const publishedSide: ActionDirection =
+    published != null && (r.direction === "BUY" || r.direction === "SELL") ? r.direction : null;
   useEffect(() => {
     if (!busTf) return;
-    onActionability?.(r.symbol, busTf, published);
-  }, [r.symbol, busTf, published, onActionability]);
+    onActionability?.(r.symbol, busTf, published, publishedSide);
+  }, [r.symbol, busTf, published, publishedSide, onActionability]);
 
   const borderColor =
     r.direction === "BUY" ? "#10b981" : r.direction === "SELL" ? "#f43f5e" : "#3f3f46";

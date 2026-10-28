@@ -38,6 +38,7 @@ import {
   resolveSelectedSymbolActionabilityDisplay,
   resolveVisibleActionLabel,
   biasToActionDirection,
+  reconcileLiftedActionDirection,
   PENDING_RESOLVE_TIMEOUT_MS,
 } from "@/lib/scannerActionability";
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
@@ -325,7 +326,14 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
       : readNotRun
         ? READ_NOT_RUN_DETAIL
         : cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
-  const actionDirection = eleanorFeedGated ? null : biasToActionDirection(verdict?.bias);
+  // The side comes from the composed bias, but a lifted card verdict carries
+  // its own scalp side: when they disagree no side is shown (downgrade-only).
+  const actionDirection = eleanorFeedGated
+    ? null
+    : reconcileLiftedActionDirection(
+        biasToActionDirection(verdict?.bias),
+        liftedAction != null ? selectedActionStore.getSide(bare, coercedTf) : null,
+      );
   const visibleActionLabel = resolveVisibleActionLabel(finalActionWithEleanor, actionDirection);
   const whyMessage = truth?.consolidated.userMessage ?? "";
   const whyCode = truth?.consolidated.internalReasonCode ?? "";

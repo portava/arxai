@@ -10296,6 +10296,18 @@ export const EdgeReportStatus = {
   INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
+/**
+ * What the report's discipline/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.
+ */
+export type EdgeBehaviourBasis =
+  (typeof EdgeBehaviourBasis)[keyof typeof EdgeBehaviourBasis];
+
+export const EdgeBehaviourBasis = {
+  SLICE_DEBRIEFS: "SLICE_DEBRIEFS",
+  NOT_MEASURED: "NOT_MEASURED",
+  ACCOUNT_WIDE_LEGACY: "ACCOUNT_WIDE_LEGACY",
+} as const;
+
 export interface EdgeReport {
   id: number;
   /** @nullable */
@@ -10323,6 +10335,7 @@ export interface EdgeReport {
   status: EdgeReportStatus;
   aiSummary: string;
   createdAt: string;
+  behaviourBasis?: EdgeBehaviourBasis;
 }
 
 export type EdgeWarningSeverity =
@@ -17588,6 +17601,7 @@ export type GenerateEdgeReport200 = {
 export type GetEdgeReportById200 = {
   report?: EdgeReport;
   warnings?: EdgeWarning[];
+  behaviourBasis?: EdgeBehaviourBasis;
 };
 
 export type GetStrongestEdges200 = {

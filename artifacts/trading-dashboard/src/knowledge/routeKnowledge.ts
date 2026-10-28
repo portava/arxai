@@ -53,7 +53,7 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   { route: "/ai-readiness-score", title: "AI Readiness Score", purpose: "AI's confidence that the current setup is trade-worthy.", related: ["/readiness"] },
   { route: "/ai-autopilot", title: "AI Autopilot", purpose: "Hands-free auto-execution path. Disabled until every safety gate is green.", safety: "Autopilot stays demo-only unless live execution is explicitly unlocked.", related: ["/autopilot-control-center", "/readiness"] },
   { route: "/autopilot-control-center", title: "Autopilot Control Center", purpose: "Detailed autopilot configuration, kill switches, and audit." },
-  { route: "/live-ai-assist", title: "Live AI Assist", purpose: "Real-time AI co-pilot during a session." },
+  { route: "/live-ai-assist", title: "Live AI Assist", purpose: "AI co-pilot during a session: builds a trade card from the selected-market scan when you ask." },
   { route: "/live-ai-auto-test", title: "Live AI Auto-Test", purpose: "Smoke-tests the live AI assist pipeline end-to-end." },
   { route: "/confidence-calibration", title: "Confidence Calibration", purpose: "Tracks predicted vs realized win rate per confidence bucket." },
   { route: "/edge-discovery", title: "Edge Discovery", purpose: "Surfaces patterns / setups that may have an edge based on history." },

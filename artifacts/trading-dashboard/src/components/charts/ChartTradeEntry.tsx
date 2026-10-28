@@ -43,7 +43,17 @@ export interface ChartTradePrefill {
   sourceNote?: string | null;
 }
 
-export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | null } = {}) {
+export function ChartTradeEntry({
+  prefill,
+  timeframe,
+}: {
+  prefill?: ChartTradePrefill | null;
+  /**
+   * The chart's timeframe. The feed chip grades and names this timeframe so it
+   * describes the chart the user is trading from (defaults to M15, labelled).
+   */
+  timeframe?: string;
+} = {}) {
   // Pulls from the shared chart-symbol bus — the SAME source of truth
   // the chart, scanner focus panel, AI assist card, ticket and ruby
   // explanation all read from. Picking a symbol in any of them flips
@@ -94,7 +104,7 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <ChartFeedConfidence symbol={symbol} />
+              <ChartFeedConfidence symbol={symbol} timeframe={timeframe} />
               <Badge variant="outline" className="font-mono" data-testid="text-chart-trade-symbol">
                 {symbol}
               </Badge>

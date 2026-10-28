@@ -31,7 +31,47 @@ export type UnifiedPosition = {
   sourceCommandId: string | null;
   accountMode: "DEMO" | "LIVE";
   source: string;
+  /** When the bridge last reported this row (server: last_synced_at / mt5_state.lastSyncAt). */
+  observedAt?: string | null;
+  /** Server's absolute verdict on observedAt. Absent (older server) = unknown. */
+  freshness?: "FRESH" | "STALE" | "MISSING";
 };
+
+function fmtAgeShort(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m ago`;
+}
+
+export interface PositionReportState {
+  /** True only when the server marked the row FRESH. */
+  confirmed: boolean;
+  /** Status field text. */
+  status: string;
+  /** "Last reported" field text. */
+  lastReported: string;
+}
+
+// What the side card may say about whether this position is open right now.
+// The feed lists rows that passed the open-exposure predicate; "open now" is
+// only asserted when the bridge reported the row recently (server FRESH).
+export function positionReportState(p: Pick<UnifiedPosition, "observedAt" | "freshness">, nowMs = Date.now()): PositionReportState {
+  const observedMs = p.observedAt ? new Date(p.observedAt).getTime() : NaN;
+  const known = Number.isFinite(observedMs);
+  const lastReported = known
+    ? `${new Date(observedMs).toLocaleTimeString()} (${fmtAgeShort(nowMs - observedMs)})`
+    : "Not reported";
+  if (p.freshness === "FRESH" && known) {
+    return { confirmed: true, status: "Open — reported by bridge", lastReported };
+  }
+  if (known) {
+    return { confirmed: false, status: `Unconfirmed — last reported ${fmtAgeShort(nowMs - observedMs)}`, lastReported };
+  }
+  return { confirmed: false, status: "Unconfirmed — no bridge report time", lastReported };
+}
 
 interface Props {
   position: UnifiedPosition;
@@ -47,6 +87,66 @@ const REFRESH_THROTTLE_MS = 8000;
 function formatMoney(v: number | null): string {
   if (v == null) return "—";
   return (v >= 0 ? "+" : "") + v.toFixed(2);
+}
+
+// ISO-4217 fiat allowlist — mirrors api-server lib/mt5/contractSize.ts
+// FIAT_CODES. Metals (XAU/XAG), crypto and index tickers are deliberately
+// absent so they never inherit the 100,000-unit FX lot.
+const FIAT_CODES: ReadonlySet<string> = new Set([
+  "USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "SEK", "NOK", "DKK",
+  "SGD", "HKD", "ZAR", "MXN", "PLN", "TRY", "CZK", "HUF", "CNH", "CNY", "RUB",
+  "INR", "THB", "ILS", "KRW",
+]);
+const FX_STANDARD_LOT_UNITS = 100_000;
+
+function splitForexPair(symbol: string): { base: string; quote: string } | null {
+  const m = /^([A-Z]{3})([A-Z]{3})([._-][A-Z0-9]+)?$/.exec(symbol.trim().toUpperCase());
+  if (!m) return null;
+  const base = m[1]!;
+  const quote = m[2]!;
+  if (!FIAT_CODES.has(base) || !FIAT_CODES.has(quote)) return null;
+  return { base, quote };
+}
+
+export interface PositionRiskEstimate {
+  /** Text shown in the "Risk est." field. "—" when it cannot be estimated. */
+  text: string;
+  /** Plain-English basis / reason, shown as the field's tooltip. */
+  basis: string;
+}
+
+/**
+ * Stop-loss risk estimate for the side card. The amount depends on the
+ * instrument's contract size and the quote currency, which this feed does not
+ * carry. We only estimate where the size is a known convention — a spot FX
+ * pair (both halves fiat) uses the standard 100,000-unit lot — and we state the
+ * amount in the pair's QUOTE currency (a USDJPY risk is yen, not dollars).
+ * Metals, indices, synthetics and crypto get no figure rather than a guessed
+ * one (the server's contractSize.ts refuses to guess for them too).
+ */
+export function estimatePositionRisk(
+  symbol: string | null,
+  entry: number | null,
+  stopLoss: number | null,
+  lotSize: number | null,
+): PositionRiskEstimate {
+  if (entry == null || stopLoss == null || lotSize == null || !symbol) {
+    return { text: "—", basis: "Needs entry, stop loss and lot size." };
+  }
+  const pair = splitForexPair(symbol);
+  if (!pair) {
+    return {
+      text: "—",
+      basis: `Contract size for ${symbol} is not reported by the broker on this feed, so the stop-loss risk cannot be estimated here.`,
+    };
+  }
+  const amount = Math.abs(entry - stopLoss) * lotSize * FX_STANDARD_LOT_UNITS;
+  if (!Number.isFinite(amount)) return { text: "—", basis: "Prices are not valid numbers." };
+  const text = pair.quote === "USD" ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ${pair.quote}`;
+  return {
+    text,
+    basis: `Estimate: |entry − stop| × ${lotSize} lot × ${FX_STANDARD_LOT_UNITS.toLocaleString()} units (standard FX lot), in ${pair.quote}. Not converted to your account currency.`,
+  };
 }
 
 function calcRR(side: "BUY" | "SELL" | null, entry: number | null, sl: number | null, tp: number | null): string {
@@ -99,14 +199,15 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
   // Resolve the honest display status identically to the Scanner.
   const displayStatus: ChartDisplayStatus = resolveDisplayStatus(feedStatus, candles.length > 0);
 
-  const risk = useMemo(() => {
-    if (p.entryPrice == null || p.stopLoss == null || p.lotSize == null) return null;
-    return Math.abs(p.entryPrice - p.stopLoss) * p.lotSize * 100000;
-  }, [p.entryPrice, p.stopLoss, p.lotSize]);
+  const risk = useMemo(
+    () => estimatePositionRisk(p.symbol, p.entryPrice, p.stopLoss, p.lotSize),
+    [p.symbol, p.entryPrice, p.stopLoss, p.lotSize],
+  );
 
   const rr = useMemo(() => calcRR(p.side, p.entryPrice, p.stopLoss, p.takeProfit), [p.side, p.entryPrice, p.stopLoss, p.takeProfit]);
 
   const openedAtLabel = p.openedAt ? new Date(p.openedAt).toLocaleString() : "—";
+  const report = positionReportState(p);
   const isLive = p.accountMode === "LIVE";
 
   const handleRefreshAnalysis = () => {
@@ -200,16 +301,21 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
           <Field label="Ticket" testid="text-position-ticket" value={p.brokerTicket ?? "—"} />
           <Field label="Lot size" testid="text-position-lot" value={p.lotSize?.toString() ?? "—"} />
           <Field label="Entry" testid="text-position-entry" value={p.entryPrice?.toString() ?? "—"} />
-          <Field label="Current" testid="text-position-current" value={p.currentPrice?.toString() ?? "—"} />
+          <Field label={report.confirmed ? "Current" : "Last reported price"} testid="text-position-current" value={p.currentPrice?.toString() ?? "—"} />
           <Field label="Stop loss" testid="text-position-sl" value={p.stopLoss?.toString() ?? "—"} />
           <Field label="Take profit" testid="text-position-tp" value={p.takeProfit?.toString() ?? "—"} />
-          <Field label="Floating P/L" testid="text-position-pnl" value={formatMoney(p.floatingPnl)}
-            valueClass={(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"} />
-          <Field label="Risk est." testid="text-position-risk" value={risk != null ? `$${risk.toFixed(2)}` : "—"} />
+          <Field label={report.confirmed ? "Floating P/L" : "Last reported P/L"} testid="text-position-pnl" value={formatMoney(p.floatingPnl)}
+            valueClass={p.floatingPnl == null ? "text-zinc-400" : p.floatingPnl >= 0 ? "text-emerald-300" : "text-rose-300"} />
+          <Field label="Risk est." testid="text-position-risk" value={risk.text} title={risk.basis} />
           <Field label="R : R" testid="text-position-rr" value={rr} />
-          <Field label="Order type" testid="text-position-ordertype" value={p.side ? `MARKET_${p.side}` : "—"} />
+          {/* The unified feed carries no order type, so none is invented from the side. */}
+          <Field label="Order type" testid="text-position-ordertype" value="Not reported"
+            valueClass="text-zinc-400" title="The positions feed does not carry the order type that opened this position." />
+          <Field label="Last reported" testid="text-position-last-reported" value={report.lastReported}
+            valueClass={report.confirmed ? undefined : "text-amber-300"} />
           <Field label="Open time" testid="text-position-opentime" value={openedAtLabel} />
-          <Field label="Status" testid="text-position-status" value="OPEN" />
+          <Field label="Status" testid="text-position-status" value={report.status}
+            valueClass={report.confirmed ? undefined : "text-amber-300"} />
         </div>
 
         {isLive && (
@@ -254,9 +360,9 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
   );
 }
 
-function Field({ label, value, testid, valueClass }: { label: string; value: string; testid: string; valueClass?: string }) {
+function Field({ label, value, testid, valueClass, title }: { label: string; value: string; testid: string; valueClass?: string; title?: string }) {
   return (
-    <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-2">
+    <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-2" title={title}>
       <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
       <div data-testid={testid} className={`text-xs font-mono ${valueClass ?? "text-zinc-100"}`}>{value}</div>
     </div>

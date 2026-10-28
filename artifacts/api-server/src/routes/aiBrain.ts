@@ -110,6 +110,18 @@ router.get("/market-replay/:id", (req, res) => {
 import { db, tradeJournalTable, liveIntentsTable, learningInsightsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
+type JournalRow = typeof tradeJournalTable.$inferSelect;
+/** A journal row whose trade has a known result: BUY/SELL with a finite P&L. */
+function hasRecordedOutcome(j: JournalRow): j is JournalRow & { pnl: number } {
+  return j.direction !== "WAIT" && typeof j.pnl === "number" && Number.isFinite(j.pnl);
+}
+
+/** A mistake tag that names a mistake ("None" / blank are not mistakes). */
+function realMistakeTag(tag: string | null | undefined): string | null {
+  const t = (tag ?? "").trim();
+  return t && t.toLowerCase() !== "none" ? t : null;
+}
+
 // Phase 25 — Per-user scope. Was previously reading ALL users' journal rows
 // and returning them to any authed caller (cross-user leak). Now filtered by
 // req.authUser.id and gated by requireUser. liveIntentsTable has no ownership
@@ -127,16 +139,21 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
     const winRate = total ? Math.round((wins / total) * 100) : 0;
     const pnl = journal.reduce((a, j) => a + (j.pnl ?? 0), 0);
 
+    // Best/worst symbol rank recorded results only (a missing P&L is
+    // unknown, not 0). "Best" must be net profitable and "worst" net losing,
+    // so one symbol is never both and a losing symbol is never "strongest".
     const bySymbol = new Map<string, { count: number; pnl: number }>();
-    for (const j of journal) {
+    for (const j of journal.filter(hasRecordedOutcome)) {
       const k = j.symbol;
       const cur = bySymbol.get(k) ?? { count: 0, pnl: 0 };
-      cur.count++; cur.pnl += j.pnl ?? 0;
+      cur.count++; cur.pnl += j.pnl;
       bySymbol.set(k, cur);
     }
     const symRows = Array.from(bySymbol.entries()).map(([symbol, v]) => ({ symbol, ...v }));
-    const bestSymbol = symRows.sort((a, b) => b.pnl - a.pnl)[0]?.symbol ?? null;
-    const worstSymbol = symRows.sort((a, b) => a.pnl - b.pnl)[0]?.symbol ?? null;
+    const topSym = [...symRows].sort((a, b) => b.pnl - a.pnl)[0];
+    const lowSym = [...symRows].sort((a, b) => a.pnl - b.pnl)[0];
+    const bestSymbol = topSym && topSym.pnl > 0 ? topSym.symbol : null;
+    const worstSymbol = lowSym && lowSym.pnl < 0 ? lowSym.symbol : null;
 
     const byStrategy = new Map<string, { count: number; pnl: number }>();
     for (const j of journal) {
@@ -150,9 +167,10 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
       .sort((a, b) => b.pnl - a.pnl);
 
     const mistakeDist = new Map<string, number>();
+    // Untagged rows and the explicit "None" tag are not a mistake pattern.
     for (const j of journal) {
-      const tag = j.mistakeTag ?? "none";
-      mistakeDist.set(tag, (mistakeDist.get(tag) ?? 0) + 1);
+      const tag = realMistakeTag(j.mistakeTag);
+      if (tag) mistakeDist.set(tag, (mistakeDist.get(tag) ?? 0) + 1);
     }
 
     // Source truth: this handler reads ONLY trade_journal. That table has no
@@ -257,24 +275,43 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       });
     }
     const total = journal.length;
-    const wins = journal.filter((j) => (j.pnl ?? 0) > 0).length;
-    const winRate = total ? Math.round((wins / total) * 100) : 0;
+    // Only rows with a recorded P&L on an actual BUY/SELL have an outcome.
+    // WAIT rows are decisions not to trade; rows with no P&L are undecided.
+    // Neither is a loss, so neither enters the win-rate denominator (same
+    // "decided" basis as the scalp journal).
+    const outcomes = journal.filter(hasRecordedOutcome);
+    const wins = outcomes.filter((j) => j.pnl > 0).length;
+    const losses = outcomes.filter((j) => j.pnl < 0).length;
+    const decided = wins + losses;
+    const withoutOutcome = total - outcomes.length;
+    const winRate: number | null = decided ? Math.round((wins / decided) * 100) : null;
+    const excludedNote = withoutOutcome > 0
+      ? ` (${withoutOutcome} journal ${withoutOutcome === 1 ? "entry" : "entries"} with no result — WAIT or no P&L entered — not counted)`
+      : "";
 
     const bySymbol = new Map<string, number>();
     const byStrategy = new Map<string, number>();
     const byMistake = new Map<string, number>();
+    // Rank on recorded results only — a missing P&L is unknown, not 0.
+    for (const j of outcomes) {
+      bySymbol.set(j.symbol, (bySymbol.get(j.symbol) ?? 0) + j.pnl);
+      byStrategy.set(j.strategy, (byStrategy.get(j.strategy) ?? 0) + j.pnl);
+    }
     for (const j of journal) {
-      bySymbol.set(j.symbol, (bySymbol.get(j.symbol) ?? 0) + (j.pnl ?? 0));
-      byStrategy.set(j.strategy, (byStrategy.get(j.strategy) ?? 0) + (j.pnl ?? 0));
-      if (j.mistakeTag) byMistake.set(j.mistakeTag, (byMistake.get(j.mistakeTag) ?? 0) + 1);
+      const tag = realMistakeTag(j.mistakeTag);
+      if (tag) byMistake.set(tag, (byMistake.get(tag) ?? 0) + 1);
     }
     const sorted = (m: Map<string, number>, asc = false) =>
       Array.from(m.entries()).sort((a, b) => asc ? a[1] - b[1] : b[1] - a[1]);
+    // "Best" must be net profitable and "worst" net losing, so one key is
+    // never both, and a profitable strategy is never told to stop.
+    const bestOf = (m: Map<string, number>) => { const top = sorted(m)[0]; return top && top[1] > 0 ? top[0] : null; };
+    const worstOf = (m: Map<string, number>) => { const low = sorted(m, true)[0]; return low && low[1] < 0 ? low[0] : null; };
 
-    const bestStrat = sorted(byStrategy)[0]?.[0] ?? null;
-    const worstStrat = sorted(byStrategy, true)[0]?.[0] ?? null;
-    const bestSym = sorted(bySymbol)[0]?.[0] ?? null;
-    const worstSym = sorted(bySymbol, true)[0]?.[0] ?? null;
+    const bestStrat = bestOf(byStrategy);
+    const worstStrat = worstOf(byStrategy);
+    const bestSym = bestOf(bySymbol);
+    const worstSym = worstOf(bySymbol);
     const topMistake = sorted(byMistake)[0]?.[0] ?? "none";
 
     // Rule suggestions are derived ONLY from what the journal records
@@ -306,9 +343,14 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
     }
 
     return res.json({
-      doingWell: winRate >= 50
-        ? `Win rate ${winRate}% across ${total} simulated trades — keep the same selection criteria.`
-        : `${wins} winners out of ${total} so far — discipline before frequency.`,
+      doingWell: winRate == null
+        ? `None of your ${total} journal ${total === 1 ? "entry has" : "entries have"} a recorded win or loss yet, so there is no win rate to report. Enter the P&L on closed trades to build one.`
+        : winRate >= 50
+          ? `Win rate ${winRate}% across ${decided} simulated trades with a recorded result${excludedNote} — keep the same selection criteria.`
+          : `${wins} winners out of ${decided} simulated trades with a recorded result${excludedNote} — discipline before frequency.`,
+      winRate,
+      tradesWithOutcome: decided,
+      entriesWithoutOutcome: withoutOutcome,
       doingPoorly: topMistake !== "none"
         ? `Most common mistake: "${topMistake}". Add a pre-trade check that blocks this case.`
         : "No clear pattern of mistakes yet — log more trades.",
@@ -317,11 +359,13 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       mostCommonMistake: topMistake,
       recommendedFocus: worstStrat
         ? `Stop trading "${worstStrat}" until you can show 5 paper wins on it in replay.`
-        : "Pick one strategy and run 10 replays before taking any live intent.",
+        : "No strategy shows a net loss in your recorded results. Pick one strategy and run 10 replays before taking any live intent.",
       suggestedRuleChanges,
-      confidenceCalibration: total < 10
+      // Journal rows carry no confidence score, so calibration cannot be
+      // measured here; never compare the win rate to a fixed constant.
+      confidenceCalibration: decided < 10
         ? "Sample size too small — confidence numbers are not yet calibrated."
-        : `Average confidence aligns with win rate within ${Math.abs(winRate - 60)} pts.`,
+        : "Confidence calibration is not measured — journal entries do not record a confidence score to compare against outcomes.",
       dataSource: "SIMULATOR",
       generatedAt: new Date().toISOString(),
     });

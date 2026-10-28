@@ -134,7 +134,15 @@ export type EffectiveMode = "demo" | "live" | "read_only";
 
 // Single plain-English data verdict for the consolidated truth strip.
 export type DataVerdict = "Live" | "Delayed" | "Stale" | "Historical only" | "Unavailable";
-export type TradingVerdict = "Enabled" | "Read-only" | "Approval required" | "Blocked";
+export type TradingVerdict =
+  | "Enabled"
+  | "Read-only"
+  | "Approval required"
+  | "Blocked"
+  // The account-mode envelope is still loading — nothing is known yet.
+  | "Checking…"
+  // The account-mode envelope failed to load — the trading state is unknown.
+  | "Couldn't check";
 export type RubyVerdict = "Full read" | "Limited read" | "No read";
 
 export interface ScannerTruth {
@@ -295,6 +303,12 @@ export interface ScannerTruth {
 
 export interface ScannerTruthMode {
   isLoading: boolean;
+  /**
+   * The account-mode request failed and no envelope is available. While this
+   * or `isLoading` is true every flag below is an unmeasured default (false),
+   * so the trading verdict says the state is unknown instead of asserting one.
+   */
+  isError?: boolean;
   isDemo: boolean;
   isLiveShared: boolean;
   isPaper: boolean;
@@ -608,7 +622,15 @@ export function resolveScannerTruth(
   // ── Execution (permission-driven; server still re-runs all 16 gates) ───────
   const executionAllowed =
     (permissions.demoManualAllowed || permissions.liveManualAllowed);
-  const executionReason = executionAllowed
+  // Account mode not resolved (loading, or failed with no envelope): every
+  // permission flag is an unmeasured default, so no approval / read-only /
+  // blocked claim may be made from it. Execution stays not allowed.
+  const modeUnresolved = !executionAllowed && !m.isFrozen && (m.isLoading || m.isError === true);
+  const executionReason = modeUnresolved
+    ? m.isLoading
+      ? "Checking your account's trading access…"
+      : "Couldn't load your account's trading access — whether you can trade from here is unknown right now."
+    : executionAllowed
     ? effectiveMode === "live"
       ? "You can place live trades — every order still passes the full safety checks."
       : "You can place demo trades."
@@ -630,6 +652,10 @@ export function resolveScannerTruth(
 
   const tradingVerdict: TradingVerdict = m.isFrozen
     ? "Blocked"
+    : modeUnresolved
+      ? m.isLoading
+        ? "Checking…"
+        : "Couldn't check"
     : executionAllowed
       ? "Enabled"
       : effectiveMode === "read_only" && !m.isLiveShared && !m.isDemo
@@ -758,8 +784,12 @@ export function resolveScannerTruth(
   // Mirror the existing tradingVerdict so the strip and the public block never
   // drift: frozen → BLOCKED, executable → ENABLED, pending approval →
   // REVIEW_REQUIRED, otherwise (read-only) → DISABLED.
+  // Unresolved account mode → DISABLED (nothing executable is known), never
+  // REVIEW_REQUIRED: no approval state has been read.
   const tradingStatus: TradingStatus = m.isFrozen
     ? "BLOCKED"
+    : modeUnresolved
+      ? "DISABLED"
     : executionAllowed
       ? "ENABLED"
       : tradingVerdict === "Approval required"

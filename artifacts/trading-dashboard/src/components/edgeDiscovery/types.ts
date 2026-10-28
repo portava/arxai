@@ -18,7 +18,15 @@ export interface EdgeReport {
   status: "STRONG_EDGE"|"DEVELOPING_EDGE"|"WEAK_EDGE"|"NO_EDGE"|"INSUFFICIENT_DATA";
   aiSummary: string;
   createdAt: string;
+  /** What the behaviour scores describe (server); absent on older servers. */
+  behaviourBasis?: EdgeBehaviourBasis;
 }
+/**
+ * SLICE_DEBRIEFS = averaged over debriefs linked to this slice's trades;
+ * NOT_MEASURED = no linked debrief (stored 0s are placeholders);
+ * ACCOUNT_WIDE_LEGACY = older report averaged over all of the user's debriefs.
+ */
+export type EdgeBehaviourBasis = "SLICE_DEBRIEFS" | "NOT_MEASURED" | "ACCOUNT_WIDE_LEGACY";
 export interface EdgeWarning {
   id: number;
   edgeReportId: number;

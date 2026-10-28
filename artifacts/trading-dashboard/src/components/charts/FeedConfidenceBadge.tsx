@@ -107,6 +107,13 @@ export interface FeedConfidenceBadgeProps {
    * bare chip. Suppressed for a current feed (<=1), honest "· —" when null.
    */
   showTrailingGap?: boolean;
+  /**
+   * The timeframe this verdict describes (e.g. "M1"). When given it is shown on
+   * the always-visible chip and named in the accessible label, so a chip that
+   * sits away from its chart never leaves the reader guessing which
+   * timeframe's feed it graded.
+   */
+  timeframeLabel?: string;
 }
 
 export function FeedConfidenceBadge({
@@ -115,12 +122,22 @@ export function FeedConfidenceBadge({
   onRequestFallback,
   aiUsableResolved,
   showTrailingGap = false,
+  timeframeLabel,
 }: FeedConfidenceBadgeProps) {
   const rawConf = feedConfidence(feedStatus);
   // Cap the raw feed verdict by the resolved verdict when one is supplied, so
   // the badge can never look more confident than the rest of the panel.
   const conf = capConfidence(rawConf, aiUsableResolved);
   const fs = feedStatus ?? null;
+  // The State row follows the same cap: a raw isLive is not shown as "Live"
+  // while the resolved verdict is unconfirmed (false) or still checking (null).
+  const rawFeedState = fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—";
+  const feedStateLabel =
+    rawFeedState === "Live" && aiUsableResolved === false
+      ? "Unconfirmed (feed reports live)"
+      : rawFeedState === "Live" && aiUsableResolved === null
+        ? "Checking…"
+        : rawFeedState;
   const provider = providerInfo(fs?.source);
   const ProviderIcon = TIER_ICON[provider.tier];
   // Task #776 — a synthetic served by the MT5 broker has NO separate Deriv tick
@@ -143,7 +160,7 @@ export function FeedConfidenceBadge({
           data-ai-usable={conf.aiUsable ? "true" : "false"}
           data-provider-tier={provider.tier}
           className="inline-flex items-center gap-1"
-          aria-label={`Data source: ${provider.label} (${TIER_LABEL[provider.tier]}). Feed status: ${conf.statusLabel}`}
+          aria-label={`Data source: ${provider.label} (${TIER_LABEL[provider.tier]}). Feed status: ${conf.statusLabel}${timeframeLabel ? `. Timeframe: ${timeframeLabel}` : ""}`}
         >
           {/* Source sub-chip — distinct icon + colour per trust tier. Names the
               primary broker feed vs. whatever fallback is actually serving. */}
@@ -155,6 +172,15 @@ export function FeedConfidenceBadge({
             <ProviderIcon className="h-3 w-3" />
             {provider.label}
           </Badge>
+          {timeframeLabel ? (
+            <Badge
+              variant="outline"
+              data-testid="arx-feed-timeframe"
+              className="text-[10px] font-mono text-zinc-300"
+            >
+              {timeframeLabel}
+            </Badge>
+          ) : null}
           {/* Quality sub-chip — live/stale severity + AI-usability. */}
           <Badge
             variant="outline"
@@ -206,7 +232,7 @@ export function FeedConfidenceBadge({
 
         <div className="space-y-1 rounded-md border border-zinc-800 p-2">
           <Row label="Source" value={fs?.source || "—"} />
-          <Row label="State" value={fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—"} />
+          <Row label="State" value={feedStateLabel} />
           {/* Server-side time to read the winning provider — NOT tick or bar age
               (see "Last tick" / "Last candle"). Unknown when nothing served. */}
           <Row label="Server read time" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
