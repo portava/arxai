@@ -84,7 +84,9 @@ export function summarizeFreshness(
  * checks + the 4-value aggregate + freshness. Pure, deterministic, advisory.
  *
  * Precedence (most-severe / most-specific first):
- * 1. Nothing evaluable (no checks, or all SKIPPED)        → ERROR (honest).
+ * 1. Nothing evaluable (no checks, or all SKIPPED)        → NOT_CHECKED (not
+ *    wired, or no context — nothing errored). ERROR is reserved for a failed
+ *    evaluation, which the coordinator reports itself.
  * 2. A REQUIRED layer FAIL                                → BLOCKED.
  * 3. A REQUIRED layer NOT_AVAILABLE                       → WAITING_FOR_DATA.
  * 4. A REQUIRED layer WARN whose age exceeds STALENESS_BUDGET_MS → STALE.
@@ -109,7 +111,7 @@ export function deriveReadinessStatus(
   _freshness: HandshakeFreshness,
 ): HandshakeReadinessStatus {
   const evaluable = checks.filter((c) => c.status !== "SKIPPED");
-  if (evaluable.length === 0 || agg.overallStatus === "UNKNOWN") return "ERROR";
+  if (evaluable.length === 0 || agg.overallStatus === "UNKNOWN") return "NOT_CHECKED";
 
   if (evaluable.some((c) => c.required && c.status === "FAIL")) return "BLOCKED";
   if (evaluable.some((c) => c.required && c.status === "NOT_AVAILABLE")) return "WAITING_FOR_DATA";

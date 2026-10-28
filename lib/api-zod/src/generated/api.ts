@@ -9487,15 +9487,20 @@ export const GetAdminHandshakeMonitorResponse = zod.object({
     zod.object({
       type: zod.string(),
       label: zod.string(),
-      overallStatus: zod.enum([
-        "READY",
-        "READY_WITH_WARNINGS",
-        "WAITING_FOR_DATA",
-        "STALE",
-        "DEGRADED",
-        "BLOCKED",
-        "ERROR",
-      ]),
+      overallStatus: zod
+        .enum([
+          "READY",
+          "READY_WITH_WARNINGS",
+          "WAITING_FOR_DATA",
+          "STALE",
+          "DEGRADED",
+          "BLOCKED",
+          "ERROR",
+          "NOT_CHECKED",
+        ])
+        .describe(
+          "ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored.",
+        ),
       aggregateStatus: zod.enum(["PASS", "WARN", "BLOCK", "UNKNOWN"]),
       safeToProceed: zod.boolean(),
       implemented: zod.boolean(),
@@ -9566,7 +9571,14 @@ export const GetAdminHandshakeMonitorResponse = zod.object({
     warnings: zod.number(),
     waiting: zod.number(),
     blocked: zod.number(),
-    errors: zod.number(),
+    errors: zod
+      .number()
+      .describe("Verdicts whose evaluation failed (ERROR) only."),
+    notChecked: zod
+      .number()
+      .describe(
+        "Verdicts with nothing evaluated (NOT_CHECKED) — not wired or no context; not errors.",
+      ),
   }),
 });
 

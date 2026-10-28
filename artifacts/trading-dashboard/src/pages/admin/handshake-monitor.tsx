@@ -21,7 +21,8 @@ type Readiness =
   | "STALE"
   | "DEGRADED"
   | "BLOCKED"
-  | "ERROR";
+  | "ERROR"
+  | "NOT_CHECKED";
 type LayerStatus = "PASS" | "WARN" | "FAIL" | "SKIPPED" | "NOT_AVAILABLE";
 
 interface LayerCheck {
@@ -76,7 +77,10 @@ interface Summary {
   warnings: number;
   waiting: number;
   blocked: number;
+  /** Evaluations that failed (ERROR) only. */
   errors: number;
+  /** Nothing evaluated — not wired, or no context. Not errors. */
+  notChecked?: number;
 }
 interface Resp {
   ok: boolean;
@@ -100,6 +104,7 @@ const READINESS_STYLE: Record<Readiness, string> = {
   DEGRADED: "bg-warning/20 text-warning",
   BLOCKED: "bg-danger/20 text-danger",
   ERROR: "bg-muted text-muted-foreground",
+  NOT_CHECKED: "bg-muted text-muted-foreground",
 };
 const READINESS_LABEL: Record<Readiness, string> = {
   READY: "Ready",
@@ -109,7 +114,17 @@ const READINESS_LABEL: Record<Readiness, string> = {
   DEGRADED: "Degraded",
   BLOCKED: "Blocked",
   ERROR: "Error",
+  NOT_CHECKED: "Not checked",
 };
+
+/** "12s old" / "3m old" for a layer signal age, or null when not time-based. */
+function ageLabel(ms: number | null): string | null {
+  if (ms == null || !Number.isFinite(ms)) return null;
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s old`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m}m old` : `${Math.round(m / 60)}h old`;
+}
 const LAYER_STYLE: Record<LayerStatus, string> = {
   PASS: "bg-success/15 text-success",
   WARN: "bg-warning/15 text-warning",
@@ -176,6 +191,9 @@ function HandshakeMonitorInner() {
           <Badge variant="outline" className="bg-muted text-muted-foreground">{summary.waiting} waiting</Badge>
           <Badge variant="outline" className={OVERALL_STYLE.BLOCK}>{summary.blocked} blocked</Badge>
           <Badge variant="outline" className="bg-muted text-muted-foreground">{summary.errors} errors</Badge>
+          {summary.notChecked != null && (
+            <Badge variant="outline" className="bg-muted text-muted-foreground">{summary.notChecked} not checked</Badge>
+          )}
         </div>
       )}
 
@@ -192,20 +210,30 @@ function HandshakeMonitorInner() {
               {!v.implemented && (
                 <span className="text-xs text-muted-foreground">Planned — not yet wired</span>
               )}
+              <span className="text-[11px] text-muted-foreground" data-testid={`handshake-evaluated-${v.type}`}>
+                Evaluated {new Date(v.evaluatedAt).toLocaleTimeString()} · results are cached for up to 10 s
+              </span>
             </CardHeader>
             <CardContent className="space-y-2">
               {v.checks.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No layer checks.</p>
               ) : (
                 v.checks.map((c) => (
-                  <div key={c.layer} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-muted-foreground">
-                      {c.layer}
-                      {c.required ? "" : " (optional)"}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Badge className={LAYER_STYLE[c.status]} variant="outline">{c.status}</Badge>
-                    </span>
+                  <div key={c.layer} className="space-y-0.5 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">
+                        {c.layer}
+                        {c.required ? "" : " (optional)"}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Badge className={LAYER_STYLE[c.status]} variant="outline">{c.status}</Badge>
+                      </span>
+                    </div>
+                    {(c.detail || ageLabel(c.ageMs)) && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {[c.detail, ageLabel(c.ageMs)].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
                   </div>
                 ))
               )}

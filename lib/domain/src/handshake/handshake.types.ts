@@ -76,7 +76,11 @@ export type HandshakeOverallStatus = (typeof HANDSHAKE_OVERALL_STATUSES)[number]
 // DEGRADED            — a required layer is reachable but impaired (non-stale).
 // BLOCKED             — a required layer is in a definitive bad state (advisory
 //                       "do not proceed"; the REAL stop is the 16-gate pipeline).
-// ERROR               — nothing could be evaluated (honest; never fabricate).
+// ERROR               — the evaluation itself failed (honest; never fabricate).
+// NOT_CHECKED         — nothing was evaluated because the handshake has no
+//                       wired layers or no context (e.g. an investor-scoped
+//                       handshake in the admin view, every layer SKIPPED).
+//                       Nothing errored; nothing was checked.
 export const HANDSHAKE_READINESS_STATUSES = [
   "READY",
   "READY_WITH_WARNINGS",
@@ -85,6 +89,7 @@ export const HANDSHAKE_READINESS_STATUSES = [
   "DEGRADED",
   "BLOCKED",
   "ERROR",
+  "NOT_CHECKED",
 ] as const;
 export type HandshakeReadinessStatus = (typeof HANDSHAKE_READINESS_STATUSES)[number];
 

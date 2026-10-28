@@ -5561,6 +5561,9 @@ export interface HandshakePermissionsView {
   executionCritical: boolean;
 }
 
+/**
+ * ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored.
+ */
 export type HandshakeVerdictViewOverallStatus =
   (typeof HandshakeVerdictViewOverallStatus)[keyof typeof HandshakeVerdictViewOverallStatus];
 
@@ -5572,6 +5575,7 @@ export const HandshakeVerdictViewOverallStatus = {
   DEGRADED: "DEGRADED",
   BLOCKED: "BLOCKED",
   ERROR: "ERROR",
+  NOT_CHECKED: "NOT_CHECKED",
 } as const;
 
 export type HandshakeVerdictViewAggregateStatus =
@@ -5587,6 +5591,7 @@ export const HandshakeVerdictViewAggregateStatus = {
 export interface HandshakeVerdictView {
   type: string;
   label: string;
+  /** ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored. */
   overallStatus: HandshakeVerdictViewOverallStatus;
   aggregateStatus: HandshakeVerdictViewAggregateStatus;
   safeToProceed: boolean;
@@ -5623,7 +5628,10 @@ export interface HandshakeMonitorSummaryView {
   warnings: number;
   waiting: number;
   blocked: number;
+  /** Verdicts whose evaluation failed (ERROR) only. */
   errors: number;
+  /** Verdicts with nothing evaluated (NOT_CHECKED) — not wired or no context; not errors. */
+  notChecked: number;
 }
 
 export interface HandshakeMonitorResponse {

@@ -13,5 +13,8 @@ export interface HandshakeMonitorSummaryView {
   warnings: number;
   waiting: number;
   blocked: number;
+  /** Verdicts whose evaluation failed (ERROR) only. */
   errors: number;
+  /** Verdicts with nothing evaluated (NOT_CHECKED) — not wired or no context; not errors. */
+  notChecked: number;
 }
