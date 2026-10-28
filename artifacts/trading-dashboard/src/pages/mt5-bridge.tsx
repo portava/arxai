@@ -178,7 +178,11 @@ export default function MT5BridgePage() {
   const allocation = (mode as any).userAllocation ?? (mode as any).assignedStartingBalance ?? null;
   const openPnl = acct?.pnl ?? null;
   const openTrades = Array.isArray(s?.openPositions) ? s.openPositions.length : null;
+  // /mt5/status carries no account/position sync time. The only age it gives
+  // is the EA heartbeat (own connection) or the shared bridge's last report,
+  // so that is what this label says — never "Last Sync".
   const lastSync = fmtAge(onShared ? (shared?.snapshotAgeSeconds ?? null) : (s?.secondsSinceHeartbeat ?? null));
+  const lastSyncLabel = onShared ? "Last bridge report" : "Last heartbeat";
 
   // Only the risk lock is known here; no risk level is measured.
   const riskTone: Tone = frozen ? "danger" : "muted";
@@ -207,8 +211,10 @@ export default function MT5BridgePage() {
   if (onShared ? shared?.snapshotAgeSeconds != null : s?.secondsSinceHeartbeat != null) {
     activity.push({ time: lastSync, event: bridgeUp ? "Bridge heartbeat" : "Last heartbeat received", tone: bridgeUp ? "success" : "warning", chip: bridgeUp ? "Connected" : "Stale" });
   }
-  if (snapshot?.account) activity.push({ time: lastSync, event: "Account snapshot synced", tone: "success", chip: "Success" });
-  if (openTrades != null) activity.push({ time: lastSync, event: "Position sync completed", tone: "success", chip: "Success" });
+  // The status payload has no sync timestamp for the snapshot or positions, so
+  // these rows say what is on file without stamping them with the heartbeat age.
+  if (snapshot?.account) activity.push({ time: "time not reported", event: "Account snapshot on file", tone: "muted", chip: "On file" });
+  if (openTrades != null) activity.push({ time: "time not reported", event: `Positions reported: ${openTrades}`, tone: "muted", chip: "On file" });
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-mt5-bridge">
@@ -266,7 +272,7 @@ export default function MT5BridgePage() {
 
           <div className="mt-3 flex items-center justify-between rounded-xl border border-border bg-background/40 px-3 py-2">
             <span className="flex items-center gap-2 text-sm text-txt-secondary">
-              <RefreshCw className="h-4 w-4 text-txt-muted" /> Last Sync <span className="text-foreground">{lastSync}</span>
+              <RefreshCw className="h-4 w-4 text-txt-muted" /> {lastSyncLabel} <span className="text-foreground">{lastSync}</span>
             </span>
             <button onClick={refresh} data-testid="bridge-refresh"
               className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20">
@@ -347,7 +353,7 @@ export default function MT5BridgePage() {
             <Row label="Result Reporting" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
             <Row label="Position Refresh" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
             <Row label="Account Refresh" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
-            <Row label="Last Sync" value={lastSync} />
+            <Row label={lastSyncLabel} value={lastSync} />
           </div>
           <button onClick={refresh} className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/20">
             <RefreshCw className="h-4 w-4" /> Refresh Status
@@ -396,7 +402,7 @@ export default function MT5BridgePage() {
           ) : (
             <div className="space-y-2">
               {activity.map((a, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2">
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2" data-testid="bridge-activity-row">
                   <span className={cn("h-2 w-2 shrink-0 rounded-full", TONE_DOT[a.tone])} />
                   <span className="w-24 shrink-0 text-xs text-txt-muted">{a.time}</span>
                   <span className="min-w-0 flex-1 truncate text-sm text-foreground">{a.event}</span>
