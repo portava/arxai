@@ -11,6 +11,8 @@
 | PR #100 head (`claude/self-trading-improvements`) | `e09875c4d1a8521a43c05b69fc827117c71db259` |
 | PR #99 head (`codex/platform-evidence-integration`), the comparison baseline and PR #100's base | `49f73dcf76de9ae689a7c12c054b17e0b454e2c9` |
 
+After these runs PR #99 advanced to `cd44c73`: four chart-performance and chart-QA commits (`a122d26`, `3a0393a`, `bc4ba57`, `cd44c73`) that touch no self-trading file. They are **not** merged into PR #100 and **not** covered by the results below. Re-merging them means repeating this run.
+
 Every check below ran in an offline cloud container (4 CPUs, Node 24.22.1, PostgreSQL 16), with non-local network connections blocked. Raw logs and JSON for each check are under `/mnt/project-files/arx/self-trading-2026-10-28/`.
 
 ## Results
@@ -134,4 +136,5 @@ At 4×, the stalls over 100 ms happened when the page remounted the Autonomous E
 4. Behaviour changes for operators, listed in `docs/SELF_TRADING_IMPROVEMENTS_2026_10_27.md`:
    - Agent entries need broker quotes. v1.31 streams none; v1.52/v1.54 need `CandleSymbols` and a symbol sync.
    - The protective path can add up to one 20 s window per cycle.
-5. Nothing here was exercised against a live or demo broker, by design.
+5. PR #99 moved to `cd44c73` after this run. PR #100 must re-merge it and repeat these checks before any green verdict.
+6. Nothing here was exercised against a live or demo broker, by design.
