@@ -7,6 +7,8 @@
 // consume this rather than re-deriving freshness/permission logic on its own.
 
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
 import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
@@ -79,6 +81,12 @@ export function useScannerTruth(
   const last = candles.length > 0 ? candles[candles.length - 1] : null;
   const first = candles.length > 0 ? candles[0] : null;
   const lastTime = candleTimeIso(last?.time);
+  // ONE display precision for the instrument, shared by every price surface.
+  const serverPrecision = candlesQ.data?.pricePrecision ?? null;
+  const pricePrecision = useMemo(
+    () => resolveDisplayPricePrecision(serverPrecision, candles.flatMap((c) => [c.open, c.high, c.low, c.close])),
+    [serverPrecision, candles],
+  );
   const nowMs = useEvidenceDeadline(lastTime != null
     ? Date.parse(lastTime) + thresholdsFor(chartTimeframe).candleMaxAgeMs + 1
     : null);
@@ -111,6 +119,7 @@ export function useScannerTruth(
         firstTime: candleTimeIso(first?.time),
         lastTime,
         lastClose: last ? last.close : null,
+        pricePrecision,
         // No trusted independent real-time quote exists: the only quote endpoint
         // is the simulator (the very source that caused the divergence bug and is
         // forbidden here). Single-sourcing candles eliminates the quote↔candle

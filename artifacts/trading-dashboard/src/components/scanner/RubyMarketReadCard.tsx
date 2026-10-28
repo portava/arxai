@@ -5,6 +5,7 @@ import { ScannerReadGate } from "@/components/scanner/ScannerReadGate";
 import { useScannerReadGate } from "@/hooks/useScannerReadGate";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import { TruthEvidenceClasses } from "@/components/scanner/TruthEvidenceClasses";
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
@@ -30,17 +31,17 @@ import type {
 
 const MODE_KEY = "scanner.rubyMarketRead.mode";
 
-function fmtNum(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const digits = abs >= 100 ? 2 : abs >= 1 ? 4 : 5;
-  return n.toFixed(digits);
+// Levels print at the instrument's display precision — the same precision the
+// header, chart badge and price axis use (lib/instrumentPriceFormat) — so a
+// level never carries fewer digits than the quote it is compared against.
+function fmtNum(n: number | null | undefined, precision: number | null | undefined): string {
+  return formatInstrumentPrice(n, precision);
 }
 
-function fmtZone(z: SignalPriceZone | null | undefined): string {
+function fmtZone(z: SignalPriceZone | null | undefined, precision: number | null | undefined): string {
   if (!z) return "—";
-  if (z.from === z.to) return fmtNum(z.from);
-  return `${fmtNum(z.from)} – ${fmtNum(z.to)}`;
+  if (z.from === z.to) return fmtNum(z.from, precision);
+  return `${fmtNum(z.from, precision)} – ${fmtNum(z.to, precision)}`;
 }
 
 function freshnessLabel(signal: RubyMarketEdgeSignal): { text: string; tone: string } {
@@ -177,7 +178,8 @@ export function RubyMarketReadCard({
   // the ONE per-symbol Truth Snapshot, so this card can never disagree with the
   // chart / scanner rows on the same page. The age is anchored to the DATA
   // timestamp (newest of lastTickAt / lastCandleAt), never the signal build time.
-  const { news, data: truthData, evidence: truthEvidence } = useSymbolTruth(symbol, chartTimeframe);
+  const { news, data: truthData, evidence: truthEvidence, scannerTruth } = useSymbolTruth(symbol, chartTimeframe);
+  const pricePrecision = scannerTruth?.candles.pricePrecision ?? null;
   const dataUpdatedIso = useMemo(() => {
     const stamps = [truthData?.lastTickAt, truthData?.lastCandleAt]
       .map((s) => (s ? Date.parse(s) : NaN))
@@ -456,14 +458,14 @@ export function RubyMarketReadCard({
               {explanation.actionable && !downgraded && (
                 <Collapsible label="Levels">
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <LevelCell label="Entry zone" value={fmtZone(explanation.levels.entryZone)} />
-                    <LevelCell label="Watch zone" value={fmtZone(explanation.levels.watchZone)} />
-                    <LevelCell label="Don't-chase zone" value={fmtZone(explanation.levels.lateZone)} />
-                    <LevelCell label="Stop loss" value={fmtNum(explanation.levels.stopLoss)} />
-                    <LevelCell label="Invalidation" value={fmtNum(explanation.levels.invalidation)} />
+                    <LevelCell label="Entry zone" value={fmtZone(explanation.levels.entryZone, pricePrecision)} />
+                    <LevelCell label="Watch zone" value={fmtZone(explanation.levels.watchZone, pricePrecision)} />
+                    <LevelCell label="Don't-chase zone" value={fmtZone(explanation.levels.lateZone, pricePrecision)} />
+                    <LevelCell label="Stop loss" value={fmtNum(explanation.levels.stopLoss, pricePrecision)} />
+                    <LevelCell label="Invalidation" value={fmtNum(explanation.levels.invalidation, pricePrecision)} />
                     <LevelCell
                       label="Take profits"
-                      value={explanation.levels.takeProfits.length ? explanation.levels.takeProfits.map(fmtZone).join(", ") : "—"}
+                      value={explanation.levels.takeProfits.length ? explanation.levels.takeProfits.map((z) => fmtZone(z, pricePrecision)).join(", ") : "—"}
                     />
                   </div>
                 </Collapsible>

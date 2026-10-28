@@ -106,10 +106,14 @@ export class MT5BridgeProvider implements BrokerProvider {
     // The current EA contract does not push the symbol catalogue. Return a
     // conservative allowlist matching the app's synthetic-index focus until
     // the EA starts pushing /api/mt5/symbols (future work).
+    // digits/pipSize mirror the venue's published pip for each index (and
+    // symbolProfile): V75 4 dp / 0.0001, V100 2 dp / 0.01, V25 3 dp / 0.001.
+    // Placeholder catalogue only — the EA-persisted arx_symbol_specs row is the
+    // broker-side authority when present.
     return [
       { symbol: "Volatility 75 Index", description: "Synthetic V75 (MT5)", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
-      { symbol: "Volatility 100 Index", description: "Synthetic V100 (MT5)", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
-      { symbol: "Volatility 25 Index", description: "Synthetic V25 (MT5)", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
+      { symbol: "Volatility 100 Index", description: "Synthetic V100 (MT5)", digits: 2, pipSize: 0.01, minLot: 0.01, maxLot: 100 },
+      { symbol: "Volatility 25 Index", description: "Synthetic V25 (MT5)", digits: 3, pipSize: 0.001, minLot: 0.01, maxLot: 100 },
     ];
   }
 

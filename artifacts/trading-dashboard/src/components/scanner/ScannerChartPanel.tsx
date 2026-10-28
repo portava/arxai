@@ -41,6 +41,8 @@ import { computeRiskReward, pipDistance, validateModifyLevels } from "@/lib/char
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { candlestickPriceFormat, formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
+import { publishScannerTip, scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
@@ -517,6 +519,17 @@ export function ScannerChartPanel() {
   // Shared resolved truth — drives the live-price affordance so the chart can
   // never look more live/actionable than the header strip says it is.
   const { truth } = useScannerTruth(symbol, timeframe);
+  // ONE display precision for this instrument (server-declared, widened by the
+  // digits the loaded quotes carry) — the axis, badge, level labels and the
+  // page header all format with it (lib/instrumentPriceFormat).
+  const pricePrecision = truth?.candles.pricePrecision ?? null;
+  const pricePrecisionRef = useRef(pricePrecision);
+  pricePrecisionRef.current = pricePrecision;
+  // Shared live-tip key: the tick-stream tip this chart applies to its axis is
+  // published here so the header + badge show that SAME observation.
+  const tipKey = scannerTipKey(symbol, timeframe);
+  const tipKeyRef = useRef(tipKey);
+  tipKeyRef.current = tipKey;
 
   // Canonical verdict for display convergence (Task #818). The chart derives a
   // single shared actionability verdict from the SAME lifted + data-only sources
@@ -1268,6 +1281,9 @@ export function ScannerChartPanel() {
       // A dedicated effect below re-applies this on status change without rebuild.
       priceLineVisible: isLiveDisplay,
       lastValueVisible: isLiveDisplay,
+      // The axis last-value label prints at the instrument's precision, not
+      // lightweight-charts' default 2 dp (owner: axis 33575.37 vs 4-dp quotes).
+      ...(candlestickPriceFormat(pricePrecisionRef.current) ? { priceFormat: candlestickPriceFormat(pricePrecisionRef.current)! } : {}),
     });
     seriesRef.current = series as unknown as {
       priceToCoordinate: (p: number) => number | null;
@@ -1413,6 +1429,9 @@ export function ScannerChartPanel() {
     // CANDLE (and, server-side, the current forming tip), so setData here both
     // reconciles the tip and replaces it with the closed bar — no orphan dup.
     newestBarSecRef.current = mapped[mapped.length - 1]!.time as number;
+    // setData just replaced any tick-stream tip on the axis with the poll's
+    // newest close, so the published tip no longer matches what the axis shows.
+    publishScannerTip(tipKeyRef.current, null);
 
     if (!didFitRef.current) {
       // Phase 2 — smart initial visible range. Show the last N candles rather
@@ -1458,6 +1477,9 @@ export function ScannerChartPanel() {
     formingCloseRef.current = null;
     setFormingCloseMs(null);
     setMarketFrozen(null);
+    // A tip never outlives its stream key (symbol / timeframe / source / context).
+    const streamTipKey = scannerTipKey(symbol, timeframe);
+    publishScannerTip(streamTipKey, null);
     if (symbol.length === 0 || !tickSource) return;
     const url = u(`/api/chart/tick-stream?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&source=${encodeURIComponent(tickSource)}`);
     let es: EventSource | null = null;
@@ -1511,8 +1533,12 @@ export function ScannerChartPanel() {
         formingCloseRef.current = msg.bar.closeTimeMs;
         setFormingCloseMs(msg.bar.closeTimeMs);
       }
-      // Series tip update — only for a live (non-frozen) forming bar.
-      if (msg.frozen || !msg.bar) return;
+      // Series tip update — only for a live (non-frozen) forming bar. A frozen
+      // or barless frame also withdraws the published tip (no stale "current").
+      if (msg.frozen || !msg.bar) {
+        publishScannerTip(streamTipKey, null);
+        return;
+      }
       const series = lineSeriesRef.current;
       if (!series) return;
       // Task #496 latency addendum: measure ingest→browser latency from the
@@ -1550,6 +1576,12 @@ export function ScannerChartPanel() {
         close: b.close,
       });
       newestBarSecRef.current = tipSec;
+      // Publish the axis' current tip (rounded to the display precision so an
+      // unchanged label never re-renders a reader) — only on a live display.
+      publishScannerTip(
+        streamTipKey,
+        isLiveDisplayRef.current ? Number(formatInstrumentPrice(b.close, pricePrecisionRef.current)) : null,
+      );
     };
     es.onerror = () => {
       // The browser auto-reconnects an EventSource; nothing to do. The poll
@@ -1558,8 +1590,9 @@ export function ScannerChartPanel() {
     return () => {
       disposed = true;
       es?.close();
+      publishScannerTip(streamTipKey, null);
     };
-  }, [symbol, apiTf, tickSource, chartContext]);
+  }, [symbol, apiTf, timeframe, tickSource, chartContext]);
 
   // ── Display-truth: keep the candlestick series' built-in last-price line +
   //    last-value label in lockstep with the live/non-live display status,
@@ -1571,6 +1604,20 @@ export function ScannerChartPanel() {
     if (!series) return;
     series.applyOptions({ priceLineVisible: isLiveDisplay, lastValueVisible: isLiveDisplay });
   }, [isLiveDisplay, chartEpoch, chartContext]);
+
+  // A non-live display never carries a tick tip (header + badge fall back to
+  // the labelled last-known close).
+  useEffect(() => {
+    if (!isLiveDisplay) publishScannerTip(tipKey, null);
+  }, [isLiveDisplay, tipKey]);
+
+  // Axis precision follows the instrument precision without a chart rebuild.
+  useEffect(() => {
+    const series = lineSeriesRef.current;
+    const priceFormat = candlestickPriceFormat(pricePrecision);
+    if (!series || !priceFormat) return;
+    series.applyOptions({ priceFormat });
+  }, [pricePrecision, chartEpoch, chartContext]);
 
   // ── Phase 3 — overlay the user's own positions + pending orders as price
   //    lines. Runs on every positions/pending poll WITHOUT recreating the
@@ -1914,6 +1961,10 @@ export function ScannerChartPanel() {
   useEffect(() => { newsAlertedRef.current = new Set(); }, [symbol]);
 
   const lastClose = candles.length > 0 ? candles[candles.length - 1]!.close : null;
+  // The CURRENT price is the same observation the axis shows: the live tick tip
+  // when one has been applied since the last poll, else the poll's close.
+  const liveTip = useScannerTip(tipKey);
+  const shownClose = resolveDisplayClose({ tipClose: liveTip, lastClose, isLive: isLiveDisplay });
 
   // ── Last-known price stamp (Task #524). The series' built-in last-value label
   //    + price line (toggled in the effect above) ONLY render when the feed is
@@ -2294,11 +2345,8 @@ export function ScannerChartPanel() {
   // review surface; in an active trade mode we keep the quick menu focused.
   const isReviewMode = tradeMode == null;
 
-  const decimals = (() => {
-    const sample = lastClose ?? draft?.entry ?? 1;
-    return sample < 10 ? 5 : sample < 1000 ? 3 : 2;
-  })();
-  const fmt = (n: number) => n.toFixed(decimals);
+  // Level / draft / position labels share the instrument precision too.
+  const fmt = (n: number) => formatInstrumentPrice(n, pricePrecision);
 
   return (
     <Card data-testid="scanner-chart-panel" className="rounded-2xl border-border bg-card">
@@ -2309,14 +2357,14 @@ export function ScannerChartPanel() {
             <span data-testid="scanner-chart-symbol" className="text-base font-semibold text-foreground">
               {symbol}
             </span>
-            {lastClose != null && isLiveDisplay && (
+            {shownClose.value != null && isLiveDisplay && (
               <Badge variant="outline" className="font-mono text-xs" data-testid="scanner-chart-last">
-                {lastClose}
+                {formatInstrumentPrice(shownClose.value, pricePrecision)}
               </Badge>
             )}
             {lastClose != null && !isLiveDisplay && displayStatus !== "UNAVAILABLE" && (
               <Badge variant="outline" className="font-mono text-xs text-zinc-500" data-testid="scanner-chart-last-stale" title="Last-known candle close — not a live price">
-                {lastClose} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
+                {formatInstrumentPrice(lastClose, pricePrecision)} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
               </Badge>
             )}
             {/* Feed-status badge — honest state of the data feed. Single-sourced

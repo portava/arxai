@@ -90,7 +90,7 @@
     "test:risk-pre-gates": "node --import tsx --test --test-force-exit src/lib/live/__qa__/riskPreGates.test.ts",
     "test:mt5-env-token-sweep": "node --import tsx --test --test-force-exit src/routes/__qa__/mt5EnvTokenLegacySweep.test.ts",
     "test:shadow-persistence-wiring": "node --import tsx --test --test-force-exit src/lib/__qa__/shadowPersistenceWiring.test.ts",
-    "test:deriv-symbol-discovery": "node --import tsx --test --test-force-exit src/lib/data/providers/__qa__/derivSymbolDiscovery.test.ts",
+    "test:deriv-symbol-discovery": "node --import tsx --test --test-force-exit src/lib/data/providers/__qa__/derivSymbolDiscovery.test.ts src/lib/data/chart/__qa__/instrumentPricePrecision.test.ts",
     "test:data-provenance-envelope": "node --import tsx --test --test-force-exit src/lib/data/__qa__/provenanceEnvelope.test.ts",
     "test:advisory-truth-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/advisoryTruthGate.integration.test.ts",
     "test:scalp-engine": "node --import tsx --test src/lib/scalp/__qa__/scalpEngine.test.ts",

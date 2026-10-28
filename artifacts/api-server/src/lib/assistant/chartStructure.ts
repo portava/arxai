@@ -90,7 +90,10 @@ function atr(candles: Candle[], period: number): number | null {
   return trs.reduce((a, b) => a + b, 0) / trs.length;
 }
 
-// Decimal precision suitable for the instrument's price magnitude.
+// Decimal precision suitable for the instrument's price magnitude. FALLBACK
+// only: when the caller knows the instrument's own precision (symbolProfile,
+// venue-pip-derived) that wins, so a V75 zone reads 33250.6123 – 33273.2045
+// rather than being rounded to one decimal the instrument never quotes in.
 function decimalsFor(price: number): number {
   const p = Math.abs(price);
   if (p >= 1000) return 1;
@@ -135,7 +138,7 @@ export const STRUCTURE_MIN_CLOSED_BARS = 20;
 // ── main analyzer ─────────────────────────────────────────────────────────
 export function analyzeChartStructure(
   rawCandles: Candle[],
-  opts: { htfBias?: StructureBias; draft?: DraftPlan; assistantName?: string } = {},
+  opts: { htfBias?: StructureBias; draft?: DraftPlan; assistantName?: string; pricePrecision?: number | null } = {},
 ): ChartReadResult {
   const htfBias: StructureBias = opts.htfBias ?? "No clear edge";
   const draft = opts.draft ?? null;
@@ -165,7 +168,11 @@ export function analyzeChartStructure(
   const closes = candles.map((c) => c.close);
   const n = closes.length;
   const last = closes[n - 1]!;
-  const decimals = decimalsFor(last);
+  const decimals =
+    opts.pricePrecision != null && Number.isSafeInteger(opts.pricePrecision)
+      && opts.pricePrecision >= 0 && opts.pricePrecision <= 8
+      ? opts.pricePrecision
+      : decimalsFor(last);
 
   // Trend via SMA stack + slope.
   const sma20 = sma(closes, Math.min(20, n));

@@ -167,6 +167,14 @@ export interface ScannerTruth {
     firstTime: string | null;
     lastTime: string | null;
     lastClose: number | null;
+    /**
+     * Display precision (decimal places) for this instrument — the server's
+     * declared precision widened by the digits the loaded quotes actually
+     * carry (lib/instrumentPriceFormat). Every price surface on the page
+     * formats with it so one quote never shows in two precisions. Null when
+     * unknown (formatter falls back to a magnitude heuristic).
+     */
+    pricePrecision?: number | null;
     ageMs: number | null;
     status: CandleStatus;
     reason: string;
@@ -302,6 +310,8 @@ export interface ScannerTruthInputs {
   firstTime: string | null;
   lastTime: string | null;
   lastClose: number | null;
+  /** Resolved display precision for the instrument (see ScannerTruth.candles). */
+  pricePrecision?: number | null;
   /** Optional independent quote — scanner passes null (simulator excluded). */
   quote?: { bid: number | null; ask: number | null; mid: number | null; source: string | null; timestamp: string | null } | null;
   /** Header ok flag (selected-market) — caps the display state. */
@@ -822,6 +832,7 @@ export function resolveScannerTruth(
       firstTime: input.firstTime,
       lastTime: input.lastTime,
       lastClose,
+      pricePrecision: input.pricePrecision ?? null,
       ageMs: candleAgeMs,
       status: candleStatus,
       reason: candleReason,
