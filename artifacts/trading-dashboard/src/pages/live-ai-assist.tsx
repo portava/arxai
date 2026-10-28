@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Brain, ThumbsUp, ThumbsDown, ShieldAlert, Loader2, WifiOff } from "lucide-react";
-import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
+import { SmartChartView, SmartChartSymbolSelect } from "@/components/charts/SmartChartView";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symbol";
 import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
@@ -17,15 +17,6 @@ type TradeCard = {
   reasonForTrade: string; invalidationReason: string;
   marketCondition: string;
 };
-
-// Display label → real symbol the Market Data Router understands.
-const SYMBOLS: { label: string; value: string; tv: string }[] = [
-  { label: "EURUSD", value: "EURUSD", tv: "FX:EURUSD" },
-  { label: "GBPUSD", value: "GBPUSD", tv: "FX:GBPUSD" },
-  { label: "USDJPY", value: "USDJPY", tv: "FX:USDJPY" },
-  { label: "XAUUSD", value: "XAUUSD", tv: "FX:XAUUSD" },
-  { label: "BTCUSD", value: "BTCUSD", tv: "BINANCE:BTCUSDT" },
-];
 
 type FeedState =
   | { kind: "idle" }
@@ -87,10 +78,7 @@ export default function LiveAiAssistPage() {
   // symbol here updates the chart, the trade ticket, scanner focus
   // panel, ruby explanation and every other consumer in the same paint.
   const [chartSymbol] = useChartSymbol();
-  const symbol = (() => {
-    const bare = bareSymbol(chartSymbol);
-    return SYMBOLS.some((s) => s.value === bare) ? bare : SYMBOLS[0].value;
-  })();
+  const symbol = bareSymbol(chartSymbol).trim().toUpperCase();
   const [feed, setFeed] = useState<FeedState>({ kind: "idle" });
   const [perm, setPerm] = useState<any>(null);
   const [resp, setResp] = useState<any>(null);
@@ -130,7 +118,6 @@ export default function LiveAiAssistPage() {
   }
 
   const card = feed.kind === "card" ? feed.card : null;
-  const tvSymbol = SYMBOLS.find(s => s.value === symbol)?.tv ?? "FX:EURUSD";
 
   async function approve() {
     if (!card) return;
@@ -171,21 +158,7 @@ export default function LiveAiAssistPage() {
             <CardHeader>
               <CardTitle className="flex justify-between items-center text-sm">
                 <span>AI Trade Card</span>
-                <select
-                  className="text-xs bg-background border border-border rounded px-2 py-1"
-                  value={symbol}
-                  data-testid="ai-symbol-select"
-                  onChange={(e) => {
-                    // Push through the shared bus so the chart, trade
-                    // ticket and every other symbol consumer flip in the
-                    // same paint. Card/resp cleanup happens via the
-                    // useEffect that watches `symbol`.
-                    const next = SYMBOLS.find((s) => s.value === e.target.value);
-                    setChartSymbol(next?.tv ?? e.target.value);
-                  }}
-                >
-                  {SYMBOLS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
+                <SmartChartSymbolSelect symbol={symbol} onSymbolChange={setChartSymbol} label="Market" testId="ai-symbol-select" />
               </CardTitle>
               <CardDescription>Reads the live market feed. No setup is shown unless the data supports one.</CardDescription>
             </CardHeader>
@@ -270,7 +243,7 @@ export default function LiveAiAssistPage() {
             </Card>
           )}
         </div>
-        <TradingViewLiveChart defaultSymbol={tvSymbol} height={620} compact />
+        <SmartChartView symbol={symbol} height={620} showSymbolSelect={false} />
       </div>
       {card && (
         <LiveSharedTradeTicket

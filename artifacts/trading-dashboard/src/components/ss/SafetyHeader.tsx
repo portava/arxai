@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Lock, FlaskConical, Activity, Target, Inbox, Eye } from "lucide-react";
+import { Lock, FlaskConical, Target, Inbox, Eye } from "lucide-react";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useAllUnlocks } from "@/hooks/useFeatureUnlock";
 import { useTradingMode } from "@/hooks/useTradingMode";
@@ -7,7 +7,7 @@ import { useTradingMode } from "@/hooks/useTradingMode";
 type Defer = { deferred: boolean; systemState: string; bannerText: string; brokerProvider: string; bridgeConnected: boolean };
 
 // Build TT — global SafetyHeader. Surfaces FULL TESTER ACCESS state, MT5
-// deferred status, and the live-chart hint from the spec. Informational only;
+// deferred status. Chart feed state stays with the chart's evidence-backed badge. Informational only;
 // never controls trading. Live broker execution remains gated by
 // placeLiveOrderGuarded() regardless of what this banner says.
 //
@@ -18,7 +18,6 @@ export function SafetyHeader() {
   const unlocks = useAllUnlocks();
   const mode = useTradingMode();
   const [defer, setDefer] = useState<Defer | null>(null);
-  const [chartLive, setChartLive] = useState(false);
   const [chartSymbol] = useChartSymbol();
   const [intentCount, setIntentCount] = useState<number | null>(null);
   const [simRunning, setSimRunning] = useState(false);
@@ -31,9 +30,6 @@ export function SafetyHeader() {
     if (unlocks.mt5) {
       void fetch("/api/system/mt5-deferred-status").then(r => r.ok ? r.json() : null).then((d) => { if (!cancelled && d) setDefer(d); }).catch(() => {});
     }
-    const check = () => setChartLive(typeof window !== "undefined" && !!(window as any).TradingView);
-    check();
-    const t = window.setInterval(check, 4000);
     const refresh = () => {
       if (unlocks.simulator) {
         void fetch("/api/live-intent/queue", { headers: { "x-security-role": "ADMIN" } }).then(r => r.ok ? r.json() : null).then(d => { if (!cancelled && d?.counts) setIntentCount(d.counts.total ?? 0); }).catch(() => {});
@@ -42,7 +38,7 @@ export function SafetyHeader() {
     };
     refresh();
     const t2 = window.setInterval(refresh, 5000);
-    return () => { cancelled = true; window.clearInterval(t); window.clearInterval(t2); };
+    return () => { cancelled = true; window.clearInterval(t2); };
   }, [unlocks.mt5, unlocks.simulator]);
 
   const mt5Connected = !!defer?.bridgeConnected;
@@ -82,11 +78,6 @@ export function SafetyHeader() {
           {unlocks.mt5 && defer?.deferred && (
             <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-600 border border-amber-500/30 px-2 py-0.5 font-semibold" title={defer.bannerText}>
               <FlaskConical className="h-3 w-3" aria-hidden="true" /> Simulator
-            </span>
-          )}
-          {chartLive && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 px-2 py-0.5 font-semibold">
-              <Activity className="h-3 w-3" aria-hidden="true" /> Live Chart
             </span>
           )}
           {/* Sim Engine is an internal simulated price engine — never a
