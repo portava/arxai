@@ -131,6 +131,26 @@ const PERFORMANCE_SOURCE_COPY: Record<Exclude<PerformanceSource, "paper_trades">
   load_failed: "The request for your demo-trade performance failed, so no figures are shown. Reload the page to try again.",
 };
 
+/**
+ * Demo-trade P/L is (exit − entry) × direction × lot size (server pnlFor). It
+ * has no contract size or account currency, so it is a price move times lots,
+ * not money, and it does not match the demo sandbox ledger's P/L.
+ */
+const PNL_UNIT_SHORT = "price move × lots";
+const PNL_UNIT_NOTE =
+  "Demo-trade P/L on this page is the price move × lot size. It has no contract size or account currency, so it is not a money amount, and it will not match the P/L on the demo sandbox ledger.";
+/** Rounded, signed price-move P/L; null = not recorded (never shown as 0). */
+function formatPriceMovePnl(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "not recorded";
+  const r = Number(v.toFixed(5));
+  if (r === 0) return "0";
+  return `${r > 0 ? "+" : ""}${r}`;
+}
+function pnlTone(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "text-muted-foreground";
+  return v > 0 ? "text-emerald-500" : v < 0 ? "text-red-500" : "text-muted-foreground";
+}
+
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await fetch(`/api${path}`, {
     method, credentials: "include",
@@ -348,7 +368,7 @@ export default function MyPaperTradesPage() {
           </Alert>
           {riskStatus && (
             <div className="grid gap-3 md:grid-cols-4">
-              <Card><CardHeader className="pb-1"><CardDescription>Today P&amp;L</CardDescription><CardTitle className={riskStatus.today.pnl >= 0 ? "text-emerald-500" : "text-red-500"}>{riskStatus.today.pnl.toFixed(2)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
+              <Card><CardHeader className="pb-1"><CardDescription>Today P/L ({PNL_UNIT_SHORT})</CardDescription><CardTitle className={pnlTone(riskStatus.today.pnl)}>{formatPriceMovePnl(riskStatus.today.pnl)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Consecutive losses</CardDescription><CardTitle>{riskStatus.today.consecutiveLosses} / {enforcedLimit(riskStatus, "maxConsecutiveLosses", riskStatus.settings.maxConsecutiveLosses) ?? "off"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.maxConsecutiveLosses?.reason ?? undefined}>{enforcedLimit(riskStatus, "maxConsecutiveLosses", riskStatus.settings.maxConsecutiveLosses) != null ? "Enforced limit" : "Not enforced"}</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Cooldown</CardDescription><CardTitle className={riskStatus.cooldown.active ? "text-amber-500" : ""}>{riskStatus.cooldown.active ? `${riskStatus.cooldown.minutesRemaining}m` : "—"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.cooldownAfterLossMinutes?.reason ?? undefined}>After loss: {enforcedLimit(riskStatus, "cooldownAfterLossMinutes", riskStatus.settings.cooldownAfterLossMinutes) ?? 0}m</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Live contract</CardDescription><CardTitle className="text-sm flex items-center gap-1"><Lock className="h-3 w-3"/>locked</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">demo_only · no broker writes</CardContent></Card>
@@ -425,6 +445,9 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="trades" className="space-y-3">
+          {!loading && trades.length > 0 && (
+            <p className="text-xs text-muted-foreground" data-testid="paper-pnl-unit-note">{PNL_UNIT_NOTE}</p>
+          )}
           {loading ? (
             <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading…</CardContent></Card>
           ) : trades.length === 0 ? (
@@ -461,8 +484,8 @@ export default function MyPaperTradesPage() {
                 <div><span className="text-muted-foreground">Risk:</span> {t.riskAmount ?? "—"}</div>
                 {t.status === "closed" && (<>
                   <div><span className="text-muted-foreground">Exit:</span> {t.exitPrice}</div>
-                  <div className={t.pnl != null && t.pnl >= 0 ? "text-emerald-500" : "text-red-500"}>
-                    <span className="text-muted-foreground">PnL:</span> {t.pnl}
+                  <div className={pnlTone(t.pnl)} data-testid={`paper-trade-pnl-${t.id}`}>
+                    <span className="text-muted-foreground">P/L ({PNL_UNIT_SHORT}):</span> {formatPriceMovePnl(t.pnl)}
                   </div>
                 </>)}
                 {t.reasonForEntry && <div className="col-span-full text-muted-foreground italic">"{t.reasonForEntry}"</div>}
@@ -530,12 +553,22 @@ export default function MyPaperTradesPage() {
           {summary && (
             <Card><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div><div className="text-muted-foreground">Trades</div><div className="text-xl font-semibold">{summary.totalTrades}</div></div>
-              <div><div className="text-muted-foreground">P/L</div><div className={`text-xl font-semibold ${summary.totalPnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>{summary.totalPnl}</div></div>
+              <div><div className="text-muted-foreground">P/L ({PNL_UNIT_SHORT})</div><div className={`text-xl font-semibold ${pnlTone(summary.totalPnl)}`}>{formatPriceMovePnl(summary.totalPnl)}</div></div>
               <div><div className="text-muted-foreground">Wins</div><div className="text-xl font-semibold text-emerald-500">{summary.wins}</div></div>
               <div><div className="text-muted-foreground">Losses</div><div className="text-xl font-semibold text-red-500">{summary.losses}</div></div>
               <div><div className="text-muted-foreground">Win rate</div><div className="text-xl font-semibold">{summary.winRate}%</div></div>
             </CardContent></Card>
           )}
+          {(() => {
+            // The server counts a closed trade with no recorded P/L as 0 in
+            // these totals; say so rather than let it read as break-even.
+            const unrecorded = trades.filter((t) => t.status === "closed" && t.pnl == null).length;
+            return unrecorded > 0 ? (
+              <p className="text-xs text-muted-foreground" data-testid="paper-pnl-unrecorded-note">
+                {unrecorded} closed demo trade{unrecorded === 1 ? " has" : "s have"} no recorded P/L; the totals and calendar below count {unrecorded === 1 ? "it" : "them"} as 0.
+              </p>
+            ) : null;
+          })()}
           {days.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">Your performance calendar will populate after your first closed trade</p>
@@ -550,7 +583,7 @@ export default function MyPaperTradesPage() {
                   <Card key={d.date} className={`border ${tone}`}>
                     <CardContent className="p-3">
                       <div className="text-xs text-muted-foreground">{d.date}</div>
-                      <div className={`text-lg font-semibold ${d.totalPnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>{d.totalPnl}</div>
+                      <div className={`text-lg font-semibold ${pnlTone(d.totalPnl)}`} data-testid={`paper-day-pnl-${d.date}`}>{formatPriceMovePnl(d.totalPnl)}</div>
                       <div className="text-xs">{d.wins}W / {d.losses}L · {d.tradesCount} trades</div>
                     </CardContent>
                   </Card>

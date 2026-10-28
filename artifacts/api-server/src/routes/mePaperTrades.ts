@@ -71,6 +71,12 @@ function rrr(side: string, entry: number | null | undefined, sl: number | null |
   if (risk <= 0 || reward <= 0) return null;
   return Number((reward / risk).toFixed(3));
 }
+/**
+ * Demo-trade P/L = (exit − entry) × direction × lot size. There is no contract
+ * size or account currency here, so the result is a price move times lots, not
+ * money (EURUSD 1.0850 → 1.0900 at 1 lot = 0.005). Serialized trades carry
+ * pnlUnit "price_move_x_lots" so no surface shows it as a money amount.
+ */
 function pnlFor(side: string, entry: number, exit: number, lot: number) {
   const dir = side === "buy" ? 1 : -1;
   // Simple per-unit PnL × lotSize (broker-agnostic, paper-only).
@@ -104,6 +110,8 @@ function serialize(t: typeof paperTradesTable.$inferSelect) {
     createdAt: t.createdAt?.toISOString() ?? null,
     updatedAt: t.updatedAt?.toISOString() ?? null,
     tradeKind: "paper" as const,
+    /** pnl is a price move × lots (see pnlFor), not money. */
+    pnlUnit: "price_move_x_lots" as const,
     safetyMode: "paper_only" as const,
     recordKind: "journal" as const,
     executionCapable: false as const,
