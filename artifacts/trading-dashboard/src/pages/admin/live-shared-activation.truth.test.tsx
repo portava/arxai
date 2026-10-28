@@ -4,6 +4,11 @@
 // fail) is never shown as a green pass or counted in "N/11 pass", and a smoke
 // request that fails says "could not be loaded" instead of crashing on a
 // missing summary.
+//
+// Readiness: a degraded readiness body (a server query failed; its kill switch,
+// counts and exposure are fail-closed stand-ins) or a failed request shows
+// "readiness could not be loaded", never "KILL SWITCH ACTIVE", "Approved users
+// 0" or a definite checklist failure.
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AdminLiveSharedActivationPage from "./live-shared-activation";
@@ -106,5 +111,61 @@ describe("activation smoke test", () => {
     await waitFor(() => expect(screen.getByTestId("smoke-error")).toBeTruthy());
     expect(screen.getByTestId("smoke-error").textContent).toMatch(/could not be loaded: INTERNAL_ERROR/);
     expect(screen.queryByTestId("smoke-result")).toBeNull();
+  });
+});
+
+// The body GET /admin/live-shared/readiness returns from its catch block.
+function degradedBody() {
+  const b = readinessBody({
+    degraded: true,
+    degradedReason: "READINESS_QUERY_FAILED",
+    message: "Live Shared readiness could not be loaded (a server query failed).",
+    approvedUsers: { readable: false, approvedCount: 0, activeCount: 0, rows: [] },
+    openExposure: { readable: false, totalOpenLots: 0, totalFloatingPlUsd: 0, openPositionsCount: 0 },
+  });
+  return {
+    ...b,
+    globalSwitches: { ...b.globalSwitches, readable: false, platformMode: "UNKNOWN", emergencyKillSwitch: true, serverMasterSwitchEnabled: false },
+  };
+}
+
+describe("activation readiness that could not be loaded", () => {
+  it("a degraded body shows 'could not be loaded', not KILL SWITCH ACTIVE or 'Approved users 0'", async () => {
+    stubApi({ "/api/admin/live-shared/readiness": () => response(degradedBody()) });
+    render(<AdminLiveSharedActivationPage />);
+    await settle();
+    await waitFor(() => expect(screen.getByTestId("banner-readiness-unavailable")).toBeTruthy());
+    expect(screen.getByTestId("banner-readiness-unavailable").textContent).toMatch(/a server query failed/);
+    expect(screen.queryByTestId("banner-kill-switch")).toBeNull();
+    expect(screen.queryByTestId("mode-chip-kill")).toBeNull();
+    expect(screen.getByTestId("mode-chip-unavailable")).toBeTruthy();
+    expect(screen.queryByText("Approved users")).toBeNull();
+    expect(screen.queryByText(/Kill switch engaged/)).toBeNull();
+    expect(screen.queryByText("Activation checklist")).toBeNull();
+    expect(screen.getByTestId("readiness-unavailable")).toBeTruthy();
+  });
+
+  it("a failed request shows 'could not be loaded' instead of loading forever", async () => {
+    stubApi({ "/api/admin/live-shared/readiness": () => response({ ok: false, error: "INTERNAL_ERROR" }, 500) });
+    render(<AdminLiveSharedActivationPage />);
+    await settle();
+    await waitFor(() => expect(screen.getByTestId("banner-readiness-unavailable")).toBeTruthy());
+    expect(screen.getByTestId("banner-readiness-unavailable").textContent).toMatch(/INTERNAL_ERROR/);
+    expect(screen.queryByText("loading…")).toBeNull();
+  });
+
+  it("a failed refresh does not keep showing the earlier readiness as current", async () => {
+    let fail = false;
+    stubApi({
+      "/api/admin/live-shared/readiness": () => (fail ? response(degradedBody()) : response(readinessBody())),
+    });
+    render(<AdminLiveSharedActivationPage />);
+    await settle();
+    await waitFor(() => expect(screen.getByText("Approved users")).toBeTruthy());
+    fail = true;
+    fireEvent.click(screen.getByTestId("act-refresh"));
+    await settle();
+    await waitFor(() => expect(screen.getByTestId("banner-readiness-unavailable")).toBeTruthy());
+    expect(screen.queryByText("Approved users")).toBeNull();
   });
 });

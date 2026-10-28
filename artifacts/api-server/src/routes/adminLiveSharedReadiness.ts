@@ -378,15 +378,22 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       "admin_live_shared_readiness_failed_safely",
     );
     const envOnly = (() => { try { return liveBrokerExecutionEnabled(); } catch { return false; } })();
+    // Every value below is a fail-closed stand-in, NOT a reading: the kill
+    // switch reads "engaged", counts and exposure read 0 so older consumers
+    // never see "safe". `readable: false` on each section (and `degraded`)
+    // tells a client to show "could not be loaded" instead of these values.
     res.status(200).json({
       ok: true,
       degraded: true,
       degradedReason: "READINESS_QUERY_FAILED",
       message:
-        "Live Shared readiness data is temporarily unavailable. Live dispatch remains blocked while readiness cannot be evaluated.",
+        "Live Shared readiness could not be loaded (a server query failed). The kill switch, arm state, bridge, approved users and open exposure are unknown, not zero. This report does not block or allow live dispatch; each dispatch runs its own gates.",
       architecture: { model: "EA_PULL", brokerCredentialsOnServer: false },
       globalSwitches: {
-        serverMasterSwitchEnabled: envOnly,
+        readable: false,
+        // Effective switch = env AND the operator arm, and the arm was not
+        // read: never report it on (the env value alone is below).
+        serverMasterSwitchEnabled: false,
         serverMasterSwitchEnvOnly: envOnly,
         liveBrokerExecutionArmedDb: false,
         liveBrokerExecutionArmedAt: null,
@@ -406,6 +413,7 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         platformStopReason: null,
       },
       liveAccount: {
+        readable: false,
         pinnedBridge: null,
         detector: { detected: false, primaryReason: "READINESS_DEGRADED" },
         detectedAccountNumber: null,
@@ -413,8 +421,8 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         detectedServerName: null,
         gate: { decision: "BLOCKED", primaryReason: "READINESS_DEGRADED" },
       },
-      approvedUsers: { approvedCount: 0, activeCount: 0, rows: [] },
-      openExposure: { totalOpenLots: 0, totalFloatingPlUsd: 0, openPositionsCount: 0 },
+      approvedUsers: { readable: false, approvedCount: 0, activeCount: 0, rows: [] },
+      openExposure: { readable: false, totalOpenLots: 0, totalFloatingPlUsd: 0, openPositionsCount: 0 },
       recentCommands: [],
       recentAudit: [],
       arxLiveCommandsCount: 0,

@@ -30,6 +30,10 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<ApiResp<T>>
 // ── readiness response shape (subset we render) ──────────────────────────
 type ReadinessResp = {
   ok: boolean;
+  /** Set when a server query failed: every value below is a fail-closed stand-in, not a reading. */
+  degraded?: boolean;
+  degradedReason?: string;
+  message?: string;
   globalSwitches: {
     serverMasterSwitchEnabled: boolean; // effective = env OR db-armed
     serverMasterSwitchEnvOnly: boolean; // ARX_LIVE_BROKER_EXECUTION_ENABLED=true
@@ -136,16 +140,31 @@ export default function AdminLiveSharedActivationPage() {
   const [readiness, setReadiness] = useState<ReadinessResp | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  // Why readiness could not be loaded. While set, no readiness value is shown:
+  // a degraded body's kill switch / users / exposure are stand-ins, and an
+  // earlier load would be stale.
+  const [readinessError, setReadinessError] = useState<string | null>(null);
 
   async function loadReadiness() {
     setBusy(true); setActionMsg(null);
     try {
       const r = await apiJson<ReadinessResp>("/api/admin/live-shared/readiness");
-      if (r.ok) setReadiness(r);
-      else setActionMsg(`readiness error: ${r.error ?? "unknown"}`);
+      if (r.ok && r.degraded !== true) { setReadiness(r); setReadinessError(null); }
+      else {
+        setReadiness(null);
+        setReadinessError(r.degraded === true
+          ? (r.message ?? "Live Shared readiness data is temporarily unavailable.")
+          : `The server answered ${r.error ?? "with an error"}.`);
+      }
+    } catch (e) {
+      setReadiness(null);
+      setReadinessError(`The request failed: ${e instanceof Error ? e.message : String(e)}.`);
     } finally { setBusy(false); }
   }
   useEffect(() => { void loadReadiness(); }, []);
+  // Panels built from readiness show "could not be loaded" instead of a value.
+  const needsReadiness = (node: React.ReactNode) =>
+    readinessError ? <ReadinessUnavailable message={readinessError} /> : node;
 
   const checklist = useChecklist(readiness);
 
@@ -155,13 +174,24 @@ export default function AdminLiveSharedActivationPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <ShieldAlert className="h-6 w-6 text-amber-400" /> Live Shared — Activation
         </h1>
-        <ModeChip readiness={readiness} />
+        {readinessError
+          ? <Badge variant="outline" className="border-zinc-500/60 text-zinc-300" data-testid="mode-chip-unavailable">READINESS UNAVAILABLE</Badge>
+          : <ModeChip readiness={readiness} />}
         <Button size="sm" variant="outline" className="ml-auto" disabled={busy} onClick={loadReadiness} data-testid="act-refresh">
           <RefreshCw className={`h-3 w-3 mr-1 ${busy ? "animate-spin" : ""}`} /> Refresh
         </Button>
       </div>
 
-      <ActivationStateBanner readiness={readiness} />
+      {readinessError ? (
+        <Alert className="py-3 border-zinc-500/60 bg-zinc-500/10" data-testid="banner-readiness-unavailable">
+          <AlertCircle className="h-4 w-4 text-zinc-300" />
+          <AlertTitle className="text-sm text-zinc-200">READINESS COULD NOT BE LOADED</AlertTitle>
+          <AlertDescription className="text-xs text-zinc-300/90">
+            {readinessError} The kill switch, arm state, bridge, approved users and open exposure are
+            unknown until readiness loads — they are not shown as values. Refresh to try again.
+          </AlertDescription>
+        </Alert>
+      ) : <ActivationStateBanner readiness={readiness} />}
 
       {actionMsg && (
         <Alert className="py-2" data-testid="act-msg">
@@ -183,21 +213,23 @@ export default function AdminLiveSharedActivationPage() {
         </TabsList>
 
         <TabsContent value="readiness" className="mt-3 space-y-3">
-          <ReadinessCards readiness={readiness} />
-          <ChecklistCard items={checklist} />
-          <ArmExecutionCard readiness={readiness} onAfter={loadReadiness} />
+          {needsReadiness(<>
+            <ReadinessCards readiness={readiness} />
+            <ChecklistCard items={checklist} />
+            <ArmExecutionCard readiness={readiness} onAfter={loadReadiness} />
+          </>)}
         </TabsContent>
 
         <TabsContent value="wizard" className="mt-3">
-          <ActivationWizard readiness={readiness} checklist={checklist} onAfterStep={loadReadiness} />
+          {needsReadiness(<ActivationWizard readiness={readiness} checklist={checklist} onAfterStep={loadReadiness} />)}
         </TabsContent>
 
         <TabsContent value="bridge" className="mt-3">
-          <BridgeTab readiness={readiness} onAction={loadReadiness} setActionMsg={setActionMsg} />
+          {needsReadiness(<BridgeTab readiness={readiness} onAction={loadReadiness} setActionMsg={setActionMsg} />)}
         </TabsContent>
 
         <TabsContent value="users" className="mt-3">
-          <UsersTab readiness={readiness} />
+          {needsReadiness(<UsersTab readiness={readiness} />)}
         </TabsContent>
 
         <TabsContent value="commands" className="mt-3">
@@ -209,7 +241,7 @@ export default function AdminLiveSharedActivationPage() {
         </TabsContent>
 
         <TabsContent value="micro" className="mt-3">
-          <MicroTestTab readiness={readiness} />
+          {needsReadiness(<MicroTestTab readiness={readiness} />)}
         </TabsContent>
 
         <TabsContent value="rollback" className="mt-3">
@@ -217,7 +249,7 @@ export default function AdminLiveSharedActivationPage() {
         </TabsContent>
 
         <TabsContent value="audit" className="mt-3">
-          <AuditTab readiness={readiness} />
+          {needsReadiness(<AuditTab readiness={readiness} />)}
         </TabsContent>
       </Tabs>
     </div>
@@ -227,6 +259,14 @@ export default function AdminLiveSharedActivationPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
+
+function ReadinessUnavailable({ message }: { message: string }) {
+  return (
+    <div className="text-xs text-zinc-300 italic" data-testid="readiness-unavailable">
+      Readiness could not be loaded. {message}
+    </div>
+  );
+}
 
 // Compute the four mutually-exclusive arm states from readiness.
 // IMPORTANT: serverMasterSwitchEnabled (env OR db-armed) is NOT itself a
