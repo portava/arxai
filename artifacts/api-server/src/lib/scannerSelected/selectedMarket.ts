@@ -61,6 +61,23 @@ const CANDLE_LIMIT = 200;
 // same symbol and timeframe. A drift guard test pins the two constants together.
 export const SELECTED_ANALYSIS_WINDOW = 30;
 
+// Clock-skew allowance for a closed bar's close time. A closed bar cannot close
+// in the future; beyond this allowance its time is not an observation.
+const DATA_AS_OF_SKEW_MS = 5_000;
+
+/**
+ * The observation time of the analysis data: the newest CLOSED bar's close
+ * time. Never the forming bar's scheduled close (which lies in the future and
+ * read as "Data as of 0s ago"), and never a time later than now.
+ */
+function closedBarDataAsOf(closed: NormalizedChartCandle[], nowMs: number): string | null {
+  const last = closed[closed.length - 1];
+  if (!last) return null;
+  const closeMs = Date.parse(last.closeTime);
+  if (!Number.isFinite(closeMs) || closeMs > nowMs + DATA_AS_OF_SKEW_MS) return null;
+  return new Date(closeMs).toISOString();
+}
+
 /** Fully closed provider bars only. A forming bar is never an analysis input. */
 function closedBars(candles: NormalizedChartCandle[]): NormalizedChartCandle[] {
   return candles.filter((c) => c.isComplete === true && c.isForming !== true);
@@ -139,7 +156,10 @@ export interface SelectedMarketResult {
   dataSourceLabel: string | null;
   /** Honest freshness state derived from the feed status. */
   dataState: TruthDataState;
-  /** The DATA timestamp (newest candle time from the feed), NOT the build time. */
+  /**
+   * The DATA timestamp: the newest CLOSED bar's close time, NOT the build time
+   * and never a forming bar's scheduled future close. null when unknown.
+   */
   dataAsOf: string | null;
   /** True when saved geometry drifted too far from price and was withheld. */
   levelsWithheld: boolean;
@@ -413,11 +433,14 @@ async function buildSelectedMarketSnapshot(
   const chart = await deps.getChartCandlesFn(symbol, timeframe, CANDLE_LIMIT, false);
   const fs = chart.feedStatus;
   const dataSourceLabel = sourceLabelFor(fs?.source ?? null);
-  // Freshness honesty rides on dataState / dataAsOf — NEVER on a faked source.
-  const dataAsOf = fs?.lastCandleTime ?? null;
   // Closed-bar rule (same as the scanner row): the analysis window is the newest
   // SELECTED_ANALYSIS_WINDOW closed bars; the forming bar never moves the read.
   const closed = closedBars(chart.candles);
+  // Freshness honesty rides on dataState / dataAsOf — NEVER on a faked source.
+  // dataAsOf is the newest closed bar's close time, not feedStatus.lastCandleTime:
+  // the latter is the newest provider bar's closeTime, which for a forming bar
+  // is a scheduled FUTURE instant, not an observation.
+  const dataAsOf = closedBarDataAsOf(closed, Date.now());
   const analysisBars = closed.slice(-SELECTED_ANALYSIS_WINDOW);
   const analysisCandles: AnalysisCandle[] = analysisBars.map((c) => ({
     o: c.open, h: c.high, l: c.low, c: c.close,

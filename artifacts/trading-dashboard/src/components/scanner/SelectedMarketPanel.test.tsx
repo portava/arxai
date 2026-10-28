@@ -416,3 +416,48 @@ describe("SelectedMarketPanel — every load state renders without crashing", ()
     expect(screen.queryByTestId("live-trade-ticket-stub")).toBeNull();
   });
 });
+
+// ── What the panel states must match what was observed ──────────────────────
+// A complete, live-confirmed snapshot (levels present) that individual tests
+// degrade one field at a time.
+function liveOkSnapshot(over: Record<string, unknown> = {}) {
+  return {
+    ...degradedOkSnapshot(),
+    highlights: {
+      bias: "BUY" as const,
+      confidenceLabel: "High",
+      confidenceScore: 82,
+      volatilityLabel: "Normal",
+      trendState: "bullish",
+      entryZone: { low: 1.103, high: 1.1036 },
+      suggestedStop: 1.1,
+      suggestedTakeProfit: 1.11,
+      riskRewardRatio: 2,
+      riskWarnings: [],
+    },
+    explanation: {
+      ...degradedOkSnapshot().explanation,
+      hedge: "This looks like a possible buy setup right now.",
+    },
+    newsRisk: { riskLevel: "none", blockTrading: false, summary: "", calendarChecked: true },
+    dataSource: "LIVE_FEED",
+    dataSourceLabel: "MT5 broker feed",
+    dataState: "LIVE_CONFIRMED" as const,
+    dataAsOf: new Date(Date.now() - 60_000).toISOString(),
+    levelsWithheld: false,
+    levelsWithheldReason: null,
+    ...over,
+  };
+}
+
+describe("SelectedMarketPanel — labels describe what was observed", () => {
+  it("a data time stamped in the future never reads as 'Data as of 0s ago'", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({
+      data: liveOkSnapshot({ dataAsOf: new Date(Date.now() + 3 * 3600_000).toISOString() }),
+    }));
+    render(<SelectedMarketPanel />);
+    const label = screen.getByTestId("text-selected-last-updated").textContent ?? "";
+    expect(label).not.toContain("0s ago");
+    expect(label).toContain("unconfirmed");
+  });
+});

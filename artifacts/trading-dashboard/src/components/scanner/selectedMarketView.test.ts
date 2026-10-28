@@ -8,6 +8,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveSelectedMarketView,
   WITHHELD_FALLBACK_REASON,
+  selectedMarketDataAsOfLabel,
   type SelectedMarketViewInput,
 } from "./selectedMarketView";
 
@@ -74,5 +75,22 @@ describe("resolveSelectedMarketView", () => {
     expect(view.levels.stop).toBe(1.149);
     expect(view.levels.target).toBe(1.152);
     expect(view.levels.riskReward).toBe(2);
+  });
+});
+
+describe("selectedMarketDataAsOfLabel", () => {
+  const NOW = Date.parse("2026-10-28T12:00:00.000Z");
+  it("a data time in the future is never shown as '0s ago'", () => {
+    const label = selectedMarketDataAsOfLabel("2026-10-28T15:00:00.000Z", NOW);
+    expect(label).not.toContain("0s ago");
+    expect(label).toContain("unconfirmed");
+  });
+  it("a past data time reads as its real age", () => {
+    expect(selectedMarketDataAsOfLabel("2026-10-28T11:56:00.000Z", NOW)).toBe("Data as of 4m ago");
+    expect(selectedMarketDataAsOfLabel("2026-10-28T11:59:30.000Z", NOW)).toBe("Data as of 30s ago");
+  });
+  it("no data time is awaiting data, an unparseable one is unknown", () => {
+    expect(selectedMarketDataAsOfLabel(null, NOW)).toBe("Awaiting live market data");
+    expect(selectedMarketDataAsOfLabel("not-a-time", NOW)).toBe("Data time unknown");
   });
 });

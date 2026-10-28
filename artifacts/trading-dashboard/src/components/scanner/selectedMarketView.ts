@@ -74,3 +74,21 @@ export function resolveSelectedMarketView(
   // Otherwise the guard withheld drifted geometry — surface its own reason.
   return { kind: "withheld", reason: ok.levelsWithheldReason ?? WITHHELD_FALLBACK_REASON };
 }
+
+// Clock-skew allowance before a data time is treated as stamped in the future.
+const DATA_AS_OF_SKEW_MS = 5_000;
+
+/**
+ * The "Data as of …" label. A data time later than now is not an observation
+ * (e.g. a forming bar's scheduled close): it is never clamped to "0s ago".
+ * Downgrade-only: the client never invents a time the server did not send.
+ */
+export function selectedMarketDataAsOfLabel(dataAsOf: string | null | undefined, nowMs: number): string {
+  if (!dataAsOf) return "Awaiting live market data";
+  const t = Date.parse(dataAsOf);
+  if (!Number.isFinite(t)) return "Data time unknown";
+  if (t > nowMs + DATA_AS_OF_SKEW_MS) return "Data time unconfirmed (the feed stamped it in the future)";
+  const s = Math.round((nowMs - Math.min(t, nowMs)) / 1000);
+  if (s < 60) return `Data as of ${s}s ago`;
+  return `Data as of ${Math.round(s / 60)}m ago`;
+}

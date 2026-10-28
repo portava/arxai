@@ -14,7 +14,7 @@ import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
-import { resolveSelectedMarketView } from "@/components/scanner/selectedMarketView";
+import { resolveSelectedMarketView, selectedMarketDataAsOfLabel } from "@/components/scanner/selectedMarketView";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
@@ -256,9 +256,7 @@ export function SelectedMarketPanel() {
                 <Badge variant="outline" data-testid="badge-data-source">{ok.dataSourceLabel}</Badge>
               )}
               <span className="ml-auto" data-testid="text-selected-last-updated">
-                {ok.dataAsOf
-                  ? `Data as of ${timeAgo(ok.dataAsOf)}`
-                  : "Awaiting live market data"}
+                {selectedMarketDataAsOfLabel(ok.dataAsOf, Date.now())}
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-ruby-cache-note">

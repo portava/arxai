@@ -455,3 +455,29 @@ test("drift guard: the selected-market window equals the scanner's SCAN_ANALYSIS
   assert.ok(m, "marketScanner.ts must still declare SCAN_ANALYSIS_WINDOW");
   assert.equal(Number(m[1]), SELECTED_ANALYSIS_WINDOW);
 });
+
+// ── dataAsOf is an observation time, never a forming bar's scheduled close ────
+// chartDataService sets feedStatus.lastCandleTime to the newest provider bar's
+// closeTime. On H4 with a forming bar opened 1h ago that is now + 3h; the panel
+// then said "Data as of 0s ago" (timeAgo clamps negative ages to zero).
+test("dataAsOf is the newest CLOSED bar's close time and never later than now", async () => {
+  clearSelectedMarketCache();
+  const now = Date.now();
+  const H4 = 4 * 3600_000;
+  const formingOpenMs = now - 3600_000;
+  const formingCloseMs = formingOpenMs + H4;
+  const bars: Bar[] = [...bullishBars(60, 1.15, 0.0005), { open: 1.15, high: 1.1502, low: 1.1498, close: 1.15, isComplete: false }];
+  const chart = makeChart(bars, { ...FRESH_FS, lastCandleTime: new Date(formingOpenMs).toISOString() });
+  // What chartDataService reports for this series: the forming bar's scheduled close.
+  chart.feedStatus = { ...chart.feedStatus!, lastCandleTime: new Date(formingCloseMs).toISOString() };
+  const stub = (async () => chart) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", timeframe: "H4", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: noEvents },
+  );
+  assert.equal(env.ok, true);
+  if (!env.ok) return;
+  assert.ok(env.dataAsOf !== null, "a closed bar exists, so the data time is known");
+  assert.ok(Date.parse(env.dataAsOf) <= Date.now(), `dataAsOf ${env.dataAsOf} must not be in the future`);
+  assert.equal(env.dataAsOf, new Date(formingOpenMs).toISOString());
+});
