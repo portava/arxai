@@ -367,12 +367,13 @@ export async function runAutonomousCycle(
   // so a justified ordinary exit for a later agent never waits behind them.
   const protectiveCycle = createProtectiveCycle();
 
-  const agentList = [...agentIds];
-  for (const [index, agentId] of agentList.entries()) {
+  let agentsReached = 0;
+  for (const agentId of agentIds) {
     if (!(await mayContinue())) {
-      completion.agentsNotStarted = agentList.length - index;
+      completion.agentsNotStarted = agentIds.size - agentsReached;
       break;
     }
+    agentsReached++;
     const bundle = manageBundles.get(agentId);
     if (!bundle) continue;
     result.agentsManaged++;
