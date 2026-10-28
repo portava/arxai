@@ -19,6 +19,33 @@ const SEV: Record<string, string> = {
   critical: "bg-rose-500/20 text-rose-400 border-rose-500/40",
 };
 
+// Minutes in one bar of each scanner timeframe. A scanner alert describes the
+// read at the moment it was raised; once one bar of its own timeframe has
+// passed, that read has been superseded and nothing here re-checks it.
+const TF_MINUTES: Record<string, number> = {
+  M1: 1, M5: 5, M15: 15, M30: 30, H1: 60, H4: 240, D1: 1440,
+};
+const DEFAULT_SUPERSEDE_MIN = 15;
+
+function fmtAge(ms: number): string {
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return "under a minute";
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)} days`;
+}
+
+/** Age of an alert and whether its own timeframe has moved on since. */
+export function alertAge(a: Pick<Alert, "createdAt" | "timeframe">, now: number):
+  { ageMs: number | null; superseded: boolean } {
+  const t = Date.parse(a.createdAt);
+  if (!Number.isFinite(t)) return { ageMs: null, superseded: true };
+  const ageMs = Math.max(0, now - t);
+  const barMin = (a.timeframe && TF_MINUTES[a.timeframe.toUpperCase()]) || DEFAULT_SUPERSEDE_MIN;
+  return { ageMs, superseded: ageMs >= barMin * 60_000 };
+}
+
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
     headers: { "x-security-role": "ADMIN", "content-type": "application/json", ...(init?.headers ?? {}) },
@@ -43,9 +70,12 @@ export default function AlertsCenter() {
         <Bell className="h-6 w-6 text-primary" />
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Alerts Center</h1>
-          <p className="text-sm text-muted-foreground">Hot setups, risk warnings, MT5 deferred notices. Simulator only.</p>
+          <p className="text-sm text-muted-foreground" data-testid="alerts-center-scope">
+            Shared scanner notices: raised by the most recent market scans run on ARX, the same list for every user, not personal to you.
+            Each one shows when it was raised; nothing re-checks it afterwards. Acknowledge, snooze and dismiss change the list for everyone.
+          </p>
         </div>
-        <Badge variant="outline">SIMULATOR</Badge>
+        <Badge variant="outline">SHARED · ANALYSIS ONLY</Badge>
         <Badge>{alerts.length}</Badge>
         <Button size="sm" variant="outline" onClick={() => setShowAll((s) => !s)}>
           {showAll ? "Show open only" : "Show all"}
@@ -55,20 +85,32 @@ export default function AlertsCenter() {
       {alerts.length === 0
         ? <Card><CardContent className="p-6 text-sm text-muted-foreground">No alerts yet — start the scanner to generate hot-setup alerts.</CardContent></Card>
         : <div className="space-y-2">
-            {alerts.map((a) => (
-              <Card key={a.alertId} className={a.acknowledgedAt ? "opacity-60" : ""}>
+            {alerts.map((a) => {
+              const { ageMs, superseded } = alertAge(a, Date.now());
+              return (
+              <Card key={a.alertId} className={a.acknowledgedAt || superseded ? "opacity-60" : ""} data-testid={`alert-${a.alertId}`}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge className={SEV[a.severity] ?? ""}>{a.severity}</Badge>
                     <Badge variant="outline">{a.source}</Badge>
                     {a.symbol && <Badge variant="outline">{a.symbol} {a.timeframe ?? ""}</Badge>}
                     <CardTitle className="text-sm flex-1">{a.message}</CardTitle>
-                    <span className="text-xs text-muted-foreground">{safeDate(a.createdAt, "time")}</span>
+                    <span className="text-xs text-muted-foreground" data-testid="alert-raised">
+                      Raised {safeDate(a.createdAt, "time")}{ageMs != null ? ` · ${fmtAge(ageMs)} ago` : ""}
+                    </span>
                   </div>
                 </CardHeader>
                 <CardContent className="text-xs space-y-2">
                   <p className="text-muted-foreground">{a.reason}</p>
-                  <p>Recommended: <span className="font-medium">{a.recommendedAction}</span></p>
+                  {superseded ? (
+                    <p className="text-amber-400" data-testid="alert-superseded">
+                      {ageMs == null
+                        ? "When this alert was raised is unknown, so it cannot be treated as current. Re-check this market in the scanner before acting on it."
+                        : `Not re-checked for ${fmtAge(ageMs)}, longer than ${a.timeframe && TF_MINUTES[a.timeframe.toUpperCase()] ? `one ${a.timeframe} bar` : `${DEFAULT_SUPERSEDE_MIN} minutes`}, so it may no longer hold. Re-check this market in the scanner before acting on it.`}
+                    </p>
+                  ) : (
+                    <p>Recommended: <span className="font-medium">{a.recommendedAction}</span></p>
+                  )}
                   {!a.acknowledgedAt && (
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" className="h-7" onClick={async () => { await api("/api/alerts/acknowledge", { method: "POST", body: JSON.stringify({ alertId: a.alertId }) }); load(); }}>
@@ -84,7 +126,8 @@ export default function AlertsCenter() {
                   )}
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>}
     </div>
   );
