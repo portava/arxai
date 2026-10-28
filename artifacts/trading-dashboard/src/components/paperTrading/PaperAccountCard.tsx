@@ -7,16 +7,46 @@ interface PaperAccount {
   isActive: number; createdAt: string;
 }
 
+/**
+ * A failed read of the active demo account. 503 means the server found the
+ * active account but could not value it (no current real quote); any other
+ * status means the account could not be read at all. Neither is "no account".
+ */
+class PaperAccountReadError extends Error {
+  readonly status: number;
+  readonly reason: string | null;
+  constructor(status: number, reason: string | null) {
+    super(reason ?? `HTTP ${status}`);
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+function readFailureCopy(err: unknown): string {
+  if (err instanceof PaperAccountReadError && err.status === 503) {
+    return `Your active demo account could not be valued right now${err.reason ? ` (${err.reason})` : ""}. ` +
+      "Balance, equity and P&L are not shown until it can be valued. The account still exists — you do not need a new one.";
+  }
+  const why = err instanceof PaperAccountReadError ? (err.reason ?? `HTTP ${err.status}`) : "the request failed";
+  return `Your demo account could not be loaded (${why}). ` +
+    "Wait for it to load before creating another one — creating a new demo account deactivates the current one.";
+}
+
 export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState("Practice");
   const [bal, setBal] = useState(10000);
-  const { data } = useQuery<{ account: PaperAccount }>({
+  const { data, isLoading, isError, error } = useQuery<{ account: PaperAccount | null }>({
     queryKey: ["paper-active"],
     queryFn: async () => {
       const r = await fetch("/api/paper/accounts/active");
-      if (r.status === 404) return { account: null as unknown as PaperAccount };
-      if (!r.ok) throw new Error("failed");
+      // Only a 404 is a confirmed "no active account".
+      if (r.status === 404) return { account: null };
+      if (!r.ok) {
+        let reason: string | null = null;
+        try { const b = await r.json(); if (typeof b?.error === "string" && b.error) reason = b.error; } catch { /* keep status */ }
+        throw new PaperAccountReadError(r.status, reason);
+      }
       const j = await r.json();
       onActive?.(j.account?.id);
       return j;
@@ -41,7 +71,11 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
         <h3 className="text-sm font-semibold text-slate-100">Demo account</h3>
         <span className="rounded bg-amber-700 px-2 py-0.5 text-[10px] font-bold text-white">SIMULATED</span>
       </header>
-      {acc ? (
+      {isLoading ? (
+        <p className="text-xs text-slate-500" data-testid="paper-account-loading">Loading demo account…</p>
+      ) : isError && !acc ? (
+        <p className="text-xs text-amber-300" role="alert" data-testid="paper-account-unavailable">{readFailureCopy(error)}</p>
+      ) : acc ? (
         <div className="space-y-2">
           <p className="text-xs text-slate-300">{acc.accountName}</p>
           <div className="grid grid-cols-2 gap-2 text-xs">
@@ -55,7 +89,7 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
             </div>
           </div>
         </div>
-      ) : (
+      ) : data?.account === null ? (
         <div className="space-y-2">
           <p className="text-xs text-slate-400">No active account.</p>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
@@ -67,6 +101,8 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
             {create.isPending ? "Creating…" : "Create demo account"}
           </button>
         </div>
+      ) : (
+        <p className="text-xs text-slate-500" data-testid="paper-account-loading">Loading demo account…</p>
       )}
       <p className="mt-2 text-[10px] text-amber-300">Simulated — demo trading does not guarantee live results.</p>
     </div>
