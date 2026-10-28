@@ -11211,6 +11211,23 @@ export const RawCalendarEventImpact = {
 } as const;
 
 /**
+ * The provider's own impact tier, unfolded. `impact` folds `critical`
+into `high` for back-compat; display surfaces read this field so a
+central-bank decision shows as critical. Returned by the live
+calendar endpoint (`GET /economic-calendar/events`).
+
+ */
+export type RawCalendarEventImpactTier =
+  (typeof RawCalendarEventImpactTier)[keyof typeof RawCalendarEventImpactTier];
+
+export const RawCalendarEventImpactTier = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  critical: "critical",
+} as const;
+
+/**
  * A raw economic-calendar event from a connected real provider (Trading
 Economics). Never fabricated — the radar/Ruby surfaces these only when
 `connected:true` from the calendar seam. The live-calendar endpoint
@@ -11224,6 +11241,12 @@ export interface RawCalendarEvent {
   title: string;
   currency: string;
   impact: RawCalendarEventImpact;
+  /** The provider's own impact tier, unfolded. `impact` folds `critical`
+into `high` for back-compat; display surfaces read this field so a
+central-bank decision shows as critical. Returned by the live
+calendar endpoint (`GET /economic-calendar/events`).
+ */
+  impactTier?: RawCalendarEventImpactTier;
   eventTimeIso: string;
   affectedMarkets: string[];
   country?: string;
@@ -16738,6 +16761,15 @@ export type ListEconomicEventsParams = {
   currency?: string;
   impact?: ListEconomicEventsImpact;
   days?: number;
+  /**
+ * Hours before now to include (0-48, default 0). The window is
+eventTime in [now - pastHours, now + days*24h] — rolling hours, not
+calendar days. Lets a caller list events already released today.
+
+ * @minimum 0
+ * @maximum 48
+ */
+  pastHours?: number;
 };
 
 export type ListEconomicEventsImpact =

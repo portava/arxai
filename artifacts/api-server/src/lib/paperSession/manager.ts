@@ -565,7 +565,7 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
     ? "win rate not available (no close has a recorded result)"
     : `win rate ${winRate}% of ${classified} close${classified === 1 ? "" : "s"} with a recorded result`;
   const durationText = durationInProgress ? `, ${durationMinutes}m so far (session not ended)` : "";
-  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${breakdown}), net $${(netPnl/100).toFixed(2)}, ${winRateText}${durationText}. Live trading remains DISABLED.`;
+  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${breakdown}), net $${(netPnl/100).toFixed(2)}, ${winRateText}${durationText}. This paper session places no live orders.`;
   const nextBestActions: string[] = [];
   if (winRate != null && winRate < 50 && classified >= 2) nextBestActions.push("Review setups in BB debriefs — focus on quality over quantity");
   if (ruleViolations.length > 0) nextBestActions.push(`Address ${ruleViolations.length} rule violation(s) before next session`);
@@ -632,7 +632,9 @@ export async function getLatestReport(paperSessionId: string): Promise<SessionRe
     rule_violations: r.ruleViolations as Array<Record<string, unknown>>,
     mistakes_detected: r.mistakesDetected as Array<Record<string, unknown>>,
     lessons_generated: r.lessonsGenerated as Array<Record<string, unknown>>,
-    coach_summary: r.coachSummary ?? "",
+    // Reports stored before this change end with an unverified account-wide
+    // claim; drop it rather than repeat it.
+    coach_summary: (r.coachSummary ?? "").replace(/ Live trading remains DISABLED\.$/, " This paper session places no live orders."),
     next_best_actions: r.nextBestActions as string[],
     warnings: r.warnings as Array<Record<string, unknown>>,
     mode: "PAPER_ONLY", liveTradingStatus: "DISABLED",

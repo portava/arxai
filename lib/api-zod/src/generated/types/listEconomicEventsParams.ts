@@ -11,4 +11,13 @@ export type ListEconomicEventsParams = {
   currency?: string;
   impact?: ListEconomicEventsImpact;
   days?: number;
+  /**
+ * Hours before now to include (0-48, default 0). The window is
+eventTime in [now - pastHours, now + days*24h] — rolling hours, not
+calendar days. Lets a caller list events already released today.
+
+ * @minimum 0
+ * @maximum 48
+ */
+  pastHours?: number;
 };

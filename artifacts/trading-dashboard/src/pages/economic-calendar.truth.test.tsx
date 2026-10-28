@@ -1,0 +1,261 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+
+// Economic Calendar page — every tile and label must say what the calendar
+// source actually reported. These tests drive the real page with a stubbed
+// fetch that mirrors the two server routes it reads:
+//   live path: GET /api/economic-calendar/events  (economicCalendarProvider)
+//   DB path:   GET /api/economic-events           (newsCalendar.ts, window
+//              eventTime between now and now + days*24h)
+
+const timing = vi.hoisted(() => ({ data: undefined as unknown }));
+vi.mock("@workspace/api-client-react", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useGetTimingBrainMulti: () => ({ data: timing.data }),
+  getGetTimingBrainMultiQueryKey: (p: unknown) => ["timing-brain-multi", p],
+}));
+
+const { default: EconomicCalendarPage } = await import("./economic-calendar");
+
+// Local-time anchors so "today"/"tomorrow" are independent of the runner's TZ.
+const NOW = new Date(2026, 9, 28, 9, 0, 0);
+const at = (dayOffset: number, h: number, m = 0) =>
+  new Date(2026, 9, 28 + dayOffset, h, m, 0).toISOString();
+
+interface LiveEvt {
+  id: string; title: string; currency: string; impact: string; impactTier?: string;
+  eventTimeIso: string; eventTimeUtc: string; affectedMarkets: string[]; affectedSymbols: string[];
+  country: string; source: string; forecast: string | null; previous: string | null;
+  actual: string | null; riskNote: string | null;
+}
+function liveEvt(over: Partial<LiveEvt> & { id: string; title: string; when: string }): LiveEvt {
+  const { when, ...rest } = over;
+  return {
+    currency: "USD", impact: "high", eventTimeIso: when, eventTimeUtc: when,
+    affectedMarkets: [], affectedSymbols: [], country: "United States", source: "TE",
+    forecast: null, previous: null, actual: null, riskNote: null,
+    ...rest,
+  };
+}
+
+interface DbEvt {
+  id: number; eventName: string; country: string; currency: string;
+  impactLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  forecast: string | null; previous: string | null; actual: string | null;
+  eventTime: string; source: string; affectedSymbols: string[] | null; volatilityFlag: number;
+}
+function dbEvt(over: Partial<DbEvt> & { id: number; eventName: string; eventTime: string }): DbEvt {
+  return {
+    country: "United States", currency: "USD", impactLevel: "HIGH",
+    forecast: null, previous: null, actual: null, source: "manual",
+    affectedSymbols: null, volatilityFlag: 0,
+    ...over,
+  };
+}
+
+type Calls = string[];
+function stubServer(opts: { live?: LiveEvt[]; db?: DbEvt[] }): Calls {
+  const calls: Calls = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    calls.push(url);
+    const u = new URL(url, "http://x");
+    if (u.pathname === "/api/economic-calendar/events") {
+      if (!opts.live) {
+        return { ok: true, status: 200, json: async () => ({
+          connected: false, provider: "none", configured: false, eventCount: 0,
+          lastFetchAt: null, lastErrorAt: null, lastErrorMessage: null,
+          freshnessStatus: "unavailable", events: [],
+        }) };
+      }
+      // Mirror getEnrichedCalendarEvents: currency + minimum-impact filters.
+      const rank: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 3 };
+      const cur = u.searchParams.get("currencies");
+      const imp = u.searchParams.get("impact");
+      const events = opts.live.filter((e) =>
+        (!cur || cur.split(",").includes(e.currency))
+        && (!imp || (rank[e.impactTier ?? e.impact] ?? 0) >= (rank[imp] ?? 0)));
+      return { ok: true, status: 200, json: async () => ({
+        connected: true, provider: "trading_economics", configured: true,
+        eventCount: events.length, lastFetchAt: NOW.toISOString(), lastErrorAt: null,
+        lastErrorMessage: null, freshnessStatus: "fresh", events,
+      }) };
+    }
+    if (u.pathname === "/api/economic-events") {
+      // Mirror newsCalendar.ts: eventTime in [now - pastHours, now + days*24h].
+      const days = Number(u.searchParams.get("days") ?? 7);
+      const pastHours = Number(u.searchParams.get("pastHours") ?? 0);
+      const since = Date.now() - pastHours * 3600_000;
+      const until = Date.now() + days * 86_400_000;
+      const cur = u.searchParams.get("currency");
+      const imp = u.searchParams.get("impact");
+      const events = (opts.db ?? []).filter((e) => {
+        const t = new Date(e.eventTime).getTime();
+        return t >= since && t <= until && (!cur || e.currency === cur) && (!imp || e.impactLevel === imp);
+      });
+      return { ok: true, status: 200, json: async () => ({ events }) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  }));
+  return calls;
+}
+
+function renderPage() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrap = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  );
+  return render(<EconomicCalendarPage />, { wrapper: wrap });
+}
+
+function row(name: string): HTMLElement {
+  const rows = screen.getAllByTestId("eco-event-row");
+  const hit = rows.find((r) => r.textContent?.includes(name));
+  if (!hit) throw new Error(`no row for ${name}`);
+  return hit;
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+  timing.data = undefined;
+});
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+describe("impact tiers agree across sources", () => {
+  it("a provider-critical event (FOMC) is Critical on the live path, and an unmapped impact is not 'Low'", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "fomc", title: "Fed Interest Rate Decision", when: at(0, 18), impact: "high", impactTier: "critical" }),
+      liveEvt({ id: "odd", title: "Odd Survey", when: at(0, 15), impact: "weird" }),
+    ] });
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    expect(screen.getByTestId("eco-critical-count").textContent).toBe("1");
+    expect(within(row("Fed Interest Rate Decision")).getByText("Critical")).toBeTruthy();
+    const odd = row("Odd Survey");
+    expect(within(odd).queryByText("Low")).toBeNull();
+    expect(within(odd).getByText(/Impact not reported/)).toBeTruthy();
+  });
+
+  it("the 'Critical' filter on the live path lists only critical events, not every high one", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "fomc", title: "Fed Interest Rate Decision", when: at(0, 18), impact: "high", impactTier: "critical" }),
+      liveEvt({ id: "nfp", title: "Non Farm Payrolls", when: at(0, 13, 30), impact: "high", impactTier: "high" }),
+    ] });
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    fireEvent.click(screen.getByRole("button", { name: "Critical" }));
+    await waitFor(() => expect(screen.getAllByTestId("eco-event-row")).toHaveLength(1));
+    expect(row("Fed Interest Rate Decision")).toBeTruthy();
+    expect(screen.queryByText("Non Farm Payrolls", { selector: "[data-testid=eco-event-row] *" })).toBeNull();
+  });
+});
+
+describe("released rows report the print, never an invented surprise or direction", () => {
+  it("a miss (3.2% vs 3.4%) gets no green up-arrow and no parseFloat 'Surprise' chip", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "cpi", title: "CPI YoY", when: at(0, 8, 30), actual: "3.2%", forecast: "3.4%", previous: "3.3%" }),
+      liveEvt({ id: "nfp", title: "Non Farm Payrolls", when: at(0, 8, 0), actual: "1.5M", forecast: "1,400K" }),
+    ] });
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    for (const name of ["CPI YoY", "Non Farm Payrolls"]) {
+      const r = row(name);
+      expect(r.textContent).not.toContain("↑");
+      fireEvent.click(within(r).getByText(name));
+      expect(within(row(name)).queryByText(/Surprise/)).toBeNull();
+      // The actual print itself is still shown, in a neutral (not success) tone.
+      const actual = within(row(name)).getAllByText(name === "CPI YoY" ? "3.2%" : "1.5M")[0]!;
+      expect(actual.className).not.toMatch(/text-success/);
+    }
+  });
+});
+
+describe("DB fallback window and the 'events in window' count", () => {
+  it("'Tomorrow' lists an event at tomorrow 13:30 when it is 09:00 today", async () => {
+    stubServer({ db: [dbEvt({ id: 1, eventName: "Non Farm Payrolls", eventTime: at(1, 13, 30) })] });
+    renderPage();
+    await screen.findByText(/No live calendar provider configured/);
+    fireEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+    await waitFor(() => expect(row("Non Farm Payrolls")).toBeTruthy());
+  });
+
+  it("'Today' includes events already released earlier today, with their actuals", async () => {
+    stubServer({ db: [
+      dbEvt({ id: 1, eventName: "Retail Sales", eventTime: at(0, 7, 0), actual: "0.4%", forecast: "0.3%" }),
+      dbEvt({ id: 2, eventName: "ISM Services", eventTime: at(0, 15, 0) }),
+    ] });
+    renderPage();
+    await waitFor(() => expect(screen.getAllByTestId("eco-event-row")).toHaveLength(2));
+    expect(screen.getByTestId("eco-total-count").textContent).toBe("2");
+    expect(screen.getByText("A 0.4% vs F 0.3%")).toBeTruthy();
+  });
+
+  it("with a currency chip on, the live banner says the count is filtered", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "a", title: "CPI YoY", when: at(0, 13, 30) }),
+      liveEvt({ id: "b", title: "ECB Speech", when: at(0, 14, 0), currency: "EUR", country: "Euro Area" }),
+    ] });
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    fireEvent.click(screen.getByRole("button", { name: "USD" }));
+    await waitFor(() => expect(screen.getAllByTestId("eco-event-row")).toHaveLength(1));
+    const banner = screen.getByTestId("eco-provider-banner");
+    expect(banner.textContent).not.toMatch(/\bin window\b/);
+    expect(banner.textContent).toMatch(/filtered to USD/);
+    expect(banner.textContent).toMatch(/1 event\b/);
+  });
+});
+
+describe("the assistant card never presents a template as the assistant's read", () => {
+  it("one LOW-impact event: no 'Best action', no static guidance chips, no 'major release'", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "pmi", title: "Chicago PMI", when: at(0, 11), impact: "low", impactTier: "low" }),
+    ] });
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    const card = screen.getByTestId("eco-assistant-card");
+    expect(card.textContent).not.toMatch(/Best action/);
+    expect(card.textContent).not.toMatch(/major releases/);
+    for (const chip of ["Reduce Size", "Avoid Scalp", "Watch Spread", "Confirm After"]) {
+      expect(within(card).queryByText(chip)).toBeNull();
+    }
+    // It still states the scheduled fact, with its source.
+    expect(card.textContent).toMatch(/Chicago PMI/);
+    expect(card.textContent).toMatch(/has not assessed/);
+  });
+
+  it("no events today is not 'Low' risk", async () => {
+    stubServer({ live: [liveEvt({ id: "nfp", title: "Non Farm Payrolls", when: at(2, 13, 30) })] });
+    renderPage();
+    await screen.findByText("Overall Risk");
+    expect(screen.getByTestId("eco-overall-risk").textContent).not.toBe("Low");
+    expect(screen.getByTestId("eco-overall-risk").textContent).toMatch(/No events today/);
+  });
+});
+
+describe("Affected Market Heat only shows symbols that were actually read", () => {
+  it("a blocked (unapproved) symbol is not drawn as a blank heat row", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "ecb", title: "ECB Press Conference", when: at(0, 13, 45), currency: "EUR", country: "Euro Area",
+        affectedSymbols: ["EURUSD", "GER40", "EURJPY"] }),
+    ] });
+    timing.data = { results: [
+      { symbol: "EURUSD", timingGrade: "B", entryPermission: "WAIT_FOR_ENTRY", heatScore: 40 },
+      { requestedSymbol: "GER40", isApprovedMarket: false, blocked: true, reason: "Not an approved ARX Focus market." },
+    ] };
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    fireEvent.click(within(row("ECB Press Conference")).getByText("ECB Press Conference"));
+    const strip = await screen.findByTestId("eco-heat-strip");
+    const rows = within(strip).getAllByTestId("eco-heat-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toMatch(/EURUSD/);
+    // The blocked and the missing symbols are named, not dropped or blanked.
+    expect(strip.textContent).toMatch(/GER40/);
+    expect(strip.textContent).toMatch(/not in the approved market list/i);
+    expect(strip.textContent).toMatch(/EURJPY/);
+    expect(strip.textContent).toMatch(/no timing read returned/i);
+  });
+});

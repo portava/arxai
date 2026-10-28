@@ -7,7 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertTriangle, Loader2, ShieldCheck, Info, Radio, RadioTower } from "lucide-react";
 import { RubySetupReason, type SignalContext } from "./RubySetupReason";
-import { assessStopLoss, computeValidatedRR } from "@/lib/risk/stopLossAssessment";
+import {
+  assessStopLoss,
+  computeValidatedRR,
+  stopLossInputsFromBrokerSpec,
+  type BrokerSymbolSpecForStops,
+  type StopLossSpecInputs,
+} from "@/lib/risk/stopLossAssessment";
+import { resolveBrokerSymbol, type SymbolResolution } from "@/lib/useMt5Symbols";
 import { useToast } from "@/hooks/use-toast";
 import { LiveTradeTicket } from "@/components/live/LiveTradeTicket";
 import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
@@ -279,6 +286,26 @@ export function ScannerTradeModal({
   // market price.
   const sharedLastClose = feedTruth?.candles.lastClose ?? null;
 
+  // The broker's reported spec for this symbol (arx_symbol_specs via the
+  // resolve endpoint, which maps aliases such as "V75" to the broker string).
+  // It is the ONLY source of the pip size, stop level and spread the
+  // stop-loss check uses; with no spec the check says the distance could not
+  // be checked instead of guessing a pip size from the symbol name.
+  const symbolSpecQ = useQuery<SymbolResolution>({
+    queryKey: ["mt5-symbol-spec", signal.symbol],
+    enabled: open && !!signal.symbol,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    queryFn: () => resolveBrokerSymbol(signal.symbol),
+  });
+  const specResolution = symbolSpecQ.data;
+  const brokerSpec: BrokerSymbolSpecForStops | null =
+    specResolution && specResolution.ok === true && specResolution.matched && typeof specResolution.matched === "object"
+      ? specResolution.matched
+      : null;
+  const specInputs: StopLossSpecInputs = stopLossInputsFromBrokerSpec(brokerSpec);
+
   // OWNER unrestricted profile bypasses the "safe-default lot" warning
   // — same source of truth as LiveTradeTicket so the two surfaces are
   // consistent. Server-side 16-gate evaluator + kill switch + master
@@ -417,6 +444,8 @@ export function ScannerTradeModal({
   // placed too close to entry (or omitted) is either adjusted to a safe
   // distance or surfaced as a blocking error. R:R only renders when risk
   // is at least 1 pip — eliminates the absurd R:R from a near-zero risk.
+  // The pip size, stop level and spread come from the broker spec
+  // (specInputs); without it the distance is reported as not checked.
   const validation = useMemo(() => {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -437,7 +466,7 @@ export function ScannerTradeModal({
     if (stopLimit && (st == null || sli == null)) errors.push("Stop trigger + stop limit prices required.");
 
     let assessedSl: number | null = slv;
-    let pipSize = 0.0001;
+    let pipSize: number | null = null;
     if (effEntry != null) {
       const long = direction === "BUY";
       if (tpv != null && long && tpv <= effEntry) errors.push("Take profit must be ABOVE entry for BUY.");
@@ -450,7 +479,10 @@ export function ScannerTradeModal({
         recentSwingLow: typeof (signal as unknown as { recentSwingLow?: number }).recentSwingLow === "number" ? (signal as unknown as { recentSwingLow?: number }).recentSwingLow : null,
         recentSwingHigh: typeof (signal as unknown as { recentSwingHigh?: number }).recentSwingHigh === "number" ? (signal as unknown as { recentSwingHigh?: number }).recentSwingHigh : null,
         atr: typeof (signal as unknown as { atr?: number }).atr === "number" ? (signal as unknown as { atr?: number }).atr : null,
-        spread: typeof (signal as unknown as { spread?: number }).spread === "number" ? (signal as unknown as { spread?: number }).spread : null,
+        spread: typeof (signal as unknown as { spread?: number }).spread === "number" ? (signal as unknown as { spread?: number }).spread : specInputs.spread,
+        minStopDistance: specInputs.minStopDistance,
+        freezeLevel: specInputs.freezeLevel,
+        pipSize: specInputs.pipSize,
         slippageBufferPips: 3,
       });
       pipSize = assess.pipSize;
@@ -461,6 +493,9 @@ export function ScannerTradeModal({
         if (assess.adjusted) {
           warnings.push(assess.reason);
           slAdvice.push(`Suggested SL ${px(assess.sl)} (stop distance ${px(assess.stopDistance)}).`);
+        } else if (!assess.distanceChecked) {
+          // The broker spec is missing: say the distance was not checked.
+          warnings.push(assess.reason);
         } else {
           slAdvice.push(assess.reason);
         }
@@ -471,7 +506,9 @@ export function ScannerTradeModal({
     if (effEntry != null && assessedSl != null && tpv != null) {
       rr = computeValidatedRR(effEntry, assessedSl, tpv, pipSize);
       if (rr == null) {
-        warnings.push("R:R unavailable until a valid stop loss is set.");
+        warnings.push(pipSize == null
+          ? `R:R not shown: without the broker's pip size for ${signal.symbol} a near-zero stop cannot be ruled out.`
+          : "R:R unavailable until a valid stop loss is set.");
       } else {
         riskPx = Math.abs(effEntry - assessedSl);
         rewardPx = Math.abs(tpv - effEntry);
@@ -482,7 +519,8 @@ export function ScannerTradeModal({
       ok: errors.length === 0, errors, warnings, rr, riskPx, rewardPx, assessedSl, slAdvice,
       riskPxText: px(riskPx), rewardPxText: px(rewardPx),
     };
-  }, [orderType, direction, market, stopLimit, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp, signal, feedTruth?.candles.pricePrecision]);
+  }, [orderType, direction, market, stopLimit, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp, signal, feedTruth?.candles.pricePrecision,
+    specInputs.pipSize, specInputs.minStopDistance, specInputs.freezeLevel, specInputs.spread]);
 
   // Submit MARKET via demo-command queue (only flow EA actually executes
   // today). Sets source=MARKET_SCANNER + signalContext in payload so the

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { RawCalendarEventImpact } from "./rawCalendarEventImpact";
+import type { RawCalendarEventImpactTier } from "./rawCalendarEventImpactTier";
 
 /**
  * A raw economic-calendar event from a connected real provider (Trading
@@ -21,6 +22,12 @@ export interface RawCalendarEvent {
   title: string;
   currency: string;
   impact: RawCalendarEventImpact;
+  /** The provider's own impact tier, unfolded. `impact` folds `critical`
+into `high` for back-compat; display surfaces read this field so a
+central-bank decision shows as critical. Returned by the live
+calendar endpoint (`GET /economic-calendar/events`).
+ */
+  impactTier?: RawCalendarEventImpactTier;
   eventTimeIso: Date;
   affectedMarkets: string[];
   country?: string;

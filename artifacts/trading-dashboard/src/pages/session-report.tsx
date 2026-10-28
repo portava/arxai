@@ -26,33 +26,77 @@ interface Report {
 
 interface Session { paper_session_id: string; status: string; }
 
+// Pull the server's own explanation out of a failed response body
+// ({ error } or a REJECTED { result: { reason } } envelope).
+function serverReason(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const b = body as { error?: unknown; result?: { reason?: unknown } };
+  if (typeof b.error === "string" && b.error.trim()) return b.error;
+  if (b.result && typeof b.result.reason === "string" && b.result.reason.trim()) return b.result.reason;
+  return null;
+}
+
+async function readBody(r: Response): Promise<unknown> {
+  try { return await r.json(); } catch { return null; }
+}
+
 export default function SessionReport() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [report, setReport] = useState<Report | null>(null);
   const [busy, setBusy] = useState(false);
+  // A failed read or a refused generate is NOT "no report yet": a report may
+  // exist, or generation was refused. Say which, with the server's reason.
+  const [error, setError] = useState<string | null>(null);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
 
   async function loadSessions() {
-    const r = await fetch("/api/paper-sessions?limit=20");
-    const d = await r.json();
-    setSessions(d.sessions ?? []);
-    if (!selected && d.sessions?.length) setSelected(d.sessions[0].paper_session_id);
+    try {
+      const r = await fetch("/api/paper-sessions?limit=20");
+      const d = (await readBody(r)) as { sessions?: Session[] } | null;
+      if (!r.ok) {
+        const why = serverReason(d);
+        setSessionsError(`Could not load your paper sessions (HTTP ${r.status}${why ? `: ${why}` : ""}).`);
+        return;
+      }
+      setSessionsError(null);
+      setSessions(d?.sessions ?? []);
+      if (!selected && d?.sessions?.length) setSelected(d.sessions[0].paper_session_id);
+    } catch {
+      setSessionsError("Could not load your paper sessions — the request did not complete.");
+    }
   }
   useEffect(() => { void loadSessions(); }, []);
 
   async function loadReport(id: string) {
-    const r = await fetch(`/api/paper-sessions/${id}/report`);
-    if (r.ok) { const d = await r.json(); setReport(d.report); } else setReport(null);
+    setReport(null);
+    setError(null);
+    try {
+      const r = await fetch(`/api/paper-sessions/${id}/report`);
+      const d = (await readBody(r)) as { report?: Report } | null;
+      if (r.ok && d?.report) { setReport(d.report); return; }
+      const why = serverReason(d);
+      // Only the route's explicit "no report yet" 404 is a true empty state.
+      if (r.status === 404 && why && /no report yet/i.test(why)) return;
+      setError(`Could not load the report for this session (HTTP ${r.status}${why ? `: ${why}` : ""}). A report may still exist.`);
+    } catch {
+      setError("Could not load the report for this session — the request did not complete. A report may still exist.");
+    }
   }
   useEffect(() => { if (selected) void loadReport(selected); }, [selected]);
 
   async function generate() {
     if (!selected) return;
     setBusy(true);
+    setError(null);
     try {
       const r = await fetch(`/api/paper-sessions/${selected}/report`, { method: "POST", headers: { "x-security-role": "OWNER", "content-type": "application/json" }, body: "{}" });
-      const d = await r.json();
-      setReport(d.report);
+      const d = (await readBody(r)) as { report?: Report } | null;
+      if (r.ok && d?.report) { setReport(d.report); return; }
+      const why = serverReason(d);
+      setError(`Report was not generated (HTTP ${r.status}${why ? `: ${why}` : ""}).`);
+    } catch {
+      setError("Report was not generated — the request did not complete.");
     } finally { setBusy(false); }
   }
 
@@ -70,7 +114,7 @@ export default function SessionReport() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Session Report</h1>
-          <p className="text-sm text-muted-foreground">Build PP — demo-only session reporting. Live trading remains DISABLED.</p>
+          <p className="text-sm text-muted-foreground">Reports on your paper practice sessions. These sessions place no live orders.</p>
         </div>
         <div className="flex gap-2">
           <select value={selected} onChange={e => setSelected(e.target.value)} className="border rounded px-2 py-1">
@@ -82,6 +126,9 @@ export default function SessionReport() {
           </button>
         </div>
       </div>
+
+      {sessionsError && <div className="text-sm text-rose-500">{sessionsError}</div>}
+      {error && <div className="text-sm text-rose-500">{error}</div>}
 
       {report ? (
         <div className="space-y-3">
@@ -104,7 +151,7 @@ export default function SessionReport() {
             <ul className="list-disc pl-5 text-sm">{report.next_best_actions.map((a,i)=><li key={i}>{a}</li>)}</ul>
           </div>
         </div>
-      ) : <div className="text-sm text-muted-foreground">No report yet — pick a session and generate.</div>}
+      ) : !error ? <div className="text-sm text-muted-foreground">No report yet — pick a session and generate.</div> : null}
     </div>
   );
 }

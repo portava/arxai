@@ -272,7 +272,7 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
         recommendedFocus: "Place a paper trade and add a journal note to begin.",
         suggestedRuleChanges: [],
         confidenceCalibration: "No trades yet — confidence cannot be calibrated.",
-        dataSource: "SIMULATOR",
+        dataSource: "JOURNAL",
         perUserScoped: true,
         generatedAt: new Date().toISOString(),
       });
@@ -349,8 +349,8 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       doingWell: winRate == null
         ? `None of your ${total} journal ${total === 1 ? "entry has" : "entries have"} a recorded win or loss yet, so there is no win rate to report. Enter the P&L on closed trades to build one.`
         : winRate >= 50
-          ? `Win rate ${winRate}% across ${decided} simulated trades with a recorded result${excludedNote} — keep the same selection criteria.`
-          : `${wins} winners out of ${decided} simulated trades with a recorded result${excludedNote} — discipline before frequency.`,
+          ? `Win rate ${winRate}% across ${decided} journal trades with a recorded result${excludedNote} — keep the same selection criteria.`
+          : `${wins} winners out of ${decided} journal trades with a recorded result${excludedNote} — discipline before frequency.`,
       winRate,
       tradesWithOutcome: decided,
       entriesWithoutOutcome: withoutOutcome,
@@ -369,7 +369,7 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       // win rate with a constant.
       confidenceCalibration:
         "Confidence calibration not measured — your journal entries do not record a confidence score to compare with your win rate.",
-      dataSource: "SIMULATOR",
+      dataSource: "JOURNAL",
       generatedAt: new Date().toISOString(),
     });
   } catch (e) { return res.status(500).json({ error: String(e) }); }

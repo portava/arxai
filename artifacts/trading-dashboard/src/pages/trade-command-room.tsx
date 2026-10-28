@@ -34,6 +34,7 @@ import {
 } from "@/components/dashboard/trade/TradePanels";
 import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "@/components/dashboard/cockpit/bridgeObservation";
+import { estimateMoneyAtDistance, formatMoneyEstimate } from "@/lib/fxRiskEstimate";
 
 type Opp = {
   symbol: string; timeframe: string; bias: string; recommendedAction: string;

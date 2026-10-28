@@ -13,13 +13,20 @@ import {
   fillOrder, listPositions, getPosition,
   closeOmsPosition, partialCloseOmsPosition, moveOmsStop, moveOmsTakeProfit, moveOmsStopToBreakEven, setOmsTrailingStop,
   pnlSummary, pnlBy, pnlDaily, brokerReconStatus, omsDashboardSummary,
-  tickAll, type OmsActionResult, type OmsActor,
+  tickAll, type OmsActionResult, type OmsActor, type OmsOwnerScope,
 } from "../lib/oms.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 // Every change to the simulator book is evaluated by the pre-trade Risk
 // Governor for the operator making it (lib/oms.ts, governed entry points).
 const actorOf = (req: Request): OmsActor => ({ userId: req.authUser!.id });
+
+// Every book read is the signed-in user's own simulator book. The OMS keeps
+// one process-wide book; without this, any caller saw every operator's
+// orders and positions as "your positions". No signed-in user → no rows.
+const ownerScope = (req: Request): OmsOwnerScope => ({ ownerUserId: req.authUser?.id ?? -1 });
+const ownedBy = (req: Request, row: { ownerUserId: number | null }) =>
+  req.authUser?.id != null && row.ownerUserId === req.authUser.id;
 
 function sendResult<T>(res: Response, r: OmsActionResult<T>) {
   if (r.ok) return res.json(r.value);
@@ -42,7 +49,7 @@ router.get("/orders", (req, res) => {
   const status = req.query.status ? String(req.query.status) : undefined;
   const source = req.query.source ? Source.safeParse(req.query.source) : null;
   return res.json({
-    orders: listOrders({
+    orders: listOrders({ ...ownerScope(req),
       environment: env?.success ? env.data : undefined,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       status: status as any,
@@ -53,7 +60,7 @@ router.get("/orders", (req, res) => {
   });
 });
 router.get("/orders/:id", (req, res) => {
-  const o = getOrder(String(req.params.id)); if (!o) return res.status(404).json({ error: "not found" });
+  const o = getOrder(String(req.params.id)); if (!o || !ownedBy(req, o)) return res.status(404).json({ error: "not found" });
   return res.json(o);
 });
 
@@ -104,15 +111,15 @@ router.patch("/orders/:id", requireAdmin, async (req, res) => {
 // ── Positions ──────────────────────────────────────────────────────────────
 router.get("/oms/positions", (req, res) => {
   const env = req.query.environment ? Env.safeParse(req.query.environment) : null;
-  return res.json({ positions: listPositions({ environment: env?.success ? env.data : undefined }), dataSource: "SIMULATOR" });
+  return res.json({ positions: listPositions({ ...ownerScope(req), environment: env?.success ? env.data : undefined }), dataSource: "SIMULATOR" });
 });
-router.get("/oms/positions/open", (_req, res) => res.json({ positions: listPositions({ status: "OPEN" }), dataSource: "SIMULATOR" }));
-router.get("/oms/positions/closed", (_req, res) => {
-  const closed = listPositions({}).filter((p) => p.status !== "OPEN");
+router.get("/oms/positions/open", (req, res) => res.json({ positions: listPositions({ ...ownerScope(req), status: "OPEN" }), dataSource: "SIMULATOR" }));
+router.get("/oms/positions/closed", (req, res) => {
+  const closed = listPositions({ ...ownerScope(req) }).filter((p) => p.status !== "OPEN");
   return res.json({ positions: closed, dataSource: "SIMULATOR" });
 });
 router.get("/oms/positions/:id", (req, res) => {
-  const p = getPosition(String(req.params.id)); if (!p) return res.status(404).json({ error: "not found" });
+  const p = getPosition(String(req.params.id)); if (!p || !ownedBy(req, p)) return res.status(404).json({ error: "not found" });
   return res.json(p);
 });
 
@@ -157,15 +164,15 @@ router.post("/execution/simulator/tick", requireAdmin, (_req, res) => { tickAll(
 // ── P/L ────────────────────────────────────────────────────────────────────
 router.get("/pnl/summary", (req, res) => {
   const env = req.query.environment ? Env.safeParse(req.query.environment) : null;
-  return res.json(pnlSummary(env?.success ? env.data : undefined));
+  return res.json(pnlSummary(env?.success ? env.data : undefined, ownerScope(req)));
 });
 router.get("/pnl/daily", (req, res) => {
   const env = req.query.environment ? Env.safeParse(req.query.environment) : null;
-  return res.json({ days: pnlDaily(env?.success ? env.data : undefined), dataSource: "SIMULATOR" });
+  return res.json({ days: pnlDaily(env?.success ? env.data : undefined, ownerScope(req)), dataSource: "SIMULATOR" });
 });
-router.get("/pnl/by-symbol", (_req, res) => res.json({ groups: pnlBy("symbol"), dataSource: "SIMULATOR" }));
-router.get("/pnl/by-strategy", (_req, res) => res.json({ groups: pnlBy("strategy"), dataSource: "SIMULATOR" }));
-router.get("/pnl/by-environment", (_req, res) => res.json({ groups: pnlBy("environment"), dataSource: "SIMULATOR" }));
+router.get("/pnl/by-symbol", (req, res) => res.json({ groups: pnlBy("symbol", ownerScope(req)), dataSource: "SIMULATOR" }));
+router.get("/pnl/by-strategy", (req, res) => res.json({ groups: pnlBy("strategy", ownerScope(req)), dataSource: "SIMULATOR" }));
+router.get("/pnl/by-environment", (req, res) => res.json({ groups: pnlBy("environment", ownerScope(req)), dataSource: "SIMULATOR" }));
 
 // ── Reconciliation + dashboard ─────────────────────────────────────────────
 router.get("/broker-reconciliation/status", (req, res) => {

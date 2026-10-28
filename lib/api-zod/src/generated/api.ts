@@ -10277,6 +10277,12 @@ export const GetLiveCalendarEventsResponse = zod.object({
         title: zod.string(),
         currency: zod.string(),
         impact: zod.enum(["low", "medium", "high"]),
+        impactTier: zod
+          .enum(["low", "medium", "high", "critical"])
+          .optional()
+          .describe(
+            "The provider's own impact tier, unfolded. `impact` folds `critical`\ninto `high` for back-compat; display surfaces read this field so a\ncentral-bank decision shows as critical. Returned by the live\ncalendar endpoint (`GET \/economic-calendar\/events`).\n",
+          ),
         eventTimeIso: zod.coerce.date(),
         affectedMarkets: zod.array(zod.string()),
         country: zod.string().optional(),
@@ -10319,11 +10325,22 @@ export const GetLiveCalendarEventsResponse = zod.object({
  * @summary List synced economic events (Build N)
  */
 export const listEconomicEventsQueryDaysDefault = 7;
+export const listEconomicEventsQueryPastHoursDefault = 0;
+export const listEconomicEventsQueryPastHoursMin = 0;
+export const listEconomicEventsQueryPastHoursMax = 48;
 
 export const ListEconomicEventsQueryParams = zod.object({
   currency: zod.coerce.string().optional(),
   impact: zod.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
   days: zod.coerce.number().default(listEconomicEventsQueryDaysDefault),
+  pastHours: zod.coerce
+    .number()
+    .min(listEconomicEventsQueryPastHoursMin)
+    .max(listEconomicEventsQueryPastHoursMax)
+    .default(listEconomicEventsQueryPastHoursDefault)
+    .describe(
+      "Hours before now to include (0-48, default 0). The window is\neventTime in [now - pastHours, now + days\*24h] — rolling hours, not\ncalendar days. Lets a caller list events already released today.\n",
+    ),
 });
 
 export const ListEconomicEventsResponse = zod.object({

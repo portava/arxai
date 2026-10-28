@@ -1414,6 +1414,7 @@ export * from "./queueDemoExecutionOrderBodyExecutionMode";
 export * from "./queueDemoExecutionOrderBodySide";
 export * from "./rawCalendarEvent";
 export * from "./rawCalendarEventImpact";
+export * from "./rawCalendarEventImpactTier";
 export * from "./readinessSelfReport";
 export * from "./reconciliationOverviewResp";
 export * from "./reconciliationOverviewRespBySeverity";

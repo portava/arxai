@@ -61,6 +61,11 @@ function priceCell(p: Pos): { label: string; sub: string } {
   if (p.currentPriceBasis === "NO_QUOTE") return { label: "Last mark", sub: at ? `no simulator quote since ${at}` : "no simulator quote" };
   return { label: "Last price", sub: "time not reported" };
 }
+/** Signed dollars to the cent: "-$12.50", "$0.00". Not a number → "—". */
+const usd = (n: unknown): string =>
+  typeof n === "number" && Number.isFinite(n) ? `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}` : "—";
+const pnlTone = (n: number) => (n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-txt-muted");
+
 const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 async function api(path: string, init?: RequestInit) {
@@ -73,11 +78,13 @@ async function api(path: string, init?: RequestInit) {
 export default function PositionsPage() {
   const [positions, setPositions] = useState<Pos[]>([]);
   const [pnl, setPnl] = useState<Pnl | null>(null);
+  const [dataSource, setDataSource] = useState<string | null>(null);
   const [tab, setTab] = useState<"OPEN" | "CLOSED" | "INTENT" | "MT5">("OPEN");
   // Why the latest poll failed (null when it succeeded), and when the book on
   // screen was last loaded. After a failure the book is a cached copy.
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
+
 
   async function load() {
     try {
@@ -87,6 +94,7 @@ export default function PositionsPage() {
       if (!Array.isArray(r?.positions)) throw new Error("positions response had no positions list");
       const s: unknown = sr.ok ? await sr.json().catch(() => null) : null;
       setPositions(r.positions as Pos[]);
+      setDataSource(typeof (r as { dataSource?: unknown }).dataSource === "string" ? (r as { dataSource: string }).dataSource : null);
       setPnl(asPnl(s));
       setLoadedAt(Date.now());
       setLoadErr(null);
@@ -119,8 +127,11 @@ export default function PositionsPage() {
         </span>
         <div className="flex-1">
           <h1 className="text-2xl font-bold leading-tight">Positions</h1>
-          <p className="text-sm text-txt-secondary">Simulated positions tracked live. Real broker positions route through the MT5 bridge.</p>
+          <p className="text-sm text-txt-secondary">Your own simulator book: fills and P/L at ARX simulator prices, not a broker account. Real broker positions route through the MT5 bridge.</p>
         </div>
+        <span data-testid="positions-data-source" className="rounded-md border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning">
+          {loadedAt == null && loadErr ? "Data source: not read" : `Data source: ${dataSource ?? "SIMULATOR"} (not a broker)`}
+        </span>
       </div>
 
       {loadErr && (
@@ -137,12 +148,12 @@ export default function PositionsPage() {
 
       {pnl && (
         <div className="grid gap-2 md:grid-cols-6">
-          <Stat label="Daily" value={`$${pnl.dailyPnL}`} />
-          <Stat label="Weekly" value={`$${pnl.weeklyPnL}`} />
-          <Stat label="Open" value={`$${pnl.openUnrealizedPnL}`} />
-          <Stat label="Win rate" value={`${pnl.winRate}%`} />
-          <Stat label="Avg R" value={String(pnl.averageR)} />
-          <Stat label="Max DD" value={`$${pnl.maxDrawdown}`} />
+          <Stat label="Sim realized today" value={usd(pnl.dailyPnL)} />
+          <Stat label="Sim realized 7d" value={usd(pnl.weeklyPnL)} />
+          <Stat label="Sim open (unrealized)" value={usd(pnl.openUnrealizedPnL)} />
+          <Stat label="Win rate (closed)" value={`${pnl.winRate}%`} />
+          <Stat label="Avg R (closed)" value={String(pnl.averageR)} />
+          <Stat label="Max DD (closed)" value={usd(pnl.maxDrawdown)} />
         </div>
       )}
 
@@ -170,8 +181,8 @@ export default function PositionsPage() {
         <div className="rounded-2xl border border-border bg-card p-2">
           <EmptyState
             icon={Briefcase}
-            title="No open positions yet."
-            description="Your positions will appear here once you place a trade. Use Demo mode to practice risk-free, or finish account setup to unlock live trading."
+            title={tab === "CLOSED" ? "No closed simulator positions." : "No open simulator positions."}
+            description="This list shows only simulator positions placed for your account. It does not show broker positions."
           />
         </div>
       ) : (
@@ -183,8 +194,19 @@ export default function PositionsPage() {
                 <Badge variant="outline">{p.environment}</Badge>
                 <span className="text-base font-semibold">{p.symbol}</span>
                 <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-semibold", p.direction === "BUY" ? "bg-success/15 text-success" : "bg-danger/15 text-danger")}>{p.direction} ×{p.lotSize}</span>
-                <span className={cn("ml-auto font-mono font-bold", (p.unrealizedPnL || p.realizedPnL) >= 0 ? "text-success" : "text-danger")}>
-                  ${p.status === "OPEN" ? p.unrealizedPnL : p.realizedPnL} {p.rMultiple !== 0 && `(${p.rMultiple}R)`}
+                <span className="ml-auto flex flex-wrap items-baseline gap-2 font-mono font-bold" data-testid={`position-pnl-${p.positionId}`}>
+                  {p.status === "OPEN" ? (
+                    <>
+                      <span className={pnlTone(p.unrealizedPnL)}><span className="text-[10px] font-normal text-txt-muted">Unrealized </span>{usd(p.unrealizedPnL)}</span>
+                      {/* A partial close realizes P/L while the position stays open. */}
+                      {p.realizedPnL !== 0 && (
+                        <span className={pnlTone(p.realizedPnL)}><span className="text-[10px] font-normal text-txt-muted">Realized </span>{usd(p.realizedPnL)}</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className={pnlTone(p.realizedPnL)}><span className="text-[10px] font-normal text-txt-muted">Realized </span>{usd(p.realizedPnL)}</span>
+                  )}
+                  {p.rMultiple !== 0 && <span className="text-txt-muted">({p.rMultiple}R)</span>}
                 </span>
               </div>
               <div className="space-y-2 text-xs">
