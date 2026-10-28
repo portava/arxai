@@ -115,7 +115,7 @@ function DirectionBadge({ direction }: { direction: string }) {
 
 function BiasChip({ bias }: { bias: string }) {
   const isBull = bias === "Bullish" || bias === "Positive" || bias === "Risk-On";
-  const isBear = bias === "Bearish" || bias === "Negative" || bias === "Risk-Off" || bias === "Not news-driven";
+  const isBear = bias === "Bearish" || bias === "Negative" || bias === "Risk-Off";
   return (
     <span className={cn("px-2 py-0.5 rounded text-xs font-semibold border", isBull && "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", isBear && "bg-red-500/15 text-red-400 border-red-500/30", !isBull && !isBear && "bg-zinc-700/50 text-zinc-300 border-zinc-600/40")}>
       {bias}
@@ -192,8 +192,32 @@ function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] 
   );
 }
 
+// macroEngine.ts: with no macro/fundamentals provider the engine returns
+// type:"unavailable", providerConnected:false, macroBias "Neutral" and
+// macroScore 50 — a fixed placeholder, not a reading.
+function macroWithheld(details: unknown): boolean {
+  const d = details as { type?: string; providerConnected?: boolean } | undefined;
+  if (!d) return true;
+  if (d.type === "synthetic") return false;
+  return d.type === "unavailable" || d.providerConnected !== true;
+}
+
 function MacroPanel({ data }: { data: object }) {
   const d = data as any;
+  if (macroWithheld(d)) {
+    const note: string | undefined = typeof d?.safetyNote === "string" ? d.safetyNote : undefined;
+    return (
+      <div data-testid="brain-macro-withheld" className="text-sm space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-400">Macro Bias</span>
+          <BiasChip bias="Not available" />
+        </div>
+        <p className="text-xs text-amber-300 leading-relaxed">
+          {note ?? "No macro data provider is connected, so no macro reading was taken."}
+        </p>
+      </div>
+    );
+  }
   if (d.type === "synthetic") {
     return (
       <div className="text-sm space-y-2">
@@ -247,9 +271,10 @@ function MacroPanel({ data }: { data: object }) {
 
 function ScoringPanel({ result }: { result: MarketBrainResult }) {
   const { scoring } = result;
+  const macroIsPlaceholder = macroWithheld(result.macroDetails);
   const items = [
     { label: "Technical Contrib", value: scoring.breakdown.technicalContrib, max: 65 },
-    { label: "Macro Contrib", value: scoring.breakdown.macroContrib, max: 20 },
+    ...(macroIsPlaceholder ? [] : [{ label: "Macro Contrib", value: scoring.breakdown.macroContrib, max: 20 }]),
     { label: "Session Contrib", value: scoring.breakdown.sessionContrib, max: 10 },
     { label: "Strategy Contrib", value: scoring.breakdown.strategyContrib, max: 25 },
   ];
@@ -262,6 +287,11 @@ function ScoringPanel({ result }: { result: MarketBrainResult }) {
     <div className="space-y-3 text-sm">
       <p className="text-[10px] text-zinc-500 font-mono bg-zinc-800/60 rounded px-2 py-1.5">{scoring.breakdown.formula}</p>
       <div className="space-y-2">
+        {macroIsPlaceholder && (
+          <p data-testid="brain-macro-placeholder-contrib" className="text-xs text-zinc-400">
+            Macro: +{scoring.breakdown.macroContrib} from a fixed neutral placeholder. No macro data was read.
+          </p>
+        )}
         {items.map(({ label, value, max }) => (
           <div key={label}>
             <div className="flex justify-between text-xs mb-0.5">
@@ -432,10 +462,17 @@ export default function BrainAnalysis() {
                     <p className="text-xl font-bold font-mono text-zinc-200">{result.direction !== "WAIT" ? `1:${result.riskReward}` : "—"}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Risk</p>
-                    <Badge variant="outline" className={cn("text-xs", result.riskApproved ? "border-emerald-600/50 text-emerald-400" : "border-red-600/50 text-red-400")}>
-                      {result.riskApproved ? "✓ Approved" : "✗ Blocked"}
+                    {/* riskApproved is only "no Brain filter fired" (confluence,
+                        chop, session, news). The route passes no account
+                        state, so neither the user's risk limits nor the Risk
+                        Governor were checked. */}
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Brain filters</p>
+                    <Badge data-testid="brain-filter-badge" variant="outline" className={cn("text-xs", result.riskApproved ? "border-zinc-600 text-zinc-300" : "border-red-600/50 text-red-400")}>
+                      {result.riskApproved ? "None fired" : "✗ Blocked"}
                     </Badge>
+                    <p data-testid="brain-risk-not-checked" className="mt-1 text-[10px] text-zinc-500">
+                      Account risk not checked
+                    </p>
                   </div>
                 </div>
               </div>
@@ -472,7 +509,7 @@ export default function BrainAnalysis() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: "Technical Bias", value: result.technicalBias, icon: BarChart3 },
-              { label: "Macro Bias", value: result.macroBias, icon: Globe2 },
+              { label: "Macro Bias", value: macroWithheld(result.macroDetails) ? "Not available (no macro data)" : result.macroBias, icon: Globe2 },
               { label: "Session", value: result.session, icon: Clock },
               { label: "News Risk", value: newsRiskUnknown(result) ? "Unknown (no calendar)" : result.newsRisk, icon: Newspaper },
             ].map(({ label, value, icon: Icon }) => (

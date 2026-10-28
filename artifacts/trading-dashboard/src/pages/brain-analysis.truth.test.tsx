@@ -141,3 +141,51 @@ describe("Market Brain truth — news risk without a calendar", () => {
     expect(screen.queryByTestId("brain-news-unknown")).toBeNull();
   });
 });
+
+describe("Market Brain truth — withheld macro and the risk badge", () => {
+  const S = "SAFETY-NOTE-S";
+  const WITHHELD = {
+    ...FULL,
+    macroBias: "Neutral",
+    macroDetails: { type: "unavailable", providerConnected: false, macroBias: "Neutral", macroScore: 50, safetyNote: S, notes: [] },
+  };
+
+  it("withheld macro shows its safety note, not a 50% Macro Score or a Neutral bias", async () => {
+    await run(WITHHELD);
+    const panel = await screen.findByTestId("brain-macro-withheld");
+    expect(panel.textContent).toContain(S);
+    expect(screen.queryByText("Macro Score")).toBeNull();
+    expect(screen.queryByText("50%")).toBeNull();
+    expect(screen.queryByText("Neutral")).toBeNull();
+    expect(screen.getByText("Not available (no macro data)")).toBeTruthy();
+  });
+
+  it("the placeholder macro contribution is named as a placeholder, not a Macro Contrib bar", async () => {
+    await run(WITHHELD);
+    await screen.findByTestId("brain-macro-withheld");
+    expect(screen.queryByText("Macro Contrib")).toBeNull();
+    expect(screen.getByTestId("brain-macro-placeholder-contrib").textContent).toMatch(/\+10 from a fixed neutral placeholder/);
+  });
+
+  it("the risk badge never says Approved and says account risk was not checked", async () => {
+    await run(WITHHELD);
+    const badge = await screen.findByTestId("brain-filter-badge");
+    expect(badge.textContent).not.toMatch(/approved/i);
+    expect(badge.className).not.toMatch(/emerald/);
+    expect(document.body.textContent).not.toMatch(/Approved/);
+    expect(screen.getByTestId("brain-risk-not-checked").textContent).toMatch(/account risk not checked/i);
+  });
+
+  it("synthetic 'Not news-driven' is not styled like a Bearish bias", async () => {
+    await run({
+      ...FULL,
+      category: "synthetic",
+      macroBias: "Not news-driven",
+      macroDetails: { type: "synthetic", macroBias: "Not news-driven", macroScore: 50, notes: [] },
+    });
+    await screen.findByTestId("brain-provenance");
+    for (const el of screen.getAllByText("Not news-driven")) {
+      expect(el.className).not.toMatch(/red/);
+    }
+  });
+});
