@@ -85,8 +85,9 @@ function humanize(map: Record<string, string>, raw: string | null | undefined): 
   return map[String(raw).toUpperCase()] ?? "—";
 }
 
-// Live "updated Xs ago" timer from a DATA timestamp (newest of the snapshot's
-// lastTickAt / lastCandleAt — never the signal build-time) against a ticking now.
+// Live "updated Xs ago" timer from a DATA timestamp (newest observed of the
+// snapshot's lastTickAt / closed lastCandleAt — never the signal build-time and
+// never a forming bar's scheduled close) against a ticking now.
 function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
   if (!dataIso) return "—";
   const t = Date.parse(dataIso);
@@ -97,6 +98,25 @@ function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
   const rem = s % 60;
   return `updated ${m}m ${rem}s ago`;
 }
+// The newest OBSERVED data time from the market-truth snapshot. A tick time is
+// an observation (a small future skew is clamped by ageLabel). A candle time is
+// a closeTime, which for the forming bar is a scheduled future boundary — it
+// only counts once it is no longer in the future.
+function resolveDataUpdated(
+  lastTickAt: string | null | undefined,
+  lastCandleAt: string | null | undefined,
+  nowTs: number,
+): { dataUpdatedIso: string | null; formingCloseOnly: boolean } {
+  const tick = lastTickAt ? Date.parse(lastTickAt) : NaN;
+  const candle = lastCandleAt ? Date.parse(lastCandleAt) : NaN;
+  const stamps: number[] = [];
+  if (Number.isFinite(tick)) stamps.push(tick);
+  const candleIsScheduled = Number.isFinite(candle) && candle > nowTs;
+  if (Number.isFinite(candle) && !candleIsScheduled) stamps.push(candle);
+  if (stamps.length === 0) return { dataUpdatedIso: null, formingCloseOnly: candleIsScheduled };
+  return { dataUpdatedIso: new Date(Math.max(...stamps)).toISOString(), formingCloseOnly: false };
+}
+
 // The Market Read header's feed row, as one ordered downgrade (client can only
 // lower the server's word, never raise it):
 //   1. the shared gate is downgraded / the read expired → "Feed not confirmed";
@@ -109,6 +129,8 @@ function resolveFeedRow(input: {
   signal: RubyMarketEdgeSignal | null;
   downgraded: boolean;
   dataUpdatedIso: string | null;
+  /** True when the only data time is a forming bar's scheduled (future) close. */
+  formingCloseOnly?: boolean;
   snapshotState: string | null;
   nowTs: number;
 }): { text: string; tone: string; feedDataNote: string | null } {
@@ -118,6 +140,14 @@ function resolveFeedRow(input: {
   if (downgraded) {
     const age = dataUpdatedIso ? ` · ${ageLabel(dataUpdatedIso, nowTs)}` : "";
     return { text: `Feed not confirmed${age}`, tone: "text-warning", feedDataNote: null };
+  }
+  if (dataUpdatedIso == null && input.formingCloseOnly) {
+    return {
+      text: "Feed time unconfirmed — only the forming bar's scheduled close was reported, no tick time",
+      tone: "text-warning",
+      feedDataNote:
+        "Feed time unconfirmed — the market-truth snapshot reports only the forming bar's scheduled close and no tick time, so the live feed can't be confirmed here.",
+    };
   }
   if (dataUpdatedIso == null) {
     return {
@@ -258,12 +288,13 @@ export function RubyMarketReadCard({
     hookNewsState ?? (news != null ? "available" : truthLoading ? "loading" : "unavailable");
   const eventRisk = eventRiskLine(news, newsState);
   const pricePrecision = scannerTruth?.candles.pricePrecision ?? null;
-  const dataUpdatedIso = useMemo(() => {
-    const stamps = [truthData?.lastTickAt, truthData?.lastCandleAt]
-      .map((s) => (s ? Date.parse(s) : NaN))
-      .filter((n) => Number.isFinite(n)) as number[];
-    return stamps.length > 0 ? new Date(Math.max(...stamps)).toISOString() : null;
-  }, [truthData?.lastTickAt, truthData?.lastCandleAt]);
+  // lastCandleAt is a candle's closeTime: for the still-forming bar it is the
+  // SCHEDULED future close, not an observation, so it never anchors the age
+  // (it would otherwise win the max and read "updated 0s ago" all bar long).
+  const { dataUpdatedIso, formingCloseOnly } = useMemo(
+    () => resolveDataUpdated(truthData?.lastTickAt, truthData?.lastCandleAt, nowTs),
+    [truthData?.lastTickAt, truthData?.lastCandleAt, nowTs],
+  );
 
   const explanation: RubyMarketReadExplanation | null = data?.explanation ?? null;
   const signal = data?.signal ?? null;
@@ -296,6 +327,7 @@ export function RubyMarketReadCard({
     signal,
     downgraded,
     dataUpdatedIso,
+    formingCloseOnly,
     snapshotState: truthData?.state ?? null,
     nowTs,
   });
