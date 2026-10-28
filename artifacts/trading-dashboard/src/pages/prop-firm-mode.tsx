@@ -84,9 +84,13 @@ export default function PropFirmMode() {
         <Trophy className="h-6 w-6 text-primary" />
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Prop Firm Challenge Mode</h1>
-          <p className="text-sm text-muted-foreground">Practise a prop-firm challenge on your paper account. Saving writes the daily and total drawdown, lot and position caps into your own risk limits, which the Risk Governor enforces. Turning it off keeps those limits until you change them.</p>
+          {/* Progress is read from the paper ledger, but saving writes the caps
+              into user_risk_settings, which the venue-agnostic Risk Governor
+              applies to paper, demo and live orders alike. */}
+          <p className="text-sm text-muted-foreground" data-testid="prop-firm-scope">Practise a prop-firm challenge. Progress is measured on your paper account only. Saving also writes the daily loss, total drawdown, lot size and open-position caps into your own risk limits. The Risk Governor applies those limits to every order you place on every venue, including demo and live broker orders. Turning the mode off keeps those limits until you change them.</p>
         </div>
-        <Badge variant="outline">PAPER</Badge>
+        <Badge variant="outline" title="Profit, drawdown and rule progress are read from your paper account.">Progress: PAPER</Badge>
+        <Badge variant="outline" className="border-amber-500/50 text-amber-500" title="Saved caps apply to paper, demo and live orders.">Limits: ALL VENUES</Badge>
         {s && <Badge className={STATUS_COLOR[s.status]}>{s.status}</Badge>}
       </div>
 
@@ -122,7 +126,7 @@ export default function PropFirmMode() {
 
       {s && (
         <Card>
-          <CardHeader><CardTitle className="text-base">Configure</CardTitle><CardDescription>Defaults reflect a typical $100k challenge.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">Configure</CardTitle><CardDescription>Defaults reflect a typical $100k challenge. Saving or turning the mode on changes your risk limits for paper, demo and live orders.</CardDescription></CardHeader>
           <CardContent className="grid gap-2 md:grid-cols-3">
             <Input type="number" placeholder={`Starting balance (${s.config.startingBalance})`} onChange={(e) => setNum("startingBalance", e.target.value)} />
             <Input type="number" placeholder={`Profit target (${s.config.profitTarget})`} onChange={(e) => setNum("profitTarget", e.target.value)} />

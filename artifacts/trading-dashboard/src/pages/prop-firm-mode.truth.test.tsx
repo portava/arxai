@@ -95,3 +95,22 @@ describe("Prop Firm Mode — labels", () => {
     expect(screen.queryByText("$0")).toBeNull();
   });
 });
+
+// Regression: the page said "Practise a prop-firm challenge on your paper
+// account" under a PAPER badge, but saving writes the caps into
+// user_risk_settings, which the Risk Governor applies to demo and live broker
+// orders too, and they stay after the mode is turned off.
+describe("Prop Firm Mode — scope of the saved limits", () => {
+  it("says the saved limits apply to every venue, including live, and the PAPER badge covers progress only", async () => {
+    stubFetch(() => json(status()));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Configure")).toBeTruthy());
+    const scope = screen.getByTestId("prop-firm-scope").textContent ?? "";
+    expect(scope).toMatch(/every order you place on every venue, including demo and live/);
+    expect(scope).toMatch(/keeps those limits/);
+    expect(scope).not.toMatch(/on your paper account\. Saving/);
+    expect(screen.queryByText("PAPER")).toBeNull();
+    expect(screen.getByText("Progress: PAPER")).toBeTruthy();
+    expect(screen.getByText("Limits: ALL VENUES")).toBeTruthy();
+  });
+});
