@@ -388,12 +388,16 @@ export function MyOpenTradesPanel() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
+                    {/* A P/L the server did not report is unknown, never "+0.00". */}
                     <span className={`text-lg font-semibold ${
-                      (c.unrealizedPnl ?? 0) > 0 ? "text-emerald-400"
-                        : (c.unrealizedPnl ?? 0) < 0 ? "text-rose-400" : "text-zinc-300"
-                    }`} data-testid={`pnl-${c.id}`}>
-                      {(c.unrealizedPnl ?? 0) >= 0 ? "+" : ""}
-                      {(c.unrealizedPnl ?? 0).toFixed(2)}
+                      c.unrealizedPnl == null ? "text-zinc-500"
+                        : c.unrealizedPnl > 0 ? "text-emerald-400"
+                        : c.unrealizedPnl < 0 ? "text-rose-400" : "text-zinc-300"
+                    }`} data-testid={`pnl-${c.id}`}
+                      title={c.unrealizedPnl == null ? "P&L not reported for this position." : undefined}>
+                      {c.unrealizedPnl == null
+                        ? "—"
+                        : `${c.unrealizedPnl > 0 ? "+" : ""}${c.unrealizedPnl.toFixed(2)}`}
                     </span>
                     {c.pnlPercent !== null && (
                       <span className="text-xs text-zinc-400">({c.pnlPercent}%)</span>
