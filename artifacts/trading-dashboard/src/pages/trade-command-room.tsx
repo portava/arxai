@@ -97,7 +97,8 @@ export default function TradeCommandRoom() {
     const [o, d, q, ic, ac] = await Promise.all([
       fetch("/api/market-scanner/opportunities?limit=12").then((r) => r.json()),
       fetch("/api/decision-stream?limit=20").then((r) => r.json()),
-      fetch(`/api/market/quote/${bare}`).then((r) => r.json()).catch(() => null),
+      // An error answer (e.g. 404 {error:"Unknown symbol"}) is no quote, not a quote object.
+      fetch(`/api/market/quote/${bare}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
       fetch("/api/live-intent/queue").then((r) => r.json()).catch(() => ({ counts: { total: 0 } })),
       fetch("/api/alerts/scanner?unackedOnly=true").then((r) => r.json()).catch(() => ({ count: 0 })),
     ]);
