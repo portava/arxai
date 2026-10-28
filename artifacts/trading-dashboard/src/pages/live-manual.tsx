@@ -7,8 +7,13 @@ import { ShieldAlert, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown } fr
 import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 
+// What POST /api/live-intent/submit checks: three static tester caps
+// (routes/liveIntent.ts TESTER_CAPS). It does not run the pre-trade Risk
+// Governor, does not read the kill switch and executes nothing anywhere.
+const TESTER_CAPS_TEXT = "lot ≤ 0.01, stop-loss required, max loss ≤ $5";
+
 type SubmitResp = {
-  accepted: boolean; testerAccess: boolean; brokerExecution: boolean;
+  accepted: boolean; riskCheckPassed?: boolean; testerAccess: boolean; brokerExecution: boolean;
   status: string; intentId: string; mt5Connected: boolean; reason: string;
   intent?: any;
 };
@@ -111,7 +116,7 @@ export default function LiveManualPage() {
         <ShieldAlert className="mt-0.5 h-4 w-4 text-danger" />
         <div>
           <p className="font-semibold text-danger">Review required before any order</p>
-          <p className="text-xs text-txt-muted">No order is placed until you confirm. The kill switch and risk governor always apply.</p>
+          <p className="text-xs text-txt-muted">This ticket only captures an intent for review — nothing is sent to a broker or the simulator. On submit the server checks the tester caps only ({TESTER_CAPS_TEXT}); the Risk Governor and kill switch are not run on this capture.</p>
         </div>
       </div>
 
@@ -164,8 +169,9 @@ export default function LiveManualPage() {
               <div className="flex justify-between"><span>Risk / Reward</span><span className="font-mono">{rr.toFixed(2)}</span></div>
               <div className="flex justify-between"><span>Risk % <span className="text-[10px] text-txt-muted">(needs account equity)</span></span><span className="font-mono text-txt-muted">—</span></div>
               <div className="flex justify-between"><span>Account mode</span><Badge variant="outline" className="text-[10px]">TESTER</Badge></div>
-              <div className="flex justify-between"><span>Execution environment</span><Badge className="bg-warning/20 text-warning text-[10px]">SIMULATOR</Badge></div>
-              <div className="flex justify-between"><span>Risk governor</span><Badge className="bg-success/20 text-success text-[10px]">active</Badge></div>
+              <div className="flex justify-between"><span>Execution environment</span><Badge className="bg-warning/20 text-warning text-[10px]">none — capture only</Badge></div>
+              <div className="flex justify-between"><span>Risk governor</span><Badge variant="outline" className="text-[10px] text-txt-muted">not run — tester caps only</Badge></div>
+              <div className="flex justify-between"><span>Checks on submit</span><span className="text-[10px] text-txt-muted">{TESTER_CAPS_TEXT}</span></div>
               <div className="flex justify-between"><span>Kill switch</span><Badge variant={killSwitch === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={killSwitch === "unknown" ? "The permission status could not be read." : "From your permission status (safety-core kill switch)."}>{killSwitch === "engaged" ? "ENGAGED" : killSwitch === "off" ? "off" : killSwitch === "checking" ? "checking…" : "not checked"}</Badge></div>
               <div className="flex justify-between"><span>Master bridge</span><Badge className={!bridgeLoaded ? "bg-muted text-txt-muted text-[10px]" : bridgeConnected ? "bg-success/20 text-success text-[10px]" : "bg-warning/20 text-warning text-[10px]"}>{!bridgeLoaded ? "checking…" : bridgeConnected ? "connected" : "not connected"}</Badge></div>
             </div>
@@ -197,8 +203,9 @@ export default function LiveManualPage() {
                     <div className="text-sm">
                       <h2 id="ticket-confirm-title" className="font-semibold text-warning">Confirm live-intent submission</h2>
                       <p className="text-txt-muted text-xs mt-1">
-                        Review the order before submitting. This goes through the risk governor and
-                        kill switch. Once captured, the intent is permanently logged.
+                        Review the order before submitting. The server checks the tester caps only
+                        ({TESTER_CAPS_TEXT}); the Risk Governor and kill switch are not run, and no
+                        order is sent anywhere. Once captured, the intent is permanently logged.
                       </p>
                     </div>
                   </div>
@@ -212,7 +219,7 @@ export default function LiveManualPage() {
                     <div className="col-span-2"><div className="text-txt-muted text-[10px]">Max loss</div>${maxLoss} · R:R {rr.toFixed(2)}</div>
                   </div>
                   {(stopLoss === "" || takeProfit === "") && (
-                    <p className="mt-2 text-[11px] text-warning">Warning: missing {stopLoss === "" ? "SL" : ""}{stopLoss === "" && takeProfit === "" ? " + " : ""}{takeProfit === "" ? "TP" : ""}. Risk governor may reject this intent.</p>
+                    <p className="mt-2 text-[11px] text-warning">Warning: missing {stopLoss === "" ? "SL" : ""}{stopLoss === "" && takeProfit === "" ? " + " : ""}{takeProfit === "" ? "TP" : ""}.{stopLoss === "" ? " The tester caps reject an intent without a stop-loss." : ""}</p>
                   )}
                   <div className="mt-3 flex justify-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => setConfirmOpen(false)} data-testid="ticket-confirm-cancel">Cancel</Button>
@@ -229,6 +236,9 @@ export default function LiveManualPage() {
                   status: {resp.status}
                 </div>
                 <p className="text-txt-muted mt-1">{resp.reason}</p>
+                {typeof resp.riskCheckPassed === "boolean" && (
+                  <p className="mt-1" data-testid="ticket-response-caps">Tester caps: {resp.riskCheckPassed ? "passed" : "failed"} (Risk Governor not run)</p>
+                )}
                 <p className="font-mono text-[10px] mt-1">intentId: {resp.intentId}</p>
               </div>
             )}

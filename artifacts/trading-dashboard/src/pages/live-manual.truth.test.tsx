@@ -62,3 +62,24 @@ describe("Manual Trade Ticket — kill switch row", () => {
     expect(killSwitchBadge().textContent).toBe("not checked");
   });
 });
+
+// POST /api/live-intent/submit applies only three tester caps (lot ≤ 0.01,
+// stop-loss required, max loss ≤ $5). It never runs the pre-trade Risk
+// Governor, never reads the kill switch and never executes anywhere.
+describe("Manual Trade Ticket — what the submit path checks", () => {
+  it("does not claim the Risk Governor or kill switch run on this capture", async () => {
+    stubFetch(baseRoutes());
+    await renderSettled();
+    const governor = screen.getByText("Risk governor").parentElement!.lastElementChild!;
+    expect(governor.textContent).not.toMatch(/active/i);
+    expect(governor.textContent).toMatch(/not run/i);
+    const env = screen.getByText("Execution environment").parentElement!.lastElementChild!;
+    expect(env.textContent).not.toBe("SIMULATOR");
+    expect(document.body.textContent).not.toMatch(/kill switch and risk governor always apply/i);
+    expect(document.body.textContent).toMatch(/lot ≤ 0\.01/);
+
+    screen.getByTestId("ticket-submit").click();
+    const dialog = await screen.findByTestId("ticket-confirm-dialog");
+    expect(dialog.textContent).not.toMatch(/goes through the risk governor/i);
+  });
+});
