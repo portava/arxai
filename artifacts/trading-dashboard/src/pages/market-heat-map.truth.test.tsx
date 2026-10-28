@@ -4,9 +4,9 @@
 // shaped like the server's and asserts the label describes what is going on.
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup, within } from "@testing-library/react";
+import { render, screen, cleanup, within, act } from "@testing-library/react";
 import type { MarketTimingRead } from "@workspace/api-client-react";
-import { BySessionTab, TodayTab, NowTab, NewsHeatTab } from "./market-heat-map";
+import { BySessionTab, TodayTab, NowTab, NewsHeatTab, SessionCard } from "./market-heat-map";
 
 afterEach(() => {
   cleanup();
@@ -142,5 +142,27 @@ describe("News Heat — unconfirmed release time", () => {
     expect(screen.getByText(/release time not confirmed/)).toBeTruthy();
     expect(screen.queryByText(/min ago/)).toBeNull();
     expect(screen.queryByText("Settled")).toBeNull();
+  });
+});
+
+describe("Local time", () => {
+  const fmt = () => new Date().toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+
+  it("'Your local time' is the viewer's current clock, not the cached read's server-formatted time", () => {
+    vi.useFakeTimers({ now: Date.UTC(2026, 9, 27, 18, 0, 5), toFake: ["Date", "setInterval", "clearInterval"] });
+    const stale = "27/10/2026, 18:00";
+    render(<TodayTab data={makeRead({}, { userLocalTime: stale })} multiData={[]} />);
+    expect(screen.getByTestId("viewer-local-time").textContent).toBe(`Your local time: ${fmt()}`);
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(screen.getByTestId("viewer-local-time").textContent).toBe(`Your local time: ${fmt()}`);
+    expect(screen.getByTestId("viewer-local-time").textContent).not.toContain(stale);
+  });
+
+  it("the session card never shows the server's cached userLocalTime", () => {
+    vi.useFakeTimers({ now: Date.UTC(2026, 9, 27, 18, 0, 5), toFake: ["Date", "setInterval", "clearInterval"] });
+    const stale = "01/01/2020, 00:00";
+    render(<SessionCard session={makeRead({}, { userLocalTime: stale }).session} />);
+    expect(screen.queryByText(new RegExp(stale))).toBeNull();
+    expect(screen.getByTestId("session-card-local-time").textContent).toBe(`Your local time: ${fmt()}`);
   });
 });

@@ -335,6 +335,30 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
   );
 }
 
+// ── Viewer's local clock ────────────────────────────────────────────────────
+
+/**
+ * The viewer's current local time, from the browser clock in the browser's own
+ * locale and time zone, refreshed every 15s. The server's `userLocalTime` is
+ * the computation time of a (possibly cached) read, so it is never shown as
+ * "your local time".
+ */
+function useViewerLocalTime(): string {
+  const format = () => {
+    try {
+      return new Date().toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+    } catch {
+      return new Date().toLocaleString();
+    }
+  };
+  const [text, setText] = useState<string>(format);
+  useEffect(() => {
+    const id = setInterval(() => setText(format()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+  return text;
+}
+
 // ── Tab: Today ─────────────────────────────────────────────────────────────
 
 const SESSION_CARD_NAMES = ["Sydney", "Asia", "London", "New York"] as const;
@@ -355,7 +379,7 @@ function sessionCardsFor(sessionName: string): SessionCardName[] {
 
 function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
   const session = data?.session;
-  const localTime = session?.userLocalTime;
+  const localTime = useViewerLocalTime();
   const activeSessionCards = session ? sessionCardsFor(session.sessionName) : [];
 
   return (
@@ -367,9 +391,7 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
             <Clock className="h-4 w-4 text-muted-foreground" />
             Today's Market Sessions
           </CardTitle>
-          {localTime && (
-            <CardDescription className="text-xs">Your local time: {localTime}</CardDescription>
-          )}
+          <CardDescription className="text-xs" data-testid="viewer-local-time">Your local time: {localTime}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {session ? (
@@ -530,6 +552,11 @@ function BySymbolTab({ results, isLoading, selectedSymbol }: { results: MarketTi
 
 // ── Shared session card ─────────────────────────────────────────────────────
 
+function SessionCardLocalTime() {
+  const localTime = useViewerLocalTime();
+  return <CardDescription className="text-xs" data-testid="session-card-local-time">Your local time: {localTime}</CardDescription>;
+}
+
 function SessionCard({
   session,
   compact = false,
@@ -557,9 +584,7 @@ function SessionCard({
             </Badge>
           </div>
         </div>
-        {session.userLocalTime && (
-          <CardDescription className="text-xs">Local: {session.userLocalTime}</CardDescription>
-        )}
+        <SessionCardLocalTime />
       </CardHeader>
       <CardContent className="space-y-3">
         {!compact && (
@@ -1384,6 +1409,7 @@ export default function MarketHeatMapPage() {
   const [chartSymbol] = useChartSymbol();
   const symbol = bareSymbol(chartSymbol);
   const { name } = useAssistantName();
+  const viewerLocalTime = useViewerLocalTime();
   const tz = useMemo(() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; }
   }, []);
@@ -1504,12 +1530,8 @@ export default function MarketHeatMapPage() {
           <span className="font-medium text-foreground">{symbol || "—"}</span>
           <span>·</span>
           <span>{GetTimingBrainTimeframe.M15}</span>
-          {data?.session?.userLocalTime && (
-            <>
-              <span>·</span>
-              <span>Local: {data.session.userLocalTime}</span>
-            </>
-          )}
+          <span>·</span>
+          <span>Your local time: {viewerLocalTime}</span>
           {data && (
             <>
               <span>·</span>
