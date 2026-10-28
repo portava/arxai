@@ -40,6 +40,7 @@ import type {
 // The mocked useGetChartCandles reads this each render, so a test can simulate
 // the 8s reconciliation poll by updating it and re-rendering.
 let currentCandleResponse: ChartCandlesResponse | undefined;
+let standaloneEnabled: boolean | undefined;
 
 // ── Spy chart-engine adapter ────────────────────────────────────────────────
 // We assert against updateActiveCandle (the live tip) and setCandles (the full
@@ -66,6 +67,8 @@ const adapterSpies = {
   setDrawingHandler: vi.fn(),
   setDrawingInteraction: vi.fn(),
   setScaleMode: vi.fn(),
+  setChartStyle: vi.fn(),
+  getScannerOverlaySurface: vi.fn(() => null as unknown),
   setReachStartHandler: vi.fn(),
   priceToCoordinate: vi.fn(() => null),
 };
@@ -92,7 +95,7 @@ vi.mock("@/lib/useChartDeepHistory", () => ({
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
-  useGetChartCandles: () => ({
+  useGetChartCandles: (_params: unknown, options: {query: {enabled: boolean}}) => (standaloneEnabled = options.query.enabled, {
     data: currentCandleResponse,
     isLoading: false,
     isError: false,
@@ -280,6 +283,8 @@ beforeEach(() => {
   openedStreams = [];
   for (const fn of Object.values(adapterSpies)) (fn as ReturnType<typeof vi.fn>).mockClear();
   adapterSpies.priceToCoordinate.mockReturnValue(null);
+  adapterSpies.getScannerOverlaySurface.mockReturnValue(null);
+  adapterSpies.setChartStyle.mockImplementation(() => {});
   (globalThis as unknown as { EventSource: unknown }).EventSource = MockEventSource;
   currentCandleResponse = makeResponse(liveFeedStatus());
 });
@@ -755,5 +760,34 @@ describe("source-bound chart ticks", () => {
     currentCandleResponse = makeResponse({ ...liveFeedStatus(), source: null } as unknown as ChartFeedStatus);
     renderChart();
     expect(openedStreams).toHaveLength(0);
+  });
+});
+
+
+describe("Scanner shared Smart Chart ownership", () => {
+  it("uses the Scanner response, disables duplicate fetch and never upgrades its live-price cap", () => {
+    const scannerResponse = makeResponse(liveFeedStatus());
+    currentCandleResponse = { ...scannerResponse, candles: scannerResponse.candles.map(c=>({...c,close:99})) };
+    render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} externalFeed={{data:scannerResponse,isLoading:false,isFetching:false,isError:false,refetch:vi.fn(),livePriceAllowed:false}} />);
+    expect(standaloneEnabled).toBe(false);
+    expect(adapterSpies.setCandles.mock.calls.at(-1)?.[0].at(-1).close).toBe(1.102);
+    expect(adapterSpies.setFeedState.mock.calls.at(-1)?.[0].livePriceAffordance).toBe(false);
+    expect(openedStreams).toHaveLength(1);
+  });
+  it("revokes overlay handles before replacing the price series, then publishes the selected style", () => {
+    const operations: string[]=[];
+    const surface={chart:{},series:{name:"candles"},container:document.createElement("div")};
+    adapterSpies.getScannerOverlaySurface.mockImplementation(()=>surface);
+    adapterSpies.setChartStyle.mockImplementation((style: string)=>{operations.push(`style:${style}`);surface.series={name:style};});
+    const bind=vi.fn((value:any)=>{operations.push(value ? `bind:${value.style}:${value.series.name}` : "revoke");});
+    const view=render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} onScannerSurfaceChange={bind} />);
+    operations.length=0;
+    fireEvent.change(view.getByLabelText("Chart style"),{target:{value:"line"}});
+    expect(operations.indexOf("revoke")).toBeLessThan(operations.indexOf("style:line"));
+    expect(operations.indexOf("bind:line:line")).toBeGreaterThan(operations.indexOf("style:line"));
+    operations.length=0;currentCandleResponse=undefined;
+    view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} onScannerSurfaceChange={bind} />);
+    expect(bind.mock.calls.at(-1)?.[0]).toBeNull();
+    view.unmount();expect(bind.mock.calls.at(-1)?.[0]).toBeNull();
   });
 });

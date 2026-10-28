@@ -1,21 +1,20 @@
-import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
-import { useScannerChartLifecycle } from "./useScannerChartLifecycle";
+import { ARXNativeChart, type ArxTimeframe } from "@/components/charts/ARXNativeChart";
+import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
+import { isChartInterval, parseChartInterval } from "@/lib/chart-engine/chartIntervals";
+import { sharedChartResponse } from "@/lib/chart-engine/sharedChartResponse";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "./useDerivedOverlayContext";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, CrosshairMode, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import { createSeriesMarkers, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CandlestickChart, RefreshCw, Loader2, X, Flame, AlertTriangle, Clock } from "lucide-react";
-import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 // `Candle` + the pure `adaptChartCandles` mapping live in scannerCandleAdapter.ts
 // so the field-shape handling is unit-tested (Task #367 — see that test).
 import { adaptChartCandles, type Candle } from "@/components/scanner/scannerCandleAdapter";
 import {
-  PRIMARY_TIMEFRAMES,
   coerceVisibleTimeframe,
-  formatCandleCountdown,
   NEWS_MARKER_LOOKAHEAD_BARS,
   isFeedConfirmedForEventMarkers,
   inferBarSeconds,
@@ -58,10 +57,9 @@ import {
   chartCandlesQueryKey,
   fetchChartCandles,
   toApiTimeframe,
+  normalizeChartTimeframe,
   type ChartCandlesResult,
 } from "@/lib/chartCandlesQuery";
-import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
-import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
 import { ChartFeedStatusBadge } from "@/components/charts/ChartFeedStatusBadge";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useToast } from "@/hooks/use-toast";
@@ -102,28 +100,14 @@ import type {
 } from "@workspace/api-client-react";
 import { buildOverlayHandshake, isWithinQuietHoursUtc, newsToastDecision } from "@workspace/domain/smart-chart";
 
-// The overlay contracts (chart annotations + smart layers) intentionally stay on
-// the original 7-value timeframe vocabulary (M1,M5,M15,M30,H1,H4,D1) — they are
-// advisory CONTEXT tags, NOT the candle-data feed (which now spans all 21 MT5
-// timeframes). Map every chart id to its NEAREST supported overlay bucket (ties
-// resolve to the coarser one) so an exotic selection like 1W tags/queries D1
-// rather than collapsing to the M5 default.
+// Server overlays/annotations have a seven-interval contract. A different
+// interval is explicitly unavailable, never mapped to a nearby read.
 type OverlayTf = "M1" | "M5" | "M15" | "M30" | "H1" | "H4" | "D1";
-function toOverlayTf(tf: string): OverlayTf {
-  switch (tf) {
-    case "1m": case "2m": return "M1";
-    case "3m": case "4m": case "5m": case "6m": return "M5";
-    case "10m": case "12m": case "15m": case "20m": return "M15";
-    case "30m": return "M30";
-    case "1h": case "2h": return "H1";
-    case "3h": case "4h": case "6h": case "8h": case "12h": return "H4";
-    case "1d": case "1w": case "1mo": return "D1";
-    default: return "M5";
-  }
+function toOverlayTf(tf: string): OverlayTf | null {
+  const value = parseChartInterval(tf);
+  return ["M1", "M5", "M15", "M30", "H1", "H4", "D1"].includes(value ?? "") ? value as OverlayTf : null;
 }
-function toAnnotationTf(tf: string): ChartAnnotationCreateRequestTimeframe {
-  return toOverlayTf(tf);
-}
+function toAnnotationTf(tf: string): ChartAnnotationCreateRequestTimeframe | null { return toOverlayTf(tf); }
 
 // ── Smart Chart Layers (Task #197) — per-layer visibility toggles, persisted
 //    across sessions. Defaults: everything visible. Keyed globally (not
@@ -179,7 +163,7 @@ function smartLayerColor(severity: string): string {
 }
 
 // Map the chart's timeframe ids to the smart-layers contract enum.
-function toSmartLayersTf(tf: string): GetMeChartSmartLayersTimeframe {
+function toSmartLayersTf(tf: string): GetMeChartSmartLayersTimeframe | null {
   return toOverlayTf(tf);
 }
 
@@ -330,33 +314,6 @@ function ChartTimingChip({ symbol }: { symbol: string }) {
 // is the broker-aligned forming-bar close (openMs + interval) lifted straight
 // from the SSE tip — never client calendar math, so 1D respects the broker's
 // daily boundary and 1W the broker's weekly close.
-function CandleCloseCountdown({
-  closeTimeMs,
-  timeframe,
-}: {
-  closeTimeMs: number;
-  timeframe: string;
-}) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  const remainingMs = closeTimeMs - nowMs;
-  // Bar already closed; the next forming frame supplies the new close time.
-  if (remainingMs <= 0) return null;
-  return (
-    <Badge
-      variant="outline"
-      className="gap-1 font-mono text-[10px] border-emerald-500/30 text-emerald-300"
-      data-testid="scanner-chart-countdown"
-      title="Time until the current candle closes"
-    >
-      <Clock className="h-2.5 w-2.5" />
-      {formatCandleCountdown(remainingMs, timeframe)}
-    </Badge>
-  );
-}
 
 type RubyReadView = {
   title: string;
@@ -404,6 +361,8 @@ export function useScannerChartRead(
   async function ask(intent: RubyChartIntent) {
     // Retained callbacks from a previous chart cannot start obsolete work.
     if (!mounted.current || contextRef.current !== context) return;
+    const requestTf = toAnnotationTf(timeframe);
+    if (!requestTf) { onError?.(new Error("Server chart reads are not available for this interval. The Smart Chart's local reader and drawing tools remain available.")); return; }
     const controller = new AbortController();
     const obsolete = request.current;
     request.current = controller;
@@ -416,7 +375,7 @@ export function useScannerChartRead(
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         signal: controller.signal,
-        body: JSON.stringify({ symbol, timeframe: toAnnotationTf(timeframe), intent }),
+        body: JSON.stringify({ symbol, timeframe: requestTf, intent }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = (await response.json()) as { draftRead?: Record<string, unknown> };
@@ -461,32 +420,26 @@ export function ScannerChartPanel() {
   const [chartSym] = useChartSymbol();
   const symbol = useMemo(() => bareSymbol(chartSym || "EURUSD").toUpperCase(), [chartSym]);
 
-  // Graceful fallback (Task #524): a persisted / bus / deep-link timeframe outside
-  // the nine visible chips coerces to FALLBACK_TIMEFRAME so the chart, the
-  // highlighted chip, and the shared scanner truth never disagree. We also
-  // normalise the bus itself (setTimeframe) so the other read-only consumers and
-  // cross-tab listeners converge on the same value. ScannerChartPanel is the only
-  // writer of this bus, so this can never fight another surface.
+  // Shared Smart Chart controls publish the exact recognized Scanner interval.
+  // Calendar intervals remain visibly unavailable instead of silently changing.
   const [rawTimeframe, setTimeframe] = useScannerTimeframe();
   const timeframe = coerceVisibleTimeframe(rawTimeframe);
-  useEffect(() => {
-    if (rawTimeframe !== timeframe) setTimeframe(timeframe);
-  }, [rawTimeframe, timeframe, setTimeframe]);
-
   // ── Candles come from the ONE shared honest source (Task #391). This uses the
   //    same React Query key as useScannerTruth, so the chart, the header truth
   //    strip, and the read-gate all read identical candles + feedStatus from a
   //    single deduped network call — no parallel /api/chart/candles fetch, no
   //    independent freshness logic. Never the simulator quote.
   const apiTf = toApiTimeframe(timeframe);
+  const overlayTf = toOverlayTf(timeframe);
   const candlesQuery = useQuery<ChartCandlesResult>({
     queryKey: chartCandlesQueryKey(symbol, apiTf, 200),
     queryFn: ({ signal }) => fetchChartCandles(symbol, apiTf, 200, signal),
-    enabled: symbol.length > 0,
+    enabled: symbol.length > 0 && isChartInterval(apiTf),
     refetchInterval: 15_000,
     staleTime: 5_000,
   });
-  const candles: Candle[] = candlesQuery.data?.candles ?? [];
+  const originalResponse = useMemo(() => sharedChartResponse(candlesQuery.data?.originalResponse, symbol, apiTf), [candlesQuery.data?.originalResponse, symbol, apiTf]);
+  const candles: Candle[] = isChartInterval(apiTf) && originalResponse ? candlesQuery.data?.candles ?? [] : [];
   const feedStatus = (candlesQuery.data?.feedStatus as FeedStatus | undefined) ?? null;
   const loading = candlesQuery.isLoading;
   const error = candlesQuery.isError ? (candlesQuery.error instanceof Error ? candlesQuery.error.message : "Network error") : null;
@@ -502,21 +455,9 @@ export function ScannerChartPanel() {
     hasCandles ? JSON.stringify([feedStatus?.source ?? null, evidenceIdentity]) : null);
   const committedChartContext = useRef(chartContext);
   useLayoutEffect(() => { committedChartContext.current = chartContext; }, [chartContext]);
-  const deepHistory = useChartDeepHistory(symbol, apiTf, hasCandles, feedStatus?.source ?? null, evidenceIdentity, true);
-
-  // Older history bars (Candle ms shape) merged IN FRONT of the live window,
-  // deduped by time with the live window winning a collision (it carries the
-  // freshest forming bar). Both arrays already share the scanner Candle ms shape.
-  const mergedCandles = useMemo<Candle[]>(() => {
-    if (deepHistory.olderCandles.length === 0) return candles;
-    const byTime = new Map<number, Candle>();
-    for (const c of deepHistory.olderCandles) byTime.set(c.time, c);
-    for (const c of candles) byTime.set(c.time, c); // live window wins
-    return [...byTime.values()].sort((a, b) => a.time - b.time);
-  }, [deepHistory.olderCandles, candles]);
   // Shared resolved truth — drives the live-price affordance so the chart can
   // never look more live/actionable than the header strip says it is.
-  const { truth } = useScannerTruth(symbol, timeframe);
+  const { truth } = useScannerTruth(isChartInterval(apiTf) ? symbol : "", timeframe);
 
   // Canonical verdict for display convergence (Task #818). The chart derives a
   // single shared actionability verdict from the SAME lifted + data-only sources
@@ -556,51 +497,28 @@ export function ScannerChartPanel() {
     {
       query: {
         queryKey: [...getGetMeChartIntelligenceQueryKey({ symbol, timeframe: apiTf as GetMeChartIntelligenceTimeframe, limit: 200 }), { chartContext }],
-        enabled: symbol.length > 0 && hasCandles,
+        enabled: symbol.length > 0 && hasCandles && overlayTf != null,
         refetchInterval: 8000,
         staleTime: 4000,
       },
     },
   );
   const structureEvidenceMissing = overlayRequiresEvidence && !hasMatchingOverlayEvidence(candlesQuery.data?.marketEvidence, intelligenceQuery.data);
-  const trendlineOverlay = structureEvidenceMissing ? null : intelligenceQuery.data?.state?.trendlineOverlay ?? null;
+  const trendlineOverlay = structureEvidenceMissing || overlayTf == null ? null : intelligenceQuery.data?.state?.trendlineOverlay ?? null;
 
   const [positions, setPositions] = useState<ChartPosition[]>([]);
   const [pending, setPending] = useState<ChartPending[]>([]);
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  // Chart instance handle, kept so the SEPARATE data effect can push candles +
-  // shift the visible logical range (prepend preserve) without recreating the
-  // chart. didFitRef makes the smart-initial-range run exactly once per rebuild.
+  // These handles belong to the shared Smart Chart. Scanner only adds owned
+  // overlays and converts pointer coordinates; it never creates/writes candles.
+  const containerRef = useRef<HTMLElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
-  const didFitRef = useRef(false);
-  // Oldest bar currently merged (ISO) — cursor seed for the reach-start handler.
-  // Held in a ref so the handler bound on the time scale always reads the latest.
-  const oldestIsoRef = useRef<string | null>(null);
-  // Previous oldest bar time (sec) used to compute how many bars were PREPENDED
-  // so the visible logical range can be shifted to keep the user's view fixed.
-  const prevOldestSecRef = useRef<number | null>(null);
-  // Newest bar time (sec) currently in the series. The real-time forming-tip SSE
-  // (Task #496) only ever calls series.update() with a time >= this value, so a
-  // late/out-of-order tick can never throw lightweight-charts' ordering error.
-  const newestBarSecRef = useRef<number | null>(null);
-  // Latest deepHistory.loadOlder, held in a ref so the reach-start handler (bound
-  // ONCE per chart rebuild) always calls the CURRENT closure. The hook recreates
-  // loadOlder when `hasMore` flips to false; without this ref a stale closure
-  // would keep firing back-page fetches after history is exhausted.
-  const loadOlderRef = useRef(deepHistory.loadOlder);
-  useLayoutEffect(() => {
-    loadOlderRef.current = deepHistory.loadOlder;
-  }, [deepHistory.loadOlder]);
   const seriesRef = useRef<{ priceToCoordinate: (p: number) => number | null; coordinateToPrice: (c: number) => number | null } | null>(null);
   // Real candlestick series handle used for incremental price-line overlays.
   // Kept separate from `seriesRef` (coordinate-conversion shape only) so the
   // position/pending price lines can be redrawn WITHOUT recreating the chart.
   const lineSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
-  // Last-known price stamp (Task #524). Separate from priceLinesRef so the
-  // muted dotted axis label survives independently of the draft/overlay lines.
-  const lastKnownLineRef = useRef<IPriceLine | null>(null);
   // News event markers (Task #197). lightweight-charts v5 surfaces markers via
   // the standalone createSeriesMarkers(series, markers) plugin (the v4
   // series.setMarkers() was removed). We keep the plugin handle so events can be
@@ -616,21 +534,6 @@ export function ScannerChartPanel() {
   // Bumped each time the chart is (re)created so the overlay effect re-draws
   // its price lines onto the fresh series after a candle/symbol rebuild.
   const [chartEpoch, setChartEpoch] = useState(0);
-
-  // Forming-bar close time (epoch ms) lifted from the SSE tick-stream for the
-  // candle-close countdown (Task #524). null whenever there is no live forming
-  // bar (frozen / silent / no tip yet). The ref mirrors the state so the SSE
-  // handler only triggers a re-render on an actual interval rollover (a new
-  // closeTimeMs), not on every incoming tick.
-  const [formingCloseMs, setFormingCloseMs] = useState<number | null>(null);
-  const formingCloseRef = useRef<number | null>(null);
-  // Market-frozen / closed-market indicator (display/telemetry only). Driven by
-  // the tick-stream `feed_status` event, whose verdict is derived from the
-  // latest tick's BROKER-time staleness (calendar-independent). null = not
-  // frozen (or no tick seen yet → assert nothing).
-  const [marketFrozen, setMarketFrozen] = useState<{ lastBrokerTimeMs: number | null } | null>(
-    null,
-  );
 
   // ── Phase 4 — draggable draft-order lines (Entry/SL/TP).
   //    These are purely a *proposal* the user shapes by dragging; nothing
@@ -689,7 +592,7 @@ export function ScannerChartPanel() {
     { symbol },
     { query: { queryKey: getGetMeChartAnnotationsQueryKey({ symbol }), refetchInterval: 30_000 } },
   );
-  const annotations: ChartAnnotation[] = annotationsQuery.data?.annotations ?? [];
+  const annotations: ChartAnnotation[] = (annotationsQuery.data?.annotations ?? []).filter(annotation => annotation.timeframe === apiTf);
   const invalidateAnnotations = () =>
     void queryClient.invalidateQueries({
       queryKey: getGetMeChartAnnotationsQueryKey({ symbol }),
@@ -721,23 +624,23 @@ export function ScannerChartPanel() {
       return next;
     });
 
-  const smartLayersParams = { symbol, timeframe: toSmartLayersTf(timeframe) };
+  const smartLayersParams = { symbol, timeframe: toSmartLayersTf(timeframe) ?? "M15" as GetMeChartSmartLayersTimeframe };
   const smartLayersQuery = useGetMeChartSmartLayers(smartLayersParams, {
     query: {
       queryKey: [...getGetMeChartSmartLayersQueryKey(smartLayersParams), { chartContext }],
-      enabled: hasCandles,
+      enabled: hasCandles && overlayTf != null,
       refetchInterval: 45_000,
     },
   });
   const smartEvidenceMissing = overlayRequiresEvidence && !hasMatchingOverlayEvidence(candlesQuery.data?.marketEvidence, smartLayersQuery.data);
-  const smartData = smartEvidenceMissing ? null : smartLayersQuery.data ?? null;
+  const smartData = smartEvidenceMissing || overlayTf == null ? null : smartLayersQuery.data ?? null;
   const smartLayers: SmartChartLayer[] = smartData?.layers ?? [];
   // Task #515 — the chart's NEWS state (event markers, high-impact toasts, and
   // the Impact Radar strip) now comes from the ONE per-symbol Truth Snapshot, so
   // the chart can never disagree with the scanner rows or the Ruby read on the
   // same page. The smart-layers query above still drives the NON-news overlays
   // (structure, exec-cost, trade-health) and the overlay handshake below.
-  const { news, verdict: symbolVerdict } = useSymbolTruth(symbol, timeframe);
+  const { news, verdict: symbolVerdict } = useSymbolTruth(isChartInterval(apiTf) ? symbol : "", timeframe);
   // Directional CTA label for Plan Buy/Sell and the Eleanor button. Derived here
   // (after symbolVerdict is available) and forwarded to child surfaces so they all
   // agree on the same direction without independent bias lookups.
@@ -880,6 +783,7 @@ export function ScannerChartPanel() {
     // never start the loop for them (no 403 spin).
     if (isInvestor) return;
     const tf = toAnnotationTf(timeframe);
+    if (!tf) return;
     const runScan = () => {
       if (typeof document !== "undefined" && document.hidden) return;
       if (scanRef.current.isPending) return;
@@ -1208,369 +1112,31 @@ export function ScannerChartPanel() {
     [pending, symbol],
   );
 
-  // Reuse the canvas engine across cached selections. Its geometry, cursor and
-  // overlays are cleared in layout effects before the new context can paint.
-  // A cold/no-data context still removes the engine and shows honest loading.
-  useScannerChartLifecycle(hasCandles, chartContext, () => {
-    const el = containerRef.current;
-    if (!el || !hasCandles) return;
-    el.innerHTML = "";
-
-    const chart = createChart(el, {
-      width: el.clientWidth,
-      height: 360,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#a1a1aa",
-        fontSize: 11,
-        // ARX-native renderer: suppress the lightweight-charts TradingView
-        // attribution logo so no third-party watermark sits on our chart.
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: "rgba(63, 63, 70, 0.25)" },
-        horzLines: { color: "rgba(63, 63, 70, 0.25)" },
-      },
-      crosshair: { mode: CrosshairMode.Normal },
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: "rgba(63, 63, 70, 0.5)",
-        // Phase 2: keep the forming bar from clipping against the price axis.
-        rightOffset: 8,
-        lockVisibleTimeRangeOnResize: false,
-      },
-      rightPriceScale: {
-        borderColor: "rgba(63, 63, 70, 0.5)",
-        // Phase 2: autoScale ensures the y-axis fits only visible candles,
-        // eliminating the compressed-flat-line symptom on H4/D1 views where a
-        // distant outlier forces a giant price range.
-        autoScale: true,
-        scaleMargins: { top: 0.08, bottom: 0.08 },
-      },
-    });
-
-    // lightweight-charts v5: series are created with addSeries(SeriesDefinition,
-    // options). The legacy v4 `addCandlestickSeries()` was removed and throws at
-    // runtime (it is undefined on the chart instance) — see the chart-lib note in
-    // .agents/memory. Do NOT cast back to a synthetic addCandlestickSeries shape.
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#10b981",
-      downColor: "#ef4444",
-      borderUpColor: "#10b981",
-      borderDownColor: "#ef4444",
-      wickUpColor: "#10b981",
-      wickDownColor: "#ef4444",
-      // Display-truth (Task #347): the candlestick series draws its OWN last-price
-      // line + last-value label by default, which reads as a live price marker.
-      // Only allow it when the feed is genuinely LIVE; on any non-LIVE state
-      // (stale/composite/analysis) stale candles must never carry a live marker.
-      // A dedicated effect below re-applies this on status change without rebuild.
-      priceLineVisible: isLiveDisplay,
-      lastValueVisible: isLiveDisplay,
-    });
-    seriesRef.current = series as unknown as {
-      priceToCoordinate: (p: number) => number | null;
-      coordinateToPrice: (c: number) => number | null;
-    };
-
-    // Expose the real series + chart so the data + overlay effects can push bars
-    // and add/remove price lines incrementally without recreating the chart.
-    chartApiRef.current = chart;
-    lineSeriesRef.current = series;
-    priceLinesRef.current = [];
-    // Fresh engine: the smart-initial-range must run once, and prepend tracking
-    // restarts from a clean slate so the first data push fits rather than shifts.
-    didFitRef.current = false;
-    prevOldestSecRef.current = null;
-
-    // ── Deep-history scroll-back: when the user pans near the oldest loaded bar,
-    //    ask the history hook for the next OLDER page (seeded from the oldest bar
-    //    currently on screen, read from a ref so this stays bound across pages).
-    //    View-only — this loads market data, never a trade.
-    const REACH_START_BARS = 20;
-    const onRange = (range: { from: number } | null) => {
-      if (range && range.from <= REACH_START_BARS) {
-        // Call through the ref so an exhausted-history closure can't keep firing.
-        loadOlderRef.current(oldestIsoRef.current);
-      }
-    };
-    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
-
-    // Teardown guard: a ResizeObserver callback already queued before disconnect
-    // can still fire after chart.remove(), and applyOptions on a removed chart
-    // throws "Object is disposed" (DevicePixelContentBoxBinding → resizeCanvas),
-    // which trips the SectionErrorBoundary on unmount/HMR. Short-circuit the
-    // callback once disposed and wrap the dispose itself defensively.
-    let disposed = false;
-    const ro = new ResizeObserver(() => {
-      if (disposed) return;
-      try {
-        chart.applyOptions({ width: el.clientWidth });
-      } catch { /* chart was removed mid-resize — nothing to size */ }
-    });
-    ro.observe(el);
-
-    setChartEpoch((e) => e + 1);
-
-    return () => {
-      disposed = true;
-      delete el.dataset.chartDataContext;
-      delete el.dataset.chartDataCount;
-      delete el.dataset.chartDataLastTime;
-      delete el.dataset.chartDataLastClose;
-      ro.disconnect();
-      try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* chart already removed */ }
-      try { chart.remove(); } catch { /* already disposed */ }
-      chartApiRef.current = null;
-      seriesRef.current = null;
-      lineSeriesRef.current = null;
-      priceLinesRef.current = [];
-    };
-  }, () => {
-    const chart = chartApiRef.current;
-    const series = lineSeriesRef.current;
-    if (!chart || !series) return;
-    const element = containerRef.current;
-    if (element) {
-      delete element.dataset.chartDataContext;
-      delete element.dataset.chartDataCount;
-      delete element.dataset.chartDataLastTime;
-      delete element.dataset.chartDataLastClose;
-    }
-    // Clear cursor authority before setData can fire a range callback.
-    oldestIsoRef.current = null;
-    newestBarSecRef.current = null;
-    prevOldestSecRef.current = null;
-    didFitRef.current = false;
-    chart.clearCrosshairPosition();
-    chart.priceScale("right").applyOptions({ autoScale: true, scaleMargins: { top: 0.08, bottom: 0.08 } });
-    for (const line of [...priceLinesRef.current, ...smartLayerLinesRef.current,
-      ...(lastKnownLineRef.current ? [lastKnownLineRef.current] : [])]) {
-      try { series.removePriceLine(line); } catch { /* already removed */ }
+  const bindSmartChartSurface = useCallback((surface: ScannerChartSurface | null) => {
+    // Revoke the old series before a context/style swap. All retained overlay
+    // handles belong to that exact series, not whichever series comes next.
+    const previous = lineSeriesRef.current;
+    if (previous) for (const line of [...priceLinesRef.current, ...smartLayerLinesRef.current]) {
+      try { previous.removePriceLine(line); } catch { /* series already released */ }
     }
     priceLinesRef.current = [];
     smartLayerLinesRef.current = [];
-    lastKnownLineRef.current = null;
-    try { newsMarkersApiRef.current?.detach(); } catch { /* already detached */ }
+    try { newsMarkersApiRef.current?.detach(); } catch { /* released */ }
     newsMarkersApiRef.current = null;
-    clearStructureLines(chart, structureHandlesRef.current);
+    try { clearStructureLines(chartApiRef.current, structureHandlesRef.current); } catch { /* released */ }
     structureHandlesRef.current = EMPTY_STRUCTURE_HANDLES;
-    series.applyOptions({ priceLineVisible: false, lastValueVisible: false });
-    series.setData([]);
-  });
-
-  // ── Push candle data into the EXISTING series WITHOUT recreating the chart.
-  //    setData keeps the current visible bar-index range, so when older bars are
-  //    PREPENDED the same bars shift right; we counter that by shifting the
-  //    visible logical range left by the prepended count to keep the view fixed.
-  //    On the first push after a rebuild we instead apply the smart initial range.
-  useEffect(() => {
-    const series = lineSeriesRef.current;
-    const chart = chartApiRef.current;
-    if (!series || !chart || mergedCandles.length === 0) return;
-
-    // Drop any malformed bar (missing / null / NaN OHLC) before setData: the
-    // lightweight-charts candlestick colorer reads bar color data during paint
-    // via ensureNotNull and throws "Value is null" on the next repaint otherwise.
-    const mapped = sanitizeCandlestickData(
-      mergedCandles.map((c) => ({
-        time: Math.floor(c.time / 1000) as UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    );
-    if (mapped.length === 0) return;
-
-    const newOldestSec = mapped[0]!.time as number;
-    oldestIsoRef.current = new Date(newOldestSec * 1000).toISOString();
-
-    // How many bars were prepended since the last push (older bars added in front).
-    let prependedCount = 0;
-    const prevOldestSec = prevOldestSecRef.current;
-    if (prevOldestSec != null && newOldestSec < prevOldestSec) {
-      const idx = mapped.findIndex((b) => (b.time as number) >= prevOldestSec);
-      prependedCount = idx > 0 ? idx : 0;
-    }
-
-    const before = chart.timeScale().getVisibleLogicalRange();
-    series.setData(mapped);
-    // A retained canvas is not evidence that the new dataset was installed.
-    // These non-visible diagnostics are written only after setData succeeds;
-    // browser acceptance separately checks a subsequent display opportunity.
-    const element = containerRef.current;
-    if (element) {
-      element.dataset.chartDataContext = chartContext;
-      element.dataset.chartDataCount = String(mapped.length);
-      element.dataset.chartDataLastTime = String(mapped[mapped.length - 1]!.time);
-      element.dataset.chartDataLastClose = String(mapped[mapped.length - 1]!.close);
-    }
-    prevOldestSecRef.current = newOldestSec;
-    // Track the newest bar time so the forming-tip SSE never calls update() with
-    // an out-of-order time. The 15s poll above carries the authoritative closed
-    // CANDLE (and, server-side, the current forming tip), so setData here both
-    // reconciles the tip and replaces it with the closed bar — no orphan dup.
-    newestBarSecRef.current = mapped[mapped.length - 1]!.time as number;
-
-    if (!didFitRef.current) {
-      // Phase 2 — smart initial visible range. Show the last N candles rather
-      // than fitting the entire loaded history, so recent price action fills the
-      // canvas readably instead of being compressed into a horizontal line.
-      const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-      const defaultVisible = isMobile ? 80 : 150;
-      if (mapped.length <= defaultVisible) {
-        chart.timeScale().fitContent();
-      } else {
-        chart.timeScale().setVisibleRange({
-          from: mapped[mapped.length - defaultVisible]!.time,
-          to: mapped[mapped.length - 1]!.time,
-        });
-      }
-      didFitRef.current = true;
-    } else if (prependedCount > 0 && before) {
-      // Keep the user's view anchored on the same bars by shifting the logical
-      // range right by however many older bars were inserted in front.
-      chart.timeScale().setVisibleLogicalRange({
-        from: before.from + prependedCount,
-        to: before.to + prependedCount,
-      });
-    }
-  }, [mergedCandles, chartEpoch, chartContext]);
-
-  const tickSource = chartTickSource(feedStatus?.source);
-
-  // ── Real-time forming-tip (Task #496). Subscribe to the server SSE tick-stream
-  //    for the bus symbol + timeframe and apply each forming bar with
-  //    series.update() — NOT setData — so the most-recent candle ticks in real
-  //    time without repainting the chart (zoom/scroll preserved). The 15s poll
-  //    above is demoted to a reconciliation safety net: it carries the
-  //    authoritative closed bar and replaces the synthesized tip (no orphan dup).
-  //
-  //    HONESTY: we only apply a tip when the stream reports it is NOT frozen
-  //    (ticks flowing within the live window) and the time is >= the newest bar,
-  //    so a silent/stale stream can never keep a fake bar ticking. The payload is
-  //    pure OHLC display telemetry — no execution path is touched here.
-  useLayoutEffect(() => {
-    // Reset the countdown whenever the stream key changes — the previous
-    // symbol/timeframe's forming bar is no longer relevant (Task #524).
-    formingCloseRef.current = null;
-    setFormingCloseMs(null);
-    setMarketFrozen(null);
-    if (symbol.length === 0 || !tickSource) return;
-    const url = u(`/api/chart/tick-stream?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&source=${encodeURIComponent(tickSource)}`);
-    let es: EventSource | null = null;
-    let disposed = false;
-    try {
-      es = new EventSource(url, { withCredentials: true });
-    } catch {
-      return; // EventSource unavailable — the 15s poll still keeps the tip fresh.
-    }
-    es.onmessage = (ev) => {
-      if (disposed || committedChartContext.current !== chartContext) return;
-      let msg: {
-        type?: string;
-        source?: string;
-        symbol?: string;
-        timeframe?: string;
-        frozen?: boolean;
-        tickWallMs?: number;
-        marketFrozen?: boolean;
-        lastBrokerTimeMs?: number | null;
-        bar?: { openTimeMs?: number; closeTimeMs?: number; open?: number; high?: number; low?: number; close?: number };
-      };
-      try {
-        msg = JSON.parse(ev.data) as typeof msg;
-      } catch {
-        return;
-      }
-      if (!matchesChartTickContext(msg, tickSource, symbol, apiTf)) return;
-      // Market-frozen / closed-market indicator. Handled BEFORE the forming-bar
-      // branch because it must surface even when there is no live tip (a frozen
-      // broker quote is exactly the no-tip case).
-      if (msg.type === "feed_status") {
-        setMarketFrozen(
-          msg.marketFrozen === true ? { lastBrokerTimeMs: msg.lastBrokerTimeMs ?? null } : null,
-        );
-        return;
-      }
-      if (msg.type !== "forming_bar") return;
-      // Candle-close countdown (Task #524): track the forming bar's broker-aligned
-      // close time. The server buckets openMs to the broker bar boundary and
-      // reports closeTimeMs = openMs + interval, so D1/W1 honour the broker's
-      // daily/weekly close — no client calendar math here. A frozen / barless
-      // frame clears it so a silent feed shows NO countdown. setState only on an
-      // actual rollover (a new closeTimeMs) to avoid a re-render per tick.
-      if (msg.frozen || !msg.bar || typeof msg.bar.closeTimeMs !== "number") {
-        if (formingCloseRef.current !== null) {
-          formingCloseRef.current = null;
-          setFormingCloseMs(null);
-        }
-      } else if (formingCloseRef.current !== msg.bar.closeTimeMs) {
-        formingCloseRef.current = msg.bar.closeTimeMs;
-        setFormingCloseMs(msg.bar.closeTimeMs);
-      }
-      // Series tip update — only for a live (non-frozen) forming bar.
-      if (msg.frozen || !msg.bar) return;
-      const series = lineSeriesRef.current;
-      if (!series) return;
-      // Task #496 latency addendum: measure ingest→browser latency from the
-      // ingest-accept wall clock the server stamped on the tip. Reported in dev
-      // for the acceptance run; the server path itself carries no batching delay.
-      if (typeof msg.tickWallMs === "number" && import.meta.env.DEV) {
-        const latencyMs = Date.now() - msg.tickWallMs;
-        if (latencyMs >= 0) {
-          // eslint-disable-next-line no-console
-          console.debug(`[forming-tip] ingest→browser latency ≈ ${latencyMs}ms`);
-        }
-      }
-      const b = msg.bar;
-      // Use Number.isFinite (NOT typeof === "number") so a NaN/Infinity OHLC can
-      // never reach series.update(): typeof NaN === "number" passes, but a NaN
-      // bar becomes a whitespace point whose candlestick colorer throws
-      // "Value is null" deep in lightweight-charts on the next repaint —
-      // uncatchable here. This mirrors the chart-engine adapter's guard.
-      if (
-        typeof b.openTimeMs !== "number" || !Number.isFinite(b.openTimeMs) ||
-        typeof b.open !== "number" || !Number.isFinite(b.open) ||
-        typeof b.high !== "number" || !Number.isFinite(b.high) ||
-        typeof b.low !== "number" || !Number.isFinite(b.low) ||
-        typeof b.close !== "number" || !Number.isFinite(b.close)
-      )
-        return;
-      const tipSec = Math.floor(b.openTimeMs / 1000);
-      // Never feed an out-of-order time to lightweight-charts (it would throw).
-      if (newestBarSecRef.current != null && tipSec < newestBarSecRef.current) return;
-      series.update({
-        time: tipSec as UTCTimestamp,
-        open: b.open,
-        high: b.high,
-        low: b.low,
-        close: b.close,
-      });
-      newestBarSecRef.current = tipSec;
-    };
-    es.onerror = () => {
-      // The browser auto-reconnects an EventSource; nothing to do. The poll
-      // remains the reconciliation backstop while the stream is down.
-    };
-    return () => {
-      disposed = true;
-      es?.close();
-    };
-  }, [symbol, apiTf, tickSource, chartContext]);
-
-  // ── Display-truth: keep the candlestick series' built-in last-price line +
-  //    last-value label in lockstep with the live/non-live display status,
-  //    WITHOUT rebuilding the chart (which would reset the user's zoom/scroll).
-  //    headerOk flips on the 15s header poll, so applyOptions here — never a deps
-  //    change on the chart-create effect — toggles the live marker honestly.
-  useEffect(() => {
-    const series = lineSeriesRef.current;
-    if (!series) return;
-    series.applyOptions({ priceLineVisible: isLiveDisplay, lastValueVisible: isLiveDisplay });
-  }, [isLiveDisplay, chartEpoch, chartContext]);
+    chartApiRef.current = surface?.chart ?? null;
+    lineSeriesRef.current = surface?.series ?? null;
+    seriesRef.current = surface?.series ?? null;
+    containerRef.current = surface?.container ?? null;
+    // A drag/menu may not survive a price-series replacement (including HA).
+    dragKeyRef.current = null;
+    posDragKeyRef.current = null;
+    setMenu(null);
+    if (longPressRef.current != null) window.clearTimeout(longPressRef.current);
+    longPressRef.current = null;
+    setChartEpoch(epoch => epoch + 1);
+  }, []);
 
   // ── Phase 3 — overlay the user's own positions + pending orders as price
   //    lines. Runs on every positions/pending poll WITHOUT recreating the
@@ -1756,12 +1322,13 @@ export function ScannerChartPanel() {
     if (markers.length === 0) return;
     // lightweight-charts requires markers sorted ascending by time.
     markers.sort((a, b) => (a.time as number) - (b.time as number));
-    newsMarkersApiRef.current = createSeriesMarkers(series, markers);
+    const markerLayer = createSeriesMarkers(series, markers);
+    newsMarkersApiRef.current = markerLayer;
     // Deterministic teardown: detach the marker layer on unmount / re-run so the
     // plugin handle never outlives the series it was attached to.
     return () => {
-      try { newsMarkersApiRef.current?.detach(); } catch { /* already detached */ }
-      newsMarkersApiRef.current = null;
+      try { markerLayer.detach(); } catch { /* already detached */ }
+      if (newsMarkersApiRef.current === markerLayer) newsMarkersApiRef.current = null;
     };
   }, [news, layerToggles.news, candles, displayStatus, chartEpoch, chartContext]);
 
@@ -1845,18 +1412,19 @@ export function ScannerChartPanel() {
           } satisfies ChartStructureMarker];
         });
 
-    structureHandlesRef.current = applyStructureLines(
+    const handles = applyStructureLines(
       chart,
       series,
       lines,
       markers,
       structureHandlesRef.current,
     );
+    structureHandlesRef.current = handles;
     // Deterministic teardown: clear the structural overlay on unmount / re-run so
     // its series + marker layer never outlive the chart they were drawn onto.
     return () => {
-      clearStructureLines(chartApiRef.current, structureHandlesRef.current);
-      structureHandlesRef.current = EMPTY_STRUCTURE_HANDLES;
+      try { clearStructureLines(chart, handles); } catch { /* chart released */ }
+      if (structureHandlesRef.current === handles) structureHandlesRef.current = EMPTY_STRUCTURE_HANDLES;
     };
     // isLiveDisplay carries the panel's resolved feed verdict; chartEpoch re-runs
     // this after a chart rebuild so structure is redrawn onto the fresh series
@@ -1916,35 +1484,6 @@ export function ScannerChartPanel() {
   const lastClose = candles.length > 0 ? candles[candles.length - 1]!.close : null;
 
   // ── Last-known price stamp (Task #524). The series' built-in last-value label
-  //    + price line (toggled in the effect above) ONLY render when the feed is
-  //    genuinely LIVE. In every non-live state that still has candles we stamp
-  //    the LAST-KNOWN close on the right price axis — muted, dotted, and titled
-  //    "last-known" — so the axis is never blank and a stale price is never
-  //    styled as a live tick. UNAVAILABLE (no usable candles) shows nothing.
-  //    Re-runs on chartEpoch so it re-draws onto a freshly rebuilt series.
-  useEffect(() => {
-    const series = lineSeriesRef.current;
-    if (!series) return;
-    if (lastKnownLineRef.current) {
-      try {
-        series.removePriceLine(lastKnownLineRef.current);
-      } catch {
-        /* line belonged to a now-destroyed series — ignore */
-      }
-      lastKnownLineRef.current = null;
-    }
-    if (!isLiveDisplay && lastClose != null && displayStatus !== "UNAVAILABLE" && candles.length > 0) {
-      lastKnownLineRef.current = series.createPriceLine({
-        price: lastClose,
-        color: "#a1a1aa", // zinc-400 — deliberately NOT the live blue last-value
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: true,
-        title: "last-known",
-      });
-    }
-  }, [isLiveDisplay, lastClose, displayStatus, candles.length, chartEpoch, chartContext]);
-
   // ── Phase 4 — reposition the draggable handles to track the price scale
   //    (zoom / scroll / resize). Runs only while a draft is active.
   useEffect(() => {
@@ -2216,24 +1755,30 @@ export function ScannerChartPanel() {
     startDraft(side, price);
   };
   const menuMarkLevel = (kind: ChartAnnotationCreateRequestKind, price: number) => {
+    const annotationTf = toAnnotationTf(timeframe);
+    if (!annotationTf) { toast({ title: "Unavailable for this interval", description: "Saved server notes and receipts support M1, M5, M15, M30, H1, H4 and D1. Local drawing tools still work." }); return; }
     createAnnotation.mutate({
-      data: { symbol, timeframe: toAnnotationTf(timeframe), kind, price },
+      data: { symbol, timeframe: annotationTf, kind, price },
     });
   };
   const menuPriceAlert = (direction: "above" | "below", price: number) => {
+    const annotationTf = toAnnotationTf(timeframe);
+    if (!annotationTf) { toast({ title: "Unavailable for this interval", description: "Saved server notes and receipts support M1, M5, M15, M30, H1, H4 and D1. Local drawing tools still work." }); return; }
     createAnnotation.mutate({
-      data: { symbol, timeframe: toAnnotationTf(timeframe), kind: "PRICE_ALERT", direction, price },
+      data: { symbol, timeframe: annotationTf, kind: "PRICE_ALERT", direction, price },
     });
   };
 
   // Watch zone — a per-user read-only band around the clicked price. WATCH_ZONE
   // requires priceTo; we build a small symmetric band from the click.
   const menuWatchZone = (price: number) => {
+    const annotationTf = toAnnotationTf(timeframe);
+    if (!annotationTf) { toast({ title: "Unavailable for this interval", description: "Saved server notes and receipts support M1, M5, M15, M30, H1, H4 and D1. Local drawing tools still work." }); return; }
     const pad = Math.max(price * 0.001, 0);
     createAnnotation.mutate({
       data: {
         symbol,
-        timeframe: toAnnotationTf(timeframe),
+        timeframe: annotationTf,
         kind: "WATCH_ZONE",
         price,
         priceTo: price + pad,
@@ -2256,6 +1801,8 @@ export function ScannerChartPanel() {
   // Save an immutable decision receipt for the current symbol/timeframe (Task 5
   // surface). Read-only memory write — never trades.
   const menuShowReceipt = async () => {
+    const annotationTf = toAnnotationTf(timeframe);
+    if (!annotationTf) { toast({ title: "Unavailable for this interval", description: "Saved server notes and receipts support M1, M5, M15, M30, H1, H4 and D1. Local drawing tools still work." }); return; }
     setReceiptBusy(true);
     try {
       const r = await fetch(u("/api/me/chart/decision-receipt"), {
@@ -2264,7 +1811,7 @@ export function ScannerChartPanel() {
         credentials: "include",
         body: JSON.stringify({
           symbol,
-          timeframe: toAnnotationTf(timeframe),
+          timeframe: annotationTf,
           intent: "analyze",
           source: "chart_read",
         }),
@@ -2333,37 +1880,6 @@ export function ScannerChartPanel() {
               testIdPrefix="scanner-chart"
               trailingIntervals={candlesQuery.data?.feedStatus?.trailingIntervals}
             />
-            {/* Market-frozen / closed-market indicator (display/telemetry only).
-                Derived from the latest tick's BROKER-time staleness via the
-                tick-stream `feed_status` event, so a still-forming bar reads as
-                closed-market, not a broken feed. Calendar-independent. */}
-            {marketFrozen && (
-              <Badge
-                variant="outline"
-                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
-                data-testid="scanner-chart-market-closed"
-                title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
-              >
-                <Clock className="h-3 w-3" /> {formatMarketClosedLabel(marketFrozen.lastBrokerTimeMs)}
-              </Badge>
-            )}
-            {/* Candle-close countdown (Task #524). Honesty-gated: only when the
-                feed is genuinely LIVE and a live forming bar has reported its
-                broker-aligned close time. The child owns its own 1s ticker. */}
-            {formingCloseMs != null && isLiveDisplay && (
-              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} />
-            )}
-            {hasCandles && (
-              <ChartHistoryBadge
-                loading={deepHistory.loading}
-                hasMore={deepHistory.hasMore}
-                providerCapped={deepHistory.providerCapped}
-                limitationReason={deepHistory.limitationReason}
-                coverageDays={deepHistory.coverageDays}
-                depthTargetDays={deepHistory.depthTargetDays}
-                loadedAny={deepHistory.loadedAny}
-              />
-            )}
             {symbolPositions.length > 0 && (
               <Badge variant="outline" className="border-blue-500/40 text-[10px] text-blue-300" data-testid="scanner-chart-pos-count">
                 {symbolPositions.length} position{symbolPositions.length > 1 ? "s" : ""}
@@ -2378,20 +1894,6 @@ export function ScannerChartPanel() {
             <ChartTimingChip symbol={symbol} />
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
-            {PRIMARY_TIMEFRAMES.map((tf) => (
-              <Button
-                key={tf.id}
-                size="sm"
-                variant={timeframe === tf.id ? "default" : "outline"}
-                className="h-7 px-2 text-xs"
-                onClick={() => {
-                  setTimeframe(tf.id);
-                }}
-                data-testid={`scanner-chart-tf-${tf.id}`}
-              >
-                {tf.label}
-              </Button>
-            ))}
             <Button
               size="sm"
               variant="ghost"
@@ -2407,62 +1909,25 @@ export function ScannerChartPanel() {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {candles.length === 0 ? (
-          <div
-            data-testid="scanner-chart-empty"
-            className="flex h-[360px] flex-col items-center justify-center rounded-md border border-zinc-800 bg-zinc-950/50 text-center text-xs text-zinc-500"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mb-2 h-5 w-5 animate-spin" />
-                Loading candles for <span className="font-mono">{symbol}</span>…
-              </>
-            ) : (
-              <>
-                <CandlestickChart className="mb-2 h-6 w-6 opacity-40" />
-                <div>
-                  No live candles for <span className="font-mono">{symbol}</span> right now.
-                </div>
-                {/* Surface the backend's own honest cause so a synthetic-feed
-                    outage (e.g. "connect MetaTrader 5"), a stale feed, and a
-                    provider error read differently — never fabricated. */}
-                {(feedStatus?.warning ?? feedStatus?.message) && (
-                  <div className="mt-1 max-w-md text-zinc-400">{feedStatus?.warning ?? feedStatus?.message}</div>
-                )}
-                {error && <div className="mt-1 text-amber-400/80">Feed: {error}</div>}
-                <div className="mt-1 text-zinc-600">
-                  We don't fabricate data — pick another symbol or connect your broker feed.
-                </div>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="relative" style={{ height: 360 }}>
-              <div
-                ref={containerRef}
-                data-testid="scanner-chart-canvas"
-                className="h-full w-full overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/50"
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  openMenuAt(e.clientX, e.clientY);
-                }}
-                onPointerDown={(e) => {
-                  // Long-press (touch/pen) opens the command menu. Mouse uses
-                  // the native context menu above; skip it here to avoid a
-                  // double-trigger on right-click.
-                  if (e.pointerType === "mouse") return;
-                  const { clientX, clientY } = e;
-                  if (longPressRef.current) window.clearTimeout(longPressRef.current);
-                  longPressRef.current = window.setTimeout(() => openMenuAt(clientX, clientY), 450) as unknown as number;
-                }}
-                onPointerUp={() => {
-                  if (longPressRef.current) { window.clearTimeout(longPressRef.current); longPressRef.current = null; }
-                }}
-                onPointerMove={() => {
-                  if (longPressRef.current) { window.clearTimeout(longPressRef.current); longPressRef.current = null; }
-                }}
-              />
+        <ARXNativeChart symbol={symbol} timeframe={apiTf as ArxTimeframe}
+          onTimeframeChange={tf => setTimeframe(normalizeChartTimeframe(tf))}
+          limit={200} height={520} mobileHeight={360}
+          externalFeed={{ data: originalResponse, isLoading: loading, isFetching: candlesQuery.isFetching,
+            isError: candlesQuery.isError || (!!candlesQuery.data && !originalResponse && isChartInterval(apiTf)),
+            refetch: () => candlesQuery.refetch(), livePriceAllowed: isLiveDisplay }}
+          onScannerSurfaceChange={bindSmartChartSurface}
+          canvasEvents={{
+              onContextMenu: (e) => { e.preventDefault(); openMenuAt(e.clientX, e.clientY); },
+              onPointerDown: (e) => {
+                if (e.pointerType === "mouse") return;
+                const { clientX, clientY } = e;
+                if (longPressRef.current) window.clearTimeout(longPressRef.current);
+                longPressRef.current = window.setTimeout(() => openMenuAt(clientX, clientY), 450);
+              },
+              onPointerUp: () => { if (longPressRef.current) window.clearTimeout(longPressRef.current); longPressRef.current = null; },
+              onPointerMove: () => { if (longPressRef.current) window.clearTimeout(longPressRef.current); longPressRef.current = null; },
+          }}
+          canvasOverlay={<>
               {menu && (
                 <ChartCommandMenu
                   anchor={menu}
@@ -2593,7 +2058,10 @@ export function ScannerChartPanel() {
                   })}
                 </div>
               )}
-            </div>
+          </>}
+        />
+        {hasCandles && (
+          <div className="mt-3 space-y-3">
 
             {/* Feed-status notice strip — appears between canvas and draft controls
                 when the chart is showing candles that are not from a live feed.
@@ -2760,6 +2228,8 @@ export function ScannerChartPanel() {
                 )}
               </div>
             )}
+
+            {overlayTf == null && <p className="text-xs text-amber-300" role="status" data-testid="scanner-overlay-interval-unavailable">Server overlays, saved notes and receipts are unavailable on {apiTf}. Smart Chart's local reader and drawing tools use this exact interval.</p>}
 
             {/* Smart Chart Layers & Market Impact Radar (Task #197) — read-only,
                 advisory overlays with honest empty/absent states throughout. */}

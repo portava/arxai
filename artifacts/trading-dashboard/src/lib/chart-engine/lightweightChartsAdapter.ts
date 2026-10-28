@@ -202,6 +202,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       width: el.clientWidth,
       height: options.height,
       layout: {
+        // Both native/replay shells render ChartLibraryCredit below the plot.
+        attributionLogo: false,
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#a1a1aa",
         fontSize: 11,
@@ -927,6 +929,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (this.container) this.container.style.cursor = this.navigationMode === "pan" ? "grab" : handler ? "crosshair" : "";
   }
   exportImage(): string | null { this.analysis?.flushPending(); return this.chart?.takeScreenshot().toDataURL("image/png") ?? null; }
+
+  getScannerOverlaySurface() {
+    return this.chart && this.series && this.container
+      ? { chart: this.chart, series: this.series, container: this.container } : null;
+  }
 
   priceToCoordinate(price: number): number | null {
     const s = this.series;
