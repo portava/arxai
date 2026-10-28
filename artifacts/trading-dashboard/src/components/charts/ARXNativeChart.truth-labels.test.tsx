@@ -449,3 +449,19 @@ describe("one instrument precision on the native chart's axis, header and side p
     expect(readChartPricePrecision(SYMBOL)).toBeNull();
   });
 });
+
+describe("the header price is last-known while the broker repeats a frozen quote", () => {
+  it("prefixes 'Last known' after a frozen-quote verdict on a live-graded feed", () => {
+    renderChart();
+    expect(screen.getByTestId("arx-native-last").textContent).not.toMatch(/last known/i);
+    act(() => {
+      openedSources[0]!.onmessage?.({
+        data: JSON.stringify({ type: "feed_status", source: "mt5_broker", symbol: SYMBOL, timeframe: TF,
+          marketFrozen: true, lastBrokerTimeMs: NEWEST_OPEN_MS, ts: Date.now() }),
+      });
+    });
+    const badge = screen.getByTestId("arx-native-last");
+    expect(badge.textContent).toMatch(/^Last known /);
+    expect(badge.getAttribute("title") ?? "").toMatch(/same quote/i);
+  });
+});

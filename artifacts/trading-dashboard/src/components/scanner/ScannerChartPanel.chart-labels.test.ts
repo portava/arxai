@@ -69,3 +69,12 @@ describe("ScannerChartPanel — your positions and drafts", () => {
     expect(code.slice(code.lastIndexOf("{ownedLoadFailed", idx), idx)).toContain("ownedLoadFailed &&");
   });
 });
+
+describe("ScannerChartPanel — header price while the quote is frozen", () => {
+  it("a frozen broker quote is shown as last-known, never as a plain current price", () => {
+    const live = code.slice(code.lastIndexOf("{", code.indexOf('data-testid="scanner-chart-last"')), code.indexOf('data-testid="scanner-chart-last"'));
+    expect(live).toMatch(/isLiveDisplay && marketFrozen == null/);
+    const stale = code.slice(code.lastIndexOf("{", code.indexOf('data-testid="scanner-chart-last-stale"')), code.indexOf('data-testid="scanner-chart-last-stale"'));
+    expect(stale).toMatch(/\(!isLiveDisplay \|\| marketFrozen != null\)/);
+  });
+});

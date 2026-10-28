@@ -2459,12 +2459,14 @@ export function ScannerChartPanel() {
             <span data-testid="scanner-chart-symbol" className="text-base font-semibold text-foreground">
               {symbol}
             </span>
-            {shownClose.value != null && isLiveDisplay && (
+            {/* A frozen broker quote (feed_status) is not a current price, even
+                on a live-graded feed: the header then shows the last-known close. */}
+            {shownClose.value != null && isLiveDisplay && marketFrozen == null && (
               <Badge variant="outline" className="font-mono text-xs" data-testid="scanner-chart-last">
                 {formatInstrumentPrice(shownClose.value, pricePrecision)}
               </Badge>
             )}
-            {lastClose != null && !isLiveDisplay && displayStatus !== "UNAVAILABLE" && (
+            {lastClose != null && (!isLiveDisplay || marketFrozen != null) && displayStatus !== "UNAVAILABLE" && (
               <Badge variant="outline" className="font-mono text-xs text-zinc-500" data-testid="scanner-chart-last-stale" title="Last-known candle close — not a live price">
                 {formatInstrumentPrice(lastClose, pricePrecision)} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
               </Badge>

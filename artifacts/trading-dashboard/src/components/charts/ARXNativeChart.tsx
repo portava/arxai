@@ -1036,6 +1036,9 @@ export function ARXNativeChart({
   const scheduledClosure = marketFrozen != null
     && scheduledWeekendClosureFor(data?.feedStatus?.assetClass ?? null, Date.now()) != null;
   const frozenChip = marketFrozen ? frozenQuoteChip(marketFrozen.lastBrokerTimeMs, scheduledClosure) : null;
+  // The header price reads as current only on a live-confirmed feed whose
+  // broker quote is still moving (downgrade-only).
+  const headerPriceLive = isLivePriceAffordance && marketFrozen == null;
 
   const isInitialLoading = query.isLoading && !hasCandles;
   const isError = query.isError && !hasCandles;
@@ -1062,13 +1065,15 @@ export function ARXNativeChart({
               // live-confirmed; the header must say the same thing in words.
               <Badge
                 variant="outline"
-                className={`font-mono text-xs ${isLivePriceAffordance ? "" : "text-zinc-400"}`}
+                className={`font-mono text-xs ${headerPriceLive ? "" : "text-zinc-400"}`}
                 data-testid="arx-native-last"
-                title={isLivePriceAffordance
+                title={headerPriceLive
                   ? undefined
-                  : "Close of the newest bar received. The feed is not live-confirmed, so this may not be the current price."}
+                  : marketFrozen
+                    ? "Close of the newest bar received. The broker keeps sending the same quote, so this is not a moving price."
+                    : "Close of the newest bar received. The feed is not live-confirmed, so this may not be the current price."}
               >
-                {isLivePriceAffordance ? "" : "Last known "}
+                {headerPriceLive ? "" : "Last known "}
                 {formatInstrumentPrice(lastClose, pricePrecision)}
               </Badge>
             )}
