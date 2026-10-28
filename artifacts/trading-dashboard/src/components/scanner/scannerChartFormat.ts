@@ -5,6 +5,7 @@
 // candles/tick-stream contract, or any execution path — it is display-only.
 
 import type { ChartDisplayStatus } from "@/lib/chart-display-status";
+import { candleIntervalMs } from "@workspace/domain/market";
 
 export type Timeframe = { id: string; label: string };
 
@@ -144,6 +145,33 @@ export function formatUtcClock(time: number | string | null | undefined): string
   if (!Number.isFinite(ms)) return null;
   const d = new Date(ms);
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+}
+
+/** A closed bar cannot close later than now beyond this clock-skew allowance. */
+const CLOSED_BAR_SKEW_MS = 5_000;
+
+/**
+ * Close time (epoch ms) of the newest CLOSED candle on the chart, or null when
+ * there is none or the timeframe is unknown. Not feedStatus.lastCandleTime:
+ * that is the newest provider bar's scheduled close, which for a still-forming
+ * bar is a FUTURE instant. A bar the server marks forming (isComplete=false),
+ * or whose open + one interval is still ahead of now, is skipped.
+ */
+export function lastClosedCandleCloseMs(
+  candles: ReadonlyArray<{ time: number; isComplete?: boolean }>,
+  timeframe: string,
+  nowMs: number,
+): number | null {
+  const intervalMs = candleIntervalMs(timeframe);
+  if (intervalMs == null || !Number.isFinite(nowMs)) return null;
+  for (let i = candles.length - 1; i >= 0; i--) {
+    const c = candles[i];
+    if (!c || c.isComplete === false || !Number.isFinite(c.time)) continue;
+    const closeMs = c.time + intervalMs;
+    if (closeMs > nowMs + CLOSED_BAR_SKEW_MS) continue;
+    return closeMs;
+  }
+  return null;
 }
 
 /** Server clock captured from one accepted tick-stream frame. */
