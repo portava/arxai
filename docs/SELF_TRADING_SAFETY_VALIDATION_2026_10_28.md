@@ -44,10 +44,11 @@ counted as coverage), old policy fixtures failed (updated with explicit healthy
 mode and AI holds), and the `6056cc08` run had a Node child-startup error plus one
 guard parse failure (repaired, rerun on `83277a73`).
 
-MT5 compilation is still pending. The exact `6f9e364` package was rebuilt and
-its five sources match this branch and `cd44c73`. Its preflight found the
-existing terminal running and stopped before Wine/MetaEditor startup. No EX5
-was produced. The rebuilt ZIP checksum is
+MT5 compilation later **passed under Mac/Wine**, build 6230, for both EAs
+with zero errors/warnings and new EX5 files: [verified result](MT5_MAC_WINE_COMPILE_RESULT_2026_10_28.md).
+The exact `6f9e364` package has five sources matching this branch and `cd44c73`.
+The earlier terminal-running preflight produced no EX5 and remains preserved.
+The rebuilt input ZIP checksum is
 `24d4227e8ba7cb68851b6b6348fedd3dd5410b0135a2d91b19f541be6c9db90f`;
 it is not verification of the earlier externally generated ZIP checksum.
 

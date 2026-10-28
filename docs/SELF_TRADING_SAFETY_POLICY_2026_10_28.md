@@ -96,9 +96,10 @@ PR #99/#100/#101 source are required before any release-green claim.
 - Governed protective decisions also require their new vault/audit mirrors to
   persist. Their policy eligibility is unchanged, but a storage failure can
   refuse the action; this is a durability dependency, not an AI-confidence gate.
-- MT5 MetaEditor compile remains a separate check. EAs/includes are unchanged
-  from `6f9e364` and `cd44c73`. The Mac compile preflight on this continuation
-  stopped because terminal64.exe was running; no compile result was produced.
+- MT5 MetaEditor compilation subsequently passed under Mac/Wine after the
+  owner closed the terminal. EAs/includes are unchanged from `6f9e364` and
+  `cd44c73`; [logs, EX5 files and hashes](MT5_MAC_WINE_COMPILE_RESULT_2026_10_28.md)
+  are saved. Windows-host and terminal/broker validation remain open.
 - The handoff's scanner latency, Smart Chart browser acceptance, Truth round-3
   integration, Profit Mission validation and TradingView/MT5 comparison gaps
   remain. Held performance experiments are excluded.

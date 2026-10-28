@@ -1,0 +1,85 @@
+{
+  "status": "PASS_MAC_WINE_COMPILE_ONLY",
+  "compiled_at_utc": "2026-10-28T14:39:27Z",
+  "local_time": "2026-10-28 10:39:27 America/New_York",
+  "source_commit": "6f9e3641c53e4d9cf316e6c8c380d5455b52d91d",
+  "sources_identical_at": [
+    "cd44c73cb3392574ff4aa6593232597278db0657",
+    "15b2dcb6eee73e5c6c857451956e4f8aee972d5a"
+  ],
+  "source_hashes": {
+    "ReplitMT5BridgeEA_v131.mq5": "e0d8b6c6aa722ba1542e4e8a3ff9522b78073b5e1c77e027dcf831c4780fcc40",
+    "ARX_AI_Universal_Agent_v154.mq5": "f3b9d147c09927e27f0558f5b84cfc4a2e4fe7179ca779db920c8c0ed046d057",
+    "ArxDemoExecution.mqh": "e81aa17fd95b242c9d0785357bbb8bc827df9a773d1a048d95a55d819156900d",
+    "ArxManagementTarget.mqh": "664024eda73cb0ee38d7b6a3b084fa49359ee9723e39713a63f32e93fbe8d06b",
+    "ArxTradeResult.mqh": "1ab6036e4c4a35fa77debd60dee20f37c4f03d9c5dc0b6104677bc1d306c34b0"
+  },
+  "compiler": {
+    "environment": "MetaEditor under Wine on macOS; not a Windows host",
+    "metaeditor_version": "5.0.0.6230",
+    "metaeditor_sha256": "68d8f87dcdb443cb851a75839ae68ed606b0b661995cde8218156778db5244c2",
+    "wine": "10.0",
+    "macos": "26.6.2 (25G83)",
+    "host_architecture": "arm64",
+    "cpu": "Apple M4 Pro",
+    "target": "X64 Regular",
+    "wine_cmd_ver": "Microsoft Windows 10.0.19043",
+    "cmd_ver_note": "The runner summary did not parse this string; read from the preserved wine-cmd-ver.txt."
+  },
+  "outputs": {
+    "ReplitMT5BridgeEA_v131": {
+      "errors": 0,
+      "warnings": 0,
+      "ex5_bytes": 151956,
+      "ex5_sha256": "0c80e360b57e6fe899ac4cd6d5c28b74ab80bb7556ad33b308f3ced44d7f0c90",
+      "raw_log_sha256": "5c9642b3f3c254304502663eab19b9c0b751809abd14a869cf8283896073a9e1",
+      "timeout": false,
+      "process_exit": 1
+    },
+    "ARX_AI_Universal_Agent_v154": {
+      "errors": 0,
+      "warnings": 0,
+      "ex5_bytes": 203430,
+      "ex5_sha256": "fc6238683e5af1a6fed5279671dcadc81b19303320b7adefdc97909a5747f3fb",
+      "raw_log_sha256": "ec173ecfd20f47a4435302049417e6a77f8e4315f9ee99f7740ec8f25e24b8a6",
+      "timeout": false,
+      "process_exit": 1
+    }
+  },
+  "result_zip": {
+    "file": "result-20261028T143927Z.zip",
+    "sha256": "1cdd3fca4fe9499dbdfa919fd1b0ec43d6481e00317fe5777a520ddf8781d53e"
+  },
+  "review": {
+    "raw_logs_decoded_and_read": true,
+    "zip_crc_and_byte_contents_verified": true,
+    "source_manifest_and_git_bytes_verified": true,
+    "fresh_ex5_verified": true,
+    "include_paths_outside_mql5": 0,
+    "terminal_running_before_or_after": false,
+    "metaeditor_running_before_or_after": false,
+    "metaeditor_binary_unchanged": true,
+    "prefix_changes_outside_compile_folder": [
+      "MetaTrader 5 directory metadata",
+      "MQL5/Experts directory metadata",
+      "logs/metaeditor.log"
+    ],
+    "no_account_config_files_flagged": true
+  },
+  "boundaries": {
+    "terminal_started": false,
+    "ea_loaded": false,
+    "broker_test": false,
+    "trading_enabled": false,
+    "workers_enabled": false,
+    "existing_database_changed": false,
+    "deployed": false,
+    "merged": false
+  },
+  "remaining": [
+    "Windows-host validation not performed",
+    "Terminal load/runtime not tested",
+    "Live/demo broker behavior not tested",
+    "Broader release not green"
+  ]
+}
