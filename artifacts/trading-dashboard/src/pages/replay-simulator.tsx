@@ -13,6 +13,7 @@ interface Scenario {
 
 interface RunResult {
   replay_run_id: string; scenario_id: string; status: string; symbol: string;
+  timeframe?: string; started_at?: string; finished_at?: string;
   candles_processed: number; decisions_created: number;
   simulated_trades_opened: number; simulated_trades_closed: number;
   wins: number; losses: number; break_even?: number; net_pnl: number;
@@ -119,7 +120,8 @@ export default function ReplaySimulator() {
   }
 
   async function runReplay() {
-    if (!selected) return;
+    // Only a scenario the dropdown actually shows can be run.
+    if (!selected || !scenarios.some(s => s.scenarioId === selected)) return;
     setBusy(true); setErr(""); setResult(null);
     try {
       const r = await fetch("/api/replay/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario_id: selected, settings: { useSniperFilter: true, minConfidence: 55 } }) }).then(x => x.json());
@@ -152,8 +154,13 @@ export default function ReplaySimulator() {
               {scenarios.map(s => <option key={s.scenarioId} value={s.scenarioId}>{s.title} ({s.candleCount}c, {sourceWord(s.source)})</option>)}
             </select>
             <Button size="sm" variant="outline" disabled={busy} onClick={createDemo}>+ New Synthetic</Button>
-            <Button size="sm" disabled={busy || !selected} onClick={runReplay}>{busy ? "Running…" : "Run Replay"}</Button>
+            <Button size="sm" disabled={busy || !scn} onClick={runReplay}>{busy ? "Running…" : "Run Replay"}</Button>
           </div>
+          {selected && !scn && !loading && (
+            <p className="text-xs text-amber-600" data-testid="replay-selected-missing">
+              The selected scenario ({selected}) is not in the loaded list, so it cannot be run from here. Pick a scenario from the list.
+            </p>
+          )}
           {scn && (
             <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
               {(() => { const c = conditionLabel(scn); return (
@@ -196,9 +203,27 @@ export default function ReplaySimulator() {
               description="Simulation only — these numbers do not reflect live trading and do not guarantee future performance."
               actions={(() => { const pill = runStatusPill(result.status); return <StatusPill status={pill.kind} label={pill.label} ariaLabel={pill.ariaLabel} />; })()}
             />
+            {(() => {
+              const ran = scenarios.find(s => s.scenarioId === result.scenario_id);
+              const ranName = ran?.title ?? result.scenario_id;
+              const finished = result.finished_at ? new Date(result.finished_at) : null;
+              return (
+                <>
+                  <p className="text-xs text-muted-foreground" data-testid="replay-result-source">
+                    Result for {ranName} · {result.symbol}{result.timeframe ? ` · ${result.timeframe}` : ""}
+                    {finished && !Number.isNaN(finished.getTime()) ? ` · finished ${finished.toLocaleString()}` : " · finish time not reported"}
+                  </p>
+                  {result.scenario_id !== selected && (
+                    <p className="text-xs text-amber-600" data-testid="replay-result-mismatch">
+                      This result is for {ranName}, not {scn?.title ?? "the scenario selected above"}. Run Replay to see the selected scenario.
+                    </p>
+                  )}
+                </>
+              );
+            })()}
             {["FAILED", "STOPPED"].includes((result.status ?? "").toUpperCase()) && (
               <p className="text-xs text-amber-600" data-testid="replay-partial-note">
-                This replay did not finish: it covers {result.candles_processed} of {scn?.scenarioId === result.scenario_id ? scn.candleCount : "the scenario's"} candles. The numbers below are partial.
+                This replay did not finish: it covers {result.candles_processed} of {scenarios.find(s => s.scenarioId === result.scenario_id)?.candleCount ?? "the scenario's"} candles. The numbers below are partial.
               </p>
             )}
             {!["COMPLETED", "FAILED", "STOPPED"].includes((result.status ?? "").toUpperCase()) && (

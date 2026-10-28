@@ -1,7 +1,7 @@
 // Build JJ — Scenario generation (synthetic + recorded). REPLAY_ONLY.
 import { randomUUID } from "node:crypto";
 import { db, replayScenariosTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 export interface Candle {
   t: number;       // unix ms
@@ -116,8 +116,10 @@ export async function persistScenario(s: Scenario) {
   });
 }
 
+// Newest first: without an order, a just-created scenario could fall outside
+// the limit and be missing from the list the Replay Simulator shows.
 export async function listScenarios(limit = 50) {
-  const rows = await db.select().from(replayScenariosTable).limit(limit);
+  const rows = await db.select().from(replayScenariosTable).orderBy(desc(replayScenariosTable.createdAt)).limit(limit);
   return rows.map(r => ({
     scenarioId: r.scenarioId,
     title: r.title,
