@@ -32,6 +32,9 @@ type Mt5Conn = {
   leverage: number | null;
   accountType: string | null;
   accountSnapshotFresh: boolean;
+  /** When balance/equity were last written (server); absent on older servers. */
+  accountSyncedAt?: string | null;
+  accountSnapshotAgeSeconds?: number | null;
   lastHeartbeatAt: string | null;
   heartbeatAgeSeconds: number | null;
   tokenLast4: string | null;
@@ -304,7 +307,9 @@ export default function MyMt5Page() {
                 <div><span className="text-muted-foreground">Free margin:</span> {c.freeMargin != null ? `${Number(c.freeMargin).toFixed(2)} ${c.accountCurrency ?? ""}`.trim() : "—"}</div>
                 <div><span className="text-muted-foreground">Margin used:</span> {c.margin != null ? `${Number(c.margin).toFixed(2)} ${c.accountCurrency ?? ""}`.trim() : "—"}</div>
                 <div><span className="text-muted-foreground">Margin level:</span> {c.marginLevelPercent != null ? `${c.marginLevelPercent.toFixed(1)}%` : "—"}</div>
-                <div><span className="text-muted-foreground">Snapshot:</span> {c.accountSnapshotFresh ? <span className="text-success">fresh</span> : <span className="text-warning">stale</span>}</div>
+                <div><span className="text-muted-foreground">Snapshot:</span> {c.accountSnapshotFresh
+                  ? <span className="text-success">fresh{c.accountSnapshotAgeSeconds != null ? ` (${c.accountSnapshotAgeSeconds}s old)` : ""}</span>
+                  : <span className="text-warning">{c.accountSnapshotAgeSeconds != null ? `stale (account last synced ${c.accountSnapshotAgeSeconds}s ago)` : c.accountSyncedAt === null ? "never synced" : "stale"}</span>}</div>
                 <div><span className="text-muted-foreground">Last heartbeat:</span> {c.heartbeatAgeSeconds != null ? `${c.heartbeatAgeSeconds}s ago` : "never"}</div>
                 <div><span className="text-muted-foreground">Token …{c.tokenLast4 ?? "?"}</span></div>
               </div>
