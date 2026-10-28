@@ -6,6 +6,7 @@ import { PageShell, SectionHeader } from "@/components/ss/PageShell";
 import { StatusPill } from "@/components/ss/StatusPill";
 import { LoadingState, EmptyState, BlockedState, ErrorState } from "@/components/ss/States";
 import { AdminDiagnosticsGate } from "@/components/admin/AdminDiagnosticsGate";
+import { safeDate } from "@/lib/safeFormat";
 
 type Snapshot = {
   connector_id: string; provider: string; mode: string; connected: boolean;
@@ -46,9 +47,7 @@ function NotReadSnapshot({ snap }: { snap: Snapshot }) {
         {snap.safetyNote && <p className="text-muted-foreground">{snap.safetyNote}</p>}
         {snap.dataQuality.warnings.length > 0 && <ul className="text-amber-600 list-disc pl-5">{snap.dataQuality.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
         {snap.dataQuality.errors.length > 0 && <ul className="text-red-600 list-disc pl-5">{snap.dataQuality.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
-        {snap.generatedAt && (
-          <p className="text-xs text-muted-foreground">Snapshot taken {new Date(snap.generatedAt).toLocaleString()}</p>
-        )}
+        <p className="text-xs text-muted-foreground">Snapshot taken {safeDate(snap.generatedAt, "datetime", "at an unreported time")}</p>
         <p className="text-xs text-muted-foreground italic border-t pt-2">No live execution buttons. Live trading remains disabled.</p>
       </CardContent>
     </Card>

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DisclaimerBanner } from "@/components/compliance/DisclaimerBanner";
+import { safeDate } from "@/lib/safeFormat";
 import {
   Brain,
   Search,
@@ -87,7 +88,7 @@ function RefusalCard({ result }: { result: BrainOutcome }) {
           ARX does not analyse made-up candles, so no direction, levels, confidence or bias is shown until a
           real feed serves enough closed bars.
         </p>
-        <p className="text-xs text-zinc-500">Checked at {new Date(result.timestamp).toLocaleTimeString()}</p>
+        <p className="text-xs text-zinc-500">Checked at {safeDate(result.timestamp, "time", "an unreported time")}</p>
       </CardContent>
     </Card>
   );
@@ -618,7 +619,7 @@ export default function BrainAnalysis() {
           </SectionCard>
 
           <p data-testid="brain-provenance" className="text-center text-xs text-zinc-500">
-            Analysis generated at {new Date(result.timestamp).toLocaleTimeString()} from{" "}
+            Analysis generated at {safeDate(result.timestamp, "time", "an unreported time")} from{" "}
             {typeof result.candleCount === "number" ? `${result.candleCount} ` : ""}1-minute candles served by{" "}
             {candleSourceLabel(result.candleSource)}. Entry, stop loss and take profit are derived from the
             1-minute ATR.
