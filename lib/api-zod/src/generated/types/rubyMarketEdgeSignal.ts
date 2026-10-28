@@ -58,4 +58,6 @@ export interface RubyMarketEdgeSignal {
   expiresAt: string;
   firstSeenAt: string;
   lateReason: string | null;
+  /** Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind. */
+  structureWindow?: number | null;
 }

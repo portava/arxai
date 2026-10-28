@@ -18,7 +18,6 @@ import type {
   PriceZone,
   RubyMarketEdgeSignal,
   RubyMarketReadExplanation,
-  SignalBias,
   SignalDirection,
   SignalEvidenceItem,
   SignalLifecycleStage,
@@ -47,28 +46,83 @@ function zoneText(z: PriceZone | null): string | null {
 
 // ── Plain-English label maps (no internal enum keys ever leak) ─────────────────
 
-const BIAS_LABEL: Record<SignalBias, string> = {
-  BULLISH: "bullish",
-  BEARISH: "bearish",
-  RANGING: "range-bound",
-  MIXED: "mixed",
-  UNCLEAR: "unclear",
-};
-
 const DIRECTION_LABEL: Record<SignalDirection, string> = {
   BUY: "buy",
   SELL: "sell",
   NEUTRAL: "no clear side",
 };
 
-const REGIME_LABEL: Record<MarketRegime, string> = {
-  TRENDING: "trending",
-  RANGING: "range-bound",
-  VOLATILE: "volatile",
-  QUIET: "quiet",
-  BREAKOUT: "breaking out",
-  UNKNOWN: "still unclear",
+// ── Structure sentence (what was measured, from which window) ────────────────
+//
+// The regime (classifyRegime: 20-bar slope / band / range expansion) and the
+// swing structure (readEarlyTrend: last swing highs/lows) are separate
+// classifiers. Owner screenshot 2026-10-27 (V75 1m): "V75 is range-bound and
+// looks bullish" paired the regime word RANGING (small 20-bar drift) with a
+// higher-highs/higher-lows swing read, which reads as a contradiction. The
+// sentence now leads with the swing structure and states the regime as the
+// measurement it is, and names the closed-bar window it ran over.
+
+const SWING_REGIME_CLAUSE: Record<MarketRegime, string> = {
+  TRENDING: ", and price is trending",
+  RANGING: ", but net movement over the last 20 closed bars is small",
+  VOLATILE: ", with bar ranges expanding sharply",
+  QUIET: ", in quiet, compressed trade",
+  BREAKOUT: ", and price is pushing a window extreme",
+  UNKNOWN: "",
 };
+
+const RANGE_REGIME_CLAUSE: Record<MarketRegime, string> = {
+  TRENDING: ", though price is drifting steadily within it",
+  RANGING: "",
+  VOLATILE: ", with bar ranges expanding sharply",
+  QUIET: ", in quiet, compressed trade",
+  BREAKOUT: ", and price is pushing the edge of that band",
+  UNKNOWN: "",
+};
+
+const CHOPPY_REGIME_CLAUSE: Record<MarketRegime, string> = {
+  TRENDING: ", though price is drifting steadily",
+  RANGING: ", and net movement over the last 20 closed bars is small",
+  VOLATILE: ", with bar ranges expanding sharply",
+  QUIET: ", in quiet, compressed trade",
+  BREAKOUT: ", and price is pushing a window extreme",
+  UNKNOWN: "",
+};
+
+/** "M1" → "1m", "H4" → "4h", "D1" → "daily"; aliases pass through. */
+function timeframeWord(tf: string): string {
+  const t = (tf ?? "").trim();
+  let m = /^M(\d+)$/.exec(t);
+  if (m) return `${m[1]}m`;
+  m = /^H(\d+)$/.exec(t);
+  if (m) return `${m[1]}h`;
+  if (t === "D1") return "daily";
+  if (t === "W1") return "weekly";
+  if (t === "MN1") return "monthly";
+  return t;
+}
+
+function structureSentence(signal: RubyMarketEdgeSignal): string {
+  const name = signal.displayName || signal.symbol;
+  const n = signal.structureWindow;
+  const tf = timeframeWord(signal.timeframe);
+  const w = typeof n === "number" && Number.isFinite(n) && n > 0
+    ? ` in the last ${Math.round(n)} closed${tf ? ` ${tf}` : ""} bars`
+    : "";
+  const regime = signal.regime;
+  switch (signal.earlyTrend?.structure) {
+    case "HH_HL":
+      return `${name} shows higher highs and higher lows across its recent swings${w} (bullish structure)${SWING_REGIME_CLAUSE[regime] ?? ""}`;
+    case "LH_LL":
+      return `${name} shows lower highs and lower lows across its recent swings${w} (bearish structure)${SWING_REGIME_CLAUSE[regime] ?? ""}`;
+    case "RANGE":
+      return `${name} is range-bound — price is held in a tight band${w}${RANGE_REGIME_CLAUSE[regime] ?? ""}`;
+    case "CHOPPY":
+      return `${name} shows no clean swing structure${w}${CHOPPY_REGIME_CLAUSE[regime] ?? ""}`;
+    default:
+      return `${name}'s structure is still unclear${w}`;
+  }
+}
 
 const BAND_LONG: Record<ConfidenceBand, string> = {
   NONE: "no",
@@ -160,9 +214,8 @@ function joinAnd(parts: string[]): string {
 
 interface Derived {
   name: string;
-  biasL: string;
   dirL: string;
-  regimeL: string;
+  structureL: string;
   bandLong: string;
   bandShort: string;
   stagePlain: string;
@@ -194,9 +247,8 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
   const newsL: NewsRiskLevel = "none"; // overwritten below if carried
   return {
     name: signal.displayName || signal.symbol,
-    biasL: BIAS_LABEL[signal.bias],
     dirL: DIRECTION_LABEL[signal.direction],
-    regimeL: REGIME_LABEL[signal.regime],
+    structureL: structureSentence(signal),
     bandLong: BAND_LONG[signal.confidenceBand],
     bandShort: BAND_SHORT[signal.confidenceBand],
     stagePlain: STAGE_PLAIN[signal.lifecycleStage],
@@ -329,8 +381,8 @@ function buildMode(
   const whatIsHappening = !d.hasData
     ? `${d.name}: there isn't enough live data yet to read this market.`
     : advanced
-      ? `${d.name} is ${d.regimeL} with a ${d.biasL} bias. Right now ${d.stagePlain}.`
-      : `${d.name} is ${d.regimeL} and looks ${d.biasL}; ${d.stagePlain}.`;
+      ? `${d.structureL}. Right now ${d.stagePlain}.`
+      : `${d.structureL}; ${d.stagePlain}.`;
 
   // why
   let why: string;

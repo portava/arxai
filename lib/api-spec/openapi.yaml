@@ -22426,6 +22426,10 @@ components:
         expiresAt: { type: string }
         firstSeenAt: { type: string }
         lateReason: { type: string, nullable: true }
+        structureWindow:
+          type: integer
+          nullable: true
+          description: Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind.
 
     MeMarketEdgeResp:
       type: object

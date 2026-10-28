@@ -18337,6 +18337,12 @@ export const GetMeMarketEdgeResponse = zod.object({
       expiresAt: zod.string(),
       firstSeenAt: zod.string(),
       lateReason: zod.string().nullable(),
+      structureWindow: zod
+        .number()
+        .nullish()
+        .describe(
+          "Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind.",
+        ),
     })
     .describe(
       "ONE normalized signal object shared by Scanner, Scalp, Ruby, and downstream explanation\/UX. Direction (BUY\/SELL\/NEUTRAL) is always kept separate from edge\/quality. When data is insufficient the read collapses to an honest WATCHING\/UNKNOWN\/NONE state with hasSufficientData=false — never a fabricated number.",

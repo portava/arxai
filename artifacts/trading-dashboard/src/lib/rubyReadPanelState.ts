@@ -165,6 +165,12 @@ export interface ChartRead extends RubyReadServerState {
   /** Canonical code of the timeframe htfBias came from (server-supplied). */
   htfTimeframe?: string | null;
   /**
+   * Bars the server's chart-structure read ran over (a moving-average trend /
+   * location read — a different classifier and window from the scanner's swing
+   * structure). Display-only; absent on older payloads ⇒ no window is named.
+   */
+  structureWindow?: number | null;
+  /**
    * DISPLAY-ONLY child inputs from the server's pattern / trendline detectors on
    * the same closed-candle window. `*Detection` says whether the detector found
    * something, looked and found nothing ("none"), or had too few bars

@@ -51,6 +51,13 @@ export type ChartReadResult = {
   htfBias: StructureBias | null;
   /** The canonical timeframe `htfBias` came from (or would have, when null). */
   htfTimeframe: ChartTimeframe | null;
+  /**
+   * Bars this structure read actually ran over (the input series length). The
+   * chart read is a moving-average trend/location read over this window — a
+   * different classifier and window from the scanner's swing structure — so
+   * surfaces name it rather than present the two biases as one fact.
+   */
+  structureWindow: number;
   dataQuality: "ok" | "insufficient";
   cautions: string[];
 };
@@ -177,6 +184,7 @@ export function analyzeChartStructure(
       riskNote: "Avoid acting on an unread chart. Let the data load, then re-read.",
       htfBias,
       htfTimeframe,
+      structureWindow: rawCandles?.length ?? 0,
       dataQuality: "insufficient",
       cautions: ["Insufficient candle history for a structural read."],
     };
@@ -350,6 +358,7 @@ export function analyzeChartStructure(
     riskNote,
     htfBias,
     htfTimeframe,
+    structureWindow: candles.length,
     dataQuality: "ok",
     cautions,
   };

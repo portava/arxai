@@ -589,8 +589,17 @@ export function buildReasoningFromChartRead(
   const htfClause = htf.bias
     ? `${htfName} ${describeHtfBias(htf.bias)}`
     : `${htf.label ? `Higher-timeframe (${htf.label})` : "Higher-timeframe"} bias not read`;
+  // Name the classifier and window this bias came from (server-supplied count),
+  // so "Mixed" here is not read as contradicting the scanner's swing-structure
+  // "bullish" on the same market — they are different reads over different bars.
+  const windowBars = typeof read.structureWindow === "number" && Number.isFinite(read.structureWindow) && read.structureWindow > 0
+    ? Math.round(read.structureWindow)
+    : null;
+  const chartReadSource = windowBars != null
+    ? ` (moving-average trend read over the last ${windowBars} ${timeframe} bars)`
+    : "";
   const structure = clean(read.bias)
-    ? `${htfClause}; ${read.bias} on ${timeframe}.`
+    ? `${htfClause}; ${read.bias} on ${timeframe}${chartReadSource}.`
     : NOT_ENOUGH;
   const momentum = clean(read.confidence)
     ? `Read confidence ${read.confidence}.`

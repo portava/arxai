@@ -184,3 +184,16 @@ test("V75 1m with 120 trending 15m bars: the wire carries a directional 15m bias
   assert.doesNotMatch(String(cr.why), /Higher-timeframe bias is unclear/);
   assert.match(String(cr.why), /Higher timeframe \(15m\) leans bullish/);
 });
+
+// Owner screenshot 2026-10-27: the chart read's "Mixed on 1m" sat beside the
+// scanner's swing-structure "bullish" with nothing naming the window either
+// came from. The wire now carries the bars the chart-structure read ran over.
+test("the read-chart wire carries the bars the chart-structure read ran over (structureWindow)", async () => {
+  nextCtx = ctx([], "M15");
+  const outcome = await buildRubyStructuralRead({ symbol: "V75", timeframe: "1m" });
+  const cr = outcome.chartRead as Record<string, unknown>;
+  assert.equal(cr.structureWindow, 199);
+  const thin = analyzeChartStructure(series(5, 60_000, Date.now() - 60_000, 6), { htfBias: null, htfTimeframe: "M15" });
+  assert.equal(thin.dataQuality, "insufficient");
+  assert.equal(thin.structureWindow, 5);
+});
