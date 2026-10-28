@@ -168,8 +168,23 @@ function riskAuditSourceNote(scope: string | undefined): string {
 
 type AuditVerdict = { tone: "pass" | "unmeasured" | "tripped"; headline: string };
 
+type HaltRead = { engaged: boolean; sources: string[]; reason: string | null; venues: string[] } | null | undefined;
+
+/** Where an engaged stop switch is released, by which switch it is. */
+export function haltReleaseHint(sources: string[]): string {
+  const parts: string[] = [];
+  if (sources.includes("trader_kill_switch")) {
+    parts.push("Your own kill switch: release it with Resume on Risk Command Center (Audit tab).");
+  }
+  if (sources.includes("safety_core_kill_switch") || sources.includes("platform_emergency_stop")) {
+    parts.push("Platform-wide stop: it halts every trader, and an operator (admin or owner) releases it on the Emergency page.");
+  }
+  return parts.join(" ");
+}
+
 /** The banner may say a check passed only when the server measured it. */
-function riskAuditVerdict(audit: { passed: boolean; closedTradesMeasured?: boolean }): AuditVerdict {
+function riskAuditVerdict(audit: { passed: boolean; closedTradesMeasured?: boolean; tradingHalt?: HaltRead }): AuditVerdict {
+  if (audit.tradingHalt?.engaged) return { tone: "tripped", headline: "New trades are halted: a stop switch is engaged" };
   if (!audit.passed) return { tone: "tripped", headline: "Legacy risk audit: a rule is tripped" };
   if (audit.closedTradesMeasured !== true) {
     return { tone: "unmeasured", headline: "Legacy risk audit: daily / weekly loss and losing streak were not measured" };
@@ -223,6 +238,11 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
           <p className="text-xs text-muted-foreground truncate mt-0.5">
             {audit.reasonsBlocked[0]}
             {audit.reasonsBlocked.length > 1 && ` (+${audit.reasonsBlocked.length - 1} more)`}
+          </p>
+        )}
+        {audit.tradingHalt?.engaged && (
+          <p className="text-xs text-red-300 mt-0.5" data-testid="risk-halt-release">
+            {haltReleaseHint(audit.tradingHalt.sources)}
           </p>
         )}
         {audit.warnings.length > 0 && audit.passed && (
@@ -287,6 +307,12 @@ export default function RiskSettings() {
 
   const { data: settings, isLoading } = useGetRiskSettings();
   const { data: botStatus } = useGetBotStatus();
+  // Same query as the audit banner: it also carries the stop-switch read.
+  const { data: auditForHalt, isError: auditHaltError, isLoading: auditHaltLoading } = useGetRiskAudit(
+    {},
+    { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } }
+  );
+  const halt = auditForHalt?.tradingHalt;
   const updateSettings = useUpdateRiskSettings();
   const applyMode = useApplyRiskMode();
   const setLiveLock = useSetLiveLock();
@@ -508,6 +534,11 @@ export default function RiskSettings() {
           {settings?.liveLocked && (
             <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border">
               <Lock size={12} className="mr-1.5" /> Live Locked
+            </Badge>
+          )}
+          {halt?.engaged && (
+            <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border" data-testid="risk-halt-badge">
+              <XCircle size={12} className="mr-1.5" /> New trades halted
             </Badge>
           )}
           {botStatus?.isPaused && (
@@ -1280,6 +1311,15 @@ export default function RiskSettings() {
               <CardContent className="space-y-2">
                 {[
                   {
+                    label: "Stop switch",
+                    value: halt?.engaged
+                      ? `ENGAGED (${halt.venues.join(", ")})`
+                      : halt
+                        ? "none engaged"
+                        : auditHaltError ? "could not be loaded" : auditHaltLoading ? "loading" : "not read",
+                    ok: halt != null && !halt.engaged,
+                  },
+                  {
                     label: "Bot Mode",
                     value: botStatus?.mode ?? "—",
                     ok: botStatus?.mode === "OFF" || !botStatus?.isRunning,
@@ -1305,7 +1345,7 @@ export default function RiskSettings() {
                     ok: currentMode !== "Aggressive",
                   },
                 ].map((row) => (
-                  <div key={row.label} className="flex items-center justify-between text-xs">
+                  <div key={row.label} className="flex items-center justify-between text-xs" data-testid={`risk-status-row-${row.label}`}>
                     <span className="text-muted-foreground">{row.label}</span>
                     <span className={cn("font-mono font-semibold", row.ok ? "text-success" : "text-yellow-400")}>
                       {row.value}

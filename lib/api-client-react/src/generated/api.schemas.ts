@@ -9400,6 +9400,28 @@ export const RiskAuditScope = {
   ALL_USERS: "ALL_USERS",
 } as const;
 
+export type RiskAuditHaltVenuesItem =
+  (typeof RiskAuditHaltVenuesItem)[keyof typeof RiskAuditHaltVenuesItem];
+
+export const RiskAuditHaltVenuesItem = {
+  PAPER: "PAPER",
+  DEMO: "DEMO",
+  LIVE: "LIVE",
+} as const;
+
+export interface RiskAuditHalt {
+  engaged: boolean;
+  /** Engaged switches, platform-wide ones first (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). */
+  sources: string[];
+  /**
+   * Plain-English reason for the first engaged switch. Null when none is engaged.
+   * @nullable
+   */
+  reason: string | null;
+  /** Venues on which new trades are halted. Empty when none is engaged. */
+  venues: RiskAuditHaltVenuesItem[];
+}
+
 export interface RiskAudit {
   passed: boolean;
   reasonsBlocked: string[];
@@ -9421,6 +9443,8 @@ export interface RiskAudit {
   balanceSource?: RiskAuditBalanceSource;
   /** USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted. */
   scope?: RiskAuditScope;
+  /** The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them. */
+  tradingHalt?: RiskAuditHalt | null;
 }
 
 export interface PositionSizeResult {

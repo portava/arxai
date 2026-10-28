@@ -81,6 +81,14 @@ mock.module("../risk/userRiskSettings.js", { namedExports: {
   updateUserRiskSettings: async () => SETTINGS,
 } });
 
+// The stop switches the pre-trade Risk Governor reads, per venue (PAPER / LIVE).
+type Halt = { engaged: boolean; sources: string[]; reason: string | null };
+const RELEASED: Halt = { engaged: false, sources: [], reason: null };
+let halts: Record<string, Halt> = { PAPER: RELEASED, LIVE: RELEASED };
+mock.module("../safety/tradingHalt.js", { namedExports: {
+  loadTradingHalt: async (a: { venue: string }) => halts[a.venue] ?? RELEASED,
+} });
+
 const { computeRiskAudit } = await import("../riskAudit.js");
 const riskRouter = (await import("../../routes/risk.js")).default;
 
@@ -177,4 +185,55 @@ test("the legacy /mt5/execute check still counts every user's rows, and says so"
   const a = await computeRiskAudit(1000, SETTINGS);
   assert.equal(a.scope, "ALL_USERS");
   assert.equal(a.openTradesCount, 3);
+});
+
+// ── Stop switches ───────────────────────────────────────────────────────────
+// Before: the audit never read the kill switches. After an Emergency Stop on
+// Risk Settings engaged the trader's kill switch, the banner still read a
+// pass and nothing on the page said new trades were halted.
+
+const TRADER_KS: Halt = { engaged: true, sources: ["trader_kill_switch"], reason: "Your kill switch is engaged. Release it to trade again. (Emergency stop from the bot panel)" };
+
+test("GET /risk/audit does not pass while the trader's kill switch is engaged, and names it", async () => {
+  rows = [];
+  halts = { PAPER: TRADER_KS, LIVE: TRADER_KS };
+  try {
+    const res = await fetch(`${base}/api/risk/audit`);
+    assert.equal(res.status, 200);
+    const a = await res.json() as { passed: boolean; reasonsBlocked: string[]; tradingHalt: { engaged: boolean; sources: string[]; venues: string[] } | null };
+    assert.equal(a.passed, false);
+    assert.match(a.reasonsBlocked[0] ?? "", /New trades are halted on PAPER, DEMO, LIVE: Your kill switch is engaged/);
+    assert.deepEqual(a.tradingHalt, { engaged: true, sources: ["trader_kill_switch"], reason: TRADER_KS.reason, venues: ["PAPER", "DEMO", "LIVE"] });
+  } finally {
+    halts = { PAPER: RELEASED, LIVE: RELEASED };
+  }
+});
+
+test("a platform emergency stop halts DEMO / LIVE only, and the audit says which venues", async () => {
+  rows = [];
+  halts = { PAPER: RELEASED, LIVE: { engaged: true, sources: ["platform_emergency_stop"], reason: "The platform emergency stop is engaged by an operator." } };
+  try {
+    const res = await fetch(`${base}/api/risk/audit`);
+    const a = await res.json() as { passed: boolean; reasonsBlocked: string[]; tradingHalt: { venues: string[] } };
+    assert.equal(a.passed, false);
+    assert.deepEqual(a.tradingHalt.venues, ["DEMO", "LIVE"]);
+    assert.match(a.reasonsBlocked[0] ?? "", /^New trades are halted on DEMO, LIVE: The platform emergency stop/);
+  } finally {
+    halts = { PAPER: RELEASED, LIVE: RELEASED };
+  }
+});
+
+test("with every switch released the view reports that it read them", async () => {
+  rows = [];
+  const res = await fetch(`${base}/api/risk/audit`);
+  const a = await res.json() as { passed: boolean; tradingHalt: { engaged: boolean; venues: string[] } | null };
+  assert.equal(a.passed, true);
+  assert.deepEqual(a.tradingHalt, { engaged: false, sources: [], reason: null, venues: [] });
+});
+
+test("the legacy /mt5/execute check does not read the stop switches (its blocking is unchanged)", async () => {
+  rows = [];
+  const a = await computeRiskAudit(1000, SETTINGS);
+  assert.equal(a.tradingHalt, null, "not read: reported as null, never as released");
+  assert.equal(a.passed, true);
 });

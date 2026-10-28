@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { RiskAuditBalanceSource } from "./riskAuditBalanceSource";
+import type { RiskAuditHalt } from "./riskAuditHalt";
 import type { RiskAuditMeasuredFrom } from "./riskAuditMeasuredFrom";
 import type { RiskAuditScope } from "./riskAuditScope";
 
@@ -30,4 +31,6 @@ export interface RiskAudit {
   balanceSource?: RiskAuditBalanceSource;
   /** USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted. */
   scope?: RiskAuditScope;
+  /** The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them. */
+  tradingHalt?: RiskAuditHalt | null;
 }

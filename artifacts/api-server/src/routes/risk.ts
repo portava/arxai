@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { GetRiskSettingsResponse, UpdateRiskSettingsBody } from "@workspace/api-zod";
 import { z } from "zod/v4";
-import { computeRiskAudit } from "../lib/riskAudit.js";
+import { computeRiskAudit, riskAuditHaltFrom } from "../lib/riskAudit.js";
+import { loadTradingHalt } from "../lib/safety/tradingHalt.js";
 import { calculatePositionSize } from "../lib/riskGovernor/positionSizer.js";
 import {
   evaluateDrawdownGuard, evaluateExposureGuard, evaluateMaxLossGuard,
@@ -141,6 +142,14 @@ router.get("/risk/audit", requireUser, async (req, res) => {
     // balanceSource below marks the figure so no consumer can mistake it for
     // a real account balance.
     const accountBalance = 1000;
+    // The trader's stop switches, read as the pre-trade Risk Governor reads
+    // them (fail closed: an unreadable switch counts as engaged). Read only
+    // for this view; nothing here changes what any order path blocks.
+    const userId = req.authUser!.id;
+    const [paperHalt, liveHalt] = await Promise.all([
+      loadTradingHalt({ userId, venue: "PAPER" }),
+      loadTradingHalt({ userId, venue: "LIVE" }),
+    ]);
     const audit = await computeRiskAudit(accountBalance, {
       riskPerTradePct:       settings.riskPerTradePct,
       maxDailyLossPct:       settings.maxDailyLossPct,
@@ -156,7 +165,7 @@ router.get("/risk/audit", requireUser, async (req, res) => {
       stocksBlockEarnings: settings.stocksBlockEarnings,
       forexBlockEvents:    settings.forexBlockEvents,
       vol75ExtraConfidence: settings.vol75ExtraConfidence,
-    }, { countClosedRows: true, userId: req.authUser!.id });
+    }, { countClosedRows: true, userId, halt: riskAuditHaltFrom(paperHalt, liveHalt) });
     return res.json({ ...audit, balanceSource: "PLACEHOLDER_1000" });
   } catch (err) {
     req.log.error(err);

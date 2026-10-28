@@ -47,6 +47,44 @@ export interface RiskAuditOptions {
    * decision left as it was. The /risk/audit view sets it.
    */
   userId?: number;
+  /**
+   * The trader's stop switches as the pre-trade Risk Governor reads them
+   * (lib/safety/tradingHalt.ts). An engaged one halts new trades whatever the
+   * legacy rows say, so the audit cannot pass over it. The /risk/audit view
+   * passes it. The legacy /mt5/execute check does not: adding it there would
+   * change what that gate blocks, an execution decision left as it was.
+   */
+  halt?: RiskAuditHalt;
+}
+
+/** Which stop switches halt this trader's new trades, and on which venues. */
+export interface RiskAuditHalt {
+  engaged: boolean;
+  /** Engaged switches (tradingHalt HaltSource codes), platform-wide ones first. */
+  sources: string[];
+  /** Plain-English reason for the first engaged switch; null when none is engaged. */
+  reason: string | null;
+  /** Venues on which new trades are halted. Empty when none is engaged. */
+  venues: Array<"PAPER" | "DEMO" | "LIVE">;
+}
+
+/**
+ * Combine the governor's PAPER and LIVE halt reads. Every switch that halts
+ * PAPER also halts DEMO / LIVE; the platform emergency stop halts only DEMO /
+ * LIVE (the paper simulator reaches no broker).
+ */
+export function riskAuditHaltFrom(
+  paper: { engaged: boolean; sources: string[]; reason: string | null },
+  live: { engaged: boolean; sources: string[]; reason: string | null },
+): RiskAuditHalt {
+  const engaged = paper.engaged || live.engaged;
+  const src = live.engaged ? live : paper;
+  return {
+    engaged,
+    sources: engaged ? [...src.sources] : [],
+    reason: engaged ? src.reason : null,
+    venues: paper.engaged ? ["PAPER", "DEMO", "LIVE"] : live.engaged ? ["DEMO", "LIVE"] : [],
+  };
 }
 
 export interface RiskAuditResult {
@@ -72,6 +110,8 @@ export interface RiskAuditResult {
   measuredFrom: "LEGACY_TRADES_TABLE";
   /** USER: only the trader's own rows were counted. ALL_USERS: every user's rows. */
   scope: "USER" | "ALL_USERS";
+  /** The stop switches read for this audit (RiskAuditOptions.halt); null when they were not read. */
+  tradingHalt: RiskAuditHalt | null;
 }
 
 export async function computeRiskAudit(
@@ -154,6 +194,13 @@ export async function computeRiskAudit(
 
   // ── Evaluate rules ────────────────────────────────────────────────────────
 
+  // An engaged stop switch halts new trades before any legacy rule applies.
+  if (opts.halt?.engaged) {
+    reasonsBlocked.push(
+      `New trades are halted on ${opts.halt.venues.join(", ") || "your account"}: ${opts.halt.reason ?? "a stop switch is engaged."}`
+    );
+  }
+
   if (dailyLossUsed >= input.maxDailyLossPct) {
     reasonsBlocked.push(
       `Daily loss limit reached: ${dailyLossUsed.toFixed(2)}% used of ${input.maxDailyLossPct}% allowed`
@@ -234,5 +281,6 @@ export async function computeRiskAudit(
     closedTradesMeasured,
     measuredFrom: "LEGACY_TRADES_TABLE",
     scope: scoped ? "USER" : "ALL_USERS",
+    tradingHalt: opts.halt ?? null,
   };
 }

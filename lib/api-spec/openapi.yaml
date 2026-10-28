@@ -18525,6 +18525,31 @@ components:
           type: string
           enum: [USER, ALL_USERS]
           description: USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.
+        tradingHalt:
+          description: The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them.
+          oneOf:
+            - $ref: "#/components/schemas/RiskAuditHalt"
+            - type: "null"
+
+    RiskAuditHalt:
+      type: object
+      required: [engaged, sources, reason, venues]
+      properties:
+        engaged:
+          type: boolean
+        sources:
+          type: array
+          items: { type: string }
+          description: Engaged switches, platform-wide ones first (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch).
+        reason:
+          type: ["string", "null"]
+          description: Plain-English reason for the first engaged switch. Null when none is engaged.
+        venues:
+          type: array
+          items:
+            type: string
+            enum: [PAPER, DEMO, LIVE]
+          description: Venues on which new trades are halted. Empty when none is engaged.
 
     PositionSizeResult:
       type: object

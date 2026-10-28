@@ -4302,6 +4302,33 @@ export const GetRiskAuditResponse = zod.object({
     .describe(
       "USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.",
     ),
+  tradingHalt: zod
+    .union([
+      zod.object({
+        engaged: zod.boolean(),
+        sources: zod
+          .array(zod.string())
+          .describe(
+            "Engaged switches, platform-wide ones first (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch).",
+          ),
+        reason: zod
+          .string()
+          .nullable()
+          .describe(
+            "Plain-English reason for the first engaged switch. Null when none is engaged.",
+          ),
+        venues: zod
+          .array(zod.enum(["PAPER", "DEMO", "LIVE"]))
+          .describe(
+            "Venues on which new trades are halted. Empty when none is engaged.",
+          ),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them.",
+    ),
 });
 
 /**
