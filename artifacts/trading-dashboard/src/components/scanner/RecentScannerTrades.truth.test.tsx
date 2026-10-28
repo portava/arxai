@@ -97,3 +97,97 @@ describe("RecentScannerTrades — title names the source that was read", () => {
     expect(screen.getByTestId("recent-scanner-trades-title").textContent).toMatch(/MT5 Demo/);
   });
 });
+
+// Item: Paper title over MT5 demo commands; the Live Shared empty state
+// promised history this card never loads; a loading mode read as Live Shared.
+describe("RecentScannerTrades — paper, live and unknown modes say what this card reads", () => {
+  it("paper user: demo-command rows are not titled 'Paper' and are named as MT5 demo orders", async () => {
+    mode = {
+      shouldShowDemoPaperCopy: true,
+      shouldShowAdminDiagnostics: false,
+      isLiveShared: false,
+      isDemo: false,
+      isPaper: true,
+      envelope: {},
+    };
+    stubItems([demoCommand()]);
+    render(<RecentScannerTrades />);
+    expect(await screen.findByText("EURUSD")).toBeTruthy();
+    const title = screen.getByTestId("recent-scanner-trades-title").textContent ?? "";
+    expect(title).not.toContain("Paper");
+    expect(title).toMatch(/MT5 Demo/);
+    expect(screen.getByTestId("recent-scanner-trades-source").textContent).toMatch(/MT5 demo orders.*not paper trades/i);
+  });
+
+  it("non-admin Live Shared: nothing is fetched and the copy does not promise future history", async () => {
+    mode = {
+      shouldShowDemoPaperCopy: false,
+      shouldShowAdminDiagnostics: false,
+      isLiveShared: true,
+      isDemo: false,
+      isPaper: false,
+      envelope: {},
+    };
+    const fetchMock = stubItems([demoCommand()]);
+    render(<RecentScannerTrades />);
+    const note = await screen.findByTestId("recent-scanner-trades-not-listed");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(note.textContent).not.toMatch(/will appear here/i);
+    expect(note.textContent).toMatch(/MT5 demo orders only/i);
+    expect(note.textContent).toMatch(/Live Shared.*not listed here/i);
+    expect(screen.queryByTestId("recent-scanner-trades-empty")).toBeNull();
+  });
+
+  it("mode still loading: no Live Shared copy, says the mode is being checked", async () => {
+    mode = {
+      shouldShowDemoPaperCopy: false,
+      shouldShowAdminDiagnostics: false,
+      isLiveShared: false,
+      isDemo: false,
+      isPaper: false,
+      isLoading: true,
+      envelope: null,
+    };
+    stubItems([]);
+    render(<RecentScannerTrades />);
+    const note = await screen.findByTestId("recent-scanner-trades-not-listed");
+    expect(note.textContent).not.toMatch(/Live Shared/);
+    expect(note.textContent).toMatch(/checking your account mode/i);
+  });
+
+  it("mode could not be checked: says so, no Live Shared copy", async () => {
+    mode = {
+      shouldShowDemoPaperCopy: false,
+      shouldShowAdminDiagnostics: false,
+      isLiveShared: false,
+      isDemo: false,
+      isPaper: false,
+      isModeUnknown: true,
+      envelope: null,
+    };
+    stubItems([]);
+    render(<RecentScannerTrades />);
+    const note = await screen.findByTestId("recent-scanner-trades-not-listed");
+    expect(note.textContent).not.toMatch(/Live Shared/);
+    expect(note.textContent).toMatch(/could not be checked/i);
+  });
+
+  it("demo user with no scanner orders: the measured empty state is kept", async () => {
+    stubItems([]);
+    render(<RecentScannerTrades />);
+    expect((await screen.findByTestId("recent-scanner-trades-empty")).textContent).toMatch(/No scanner-originated/);
+  });
+});
+
+describe("RecentScannerTrades — no empty state before the first read", () => {
+  it("while the first read is in flight the card says it is loading, not 'No scanner-originated trades yet'", async () => {
+    let resolve: (r: Response) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((r) => { resolve = r; })));
+    render(<RecentScannerTrades />);
+    expect(screen.getByTestId("recent-scanner-trades-loading")).toBeTruthy();
+    expect(screen.queryByTestId("recent-scanner-trades-empty")).toBeNull();
+    resolve({ ok: true, status: 200, text: async () => JSON.stringify({ items: [] }) } as unknown as Response);
+    expect(await screen.findByTestId("recent-scanner-trades-empty")).toBeTruthy();
+    expect(screen.queryByTestId("recent-scanner-trades-loading")).toBeNull();
+  });
+});

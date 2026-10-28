@@ -44,6 +44,9 @@ export function RecentScannerTrades() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // True once the demo feed has been read successfully; until then an empty
+  // list is "not read yet", not "no trades".
+  const [hasRead, setHasRead] = useState(false);
   const mode = useTradingMode();
   const { name } = useAssistantName();
   const showDemoFeed = mode.shouldShowDemoPaperCopy || mode.shouldShowAdminDiagnostics;
@@ -83,6 +86,7 @@ export function RecentScannerTrades() {
       return payloadStr(c.payload, "scope") !== "TEST";
     });
     setRows(scannerOnly.slice(0, 20));
+    setHasRead(true);
     setErr(null);
     setLoading(false);
   }
@@ -101,6 +105,7 @@ export function RecentScannerTrades() {
   }
 
   useEffect(() => {
+    setHasRead(false);
     void load();
     // Perf: don't poll while the tab is backgrounded; resume immediately on return.
     function tick() {
@@ -130,6 +135,22 @@ export function RecentScannerTrades() {
   // Shown only because admin diagnostics are on, not because the account is
   // in a demo/paper mode.
   const adminDemoView = showDemoFeed && !mode.shouldShowDemoPaperCopy;
+  const sourceNote = adminDemoView
+    ? "Admin diagnostics: these are MT5 demo orders sent from the scanner. They are not Live Shared orders, and Live Shared orders are not listed here."
+    : showDemoFeed && mode.isPaper
+      ? "These are MT5 demo orders sent from the scanner, not paper trades."
+      : null;
+  // The demo feed is not read: say why, and never promise history this card
+  // does not load (it has no live-order source).
+  const notListedCopy = showDemoFeed
+    ? null
+    : mode.isModeUnknown
+      ? "Your account mode could not be checked, so no scanner orders are listed. ARX will check again."
+      : mode.envelope == null
+        ? "Checking your account mode…"
+        : mode.isLiveShared
+          ? "This card lists MT5 demo orders only. Live Shared scanner orders are not listed here."
+          : "Live execution is armed, so MT5 demo orders are not listed here. This card does not list live orders.";
 
   return (
     <Card className="rounded-xl border-border bg-background/40">
@@ -143,9 +164,9 @@ export function RecentScannerTrades() {
         </Button>
       </CardHeader>
       <CardContent className="p-0">
-        {adminDemoView && (
+        {sourceNote && (
           <div className="px-3 pb-1 text-[11px] text-muted-foreground" data-testid="recent-scanner-trades-source">
-            Admin diagnostics: these are MT5 demo orders sent from the scanner. They are not Live Shared orders, and Live Shared orders are not listed here.
+            {sourceNote}
           </div>
         )}
         {err && (
@@ -167,11 +188,19 @@ export function RecentScannerTrades() {
             </Button>
           </div>
         )}
-        {!err && rows.length === 0 && (
+        {notListedCopy && (
+          <div className="text-xs text-muted-foreground px-3 py-3" data-testid="recent-scanner-trades-not-listed">
+            {notListedCopy}
+          </div>
+        )}
+        {showDemoFeed && !err && !hasRead && rows.length === 0 && (
+          <div className="text-xs text-muted-foreground px-3 py-3" data-testid="recent-scanner-trades-loading">
+            Loading scanner orders…
+          </div>
+        )}
+        {showDemoFeed && !err && hasRead && rows.length === 0 && (
           <div className="text-xs text-muted-foreground px-3 py-3" data-testid="recent-scanner-trades-empty">
-            {showDemoFeed
-              ? "No scanner-originated trades yet. Use Buy or Sell on a result card to place one."
-              : "Live Shared scanner trade history will appear here once orders are placed."}
+            No scanner-originated trades yet. Use Buy or Sell on a result card to place one.
           </div>
         )}
         {rows.length > 0 && (
