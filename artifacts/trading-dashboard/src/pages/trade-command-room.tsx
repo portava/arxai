@@ -33,6 +33,7 @@ import {
 import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "@/components/dashboard/cockpit/bridgeObservation";
 import { describeRiskCaps } from "@/components/dashboard/cockpit/riskCapsSummary";
+import { estimateMoneyAtDistance, formatMoneyEstimate } from "@/lib/fxRiskEstimate";
 
 type Opp = {
   symbol: string; timeframe: string; bias: string; recommendedAction: string;
@@ -113,14 +114,13 @@ export default function TradeCommandRoom() {
     setPicked(o); setSymbol(o.symbol); setTimeframe(o.timeframe);
   }
 
-  // Risk approximation — simple display of lot × notional placeholder, using
-  // the existing quote. (Mirrors the mockup's "Risk approx." readout.)
-  // Real risk-at-stop estimate. Only shows a dollar figure when a stop-loss
-  // is set, since risk is undefined without one — we never fabricate a number.
-  //   risk ≈ lots × stop-distance(in pips) × pip-value-per-lot
-  // Pip value uses the standard 100k contract (~$10/pip per 1.0 lot for
-  // 4-digit FX pairs, ~$1000/pip per 1.0 lot for 2-digit JPY pairs). The
-  // server's risk governor remains the source of truth on submit.
+  // Risk-at-stop estimate. Only shown when a stop-loss is set, since risk is
+  // undefined without one. Dollars are computed only for spot FX with USD on
+  // one side on the standard 100k contract (lib/fxRiskEstimate); JPY pairs are
+  // converted at the pair's price, and cross pairs, metals, indices, crypto
+  // and synthetics read "Not estimated" (their contract size is broker
+  // specific). The quote is /api/market/quote (simulator). The server's checks
+  // remain the source of truth on submit.
   const riskApprox = useMemo(() => {
     const l = Number(lot) || 0;
     const sl = Number(stopLoss);
@@ -129,13 +129,7 @@ export default function TradeCommandRoom() {
     if (!stopLoss || !Number.isFinite(sl) || !Number.isFinite(ref) || sl <= 0) {
       return "Set SL";
     }
-    const isJpy = /JPY$/i.test(symbol);
-    const pipSize = isJpy ? 0.01 : 0.0001;
-    const pips = Math.abs(ref - sl) / pipSize;
-    const pipValuePerLot = 10; // ~$10 per pip per 1.0 standard lot
-    const risk = l * pips * pipValuePerLot;
-    if (!Number.isFinite(risk) || risk <= 0) return "—";
-    return `$${risk.toFixed(2)}`;
+    return formatMoneyEstimate(estimateMoneyAtDistance(symbol, l, ref, sl));
   }, [lot, stopLoss, quote, symbol]);
 
   // ── Mode / permission → plain English ───────────────────────────────

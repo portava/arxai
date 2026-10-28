@@ -2,7 +2,7 @@
 // what was read, from where, or that it could not be checked.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 vi.mock("@/components/charts/TradingViewLiveChart", () => ({ default: () => null }));
 vi.mock("@/lib/use-chart-symbol", () => ({
@@ -81,5 +81,31 @@ describe("Manual Trade Ticket — what the submit path checks", () => {
     screen.getByTestId("ticket-submit").click();
     const dialog = await screen.findByTestId("ticket-confirm-dialog");
     expect(dialog.textContent).not.toMatch(/goes through the risk governor/i);
+  });
+});
+
+describe("Manual Trade Ticket — estimated loss / gain", () => {
+  it("EURUSD 0.01 lot with a 20-pip stop reads ≈$2.00, not $0.20", async () => {
+    stubFetch(baseRoutes());
+    await renderSettled();
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("ticket-sl"), { target: { value: "1.083" } });
+      fireEvent.change(screen.getByTestId("ticket-tp"), { target: { value: "1.089" } });
+    });
+    expect(screen.getByTestId("ticket-est-loss").textContent).toBe("≈$2.00");
+    expect(screen.getByTestId("ticket-est-gain").textContent).toBe("≈$4.00");
+    expect(screen.getByTestId("ticket-rr").textContent).toBe("2.00");
+  });
+
+  it("a market without a known contract size says 'Not estimated' instead of a dollar figure", async () => {
+    stubFetch(baseRoutes({ "/api/market/quote/": { body: { symbol: "XAUUSD", bid: 2400, ask: 2400.4, mid: 2400.2, spread: 0.4, volatility: "MEDIUM" } } }));
+    await renderSettled();
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("ticket-symbol"), { target: { value: "XAUUSD" } });
+    });
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    await act(async () => { fireEvent.change(screen.getByTestId("ticket-sl"), { target: { value: "2390" } }); });
+    expect(screen.getByTestId("ticket-quote").textContent).toContain("2400");
+    expect(screen.getByTestId("ticket-est-loss").textContent).toBe("Not estimated");
   });
 });
