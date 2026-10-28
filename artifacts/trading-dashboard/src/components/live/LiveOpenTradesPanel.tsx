@@ -2,8 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Briefcase, TrendingUp, TrendingDown, Wifi, WifiOff, AlertTriangle } from "lucide-react";
-
-const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+import { fetchLiveSlotSummary, lastGoodReadTime } from "./LiveSlotSummaryCard";
 
 type SlotPosition = {
   brokerTicket: string | null;
@@ -88,18 +87,23 @@ function toneFor(v: number | null): string {
 export function LiveOpenTradesPanel() {
   const q = useQuery<SlotSummary>({
     queryKey: ["live", "slot-summary"],
-    queryFn: () => fetch(`${BASE}/api/me/live/slot-summary`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchLiveSlotSummary<SlotSummary>(),
     refetchInterval: 3000,
     refetchOnWindowFocus: false,
     staleTime: 1500,
   });
 
+  // A failed read is never an empty book. On a failed refresh React Query keeps
+  // the last good data; it is shown as "last successful read", never as live.
+  const readFailed = q.isError;
   const ccy = q.data?.accountCurrency ?? "USD";
   const positions = q.data?.positions ?? [];
   const syncIncomplete = q.data?.positionSyncIncomplete === true;
-  // "Live" requires BOTH a fresh bridge heartbeat AND a reliable positions
-  // snapshot; the client may only downgrade the server's isLive.
-  const bookLive = q.data?.isLive === true && !syncIncomplete;
+  // "Live" requires a successful latest read, a fresh bridge heartbeat AND a
+  // reliable positions snapshot; the client may only downgrade the server's isLive.
+  const bookLive = !readFailed && q.data?.isLive === true && !syncIncomplete;
+  const plMuted = (p: SlotPosition) => readFailed || rowPending(p);
+  const plCurrent = (p: SlotPosition) => !readFailed && rowConfirmed(p);
 
   return (
     <Card data-testid="live-open-trades-panel">
@@ -112,7 +116,16 @@ export function LiveOpenTradesPanel() {
           <CardDescription>Floating P/L per position as last reported by the broker (before swap and commission, which the broker does not report).</CardDescription>
         </div>
         <div className="flex items-center gap-2">
-          {bookLive ? (
+          {readFailed ? (
+            <Badge
+              variant="outline"
+              className="text-amber-300 border-amber-500/40 gap-1"
+              data-testid="open-trades-badge-read-failed"
+              title="The latest request for your open trades failed."
+            >
+              <AlertTriangle className="h-3 w-3" /> {q.data ? "Not updating" : "Not loaded"}
+            </Badge>
+          ) : bookLive ? (
             <Badge className="bg-emerald-500/20 text-emerald-300 gap-1" data-testid="open-trades-badge-live"><Wifi className="h-3 w-3" /> Live</Badge>
           ) : q.data?.isLive && syncIncomplete ? (
             <Badge
@@ -137,11 +150,26 @@ export function LiveOpenTradesPanel() {
             <span>{q.data?.snapshotWarning ?? "Position sync incomplete — waiting for broker confirmation."}</span>
           </div>
         )}
+        {readFailed && q.data ? (
+          <div className="mb-3 text-[11px] text-amber-300/90 flex items-start gap-1" role="alert" data-testid="open-trades-refresh-failed">
+            <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+            <span>
+              Could not refresh open trades. Showing the last successful read from {lastGoodReadTime(q.dataUpdatedAt)};
+              positions and P/L may have changed since.
+            </span>
+          </div>
+        ) : null}
         {q.isLoading ? (
           <div className="text-sm text-muted-foreground py-4 text-center">Loading open trades…</div>
+        ) : readFailed && !q.data ? (
+          <div className="text-sm text-amber-300 py-4 text-center" role="alert" data-testid="open-trades-load-error">
+            Open trades could not be loaded — ARX could not read your book from the server. Do not assume you are flat; check MT5 directly.
+          </div>
         ) : positions.length === 0 ? (
           <div className="text-sm text-muted-foreground py-4 text-center" data-testid="open-trades-empty">
-            No open trades right now.
+            {readFailed
+              ? `No open trades at the last successful read (${lastGoodReadTime(q.dataUpdatedAt)}).`
+              : "No open trades right now."}
           </div>
         ) : (
           <>
@@ -161,13 +189,13 @@ export function LiveOpenTradesPanel() {
                     <div><span className="text-muted-foreground">SL/TP</span> {p.stopLoss ?? "—"} / {p.takeProfit ?? "—"}</div>
                   </div>
                   <div className="flex items-center justify-between border-t border-zinc-800 pt-2">
-                    <div className="text-xs text-muted-foreground">{rowConfirmed(p) ? "Current P/L" : "Last reported P/L"}</div>
+                    <div className="text-xs text-muted-foreground">{plCurrent(p) ? "Current P/L" : "Last reported P/L"}</div>
                     <div
-                      className={`text-base font-semibold tabular-nums flex items-center gap-1 ${rowPending(p) ? "text-zinc-400" : toneFor(p.grossProfit)}`}
+                      className={`text-base font-semibold tabular-nums flex items-center gap-1 ${plMuted(p) ? "text-zinc-400" : toneFor(p.grossProfit)}`}
                       data-testid={`open-trade-mobile-pl-${p.brokerTicket ?? "x"}`}
                       title={p.grossProfit == null ? "The broker has not reported floating P/L for this position." : undefined}
                     >
-                      {!rowPending(p) && p.grossProfit != null && p.grossProfit > 0 ? <TrendingUp className="h-3 w-3" /> : !rowPending(p) && p.grossProfit != null && p.grossProfit < 0 ? <TrendingDown className="h-3 w-3" /> : null}
+                      {!plMuted(p) && p.grossProfit != null && p.grossProfit > 0 ? <TrendingUp className="h-3 w-3" /> : !plMuted(p) && p.grossProfit != null && p.grossProfit < 0 ? <TrendingDown className="h-3 w-3" /> : null}
                       {plText(p, ccy)}
                       {p.profitPercentOfSlot != null && (
                         <span className="text-xs text-muted-foreground ml-1">({p.profitPercentOfSlot >= 0 ? "+" : ""}{p.profitPercentOfSlot.toFixed(2)}%)</span>
@@ -222,8 +250,8 @@ export function LiveOpenTradesPanel() {
                       <td className="py-2 pr-2 text-right tabular-nums text-xs">{p.stopLoss ?? "—"} / {p.takeProfit ?? "—"}</td>
                       <td className="py-2 pr-2 text-right tabular-nums text-xs">{p.swap == null ? "—" : fmtMoney(p.swap, ccy)}</td>
                       <td className="py-2 pr-2 text-right tabular-nums text-xs">{p.commission == null ? "—" : fmtMoney(p.commission, ccy)}</td>
-                      <td className={`py-2 pr-2 text-right tabular-nums font-semibold ${rowPending(p) ? "text-zinc-400" : toneFor(p.grossProfit)}`} data-testid={`open-trade-pl-${p.brokerTicket ?? "x"}`}>{plText(p, ccy)}</td>
-                      <td className={`py-2 pr-2 text-right tabular-nums ${rowPending(p) ? "text-zinc-400" : toneFor(p.profitPercentOfSlot)}`}>
+                      <td className={`py-2 pr-2 text-right tabular-nums font-semibold ${plMuted(p) ? "text-zinc-400" : toneFor(p.grossProfit)}`} data-testid={`open-trade-pl-${p.brokerTicket ?? "x"}`}>{plText(p, ccy)}</td>
+                      <td className={`py-2 pr-2 text-right tabular-nums ${plMuted(p) ? "text-zinc-400" : toneFor(p.profitPercentOfSlot)}`}>
                         {p.profitPercentOfSlot == null ? "—" : `${p.profitPercentOfSlot >= 0 ? "+" : ""}${p.profitPercentOfSlot.toFixed(2)}%`}
                       </td>
                       <td

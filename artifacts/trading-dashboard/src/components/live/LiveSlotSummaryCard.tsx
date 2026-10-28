@@ -30,6 +30,22 @@ type SlotSummary = {
   lastUpdated: string | null;
 };
 
+/**
+ * Shared read for the /live-trades slot summary (card + Open Trades panel use
+ * one query key). A non-2xx answer (401 envelope, HTML 500) is a failed read and
+ * throws, so it surfaces as q.isError — it is never parsed into an empty book.
+ */
+export async function fetchLiveSlotSummary<T>(): Promise<T> {
+  const r = await fetch(`${BASE}/api/me/live/slot-summary`, { credentials: "include" });
+  if (!r.ok) throw new Error(`Slot summary request failed (HTTP ${r.status})`);
+  return (await r.json()) as T;
+}
+
+/** Time of the last successful read, for "showing the last successful read from …" copy. */
+export function lastGoodReadTime(dataUpdatedAt: number): string {
+  return dataUpdatedAt > 0 ? new Date(dataUpdatedAt).toLocaleTimeString() : "an earlier read";
+}
+
 function fmtMoney(v: number | null, ccy: string): string {
   if (v == null || !Number.isFinite(v)) return "—";
   const sign = v < 0 ? "-" : "";
@@ -62,11 +78,14 @@ function Stat({ label, value, valueClassName, icon }: {
 export function LiveSlotSummaryCard() {
   const q = useQuery<SlotSummary>({
     queryKey: ["live", "slot-summary"],
-    queryFn: () => fetch(`${BASE}/api/me/live/slot-summary`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchLiveSlotSummary<SlotSummary>(),
     refetchInterval: 3000,
     refetchOnWindowFocus: false,
     staleTime: 1500,
   });
+  // A failed refresh keeps the last good data in q.data; it is shown only as
+  // "last successful read", never as live.
+  const readFailed = q.isError;
 
   if (q.isLoading) {
     return (
@@ -81,14 +100,21 @@ export function LiveSlotSummaryCard() {
     return (
       <Card data-testid="slot-summary-error">
         <CardHeader><CardTitle className="text-base">Your Account</CardTitle></CardHeader>
-        <CardContent><div className="text-sm text-rose-400">Couldn't load your account summary.</div></CardContent>
+        <CardContent>
+          <div className="text-sm text-rose-400">
+            Your account summary could not be loaded — ARX could not read it from the server. Balance, equity and open P/L are unknown, not zero.
+          </div>
+        </CardContent>
       </Card>
     );
   }
 
   const pnl = s.openPnL;
-  const pnlTone = pnl == null ? "text-zinc-400" : pnl > 0 ? "text-emerald-400" : pnl < 0 ? "text-rose-400" : "text-zinc-300";
-  const pnlIcon = pnl != null && pnl > 0
+  // A value from a failed refresh is not coloured as a live move.
+  const pnlTone = pnl == null || readFailed ? "text-zinc-400" : pnl > 0 ? "text-emerald-400" : pnl < 0 ? "text-rose-400" : "text-zinc-300";
+  const pnlIcon = readFailed
+    ? null
+    : pnl != null && pnl > 0
     ? <TrendingUp className="h-3 w-3 text-emerald-400" />
     : pnl != null && pnl < 0
     ? <TrendingDown className="h-3 w-3 text-rose-400" />
@@ -103,12 +129,23 @@ export function LiveSlotSummaryCard() {
           </CardTitle>
           <CardDescription>
             {s.isAllocated
-              ? "Your slotted funds and live floating P/L."
+              ? readFailed
+                ? "Your slotted funds and floating P/L from the last successful read."
+                : "Your slotted funds and live floating P/L."
               : (s.allocationNote ?? "No allocation assigned.")}
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
-          {s.isLive ? (
+          {readFailed ? (
+            <Badge
+              variant="outline"
+              className="text-amber-300 border-amber-500/40 gap-1"
+              data-testid="badge-read-failed"
+              title="The latest request for your account summary failed."
+            >
+              <AlertTriangle className="h-3 w-3" /> Not updating
+            </Badge>
+          ) : s.isLive ? (
             <Badge className="bg-emerald-500/20 text-emerald-300 gap-1" data-testid="badge-live"><Wifi className="h-3 w-3" /> Live</Badge>
           ) : s.isStale ? (
             <Badge variant="outline" className="text-amber-300 border-amber-500/40 gap-1" data-testid="badge-stale"><AlertTriangle className="h-3 w-3" /> Stale</Badge>
@@ -118,6 +155,15 @@ export function LiveSlotSummaryCard() {
         </div>
       </CardHeader>
       <CardContent>
+        {readFailed ? (
+          <div className="mb-3 text-[11px] text-amber-300/90 flex items-start gap-1" role="alert" data-testid="slot-refresh-failed">
+            <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+            <span>
+              Could not refresh your account summary. Showing the last successful read from {lastGoodReadTime(q.dataUpdatedAt)};
+              balance, equity and open P/L may have changed since.
+            </span>
+          </div>
+        ) : null}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <Stat label="Slot Balance" value={fmtMoney(s.balance, s.accountCurrency)} />
           <Stat label="Slot Equity" value={fmtMoney(s.equity, s.accountCurrency)} />
