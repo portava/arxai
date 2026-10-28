@@ -414,24 +414,31 @@ export function startTournament(): { running: boolean } {
 export function tournamentResults() {
   const since = tournamentStartedAt ? Date.parse(tournamentStartedAt) : 0;
   const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since);
-  const byStrategy: Record<string, { n: number; wins: number; losses: number; sumR: number; rgBlocks: number; gradeSum: number; gradeN: number }> = {};
+  const byStrategy: Record<string, { n: number; wins: number; losses: number; sumR: number; grossWinR: number; grossLossR: number; rgBlocks: number; gradeSum: number; gradeN: number }> = {};
   for (const d of arr) {
-    const s = byStrategy[d.strategy] = byStrategy[d.strategy] ?? { n: 0, wins: 0, losses: 0, sumR: 0, rgBlocks: 0, gradeSum: 0, gradeN: 0 };
+    const s = byStrategy[d.strategy] = byStrategy[d.strategy] ?? { n: 0, wins: 0, losses: 0, sumR: 0, grossWinR: 0, grossLossR: 0, rgBlocks: 0, gradeSum: 0, gradeN: 0 };
     s.gradeSum += d.grade; s.gradeN++;
     if (!d.riskGovernor.approved) s.rgBlocks++;
-    if (d.status === "SHADOW_WIN") { s.n++; s.wins++; s.sumR += d.pnlR ?? 0; }
-    else if (d.status === "SHADOW_LOSS") { s.n++; s.losses++; s.sumR += d.pnlR ?? 0; }
+    if (d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS") {
+      const r = d.pnlR ?? 0;
+      s.n++; s.sumR += r;
+      if (d.status === "SHADOW_WIN") s.wins++; else s.losses++;
+      if (r > 0) s.grossWinR += r; else s.grossLossR += -r;
+    }
   }
   const rows = Object.entries(byStrategy).map(([strategy, s]) => {
     const winRate = s.n ? s.wins / s.n : 0;
     const avgR = s.n ? s.sumR / s.n : 0;
-    const profitFactor = s.losses ? Math.max(0, s.sumR + s.losses) / s.losses : s.wins;
-    const expectancy = winRate * Math.max(0, avgR) - (1 - winRate) * 1;
+    // Profit factor = R won / R lost. With nothing lost it cannot be computed
+    // (null), never the win count.
+    const profitFactor = s.grossLossR > 0 ? s.grossWinR / s.grossLossR : null;
+    // Expectancy per tracked trade, in R, is the average R itself.
+    const expectancy = avgR;
     const riskAdj = s.n ? avgR / Math.max(0.5, Math.sqrt(s.n)) : 0;
     return {
       strategy, sample: s.n, winRate: Number((winRate * 100).toFixed(1)),
       avgR: Number(avgR.toFixed(2)),
-      profitFactor: Number(profitFactor.toFixed(2)),
+      profitFactor: profitFactor === null ? null : Number(profitFactor.toFixed(2)),
       expectancy: Number(expectancy.toFixed(2)),
       riskAdjustedReturn: Number(riskAdj.toFixed(2)),
       qualitySetups: s.n,
@@ -510,7 +517,8 @@ function strategyStats(strategy: string) {
   const avgR = tracked.length ? tracked.reduce((a, d) => a + (d.pnlR ?? 0), 0) / tracked.length : 0;
   const dd = maxDrawdownR(arr);
   const rgViolations = arr.filter((d) => !d.riskGovernor.approved).length;
-  const expectancy = winRate * Math.max(0, avgR) - (1 - winRate);
+  // Expectancy per tracked trade, in R, is the average R itself.
+  const expectancy = avgR;
   return { sample: arr.length, tracked: tracked.length, winRate, avgR, drawdownR: dd, rgViolations, expectancy };
 }
 

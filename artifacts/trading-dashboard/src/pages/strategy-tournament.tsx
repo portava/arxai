@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Swords } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
-type Row = { strategy: string; sample: number; winRate: number; avgR: number; profitFactor: number; expectancy: number; riskAdjustedReturn: number; qualitySetups: number; confidenceAccuracy: number; riskDiscipline: number; tradeGradeAvg: number };
+type Row = { strategy: string; sample: number; winRate: number; avgR: number; profitFactor: number | null; expectancy: number; riskAdjustedReturn: number; qualitySetups: number; confidenceAccuracy: number; riskDiscipline: number; tradeGradeAvg: number };
 type Result = { running: boolean; startedAt: string | null; ranked: Row[]; leaderboard: Record<string, string | null> };
 
 async function api(path: string, init?: RequestInit) {
@@ -89,7 +89,7 @@ export default function StrategyTournament() {
                       <td>{row.sample}</td>
                       <td>{row.winRate}</td>
                       <td>{row.avgR}</td>
-                      <td>{row.profitFactor}</td>
+                      <td title={row.profitFactor == null ? "No R lost yet, so profit factor cannot be computed" : undefined}>{row.profitFactor ?? "n/a"}</td>
                       <td>{row.expectancy}</td>
                       <td>{row.riskAdjustedReturn}</td>
                       <td>{row.confidenceAccuracy}</td>
