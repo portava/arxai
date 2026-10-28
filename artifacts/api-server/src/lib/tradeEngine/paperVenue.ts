@@ -299,8 +299,9 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
   if (!slOk || !tpOk) return { ok: false, reason: "INVALID_SLTP_GEOMETRY", entryPrice: px };
   // Pre-trade Risk Governor: the same rules a live order faces, priced
   // against the paper simulator's market.
+  const entryOrigin = paperEntryOrigin(a.origin, a.decisionId);
   const risk = await enforcePreTradeRisk({
-    userId: a.userId, venue: "PAPER", origin: paperEntryOrigin(a.origin, a.decisionId), action: "OPEN",
+    userId: a.userId, venue: "PAPER", origin: entryOrigin, action: "OPEN",
     symbol: a.symbol, side: a.side, lots: a.lots,
     entryPrice: q ? null : a.entryPrice, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
     ...(a.intentRef ? { intentRef: a.intentRef } : {}),
@@ -453,8 +454,9 @@ export interface PaperFillOpenArgs {
  * their own refusal envelopes.
  */
 export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; order: PaperOrderRow; risk: EnforceResult } | PaperFillBlocked> {
+  const entryOrigin = paperEntryOrigin(a.origin, a.decisionId);
   const risk = await enforcePreTradeRisk({
-    userId: a.userId, venue: "PAPER", origin: paperEntryOrigin(a.origin, a.decisionId), action: "OPEN",
+    userId: a.userId, venue: "PAPER", origin: entryOrigin, action: "OPEN",
     symbol: a.symbol, side: a.side, lots: a.lots,
     ...("governedEntryPrice" in a ? { entryPrice: a.governedEntryPrice } : {}),
     stopLoss: a.stopLoss, takeProfit: a.takeProfit,

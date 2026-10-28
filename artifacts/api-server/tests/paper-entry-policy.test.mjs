@@ -155,19 +155,7 @@ test('keyed concurrent paper retries commit one order and one outcome trail', as
   const { spawnSync } = await import('node:child_process');
   // Exercise the existing internal keyed contract used by Trade Action Center.
   // The child inherits this lane's disposable DB and network-blocking preload.
-  const code = `
-    import assert from 'node:assert/strict';
-    import { openPaperOrder, getMockPrice } from './src/lib/tradeEngine/paperVenue.ts';
-    const price = getMockPrice('EURUSD', Date.now());
-    const input = {userId:${trader.id}, paperAccountId:${trader.accountId}, symbol:'EURUSD', side:'BUY', orderType:'MARKET', lots:0.01, entryPrice:null, stopLoss:price*0.97, takeProfit:price*1.06, strategyId:null, tradePlanId:null, decisionId:null, caller:'isolated keyed retry', clientRequestKey:'qa-keyed-retry'};
-    const results = await Promise.all(Array.from({length:4}, () => openPaperOrder(input)));
-    assert.ok(results.every(r => r.ok), JSON.stringify(results));
-    assert.equal(new Set(results.map(r => r.order.id)).size, 1);
-    assert.equal((await openPaperOrder(input)).order.id, results[0].order.id);
-    console.log('KEYED_RETRY_ASSERTIONS_PASSED');
-    process.exit(0);
-  `;
-  const run = spawnSync(process.execPath, ['--import','tsx','--input-type=module','-e',code], { encoding:'utf8', timeout:30000 });
+  const run = spawnSync(process.execPath, ['--import','tsx','tests/support/keyed-paper-retry.mts', String(trader.id), String(trader.accountId)], { encoding:'utf8', timeout:30000 });
   assert.equal(run.status, 0, run.stderr + run.stdout);
   assert.match(run.stdout, /KEYED_RETRY_ASSERTIONS_PASSED/);
   const orders = await paperOrdersOf(client, trader.id);
