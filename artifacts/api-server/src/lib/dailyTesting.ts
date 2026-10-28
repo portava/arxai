@@ -384,11 +384,34 @@ export async function weeklySummary() {
     averageTradeGrade: avg(weekDecisions.map((d) => d.tradeGrade ?? 0)),
     simulatedPnl: pnlSummary("DEMO_SIMULATOR")?.closedRealizedPnL ?? 0,
     riskGovernorBlocks: weekRisk.filter((e) => e.severity === "BLOCK").length,
-    mt5SetupStatus: { connected: false, deferred: true, ready: false, note: "MT5 bridge deferred until desktop/VPS connected." },
+    mt5SetupStatus: mt5SetupStatusFrom(r),
     readinessScore: readinessNow,
     releaseReady: releaseReadyNow,
     conclusion,
   };
+}
+
+/**
+ * The weekly report's MT5 line, from the readiness report's MT5 observation
+ * (mt5Connected at evaluatedAt). connected is null when it was not checked.
+ */
+export function mt5SetupStatusFrom(
+  r: { mt5Connected: boolean | null; evaluatedAt: string } | null,
+): { connected: boolean | null; deferred: boolean; ready: false; checkedAt: string | null; note: string } {
+  if (!r) {
+    return { connected: null, deferred: true, ready: false, checkedAt: null,
+      note: "MT5 feed state could not be checked: the readiness report could not be loaded." };
+  }
+  if (r.mt5Connected === true) {
+    return { connected: true, deferred: false, ready: false, checkedAt: r.evaluatedAt,
+      note: `MT5 feed observed connected (checked ${r.evaluatedAt}).` };
+  }
+  if (r.mt5Connected === false) {
+    return { connected: false, deferred: true, ready: false, checkedAt: r.evaluatedAt,
+      note: `MT5 feed observed not connected (checked ${r.evaluatedAt}). MT5 bridge deferred until desktop/VPS connected.` };
+  }
+  return { connected: null, deferred: true, ready: false, checkedAt: r.evaluatedAt,
+    note: `MT5 feed state could not be checked (${r.evaluatedAt}).` };
 }
 
 function decideWeeklyConclusion(args: { bugsOpenP0P1: number; sessionsCompleted: number; readinessNow: number }):

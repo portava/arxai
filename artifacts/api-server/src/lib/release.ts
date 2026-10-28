@@ -22,12 +22,18 @@ export const RELEASE_STAGE = "BETA_TESTER" as const;
  */
 const SERVER_STARTED_AT = new Date().toISOString();
 
-export function versionEnvelope() {
+/**
+ * "MT5 deferred" means the MT5 feed was not observed connected (as routes/mt5.ts
+ * reports it: mt5Deferred = !fresh). Pass the observed state when there is one;
+ * without it (a sync caller that only wants .version) nothing was observed, so
+ * the feed was not observed connected.
+ */
+export function versionEnvelope(observedMt5Connected?: boolean | null) {
   return {
     version: APP_VERSION,
     stage: RELEASE_STAGE,
     fullTesterAccess: true,
-    mt5Deferred: true,
+    mt5Deferred: observedMt5Connected !== true,
     realBrokerExecutionAvailable: false,
     canPlaceTrades: false,
     lastUpdated: SERVER_STARTED_AT,
@@ -50,6 +56,16 @@ async function observeMt5Connected(): Promise<boolean | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The version envelope with its MT5 fields read now: mt5Deferred follows the
+ * observed feed, mt5Connected is null when it could not be read, and
+ * mt5CheckedAt says when. The rest of the envelope is static (server start).
+ */
+export async function observedVersionEnvelope() {
+  const mt5Connected = await observeMt5Connected();
+  return { ...versionEnvelope(mt5Connected), mt5Connected, mt5CheckedAt: new Date().toISOString() };
 }
 
 export async function evaluateGates(): Promise<{
@@ -93,18 +109,20 @@ export async function evaluateGates(): Promise<{
   const recent = await listAudit({ limit: 25 });
   push("audit_pass", "Audit pass", Array.isArray(recent));
 
-  // MT5 deferred honesty — the "MT5 deferred" claim holds only while the MT5
-  // feed is observed NOT connected. Connected or unreadable ⇒ not PASS.
+  // MT5 status honesty — the report's MT5 fields (mt5Connected, mt5Deferred)
+  // come from this observation, so they hold whether the feed is connected or
+  // not: a connected feed is not a release failure. Unreadable ⇒ not PASS,
+  // because the report cannot say which it is.
   const checkedAt = new Date().toISOString();
   const mt5Connected = await observeMt5Connected();
   push(
     "mt5_deferred_honesty_pass",
-    "MT5 deferred honesty",
-    mt5Connected === false,
+    "MT5 status reported from observation",
+    mt5Connected !== null,
     mt5Connected === false
-      ? `MT5 feed observed not connected (checked ${checkedAt})`
+      ? `MT5 feed observed not connected (checked ${checkedAt}); reported as deferred`
       : mt5Connected === true
-        ? `MT5 feed observed connected (checked ${checkedAt}) — the "MT5 deferred" claim does not match`
+        ? `MT5 feed observed connected (checked ${checkedAt}); reported as connected, not deferred`
         : `MT5 feed state could not be checked (${checkedAt})`,
   );
 
@@ -142,7 +160,8 @@ export async function readinessReport() {
     evaluatedAt,
     /** Observed MT5 feed state at evaluation; null = could not be checked. */
     mt5Connected,
-    mt5Deferred: true,
+    /** Not observed connected (same observation as mt5Connected, at evaluatedAt). */
+    mt5Deferred: mt5Connected !== true,
     realBrokerExecutionAvailable: false,
   };
 }

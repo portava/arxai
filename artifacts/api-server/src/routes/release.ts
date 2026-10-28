@@ -10,13 +10,14 @@ import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireRole, getSessionFromReq } from "../lib/security/session.js";
 import { auditEvent } from "../lib/systemHealth/audit.js";
-import { versionEnvelope, readinessReport, diagnosticsPackage, listFeedback } from "../lib/release.js";
+import { versionEnvelope, observedVersionEnvelope, readinessReport, diagnosticsPackage, listFeedback } from "../lib/release.js";
 import { runAcceptance, getLastAcceptance, setLastAcceptance } from "../lib/acceptance.js";
 
 const router = Router();
 
-router.get("/release/version", (_req, res) => {
-  res.json(versionEnvelope());
+router.get("/release/version", async (_req, res) => {
+  // mt5Deferred follows the MT5 feed observed now (mt5Connected, mt5CheckedAt).
+  res.json(await observedVersionEnvelope());
 });
 
 router.get("/release/readiness", async (_req, res) => {
