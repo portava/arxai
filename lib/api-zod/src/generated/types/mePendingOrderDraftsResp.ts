@@ -9,5 +9,8 @@ import type { MePendingOrderDraftItem } from "./mePendingOrderDraftItem";
 
 export interface MePendingOrderDraftsResp {
   ok?: boolean;
+  /** When the bridge was read for currentPendingStatus; null when it could not be read. */
+  bridgeCheckedAt?: Date | null;
+  bridgeCheckError?: string | null;
   drafts?: MePendingOrderDraftItem[];
 }

@@ -22174,10 +22174,21 @@ components:
         status: { type: string }
         reason: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
+        currentPendingStatus:
+          type: string
+          nullable: true
+          description: What POST /me/pending-order-draft/{id}/submit would answer for the user's bridge at bridgeCheckedAt (same resolver). pendingStatus is the stored answer from when the draft was saved or last submitted. Null when the bridge could not be read, or the draft is not in a refusal state (placed, queued, cancelled).
+        currentPendingReason: { type: string, nullable: true }
     MePendingOrderDraftsResp:
       type: object
       properties:
         ok: { type: boolean }
+        bridgeCheckedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the bridge was read for currentPendingStatus; null when it could not be read.
+        bridgeCheckError: { type: string, nullable: true }
         drafts:
           type: array
           items: { $ref: "#/components/schemas/MePendingOrderDraftItem" }

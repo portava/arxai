@@ -17150,6 +17150,13 @@ export const CreateMePendingOrderDraftResponse = zod.object({
  */
 export const GetMePendingOrderDraftsResponse = zod.object({
   ok: zod.boolean().optional(),
+  bridgeCheckedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "When the bridge was read for currentPendingStatus; null when it could not be read.",
+    ),
+  bridgeCheckError: zod.string().nullish(),
   drafts: zod
     .array(
       zod.object({
@@ -17168,6 +17175,13 @@ export const GetMePendingOrderDraftsResponse = zod.object({
         status: zod.string().optional(),
         reason: zod.string().nullish(),
         createdAt: zod.coerce.date().optional(),
+        currentPendingStatus: zod
+          .string()
+          .nullish()
+          .describe(
+            "What POST \/me\/pending-order-draft\/{id}\/submit would answer for the user's bridge at bridgeCheckedAt (same resolver). pendingStatus is the stored answer from when the draft was saved or last submitted. Null when the bridge could not be read, or the draft is not in a refusal state (placed, queued, cancelled).",
+          ),
+        currentPendingReason: zod.string().nullish(),
       }),
     )
     .optional(),

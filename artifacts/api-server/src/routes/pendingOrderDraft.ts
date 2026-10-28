@@ -81,6 +81,14 @@ type BridgeConnRow = {
 
 const DRAFT_SAVED = "Pending order saved as a validated draft; it has not been sent to your broker.";
 
+// Stored pendingStatus values that are a refusal answer from the bridge
+// check (not a queued / placed / cancelled outcome), so a "what would submit
+// answer now" read is meaningful for them.
+const REFUSAL_STATUSES = new Set<string>([
+  "BRIDGE_DISCONNECTED", "BRIDGE_UNSUPPORTED", "EA_UPGRADE_REQUIRED", "READ_ONLY",
+  "LIVE_LOCKED", "BLOCKED_BY_PAPER_LOCK", "TRADING_DISABLED",
+]);
+
 function resolveRoutePendingStatus(
   conn: BridgeConnRow | null,
   needsStopLimit: boolean,
@@ -327,8 +335,39 @@ router.get("/me/pending-order-drafts", async (req, res): Promise<void> => {
       .orderBy(desc(tradeActionRequestsTable.createdAt))
       .limit(50);
 
+    // A draft's stored pendingStatus is the bridge answer from when it was
+    // saved or last submitted (only /submit rewrites it). Alongside it, say
+    // what the submit gate answers for this bridge now, and when that was
+    // read — never rewriting the stored row. An unreadable bridge leaves the
+    // list loadable and says the current answer could not be checked.
+    let conn: BridgeConnRow | null = null;
+    let bridgeCheckedAt: string | null = null;
+    let bridgeCheckError: string | null = null;
+    try {
+      const connRows = await listUserConnections(userId, { order: "oldest", limit: 1 });
+      conn = connRows[0] ?? null;
+      bridgeCheckedAt = new Date().toISOString();
+    } catch (e) {
+      req.log?.warn?.({ err: (e as Error).message, userId }, "pending-order-drafts bridge read failed");
+      bridgeCheckError = "Your MT5 bridge status could not be read, so what a submit would answer now is not shown.";
+    }
+    const nowMs = Date.now();
+    const currentFor = (r: { pendingStatus: string | null; status: string; orderType: string | null }) => {
+      if (bridgeCheckedAt == null || r.status === "cancelled" || !REFUSAL_STATUSES.has(String(r.pendingStatus))) {
+        return { currentPendingStatus: null, currentPendingReason: null };
+      }
+      const now = resolveRoutePendingStatus(
+        conn,
+        r.orderType === "BUY_STOP_LIMIT" || r.orderType === "SELL_STOP_LIMIT",
+        nowMs,
+      );
+      return { currentPendingStatus: now.status, currentPendingReason: now.reason };
+    };
+
     res.status(200).json({
       ok: true,
+      bridgeCheckedAt,
+      bridgeCheckError,
       drafts: rows.map((r) => ({
         id: r.id,
         orderType: r.orderType,
@@ -345,6 +384,7 @@ router.get("/me/pending-order-drafts", async (req, res): Promise<void> => {
         status: r.status,
         reason: r.reason,
         createdAt: r.createdAt.toISOString(),
+        ...currentFor(r),
       })),
       ...SAFETY,
     });

@@ -13815,10 +13815,16 @@ export interface MePendingOrderDraftItem {
   status?: string;
   reason?: string | null;
   createdAt?: string;
+  /** What POST /me/pending-order-draft/{id}/submit would answer for the user's bridge at bridgeCheckedAt (same resolver). pendingStatus is the stored answer from when the draft was saved or last submitted. Null when the bridge could not be read, or the draft is not in a refusal state (placed, queued, cancelled). */
+  currentPendingStatus?: string | null;
+  currentPendingReason?: string | null;
 }
 
 export interface MePendingOrderDraftsResp {
   ok?: boolean;
+  /** When the bridge was read for currentPendingStatus; null when it could not be read. */
+  bridgeCheckedAt?: string | null;
+  bridgeCheckError?: string | null;
   drafts?: MePendingOrderDraftItem[];
 }
 
