@@ -98,4 +98,18 @@ describe("Shadow Mode", () => {
     expect(screen.getByText(/no stop or target proposed/i)).toBeTruthy();
     expect(screen.queryByText(/sl 1\.08/)).toBeNull();
   });
+
+  it("ideas nobody tracked say so, and the untracked count is shown", async () => {
+    bodies["/api/shadow-mode/status"] = { ...STATUS, priceSource: "SYNTHETIC_SIMULATOR", untracked: 2 };
+    bodies["/api/shadow-mode/decisions"] = { decisions: [
+      { ...WAIT_DEC, id: "a", action: "BUY", sl: 1.08, tp: 1.095, status: "SHADOW_EXPIRED",
+        outcomeAt: "2026-10-01T10:02:00Z", untrackedReason: "TRACKING_STOPPED" },
+      { ...WAIT_DEC, id: "b", action: "BUY", sl: 1.08, tp: 1.095, status: "SHADOW_TRADE_IDEA",
+        untrackedReason: "TRACKER_NOT_RUNNING" },
+    ] };
+    await show(<ShadowMode />);
+    expect(screen.getByText(/shadow mode was stopped at .*before this idea reached its stop or target/i)).toBeTruthy();
+    expect(screen.getByText(/shadow mode was stopped when this decision was made/i)).toBeTruthy();
+    expect(screen.getByText("Outcome not tracked").nextSibling?.textContent).toBe("2");
+  });
 });

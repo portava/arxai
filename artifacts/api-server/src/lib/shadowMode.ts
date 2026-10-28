@@ -52,6 +52,13 @@ export interface ShadowDecision {
   riskGovernor: { approved: boolean; level: string; hardBlocks: string[]; warnings: string[] };
   reason: string; reasonToAvoid: string;
   status: ShadowStatus; expiresAt: string; pnlR?: number; outcomeAt?: string;
+  /**
+   * Set when nothing tracked (or kept tracking) this idea's outcome:
+   * TRACKING_STOPPED — shadow mode was stopped while it was open (closed as
+   * SHADOW_EXPIRED at outcomeAt, no R measured); TRACKER_NOT_RUNNING — it was
+   * made while shadow mode was stopped (SHADOW_TRADE_IDEA, never tracked).
+   */
+  untrackedReason?: "TRACKING_STOPPED" | "TRACKER_NOT_RUNNING";
   dataSource: "SHADOW";
   /**
    * R7 step 4 — feature provenance. `featureSetId` pins WHICH shared-engine
@@ -125,6 +132,13 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
     action === "WAIT" ? "SHADOW_WAIT"
       : !rg.approved ? "SHADOW_REJECTED"
       : "SHADOW_TRACKING_OUTCOME";
+  // Only the outcome tracker (running while shadow mode runs) resolves an
+  // idea. With it stopped, the idea is recorded but never claimed as tracked.
+  let untrackedReason: ShadowDecision["untrackedReason"];
+  if (status === "SHADOW_TRACKING_OUTCOME" && !trackTimer) {
+    status = "SHADOW_TRADE_IDEA";
+    untrackedReason = "TRACKER_NOT_RUNNING";
+  }
 
   // R7 step 4 — stamp the decision with the shared feature engine's snapshot,
   // computed from the SAME candles the strategy scan above consumed (never a
@@ -155,6 +169,7 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
     riskGovernor: { approved: rg.approved, level: rg.riskLevel, hardBlocks: rg.hardBlocks, warnings: rg.warnings },
     reason: scan.reason, reasonToAvoid: rg.hardBlocks.join("; ") || scan.riskWarning || "",
     status, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    ...(untrackedReason ? { untrackedReason } : {}),
     dataSource: "SHADOW",
     featureSetId: FEATURE_SET_ID,
     featureSnapshot,
@@ -225,7 +240,17 @@ export function stopShadowMode() {
   shadowEnabled = false;
   if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
   if (trackTimer) { clearInterval(trackTimer); trackTimer = null; }
-  return { running: false };
+  // Nothing tracks an open idea after Stop, so none may keep reading as
+  // "tracking": each is closed as expired with no measured R, and says why.
+  const at = new Date().toISOString();
+  let closedUntracked = 0;
+  for (const d of decisions.values()) {
+    if (d.status !== "SHADOW_TRACKING_OUTCOME") continue;
+    d.status = "SHADOW_EXPIRED"; d.outcomeAt = at; d.untrackedReason = "TRACKING_STOPPED";
+    persistOutcome(d);
+    closedUntracked++;
+  }
+  return { running: false, closedUntracked };
 }
 export function shadowStatus() {
   const arr = [...decisions.values()];
@@ -239,6 +264,9 @@ export function shadowStatus() {
     expired: arr.filter((d) => d.status === "SHADOW_EXPIRED").length,
     rejected: arr.filter((d) => d.status === "SHADOW_REJECTED").length,
     waits: arr.filter((d) => d.status === "SHADOW_WAIT").length,
+    // Ideas whose outcome nothing tracked (stopped mid-way, or made while stopped).
+    untracked: arr.filter((d) => d.untrackedReason).length,
+    trackerRunning: trackTimer !== null,
     // Every candle and quote shadow mode reads comes from the built-in
     // synthetic market simulator, not a live feed or broker.
     priceSource: SYNTHETIC_SIMULATOR_SOURCE,
