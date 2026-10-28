@@ -10,7 +10,8 @@
 import { and, desc, eq, gte } from "drizzle-orm";
 import { db, userRiskEventsTable, userRiskSettingsTable } from "@workspace/db";
 import { buildRiskContext } from "./enforce.js";
-import type { RiskContext, RiskVenue } from "./preTrade.js";
+import { tradingDayStart, type RiskContext, type RiskVenue } from "./preTrade.js";
+import { readActivePaperAccount, sumPaperRealizedSince } from "../tradeEngine/paperBookReader.js";
 import { getOrCreateRiskSettings } from "./riskEvents.js";
 import { loadPlatformHalt } from "../safety/tradingHalt.js";
 
@@ -53,6 +54,24 @@ export interface PropFirmConfig {
   newsTradingAllowed: boolean;
   weekendHoldingAllowed: boolean;
   consistencyRulePctOfTotal: number;
+  /**
+   * Where the challenge is measured from: the paper account and its stored
+   * equity when the challenge was started (turned on, or Reset). Set by
+   * configurePropFirm only; null/absent = not recorded, so progress cannot be
+   * measured (a challenge saved before this was tracked, or started with no
+   * active paper account).
+   */
+  challengeStart?: PropFirmChallengeStart | null;
+}
+
+export interface PropFirmChallengeStart {
+  /** When the challenge was started (ISO). */
+  at: string;
+  paperAccountId: number;
+  /** The paper account's stored equity at that moment … */
+  equity: number;
+  /** … and when that equity was last marked (paper_accounts.updated_at, ISO). */
+  equityAsOf: string;
 }
 
 export const DEFAULT_PROP_FIRM: PropFirmConfig = {
@@ -76,10 +95,23 @@ export async function applyRiskPreset(userId: number, preset: RiskPreset) {
  * lot and position caps become the trader's limits (drawdown as a percent of
  * the challenge balance). Turning it off keeps the limits until the trader
  * changes them, so switching off never silently loosens protection.
+ *
+ * The challenge is measured from the active paper account's equity when it
+ * starts: turning the mode on, `restart` (Reset), or saving an enabled
+ * challenge that has no recorded start. Editing an enabled challenge keeps
+ * its start, so progress is not wiped by changing a target.
  */
-export async function configurePropFirm(userId: number, patch: Partial<PropFirmConfig>) {
+export async function configurePropFirm(userId: number, patch: Partial<PropFirmConfig>, opts: { restart?: boolean } = {}) {
   const current = await getOrCreateRiskSettings(userId);
-  const cfg: PropFirmConfig = { ...DEFAULT_PROP_FIRM, ...((current.propFirm as Partial<PropFirmConfig> | null) ?? {}), ...patch };
+  const prev = (current.propFirm as Partial<PropFirmConfig> | null) ?? {};
+  const { challengeStart: _clientStart, ...edits } = patch;
+  const cfg: PropFirmConfig = { ...DEFAULT_PROP_FIRM, ...prev, ...edits };
+  if (cfg.enabled && (opts.restart || !prev.enabled || !prev.challengeStart)) {
+    const acct = await readActivePaperAccount(userId);
+    cfg.challengeStart = acct
+      ? { at: new Date().toISOString(), paperAccountId: acct.id, equity: acct.equity, equityAsOf: acct.updatedAt.toISOString() }
+      : null;
+  }
   const limits = cfg.enabled ? {
     maxDailyLossAmount: cfg.maxDailyDrawdownUsd,
     maxDrawdownPercent: cfg.startingBalance > 0 ? Number(((cfg.maxTotalDrawdownUsd / cfg.startingBalance) * 100).toFixed(2)) : null,
@@ -146,36 +178,67 @@ export interface PropFirmRuleNotChecked { rule: string; reason: string }
 /**
  * Prop-firm progress on the paper ledger, against the trader's stored challenge.
  *
- * A rule is scored (passed / failed) only from a measured paper equity. When
- * equity cannot be read (no active paper account) nothing is measured: the
- * money figures are null, no rule is passed or failed, each such rule is in
- * `notChecked` with the reason, and an enabled challenge reads NOT_MEASURED,
- * never ACTIVE.
+ * Measured from the challenge start (config.challengeStart): profit is the
+ * active paper account's stored equity minus its equity when the challenge
+ * started, and today's drawdown counts paper P/L settled since the later of
+ * the trading day's start and the challenge start, plus the current floating
+ * loss. Equity is the account's last stored mark (equityAsOf).
+ *
+ * A rule is scored (passed / failed) only when that measurement exists. With
+ * no active paper account, no recorded challenge start, or a start on a
+ * different paper account, nothing is measured: the money figures are null,
+ * no rule is passed or failed, each such rule is in `notChecked` with the
+ * reason, and an enabled challenge reads NOT_MEASURED, never ACTIVE.
  */
-export async function propFirmStatus(userId: number) {
+export async function propFirmStatus(userId: number, now: Date = new Date()) {
   const settings = await getOrCreateRiskSettings(userId);
   const cfg: PropFirmConfig = { ...DEFAULT_PROP_FIRM, ...((settings.propFirm as Partial<PropFirmConfig> | null) ?? {}) };
-  const ov = await riskOverview(userId, "PAPER");
-  const equity = ov.budget.equity;
+  const acct = await readActivePaperAccount(userId);
+  const start = cfg.challengeStart ?? null;
   const passed: string[] = []; const failed: string[] = [];
   const notChecked: PropFirmRuleNotChecked[] = [];
-  const base = { config: cfg, equitySource: "paper_ledger" as const };
+  const notes: string[] = [];
+  const base = {
+    config: cfg, equitySource: "paper_ledger" as const,
+    paperAccountId: acct?.id ?? null,
+    equityUsd: acct ? r2(acct.equity) : null,
+    /** When the paper account's equity was last marked; equity is not re-read live. */
+    equityAsOf: acct ? acct.updatedAt.toISOString() : null,
+    challengeStartedAt: start?.at ?? null,
+    startEquityUsd: start ? r2(start.equity) : null,
+  };
 
-  if (equity == null) {
-    const reason = "No active paper account, so paper equity could not be read.";
+  const notMeasuredReason = !acct
+    ? "No active paper account, so paper equity could not be read."
+    : !start
+      ? "The challenge start was not recorded, so there is no starting equity to measure from. Press Reset to start the challenge from your paper account's current equity."
+      : start.paperAccountId !== acct.id
+        ? `The challenge started on paper account #${start.paperAccountId}, but your active paper account is #${acct.id}. Press Reset to restart the challenge on #${acct.id}.`
+        : null;
+
+  if (notMeasuredReason != null || !acct || !start) {
+    const reason = notMeasuredReason ?? "Not measured.";
     for (const rule of ["PROFIT_TARGET", "DAILY_DD", "TOTAL_DD"]) notChecked.push({ rule, reason });
     return {
       ...base, measured: false, notMeasuredReason: reason as string | null,
       profitUsd: null as number | null, profitTargetProgress: null as number | null,
       dailyDrawdownRemainingUsd: null as number | null, totalDrawdownRemainingUsd: null as number | null,
-      passed, failed, notChecked,
+      dailyDrawdownSince: null as string | null,
+      passed, failed, notChecked, notes,
       status: (cfg.enabled ? "NOT_MEASURED" : "OFF") as PropFirmStatusCode,
     };
   }
 
-  const profit = equity - cfg.startingBalance;
-  const dailyDD = ov.budget.dailyRiskUsed;
+  const profit = acct.equity - start.equity;
+  const since = new Date(Math.max(tradingDayStart(now).getTime(), Date.parse(start.at) || 0));
+  const realizedToday = await sumPaperRealizedSince({ account: acct.id }, since);
+  const floating = acct.equity - acct.currentBalance;
+  const dailyDD = Math.max(0, -(realizedToday + Math.min(0, floating)));
   const totalDD = Math.max(0, -profit);
+  if (Math.abs(cfg.startingBalance - start.equity) >= 0.01) {
+    notes.push(`The challenge size is $${cfg.startingBalance}, but your paper account started the challenge with $${r2(start.equity)} equity. `
+      + `Profit, target and drawdown are measured in dollars from $${r2(start.equity)} and are not scaled.`);
+  }
   if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
   if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
   if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
@@ -187,7 +250,9 @@ export async function propFirmStatus(userId: number) {
     profitTargetProgress: (cfg.profitTarget > 0 ? r2((profit / cfg.profitTarget) * 100) : 0) as number | null,
     dailyDrawdownRemainingUsd: r2(cfg.maxDailyDrawdownUsd - dailyDD) as number | null,
     totalDrawdownRemainingUsd: r2(cfg.maxTotalDrawdownUsd - totalDD) as number | null,
-    passed, failed, notChecked, status,
+    /** Today's drawdown counts paper P/L settled from here (trading-day start or challenge start, whichever is later). */
+    dailyDrawdownSince: since.toISOString() as string | null,
+    passed, failed, notChecked, notes, status,
   };
 }
 

@@ -42,3 +42,24 @@ describe("Prop Firm Mode — unmeasured equity", () => {
     }
   });
 });
+
+describe("Prop Firm Mode — measured from the challenge start", () => {
+  it("says which paper account, which equity mark and which start the figures come from, and shows the size note", async () => {
+    const note = "The challenge size is $100000, but your paper account started the challenge with $10000 equity. Profit, target and drawdown are measured in dollars from $10000 and are not scaled.";
+    stubStatus({
+      config: CONFIG, measured: true, notMeasuredReason: null,
+      profitUsd: 0, profitTargetProgress: 0, dailyDrawdownRemainingUsd: 5000, totalDrawdownRemainingUsd: 10000,
+      passed: ["DAILY_DD", "TOTAL_DD"], failed: [], notChecked: [], status: "ACTIVE", equitySource: "paper_ledger",
+      paperAccountId: 3, equityUsd: 10000, equityAsOf: "2026-10-28T11:59:00.000Z",
+      challengeStartedAt: "2026-10-27T09:00:00.000Z", startEquityUsd: 10000, dailyDrawdownSince: "2026-10-28T00:00:00.000Z",
+      notes: [note],
+    });
+    render(<PropFirmMode />);
+    const from = await screen.findByTestId("prop-measured-from");
+    expect(from.textContent).toMatch(/paper account #3/);
+    expect(from.textContent).toMatch(/last stored mark/);
+    expect(from.textContent).toMatch(/when the challenge started/);
+    expect(screen.getByTestId("prop-note").textContent).toBe(note);
+    expect(screen.queryByText("$-90000")).toBeNull();
+  });
+});

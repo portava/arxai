@@ -127,8 +127,10 @@ router.post("/prop-firm/configure", requireUser, async (req, res) => {
   const r = await configurePropFirm(req.authUser!.id, p.data);
   res.json(r.config);
 });
+// Reset restarts the challenge: it is measured again from the active paper
+// account's equity now. The configured rules are kept.
 router.post("/prop-firm/reset", requireUser, async (req, res) => {
-  const r = await configurePropFirm(req.authUser!.id, { enabled: true });
+  const r = await configurePropFirm(req.authUser!.id, { enabled: true }, { restart: true });
   res.json(r.config);
 });
 

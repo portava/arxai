@@ -11,6 +11,11 @@ type Status = {
   profitUsd: number | null; profitTargetProgress: number | null;
   dailyDrawdownRemainingUsd: number | null; totalDrawdownRemainingUsd: number | null;
   measured?: boolean; notMeasuredReason?: string | null;
+  // What the figures are measured from: the paper account's last stored equity
+  // mark, and its equity when the challenge started (turned on, or Reset).
+  paperAccountId?: number | null; equityUsd?: number | null; equityAsOf?: string | null;
+  challengeStartedAt?: string | null; startEquityUsd?: number | null; dailyDrawdownSince?: string | null;
+  notes?: string[];
   passed: string[]; failed: string[]; notChecked?: Array<{ rule: string; reason: string }>;
   status: "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
 };
@@ -50,6 +55,17 @@ export default function PropFirmMode() {
         </p>
       )}
 
+      {s && s.measured && s.equityUsd != null && s.startEquityUsd != null && (
+        <p className="text-xs text-muted-foreground" data-testid="prop-measured-from">
+          Measured on paper account #{s.paperAccountId}: equity ${s.equityUsd} as of {when(s.equityAsOf)} (the account's last stored mark),
+          against ${s.startEquityUsd} when the challenge started {when(s.challengeStartedAt)}.
+          {s.dailyDrawdownSince && <> Today's drawdown counts paper P/L settled since {when(s.dailyDrawdownSince)} plus the current floating loss.</>}
+        </p>
+      )}
+      {s && (s.notes ?? []).map((n) => (
+        <p key={n} className="text-xs rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-300" data-testid="prop-note">{n}</p>
+      ))}
+
       {s && (
         <div className="grid gap-2 md:grid-cols-4">
           <Stat label="Enabled" value={s.config.enabled ? "YES" : "NO"} />
@@ -66,7 +82,7 @@ export default function PropFirmMode() {
 
       {s && (
         <Card>
-          <CardHeader><CardTitle className="text-base">Configure</CardTitle><CardDescription>Defaults reflect a typical $100k challenge.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">Configure</CardTitle><CardDescription>Defaults reflect a typical $100k challenge. Progress is measured in dollars from your paper account's equity when the challenge starts (turning it on, or Reset); the challenge size is not applied to it.</CardDescription></CardHeader>
           <CardContent className="grid gap-2 md:grid-cols-3">
             <Input type="number" placeholder={`Starting balance (${s.config.startingBalance})`} onChange={(e) => setEdit({ ...edit, startingBalance: Number(e.target.value) })} />
             <Input type="number" placeholder={`Profit target (${s.config.profitTarget})`} onChange={(e) => setEdit({ ...edit, profitTarget: Number(e.target.value) })} />
@@ -105,6 +121,10 @@ export default function PropFirmMode() {
 
 const NOT_MEASURED = "not measured";
 const money = (v: number | null) => (v == null ? NOT_MEASURED : `$${v}`);
+const when = (iso: string | null | undefined) => {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? new Date(t).toLocaleString() : "at an unknown time";
+};
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <Card><CardContent className="p-2"><p className="text-[10px] text-muted-foreground uppercase">{label}</p><p className="text-sm font-mono font-semibold">{value}</p></CardContent></Card>;
