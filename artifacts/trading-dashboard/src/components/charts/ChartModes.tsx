@@ -24,8 +24,11 @@ import { useTradingMode } from "@/hooks/useTradingMode";
 //   AI      — pulse + full natural-language sentences.
 //   Scalp   — pulse only; fast, quick-decision focused.
 //   Risk    — pulse + sentences with the risk read up top.
-//   Review  — honest empty state (data lands in a later task; paused live).
-//   Learning— honest empty state (data lands in a later task; paused live).
+//   Review  — not built yet: says it does not load the saved decision receipts
+//             (they exist; this view just doesn't show them); paused in
+//             live-shared mode.
+//   Learning— not built yet: says it does not show chart memory or coaching;
+//             paused in live-shared mode.
 //   Admin   — operator-only raw diagnostics (gated; admin, not previewing).
 //
 // PERFORMANCE: the sentences and diagnostics bodies are React.lazy, so only the
@@ -136,7 +139,8 @@ export function ChartModes({ state }: { state: ChartState | null }) {
     ? [...BASE_MODES, { key: "admin", label: "Diagnostics", icon: Wrench }]
     : BASE_MODES;
 
-  // Deep modes must not run heavy content during live execution.
+  // Deep modes are paused while the account is in live-shared mode. This is
+  // keyed to the account mode, NOT to whether a live trade is open.
   const liveActive = tm.isLiveShared;
 
   return (
@@ -235,13 +239,13 @@ export function ChartModes({ state }: { state: ChartState | null }) {
             (liveActive ? (
               <EmptyMode
                 title="Review paused"
-                body="Deep review doesn't run during live execution. Switch to Clean or Scalp while a live trade is active."
+                body="Review is paused while your account is in live-shared mode (whether or not a trade is open). Clean, AI, Scalp and Risk still work."
                 testid="chart-mode-review-paused"
               />
             ) : (
               <EmptyMode
                 title="Review"
-                body="Trade receipts and session review arrive in a later Chart Brain task. Nothing to review yet."
+                body="This view isn't built yet: your saved decision receipts and session review are not loaded here, so an empty panel does not mean you have nothing to review."
                 testid="chart-mode-review"
               />
             ))}
@@ -250,13 +254,13 @@ export function ChartModes({ state }: { state: ChartState | null }) {
             (liveActive ? (
               <EmptyMode
                 title="Learning paused"
-                body="The learning view doesn't run during live execution. Switch to Clean or Scalp while a live trade is active."
+                body="Learning is paused while your account is in live-shared mode (whether or not a trade is open). Clean, AI, Scalp and Risk still work."
                 testid="chart-mode-learning-paused"
               />
             ) : (
               <EmptyMode
                 title="Learning"
-                body="Pattern memory and coaching arrive in a later Chart Brain task. Nothing to learn from yet."
+                body="This view isn't built yet: the chart memory the levels already use (remembered holds, breaks and retests) and coaching are not shown here, so an empty panel does not mean there is nothing to learn from."
                 testid="chart-mode-learning"
               />
             ))}
