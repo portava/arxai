@@ -117,14 +117,30 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
 
   // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
   const { switches: sw, config: s } = await loadPlatformSettings();
-  const switchOn = liveBrokerExecutionEnabled();
-  const platform = derivePlatformBridgeMode({
+  // Gate 1 of the dispatch gate is the EFFECTIVE master switch: the env flag
+  // AND an operator arm (platformSwitches; unreadable settings → not armed).
+  // The env flag alone is not the master switch.
+  const envOn = liveBrokerExecutionEnabled();
+  const armed = sw.liveBrokerExecution.operatorArmed;
+  const switchOn = sw.liveBrokerExecution.enabled;
+  const platformRaw = derivePlatformBridgeMode({
     platformMode: sw.platformMode,
     accountRoutingMode: s?.accountRoutingMode,
     masterBridgeLiveEnabled: !!s?.masterBridgeLiveEnabled,
     sharedLiveTradingEnabled: !!s?.sharedLiveTradingEnabled,
     liveBrokerExecutionEnabled: switchOn,
   });
+  // The shared derivation names only the env step; with the env already on
+  // the missing step is the operator arm.
+  const platform = !switchOn && envOn && /ARX_LIVE_BROKER_EXECUTION_ENABLED/.test(platformRaw.nextPlatformStep)
+    ? { ...platformRaw, nextPlatformStep: "The server env allows live execution; an operator must arm live execution (Live Shared Activation → Arm Live Execution) before the dispatch gate's master switch passes." }
+    : platformRaw;
+  const armText = !sw.readable
+    ? (sw.unreadableReason === "missing"
+      ? "there is no settings row, so live execution is not armed"
+      : "the operator arm could not be read (settings unreadable), so it counts as not armed")
+    : armed ? "an operator armed live execution" : "no operator has armed live execution";
+  const envText = envOn ? "env ARX_LIVE_BROKER_EXECUTION_ENABLED is set" : "env ARX_LIVE_BROKER_EXECUTION_ENABLED is not set";
 
   const detector = await detectCurrentConnectedBridge();
   const masterGate = await loadAndEvaluateMasterLiveBridgeGate();
@@ -177,12 +193,12 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
 
   rows.push({
     id: "server_master_switch",
-    label: "Server master switch (ARX_LIVE_BROKER_EXECUTION_ENABLED)",
+    label: "Server master switch (env ARX_LIVE_BROKER_EXECUTION_ENABLED and operator arm)",
     status: switchOn ? "pass" : "fail",
     detail: switchOn
-      ? "Server master switch is ON. The 16-gate evaluator is allowed to consider PASSing."
-      : "Server master switch is OFF. Every live dispatch is refused with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.",
-    rawCode: switchOn ? "LIVE_BROKER_EXECUTION_ENABLED" : "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED",
+      ? `Server master switch is ON: ${envText} and ${armText}. The dispatch gate's master-switch check passes; every other gate must still pass.`
+      : `Server master switch is OFF: ${envText} and ${armText}. Every live dispatch is refused with LIVE_BROKER_EXECUTION_DISABLED.`,
+    rawCode: switchOn ? "LIVE_BROKER_EXECUTION_ENABLED" : "LIVE_BROKER_EXECUTION_DISABLED",
   });
 
   // Both install-wide stops through platformStop(): the operator emergency
@@ -399,9 +415,9 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
     label: "Broker placement layer",
     status: switchOn ? "pass" : "fail",
     detail: switchOn
-      ? "Phase B broker dispatch layer is wired and the master switch is ON."
-      : "Phase B broker dispatch layer is wired but the master switch is OFF. No real money can leave.",
-    rawCode: switchOn ? "BROKER_PLACEMENT_LAYER_ACTIVE" : "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED",
+      ? "Phase B broker dispatch layer is wired and the master switch (env and operator arm) is ON."
+      : "Phase B broker dispatch layer is wired but the master switch (env and operator arm) is OFF: dispatch is refused with LIVE_BROKER_EXECUTION_DISABLED (BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED is appended to the block reasons). No real money can leave.",
+    rawCode: switchOn ? "BROKER_PLACEMENT_LAYER_ACTIVE" : "LIVE_BROKER_EXECUTION_DISABLED",
   });
 
   return res.json({

@@ -32,6 +32,7 @@ import {
   adminActionAuditLogTable,
   } from "@workspace/db";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import { readPlatformSwitches } from "../lib/safety/platformSwitches.js";
 import { engagePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
@@ -150,11 +151,20 @@ router.post("/admin/live-shared/activation-smoke-test", async (req, res) => {
 
   // C6 — execute is blocked when master switch is off. The smoke test does
   // not run the dispatch gate, so this row records the switch state only.
+  // The master switch (dispatch gate 1) is the env flag AND the operator arm,
+  // from the one switch authority; the env flag alone is not it.
   const masterSwitch = liveBrokerExecutionEnabled();
+  const switches = await readPlatformSwitches();
+  const lbe = switches.liveBrokerExecution;
+  const masterSwitchState = `env ARX_LIVE_BROKER_EXECUTION_ENABLED is ${masterSwitch ? "set" : "not set"} and ${!switches.readable
+    ? (switches.unreadableReason === "missing"
+      ? "there is no settings row, so live execution is not armed"
+      : "the operator arm could not be read (it counts as not armed)")
+    : lbe.operatorArmed ? "an operator armed live execution" : "no operator has armed live execution"}`;
   push("C6_execute_blocked_when_master_off", "Execute blocked when master switch off/missing", "not_checked",
-    `Not checked: this smoke test does not run the dispatch gate. ${masterSwitch
-      ? "ARX_LIVE_BROKER_EXECUTION_ENABLED=true — execution may PASS gate 1; gates 2-16 must also pass"
-      : "ARX_LIVE_BROKER_EXECUTION_ENABLED unset/false — every dispatch will return LIVE_BLOCKED:LIVE_BROKER_EXECUTION_DISABLED"}`);
+    `Not checked: this smoke test does not run the dispatch gate. Current state: ${masterSwitchState}, so ${lbe.enabled
+      ? "the master switch is ON — gate 1 passes; every other gate must also pass"
+      : "the master switch is OFF — every dispatch is refused with LIVE_BROKER_EXECUTION_DISABLED"}.`);
 
   // C7 — command queue insert only happens through validate→confirm→dispatch
   // pipeline. We assert here that no row exists with a "raw" status missing
@@ -214,7 +224,8 @@ router.post("/admin/live-shared/activation-smoke-test", async (req, res) => {
     await writeAudit({
       adminId: admin.id, adminRole: admin.role,
       action: "ADMIN_RAN_LIVE_SHARED_ACTIVATION_SMOKE_TEST",
-      after: { summary: summarize(), summaryCovers: "C1-C10", masterSwitch, bridgeGateDecision: bridgeGate.decision },
+      // masterSwitch: the env flag (as before); liveBrokerExecutionEnabled: the effective switch (env AND arm).
+      after: { summary: summarize(), summaryCovers: "C1-C10", masterSwitch, liveBrokerExecutionEnabled: lbe.enabled, operatorArmed: lbe.operatorArmed, bridgeGateDecision: bridgeGate.decision },
     });
     push("C11_audit_log_write", "Audit log write works", "pass",
       "this smoke-test call wrote one admin_action_audit_log row");

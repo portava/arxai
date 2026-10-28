@@ -8,6 +8,9 @@
 // audit row before it was written. Only the DB handle and the bridge
 // readers are stubbed; the real router runs. No network.
 //
+// C6 also names the switch gate 1 reads (env flag AND operator arm): with the
+// env flag set and no arm it said "execution may PASS gate 1".
+//
 // Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
 //        src/routes/__qa__/liveSharedSmokeTestTruth.test.ts
 
@@ -145,4 +148,21 @@ test("C11: passes only after the audit row was written; a refused write fails th
   assert.equal(c11.pass, false);
   assert.equal(c11.status, "fail");
   assert.match(c11.detail, /could not write/);
+});
+
+test("C6 names the effective master switch (env AND operator arm), not the env flag alone", async () => {
+  const prev = process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED;
+  process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED = "true";
+  try {
+    // No settings row in the fake DB: live execution is not armed.
+    const { body } = await run();
+    const c6 = byId(body, "C6_execute_blocked_when_master_off");
+    assert.equal(c6.pass, false);
+    assert.doesNotMatch(c6.detail, /may PASS gate 1/);
+    assert.match(c6.detail, /env ARX_LIVE_BROKER_EXECUTION_ENABLED is set and there is no settings row/);
+    assert.match(c6.detail, /master switch is OFF — every dispatch is refused with LIVE_BROKER_EXECUTION_DISABLED/);
+  } finally {
+    if (prev === undefined) delete process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED;
+    else process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED = prev;
+  }
 });
