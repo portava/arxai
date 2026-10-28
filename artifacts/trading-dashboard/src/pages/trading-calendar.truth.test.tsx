@@ -150,3 +150,39 @@ describe("trading calendar: source", () => {
     await waitFor(() => expect(note.textContent).toMatch(/closed live trades recorded against your account/));
   });
 });
+
+describe("trading calendar: day profit factor", () => {
+  for (const [label, pf] of [["new server (null)", null], ["older server (9.99 cap)", 9.99]] as const) {
+    it(`no losing trade: profit factor is undefined, not 9.99 — ${label}`, async () => {
+      mockFetch({
+        "/api/me/trading/mode": { tradingMode: "PAPER" },
+        "/api/performance/calendar": {
+          calendar: { month: MONTH, total_pnl: 2, total_trades: 1, winning_days: 1, losing_days: 0, no_trade_days: 0, days: [day(`${MONTH}-01`, { total_trades: 1, wins: 1, net_pnl: 2, day_rating: "A", day_status: "WINNING_DAY" })] },
+        },
+        "/api/performance/day": {
+          day: { date: `${MONTH}-01`, stats: { net_pnl: 2, total_trades: 1, wins: 1, losses: 0, win_rate: 100, profit_factor: pf, day_rating: "A", top_lesson: "" }, trades: [] },
+        },
+      });
+      renderPage();
+      fireEvent.click(await screen.findByTestId(`day-${MONTH}-01`));
+      const cell = await screen.findByTestId("day-detail-profit-factor");
+      expect(cell.textContent).not.toMatch(/9\.99/);
+      expect(cell.textContent).toMatch(/No losses/);
+    });
+  }
+
+  it("a measured profit factor is shown", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { tradingMode: "PAPER" },
+      "/api/performance/calendar": {
+        calendar: { month: MONTH, total_pnl: 1.5, total_trades: 2, winning_days: 1, losing_days: 0, no_trade_days: 0, days: [day(`${MONTH}-01`, { total_trades: 2 })] },
+      },
+      "/api/performance/day": {
+        day: { date: `${MONTH}-01`, stats: { net_pnl: 1.5, total_trades: 2, wins: 1, losses: 1, win_rate: 50, profit_factor: 2, day_rating: "B", top_lesson: "" }, trades: [] },
+      },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId(`day-${MONTH}-01`));
+    expect((await screen.findByTestId("day-detail-profit-factor")).textContent).toBe("2.00");
+  });
+});

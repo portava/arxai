@@ -50,6 +50,11 @@ export async function rebuildSnapshots(userId: number, log: RebuildLogger) {
       // such a day, next to dayStatus NO_TRADE_DAY; the stored value is kept
       // as it was (the coach counts only A/B days).
       const storedDayRating = stats.day_rating ?? "F";
+      // profit_factor is null when no losing trade closed (undefined). The
+      // snapshot column is NOT NULL; it keeps the value it always held for
+      // such a day (9.99 with a profit, else 0) so stored rows are unchanged.
+      // Nothing displays it.
+      const storedProfitFactor = stats.profit_factor ?? (stats.gross_profit > 0 ? 9.99 : 0);
       // Upsert.
       await db.insert(performanceDailySnapshotsTable).values({
         userId,
@@ -66,7 +71,7 @@ export async function rebuildSnapshots(userId: number, log: RebuildLogger) {
         netPnl: stats.net_pnl,
         avgWin: stats.avg_win,
         avgLoss: stats.avg_loss,
-        profitFactor: stats.profit_factor,
+        profitFactor: storedProfitFactor,
         bestTradeId: stats.best_trade_id,
         worstTradeId: stats.worst_trade_id,
         symbolsTraded: stats.symbols_traded,
@@ -86,7 +91,7 @@ export async function rebuildSnapshots(userId: number, log: RebuildLogger) {
           breakEven: stats.break_even, manualCloses: stats.manual_closes, cancelled: stats.cancelled,
           winRate: stats.win_rate, grossProfit: stats.gross_profit, grossLoss: stats.gross_loss,
           netPnl: stats.net_pnl, avgWin: stats.avg_win, avgLoss: stats.avg_loss,
-          profitFactor: stats.profit_factor, bestTradeId: stats.best_trade_id,
+          profitFactor: storedProfitFactor, bestTradeId: stats.best_trade_id,
           worstTradeId: stats.worst_trade_id, symbolsTraded: stats.symbols_traded,
           mistakeTags: stats.mistake_tags, topLesson: stats.top_lesson,
           dayRating: storedDayRating, dayStatus: stats.day_status,

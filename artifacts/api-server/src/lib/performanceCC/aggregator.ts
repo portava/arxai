@@ -75,7 +75,8 @@ export interface DailyStats {
   worst_trade_id: number | null;
   avg_win: number;
   avg_loss: number;
-  profit_factor: number;
+  /** null when no losing trade closed that day (undefined: nothing to divide by). */
+  profit_factor: number | null;
   symbols_traded: string[];
   ai_decisions_count: number;
   paper_trades_opened: number;
@@ -121,7 +122,9 @@ export async function computeDailyStats(userId: number, date: string): Promise<D
   const winRate = closedToday.length > 0 ? (wins.length / closedToday.length) * 100 : 0;
   const avgWin = wins.length ? grossProfit / wins.length : 0;
   const avgLoss = losses.length ? grossLoss / losses.length : 0;
-  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 9.99 : 0);
+  // Gross profit ÷ gross loss. With no losing trade there is nothing to
+  // divide by: undefined (null), never an invented cap such as 9.99.
+  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : null;
   const sortedByPnl = [...closedToday].sort((a, b) => (b.profitLoss ?? 0) - (a.profitLoss ?? 0));
   const bestTrade = sortedByPnl[0]?.profitLoss ?? null;
   const worstTrade = sortedByPnl[sortedByPnl.length - 1]?.profitLoss ?? null;
@@ -186,7 +189,7 @@ export async function computeDailyStats(userId: number, date: string): Promise<D
     worst_trade_id: worstTradeId,
     avg_win: Number(avgWin.toFixed(2)),
     avg_loss: Number(avgLoss.toFixed(2)),
-    profit_factor: Number(profitFactor.toFixed(2)),
+    profit_factor: profitFactor == null ? null : Number(profitFactor.toFixed(2)),
     symbols_traded: symbolsTraded,
     ai_decisions_count: decisions.length,
     paper_trades_opened: openedToday.length,
@@ -603,7 +606,8 @@ export async function computeRangeSummary(userId: number, range: RangeKey) {
     net_pnl: Number(netPnl.toFixed(2)),
     gross_profit: Number(grossProfit.toFixed(2)),
     gross_loss: Number(grossLoss.toFixed(2)),
-    profit_factor: grossLoss > 0 ? Number((grossProfit / grossLoss).toFixed(2)) : (grossProfit > 0 ? 9.99 : 0),
+    // null with no losing trade (undefined), never an invented 9.99.
+    profit_factor: grossLoss > 0 ? Number((grossProfit / grossLoss).toFixed(2)) : null,
     avg_daily_pnl: Object.keys(byDay).length ? Number((netPnl / Object.keys(byDay).length).toFixed(2)) : 0,
     best_day: bestDay,
     worst_day: worstDay,

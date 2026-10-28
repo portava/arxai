@@ -49,6 +49,20 @@ function noPnlText(t: { status?: unknown; pnl_note?: unknown }): string {
   return "No P&L recorded";
 }
 
+/**
+ * Profit factor (gross profit ÷ gross loss) is a number only when a losing
+ * trade closed. With no loss it is undefined; an older server sent an
+ * invented 9.99 (or 0) for that, which is downgraded here.
+ */
+function profitFactorText(stats: { profit_factor?: unknown; wins?: unknown; losses?: unknown }): string {
+  const pf = stats.profit_factor;
+  const losses = typeof stats.losses === "number" ? stats.losses : null;
+  const wins = typeof stats.wins === "number" ? stats.wins : null;
+  if (typeof pf === "number" && Number.isFinite(pf) && losses != null && losses > 0) return pf.toFixed(2);
+  if (losses === 0 && wins != null && wins > 0) return "No losses (undefined)";
+  return "—";
+}
+
 function dayColor(d: CalendarDay) {
   switch (d.day_status) {
     case "WINNING_DAY": return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
@@ -280,7 +294,7 @@ export default function TradingCalendarPage() {
                   <div><div className="text-muted-foreground text-xs">Net P&L</div><div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div></div>
                   <div><div className="text-muted-foreground text-xs">Trades</div><div className="font-bold">{day.data.day.stats.total_trades}</div></div>
                   <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{day.data.day.stats.win_rate.toFixed(1)}%</div></div>
-                  <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold">{day.data.day.stats.profit_factor}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold" data-testid="day-detail-profit-factor">{profitFactorText(day.data.day.stats)}</div></div>
                   <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold" data-testid="day-detail-rating">{day.data.day.stats.day_rating ?? (day.data.day.stats.total_trades > 0 ? "Not rated" : "Not rated — no closed trades")}</div></div>
                 </div>
                 {day.data.day.stats.top_lesson && <div className="text-sm italic text-amber-300">📖 {day.data.day.stats.top_lesson}</div>}

@@ -33,7 +33,7 @@ mock.module("../../learning/scopedMemory.js", {
   namedExports: { listOwnEdges: async () => [], listOwnMistakes: async () => [] },
 });
 
-const { computeAutopilotSummary, computeCalendarMonth, computeDailyStats, computeDayDetail } = await import("../aggregator.js");
+const { computeAutopilotSummary, computeCalendarMonth, computeDailyStats, computeDayDetail, computeRangeSummary } = await import("../aggregator.js");
 
 function order(over: Record<string, unknown>) {
   return {
@@ -123,4 +123,19 @@ test("autopilot with no cycles today: zero counts are labelled as no run today",
   assert.equal(s.cycles_today, 0);
   assert.equal(s.ran_today, false);
   assert.equal(s.last_cycle, null);
+});
+
+test("profit factor with no losing trade is undefined (null), not an invented 9.99", async () => {
+  rows.set(database.paperOrdersTable, [order({ id: 1, profitLoss: 2 })]);
+  const day = await computeDailyStats(7, "2026-05-04");
+  assert.equal(day.profit_factor, null);
+  const range = await computeRangeSummary(7, "30d");
+  assert.equal(range.profit_factor, null);
+
+  rows.set(database.paperOrdersTable, [order({ id: 1, profitLoss: 3 }), order({ id: 2, profitLoss: -1.5, status: "CLOSED_SL" })]);
+  assert.equal((await computeDailyStats(7, "2026-05-04")).profit_factor, 2);
+  assert.equal((await computeRangeSummary(7, "30d")).profit_factor, 2);
+
+  rows.clear();
+  assert.equal((await computeDailyStats(7, "2026-05-04")).profit_factor, null, "no closed trades: nothing to divide");
 });

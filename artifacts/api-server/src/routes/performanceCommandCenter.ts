@@ -88,7 +88,7 @@ router.get("/performance/day", async (req: Request, res: Response) => {
       return ok(res, {
         day: {
           date,
-          stats: { net_pnl: 0, total_trades: 0, win_rate: 0, profit_factor: 0, day_rating: null, top_lesson: null },
+          stats: { net_pnl: 0, total_trades: 0, win_rate: 0, profit_factor: null, day_rating: null, top_lesson: null },
           trades: [],
         },
         currentAccountMode: "LIVE_SHARED",
