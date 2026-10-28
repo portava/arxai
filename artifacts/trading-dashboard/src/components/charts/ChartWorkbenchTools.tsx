@@ -30,6 +30,14 @@ interface Props {
 export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false}: Props) {
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
+  const styleNoteId = `${instanceId}-style-note`;
+  const styleNote = preferences.style === "heikinAshi"
+    ? "Heikin Ashi shows averaged candles. Analysis uses original candles; drawings and trade levels keep the original price scale."
+    : preferences.style === "baseline"
+    ? "Baseline reference: the first loaded close. Loading older history can change this reference."
+    : preferences.style === "hollow"
+    ? "Hollow body: close at or above open. Colour compares with the previous close (own open for the first loaded candle); equal counts as up."
+    : null;
   const [history,setHistory] = useState<{past:ChartDrawing[][];present:ChartDrawing[];future:ChartDrawing[][]}>(()=>({past:[],present:ephemeralDrawings ? [] : validateDrawings(readChartStorage(key)),future:[]}));
   const [panel,setPanel] = useState<"studies" | "objects" | null>(null);
   const [tool,setTool] = useState<DrawingKind | null>(null);
@@ -141,7 +149,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom in chart" title="Zoom in (+ on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(0.75)}><ZoomIn className="h-3.5 w-3.5"/></Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom out chart" title="Zoom out (− on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(4/3)}><ZoomOut className="h-3.5 w-3.5"/></Button>
       </div>
-      <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
+      <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
         {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
       </select></label>
       <label className="flex items-center gap-2" title="Display only. Candle times, drawings, links and data requests stay in UTC. No zone here represents broker server time.">Time zone <select className={field} aria-label="Display time zone" value={selectedZone} onChange={e=>{const value=e.target.value as ChartTimeZone;onPreferences(p=>{const next={...p};if(value==="UTC")delete next.timeZone;else next.timeZone=value;return next;});}}>
@@ -160,6 +168,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{const saved=readChartStorage(TEMPLATE_KEY);if(saved){const {timeZone:_zone,...loaded}=validatePreferences(saved);onPreferences(p=>p.timeZone ? {...loaded,timeZone:p.timeZone} : loaded);setMessage("Template applied. Drawings remain with their instrument and timeframe.");}else setMessage("No template saved in this browser yet.");}}>Load template</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles} onClick={exportImage}>Export PNG</Button>
     </div>
+    {styleNote && <p id={styleNoteId} data-testid="chart-style-note" className="mt-2 text-[11px] leading-relaxed text-zinc-400">{styleNote}</p>}
     <div className="mt-2 flex flex-wrap items-center gap-2 text-zinc-400" aria-label="Chart date navigation">
       <span>Range</span>{[["1D",86400],["5D",432000],["1M",2592000],["3M",7776000],["1Y",31536000]].map(([label,seconds])=><button key={label} type="button" className="rounded px-2 py-1 text-[11px] hover:bg-zinc-800 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40" disabled={!hasCandles} onClick={()=>{const range=adapter?.showRecentRange?.(Number(seconds));setMessage(range ? range.complete ? "Range shown from loaded history." : "Showing available history; the requested range starts before the loaded candles." : "No history available.");}}>{label}</button>)}
       <form className="flex flex-wrap items-center gap-2" onSubmit={event=>{event.preventDefault();const parsed=parseWallClockInZone(goToDate,zone);

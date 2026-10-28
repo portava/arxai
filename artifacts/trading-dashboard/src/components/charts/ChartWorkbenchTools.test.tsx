@@ -14,6 +14,29 @@ const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkb
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
 describe("drawing workspace controls",()=>{
+  it("explains transformed styles beside the controls and associates each view with its own explanation",()=>{
+    function View(){const [preferences,onPreferences]=useState(DEFAULT_PREFERENCES);return <ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={onPreferences} hasCandles feedLabel="Offline fixture"/>;}
+    const first=render(<View/>), second=render(<View/>);
+    const a=within(first.container), b=within(second.container);
+    expect(a.queryByTestId("chart-style-note")).toBeNull();
+    fireEvent.change(a.getByLabelText("Chart style"),{target:{value:"heikinAshi"}});
+    fireEvent.change(b.getByLabelText("Chart style"),{target:{value:"baseline"}});
+    const ha=a.getByTestId("chart-style-note"), base=b.getByTestId("chart-style-note");
+    expect(ha.closest("details")).toBeNull();
+    expect(ha.textContent).toContain("averaged candles");
+    expect(ha.textContent).toContain("Analysis uses original candles");
+    expect(ha.textContent).toContain("original price scale");
+    expect(base.textContent).toContain("Loading older history can change this reference");
+    expect(ha.id).not.toBe(base.id);
+    expect(a.getByLabelText("Chart style").getAttribute("aria-describedby")).toBe(ha.id);
+    expect(b.getByLabelText("Chart style").getAttribute("aria-describedby")).toBe(base.id);
+    fireEvent.change(a.getByLabelText("Chart style"),{target:{value:"hollow"}});
+    expect(a.getByTestId("chart-style-note").textContent).toContain("previous close");
+    expect(a.getByTestId("chart-style-note").textContent).toContain("own open for the first loaded candle");
+    fireEvent.change(a.getByLabelText("Chart style"),{target:{value:"candles"}});
+    expect(a.queryByTestId("chart-style-note")).toBeNull();
+    expect(a.getByLabelText("Chart style").hasAttribute("aria-describedby")).toBe(false);
+  });
   it("offers explicit pan and zoom and restores drawing placement when a tool is selected",()=>{
     const engine={...adapter,setNavigationMode:vi.fn(),panBy:vi.fn(),zoomBy:vi.fn()} as unknown as ChartEngineAdapter;
     mount("EURUSD","M15",engine);

@@ -1,6 +1,7 @@
 async page => {
+ const base=typeof CHART_QA_BASE_URL==='string'?CHART_QA_BASE_URL:'http://127.0.0.1:4178';
  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:4178');
+ await page.goto(base);
  await page.evaluate(()=>localStorage.clear()); await page.reload();
  await page.setViewportSize({width:1600,height:1100});
  const chart=page.getByTestId('arx-native-canvas');
@@ -86,7 +87,7 @@ async page => {
  if(await page.getByTestId('arx-native-canvas').locator('tr').count()!==2) throw Error('Empty indicator panes leaked');
  const touchContext=await page.context().browser().newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
  const touch=await touchContext.newPage();
- await touch.goto('http://127.0.0.1:4178');
+ await touch.goto(base);
  await touch.getByLabel('Drawing tool',{exact:true}).selectOption('trend');
  await touch.getByTestId('arx-native-canvas').tap({position:{x:70,y:70}});
  await touch.getByTestId('arx-native-canvas').tap({position:{x:200,y:140}});

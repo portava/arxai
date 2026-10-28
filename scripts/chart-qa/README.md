@@ -12,6 +12,7 @@ node scripts/chart-qa/server.mjs
 playwright-cli -s=arx-chart open http://127.0.0.1:4178 --browser=chrome
 playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/acceptance.js
 playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/workbench-acceptance.js
+playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/style-timezone-acceptance.js
 playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/interaction-latency.js
 ```
 
@@ -35,6 +36,20 @@ templates, an annotated PNG, two-chart layouts and mobile touch placement. It
 also repeats the benchmark with all five studies enabled. Both scripts clear
 only this isolated fixture origin's browser storage before running. Exported
 images and browser screenshots are written under `/private/tmp/` for inspection.
+
+`style-timezone-acceptance.js` additionally checks visible explanations for
+Heikin Ashi, baseline and hollow candles, complete unchanged canonical OHLC across
+four display zones, go-to instant preservation, daylight-saving gap rejection,
+actual daily UTC / intraday New York inspector labels, canvas retention,
+persistence and mobile horizontal overflow. External HTTP requests are blocked
+and fail the run. This is functional acceptance; `selectOption` is not a trusted
+human interaction or a latency measurement. Mobile no-overflow is not complete
+mobile usability acceptance: many controls still push the chart below the fold.
+
+Both workbench and style/time-zone scripts accept `CHART_QA_BASE_URL` as an
+evaluation global for the production fixture on port 4179. The workbench's
+separate touch context uses the same base URL. Record the production fixture
+build metadata and the exact source commit with each result.
 
 The fixture mounts the real `SmartChartLayout` and primary `ARXNativeChart`.
 The comparison chart uses the same synthetic data hooks. No order ticket or
