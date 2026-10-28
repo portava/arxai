@@ -30,6 +30,7 @@ type TruthStub = {
     pricePrecision: number | null;
     lastTime: string | null;
     sourceLabel: string;
+    headerCapReason?: string | null;
   };
   displayStatus: string;
   isLivePrice: boolean;
@@ -153,6 +154,45 @@ describe("ScannerTradeModal — 'Current price' states its basis", () => {
     await waitFor(() => expect(priceInput().value).toBe("156.305"));
     truth = staleTruth(156.41);
     rerender(ui(true, client, USDJPY));
+    expect(basis()).toContain("Latest close is now 156.410");
+  });
+
+  it("follows the feed: a 'confirming' open is not called 'historical only', and the note turns live when the feed does", async () => {
+    // Cold open: the candles answer before the scanner analysis, so the truth
+    // is ANALYSIS_ONLY with headerCapReason analysis_pending, then LIVE.
+    const confirming: TruthStub = {
+      candles: { lastClose: 1.1, pricePrecision: 5, lastTime: "2026-10-27T10:00:00.000Z", sourceLabel: "MT5 broker", headerCapReason: "analysis_pending" },
+      displayStatus: "ANALYSIS_ONLY", isLivePrice: false, actionable: false,
+    };
+    truth = confirming;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(ui(true, client));
+    await waitFor(() => expect(priceInput().value).toBe("1.1"));
+    expect(basis()).not.toContain("historical only");
+    expect(basis()).toContain("still being confirmed");
+
+    truth = { ...confirming, candles: { ...confirming.candles, headerCapReason: null }, displayStatus: "LIVE", isLivePrice: true, actionable: true };
+    rerender(ui(true, client));
+    expect(basis()).not.toContain("historical only");
+    expect(basis()).not.toMatch(/not a live price/i);
+    expect(basis()).not.toContain("being confirmed");
+    expect(basis()).toContain("Last candle close from MT5 broker, candle at 10:00:00 UTC.");
+    expect(screen.getByTestId("scanner-trade-current-price-basis").className).not.toContain("text-warning");
+  });
+
+  it("says the feed is live now when it turned live after a non-live fill and the close has moved", async () => {
+    truth = staleTruth(156.305);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(ui(true, client, USDJPY));
+    await waitFor(() => expect(priceInput().value).toBe("156.305"));
+    truth = {
+      candles: { lastClose: 156.41, pricePrecision: 3, lastTime: "2026-10-27T10:05:00.000Z", sourceLabel: "ARX market data" },
+      displayStatus: "LIVE", isLivePrice: true, actionable: true,
+    };
+    rerender(ui(true, client, USDJPY));
+    expect(basis()).not.toContain("while the feed is stale");
+    expect(basis()).toContain("filled while the feed was stale");
+    expect(basis()).toContain("the feed is live now");
     expect(basis()).toContain("Latest close is now 156.410");
   });
 
