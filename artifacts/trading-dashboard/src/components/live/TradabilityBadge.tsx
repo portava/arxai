@@ -1,7 +1,9 @@
 // Compact badge that explains, in plain language, whether the selected
-// market is live-tradable through the connected MT5 bridge or
-// analysis-only. Reads from /api/market-data/tradability so trade
-// ticket, scanner card, and Ruby panel all agree.
+// market is allowed for MT5 live trading (on the live market list and an
+// ARX Focus market) or analysis-only. It does not check the bridge
+// connection — the server copy says so. Reads from
+// /api/market-data/tradability so trade ticket, scanner card, and Ruby
+// panel all agree.
 import { Badge } from "@/components/ui/badge";
 import { Info } from "lucide-react";
 import { useTradability } from "@/lib/useTradability";
@@ -19,11 +21,32 @@ export function TradabilityBadge({
   const t = q.data;
 
   if (!t) {
-    // No verdict yet — quiet placeholder, never leak provider/route names.
+    // useTradability resolves a failed lookup to null; only a request still
+    // in flight (or not yet enabled) is "checking".
+    if (q.isPending || q.isFetching) {
+      // No verdict yet — quiet placeholder, never leak provider/route names.
+      return (
+        <Badge variant="outline" className={`text-[10px] ${className ?? ""}`} data-testid="badge-tradability-loading">
+          Checking tradability…
+        </Badge>
+      );
+    }
     return (
-      <Badge variant="outline" className={`text-[10px] ${className ?? ""}`} data-testid="badge-tradability-loading">
-        Checking tradability…
-      </Badge>
+      <div className={`flex flex-col gap-1 ${className ?? ""}`}>
+        <Badge
+          variant="outline"
+          className="text-[10px] w-fit bg-zinc-500/15 text-zinc-300 border-zinc-500/40"
+          data-testid="badge-tradability-unavailable"
+        >
+          Tradability could not be loaded
+        </Badge>
+        {showHelper && (
+          <div className="flex items-start gap-1 text-[11px] text-muted-foreground" data-testid="text-tradability-helper">
+            <Info className="h-3 w-3 mt-[2px] shrink-0" />
+            <span>Whether this market can be traded live was not checked.</span>
+          </div>
+        )}
+      </div>
     );
   }
 
