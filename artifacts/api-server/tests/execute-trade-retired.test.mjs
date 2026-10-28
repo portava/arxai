@@ -8,10 +8,16 @@
 //   - authenticated ones, from the owner and from a plain trader, get 410
 //     EXECUTE_TRADE_RETIRED, executed=false, converted=false, no trade id,
 //     and the governed paths to use instead;
-//   - none of them writes a trade, paper order, broker command (MT5 / live /
-//     demo queue), execution event, approval, confirmation, trade action,
-//     self-trade execution, Risk Governor decision or vault/audit row: every
-//     table in support/governed.mjs EXECUTION_TABLES keeps its row count;
+//   - none of them writes a row anywhere: every base table in the schema
+//     keeps its row count (support/governed.mjs countRows; a table added
+//     later is counted by default). That covers trades, paper orders and
+//     paper trades, broker commands (MT5 / live / demo queue), exposure
+//     reservations, live intents, execution events, approvals,
+//     confirmations, trade actions and decisions, pre-trade checks,
+//     self-trade executions / ledgers / audit, Risk Governor evaluations and
+//     events, and the vault and audit logs (vault_events, audit_events,
+//     system_audit_logs); EXECUTION_TABLES names them so a rename fails the
+//     test instead of dropping one;
 //   - a confirmation id in the body is not claimed.
 // Nothing is sent to a broker: no broker command row is written, and the
 // isolated runner fails any external connection and prints the count.
@@ -24,7 +30,7 @@
 import { test, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import pkg from "pg";
-import { BASE, DIRECT, call, countRows, freshTrader } from "./support/governed.mjs";
+import { BASE, DIRECT, call, changedTables, countRows, freshTrader } from "./support/governed.mjs";
 
 const { Client } = pkg;
 
@@ -81,21 +87,21 @@ test("RET-1 unauthenticated PAPER, DEMO and LIVE bodies are refused by the auth 
       assert.equal(r.status, 401, `${label}: ${JSON.stringify(r.data)}`);
       assert.notEqual(r.data?.code, "EXECUTE_TRADE_RETIRED", "the auth gate answers first");
     }
-    assert.deepEqual(await countRows(pg), before);
+    assert.deepEqual(changedTables(before, await countRows(pg)), {}, "no row written in any table");
   });
 
 test("RET-2 the owner gets 410 EXECUTE_TRADE_RETIRED for PAPER, DEMO and LIVE bodies, and nothing is written", async () => {
   const before = await countRows(pg);
   for (const [label, body] of Object.entries(BODIES)) assertRetired(await call(BASE, "POST", "/execute-trade", body), `owner ${label}`);
   assertRetired(await call(BASE, "POST", "/execute-trade", {}), "owner empty body");
-  assert.deepEqual(await countRows(pg), before, "no execution, order, command, audit or vault row");
+  assert.deepEqual(changedTables(before, await countRows(pg)), {}, "no row written in any table");
 });
 
 test("RET-3 a plain trader gets 410 for PAPER, DEMO and LIVE bodies, and nothing is written for anyone", async () => {
   const t = await freshTrader(pg, "retired-RET-3");
   const before = await countRows(pg);
   for (const [label, body] of Object.entries(BODIES)) assertRetired(await t.call("POST", "/execute-trade", body), `trader ${label}`);
-  assert.deepEqual(await countRows(pg), before, "no execution, order, command, audit or vault row");
+  assert.deepEqual(changedTables(before, await countRows(pg)), {}, "no row written in any table");
   const trades = await t.call("GET", "/trades");
   assert.equal(trades.status, 200);
   assert.deepEqual(trades.data, [], "the trader has no trade history");
@@ -113,7 +119,7 @@ test("RET-4 a confirmation id in the body is not claimed or rejected", async () 
     assertRetired(await call(BASE, "POST", "/execute-trade", { ...BODIES.LIVE, confirmationId: conf.id }), "owner LIVE with confirmation");
     const { rows: [afterRow] } = await pg.query("SELECT status FROM execution_confirmations WHERE id = $1", [conf.id]);
     assert.equal(afterRow.status, "CONFIRMED", "the retired endpoint never claims a confirmation");
-    assert.deepEqual(await countRows(pg), before);
+    assert.deepEqual(changedTables(before, await countRows(pg)), {}, "no row written in any table");
   } finally {
     await pg.query("DELETE FROM execution_confirmations WHERE id = $1", [conf.id]);
   }

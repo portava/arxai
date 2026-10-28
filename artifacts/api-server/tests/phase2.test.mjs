@@ -26,7 +26,7 @@ import { test, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import pkg from "pg";
 import {
-  BASE, freshTrader, paperOrder, paperOrdersOf, tradeAction, countRows,
+  BASE, freshTrader, paperOrder, paperOrdersOf, riskEvents, tradeAction, countRows,
 } from "./support/governed.mjs";
 
 const { Client } = pkg;
@@ -130,17 +130,42 @@ test("LOG-2 blocked governed trade produces a vault row with its symbol and bloc
 });
 
 // LOG-3: an approved LIVE trade is recorded with a link to its execution.
-// Trading stays disabled here (no broker connection, ARX_LIVE_BROKER_EXECUTION_
-// ENABLED=false), so the governed LIVE path (Trade Action Center) is driven to
-// its refusal: the server-side typed phrase first, then the guard chain, whose
-// routing step refuses a LIVE action without a resolved broker connection
-// (lib/tradeAction/guards.ts step 6) before any venue queue. The refusal must
-// be recorded and bound to the action, and nothing may reach a broker queue.
-// An approved LIVE execution is not exercised in this lane.
-test("LOG-3 governed LIVE action is refused by a safety gate, recorded against the action, and queues nothing", async () => {
+// Trading stays disabled in this lane, so a LIVE approval cannot happen here;
+// LOG-3b keeps the recording requirement. This case drives the governed LIVE
+// path (Trade Action Center) as far as it goes for a trader who has done
+// everything a trader can: a live-typed MT5 connection row (no bridge token,
+// no EA, so nothing could ever be delivered to it) and the live disclosure
+// accepted. Routing and the account type then pass, and the Risk Governor
+// step refuses the action as a trading halt because broker execution is
+// disabled by the operator (lib/safety/tradingHalt.ts brokerControlBlocks:
+// broker_health_state.execution_enabled, false by default and never set in
+// this lane; it blocks new risk on DEMO / LIVE only). That is the safety
+// gate, and it fires before any venue queue. Behind it the server master
+// switch is off too (ARX_LIVE_BROKER_EXECUTION_ENABLED=false, asserted below)
+// and the trader is not armed for live. The refusal must be recorded against
+// the action and in the Risk Governor audit, and nothing may reach a broker
+// queue, reservation or live intent. The platform venue switch is open here
+// only because the seeded global_trading_settings default is LIVE with
+// live_enabled; the lane never changes it.
+const LIVE_SIDE_EFFECTS = [
+  "arx_live_commands", "arx_live_positions", "arx_dispatch_exposure_reservations", "live_intents",
+  "mt5_commands", "mt5_demo_commands", "live_trade_approvals", "trades", "paper_orders", "execution_events",
+];
+test("LOG-3 governed LIVE action with a resolved connection is refused by the broker-execution halt, recorded, and queues nothing", async () => {
   await setHeartbeatAge(2);
+  const diag = await j("GET", "/admin/live-gates/diagnostic");
+  assert.equal(diag.status, 200, JSON.stringify(diag.data));
+  const master = (diag.data.gates ?? []).find((g) => g.id === "server_master_switch");
+  assert.equal(master?.rawCode, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED", `the server master switch is off in this lane: ${JSON.stringify(master)}`);
+
   const t = await freshTrader(pg, "phase2-LOG-3");
-  const before = await countRows(pg, ["arx_live_commands", "mt5_commands", "mt5_demo_commands", "live_trade_approvals", "trades", "paper_orders"]);
+  await pg.query(
+    `INSERT INTO mt5_connection (user_id, connection_name, status, account_type, account_number, broker_name, account_balance, account_equity, free_margin, last_heartbeat)
+     VALUES ($1, 'legacy lane: no bridge token, no EA', 'connected', 'live', 'LANE0003', 'none', 10000, 10000, 10000, NOW())`,
+    [t.id],
+  );
+  await pg.query("INSERT INTO user_readiness_state (user_id, live_disclosure_accepted_at) VALUES ($1, NOW())", [t.id]);
+  const before = await countRows(pg, LIVE_SIDE_EFFECTS);
 
   const unphrased = await tradeAction(t, "LIVE", { phrase: "" });
   assert.equal(unphrased.confirm.status, 400);
@@ -153,22 +178,40 @@ test("LOG-3 governed LIVE action is refused by a safety gate, recorded against t
   const action = live.data.action;
   assert.equal(action.status, "rejected");
   assert.equal(action.requestedMode, "LIVE", "a LIVE request is never converted to another mode");
-  assert.equal(action.guardResult.failedCheckId, "routing");
-  assert.equal(action.rejectionReason, "USER_OWNED_NO_CONNECTION");
-  for (const id of ["auth", "kill_switch", "platform_mode", "user_active"]) {
-    assert.ok(action.guardResult.checks.find((c) => c.id === id)?.passed, `${id} ran before the refusal`);
+  for (const id of ["routing", "account_type"]) {
+    assert.ok(action.guardResult.checks.find((c) => c.id === id)?.passed, `${id} passed: the refusal is not a missing connection`);
   }
-  assert.equal(action.executionVenue, null);
+  assert.equal(action.guardResult.failedCheckId, "risk_governor");
+  assert.match(action.rejectionReason, /Broker execution is disabled by the operator/);
+  assert.equal(action.executionVenue, null, "never handed to a venue queue");
   assert.equal(action.venueCommandId, null);
+
+  const ev = (await riskEvents(t)).find((e) => e.details?.caller === "trade_action_guards" && e.details?.actionId === unphrased.id);
+  assert.ok(ev, "the refusal has its Risk Governor audit row");
+  assert.equal(ev.decision, "block");
+  assert.ok(ev.details.blockedBy.includes("trading_halt"), JSON.stringify(ev.details.blockedBy));
+  assert.match(JSON.stringify(ev.details), /Broker execution is disabled by the operator/, "the halt names the broker-execution control");
 
   const audit = await t.call("GET", `/me/trade-actions/${unphrased.id}/audit`);
   assert.equal(audit.status, 200);
   assert.equal(audit.data.action.id, unphrased.id, "the audit is bound to the action");
   const text = JSON.stringify(audit.data);
   assert.ok(text.includes("action_confirmed") && text.includes("action_guard_rejected"), "confirm and refusal are on the action's timeline");
-  assert.deepEqual(await countRows(pg, ["arx_live_commands", "mt5_commands", "mt5_demo_commands", "live_trade_approvals", "trades", "paper_orders"]), before,
-    "no live command, broker command, approval, trade or order row");
+  assert.deepEqual(await countRows(pg, LIVE_SIDE_EFFECTS), before,
+    "no live command, position, exposure reservation, live intent, broker command, approval, trade, order or execution row");
 });
+
+// LOG-3b keeps the original requirement: an approved LIVE trade is recorded
+// in the vault (APPROVED_TRADE, truthDomain EXECUTION, linkedTradeId). It
+// cannot be exercised without arming a trader and enabling live broker
+// execution, which this lane must never do. It is also not met in the code:
+// no file on the governed LIVE path writes the vault (lib/live/*,
+// lib/tradeEngine/pipeline.ts, routes/meLive.ts, routes/mt5Live*.ts), and
+// lib/vaultLogger.ts logApprovedTrade has no caller (open gap 2 in
+// docs/TIER1_TRADE_ENGINE_MODES.md).
+test("LOG-3b approved LIVE trade produces an APPROVED_TRADE vault row linked to its execution",
+  { skip: "not exercisable: needs an armed trader and live broker execution enabled; open gap 2 (no LIVE-path vault writer)" },
+  () => {});
 
 // LOG-4: a paper trade produces a vault row linked to the trade
 // (linkedTradeId). Governed: POST /paper/orders writes PAPER_ORDER_PLACED with

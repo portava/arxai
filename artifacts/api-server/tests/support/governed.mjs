@@ -73,10 +73,13 @@ export async function paperOrder(t, { symbol = "Volatility 75 Index", lotSize = 
 /**
  * Create a Trade Action Center OPEN draft and confirm it in the given mode.
  * A LIVE confirm sends the typed phrase unless `phrase` is given ("" sends none).
+ * `source` is the draft origin (ai_suggested = Ruby, decision_engine =
+ * automation); `extra` adds body fields as sent.
  */
-export async function tradeAction(t, mode, { symbol = "EURUSD", lotSize = 0.05, px = 1.1, phrase } = {}) {
+export async function tradeAction(t, mode, { symbol = "EURUSD", lotSize = 0.05, px = 1.1, phrase, source, extra = {} } = {}) {
   const created = await t.call("POST", "/me/trade-actions", {
     actionType: "OPEN", requestedMode: mode, symbol, side: "BUY", lotSize, stopLoss: px * 0.97, takeProfit: px * 1.06,
+    ...(source ? { source } : {}), ...extra,
   });
   if (created.status !== 201) throw new Error(`trade action draft ${mode}: ${created.status} ${JSON.stringify(created.data)}`);
   const id = created.data.action.id;
@@ -93,21 +96,58 @@ export async function riskEvents(t) {
 }
 
 /**
- * Every table a booked order, a queued broker command or an execution would
- * write. A count that does not move proves none of them was written.
+ * The tables a booked order, a queued broker command, an exposure reservation,
+ * a live intent, a trade decision or an execution audit would write. Named so
+ * a rename cannot silently drop one: countRows() refuses to run when one of
+ * them is missing from the schema.
  */
 export const EXECUTION_TABLES = [
-  "trades", "paper_orders", "paper_trade_events", "paper_executions", "paper_execution_logs",
-  "arx_live_commands", "arx_live_positions", "mt5_commands", "mt5_demo_commands", "live_positions",
+  "trades", "paper_orders", "paper_trades", "paper_trade_events", "paper_executions", "paper_execution_logs",
+  "arx_live_commands", "arx_live_positions", "arx_dispatch_exposure_reservations", "live_intents",
+  "mt5_commands", "mt5_demo_commands", "live_positions", "position_events",
   "execution_events", "execution_confirmations", "live_trade_approvals", "live_trading_audit",
-  "one_click_audit", "trade_command_audit_log", "trade_action_requests", "user_risk_events",
-  "self_trade_agent_executions", "self_trade_decisions", "self_trade_ledger_entries", "position_events",
-  "vault_events",
+  "one_click_audit", "trade_command_audit_log", "trade_action_requests", "trade_decisions", "pre_trade_checks",
+  "user_risk_events", "risk_governor_evaluations", "risk_governor_events",
+  "self_trade_agent_executions", "self_trade_decisions", "self_trade_ledger_entries",
+  "self_trade_agent_ledger", "self_trade_audit_log",
+  "vault_events", "audit_events", "system_audit_logs",
 ];
 
-export async function countRows(pg, tables = EXECUTION_TABLES) {
+/**
+ * Tables a request may write without denoting any execution. Everything else
+ * in the schema is counted, so a table added later is covered by default.
+ * Empty today: in this lane an authenticated call to the retired endpoint
+ * inserts no row at all, its auth and session handling included (RET-2 / 3).
+ * Row counts only: an update in place is not detected.
+ */
+export const NON_EXECUTION_TABLES = new Set([]);
+
+/** Every base table in the lane's schema except NON_EXECUTION_TABLES. */
+export async function countedTables(pg) {
+  const { rows } = await pg.query(
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1",
+  );
+  const all = rows.map((r) => r.table_name);
+  const missing = EXECUTION_TABLES.filter((t) => !all.includes(t));
+  if (missing.length) throw new Error(`execution tables missing from the schema: ${missing.join(", ")}`);
+  return all.filter((t) => !NON_EXECUTION_TABLES.has(t));
+}
+
+/** Row counts per table (one statement); every counted table by default. */
+export async function countRows(pg, tables) {
+  const list = tables ?? await countedTables(pg);
+  const sql = list.map((t) => `SELECT '${t}' AS t, count(*)::int AS n FROM "${t}"`).join(" UNION ALL ");
   const out = {};
-  for (const table of tables) out[table] = Number((await pg.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n);
+  for (const r of (await pg.query(sql)).rows) out[r.t] = r.n;
+  return out;
+}
+
+/** The tables whose count moved between two countRows snapshots: { table: [before, after] }. */
+export function changedTables(before, after) {
+  const out = {};
+  for (const t of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (before[t] !== after[t]) out[t] = [before[t], after[t]];
+  }
   return out;
 }
 

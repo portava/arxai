@@ -163,11 +163,11 @@ test("CT-5 LIVE_TRADING refused unless conditions safe (MT5 must be OK + healthy
 
 // Original requirement (RG-1): an order below the Risk Governor's confidence
 // floor is hard-blocked. In the governed engine the floor is a venue rule
-// (preTrade.ts, VenueRules.minAiConfidence) applied to AI-originated orders;
-// the simulator OMS sets it to 70 (lib/oms.ts SIMULATOR_VENUE_RULES) and
-// POST /orders/create is its governed entry (operator only, so via the owner
-// proxy). POST /paper/orders and the Trade Action Center carry no model
-// confidence, so no confidence floor applies on them.
+// (preTrade.ts, VenueRules.minAiConfidence) applied to AI-originated orders.
+// Only the simulator OMS sets it (70, lib/oms.ts SIMULATOR_VENUE_RULES), and
+// POST /orders/create is its entry (operator only, so via the owner proxy).
+// This case covers that entry only: it is not one of the replacement paths
+// the 410 body names. Those are RG-1b (open gap).
 test("RG-1 low-confidence AI order blocked by the Risk Governor confidence floor", async () => {
   const q = await j("GET", "/market/quote/EURUSD");
   assert.equal(q.status, 200);
@@ -195,6 +195,41 @@ test("RG-1 low-confidence AI order blocked by the Risk Governor confidence floor
   assert.ok(evHigh, "the high-confidence decision is audited too");
   assert.equal(evHigh.details.rules.find((r) => r.rule === "trading_discipline").measured.aiConfidence, 95);
   assert.doesNotMatch(JSON.stringify(evHigh.details.rules), /model confidence/, "confidence 95 clears the floor");
+});
+
+// RG-1 on the replacement paths the 410 body names (open gap 4 in
+// docs/TIER1_TRADE_ENGINE_MODES.md). A Ruby- or automation-originated
+// SIMULATED open is judged by the guard chain's Risk Governor with origin
+// ruby / automation (lib/tradeAction/confirm.ts, guards.ts 8b) and then
+// routed to the PAPER venue (lib/tradeAction/route.ts routeSimulatedOpen),
+// both without venue rules, so the preTrade.ts minAiConfidence branch never
+// runs; the draft cannot even carry a model confidence (routes/
+// meTradeActions.ts draftSchema strips it; preTrade.ts reads a missing one as
+// 0). POST /paper/orders has no origin or confidence at all. The trader gets
+// a fresh symbol snapshot (the quote source the guard's Risk Governor reads
+// first, lib/riskGovernor/enforce.ts loadQuote) so the decision is not a
+// stale-quote refusal. The PAPER venue still needs a real provider quote,
+// which this offline lane has none of, so nothing books either way; the
+// requirement asserted is the Risk Governor's decision. This case fails until
+// a floor applies on these paths.
+test("RG-1b low-confidence Ruby / automation SIMULATED trade action is blocked by the Risk Governor confidence floor", async () => {
+  await setHeartbeatAge(2);
+  for (const source of ["decision_engine", "ai_suggested"]) {
+    const t = await freshTrader(pg, `phase1-RG-1b-${source}`);
+    await pg.query(
+      "INSERT INTO arx_symbol_specs (user_id, symbol, bid, ask, last_tick_time) VALUES ($1, 'EURUSD', 1.0999, 1.1001, NOW())",
+      [t.id],
+    );
+    const { id, confirm } = await tradeAction(t, "SIMULATED", { source, extra: { confidence: 10, confidenceScore: 10 } });
+    const ev = (await riskEvents(t)).find((e) => e.details?.caller === "trade_action_guards" && e.details?.actionId === id);
+    assert.ok(ev, `${source}: the guard's Risk Governor decision is audited`);
+    assert.equal(ev.decision, "block",
+      `${source}: an AI-originated open with model confidence 10 must be blocked; got ${ev.decision}, blockedBy ${JSON.stringify(ev.details.blockedBy)}`);
+    assert.match(JSON.stringify(ev.details), /model confidence/, "blocked by the confidence floor");
+    assert.equal(confirm.status, 400, JSON.stringify(confirm.data));
+    assert.equal(confirm.data.action.guardResult.failedCheckId, "risk_governor");
+    assert.deepEqual(await paperOrdersOf(pg, t.id), [], "nothing booked");
+  }
 });
 
 // Original requirement (RG-2): a non-trading global state blocks new trades;

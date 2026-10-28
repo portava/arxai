@@ -6,14 +6,18 @@
 
 // NOTE (owner decision 14, 2026-10-25): POST /execute-trade is retired and
 // returns 410 EXECUTE_TRADE_RETIRED for every authenticated call (401 before
-// that, as since Phase-2 requireUser). The cases below that drive the Safety
-// Core through /execute-trade no longer reach it. This server-dependent
-// legacy suite is not part of ci; see docs/TIER1_TRADE_ENGINE_MODES.md
-// (round 5) for the retirement and the governed paths that replace it.
+// that, as since Phase-2 requireUser). V-S3, V-QY5 and V-QY6 used it to make
+// a trade decision; they now make it on the governed paths that replaced it
+// (support/governed.mjs; docs/TIER1_TRADE_ENGINE_MODES.md round 5), so they
+// can fail again. V-R1 called it only to run the state machine, which
+// GET /system/status already does (routes/system.ts), so that call is gone.
+// This server-dependent legacy suite is not part of ci; run it with
+// pnpm --filter @workspace/api-server run test:isolated-server-lane.
 
 import { test, beforeEach, before, after } from "node:test";
 import assert from "node:assert/strict";
 import pg from "pg";
+import { freshTrader, paperOrder, paperOrdersOf, riskEvents } from "./support/governed.mjs";
 
 const { Pool } = pg;
 const BASE = process.env.API_BASE_URL ?? "http://localhost:80/api";
@@ -96,14 +100,28 @@ test("V-S3 vault has no power to block / approve / override trades", async () =>
   await forceFail(0);
   await j("POST", "/system/mode", { mode: "PAPER_TRADING", changedBy: "v" });
 
-  // Trade attempt — gate may approve / paper / block / reject in DEGRADED.
-  // What matters is: NO event in either log has source="VAULT" for trade
-  // approval, block, or override decisions.
-  await j("POST", "/execute-trade", {
-    symbol: "Volatility 75 Index", direction: "BUY", lot: 0.5,
-    strategy: "Trend Continuation", confidence: 80,
-    generatedAtIso: new Date().toISOString(),
-  });
+  // Governed trade decisions right after the outage: one the Risk Governor
+  // allows (a PAPER order through POST /paper/orders) and one it blocks (the
+  // same path with the kill switch engaged). Both must be decided and audited
+  // by the Risk Governor; the vault records, it never decides. And: NO event
+  // in either log has source="VAULT" for trade approval, block, or override
+  // decisions.
+  const t = await freshTrader(pool, "v-s3");
+  const allowed = await paperOrder(t);
+  assert.equal(allowed.status, 200, JSON.stringify(allowed.data));
+  await j("POST", "/system/kill-switch/engage", { reason: "V-S3 blocked attempt", triggeredBy: "v" });
+  const blocked = await paperOrder(t, { lotSize: 0.07 });
+  assert.equal(blocked.status, 422, JSON.stringify(blocked.data));
+  assert.equal(blocked.data.code, "RISK_GOVERNOR_BLOCK");
+  assert.equal((await paperOrdersOf(pool, t.id)).length, 1, "only the allowed order is booked");
+  const decided = (await riskEvents(t)).filter((e) => e.details?.caller === "POST /paper/orders");
+  assert.deepEqual(decided.map((e) => e.decision).sort(), ["block", "pass"], "both decisions are the Risk Governor's");
+  for (const e of decided) assert.equal(e.details.source, "pre_trade_risk_governor");
+  const placed = await pool.query(
+    `SELECT source FROM vault_events WHERE kind = 'PAPER_ORDER_PLACED' AND (payload->>'orderId')::int = $1`, [allowed.data.order.id],
+  );
+  assert.equal(placed.rows.length, 1, "the booked order is recorded in the vault");
+  assert.notEqual(placed.rows[0].source, "VAULT");
   // Audit log: no VAULT-sourced decisions
   const events = await j("GET", "/audit/events?limit=200");
   for (const e of events.data.events) {
@@ -289,47 +307,39 @@ test("V-QY4 query by systemMode", async () => {
   for (const e of r.data.events) assert.equal(e.systemMode, "PAPER_TRADING");
 });
 
-test("V-QY5 query by tradeId / linkedTradeId", async () => {
-  await j("POST", "/system/mode", { mode: "SUGGEST_ONLY", changedBy: "v" });
-  await j("POST", "/system/mode", { mode: "PAPER_TRADING", changedBy: "v" });
-  const t = await j("POST", "/execute-trade", {
-    symbol: "Volatility 75 Index", direction: "BUY", lot: 0.5,
-    strategy: "Trend Continuation", confidence: 80,
-    generatedAtIso: new Date().toISOString(),
-  });
-  // Find a tradeId from any payload that has one.
-  const all = await j("GET", "/audit/events?limit=200");
-  const withTrade = all.data.events.find(e => e.payload && typeof e.payload.linkedTradeId === "string");
-  if (!withTrade) {
-    // Trade may have been blocked. Skip the strict assertion but still verify
-    // the filter accepts the param.
-    const r = await j("GET", "/audit/events?tradeId=does-not-exist");
-    assert.equal(r.status, 200);
-    assert.equal(r.data.count, 0);
-    return;
-  }
-  const tid = withTrade.payload.linkedTradeId;
+// V-QY5 / V-QY6: the Phase-2 audit log answers a trade-id and a symbol query
+// for a trade. Governed: a PAPER order through POST /paper/orders. Its only
+// vault row (PAPER_ORDER_PLACED) is written straight to vault_events by
+// lib/tradeEngine/paperVenue.ts vaultBehavior, without the audit_events
+// mirror that safetyCore emit() adds and without a linked trade id, and the
+// Risk Governor audits only to user_risk_events. So both fail until governed
+// trades reach the audit log (open gaps 2 and 3 in
+// docs/TIER1_TRADE_ENGINE_MODES.md).
+test("V-QY5 query by tradeId / linkedTradeId finds the governed paper order", async () => {
+  const t = await freshTrader(pool, "v-qy5");
+  const order = await paperOrder(t);
+  assert.equal(order.status, 200, JSON.stringify(order.data));
+  const tid = String(order.data.order.id);
   const r = await j("GET", `/audit/events?tradeId=${encodeURIComponent(tid)}`);
-  assert.ok(r.data.count >= 1);
+  assert.equal(r.status, 200);
+  assert.ok(r.data.count >= 1, `audit events for paper order ${tid} are required`);
   for (const e of r.data.events) {
-    assert.equal(e.payload.linkedTradeId, tid);
+    assert.ok(e.payload.linkedTradeId === tid || e.payload.tradeId === tid, JSON.stringify(e.payload));
   }
-  void t;
+  const none = await j("GET", "/audit/events?tradeId=does-not-exist");
+  assert.equal(none.status, 200);
+  assert.equal(none.data.count, 0);
 });
 
-test("V-QY6 query by symbol", async () => {
-  await j("POST", "/system/mode", { mode: "SUGGEST_ONLY", changedBy: "v" });
-  await j("POST", "/system/mode", { mode: "PAPER_TRADING", changedBy: "v" });
-  await j("POST", "/execute-trade", {
-    symbol: "Volatility 75 Index", direction: "BUY", lot: 0.5,
-    strategy: "Trend Continuation", confidence: 80,
-    generatedAtIso: new Date().toISOString(),
-  });
-  const r = await j("GET", "/audit/events?symbol=" + encodeURIComponent("Volatility 75 Index"));
-  // If gate produced any symbol-tagged event, filter should match it.
-  for (const e of r.data.events) {
-    assert.equal(e.payload.symbol, "Volatility 75 Index");
-  }
+test("V-QY6 query by symbol finds the governed paper order", async () => {
+  const symbol = "Volatility 75 Index";
+  const t = await freshTrader(pool, "v-qy6");
+  const order = await paperOrder(t, { symbol });
+  assert.equal(order.status, 200, JSON.stringify(order.data));
+  const r = await j("GET", "/audit/events?symbol=" + encodeURIComponent(symbol));
+  assert.equal(r.status, 200);
+  assert.ok(r.data.count >= 1, `audit events for the ${symbol} order are required`);
+  for (const e of r.data.events) assert.equal(e.payload.symbol, symbol);
 });
 
 test("V-QY7 query by source", async () => {
@@ -399,12 +409,8 @@ test("V-R1 storage failure triggers DEGRADED_MODE (via driveGlobalState)", async
   }
   const h = await j("GET", "/audit/health");
   assert.equal(h.data.degraded, true, "vault should be degraded after failures");
-  // Now trigger driveGlobalState by hitting trade gate.
-  await j("POST", "/execute-trade", {
-    symbol: "Volatility 75 Index", direction: "BUY", lot: 0.5,
-    strategy: "Trend Continuation", confidence: 80,
-    generatedAtIso: new Date().toISOString(),
-  });
+  // GET /system/status runs driveGlobalState() before it answers
+  // (routes/system.ts); the retired trade gate used to be the trigger.
   const status = await j("GET", "/system/status");
   assert.equal(status.status, 200);
   assert.equal(status.data.globalState, "DEGRADED_MODE",
