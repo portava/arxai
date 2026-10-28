@@ -415,6 +415,11 @@ export interface ScalpReasoningInput {
   result: ScalpResult;
   /** Human flame setup label (FLAME_SETUP_LABEL) the card already resolved. */
   patternLabel?: string | null;
+  /**
+   * True once the read is past its own server-declared expiresAt (or has no
+   * valid one). The decision is then not stated as current.
+   */
+  expired?: boolean;
 }
 
 export function buildReasoningFromScalp(
@@ -433,7 +438,9 @@ export function buildReasoningFromScalp(
 
   // ── Decision ──────────────────────────────────────────────────────────────
   let decision: string;
-  if (awaiting) {
+  if (input.expired) {
+    decision = "WAIT — this scalp read has expired; refresh for a current read";
+  } else if (awaiting) {
     decision = "WAIT — awaiting live data";
   } else if (noSpecs) {
     decision = "WAIT — broker symbol details unavailable";
@@ -483,15 +490,17 @@ export function buildReasoningFromScalp(
       : "No clean level marked yet — be cautious entering blind.";
   }
 
-  const feedData = awaiting
-    ? "Awaiting live feed — no confirmed candles yet, so this read is provisional."
-    : noSpecs
-      ? `Live ${tfWords ?? "scalp-timeframe"} data passed the feed checks; no broker symbol details (lot size, point value) are synced for this account, so no scalp is built.`
-      : flame
-        ? tfWords
-          ? `Live ${tfWords} candles read.`
-          : "Live candles read."
-        : "Scanner-level (blind) read — limited candle visibility on this symbol.";
+  const feedData = input.expired
+    ? "Read expired — the candles behind this read describe the market when it was read, not now."
+    : awaiting
+      ? "Awaiting live feed — no confirmed candles yet, so this read is provisional."
+      : noSpecs
+        ? `Live ${tfWords ?? "scalp-timeframe"} data passed the feed checks; no broker symbol details (lot size, point value) are synced for this account, so no scalp is built.`
+        : flame
+          ? tfWords
+            ? `Live ${tfWords} candles read.`
+            : "Live candles read."
+          : "Scanner-level (blind) read — limited candle visibility on this symbol.";
 
   const newsLabel = clean(r.newsRisk);
   const riskBits = [
@@ -540,7 +549,9 @@ export function buildReasoningFromScalp(
 
   return {
     decision,
-    why: orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH)),
+    why: input.expired
+      ? `When it was read: ${orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH))}`
+      : orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH)),
     evidence: { structure, momentum, pattern, trendline, supportResistance, feedData, risk: evidenceRisk },
     confirmation,
     invalidation,

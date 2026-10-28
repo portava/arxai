@@ -76,3 +76,79 @@ describe("ScalpSignalCard — the scalp read's own lifetime", () => {
     expect((screen.getByTestId("scalp-build-EURUSD") as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+// Review fix (2026-10-28): after expiresAt the card replaced only the timing
+// chip, flame freshness, published verdict and Build button. The header status
+// badge still read "Ready to review" (success tone), the flame row still read
+// "Strong scalp" with its live execution chips, and the reasoning block still
+// stated "BUY scalp setup" as the current decision.
+describe("ScalpSignalCard — an expired read states nothing as current", () => {
+  const liveFlame = {
+    blind: false,
+    scalpStatus: "STRONG",
+    flameStage: "ACTIVE",
+    scalpScore: 81,
+    freshness: "FRESH",
+    flameAgeCandles: 2,
+    entryTiming: "CLEAN",
+    chaseRisk: "LOW",
+    runway: "CLEAR",
+    executionQuality: "GOOD",
+    htfContext: "ALIGNED",
+    setupType: "BREAKOUT",
+    whyNow: "Momentum just broke the range high.",
+  };
+
+  it("status badge, flame row, execution chips and decision say the read expired", () => {
+    const expired = makeResult({
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      generatedAt: new Date(Date.now() - 120_000).toISOString(),
+      flame: liveFlame as unknown as ScalpResult["flame"],
+    });
+    render(<ScalpSignalCard result={expired} onBuild={() => {}} />);
+    expect(screen.getByTestId("scalp-expired-EURUSD")).toBeTruthy();
+
+    const card = screen.getByTestId("scalp-card-EURUSD");
+    const status = card.querySelector("[data-status-token]");
+    expect(status?.textContent).not.toMatch(/Ready to review/i);
+    expect(status?.textContent).toMatch(/expired/i);
+    expect(status?.className ?? "").not.toMatch(/emerald/);
+
+    const flameRow = screen.queryByTestId("scalp-flame-EURUSD");
+    expect(flameRow?.textContent ?? "").not.toMatch(/Strong scalp/i);
+    expect(card.textContent).not.toMatch(/Timing\s*Clean entry/i);
+    expect(card.textContent).not.toMatch(/Chase\s*Low/i);
+    expect(card.textContent).not.toMatch(/Runway/i);
+
+    const decision = screen.getByTestId("scalp-reasoning-EURUSD-decision").textContent ?? "";
+    expect(decision).not.toMatch(/BUY scalp setup/);
+    expect(decision).toMatch(/expired/i);
+  });
+
+  it("a current read still shows its status, flame and decision", () => {
+    const current = makeResult({
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      flame: liveFlame as unknown as ScalpResult["flame"],
+    });
+    render(<ScalpSignalCard result={current} onBuild={() => {}} />);
+    const card = screen.getByTestId("scalp-card-EURUSD");
+    expect(card.querySelector("[data-status-token]")?.textContent).toMatch(/Ready to review/i);
+    expect(screen.getByTestId("scalp-flame-EURUSD").textContent).toMatch(/Strong scalp/i);
+    expect(card.textContent).toMatch(/Timing\s*Clean entry/i);
+    expect(card.textContent).toMatch(/Runway\s*Clear runway/i);
+    expect(screen.getByTestId("scalp-reasoning-EURUSD-decision").textContent).toMatch(/BUY scalp setup/);
+  });
+});
+
+describe("buildReasoningFromScalp — expired input", () => {
+  it("states no current decision and labels the why as at-read", async () => {
+    const { buildReasoningFromScalp } = await import("@/lib/rubyReasoningBlock");
+    const data = buildReasoningFromScalp({ result: makeResult(), expired: true });
+    expect(data.decision).not.toMatch(/BUY scalp setup/);
+    expect(data.decision).toMatch(/expired/i);
+    expect(data.why).toMatch(/^When it was read:/);
+    expect(data.evidence.feedData).toMatch(/expired/i);
+    const current = buildReasoningFromScalp({ result: makeResult() });
+    expect(current.decision).toBe("BUY scalp setup");
+  });
+});
