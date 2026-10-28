@@ -142,9 +142,17 @@ function ReadinessBody({ report }: { report: ReadinessReport }) {
         </div>
       )}
 
-      <Button asChild variant="outline" size="sm" className="w-full" data-testid="button-view-full-readiness">
-        <Link href="/trading-readiness">View full readiness</Link>
+      {/* /trading-readiness is a different check (/api/readiness/evaluate:
+          mindset, news, rule contract) with its own score. It is not the full
+          version of this setup report (/api/readiness/me), so the link must
+          not present it as one. */}
+      <Button asChild variant="outline" size="sm" className="w-full" data-testid="button-open-pre-session-check">
+        <Link href="/trading-readiness">Open pre-session check</Link>
       </Button>
+      <div className="text-[11px] text-muted-foreground" data-testid="text-pre-session-check-note">
+        The pre-session check is a separate check (mindset, news, rule contract) with its own score. It does not
+        measure the setup checks above.
+      </div>
     </div>
   );
 }

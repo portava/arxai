@@ -62,4 +62,14 @@ describe("TradingSetupReadinessCard", () => {
     expect(count.textContent).toBe("0 of 1 required checks passed · 1 not required");
     expect(screen.getByTestId("readiness-percent").textContent).toBe("0%");
   });
+
+  it("does not present the separate pre-session check as the full version of this setup report", async () => {
+    mount({ ...base, statuses: [{ id: "a", label: "Risk profile", status: "pass", nextStep: null }] });
+    await screen.findByTestId("readiness-count");
+    expect(screen.queryByText(/full readiness/i)).toBeNull();
+    const link = screen.getByTestId("button-open-pre-session-check");
+    expect(link.getAttribute("href")).toBe("/trading-readiness");
+    expect(link.textContent).toBe("Open pre-session check");
+    expect(screen.getByTestId("text-pre-session-check-note").textContent).toMatch(/separate check .* with its own score\. It does not\s+measure the setup checks above\./);
+  });
 });
