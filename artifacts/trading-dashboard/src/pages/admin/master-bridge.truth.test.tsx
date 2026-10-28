@@ -213,3 +213,46 @@ describe("Master Bridge 'ready' is a bridge-binding verdict, not execution readi
     expect(screen.getByTestId("kv-arx-live-broker-execution-enabled").textContent).toContain("effective switch (env AND arm) is ON");
   });
 });
+
+describe("A blocked detector's hint bridge is labelled as not the master bridge", () => {
+  it("MOCK hint under a blocked detector is labelled non-qualifying", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": {
+        body: current({
+          detected: false,
+          primaryReason: "MASTER_BRIDGE_REAL_HEARTBEAT_REQUIRED",
+          latestHint: {
+            bridgeId: 7, brokerName: "Broker", accountNumberMasked: "••••9999", eaVersion: "1.50",
+            heartbeatAgeSec: 3, accountType: "demo", mode: "MOCK", readOnlyMode: null,
+            enableLiveExecution: null, enableDemoExecution: null, terminalConnected: null,
+            algoTradingAllowed: null, maxLiveLot: null,
+          },
+        }),
+      },
+    });
+    const label = screen.getByTestId("text-bridge-hint-label");
+    expect(label.textContent).toContain("Not the master bridge");
+    expect(label.textContent).toContain("MASTER_BRIDGE_REAL_HEARTBEAT_REQUIRED");
+    expect(screen.getByTestId("grid-bridge-hint").textContent).toContain("MOCK");
+    expect(screen.queryByTestId("grid-bridge-selected")).toBeNull();
+  });
+
+  it("a detected bridge carries no hint label", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": {
+        body: current({
+          detected: true,
+          primaryReason: undefined,
+          bridge: {
+            bridgeId: 41, brokerName: "Broker", accountNumberMasked: "••••1234", eaVersion: "1.50",
+            heartbeatAgeSec: 2, accountType: "live", mode: "LIVE", readOnlyMode: false,
+            enableLiveExecution: true, enableDemoExecution: false, terminalConnected: true,
+            algoTradingAllowed: true, maxLiveLot: 0.1,
+          },
+        }),
+      },
+    });
+    expect(screen.queryByTestId("text-bridge-hint-label")).toBeNull();
+    expect(screen.getByTestId("grid-bridge-selected")).toBeTruthy();
+  });
+});

@@ -166,6 +166,9 @@ function MainBridgeCurrentConnectedCard({
     } finally { setBusy(false); }
   }
   const b = main?.bridge ?? main?.latestHint ?? null;
+  // A blocked detector returns the freshest bridge it saw as a hint. That
+  // bridge did NOT qualify and is not the master bridge.
+  const bIsHint = !!main && !main.detected && !main.bridge && !!main.latestHint;
   // The detector + master gate verdict is a bridge-binding verdict only. It
   // says nothing about the server switch, the operator arm or the stops, so
   // "binding ready" is green only when none of those refuses live dispatch.
@@ -242,7 +245,22 @@ function MainBridgeCurrentConnectedCard({
           </div>
         )}
         {b ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <>
+          {bIsHint && (
+            <div
+              className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12px] text-warning"
+              data-testid="text-bridge-hint-label"
+            >
+              Not the master bridge: this is the freshest bridge the detector
+              saw, and it does not qualify
+              {main?.primaryReason ? <> (<span className="font-mono">{main.primaryReason}</span>)</> : null}.
+              No bridge is currently selected as the master live bridge.
+            </div>
+          )}
+          <div
+            className={`grid grid-cols-2 sm:grid-cols-4 gap-3${bIsHint ? " rounded-md border border-dashed border-warning/40 p-2 opacity-80" : ""}`}
+            data-testid={bIsHint ? "grid-bridge-hint" : "grid-bridge-selected"}
+          >
             <Kv label="Bridge id" v={String(b.bridgeId)} mono />
             <Kv label="MT5 account" v={b.accountNumberMasked ?? "—"} mono />
             <Kv label="Broker/Server" v={b.brokerName ?? "—"} />
@@ -257,6 +275,7 @@ function MainBridgeCurrentConnectedCard({
             <Kv label="algoTradingAllowed" v={String(b.algoTradingAllowed ?? "—")} mono />
             <Kv label="mode" v={b.mode} mono />
           </div>
+          </>
         ) : mainErr ? (
           <div className="text-danger" data-testid="text-main-bridge-load-error">
             The bridge detector could not be loaded ({mainErr}). This page cannot
