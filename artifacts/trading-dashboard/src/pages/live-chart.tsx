@@ -217,7 +217,7 @@ export default function LiveChartPage() {
           {/* Trade entry is the single gated order surface. Hidden from view-only
               (investor) roles and while identity resolves; placement itself still
               routes through the server-side instant-trade router + 16-gate. */}
-          {canSeeTradeEntry && <ChartTradeEntry prefill={tradePrefill} />}
+          {canSeeTradeEntry && <ChartTradeEntry prefill={tradePrefill} timeframe={timeframe} />}
           <PositionPickerPanel />
         </div>
       </div>

@@ -105,6 +105,13 @@ export interface FeedConfidenceBadgeProps {
    * bare chip. Suppressed for a current feed (<=1), honest "· —" when null.
    */
   showTrailingGap?: boolean;
+  /**
+   * The timeframe this verdict describes (e.g. "M1"). When given it is shown on
+   * the always-visible chip and named in the accessible label, so a chip that
+   * sits away from its chart never leaves the reader guessing which
+   * timeframe's feed it graded.
+   */
+  timeframeLabel?: string;
 }
 
 export function FeedConfidenceBadge({
@@ -113,6 +120,7 @@ export function FeedConfidenceBadge({
   onRequestFallback,
   aiUsableResolved,
   showTrailingGap = false,
+  timeframeLabel,
 }: FeedConfidenceBadgeProps) {
   const rawConf = feedConfidence(feedStatus);
   // Cap the raw feed verdict by the resolved verdict when one is supplied, so
@@ -141,7 +149,7 @@ export function FeedConfidenceBadge({
           data-ai-usable={conf.aiUsable ? "true" : "false"}
           data-provider-tier={provider.tier}
           className="inline-flex items-center gap-1"
-          aria-label={`Data source: ${provider.label} (${TIER_LABEL[provider.tier]}). Feed status: ${conf.statusLabel}`}
+          aria-label={`Data source: ${provider.label} (${TIER_LABEL[provider.tier]}). Feed status: ${conf.statusLabel}${timeframeLabel ? `. Timeframe: ${timeframeLabel}` : ""}`}
         >
           {/* Source sub-chip — distinct icon + colour per trust tier. Names the
               primary broker feed vs. whatever fallback is actually serving. */}
@@ -153,6 +161,15 @@ export function FeedConfidenceBadge({
             <ProviderIcon className="h-3 w-3" />
             {provider.label}
           </Badge>
+          {timeframeLabel ? (
+            <Badge
+              variant="outline"
+              data-testid="arx-feed-timeframe"
+              className="text-[10px] font-mono text-zinc-300"
+            >
+              {timeframeLabel}
+            </Badge>
+          ) : null}
           {/* Quality sub-chip — live/stale severity + AI-usability. */}
           <Badge
             variant="outline"
