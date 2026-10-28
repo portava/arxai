@@ -1430,6 +1430,22 @@ function AdminDataStatusTab({ data, isLoading }: { data: MarketTimingRead | unde
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
+/**
+ * Header clock for the timing read. `generatedAt` is the server's wall clock
+ * when it recalculated the read, not the time of the latest candle or quote,
+ * so it is labelled as a calculation time, never as "Updated".
+ */
+export function TimingReadClock({ generatedAt }: { generatedAt: string }) {
+  const clock = utcClockOf(generatedAt);
+  return (
+    <span data-testid="timing-read-clock">
+      {clock === "unknown time"
+        ? "Read calculation time unknown"
+        : `Read calculated ${clock} UTC (when the server recalculated it, not the time of the latest price)`}
+    </span>
+  );
+}
+
 export default function MarketHeatMapPage() {
   const [chartSymbol] = useChartSymbol();
   const symbol = bareSymbol(chartSymbol);
@@ -1560,7 +1576,7 @@ export default function MarketHeatMapPage() {
           {data && (
             <>
               <span>·</span>
-              <span>Updated {new Date(data.generatedAt).toLocaleTimeString()}</span>
+              <TimingReadClock generatedAt={data.generatedAt} />
             </>
           )}
         </div>
