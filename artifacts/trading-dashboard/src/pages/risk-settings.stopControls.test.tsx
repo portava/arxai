@@ -5,7 +5,7 @@
 // where to release the switch; System Status showed Bot Mode OFF / Is
 // Running NO / Is Paused NO in green and the audit banner read a pass.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 type MutateOpts = { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void };
 const h = vi.hoisted(() => ({
@@ -142,5 +142,40 @@ describe("Risk Settings: the bot paused flag says what it does", () => {
     expect(screen.getByText(/New trades are not stopped by it/)).toBeTruthy();
     expect(statusRow("Paused flag")).toMatch(/SET/);
     expect(screen.getByTestId("bot-flags-note").textContent).toMatch(/no order path reads them/);
+  });
+});
+
+// Before: the card said the stop "cancels all open mock trades… This cannot be
+// undone", the dialog said "Cancel every open mock trade", and an operator was
+// never told that their press halts every trader on the platform.
+describe("Risk Settings: the emergency stop says who it halts and what it closes", () => {
+  it("an operator is told, before the press, that the stop is platform-wide", async () => {
+    h.bot = { ...(h.bot as object), emergencyStopScope: "PLATFORM" };
+    render(<RiskSettings />);
+    const card = screen.getByTestId("emergency-stop-description").textContent ?? "";
+    expect(card).toMatch(/platform-wide safety-core kill switch/);
+    expect(card).toMatch(/every trader/);
+    expect(card).not.toMatch(/cannot be undone|all open mock trades/i);
+    const button = screen.getByRole("button", { name: /EMERGENCY STOP: EVERY TRADER/ });
+    await act(async () => { fireEvent.click(button); });
+    const dialog = screen.getByTestId("emergency-stop-dialog").textContent ?? "";
+    expect(dialog).toMatch(/platform-wide.*every trader/);
+    expect(dialog).toMatch(/paper-book and broker positions stay open/);
+    expect(dialog).not.toMatch(/Cancel every open mock trade|Require manual restart/);
+  });
+
+  it("a trader is told the stop is their own kill switch and where to release it", () => {
+    h.bot = { ...(h.bot as object), emergencyStopScope: "YOUR_ACCOUNT" };
+    render(<RiskSettings />);
+    const card = screen.getByTestId("emergency-stop-description").textContent ?? "";
+    expect(card).toMatch(/your own kill switch/);
+    expect(card).toMatch(/Resume on Risk Command Center/);
+    expect(card).toMatch(/legacy simulated trades table only/);
+    expect(screen.getByRole("button", { name: /EMERGENCY STOP: MY TRADING/ })).toBeTruthy();
+  });
+
+  it("an unknown scope discloses both cases instead of guessing", () => {
+    render(<RiskSettings />);
+    expect(screen.getByTestId("emergency-stop-description").textContent).toMatch(/could not be loaded: for an operator .* every trader/);
   });
 });

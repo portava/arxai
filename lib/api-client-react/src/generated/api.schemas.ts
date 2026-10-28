@@ -9084,6 +9084,17 @@ export const BotStatusRiskMode = {
   Aggressive: "Aggressive",
 } as const;
 
+/**
+ * Who POST /bot/emergency-stop halts for this caller. PLATFORM (owner/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch.
+ */
+export type BotStatusEmergencyStopScope =
+  (typeof BotStatusEmergencyStopScope)[keyof typeof BotStatusEmergencyStopScope];
+
+export const BotStatusEmergencyStopScope = {
+  PLATFORM: "PLATFORM",
+  YOUR_ACCOUNT: "YOUR_ACCOUNT",
+} as const;
+
 export interface BotStatus {
   mode: BotStatusMode;
   symbol: string;
@@ -9095,6 +9106,8 @@ export interface BotStatus {
   isPaused: boolean;
   /** @nullable */
   lastScanAt?: string | null;
+  /** Who POST /bot/emergency-stop halts for this caller. PLATFORM (owner/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch. */
+  emergencyStopScope?: BotStatusEmergencyStopScope;
 }
 
 export type BotStatusUpdateMode =
@@ -9149,10 +9162,24 @@ export interface BotSettingsUpdate {
   scanIntervalSeconds?: number;
 }
 
+/**
+ * PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch.
+ */
+export type EmergencyStopResultScope =
+  (typeof EmergencyStopResultScope)[keyof typeof EmergencyStopResultScope];
+
+export const EmergencyStopResultScope = {
+  PLATFORM: "PLATFORM",
+  YOUR_ACCOUNT: "YOUR_ACCOUNT",
+} as const;
+
 export interface EmergencyStopResult {
   success: boolean;
   message: string;
+  /** Open rows in the legacy simulated trades table that were cancelled. Paper-book and broker positions are not closed and are not counted. */
   closedTrades: number;
+  /** PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch. */
+  scope?: EmergencyStopResultScope;
 }
 
 export type SignalDirection =

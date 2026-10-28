@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { BotStatusEmergencyStopScope } from "./botStatusEmergencyStopScope";
 import type { BotStatusMode } from "./botStatusMode";
 import type { BotStatusRiskMode } from "./botStatusRiskMode";
 
@@ -19,4 +20,6 @@ export interface BotStatus {
   isPaused: boolean;
   /** @nullable */
   lastScanAt?: string | null;
+  /** Who POST /bot/emergency-stop halts for this caller. PLATFORM (owner/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch. */
+  emergencyStopScope?: BotStatusEmergencyStopScope;
 }

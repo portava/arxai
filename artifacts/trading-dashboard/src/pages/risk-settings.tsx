@@ -12,6 +12,7 @@ import {
   getGetRiskSettingsQueryKey,
   getGetRiskAuditQueryKey,
   getGetPositionSizeQueryKey,
+  getGetBotStatusQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -291,6 +292,26 @@ export const BOT_PAUSE_FLAG_NOTE =
 export const BOT_FLAGS_NOTE =
   "Bot Mode, Is Running and the paused flag are stored bot settings; no order path reads them. The Stop switch row is what halts new trades.";
 
+// ── Emergency stop scope ─────────────────────────────────────────────────────
+
+type StopScope = "PLATFORM" | "YOUR_ACCOUNT" | undefined;
+
+/** Who the emergency stop halts for this viewer, as the server reports it. */
+export function emergencyStopScopeLine(scope: StopScope): string {
+  if (scope === "PLATFORM") {
+    return "As an operator, you engage the platform-wide safety-core kill switch: new trades stop for every trader on every venue, " +
+      "and the platform mode drops to OBSERVE_ONLY, until an operator releases it on the Emergency page.";
+  }
+  if (scope === "YOUR_ACCOUNT") {
+    return "It engages your own kill switch: new trades on your account stop on every venue and live is disarmed, " +
+      "until you release it with Resume on Risk Command Center. Other traders are not affected.";
+  }
+  return "Who it halts could not be loaded: for an operator (admin or owner) it halts every trader on the platform; otherwise only your account.";
+}
+
+export const EMERGENCY_STOP_EFFECTS =
+  "It cancels open rows in the legacy simulated trades table only: open paper-book and broker positions stay open. It also sets your bot settings to OFF.";
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 const VALID_RISK_TABS = ["mode", "limits", "rules", "calculator", "emergency"] as const;
@@ -328,6 +349,7 @@ export default function RiskSettings() {
     { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } }
   );
   const halt = auditForHalt?.tradingHalt;
+  const stopScope = botStatus?.emergencyStopScope;
   const updateSettings = useUpdateRiskSettings();
   const applyMode = useApplyRiskMode();
   const setLiveLock = useSetLiveLock();
@@ -477,8 +499,9 @@ export default function RiskSettings() {
       onSuccess: (res) => {
         setConfirmKill(false);
         queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
         toast({
-          title: "⛔ Emergency Stop Executed",
+          title: res.scope === "PLATFORM" ? "⛔ Platform-wide emergency stop engaged" : "⛔ Emergency stop engaged",
           description: res.message,
           variant: "destructive",
         });
@@ -1182,9 +1205,9 @@ export default function RiskSettings() {
               <CardTitle className="flex items-center gap-2 text-red-400">
                 <XCircle size={20} /> Emergency Kill Switch
               </CardTitle>
-              <CardDescription className="text-muted-foreground text-sm">
-                Immediately stops the bot, cancels all open mock trades, and resets to OFF mode.
-                This cannot be undone — the bot must be manually restarted.
+              <CardDescription className="text-muted-foreground text-sm space-y-1" data-testid="emergency-stop-description">
+                <span className="block">{emergencyStopScopeLine(stopScope)}</span>
+                <span className="block">{EMERGENCY_STOP_EFFECTS}</span>
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1196,7 +1219,9 @@ export default function RiskSettings() {
                     className="w-full h-16 text-lg font-black tracking-widest gap-3 shadow-lg shadow-red-500/20 hover:shadow-red-500/40 transition-shadow"
                   >
                     <XCircle size={24} />
-                    ⛔ EMERGENCY STOP ALL TRADING
+                    {stopScope === "PLATFORM"
+                      ? "⛔ EMERGENCY STOP: EVERY TRADER"
+                      : stopScope === "YOUR_ACCOUNT" ? "⛔ EMERGENCY STOP: MY TRADING" : "⛔ EMERGENCY STOP"}
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="border-red-500/40">
@@ -1204,15 +1229,23 @@ export default function RiskSettings() {
                     <DialogTitle className="text-red-400 flex items-center gap-2">
                       <AlertTriangle /> Confirm Emergency Stop
                     </DialogTitle>
-                    <DialogDescription className="text-sm text-muted-foreground space-y-2 pt-2">
-                      <p>This will immediately:</p>
-                      <ul className="list-disc list-inside space-y-1 text-foreground/80">
-                        <li>Stop all active bot scanning</li>
-                        <li>Cancel every open mock trade</li>
-                        <li>Set bot mode to <strong>OFF</strong></li>
-                        <li>Require manual restart to resume</li>
-                      </ul>
-                      <p className="text-red-400 font-medium pt-2">Are you sure?</p>
+                    <DialogDescription asChild>
+                      <div className="text-sm text-muted-foreground space-y-2 pt-2" data-testid="emergency-stop-dialog">
+                        <p>This will immediately:</p>
+                        <ul className="list-disc list-inside space-y-1 text-foreground/80">
+                          <li>
+                            {stopScope === "PLATFORM"
+                              ? <>Engage the <strong>platform-wide</strong> safety-core kill switch: new trades stop for <strong>every trader</strong></>
+                              : stopScope === "YOUR_ACCOUNT"
+                                ? <>Engage <strong>your own</strong> kill switch: new trades on your account stop on every venue</>
+                                : <>Engage a kill switch (who it halts could not be loaded)</>}
+                          </li>
+                          <li>Cancel open rows in the legacy simulated trades table (paper-book and broker positions stay open)</li>
+                          <li>Set your bot settings to <strong>OFF</strong></li>
+                        </ul>
+                        <p>{emergencyStopScopeLine(stopScope)}</p>
+                        <p className="text-red-400 font-medium pt-2">Are you sure?</p>
+                      </div>
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter className="gap-2">

@@ -26,6 +26,27 @@ async function getOrCreateBotSettings(userId: number) {
   return inserted[0];
 }
 
+/**
+ * Who POST /bot/emergency-stop halts for this caller: an owner/operator
+ * engages the platform-wide safety-core kill switch, a trader only their own.
+ * The same check the stop itself uses, so the page can say it before the press.
+ */
+export type EmergencyStopScope = "PLATFORM" | "YOUR_ACCOUNT";
+function emergencyStopScopeOf(authUser: Parameters<typeof canSeeLegacyRows>[0]): EmergencyStopScope {
+  return canSeeLegacyRows(authUser) ? "PLATFORM" : "YOUR_ACCOUNT";
+}
+
+/** What an emergency stop did, from what it did: never more than that. */
+export function emergencyStopMessage(scope: EmergencyStopScope, cancelledLegacyRows: number): string {
+  const halt = scope === "PLATFORM"
+    ? "Platform-wide stop engaged: the safety-core kill switch now halts new trades for every trader on every venue, and the platform mode is OBSERVE_ONLY. An operator releases it on the Emergency page."
+    : "Your kill switch is engaged: new trades on your account are halted on every venue and live is disarmed. Release it with Resume on Risk Command Center.";
+  const cancelled = cancelledLegacyRows > 0
+    ? `Cancelled ${cancelledLegacyRows} open row${cancelledLegacyRows === 1 ? "" : "s"} in the legacy simulated trades table.`
+    : "No open rows in the legacy simulated trades table needed cancelling.";
+  return `${halt} ${cancelled} Open paper-book and broker positions were not closed. Your bot settings are set to OFF.`;
+}
+
 router.get("/bot/status", requireUser, async (req, res) => {
   try {
     const settings = await getOrCreateBotSettings(req.authUser!.id);
@@ -37,6 +58,7 @@ router.get("/bot/status", requireUser, async (req, res) => {
       isRunning: settings.isRunning,
       isPaused: settings.isPaused,
       lastScanAt: settings.lastScanAt?.toISOString() ?? null,
+      emergencyStopScope: emergencyStopScopeOf(req.authUser),
     });
     res.json(data);
   } catch (err) {
@@ -63,6 +85,7 @@ router.patch("/bot/status", requireUser, async (req, res) => {
       mode: s.mode, symbol: s.symbol, strategy: s.strategy, riskMode: s.riskMode,
       isRunning: s.isRunning, isPaused: s.isPaused,
       lastScanAt: s.lastScanAt?.toISOString() ?? null,
+      emergencyStopScope: emergencyStopScopeOf(req.authUser),
     });
     res.json(data);
   } catch (err) {
@@ -111,15 +134,17 @@ router.patch("/bot/settings", requireUser, async (req, res) => {
   }
 });
 
-// POST /bot/emergency-stop — stops THIS user's bot and cancels THIS user's
-// open trades. Who it halts depends on who pulls it (owner decision
+// POST /bot/emergency-stop — sets THIS user's bot settings to OFF and cancels
+// THIS user's OPEN rows in the legacy `trades` table (paper-book and broker
+// positions are not touched). Who it halts depends on who pulls it (owner decision
 // 2026-10-24): an owner/operator engages the global safety-core kill switch;
 // a trader engages only their own kill switch, which halts their own new
 // risk on every venue. A trader can never halt the whole platform.
 router.post("/bot/emergency-stop", requireUser, async (req, res) => {
   try {
     const userId = req.authUser!.id;
-    const operator = canSeeLegacyRows(req.authUser);
+    const scope = emergencyStopScopeOf(req.authUser);
+    const operator = scope === "PLATFORM";
     const settings = await getOrCreateBotSettings(userId);
     if (operator) {
       await engageKillSwitch({ reason: `Emergency stop triggered by operator user_id=${userId}`, triggeredBy: "user" });
@@ -134,10 +159,9 @@ router.post("/bot/emergency-stop", requireUser, async (req, res) => {
     const openTrades = await cancelOpenLegacyTrades(userId);
     const data = EmergencyStopResponse.parse({
       success: true,
-      message: operator
-        ? "Platform emergency stop engaged. Your trades cancelled. Bot is OFF."
-        : "Emergency stop executed. Your kill switch is engaged, your trades cancelled and your bot is OFF.",
+      message: emergencyStopMessage(scope, openTrades.length),
       closedTrades: openTrades.length,
+      scope,
     });
     res.json(data);
   } catch (err) {

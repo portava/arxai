@@ -3927,6 +3927,12 @@ export const GetBotStatusResponse = zod.object({
       "Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST \/risk\/pause) does.",
     ),
   lastScanAt: zod.string().nullish(),
+  emergencyStopScope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "Who POST \/bot\/emergency-stop halts for this caller. PLATFORM (owner\/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch.",
+    ),
 });
 
 /**
@@ -3955,6 +3961,12 @@ export const UpdateBotStatusResponse = zod.object({
       "Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST \/risk\/pause) does.",
     ),
   lastScanAt: zod.string().nullish(),
+  emergencyStopScope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "Who POST \/bot\/emergency-stop halts for this caller. PLATFORM (owner\/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch.",
+    ),
 });
 
 /**
@@ -4007,7 +4019,17 @@ export const UpdateBotSettingsResponse = zod.object({
 export const EmergencyStopResponse = zod.object({
   success: zod.boolean(),
   message: zod.string(),
-  closedTrades: zod.number(),
+  closedTrades: zod
+    .number()
+    .describe(
+      "Open rows in the legacy simulated trades table that were cancelled. Paper-book and broker positions are not closed and are not counted.",
+    ),
+  scope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch.",
+    ),
 });
 
 /**
