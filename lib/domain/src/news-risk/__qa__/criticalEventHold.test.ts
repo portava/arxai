@@ -60,3 +60,21 @@ test("HIGH event 10m away keeps the 15-minute window copy", () => {
   assert.equal(r.riskLevel, "NO_TRADE_WINDOW");
   assert.match(r.tradeWarning ?? "", /no-trade window is active/);
 });
+
+// This scorer's blockTrading is read only by trade-plan validation
+// (routes/tradePlans.ts) and the news alert. Orders placed outside a trade
+// plan go through the trading-path news gate (lib/news/calendar/
+// newsRiskScorer.ts), which blocks only around the release itself — so the
+// copy must not say "ARX holds new trades on EURUSD" for 24 hours.
+test("CRITICAL hold copy names what it holds (trade-plan validation), not all new trades", () => {
+  for (const minutes of [20 * 60, -45]) {
+    const r = scoreNewsRisk({ symbol: "EURUSD", events: [critical(minutes)], nowMs: NOW });
+    assert.equal(r.blockTrading, true, "the trade-plan hold itself is kept");
+    const copy = [r.tradeWarning ?? "", r.aiSummary, ...r.reasons].join(" | ");
+    assert.doesNotMatch(copy, /holds new trades/i);
+    assert.match(r.tradeWarning ?? "", /trade plan/i);
+    assert.match(r.tradeWarning ?? "", /not held by this check/i);
+    assert.doesNotMatch(r.tradeWarning ?? "", /^NO TRADE WINDOW:/, "a plan hold 20h out is not a live no-trade window");
+    assert.ok(r.reasons.some((x) => /trade plan/i.test(x)), r.reasons.join(" | "));
+  }
+});

@@ -188,7 +188,10 @@ export function scoreNewsRisk(args: {
   const directionWord = deltaMin >= 0 ? `in ${formatMinutes(minutesAbs)}` : `${formatMinutes(minutesAbs)} ago`;
   const inReleaseWindow = deltaMin >= -RELEASE_WINDOW_MIN && deltaMin <= RELEASE_WINDOW_MIN;
   // CRITICAL outside its release window: the block is ARX's critical-event
-  // hold, not an active release window.
+  // hold, not an active release window. That hold is enforced only where this
+  // scorer's blockTrading is read — trade-plan validation (and the alert);
+  // orders placed outside a trade plan go through the trading-path news gate,
+  // which blocks only around the release itself. The copy says exactly that.
   let criticalHold = false;
   let label: NewsRiskLabel = "CLEAR";
 
@@ -199,7 +202,7 @@ export function scoreNewsRisk(args: {
       reasons.push(`CRITICAL impact event ${event.eventName} ${directionWord} — within the 15-minute release window.`);
     } else {
       criticalHold = true;
-      reasons.push(`CRITICAL impact event ${event.eventName} ${directionWord} — ARX holds new trades from 24 hours before a critical event until 2 hours after it.`);
+      reasons.push(`CRITICAL impact event ${event.eventName} ${directionWord} — ARX does not validate trade plans from 24 hours before a critical event until 2 hours after it.`);
     }
   } else if (event.impactLevel === "HIGH" && deltaMin >= -15 && deltaMin <= 15) {
     label = "NO_TRADE_WINDOW";
@@ -227,9 +230,9 @@ export function scoreNewsRisk(args: {
   const blockTrading = label === "NO_TRADE_WINDOW";
   const tradeWarning = label === "CLEAR"
     ? null
-    : `${label.replace(/_/g, " ")}: ${event.impactLevel} impact ${event.eventName} (${event.currency}) ${directionWord}. ${
+    : `${criticalHold ? "TRADE PLAN HOLD" : label.replace(/_/g, " ")}: ${event.impactLevel} impact ${event.eventName} (${event.currency}) ${directionWord}. ${
       criticalHold
-        ? `ARX holds new trades on ${symbol} from 24 hours before a critical event until 2 hours after it. ${
+        ? `ARX does not validate trade plans on ${symbol} from 24 hours before a critical event until 2 hours after it; orders placed outside a trade plan are not held by this check. ${
             deltaMin >= 0
               ? `The release itself is not due for ${formatMinutes(minutesAbs)}.`
               : `It was released ${formatMinutes(minutesAbs)} ago; the hold ends 2 hours after the release.`
