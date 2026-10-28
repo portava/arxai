@@ -114,6 +114,20 @@ function runPreview(input: {
   return { errors, warnings, riskReward: rr, effectiveEntry: eff, label };
 }
 
+/** Plain-English text for a refused /trade/place answer: the server's message, else the code named as a refusal. */
+function placeRefusalText(j: { error?: unknown; message?: unknown; result?: { reason?: unknown; message?: unknown } }, status: number): string {
+  const message = typeof j.result?.message === "string" && j.result.message
+    ? j.result.message
+    : typeof j.message === "string" && j.message ? j.message : null;
+  if (message) return message;
+  const code = typeof j.result?.reason === "string" && j.result.reason
+    ? j.result.reason
+    : typeof j.error === "string" && j.error ? j.error : null;
+  return code ? `The server refused this order (${code}).` : `The order request failed (HTTP ${status}).`;
+}
+
+interface SimulatedFill { fillPrice?: number | null; priceSource?: string | null; quoteAt?: string | null; replayed?: boolean }
+
 export function PaperOrderTicket({ accountId: _accountId }: { accountId: number | null }) {
   const qc = useQueryClient();
   const [symbol, setSymbol] = useState(SYMBOLS[0]);
@@ -161,7 +175,7 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
           }),
         });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || j.result?.reason || "Trade place failed");
+        if (!r.ok || j.ok === false) throw new Error(placeRefusalText(j, r.status));
         return { kind: "market", result: j };
       }
       // Pending order — goes to draft endpoint; backend force-locks executable:false.
@@ -299,13 +313,24 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         {place.isPending ? "Placing…" : isMarket(orderType) ? `Place SIMULATED ${ORDER_LABELS[orderType]}` : `Save ${ORDER_LABELS[orderType]} Draft`}
       </button>
 
-      {place.isError && <p className="text-[11px] text-red-400">{(place.error as Error).message}</p>}
+      {place.isError && <p className="text-[11px] text-red-400" data-testid="order-ticket-error">{(place.error as Error).message}</p>}
 
       {place.isSuccess && place.data && (
         <div className="rounded border border-slate-700 bg-slate-950/60 p-2 text-[11px]">
-          {place.data.kind === "market" ? (
-            <p className="text-emerald-300">Market order accepted.</p>
-          ) : (
+          {place.data.kind === "market" ? (() => {
+            const fill = (place.data.result?.result?.paper ?? null) as SimulatedFill | null;
+            if (!fill || fill.fillPrice == null) {
+              return <p className="text-amber-300" data-testid="order-ticket-filled">The server accepted the order but returned no fill details.</p>;
+            }
+            const at = fill.quoteAt ? new Date(fill.quoteAt).toLocaleTimeString() : null;
+            return (
+              <p className="text-emerald-300" data-testid="order-ticket-filled">
+                {fill.replayed ? "Already booked: simulated paper order" : "Simulated paper order booked"} at {fill.fillPrice}
+                {fill.priceSource ? ` from ${fill.priceSource}` : " (price source not reported)"}
+                {at ? `, quote observed at ${at}` : ""}. No broker order was sent.
+              </p>
+            );
+          })() : (
             <>
               <p className="text-sky-300">Draft saved.</p>
               <p className="text-slate-300 mt-1">{place.data.result.reason ?? "Draft validated. Not sent to broker."}</p>
@@ -318,8 +343,10 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         </div>
       )}
 
-      <p className="text-[10px] text-amber-300">
-        Live execution remains system-locked. Market orders execute as SIMULATED; pending orders save as validated DRAFTS until the MT5 bridge supports them and live trading is unlocked.
+      <p className="text-[10px] text-amber-300" data-testid="order-ticket-footer">
+        Live execution remains system-locked. Market orders are submitted as SIMULATED paper orders, but the server currently
+        refuses them from this ticket (it requires a retry-safety request key this ticket does not send), so none are booked here.
+        Pending orders save as validated DRAFTS until the MT5 bridge supports them and live trading is unlocked.
       </p>
     </div>
   );
