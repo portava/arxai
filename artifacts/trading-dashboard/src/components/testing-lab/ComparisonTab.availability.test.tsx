@@ -114,3 +114,31 @@ describe("ComparisonTab — empty state only on a confirmed empty read", () => {
     expect(screen.queryByText("Runs")).toBeNull();
   });
 });
+
+describe("ComparisonTab — unmeasured forward stats", () => {
+  it("zero tracked forward trades → Avg R, Max DD and best/worst symbol are Unavailable, not 0", async () => {
+    route = routes({
+      backtest: async () => jsonResponse(200, { runs: [{ id: 1, strategyId: "trend", symbol: "EURUSD", timeframe: "M15", totalTrades: 40 }] }),
+      forward: async () => jsonResponse(200, { ...FORWARD, shadowTradesTracked: 0, wins: 0, losses: 0, winRate: 0, avgR: 0, maxDrawdownR: 0 }),
+    });
+    renderTab();
+    await waitFor(() => expect(screen.getByText("Forward test · all strategies")).toBeTruthy());
+    const row = (label: string) => screen.getByText(label).parentElement!.textContent ?? "";
+    expect(row("Avg R")).not.toMatch(/0$/);
+    expect(row("Avg R")).toMatch(/Unavailable/);
+    expect(row("Max DD (R)")).toMatch(/Unavailable/);
+    expect(row("Best / worst symbol")).toMatch(/Unavailable/);
+    expect(screen.queryByText(/EURUSD \/ GBPUSD/)).toBeNull();
+  });
+
+  it("tracked forward trades → measured values are shown", async () => {
+    route = routes({
+      backtest: async () => jsonResponse(200, { runs: [] }),
+      forward: async () => jsonResponse(200, FORWARD),
+    });
+    renderTab();
+    await waitFor(() => expect(screen.getByText("Forward test · all strategies")).toBeTruthy());
+    expect(screen.getByText("EURUSD / GBPUSD")).toBeTruthy();
+    expect(screen.queryByText(/Unavailable — no tracked trades/)).toBeNull();
+  });
+});

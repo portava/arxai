@@ -14,6 +14,7 @@ import { formatBacktestNumber } from "@workspace/domain/backtest";
 import type { BacktestChartSeries, ForwardChartSeries } from "@workspace/api-client-react";
 
 const OVERLAY_COLORS = ["#6366f1", "#f59e0b"];
+const NO_TRACKED = "Unavailable — no tracked trades";
 
 
 export function ComparisonTab({ strategyId }: { strategyId?: string }) {
@@ -173,10 +174,12 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
             {!fwd ? <p className="text-xs text-slate-400">{forwardError ? forwardUnavailableLine : "Forward results have not loaded."}</p> : <>
             <Row label="Decisions" value={String(fwd?.totalShadowDecisions ?? 0)} />
             <Row label="Sample (trades)" value={String(fwdTrades)} />
-            <Row label="Win rate" value={fwd && fwdTrades > 0 ? `${formatBacktestNumber(fwd.winRate)}%` : "—"} />
-            <Row label="Avg R" value={fwd ? formatBacktestNumber(fwd.avgR) : "—"} />
-            <Row label="Max DD (R)" value={fwd ? formatBacktestNumber(fwd.maxDrawdownR) : "—"} />
-            <Row label="Best / worst symbol" value={`${fwd?.bestSymbol ?? "—"} / ${fwd?.worstSymbol ?? "—"}`} />
+            {/* With zero tracked (win/loss) trades the server still returns 0s
+                and an arbitrary symbol ranking; none of it was measured. */}
+            <Row label="Win rate" value={fwdTrades > 0 ? `${formatBacktestNumber(fwd.winRate)}%` : NO_TRACKED} muted={fwdTrades === 0} />
+            <Row label="Avg R" value={fwdTrades > 0 ? formatBacktestNumber(fwd.avgR) : NO_TRACKED} muted={fwdTrades === 0} />
+            <Row label="Max DD (R)" value={fwdTrades > 0 ? formatBacktestNumber(fwd.maxDrawdownR) : NO_TRACKED} muted={fwdTrades === 0} />
+            <Row label="Best / worst symbol" value={fwdTrades > 0 ? `${fwd.bestSymbol ?? "—"} / ${fwd.worstSymbol ?? "—"}` : NO_TRACKED} muted={fwdTrades === 0} />
             </>}
           </CardContent>
         </Card>

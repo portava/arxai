@@ -166,7 +166,11 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
       </Card>
 
       {results && resultsState === "ok" ? (
-        <ForwardStats results={results} />
+        results.totalShadowDecisions > 0 ? (
+          <ForwardStats results={results} startedAt={status?.startedAt ?? null} />
+        ) : (
+          <p className="text-xs text-slate-500">No forward-test results yet.</p>
+        )
       ) : resultsState === "error" ? (
         <p className="text-xs text-amber-300">
           Forward-test results could not be loaded ({resultsFailure ?? "unknown error"}). No stats are shown until a read succeeds.
@@ -182,21 +186,51 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
 
 type ReadState = "loading" | "ok" | "error";
 
-function ForwardStats({ results }: { results: ForwardResults }) {
+const UNAVAILABLE_NO_TRACKED = "Unavailable — no tracked trades";
+
+// Plain-English names for the server's confidenceCalibration() tokens. An
+// unrecognised token is shown as unknown rather than passed through raw.
+const CALIBRATION_LABELS: Record<string, string> = {
+  WELL_CALIBRATED: "Well calibrated",
+  OVERCONFIDENT: "Overconfident",
+  UNDERCONFIDENT: "Underconfident",
+  RANDOM_CONFIDENCE: "Confidence not predictive",
+  NEEDS_MORE_DATA: "Not enough data",
+};
+
+function calibrationLabel(token: string | null | undefined): string {
+  return (token && CALIBRATION_LABELS[token]) ?? "Unknown";
+}
+
+function ForwardStats({ results, startedAt }: { results: ForwardResults; startedAt: string | null }) {
+  // Win rate, average R, drawdown and best/worst rankings are only measured
+  // once at least one shadow trade has a win/loss outcome. With zero tracked
+  // trades the server still returns 0s and an arbitrary symbol/strategy; the
+  // tab says they are unavailable instead of presenting them as measured.
+  const tracked = results.shadowTradesTracked > 0;
+  const measured = (v: string) => (tracked ? v : UNAVAILABLE_NO_TRACKED);
   return (
-    <div className="grid gap-2 md:grid-cols-4">
-      <Stat label="Decisions" value={String(results.totalShadowDecisions)} />
-      <Stat label="Tracked" value={String(results.shadowTradesTracked)} />
-      <Stat label="Wins" value={String(results.wins)} />
-      <Stat label="Losses" value={String(results.losses)} />
-      <Stat label="Win rate" value={`${results.winRate}%`} />
-      <Stat label="Avg R" value={String(results.avgR)} />
-      <Stat label="Max DD R" value={String(results.maxDrawdownR)} />
-      <Stat label="Calibration" value={results.confidenceCalibration} />
-      <Stat label="Best symbol" value={results.bestSymbol ?? "—"} />
-      <Stat label="Worst symbol" value={results.worstSymbol ?? "—"} />
-      <Stat label="Best strategy" value={results.bestStrategy ?? "—"} />
-      <Stat label="Weakest strategy" value={results.weakestStrategy ?? "—"} />
+    <div className="space-y-1">
+      <p className="text-[10px] text-slate-500">
+        {startedAt
+          ? `Since the forward test started at ${new Date(startedAt).toLocaleString()}`
+          : "All recorded shadow decisions (start time unavailable)"}
+        {" · all shadow strategies and symbols"}
+      </p>
+      <div className="grid gap-2 md:grid-cols-4">
+        <Stat label="Decisions" value={String(results.totalShadowDecisions)} />
+        <Stat label="Tracked" value={String(results.shadowTradesTracked)} />
+        <Stat label="Wins" value={String(results.wins)} />
+        <Stat label="Losses" value={String(results.losses)} />
+        <Stat label="Win rate" value={measured(`${results.winRate}%`)} />
+        <Stat label="Avg R" value={measured(String(results.avgR))} />
+        <Stat label="Max DD R" value={measured(String(results.maxDrawdownR))} />
+        <Stat label="Calibration (all shadow history)" value={calibrationLabel(results.confidenceCalibration)} />
+        <Stat label="Best symbol" value={tracked ? results.bestSymbol ?? "—" : UNAVAILABLE_NO_TRACKED} />
+        <Stat label="Worst symbol" value={tracked ? results.worstSymbol ?? "—" : UNAVAILABLE_NO_TRACKED} />
+        <Stat label="Best strategy" value={tracked ? results.bestStrategy ?? "—" : UNAVAILABLE_NO_TRACKED} />
+        <Stat label="Weakest strategy" value={tracked ? results.weakestStrategy ?? "—" : UNAVAILABLE_NO_TRACKED} />
+      </div>
     </div>
   );
 }

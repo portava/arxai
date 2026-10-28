@@ -114,6 +114,15 @@ describe("ForwardTestingTab — results availability", () => {
     expect(screen.queryByText("58.3%")).toBeNull();
     expect(screen.getByText(/Forward-test results could not be loaded/i)).toBeTruthy();
   });
+
+  it("a confirmed zero-decision payload still reads 'No forward-test results yet.'", async () => {
+    route = async (url) => jsonResponse(200, url.includes("/results")
+      ? { ...EMPTY_TRACKED, totalShadowDecisions: 0 }
+      : { ...STATUS_RUNNING, running: false });
+    render(<ForwardTestingTab />);
+    await flush();
+    expect(screen.getByText("No forward-test results yet.")).toBeTruthy();
+  });
 });
 
 describe("ForwardTestingTab — strategy scope copy", () => {
@@ -130,5 +139,32 @@ describe("ForwardTestingTab — strategy scope copy", () => {
     expect(screen.queryByText(/selected strategy: meanReversion/)).toBeNull();
     expect(screen.getByText(/every shadow strategy/i)).toBeTruthy();
     expect(screen.getByText(/meanReversion.*is not applied/i)).toBeTruthy();
+  });
+});
+
+describe("ForwardTestingTab — unmeasured stats", () => {
+  it("zero tracked trades → win rate, avg R, max DD and best/worst symbol are Unavailable; calibration is plain English", async () => {
+    route = async (url) => jsonResponse(200, url.includes("/results") ? EMPTY_TRACKED : { ...STATUS_RUNNING, running: false });
+    render(<ForwardTestingTab />);
+    await flush();
+    expect(screen.getByText("Decisions")).toBeTruthy();
+    expect(screen.queryByText("0%")).toBeNull();
+    expect(screen.queryByText("NEEDS_MORE_DATA")).toBeNull();
+    expect(screen.queryByText("EURUSD")).toBeNull();
+    expect(screen.queryByText("USDJPY")).toBeNull();
+    expect(screen.getAllByText(/Unavailable/).length).toBeGreaterThanOrEqual(5);
+    expect(screen.getByText(/Not enough data/i)).toBeTruthy();
+  });
+
+  it("tracked trades → measured values and a humanised calibration label", async () => {
+    route = async (url) => jsonResponse(200, url.includes("/results") ? RESULTS : STATUS_RUNNING);
+    render(<ForwardTestingTab />);
+    await flush();
+    expect(screen.getByText("58.3%")).toBeTruthy();
+    expect(screen.getByText("0.41")).toBeTruthy();
+    expect(screen.getByText("2.25")).toBeTruthy();
+    expect(screen.getByText("EURUSD")).toBeTruthy();
+    expect(screen.queryByText("WELL_CALIBRATED")).toBeNull();
+    expect(screen.getByText("Well calibrated")).toBeTruthy();
   });
 });
