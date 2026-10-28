@@ -6,6 +6,11 @@
 //     so even a tradeable preview (which by construction is served by the
 //     user's own MetaTrader 5 broker bridge) said "Source: composite
 //     market-data" and "not a broker-native quote".
+//   * For a gated read the route reused the success-path trust line ("Verified
+//     M15 candles · Live feed · Mirror synced …") and, when the gate had no
+//     block reason, the producer's default refusal "The chart feed isn't
+//     confirmed yet" — although the feed was confirmed and what was missing
+//     was a merge-seam check (or the feed was delayed, not stale).
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -53,13 +58,35 @@ function candles(n = 80, start = 1.07643, step = 0.00011, wick = 0.00017) {
   });
 }
 
+const openGate = {
+  chartTruthScore: 85, chartReadScore: 70, truthLabel: "Strong", readLabel: "Readable",
+  confidentReadAllowed: true, scannerConfirmAllowed: true, selfTradeChartAllowed: true,
+  candlestickModeAllowed: true, autonomousChartActionAllowed: true, tradeConfirmationAllowed: true,
+  primaryBlockReason: null,
+};
+const sub = (key: string, rawScore: number | null) => ({
+  key, rawScore, evidenceStatus: rawScore == null ? "unavailable" : "measured",
+});
+// Bound broker quote, every gate open, but no forming bar: the merge seam is
+// unmeasured, so the handshake WARNs and the basis is PARTIAL.
+const seamUnmeasuredScore = {
+  score: 85,
+  subMetrics: [
+    sub("ohlc_integrity", 100), sub("timeframe_accuracy", 100), sub("feed_freshness", 100),
+    sub("historical_live_merge", null), sub("symbol_mirror_accuracy", 96), sub("render_accuracy", null),
+  ],
+  primaryConcern: "Not measured: Historical/Live Merge Quality, Render Accuracy.",
+};
+const SUCCESS_LINE = "Verified M15 candles · Live feed · Mirror synced · AACI warning";
+
 function verifiedCtx(source: string | null): Ctx {
   return {
     symbol: "EURUSD", displaySymbol: "EUR/USD", timeframe: "M15", basis: "VERIFIED",
     confidentReadAllowed: true, hasFormingCandle: true, closedBarsCount: 80, limitedHistory: false,
     liveDelayed: false, trustLine: "Verified M15 candles · Live feed · Mirror synced · AACI verified",
     blockReason: null, aaciChartHandshakeOverall: "PASS",
-    state: { stale: false, aiUsable: true, truthState: { source } },
+    gateOutput: openGate,
+    state: { stale: false, aiUsable: true, truthState: { source }, chartTruthScore: seamUnmeasuredScore },
     candles: candles(), htfCandles: [], htfTimeframe: null,
   };
 }
@@ -95,4 +122,38 @@ test("a series from another provider is composite; an unreported source is named
   const unknown = await draw({ symbol: "EURUSD", timeframe: "M15" });
   assert.equal(unknown.providerSource.label, "unreported");
   assert.notEqual(unknown.providerSource.label, "composite market-data");
+});
+
+
+test("a PARTIAL read with every gate open shows the gated line and names the unconfirmed check", async () => {
+  ctx = {
+    ...verifiedCtx("mt5_broker"), basis: "PARTIAL", trustLine: SUCCESS_LINE, blockReason: null,
+    aaciChartHandshakeOverall: "WARN", gateOutput: openGate,
+    state: { stale: false, aiUsable: true, truthState: { source: "mt5_broker" }, chartTruthScore: seamUnmeasuredScore },
+  };
+  const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
+  assert.equal(p.verdict, "refused");
+  assert.equal(p.dataFreshness.basis, "PARTIAL");
+  assert.ok(!/^Verified M15 candles · Live feed/.test(p.dataFreshness.trustLine), p.dataFreshness.trustLine);
+  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · mirror syncing · read gated");
+  assert.ok(!/isn't confirmed yet/.test(p.refusalReason), p.refusalReason);
+  assert.match(p.refusalReason, /seam between closed history and the live candle is not confirmed/);
+});
+
+test("a delayed (not stale) feed is called delayed in both the line and the refusal", async () => {
+  ctx = {
+    ...verifiedCtx("mt5_broker"), basis: "INSUFFICIENT", trustLine: SUCCESS_LINE, blockReason: null,
+    gateOutput: openGate,
+    state: { stale: false, aiUsable: false, truthState: { source: "mt5_broker" }, chartTruthScore: seamUnmeasuredScore },
+  };
+  const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
+  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · feed delayed · read gated");
+  assert.match(p.refusalReason, /delayed, not live/);
+});
+
+test("a chart that could not be loaded says so", async () => {
+  ctx = null;
+  const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
+  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · feed unavailable · read gated");
+  assert.match(p.refusalReason, /could not be loaded/);
 });

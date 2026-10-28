@@ -195,6 +195,56 @@ export function buildGatedTrustLine(
   return `${timeframe} candles syncing · ${feedPart} · read gated`;
 }
 
+// Candle-data handshake checks a gated read can name, in plain English.
+// RubyReadAllowed (the truth gate) and MirrorSync (a rollup of the merge seam
+// and broker alignment) are covered by the explicit gate checks below.
+type GatedCheck =
+  | "ChartSource" | "OHLCIntegrity" | "TimeframeAccuracy" | "FeedFreshness"
+  | "HistoricalLiveMerge" | "BrokerPriceAlignment" | "SelfTradeChartAllowed";
+const GATED_CHECK_LABELS: ReadonlyArray<[GatedCheck, string]> = [
+  ["ChartSource", "the chart source check"],
+  ["OHLCIntegrity", "candle integrity"],
+  ["TimeframeAccuracy", "the timeframe history check"],
+  ["FeedFreshness", "feed freshness"],
+  ["HistoricalLiveMerge", "the seam between closed history and the live candle"],
+  ["BrokerPriceAlignment", "the broker price comparison"],
+  ["SelfTradeChartAllowed", "the automated-trading chart check"],
+];
+
+/**
+ * Plain-English reason a read is gated (basis !== "VERIFIED"), naming what was
+ * actually not confirmed — the feed (stale / delayed), the candles (truth
+ * still syncing) or the specific chart checks that have not passed. Used when
+ * the gate itself has no primaryBlockReason (e.g. every gate flag is open but
+ * the merge seam is unmeasured), so a refusal never falls back to "the chart
+ * feed isn't confirmed" when the feed is. A VERIFIED read keeps the gate's own
+ * block reason (normally null).
+ */
+export function gatedReadReason(
+  ctx: Pick<RubyChartContext, "basis" | "blockReason" | "gateOutput" | "state"> | null,
+): string | null {
+  if (!ctx) return "The chart could not be loaded, so I won't draw a tradeable setup.";
+  if (ctx.blockReason) return ctx.blockReason;
+  if (ctx.basis === "VERIFIED") return null;
+  const { state, gateOutput: gate } = ctx;
+  if (state.stale) return "The chart feed is stale, so I won't draw a tradeable setup. I'll mark levels once it is live again.";
+  if (!state.aiUsable) return "The chart feed is delayed, not live, so I won't draw a tradeable setup. I'll mark levels once it is live.";
+  if (!gate.confidentReadAllowed) {
+    return `The candles have not passed their checks yet (chart truth ${Math.round(gate.chartTruthScore)} of 100), so I won't draw a tradeable setup.`;
+  }
+  const pending: string[] = [];
+  if (!gate.autonomousChartActionAllowed) pending.push("the feed is not fresh enough for a live setup");
+  if (!gate.tradeConfirmationAllowed) pending.push("the chart price has not been confirmed against your broker's quote");
+  const handshake = buildChartHandshake(gate, state.chartTruthScore);
+  for (const [key, label] of GATED_CHECK_LABELS) {
+    const verdict = handshake[key];
+    if (verdict === "FAIL") pending.push(`${label} failed`);
+    else if (verdict === "WARN") pending.push(`${label} is not confirmed`);
+  }
+  if (pending.length === 0) return "Not every chart check has passed, so I won't draw a tradeable setup.";
+  return `Not every chart check has passed: ${pending.join("; ")}. I won't draw a tradeable setup until they do.`;
+}
+
 /**
  * Truthful trust line for a STRUCTURAL_ONLY read — enough CLOSED history to read
  * DIRECTION, but the exact live trade setup is WITHHELD (the live feed isn't

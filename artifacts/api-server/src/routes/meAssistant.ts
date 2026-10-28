@@ -68,7 +68,7 @@ import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.j
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { knownPricePrecision } from "../lib/data/chart/symbolProfile.js";
-import { buildRubyChartContext, buildGatedTrustLine } from "../lib/data/chart/rubyChartContext.js";
+import { buildRubyChartContext, buildGatedTrustLine, gatedReadReason } from "../lib/data/chart/rubyChartContext.js";
 import { buildRubyStructuralRead } from "../lib/assistant/rubyStructuralReadService.js";
 import { buildDecisionSnapshot, recordDecisionSnapshot } from "../lib/data/chart/chartDecisionSnapshot.js";
 import { buildRubyDraftRead, type RubyDraftIntent } from "../lib/assistant/rubyDraftRead.js";
@@ -740,8 +740,20 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   }
 
   const basis = rubyCtx?.basis ?? "INSUFFICIENT";
-  const trustLine = rubyCtx?.trustLine ?? `${timeframe} candles syncing`;
-  const blockReason = rubyCtx?.blockReason ?? null;
+  // HONESTY (same rule as draft-read and read-chart): a gated read never shows
+  // the success-path "Verified … · Live feed …" line, which is composed from
+  // raw gate flags and can disagree with the feed state that set the basis.
+  const trustLine = rubyCtx && basis === "VERIFIED"
+    ? rubyCtx.trustLine
+    : buildGatedTrustLine(timeframe, {
+        available: rubyCtx != null,
+        stale: rubyCtx?.state.stale ?? false,
+        aiUsable: rubyCtx?.state.aiUsable ?? false,
+        basis,
+      });
+  // Name what is actually not confirmed (feed, candles, or the specific chart
+  // check) so the refusal never says "the feed isn't confirmed" when it is.
+  const blockReason = gatedReadReason(rubyCtx);
 
   // Provider honesty: name the source that actually served this series. Only
   // the MetaTrader 5 broker bridge is broker-native; any other (or unreported)
