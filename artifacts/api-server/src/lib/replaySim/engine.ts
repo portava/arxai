@@ -171,9 +171,13 @@ export interface RunRecord {
   wins: number;
   losses: number;
   breakEven: number;
-  winRate: number;
+  /** Percent of closed trades that won; null when no simulated trade closed (there is no win rate). */
+  winRate: number | null;
   maxDrawdown: number;
-  profitFactor: number;
+  /** Gross profit / gross loss; null when no closed trade lost (the ratio is undefined). */
+  profitFactor: number | null;
+  /** Size every simulated trade used. P&L and drawdown are candle price differences x this size, not money. */
+  positionSize: number;
   bestTrade: SimTrade | null;
   worstTrade: SimTrade | null;
 }
@@ -204,6 +208,7 @@ export async function runReplay(scenario: Scenario, settings: RunSettings = {}, 
   const slDist = settings.slDistance ?? 5;
   const tpDist = settings.tpDistance ?? 10;
   const useSniper = settings.useSniperFilter !== false;
+  const positionSize = settings.riskPercent ? Math.max(0.01, settings.riskPercent / 100) : 1;
 
   await logEvent(replayRunId, "REPLAY_STARTED", "INFO", `Replay started for scenario ${scenario.scenarioId}`, {
     symbol: scenario.symbol, timeframe: scenario.timeframe, candleCount: candles.length, settings,
@@ -284,7 +289,7 @@ export async function runReplay(scenario: Scenario, settings: RunSettings = {}, 
             exitPrice: 0,
             stopLoss: +(entry + slDist * slDirSign).toFixed(4),
             takeProfit: +(entry + tpDist * tpDirSign).toFixed(4),
-            positionSize: settings.riskPercent ? Math.max(0.01, settings.riskPercent / 100) : 1,
+            positionSize,
             pnl: 0,
             pnlPercent: 0,
             result: "OPEN",
@@ -331,10 +336,10 @@ export async function runReplay(scenario: Scenario, settings: RunSettings = {}, 
   const breakEven = trades.filter(t => t.result === "BREAK_EVEN").length;
   const closed = trades.filter(t => t.status === "CLOSED");
   const netPnl = +closed.reduce((s, t) => s + t.pnl, 0).toFixed(4);
-  const winRate = closed.length > 0 ? +((wins / closed.length) * 100).toFixed(2) : 0;
+  const winRate = closed.length > 0 ? +((wins / closed.length) * 100).toFixed(2) : null;
   const grossWin = closed.filter(t => t.pnl > 0).reduce((s, t) => s + t.pnl, 0);
   const grossLoss = Math.abs(closed.filter(t => t.pnl < 0).reduce((s, t) => s + t.pnl, 0));
-  const profitFactor = grossLoss > 0 ? +(grossWin / grossLoss).toFixed(3) : (grossWin > 0 ? 999 : 0);
+  const profitFactor = grossLoss > 0 ? +(grossWin / grossLoss).toFixed(3) : null;
   // Drawdown
   let runningPnl = 0; let peak = 0; let maxDd = 0;
   for (const t of closed) {
@@ -358,7 +363,8 @@ export async function runReplay(scenario: Scenario, settings: RunSettings = {}, 
     symbol: scenario.symbol, timeframe: scenario.timeframe,
     candlesProcessed, decisionsCreated,
     simulatedTradesOpened: trades.length, simulatedTradesClosed: closed.length,
-    wins, losses, breakEven, netPnl, maxDrawdown: +maxDd.toFixed(4), winRate, profitFactor,
+    wins, losses, breakEven, netPnl, maxDrawdown: +maxDd.toFixed(4),
+    winRate: storedWinRate(winRate), profitFactor: storedProfitFactor(profitFactor, wins),
     replaySummary: { bestTradeId: bestTrade?.replayTradeId, worstTradeId: worstTrade?.replayTradeId, settings },
     warnings, errors, startedAt, finishedAt,
   });
@@ -379,9 +385,29 @@ export async function runReplay(scenario: Scenario, settings: RunSettings = {}, 
   return {
     replayRunId, scenarioId: scenario.scenarioId, symbol: scenario.symbol, timeframe: scenario.timeframe,
     status, candlesProcessed, decisionsCreated, trades, warnings, errors, startedAt, finishedAt,
-    netPnl, wins, losses, breakEven, winRate, maxDrawdown: +maxDd.toFixed(4), profitFactor,
+    netPnl, wins, losses, breakEven, winRate, maxDrawdown: +maxDd.toFixed(4), profitFactor, positionSize,
     bestTrade, worstTrade,
   };
+}
+
+// replay_runs / replay_reports keep win_rate and profit_factor in NOT NULL
+// columns. New rows keep the encoding stored rows have always had (0 when no
+// trade closed; profit factor 999 when no trade lost) so every row reads the
+// same way; the run record and the run response carry null instead.
+function storedWinRate(winRate: number | null): number { return winRate ?? 0; }
+function storedProfitFactor(profitFactor: number | null, wins: number): number {
+  return profitFactor ?? (wins > 0 ? 999 : 0);
+}
+
+/** Plain-English profit factor: never the stored sentinel. */
+function profitFactorText(run: Pick<RunRecord, "profitFactor" | "wins">): string {
+  if (run.profitFactor != null) return String(run.profitFactor);
+  return run.wins > 0 ? "n/a (no losing trades)" : "n/a (no closed trades)";
+}
+
+/** Unit of every P&L / drawdown figure the engine reports. */
+export function pnlUnitText(positionSize: number): string {
+  return `price points x size ${positionSize}, not money`;
 }
 
 export async function generateReplayReport(run: RunRecord, scenario: Scenario) {
@@ -405,20 +431,27 @@ export async function generateReplayReport(run: RunRecord, scenario: Scenario) {
   const ambig = closed.filter(t => t.closeReason === "AMBIGUOUS_BAR_SL_FIRST").length;
   if (slCount >= 3) mistakePatterns.push({ tag: "FREQUENT_SL_HIT", count: slCount, note: "Many trades closed at SL — review entry quality or SL distance." });
   if (ambig >= 1) mistakePatterns.push({ tag: "AMBIGUOUS_BAR", count: ambig, note: "Same bar hit both SL and TP — replay assumes SL first (conservative)." });
+  const unit = pnlUnitText(run.positionSize);
   if (run.maxDrawdown > Math.abs(run.netPnl) * 1.5 && run.netPnl > 0) {
-    mistakePatterns.push({ tag: "HIGH_DRAWDOWN_VS_PROFIT", count: 1, note: `Drawdown ${run.maxDrawdown} large vs net ${run.netPnl}.` });
+    mistakePatterns.push({ tag: "HIGH_DRAWDOWN_VS_PROFIT", count: 1, note: `Drawdown ${run.maxDrawdown} large vs net ${run.netPnl} (${unit}).` });
   }
 
   const playbookRecommendations: { type: string; message: string }[] = [];
-  const shouldPromote = run.winRate >= 60 && closed.length >= 10 && run.profitFactor >= 1.5 && run.netPnl > 0;
-  const shouldReview = run.winRate < 40 || run.netPnl < 0 || run.maxDrawdown > Math.abs(run.netPnl) * 2;
-  if (shouldPromote) playbookRecommendations.push({ type: "PROMOTE", message: `Setup performed well in REPLAY (winRate ${run.winRate}%, PF ${run.profitFactor}). Candidate for ACTIVE — needs live paper validation, not live money.` });
-  if (shouldReview)  playbookRecommendations.push({ type: "REVIEW",  message: `Setup underperformed in REPLAY (winRate ${run.winRate}%, net ${run.netPnl}). Mark for REVIEW.` });
+  // No losing trade means gross profit with zero gross loss: better than any
+  // ratio threshold (the stored sentinel 999 always passed this check).
+  const pfAtLeast = (min: number) => run.profitFactor != null ? run.profitFactor >= min : run.wins > 0;
+  const shouldPromote = run.winRate != null && run.winRate >= 60 && closed.length >= 10 && pfAtLeast(1.5) && run.netPnl > 0;
+  // With no closed trade nothing was measured, so nothing "underperformed".
+  const shouldReview = (run.winRate != null && run.winRate < 40) || run.netPnl < 0 || run.maxDrawdown > Math.abs(run.netPnl) * 2;
+  if (shouldPromote) playbookRecommendations.push({ type: "PROMOTE", message: `Setup performed well in REPLAY (winRate ${run.winRate}%, PF ${profitFactorText(run)}). Candidate for ACTIVE — needs live paper validation, not live money.` });
+  if (shouldReview)  playbookRecommendations.push({ type: "REVIEW",  message: `Setup underperformed in REPLAY (winRate ${run.winRate == null ? "n/a" : `${run.winRate}%`}, net ${run.netPnl} — ${unit}). Mark for REVIEW.` });
   if (closed.length < 5) playbookRecommendations.push({ type: "MORE_DATA", message: "Not enough simulated trades for a confident recommendation. Run more scenarios." });
 
   const coachNotes: string[] = [
     `Replay processed ${run.candlesProcessed} candles, took ${closed.length} trades.`,
-    `Win rate ${run.winRate}% on ${closed.length} trades; net ${run.netPnl}; max DD ${run.maxDrawdown}.`,
+    closed.length > 0
+      ? `Win rate ${run.winRate}% on ${closed.length} closed trades; net ${run.netPnl}; max DD ${run.maxDrawdown} (${unit}); profit factor ${profitFactorText(run)}.`
+      : "No simulated trade closed, so there is no win rate or profit factor yet.",
     "All findings are SIMULATION-based and do not authorize live trading.",
   ];
   const safetyNotes: string[] = [
@@ -432,7 +465,8 @@ export async function generateReplayReport(run: RunRecord, scenario: Scenario) {
     replayReportId: reportId, replayRunId: run.replayRunId, scenarioId: scenario.scenarioId,
     symbol: scenario.symbol, timeframe: scenario.timeframe,
     totalTrades: closed.length, wins: run.wins, losses: run.losses, breakEven: run.breakEven,
-    winRate: run.winRate, netPnl: run.netPnl, maxDrawdown: run.maxDrawdown, profitFactor: run.profitFactor,
+    winRate: storedWinRate(run.winRate), netPnl: run.netPnl, maxDrawdown: run.maxDrawdown,
+    profitFactor: storedProfitFactor(run.profitFactor, run.wins),
     avgWin, avgLoss, bestSetup, weakestSetup,
     mistakePatterns, playbookRecommendations, coachNotes, safetyNotes,
     shouldPromoteToPlaybook: shouldPromote, shouldMarkForReview: shouldReview,
@@ -445,7 +479,9 @@ export async function generateReplayReport(run: RunRecord, scenario: Scenario) {
     timeframe: scenario.timeframe,
     total_trades: closed.length,
     wins: run.wins, losses: run.losses, break_even: run.breakEven,
-    win_rate: run.winRate, net_pnl: run.netPnl, max_drawdown: run.maxDrawdown, profit_factor: run.profitFactor,
+    // Mirrors the stored report row (NOT NULL columns; see storedProfitFactor).
+    win_rate: storedWinRate(run.winRate), net_pnl: run.netPnl, max_drawdown: run.maxDrawdown,
+    profit_factor: storedProfitFactor(run.profitFactor, run.wins),
     avg_win: avgWin, avg_loss: avgLoss,
     best_setup: bestSetup, weakest_setup: weakestSetup,
     mistake_patterns: mistakePatterns,

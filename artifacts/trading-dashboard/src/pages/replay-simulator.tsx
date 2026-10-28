@@ -15,8 +15,12 @@ interface RunResult {
   replay_run_id: string; scenario_id: string; status: string; symbol: string;
   candles_processed: number; decisions_created: number;
   simulated_trades_opened: number; simulated_trades_closed: number;
-  wins: number; losses: number; net_pnl: number; win_rate: number;
-  max_drawdown: number; profit_factor: number;
+  wins: number; losses: number; break_even?: number; net_pnl: number;
+  // null when undefined: no closed trade (win rate) or no losing trade (profit factor).
+  win_rate: number | null;
+  max_drawdown: number; profit_factor: number | null;
+  // P&L and drawdown are candle price differences x this size, not money.
+  position_size?: number;
   warnings: string[]; errors: string[];
   report: {
     coach_notes: string[]; safety_notes: string[];
@@ -40,6 +44,19 @@ function runStatusPill(status: string): { kind: StatusKind; label: string; ariaL
       return { kind: "INACTIVE", label: shown, ariaLabel: `status: unknown (${raw === "" ? "none reported" : raw})` };
     }
   }
+}
+
+// Win rate needs at least one closed trade. An older server sent 0 here.
+function winRateText(r: RunResult): string {
+  if (!(r.simulated_trades_closed > 0) || r.win_rate == null) return "— (no closed trades)";
+  return `${r.win_rate}%`;
+}
+
+// Profit factor is gross profit / gross loss, so it needs a losing trade. An
+// older server sent the sentinel 999 (no losses) or 0 (no trades) here.
+function profitFactorText(r: RunResult): string {
+  if (!(r.losses > 0) || r.profit_factor == null) return r.wins > 0 ? "— (no losing trades)" : "— (no closed trades)";
+  return String(r.profit_factor);
 }
 
 export default function ReplaySimulator() {
@@ -161,16 +178,19 @@ export default function ReplaySimulator() {
               </ul>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-sm">
-              <Stat label="Candles" value={result.candles_processed} />
-              <Stat label="Decisions" value={result.decisions_created} />
-              <Stat label="Trades opened" value={result.simulated_trades_opened} />
-              <Stat label="Trades closed" value={result.simulated_trades_closed} />
-              <Stat label="Wins / Losses" value={`${result.wins} / ${result.losses}`} />
-              <Stat label="Win rate" value={`${result.win_rate}%`} />
-              <Stat label="Net P&L" value={result.net_pnl} />
-              <Stat label="Max DD" value={result.max_drawdown} />
-              <Stat label="Profit factor" value={result.profit_factor} />
+              <Stat id="candles" label="Candles" value={result.candles_processed} />
+              <Stat id="decisions" label="Decisions" value={result.decisions_created} />
+              <Stat id="opened" label="Trades opened" value={result.simulated_trades_opened} />
+              <Stat id="closed" label="Trades closed" value={result.simulated_trades_closed} />
+              <Stat id="wins-losses" label="Wins / Losses / Even" value={`${result.wins} / ${result.losses} / ${result.break_even ?? "—"}`} />
+              <Stat id="win-rate" label="Win rate" value={winRateText(result)} />
+              <Stat id="net-pnl" label="Net P&L" value={`${result.net_pnl} pts`} />
+              <Stat id="max-dd" label="Max DD" value={`${result.max_drawdown} pts`} />
+              <Stat id="profit-factor" label="Profit factor" value={profitFactorText(result)} />
             </div>
+            <p className="text-xs text-muted-foreground" data-testid="replay-pnl-unit">
+              P&L and drawdown are price points: candle price differences × position size {result.position_size ?? "(not reported)"} on this scenario's candles — not money.
+            </p>
             {result.report.coach_notes.length > 0 && (
               <div>
                 <h3 className="font-semibold text-sm mt-2">Coach notes</h3>
@@ -198,9 +218,9 @@ export default function ReplaySimulator() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
+function Stat({ id, label, value }: { id: string; label: string; value: string | number }) {
   return (
-    <div className="border border-border rounded-md p-2 bg-card">
+    <div className="border border-border rounded-md p-2 bg-card" data-testid={`replay-stat-${id}`}>
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="text-base font-semibold tabular-nums">{value}</div>
     </div>
