@@ -109,3 +109,14 @@ test("bridge offline: still says reconciliation cannot run, and never claims liv
   assert.equal(r.placementLayer, "LIVE_LOCKED_FOR_ACCOUNT");
   assert.doesNotMatch(r.placementLayerNote, /available for your account/);
 });
+
+test("connected bridge label is not presented as the account's live permission", async () => {
+  currentEnv = ARMED_LIVE;
+  primaryConnection = connectedBridge();
+  const r = await getReconciliationStatus(10);
+  assert.equal(r.bridge.mode, "READ_ONLY");
+  assert.match(r.bridge.modeNote, /connection label only — it is not this account's live-trading permission/);
+  primaryConnection = null;
+  const off = await getReconciliationStatus(11);
+  assert.match(off.bridge.modeNote, /offline/);
+});
