@@ -54,6 +54,8 @@ type ReconFeed = {
   complete?: boolean;
   /** Issue types whose detector could not run (unknown, not zero). */
   uncheckedTypes?: string[];
+  /** Lists that hit their row cap: more matched than were listed. */
+  truncatedChecks?: Array<{ check: string; type: string; limit: number }>;
   reason?: string;
 };
 // "loading" before the first answer, "failed" when the feed could not be
@@ -61,7 +63,7 @@ type ReconFeed = {
 type ReconLoad =
   | { state: "loading" }
   | { state: "failed"; reason: string | null }
-  | { state: "loaded"; complete: boolean; uncheckedTypes: string[] };
+  | { state: "loaded"; complete: boolean; uncheckedTypes: string[]; cut: Array<{ type: string; limit: number }> };
 type SymbolCap = {
   userId: number; symbol: string; brokerSymbol: string | null; accountType: string | null;
   visible: boolean | null; tradeAllowed: boolean | null; tradeMode: string | null;
@@ -109,7 +111,10 @@ function BridgeDiagnosticsInner() {
       if (rc.ok) setRetcodes(rc.retcodes ?? []);
       if (ri.ok) {
         setIssues(ri.issues ?? []);
-        setRecon({ state: "loaded", complete: ri.complete === true, uncheckedTypes: ri.uncheckedTypes ?? [] });
+        setRecon({
+          state: "loaded", complete: ri.complete === true, uncheckedTypes: ri.uncheckedTypes ?? [],
+          cut: (ri.truncatedChecks ?? []).map((c) => ({ type: c.type, limit: c.limit })),
+        });
       } else {
         setIssues([]);
         setRecon({ state: "failed", reason: ri.reason ?? ri.error ?? null });
@@ -157,6 +162,11 @@ function BridgeDiagnosticsInner() {
       orphans, stale, duplicates, other,
       orphansUnchecked: unchecked(["ORPHAN_BROKER_POSITION"]),
       staleUnchecked: unchecked(["COMMAND_RESULT_MISMATCH", "STALE_HEARTBEAT"]),
+      // Capped lists: "first N listed, more exist" — never presented as all.
+      orphansCut: recon.state === "loaded" ? recon.cut.filter((c) => c.type === "ORPHAN_BROKER_POSITION") : [],
+      staleCut: recon.state === "loaded"
+        ? recon.cut.filter((c) => c.type === "COMMAND_RESULT_MISMATCH" || c.type === "STALE_HEARTBEAT")
+        : [],
     };
   }, [issues, verdicts, recon]);
 
@@ -288,6 +298,11 @@ function BridgeDiagnosticsInner() {
               <div className="text-xs text-txt-muted" data-testid="orphans-none">No orphan positions detected.</div>
             ) : (
               <div className="space-y-1">
+                {reconGroups.orphansCut.length > 0 && (
+                  <div className="text-xs text-warning" data-testid="orphans-capped">
+                    Showing the first {reconGroups.orphansCut[0]!.limit} orphan positions; more exist.
+                  </div>
+                )}
                 {reconGroups.orphans.map((i) => (
                   <div key={i.id} className="rounded-md border border-danger/40 bg-danger/5 p-2 text-xs" data-testid={`orphan-${i.id}`}>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -314,6 +329,11 @@ function BridgeDiagnosticsInner() {
               <div className="text-xs text-txt-muted" data-testid="stale-none">No stale commands or heartbeats.</div>
             ) : (
               <div className="space-y-1">
+                {reconGroups.staleCut.map((c) => (
+                  <div key={c.type} className="text-xs text-warning" data-testid={`stale-capped-${c.type}`}>
+                    {c.type}: showing the first {c.limit}; more exist.
+                  </div>
+                ))}
                 {reconGroups.stale.map((i) => (
                   <div key={i.id} className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs" data-testid={`stale-${i.id}`}>
                     <div className="flex items-center gap-2 flex-wrap">

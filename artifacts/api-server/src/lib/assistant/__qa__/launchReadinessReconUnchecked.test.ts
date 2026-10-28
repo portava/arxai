@@ -50,6 +50,7 @@ function aggOf(over: Partial<Agg>): Agg {
   return {
     issues: [], countsByType: {} as Agg["countsByType"], countsBySeverity: ZERO, total: 0,
     computedAt: new Date().toISOString(), complete: true, failedChecks: [], uncheckedTypes: [],
+    truncated: false, truncatedChecks: [], truncatedTypes: [], truncatedSeverities: [],
     ...over,
   } as Agg;
 }
@@ -75,6 +76,20 @@ test("an unchecked critical detector blocks the verdict instead of reading as 0 
   assert.ok(r.blockers.includes("RECONCILIATION_UNCHECKED=ORPHAN_BROKER_POSITION"), JSON.stringify(r.blockers));
   assert.equal(r.counts.reconciliationChecksComplete, false);
   assert.deepEqual(r.counts.reconciliationUncheckedTypes, ["ORPHAN_BROKER_POSITION"]);
+});
+
+test("capped reconciliation lists are reported as lower-bound counts", async () => {
+  agg = aggOf({
+    total: 50, countsBySeverity: { ...ZERO, high: 50 },
+    truncated: true, truncatedTypes: ["MISSING_ATTRIBUTION"], truncatedSeverities: ["high"],
+    truncatedChecks: [{ check: "missing_attribution", type: "MISSING_ATTRIBUTION", severity: "high", limit: 50 }],
+  });
+  const r = (await summarizeLaunchReadinessForAdminTool(1)) as {
+    counts: { reconciliationHigh: number; reconciliationCountsAreLowerBounds: boolean; reconciliationTruncatedTypes: string[] };
+  };
+  assert.equal(r.counts.reconciliationHigh, 50);
+  assert.equal(r.counts.reconciliationCountsAreLowerBounds, true);
+  assert.deepEqual(r.counts.reconciliationTruncatedTypes, ["MISSING_ATTRIBUTION"]);
 });
 
 test("an unchecked lower-severity detector is a needs-action item, not 'all clear'", async () => {

@@ -112,6 +112,8 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
     /** False when any detector could not run: 0 issues is then "not fully checked". */
     checksComplete: boolean;
     uncheckedTypes: string[];
+    /** Types whose list hit its row cap: this bridge's issue may be past it. */
+    truncatedTypes: string[];
   } {
     const seen = new Map<string, ReconciliationIssue>();
     for (const i of issuesByConnection.get(connectionId) ?? []) seen.set(i.id, i);
@@ -130,6 +132,7 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
       computedAt: reconciliation.computedAt,
       checksComplete: reconciliation.complete,
       uncheckedTypes: reconciliation.uncheckedTypes,
+      truncatedTypes: reconciliation.truncatedTypes,
     };
   }
 

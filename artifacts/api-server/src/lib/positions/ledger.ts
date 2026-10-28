@@ -291,7 +291,7 @@ export async function readLiveFloatingLoss(client: Pick<PoolClient, "query">, us
 }
 
 /** Operator detector: unreconciled open broker rows without a governed entry. */
-export async function readOrphanLivePositions() {
+export async function readOrphanLivePositions(limit = 50) {
   return pool.query<Record<string, unknown>>(
     `SELECT p.id, p.user_id, p.bridge_connection_id, p.broker_ticket, p.symbol,
               p.source_command_id, p.opened_at,
@@ -303,7 +303,8 @@ export async function readOrphanLivePositions() {
           AND (p.source_command_id IS NULL
                OR NOT EXISTS (SELECT 1 FROM arx_live_commands c
                                WHERE c.command_id = p.source_command_id))
-        LIMIT 50`,
+        LIMIT $1`,
+    [limit],
   );
 }
 

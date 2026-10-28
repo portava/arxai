@@ -27,6 +27,11 @@ interface Resp {
   /** Issue types whose detector could not run (unknown, not zero). */
   uncheckedTypes?: string[];
   failedChecks?: Array<{ check: string; type: string; severity: Sev; error: string }>;
+  /** True when a detector's list hit its row cap: those counts are "at least". */
+  truncated?: boolean;
+  truncatedChecks?: Array<{ check: string; type: string; severity: Sev; limit: number }>;
+  truncatedTypes?: string[];
+  truncatedSeverities?: Sev[];
 }
 
 const ACTIONS = [
@@ -90,6 +95,10 @@ export default function AdminReconciliationCenter() {
   const byType = data.countsByType ?? {};
   const complete = data.complete === true;
   const unchecked = data.uncheckedTypes ?? [];
+  // A capped list means more matched than were listed: "50+" is a lower bound.
+  const cutTypes = data.truncatedTypes ?? [];
+  const cutSeverities = data.truncatedSeverities ?? [];
+  const plus = (cut: boolean) => (cut ? "+" : "");
 
   return (
     <div className="space-y-4 p-4">
@@ -99,7 +108,7 @@ export default function AdminReconciliationCenter() {
           <h1 className="text-2xl font-bold">Reconciliation Center</h1>
           <p className="text-sm text-muted-foreground">Admin-only. Read + audited actions only — never places trades.</p>
         </div>
-        <Badge variant="outline">total {data.total ?? 0}</Badge>
+        <Badge variant="outline">{data.truncated ? `total at least ${data.total ?? 0}` : `total ${data.total ?? 0}`}</Badge>
         {!complete && <Badge variant="outline" className="border-warning/40 text-warning">incomplete check</Badge>}
       </div>
 
@@ -121,13 +130,24 @@ export default function AdminReconciliationCenter() {
         </Card>
       )}
 
+      {data.truncated && (
+        <Card className="border-warning/40" data-testid="recon-capped">
+          <CardContent className="pt-4 text-sm space-y-1">
+            <p className="text-warning">Some lists hit their row cap, so counts marked + are lower bounds — the true numbers are higher.</p>
+            {(data.truncatedChecks ?? []).map((c) => (
+              <p key={c.check} className="text-xs text-muted-foreground">{c.type} ({c.check}): first {c.limit} listed, more exist.</p>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader><CardTitle className="text-base">Counts by severity</CardTitle></CardHeader>
         <CardContent className="flex gap-2 flex-wrap text-sm">
-          <Badge className="bg-danger/20 text-danger">critical {sev.critical}</Badge>
-          <Badge className="bg-warning/20 text-warning">high {sev.high}</Badge>
-          <Badge className="bg-warning/20 text-warning">medium {sev.medium}</Badge>
-          <Badge className="bg-primary/20 text-primary">low {sev.low}</Badge>
+          <Badge className="bg-danger/20 text-danger" data-testid="recon-sev-critical">critical {sev.critical}{plus(cutSeverities.includes("critical"))}</Badge>
+          <Badge className="bg-warning/20 text-warning" data-testid="recon-sev-high">high {sev.high}{plus(cutSeverities.includes("high"))}</Badge>
+          <Badge className="bg-warning/20 text-warning" data-testid="recon-sev-medium">medium {sev.medium}{plus(cutSeverities.includes("medium"))}</Badge>
+          <Badge className="bg-primary/20 text-primary" data-testid="recon-sev-low">low {sev.low}{plus(cutSeverities.includes("low"))}</Badge>
         </CardContent>
       </Card>
 
@@ -137,7 +157,7 @@ export default function AdminReconciliationCenter() {
           {Object.entries(byType).map(([k, v]) => (
             <div key={k} className="flex justify-between border-b border-border/40 py-1" data-testid={`recon-type-${k}`}>
               <span className="text-muted-foreground">{k}</span>
-              <span>{unchecked.includes(k) ? <span className="text-warning">not checked</span> : v}</span>
+              <span>{unchecked.includes(k) ? <span className="text-warning">not checked</span> : `${v}${plus(cutTypes.includes(k))}`}</span>
             </div>
           ))}
         </CardContent>

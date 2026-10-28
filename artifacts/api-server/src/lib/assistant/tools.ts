@@ -2275,7 +2275,11 @@ async function getReconciliationCenterSummaryTool(userId: number): Promise<unkno
   return {
     ok: true, total: agg.total, countsByType: agg.countsByType, countsBySeverity: agg.countsBySeverity, issues,
     complete: agg.complete, uncheckedTypes: agg.uncheckedTypes,
-    note: agg.complete ? undefined : `Not every reconciliation check ran. Could not be checked: ${agg.uncheckedTypes.join(", ")}. Counts cover only the checks that ran.`,
+    truncated: agg.truncated, truncatedTypes: agg.truncatedTypes,
+    note: [
+      agg.complete ? null : `Not every reconciliation check ran. Could not be checked: ${agg.uncheckedTypes.join(", ")}. Counts cover only the checks that ran.`,
+      agg.truncated ? `These lists hit their row cap, so their counts are "at least", not totals: ${agg.truncatedTypes.join(", ")}.` : null,
+    ].filter(Boolean).join(" ") || undefined,
   };
 }
 
@@ -2670,6 +2674,9 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
         reconciliationHigh: recon.countsBySeverity?.high ?? 0,
         reconciliationChecksComplete: recon.complete === true,
         reconciliationUncheckedTypes: recon.uncheckedTypes ?? [],
+        // A list hit its row cap: the reconciliation counts are "at least".
+        reconciliationCountsAreLowerBounds: recon.truncated === true,
+        reconciliationTruncatedTypes: recon.truncatedTypes ?? [],
       },
       userApprovals,
       doNotTouch: [

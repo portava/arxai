@@ -49,6 +49,10 @@ type OperatorPayload = {
     /** True only when every reconciliation detector ran. */
     complete?: boolean;
     uncheckedTypes?: string[];
+    /** A list hit its row cap: these counts are lower bounds. */
+    truncated?: boolean;
+    truncatedTypes?: string[];
+    truncatedSeverities?: string[];
   };
 };
 
@@ -245,12 +249,17 @@ export default function OperatorCommandCenter() {
               . The counts below cover only the checks that ran.
             </p>
           )}
+          {d.reconciliationSummary.truncated && (
+            <p className="text-warning" data-testid="reconciliation-capped">
+              {(d.reconciliationSummary.truncatedTypes ?? []).join(", ")} hit the row cap — counts marked + are lower bounds.
+            </p>
+          )}
           <div className="grid grid-cols-5 gap-2">
-            <div>Total: <strong>{d.reconciliationSummary.total}</strong></div>
-            <div>Critical: <strong className="text-danger">{d.reconciliationSummary.critical}</strong></div>
-            <div>High: <strong>{d.reconciliationSummary.high}</strong></div>
-            <div>Medium: <strong>{d.reconciliationSummary.medium}</strong></div>
-            <div>Low: <strong>{d.reconciliationSummary.low}</strong></div>
+            <div>Total: <strong>{d.reconciliationSummary.total}{d.reconciliationSummary.truncated ? "+" : ""}</strong></div>
+            <div>Critical: <strong className="text-danger">{d.reconciliationSummary.critical}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("critical") ? "+" : ""}</strong></div>
+            <div>High: <strong>{d.reconciliationSummary.high}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("high") ? "+" : ""}</strong></div>
+            <div>Medium: <strong>{d.reconciliationSummary.medium}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("medium") ? "+" : ""}</strong></div>
+            <div>Low: <strong>{d.reconciliationSummary.low}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("low") ? "+" : ""}</strong></div>
           </div>
           {Object.keys(d.reconciliationSummary.byType).length > 0 && (
             <pre className="rounded-xl border border-border bg-background/40 p-2 text-xs text-txt-secondary">{JSON.stringify(d.reconciliationSummary.byType, null, 2)}</pre>

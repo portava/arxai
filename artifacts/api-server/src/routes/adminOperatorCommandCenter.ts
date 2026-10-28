@@ -166,6 +166,11 @@ router.get("/admin/operator-command-center", async (req, res) => {
       // only the checks that ran, and the unchecked types are unknown.
       complete: recon.complete,
       uncheckedTypes: recon.uncheckedTypes,
+      // True when a detector's list hit its row cap: the counts for these
+      // types/severities are "at least", not totals.
+      truncated: recon.truncated,
+      truncatedTypes: recon.truncatedTypes,
+      truncatedSeverities: recon.truncatedSeverities,
     };
 
     // Audit (one row per panel view).
