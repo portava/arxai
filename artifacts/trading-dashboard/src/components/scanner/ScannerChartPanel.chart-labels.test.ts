@@ -49,3 +49,12 @@ describe("ScannerChartPanel — frozen-quote chip", () => {
     expect(code).toMatch(/marketClosed: truth\?\.marketClosure != null \|\| scheduledClosure/);
   });
 });
+
+describe("ScannerChartPanel — candle-close countdown", () => {
+  it("is withdrawn while the broker keeps repeating one quote (no 'closes in' on a frozen market)", () => {
+    const idx = code.indexOf("<CandleCloseCountdown");
+    expect(idx).toBeGreaterThan(-1);
+    const gate = code.slice(code.lastIndexOf("{", idx), idx);
+    expect(gate).toMatch(/formingCloseMs != null && isLiveDisplay && marketFrozen == null/);
+  });
+});

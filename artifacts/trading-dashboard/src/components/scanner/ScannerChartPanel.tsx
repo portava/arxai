@@ -2451,9 +2451,11 @@ export function ScannerChartPanel() {
               </Badge>
             )}
             {/* Candle-close countdown (Task #524). Honesty-gated: only when the
-                feed is genuinely LIVE and a live forming bar has reported its
-                broker-aligned close time. The child owns its own 1s ticker. */}
-            {formingCloseMs != null && isLiveDisplay && (
+                feed is genuinely LIVE, a live forming bar has reported its
+                broker-aligned close time, and the broker is not repeating a
+                frozen quote (a stopped market has no bar closing). The child
+                owns its own 1s ticker. */}
+            {formingCloseMs != null && isLiveDisplay && marketFrozen == null && (
               <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} clockRef={serverClockRef} />
             )}
             {hasCandles && (
