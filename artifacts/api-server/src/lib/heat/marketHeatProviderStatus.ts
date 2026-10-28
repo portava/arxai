@@ -255,6 +255,19 @@ function isDerivBacked(provider: string | null | undefined): boolean {
 }
 
 /**
+ * User-safe price-source name for the heat card (never a raw router id such
+ * as "mt5_broker" or "assistant_real:twelvedata"; the raw id stays on
+ * `PriceProviderRead.provider` for admin diagnostics). "none" is preserved —
+ * downstream treats it as "not configured".
+ */
+export function priceSourceDisplayName(provider: string | null | undefined, storedMirror = false): string {
+  if (!provider || provider === "none") return "none";
+  if (provider === "mt5_broker") return storedMirror ? "MT5 broker (stored)" : "MT5 broker";
+  if (isDerivBacked(provider)) return "Deriv";
+  return "Market data provider";
+}
+
+/**
  * Probe the price router for a symbol and derive a normalized price signal.
  * Real-or-empty: an exhausted router yields an honest UNAVAILABLE signal.
  */
@@ -276,7 +289,7 @@ export async function readPriceProvider(
     return {
       source: {
         kind: "price",
-        name: provider,
+        name: priceSourceDisplayName(provider),
         status: "unavailable",
         configured: provider !== "none",
         connected: false,
@@ -313,6 +326,9 @@ export async function readPriceProvider(
   const volatility = Math.max(0, Math.min(1, (n ? sum / n : 0) * 200));
 
   const provider = result.primaryProvider ?? "none";
+  // The restart-surviving market_candles mirror is served only when no bridge
+  // is pushing this series: stored bars, never a live/connected provider.
+  const storedMirror = result.provenance?.subProviderId === "durable_mirror";
   const barTime = c[c.length - 1]!.time;
   const lastMs = Date.parse(barTime);
 
@@ -355,6 +371,7 @@ export async function readPriceProvider(
     const recentTick = tickUsable && nowMs - tickMs <= RECENT_TICK_MS;
     if (freshness === "LIVE" && !recentTick) freshness = "DELAYED";
   }
+  if (storedMirror && freshness === "LIVE") freshness = "DELAYED";
 
   const status =
     freshness === "STALE" ? "stale" : freshness === "DELAYED" ? "delayed" : "live";
@@ -362,18 +379,22 @@ export async function readPriceProvider(
   return {
     source: {
       kind: "price",
-      name: provider,
+      name: priceSourceDisplayName(provider, storedMirror),
       status,
       configured: true,
-      connected: true,
+      // "Connected" = a current feed answered: a stale series or the stored
+      // mirror returned bars but shows no current provider connection.
+      connected: freshness !== "STALE" && !storedMirror,
       updatedAt,
       recordCount: c.length,
       note:
-        status === "stale"
-          ? "Price feed is stale."
-          : status === "delayed"
-            ? "Price feed is delayed."
-            : null,
+        storedMirror
+          ? "Stored MT5 broker candles — no broker bridge is pushing this market right now."
+          : status === "stale"
+            ? "Price feed is stale."
+            : status === "delayed"
+              ? "Price feed is delayed."
+              : null,
     },
     available: true,
     momentum,
