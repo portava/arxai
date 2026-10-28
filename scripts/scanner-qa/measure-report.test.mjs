@@ -121,11 +121,11 @@ test("warm-up breaches are listed with their p95 but do not decide the verdict",
 });
 
 test("a failed iteration keeps the samples it measured and names them", () => {
-  const d = data([iteration({ error: "Same-universe selection blanked the results", partialRuns: [run(1, twenty(30)), { ...run(4, twenty(50).slice(0, 7)), inProgress: true }] })]);
+  const d = data([iteration({ error: "Same-universe selection blanked the results\nBrowser logs: ...", partialRuns: [run(1, twenty(30)), { ...run(4, twenty(50).slice(0, 7)), inProgress: true }] })]);
   d.config = { surfaces: ["fixture"], modes: ["prod"] };
   const groups = summarize(d);
   assert.equal(groups[0].passed, false);
-  assert.match(markdown(d, groups), /\*\*Error\*\* head round 1 iteration 1: Same-universe selection blanked the results \(samples kept in results\.json: 1× 20 clicks, p95 34 ms; 4× 7 clicks \(run interrupted\), p95 54 ms\)/);
+  assert.match(markdown(d, groups), /\*\*Error\*\* head round 1 iteration 1: Same-universe selection blanked the results \(full message in results\.json\) \(samples kept in results\.json: 1× 20 clicks, p95 34 ms; 4× 7 clicks \(run interrupted\), p95 54 ms\)/);
 });
 
 test("production groups show the bundle's provenance; a bundle from another commit fails", () => {

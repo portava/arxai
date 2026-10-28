@@ -131,7 +131,8 @@ export const markdown = (data, groups) => {
           if (r.runP95Outliers.items.length) L.push(`  - Run-level p95 outliers (${r.runP95Outliers.rule}, threshold ${r.runP95Outliers.threshold} ms): ${r.runP95Outliers.items.map(o => `round ${o.round} iteration ${o.iteration} ${o.p95} ms`).join("; ")}.`);
           if (r.sampleOutliers.items.length) L.push(`  - Click outliers (${r.sampleOutliers.rule}; median ${r.sampleOutliers.median} ms, threshold ±${r.sampleOutliers.threshold} ms): ${r.sampleOutliers.items.map(o => `r${o.round}/i${o.iteration}/click ${o.click + 1} ${o.ms} ms`).join("; ")}.`);
         }
-        for (const e of g.errors) L.push(`- **Error** ${g.checkout} round ${e.round} iteration ${e.iteration}: ${e.error}${e.partialRuns ? ` (samples kept in results.json: ${e.partialRuns.map(r =>
+        // First line of each error (the whole message is in results.json), then any samples it kept.
+        for (const e of g.errors) L.push(`- **Error** ${g.checkout} round ${e.round} iteration ${e.iteration}: ${e.error.split("\n")[0]}${e.error.includes("\n") ? " (full message in results.json)" : ""}${e.partialRuns ? ` (samples kept in results.json: ${e.partialRuns.map(r =>
           `${r.cpuRate}× ${r.samples.length} clicks${r.inProgress ? " (run interrupted)" : ""}, p95 ${round1(percentile(r.samples, .95)) ?? "—"} ms`).join("; ")})` : ""}`);
         for (const e of g.serverErrors) L.push(`- **Server failure** ${g.checkout} round ${e.round}: ${e.error}`);
         for (const b of g.bundles) {
