@@ -231,8 +231,11 @@ export function computeChartTruthScore(
   let mirrorRaw: number;
   let mirrorDetail: string;
   if (!seamMeasured) {
-    mirrorRaw = 80;
-    mirrorDetail = "No closed-to-forming pair available — seam not assessable.";
+    // Half of this check (seam integrity) was not observed, so it earns no
+    // placeholder points: below, only an observed broker FAILURE is scored
+    // (it stays a measured failure); anything else is left unmeasured.
+    mirrorRaw = 100;
+    mirrorDetail = "Merge seam could not be checked (no closed-to-forming bar pair).";
   } else if (seam.overlapAtSeam) {
     mirrorRaw = 30;
     mirrorDetail = "Seam overlap detected — forming bar open overlaps last closed bar.";
@@ -278,6 +281,10 @@ export function computeChartTruthScore(
     mirrorDetail += " Broker quote unavailable for alignment check.";
   }
   const alignmentMeasured = hasMeasuredBrokerAlignment(alignment);
+  // Seam not checked: a failure in either half fails the whole check, so an
+  // observed broker FAILURE is scored. A healthy or drifting comparison cannot
+  // confirm the mirror on its own and earns no points.
+  const mirrorScored = alignmentMeasured && (seamMeasured || alignment!.tolerance === "failed");
   // A numeric comparison whose quote is not bound to this series' identity and
   // freshness earns nothing; the observed binding failure stays named.
   const binding = alignment?.quoteBinding;
@@ -289,8 +296,10 @@ export function computeChartTruthScore(
       ? "Broker mirror accuracy unmeasured — broker quote identity and freshness were not evaluated."
       : "Broker mirror accuracy unmeasured — no usable broker-price comparison.";
   subMetrics.push(sub("symbol_mirror_accuracy", "Symbol Mirror Accuracy", 0.12,
-    alignmentMeasured ? mirrorRaw : null,
-    alignmentMeasured ? mirrorDetail : unboundDetail));
+    mirrorScored ? mirrorRaw : null,
+    mirrorScored ? mirrorDetail
+      : alignmentMeasured ? `${mirrorDetail} Symbol mirror not confirmed — this check earns no points until the seam is observed too.`
+        : unboundDetail));
 
   // ── 5. Historical/Live Merge Quality (0.10) ───────────────────────────────
   // Strictly the quality of the merge seam itself.
