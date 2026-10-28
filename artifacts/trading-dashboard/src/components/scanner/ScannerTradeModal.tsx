@@ -140,7 +140,11 @@ export function ScannerTradeModal({
   const [cmd, setCmd] = useState<DemoCommand | null>(null);
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [bridge, setBridge] = useState<BridgeReadiness | null>(null);
-  const [bridgeLoading, setBridgeLoading] = useState(false);
+  // Outcome of the most recent bridge-status request. "checking" until the
+  // first answer of this open; "failed" when the request errored — the bridge
+  // state is then UNKNOWN (never reported as "no bridge connected").
+  const [bridgeCheck, setBridgeCheck] = useState<"checking" | "failed" | "done">("checking");
+  const [bridgeCheckDetail, setBridgeCheckDetail] = useState<string | null>(null);
   const idempotencyKeyRef = useRef<string>(`sc-${signal.symbol}-${signal.timeframe ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
   const toastedTerminalRef = useRef<string | null>(null);
   // Tracks whether the editable "Current price" has been seeded from the shared
@@ -205,16 +209,29 @@ export function ScannerTradeModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    // A snapshot from an earlier open is not this open's bridge state.
+    setBridge(null);
+    setBridgeCheck("checking");
+    setBridgeCheckDetail(null);
+    // A failed request leaves the bridge state unknown: it is never shown as
+    // "no bridge connected", and the stale answer is dropped (submit stays
+    // blocked because bridgeReady needs a successful answer).
+    const failed = (detail: string) => {
+      if (cancelled) return;
+      setBridge(null);
+      setBridgeCheck("failed");
+      setBridgeCheckDetail(detail);
+    };
     async function load() {
       try {
-        setBridgeLoading(true);
         const r = await fetch(u("/api/me/demo-bridge-debug"), { credentials: "include" });
-        if (!r.ok) { if (!cancelled) setBridge(null); return; }
+        if (!r.ok) { failed(`HTTP ${r.status}`); return; }
         const j = await r.json();
         if (cancelled) return;
         setBridge(j.bridge ?? null);
-      } catch { if (!cancelled) setBridge(null); }
-      finally { if (!cancelled) setBridgeLoading(false); }
+        setBridgeCheck("done");
+        setBridgeCheckDetail(null);
+      } catch (e) { failed(String((e as Error)?.message ?? e)); }
     }
     void load();
     const t = setInterval(load, 5000);
@@ -598,7 +615,8 @@ export function ScannerTradeModal({
             {bridgeReady ? <RadioTower className="mt-0.5 h-3.5 w-3.5" /> : <Radio className="mt-0.5 h-3.5 w-3.5" />}
             <div className="min-w-0 flex-1">
               <div className="font-medium">
-                {bridgeLoading && !bridge ? "Checking active demo bridge…"
+                {bridgeCheck === "checking" ? "Checking active demo bridge…"
+                  : bridgeCheck === "failed" ? "Active demo bridge status unknown"
                   : bridgeReady ? "Active demo bridge ready"
                   : "Active demo bridge NOT ready"}
               </div>
@@ -612,7 +630,12 @@ export function ScannerTradeModal({
                   {bridge.eaInputs.enableDemoExecution === false ? " · EXEC_OFF" : ""}
                 </div>
               )}
-              {!bridgeReady && bridgeBlockReason && (
+              {bridgeCheck === "failed" && (
+                <div className="mt-1 opacity-90" data-testid="scanner-bridge-check-failed">
+                  The bridge status could not be checked{bridgeCheckDetail ? ` (${bridgeCheckDetail})` : ""}, so whether your EA is attached and ready is unknown. Demo orders stay blocked until the check succeeds; it retries every 5 seconds.
+                </div>
+              )}
+              {bridgeCheck === "done" && !bridgeReady && bridgeBlockReason && (
                 <div className="mt-1 opacity-90">{bridgeBlockReason}</div>
               )}
             </div>
