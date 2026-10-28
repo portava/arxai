@@ -62,6 +62,12 @@ export interface UnifiedAccountModeEnvelope {
 export interface UseTradingModeResult {
   isLoading: boolean;
   isError: boolean;
+  /**
+   * True when the account-mode check failed (HTTP error, network error, or a
+   * non-ok envelope). The mode is then UNKNOWN: not loading, not demo/paper,
+   * and no permission or mode claim from an earlier check is carried forward.
+   */
+  isModeUnknown: boolean;
   envelope: UnifiedAccountModeEnvelope | null;
 
   // Mode booleans
@@ -95,11 +101,14 @@ export interface UseTradingModeResult {
   shouldShowDemoPaperCopy: boolean;
 }
 
-async function fetchAccountMode(): Promise<UnifiedAccountModeEnvelope | null> {
+// A failed check throws so React Query records an error. Returning null here
+// used to read as a successful "no mode" answer: a live user's pages flipped to
+// "Loading…" and demo/paper copy ("no real broker order is placed").
+async function fetchAccountMode(): Promise<UnifiedAccountModeEnvelope> {
   const res = await fetch("/api/me/account-mode", { credentials: "include" });
-  if (!res.ok) return null;
+  if (!res.ok) throw new Error(`/api/me/account-mode failed: ${res.status}`);
   const json = (await res.json()) as UnifiedAccountModeEnvelope | { ok: false };
-  if (!("ok" in json) || json.ok !== true) return null;
+  if (!("ok" in json) || json.ok !== true) throw new Error("/api/me/account-mode returned no mode");
   return json;
 }
 
@@ -134,7 +143,10 @@ export function useTradingMode(): UseTradingModeResult {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [qc]);
 
-  const env = q.data ?? null;
+  // After a failed check the mode is unknown: an earlier envelope is not shown
+  // as current, and every permission it granted reads as not granted.
+  const isModeUnknown = q.isError;
+  const env = isModeUnknown ? null : q.data ?? null;
 
   const isLiveShared = env?.currentAccountMode === "LIVE_SHARED";
   const isDemo = env?.currentAccountMode === "DEMO";
@@ -153,15 +165,20 @@ export function useTradingMode(): UseTradingModeResult {
   const hasAllocation = env?.userAllocation.hasAllocation === true;
   const hasRiskCaps = env?.userRiskCaps.maxLotSize != null;
 
-  const cleanModeLabel = env?.cleanModeLabel ?? "Loading…";
-  const cleanUserMessage = env?.cleanUserMessage ?? "";
+  const cleanModeLabel = env?.cleanModeLabel ?? (isModeUnknown ? "Mode unknown" : "Loading…");
+  const cleanUserMessage =
+    env?.cleanUserMessage ??
+    (isModeUnknown ? "Your account mode could not be checked just now. ARX will check again." : "");
   const cleanBlockedReason = env?.cleanBlockedReason ?? null;
 
-  const shouldShowDemoPaperCopy = !isLiveShared && !isLiveArmed;
+  // Demo/paper copy needs a known demo/paper mode: never while the mode is
+  // loading or could not be checked (the user may be live).
+  const shouldShowDemoPaperCopy = env != null && !isLiveShared && !isLiveArmed;
 
   return {
     isLoading: q.isLoading,
     isError: q.isError,
+    isModeUnknown,
     envelope: env,
     isLiveShared,
     isDemo,

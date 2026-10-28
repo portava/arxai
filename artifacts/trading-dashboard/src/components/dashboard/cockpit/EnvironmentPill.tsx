@@ -19,7 +19,10 @@ export function EnvironmentPill() {
   // master switch …). It never reads a bridge heartbeat, so the label names the
   // block and the sub-line carries the server's own reason — never "Bridge
   // Disconnected".
-  const state = mode.cleanBlockedReason
+  const state = mode.isModeUnknown
+    // The check failed: say so, never a demo/simulator label or "Loading…".
+    ? { label: "Mode unknown", dot: "bg-warning", text: "text-warning", icon: AlertTriangle, sub: "Your account mode could not be checked just now." }
+    : mode.cleanBlockedReason
     ? { label: "Trading blocked", dot: "bg-danger", text: "text-danger", icon: Lock, sub: mode.cleanBlockedReason }
     : mode.isFrozen
       ? { label: "Trading Paused", dot: "bg-warning", text: "text-warning", icon: Pause, sub: mode.cleanUserMessage }
