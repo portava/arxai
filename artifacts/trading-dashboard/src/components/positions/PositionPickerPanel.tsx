@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { PositionSideCard, type UnifiedPosition } from "./PositionSideCard";
+import { PositionSideCard, positionReportState, useNowMs, type UnifiedPosition } from "./PositionSideCard";
 import { resolveSafetyError } from "./safetyMessages";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -36,6 +36,9 @@ export function PositionPickerPanel() {
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
   const { user } = useCurrentUser();
+  // Same clock and freshness rule as the side card, so a row's P/L is only
+  // shown as current while the bridge report behind it is.
+  const nowMs = useNowMs();
   const isAdmin = user?.role === "ADMIN" || user?.role === "OWNER";
   const describe = (payload: unknown, status?: number) => {
     const r = resolveSafetyError(payload, status);
@@ -146,6 +149,10 @@ export function PositionPickerPanel() {
           {all.map((p) => {
             const key = `${p.scope}:${p.brokerTicket}`;
             const isSel = key === selected;
+            const report = positionReportState(p, nowMs);
+            const pnlClass = !report.confirmed || p.floatingPnl == null
+              ? "text-zinc-400"
+              : p.floatingPnl >= 0 ? "text-emerald-300" : "text-rose-300";
             return (
               <button
                 key={key}
@@ -164,7 +171,11 @@ export function PositionPickerPanel() {
                       {p.accountMode}
                     </Badge>
                   </div>
-                  <span className={`font-mono ${(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  <span
+                    data-testid={`text-row-pnl-${p.scope}-${p.brokerTicket}`}
+                    className={`font-mono ${pnlClass}`}
+                    title={report.confirmed ? "Floating P/L" : "Last reported P/L — not confirmed as current"}
+                  >
                     {p.floatingPnl == null ? "—" : (p.floatingPnl >= 0 ? "+" : "") + p.floatingPnl.toFixed(2)}
                   </span>
                 </div>
@@ -172,6 +183,11 @@ export function PositionPickerPanel() {
                   <span>#{p.brokerTicket ?? "—"}</span>
                   <span>lot {p.lotSize ?? "—"}</span>
                   <span>entry {p.entryPrice ?? "—"}</span>
+                  {!report.confirmed && (
+                    <span data-testid={`text-row-report-${p.scope}-${p.brokerTicket}`} className="text-amber-300">
+                      {report.status}
+                    </span>
+                  )}
                 </div>
               </button>
             );

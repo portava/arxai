@@ -74,3 +74,34 @@ describe("PositionPickerPanel side card after the poll starts failing", () => {
     expect(screen.getByTestId("positions-load-error").textContent).toMatch(/^Could not refresh positions \(network down\)\. The list below is from the last successful load at /);
   });
 });
+
+describe("PositionPickerPanel list rows carry the server freshness verdict", () => {
+  it("a STALE row's P/L is not shown in green as current; the row says it is unconfirmed, like the side card", async () => {
+    stubFetch([body([row({ floatingPnl: 12.5, observedAt: new Date(Date.now() - 5 * 60_000).toISOString(), freshness: "STALE" })])]);
+    render(<PositionPickerPanel />);
+    const pnl = await screen.findByTestId("text-row-pnl-live-777");
+    expect(pnl.textContent).toBe("+12.50");
+    expect(pnl.className).not.toMatch(/text-emerald-300/);
+    expect(pnl.getAttribute("title")).toBe("Last reported P/L — not confirmed as current");
+    expect(screen.getByTestId("text-row-report-live-777").textContent).toBe("Unconfirmed — last reported 5m ago");
+
+    fireEvent.click(screen.getByTestId("btn-select-position-live-777"));
+    expect(screen.getByTestId("text-position-status").textContent).toBe("Unconfirmed — last reported 5m ago");
+  });
+
+  it("a MISSING row is unconfirmed in the list too", async () => {
+    stubFetch([body([row({ floatingPnl: -3, observedAt: null, freshness: "MISSING" })])]);
+    render(<PositionPickerPanel />);
+    const pnl = await screen.findByTestId("text-row-pnl-live-777");
+    expect(pnl.className).not.toMatch(/text-rose-300/);
+    expect(screen.getByTestId("text-row-report-live-777").textContent).toBe("Unconfirmed — no bridge report time");
+  });
+
+  it("a FRESH row keeps its coloured P/L and no unconfirmed marker", async () => {
+    stubFetch([body([row({ floatingPnl: 12.5, observedAt: new Date().toISOString(), freshness: "FRESH" })])]);
+    render(<PositionPickerPanel />);
+    const pnl = await screen.findByTestId("text-row-pnl-live-777");
+    expect(pnl.className).toMatch(/text-emerald-300/);
+    expect(screen.queryByTestId("text-row-report-live-777")).toBeNull();
+  });
+});
