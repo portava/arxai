@@ -63,7 +63,8 @@ type BridgeReadiness = {
   eaVersionAtLeast?: boolean | null;
   bridgeReady?: boolean | null;
   bridgeBlockers?: string[];
-  gateBlockers?: string[];
+  /** null = the gate was not evaluated for this read (no blocker list exists). */
+  gateBlockers?: string[] | null;
   /** Demo execution armed for this account (MT5 Setup → Demo Execution Control); null/absent = not reported. */
   armed?: boolean | null;
   eaInputs: {
@@ -177,8 +178,12 @@ const POLL_FAILURES_BEFORE_UNKNOWN = 3;
 // USER_NOT_CONFIRMED is always listed and is cleared by this form's own
 // confirm step. Every other blocker means the server will refuse the order.
 const CONFIRM_STEP_BLOCKER = "USER_NOT_CONFIRMED";
+const NOT_ARMED_WORDS = "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)";
 const GATE_BLOCKER_WORDS: Record<string, string> = {
-  WRONG_EXECUTION_MODE: "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)",
+  // Current servers send DEMO_EXECUTION_NOT_ARMED; older ones send the gate's
+  // raw WRONG_EXECUTION_MODE. Both mean the same thing.
+  DEMO_EXECUTION_NOT_ARMED: NOT_ARMED_WORDS,
+  WRONG_EXECUTION_MODE: NOT_ARMED_WORDS,
   NOT_VERIFIED_DEMO: "the demo account has not passed demo verification",
   ACCOUNT_TYPE_NOT_EXPLICIT_DEMO: "the bridge account is not confirmed as a demo account",
   NO_BRIDGE_CONNECTION: "no demo bridge is connected",
@@ -197,6 +202,7 @@ function gateBlockerWords(code: string): string {
 type DemoExecutionState =
   | { kind: "checking" }
   | { kind: "unchecked" }
+  | { kind: "gateNotEvaluated" }
   | { kind: "unreported" }
   | { kind: "blocked"; reasons: string[] }
   | { kind: "enabled" };
@@ -388,6 +394,9 @@ export function ScannerTradeModal({
   const demoExecution: DemoExecutionState = (() => {
     if (bridgeCheck === "checking") return { kind: "checking" };
     if (bridgeCheck === "failed" || !bridge) return { kind: "unchecked" };
+    // The server answered but its dispatch gate threw: no blocker list was
+    // measured, so an empty one must not read as "nothing blocking".
+    if (bridge.gateEvaluated === false) return { kind: "gateNotEvaluated" };
     if (!Array.isArray(bridge.gateBlockers)) return { kind: "unreported" };
     const blocking = bridge.gateBlockers.filter((b) => b !== CONFIRM_STEP_BLOCKER);
     if (blocking.length > 0) return { kind: "blocked", reasons: blocking.map(gateBlockerWords) };
@@ -789,6 +798,7 @@ export function ScannerTradeModal({
               {demoExecution.kind === "enabled" && "Demo execution enabled for this account (server dispatch gate)."}
               {demoExecution.kind === "checking" && "Checking demo execution for this account…"}
               {demoExecution.kind === "unchecked" && "Demo execution for this account could not be checked — the server's dispatch gate did not respond."}
+              {demoExecution.kind === "gateNotEvaluated" && "Demo execution for this account could not be checked — the server could not evaluate its dispatch gate just now."}
               {demoExecution.kind === "unreported" && "The server did not report whether demo execution is allowed for this account."}
               {demoExecution.kind === "blocked" &&
                 `Demo execution is not available for this account: ${demoExecution.reasons.join("; ")}. The server will refuse orders from this form until that is fixed.`}

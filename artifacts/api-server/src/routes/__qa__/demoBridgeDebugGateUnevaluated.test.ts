@@ -43,5 +43,8 @@ test("gate evaluation failed: strict heartbeat / EA version / readiness are unkn
     assert.equal(bridge["eaVersionAtLeast"], null, "EA 1.26 was never judged below the minimum");
     assert.equal(bridge["bridgeReady"], null, "readiness is unknown, not a measured 'not ready'");
     assert.equal(bridge["heartbeatAgeSeconds"], 3);
+    // No blocker list was measured: an empty array would read as "nothing
+    // blocking" and the trade modal would say demo execution is enabled.
+    assert.equal(bridge["gateBlockers"], null, "no gate ran, so there is no blocker list");
   });
 });

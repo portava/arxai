@@ -30,7 +30,7 @@ const signal = {
   entry: 1.085, stopLoss: 1.08, takeProfit: 1.095, suggestedLot: 0.02, confidenceScore: 70,
 } as unknown as Parameters<typeof ScannerTradeModal>[0]["signal"];
 
-function bridge(gateBlockers: string[]) {
+function bridge(gateBlockers: string[] | null, extra: Record<string, unknown> = {}) {
   return {
     ok: true, safetyMode: "demo_only", liveExecutionBlocked: true,
     bridge: {
@@ -38,6 +38,7 @@ function bridge(gateBlockers: string[]) {
       heartbeatAgeSeconds: 3, heartbeatFresh: true, heartbeatFreshStrict: true, eaVersionAtLeast: true,
       bridgeReady: true, bridgeBlockers: [], gateBlockers,
       eaInputs: { readOnlyMode: false, enableDemoExecution: true, reportedAt: null },
+      ...extra,
     },
   };
 }
@@ -85,5 +86,40 @@ describe("ScannerTradeModal — demo execution banner reflects the server's disp
     const banner = screen.getByTestId("scanner-demo-execution-banner");
     expect(banner.textContent).not.toContain("enabled");
     expect(banner.textContent).toContain("could not be checked");
+  });
+
+  // The dispatch gate threw on the server: gateEvaluated is false and the
+  // strict verdicts are null. Older servers still sent gateBlockers: [] in that
+  // case, which read as "nothing blocking" and showed "enabled".
+  it("does not say enabled when the server reports the dispatch gate was not evaluated", async () => {
+    routes.push((u) => (u.endsWith("/api/me/demo-bridge-debug")
+      ? json(bridge([], { gateEvaluated: false, bridgeReady: null, heartbeatFreshStrict: null, eaVersionAtLeast: null, armed: null }))
+      : undefined));
+    render(<ScannerTradeModal open onClose={() => {}} signal={signal} defaultSide="BUY" />);
+    await flush();
+    const banner = screen.getByTestId("scanner-demo-execution-banner");
+    expect(banner.textContent).not.toContain("enabled");
+    expect(banner.textContent).toContain("could not be checked");
+  });
+
+  it("does not say enabled when the server sends no gate blocker list (gate not evaluated)", async () => {
+    routes.push((u) => (u.endsWith("/api/me/demo-bridge-debug")
+      ? json(bridge(null, { gateEvaluated: false, bridgeReady: null }))
+      : undefined));
+    render(<ScannerTradeModal open onClose={() => {}} signal={signal} defaultSide="BUY" />);
+    await flush();
+    const banner = screen.getByTestId("scanner-demo-execution-banner");
+    expect(banner.textContent).not.toContain("enabled");
+    expect(banner.textContent).toContain("could not be checked");
+  });
+
+  it("names the server's DEMO_EXECUTION_NOT_ARMED code in plain English, not as a raw code", async () => {
+    routes.push((u) => (u.endsWith("/api/me/demo-bridge-debug") ? json(bridge(["DEMO_EXECUTION_NOT_ARMED"], { bridgeReady: true, armed: false })) : undefined));
+    render(<ScannerTradeModal open onClose={() => {}} signal={signal} defaultSide="BUY" />);
+    await flush();
+    const banner = screen.getByTestId("scanner-demo-execution-banner");
+    expect(banner.textContent).toContain("not armed for demo execution");
+    expect(banner.textContent).toContain("MT5 Setup → Demo Execution Control");
+    expect(banner.textContent).not.toContain("DEMO_EXECUTION_NOT_ARMED");
   });
 });
