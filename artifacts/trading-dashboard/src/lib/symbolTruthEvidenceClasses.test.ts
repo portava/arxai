@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MarketTruthResponse } from "@workspace/api-client-react";
-import { classifyTruthEvidence, type TruthEvidence } from "@workspace/domain/truth";
+import { classifyTruthEvidence, SYNTHETIC_EVENT_RISK_LABEL, type TruthEvidence } from "@workspace/domain/truth";
 import type { ScannerTruth } from "./scannerTruth";
 import { resolveSymbolTruthEvidence, SYMBOL_TRUTH_MAX_AGE_MS, SYMBOL_TRUTH_NEWS_MAX_AGE_MS } from "./symbolTruthEvidence";
 
@@ -114,6 +114,24 @@ describe("evidence classes after the client cap", () => {
   it("a snapshot too old even for its calendar state is withdrawn entirely, classes included", () => {
     const value = input(); value.nowMs += SYMBOL_TRUTH_NEWS_MAX_AGE_MS + 1;
     expect(resolveSymbolTruthEvidence(value)).toEqual({ snapshot: null, actionCapped: true });
+  });
+  // Owner screenshot 2026-10-27 (V75): a synthetic market's event risk is a
+  // classification (scheduled events do not apply), never "no calendar" and
+  // never verified. The reason is accepted only under its own class.
+  it("accepts SYNTHETIC_NO_EVENT_MAPPING only as an estimate, and it wins over an unchecked flag", () => {
+    const value = input();
+    value.snapshot!.news = { ...value.snapshot!.news, providerConnected: false, riskUnchecked: true, synthetic: true,
+      riskLabel: SYNTHETIC_EVENT_RISK_LABEL, disclaimer: null };
+    value.snapshot!.evidence = serverEvidence(value.snapshot!);
+    expect(value.snapshot!.evidence.news).toEqual({ evidenceClass: "estimate", reason: "SYNTHETIC_NO_EVENT_MAPPING", observedAt: null });
+    expect(resolveSymbolTruthEvidence(value).snapshot?.evidence?.news).toEqual({ evidenceClass: "estimate", reason: "SYNTHETIC_NO_EVENT_MAPPING", observedAt: null });
+    for (const wrongClass of ["verified", "stale", "unavailable"] as const) {
+      const forged = input();
+      forged.snapshot!.news = { ...value.snapshot!.news };
+      forged.snapshot!.evidence = serverEvidence(forged.snapshot!);
+      (forged.snapshot!.evidence as unknown as Record<string, unknown>).news = { evidenceClass: wrongClass, reason: "SYNTHETIC_NO_EVENT_MAPPING", observedAt: null };
+      expect(resolveSymbolTruthEvidence(forged).snapshot?.evidence?.news).toEqual({ evidenceClass: "unavailable", reason: "UNCLASSIFIED", observedAt: null });
+    }
   });
   // Review 2026-10-27 finding 5: an unchecked calendar has its own reason.
   it("labels an unchecked calendar CALENDAR_UNCHECKED and downgrades a server claim that hides it", () => {

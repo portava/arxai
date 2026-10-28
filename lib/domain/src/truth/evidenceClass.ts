@@ -45,6 +45,7 @@ export type TruthEvidenceReason =
   | "MODEL_ESTIMATE"
   | "FEED_UNCONFIRMED"
   | "CALENDAR_FETCH_TIME_UNKNOWN"
+  | "SYNTHETIC_NO_EVENT_MAPPING"
   // stale
   | "FEED_STALE"
   | "EXPIRED"
@@ -65,6 +66,7 @@ export const TRUTH_EVIDENCE_REASONS: readonly TruthEvidenceReason[] = [
   "MODEL_ESTIMATE",
   "FEED_UNCONFIRMED",
   "CALENDAR_FETCH_TIME_UNKNOWN",
+  "SYNTHETIC_NO_EVENT_MAPPING",
   "FEED_STALE",
   "EXPIRED",
   "NO_FEED",
@@ -85,6 +87,10 @@ const REASON_CLASS: Record<TruthEvidenceReason, TruthEvidenceClass> = {
   MODEL_ESTIMATE: "estimate",
   FEED_UNCONFIRMED: "estimate",
   CALENDAR_FETCH_TIME_UNKNOWN: "estimate",
+  // A classification of the instrument, not an observation of any calendar:
+  // never "verified" (nothing was observed), never "unavailable" (nothing is
+  // missing — scheduled events simply do not apply to a synthetic market).
+  SYNTHETIC_NO_EVENT_MAPPING: "estimate",
   FEED_STALE: "stale",
   EXPIRED: "stale",
   NO_FEED: "unavailable",
@@ -140,6 +146,13 @@ export interface TruthEvidenceInput {
      * configured". Absent (older server) is treated as false.
      */
     riskUnchecked?: boolean;
+    /**
+     * The instrument is synthetic: scheduled economic events do not apply and
+     * the calendar is not consulted. Evaluated BEFORE riskUnchecked so a
+     * failed calendar can never be blamed for a market it does not cover.
+     * Absent (older server) is treated as false.
+     */
+    synthetic?: boolean;
   };
   components: Record<TruthComponentKey, { present: boolean; asOf: string | null }>;
   levels: { withheld: boolean };
@@ -240,7 +253,9 @@ export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence 
   // so even a connected provider is never labelled "verified" here. A calendar
   // that could not be checked is unavailable for that reason — never
   // described as "not connected", and never as an estimate.
-  const news = input.news.riskUnchecked === true
+  const news = input.news.synthetic === true
+    ? claim("SYNTHETIC_NO_EVENT_MAPPING", null)
+    : input.news.riskUnchecked === true
     ? claim("CALENDAR_UNCHECKED", null)
     : input.news.providerConnected
       ? claim("CALENDAR_FETCH_TIME_UNKNOWN", null)
@@ -368,6 +383,7 @@ export const TRUTH_EVIDENCE_REASON_TEXT: Record<TruthEvidenceReason, string> = {
   MODEL_ESTIMATE: "Calculated by ARX from current data — an estimate, not an observation.",
   FEED_UNCONFIRMED: "The live feed is not confirmed yet, so this is not verified.",
   CALENDAR_FETCH_TIME_UNKNOWN: "From the connected calendar; when it was last fetched isn't reported.",
+  SYNTHETIC_NO_EVENT_MAPPING: "Synthetic market — scheduled events do not apply; calendar not consulted.",
   FEED_STALE: "The feed behind this has gone stale.",
   EXPIRED: "This read expired; waiting for current evidence.",
   NO_FEED: "No usable market-data feed backs this.",

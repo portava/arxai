@@ -6334,6 +6334,8 @@ export interface TruthNews {
   /** Scheduled event risk could not be checked (the calendar read failed, or a configured calendar is not connected). Distinct from "no calendar configured". Absent on older servers; treat absent as false. */
   riskUnchecked?: boolean;
   disclaimer: string | null;
+  /** Present (true) only for a synthetic market: scheduled economic events do not apply and the economic calendar is not consulted. riskLabel is then the shared synthetic sentence, riskUnchecked is false and no events or disclaimer are carried. Absent means not synthetic (or an older server). */
+  synthetic?: boolean;
 }
 
 export type TruthDataState =
@@ -6447,6 +6449,7 @@ export const TruthEvidenceClaimReason = {
   MODEL_ESTIMATE: "MODEL_ESTIMATE",
   FEED_UNCONFIRMED: "FEED_UNCONFIRMED",
   CALENDAR_FETCH_TIME_UNKNOWN: "CALENDAR_FETCH_TIME_UNKNOWN",
+  SYNTHETIC_NO_EVENT_MAPPING: "SYNTHETIC_NO_EVENT_MAPPING",
   FEED_STALE: "FEED_STALE",
   EXPIRED: "EXPIRED",
   NO_FEED: "NO_FEED",

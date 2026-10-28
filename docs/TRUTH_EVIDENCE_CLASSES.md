@@ -13,7 +13,7 @@ This change is additive and advisory. It labels what surfaces display. It does n
 | `price` | `data.price` plus the bar it came from (`data.lastCandleAt`) |
 | `lastCandle` | `data.lastCandleAt` |
 | `lastTick` | `data.lastTickAt` |
-| `news` | `news.providerConnected` |
+| `news` | `news.synthetic`, `news.riskUnchecked`, `news.providerConnected` (in that order) |
 | `components.{scanner,flame,timing,scalp}` | `components.*.present` / `asOf` |
 | `levels` | `levels.withheld` plus the scanner read's observation |
 | `verdict` | `verdict.bias` plus the present components' observations |
@@ -31,6 +31,7 @@ Each claim has this shape: `{ evidenceClass, reason, observedAt }`.
   - `MODEL_ESTIMATE`: every component vote, the entry/stop/target geometry, grades and the composed verdict. These are ARX calculations, so they are never `verified`, even when every input is fresh.
   - `FEED_UNCONFIRMED`: values observed while the feed is `SYNCING`.
   - `CALENDAR_FETCH_TIME_UNKNOWN`: a connected calendar. The snapshot does not carry the calendar's fetch time, so news is never labelled verified.
+  - `SYNTHETIC_NO_EVENT_MAPPING` (added 2026-10-28, owner screenshot V75 1m): the market is synthetic (canonical resolver `assetClass === "synthetic"`), so scheduled economic events do not apply and the calendar is not consulted. The snapshot sets the optional wire flag `news.synthetic: true`, `riskUnchecked: false`, no events, no disclaimer, and `riskLabel` = the shared `SYNTHETIC_EVENT_RISK_LABEL` ("Synthetic market — not driven by scheduled economic events; the economic calendar is not consulted for this market."). It is evaluated before `riskUnchecked`, so a failed calendar is never blamed for a market it does not cover. It is an `estimate` (a classification of the instrument; nothing was observed), never `verified`, and a server claim carrying this reason under any other class is malformed (`UNCLASSIFIED`).
 - **stale**:
   - `FEED_STALE`: the feed is past its freshness budget. Derived claims follow their feed.
   - `EXPIRED`: the read passed `validUntil` inside the server cache window. In that case `capExpiredTruthSnapshot` marks the derived claims stale and leaves data claims unchanged.
