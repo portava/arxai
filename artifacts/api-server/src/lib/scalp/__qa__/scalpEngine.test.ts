@@ -442,3 +442,59 @@ test("flame no fabrication: candles present but non-live data source stays blind
   assert.equal(r.flame.blind, true, "no live data => no flame read, even with candles");
   assert.equal(r.flame.flameStage, "NONE");
 });
+
+// ── AWAITING_DATA reason split (owner screenshot 2026-10-27, V75, no bridge) ───
+// The Scanner header showed ACTION "Feed limited — The live feed isn't fully
+// confirmed" while DATA said "Live, confirmed candles." The scalp engine had
+// passed every feed gate and stopped only because the broker's symbol details
+// were missing (no MT5 bridge). Each AWAITING_DATA exit now names its reason so
+// a non-feed gate is never shown as a feed problem.
+test("AWAITING_DATA reasons: each exit sets a distinct rejectReason", () => {
+  const noRead = evaluateScalp(baseInput({ scanner: null }));
+  assert.equal(noRead.status, "AWAITING_DATA");
+  assert.equal(noRead.rejectReason, "NO_SCANNER_READ");
+  const noPrice = evaluateScalp(baseInput({ currentPrice: null as unknown as number }));
+  assert.equal(noPrice.rejectReason, "NO_SCANNER_READ");
+
+  const notLive = evaluateScalp(baseInput({ scanner: sellScanner({ dataSource: "SIMULATOR" }) }));
+  assert.equal(notLive.rejectReason, "NOT_LIVE");
+
+  const thin = evaluateScalp(baseInput({ scanner: sellScanner({ sufficiency: insufficientVerdict() }) }));
+  assert.equal(thin.rejectReason, "INSUFFICIENT_DATA");
+  const missingVerdict = evaluateScalp(baseInput({ scanner: sellScanner({ sufficiency: null }) }));
+  assert.equal(missingVerdict.rejectReason, "INSUFFICIENT_DATA");
+
+  const noSpecs = evaluateScalp(baseInput({ spec: v75Spec({ hasBrokerTruth: false, tickValue: null, contractSize: null }) }));
+  assert.equal(noSpecs.status, "AWAITING_DATA");
+  assert.equal(noSpecs.rejectReason, "NO_SPECS");
+  assert.equal(noSpecs.canBuildTrade, false);
+  assert.equal(noSpecs.suggestedLot, null);
+  assert.match(noSpecs.plainEnglishReason, /broker's live symbol details/);
+});
+
+test("NO_SPECS is only reachable after price, live feed and sufficiency all pass (gate order)", () => {
+  const noSpecs = v75Spec({ hasBrokerTruth: false, tickValue: null, contractSize: null });
+  // Any feed failure wins over missing specs — the feed reason is reported.
+  assert.equal(evaluateScalp(baseInput({ spec: noSpecs, scanner: null })).rejectReason, "NO_SCANNER_READ");
+  assert.equal(
+    evaluateScalp(baseInput({ spec: noSpecs, scanner: sellScanner({ dataSource: "SIMULATOR" }) })).rejectReason,
+    "NOT_LIVE",
+  );
+  assert.equal(
+    evaluateScalp(baseInput({ spec: noSpecs, scanner: sellScanner({ sufficiency: insufficientVerdict() }) })).rejectReason,
+    "INSUFFICIENT_DATA",
+  );
+  // Live, sufficient feed + missing specs → NO_SPECS.
+  assert.equal(
+    evaluateScalp(baseInput({ spec: noSpecs, scanner: sellScanner({ sufficiency: sufficientVerdict() }) })).rejectReason,
+    "NO_SPECS",
+  );
+});
+
+test("non-AWAITING results carry no rejectReason", () => {
+  const ready = evaluateScalp(baseInput());
+  assert.equal(ready.status, "READY");
+  assert.equal(ready.rejectReason ?? null, null);
+  const closed = evaluateScalp(baseInput({ spec: v75Spec({ marketOpen: false }) }));
+  assert.equal(closed.rejectReason ?? null, null);
+});

@@ -29,6 +29,20 @@ export type ScalpStatus =
   // fake lot size. Keeps us honest instead of guessing.
   | "AWAITING_DATA";
 
+/**
+ * WHY an AWAITING_DATA result was returned, so surfaces never describe a
+ * non-feed gate as a feed problem. Set only on AWAITING_DATA exits:
+ *   - NO_SCANNER_READ: no current scanner read for this symbol/bar/source, or no
+ *     price (feed reason).
+ *   - NOT_LIVE: the scanner read is not from a live feed (feed reason).
+ *   - INSUFFICIENT_DATA: the shared sufficiency verdict does not allow a setup
+ *     (feed/data reason).
+ *   - NO_SPECS: the feed is live and sufficient, but the broker's symbol
+ *     details (lot size, point value) are unavailable, so no scalp can be sized.
+ *     NOT a feed reason.
+ */
+export type ScalpRejectReason = "NO_SCANNER_READ" | "NOT_LIVE" | "INSUFFICIENT_DATA" | "NO_SPECS";
+
 export type ScalpMode =
   | "SNIPER"
   | "SAFER"
@@ -230,6 +244,10 @@ export interface ScalpResult {
   scalpType: string;
   mode: ScalpMode;
   status: ScalpStatus;
+  /** Why an AWAITING_DATA result was returned (absent/null otherwise). */
+  rejectReason?: ScalpRejectReason | null;
+  /** The engine timeframe this result was read on (e.g. "M5"). */
+  timeframe?: string | null;
   qualityScore: number;
   confidenceLabel: ConfidenceLabel;
   entryType: ScalpEntryType | null;
