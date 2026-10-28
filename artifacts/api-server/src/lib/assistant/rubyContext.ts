@@ -17,6 +17,7 @@
 //     requires it, so solved setup steps are not repeated.
 import { getUserAllocationView } from "../live/masterBridgePool.js";
 import { analyzeSession } from "../../brain/sessions/sessionEngine.js";
+import { isFxWeekendClosed, FX_WEEKEND_SESSION_NAME } from "../../brain/timing/sessionKillZoneEngine.js";
 import { getSymbolTradability } from "../data/symbolTradability.js";
 import { classifySymbol } from "../data/marketDataRouter.js";
 import { isApprovedArxMarket } from "@workspace/domain/market";
@@ -271,6 +272,38 @@ async function fetchCalendar(): Promise<CalCacheVal> {
 }
 
 /**
+ * The briefing's market-session line. analyzeSession() reads only the UTC hour,
+ * so on a Saturday it still names "London"; the FX week (Sun 17:00 - Fri 17:00
+ * New York, isFxWeekendClosed) decides whether forex is open. At the weekend
+ * forex is closed for every symbol: a forex/index symbol's session reads as
+ * closed, and a synthetic symbol (24/7) keeps its own liquidity but does not
+ * claim an FX session. Briefing copy only; the brain's session scoring is
+ * unchanged.
+ */
+export function rubySessionContext(
+  assetClass: string,
+  symbol: string,
+  now: Date,
+): NonNullable<RubyContext["session"]> {
+  const sa = analyzeSession(assetClass, symbol);
+  if (isFxWeekendClosed(now)) {
+    const synthetic = assetClass === "synthetic";
+    return {
+      name: FX_WEEKEND_SESSION_NAME,
+      liquidity: synthetic ? sa.liquidityLevel : "Closed",
+      score: synthetic ? sa.sessionScore : 0,
+      forexOpen: false,
+    };
+  }
+  return {
+    name: sa.session,
+    liquidity: sa.liquidityLevel,
+    score: sa.sessionScore,
+    forexOpen: assetClass === "synthetic" ? true : sa.session !== "Off-hours",
+  };
+}
+
+/**
  * Gather the full Ruby context for a user. Never throws — each source is
  * isolated so a single failure degrades to a null/empty field.
  */
@@ -381,13 +414,7 @@ export async function buildRubyContext(
   let session: RubyContext["session"] = null;
   try {
     const assetClass = symbolUpper ? classifySymbol(symbolUpper) : "unknown";
-    const sa = analyzeSession(assetClass, symbolUpper ?? "");
-    session = {
-      name: sa.session,
-      liquidity: sa.liquidityLevel,
-      score: sa.sessionScore,
-      forexOpen: assetClass === "synthetic" ? true : sa.session !== "Off-hours",
-    };
+    session = rubySessionContext(assetClass, symbolUpper ?? "", now);
   } catch {
     session = null;
   }
