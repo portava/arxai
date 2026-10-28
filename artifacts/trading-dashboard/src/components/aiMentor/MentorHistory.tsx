@@ -2,9 +2,10 @@ import { ShieldAlert, NotebookPen, Trophy, Sparkles, AlertTriangle } from "lucid
 import type { MentorSession, SessionType } from "./types";
 import { useAssistantName } from "@/lib/assistant-name";
 
-// Group raw session types into user-facing conversation categories. The full
-// session list is still passed in and every session remains accessible via
-// onSelect — we only group the *display*, never drop history.
+// Group raw session types into user-facing conversation categories. Only the
+// sessions passed in are grouped — callers fetch the newest N (?limit=N), so
+// every count is "within your latest N sessions", never a lifetime total.
+// The "View" button renders only when the caller wires onSelect.
 type GroupKey = "risk" | "post-trade" | "coaching" | "briefing";
 
 const GROUP_OF: Record<SessionType, GroupKey> = {
@@ -26,8 +27,13 @@ const GROUP_META: Record<GroupKey, { title: string; noun: string; icon: typeof S
 
 const GROUP_ORDER: GroupKey[] = ["risk", "post-trade", "coaching", "briefing"];
 
-export function MentorHistory({ sessions, onSelect }:
-  { sessions: MentorSession[]; onSelect?: (s: MentorSession) => void }) {
+export function MentorHistory({ sessions, onSelect, pageLimit }:
+  {
+    sessions: MentorSession[];
+    onSelect?: (s: MentorSession) => void;
+    /** The ?limit= the caller fetched with; a full page means older sessions exist or may exist. */
+    pageLimit?: number;
+  }) {
   const { name } = useAssistantName();
   if (sessions.length === 0) {
     return (
@@ -45,8 +51,16 @@ export function MentorHistory({ sessions, onSelect }:
   }
 
   const present = GROUP_ORDER.filter((g) => groups.has(g));
+  const windowSize = sessions.length;
+  const pageFull = pageLimit != null && windowSize >= pageLimit;
 
   return (
+    <div className="space-y-2">
+    {pageFull && (
+      <p className="text-[11px] text-txt-muted" data-testid="mentor-history-window-note">
+        Showing your latest {windowSize} sessions; older sessions are not counted here.
+      </p>
+    )}
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {present.map((g) => {
         const meta = GROUP_META[g];
@@ -62,20 +76,25 @@ export function MentorHistory({ sessions, onSelect }:
                 <h4 className="text-sm font-semibold text-foreground">{meta.title}</h4>
               </div>
             </div>
-            <p className={`mt-2 text-xs font-medium ${meta.text}`}>{count} {meta.noun}{count === 1 ? "" : "s"}</p>
+            <p className={`mt-2 text-xs font-medium ${meta.text}`}>
+              {count} {meta.noun}{count === 1 ? "" : "s"} in your latest {windowSize} session{windowSize === 1 ? "" : "s"}
+            </p>
             <p className="mt-1 text-xs leading-snug text-txt-secondary line-clamp-2">
               Latest: {latest.mainFocus}
             </p>
-            <button
-              onClick={() => onSelect?.(latest)}
-              className={`mt-3 w-full rounded-lg border py-1.5 text-xs font-semibold ${meta.btn}`}
-              data-testid={`conversation-view-${g}`}
-            >
-              View
-            </button>
+            {onSelect && (
+              <button
+                onClick={() => onSelect(latest)}
+                className={`mt-3 w-full rounded-lg border py-1.5 text-xs font-semibold ${meta.btn}`}
+                data-testid={`conversation-view-${g}`}
+              >
+                View
+              </button>
+            )}
           </div>
         );
       })}
+    </div>
     </div>
   );
 }

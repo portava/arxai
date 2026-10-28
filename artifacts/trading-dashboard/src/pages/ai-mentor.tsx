@@ -10,6 +10,8 @@ const TYPES: SessionType[] = [
   "WEEKLY_RESET", "CONFIDENCE_REBUILD", "DISCIPLINE_CHECK",
 ];
 
+const MENTOR_HISTORY_LIMIT = 20;
+
 export default function AiMentorPage() {
   const qc = useQueryClient();
 
@@ -19,7 +21,7 @@ export default function AiMentorPage() {
   });
   const history = useQuery<{ sessions: MentorSession[] }>({
     queryKey: ["mentor-history"],
-    queryFn: async () => (await fetch("/api/mentor/sessions?limit=20")).json(),
+    queryFn: async () => (await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`)).json(),
   });
 
   const generate = useMutation({
@@ -98,7 +100,7 @@ export default function AiMentorPage() {
 
       <section>
         <h3 className="mb-2 text-sm font-semibold text-slate-200">Recent sessions</h3>
-        <MentorHistory sessions={history.data?.sessions ?? []} />
+        <MentorHistory sessions={history.data?.sessions ?? []} pageLimit={MENTOR_HISTORY_LIMIT} />
       </section>
     </div>
   );

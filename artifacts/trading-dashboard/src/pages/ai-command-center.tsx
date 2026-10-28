@@ -92,6 +92,9 @@ interface CCResp {
   autopilot: any;
 }
 
+/** Newest mentor sessions fetched for the history groups (server caps at 100). */
+const MENTOR_HISTORY_LIMIT = 10;
+
 export default function AICommandCenterPage() {
   const { name } = useAssistantName();
   return (
@@ -187,7 +190,7 @@ function ChatTab() {
   });
   const history = useQuery<{ sessions: MentorSession[] }>({
     queryKey: ["mentor-history"],
-    queryFn: async () => (await fetch("/api/mentor/sessions?limit=10")).json(),
+    queryFn: async () => (await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`)).json(),
   });
 
   const updateStatus = useMutation({
@@ -296,7 +299,7 @@ function ChatTab() {
         {history.isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : (
-          <MentorHistory sessions={history.data?.sessions ?? []} />
+          <MentorHistory sessions={history.data?.sessions ?? []} pageLimit={MENTOR_HISTORY_LIMIT} />
         )}
       </section>
 
