@@ -1,5 +1,7 @@
 # Self-trading release validation — 28 October 2026
 
+> Later evidence: the exact `6f9e364` EAs compiled successfully under Mac/Wine on 28 October at 10:39 a.m. New York time. [Raw result, EX5 files and scope](MT5_MAC_WINE_COMPILE_RESULT_2026_10_28.md). This historical report retains its original commit/run results; terminal and broker validation remain open.
+
 **Verdict: not green.** PR #100 stays a draft. Nothing was deployed, no worker was activated and no broker, demo or network order was sent.
 
 "Merged" in this document and in the PR means integration between development branches (slice branches into `claude/self-trading-improvements`, and PR #99's `codex/platform-evidence-integration` into it). Nothing was merged into `main`.

@@ -111,20 +111,17 @@ after(async () => {
   await deleteFixtures();
 });
 
-test("C demo automated: automation is sized to the trader's lot cap, opens, and the pass is audited as automation", async (t) => {
+test("C demo automated: correctly sized automation still holds pending the owner's confidence policy", async () => {
   const acct = await resetPaper();
   await db.insert(userRiskSettingsTable).values({ userId, maxPositionSize: 0.2 })
     .onConflictDoUpdate({ target: userRiskSettingsTable.userId, set: { maxPositionSize: 0.2 } });
   const res = await executePaperFromDecision(decision(), nextDecisionId(), { ownerUserId: userId, paperAccountId: acct, origin: "automation" });
-  if (res.status !== "PAPER_OPENED" && /RISK_GOVERNOR_BLOCK\[/.test(res.rejection_reason ?? "") === false) {
-    // The account-level paper governor (Build HH) or eligibility refused before sizing.
-    t.diagnostic(`refused before the pre-trade governor: ${res.rejection_reason}`);
-  }
-  assert.equal(res.status, "PAPER_OPENED", res.rejection_reason ?? "");
-  assert.ok(res.position_size != null && res.position_size <= 0.2, `sized ${res.position_size} within the 0.2 lot cap`);
+  assert.notEqual(res.status, "PAPER_OPENED");
+  assert.match(res.rejection_reason ?? "", /AI_ENTRY_POLICY_PENDING/);
+  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct))).length, 0);
   const ev = await latestEvent();
   assert.ok(ev);
-  assert.equal(ev.decision, "pass");
+  assert.equal(ev.decision, "block");
   const details = ev.details as { source: string; intent: { origin: string; venue: string; lots: number } };
   assert.equal(details.source, "pre_trade_risk_governor");
   assert.equal(details.intent.origin, "automation");

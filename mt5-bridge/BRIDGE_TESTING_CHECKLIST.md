@@ -4,7 +4,7 @@ Use `README_SETUP.md` and the supplied profile. Leave unobserved items unchecked
 
 - [ ] Exact target ARX workspace/origin and intended connection owner verified.
 - [ ] MT5 terminal account verified as DEMO; no account credentials recorded here.
-- [ ] Packaged `ReplitMT5BridgeEA_v131.mq5` compiled in MetaEditor; actual result recorded.
+- [x] Packaged v1.31 and v1.54 at `6f9e364` compiled in MetaEditor 6230 under Mac/Wine: 0 errors, 0 warnings, new EX5 files. [Result](../docs/MT5_MAC_WINE_COMPILE_RESULT_2026_10_28.md). This checks compilation only; recheck hashes after source changes.
 - [ ] Profile loaded before private URL/token entry; all trading arms remain off.
 - [ ] Automated trading remains disabled; only the reviewed origin is allowlisted.
 - [ ] Active per-user token belongs to this connection; no token in shared evidence.

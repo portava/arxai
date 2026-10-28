@@ -1,6 +1,6 @@
 # MT5 native compile handoff — 28 October 2026
 
-**Status: native MetaEditor compilation has not been run.** It could not be run in the cloud validation container, so it remains an open gap. This document is the handoff for someone with a Windows machine (or a working Wine prefix) and a MetaTrader 5 installation.
+**Update, 28 October 2026, 10:39 a.m. New York:** both EAs compiled with MetaEditor 5.0.0.6230 under Wine on macOS: zero errors and warnings, fresh EX5 files. [Verified result and raw evidence](MT5_MAC_WINE_COMPILE_RESULT_2026_10_28.md). The cloud-container limitation below is historical. Windows-host and terminal/broker validation remain open; the instructions are retained for reproducing those separate checks.
 
 Compiling needs **no broker connection, no account login, and no trading permission**. MetaEditor compiles source offline. Do not log in to a live account for this step.
 
@@ -9,7 +9,7 @@ Compiling needs **no broker connection, no account login, and no trading permiss
 | Evidence | What it proves | Status |
 | --- | --- | --- |
 | **Extracted-MQL C++ harness** (`mt5-bridge/tests/run_demo_core.py`, `run_management_target.py`, `run_management_target.py --result-evidence`) | The handler functions extracted from the EA source behave correctly when compiled as C++ (g++) against a fake offline terminal. | Passes (56 + 105 + 674 checks). Not a MetaEditor compile. |
-| **Native MetaEditor compile** (this handoff) | The full `.mq5` source, with its `.mqh` companions and the MQL5 standard library, compiles in the real MQL5 compiler and produces an `.ex5`. | **Not run.** |
+| **Native MetaEditor compile** (this handoff) | The full `.mq5` source, with its `.mqh` companions and the MQL5 standard library, compiles in the real MQL5 compiler and produces an `.ex5`. | **Pass under Mac/Wine**, build 6230, exact `6f9e364` source; Windows host not tested. |
 | **Terminal run** (Strategy Tester or a chart in a terminal) | The compiled EA loads, starts, and behaves as expected in a terminal. A connectivity check needs a DEMO account; `WebRequest` does not run in the Strategy Tester. | **Not run.** Out of scope here, and no live or demo order may be sent without separate owner approval. |
 
 A successful compile closes only the second row. It does not prove the terminal run or any broker behaviour.
@@ -85,7 +85,7 @@ Record the result in `docs/SELF_TRADING_RELEASE_VALIDATION_*.md` under "MT5 EA: 
 
 - [ ] MT5 installed from the official installer; no account logged in.
 - [ ] Five files copied side by side into `MQL5\Experts\ARX\`; SHA-256 recorded.
-- [ ] v1.31 compiled; log saved; `.ex5` present; errors and warnings recorded.
-- [ ] v1.54 compiled; log saved; `.ex5` present; errors and warnings recorded.
-- [ ] MetaEditor build number recorded.
-- [ ] Results written into the validation report. Terminal run still marked open.
+- [x] v1.31 compiled under Mac/Wine; raw log and new `.ex5` saved; 0 errors, 0 warnings.
+- [x] v1.54 compiled under Mac/Wine; raw log and new `.ex5` saved; 0 errors, 0 warnings.
+- [x] MetaEditor build 6230 recorded from the compiler binary version.
+- [x] Results written into the validation report. Terminal run still marked open.

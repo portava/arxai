@@ -18,6 +18,8 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
+import { aiEntryPolicyReason, paperEntryPolicyReason } from "../safety/entryPolicy.js";
+import { readPaperEntryPosture } from "../safety/platformSwitches.js";
 import { classifyHeartbeatAgeMs, MT5_CLOSE_HEARTBEAT_ALLOWANCE_MS, heartbeatAllowsRiskReducingClose } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { readOpenPositions, RISK_COUNT_BASIS } from "../positions/openPositions.js";
@@ -559,6 +561,14 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
     ctx = await buildRiskContext(intent, opts);
     limits = ctx.limits;
     decision = evaluatePreTradeRisk(intent, ctx);
+    // Caller-supplied facts cannot bypass the owner policy. Protection keeps
+    // its own governor rules; this gate applies only to new entries.
+    const policyReason = aiEntryPolicyReason(intent) ?? (intent.venue === "PAPER" && intent.action === "OPEN"
+      ? paperEntryPolicyReason(await readPaperEntryPosture()) : null);
+    if (policyReason) decision = {
+      ...decision, decision: "BLOCK", blockedBy: [...new Set(["trading_halt" as const, ...decision.blockedBy])],
+      primaryReason: policyReason,
+    };
   } catch (e) {
     decision = contextFailure(intent, now, (e as Error).message.slice(0, 160));
   }
@@ -581,6 +591,7 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
           ? `Trader override of their own trading rules: ${override.reason} (${decision.primaryReason ?? "discipline block"})`
           : blocked ? decision.primaryReason ?? "Blocked by Risk Governor." : `Pre-trade risk passed (${intent.venue} ${intent.action} ${intent.symbol}).`,
         details: {
+          ...(opts.auditContext ?? {}),
           source: "pre_trade_risk_governor",
           intent,
           override,
@@ -605,7 +616,6 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
               ? { ...ctx.activity, lastClosedAt: ctx.activity.lastClosedAt?.toISOString() ?? null }
               : ctx.activity ?? null,
           } : null,
-          ...(opts.auditContext ?? {}),
         },
       });
       auditEventId = row?.id ?? null;

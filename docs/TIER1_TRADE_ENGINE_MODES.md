@@ -346,8 +346,15 @@ its row count. Run the lane with
 disposable PostgreSQL, no background workers, outbound TCP/TLS, UDP and DNS
 refused; see `artifacts/api-server/scripts/isolated-lane/run.mjs`).
 
-Cases fail on purpose: the governed paths do not enforce these original
-requirements. They are open, not accepted:
+The following findings describe the `6f9e364` run retained in the handoff.
+The October 28 continuation implements the paper-mode checks, mandatory
+linked decision/booking audit, and the owner's temporary AI-entry hold;
+see [the continuation policy](SELF_TRADING_SAFETY_POLICY_2026_10_28.md).
+These historical failures must not be attributed to a newer commit without
+rerunning it. Broker execution, native compilation and combined release
+validation remain separate evidence gaps.
+
+**Historical gaps at `6f9e364`:**
 
 1. **Safety Core mode and state are not enforced on PAPER** (CT-2, CT-3,
    RG-2, LOG-5). `POST /paper/orders` books an order while the Safety Core is

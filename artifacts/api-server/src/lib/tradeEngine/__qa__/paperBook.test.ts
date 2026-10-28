@@ -17,13 +17,14 @@
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   analyticsSnapshotsTable,
   db,
   paperAccountsTable,
   paperOrdersTable,
   paperTradeEventsTable,
+  safetyCoreTable,
   postTradeDebriefsTable,
   tradesTable,
   userRiskEventsTable,
@@ -42,6 +43,7 @@ const SYMBOL = "QAPBUSD";
 const SYMBOL_2 = "QAPCUSD"; // a second order on the same symbol and side is a governor duplicate
 const PX = 1.1;
 const u = { a: 0, b: 0 };
+let restoreSafety: () => Promise<void>;
 
 async function userIds(): Promise<number[]> {
   return (await db.select({ id: usersTable.id }).from(usersTable)
@@ -82,7 +84,7 @@ async function freshAccount(userId: number): Promise<number> {
 const fill = (userId: number, paperAccountId: number, over: Partial<PaperFillOpenArgs> = {}) => openPaperFill({
   userId, paperAccountId, symbol: SYMBOL, side: "BUY", lots: 0.1, fillPrice: PX,
   stopLoss: 1.09, takeProfit: 1.12, decisionId: null, strategyId: "build_ee_paper_execution",
-  origin: "automation", governedEntryPrice: null,
+  origin: "manual", governedEntryPrice: null,
   quote: { bid: PX, ask: PX, at: new Date(), source: "qa_paper_book" },
   auditContext: { caller: "QA paper book" },
   placedMessage: `${SIMULATED_TAG} QA placed`,
@@ -97,6 +99,16 @@ async function events(orderId: number) {
 }
 
 before(async () => {
+  const rows = await db.select().from(safetyCoreTable);
+  assert.ok(rows.length <= 1, "paper-book fixtures require unambiguous Safety Core state");
+  if (rows[0]) {
+    const old = rows[0];
+    await db.update(safetyCoreTable).set({ operationalMode: "PAPER_TRADING", globalState: "NORMAL", killSwitchEngaged: false }).where(eq(safetyCoreTable.id, old.id));
+    restoreSafety = async () => { await db.update(safetyCoreTable).set({ operationalMode: old.operationalMode, globalState: old.globalState, killSwitchEngaged: old.killSwitchEngaged }).where(eq(safetyCoreTable.id, old.id)); };
+  } else {
+    const [row] = await db.insert(safetyCoreTable).values({ operationalMode: "PAPER_TRADING", globalState: "NORMAL", killSwitchEngaged: false }).returning();
+    restoreSafety = async () => { await db.delete(safetyCoreTable).where(eq(safetyCoreTable.id, row!.id)); };
+  }
   await deleteFixtures();
   u.a = await seedUser(EMAIL_A);
   u.b = await seedUser(EMAIL_B);
@@ -104,6 +116,7 @@ before(async () => {
 
 after(async () => {
   await deleteFixtures();
+  await restoreSafety?.();
 });
 
 test("openPaperFill: governed OPEN with venue PAPER, books at the caller's fill price with its event", async () => {
@@ -120,13 +133,26 @@ test("openPaperFill: governed OPEN with venue PAPER, books at the caller's fill 
   const intent = (audit[0]!.details as { intent: Record<string, unknown> }).intent;
   assert.equal(intent["venue"], "PAPER");
   assert.equal(intent["action"], "OPEN");
-  assert.equal(intent["origin"], "automation");
+  assert.equal(intent["origin"], "manual");
   const ev = await events(r.order.id);
   assert.deepEqual(ev.map((e) => [e.eventType, e.message]), [["PLACED", `${SIMULATED_TAG} QA placed`]]);
 
   const quiet = await fill(u.a, acct, { symbol: SYMBOL_2, placedMessage: null, strategyId: null, origin: "system", intentRef: "qa_fixture" });
   assert.ok(quiet.ok);
   assert.equal((await events(quiet.order.id)).length, 0, "the QA fixture path writes no event, as before");
+});
+
+test("AI-origin and AI-linked paper fills remain held regardless of a caller's manual label", async () => {
+  const acct = await freshAccount(u.a);
+  for (const origin of ["ruby", "automation", "strategy"] as const) {
+    const r = await fill(u.a, acct, { origin });
+    assert.ok(!r.ok);
+    assert.match(r.risk.primaryReason ?? "", /AI_ENTRY_POLICY_PENDING/);
+  }
+  const linked = await fill(u.a, acct, { origin: "manual", decisionId: 1 });
+  assert.ok(!linked.ok);
+  assert.match(linked.risk.primaryReason ?? "", /AI_ENTRY_POLICY_PENDING/);
+  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct))).length, 0);
 });
 
 test("openPaperFill: a Risk Governor refusal books nothing and returns the decision", async () => {
@@ -143,7 +169,7 @@ test("Trade Engine PAPER fills: fillPaperTrade / settlePaperTrade / voidPaperTra
   const args = (over: Partial<PaperFillOpenArgs> = {}): PaperFillOpenArgs => ({
     userId: u.a, paperAccountId: acct, symbol: SYMBOL, side: "BUY", lots: 0.1, fillPrice: PX,
     stopLoss: 1.09, takeProfit: 1.12, decisionId: null, strategyId: "build_ee_paper_execution",
-    origin: "automation", governedEntryPrice: null,
+    origin: "manual", governedEntryPrice: null,
     quote: { bid: PX, ask: PX, at: new Date(), source: "qa_paper_book" },
     auditContext: { caller: "QA paper book" }, placedMessage: `${SIMULATED_TAG} QA placed`, ...over,
   });
@@ -250,7 +276,10 @@ test("settlePaperOrder and voidPaperOrder: venue fills, not re-governed, only st
   const [rb] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, b.order.id));
   assert.equal(rb!.status, "CANCELLED");
   assert.equal(rb!.closedAt, null, "a rollback is not a close");
-  assert.deepEqual((await events(b.order.id)).map((e) => e.eventType), ["PLACED"]);
+  assert.deepEqual((await events(b.order.id)).map((e) => e.eventType), ["PLACED", "CANCELLED"]);
+  const evidence = await db.execute(sql`SELECT kind FROM vault_events WHERE linked_trade_id=${String(b.order.id)} AND kind IN ('PAPER_ORDER_CANCELLED','PAPER_ORDER_CLOSED')
+    UNION ALL SELECT event_type AS kind FROM audit_events WHERE payload->>'linkedTradeId'=${String(b.order.id)} AND event_type IN ('PAPER_ORDER_CANCELLED','PAPER_ORDER_CLOSED')`);
+  assert.deepEqual(evidence.rows.map(row => row.kind), ['PAPER_ORDER_CANCELLED', 'PAPER_ORDER_CANCELLED']);
 });
 
 test("Build EE monitor: stop/target hits settle through the venue; manual close is governed there", async () => {
