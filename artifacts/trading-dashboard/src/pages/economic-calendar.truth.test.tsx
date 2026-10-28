@@ -234,3 +234,28 @@ describe("the assistant card never presents a template as the assistant's read",
     expect(screen.getByTestId("eco-overall-risk").textContent).toMatch(/No events today/);
   });
 });
+
+describe("Affected Market Heat only shows symbols that were actually read", () => {
+  it("a blocked (unapproved) symbol is not drawn as a blank heat row", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "ecb", title: "ECB Press Conference", when: at(0, 13, 45), currency: "EUR", country: "Euro Area",
+        affectedSymbols: ["EURUSD", "GER40", "EURJPY"] }),
+    ] });
+    timing.data = { results: [
+      { symbol: "EURUSD", timingGrade: "B", entryPermission: "WAIT_FOR_ENTRY", heatScore: 40 },
+      { requestedSymbol: "GER40", isApprovedMarket: false, blocked: true, reason: "Not an approved ARX Focus market." },
+    ] };
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    fireEvent.click(within(row("ECB Press Conference")).getByText("ECB Press Conference"));
+    const strip = await screen.findByTestId("eco-heat-strip");
+    const rows = within(strip).getAllByTestId("eco-heat-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toMatch(/EURUSD/);
+    // The blocked and the missing symbols are named, not dropped or blanked.
+    expect(strip.textContent).toMatch(/GER40/);
+    expect(strip.textContent).toMatch(/not in the approved market list/i);
+    expect(strip.textContent).toMatch(/EURJPY/);
+    expect(strip.textContent).toMatch(/no timing read returned/i);
+  });
+});

@@ -172,8 +172,24 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
   const q = useGetTimingBrainMulti(params, {
     query: { queryKey: getGetTimingBrainMultiQueryKey(params), enabled: symbols.length > 0, staleTime: 30_000, refetchInterval: 60_000 },
   });
-  const results = (q.data as { results?: Array<{ symbol?: string; timingGrade?: string; entryPermission?: string; heatScore?: number; tradeabilityScore?: number; heatState?: string }> } | undefined)?.results;
-  if (!results || results.length === 0) return null;
+  // /me/timing-brain returns one entry per requested symbol: a timing read, or
+  // the Focus-Lock blocked envelope ({ requestedSymbol, blocked: true }) for a
+  // symbol outside the approved universe (nothing computed). A read that failed
+  // server-side is dropped from the list. Only real reads are drawn as heat
+  // rows; blocked and missing symbols are named as such.
+  type HeatEntry = {
+    symbol?: string; timingGrade?: string; entryPermission?: string; heatScore?: number;
+    tradeabilityScore?: number; heatState?: string;
+    requestedSymbol?: string; blocked?: boolean; isApprovedMarket?: boolean;
+  };
+  const raw = (q.data as { results?: HeatEntry[] } | undefined)?.results;
+  if (!raw) return null;
+  const isBlocked = (r: HeatEntry) => r.blocked === true || r.isApprovedMarket === false;
+  const results = raw.filter((r) => !isBlocked(r) && typeof r.symbol === "string" && r.symbol.length > 0);
+  const blocked = raw.filter(isBlocked).map((r) => r.requestedSymbol ?? r.symbol ?? "").filter(Boolean);
+  const answered = new Set<string>([...results.map((r) => r.symbol!), ...blocked]);
+  const missing = symbols.filter((s) => !answered.has(s));
+  if (results.length === 0 && blocked.length === 0 && missing.length === 0) return null;
 
   const permColor: Record<string, string> = {
     GO: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
@@ -183,13 +199,13 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
     STAND_DOWN: "border-rose-600/50 bg-rose-600/15 text-rose-300",
   };
   return (
-    <div className="mt-2 rounded-lg border border-border/50 bg-background/30 p-2">
+    <div data-testid="eco-heat-strip" className="mt-2 rounded-lg border border-border/50 bg-background/30 p-2">
       <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-txt-muted">
         <Flame className="h-3 w-3" /> Affected Market Heat — advisory
       </div>
       <div className="flex flex-wrap gap-2">
         {results.map((r) => (
-          <div key={r.symbol} className={cn("flex items-center gap-1.5 rounded border px-2 py-1 text-[11px]", permColor[r.entryPermission ?? ""] ?? "border-border text-txt-secondary")}>
+          <div key={r.symbol} data-testid="eco-heat-row" className={cn("flex items-center gap-1.5 rounded border px-2 py-1 text-[11px]", permColor[r.entryPermission ?? ""] ?? "border-border text-txt-secondary")}>
             <span className="font-mono font-semibold">{r.symbol}</span>
             <span className="text-txt-muted">|</span>
             <span className="font-bold">{r.timingGrade ?? "—"}</span>
@@ -201,6 +217,19 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
           </div>
         ))}
       </div>
+      {results.length === 0 && (
+        <p className="text-[11px] text-txt-muted">No timing read is available for these markets.</p>
+      )}
+      {blocked.length > 0 && (
+        <p className="mt-1 text-[11px] text-txt-muted">
+          {blocked.join(", ")}: not in the approved market list — no timing read.
+        </p>
+      )}
+      {missing.length > 0 && (
+        <p className="mt-1 text-[11px] text-txt-muted">
+          {missing.join(", ")}: no timing read returned.
+        </p>
+      )}
     </div>
   );
 }
