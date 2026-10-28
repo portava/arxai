@@ -44,7 +44,7 @@ import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel"
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
 import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
-import { scannerResultActionChip } from "@/components/scanner/scannerResultAction";
+import { scannerResultActionChip, scannerResultCardClaims } from "@/components/scanner/scannerResultAction";
 import type { ScalpResult } from "@workspace/api-client-react";
 
 type Opp = {
@@ -112,6 +112,13 @@ const BADGE_LABELS: Record<string, string> = {
   PENDING_MT5_CONNECTION: "Waiting for connection",
   // Score under the scanner's minimum while no risk rule failed — not "Risk too high".
   LOW_OPPORTUNITY_SCORE: "Score too low",
+};
+
+const BORDER_TONE_COLORS: Record<"positive" | "negative" | "info" | "neutral", string> = {
+  positive: "#10b981",
+  negative: "#f43f5e",
+  info: "#3b82f6",
+  neutral: "#71717a",
 };
 
 const LABEL_COLORS: Record<string, string> = {
@@ -693,29 +700,44 @@ export default function MarketScanner() {
                 This setup needs a fresh, tradeable market read. Scan again to restore its direction, scores and trade actions.
               </CardContent>
             </Card>
-          ) : (
+          ) : (() => {
+            // The server's fused final read may withhold the action; the
+            // grade, border and status badge are then downgraded with it.
+            const chip = scannerResultActionChip(o.recommendedAction, o.finalRead?.label);
+            const claims = scannerResultCardClaims(chip, o.opportunity.label, o.statusBadge);
+            return (
             <Card
               key={`${o.symbol}-${o.timeframe}-${i}`}
               className="border-l-4"
-              style={{ borderLeftColor: o.opportunity.label === "ELITE" || o.opportunity.label === "STRONG" ? "#10b981" : o.opportunity.label === "REJECT" ? "#f43f5e" : "#3b82f6" }}
+              style={{ borderLeftColor: BORDER_TONE_COLORS[claims.borderTone] }}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-base">{o.symbol} <span className="text-xs text-muted-foreground">{o.timeframe}</span></CardTitle>
-                  <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score}</Badge>
+                  {claims.showGrade ? (
+                    <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score}</Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-xs text-muted-foreground"
+                      data-testid={`scanner-grade-withheld-${o.symbol}`}
+                      title="The server's final read says not to take this setup now, so its grade is not shown."
+                    >
+                      Score {o.opportunity.score} · not graded
+                    </Badge>
+                  )}
                 </div>
                 <CardDescription className="flex flex-wrap items-center gap-1.5 mt-1">
-                  {(() => {
-                    const chip = scannerResultActionChip(o.recommendedAction, o.finalRead?.label);
-                    return <Badge variant={chip.variant} className="text-xs" data-testid={`scanner-action-${o.symbol}`}>{chip.text}</Badge>;
-                  })()}
+                  <Badge variant={chip.variant} className="text-xs" data-testid={`scanner-action-${o.symbol}`}>{chip.text}</Badge>
                   <Badge variant="outline" className="text-xs">{o.bias === "choppy" ? "volatile" : o.bias}</Badge>
-                  <Badge
-                    className={`text-xs ${BADGE_COLORS[o.statusBadge] ?? ""}`}
-                    data-status-badge={o.statusBadge}
-                  >
-                    {BADGE_LABELS[o.statusBadge] ?? "Working on it"}
-                  </Badge>
+                  {claims.showStatusBadge && (
+                    <Badge
+                      className={`text-xs ${BADGE_COLORS[o.statusBadge] ?? ""}`}
+                      data-status-badge={o.statusBadge}
+                    >
+                      {BADGE_LABELS[o.statusBadge] ?? "Working on it"}
+                    </Badge>
+                  )}
                   {(() => {
                     const c = cohesionMap.get(o.symbol);
                     if (!c) return null;
@@ -830,7 +852,8 @@ export default function MarketScanner() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })())}
         </div>
       )}
     </div>
