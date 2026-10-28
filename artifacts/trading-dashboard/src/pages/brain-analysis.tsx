@@ -46,6 +46,23 @@ function isFullAnalysis(r: BrainOutcome): boolean {
   return r.available !== false && !!r.scoring && !!r.technicalDetails;
 }
 
+// newsRiskEngine.ts: riskLevel "Low" with providerConnected:false means the
+// calendar could not be read ("cannot see"), never "clear". Only a verdict
+// from a known event set (connected calendar, or a news-immune synthetic)
+// may read as Low.
+type NewsDetails = {
+  riskLevel?: string;
+  providerConnected?: boolean;
+};
+
+function newsRiskUnknown(r: BrainOutcome): boolean {
+  const n = r.newsDetails as NewsDetails | undefined;
+  return n?.providerConnected !== true && (n?.riskLevel ?? r.newsRisk) === "Low";
+}
+
+const NEWS_UNKNOWN_NOTE =
+  "No economic calendar was read, so news risk is unknown, not clear. No news deduction was applied.";
+
 function candleSourceLabel(source: string | undefined): string {
   if (!source) return "an unreported source";
   if (source === "router") return "the market-data router (provider not reported)";
@@ -457,7 +474,7 @@ export default function BrainAnalysis() {
               { label: "Technical Bias", value: result.technicalBias, icon: BarChart3 },
               { label: "Macro Bias", value: result.macroBias, icon: Globe2 },
               { label: "Session", value: result.session, icon: Clock },
-              { label: "News Risk", value: result.newsRisk, icon: Newspaper },
+              { label: "News Risk", value: newsRiskUnknown(result) ? "Unknown (no calendar)" : result.newsRisk, icon: Newspaper },
             ].map(({ label, value, icon: Icon }) => (
               <Card key={label} className="border-zinc-800 bg-zinc-900/60">
                 <CardContent className="pt-4 pb-3">
@@ -486,10 +503,21 @@ export default function BrainAnalysis() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-400">Risk Level</span>
-                  <Badge variant="outline" className={cn("text-xs", (result.newsDetails as any)?.riskLevel === "Critical" ? "border-red-600 text-red-400" : (result.newsDetails as any)?.riskLevel === "High" ? "border-amber-600 text-amber-400" : (result.newsDetails as any)?.riskLevel === "Medium" ? "border-yellow-600 text-yellow-400" : "border-emerald-700 text-emerald-400")}>
-                    {(result.newsDetails as any)?.riskLevel}
-                  </Badge>
+                  {newsRiskUnknown(result) ? (
+                    <Badge data-testid="brain-news-level" variant="outline" className="text-xs border-zinc-600 text-zinc-300">
+                      Unknown — calendar not connected
+                    </Badge>
+                  ) : (
+                    <Badge data-testid="brain-news-level" variant="outline" className={cn("text-xs", (result.newsDetails as any)?.riskLevel === "Critical" ? "border-red-600 text-red-400" : (result.newsDetails as any)?.riskLevel === "High" ? "border-amber-600 text-amber-400" : (result.newsDetails as any)?.riskLevel === "Medium" ? "border-yellow-600 text-yellow-400" : "border-emerald-700 text-emerald-400")}>
+                      {(result.newsDetails as any)?.riskLevel}
+                    </Badge>
+                  )}
                 </div>
+                {newsRiskUnknown(result) && (
+                  <p data-testid="brain-news-unknown" className="text-xs text-amber-300 leading-relaxed">
+                    {NEWS_UNKNOWN_NOTE}
+                  </p>
+                )}
                 {(result.newsDetails as any)?.nextEvent && (
                   <p className="text-xs text-zinc-400">Next: {(result.newsDetails as any).nextEvent}</p>
                 )}

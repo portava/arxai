@@ -110,3 +110,34 @@ describe("Market Brain truth — refusal and provenance", () => {
     expect(err.textContent).toMatch(/could not be loaded/i);
   });
 });
+
+describe("Market Brain truth — news risk without a calendar", () => {
+  const NO_CALENDAR = {
+    ...FULL,
+    newsRisk: "Low",
+    newsDetails: { majorNewsSoon: false, riskLevel: "Low", blockTrading: false, reason: "x", providerConnected: false },
+  };
+
+  it("'Low' with providerConnected:false is shown as unknown, never a green Low", async () => {
+    await run(NO_CALENDAR);
+    const level = await screen.findByTestId("brain-news-level");
+    expect(level.textContent).toMatch(/unknown/i);
+    expect(level.textContent).toMatch(/not connected/i);
+    expect(level.className).not.toMatch(/emerald/);
+    expect(screen.getByTestId("brain-news-unknown").textContent).toMatch(/unknown, not clear/i);
+    expect(screen.queryByText("Low")).toBeNull();
+  });
+
+  it("the bias row does not read 'News Risk: Low' when no calendar was read", async () => {
+    await run(NO_CALENDAR);
+    await screen.findByTestId("brain-news-level");
+    expect(screen.getByText("Unknown (no calendar)")).toBeTruthy();
+  });
+
+  it("a connected calendar's Low is still shown as Low", async () => {
+    await run({ ...NO_CALENDAR, newsDetails: { ...NO_CALENDAR.newsDetails, providerConnected: true } });
+    const level = await screen.findByTestId("brain-news-level");
+    expect(level.textContent).toBe("Low");
+    expect(screen.queryByTestId("brain-news-unknown")).toBeNull();
+  });
+});
