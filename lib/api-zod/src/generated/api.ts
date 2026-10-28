@@ -18190,6 +18190,18 @@ export const GetMeScalpBasketsResponse = zod.object({
   ),
   accountMode: zod.enum(["LIVE_SHARED", "DEMO", "PAPER", "NONE"]),
   generatedAt: zod.string(),
+  positionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      'False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured \"none\".',
+    ),
+  positionsNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plain statement of why positions were not read; null when they were.",
+    ),
 });
 
 /**
@@ -18440,6 +18452,18 @@ export const CreateMeScalpAddOnCheckResponse = zod.object({
       'Running-momentum \"flame\" read off the live candle window. Honest NONE\/UNKNOWN when blind (no candles) — never fabricated.',
     ),
   generatedAt: zod.string(),
+  positionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      'False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured \"none\".',
+    ),
+  positionsNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plain statement of why positions were not read; null when they were.",
+    ),
 });
 
 /**

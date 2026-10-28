@@ -23117,6 +23117,12 @@ components:
           items: { $ref: "#/components/schemas/ScalpBasket" }
         accountMode: { type: string, enum: [LIVE_SHARED, DEMO, PAPER, NONE] }
         generatedAt: { type: string }
+        positionsMeasured:
+          type: boolean
+          description: False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none".
+        positionsNote:
+          type: ["string", "null"]
+          description: Plain statement of why positions were not read; null when they were.
 
     MeScalpAddOnCheckBody:
       type: object
@@ -23138,6 +23144,12 @@ components:
         addOn: { $ref: "#/components/schemas/ScalpAddOnVerdict" }
         flame: { $ref: "#/components/schemas/ScalpFlameRead" }
         generatedAt: { type: string }
+        positionsMeasured:
+          type: boolean
+          description: False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none".
+        positionsNote:
+          type: ["string", "null"]
+          description: Plain statement of why positions were not read; null when they were.
 
     ScalpJournalEntry:
       type: object
