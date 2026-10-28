@@ -426,7 +426,7 @@ export async function runAutoDebrief(
     if (trade.userId == null) {
       warnings.push("Paper order has no owner — analytics snapshot skipped");
     } else {
-      const computed = await computeSnapshot(trade.userId);
+      const { pnlCoverage: _pnlCoverage, ...computed } = await computeSnapshot(trade.userId);
       const snapIns = await db.insert(analyticsSnapshotsTable).values({ ...computed, userId: trade.userId })
         .returning({ id: analyticsSnapshotsTable.id });
       snapshotId = snapIns[0]?.id ?? null;

@@ -19,6 +19,7 @@ import {
 } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { paperMoveSign, paperPnl } from "../lib/paperExecution/paperPnl.js";
 
 const router = Router();
 const ANALYTICS_DISCLAIMER =
@@ -45,10 +46,45 @@ async function vaultAnalytics(kind: string, payload: Record<string, unknown>) {
 function isClosed(o: typeof paperOrdersTable.$inferSelect): boolean {
   return o.status !== "OPEN" && o.exitPrice != null;
 }
-function pnlOf(o: typeof paperOrdersTable.$inferSelect): number {
-  if (!isClosed(o) || o.exitPrice == null) return 0;
-  const dir = o.direction === "BUY" ? 1 : -1;
-  return (o.exitPrice - o.entryPrice) * dir * o.lotSize * 100; // synthetic $/lot
+// P&L of a closed order in USD at the instrument's contract size (the sizing
+// rule in lib/mt5/contractSize.ts, via paperPnl). It used to be
+// Δprice × lots × 100 for every symbol, so a 1.00-lot, 100-pip EURUSD trade
+// read $1 instead of $1,000. null = the order cannot be sized honestly (no
+// broker contract spec and not a fiat currency pair, or no FX conversion):
+// it is left out of every money figure and counted in pnlCoverage, never
+// booked as $0.
+function pnlOf(o: typeof paperOrdersTable.$inferSelect): number | null {
+  if (!isClosed(o) || o.exitPrice == null) return null;
+  return paperPnl({
+    symbol: o.symbol, direction: o.direction, lots: o.lotSize,
+    entry: o.entryPrice, price: o.exitPrice,
+  }).amount;
+}
+/** Win / loss by the direction of the price move — needs no contract size. */
+function outcomeSign(o: typeof paperOrdersTable.$inferSelect): 1 | -1 | 0 {
+  return o.exitPrice == null ? 0 : paperMoveSign(o.direction, o.entryPrice, o.exitPrice);
+}
+export interface PnlCoverage {
+  closedTrades: number;
+  /** Closed trades whose P&L could be sized in USD; every money figure uses only these. */
+  sizedTrades: number;
+  unsizedTrades: number;
+  /** Symbols with at least one closed trade that could not be sized. */
+  unsizedSymbols: string[];
+  /** Plain-English basis of the money figures. */
+  note: string;
+}
+function pnlCoverageOf(closed: Array<typeof paperOrdersTable.$inferSelect>): PnlCoverage {
+  const unsized = closed.filter((o) => pnlOf(o) == null);
+  const sizedTrades = closed.length - unsized.length;
+  const unsizedSymbols = [...new Set(unsized.map((o) => o.symbol))].sort();
+  const basis = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair).";
+  const note = unsized.length === 0
+    ? basis
+    : sizedTrades === 0
+      ? `P&L not measured: none of your ${closed.length} closed trades could be sized in USD (${unsizedSymbols.join(", ")} — no contract size or no USD conversion). Money figures here are not results.`
+      : `${basis} ${unsized.length} of ${closed.length} closed trades (${unsizedSymbols.join(", ")}) could not be sized and are left out of every money figure.`;
+  return { closedTrades: closed.length, sizedTrades, unsizedTrades: unsized.length, unsizedSymbols, note };
 }
 function maxDrawdown(equityCurve: Array<{ pnl: number }>): number {
   let peak = 0, cum = 0, mdd = 0;
@@ -82,15 +118,18 @@ export async function computeSnapshot(userId: number) {
     db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.userId, userId)).limit(200),
   ]);
   const closed = orders.filter((o) => isClosed(o));
-  const pnls = closed.map((o) => pnlOf(o));
+  // Money figures use only trades whose P&L could be sized (see pnlOf).
+  const pnls = closed.map((o) => pnlOf(o)).filter((p): p is number => p != null);
   const totalTrades = closed.length;
   const wins = pnls.filter((p) => p > 0);
   const losses = pnls.filter((p) => p < 0);
   const grossWin = wins.reduce((s, p) => s + p, 0);
   const grossLoss = Math.abs(losses.reduce((s, p) => s + p, 0));
   const netProfitLoss = pnls.reduce((s, p) => s + p, 0);
-  const winRate = totalTrades ? wins.length / totalTrades : 0;
-  const expectancy = totalTrades ? netProfitLoss / totalTrades : 0;
+  // A win is a favourable price move, so unsized trades still count here.
+  const winCount = closed.filter((o) => outcomeSign(o) > 0).length;
+  const winRate = totalTrades ? winCount / totalTrades : 0;
+  const expectancy = pnls.length ? netProfitLoss / pnls.length : 0;
   const profitFactor = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? 999 : 0);
   // Average reward/risk per trade (R-multiple).
   const rrs = closed.map((o) => {
@@ -106,8 +145,9 @@ export async function computeSnapshot(userId: number) {
   const byStrategy = new Map<string, { wins: number; total: number; pnl: number }>();
   for (const o of closed) {
     const key = o.symbol;  // proxy for strategy when no strategy field on paper orders
-    const cur = byStrategy.get(key) ?? { wins: 0, total: 0, pnl: 0 };
     const p = pnlOf(o);
+    if (p == null) continue; // ranked by P&L, so only sized trades rank
+    const cur = byStrategy.get(key) ?? { wins: 0, total: 0, pnl: 0 };
     cur.wins += p > 0 ? 1 : 0; cur.total += 1; cur.pnl += p;
     byStrategy.set(key, cur);
   }
@@ -135,6 +175,8 @@ export async function computeSnapshot(userId: number) {
     consistencyScoreAvg:sk?.consistencyScore ?? 0,
     strongestStrategy, weakestStrategy,
     strongestMarketCondition, weakestMarketCondition,
+    // Not a snapshot column: what the money figures above cover.
+    pnlCoverage: pnlCoverageOf(closed),
   };
 }
 
@@ -142,11 +184,11 @@ export async function computeSnapshot(userId: number) {
 router.post("/analytics/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
     const userId = req.authUser!.id;
-    const computed = await computeSnapshot(userId);
+    const { pnlCoverage, ...computed } = await computeSnapshot(userId);
     const ins = await db.insert(analyticsSnapshotsTable).values({ ...computed, userId }).returning();
     await vaultAnalytics("ANALYTICS_SNAPSHOT_GENERATED",
       { snapshotId: ins[0]!.id, totalTrades: computed.totalTrades });
-    ok(res, { snapshot: ins[0] });
+    ok(res, { snapshot: ins[0], pnlCoverage });
   } catch (err) {
     res.req.log?.error?.({ err: String(err) }, "POST /analytics/snapshot failed");
     fail(res, 500, "Failed to generate analytics snapshot");
@@ -188,32 +230,27 @@ async function buildAllHeatmaps(userId: number): Promise<Array<{ heatmapType: st
   ]);
   const closed = orders.filter((o) => isClosed(o));
 
-  // SESSION_PNL: bucket P&L by ASIA/LONDON/NEWYORK.
-  const sess: Record<string, { trades: number; pnl: number; wins: number }> = {
-    ASIA: { trades: 0, pnl: 0, wins: 0 },
-    LONDON: { trades: 0, pnl: 0, wins: 0 },
-    NEWYORK: { trades: 0, pnl: 0, wins: 0 },
-  };
-  for (const o of closed) {
-    const s = sessionOf(o.openedAt);
+  // Every bucket counts all closed trades and wins by price move; `pnl` sums
+  // only the trades that could be sized, and `sizedTrades` says how many.
+  type Bucket = { trades: number; pnl: number; wins: number; sizedTrades: number };
+  const bucket = (): Bucket => ({ trades: 0, pnl: 0, wins: 0, sizedTrades: 0 });
+  const add = (b: Bucket, o: typeof closed[number]) => {
     const p = pnlOf(o);
-    sess[s]!.trades++; sess[s]!.pnl += p; sess[s]!.wins += p > 0 ? 1 : 0;
-  }
+    b.trades++; b.wins += outcomeSign(o) > 0 ? 1 : 0;
+    if (p != null) { b.pnl += p; b.sizedTrades++; }
+  };
+
+  // SESSION_PNL: bucket P&L by ASIA/LONDON/NEWYORK.
+  const sess: Record<string, Bucket> = { ASIA: bucket(), LONDON: bucket(), NEWYORK: bucket() };
+  for (const o of closed) add(sess[sessionOf(o.openedAt)]!, o);
 
   // DAY_OF_WEEK: 0..6
-  const dow = Array.from({ length: 7 }, () => ({ trades: 0, pnl: 0, wins: 0 }));
-  for (const o of closed) {
-    const d = o.openedAt.getUTCDay();
-    const p = pnlOf(o);
-    dow[d]!.trades++; dow[d]!.pnl += p; dow[d]!.wins += p > 0 ? 1 : 0;
-  }
+  const dow = Array.from({ length: 7 }, bucket);
+  for (const o of closed) add(dow[o.openedAt.getUTCDay()]!, o);
 
   // ENTRY_TIMING: bucket by hour 0..23
-  const hours = Array.from({ length: 24 }, () => ({ trades: 0, pnl: 0 }));
-  for (const o of closed) {
-    const h = o.openedAt.getUTCHours();
-    hours[h]!.trades++; hours[h]!.pnl += pnlOf(o);
-  }
+  const hours = Array.from({ length: 24 }, bucket);
+  for (const o of closed) add(hours[o.openedAt.getUTCHours()]!, o);
 
   // EMOTIONAL: count by emotion-after
   const emo: Record<string, number> = {};
@@ -236,12 +273,13 @@ router.get("/analytics/strategy", requireUser, async (req, res): Promise<void> =
   const orders = await db.select().from(paperOrdersTable)
     .where(eq(paperOrdersTable.userId, req.authUser!.id)).limit(1000);
   const closed = orders.filter((o) => isClosed(o));
-  const groups = new Map<string, { trades: number; wins: number; pnl: number; rrSum: number; rrN: number }>();
+  const groups = new Map<string, { trades: number; wins: number; pnl: number; sized: number; rrSum: number; rrN: number }>();
   for (const o of closed) {
     const k = o.symbol;
-    const cur = groups.get(k) ?? { trades: 0, wins: 0, pnl: 0, rrSum: 0, rrN: 0 };
+    const cur = groups.get(k) ?? { trades: 0, wins: 0, pnl: 0, sized: 0, rrSum: 0, rrN: 0 };
     const p = pnlOf(o);
-    cur.trades++; cur.pnl += p; cur.wins += p > 0 ? 1 : 0;
+    cur.trades++; cur.wins += outcomeSign(o) > 0 ? 1 : 0;
+    if (p != null) { cur.pnl += p; cur.sized++; }
     const risk = Math.abs(o.entryPrice - o.stopLoss);
     if (risk > 0 && o.exitPrice != null) {
       const dir = o.direction === "BUY" ? 1 : -1;
@@ -250,12 +288,14 @@ router.get("/analytics/strategy", requireUser, async (req, res): Promise<void> =
     }
     groups.set(k, cur);
   }
-  const rows = [...groups.entries()].map(([symbol, g]) => ({
+  // A symbol whose trades could not be sized has no P&L to show: it is
+  // listed in pnlCoverage.unsizedSymbols instead of a $0.00 row.
+  const rows = [...groups.entries()].filter(([, g]) => g.sized > 0).map(([symbol, g]) => ({
     symbol, trades: g.trades, winRate: g.trades ? g.wins / g.trades : 0,
-    totalPnl: g.pnl, expectancy: g.trades ? g.pnl / g.trades : 0,
+    totalPnl: g.pnl, expectancy: g.pnl / g.sized, sizedTrades: g.sized,
     averageRr: g.rrN ? g.rrSum / g.rrN : 0,
   })).sort((a, b) => b.totalPnl - a.totalPnl);
-  ok(res, { strategies: rows });
+  ok(res, { strategies: rows, pnlCoverage: pnlCoverageOf(closed) });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/strategy failed");
     fail(res, 500, "Failed to load strategy analytics");
@@ -299,13 +339,16 @@ router.get("/analytics/drawdown", requireUser, async (req, res): Promise<void> =
       .orderBy(paperOrdersTable.openedAt).limit(1000);
     const closed = orders.filter((o) => isClosed(o));
     let peak = 0, cum = 0;
-    const curve = closed.map((o) => {
-      cum += pnlOf(o);
+    // The curve steps only on trades whose P&L could be sized.
+    const curve = closed.flatMap((o) => {
+      const p = pnlOf(o);
+      if (p == null) return [];
+      cum += p;
       if (cum > peak) peak = cum;
-      return { tradeId: o.id, openedAt: o.openedAt, equity: cum, peak, drawdown: peak - cum };
+      return [{ tradeId: o.id, openedAt: o.openedAt, equity: cum, peak, drawdown: peak - cum }];
     });
     const maxDd = curve.reduce((m, p) => Math.max(m, p.drawdown), 0);
-    ok(res, { equityCurve: curve, maxDrawdown: maxDd });
+    ok(res, { equityCurve: curve, maxDrawdown: maxDd, pnlCoverage: pnlCoverageOf(closed) });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/drawdown failed");
     fail(res, 500, "Failed to load drawdown");
