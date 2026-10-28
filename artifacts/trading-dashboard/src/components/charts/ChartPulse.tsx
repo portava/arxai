@@ -117,16 +117,21 @@ function buildItems(state: ChartState, pricePrecision: number | null): PulseItem
     testid: "pulse-momentum",
   });
 
-  // Risk — reuse the deterministic risk sentence tone.
+  // Risk — reuse the deterministic risk sentence tone. "Normal" only for the
+  // server's all-clear read (tone "info"); a sentence that assessed nothing
+  // ("Risk not assessed", tone "neutral") or any other tone is "Not assessed".
+  const riskTone = state.marketSentences.risk.tone;
   items.push({
     label: "Risk",
     value:
-      state.marketSentences.risk.tone === "danger"
+      riskTone === "danger"
         ? "High"
-        : state.marketSentences.risk.tone === "caution"
+        : riskTone === "caution"
           ? "Elevated"
-          : "Normal",
-    tone: state.marketSentences.risk.tone,
+          : riskTone === "info"
+            ? "Normal"
+            : "Not assessed",
+    tone: riskTone,
     testid: "pulse-risk",
   });
 

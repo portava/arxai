@@ -307,6 +307,15 @@ function sentenceRisk(s: SentenceInput): ChartMarketSentence {
       text: `Risk is moderate — ${contradiction.text.toLowerCase()}`,
     };
   }
+  // The all-clear line needs an actual read: with no trend or readiness read
+  // nothing was assessed, so it says that instead of "normal".
+  if (!s.marketUnderstanding.populated || !r.populated || !s.marketUnderstanding.trend.populated) {
+    return {
+      ...base,
+      tone: "neutral",
+      text: `Risk not assessed — there isn't enough clean data on ${s.displaySymbol} ${s.timeframe} to read the market yet.`,
+    };
+  }
   return {
     ...base,
     tone: "info",
@@ -564,6 +573,20 @@ function sentenceSignalFreshness(s: SentenceInput): ChartMarketSentence {
     };
   }
   const setup = s.setupState;
+  // Not stale is not live: a delayed or not-live feed is named, and setup age
+  // in bars is never presented as data freshness.
+  const feedNotLive = s.truthState?.quality === "delayed" ? "delayed"
+    : s.truthState?.isLive !== true ? "not live" : null;
+  if (feedNotLive) {
+    const ageNote = setup.populated && setup.ageBars != null
+      ? ` The setup is ${setup.ageBars} bar${setup.ageBars === 1 ? "" : "s"} old, but setup age is not data freshness.`
+      : "";
+    return {
+      ...base,
+      tone: "caution",
+      text: `The feed is ${feedNotLive} — this read is not from current live data.${ageNote}`,
+    };
+  }
   if (!setup.populated || setup.ageBars == null) {
     return {
       ...base,

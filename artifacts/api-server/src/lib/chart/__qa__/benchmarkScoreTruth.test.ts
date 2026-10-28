@@ -202,7 +202,11 @@ test("every warning form of the real risk sentence is recognised, and the all-cl
   assert.equal(normal.length, 1);
   assert.equal(normal[0], NORMAL_RISK);
   assert.equal(riskSentenceIsWarning(NORMAL_RISK), false);
-  for (const t of texts.filter((x) => x !== NORMAL_RISK)) {
+  // "Risk not assessed" (no read) is neither the all-clear nor a warning flag.
+  const notAssessed = texts.filter((t) => t.startsWith("Risk not assessed"));
+  assert.equal(notAssessed.length, 1);
+  assert.equal(riskSentenceIsWarning(notAssessed[0]), false);
+  for (const t of texts.filter((x) => x !== NORMAL_RISK && !notAssessed.includes(x))) {
     assert.equal(riskSentenceIsWarning(t), true, `not recognised as a warning: ${t}`);
   }
   assert.equal(riskSentenceIsWarning(null), false);
