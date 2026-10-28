@@ -67,7 +67,9 @@ export default function StrategyPromotion() {
             <div key={s.strategy} className="border rounded p-2 text-xs space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold">{s.strategy}</span>
-                <Badge className={LEVEL_COLOR[s.level]}>{s.level === "PAPER_APPROVED" ? "DEMO_APPROVED" : s.level}</Badge>
+                {/* The server's level, as stored. PAPER_APPROVED and DEMO_APPROVED are
+                    different gates, so the client never relabels one as the other. */}
+                <Badge className={LEVEL_COLOR[s.level]}>{s.level}</Badge>
                 {s.demotion && <Badge variant="destructive">demotion: {s.demotion}</Badge>}
                 {s.eligibleFor && <Badge className="bg-emerald-500/20 text-emerald-400">eligible → {s.eligibleFor}</Badge>}
                 <span className="ml-auto text-muted-foreground">n={s.stats.sample} tracked={s.stats.tracked} wr={(s.stats.winRate * 100).toFixed(0)}% avgR={s.stats.avgR.toFixed(2)} exp={s.stats.expectancy.toFixed(2)}</span>
