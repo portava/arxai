@@ -80,3 +80,21 @@ test("invalid user timezone fails soft to null local time", () => {
     mock.timers.reset();
   }
 });
+
+test("kill-zone description prints clock times, not decimal hours", () => {
+  const cases: Array<[number, number, string, string]> = [
+    [7, 30, "07:00-08:30 UTC", "8.5:00"],
+    [12, 30, "12:00-13:30 UTC", "13.5:00"],
+    [1, 0, "00:00-02:30 UTC", "2.5:00"],
+  ];
+  for (const [h, m, want, bad] of cases) {
+    atUtc(h, m);
+    try {
+      const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+      assert.ok(out.sessionDescription.includes(want), `${h}:${m} → ${out.sessionDescription}`);
+      assert.ok(!out.sessionDescription.includes(bad), `${h}:${m} → ${out.sessionDescription}`);
+    } finally {
+      mock.timers.reset();
+    }
+  }
+});

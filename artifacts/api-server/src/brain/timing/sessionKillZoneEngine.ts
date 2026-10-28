@@ -112,6 +112,14 @@ function decimalHour(d: Date): number {
   return d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
 }
 
+/** Decimal UTC hours (e.g. 8.5) → clock time "08:30". */
+function formatUtcClock(decimal: number): string {
+  const totalMinutes = Math.round((((decimal % 24) + 24) % 24) * 60);
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 function inWindow(open: number, close: number, hour: number): boolean {
   if (open <= close) return hour >= open && hour < close;
   // wraps midnight
@@ -196,7 +204,7 @@ export function computeSessionKillZone(input: SessionKillZoneInput): SessionTimi
     bestSymbols,
     dangerSymbols,
     sessionDescription: kz
-      ? `${kz.label} active (${kz.openUTC}:00-${kz.closeUTC}:00 UTC). ${session.description}`
+      ? `${kz.label} active (${formatUtcClock(kz.openUTC)}-${formatUtcClock(kz.closeUTC)} UTC). ${session.description}`
       : session.description,
     userLocalTime: getUserLocalTime(now, input.userTimezone),
   };

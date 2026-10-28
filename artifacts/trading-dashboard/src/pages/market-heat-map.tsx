@@ -571,6 +571,14 @@ function SessionCard({
 
 // ── Tab: By Session ─────────────────────────────────────────────────────────
 
+/** "HH:MM" in UTC for an ISO timestamp; "unknown time" when it cannot be parsed. */
+function utcClockOf(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return "unknown time";
+  const d = new Date(ms);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+
 function BySessionTab({ data }: { data: MarketTimingRead | undefined }) {
   if (!data) return <HonestEmpty message="Session data requires a timing read for the selected symbol." />;
   return (
@@ -580,7 +588,7 @@ function BySessionTab({ data }: { data: MarketTimingRead | undefined }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Session Context</CardTitle>
           <CardDescription className="text-xs">
-            Session timing is derived from UTC hour {data.session.utcHour}:00. Kill zones mark the highest-probability windows.
+            Session timing is derived from the UTC clock when this read was computed ({utcClockOf(data.generatedAt)} UTC). Kill zones mark the highest-probability windows.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1489,3 +1497,6 @@ export default function MarketHeatMapPage() {
     </div>
   );
 }
+
+// Exported for render tests only (truth/label regression coverage).
+export { NowTab, TodayTab, BySessionTab, NewsHeatTab, SessionCard, DangerWindowsTab };
