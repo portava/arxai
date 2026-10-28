@@ -173,6 +173,9 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
         </CardContent>
       </Card>
 
+      {status && !status.startedAt && (
+        <p className="text-xs text-slate-500">No forward test has been started yet, so there are no forward-test results.</p>
+      )}
       {results ? (
         <div className="grid gap-2 md:grid-cols-4">
           <Stat label="Decisions" value={String(results.totalShadowDecisions)} />

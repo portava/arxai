@@ -70,3 +70,11 @@ describe("ForwardTestingTab phase and end time", () => {
     expect(start.disabled).toBe(true);
   });
 });
+
+describe("ForwardTestingTab results scope", () => {
+  it("says no forward test has been started when none has", async () => {
+    stub({ running: false, startedAt: null, endsAt: null, observedSinceStart: 0, config: null });
+    render(<ForwardTestingTab />);
+    expect(await screen.findByText(/No forward test has been started yet/i)).toBeTruthy();
+  });
+});

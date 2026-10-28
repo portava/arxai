@@ -238,11 +238,13 @@ export interface ForwardTestConfig {
   riskProfile: string; sessionFilters: string[]; newsFilters: string[];
 }
 let forwardConfig: ForwardTestConfig | null = null;
+// The config of the most recent forward test (running or ended), so its
+// strategy filter keeps scoping results after it ends.
+let forwardLastConfig: ForwardTestConfig | null = null;
 let forwardStartedAt: string | null = null;
 let forwardEndsAt: string | null = null;
 let forwardEndedAt: string | null = null;
 let forwardEndReason: "duration_elapsed" | "stopped" | null = null;
-let forwardCountAtStart = 0;
 
 /** Longest forward test accepted (7 days), in minutes. */
 export const FORWARD_MAX_DURATION_MIN = 7 * 24 * 60;
@@ -277,11 +279,11 @@ export function startForwardTest(c: Partial<ForwardTestConfig> = {}): { running:
     riskProfile: c.riskProfile ?? "CONSERVATIVE",
     sessionFilters: c.sessionFilters ?? [], newsFilters: c.newsFilters ?? [],
   };
+  forwardLastConfig = forwardConfig;
   forwardStartedAt = new Date().toISOString();
   forwardEndsAt = new Date(Date.now() + forwardConfig.durationMin * 60_000).toISOString();
   forwardEndedAt = null;
   forwardEndReason = null;
-  forwardCountAtStart = totalsObserved;
   if (!shadowEnabled) startShadowMode({ symbols: forwardConfig.symbols });
   return { running: true, endsAt: forwardEndsAt };
 }
@@ -303,14 +305,34 @@ export function forwardStatus() {
     // When the test ended (endsAt reached, or Stop) and why; null while running
     // or before any test started.
     endedAt: forwardEndedAt, endReason: forwardEndReason,
-    config: forwardConfig, observedSinceStart: totalsObserved - forwardCountAtStart,
+    config: forwardConfig,
+    // Shadow decisions inside the test window (all strategies): frozen once
+    // the test ends, 0 before any test started.
+    observedSinceStart: forwardWindowDecisions(false).length,
     dataSource: "SHADOW" as const,
   };
 }
+
+/**
+ * The forward test's own decisions: made at or after it started and, once it
+ * ended, no later than its end — filtered to its strategy. Empty before any
+ * forward test started (shadow decisions from other surfaces are not forward
+ * results).
+ */
+function forwardWindowDecisions(byStrategy: boolean): ShadowDecision[] {
+  settleForwardTest();
+  if (!forwardStartedAt) return [];
+  const since = Date.parse(forwardStartedAt);
+  const until = forwardEndedAt ? Date.parse(forwardEndedAt) : Number.POSITIVE_INFINITY;
+  const strategy = byStrategy ? (forwardConfig ?? forwardLastConfig)?.strategy : undefined;
+  return [...decisions.values()].filter((d) => {
+    const ts = Date.parse(d.ts);
+    return ts >= since && ts <= until && (!strategy || d.strategy === strategy);
+  });
+}
+
 export function forwardResults() {
-  const since = forwardStartedAt ? Date.parse(forwardStartedAt) : 0;
-  const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since &&
-    (!forwardConfig?.strategy || d.strategy === forwardConfig.strategy));
+  const arr = forwardWindowDecisions(true);
   const wins = arr.filter((d) => d.status === "SHADOW_WIN");
   const losses = arr.filter((d) => d.status === "SHADOW_LOSS");
   const tracked = wins.length + losses.length;
@@ -349,16 +371,18 @@ export function forwardResults() {
     bestSymbol: symbolRank[0]?.k ?? null, worstSymbol: worstOf(symbolRank),
     bestStrategy: stratRank[0]?.k ?? null, weakestStrategy: worstOf(stratRank),
     confidenceCalibration: confidenceCalibration().label,
+    // The window these results cover (null start = no forward test has run).
+    testStartedAt: forwardStartedAt,
+    testEndedAt: forwardEndedAt,
+    running: !!forwardConfig,
     dataSource: "SHADOW" as const,
   };
 }
 // Forward-test equity (R-multiple) chart series (Task #763) — DISPLAY-ONLY.
-// Same scope as forwardResults(): decisions since the forward test started,
-// filtered to the active strategy. Pure derivation via buildForwardChartSeries.
+// Same scope as forwardResults(): the forward test's own window, filtered to
+// its strategy. Pure derivation via buildForwardChartSeries.
 export function forwardChartSeries(): ForwardChartSeries {
-  const since = forwardStartedAt ? Date.parse(forwardStartedAt) : 0;
-  const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since &&
-    (!forwardConfig?.strategy || d.strategy === forwardConfig.strategy));
+  const arr = forwardWindowDecisions(true);
   return buildForwardChartSeries(arr.map((d) => ({
     id: d.id, ts: d.ts, symbol: d.symbol, strategy: d.strategy,
     action: d.action, entry: d.entry, status: d.status,
