@@ -48,6 +48,55 @@ import { RiskLimitLayersPanel, RISK_LIMIT_LAYERS_QUERY_KEY } from "@/components/
 
 // ── Risk mode config ─────────────────────────────────────────────────────────
 
+type PresetMode = "Conservative" | "Balanced" | "Aggressive";
+interface PresetLimits {
+  riskPerTradePct: number; maxDailyLossPct: number; maxWeeklyLossPct: number;
+  maxTradesPerDay: number; stopAfterLosingStreak: number; minConfidenceScore: number;
+  maxOpenTrades: number; cooldownAfterLossMinutes: number; maxLotSize: number;
+}
+
+// The values POST /risk/mode writes for each preset (RISK_PRESETS in the
+// api-server's routes/risk.ts). The saved risk-mode label and the limits are
+// stored separately, so a label is "Active" only while the stored limits
+// still equal these values.
+const PRESET_LIMITS: Record<PresetMode, PresetLimits> = {
+  Conservative: { riskPerTradePct: 0.25, maxDailyLossPct: 1, maxWeeklyLossPct: 3, maxTradesPerDay: 3, stopAfterLosingStreak: 2,
+    minConfidenceScore: 80, maxOpenTrades: 1, cooldownAfterLossMinutes: 60, maxLotSize: 0.05 },
+  Balanced: { riskPerTradePct: 0.5, maxDailyLossPct: 2, maxWeeklyLossPct: 5, maxTradesPerDay: 5, stopAfterLosingStreak: 3,
+    minConfidenceScore: 75, maxOpenTrades: 2, cooldownAfterLossMinutes: 30, maxLotSize: 0.1 },
+  Aggressive: { riskPerTradePct: 1, maxDailyLossPct: 3, maxWeeklyLossPct: 7, maxTradesPerDay: 8, stopAfterLosingStreak: 3,
+    minConfidenceScore: 70, maxOpenTrades: 3, cooldownAfterLossMinutes: 15, maxLotSize: 0.2 },
+};
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+const PRESET_FIELDS: { key: keyof PresetLimits; label: string; fmt: (v: number) => string }[] = [
+  { key: "riskPerTradePct", label: "Risk/Trade", fmt: (v) => `${v}%` },
+  { key: "maxDailyLossPct", label: "Daily Limit", fmt: (v) => `${v}%` },
+  // The settings API reports a missing weekly cap as 0.
+  { key: "maxWeeklyLossPct", label: "Weekly Limit", fmt: (v) => (v > 0 ? `${v}%` : "no weekly cap") },
+  { key: "maxTradesPerDay", label: "Max Trades", fmt: (v) => `${v}/day` },
+  { key: "stopAfterLosingStreak", label: "Loss Streak", fmt: (v) => plural(v, "trade") },
+  { key: "minConfidenceScore", label: "Min Confidence", fmt: (v) => `${v}%` },
+  { key: "maxOpenTrades", label: "Max Open", fmt: (v) => plural(v, "trade") },
+  { key: "cooldownAfterLossMinutes", label: "Cooldown", fmt: (v) => `${v} min` },
+  { key: "maxLotSize", label: "Max Lot", fmt: (v) => plural(v, "lot") },
+];
+
+function isPresetMode(mode: string | null | undefined): mode is PresetMode {
+  return mode === "Conservative" || mode === "Balanced" || mode === "Aggressive";
+}
+
+/** Stored limits that are not the preset's value, worded "stored, preset". */
+function presetDiffs(mode: PresetMode, stored: Partial<Record<keyof PresetLimits, unknown>>) {
+  const preset = PRESET_LIMITS[mode];
+  return PRESET_FIELDS.flatMap((f) => {
+    const v = stored[f.key];
+    if (typeof v === "number" && Math.abs(v - preset[f.key]) < 1e-6) return [];
+    const shown = typeof v === "number" && Number.isFinite(v) ? f.fmt(v) : "not reported";
+    return [`${f.label}: ${shown} stored, preset ${f.fmt(preset[f.key])}`];
+  });
+}
+
 const MODES = {
   Conservative: {
     icon: ShieldCheck,
@@ -56,15 +105,7 @@ const MODES = {
     bg: "bg-success/10",
     activeBg: "bg-success/15",
     badge: "bg-success/20 text-success border-success/30",
-    stats: [
-      { label: "Risk/Trade", value: "0.25%" },
-      { label: "Daily Limit", value: "1%" },
-      { label: "Weekly Limit", value: "3%" },
-      { label: "Max Trades", value: "3/day" },
-      { label: "Loss Streak", value: "2 trades" },
-      { label: "Min Confidence", value: "80%" },
-      { label: "Max Open", value: "1 trade" },
-    ],
+    stats: PRESET_FIELDS.map((f) => ({ label: f.label, value: f.fmt(PRESET_LIMITS.Conservative[f.key]) })),
     description: "Capital preservation first. Tight limits, high confidence bar. Ideal for volatile market conditions.",
   },
   Balanced: {
@@ -74,15 +115,7 @@ const MODES = {
     bg: "bg-blue-500/5",
     activeBg: "bg-blue-500/15",
     badge: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-    stats: [
-      { label: "Risk/Trade", value: "0.5%" },
-      { label: "Daily Limit", value: "2%" },
-      { label: "Weekly Limit", value: "5%" },
-      { label: "Max Trades", value: "5/day" },
-      { label: "Loss Streak", value: "3 trades" },
-      { label: "Min Confidence", value: "75%" },
-      { label: "Max Open", value: "2 trades" },
-    ],
+    stats: PRESET_FIELDS.map((f) => ({ label: f.label, value: f.fmt(PRESET_LIMITS.Balanced[f.key]) })),
     description: "Optimized for consistent growth. Balanced exposure across all market conditions.",
   },
   Aggressive: {
@@ -92,15 +125,7 @@ const MODES = {
     bg: "bg-orange-500/5",
     activeBg: "bg-orange-500/15",
     badge: "bg-orange-500/20 text-orange-300 border-orange-500/30",
-    stats: [
-      { label: "Risk/Trade", value: "1%" },
-      { label: "Daily Limit", value: "3%" },
-      { label: "Weekly Limit", value: "7%" },
-      { label: "Max Trades", value: "8/day" },
-      { label: "Loss Streak", value: "3 trades" },
-      { label: "Min Confidence", value: "70%" },
-      { label: "Max Open", value: "3 trades" },
-    ],
+    stats: PRESET_FIELDS.map((f) => ({ label: f.label, value: f.fmt(PRESET_LIMITS.Aggressive[f.key]) })),
     description: "Maximum opportunity capture. Higher drawdown tolerance. Use only in favorable conditions.",
   },
   Custom: {
@@ -110,10 +135,12 @@ const MODES = {
     bg: "bg-violet-500/5",
     activeBg: "bg-violet-500/15",
     badge: "bg-violet-500/20 text-violet-300 border-violet-500/30",
-    stats: [],
+    stats: [] as { label: string; value: string }[],
     description: "Full manual control. Every parameter editable. Your rules, your risk.",
   },
 };
+
+const MISMATCH_BADGE = "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
 
 // ── Custom limits form schema ────────────────────────────────────────────────
 
@@ -447,6 +474,11 @@ export default function RiskSettings() {
   const currentMode = settings?.riskMode ?? "Balanced";
   const modeConfig = MODES[currentMode as keyof typeof MODES] ?? MODES.Custom;
   const ModeIcon = modeConfig.icon;
+  // The label is stored apart from the limits (a fresh trader, or a Risk
+  // Command Center preset, leaves it unchanged), so it only names the
+  // limits in force while they still equal that preset.
+  const labelDiffs = settings && isPresetMode(currentMode) ? presetDiffs(currentMode, settings) : [];
+  const labelMismatch = labelDiffs.length > 0;
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5 p-4 md:p-6 pb-32 md:pb-6 animate-in fade-in duration-500">
@@ -464,10 +496,11 @@ export default function RiskSettings() {
         </div>
         <div className="flex flex-wrap items-center gap-2 max-w-full min-w-0">
           <Badge
-            className={cn("px-3 py-1 font-semibold border", modeConfig.badge)}
+            className={cn("px-3 py-1 font-semibold border", labelMismatch ? MISMATCH_BADGE : modeConfig.badge)}
+            data-testid="risk-mode-badge"
           >
             <ModeIcon size={13} className="mr-1.5" />
-            {currentMode} Mode
+            {labelMismatch ? `${currentMode} label · limits differ` : `${currentMode} Mode`}
           </Badge>
           {settings?.liveLocked && (
             <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border">
@@ -515,14 +548,34 @@ export default function RiskSettings() {
             TAB 1 — RISK MODE
         ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="mode" className="space-y-4">
+          {labelMismatch && (
+            <Alert className="border-yellow-500/30 bg-yellow-500/5" data-testid="risk-mode-mismatch">
+              <AlertTriangle className="h-4 w-4 text-yellow-400" />
+              <AlertTitle className="text-yellow-300 text-sm">
+                Saved label is {currentMode}, but your stored limits are not the {currentMode} preset
+              </AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground space-y-1">
+                <ul className="list-disc list-inside">
+                  {labelDiffs.map((d) => <li key={d}>{d}</li>)}
+                </ul>
+                <p>
+                  Orders are checked against your stored limits, or a stricter operator or platform limit,
+                  as listed under Limits in force on the Limits tab. Re-apply the preset to write its values.
+                </p>
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {(["Conservative", "Balanced", "Aggressive", "Custom"] as const).map((mode) => {
               const cfg = MODES[mode];
               const Icon = cfg.icon;
-              const isActive = currentMode === mode;
+              const labelled = currentMode === mode;
+              const isActive = labelled && !labelMismatch;
+              const labelOnly = labelled && labelMismatch;
               return (
                 <Card
                   key={mode}
+                  data-testid={`risk-mode-card-${mode}`}
                   className={cn(
                     "cursor-pointer border-2 transition-all duration-200",
                     isActive ? `${cfg.border} ${cfg.activeBg}` : "border-border/40 hover:border-border"
@@ -536,6 +589,9 @@ export default function RiskSettings() {
                       {isActive && (
                         <Badge className={cn("ml-auto text-xs border", cfg.badge)}>Active</Badge>
                       )}
+                      {labelOnly && (
+                        <Badge className={cn("ml-auto text-xs border", MISMATCH_BADGE)}>Saved label · limits differ</Badge>
+                      )}
                       {mode === "Custom" && !isActive && (
                         <Badge className="ml-auto text-xs bg-muted/50 text-muted-foreground border border-border">
                           Manual
@@ -546,6 +602,7 @@ export default function RiskSettings() {
                   </CardHeader>
                   {cfg.stats.length > 0 && (
                     <CardContent className="pt-0">
+                      <p className="text-[11px] text-muted-foreground mb-1">Applying this preset sets:</p>
                       <div className="grid grid-cols-2 gap-x-4">
                         {cfg.stats.map((s) => (
                           <div key={s.label} className="flex justify-between py-1 border-b border-border/20 last:border-0">
@@ -582,7 +639,7 @@ export default function RiskSettings() {
                           handleApplyMode(mode as "Conservative" | "Balanced" | "Aggressive");
                         }}
                       >
-                        {isActive ? "Currently Active" : `Apply ${mode} Preset`}
+                        {isActive ? "Currently Active" : labelOnly ? `Re-apply ${mode} Preset` : `Apply ${mode} Preset`}
                         {!isActive && <ChevronRight size={12} />}
                       </Button>
                     </CardFooter>
@@ -603,10 +660,12 @@ export default function RiskSettings() {
                 <div
                   className="absolute top-0 w-4 h-4 rounded-full border-2 border-background shadow-lg transition-all duration-500"
                   style={{
-                    left: currentMode === "Conservative" ? "2%" :
+                    left: labelMismatch ? "90%" :
+                          currentMode === "Conservative" ? "2%" :
                           currentMode === "Balanced" ? "33%" :
                           currentMode === "Aggressive" ? "65%" : "90%",
-                    backgroundColor: currentMode === "Conservative" ? "#10b981" :
+                    backgroundColor: labelMismatch ? "#8b5cf6" :
+                                     currentMode === "Conservative" ? "#10b981" :
                                      currentMode === "Balanced" ? "#3b82f6" :
                                      currentMode === "Aggressive" ? "#f97316" : "#8b5cf6",
                   }}
@@ -630,7 +689,11 @@ export default function RiskSettings() {
           {currentMode !== "Custom" && (
             <Alert className="mb-4 border-blue-500/30 bg-blue-500/5">
               <ShieldAlert className="h-4 w-4 text-blue-400" />
-              <AlertTitle className="text-blue-300 text-sm">Preset Active — {currentMode}</AlertTitle>
+              <AlertTitle className="text-blue-300 text-sm">
+                {labelMismatch
+                  ? `Saved label ${currentMode} — your stored limits are not that preset`
+                  : `Preset Active — ${currentMode}`}
+              </AlertTitle>
               <AlertDescription className="text-xs text-muted-foreground">
                 Editing any limit below will switch you to <strong className="text-violet-400">Custom</strong> mode automatically.
               </AlertDescription>
@@ -1265,11 +1328,11 @@ export default function RiskSettings() {
                   },
                   {
                     label: "Risk Mode",
-                    value: currentMode,
-                    ok: currentMode !== "Aggressive",
+                    value: labelMismatch ? `${currentMode} label · limits differ` : currentMode,
+                    ok: currentMode !== "Aggressive" && !labelMismatch,
                   },
                 ].map((row) => (
-                  <div key={row.label} className="flex items-center justify-between text-xs">
+                  <div key={row.label} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.label}`}>
                     <span className="text-muted-foreground">{row.label}</span>
                     <span className={cn("font-mono font-semibold", row.ok ? "text-success" : "text-yellow-400")}>
                       {row.value}
