@@ -1,11 +1,30 @@
 // Build JJ — Strategy Lab. REPLAY_ONLY experiments across scenarios.
 import { randomUUID } from "node:crypto";
 import { db, strategyLabExperimentsTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import { getScenario } from "./scenarios.js";
 import { runReplay, generateReplayReport, type RunSettings } from "./engine.js";
 
+// Ownership. strategy_lab_experiments has no user column (no migration here),
+// so the creator's user id is recorded in the row's settings JSON under this
+// reserved key, written only by createExperiment from the caller's session.
+// Every read and run is scoped to it; a row without it belongs to nobody and
+// is never shown as anyone's own experiment.
+export const EXPERIMENT_OWNER_KEY = "_ownerUserId";
+
+function ownedBy(ownerUserId: number): SQL {
+  return sql`${strategyLabExperimentsTable.settings}->>${sql.raw(`'${EXPERIMENT_OWNER_KEY}'`)} = ${String(ownerUserId)}`;
+}
+
+/** Settings as the replay engine sees them (the owner key removed). */
+function runSettingsOf(settings: unknown): RunSettings {
+  const { [EXPERIMENT_OWNER_KEY]: _owner, ...rest } = (settings ?? {}) as Record<string, unknown>;
+  return rest as RunSettings;
+}
+
 export interface ExperimentInput {
+  /** The session user creating the experiment; recorded as its owner. */
+  ownerUserId: number;
   title: string;
   symbol?: string;
   timeframe?: string;
@@ -20,27 +39,35 @@ export async function createExperiment(input: ExperimentInput) {
     experimentId, title: input.title,
     symbol: input.symbol ?? "", timeframe: input.timeframe ?? "M5",
     playbookEntryId: input.playbookEntryId ?? "",
-    scenarioIds: input.scenarioIds, settings: input.settings ?? {},
+    scenarioIds: input.scenarioIds,
+    // The owner key is set last, so a body-supplied value can never override it.
+    settings: { ...runSettingsOf(input.settings), [EXPERIMENT_OWNER_KEY]: input.ownerUserId },
     resultSummary: {}, status: "PENDING",
   });
   return experimentId;
 }
 
-export async function listExperiments(limit = 20) {
-  return db.select().from(strategyLabExperimentsTable).orderBy(desc(strategyLabExperimentsTable.createdAt)).limit(limit);
+/** The owner's experiments, newest first. */
+export async function listExperiments(ownerUserId: number, limit = 20) {
+  return db.select().from(strategyLabExperimentsTable)
+    .where(ownedBy(ownerUserId))
+    .orderBy(desc(strategyLabExperimentsTable.createdAt)).limit(limit);
 }
 
-export async function getExperiment(experimentId: string) {
-  const rows = await db.select().from(strategyLabExperimentsTable).where(eq(strategyLabExperimentsTable.experimentId, experimentId)).limit(1);
+/** One experiment, only if it belongs to the owner. */
+export async function getExperiment(experimentId: string, ownerUserId: number) {
+  const rows = await db.select().from(strategyLabExperimentsTable)
+    .where(and(eq(strategyLabExperimentsTable.experimentId, experimentId), ownedBy(ownerUserId)))
+    .limit(1);
   return rows[0] ?? null;
 }
 
-export async function runExperiment(experimentId: string) {
-  const exp = await getExperiment(experimentId);
+export async function runExperiment(experimentId: string, ownerUserId: number) {
+  const exp = await getExperiment(experimentId, ownerUserId);
   if (!exp) throw new Error("experiment not found");
   await db.update(strategyLabExperimentsTable).set({ status: "RUNNING", updatedAt: new Date() }).where(eq(strategyLabExperimentsTable.experimentId, experimentId));
   const scenarioIds = exp.scenarioIds as string[];
-  const settings = exp.settings as RunSettings;
+  const settings = runSettingsOf(exp.settings);
   const perScenario: { scenarioId: string; replayRunId: string; trades: number; netPnl: number; winRate: number; profitFactor: number; reportId: string; promote: boolean; review: boolean }[] = [];
   let totalNet = 0; let totalTrades = 0; let totalWins = 0;
   for (const sid of scenarioIds) {
@@ -84,10 +111,10 @@ export async function runExperiment(experimentId: string) {
   return summary;
 }
 
-export async function compareExperiments(ids: string[]) {
+export async function compareExperiments(ids: string[], ownerUserId: number) {
   const out: Array<{ experimentId: string; title: string; status: string; summary: unknown }> = [];
   for (const id of ids) {
-    const e = await getExperiment(id);
+    const e = await getExperiment(id, ownerUserId);
     if (e) out.push({ experimentId: e.experimentId, title: e.title, status: e.status, summary: e.resultSummary });
   }
   return out;
