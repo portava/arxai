@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { db, tradesTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod/v4";
-import { evaluateTrade } from "../lib/tradeManagement/tradeManager.js";
+import { evaluateTrade, paperCloseOutcome } from "../lib/tradeManagement/tradeManager.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
 import { ownerScope } from "../lib/auth/ownerScope.js";
 import { guardianPaperManage, type GuardianPaperOp } from "../lib/positionGuardian/manage.js";
@@ -70,6 +70,11 @@ router.post("/trade-management/:id/trail", async (req, res) => {
   const trade = await getTrade(id, req);
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
   const snap = await evaluateTrade(trade);
+  // No quote: a trail distance cannot be placed behind an unknown price.
+  if (snap.currentPrice == null) {
+    res.status(409).json({ error: "NO_CURRENT_QUOTE", message: snap.priceUnavailableReason });
+    return;
+  }
   const newStop = snap.suggestions.trail.newStop ?? trade.stopLoss;
   const updated = await manage(res, trade, { kind: "MOVE_STOP", newStop });
   if (!updated) return;
@@ -108,24 +113,34 @@ router.post("/trade-management/:id/close", async (req, res) => {
   void liveAllowed;
 
   const snap = await evaluateTrade(trade);
-  const status: "CLOSED_WIN" | "CLOSED_LOSS" = snap.floatingPnl >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
+  // No quote: closing would book the entry price and $0.00 as the result.
+  // Refuse instead of recording an invented close. A priced close whose P&L
+  // cannot be sized is recorded with pnl null / pnlStatus UNKNOWN.
+  const outcome = paperCloseOutcome(trade, snap);
+  if (!outcome.ok) {
+    res.status(409).json({ error: "NO_CURRENT_QUOTE", message: outcome.reason });
+    return;
+  }
+  const { status } = outcome;
   const updated = await manage(res, trade, {
-    kind: "CLOSE", status, pnl: Number(snap.floatingPnl.toFixed(2)), closedAt: new Date(),
+    kind: "CLOSE", status, pnl: outcome.pnl, closedAt: new Date(),
+    pnlStatus: outcome.pnlStatus, dataQualityFlag: outcome.dataQualityFlag,
   });
   if (!updated) return;
 
+  const closedText = `${trade.symbol} ${trade.direction} closed at ${outcome.exitPrice.toFixed(5)} ${outcome.resultText} (mock).`;
   await createAlert({
     userId: trade.userId,
     type: "TRADE_CLOSED",
     severity: status === "CLOSED_WIN" ? "success" : "warning",
     title: `Trade closed (${status === "CLOSED_WIN" ? "win" : "loss"})`,
-    message: `${trade.symbol} ${trade.direction} closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)} (mock).`,
+    message: closedText,
     symbol: trade.symbol,
   });
 
   res.json({
     success: true,
-    message: `Trade closed at ${snap.currentPrice.toFixed(5)} for ${snap.floatingPnl.toFixed(2)} (mock).`,
+    message: `Trade closed at ${outcome.exitPrice.toFixed(5)} ${outcome.resultText} (mock).`,
     trade: serialiseTrade(updated),
   });
 });

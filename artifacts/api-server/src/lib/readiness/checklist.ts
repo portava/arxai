@@ -17,14 +17,28 @@ export async function buildChecklist(report?: ReadinessReport): Promise<Checklis
   const rpt = report ?? await runReadinessGate();
   const safe = (key: keyof ReadinessReport["subsystemResults"]) => rpt.subsystemResults[key as string] ?? { passed: 0, warned: 0, failed: 0, tests: [] };
 
+  // A section whose probes never ran is unmeasured, not passing: `[].every()`
+  // is true, so every "ok" below also requires at least one probe result.
   const safetyTests = (rpt.safetyResults as { tests?: Array<{ status: string }> }).tests ?? [];
-  const safetyOk = safetyTests.every((t) => t.status === "PASS");
+  const safetyOk = safetyTests.length > 0 && safetyTests.every((t) => t.status === "PASS");
   const securityTests = (rpt.securityResults as { tests?: Array<{ status: string }> }).tests ?? [];
-  const securityOk = securityTests.every((t) => t.status !== "FAIL");
+  const securityOk = securityTests.length > 0 && securityTests.every((t) => t.status !== "FAIL");
   const dpTests = (rpt.dataProtectionResults as { tests?: Array<{ status: string }> }).tests ?? [];
-  const dpOk = dpTests.every((t) => t.status === "PASS");
-  const dbTests = (rpt.databaseResults as { tests?: Array<{ status: string; name: string }> }).tests ?? [];
-  const dbFailed = dbTests.filter((t) => t.status === "FAIL").map((t) => t.name);
+  const dpOk = dpTests.length > 0 && dpTests.every((t) => t.status === "PASS");
+  const countEvidence = (label: string, tests: Array<{ status: string }>): string =>
+    tests.length === 0
+      ? `no ${label} probes ran in this report`
+      : `${tests.filter((t) => t.status === "PASS").length}/${tests.length} ${label} probes passed`;
+  const dbTests = (rpt.databaseResults as { tests?: Array<{ status: string; name: string; errors?: string[] }> }).tests ?? [];
+  const DB_RW_NAME = "production_gate_logs r/w check";
+  const dbTableTests = dbTests.filter((t) => t.name !== DB_RW_NAME);
+  const dbFailed = dbTableTests.filter((t) => t.status === "FAIL").map((t) => t.name);
+  const dbRw = dbTests.find((t) => t.name === DB_RW_NAME);
+  const dbRwEvidence = !dbRw
+    ? "insert check did not run in this report"
+    : dbRw.status === "PASS"
+    ? "insert succeeded"
+    : `insert failed${dbRw.errors && dbRw.errors.length > 0 ? `: ${dbRw.errors[0]}` : " (no error text recorded)"}`;
   const epTests = (rpt.endpointResults as { tests?: Array<{ status: string; name: string }> }).tests ?? [];
   const epFailed = epTests.filter((t) => t.status !== "PASS").map((t) => t.name);
   const feTests = (rpt.frontendResults as { tests?: Array<{ status: string; name: string }> }).tests ?? [];
@@ -37,23 +51,26 @@ export async function buildChecklist(report?: ReadinessReport): Promise<Checklis
       items: [
         { item: "appMode is PAPER_ONLY", status: rpt.appMode === "PAPER_ONLY" ? "PASS" : "FAIL", evidence: `appMode=${rpt.appMode}`, recommendedFix: "Restore PAPER_ONLY enforcement in safety core." },
         { item: "liveTradingStatus is DISABLED", status: rpt.liveTradingStatus === "DISABLED" ? "PASS" : "FAIL", evidence: `liveTradingStatus=${rpt.liveTradingStatus}`, recommendedFix: "Hard-disable live trading in security settings." },
-        { item: "canProceedToLiveTrading is false", status: rpt.canProceedToLiveTrading === false ? "PASS" : "FAIL", evidence: "false", recommendedFix: "Live trading is permanently locked by Build NN." },
-        { item: "MM admin rejects ENABLE_LIVE_TRADING", status: safetyOk ? "PASS" : "FAIL", evidence: `${safetyTests.length} safety tests`, recommendedFix: "Verify NN gate-0 in admin.ts." },
+        { item: "canProceedToLiveTrading is false", status: rpt.canProceedToLiveTrading === false ? "PASS" : "FAIL", evidence: `canProceedToLiveTrading=${String(rpt.canProceedToLiveTrading)}`, recommendedFix: "Live trading is permanently locked by Build NN." },
+        { item: "MM admin rejects ENABLE_LIVE_TRADING", status: safetyOk ? "PASS" : "FAIL", evidence: countEvidence("safety", safetyTests), recommendedFix: "Verify NN gate-0 in admin.ts." },
       ],
     },
     {
       name: "Security",
       items: [
-        { item: "NN roles + permissions seeded", status: securityOk ? "PASS" : "FAIL", evidence: `${securityTests.length} security tests`, recommendedFix: "Re-run NN seed via /api/security/seed." },
-        { item: "Forbidden permissions reject for OWNER", status: securityOk ? "PASS" : "FAIL", evidence: "OWNER × forbidden:* → DENY", recommendedFix: "Re-check permissions.ts FORBIDDEN list." },
-        { item: "NN protects readiness routes", status: "PASS", evidence: "attachSecurityContext mounted before readiness router", recommendedFix: "" },
+        { item: "NN roles + permissions seeded", status: securityOk ? "PASS" : "FAIL", evidence: countEvidence("security", securityTests), recommendedFix: "Re-run NN seed via /api/security/seed." },
+        { item: "Forbidden permissions reject for OWNER", status: securityOk ? "PASS" : "FAIL", evidence: securityOk ? "OWNER × forbidden:* → DENY observed" : countEvidence("security", securityTests), recommendedFix: "Re-check permissions.ts FORBIDDEN list." },
+        // No readiness probe sends an unauthenticated request to the readiness
+        // routes, so this cannot be shown as PASS. It stays WARN (unmeasured)
+        // until such a probe exists.
+        { item: "NN protects readiness routes", status: "WARN", evidence: "Not probed by this report: no unauthenticated request to the readiness routes was made, so route protection was not checked.", recommendedFix: "Add a readiness probe that calls a readiness route without a token and expects 401/403." },
       ],
     },
     {
       name: "Data protection",
       items: [
-        { item: "Redaction self-test 6/6", status: dpOk ? "PASS" : "FAIL", evidence: `${dpTests.length} tests`, recommendedFix: "Restore secret patterns in redact.ts." },
-        { item: "Account masking last-4", status: dpOk ? "PASS" : "FAIL", evidence: "9876543210 → ****3210", recommendedFix: "" },
+        { item: "Redaction self-test 6/6", status: dpOk ? "PASS" : "FAIL", evidence: countEvidence("data-protection", dpTests), recommendedFix: "Restore secret patterns in redact.ts." },
+        { item: "Account masking last-4", status: dpOk ? "PASS" : "FAIL", evidence: dpOk ? "9876543210 → ****3210 observed" : countEvidence("data-protection", dpTests), recommendedFix: "" },
       ],
     },
     {
@@ -61,8 +78,8 @@ export async function buildChecklist(report?: ReadinessReport): Promise<Checklis
       items: dbTests.length === 0
         ? [{ item: "DB checks did not run", status: "FAIL", evidence: "no DB tests", recommendedFix: "Investigate runner errors." }]
         : [
-          { item: "All required tables exist", status: dbFailed.length === 0 ? "PASS" : "FAIL", evidence: `${dbTests.length - dbFailed.length}/${dbTests.length} present`, recommendedFix: dbFailed.length > 0 ? `Run pnpm --filter @workspace/db run push (missing: ${dbFailed.slice(0,5).join(", ")}${dbFailed.length>5?"…":""})` : "" },
-          { item: "production_gate_logs r/w", status: dbTests.find((t) => t.name === "production_gate_logs r/w check")?.status === "PASS" ? "PASS" : "FAIL", evidence: "insert succeeded", recommendedFix: "" },
+          { item: "All required tables exist", status: dbFailed.length === 0 ? "PASS" : "FAIL", evidence: `${dbTableTests.length - dbFailed.length}/${dbTableTests.length} present`, recommendedFix: dbFailed.length > 0 ? `Run pnpm --filter @workspace/db run push (missing: ${dbFailed.slice(0,5).join(", ")}${dbFailed.length>5?"…":""})` : "" },
+          { item: "production_gate_logs r/w", status: dbRw?.status === "PASS" ? "PASS" : "FAIL", evidence: dbRwEvidence, recommendedFix: dbRw?.status === "PASS" ? "" : "Check database connectivity and write permission on production_gate_logs." },
         ],
     },
     {

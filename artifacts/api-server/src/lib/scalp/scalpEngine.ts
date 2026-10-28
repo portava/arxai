@@ -150,6 +150,7 @@ function rejectResult(
     spreadRisk: "LOW",
     slippageRisk: "LOW",
     newsRisk: input.scanner?.newsRisk ?? "LOW",
+    ...(input.scanner?.newsRiskUnchecked === true ? { newsRiskUnchecked: true } : {}),
     timingStatus: "WAIT_FOR_ENTRY",
     validForSeconds: 0,
     expiresAt: new Date(now).toISOString(),
@@ -304,6 +305,15 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     return rejectResult(input, "NEWS_DANGER", "High-impact news risk makes this scalp unsafe right now.", {
       canWatch: true,
       plain: "There is high-impact news risk around this market, so a scalp is unsafe right now.",
+    });
+  }
+  // Event risk applies but was never checked (news lookup failed / calendar did
+  // not answer): a release minutes away would not be seen. Fail closed and say
+  // so — never read the missing check as LOW news risk.
+  if (scanner.newsRiskUnchecked === true) {
+    return rejectResult(input, "NO_CLEAN_SCALP", "Scheduled news risk could not be checked, so no scalp is offered right now.", {
+      canWatch: true,
+      plain: "Scheduled news risk for this market could not be checked right now (the economic calendar did not answer), so no scalp is offered until it can be.",
     });
   }
 

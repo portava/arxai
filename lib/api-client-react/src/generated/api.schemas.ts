@@ -872,6 +872,9 @@ export interface MissionExposureAggregates {
   totalOpenRisk: number;
   riskByAssetClass: MissionExposureAggregatesRiskByAssetClass;
   countByAssetClass: MissionExposureAggregatesCountByAssetClass;
+  /** Open positions whose money at risk to the stop is not known. totalOpenRisk and riskByAssetClass sum only current floating losses, so when this is > 0 they are a lower bound, not the open risk.
+   */
+  riskUnknownCount?: number;
 }
 
 /**
@@ -10081,6 +10084,19 @@ export interface TradeHealth {
   factors: TradeHealthFactors;
 }
 
+/**
+ * Which input was missing when a priced trade's P&L could not be sized.
+ * @nullable
+ */
+export type TradeSnapshotPnlDataQualityFlag =
+  | (typeof TradeSnapshotPnlDataQualityFlag)[keyof typeof TradeSnapshotPnlDataQualityFlag]
+  | null;
+
+export const TradeSnapshotPnlDataQualityFlag = {
+  MISSING_CONTRACT_SIZE: "MISSING_CONTRACT_SIZE",
+  MISSING_FX_CONVERSION: "MISSING_FX_CONVERSION",
+} as const;
+
 export interface SuggestionBreakEven {
   recommended: boolean;
   reason: string;
@@ -10116,10 +10132,39 @@ export type TradeSnapshotSuggestions = {
 
 export interface TradeSnapshot {
   tradeId: number;
-  currentPrice: number;
-  rMultiple: number;
-  floatingPnl: number;
-  health: TradeHealth;
+  /**
+   * Last price from the market-data feed; null when no quote was available (never the entry price).
+   * @nullable
+   */
+  currentPrice: number | null;
+  /**
+   * Timestamp of the quote currentPrice came from; null when there is no quote.
+   * @nullable
+   */
+  quoteAt?: string | null;
+  /**
+   * Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.
+   * @nullable
+   */
+  priceUnavailableReason?: string | null;
+  /** @nullable */
+  rMultiple: number | null;
+  /**
+   * Floating P&L in USD, contract-size aware (move x lots x contract size x quote->USD). Null when there is no price or the contract size / FX rate cannot be established.
+   * @nullable
+   */
+  floatingPnl: number | null;
+  /**
+   * Why floatingPnl is null; null when it was sized.
+   * @nullable
+   */
+  pnlUnavailableReason?: string | null;
+  /**
+   * Which input was missing when a priced trade's P&L could not be sized.
+   * @nullable
+   */
+  pnlDataQualityFlag?: TradeSnapshotPnlDataQualityFlag;
+  health: TradeHealth | null;
   primarySuggestion: string;
   invalidated: boolean;
   suggestions: TradeSnapshotSuggestions;
@@ -11315,6 +11360,16 @@ export interface DeleteResult {
   deleted: number;
 }
 
+/**
+ * Where the figures come from.
+ */
+export type PortfolioExposureSource =
+  (typeof PortfolioExposureSource)[keyof typeof PortfolioExposureSource];
+
+export const PortfolioExposureSource = {
+  LEGACY_TRADES_TABLE: "LEGACY_TRADES_TABLE",
+} as const;
+
 export type PortfolioExposureExposureByMarket = { [key: string]: number };
 
 export type PortfolioExposureExposureByStrategy = { [key: string]: number };
@@ -11327,12 +11382,27 @@ export type PortfolioExposureExposureByCurrencyItem = {
 export interface PortfolioExposure {
   totalOpen: number;
   totalClosed: number;
-  floatingPnl: number;
+  /**
+   * null when any open row has no marked-to-market P&L (never a guessed 0).
+   * @nullable
+   */
+  floatingPnl: number | null;
+  /** @nullable */
+  floatingPnlUnavailableReason?: string | null;
+  /** Excludes closed rows whose pnlStatus is UNKNOWN. */
   realizedPnl: number;
+  /** Closed rows left out of realized/daily/weekly figures because pnlStatus is UNKNOWN. */
+  realizedPnlExcludedUnknown?: number;
+  /** Where the figures come from. */
+  source?: PortfolioExposureSource;
+  /** Plain-English scope of the figures (e.g. broker positions not included). */
+  sourceNote?: string;
   exposureByMarket: PortfolioExposureExposureByMarket;
   exposureByStrategy: PortfolioExposureExposureByStrategy;
   exposureByCurrency: PortfolioExposureExposureByCurrencyItem[];
+  /** Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown. */
   dailyDrawdown: number;
+  /** Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown. */
   weeklyDrawdown: number;
 }
 
@@ -14622,6 +14692,8 @@ export interface ScalpResult {
   spreadRisk: ScalpResultSpreadRisk;
   slippageRisk: ScalpResultSlippageRisk;
   newsRisk: ScalpResultNewsRisk;
+  /** True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW. */
+  newsRiskUnchecked?: boolean;
   timingStatus: ScalpResultTimingStatus;
   validForSeconds: number;
   expiresAt: string;

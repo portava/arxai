@@ -34,4 +34,8 @@ export interface ForwardResults {
   bestStrategy: string | null;
   weakestStrategy: string | null;
   confidenceCalibration: string;
+  /** Window the results cover; null start = no forward test has been run. */
+  testStartedAt?: string | null;
+  testEndedAt?: string | null;
+  running?: boolean;
 }

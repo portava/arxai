@@ -238,11 +238,40 @@ export interface ForwardTestConfig {
   riskProfile: string; sessionFilters: string[]; newsFilters: string[];
 }
 let forwardConfig: ForwardTestConfig | null = null;
+// The config of the most recent forward test (running or ended), so its
+// strategy filter keeps scoping results after it ends.
+let forwardLastConfig: ForwardTestConfig | null = null;
 let forwardStartedAt: string | null = null;
 let forwardEndsAt: string | null = null;
-let forwardCountAtStart = 0;
+let forwardEndedAt: string | null = null;
+let forwardEndReason: "duration_elapsed" | "stopped" | null = null;
+
+/** Longest forward test accepted (7 days), in minutes. */
+export const FORWARD_MAX_DURATION_MIN = 7 * 24 * 60;
+
+/** A forward-test duration is a finite number of minutes in [1, FORWARD_MAX_DURATION_MIN]. */
+export function isValidForwardDurationMin(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= FORWARD_MAX_DURATION_MIN;
+}
+
+/**
+ * End a running forward test whose duration has elapsed. Read-time, so a
+ * missed timer can never leave a test reading RUNNING past its endsAt.
+ */
+function settleForwardTest(now = Date.now()): void {
+  if (forwardConfig && forwardEndsAt && now >= Date.parse(forwardEndsAt)) {
+    forwardConfig = null;
+    forwardEndedAt = forwardEndsAt;
+    forwardEndReason = "duration_elapsed";
+  }
+}
 
 export function startForwardTest(c: Partial<ForwardTestConfig> = {}): { running: boolean; endsAt: string } {
+  if (c.durationMin !== undefined && !isValidForwardDurationMin(c.durationMin)) {
+    // Refuse instead of starting a test that has already ended (0 min) or
+    // whose end time cannot be computed (NaN / non-numeric).
+    throw new RangeError(`durationMin must be a number of minutes from 1 to ${FORWARD_MAX_DURATION_MIN}.`);
+  }
   forwardConfig = {
     strategy: c.strategy, symbols: c.symbols ?? [...DEFAULT_SYMBOLS], timeframes: c.timeframes ?? ["M15"],
     durationMin: c.durationMin ?? 60, maxShadowTrades: c.maxShadowTrades ?? 100, maxTradesPerDay: c.maxTradesPerDay ?? 30,
@@ -250,25 +279,60 @@ export function startForwardTest(c: Partial<ForwardTestConfig> = {}): { running:
     riskProfile: c.riskProfile ?? "CONSERVATIVE",
     sessionFilters: c.sessionFilters ?? [], newsFilters: c.newsFilters ?? [],
   };
+  forwardLastConfig = forwardConfig;
   forwardStartedAt = new Date().toISOString();
   forwardEndsAt = new Date(Date.now() + forwardConfig.durationMin * 60_000).toISOString();
-  forwardCountAtStart = totalsObserved;
+  forwardEndedAt = null;
+  forwardEndReason = null;
   if (!shadowEnabled) startShadowMode({ symbols: forwardConfig.symbols });
   return { running: true, endsAt: forwardEndsAt };
 }
-export function stopForwardTest() { const c = forwardConfig; forwardConfig = null; return { stopped: true, was: c }; }
+export function stopForwardTest() {
+  settleForwardTest();
+  const c = forwardConfig;
+  if (c) {
+    forwardConfig = null;
+    forwardEndedAt = new Date().toISOString();
+    forwardEndReason = "stopped";
+  }
+  return { stopped: true, was: c };
+}
 
 export function forwardStatus() {
+  settleForwardTest();
   return {
     running: !!forwardConfig, startedAt: forwardStartedAt, endsAt: forwardEndsAt,
-    config: forwardConfig, observedSinceStart: totalsObserved - forwardCountAtStart,
+    // When the test ended (endsAt reached, or Stop) and why; null while running
+    // or before any test started.
+    endedAt: forwardEndedAt, endReason: forwardEndReason,
+    config: forwardConfig,
+    // Shadow decisions inside the test window (all strategies): frozen once
+    // the test ends, 0 before any test started.
+    observedSinceStart: forwardWindowDecisions(false).length,
     dataSource: "SHADOW" as const,
   };
 }
+
+/**
+ * The forward test's own decisions: made at or after it started and, once it
+ * ended, no later than its end — filtered to its strategy. Empty before any
+ * forward test started (shadow decisions from other surfaces are not forward
+ * results).
+ */
+function forwardWindowDecisions(byStrategy: boolean): ShadowDecision[] {
+  settleForwardTest();
+  if (!forwardStartedAt) return [];
+  const since = Date.parse(forwardStartedAt);
+  const until = forwardEndedAt ? Date.parse(forwardEndedAt) : Number.POSITIVE_INFINITY;
+  const strategy = byStrategy ? (forwardConfig ?? forwardLastConfig)?.strategy : undefined;
+  return [...decisions.values()].filter((d) => {
+    const ts = Date.parse(d.ts);
+    return ts >= since && ts <= until && (!strategy || d.strategy === strategy);
+  });
+}
+
 export function forwardResults() {
-  const since = forwardStartedAt ? Date.parse(forwardStartedAt) : 0;
-  const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since &&
-    (!forwardConfig?.strategy || d.strategy === forwardConfig.strategy));
+  const arr = forwardWindowDecisions(true);
   const wins = arr.filter((d) => d.status === "SHADOW_WIN");
   const losses = arr.filter((d) => d.status === "SHADOW_LOSS");
   const tracked = wins.length + losses.length;
@@ -284,10 +348,16 @@ export function forwardResults() {
       if (d.status === "SHADOW_WIN") { bySymbol[d.symbol].wins++; byStrategy[d.strategy].wins++; }
     }
   }
+  // Only entries with at least one tracked outcome (win or loss) are ranked:
+  // a symbol/strategy with no outcome has no win rate, so it is never named
+  // best or worst. A worst pick needs a second ranked entry (one entry is not
+  // both the best and the worst).
   const ranked = (m: Record<string, { n: number; wins: number }>) =>
-    Object.entries(m).map(([k, v]) => ({ k, winRate: v.n ? v.wins / v.n : 0, n: v.n })).sort((a, b) => b.winRate - a.winRate);
+    Object.entries(m).filter(([, v]) => v.n > 0)
+      .map(([k, v]) => ({ k, winRate: v.wins / v.n, n: v.n })).sort((a, b) => b.winRate - a.winRate);
   const symbolRank = ranked(bySymbol);
   const stratRank = ranked(byStrategy);
+  const worstOf = (r: { k: string }[]) => (r.length >= 2 ? r[r.length - 1]!.k : null);
   return {
     totalShadowDecisions: arr.length,
     shadowTradesTracked: tracked,
@@ -298,19 +368,21 @@ export function forwardResults() {
     winRate: Number((winRate * 100).toFixed(1)),
     avgR: Number(avgR.toFixed(2)),
     maxDrawdownR: Number(maxDrawdownR(arr).toFixed(2)),
-    bestSymbol: symbolRank[0]?.k ?? null, worstSymbol: symbolRank.at(-1)?.k ?? null,
-    bestStrategy: stratRank[0]?.k ?? null, weakestStrategy: stratRank.at(-1)?.k ?? null,
+    bestSymbol: symbolRank[0]?.k ?? null, worstSymbol: worstOf(symbolRank),
+    bestStrategy: stratRank[0]?.k ?? null, weakestStrategy: worstOf(stratRank),
     confidenceCalibration: confidenceCalibration().label,
+    // The window these results cover (null start = no forward test has run).
+    testStartedAt: forwardStartedAt,
+    testEndedAt: forwardEndedAt,
+    running: !!forwardConfig,
     dataSource: "SHADOW" as const,
   };
 }
 // Forward-test equity (R-multiple) chart series (Task #763) — DISPLAY-ONLY.
-// Same scope as forwardResults(): decisions since the forward test started,
-// filtered to the active strategy. Pure derivation via buildForwardChartSeries.
+// Same scope as forwardResults(): the forward test's own window, filtered to
+// its strategy. Pure derivation via buildForwardChartSeries.
 export function forwardChartSeries(): ForwardChartSeries {
-  const since = forwardStartedAt ? Date.parse(forwardStartedAt) : 0;
-  const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since &&
-    (!forwardConfig?.strategy || d.strategy === forwardConfig.strategy));
+  const arr = forwardWindowDecisions(true);
   return buildForwardChartSeries(arr.map((d) => ({
     id: d.id, ts: d.ts, symbol: d.symbol, strategy: d.strategy,
     action: d.action, entry: d.entry, status: d.status,

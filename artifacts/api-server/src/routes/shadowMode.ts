@@ -8,6 +8,7 @@ import {
   startTournament, tournamentResults,
   confidenceCalibration, promotionStatus, promote, demote, demotionScan,
   readinessScore, shadowJournal, dashboardCards,
+  isValidForwardDurationMin, FORWARD_MAX_DURATION_MIN,
 } from "../lib/shadowMode.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
@@ -42,7 +43,38 @@ router.get("/shadow-mode/decisions", requireAdmin, (req, res) => {
 });
 
 // Forward Testing
-router.post("/forward-testing/start", requireAdmin, (req, res) => res.json(startForwardTest(req.body ?? {})));
+// A duration must be a whole-or-fractional number of minutes from 1 to 7 days:
+// 0 would start a test that has already ended, and a non-numeric value has no
+// end time at all. Refused with 400 instead of a RUNNING test or a 500.
+const ForwardStartBody = z.object({
+  strategy: z.string().optional(),
+  symbols: z.array(z.string()).optional(),
+  timeframes: z.array(z.string()).optional(),
+  durationMin: z.number().refine(isValidForwardDurationMin, {
+    message: `durationMin must be a number of minutes from 1 to ${FORWARD_MAX_DURATION_MIN}`,
+  }).optional(),
+  maxShadowTrades: z.number().optional(),
+  maxTradesPerDay: z.number().optional(),
+  minConfidence: z.number().optional(),
+  minOpportunity: z.number().optional(),
+  minTradeGrade: z.number().optional(),
+  riskProfile: z.string().optional(),
+  sessionFilters: z.array(z.string()).optional(),
+  newsFilters: z.array(z.string()).optional(),
+});
+router.post("/forward-testing/start", requireAdmin, (req, res) => {
+  const p = ForwardStartBody.safeParse(req.body ?? {});
+  if (!p.success) {
+    const durationIssue = p.error.issues.some((i) => i.path[0] === "durationMin");
+    return res.status(400).json({
+      error: "invalid",
+      message: durationIssue
+        ? `Forward test not started: the duration must be a number of minutes from 1 to ${FORWARD_MAX_DURATION_MIN}.`
+        : "Forward test not started: the request settings are invalid.",
+    });
+  }
+  return res.json(startForwardTest(p.data));
+});
 router.post("/forward-testing/stop", requireAdmin, (_req, res) => res.json(stopForwardTest()));
 router.get("/forward-testing/status", requireAdmin, (_req, res) => res.json(forwardStatus()));
 router.get("/forward-testing/results", requireAdmin, (_req, res) => res.json(forwardResults()));

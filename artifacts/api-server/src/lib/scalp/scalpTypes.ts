@@ -269,6 +269,8 @@ export interface ScalpResult {
   spreadRisk: RiskBand;
   slippageRisk: RiskBand;
   newsRisk: RiskBand;
+  /** True when news risk could not be checked: `newsRisk` is then not an observation. */
+  newsRiskUnchecked?: boolean;
   timingStatus: TimingStatus;
   validForSeconds: number;
   expiresAt: string;
@@ -454,6 +456,12 @@ export interface ScalpScannerInput {
    */
   sufficiency?: MarketDataSufficiencyVerdict | null;
   newsRisk?: RiskBand;
+  /**
+   * True when scheduled event risk applies but could not be checked (the news
+   * lookup failed or a configured calendar did not answer). `newsRisk` is then
+   * not an observation; the engine fails closed and says so.
+   */
+  newsRiskUnchecked?: boolean;
   generatedAt?: string;
 }
 

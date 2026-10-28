@@ -54,6 +54,8 @@ export interface ScalpResult {
   spreadRisk: ScalpResultSpreadRisk;
   slippageRisk: ScalpResultSlippageRisk;
   newsRisk: ScalpResultNewsRisk;
+  /** True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW. */
+  newsRiskUnchecked?: boolean;
   timingStatus: ScalpResultTimingStatus;
   validForSeconds: number;
   expiresAt: string;

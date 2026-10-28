@@ -305,3 +305,26 @@ describe("ScalpSignalCard — AWAITING_DATA reasons and the lifted verdict", () 
     expect(spy).toHaveBeenLastCalledWith("V75", "5m", null);
   });
 });
+
+// A failed news check is not LOW news risk: the risk chip must say it was not
+// checked instead of rendering "News LOW" beside a no-scalp reason.
+describe("ScalpSignalCard — unchecked news risk", () => {
+  it("renders 'Unchecked' and never 'LOW' for news when the check failed", () => {
+    const { container } = render(
+      <ScalpSignalCard
+        result={makeResult({
+          status: "NO_CLEAN_SCALP",
+          direction: null,
+          canBuildTrade: false,
+          canWatch: true,
+          newsRisk: "LOW",
+          newsRiskUnchecked: true,
+          noTradeReason: "Scheduled news risk could not be checked, so no scalp is offered right now.",
+          plainEnglishReason: "Scheduled news risk for this market could not be checked right now.",
+        })}
+      />,
+    );
+    expect(container.querySelector('[data-testid="scalp-news-unchecked"]')?.textContent).toBe("Unchecked");
+    expect(textOf(container)).not.toMatch(/News\s*LOW/);
+  });
+});

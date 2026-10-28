@@ -155,7 +155,13 @@ function analyzeCore(
     entryQualityScore, riskScore, confidenceScore, recommendedAction,
     entryZone: { low: round(entry - avgRange * 0.25, 5), high: round(entry + avgRange * 0.25, 5) },
     stopLoss, takeProfit, riskRewardRatio,
-    reasonForTrade: `${marketBias} bias on ${symbol} ${timeframe}; trend=${trendStrength}, ${spreadNote(spread, spreadPenalty)}, RR ${riskRewardRatio}`,
+    // Say what was measured: "choppy" is only a last-bar range spike, and the
+    // spread is "ok" only when its rule passed.
+    reasonForTrade: `${
+      marketBias === "choppy"
+        ? `volatility spike (last bar range ${volatilityRatio.toFixed(1)}x the ${candles.length}-bar average)`
+        : `${marketBias} bias`
+    } on ${symbol} ${timeframe}; trend=${trendStrength}, ${spreadNote(spread, spreadPenalty)}, RR ${riskRewardRatio}`,
     reasonToAvoid: rulesFailed.length ? `Failed rules: ${rulesFailed.join(", ")}` : "",
     invalidationReason: dir === "BUY" ? `Close below ${stopLoss}` : `Close above ${stopLoss}`,
     rulesPassed, rulesFailed,

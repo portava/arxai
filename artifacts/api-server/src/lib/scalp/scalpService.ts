@@ -116,7 +116,7 @@ function coerceAction(a: string): ScalpScannerInput["recommendedAction"] {
 }
 
 type DecoratedOpportunity = ScannerOpportunity & {
-  newsContext?: { riskLevel?: string | null };
+  newsContext?: { riskLevel?: string | null; eventRiskUnchecked?: boolean };
 };
 
 /**
@@ -154,7 +154,7 @@ function oppToScalpPatternImpact(
   };
 }
 
-function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
+export function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
   return {
     bias: coerceBias(opp.bias),
     recommendedAction: coerceAction(opp.recommendedAction),
@@ -172,6 +172,8 @@ function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
     // (not omitted) when absent — the engine fail-closes either way.
     sufficiency: opp.sufficiency ?? null,
     newsRisk: mapNewsRisk(opp.newsContext?.riskLevel),
+    // A failed news check is not LOW risk: carry it so the engine fails closed.
+    ...(opp.newsContext?.eventRiskUnchecked === true ? { newsRiskUnchecked: true } : {}),
     generatedAt: opp.generatedAt,
   };
 }

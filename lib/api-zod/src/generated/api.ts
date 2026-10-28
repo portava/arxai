@@ -874,6 +874,12 @@ export const GetProfitMissionPulseResponse = zod
         totalOpenRisk: zod.number(),
         riskByAssetClass: zod.record(zod.string(), zod.number()),
         countByAssetClass: zod.record(zod.string(), zod.number()),
+        riskUnknownCount: zod
+          .number()
+          .optional()
+          .describe(
+            "Open positions whose money at risk to the stop is not known. totalOpenRisk and riskByAssetClass sum only current floating losses, so when this is > 0 they are a lower bound, not the open risk.\n",
+          ),
       })
       .describe(
         "Phase 7 aggregate of OPEN live exposure for a single user (per-user isolation). Display-only.\n",
@@ -9920,14 +9926,53 @@ export const GetTradeSnapshotParams = zod.object({
 
 export const GetTradeSnapshotResponse = zod.object({
   tradeId: zod.number(),
-  currentPrice: zod.number(),
-  rMultiple: zod.number(),
-  floatingPnl: zod.number(),
-  health: zod.object({
-    score: zod.number(),
-    state: zod.enum(["healthy", "watching", "at_risk", "invalidated"]),
-    factors: zod.record(zod.string(), zod.number()),
-  }),
+  currentPrice: zod
+    .number()
+    .nullable()
+    .describe(
+      "Last price from the market-data feed; null when no quote was available (never the entry price).",
+    ),
+  quoteAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of the quote currentPrice came from; null when there is no quote.",
+    ),
+  priceUnavailableReason: zod
+    .string()
+    .nullish()
+    .describe(
+      "Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.",
+    ),
+  rMultiple: zod.number().nullable(),
+  floatingPnl: zod
+    .number()
+    .nullable()
+    .describe(
+      "Floating P&L in USD, contract-size aware (move x lots x contract size x quote->USD). Null when there is no price or the contract size \/ FX rate cannot be established.",
+    ),
+  pnlUnavailableReason: zod
+    .string()
+    .nullish()
+    .describe("Why floatingPnl is null; null when it was sized."),
+  pnlDataQualityFlag: zod
+    .union([
+      zod.literal("MISSING_CONTRACT_SIZE"),
+      zod.literal("MISSING_FX_CONVERSION"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Which input was missing when a priced trade's P&L could not be sized.",
+    ),
+  health: zod.union([
+    zod.object({
+      score: zod.number(),
+      state: zod.enum(["healthy", "watching", "at_risk", "invalidated"]),
+      factors: zod.record(zod.string(), zod.number()),
+    }),
+    zod.null(),
+  ]),
   primarySuggestion: zod.string(),
   invalidated: zod.boolean(),
   suggestions: zod.object({
@@ -12991,8 +13036,32 @@ export const ToggleWatchlistItemFavoriteResponse = zod.object({
 export const GetPortfolioExposureResponse = zod.object({
   totalOpen: zod.number(),
   totalClosed: zod.number(),
-  floatingPnl: zod.number(),
-  realizedPnl: zod.number(),
+  floatingPnl: zod
+    .number()
+    .nullable()
+    .describe(
+      "null when any open row has no marked-to-market P&L (never a guessed 0).",
+    ),
+  floatingPnlUnavailableReason: zod.string().nullish(),
+  realizedPnl: zod
+    .number()
+    .describe("Excludes closed rows whose pnlStatus is UNKNOWN."),
+  realizedPnlExcludedUnknown: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows left out of realized\/daily\/weekly figures because pnlStatus is UNKNOWN.",
+    ),
+  source: zod
+    .enum(["LEGACY_TRADES_TABLE"])
+    .optional()
+    .describe("Where the figures come from."),
+  sourceNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Plain-English scope of the figures (e.g. broker positions not included).",
+    ),
   exposureByMarket: zod.record(zod.string(), zod.number()),
   exposureByStrategy: zod.record(zod.string(), zod.number()),
   exposureByCurrency: zod.array(
@@ -13001,8 +13070,16 @@ export const GetPortfolioExposureResponse = zod.object({
       netLots: zod.number(),
     }),
   ),
-  dailyDrawdown: zod.number(),
-  weeklyDrawdown: zod.number(),
+  dailyDrawdown: zod
+    .number()
+    .describe(
+      "Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown.",
+    ),
+  weeklyDrawdown: zod
+    .number()
+    .describe(
+      "Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown.",
+    ),
 });
 
 /**
@@ -16437,6 +16514,12 @@ export const CreateMeScalpFocusResponse = zod.object({
   spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+  newsRiskUnchecked: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+    ),
   timingStatus: zod.enum(["VALID_NOW", "WAIT_FOR_ENTRY", "LATE", "EXPIRED"]),
   validForSeconds: zod.number(),
   expiresAt: zod.string(),
@@ -16627,6 +16710,12 @@ export const CreateMeScalpRankResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -16808,6 +16897,12 @@ export const CreateMeScalpRankResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -16989,6 +17084,12 @@ export const CreateMeScalpRankResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17170,6 +17271,12 @@ export const CreateMeScalpRankResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17372,6 +17479,12 @@ export const CreateMeScalpBuildResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17553,6 +17666,12 @@ export const CreateMeScalpBuildResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",

@@ -64,6 +64,7 @@ type OpenCard = {
   openedAt: string | null;
   brokerLabelMasked: string | null;
   waitingForSync: boolean;
+  pnlObservedAt?: string | null;
 };
 type OpenResponse = {
   ok: boolean;
@@ -83,7 +84,11 @@ function money(n: number | null | undefined): string {
 function plain(n: number | null | undefined): string {
   return n == null ? "—" : `$${n.toFixed(2)}`;
 }
-const pnlTone = (n: number) => (n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-txt-secondary");
+const pnlTone = (n: number | null) => (n == null ? "text-txt-muted" : n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-txt-secondary");
+// A card's P/L is known only once the broker has reported it; a waiting card
+// is unknown, never $0.00.
+const pnlKnown = (c: OpenCard): c is OpenCard & { unrealizedPnl: number } => !c.waitingForSync && c.unrealizedPnl != null;
+const UNREPORTED = "Not reported";
 const isProtected = (c: OpenCard) => c.stopLoss != null;
 function durationLabel(iso: string | null): string {
   if (!iso) return "—";
@@ -170,23 +175,27 @@ export default function MyTradesPage() {
 
   // ── Derived summary (real data only) ──────────────────────────────────────
   const sum = useMemo(() => {
-    const openPnl = cards.reduce((s, c) => s + (c.unrealizedPnl ?? 0), 0);
+    // The total is stated only when every position's P/L has been reported;
+    // otherwise it is unknown (a partial sum would read as the whole book).
+    const known = cards.filter(pnlKnown);
+    const unreportedN = cards.length - known.length;
+    const openPnl: number | null = unreportedN === 0 ? known.reduce((s, c) => s + c.unrealizedPnl, 0) : null;
     const totalLots = cards.reduce((s, c) => s + (c.lotSize ?? 0), 0);
     const protectedN = cards.filter(isProtected).length;
     const unprotectedN = cards.length - protectedN;
-    const withWinner = cards.reduce<OpenCard | null>((b, c) => (!b || (c.unrealizedPnl ?? 0) > (b.unrealizedPnl ?? 0) ? c : b), null);
-    const withLoser = cards.reduce<OpenCard | null>((b, c) => (!b || (c.unrealizedPnl ?? 0) < (b.unrealizedPnl ?? 0) ? c : b), null);
+    const withWinner = known.reduce<(OpenCard & { unrealizedPnl: number }) | null>((b, c) => (!b || c.unrealizedPnl > b.unrealizedPnl ? c : b), null);
+    const withLoser = known.reduce<(OpenCard & { unrealizedPnl: number }) | null>((b, c) => (!b || c.unrealizedPnl < b.unrealizedPnl ? c : b), null);
     const longLots = cards.filter((c) => c.side === "BUY").reduce((s, c) => s + c.lotSize, 0);
     const shortLots = cards.filter((c) => c.side === "SELL").reduce((s, c) => s + c.lotSize, 0);
     const noSL = cards.filter((c) => c.stopLoss == null).length;
     const noTP = cards.filter((c) => c.takeProfit == null).length;
-    return { openPnl, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP };
+    return { openPnl, unreportedN, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP };
   }, [cards]);
 
   const visible = useMemo(() => {
     let list = cards;
-    if (filter === "winning") list = list.filter((c) => (c.unrealizedPnl ?? 0) > 0);
-    else if (filter === "losing") list = list.filter((c) => (c.unrealizedPnl ?? 0) < 0);
+    if (filter === "winning") list = list.filter((c) => pnlKnown(c) && c.unrealizedPnl > 0);
+    else if (filter === "losing") list = list.filter((c) => pnlKnown(c) && c.unrealizedPnl < 0);
     else if (filter === "protected") list = list.filter(isProtected);
     else if (filter === "unprotected") list = list.filter((c) => !isProtected(c));
     if (query) list = list.filter((c) => c.symbol.toLowerCase().includes(query.toLowerCase()));
@@ -229,6 +238,19 @@ export default function MyTradesPage() {
     URL.revokeObjectURL(url);
   }
 
+  // Strip P/L: the shared SSE snapshot when it is live, else the cards' total
+  // (null while any position's P/L is not reported — never a $0.00 stand-in).
+  const stripPnl: number | null = !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
+    ? liveSnap.snapshot.openPL
+    : data == null ? null : sum.openPnl;
+  const stripState: "error" | "loading" | "waiting" | "ok" = err
+    ? "error"
+    : data == null
+    ? "loading"
+    : sum.unreportedN > 0
+    ? "waiting"
+    : "ok";
+
   // By-symbol exposure (real lots).
   const bySymbol = useMemo(() => {
     const m = new Map<string, number>();
@@ -266,7 +288,8 @@ export default function MyTradesPage() {
           same source). Per-card P/L below still comes from /me/trades/open
           which has the richer per-position detail needed for sorting/filtering. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border bg-card px-4 py-2 text-sm">
-        <span className="inline-flex items-center gap-1.5"><span className={cn("h-2 w-2 rounded-full", err ? "bg-danger" : "bg-success")} /><span className="text-txt-secondary">{liveLabel}</span></span>
+        {/* Green only when positions loaded and every one has reported P/L. */}
+        <span className="inline-flex items-center gap-1.5"><span data-testid="open-trades-status-dot" data-state={stripState} className={cn("h-2 w-2 rounded-full", stripState === "error" ? "bg-danger" : stripState === "ok" ? "bg-success" : stripState === "waiting" ? "bg-warning" : "bg-txt-muted")} /><span className="text-txt-secondary">{liveLabel}</span></span>
         <span className="text-txt-muted">
           {(!liveSnap.isUnavailable && liveSnap.snapshot != null
             ? liveSnap.snapshot.openPositionsCount
@@ -275,15 +298,7 @@ export default function MyTradesPage() {
                 ? liveSnap.snapshot.openPositionsCount
                 : cards.length) === 1 ? "" : "s")}
         </span>
-        <span className="text-txt-muted">Open P/L <span className={cn("font-medium", pnlTone(
-          !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
-            ? liveSnap.snapshot.openPL
-            : sum.openPnl
-        ))}>{money(
-          !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
-            ? liveSnap.snapshot.openPL
-            : sum.openPnl
-        )}</span></span>
+        <span className="text-txt-muted">Open P/L <span data-testid="open-trades-strip-pnl" className={cn("font-medium", pnlTone(stripPnl))}>{stripPnl == null ? (cards.length === 0 ? "—" : `${UNREPORTED} (${sum.unreportedN} of ${cards.length} positions)`) : money(stripPnl)}</span></span>
         <span className="text-txt-muted">Total Lots <span className="text-foreground font-medium">{sum.totalLots.toFixed(2)}</span></span>
         <span className="text-txt-muted">Exposure <span className="text-success font-medium">{cards.length === 0 ? "None" : "Active"}</span></span>
         {liveSnap.snapshot != null && (
@@ -324,12 +339,12 @@ export default function MyTradesPage() {
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Mini label="Open Trades" value={String(cards.length)} />
-              <Mini label="Open P/L" value={money(sum.openPnl)} tone={pnlTone(sum.openPnl)} />
+              <Mini label="Open P/L" value={sum.openPnl == null ? UNREPORTED : money(sum.openPnl)} tone={pnlTone(sum.openPnl)} sub={sum.openPnl == null ? `${sum.unreportedN} of ${cards.length} awaiting broker P/L` : undefined} />
               <Mini label="Total Lots" value={sum.totalLots.toFixed(2)} />
               <Mini label="Protected" value={`${sum.protectedN} / ${cards.length}`} />
               <Mini label="Unprotected" value={String(sum.unprotectedN)} tone={sum.unprotectedN ? "text-danger" : undefined} />
-              <Mini label="Biggest Winner" value={sum.withWinner ? money(sum.withWinner.unrealizedPnl ?? 0) : "—"} tone="text-success" sub={sum.withWinner?.symbol} />
-              <Mini label="Biggest Loser" value={sum.withLoser ? money(sum.withLoser.unrealizedPnl ?? 0) : "—"} tone="text-danger" sub={sum.withLoser?.symbol} />
+              <Mini label="Biggest Winner" value={sum.withWinner ? money(sum.withWinner.unrealizedPnl) : "—"} tone="text-success" sub={sum.withWinner?.symbol} />
+              <Mini label="Biggest Loser" value={sum.withLoser ? money(sum.withLoser.unrealizedPnl) : "—"} tone="text-danger" sub={sum.withLoser?.symbol} />
             </div>
           )}
         </div>
@@ -342,7 +357,11 @@ export default function MyTradesPage() {
           ) : (
             <>
               <p className="mt-2 text-sm text-txt-secondary">
-                {sum.openPnl >= 0 ? "Your open trades are net positive right now." : "Your open trades are net negative right now."}{" "}
+                {sum.openPnl == null
+                  ? `Open P/L is not reported yet for ${sum.unreportedN} of ${cards.length} position${cards.length === 1 ? "" : "s"}.`
+                  : sum.openPnl > 0 ? "Your open trades are net positive right now."
+                  : sum.openPnl < 0 ? "Your open trades are net negative right now."
+                  : "Your open trades are flat right now."}{" "}
                 {sum.unprotectedN > 0 ? `${sum.unprotectedN} position${sum.unprotectedN === 1 ? " is" : "s are"} unprotected — consider adding a stop.` : "All positions have a stop in place."}
               </p>
               <div className="mt-3 flex flex-wrap gap-1.5">

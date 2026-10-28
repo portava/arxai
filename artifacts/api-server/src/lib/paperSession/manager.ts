@@ -503,6 +503,11 @@ export async function listSessionEvents(paperSessionId: string, limit = 100) {
 
 // ── Session report ───────────────────────────────────────────────────────────
 
+/** Win rate (0-100) over closes with a recorded result; null when there are none. */
+function winRateOf(wins: number, classified: number): number | null {
+  return classified > 0 ? Math.round((wins / classified) * 100) : null;
+}
+
 export interface SessionReport {
   session_report_id: string;
   paper_session_id: string;
@@ -510,12 +515,17 @@ export interface SessionReport {
   started_at: string | null;
   ended_at: string | null;
   duration_minutes: number;
+  /** True when the session has not ended: duration runs to report time. */
+  duration_in_progress: boolean;
   total_trades: number;
   wins: number;
   losses: number;
   break_even: number;
+  /** Closes with no recorded result. wins+losses+break_even+unclassified = total_trades. */
+  unclassified: number;
   net_pnl: number;
-  win_rate: number;
+  /** 0-100 over closes with a recorded result; null when none has one. */
+  win_rate: number | null;
   rule_violations: Array<Record<string, unknown>>;
   mistakes_detected: Array<Record<string, unknown>>;
   lessons_generated: Array<Record<string, unknown>>;
@@ -535,9 +545,13 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
   const wins = closed.filter(t => t.result === "WIN").length;
   const losses = closed.filter(t => t.result === "LOSS").length;
   const breakEven = closed.filter(t => t.result === "BREAK_EVEN").length;
+  // A close whose link carried no result is unclassified — not a non-win.
+  const classified = wins + losses + breakEven;
+  const unclassified = closed.length - classified;
   const netPnl = closed.reduce((s, t) => s + (t.pnl ?? 0), 0);
-  const winRate = closed.length > 0 ? Math.round((wins / closed.length) * 100) : 0;
+  const winRate = winRateOf(wins, classified);
   const startMs = cur.started_at ? Date.parse(cur.started_at) : 0;
+  const durationInProgress = !cur.ended_at;
   const endMs = cur.ended_at ? Date.parse(cur.ended_at) : Date.now();
   const durationMinutes = startMs ? Math.max(0, Math.round((endMs - startMs) / 60_000)) : 0;
 
@@ -546,9 +560,14 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
   if (-netPnl > cur.sessionRules.maxSessionLoss) ruleViolations.push({ code: "SESSION_LOSS_EXCEEDED", limit: cur.sessionRules.maxSessionLoss, actual: -netPnl });
   if (durationMinutes > cur.sessionRules.maxSessionMinutes) ruleViolations.push({ code: "SESSION_DURATION_EXCEEDED", limit: cur.sessionRules.maxSessionMinutes, actual: durationMinutes });
 
-  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${wins}W/${losses}L/${breakEven}BE), net $${(netPnl/100).toFixed(2)}, win rate ${winRate}%. Live trading remains DISABLED.`;
+  const breakdown = `${wins}W/${losses}L/${breakEven}BE${unclassified > 0 ? `, ${unclassified} without a recorded result` : ""}`;
+  const winRateText = winRate == null
+    ? "win rate not available (no close has a recorded result)"
+    : `win rate ${winRate}% of ${classified} close${classified === 1 ? "" : "s"} with a recorded result`;
+  const durationText = durationInProgress ? `, ${durationMinutes}m so far (session not ended)` : "";
+  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${breakdown}), net $${(netPnl/100).toFixed(2)}, ${winRateText}${durationText}. Live trading remains DISABLED.`;
   const nextBestActions: string[] = [];
-  if (winRate < 50 && closed.length >= 2) nextBestActions.push("Review setups in BB debriefs — focus on quality over quantity");
+  if (winRate != null && winRate < 50 && classified >= 2) nextBestActions.push("Review setups in BB debriefs — focus on quality over quantity");
   if (ruleViolations.length > 0) nextBestActions.push(`Address ${ruleViolations.length} rule violation(s) before next session`);
   if (closed.length === 0) nextBestActions.push("No trades closed — consider widening focus areas or reviewing setup criteria");
   if (nextBestActions.length === 0) nextBestActions.push("Continue practicing within the same rules; queue another session when ready");
@@ -560,7 +579,9 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
     startedAt: cur.started_at ? new Date(cur.started_at) : null,
     endedAt: cur.ended_at ? new Date(cur.ended_at) : null,
     durationMinutes, totalTrades: closed.length, wins, losses, breakEven,
-    netPnl, winRate,
+    // NOT NULL column: 0 when no close has a result. Readers recompute the
+    // rate from the stored counts (getLatestReport), so 0 is never shown.
+    netPnl, winRate: winRate ?? 0,
     ruleViolations, mistakesDetected: cur.mistakesDetected, lessonsGenerated: cur.lessonsGenerated,
     coachSummary, nextBestActions, warnings: cur.activeWarnings,
   });
@@ -572,7 +593,9 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
     status: cur.status === "ENDED" ? "COMPLETE" : "PARTIAL",
     started_at: cur.started_at, ended_at: cur.ended_at,
     duration_minutes: durationMinutes,
+    duration_in_progress: durationInProgress,
     total_trades: closed.length, wins, losses, break_even: breakEven,
+    unclassified,
     net_pnl: netPnl, win_rate: winRate,
     rule_violations: ruleViolations,
     mistakes_detected: cur.mistakesDetected,
@@ -599,8 +622,13 @@ export async function getLatestReport(paperSessionId: string): Promise<SessionRe
     started_at: r.startedAt ? r.startedAt.toISOString() : null,
     ended_at: r.endedAt ? r.endedAt.toISOString() : null,
     duration_minutes: r.durationMinutes,
+    duration_in_progress: r.endedAt == null,
     total_trades: r.totalTrades, wins: r.wins, losses: r.losses, break_even: r.breakEven,
-    net_pnl: r.netPnl, win_rate: r.winRate,
+    unclassified: Math.max(0, r.totalTrades - r.wins - r.losses - r.breakEven),
+    net_pnl: r.netPnl,
+    // Recomputed from the stored counts: older rows divided by every close,
+    // including result-less ones.
+    win_rate: winRateOf(r.wins, r.wins + r.losses + r.breakEven),
     rule_violations: r.ruleViolations as Array<Record<string, unknown>>,
     mistakes_detected: r.mistakesDetected as Array<Record<string, unknown>>,
     lessons_generated: r.lessonsGenerated as Array<Record<string, unknown>>,

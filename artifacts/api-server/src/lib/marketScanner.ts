@@ -30,6 +30,7 @@ import {
   type UserGovernance,
 } from "./agentEcosystem/governance.js";
 import type { AdvisoryDirection } from "@workspace/domain/agent-system";
+import { isSyntheticInstrument } from "@workspace/domain/smart-chart";
 import { getDerivFeedStatus, hasRecentDerivTickFor } from "./data/providers/derivProvider.js";
 import {
   resolveScannerRegime,
@@ -112,7 +113,10 @@ export function isApprovedScannerSymbol(sym: string): boolean {
 export type StatusBadge =
   | "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION"
   | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE"
-  | "SPREAD_TOO_HIGH" | "PENDING_MT5_CONNECTION";
+  | "SPREAD_TOO_HIGH" | "PENDING_MT5_CONNECTION"
+  // The opportunity score is below the scanner's minimum (REJECT band) while
+  // the analysis itself rejected nothing: a weak score, NOT a risk rejection.
+  | "LOW_OPPORTUNITY_SCORE";
 
 export type OpportunityLabel = "ELITE" | "STRONG" | "ACCEPTABLE" | "WEAK" | "REJECT";
 
@@ -450,7 +454,12 @@ export interface ScannerTimingContext {
   roomToMove: number;         // 0-100
   heatBoost: number;          // bounded −10..+10 adjustment applied to score
   dataQualityLabel: string;   // real/partial/basic_timing_estimate
+  /** The timeframe this timing read was computed on — always the row's own. */
+  timeframe?: string;
 }
+
+/** Timeframes the timing brain reads (mirrors the /me/timing-brain route). */
+const TIMING_READ_TIMEFRAMES = new Set(["M1", "M5", "M15", "M30", "H1", "H4", "D1"]);
 
 /**
  * Effective ranking score. Governance (when applied) wins because it is bounded
@@ -518,7 +527,9 @@ export function computeFinalRead(
   const reasons: string[] = [];
   const histScore = hist && hist.available && hist.winRate != null ? hist.winRate : null;
   const newsLevel = news?.riskLevel ?? "none";
-  const newsAvail = !!news;
+  // A failed check is not news data: "none" there was never observed.
+  const newsUnchecked = news?.eventRiskUnchecked === true;
+  const newsAvail = !!news && !newsUnchecked;
   const histAvail = !!hist?.available;
 
   // Conflict = scanner direction opposes either news bias or historical bias.
@@ -552,6 +563,10 @@ export function computeFinalRead(
   if (opp.statusBadge === "REJECTED_BY_RISK" || opp.statusBadge === "CHOPPY_MARKET") {
     label = "NO_TRADE";
     reasons.push("No clean trade right now — setup rejected by risk rules.");
+  } else if (opp.statusBadge === "LOW_OPPORTUNITY_SCORE") {
+    // Same non-actionable outcome as before (never raised), with the true cause.
+    label = "NO_TRADE";
+    reasons.push("No clean trade right now — the opportunity score at scan time was below the scanner's minimum of 60. No risk rule failed.");
   } else if (opp.statusBadge === "LOW_CONFIDENCE" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical confidence is low.");
@@ -569,6 +584,15 @@ export function computeFinalRead(
     confidence = "MEDIUM";
   } else {
     confidence = techScore >= 75 && newsLevel === "none" && !conflict ? "HIGH" : "MEDIUM";
+  }
+
+  // 4b. EVENT-RISK-UNCHECKED CAP. Scheduled event risk applies but could not be
+  //     checked, so a release minutes away would not be seen. Downgrade-only:
+  //     withhold the actionable label, floor confidence, and say so plainly.
+  if (newsUnchecked) {
+    confidence = "LOW";
+    if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
+    reasons.push(NEWS_RISK_UNCHECKED_REASON);
   }
 
   // 5. DATA-SOURCE TRUTH CAP (ARX Scanner Truth Principle). A read can only be
@@ -883,6 +907,28 @@ export interface ScannerNewsContext {
   minutesUntilEvent: number | null;
   warning: string;
   alignsWithScanner: boolean | null;
+  /**
+   * True when scheduled event risk applies to this market but could NOT be
+   * checked: the news lookup failed, or a configured economic calendar did not
+   * answer. `riskLevel` is then "none" only because nothing was observed — it is
+   * not an all-clear. Never set for synthetic instruments (scheduled events do
+   * not move them) or when no calendar is configured (technicals-only by design).
+   */
+  eventRiskUnchecked?: boolean;
+}
+
+/** Plain-English reason shown when scheduled event risk could not be checked. */
+export const NEWS_RISK_UNCHECKED_REASON =
+  "Scheduled news risk could not be checked right now — the economic calendar did not answer.";
+
+/** A configured calendar that did not answer (or failed outright) is a failed check, not "no news". */
+function scannerCalendarCheckFailed(
+  calendar: { connected?: boolean | null; provider?: string | null; providerState?: string | null } | null | undefined,
+): boolean {
+  if (!calendar || calendar.connected === true) return false;
+  if (calendar.providerState === "fetch_error") return true;
+  if (calendar.providerState === "not_configured") return false;
+  return typeof calendar.provider === "string" && calendar.provider !== "none" && calendar.provider !== "";
 }
 
 // Phase News — decorate scanner opportunities with news intelligence. Pure
@@ -909,8 +955,13 @@ export async function decorateOpportunitiesWithNewsRisk(
           minutesUntilEvent: pack.upcomingEvent?.minutesUntil ?? null,
           warning: pack.warningSummary,
           alignsWithScanner: null,
+          eventRiskUnchecked: !isSyntheticInstrument(sym) && scannerCalendarCheckFailed(pack.dataSources?.calendar),
         });
       } catch {
+        // The lookup failed: nothing was observed. riskLevel "none" here means
+        // "not checked", so the row carries eventRiskUnchecked and the final
+        // read / map / scalp withhold any clean or actionable read.
+        const synthetic = isSyntheticInstrument(sym);
         ctxBySymbol.set(sym, {
           riskLevel: "none",
           bias: "unclear",
@@ -920,8 +971,11 @@ export async function decorateOpportunitiesWithNewsRisk(
           headlinesConnected: false,
           upcomingEventTitle: null,
           minutesUntilEvent: null,
-          warning: "News intelligence temporarily unavailable.",
+          warning: synthetic
+            ? "News intelligence temporarily unavailable."
+            : "News intelligence temporarily unavailable — scheduled news risk could not be checked.",
           alignsWithScanner: null,
+          eventRiskUnchecked: !synthetic,
         });
       }
     });
@@ -946,18 +1000,28 @@ export async function decorateOpportunitiesWithTimingContext(
   opps: ScannerOpportunity[],
 ): Promise<ScannerOpportunity[]> {
   if (opps.length === 0) return opps;
-  const uniqueSymbols = Array.from(new Set(opps.map((o) => o.symbol)));
-  const ctxBySymbol = new Map<string, ScannerTimingContext>();
+  // One read per (symbol, timeframe) on the ROW'S OWN timeframe: an H4 or M1
+  // row must never show (or be scored by) an M15 grade / permission. A
+  // timeframe the timing brain does not read gets no timing context (honest
+  // absence) rather than a read from another timeframe.
+  const keyOf = (o: ScannerOpportunity) => `${o.symbol}|${o.timeframe}`;
+  const uniqueKeys = Array.from(new Set(
+    opps.filter((o) => TIMING_READ_TIMEFRAMES.has(o.timeframe)).map(keyOf),
+  ));
+  const ctxByKey = new Map<string, ScannerTimingContext>();
 
-  await mapWithConcurrency(uniqueSymbols, ENRICHMENT_CONCURRENCY, async (sym) => {
+  await mapWithConcurrency(uniqueKeys, ENRICHMENT_CONCURRENCY, async (key) => {
+      const sep = key.lastIndexOf("|");
+      const sym = key.slice(0, sep);
+      const timeframe = key.slice(sep + 1);
       try {
-        const read = await runWithScannerBudget(() => computeTimingRead({ symbol: sym, timeframe: "M15", persistSnapshot: false }));
+        const read = await runWithScannerBudget(() => computeTimingRead({ symbol: sym, timeframe, persistSnapshot: false }));
         // Heat boost: GO=+10, WAIT_FOR_ENTRY=+4, WAIT_NEWS/NO_TRADE=−6, STAND_DOWN=−10
         const permBoost: Record<string, number> = {
           GO: 10, WAIT_FOR_ENTRY: 4, WAIT_NEWS: -6, NO_TRADE: -6, STAND_DOWN: -10,
         };
         const heatBoost = Math.max(-10, Math.min(10, permBoost[read.entryPermission] ?? 0));
-        ctxBySymbol.set(sym, {
+        ctxByKey.set(key, {
           heatScore: read.heatScore,
           tradeabilityScore: read.tradeabilityScore,
           edgeScore: read.edgeScore,
@@ -976,6 +1040,7 @@ export async function decorateOpportunitiesWithTimingContext(
           roomToMove: read.roomToMove,
           heatBoost,
           dataQualityLabel: read.dataQuality.label,
+          timeframe,
         });
       } catch {
         // Fail-open: timing is advisory; any error leaves the opportunity untouched.
@@ -983,7 +1048,7 @@ export async function decorateOpportunitiesWithTimingContext(
     });
 
   return opps.map((o) => {
-    const ctx = ctxBySymbol.get(o.symbol);
+    const ctx = ctxByKey.get(keyOf(o));
     if (!ctx) return o;
     // Fold heat boost into opportunity score (bounded, clamped 0..100).
     const boostedScore = Math.max(0, Math.min(100, o.opportunity.score + ctx.heatBoost));
@@ -1145,17 +1210,33 @@ export async function decorateOpportunitiesWithHistory(
   });
 }
 
-function setupTypeFor(a: MarketAnalysis): string {
-  if (a.marketBias === "choppy") return "Range / chop";
-  if (a.marketBias === "neutral") return "Consolidation";
-  return a.recommendedAction === "WAIT" ? "Pullback watch" : "Trend continuation";
+/**
+ * Plain name for what the analysis actually measured. The analyser has no
+ * range, pullback, retest or continuation detector: its bias is the sign of the
+ * 30-bar close drift, and "choppy" means only that the LAST bar's range is more
+ * than 1.8x the window average (usually an expansion bar). Names must not claim
+ * more than that. `mayShowBias` false (direction withheld) gets no directional
+ * name.
+ */
+export function setupTypeFor(a: MarketAnalysis, mayShowBias = true): string {
+  if (!mayShowBias) return "Direction withheld";
+  if (a.marketBias === "choppy") return "Volatility spike";
+  if (a.marketBias === "neutral") return "Flat drift";
+  if (a.recommendedAction === "REJECT") return "No setup — rules failed";
+  const side = a.marketBias === "bullish" ? "Upward" : "Downward";
+  return a.recommendedAction === "WAIT" ? `${side} drift — not confirmed` : `${side} drift`;
 }
 
-function statusBadgeFor(a: MarketAnalysis, opp: OpportunityScore): StatusBadge {
+export function statusBadgeFor(a: MarketAnalysis, opp: OpportunityScore): StatusBadge {
   if (a.recommendedAction === "REJECT" || opp.label === "REJECT") {
     if (a.marketBias === "choppy") return "CHOPPY_MARKET";
     if (a.riskScore > 65) return "SPREAD_TOO_HIGH";
-    return "REJECTED_BY_RISK";
+    // "Rejected by risk" only when the analysis rejected the setup or a rule
+    // actually failed. A row that passed every rule and is in the REJECT band
+    // only because its opportunity score is under 60 has a weak score, not a
+    // risk problem — badge it as such (still non-actionable).
+    if (a.recommendedAction === "REJECT" || a.rulesFailed.length > 0) return "REJECTED_BY_RISK";
+    return "LOW_OPPORTUNITY_SCORE";
   }
   if (a.confidenceScore < 50) return "LOW_CONFIDENCE";
   if (a.recommendedAction === "WAIT") return "WAIT_FOR_CONFIRMATION";
@@ -1580,7 +1661,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     const op: ScannerOpportunity = {
       symbol: sym, timeframe: tf, bias: displayBias,
       recommendedAction: displayAction,
-      setupType: setupTypeFor(a),
+      setupType: setupTypeFor(a, mayShowBias),
       confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
       entrySniperScore: displayEntrySniperScore,
       riskRewardRatio: a.riskRewardRatio,

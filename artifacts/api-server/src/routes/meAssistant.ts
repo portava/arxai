@@ -454,7 +454,7 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
   const cautions: string[] = [];
   if ((s.riskScore ?? 0) >= 70) cautions.push("Volatility risk elevated — size smaller.");
   if (conf < 50) cautions.push("Confidence is not high — wait for confirmation if momentum is weak.");
-  if (s.statusBadge && /SPREAD|CHOPPY|REJECT/i.test(s.statusBadge)) {
+  if (s.statusBadge && /SPREAD|CHOPPY|REJECT|LOW_OPPORTUNITY/i.test(s.statusBadge)) {
     cautions.push(`Scanner flagged ${s.statusBadge.replace(/_/g, " ").toLowerCase()}.`);
   }
 

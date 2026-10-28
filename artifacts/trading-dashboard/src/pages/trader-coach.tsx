@@ -6,12 +6,15 @@ interface CoachReport {
   liveTradingStatus: string;
   reportType: string;
   traderStatus: {
-    readinessScore: number;
-    readinessGrade: string;
-    readinessLevel: string;
+    /** false (or absent on an older server) when the Risk Governor did not run. */
+    readinessEvaluated?: boolean;
+    readinessUnavailableReason?: string | null;
+    readinessScore: number | null;
+    readinessGrade: string | null;
+    readinessLevel: string | null;
     governorStatus: string;
-    paperTradingAllowed: boolean;
-    autopilotAllowed: boolean;
+    paperTradingAllowed: boolean | null;
+    autopilotAllowed: boolean | null;
     liveTradingAllowed: boolean;
   };
   performanceSummary: Record<string, unknown>;
@@ -112,6 +115,11 @@ export default function TraderCoachPage() {
   if (!coach) return <div className="p-6">No coach data.</div>;
 
   const govBadge = GOV_BADGE[coach.traderStatus.governorStatus] ?? GOV_BADGE.UNKNOWN;
+  // Client may only downgrade: show a readiness figure only when the server
+  // says the governor was evaluated and every part of the figure is present.
+  const ts = coach.traderStatus;
+  const readinessKnown = ts.readinessEvaluated === true && ts.governorStatus !== "UNKNOWN"
+    && ts.readinessScore != null && ts.readinessGrade != null && ts.readinessLevel != null;
 
   return (
     <div className="p-6 space-y-6 text-gray-100">
@@ -120,9 +128,15 @@ export default function TraderCoachPage() {
         <span className="px-2 py-1 rounded text-xs bg-blue-700">DEMO ONLY</span>
         <span className="px-2 py-1 rounded text-xs bg-gray-700">LIVE TRADING DISABLED</span>
         <span className={`px-2 py-1 rounded text-xs ${govBadge}`}>Governor: {coach.traderStatus.governorStatus === "PAPER_ALLOWED" ? "DEMO_ALLOWED" : coach.traderStatus.governorStatus === "PAPER_CAUTION" ? "DEMO_CAUTION" : coach.traderStatus.governorStatus === "PAPER_PAUSED" ? "DEMO_PAUSED" : coach.traderStatus.governorStatus}</span>
-        <span className="px-2 py-1 rounded text-xs bg-gray-700">
-          Readiness {coach.traderStatus.readinessScore}/{coach.traderStatus.readinessGrade} ({coach.traderStatus.readinessLevel})
-        </span>
+        {readinessKnown ? (
+          <span className="px-2 py-1 rounded text-xs bg-gray-700" data-testid="coach-readiness">
+            Readiness {ts.readinessScore}/{ts.readinessGrade} ({ts.readinessLevel})
+          </span>
+        ) : (
+          <span className="px-2 py-1 rounded text-xs bg-gray-700" data-testid="coach-readiness" title={ts.readinessUnavailableReason ?? undefined}>
+            Readiness unavailable — not evaluated
+          </span>
+        )}
         <button onClick={loadAll} className="ml-auto px-3 py-1 bg-blue-600 rounded text-sm">Refresh</button>
       </header>
 

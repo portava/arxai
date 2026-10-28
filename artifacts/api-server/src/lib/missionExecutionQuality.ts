@@ -239,8 +239,15 @@ function spreadFrom(signals: MissionLiveSignals): ExecHealthSpread {
   }
 }
 
+/**
+ * An open exposure row plus whether its risk-to-stop is actually known. Today
+ * it never is: `riskAmount` is only the current floating loss (a lower bound),
+ * or 0 when the position is flat/in profit or has no floating P/L.
+ */
+type OpenExposureRow = ExposurePosition & { riskKnown: boolean };
+
 /** Load this user's OPEN live positions as honest exposure rows (per-user only). */
-async function loadOpenExposure(userId: number): Promise<ExposurePosition[]> {
+async function loadOpenExposure(userId: number): Promise<OpenExposureRow[]> {
   const rows = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED" })).map((p) => p.row);
   return rows.map((r) => {
     const direction: "BUY" | "SELL" = String(r.side).toUpperCase() === "SELL" ? "SELL" : "BUY";
@@ -254,6 +261,9 @@ async function loadOpenExposure(userId: number): Promise<ExposurePosition[]> {
       currencies: currenciesFor(r.symbol),
       direction,
       riskAmount,
+      // No stop-distance × contract value is computed here, so the money at
+      // risk to the stop is not known for any open position.
+      riskKnown: false,
     };
   });
 }
@@ -439,8 +449,15 @@ export interface MissionPulsePhase7 {
   /** Broker/feed execution-health gate verdict (symbol-independent). */
   health: ExecutionHealthVerdict;
   /** This user's aggregate OPEN live exposure (per-user isolation). */
-  exposure: ExposureAggregates;
+  exposure: MissionExposure;
 }
+
+/**
+ * Open exposure for display. `totalOpenRisk` sums only the known part (current
+ * floating losses); `riskUnknownCount` open positions have no known risk to
+ * their stop, so when it is > 0 the total is a lower bound, not the risk.
+ */
+export type MissionExposure = ExposureAggregates & { riskUnknownCount: number };
 
 /**
  * Resolve the advisory Phase 7 pulse surface: honest broker/feed health plus the
@@ -484,7 +501,11 @@ export async function resolveMissionPulsePhase7(args: {
     routeHealthy:
       brokerConnected === true ? true : brokerConnected === false ? false : null,
   });
-  const exposure = aggregateExposure(await loadOpenExposure(args.userId));
+  const open = await loadOpenExposure(args.userId);
+  const exposure: MissionExposure = {
+    ...aggregateExposure(open),
+    riskUnknownCount: open.filter((p) => !p.riskKnown).length,
+  };
   return { health, exposure };
 }
 

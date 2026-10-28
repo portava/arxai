@@ -276,7 +276,14 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
     qc.invalidateQueries({ queryKey: getGetOpenTradesQueryKey() });
   };
 
-  const healthColor = snap ? (snap.health.score >= 70 ? "[&>div]:bg-green-500" : snap.health.score >= 40 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-destructive") : "";
+  // Truth rule: Current / P&L / R / Health are null when the server had no
+  // quote — render "Unavailable" with the server's reason, never 0 or entry.
+  const health = snap?.health ?? null;
+  const healthColor = health ? (health.score >= 70 ? "[&>div]:bg-green-500" : health.score >= 40 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-destructive") : "";
+  const currentPrice = snap?.currentPrice ?? null;
+  const floatingPnl = snap?.floatingPnl ?? null;
+  const rMultiple = snap?.rMultiple ?? null;
+  const quoteAt = snap?.quoteAt ?? null;
 
   return (
     <Card data-testid={`live-trade-card-${trade.id}`}>
@@ -311,18 +318,30 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
           <>
             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
               <div><div className="text-muted-foreground">Entry</div><div>{trade.entryPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">Current</div><div>{snap.currentPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">P&L</div><div className={snap.floatingPnl >= 0 ? "text-green-500" : "text-destructive"}>${snap.floatingPnl.toFixed(2)}</div></div>
+              <div><div className="text-muted-foreground">Current</div><div data-testid={`snap-current-${trade.id}`}>{currentPrice != null ? currentPrice.toFixed(5) : <span className="text-muted-foreground">Unavailable</span>}</div></div>
+              <div><div className="text-muted-foreground">P&L</div>{floatingPnl != null
+                ? <div data-testid={`snap-pnl-${trade.id}`} className={floatingPnl >= 0 ? "text-green-500" : "text-destructive"}>{floatingPnl < 0 ? "-" : ""}${Math.abs(floatingPnl).toFixed(2)}</div>
+                : <div data-testid={`snap-pnl-${trade.id}`} className="text-muted-foreground">Unavailable</div>}</div>
               <div><div className="text-muted-foreground">SL</div><div className="text-destructive">{trade.stopLoss.toFixed(5)}</div></div>
               <div><div className="text-muted-foreground">TP</div><div className="text-green-500">{trade.takeProfit.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">R</div><div className={snap.rMultiple >= 0 ? "text-green-500" : "text-destructive"}>{snap.rMultiple.toFixed(2)}R</div></div>
+              <div><div className="text-muted-foreground">R</div>{rMultiple != null
+                ? <div data-testid={`snap-r-${trade.id}`} className={rMultiple >= 0 ? "text-green-500" : "text-destructive"}>{rMultiple.toFixed(2)}R</div>
+                : <div data-testid={`snap-r-${trade.id}`} className="text-muted-foreground">Unavailable</div>}</div>
             </div>
+            {currentPrice != null && quoteAt ? (
+              <div className="text-[10px] text-muted-foreground" data-testid={`snap-quote-at-${trade.id}`}>Quote as of {new Date(quoteAt).toLocaleTimeString()}</div>
+            ) : null}
+            {currentPrice != null && floatingPnl == null && snap.pnlUnavailableReason ? (
+              <div className="text-[10px] text-amber-300" data-testid={`snap-pnl-unavailable-${trade.id}`}>{snap.pnlUnavailableReason}</div>
+            ) : null}
             <div>
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="text-muted-foreground">Health</span>
-                <Badge variant="outline" className="text-[10px] capitalize">{snap.health.state.replace("_", " ")}</Badge>
+                {health
+                  ? <Badge variant="outline" className="text-[10px] capitalize">{health.state.replace("_", " ")}</Badge>
+                  : <Badge variant="outline" className="text-[10px]" data-testid={`snap-health-unavailable-${trade.id}`}>Not measured</Badge>}
               </div>
-              <Progress value={snap.health.score} className={`h-2 ${healthColor}`} />
+              {health ? <Progress value={health.score} className={`h-2 ${healthColor}`} /> : null}
             </div>
             <div className="text-xs p-2 rounded bg-muted/30 border border-border/50">{snap.primarySuggestion}</div>
             <div className="grid grid-cols-2 gap-2">
