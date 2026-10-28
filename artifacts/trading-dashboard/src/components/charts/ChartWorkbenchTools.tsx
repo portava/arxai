@@ -7,6 +7,7 @@ import { CHART_TIME_ZONES, captureLabel, convertWallClock, effectiveDisplayZone,
 import { CHART_STYLES, CHART_STYLE_NAMES, DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, validateDrawings, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type ChartStyle, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut } from "lucide-react";
+import { MAX_NOTE_LENGTH, MAX_NOTE_PARAGRAPHS, normalizeNoteText } from "@/lib/chart-engine/chartTextNote";
 
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
 /** PNG header lines: instrument, interval, capture time, feed verdict, display
@@ -43,6 +44,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [panel,setPanel] = useState<"studies" | "objects" | null>(null);
   const [tool,setTool] = useState<DrawingKind | null>(null);
   const [anchor,setAnchor] = useState<ChartAnchor | null>(null);
+  const [noteText,setNoteText] = useState("");
   const [hidden,setHidden] = useState(false);
   const [message,setMessage] = useState("");
   const [goToDate,setGoToDate] = useState("");
@@ -132,16 +134,17 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   useEffect(()=>()=>adapter?.setDrawingInteraction?.(null),[adapter]);
   useEffect(()=>{if(selectedId && !drawings.some(d=>d.id === selectedId)) setSelectedId(null);},[drawings,selectedId]);
   useEffect(()=>{
-    adapter?.setDrawingHandler?.(tool && hasCandles ? point=>{
+    adapter?.setDrawingHandler?.(tool && hasCandles && (tool !== "text" || normalizeNoteText(noteText) != null) ? point=>{
       if (drawings.length >= MAX_DRAWINGS) {setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first.`);setTool(null);return;}
       if (!singleAnchorDrawing(tool) && !anchor) {setAnchor(point);return;}
       if (anchor && point.time === anchor.time) {setMessage("Choose a different candle for the second anchor.");return;}
       const id = crypto.randomUUID();
-      change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:point} : {}),color:"#fbbf24"}]);
-      setSelectedId(id);setTool(null);setAnchor(null);setHidden(false);setMessage("Drawing added. Drag the line or its handles to edit; Objects has exact values and locking.");
+      change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:point} : {}),color:"#fbbf24",...(tool === "text" ? {text:normalizeNoteText(noteText)!} : {})}]);
+      if (tool === "text") setPanel("objects");
+      setSelectedId(id);setTool(null);setAnchor(null);setHidden(false);setMessage(tool === "text" ? "Your note added. Drag its card or anchor to move it; edit the text in Objects. This is your annotation, not an automated reading." : "Drawing added. Drag the line or its handles to edit; Objects has exact values and locking.");
     } : null);
     return ()=>adapter?.setDrawingHandler?.(null);
-  },[adapter,epoch,tool,anchor,drawings,hasCandles,key]);
+  },[adapter,epoch,tool,anchor,drawings,hasCandles,key,noteText]);
   useEffect(()=>{
     const cancel = (event: KeyboardEvent) => {if(event.key === "Escape"){setTool(null);setAnchor(null);}};
     window.addEventListener("keydown",cancel);return()=>window.removeEventListener("keydown",cancel);
@@ -204,7 +207,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       </select></label>
       {zone !== selectedZone && resolveTimeZone(selectedZone) !== "UTC" && <span className="text-[11px] text-zinc-500" data-testid="chart-daily-zone-note">Daily bars keep UTC day labels.</span>}
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "studies"} onClick={()=>setPanel(p=>p === "studies" ? null : "studies")}>Studies ({preferences.studies.length})</Button>
-      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setHidden(false);setMessage("");}}>
+      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setNoteText("");setHidden(false);setMessage("");}}>
         <option value="">Select / crosshair / pan</option>{Object.entries(names).map(([kind,name])=><option key={kind} value={kind}>{name}</option>)}
       </select>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={snap} title="Snap new anchors and dragged handles to the nearest open, high, low or close of the candle" onClick={()=>setSnap(value=>!value)}>Magnet {snap ? "on" : "off"}</Button>
@@ -230,24 +233,37 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyLabel(study)}</span>)}</div>}
     {panel === "studies" && <div className="basis-full"><ChartStudySettings preferences={preferences} onPreferences={onPreferences} /></div>}
     {panel === "objects" && <div className="basis-full mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
-      <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Lines outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>setHidden(h=>!h)}>{hidden ? "Show drawings" : "Hide drawings"}</Button></div>
+      <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Objects outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>setHidden(h=>!h)}>{hidden ? "Show drawings" : "Hide drawings"}</Button></div>
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}
       {drawings.map((d,index)=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
         <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}</button>
         {(["start","end"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{formatChartTime(d[name]!.time,zone)}</span></label>)}
         <input type="color" aria-label={`Drawing ${index+1} color`} className="h-7 w-8 bg-transparent" value={d.color} onChange={e=>change(drawings.map(item=>item.id===d.id ? {...item,color:e.target.value} : item))}/>
-        <select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>
-        <select className={field} aria-label={`Drawing ${index+1} line style`} value={(d.dashed ?? ["horizontal","fibonacci"].includes(d.kind)) ? "dashed" : "solid"} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,dashed:event.target.value==="dashed"} : item))}><option value="solid">Solid</option><option value="dashed">Dashed</option></select>
+        {d.kind !== "text" && <><select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>
+        <select className={field} aria-label={`Drawing ${index+1} line style`} value={(d.dashed ?? ["horizontal","fibonacci"].includes(d.kind)) ? "dashed" : "solid"} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,dashed:event.target.value==="dashed"} : item))}><option value="solid">Solid</option><option value="dashed">Dashed</option></select></>}
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.locked ? "Unlock" : "Lock"} drawing ${index+1}`} aria-pressed={!!d.locked} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,locked:!item.locked} : item))}>{d.locked ? "Unlock" : "Lock"}</Button>
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>change(drawings.filter(item=>item.id!==d.id))}>Delete</Button>
+        {d.kind === "text" && <NoteTextEditor label={`Drawing ${index+1} note text`} value={d.text!} locked={d.locked === true} onSave={text=>change(drawings.map(item=>item.id===d.id ? {...item,text} : item))} />}
       </div>)}
     </div>}
       </div>
     </div>
     {styleNote && <p id={styleNoteId} data-testid="chart-style-note" className="mt-2 text-[11px] leading-relaxed text-zinc-400">{styleNote}</p>}
-    {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Drawings are analysis only. <Button size="sm" variant="ghost" className="ml-1 h-8 text-xs" onClick={()=>{setTool(null);setAnchor(null);panRef.current?.focus();}}>Cancel drawing</Button></p>}
+    {tool === "text" && <label className="mt-2 flex max-w-sm flex-col gap-1 text-zinc-300">Your note<textarea aria-label="New user note" className="w-full min-w-0 rounded border border-zinc-700 bg-zinc-900 p-2 text-xs" rows={2} maxLength={MAX_NOTE_LENGTH} value={noteText} onChange={event=>setNoteText(event.target.value)} placeholder="Write your observation, then tap a candle" /><span className="text-[11px] text-zinc-400">Plain text, up to {MAX_NOTE_LENGTH} characters and {MAX_NOTE_PARAGRAPHS} lines. Your annotations are separate from automated analysis.</span></label>}
+    {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {tool === "text" && normalizeNoteText(noteText) == null ? "enter a valid note above before choosing its candle" : anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Drawings are analysis only. <Button size="sm" variant="ghost" className="ml-1 h-8 text-xs" onClick={()=>{setTool(null);setAnchor(null);panRef.current?.focus();}}>Cancel drawing</Button></p>}
     {panOnly && <p className="mt-2 text-zinc-400" role="status">Pan mode · drag through history without moving drawings. Use + / − to zoom and arrow keys to pan while the chart is focused.</p>}
     {message && <p className="mt-2 text-zinc-300" role="status">{message}</p>}
     {storageFailed && <p className="mt-2 text-amber-300" role="alert">Browser storage is unavailable. Drawing changes will be lost when this view closes.</p>}
   </div>;
+}
+
+function NoteTextEditor({label,value,locked,onSave}: {label:string;value:string;locked:boolean;onSave:(text:string)=>void}) {
+  const [draft,setDraft] = useState(value);
+  useEffect(()=>setDraft(value),[value]);
+  const text = normalizeNoteText(draft);
+  return <form className="flex basis-full min-w-0 flex-wrap items-end gap-2" onSubmit={event=>{event.preventDefault();if(!locked && text != null)onSave(text);}}>
+    <label className="flex min-w-0 flex-1 basis-48 flex-col gap-1">Your note<textarea aria-label={label} className="w-full min-w-0 rounded border border-zinc-700 bg-zinc-900 p-2 text-xs disabled:opacity-50" rows={2} maxLength={MAX_NOTE_LENGTH} value={draft} disabled={locked} onChange={event=>setDraft(event.target.value)} /></label>
+    <Button type="submit" size="sm" variant="outline" className="h-8 text-xs" disabled={locked || text == null || text === value}>Save note</Button>
+    {text == null && <p className="basis-full text-amber-300" role="alert">Use visible plain text, up to {MAX_NOTE_LENGTH} characters and {MAX_NOTE_PARAGRAPHS} lines.</p>}
+  </form>;
 }

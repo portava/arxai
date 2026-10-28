@@ -13,6 +13,69 @@ const adapter={setDrawings:drawings,setDrawingHandler:(handler:typeof click)=>{c
 const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkbenchTools key={`${symbol}:${timeframe}`} adapter={engine} epoch={1} symbol={symbol} timeframe={timeframe} preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline fixture"/>);
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
+describe("manual text note controls",()=>{
+  const createNote=(text="My own observation")=>{
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"text"}});
+    expect(click).toBeNull();
+    fireEvent.change(screen.getByLabelText("New user note"),{target:{value:text}});
+    act(()=>click?.({time:100,price:1.2}));
+  };
+  it("creates literal text at the chosen candle, edits once with undo/redo and reloads without API calls",()=>{
+    const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+    const view=mount();createNote("<b>My note</b>\nSecond line");
+    const stored=()=>JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!);
+    expect(stored()[0]).toMatchObject({kind:"text",text:"<b>My note</b>\nSecond line",start:{time:100,price:1.2}});
+    expect(screen.getByText(/This is your annotation, not an automated reading/)).toBeTruthy();
+    expect(view.container.querySelector("b")).toBeNull();
+    expect(screen.queryByLabelText("Drawing 1 line width")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Drawing 1 note text"),{target:{value:"Edited note"}});
+    expect(stored()[0].text).toBe("<b>My note</b>\nSecond line");
+    fireEvent.click(screen.getByRole("button",{name:"Save note",exact:true}));
+    expect(stored()[0].text).toBe("Edited note");
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(stored()[0].text).toBe("<b>My note</b>\nSecond line");
+    expect((screen.getByLabelText("Drawing 1 note text") as HTMLTextAreaElement).value).toBe("<b>My note</b>\nSecond line");
+    fireEvent.click(screen.getByRole("button",{name:"Redo",exact:true}));
+    expect(stored()[0].text).toBe("Edited note");
+    view.unmount();mount();
+    expect(drawings.mock.calls.at(-1)![0][0].text).toBe("Edited note");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("refuses empty or invalid text without discarding a saved note or adding undo history",()=>{
+    mount();
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"text"}});
+    fireEvent.change(screen.getByLabelText("New user note"),{target:{value:" \u202E "}});
+    expect(click).toBeNull();
+    expect(localStorage.getItem(drawingStorageKey("EURUSD","M15"))).toBeNull();
+    fireEvent.change(screen.getByLabelText("New user note"),{target:{value:"Valid note"}});
+    act(()=>click?.({time:100,price:1.2}));
+    fireEvent.change(screen.getByLabelText("Drawing 1 note text"),{target:{value:""}});
+    expect(screen.getByRole("button",{name:"Save note",exact:true}).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("visible plain text");
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)[0].text).toBe("Valid note");
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+  });
+  it("uses existing selection, lock, hide, delete and undo without sharing notes across chart contexts",()=>{
+    const engine={...adapter,setDrawingInteraction:vi.fn()} as unknown as ChartEngineAdapter;
+    const view=mount("EURUSD","M15",engine);createNote();
+    expect(screen.getByRole("button",{name:"Select drawing 1"}).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button",{name:"Lock drawing 1"}));
+    expect(screen.getByLabelText("Drawing 1 note text").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByLabelText("Drawing 1 start price").hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button",{name:"Hide drawings",exact:true}));
+    expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+    expect(engine.setDrawingInteraction).toHaveBeenLastCalledWith(null);
+    fireEvent.click(screen.getByRole("button",{name:"Show drawings",exact:true}));
+    expect(drawings.mock.calls.at(-1)![0][0]).toMatchObject({kind:"text",locked:true});
+    fireEvent.click(screen.getByRole("button",{name:"Delete drawing 1"}));
+    expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(drawings.mock.calls.at(-1)![0][0].text).toBe("My own observation");
+    view.unmount();const other=mount("GBPUSD","M15");expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+    other.unmount();mount("EURUSD","H1");expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+  });
+});
 describe("drawing workspace controls",()=>{
   it("keeps an in-progress drawing visible and cancellable when tools close",()=>{
     mount();

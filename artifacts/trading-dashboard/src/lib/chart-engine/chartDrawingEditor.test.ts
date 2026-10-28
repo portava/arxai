@@ -27,6 +27,28 @@ function fixture(drawings=[trend]) {
   return {editor,render,select,freeze,onSelect,onCommit,pointer,canvas,container};
 }
 describe("analysis-only drawing editing",()=>{
+  it("moves a text card by its real anchor even when the pointer begins over whitespace",()=>{
+    const note:ChartDrawing={id:"note",kind:"text",start:{time:160,price:10},color:"#ffffff",text:"My observation"};
+    const moved=moveDrawing(note,"body",{x:310,y:65},{x:360,y:55},projection,true)!;
+    expect(moved).toEqual({...note,start:{time:220,price:20}});
+    expect(moveDrawing(note,"start",{x:50,y:90},{x:200,y:82},projection,true)?.start).toEqual({time:1060,price:15});
+    expect(moveDrawing(note,"body",{x:310,y:65},{x:610,y:55},projection,false)).toBeNull();
+    expect(moveDrawing({...note,start:{time:1,price:10}},"body",{x:50,y:90},{x:100,y:80},projection,false)).toBeNull();
+  });
+  it("commits a note drag once and keeps a locked note selected without moving it",()=>{
+    vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue({measureText:(text:string)=>({width:text.length*6})} as any);
+    const note:ChartDrawing={id:"note",kind:"text",start:{time:160,price:10},color:"#ffffff",text:"My observation"};
+    const f=fixture([note]);
+    f.editor.configure({selectedId:null,snap:false,onSelect:f.onSelect,onCommit:f.onCommit});
+    f.pointer("pointerdown",70,65);f.pointer("pointermove",120,55);f.pointer("pointerup",120,55);
+    expect(f.onSelect).toHaveBeenLastCalledWith("note");
+    expect(f.onCommit).toHaveBeenCalledExactlyOnceWith([{...note,start:{time:220,price:20}}]);
+    f.editor.setDrawings([{...note,locked:true}]);f.onCommit.mockClear();
+    f.pointer("pointerdown",70,65);f.pointer("pointermove",120,55);f.pointer("pointerup",120,55);
+    expect(f.onSelect).toHaveBeenLastCalledWith("note");
+    expect(f.onCommit).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
   it("moves both anchors by candle indices and clamps the object inside loaded history",()=>{
     const moved=moveDrawing(trend,"body",{x:100,y:85},{x:150,y:75},projection,false)!;
     expect(moved.start).toEqual({time:220,price:20});expect(moved.end).toEqual({time:1060,price:30});
