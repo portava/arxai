@@ -11,6 +11,7 @@ type Q = { data: unknown; isLoading: boolean; isError: boolean };
 const h = vi.hoisted(() => ({
   settings: { data: undefined, isLoading: false, isError: false } as { data: unknown; isLoading: boolean; isError: boolean },
   bot: { data: undefined, isLoading: false, isError: false } as { data: unknown; isLoading: boolean; isError: boolean },
+  botOpts: undefined as unknown,
   audit: { data: undefined, isLoading: false, isError: false } as { data: unknown; isLoading: boolean; isError: boolean },
   applyMutate: vi.fn(),
   stopMutate: vi.fn(),
@@ -29,7 +30,7 @@ vi.mock("@/components/risk/RiskLimitLayersPanel", () => ({
 vi.mock("@workspace/api-client-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useGetRiskSettings: () => h.settings,
-  useGetBotStatus: () => h.bot,
+  useGetBotStatus: (opts: unknown) => { h.botOpts = opts; return h.bot; },
   useGetRiskAudit: () => ({ ...h.audit, refetch: vi.fn() }),
   useGetPositionSize: () => ({ data: undefined }),
   useUpdateRiskSettings: () => ({ mutate: vi.fn(), isPending: false }),
@@ -262,5 +263,40 @@ describe("System Status never colours an unread bot status green", () => {
     const running = screen.getByTestId("system-status-Is Running");
     expect(running.querySelector(".text-success")).toBeNull();
     expect(screen.getByTestId("system-status-bot-scope").textContent).toMatch(/saved Bot Control settings/);
+  });
+});
+
+describe("the page re-reads what its own actions changed", () => {
+  type Opts = { onSuccess?: (d: unknown) => void };
+  const keyed = (calls: unknown[][]) => calls.map((c) => JSON.stringify((c[0] as { queryKey?: unknown })?.queryKey));
+  const BOT = { mode: "AUTO", symbol: "EURUSD", strategy: "x", riskMode: "Balanced", isRunning: true, isPaused: false, lastScanAt: null };
+
+  it("applying a preset invalidates Limits in force and the risk audit", () => {
+    h.applyMutate.mockImplementation((_v: unknown, o: Opts) => o.onSuccess?.(BALANCED_APPLIED));
+    const { invalidate } = renderPage({ settings: { data: BALANCED_APPLIED } });
+    fireEvent.click(within(modeCard("Conservative")).getByRole("button", { name: /Apply Conservative Preset/i }));
+    const keys = keyed(invalidate.mock.calls);
+    expect(keys).toContain(JSON.stringify(["me", "risk-limits", "layers"]));
+    expect(keys).toContain(JSON.stringify(["/api/risk/audit"]));
+  });
+
+  it("an emergency stop invalidates the bot status (and audit, and limits)", () => {
+    h.stopMutate.mockImplementation((_v: unknown, o: Opts) => o.onSuccess?.({ success: true, message: "stopped", closedTrades: 0 }));
+    const { invalidate } = renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: BOT } });
+    fireEvent.click(screen.getByRole("button", { name: /EMERGENCY STOP ALL TRADING/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Confirm Emergency Stop/ }));
+    expect(h.stopMutate).toHaveBeenCalledTimes(1);
+    const keys = keyed(invalidate.mock.calls);
+    expect(keys).toContain(JSON.stringify(["/api/bot/status"]));
+    expect(keys).toContain(JSON.stringify(["/api/risk/audit"]));
+  });
+
+  it("pause invalidates the bot status, and the bot status is polled", () => {
+    h.botMutate.mockImplementation((_v: unknown, o: Opts) => o.onSuccess?.(BOT));
+    const { invalidate } = renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: BOT } });
+    fireEvent.click(screen.getByRole("button", { name: /Pause All Trading/ }));
+    expect(keyed(invalidate.mock.calls)).toContain(JSON.stringify(["/api/bot/status"]));
+    const opts = h.botOpts as { query?: { refetchInterval?: number } } | undefined;
+    expect(opts?.query?.refetchInterval).toBeGreaterThan(0);
   });
 });

@@ -12,6 +12,7 @@ import {
   getGetRiskSettingsQueryKey,
   getGetRiskAuditQueryKey,
   getGetPositionSizeQueryKey,
+  getGetBotStatusQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -280,7 +281,10 @@ export default function RiskSettings() {
   };
 
   const { data: settings, isLoading } = useGetRiskSettings();
-  const { data: botStatus, isError: botStatusFailed } = useGetBotStatus();
+  // Bot Control and the kill switch elsewhere change this row too, so it is re-read.
+  const { data: botStatus, isError: botStatusFailed } = useGetBotStatus(
+    { query: { queryKey: getGetBotStatusQueryKey(), refetchInterval: 30_000 } },
+  );
   const updateSettings = useUpdateRiskSettings();
   const applyMode = useApplyRiskMode();
   const setLiveLock = useSetLiveLock();
@@ -367,6 +371,9 @@ export default function RiskSettings() {
       {
         onSuccess: (res) => {
           queryClient.setQueryData(getGetRiskSettingsQueryKey(), res);
+          // The preset rewrote the governor's limits: re-read every view of them.
+          queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
+          queryClient.invalidateQueries({ queryKey: RISK_LIMIT_LAYERS_QUERY_KEY });
           toast({ title: `${mode} mode applied`, description: "All risk limits updated." });
         },
         onError: () => toast({ title: "Failed to apply mode", variant: "destructive" }),
@@ -399,6 +406,7 @@ export default function RiskSettings() {
       {
         onSuccess: (res) => {
           queryClient.setQueryData(getGetRiskSettingsQueryKey(), res);
+          queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
           toast({ title: "Special rules saved" });
         },
         onError: () => toast({ title: "Save failed", variant: "destructive" }),
@@ -430,6 +438,9 @@ export default function RiskSettings() {
       onSuccess: (res) => {
         setConfirmKill(false);
         queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
+        // The stop set the bot OFF and engaged a kill switch: re-read both.
+        queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
+        queryClient.invalidateQueries({ queryKey: RISK_LIMIT_LAYERS_QUERY_KEY });
         toast({
           title: "⛔ Emergency Stop Executed",
           description: res.message,
@@ -444,7 +455,10 @@ export default function RiskSettings() {
     updateBotStatus.mutate(
       { data: { isPaused: true } },
       {
-        onSuccess: () => toast({ title: "Trading paused", description: "Bot will not open new positions." }),
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
+          toast({ title: "Trading paused", description: "Bot will not open new positions." });
+        },
         onError: () => toast({ title: "Failed to pause", variant: "destructive" }),
       }
     );
@@ -454,7 +468,10 @@ export default function RiskSettings() {
     updateBotStatus.mutate(
       { data: { isPaused: false } },
       {
-        onSuccess: () => toast({ title: "Trading resumed" }),
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
+          toast({ title: "Trading resumed" });
+        },
         onError: () => toast({ title: "Failed to resume", variant: "destructive" }),
       }
     );
