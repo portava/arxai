@@ -1,5 +1,6 @@
 import type { Trade } from "@workspace/db";
 import { getLatestQuote } from "../data/dataManager.js";
+import { quoteObservationFreshness } from "../data/quoteObservationFreshness.js";
 import { decideContractSize, resolveContractSize, type ResolvedContractSize } from "../mt5/contractSize.js";
 import { paperPnl } from "../paperExecution/paperPnl.js";
 import { PNL_DATA_QUALITY_MISSING_CONTRACT_SIZE, PNL_DATA_QUALITY_MISSING_FX } from "../live/realizedPnl.js";
@@ -12,11 +13,14 @@ import { partialCloseSuggestion } from "./rules/partialCloseRules.js";
 import { earlyExitSuggestion } from "./rules/earlyExitRules.js";
 
 // Truth rule: Current / R / P&L / Health are only reported when a real quote
-// was observed. With no quote they are null and `priceUnavailableReason` says
-// why — never the entry price, $0.00 and 0.00R as if the trade were flat.
+// was observed within the shared quote budget (QUOTE_STALE_AFTER_MS). With no
+// quote, a last-known quote older than the budget, or a quote whose time is
+// unknown, they are null and `priceUnavailableReason` says why — never the
+// entry price, $0.00 and 0.00R as if the trade were flat, and never a
+// last-known price presented as the current one.
 export interface TradeManagementSnapshot {
   tradeId: number;
-  /** Last price from the market-data router; null when no quote was available. */
+  /** Last price from the market-data router; null when no current quote was available. */
   currentPrice: number | null;
   /** Timestamp of the quote `currentPrice` came from; null when there is no quote. */
   quoteAt: string | null;
@@ -48,25 +52,46 @@ function isPrice(x: unknown): x is number {
   return typeof x === "number" && Number.isFinite(x) && x > 0;
 }
 
+function unpricedSnapshot(trade: Trade, reason: string): TradeManagementSnapshot {
+  const unavailable = { recommended: false as const, reason };
+  return {
+    tradeId: trade.id,
+    currentPrice: null,
+    quoteAt: null,
+    priceUnavailableReason: reason,
+    rMultiple: null,
+    floatingPnl: null,
+    pnlUnavailableReason: reason,
+    pnlDataQualityFlag: null,
+    health: null,
+    suggestions: { breakEven: unavailable, trail: unavailable, partial: unavailable, earlyExit: unavailable },
+    primarySuggestion: reason,
+    invalidated: false,
+  };
+}
+
 export async function evaluateTrade(trade: Trade): Promise<TradeManagementSnapshot> {
   const quote = await getLatestQuote(trade.symbol);
-  if (!isPrice(quote.last)) {
-    const reason = `No current quote for ${trade.symbol} from the market-data feed — price, P&L, R and health cannot be measured right now.`;
-    const unavailable = { recommended: false as const, reason };
-    return {
-      tradeId: trade.id,
-      currentPrice: null,
-      quoteAt: null,
-      priceUnavailableReason: reason,
-      rMultiple: null,
-      floatingPnl: null,
-      pnlUnavailableReason: reason,
-      pnlDataQualityFlag: null,
-      health: null,
-      suggestions: { breakEven: unavailable, trail: unavailable, partial: unavailable, earlyExit: unavailable },
-      primarySuggestion: reason,
-      invalidated: false,
-    };
+  if (!quote || !isPrice(quote.last)) {
+    return unpricedSnapshot(
+      trade,
+      `No current quote for ${trade.symbol} from the market-data feed — price, P&L, R and health cannot be measured right now.`,
+    );
+  }
+  // Age check on the quote's own basis: a producer tick time can read fresh;
+  // a receive-time stamp at best "delayed". Stale (older than the budget) or an
+  // unknown / future time is not a current price.
+  const obs = quoteObservationFreshness({
+    hasPrice: true,
+    observedAt: quote.timestamp,
+    basis: quote.tickTimeObserved === true ? "producer_tick" : "server_receive",
+    sourceLabel: quote.source ?? null,
+  });
+  if (obs.stale) {
+    return unpricedSnapshot(
+      trade,
+      `${obs.plainEnglish} Current price, P&L, R and health for ${trade.symbol} are not measured from it.`,
+    );
   }
   const currentPrice = quote.last;
   const risk = Math.abs(trade.entryPrice - trade.stopLoss) || 1e-6;

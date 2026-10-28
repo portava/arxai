@@ -5,6 +5,8 @@
 //     measured, so they are null with a plain-English reason — never the entry
 //     price, $0.00 and 0.00R shown as if the trade were flat;
 //   - with a quote, the snapshot names the quote's timestamp;
+//   - a quote older than the 5 min quote budget, or with no usable time, is a
+//     last-known price: nothing is measured from it and a close is refused;
 //   - floating P&L is contract-size aware (lib/mt5/contractSize.ts, the rule
 //     realized P/L and paper P&L use): 1.00 lot EURUSD +10 pips is ~$100, not
 //     the old flat x100 figure of $0.10; when the contract size or FX factor
@@ -20,12 +22,17 @@ import assert from "node:assert/strict";
 import type { Trade } from "@workspace/db";
 
 type Quote = { symbol: string; timestamp: string; last?: number; bid?: number; ask?: number };
-let nextQuote: Quote = { symbol: "EURUSD", timestamp: "2026-10-28T09:00:00.000Z" };
+// Quotes are judged against the 5 min quote budget, so priced fixtures carry a
+// time a few seconds ago (a fixed past date would be a last-known price).
+const QUOTE_AT = new Date(Date.now() - 2_000).toISOString();
+let nextQuote: Quote = { symbol: "EURUSD", timestamp: QUOTE_AT };
+// getLatestQuote returns null when no provider served a quote.
+let nextQuoteIsNull = false;
 const realData = await import("../../data/dataManager.js");
 mock.module("../../data/dataManager.js", {
   namedExports: {
     ...realData,
-    getLatestQuote: async (symbol: string): Promise<Quote> => ({ ...nextQuote, symbol }),
+    getLatestQuote: async (symbol: string): Promise<Quote | null> => (nextQuoteIsNull ? null : { ...nextQuote, symbol }),
   },
 });
 
@@ -78,7 +85,7 @@ test("no quote: Current, P&L, R and Health are unavailable, not entry / $0.00 / 
 
 test("non-finite or non-positive last is treated as no quote", async () => {
   for (const last of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-    nextQuote = { symbol: "EURUSD", timestamp: "2026-10-28T09:00:00.000Z", last };
+    nextQuote = { symbol: "EURUSD", timestamp: QUOTE_AT, last };
     const snap = await evaluateTrade(trade());
     assert.equal(snap.currentPrice, null, `last=${last} is not a price`);
     assert.equal(snap.floatingPnl, null);
@@ -86,17 +93,17 @@ test("non-finite or non-positive last is treated as no quote", async () => {
 });
 
 test("with a quote: measured values carry the quote timestamp", async () => {
-  nextQuote = { symbol: "EURUSD", timestamp: "2026-10-28T09:00:00.000Z", last: 1.105 };
+  nextQuote = { symbol: "EURUSD", timestamp: QUOTE_AT, last: 1.105 };
   const snap = await evaluateTrade(trade());
   assert.equal(snap.currentPrice, 1.105);
-  assert.equal(snap.quoteAt, "2026-10-28T09:00:00.000Z");
+  assert.equal(snap.quoteAt, QUOTE_AT);
   assert.equal(snap.priceUnavailableReason, null);
   assert.ok(snap.rMultiple != null && Math.abs(snap.rMultiple - 0.5) < 1e-9);
   assert.ok(snap.health != null && typeof snap.health.score === "number");
 });
 
 test("EURUSD 1.00 lot +10 pips is ~$100 (contract size 100,000), not the flat x100 $0.10", async () => {
-  nextQuote = { symbol: "EURUSD", timestamp: "2026-10-28T09:00:00.000Z", last: 1.101 };
+  nextQuote = { symbol: "EURUSD", timestamp: QUOTE_AT, last: 1.101 };
   const snap = await evaluateTrade(trade({ entryPrice: 1.1, lot: 1, direction: "BUY" }));
   assert.ok(snap.floatingPnl != null);
   assert.ok(Math.abs(snap.floatingPnl - 100) < 0.01, `expected ~100, got ${snap.floatingPnl}`);
@@ -104,18 +111,18 @@ test("EURUSD 1.00 lot +10 pips is ~$100 (contract size 100,000), not the flat x1
 });
 
 test("SELL loss is negative and USDJPY P&L is converted from JPY to USD", async () => {
-  nextQuote = { symbol: "EURUSD", timestamp: "2026-10-28T09:00:00.000Z", last: 1.101 };
+  nextQuote = { symbol: "EURUSD", timestamp: QUOTE_AT, last: 1.101 };
   const sell = await evaluateTrade(trade({ entryPrice: 1.1, lot: 0.5, direction: "SELL", stopLoss: 1.11 }));
   assert.ok(sell.floatingPnl != null && Math.abs(sell.floatingPnl + 50) < 0.01, `got ${sell.floatingPnl}`);
 
-  nextQuote = { symbol: "USDJPY", timestamp: "2026-10-28T09:00:00.000Z", last: 150.5 };
+  nextQuote = { symbol: "USDJPY", timestamp: QUOTE_AT, last: 150.5 };
   const jpy = await evaluateTrade(trade({ symbol: "USDJPY", entryPrice: 150, stopLoss: 149, takeProfit: 152, lot: 1 }));
   // 0.5 JPY x 100,000 = 50,000 JPY ~= $332.23 at 150.5 — not 50,000 "dollars".
   assert.ok(jpy.floatingPnl != null && Math.abs(jpy.floatingPnl - 50_000 / 150.5) < 0.01, `got ${jpy.floatingPnl}`);
 });
 
 test("non-FX symbol with no broker spec: P&L unavailable with a reason, price still shown", async () => {
-  nextQuote = { symbol: "XAUUSD", timestamp: "2026-10-28T09:00:00.000Z", last: 2010 };
+  nextQuote = { symbol: "XAUUSD", timestamp: QUOTE_AT, last: 2010 };
   const snap = await evaluateTrade(trade({ symbol: "XAUUSD", entryPrice: 2000, stopLoss: 1990, takeProfit: 2030, lot: 1 }));
   assert.equal(snap.currentPrice, 2010);
   assert.equal(snap.floatingPnl, null, "gold must not be sized as a guess");
@@ -125,7 +132,7 @@ test("non-FX symbol with no broker spec: P&L unavailable with a reason, price st
 
 test("broker spec is used when the trade has an owner; a failed spec read withholds P&L", async () => {
   brokerSpecs.set("42:XAUUSD", { contractSize: 100, profitCurrency: "USD" });
-  nextQuote = { symbol: "XAUUSD", timestamp: "2026-10-28T09:00:00.000Z", last: 2010 };
+  nextQuote = { symbol: "XAUUSD", timestamp: QUOTE_AT, last: 2010 };
   const gold = trade({ userId: 42, symbol: "XAUUSD", entryPrice: 2000, stopLoss: 1990, takeProfit: 2030, lot: 1 });
   const snap = await evaluateTrade(gold);
   assert.ok(snap.floatingPnl != null && Math.abs(snap.floatingPnl - 1000) < 0.01, `got ${snap.floatingPnl}`);
@@ -143,12 +150,12 @@ test("broker spec is used when the trade has an owner; a failed spec read withho
 test("manual close: refused with no quote; sized P&L booked; unsized P&L recorded as UNKNOWN", async () => {
   const { paperCloseOutcome } = await import("../tradeManager.js");
 
-  nextQuote = { symbol: "EURUSD", timestamp: "2026-10-28T09:00:00.000Z" };
+  nextQuote = { symbol: "EURUSD", timestamp: QUOTE_AT };
   const eur = trade();
   const noQuote = paperCloseOutcome(eur, await evaluateTrade(eur));
   assert.equal(noQuote.ok, false, "a close with no quote would book the entry price and $0.00");
 
-  nextQuote = { symbol: "EURUSD", timestamp: "2026-10-28T09:00:00.000Z", last: 1.101 };
+  nextQuote = { symbol: "EURUSD", timestamp: QUOTE_AT, last: 1.101 };
   const sized = paperCloseOutcome(eur, await evaluateTrade(eur));
   assert.ok(sized.ok);
   assert.equal(sized.status, "CLOSED_WIN");
@@ -156,7 +163,7 @@ test("manual close: refused with no quote; sized P&L booked; unsized P&L recorde
   assert.equal(sized.pnlStatus, null);
   assert.match(sized.resultText, /\$100\.00/);
 
-  nextQuote = { symbol: "XAUUSD", timestamp: "2026-10-28T09:00:00.000Z", last: 1990 };
+  nextQuote = { symbol: "XAUUSD", timestamp: QUOTE_AT, last: 1990 };
   const gold = trade({ symbol: "XAUUSD", entryPrice: 2000, stopLoss: 1980, takeProfit: 2030 });
   const unsized = paperCloseOutcome(gold, await evaluateTrade(gold));
   assert.ok(unsized.ok);
@@ -165,4 +172,44 @@ test("manual close: refused with no quote; sized P&L booked; unsized P&L recorde
   assert.equal(unsized.pnlStatus, "UNKNOWN");
   assert.equal(unsized.dataQualityFlag, "MISSING_CONTRACT_SIZE");
   assert.doesNotMatch(unsized.resultText, /\$/);
+});
+
+test("a quote older than the 5 min budget is last-known: no Current/P&L/R/Health, close refused", async () => {
+  const { paperCloseOutcome } = await import("../tradeManager.js");
+  const oldAt = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
+  nextQuote = { symbol: "EURUSD", timestamp: oldAt, last: 1.101 };
+  const eur = trade();
+  const snap = await evaluateTrade(eur);
+  assert.equal(snap.currentPrice, null, "a 3 h old price is not the current price");
+  assert.equal(snap.floatingPnl, null);
+  assert.equal(snap.rMultiple, null);
+  assert.equal(snap.health, null);
+  assert.equal(snap.quoteAt, null);
+  assert.match(snap.priceUnavailableReason ?? "", /last-known price, not a current one/);
+  assert.match(snap.priceUnavailableReason ?? "", /not measured/);
+  for (const s of Object.values(snap.suggestions)) assert.equal(s.recommended, false);
+  const close = paperCloseOutcome(eur, snap);
+  assert.equal(close.ok, false, "a close must not be booked at a 3 h old price");
+});
+
+test("a quote with no usable time is not treated as current", async () => {
+  for (const timestamp of ["", "not-a-time", new Date(Date.now() + 60 * 60_000).toISOString()]) {
+    nextQuote = { symbol: "EURUSD", timestamp, last: 1.101 };
+    const snap = await evaluateTrade(trade());
+    assert.equal(snap.currentPrice, null, `timestamp=${JSON.stringify(timestamp)}`);
+    assert.match(snap.priceUnavailableReason ?? "", /cannot be treated as current/);
+  }
+});
+
+test("the accessor's null (no provider served a quote) reads as no current quote", async () => {
+  const saved = nextQuote;
+  nextQuoteIsNull = true;
+  try {
+    const snap = await evaluateTrade(trade());
+    assert.equal(snap.currentPrice, null);
+    assert.match(snap.priceUnavailableReason ?? "", /no current quote for EURUSD/i);
+  } finally {
+    nextQuoteIsNull = false;
+    nextQuote = saved;
+  }
 });
