@@ -141,6 +141,9 @@ const MODES = {
 };
 
 const MISMATCH_BADGE = "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
+// Nothing read means nothing to show: no mode, limit, rule or lock state is
+// assumed while GET /risk/settings has failed.
+const SETTINGS_UNREAD = "could not be loaded";
 
 // ── Custom limits form schema ────────────────────────────────────────────────
 
@@ -471,7 +474,7 @@ export default function RiskSettings() {
     );
   }
 
-  const currentMode = settings?.riskMode ?? "Balanced";
+  const currentMode: string | null = settings?.riskMode ?? null;
   const modeConfig = MODES[currentMode as keyof typeof MODES] ?? MODES.Custom;
   const ModeIcon = modeConfig.icon;
   // The label is stored apart from the limits (a fresh trader, or a Risk
@@ -495,13 +498,19 @@ export default function RiskSettings() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 max-w-full min-w-0">
-          <Badge
-            className={cn("px-3 py-1 font-semibold border", labelMismatch ? MISMATCH_BADGE : modeConfig.badge)}
-            data-testid="risk-mode-badge"
-          >
-            <ModeIcon size={13} className="mr-1.5" />
-            {labelMismatch ? `${currentMode} label · limits differ` : `${currentMode} Mode`}
-          </Badge>
+          {settings ? (
+            <Badge
+              className={cn("px-3 py-1 font-semibold border", labelMismatch ? MISMATCH_BADGE : modeConfig.badge)}
+              data-testid="risk-mode-badge"
+            >
+              <ModeIcon size={13} className="mr-1.5" />
+              {labelMismatch ? `${currentMode} label · limits differ` : `${currentMode} Mode`}
+            </Badge>
+          ) : (
+            <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border" data-testid="risk-mode-badge">
+              <AlertTriangle size={12} className="mr-1.5" /> Risk settings {SETTINGS_UNREAD}
+            </Badge>
+          )}
           {settings?.liveLocked && (
             <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border">
               <Lock size={12} className="mr-1.5" /> Live Locked
@@ -548,6 +557,16 @@ export default function RiskSettings() {
             TAB 1 — RISK MODE
         ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="mode" className="space-y-4">
+          {!settings && (
+            <Alert className="border-red-500/30 bg-red-500/5" data-testid="risk-settings-load-error">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <AlertTitle className="text-red-300 text-sm">Your risk settings {SETTINGS_UNREAD}</AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground">
+                No mode is marked active and no limits, rules or lock state are shown, because none were read.
+                Applying a preset still writes that preset's values.
+              </AlertDescription>
+            </Alert>
+          )}
           {labelMismatch && (
             <Alert className="border-yellow-500/30 bg-yellow-500/5" data-testid="risk-mode-mismatch">
               <AlertTriangle className="h-4 w-4 text-yellow-400" />
@@ -657,7 +676,7 @@ export default function RiskSettings() {
             <CardContent>
               <div className="relative pt-2 pb-4">
                 <div className="h-2 rounded-full bg-gradient-to-r from-emerald-500 via-blue-500 via-orange-400 to-red-500" />
-                <div
+                {settings && <div
                   className="absolute top-0 w-4 h-4 rounded-full border-2 border-background shadow-lg transition-all duration-500"
                   style={{
                     left: labelMismatch ? "90%" :
@@ -669,7 +688,7 @@ export default function RiskSettings() {
                                      currentMode === "Balanced" ? "#3b82f6" :
                                      currentMode === "Aggressive" ? "#f97316" : "#8b5cf6",
                   }}
-                />
+                />}
                 <div className="flex justify-between text-xs text-muted-foreground mt-3">
                   <span>Safe</span>
                   <span>Balanced</span>
@@ -686,7 +705,7 @@ export default function RiskSettings() {
         ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="limits">
           <RiskLimitLayersPanel />
-          {currentMode !== "Custom" && (
+          {settings && currentMode !== "Custom" && (
             <Alert className="mb-4 border-blue-500/30 bg-blue-500/5">
               <ShieldAlert className="h-4 w-4 text-blue-400" />
               <AlertTitle className="text-blue-300 text-sm">
@@ -699,6 +718,15 @@ export default function RiskSettings() {
               </AlertDescription>
             </Alert>
           )}
+          {!settings ? (
+            <Alert className="border-red-500/30 bg-red-500/5" data-testid="risk-limits-load-error">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <AlertTitle className="text-red-300 text-sm">Your saved limits {SETTINGS_UNREAD}</AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground">
+                The limit editor is hidden so placeholder values cannot be saved over your real limits. Reload the page to try again.
+              </AlertDescription>
+            </Alert>
+          ) : (
           <Form {...limitsForm}>
             <form onSubmit={limitsForm.handleSubmit(handleSaveLimits)}>
               <Card className="border-border/50">
@@ -871,6 +899,7 @@ export default function RiskSettings() {
               </Card>
             </form>
           </Form>
+          )}
         </TabsContent>
 
         {/* ══════════════════════════════════════════════════════════════════
@@ -903,9 +932,9 @@ export default function RiskSettings() {
                     <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">{desc}</p>
                   </div>
                   <Switch
-                    checked={settings?.[key] ?? true}
+                    checked={settings?.[key] ?? false}
                     onCheckedChange={(v) => handleSaveSpecialRules({ [key]: v })}
-                    disabled={updateSettings.isPending}
+                    disabled={updateSettings.isPending || !settings}
                     className="shrink-0 mt-0.5"
                   />
                 </div>
@@ -947,9 +976,9 @@ export default function RiskSettings() {
                     <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">{desc}</p>
                   </div>
                   <Switch
-                    checked={settings?.[key] ?? true}
+                    checked={settings?.[key] ?? false}
                     onCheckedChange={(v) => handleSaveSpecialRules({ [key]: v })}
-                    disabled={updateSettings.isPending}
+                    disabled={updateSettings.isPending || !settings}
                     className="shrink-0 mt-0.5"
                   />
                 </div>
@@ -965,6 +994,7 @@ export default function RiskSettings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1" data-testid="rule-summary">
+              {!settings && <p className="text-xs text-red-300">Special rules {SETTINGS_UNREAD}</p>}
               {settings && (() => {
                 // "applied": a risk check reads it. "reminder": adds warning text
                 // only. "saved": stored, but nothing reads it yet.
@@ -1346,18 +1376,21 @@ export default function RiskSettings() {
                   },
                   {
                     label: "Live Locked",
-                    value: settings?.liveLocked ? "LOCKED" : "OPEN",
+                    value: !settings ? SETTINGS_UNREAD : settings.liveLocked ? "LOCKED" : "OPEN",
                     ok: settings?.liveLocked,
+                    unread: !settings,
                   },
                   {
                     label: "Risk Mode",
-                    value: labelMismatch ? `${currentMode} label · limits differ` : currentMode,
+                    value: !settings ? SETTINGS_UNREAD : labelMismatch ? `${currentMode} label · limits differ` : currentMode,
                     ok: currentMode !== "Aggressive" && !labelMismatch,
+                    unread: !settings,
                   },
-                ].map((row) => (
+                ].map((row: { label: string; value: React.ReactNode; ok?: boolean; unread?: boolean }) => (
                   <div key={row.label} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.label}`}>
                     <span className="text-muted-foreground">{row.label}</span>
-                    <span className={cn("font-mono font-semibold", row.ok ? "text-success" : "text-yellow-400")}>
+                    <span className={cn("font-mono font-semibold",
+                      row.unread ? "text-muted-foreground" : row.ok ? "text-success" : "text-yellow-400")}>
                       {row.value}
                     </span>
                   </div>

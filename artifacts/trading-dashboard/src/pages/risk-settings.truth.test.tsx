@@ -197,3 +197,45 @@ describe("Lot Size Reference table matches the position sizer", () => {
     }
   });
 });
+
+describe("a failed GET /risk/settings is not shown as Balanced defaults", () => {
+  const FAILED = { data: undefined, isLoading: false, isError: true };
+
+  it("no mode badge, no Active card, and the failure is stated", () => {
+    renderPage({ settings: FAILED });
+    expect(screen.queryByText(/Balanced Mode/)).toBeNull();
+    expect(screen.getByTestId("risk-mode-badge").textContent).toMatch(/could not be loaded/i);
+    expect(screen.getByTestId("risk-settings-load-error").textContent).toMatch(/could not be loaded/i);
+    for (const mode of ["Conservative", "Balanced", "Aggressive", "Custom"]) {
+      expect(within(modeCard(mode)).queryByText("Active")).toBeNull();
+      expect(within(modeCard(mode)).queryByText("Currently Active")).toBeNull();
+    }
+  });
+
+  it("the limit editor does not show placeholder limits that a Save would write", () => {
+    renderPage({ tab: "limits", settings: FAILED });
+    expect(screen.queryByText("Save Custom Limits")).toBeNull();
+    expect(screen.getByTestId("risk-limits-load-error").textContent).toMatch(/could not be loaded/i);
+  });
+
+  it("special-rule switches are not rendered as switched on", () => {
+    renderPage({ tab: "rules", settings: FAILED });
+    const switches = screen.getAllByRole("switch");
+    expect(switches.length).toBeGreaterThan(0);
+    for (const sw of switches) {
+      expect(sw.getAttribute("aria-checked")).toBe("false");
+      expect((sw as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(screen.getByTestId("rule-summary").textContent).toMatch(/could not be loaded/i);
+  });
+
+  it("System Status says the lock and mode could not be loaded, not OPEN / Balanced", () => {
+    renderPage({ tab: "emergency", settings: FAILED });
+    for (const label of ["Live Locked", "Risk Mode"]) {
+      const row = screen.getByTestId(`system-status-${label}`);
+      expect(row.textContent).toMatch(/could not be loaded/i);
+      expect(row.textContent).not.toMatch(/OPEN|Balanced/);
+      expect(row.querySelector(".text-success")).toBeNull();
+    }
+  });
+});
