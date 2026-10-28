@@ -101,6 +101,43 @@ describe("failed diagnostic fetch is unknown, not a default safe posture", () =>
     expect(score.liveUnavailableReason).toMatch(/could not be read/i);
   });
 
+  it("an unreadable EA connection (bridgeMode unknown) is not an observed absence, not 'deferred', and earns no points", () => {
+    // appDoctor: getUserActiveConnection() threw → bridgeMode "unknown",
+    // heartbeatPresent false (from !!undefined), heartbeatAgeSeconds null.
+    const unreadBridge: BridgeDiagnosticSummary = {
+      ...connectedBridge, bridgeMode: "unknown", heartbeatPresent: false, heartbeatScope: "your_connection",
+      lastHeartbeatAt: null, heartbeatAgeSeconds: null, paperOnly: true,
+      reason: "The bridge heartbeat status could not be read, so the bridge state is unknown; treating as deferred for safety.",
+    };
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: unreadBridge });
+    expect(ctx.heartbeatPresent).toBeNull();
+    expect(ctx.heartbeatAgeSeconds).toBeNull();
+    const score = computeReadinessScore(ctx, []);
+    const hb = score.sections.find((x) => x.id === "heartbeat")!;
+    expect(hb.score).toBe(0);
+    expect(hb.level).toBe("unavailable");
+    expect(hb.summary).not.toMatch(/deferred|expected/i);
+    expect(hb.summary).toMatch(/could not be read/i);
+    const bridge = score.sections.find((x) => x.id === "mt5-bridge")!;
+    expect(bridge.score).toBe(0);
+    expect(bridge.level).toBe("unavailable");
+    expect(bridge.summary).toMatch(/could not be read/i);
+    const wz = buildSetupWizard(ctx);
+    expect(wz.find((s) => s.id === "wz-heartbeat")!.statusText).not.toMatch(/not expected|deferred/i);
+    expect(wz.find((s) => s.id === "wz-heartbeat")!.statusText).toMatch(/could not be read/i);
+    expect(wz.find((s) => s.id === "wz-mt5")!.statusText).toMatch(/could not be read/i);
+    holder.ctx = ctx;
+    render(<StatusCommandCenter />);
+    expect(runtimeRow("Heartbeat")).toMatch(/^not checked — your EA connection could not be read/);
+  });
+
+  it("a bridge summary that was never read scores the MT5 Bridge section 0, not 5", () => {
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: null, bridgeStatus: "unavailable" });
+    const bridge = computeReadinessScore(ctx, []).sections.find((x) => x.id === "mt5-bridge")!;
+    expect(bridge.score).toBe(0);
+    expect(bridge.level).toBe("unavailable");
+  });
+
   it("Status Command Center shows unknown rows and a fetch-failure disclosure", () => {
     holder.ctx = collectRuntimeContext({ route: "/status-command-center", bridge: null, bridgeStatus: "unavailable" });
     render(<StatusCommandCenter />);

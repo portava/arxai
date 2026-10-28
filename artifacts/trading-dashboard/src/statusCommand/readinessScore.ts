@@ -120,12 +120,15 @@ export function computeReadinessScore(
 
   // 5. MT5 Bridge
   {
+    // An unread bridge (no summary, or the server could not read the EA
+    // connection: bridgeMode "unknown") earns nothing, like the other unread sections.
     const mode = ctx.bridge?.bridgeMode ?? "unknown";
-    const score = mode === "connected" ? 10 : mode === "deferred" ? 7 : mode === "disconnected" ? 3 : 5;
+    const known = mode === "connected" || mode === "deferred" || mode === "disconnected" || mode === "simulator";
+    const score = mode === "connected" ? 10 : mode === "deferred" ? 7 : mode === "disconnected" ? 3 : known ? 5 : 0;
     const level: SectionLevel =
       mode === "connected" ? "ready" :
       mode === "deferred" ? "info" :
-      mode === "disconnected" ? "blocked" : "attention";
+      mode === "disconnected" ? "blocked" : known ? "attention" : "unavailable";
     sections.push({
       id: "mt5-bridge", title: "MT5 Bridge",
       score, max: 10, level,
@@ -133,7 +136,10 @@ export function computeReadinessScore(
         mode === "deferred" ? "Bridge intentionally deferred — ARX runs in simulator mode."
         : mode === "connected" ? "Bridge connected — broker remains read-only by default."
         : mode === "disconnected" ? "Bridge token configured, but no connection."
-        : "Bridge state unknown.",
+        : known ? `Bridge mode: ${mode}.`
+        : !ctx.bridge
+          ? ctx.bridgeStatus === "loading" ? "Bridge summary has not loaded yet." : "Bridge state could not be read (/api/mt5/diagnostic-summary failed)."
+          : "Bridge state could not be read: the server could not read the EA connection, so it is unknown (the server treats it as deferred).",
       evidence: [`bridgeMode=${mode}`],
     });
   }
@@ -149,7 +155,9 @@ export function computeReadinessScore(
       score: present === null ? 0 : fresh ? 10 : present ? 6 : ctx.mt5Deferred ? 7 : 2, max: 10,
       level: present === null ? "unavailable" : fresh ? "ready" : present ? "attention" : ctx.mt5Deferred ? "info" : "blocked",
       summary: present === null
-        ? "Heartbeat status could not be read from the server."
+        ? ctx.bridge?.bridgeMode === "unknown"
+          ? "Heartbeat not checked — the EA connection could not be read from the server."
+          : "Heartbeat status could not be read from the server."
         : fresh
         ? `Fresh heartbeat (${age}s ago).`
         : present ? "Heartbeat seen, but stale."

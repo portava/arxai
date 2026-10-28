@@ -18,6 +18,17 @@ describe("Status Command Center heartbeat row", () => {
   it("an absent summary is 'not checked', not 'absent'", () => {
     expect(heartbeatLine(null)).toBe("not checked — bridge summary unavailable");
   });
+  it("an unreadable EA connection (bridgeMode unknown) is 'not checked', never an observed absence", () => {
+    const line = heartbeatLine({
+      ...base, bridgeMode: "unknown", heartbeatPresent: false, heartbeatAgeSeconds: null, heartbeatScope: "your_connection",
+    });
+    expect(line).toBe("not checked — your EA connection could not be read (as of 14:05:03 UTC)");
+    expect(line).not.toMatch(/^absent|no heartbeat received/);
+  });
+  it("an unreadable platform bridge probe is 'not checked' too", () => {
+    expect(heartbeatLine({ ...base, bridgeMode: "unknown", heartbeatPresent: false, heartbeatAgeSeconds: null, heartbeatScope: "platform" }))
+      .toBe("not checked — the platform bridge status could not be read (as of 14:05:03 UTC)");
+  });
   it("a stale heartbeat reports its last age", () => {
     expect(heartbeatLine({ ...base, heartbeatPresent: false, heartbeatAgeSeconds: 600, heartbeatScope: "your_connection" }))
       .toBe("absent (last 600s old as of 14:05:03 UTC, your EA)");

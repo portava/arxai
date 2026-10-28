@@ -94,7 +94,9 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       title: "Check MT5 bridge status",
       shortExplanation: "The bridge is deferred by default. Even if connected, broker stays read-only until execution is cleared server-side.",
       currentStatus: mode === "connected" ? "complete" : mode === "deferred" ? "info" : "attention",
-      statusText: `Bridge mode: ${mode}`,
+      statusText: mode === "unknown"
+        ? ctx.bridge ? "Bridge state could not be read (the server could not read the EA connection)." : "Bridge state could not be read."
+        : `Bridge mode: ${mode}`,
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain the MT5 bridge status",
       completionCondition: "You know the current bridge mode and what it means.",
@@ -111,7 +113,7 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       shortExplanation: "A recent EA heartbeat is the only proof the bridge is alive.",
       currentStatus: present === null ? "attention" : present ? "complete" : ctx.mt5Deferred ? "info" : "blocked",
       statusText: present === null
-        ? "Heartbeat status could not be read from the server."
+        ? ctx.bridge?.bridgeMode === "unknown" ? "Heartbeat not checked — the EA connection could not be read." : "Heartbeat status could not be read from the server."
         : present ? `Heartbeat present (${ctx.heartbeatAgeSeconds ?? "?"}s ago)` : ctx.mt5Deferred ? "Heartbeat not expected — bridge deferred." : "No recent heartbeat.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Where do I check the heartbeat?",
