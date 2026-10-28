@@ -9389,6 +9389,17 @@ export const RiskAuditBalanceSource = {
   PLACEHOLDER_1000: "PLACEHOLDER_1000",
 } as const;
 
+/**
+ * USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.
+ */
+export type RiskAuditScope =
+  (typeof RiskAuditScope)[keyof typeof RiskAuditScope];
+
+export const RiskAuditScope = {
+  USER: "USER",
+  ALL_USERS: "ALL_USERS",
+} as const;
+
 export interface RiskAudit {
   passed: boolean;
   reasonsBlocked: string[];
@@ -9408,6 +9419,8 @@ export interface RiskAudit {
   measuredFrom?: RiskAuditMeasuredFrom;
   /** The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance. */
   balanceSource?: RiskAuditBalanceSource;
+  /** USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted. */
+  scope?: RiskAuditScope;
 }
 
 export interface PositionSizeResult {

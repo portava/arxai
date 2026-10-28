@@ -90,3 +90,20 @@ describe("risk audit detail", () => {
     expect(screen.getByTestId("risk-audit-detail").textContent).toMatch(/could not be loaded/);
   });
 });
+
+describe("risk audit scope", () => {
+  it("a user-scoped audit says it counted your rows, and the open-trade count is yours", () => {
+    set({ ...BASE, closedTradesMeasured: true, scope: "USER", openTradesCount: 0 });
+    render(<><AuditBanner /><RiskAuditDetail /></>);
+    expect(screen.getByTestId("risk-audit-banner").textContent).toMatch(/your rows in the legacy simulated trades table/);
+    expect(screen.getByText("yours")).toBeTruthy();
+  });
+
+  it("an audit over every user's rows says so instead of passing it off as yours", () => {
+    set({ ...BASE, passed: false, closedTradesMeasured: true, scope: "ALL_USERS", openTradesCount: 3,
+      reasonsBlocked: ["Max open trades reached (3/2)"] });
+    render(<><AuditBanner /><RiskAuditDetail /></>);
+    expect(screen.getByTestId("risk-audit-banner").textContent).toMatch(/every user's rows/);
+    expect(screen.getByText("all users")).toBeTruthy();
+  });
+});

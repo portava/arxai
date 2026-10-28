@@ -18521,6 +18521,10 @@ components:
           type: string
           enum: [PLACEHOLDER_1000]
           description: The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance.
+        scope:
+          type: string
+          enum: [USER, ALL_USERS]
+          description: USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.
 
     PositionSizeResult:
       type: object

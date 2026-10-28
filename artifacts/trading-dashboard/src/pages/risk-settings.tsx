@@ -160,9 +160,11 @@ function StatRow({ label, value, sub }: { label: string; value: React.ReactNode;
  * What the legacy risk audit reads. Loss percentages and the losing streak
  * are only real when the server says it measured closed rows.
  */
-const RISK_AUDIT_SOURCE_NOTE =
-  "Counted from the legacy simulated trades table, which takes no new rows: trades you place now are not in it. " +
-  "Loss percentages are of a placeholder $1,000 balance, not your account. Shown for review only; orders are checked separately when placed.";
+function riskAuditSourceNote(scope: string | undefined): string {
+  const whose = scope === "USER" ? "your rows in" : scope === "ALL_USERS" ? "every user's rows in" : "rows in";
+  return `Counted from ${whose} the legacy simulated trades table, which takes no new rows: trades you place now are not in it. ` +
+    "Loss percentages are of a placeholder $1,000 balance, not your account. Shown for review only; orders are checked separately when placed.";
+}
 
 type AuditVerdict = { tone: "pass" | "unmeasured" | "tripped"; headline: string };
 
@@ -228,7 +230,7 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
             ⚠ {audit.warnings[0]}
           </p>
         )}
-        <p className="text-xs text-muted-foreground mt-0.5">{RISK_AUDIT_SOURCE_NOTE}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{riskAuditSourceNote(audit.scope)}</p>
       </div>
       <div className="hidden md:flex gap-6 shrink-0 text-center">
         <div>
@@ -1348,7 +1350,7 @@ export function RiskAuditDetail() {
           <CardTitle className="text-base flex items-center gap-2">
             <Activity size={16} /> Live Risk Audit
           </CardTitle>
-          <CardDescription className="text-xs">{RISK_AUDIT_SOURCE_NOTE} Refreshes every 30s.</CardDescription>
+          <CardDescription className="text-xs">{riskAuditSourceNote(audit.scope)} Refreshes every 30s.</CardDescription>
         </div>
         <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Refresh</Button>
       </CardHeader>
@@ -1362,7 +1364,7 @@ export function RiskAuditDetail() {
             <StatRow label="Daily Loss Used" value={measured ? `${audit.dailyLossUsed.toFixed(2)}%` : notMeasured} />
             <StatRow label="Weekly Loss Used" value={measured ? `${audit.weeklyLossUsed.toFixed(2)}%` : notMeasured} />
             <StatRow label="Trades Remaining Today" value={audit.tradesRemaining} />
-            <StatRow label="Open Trades" value={audit.openTradesCount} />
+            <StatRow label="Open Trades" value={audit.openTradesCount} sub={audit.scope === "USER" ? "yours" : audit.scope === "ALL_USERS" ? "all users" : "scope not reported"} />
             <StatRow label="Current Losing Streak" value={measured ? audit.losingStreak : notMeasured} />
             <StatRow
               label="Cooldown"

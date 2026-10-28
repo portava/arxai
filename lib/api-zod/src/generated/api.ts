@@ -4296,6 +4296,12 @@ export const GetRiskAuditResponse = zod.object({
     .describe(
       "The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance.",
     ),
+  scope: zod
+    .enum(["USER", "ALL_USERS"])
+    .optional()
+    .describe(
+      "USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.",
+    ),
 });
 
 /**

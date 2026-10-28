@@ -137,3 +137,44 @@ test("the legacy /mt5/execute check keeps its old filter and says it measured no
   assert.equal(a.closedTradesMeasured, false, "the old status filter matches no row");
   assert.equal(a.dailyLossUsed, 0);
 });
+
+// ── User scope ──────────────────────────────────────────────────────────────
+// Before: open trades, trades today, losses and the streak counted every
+// user's rows, so another trader's legacy OPEN rows showed "Max open trades
+// reached (3/2)" to a trader with no positions.
+
+function openRow(id: number, userId: number | null): Row {
+  return { id, userId, status: "OPEN", pnl: null, pnlStatus: null, closedAt: null, createdAt: new Date(Date.now() - 5 * 60_000) };
+}
+
+test("GET /risk/audit counts only the caller's rows: another user's open trades do not block this trader", async () => {
+  rows = [openRow(10, 99), openRow(11, 99), openRow(12, 99), closedLoss(13, 99, -500, 5)];
+  const res = await fetch(`${base}/api/risk/audit`);
+  assert.equal(res.status, 200);
+  const a = await res.json() as {
+    passed: boolean; openTradesCount: number; tradesRemaining: number; dailyLossUsed: number; losingStreak: number;
+    reasonsBlocked: string[]; scope: string;
+  };
+  assert.equal(a.scope, "USER");
+  assert.equal(a.openTradesCount, 0, "user 1 has no open rows");
+  assert.equal(a.tradesRemaining, SETTINGS.maxTradesPerDay, "other users' rows created today do not use this trader's cap");
+  assert.equal(a.dailyLossUsed, 0);
+  assert.equal(a.losingStreak, 0);
+  assert.ok(!a.reasonsBlocked.some((r) => /Max open trades/.test(r)), a.reasonsBlocked.join(" | "));
+  assert.equal(a.passed, true);
+});
+
+test("the caller's own rows still count", async () => {
+  rows = [openRow(10, 1), openRow(11, 1), openRow(12, 99)];
+  const a = await computeRiskAudit(1000, SETTINGS, { countClosedRows: true, userId: 1 });
+  assert.equal(a.openTradesCount, 2);
+  assert.equal(a.passed, false, "2/2 open trades is the limit");
+  assert.equal(a.scope, "USER");
+});
+
+test("the legacy /mt5/execute check still counts every user's rows, and says so", async () => {
+  rows = [openRow(10, 99), openRow(11, 99), openRow(12, 99)];
+  const a = await computeRiskAudit(1000, SETTINGS);
+  assert.equal(a.scope, "ALL_USERS");
+  assert.equal(a.openTradesCount, 3);
+});

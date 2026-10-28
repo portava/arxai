@@ -7,6 +7,7 @@
  */
 import type { RiskAuditBalanceSource } from "./riskAuditBalanceSource";
 import type { RiskAuditMeasuredFrom } from "./riskAuditMeasuredFrom";
+import type { RiskAuditScope } from "./riskAuditScope";
 
 export interface RiskAudit {
   passed: boolean;
@@ -27,4 +28,6 @@ export interface RiskAudit {
   measuredFrom?: RiskAuditMeasuredFrom;
   /** The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance. */
   balanceSource?: RiskAuditBalanceSource;
+  /** USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted. */
+  scope?: RiskAuditScope;
 }

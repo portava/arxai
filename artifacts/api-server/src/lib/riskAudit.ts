@@ -40,6 +40,13 @@ export interface RiskAuditOptions {
    * counts is an execution decision, left as it was.
    */
   countClosedRows?: boolean;
+  /**
+   * Count only this trader's rows. Without it every user's rows are counted
+   * (open trades, trades today, losses, streak), as the legacy /mt5/execute
+   * check still does: scoping that gate would loosen it, an execution
+   * decision left as it was. The /risk/audit view sets it.
+   */
+  userId?: number;
 }
 
 export interface RiskAuditResult {
@@ -63,6 +70,8 @@ export interface RiskAuditResult {
   closedTradesMeasured: boolean;
   /** Where the counts come from: the legacy simulated trades table (no new rows since /execute-trade was retired). */
   measuredFrom: "LEGACY_TRADES_TABLE";
+  /** USER: only the trader's own rows were counted. ALL_USERS: every user's rows. */
+  scope: "USER" | "ALL_USERS";
 }
 
 export async function computeRiskAudit(
@@ -76,6 +85,9 @@ export async function computeRiskAudit(
   const isClosed: SQL = closedTradesMeasured
     ? inArray(tradesTable.status, [...LEGACY_CLOSED_TRADE_STATUSES])
     : eq(tradesTable.status, "CLOSED");
+  const scoped = opts.userId != null;
+  // and() of one condition is that condition; with a user it adds user_id = ?.
+  const own = (cond: SQL): SQL => (scoped ? and(cond, eq(tradesTable.userId, opts.userId!))! : cond);
 
   // The Risk Governor's trading day (owner decision 9): UTC midnight, not
   // server-local midnight. The trade-count source here is still the legacy
@@ -90,7 +102,7 @@ export async function computeRiskAudit(
   const todayClosed = await db
     .select()
     .from(tradesTable)
-    .where(and(gte(tradesTable.closedAt, todayStart), isClosed));
+    .where(own(and(gte(tradesTable.closedAt, todayStart), isClosed)!));
 
   // A row whose P/L is UNKNOWN is left out of every P/L sum (trades schema).
   const knownPnl = (t: { pnlStatus: string | null }) => t.pnlStatus !== "UNKNOWN";
@@ -105,7 +117,7 @@ export async function computeRiskAudit(
   const weekClosed = await db
     .select()
     .from(tradesTable)
-    .where(and(gte(tradesTable.closedAt, weekStart), isClosed));
+    .where(own(and(gte(tradesTable.closedAt, weekStart), isClosed)!));
 
   const weeklyPnl = weekClosed.filter(knownPnl).reduce((s, t) => s + (t.pnl ?? 0), 0);
   const weeklyLossUsed = weeklyPnl < 0 ? (Math.abs(weeklyPnl) / accountBalance) * 100 : 0;
@@ -114,21 +126,21 @@ export async function computeRiskAudit(
   const openTrades = await db
     .select()
     .from(tradesTable)
-    .where(eq(tradesTable.status, "OPEN"));
+    .where(own(eq(tradesTable.status, "OPEN")));
   const openTradesCount = openTrades.length;
 
   // ── Today's total trades ──────────────────────────────────────────────────
   const todayAll = await db
     .select()
     .from(tradesTable)
-    .where(gte(tradesTable.createdAt, todayStart));
+    .where(own(gte(tradesTable.createdAt, todayStart)));
   const tradesRemaining = Math.max(0, input.maxTradesPerDay - todayAll.length);
 
   // ── Losing streak (last N closed) ─────────────────────────────────────────
   const recentClosed = await db
     .select()
     .from(tradesTable)
-    .where(isClosed)
+    .where(own(isClosed))
     .orderBy(sql`${tradesTable.closedAt} DESC`)
     .limit(input.stopAfterLosingStreak + 2);
 
@@ -221,5 +233,6 @@ export async function computeRiskAudit(
     cooldownActive,
     closedTradesMeasured,
     measuredFrom: "LEGACY_TRADES_TABLE",
+    scope: scoped ? "USER" : "ALL_USERS",
   };
 }

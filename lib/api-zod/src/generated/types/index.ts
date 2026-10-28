@@ -1457,6 +1457,7 @@ export * from "./richJournalEntryList";
 export * from "./riskAudit";
 export * from "./riskAuditBalanceSource";
 export * from "./riskAuditMeasuredFrom";
+export * from "./riskAuditScope";
 export * from "./riskLock";
 export * from "./riskLockInput";
 export * from "./riskLockResult";
