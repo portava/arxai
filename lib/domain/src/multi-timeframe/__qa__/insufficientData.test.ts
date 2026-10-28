@@ -14,7 +14,7 @@ import {
   detectTrend,
   MIN_CANDLES_FOR_TREND,
   type CandleLike,
-} from "../index";
+} from "../index.js";
 
 function series(n: number, start: number, step: number): CandleLike[] {
   const out: CandleLike[] = [];

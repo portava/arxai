@@ -11,7 +11,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scoreNewsRisk, type EconomicEventInput } from "../index";
+import { scoreNewsRisk, type EconomicEventInput } from "../index.js";
 
 const NOW = Date.parse("2026-10-28T12:00:00.000Z");
 
