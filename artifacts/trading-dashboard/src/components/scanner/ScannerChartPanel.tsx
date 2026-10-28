@@ -408,6 +408,53 @@ type RubyReadView = {
   consensus?: { headline?: string; note?: string } | null;
 };
 
+// Outcome of POST /api/me/chart/decision-receipt. The route fails open: a
+// storage error answers 200 {created:false, receipt:null}, so HTTP 200 alone
+// is not a save — only created:true is.
+export type DecisionReceiptSaveResult =
+  | { kind: "saved" }
+  | { kind: "not_saved" }
+  | { kind: "failed"; detail: string };
+
+export async function saveDecisionReceipt(req: { symbol: string; timeframe: string }): Promise<DecisionReceiptSaveResult> {
+  try {
+    const r = await fetch(u("/api/me/chart/decision-receipt"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        symbol: req.symbol,
+        timeframe: req.timeframe,
+        intent: "analyze",
+        source: "chart_read",
+      }),
+    });
+    if (!r.ok) return { kind: "failed", detail: `HTTP ${r.status}` };
+    const body = (await r.json().catch(() => null)) as { created?: unknown } | null;
+    if (body?.created === true) return { kind: "saved" };
+    if (body?.created === false) return { kind: "not_saved" };
+    return { kind: "failed", detail: "the server's reply did not say whether a receipt was created" };
+  } catch (e) {
+    return { kind: "failed", detail: e instanceof Error ? e.message : "network error" };
+  }
+}
+
+export function decisionReceiptToast(
+  result: DecisionReceiptSaveResult, symbol: string, timeframe: string,
+): { title: string; description: string; variant?: "destructive" } {
+  if (result.kind === "saved") {
+    return { title: "Decision receipt saved", description: `An immutable read of ${symbol} (${timeframe}) was recorded.` };
+  }
+  if (result.kind === "not_saved") {
+    return {
+      title: "Decision receipt not saved",
+      description: `The server could not store a receipt for ${symbol} (${timeframe}) — nothing was recorded. Try again.`,
+      variant: "destructive",
+    };
+  }
+  return { title: "Could not save receipt", description: result.detail, variant: "destructive" };
+}
+
 /** A read belongs to one committed chart context and one request. A provider
  * may finish after abort, so transport cancellation never replaces ownership. */
 export function useScannerChartRead(
@@ -2408,31 +2455,12 @@ export function ScannerChartPanel() {
 
   // Save an immutable decision receipt for the current symbol/timeframe (Task 5
   // surface). Read-only memory write — never trades.
+  // Only a server-reported created:true is announced as saved.
   const menuShowReceipt = async () => {
     setReceiptBusy(true);
     try {
-      const r = await fetch(u("/api/me/chart/decision-receipt"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          symbol,
-          timeframe: toAnnotationTf(timeframe),
-          intent: "analyze",
-          source: "chart_read",
-        }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      toast({
-        title: "Decision receipt saved",
-        description: `An immutable read of ${symbol} (${timeframe}) was recorded.`,
-      });
-    } catch (e) {
-      toast({
-        title: "Could not save receipt",
-        description: e instanceof Error ? e.message : "network error",
-        variant: "destructive",
-      });
+      const result = await saveDecisionReceipt({ symbol, timeframe: toAnnotationTf(timeframe) });
+      toast(decisionReceiptToast(result, symbol, timeframe));
     } finally {
       setReceiptBusy(false);
     }
