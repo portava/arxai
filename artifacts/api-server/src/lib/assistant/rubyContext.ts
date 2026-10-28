@@ -237,7 +237,11 @@ async function fetchCalendar(): Promise<CalCacheVal> {
     // share ONE provider path. The market-provider chain has no TE wiring and
     // returns connected:false for every calendar call regardless of key config.
     const res = await getEconomicCalendar(""); // empty = all symbols (briefing-level)
-    if (res.connected && res.events.length > 0) {
+    // A connected calendar that lists no events WAS checked: it stays
+    // connected (next = null), never reported as "not connected".
+    if (res.connected && res.events.length === 0) {
+      val = { connected: true, next: null };
+    } else if (res.connected) {
       const now = Date.now();
       // RawCalendarEvent uses `impact` and `eventTimeIso` (not `importance`/`whenIso`).
       const upcoming = res.events
