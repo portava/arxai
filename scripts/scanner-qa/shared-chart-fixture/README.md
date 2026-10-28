@@ -94,3 +94,33 @@ node --check scripts/scanner-qa/shared-chart-fixture/build.mjs
 node --check scripts/scanner-qa/shared-chart-setup.js
 node --check scripts/scanner-qa/shared-chart-acceptance.js
 ```
+
+## Secondary-page acceptance (separate result)
+
+The exact static SPA route list also includes `/live-chart`, `/live-manual`,
+`/live-ai-assist` and `/live-ai-auto-test`; no general navigation fallback or API
+proxy is added. After the same setup, run
+`scripts/scanner-qa/shared-chart-pages-acceptance.js` in its own fresh session.
+This loads every real page, checks the executing build, obtains fresh page
+response evidence, and verifies full canonical/displayed candles after market
+and interval changes. It records desktop/mobile chart screenshots and checks
+the mobile disclosure without touching order controls.
+
+It only clicks chart controls plus AI Assist's GET-only Analyze action. The
+M5 chart must remain separate from the explicitly labelled M15 AI read, whose
+synthetic WAIT response must expose no approval button. Manual review remains
+unopened; audit-loop Start is never clicked and the loop stays stopped. Review
+and Start controls may be enabled by the existing page semantics; this does not
+mean live permission is granted. This test does **not** execute server risk
+gates, test authorization for other roles, or prove that every control is disabled.
+Tester intent submissions count as forbidden write attempts as well as live
+orders. All existing request barriers remain in effect across navigation.
+
+The four-page result is independent from the Scanner result. Prepared scripts,
+helper-test success and a successful browser CLI exit do not mean these pages
+passed; inspect `passed`, every page record, failures, screenshots and network.
+
+```sh
+node --test scripts/scanner-qa/shared-chart-pages-acceptance.test.mjs
+node --check scripts/scanner-qa/shared-chart-pages-acceptance.js
+```
