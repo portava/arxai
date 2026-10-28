@@ -19,7 +19,10 @@ interface Explanation {
   recommendedFixes: string[];
   safeNextStep: string;
   links: { label: string; href: string }[];
-  liveTradingStatus: "DISABLED";
+  /** Legacy constant: describes the explainer (it never enables live trading), not the account. Not shown. */
+  liveTradingStatus?: string;
+  /** The account's live-trading posture, read by the server from the same check as the Trading Permission card. */
+  livePosture?: { state?: string; plainEnglish?: string } | null;
   generatedAt: string;
 }
 
@@ -28,13 +31,23 @@ export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as Bloc
   const [action, setAction] = useState<BlockedAction>(defaultAction);
   const [exp, setExp] = useState<Explanation | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function load(a: BlockedAction) {
-    setLoading(true); setAction(a);
-    const r = await fetch(`${BASE}/api/help/why-blocked`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ blockedAction: a }) });
-    const d = await r.json();
-    setExp(d.explanation ?? null);
-    setLoading(false);
+    setLoading(true); setAction(a); setLoadError(null);
+    try {
+      const r = await fetch(`${BASE}/api/help/why-blocked`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ blockedAction: a }) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      if (!d?.explanation) throw new Error("the response had no explanation");
+      setExp(d.explanation);
+    } catch (e) {
+      // A failed request is "could not be loaded", never an empty explanation.
+      setExp(null);
+      setLoadError(e instanceof Error ? e.message : "unknown error");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openWith(a: BlockedAction) { setOpen(true); load(a); }
@@ -48,7 +61,7 @@ export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as Bloc
         <SheetContent className="overflow-y-auto w-full sm:max-w-md">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" />Why am I blocked?</SheetTitle>
-            <SheetDescription>Plain-English safety explanation. Live trading remains DISABLED.</SheetDescription>
+            <SheetDescription>Plain-English explanation of what is blocking an action. This page cannot change your account's live-trading status.</SheetDescription>
           </SheetHeader>
           <div className="mt-3 flex flex-wrap gap-1">
             {(["START_PAPER_SESSION","START_AUTOPILOT","OPEN_PAPER_TRADE","ENABLE_LIVE_TRADING","USE_BROKER_EXECUTION"] as BlockedAction[]).map(a => {
@@ -60,6 +73,11 @@ export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as Bloc
           </div>
           <div className="mt-4 space-y-3">
             {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
+            {!loading && loadError && (
+              <p className="text-xs text-amber-500" data-testid="why-blocked-load-error">
+                This explanation could not be loaded ({loadError}), so why this action is blocked is unknown.
+              </p>
+            )}
             {!loading && exp && (
               <>
                 <Alert variant={exp.highestSeverity === "CRITICAL" || exp.highestSeverity === "BLOCK" ? "destructive" : "default"}>
@@ -87,7 +105,10 @@ export function WhyBlockedDrawer({ defaultAction = "START_PAPER_SESSION" as Bloc
                   <summary className="cursor-pointer">Technical detail</summary>
                   <ul className="pl-4 mt-1 space-y-0.5 font-mono">{exp.technicalReasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
                 </details>
-                <p className="text-[10px] italic text-muted-foreground">explanation_id {exp.explanation_id} · {new Date(exp.generatedAt).toLocaleString()} · liveTradingStatus=DISABLED</p>
+                <p className="text-[11px] text-muted-foreground" data-testid="why-blocked-live-posture">
+                  {exp.livePosture?.plainEnglish || "This explanation did not report your account's live-trading status. Check the Trading Permission card on your dashboard."}
+                </p>
+                <p className="text-[10px] italic text-muted-foreground">explanation_id {exp.explanation_id} · {new Date(exp.generatedAt).toLocaleString()}</p>
               </>
             )}
           </div>
