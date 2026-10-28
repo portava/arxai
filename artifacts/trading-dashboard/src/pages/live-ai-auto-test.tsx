@@ -45,9 +45,11 @@ type LastResult = {
   reason: string | null;
 };
 
+// Only maxLotSize / maxLossPerTrade / stop-loss are checked by the server
+// (routes/liveIntent.ts). The per-session cap and cooldown are this page's own
+// loop limits and are labelled as such.
 const TESTER_CAPS = {
   maxAiLiveIntentPerSession: 1,
-  maxAiLiveIntentPerDay: 3,
   maxLotSize: 0.01,
   maxOpenPosition: 1,
   maxLossPerTrade: 5,
@@ -184,6 +186,12 @@ export default function LiveAiAutoTestPage() {
   }, [running, paused, cooldownUntil, intentsThisSession]);
 
   const cooldownRemaining = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 60000)) : 0;
+  // MT5 state as last reported by the server (submit result first, then
+  // /permission/status). Never default an unreported state to "false".
+  const mt5Reported: boolean | null = typeof lastResult?.mt5Connected === "boolean"
+    ? lastResult.mt5Connected
+    : typeof perm?.testerAccess?.mt5Connected === "boolean" ? perm.testerAccess.mt5Connected : null;
+  const mt5ConnectedLabel = mt5Reported == null ? "unknown" : String(mt5Reported);
 
   return (
     <div className="container mx-auto py-4 px-3 md:px-6 space-y-4 max-w-[1600px]">
@@ -212,12 +220,21 @@ export default function LiveAiAutoTestPage() {
         <CardContent className="pt-4 flex items-start gap-2 text-sm">
           <ShieldAlert className="w-4 h-4 mt-0.5 text-red-500" />
           <div>
-            <p className="font-semibold text-red-300">Tester caps (server-enforced)</p>
-            <ul className="text-xs text-muted-foreground list-disc pl-5 mt-1">
-              <li>max 1 test intent per session, max 3 per day</li>
-              <li>max lot 0.01 · max loss/intent $5 · stop-loss required</li>
-              <li>15-minute cooldown between intents</li>
-            </ul>
+            <p className="font-semibold text-red-300">Tester caps</p>
+            <div className="text-xs text-muted-foreground mt-1" data-testid="caps-server">
+              <span className="font-medium text-foreground">Checked by the server on every submit (server-enforced):</span>
+              <ul className="list-disc pl-5">
+                <li>max lot 0.01 · max loss/intent $5 · stop-loss required</li>
+              </ul>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1" data-testid="caps-browser">
+              <span className="font-medium text-foreground">Applied by this page only (not enforced by the server):</span>
+              <ul className="list-disc pl-5">
+                <li>max 1 test intent per session (the loop stops itself; resets on reload)</li>
+                <li>15-minute cooldown between intents (held in this browser tab only)</li>
+              </ul>
+              <p className="mt-0.5">A reload, a second tab or a direct API call is not limited by these. No per-day limit is enforced anywhere.</p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -248,7 +265,7 @@ export default function LiveAiAutoTestPage() {
                   {lastResult == null ? "—" : lastResult.riskCheckPassed === true ? "passed" : lastResult.riskCheckPassed === false ? "failed" : "unknown"}
                 </div>
               </div>
-              <div className="rounded border border-border p-2"><div className="text-muted-foreground">MT5 connected</div><div className="font-mono">{String(lastResult?.mt5Connected ?? perm?.testerAccess?.mt5Connected ?? false)}</div></div>
+              <div className="rounded border border-border p-2"><div className="text-muted-foreground">MT5 connected</div><div className="font-mono" data-testid="mt5-connected-state">{mt5ConnectedLabel}</div></div>
             </div>
             {defStatus?.deferred && (
               <div className="text-[11px] text-amber-300">{defStatus.bannerText}</div>
