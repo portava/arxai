@@ -166,3 +166,18 @@ describe("Local time", () => {
     expect(screen.getByTestId("session-card-local-time").textContent).toBe(`Your local time: ${fmt()}`);
   });
 });
+
+describe("Percent scales (server scores are already 0-100)", () => {
+  it("trap probability, heat-source confidence and fakeout risk are not multiplied by 100 again", () => {
+    const read = makeRead({
+      trapProbability: 45,
+      heatSource: { primary: "session_open", primaryConfidence: 70, backup: "trend_continuation", backupConfidence: 40, explanation: "" },
+    }, { fakeoutRisk: 40 });
+    const { container } = render(<NowTab data={read} isLoading={false} symbol="EURUSD" />);
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/\d{3,}%/);
+    expect(text).toContain("45%");
+    expect(text).toContain("70%");
+    expect(text).toContain("40%");
+  });
+});
