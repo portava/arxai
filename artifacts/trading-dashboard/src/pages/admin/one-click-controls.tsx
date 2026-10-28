@@ -126,10 +126,25 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
         </Alert>
       )}
 
-      {!loading && users.length === 0 && !err && (
+      {!loading && users.length === 0 && !err && data && (
         <Card>
-          <CardContent className="p-6 text-center text-muted-foreground text-sm">
-            No users in the master live access table yet.
+          <CardContent className="p-6 text-center text-muted-foreground text-sm" data-testid="text-one-click-empty">
+            {data.isSharedMode === false ? (
+              <>
+                No users are listed because account routing is not
+                SHARED_MASTER_MT5 — each user trades through their own MT5
+                bridge, so there are no shared-bridge users to control here.
+                This says nothing about how many users are in the master live
+                access table.
+              </>
+            ) : (
+              <>
+                No shared-bridge users. This list shows only users in the master
+                live access table who have no MT5 bridge of their own registered
+                (a revoked bridge still counts as their own). Either that table
+                is empty or every user in it has a bridge of their own.
+              </>
+            )}
           </CardContent>
         </Card>
       )}
