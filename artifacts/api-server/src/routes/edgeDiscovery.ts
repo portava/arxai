@@ -158,6 +158,32 @@ function summarize(name: string, status: string, s: ReturnType<typeof computeSta
   return lines.join(" ");
 }
 
+// ── Behaviour basis ─────────────────────────────────────────────────────────
+// SLICE_DEBRIEFS: discipline/emotional averaged over debriefs linked to the
+//   slice's own trades (summary names the count).
+// NOT_MEASURED: no debrief is linked to a trade in the slice; stored 0s are
+//   placeholders.
+// ACCOUNT_WIDE_LEGACY: a report generated before per-slice scoring, whose
+//   numbers were averaged over every debrief the user has (or 0 with none).
+type BehaviourBasis = "SLICE_DEBRIEFS" | "NOT_MEASURED" | "ACCOUNT_WIDE_LEGACY";
+const BEHAVIOUR_NOT_MEASURED = "BEHAVIOUR_NOT_MEASURED";
+const BEHAVIOUR_NOT_MEASURED_MESSAGE =
+  "No post-trade debrief is linked to a trade in this slice, so discipline and emotional scores were not measured. The stored 0s are placeholders, not scores.";
+const BEHAVIOUR_SLICE_RE = /post-trade debriefs? on trades in this slice/;
+function behaviourSentence(linked: number): string {
+  return linked > 0
+    ? `Behaviour scores come from ${linked} post-trade debrief${linked === 1 ? "" : "s"} on trades in this slice; execution is not measured by debriefs.`
+    : "Behaviour scores: not measured — no post-trade debrief is linked to a trade in this slice.";
+}
+function behaviourBasisOf(
+  r: { aiSummary: string },
+  ws: ReadonlyArray<{ warningType: string }>,
+): BehaviourBasis {
+  if (ws.some((w) => w.warningType === BEHAVIOUR_NOT_MEASURED) || /Behaviour scores: not measured/.test(r.aiSummary)) return "NOT_MEASURED";
+  if (BEHAVIOUR_SLICE_RE.test(r.aiSummary)) return "SLICE_DEBRIEFS";
+  return "ACCOUNT_WIDE_LEGACY";
+}
+
 // ── Source loader (READ-ONLY) ──────────────────────────────────────────────
 async function loadTrades(userId: number): Promise<TradeLike[]> {
   const [journals, papers, debriefs] = await Promise.all([
@@ -217,15 +243,16 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
       groups.set(k, g);
     }
 
-    // Behavior overlays from debriefs (averages over the union of trade ids in
-    // the buckets that came from PAPER trades; we approximate by all debriefs).
+    // Behavior overlays come from the debriefs linked to THIS slice's trades
+    // (debriefs key on paper_orders.id; journal rows have none). A slice with
+    // no linked debrief is "not measured": the columns are NOT NULL, so they
+    // hold 0 as a placeholder, and a BEHAVIOUR_NOT_MEASURED warning plus the
+    // summary say so. There is no execution measure in a debrief, so
+    // executionScoreAvg is never derived (it stays 0, read as not measured).
     const debriefs = await db.select().from(postTradeDebriefsTable)
       .where(eq(postTradeDebriefsTable.userId, userId)).limit(2000);
-    const followed = debriefs.filter((d) => d.followedPlan === 1).length;
-    const calmish  = debriefs.filter((d) => ["CALM","RELIEVED","NEUTRAL"].includes(d.traderEmotionAfter ?? "")).length;
-    const disciplineAvg = debriefs.length ? Math.round((followed / debriefs.length) * 100) : 0;
-    const emotionalAvg  = debriefs.length ? Math.round((calmish  / debriefs.length) * 100) : 0;
-    const executionAvg  = Math.round((disciplineAvg + emotionalAvg) / 2);
+    const debriefByPaperId = new Map<number, (typeof debriefs)[number]>();
+    for (const d of debriefs) debriefByPaperId.set(d.tradeId, d);
 
     // Build reports, persist, and persist per-report warnings.
     const created: typeof edgeDiscoveryReportsTable.$inferSelect[] = [];
@@ -234,7 +261,17 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
       if (stats.sampleSize === 0) continue;
       const status = classifyStatus(stats);
       const conf   = confidence(stats, status);
-      const summary = summarize(name, status, stats);
+      const linked = bucket.trades
+        .filter((t) => t.source === "PAPER")
+        .map((t) => debriefByPaperId.get(t.id))
+        .filter((d): d is (typeof debriefs)[number] => d != null);
+      const measured = linked.length > 0;
+      const followed = linked.filter((d) => d.followedPlan === 1).length;
+      const calmish  = linked.filter((d) => ["CALM","RELIEVED","NEUTRAL"].includes(d.traderEmotionAfter ?? "")).length;
+      const disciplineAvg = measured ? Math.round((followed / linked.length) * 100) : 0;
+      const emotionalAvg  = measured ? Math.round((calmish  / linked.length) * 100) : 0;
+      const executionAvg  = 0;
+      const summary = `${summarize(name, status, stats)} ${behaviourSentence(linked.length)}`;
       const ins = await db.insert(edgeDiscoveryReportsTable).values({
         userId,
         edgeName:  `${b.groupBy}=${name}`,
@@ -252,6 +289,7 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
       const rep = ins[0]!;
       created.push(rep);
       const ws = warnings(bucket, stats);
+      if (!measured) ws.push({ warningType: BEHAVIOUR_NOT_MEASURED, severity: "INFO", message: BEHAVIOUR_NOT_MEASURED_MESSAGE });
       for (const w of ws) {
         await db.insert(edgeWarningsTable).values({
           userId,
@@ -264,7 +302,10 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
           profitFactor: stats.profitFactor, expectancy: stats.expectancy });
     }
 
-    ok(res, { reports: created, generated: created.length, groupBy: b.groupBy });
+    ok(res, {
+      reports: created.map((r) => ({ ...r, behaviourBasis: behaviourBasisOf(r, []) })),
+      generated: created.length, groupBy: b.groupBy,
+    });
   } catch (err) {
     if (err instanceof z.ZodError) { fail(res, 400, "Invalid", { issues: err.issues }); return; }
     req.log.error({ err: String(err) }, "POST /edge/reports failed");
@@ -292,7 +333,7 @@ router.get("/edge/reports/:id", requireUser, async (req, res): Promise<void> => 
   if (!r) { fail(res, 404, "Not found"); return; }
   const ws = await db.select().from(edgeWarningsTable)
     .where(and(eq(edgeWarningsTable.edgeReportId, id), eq(edgeWarningsTable.userId, userId)));
-  ok(res, { report: r, warnings: ws });
+  ok(res, { report: r, warnings: ws, behaviourBasis: behaviourBasisOf(r, ws) });
 });
 
 // ── GET /edge/strongest ────────────────────────────────────────────────────

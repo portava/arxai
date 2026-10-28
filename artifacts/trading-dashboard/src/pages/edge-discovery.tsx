@@ -4,7 +4,7 @@ import {
   StrongestEdgeCard, WeakestAreaCard, EdgeBreakdownTable, EdgeWarningPanel,
   AiEdgeSummaryCard,
 } from "@/components/edgeDiscovery";
-import type { EdgeReport, EdgeWarning } from "@/components/edgeDiscovery";
+import type { EdgeBehaviourBasis, EdgeReport, EdgeWarning } from "@/components/edgeDiscovery";
 
 const GROUPS = ["symbol", "strategy", "emotion", "direction"] as const;
 
@@ -25,7 +25,7 @@ export default function EdgeDiscoveryPage() {
     queryKey: ["edge-weakest"],
     queryFn: async () => (await fetch("/api/edge/weakest")).json(),
   });
-  const detail = useQuery<{ report: EdgeReport; warnings: EdgeWarning[] }>({
+  const detail = useQuery<{ report: EdgeReport; warnings: EdgeWarning[]; behaviourBasis?: EdgeBehaviourBasis }>({
     queryKey: ["edge-detail", selectedId],
     enabled: selectedId != null,
     queryFn: async () => (await fetch(`/api/edge/reports/${selectedId}`)).json(),
@@ -112,7 +112,7 @@ export default function EdgeDiscoveryPage() {
 
       {detail.data && (
         <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <AiEdgeSummaryCard report={detail.data.report} />
+          <AiEdgeSummaryCard report={detail.data.report} behaviourBasis={detail.data.behaviourBasis} />
           <div>
             <h3 className="mb-1 text-sm font-semibold text-slate-200">Warnings</h3>
             <EdgeWarningPanel warnings={detail.data.warnings} />

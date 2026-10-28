@@ -12334,6 +12334,12 @@ export const GetEdgeReportsResponse = zod.object({
         ]),
         aiSummary: zod.string(),
         createdAt: zod.string(),
+        behaviourBasis: zod
+          .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+          .optional()
+          .describe(
+            "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+          ),
       }),
     )
     .optional(),
@@ -12375,6 +12381,12 @@ export const GenerateEdgeReportResponse = zod.object({
         ]),
         aiSummary: zod.string(),
         createdAt: zod.string(),
+        behaviourBasis: zod
+          .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+          .optional()
+          .describe(
+            "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+          ),
       }),
     )
     .optional(),
@@ -12415,6 +12427,12 @@ export const GetEdgeReportByIdResponse = zod.object({
       ]),
       aiSummary: zod.string(),
       createdAt: zod.string(),
+      behaviourBasis: zod
+        .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+        .optional()
+        .describe(
+          "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+        ),
     })
     .optional(),
   warnings: zod
@@ -12430,6 +12448,12 @@ export const GetEdgeReportByIdResponse = zod.object({
       }),
     )
     .optional(),
+  behaviourBasis: zod
+    .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+    .optional()
+    .describe(
+      "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+    ),
 });
 
 export const GetStrongestEdgesResponse = zod.object({
@@ -12462,6 +12486,12 @@ export const GetStrongestEdgesResponse = zod.object({
         ]),
         aiSummary: zod.string(),
         createdAt: zod.string(),
+        behaviourBasis: zod
+          .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+          .optional()
+          .describe(
+            "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+          ),
       }),
     )
     .optional(),
@@ -12497,6 +12527,12 @@ export const GetWeakestEdgesResponse = zod.object({
         ]),
         aiSummary: zod.string(),
         createdAt: zod.string(),
+        behaviourBasis: zod
+          .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+          .optional()
+          .describe(
+            "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+          ),
       }),
     )
     .optional(),
