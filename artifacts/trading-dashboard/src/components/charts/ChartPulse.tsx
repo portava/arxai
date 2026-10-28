@@ -7,7 +7,7 @@ import { feedConfidence } from "@/lib/feed-confidence";
 import { toneClasses } from "@/lib/chart-sentence-tone";
 import { useAssistantName } from "@/lib/assistant-name";
 import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
-import { useChartPricePrecision } from "./chartPricePrecisionStore";
+import { useStatePricePrecision } from "./chartPricePrecisionStore";
 
 // ChartPulse — Chart Brain v2 (Task 3) compact at-a-glance state panel.
 //
@@ -196,7 +196,7 @@ function buildItems(
 }
 
 export function ChartPulse({ state }: { state: ChartState | null }) {
-  const pricePrecision = useChartPricePrecision(state?.symbol ?? null);
+  const pricePrecision = useStatePricePrecision(state);
   const { name } = useAssistantName();
   if (!state) {
     return (

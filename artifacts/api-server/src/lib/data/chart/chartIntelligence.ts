@@ -504,6 +504,7 @@ export async function buildChartIntelligenceState(
     remembered,
     truth.symbol,
     timeframe,
+    truth.truthResult ? truth.truthResult.pricePrecision : undefined,
   );
   const levels = levelsResult.read;
   const candleIntent = computeCandleIntent(closed);

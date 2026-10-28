@@ -63,6 +63,46 @@ export function decimalsFor(price: number): number {
   return 5;
 }
 
+const MAX_PRICE_DECIMALS = 8;
+
+function validDecimals(d: unknown): d is number {
+  return typeof d === "number" && Number.isSafeInteger(d) && d >= 0 && d <= MAX_PRICE_DECIMALS;
+}
+
+function priceDecimalsOf(value: number): number {
+  for (let d = 0; d <= MAX_PRICE_DECIMALS; d++) {
+    if (Math.abs(value - Number(value.toFixed(d))) < 1e-9) return d;
+  }
+  return MAX_PRICE_DECIMALS;
+}
+
+/**
+ * Decimals to round / print a chart price for one instrument at — the same
+ * rule the dashboard price axis uses (trading-dashboard lib/instrumentPriceFormat
+ * resolveDisplayPricePrecision): the declared instrument precision widened by
+ * the digits the observed quotes actually carry (capped at declared + 2), the
+ * observed digits alone when nothing is declared, and the legacy magnitude
+ * heuristic (decimalsFor) only when neither is known. Never rounds away a digit
+ * the venue quoted. Display / rounding only — never an order tick size.
+ */
+export function resolveChartPriceDecimals(
+  declared: number | null | undefined,
+  observed: Iterable<number | null | undefined>,
+  reference: number,
+): number {
+  let seen: number | null = null;
+  for (const v of observed) {
+    if (v == null || !Number.isFinite(v)) continue;
+    const d = priceDecimalsOf(v);
+    seen = seen == null ? d : Math.max(seen, d);
+  }
+  if (validDecimals(declared)) {
+    if (seen == null) return declared;
+    return Math.max(declared, Math.min(seen, declared + 2, MAX_PRICE_DECIMALS));
+  }
+  return seen ?? decimalsFor(reference);
+}
+
 export interface Swing {
   index: number;
   price: number;

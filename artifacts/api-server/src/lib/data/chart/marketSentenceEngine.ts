@@ -16,8 +16,10 @@
 // route that serves them stays read-only and per-user gated.
 
 import type { ChartIntelligenceState } from "./chartIntelligence.js";
-import type { ChartLevel } from "./engines/marketUnderstandingTypes.js";
+import type { ChartLevel, ChartLevelPersonality } from "./engines/marketUnderstandingTypes.js";
 import { chartReadVerification } from "./chartDecisionTruthCap.js";
+import { resolveChartPriceDecimals } from "@workspace/domain/chart-patterns";
+import { getSymbolProfile } from "./symbolProfile.js";
 
 export type ChartSentenceTone =
   | "bullish"
@@ -58,11 +60,56 @@ export interface ChartMarketSentences {
 // the field it produces to avoid a self-referential dependency.
 type SentenceInput = Omit<ChartIntelligenceState, "marketSentences">;
 
-function fmtPrice(n: number | null | undefined): string {
+type PriceContext = Pick<
+  ChartIntelligenceState,
+  "symbol" | "assetClass" | "latestClosedCandle" | "currentCandle" | "marketUnderstanding"
+>;
+
+/**
+ * Decimals for printing a price on this chart: the instrument's declared
+ * precision (the same symbol profile the chart truth layer uses) widened by
+ * the digits the latest bars and mapped levels carry — the shared rule the
+ * dashboard axis uses. The magnitude heuristic is only the last resort.
+ */
+export function chartStatePriceDecimals(s: PriceContext, reference: number): number {
+  const declared = getSymbolProfile(s.symbol, s.assetClass).pricePrecision;
+  const observed: Array<number | null | undefined> = [];
+  for (const c of [s.latestClosedCandle, s.currentCandle]) {
+    if (c) observed.push(c.open, c.high, c.low, c.close);
+  }
+  const lv = s.marketUnderstanding?.levels;
+  observed.push(lv?.nearestSupport?.price, lv?.nearestResistance?.price);
+  return resolveChartPriceDecimals(declared, observed, reference);
+}
+
+/** A chart price at the instrument's precision ("the level" when unknown). */
+export function formatChartStatePrice(s: PriceContext, n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "the level";
-  const abs = Math.abs(n);
-  const decimals = abs < 10 ? 5 : abs < 1000 ? 3 : 2;
-  return n.toFixed(decimals);
+  return n.toFixed(chartStatePriceDecimals(s, n));
+}
+
+/** A level personality token in plain words (never the raw enum). */
+export function chartLevelPersonalityWords(p: ChartLevelPersonality | string): string {
+  switch (p) {
+    case "fresh":
+      return "fresh (not yet tested)";
+    case "defended":
+      return "defended";
+    case "weakening":
+      return "weakening";
+    case "broken":
+      return "broken";
+    case "retest_pending":
+      return "waiting for a retest";
+    case "trap_zone":
+      return "a possible trap zone";
+    case "scalp_only":
+      return "scalp-only";
+    case "invalidated":
+      return "invalidated";
+    default:
+      return String(p).replace(/_/g, " ");
+  }
 }
 
 function directionWord(
@@ -468,7 +515,7 @@ function sentenceBestNextAction(s: SentenceInput): ChartMarketSentence {
     };
   }
   const { level, isSupport } = nearestLevel(s);
-  const levelTxt = level ? fmtPrice(level.price) : null;
+  const levelTxt = level ? formatChartStatePrice(s, level.price) : null;
   // A read the chart-truth gate has not verified never invites action, whatever
   // grade the candle engines gave it (the decision summary is capped to watch
   // for the same reason). Stand-aside / unknown already invite nothing.
@@ -540,7 +587,7 @@ function sentenceWhatWouldChange(s: SentenceInput): ChartMarketSentence {
   }
   const { level, isSupport } = nearestLevel(s);
   if (level) {
-    const price = fmtPrice(level.price);
+    const price = formatChartStatePrice(s, level.price);
     return isSupport
       ? {
           ...base,
@@ -566,7 +613,7 @@ function sentenceWhatInvalidates(s: SentenceInput): ChartMarketSentence {
   const setup = s.setupState;
   if (setup.invalidationCondition) {
     const price = setup.invalidationPrice;
-    const priceClause = price != null ? ` (${fmtPrice(price)})` : "";
+    const priceClause = price != null ? ` (${formatChartStatePrice(s, price)})` : "";
     return {
       ...base,
       tone: "danger",
@@ -575,7 +622,7 @@ function sentenceWhatInvalidates(s: SentenceInput): ChartMarketSentence {
   }
   const { level, isSupport } = nearestLevel(s);
   if (level) {
-    const price = fmtPrice(level.price);
+    const price = formatChartStatePrice(s, level.price);
     return {
       ...base,
       tone: "caution",

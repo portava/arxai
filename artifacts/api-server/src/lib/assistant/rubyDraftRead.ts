@@ -20,6 +20,10 @@ import type { ChartEvidenceDirection } from "../data/chart/engines/marketUnderst
 import type { ChartConsensusStance } from "../data/chart/chartAgentConsensus.js";
 import { buildChartHandshake } from "../data/chart/chartHandshake.js";
 import { mirrorTrustSegment } from "../data/chart/brokerPriceAlignment.js";
+import {
+  chartLevelPersonalityWords,
+  formatChartStatePrice,
+} from "../data/chart/marketSentenceEngine.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 
 export type RubyDraftIntent =
@@ -205,7 +209,17 @@ function sentence(
   return typeof s === "object" && s != null && "text" in s ? s.text : "";
 }
 
-function activeLevelLine(mu: ChartMarketUnderstanding): string | null {
+/**
+ * Ruby's nearest-level line: the price at the instrument's precision (the
+ * chart's own digit rule) and the personality in plain words.
+ */
+export function activeLevelLine(
+  state: Pick<
+    ChartIntelligenceState,
+    "symbol" | "assetClass" | "latestClosedCandle" | "currentCandle" | "marketUnderstanding"
+  >,
+): string | null {
+  const mu: ChartMarketUnderstanding = state.marketUnderstanding;
   const levels = mu.levels;
   const list = (levels.levels ?? []) as {
     kind: string;
@@ -225,7 +239,7 @@ function activeLevelLine(mu: ChartMarketUnderstanding): string | null {
     lv.distancePct == null
       ? ""
       : ` (${Math.abs(lv.distancePct).toFixed(2)}% away)`;
-  return `Nearest level: ${lv.kind} at ${lv.price}${dist}, behaving as ${lv.personality}.`;
+  return `Nearest level: ${lv.kind} at ${formatChartStatePrice(state, lv.price)}${dist}, ${chartLevelPersonalityWords(lv.personality)}.`;
 }
 
 function baseResult(
@@ -370,7 +384,7 @@ function answerAnalyze(state: ChartIntelligenceState): RubyDraftReadResult {
   const proving = sentence(state, "proving");
   const failed = sentence(state, "failedToProve");
   const fresh = sentence(state, "signalFreshness");
-  const lvl = activeLevelLine(state.marketUnderstanding);
+  const lvl = activeLevelLine(state);
   r.points = [proving, failed, lvl ?? "", fresh].filter(Boolean) as string[];
   pushCautions(state, r.cautions);
   return r;
