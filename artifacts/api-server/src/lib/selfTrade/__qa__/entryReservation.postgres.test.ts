@@ -29,6 +29,7 @@ const {
   selfTradeAuditLogTable: audit,
   selfTradeLedgerEntriesTable: entries,
   selfTradeAllocationsTable: allocations,
+  selfTradeKillSwitchesTable: killSwitches,
   arxLiveCommandsTable: commands,
   liveTradingAuditTable: liveAudit,
 } = database;
@@ -103,8 +104,16 @@ mock.module("../executionGate.js", {
     }),
   },
 });
+// Default: no switch engaged (unchanged). Kill-switch tests swap the behaviour.
+let killGateBehavior: () => Promise<unknown> = async () => ({ killed: false });
+let killGateCalls = 0;
 mock.module("../killSwitchGate.js", {
-  namedExports: { assertAgentNotKilled: async () => ({ killed: false }) },
+  namedExports: {
+    assertAgentNotKilled: async () => {
+      killGateCalls++;
+      return killGateBehavior();
+    },
+  },
 });
 mock.module("../../data/marketDataRouter.js", {
   namedExports: {
@@ -194,7 +203,7 @@ const { fundAgent, defundAgent, applyRealizedFromFills } =
 const Pool = pool.constructor as new (config: {
   connectionString?: string;
 }) => typeof pool;
-const { configureAgent, setAgentStatus, setAutonomyLevel } =
+const { configureAgent, setAgentStatus, setAutonomyLevel, toggleKillSwitch } =
   await import("../service.js");
 const tables = [
   agents,
@@ -207,6 +216,7 @@ const tables = [
   allocations,
   commands,
   liveAudit,
+  killSwitches,
 ];
 const dialect = new PgDialect();
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
@@ -298,11 +308,16 @@ before(async () => {
     "CREATE UNIQUE INDEX test_agent_ledger ON self_trade_agent_ledger(agent_id)",
   );
   await pool.query(
+    "CREATE UNIQUE INDEX self_trade_kill_switches_scope_ref_uq ON self_trade_kill_switches(scope,scope_ref)",
+  );
+  await pool.query(
     "CREATE UNIQUE INDEX self_trade_agent_executions_idem_active_uq ON self_trade_agent_executions(agent_id,idempotency_key) WHERE status IN ('PENDING_TICKET','DISPATCHED','FILLED')",
   );
 });
 beforeEach(async () => {
   integrityBarrier = null;
+  killGateBehavior = async () => ({ killed: false });
+  killGateCalls = 0;
   submissions = 0;
   dispatchRequests = 0;
   submittedPrepareOnly = undefined;
@@ -1570,4 +1585,416 @@ it("unverified accounting cannot be withdrawn or escaped by assigning zero profi
   assert.deepEqual(await db.select().from(ledger), before);
   assert.equal((await reserve()).ok, false);
   assert.equal((await applyRealizedFromFills(agent.id)).posted, 0);
+});
+
+// ── Fresh market facts at the final dispatch claim (2026-10-27) ─────────────
+// The fixture decision priced a BUY at entry zone 1.1-1.1 with stop 1.09.
+// Quotes are local values; nothing reads a feed or contacts a venue.
+// The store's first-sight provenance the observer copies (mt5Provider
+// recordMt5Tick): the tick first seen at `observedAt`, two seconds after the
+// feed's previous post, never re-posted.
+const provenanceFor = (observedAt: unknown) => {
+  const ms = typeof observedAt === "string" ? Date.parse(observedAt) : NaN;
+  return {
+    firstSeenAt: observedAt,
+    lastPostedAt: observedAt,
+    reposts: 0,
+    priorPostAt: Number.isFinite(ms) ? new Date(ms - 2_000).toISOString() : null,
+  };
+};
+const freshQuote = (patch: Record<string, unknown> = {}) => {
+  const observedAt = "observedAt" in patch ? patch.observedAt : new Date(now.getTime() - 1_000).toISOString();
+  return {
+    bid: 1.09995,
+    ask: 1.10005,
+    observedAt,
+    source: "fixture",
+    point: 0.00001,
+    tickProvenance: provenanceFor(observedAt),
+    ...patch,
+  };
+};
+async function refusedFreshClaim(
+  entryMarket: Record<string, unknown> | null,
+  reason: RegExp,
+  clock?: () => Date,
+) {
+  const { row } = await approveAuthority();
+  await assert.rejects(
+    claimLiveCommandForDispatch(row.commandId, sendPatch(), row, db, clock, {
+      entryMarket: entryMarket as never,
+    }),
+    (error: unknown) =>
+      error instanceof AgentEntryAuthorityError && reason.test(error.reason),
+  );
+  // The authority transaction rolled back: unsent, reserved, no claim audit.
+  assert.equal((await db.select().from(commands))[0].status, "LIVE_APPROVED");
+  assert.equal((await db.select().from(executions))[0].status, "PENDING_TICKET");
+  assert.equal(
+    (await db.select().from(audit)).filter(
+      (r) => r.eventType === "ENTRY_AUTHORITY_DISPATCH_CLAIMED",
+    ).length,
+    0,
+  );
+}
+it("fresh facts: stale quote refuses the final claim", async () => {
+  await refusedFreshClaim(
+    freshQuote({ observedAt: new Date(now.getTime() - 5_001).toISOString() }),
+    /^ENTRY_FRESH_QUOTE_STALE$/,
+  );
+});
+it("fresh facts: quote dated beyond clock-skew tolerance refuses", async () => {
+  await refusedFreshClaim(
+    freshQuote({ observedAt: new Date(now.getTime() + 60_000).toISOString() }),
+    /^ENTRY_FRESH_QUOTE_FUTURE_DATED$/,
+  );
+});
+for (const observedAt of [NaN, null, "not-a-time", "1761480000000"])
+  it(`fresh facts: malformed quote timestamp ${String(observedAt)} refuses`, async () => {
+    await refusedFreshClaim(
+      freshQuote({ observedAt }),
+      /^ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID$/,
+    );
+  });
+it("fresh facts: missing observation (feed down) refuses", async () => {
+  await refusedFreshClaim(null, /^ENTRY_FRESH_QUOTE_UNAVAILABLE$/);
+});
+it("fresh facts: spread blown out since decision refuses", async () => {
+  await refusedFreshClaim(
+    freshQuote({ bid: 1.0997, ask: 1.1003 }),
+    /^ENTRY_FRESH_SPREAD_TOO_WIDE$/,
+  );
+});
+it("fresh facts: price moved beyond the decision's zone tolerance refuses", async () => {
+  await refusedFreshClaim(
+    freshQuote({ bid: 1.1004, ask: 1.1005 }),
+    /^ENTRY_FRESH_PRICE_MOVED$/,
+  );
+});
+it("fresh facts: price already through the decision stop refuses", async () => {
+  await refusedFreshClaim(
+    freshQuote({ bid: 1.0899, ask: 1.09 }),
+    /^ENTRY_FRESH_STOP_CROSSED$/,
+  );
+});
+it("fresh facts: age is measured after lock acquisition, not at fetch", async () => {
+  // Fresh when fetched; six seconds pass before the claim holds its locks.
+  await refusedFreshClaim(
+    freshQuote({ observedAt: now.toISOString() }),
+    /^ENTRY_FRESH_QUOTE_STALE$/,
+    () => new Date(now.getTime() + 6_000),
+  );
+});
+it("fresh facts: setup expiry between decision and dispatch still refuses first", async () => {
+  await refusedFreshClaim(
+    freshQuote({ observedAt: "2026-10-30T00:00:00.000Z" }),
+    /^ENTRY_SETUP_EXPIRED$/,
+    () => new Date("2026-10-30T00:00:00Z"),
+  );
+});
+it("fresh facts: the first tick a bridge ever posted (no earlier post bounds it) refuses STALE under the locks", async () => {
+  await refusedFreshClaim(
+    freshQuote({ tickProvenance: { ...provenanceFor(new Date(now.getTime() - 1_000).toISOString()), priorPostAt: null } }),
+    /^ENTRY_FRESH_QUOTE_STALE$/,
+  );
+});
+it("fresh facts: a tick that follows a 40 h feed silence refuses STALE under the locks", async () => {
+  await refusedFreshClaim(
+    freshQuote({
+      tickProvenance: {
+        ...provenanceFor(new Date(now.getTime() - 1_000).toISOString()),
+        priorPostAt: new Date(now.getTime() - 40 * 3_600_000).toISOString(),
+      },
+    }),
+    /^ENTRY_FRESH_QUOTE_STALE$/,
+  );
+});
+it("fresh facts: a quote without tick provenance refuses TIMESTAMP_INVALID under the locks", async () => {
+  await refusedFreshClaim(freshQuote({ tickProvenance: null }), /^ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID$/);
+});
+it("fresh facts: a fresh in-zone quote claims once and records the facts", async () => {
+  const { row } = await approveAuthority();
+  const claimed = await claimLiveCommandForDispatch(
+    row.commandId,
+    sendPatch(),
+    row,
+    db,
+    undefined,
+    { entryMarket: freshQuote() },
+  );
+  assert.equal(claimed?.status, "SENT_TO_MT5_LIVE");
+  const [claimAudit] = (await db.select().from(audit)).filter(
+    (r) => r.eventType === "ENTRY_AUTHORITY_DISPATCH_CLAIMED",
+  );
+  const facts = (claimAudit.afterState as any).freshFacts;
+  assert.equal(facts.quoteAgeMs, 1_000);
+  assert.equal(facts.executablePrice, 1.10005);
+  assert.equal(Math.round(facts.spreadPoints), 10);
+  assert.equal(facts.quoteReposts, 0);
+  assert.equal(facts.quoteFeedGapMs, 2_000);
+});
+it("fresh facts: confirmation is not the final step and does not need a quote", async () => {
+  const staged = await stageAuthority();
+  assert.ok(
+    await claimLiveCommandForConfirm(
+      staged.row.commandId,
+      { status: "LIVE_APPROVED", confirmedAt: now },
+      staged.row,
+    ),
+  );
+});
+// Opt-in (ARX_FRESH_FACTS_BENCHMARK=1): paired, interleaved final-claim latency
+// in this disposable cluster. "before" is the claim without facts (the previous
+// code path); "after" adds the dispatch-time observation (real broker-spec read
+// from PostgreSQL; the quote router is replaced by an in-memory value here and
+// measured separately offline) plus in-claim evaluation.
+it(
+  "fresh facts: paired final-claim latency benchmark",
+  { skip: process.env.ARX_FRESH_FACTS_BENCHMARK !== "1" },
+  async (t) => {
+    const { arxSymbolSpecsTable } = database;
+    await pool.query("DROP TABLE IF EXISTS arx_symbol_specs");
+    await createTable(arxSymbolSpecsTable);
+    await db.insert(arxSymbolSpecsTable).values({
+      userId: 9,
+      symbol: "EURUSD.a",
+      point: 0.00001,
+    } as never);
+    const { getBrokerSymbolSpec } = await import("../../mt5/brokerSymbolSpec.js");
+    await configure({ maxConcurrentPositions: 0, baseMaxTrades: 100_000 });
+    const observe = async () => {
+      const [q, spec] = await Promise.all([
+        Promise.resolve(freshQuote()),
+        getBrokerSymbolSpec(9, "EURUSD.a"),
+      ]);
+      return { ...q, point: spec.spec.point };
+    };
+    const before: number[] = [];
+    const after: number[] = [];
+    const rounds = 300;
+    for (let i = 0; i < rounds + 20; i++) {
+      for (const variant of i % 2 ? ["after", "before"] : ["before", "after"]) {
+        const { row } = await approveAuthority();
+        const t0 = performance.now();
+        const claimed =
+          variant === "before"
+            ? await claimLiveCommandForDispatch(row.commandId, sendPatch(), row)
+            : await claimLiveCommandForDispatch(
+                row.commandId,
+                sendPatch(),
+                row,
+                db,
+                undefined,
+                { entryMarket: await observe() },
+              );
+        const ms = performance.now() - t0;
+        assert.equal(claimed?.status, "SENT_TO_MT5_LIVE");
+        if (i >= 20) (variant === "before" ? before : after).push(ms);
+      }
+    }
+    const pct = (xs: number[], p: number) => {
+      const s = [...xs].sort((a, b) => a - b);
+      return Number(s[Math.min(s.length - 1, Math.ceil((p / 100) * s.length) - 1)].toFixed(3));
+    };
+    const summary = (xs: number[]) => ({
+      n: xs.length,
+      median: pct(xs, 50),
+      p95: pct(xs, 95),
+      p99: pct(xs, 99),
+    });
+    t.diagnostic(
+      `FRESH_FACTS_BENCHMARK ${JSON.stringify({ before: summary(before), after: summary(after) })}`,
+    );
+  },
+);
+// ── Emergency stops: self-trade kill switches at the final authority claim ──
+// The executor checks self_trade_kill_switches before reservation and again
+// before submission. These prove the check is repeated under the entry
+// authority locks at draft, human confirmation and the final dispatch claim,
+// that a read failure there refuses, and that engage/claim are serialized.
+const KILL_LOCK_OBJID = 213_000_213;
+async function engage(scope: string, scopeRef: string | null) {
+  await db.insert(killSwitches).values({ scope, scopeRef, engaged: true, reason: `qa ${scope}` });
+}
+const killRefusal = (error: unknown) => {
+  assert.ok(error instanceof AgentEntryAuthorityError, String(error));
+  assert.equal((error as InstanceType<typeof AgentEntryAuthorityError>).reason, "ENTRY_KILL_SWITCH_ENGAGED");
+  return true;
+};
+for (const [label, scope, scopeRef] of [
+  ["GLOBAL", "GLOBAL", null],
+  ["NEWS", "NEWS", null],
+  ["AGENT", "AGENT", "alpha"],
+  ["STRATEGY", "STRATEGY", "TEST"],
+  ["SYMBOL canonical", "SYMBOL", "EURUSD"],
+  ["SYMBOL broker-native", "SYMBOL", "EURUSD.a"],
+  ["SYMBOL case/whitespace", "SYMBOL", " eurusd "],
+  ["malformed scope", "global", null],
+  ["targeted scope without ref", "AGENT", null],
+] as const) {
+  it(`kill switch (${label}) engaged after confirmation refuses the final dispatch claim`, async () => {
+    const { row } = await approveAuthority();
+    await engage(scope, scopeRef);
+    await assert.rejects(claimLiveCommandForDispatch(row.commandId, sendPatch(), row), killRefusal);
+    const [current] = await db.select().from(commands);
+    assert.equal(current.status, "LIVE_APPROVED");
+    assert.equal(
+      (await db.select().from(audit)).filter((r) => r.eventType === "ENTRY_AUTHORITY_DISPATCH_CLAIMED").length,
+      0,
+    );
+  });
+}
+it("kill switches for another agent, strategy or symbol, or released ones, do not refuse", async () => {
+  const { row } = await approveAuthority();
+  await engage("AGENT", "beta");
+  await engage("STRATEGY", "OTHER");
+  await engage("SYMBOL", "GBPUSD");
+  await db.insert(killSwitches).values({ scope: "GLOBAL", scopeRef: null, engaged: false, reason: "released" });
+  assert.equal((await claimLiveCommandForDispatch(row.commandId, sendPatch(), row))?.status, "SENT_TO_MT5_LIVE");
+});
+it("PREPARE_ONLY staged before a kill switch cannot be confirmed by a person afterwards", async () => {
+  const staged = await stageAuthority();
+  await engage("AGENT", "alpha");
+  await assert.rejects(
+    claimLiveCommandForConfirm(staged.row.commandId, { status: "LIVE_APPROVED", confirmedAt: now }, staged.row),
+    killRefusal,
+  );
+  assert.equal((await db.select().from(commands))[0].status, "LIVE_CONFIRMATION_REQUIRED");
+});
+it("draft creation refuses while a covering kill switch is engaged", async () => {
+  const context = await reservedAuthority();
+  await engage("SYMBOL", "EURUSD");
+  await assert.rejects(stageAuthority(context), killRefusal);
+  assert.equal((await db.select().from(commands)).length, 0);
+  assert.equal((await db.select().from(executions))[0].commandId, null);
+});
+it("a kill-switch read failure at the final claim fails closed (nothing sent)", async () => {
+  const { row } = await approveAuthority();
+  await pool.query("ALTER TABLE self_trade_kill_switches RENAME TO qa_kill_switches_unreadable");
+  try {
+    await assert.rejects(claimLiveCommandForDispatch(row.commandId, sendPatch(), row), /self_trade_kill_switches/);
+    assert.equal((await db.select().from(commands))[0].status, "LIVE_APPROVED");
+    assert.equal(
+      (await db.select().from(audit)).filter((r) => r.eventType === "ENTRY_AUTHORITY_DISPATCH_CLAIMED").length,
+      0,
+    );
+  } finally {
+    await pool.query("ALTER TABLE qa_kill_switches_unreadable RENAME TO self_trade_kill_switches");
+  }
+});
+it("an engage committing while the final claim waits is honoured (claim refuses)", async () => {
+  const { row } = await approveAuthority();
+  const writer = await pool.connect();
+  let claim: Promise<unknown> | undefined;
+  try {
+    await writer.query("BEGIN");
+    await writer.query("SELECT pg_advisory_xact_lock($1)", [KILL_LOCK_OBJID]);
+    await writer.query(
+      "INSERT INTO self_trade_kill_switches(scope,scope_ref,engaged,reason) VALUES ('AGENT','alpha',true,'mid-claim engage')",
+    );
+    claim = claimLiveCommandForDispatch(row.commandId, sendPatch(), row).catch((e) => e);
+    await waitForLock(
+      `SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=${KILL_LOCK_OBJID} AND NOT granted`,
+    );
+    await writer.query("COMMIT");
+    assert.ok(killRefusal(await claim));
+    assert.equal((await db.select().from(commands))[0].status, "LIVE_APPROVED");
+  } finally {
+    await writer.query("ROLLBACK").catch(() => undefined);
+    writer.release();
+    await claim;
+  }
+});
+it("toggleKillSwitch waits behind an in-flight final claim; the committed hand-off stands", async () => {
+  const { row } = await approveAuthority();
+  const barrier = await pool.connect();
+  await barrier.query("SELECT pg_advisory_lock(771239)");
+  await pool.query(`CREATE FUNCTION qa_kill_claim() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.event_type = 'ENTRY_AUTHORITY_DISPATCH_CLAIMED' THEN PERFORM pg_advisory_xact_lock(771239); END IF; RETURN NEW; END $$`);
+  await pool.query(
+    "CREATE TRIGGER qa_kill_claim BEFORE INSERT ON self_trade_audit_log FOR EACH ROW EXECUTE FUNCTION qa_kill_claim()",
+  );
+  let claim: ReturnType<typeof claimLiveCommandForDispatch> | undefined;
+  let toggle: ReturnType<typeof toggleKillSwitch> | undefined;
+  try {
+    claim = claimLiveCommandForDispatch(row.commandId, sendPatch(), row);
+    await waitForLock("SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=771239 AND NOT granted");
+    toggle = toggleKillSwitch("AGENT", "alpha", true, "engage during claim", { userId: 9, role: "admin" } as never);
+    await waitForLock(
+      `SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=${KILL_LOCK_OBJID} AND NOT granted`,
+    );
+    await barrier.query("SELECT pg_advisory_unlock(771239)");
+    assert.equal((await claim)?.status, "SENT_TO_MT5_LIVE");
+    assert.equal((await toggle).ok, true);
+    const [sw] = await db.select().from(killSwitches);
+    assert.equal(sw.engaged, true);
+    // The next entry for this agent is refused at draft.
+    await configure({ maxConcurrentPositions: 0, baseMaxTrades: 100 });
+    await assert.rejects(stageAuthority(), killRefusal);
+  } finally {
+    await barrier.query("SELECT pg_advisory_unlock_all()");
+    await Promise.allSettled([claim, toggle].filter(Boolean));
+    barrier.release();
+    await pool.query("DROP TRIGGER qa_kill_claim ON self_trade_audit_log");
+    await pool.query("DROP FUNCTION qa_kill_claim()");
+  }
+});
+it("manual entry commands are not subject to self-trade kill switches", async () => {
+  await engage("GLOBAL", null);
+  const [manual] = await db
+    .insert(commands)
+    .values({
+      commandId: "qa-manual-under-self-trade-kill",
+      userId: 9,
+      commandType: "PLACE_LIVE_MARKET_ORDER",
+      status: "LIVE_APPROVED",
+      symbol: "EURUSD",
+      side: "BUY",
+      orderType: "MARKET_BUY",
+      requestedVolume: 0.1,
+      sourcePage: "MANUAL",
+      actorId: 9,
+      actorType: "USER",
+    })
+    .returning();
+  assert.equal(isAgentEntryCommand(manual), false);
+  assert.equal((await claimLiveCommandForDispatch(manual.commandId, sendPatch(), manual))?.status, "SENT_TO_MT5_LIVE");
+});
+
+// ── Executor TOCTOU read (immediately before submission) ──────────────────
+// evaluateAgentExecution is mocked to PERMIT, so the only kill-switch read the
+// executor makes here is the pre-submission TOCTOU re-check.
+it("executor: a switch engaged after the gate evaluation blocks before submission and frees the slot", async () => {
+  killGateBehavior = async () => ({ killed: true, scope: "AGENT", scopeRef: "alpha", reason: "desk halt" });
+  const result = await executeAgentDecision(await executeInput());
+  assert.equal(killGateCalls, 1);
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.blockReason, "desk halt");
+  assert.equal(submissions, 0);
+  const [row] = await db.select().from(executions);
+  assert.equal(row.status, "BLOCKED");
+  assert.ok((await db.select().from(audit)).some((r) => r.eventType === "EXECUTION_BLOCKED_TOCTOU"));
+});
+it("executor: a kill-switch READ FAILURE at the TOCTOU re-check fails closed, is audited and frees the slot", async () => {
+  killGateBehavior = async () => {
+    throw new Error("simulated kill-switch read failure");
+  };
+  const result = await executeAgentDecision(await executeInput());
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.blockReason, "KILL_SWITCH_UNREADABLE");
+  assert.equal(submissions, 0);
+  const [row] = await db.select().from(executions);
+  // Non-submission is certain (the venue was never called), so the slot is
+  // released truthfully instead of leaking as an unlinked PENDING_TICKET.
+  assert.equal(row.status, "BLOCKED");
+  assert.equal(row.blockReason, "KILL_SWITCH_UNREADABLE");
+  assert.equal(row.commandId, null);
+  assert.ok(
+    (await db.select().from(audit)).some(
+      (r) => r.eventType === "EXECUTION_BLOCKED_TOCTOU" && r.reason?.includes("unreadable"),
+    ),
+  );
+  killGateBehavior = async () => ({ killed: false });
+  assert.equal((await executeAgentDecision(await executeInput())).status, "DISPATCHED");
+  assert.equal(submissions, 1);
 });

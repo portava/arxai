@@ -4,7 +4,7 @@
 // atomicity and broker execution identity remain unverified.
 import { supportsManagementTarget } from "../mt5/managementTargetProtocol.js";
 import { isDeepStrictEqual } from "node:util";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable as commands,
@@ -29,6 +29,14 @@ import {
   sameBrokerAccount,
 } from "./executionLifecycle.js";
 import type { AuthorityTransaction } from "./entryAuthority.js";
+import {
+  evaluatePositionObservation,
+  evaluateProtectiveObservation,
+  evaluateTicketCommands,
+  parseObservationTime,
+  sameAccountTicketCommands,
+} from "./freshFacts.js";
+import { doesNotLoosenStop } from "@workspace/domain/self-trade";
 
 export const MANAGEMENT_TARGET_SOURCE = "INSTANT_SELF_TRADE_MANAGEMENT";
 export class ManagementTargetError extends Error {
@@ -471,6 +479,87 @@ export function claimManagementCommand(
       }
       if (patch.expiresAt != null && patch.expiresAt.getTime() <= Date.now())
         refuse("MANAGEMENT_COMMAND_EXPIRED");
+      // The decision used a broker snapshot. At the final claim the locked row
+      // must still be a current observation (geometry equality is checked above
+      // via the target); a stale or future-dated snapshot refuses.
+      if (requiredStatus === "LIVE_APPROVED") {
+        const observed = evaluatePositionObservation({
+          lastSyncedAt: facts.position?.lastSyncedAt,
+          commandEventTimes: [facts.entry?.filledAt],
+          nowMs: Date.now(),
+        });
+        if (!observed.ok) refuse(observed.reason);
+        // Protective-action parity: a claim taken by the protective path was
+        // justified by a specific complete-sweep row. The locked row must still
+        // be sweep evidence at least as new as that, no other close/modify on
+        // the ticket may be in flight or have moved since that evidence, and a
+        // stop move must still tighten against the locked price. One plain
+        // read of the ticket's other commands (protective claims only); no new
+        // lock.
+        const protective = readManagementMemory(facts.execution.managementState)
+          .pendingManagement?.protective;
+        if (protective) {
+          const evidenceAtMs =
+            parseObservationTime(protective.evidence?.lastSyncedAt) ?? Number.NaN;
+          const evidence = evaluateProtectiveObservation({
+            row: facts.position!,
+            connection: bridge,
+            mustNotPrecedeMs: evidenceAtMs,
+            commandEventTimes: [facts.entry?.filledAt],
+            nowMs: Date.now(),
+          });
+          if (!evidence.ok) refuse(evidence.reason);
+          const ticketCommands = await tx
+            .select({
+              commandId: commands.commandId,
+              status: commands.status,
+              sentToMt5At: commands.sentToMt5At,
+              filledAt: commands.filledAt,
+              rejectedAt: commands.rejectedAt,
+              bridgeConnectionId: commands.bridgeConnectionId,
+              accountLogin: commands.accountLogin,
+            })
+            .from(commands)
+            .where(
+              and(
+                eq(commands.userId, target.userId),
+                inArray(commands.commandType, ["CLOSE_LIVE_POSITION", "MODIFY_LIVE_SLTP"]),
+                sql`${commands.payload}->>'brokerTicket' = ${target.brokerTicket}`,
+                isNotNull(commands.sentToMt5At),
+                ne(commands.commandId, current.commandId),
+              ),
+            );
+          // Only this position's account: the same ticket number on another
+          // bridge or login is another position (unattributed rows are kept).
+          const ordered = evaluateTicketCommands(
+            sameAccountTicketCommands(ticketCommands, {
+              bridgeConnectionId: target.bridgeConnectionId,
+              accountLogin: target.accountLogin,
+            }),
+            evidenceAtMs,
+          );
+          if (!ordered.ok) refuse(ordered.reason);
+          if (target.action !== "EXIT") {
+            const geometry = doesNotLoosenStop(
+              {
+                side: target.side,
+                volume: facts.position!.volume,
+                entryPrice: facts.position!.entryPrice,
+                currentPrice: facts.position!.currentPrice as number,
+                stopLoss: facts.position!.stopLoss,
+                takeProfit: facts.position!.takeProfit,
+              },
+              {
+                kind: "MODIFY_STOP",
+                side: target.side,
+                newStopLoss: target.nextStopLoss as number,
+                newTakeProfit: target.currentTakeProfit,
+              },
+            );
+            if (!geometry.ok) refuse(geometry.reason);
+          }
+        }
+      }
       const [claimed] = await tx
         .update(commands)
         .set(patch)

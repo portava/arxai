@@ -51,6 +51,11 @@ import {
 } from "../selfTrade/entryAuthority.js";
 import { claimManagementCommand, isAgentManagementCommand } from "../selfTrade/managementTarget.js";
 import { writeSelfTradeAudit } from "../selfTrade/audit.js";
+import {
+  evaluateEntryFreshFacts,
+  type EntryFreshFacts,
+  type EntryMarketObservation,
+} from "../selfTrade/freshFacts.js";
 
 /**
  * Typed refusal — a concurrent dispatcher already moved this command out of
@@ -69,6 +74,16 @@ export const LIVE_CONFIRM_RACE_LOST = "LIVE_CONFIRM_RACE_LOST" as const;
 type LiveCommandPatch = Partial<typeof arxLiveCommandsTable.$inferInsert>;
 
 /**
+ * Facts gathered outside any lock immediately before the final claim. When
+ * `entryMarket` is present (dispatchLiveCommand always passes it for agent
+ * entries, null when the feed could not be read), the quote is evaluated after
+ * the authority locks are held, against the locked decision snapshot.
+ */
+export interface DispatchClaimFacts {
+  entryMarket?: EntryMarketObservation | null;
+}
+
+/**
  * Atomically claim `commandId` for dispatch.
  *
  * Applies `patch` ONLY if the row is still `LIVE_APPROVED`. Returns the
@@ -82,6 +97,7 @@ export async function claimLiveCommandForDispatch(
   expected?: ArxLiveCommand,
   database: typeof db = db,
   clock?: () => Date,
+  facts?: DispatchClaimFacts,
 ): Promise<ArxLiveCommand | null> {
   if (expected && expected.commandId !== commandId)
     throw new AgentEntryAuthorityError("ENTRY_AUTHORITY_LINK_MISMATCH");
@@ -97,7 +113,7 @@ export async function claimLiveCommandForDispatch(
   if (observed && isAgentManagementCommand(observed))
     return claimManagementCommand(observed, "LIVE_APPROVED", patch, database);
   if (observed && isAgentEntryCommand(observed))
-    return claimAgentCommand(observed, "LIVE_APPROVED", patch, database, clock);
+    return claimAgentCommand(observed, "LIVE_APPROVED", patch, database, clock, facts);
   const rows = await database
     .update(arxLiveCommandsTable)
     .set(patch)
@@ -164,6 +180,7 @@ async function claimAgentCommand(
   patch: LiveCommandPatch,
   database: typeof db,
   clock?: () => Date,
+  facts?: DispatchClaimFacts,
 ): Promise<ArxLiveCommand | null> {
   return withEntryAuthority(
     authorityRequestForCommand(expected),
@@ -182,6 +199,30 @@ async function claimAgentCommand(
         patch.expiresAt <= now
       )
         throw new AgentEntryAuthorityError("ENTRY_COMMAND_EXPIRED");
+      // Market facts move independently of these rows. Evaluate the quote read
+      // just before this transaction against the locked admission decision,
+      // using the post-lock clock so waiting cannot preserve a stale price.
+      let freshFacts: EntryFreshFacts | undefined;
+      if (
+        requiredStatus === "LIVE_APPROVED" &&
+        facts != null &&
+        "entryMarket" in facts
+      ) {
+        const admitted = (
+          execution.managementState as {
+            entryAdmissionV1?: { decision?: { thesis?: unknown } };
+          } | null
+        )?.entryAdmissionV1?.decision;
+        const verdict = evaluateEntryFreshFacts({
+          side: current.side,
+          stopLoss: current.stopLoss,
+          thesis: admitted?.thesis ?? null,
+          observation: facts.entryMarket,
+          nowMs: now.getTime(),
+        });
+        if (!verdict.ok) throw new AgentEntryAuthorityError(verdict.reason, verdict.detail);
+        freshFacts = verdict.facts;
+      }
       // This committed CAS is the authority linearization point. A later pause
       // cannot retrospectively declare an already handed-off command unsent.
       const [claimed] = await tx
@@ -207,6 +248,7 @@ async function claimAgentCommand(
             commandId: expected.commandId,
             admissionHash: envelope.snapshotHash,
             at: now.toISOString(),
+            ...(freshFacts ? { freshFacts } : {}),
           },
           reason:
             requiredStatus === "LIVE_APPROVED"

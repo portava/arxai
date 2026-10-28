@@ -16,12 +16,17 @@
 //   switch because the live pipeline itself enforces what is permitted.
 // - We only manage a position when the REAL broker row (arx_live_positions)
 //   exists; if it is absent we skip (never act on a phantom).
+// - A stale broker snapshot holds. The protective-action path
+//   (protectiveActionPath.ts) starts FROM that hold and never uses the refused
+//   observation: it may act only on a strictly newer, sweep-written row that
+//   passes a stricter standard (owner decision 2026-10-27). The hold only
+//   queues the candidate; it runs after every ordinary evaluation/dispatch.
 
 import {
   livePositionLedger,
   livePositionColumns,
 } from "../positions/ledger.js";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   db,
@@ -38,6 +43,7 @@ import {
 import { logger } from "../logger.js";
 import { guardianInstantManage } from "../positionGuardian/manage.js";
 import { writeSelfTradeAudit } from "./audit.js";
+import { evaluatePositionObservation } from "./freshFacts.js";
 import {
   ownedEntryBinding,
   sameBrokerAccount,
@@ -48,6 +54,13 @@ import {
   type ManagementMemory,
   type PendingManagement,
 } from "./executionLifecycle.js";
+import {
+  createProtectiveCycle,
+  drainProtectiveCycle,
+  queueProtectiveCandidate,
+  type ProtectiveCycle,
+  type ProtectivePathDeps,
+} from "./protectiveActionPath.js";
 
 export interface ManagePositionsResult {
   evaluated: number;
@@ -55,12 +68,41 @@ export interface ManagePositionsResult {
   closed: number;
   alerted: number;
   held: number;
+  /** Structured reasons for holds that refused to act on the observation. */
+  heldReasons: Record<string, number>;
+  /**
+   * Protective-action path (started from observation holds). `held` /
+   * `evaluated` / `heldReasons` above keep their ordinary meaning; a protective
+   * dispatch is still counted there as the hold it started from. `queued`
+   * counts candidates handed to the protective cycle; the other fields are
+   * filled only when this call drains its own cycle (no `protectiveCycle`
+   * option); otherwise the caller's drain reports them.
+   */
+  protective: {
+    queued: number;
+    considered: number;
+    waitedMs: number;
+    acted: number;
+    held: Record<string, number>;
+  };
+}
+
+export interface ManagePositionsOptions {
+  /** Injectable seams for the protective path (tests); production uses the defaults. */
+  protective?: ProtectivePathDeps;
+  /**
+   * Cycle-scoped protective queue (autonomousCycle). Candidates are only
+   * collected here and the caller drains the cycle after every agent's
+   * ordinary evaluation and dispatch. Omitted: this call drains its own
+   * candidates after its ordinary loop, under one bounded wait budget.
+   */
+  protectiveCycle?: ProtectiveCycle;
 }
 
 // One durable claim per execution. Compare-and-set prevents overlapping cycles
 // from issuing the same stop/close twice, without holding a DB transaction open
 // over the broker pipeline. An uncertain submission keeps its claim for review.
-async function updateManagement(
+export async function updateManagement(
   execution: SelfTradeAgentExecution,
   before: unknown,
   memory: ManagementMemory,
@@ -84,6 +126,167 @@ async function updateManagement(
   return rows.length === 1;
 }
 
+export type ClaimedDispatchOutcome =
+  /** A command exists and the pipeline accepted it; awaiting broker confirmation. */
+  | { outcome: "DISPATCHED"; commandId: string }
+  /** A command exists but the pipeline refused after creating it; reconciliation settles it. */
+  | { outcome: "REFUSED_WITH_COMMAND"; commandId: string; error: string }
+  /** Refused before any command existed; the claim has been rolled back. */
+  | { outcome: "REFUSED_WITHOUT_COMMAND"; error: string }
+  /** Accepted without command evidence; the claim is retained for review. */
+  | { outcome: "ACCEPTED_WITHOUT_EVIDENCE" }
+  /** The pipeline threw after submission started; the claim is retained for review. */
+  | { outcome: "UNCERTAIN"; error: unknown }
+  /** The intent audit failed before the pipeline was called; the claim has been rolled back. */
+  | { outcome: "AUDIT_FAILED"; error: unknown };
+
+export interface ClaimedDispatchArgs {
+  agent: SelfTradeAgent;
+  execution: SelfTradeAgentExecution;
+  /** The row the decision was taken on (exact ledger row id and current protection). */
+  position: { id: number; stopLoss: number | null; takeProfit: number | null };
+  /** The claim already written by compare-and-set. */
+  claim: PendingManagement;
+  /** Memory before the claim (restored on a refusal without a command). */
+  memory: ManagementMemory;
+  /** Memory with the claim (the CAS "before" for the command link). */
+  claimed: ManagementMemory;
+  reason: string;
+  actorUserId?: number | null;
+  actorRole?: string | null;
+  /** Explicit take-profit on a stop move (protective path pins it); omitted keeps the pipeline default. */
+  newTakeProfit?: number | null;
+  /** Extra fields recorded on the MANAGEMENT_DISPATCH_INTENT audit row. */
+  auditAfterState?: Record<string, unknown>;
+}
+
+/**
+ * Dispatch a management request whose claim is already taken: audit the
+ * intent, hand it to the Position Guardian (→ executeInstant → every live
+ * gate), then record the outcome. Shared by the ordinary path and the
+ * protective path; neither writes a command or talks to the broker itself.
+ */
+export async function dispatchClaimedManagement(
+  args: ClaimedDispatchArgs,
+): Promise<ClaimedDispatchOutcome> {
+  const { agent, execution: e, position, claim, memory, claimed } = args;
+  const action = claim.action;
+  let submissionStarted = false;
+  try {
+    await writeSelfTradeAudit(db, {
+      agentId: agent.id,
+      eventType: "MANAGEMENT_DISPATCH_INTENT",
+      actorUserId: args.actorUserId ?? null,
+      actorRole: args.actorRole ?? null,
+      severity: "INFO",
+      afterState: {
+        executionId: e.id,
+        action,
+        claimId: claim.claimId,
+        stopLoss: claim.stopLoss,
+        ...(args.auditAfterState ?? {}),
+      },
+      reason: args.reason,
+    });
+    submissionStarted = true;
+    const res = await guardianInstantManage({
+      ruleId: "self-trade-manage",
+      userId: e.executingUserId!,
+      position: {
+        side: (e.side === "SELL" ? "SELL" : "BUY") as "BUY" | "SELL",
+        stopLoss: position.stopLoss,
+        takeProfit: position.takeProfit,
+      },
+      intent: {
+        source: "self_trade",
+        action: action === "EXIT" ? "CLOSE" : "MODIFY_SL_TP",
+        accountMode: "live",
+        positionId: e.brokerTicket!,
+        selfTradeManagement: {
+          executionId: e.id,
+          positionRowId: position.id,
+          claimId: claim.claimId,
+        },
+        ...(action === "EXIT"
+          ? {}
+          : {
+              newStopLoss: claim.stopLoss,
+              ...("newTakeProfit" in args ? { newTakeProfit: args.newTakeProfit } : {}),
+            }),
+        oneClick: true,
+        selfTradeAgentId: agent.id,
+        selfTradeDecisionId: e.decisionId,
+        selfTradeAgentKey: agent.agentKey,
+      },
+    });
+    if (!res.ok && !res.commandId) {
+      // Ops returns the command ID on every refusal after draft creation.
+      // Without one, this returned refusal happened before a command existed.
+      await updateManagement(e, claimed, memory);
+      logger.warn(
+        { executionId: e.id, error: res.error },
+        "self-trade: management refused",
+      );
+      return { outcome: "REFUSED_WITHOUT_COMMAND", error: res.error };
+    }
+    if (!res.commandId) {
+      logger.error(
+        { executionId: e.id, claimId: claim.claimId },
+        "self-trade: management accepted without command evidence; review required",
+      );
+      return { outcome: "ACCEPTED_WITHOUT_EVIDENCE" };
+    }
+    const submitted: ManagementMemory = {
+      ...claimed,
+      pendingManagement: { ...claim, commandId: res.commandId },
+      ...(action === "EXIT" ? { closeCommandId: res.commandId } : {}),
+    };
+    await updateManagement(e, claimed, submitted);
+    await writeSelfTradeAudit(db, {
+      agentId: agent.id,
+      eventType: !res.ok
+        ? "MANAGEMENT_REFUSAL_WITH_COMMAND"
+        : action === "EXIT"
+          ? "MANAGEMENT_EXIT_DISPATCH"
+          : "MANAGEMENT_STOP_DISPATCH",
+      actorUserId: args.actorUserId ?? null,
+      actorRole: args.actorRole ?? null,
+      severity: "INFO",
+      afterState: {
+        executionId: e.id,
+        commandId: res.commandId,
+        action,
+        ...(claim.protective ? { protective: claim.protective.trigger } : {}),
+      },
+      reason: res.ok
+        ? "Management request dispatched; awaiting broker confirmation."
+        : "Management request refused with command evidence; awaiting reconciliation.",
+    });
+    // Submission is not a completed modification or close. The next cycle
+    // advances it only from command evidence plus broker position truth.
+    return res.ok
+      ? { outcome: "DISPATCHED", commandId: res.commandId }
+      : { outcome: "REFUSED_WITH_COMMAND", commandId: res.commandId, error: res.error };
+  } catch (err) {
+    // Audit failed before calling the pipeline: non-submission is certain.
+    if (!submissionStarted) await updateManagement(e, claimed, memory);
+    logger.error(
+      { err, executionId: e.id, claimId: claim.claimId },
+      submissionStarted
+        ? "self-trade: management outcome uncertain; claim retained for review"
+        : "self-trade: management audit unavailable; no command submitted",
+    );
+    return submissionStarted
+      ? { outcome: "UNCERTAIN", error: err }
+      : { outcome: "AUDIT_FAILED", error: err };
+  }
+}
+
+/** A dispatch that produced no command evidence counts as a hold for the cycle. */
+function dispatchHeld(outcome: ClaimedDispatchOutcome): boolean {
+  return outcome.outcome !== "DISPATCHED" && outcome.outcome !== "REFUSED_WITH_COMMAND";
+}
+
 /**
  * Evaluate + (for L3+) act on every open position owned by this agent.
  */
@@ -91,6 +294,7 @@ export async function manageAgentPositions(
   agent: SelfTradeAgent,
   actorUserId?: number | null,
   actorRole?: string | null,
+  options: ManagePositionsOptions = {},
 ): Promise<ManagePositionsResult> {
   const result: ManagePositionsResult = {
     evaluated: 0,
@@ -98,7 +302,10 @@ export async function manageAgentPositions(
     closed: 0,
     alerted: 0,
     held: 0,
+    heldReasons: {},
+    protective: { queued: 0, considered: 0, waitedMs: 0, acted: 0, held: {} },
   };
+  const protectiveCycle = options.protectiveCycle ?? createProtectiveCycle();
 
   const filled = await db
     .select()
@@ -232,13 +439,76 @@ export async function manageAgentPositions(
       else result.held++;
       continue;
     }
-    // Position Guardian rule "self-trade-manage": every modify/close is checked
-    // against the guardian registry (never a widened stop) before the router.
-    const guardedPosition = {
-      side: (e.side === "SELL" ? "SELL" : "BUY") as "BUY" | "SELL",
-      stopLoss: pos.stopLoss != null ? Number(pos.stopLoss) : null,
-      takeProfit: pos.takeProfit != null ? Number(pos.takeProfit) : null,
-    };
+    // Fresh facts: act only on a current broker snapshot that already reflects
+    // every broker-affecting command on this ticket (entry fill, and any
+    // close/modify that was actually sent, including manual ones).
+    const readTicketCommands = () =>
+      db
+        .select({
+          commandId: arxLiveCommandsTable.commandId,
+          status: arxLiveCommandsTable.status,
+          sentToMt5At: arxLiveCommandsTable.sentToMt5At,
+          filledAt: arxLiveCommandsTable.filledAt,
+          rejectedAt: arxLiveCommandsTable.rejectedAt,
+          // Read for the protective path, which keeps only this position's
+          // account; the ordinary ordering check below uses every row.
+          bridgeConnectionId: arxLiveCommandsTable.bridgeConnectionId,
+          accountLogin: arxLiveCommandsTable.accountLogin,
+        })
+        .from(arxLiveCommandsTable)
+        .where(
+          and(
+            eq(arxLiveCommandsTable.userId, e.executingUserId!),
+            inArray(arxLiveCommandsTable.commandType, [
+              "CLOSE_LIVE_POSITION",
+              "MODIFY_LIVE_SLTP",
+            ]),
+            sql`${arxLiveCommandsTable.payload}->>'brokerTicket' = ${e.brokerTicket}`,
+            isNotNull(arxLiveCommandsTable.sentToMt5At),
+          ),
+        );
+    const ticketCommands = await readTicketCommands();
+    const nowMs = Date.now();
+    const observation = evaluatePositionObservation({
+      lastSyncedAt: pos.lastSyncedAt,
+      currentPrice: pos.currentPrice,
+      commandEventTimes: [
+        entryCommand?.filledAt,
+        ...ticketCommands.flatMap((c) => [c.sentToMt5At, c.filledAt, c.rejectedAt]),
+      ],
+      nowMs,
+    });
+    if (!observation.ok) {
+      result.held++;
+      result.heldReasons[observation.reason] =
+        (result.heldReasons[observation.reason] ?? 0) + 1;
+      logger.warn(
+        { executionId: e.id, reason: observation.reason, detail: observation.detail },
+        "self-trade: management held on position observation",
+      );
+      // Protective-action path: not a bypass. The refused observation above is
+      // never used to act. The candidate is only queued here and runs after
+      // every ordinary evaluation and dispatch (drainProtectiveCycle): it waits
+      // for a strictly newer complete sweep and re-verifies identity and
+      // geometry against that row before any claim.
+      queueProtectiveCandidate(protectiveCycle, {
+        ctx: {
+          agent,
+          execution: e,
+          entry,
+          position: pos,
+          thesis,
+          memory: mgmt,
+          holdReason: observation.reason,
+          heldAtMs: nowMs,
+          actorUserId,
+          actorRole,
+        },
+        deps: { readTicketCommands, ...(options.protective ?? {}) },
+      });
+      result.protective.queued++;
+      continue;
+    }
 
     const verdict = evaluateManagementAction({
       side: e.side as "BUY" | "SELL",
@@ -321,94 +591,34 @@ export async function manageAgentPositions(
       continue;
     }
 
-    let submissionStarted = false;
-    try {
-      await writeSelfTradeAudit(db, {
-        agentId: agent.id,
-        eventType: "MANAGEMENT_DISPATCH_INTENT",
-        actorUserId: actorUserId ?? null,
-        actorRole: actorRole ?? null,
-        severity: "INFO",
-        afterState: {
-          executionId: e.id,
-          action,
-          claimId: claim.claimId,
-          stopLoss: claim.stopLoss,
-        },
-        reason: verdict.reason,
-      });
-      submissionStarted = true;
-      const res = await guardianInstantManage({
-        ruleId: "self-trade-manage",
-        userId: e.executingUserId,
-        position: guardedPosition,
-        intent: {
-          source: "self_trade",
-          action: action === "EXIT" ? "CLOSE" : "MODIFY_SL_TP",
-          accountMode: "live",
-          positionId: e.brokerTicket,
-          selfTradeManagement: { executionId: e.id, positionRowId: pos.id, claimId: claim.claimId },
-          ...(action === "EXIT" ? {} : { newStopLoss: claim.stopLoss }),
-          oneClick: true,
-          selfTradeAgentId: agent.id,
-          selfTradeDecisionId: e.decisionId,
-          selfTradeAgentKey: agent.agentKey,
-        },
-      });
-      if (!res.ok && !res.commandId) {
-        // Ops returns the command ID on every refusal after draft creation.
-        // Without one, this returned refusal happened before a command existed.
-        await updateManagement(e, claimed, mgmt);
-        logger.warn(
-          { executionId: e.id, error: res.error },
-          "self-trade: management refused",
-        );
-        result.held++;
-        continue;
-      }
-      if (!res.commandId) {
-        logger.error(
-          { executionId: e.id, claimId: claim.claimId },
-          "self-trade: management accepted without command evidence; review required",
-        );
-        result.held++;
-        continue;
-      }
-      const submitted: ManagementMemory = {
-        ...claimed,
-        pendingManagement: { ...claim, commandId: res.commandId },
-        ...(action === "EXIT" ? { closeCommandId: res.commandId } : {}),
-      };
-      await updateManagement(e, claimed, submitted);
-      await writeSelfTradeAudit(db, {
-        agentId: agent.id,
-        eventType: !res.ok
-          ? "MANAGEMENT_REFUSAL_WITH_COMMAND"
-          : action === "EXIT"
-            ? "MANAGEMENT_EXIT_DISPATCH"
-            : "MANAGEMENT_STOP_DISPATCH",
-        actorUserId: actorUserId ?? null,
-        actorRole: actorRole ?? null,
-        severity: "INFO",
-        afterState: { executionId: e.id, commandId: res.commandId, action },
-        reason: res.ok
-          ? "Management request dispatched; awaiting broker confirmation."
-          : "Management request refused with command evidence; awaiting reconciliation.",
-      });
-      // Submission is not a completed modification or close. The next cycle
-      // advances it only from command evidence plus broker position truth.
-    } catch (err) {
-      // Audit failed before calling the pipeline: non-submission is certain.
-      if (!submissionStarted) await updateManagement(e, claimed, mgmt);
-      logger.error(
-        { err, executionId: e.id, claimId: claim.claimId },
-        submissionStarted
-          ? "self-trade: management outcome uncertain; claim retained for review"
-          : "self-trade: management audit unavailable; no command submitted",
-      );
-      result.held++;
-    }
+    // Position Guardian rule "self-trade-manage": every modify/close is checked
+    // against the guardian registry (never a widened stop) before the router.
+    const outcome = await dispatchClaimedManagement({
+      agent,
+      execution: e,
+      position: {
+        id: pos.id,
+        stopLoss: pos.stopLoss != null ? Number(pos.stopLoss) : null,
+        takeProfit: pos.takeProfit != null ? Number(pos.takeProfit) : null,
+      },
+      claim,
+      memory: mgmt,
+      claimed,
+      reason: verdict.reason,
+      actorUserId,
+      actorRole,
+    });
+    if (dispatchHeld(outcome)) result.held++;
   }
 
+  // Standalone call: drain this agent's candidates now, after its ordinary
+  // dispatches, under one bounded wait budget.
+  if (!options.protectiveCycle) {
+    const drained = await drainProtectiveCycle(protectiveCycle);
+    result.protective.considered = drained.considered;
+    result.protective.acted = drained.acted;
+    result.protective.waitedMs = drained.waitedMs;
+    result.protective.held = drained.held;
+  }
   return result;
 }

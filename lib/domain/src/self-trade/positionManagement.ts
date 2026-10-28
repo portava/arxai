@@ -40,8 +40,21 @@ export interface PositionManagementInput {
   autonomyLevel: number; // L3 manage; L4 also extend (handled by caller)
 }
 
+/**
+ * Which rule fired. The protective-action path uses it to tell a protective
+ * EXIT (invalidation breached) from a profit-taking EXIT (final target).
+ */
+export type ManagementTrigger =
+  | "INVALIDATION_BREACH"
+  | "FINAL_TARGET"
+  | "FIRST_TARGET"
+  | "BREAK_EVEN"
+  | "TRAIL";
+
 export interface PositionManagementVerdict {
   action: ManagementAction;
+  /** The rule that produced the action; null for HOLD. */
+  trigger: ManagementTrigger | null;
   reason: string;
   rMultiple: number;
   /** Proposed new stop for MOVE_TO_BE / TIGHTEN_SL (else null). */
@@ -66,6 +79,7 @@ export function evaluateManagementAction(
 
   const hold = (reason: string): PositionManagementVerdict => ({
     action: "HOLD",
+    trigger: null,
     reason,
     rMultiple,
     newStopLoss: null,
@@ -80,6 +94,7 @@ export function evaluateManagementAction(
     if (breached) {
       return {
         action: "EXIT",
+        trigger: "INVALIDATION_BREACH",
         reason: "Invalidation level breached.",
         rMultiple,
         newStopLoss: null,
@@ -97,6 +112,7 @@ export function evaluateManagementAction(
     if (reached) {
       return {
         action: "EXIT",
+        trigger: "FINAL_TARGET",
         reason: "Final take-profit target reached.",
         rMultiple,
         newStopLoss: null,
@@ -114,6 +130,7 @@ export function evaluateManagementAction(
     if (reached) {
       return {
         action: "TAKE_PARTIAL",
+        trigger: "FIRST_TARGET",
         reason: "First take-profit reached — banking partial, de-risking.",
         rMultiple,
         partialFraction: 0.5,
@@ -133,6 +150,7 @@ export function evaluateManagementAction(
     if (improvesStop(isBuy, newSl, input.currentSl)) {
       return {
         action: "MOVE_TO_BE",
+        trigger: "BREAK_EVEN",
         reason: "Reached 1R — moving stop to break-even.",
         rMultiple,
         newStopLoss: newSl,
@@ -148,6 +166,7 @@ export function evaluateManagementAction(
     if (improvesStop(isBuy, newSl, input.currentSl)) {
       return {
         action: "TIGHTEN_SL",
+        trigger: "TRAIL",
         reason: "Beyond 1.5R — trailing stop to lock in gains.",
         rMultiple,
         newStopLoss: newSl,

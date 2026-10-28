@@ -4,6 +4,10 @@ import {
   hasUnresolvedAgentAccounting,
   ENTRY_ACCOUNTING_UNRESOLVED,
 } from "./accountingHold.js";
+import {
+  lockKillSwitchesShared,
+  readKillSwitchVerdict,
+} from "./killSwitchScope.js";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { eq } from "drizzle-orm";
@@ -65,10 +69,20 @@ export interface AgentAdmissionEnvelope {
 }
 
 export class AgentEntryAuthorityError extends Error {
-  constructor(public readonly reason: string) {
+  /**
+   * `reason` is the structured code (the row's rejectionReason and `message`).
+   * `detail` is optional operator-facing text (what was measured, where it was
+   * read) for the dispatch snapshot and audit; it never changes the outcome.
+   */
+  constructor(
+    public readonly reason: string,
+    public readonly detail: string | null = null,
+  ) {
     super(reason);
   }
 }
+/** Refusal when a self-trade kill switch covers the entry at draft/confirm/claim. */
+export const ENTRY_KILL_SWITCH_ENGAGED = "ENTRY_KILL_SWITCH_ENGAGED" as const;
 const refuse = (reason: string): never => {
   throw new AgentEntryAuthorityError(reason);
 };
@@ -246,6 +260,22 @@ export async function withEntryAuthority<T>(
       return refuse("ENTRY_NOT_FUNDED");
     if (await hasUnresolvedAgentAccounting(tx, agent.id))
       return refuse(ENTRY_ACCOUNTING_UNRESOLVED);
+    // Emergency stop at the linearization point. The shared advisory lock
+    // serializes this read against every kill-switch write (exclusive side in
+    // service.toggleKillSwitch): an engage that commits first is seen here; a
+    // claim that commits first is a completed hand-off. A read error throws,
+    // rolls the transaction back and is mapped to a refusal by the caller.
+    await lockKillSwitchesShared(tx);
+    const kill = await readKillSwitchVerdict(
+      {
+        agentKey: agent.agentKey,
+        symbol: decision.symbol,
+        symbols: [request.symbol],
+        strategy: decision.setupType ?? null,
+      },
+      tx,
+    );
+    if (kill.killed) return refuse(ENTRY_KILL_SWITCH_ENGAGED);
     return operation(tx, execution, envelope);
   });
 }

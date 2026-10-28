@@ -43,6 +43,12 @@ export const ARX_LOCK_NS = {
   // gets { acquired: false,
   USER_ALLOCATION: 0x4152_5804, // keyB = userId. Wave-5 atomic per-user headroom+reservation (lock order USER -> MASTER). } and reports AGENT_ECO_RUNNER_LOCKED.
   AGENT_ECO_RUNNER: 0x4152_5803,
+  // SELF_TRADE_CYCLE — keyB = 1 (singleton). SESSION-scoped, unlike the rest:
+  // pg_try_advisory_lock on a dedicated connection held for one whole
+  // autonomous cycle (lib/selfTrade/cycleCoordinator.ts), so two API processes
+  // cannot run cycles at once. Released by unlock or when that connection or
+  // its process dies; a second caller gets 409 CYCLE_ALREADY_RUNNING.
+  SELF_TRADE_CYCLE: 0x4152_5805,
 } as const;
 
 export type ArxLockNamespace =

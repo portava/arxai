@@ -75,9 +75,12 @@ try {
         ...env,
         DATABASE_URL: `postgresql://arx_qa@localhost/arx_entry_capacity_test?host=${encodeURIComponent(socket)}&port=55439`,
         ARX_ENTRY_CAPACITY_PG: "1",
+        ...(process.env.ARX_FRESH_FACTS_BENCHMARK === "1"
+          ? { ARX_FRESH_FACTS_BENCHMARK: "1" }
+          : {}),
       },
       stdio: "inherit",
-      timeout: 60_000,
+      timeout: process.env.ARX_FRESH_FACTS_BENCHMARK === "1" ? 300_000 : 60_000,
     },
   );
   status = result.status ?? 1;

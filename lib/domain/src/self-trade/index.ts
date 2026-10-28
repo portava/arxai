@@ -47,11 +47,12 @@ export type {
   ExecutionPermissionInput,
   ExecutionPermissionVerdict,
 } from "./executionPermission.js";
-export { computeRiskAwareLot } from "./riskAwareLotSizer.js";
+export { computeRiskAwareLot, riskAwareLotBlockReason } from "./riskAwareLotSizer.js";
 export type {
   RiskAwareLotInput,
   RiskAwareLotResult,
   LotClampReason,
+  RiskAwareLotBlockReason,
 } from "./riskAwareLotSizer.js";
 export { evaluateQuotaPressure } from "./quotaPressure.js";
 export type {
@@ -62,6 +63,33 @@ export type {
 export { evaluateManagementAction } from "./positionManagement.js";
 export type {
   ManagementAction,
+  ManagementTrigger,
   PositionManagementInput,
   PositionManagementVerdict,
 } from "./positionManagement.js";
+export {
+  PROTECTIVE_HOLD_REASONS,
+  classifyProtectiveTrigger,
+  doesNotIncreaseExposure,
+  doesNotReverse,
+  doesNotLoosenStop,
+  evaluateProtectiveGeometry,
+  verifyProtectiveBridge,
+  verifyProtectivePosition,
+  explainProtectiveHold,
+  redactProtectiveDetail,
+  summarizeManagementHold,
+} from "./protectiveAction.js";
+export type {
+  ProtectiveTrigger,
+  ProtectiveSide,
+  ProtectivePositionFacts,
+  ProtectiveIntent,
+  ProtectiveCheck,
+  ProtectiveHoldReason,
+  ProtectiveHeartbeat,
+  ProtectiveEntryFacts,
+  ProtectiveExecutionFacts,
+  ProtectiveBridgeFacts,
+  ProtectiveRowFacts,
+} from "./protectiveAction.js";

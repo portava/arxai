@@ -8,6 +8,17 @@
 //   4. For every distinct agent touched (decisions ∪ active executions),
 //      manage open positions, reconcile real outcomes, post realized P/L, and
 //      soft-audit any missed daily-minimum quota.
+//   5. Run the protective-action candidates every agent's manager queued, once,
+//      after all ordinary dispatches (one wait budget per cycle, bridges
+//      concurrently).
+//
+// Under the route, the cycle runs while holding the cross-process cycle lock
+// with bounded database waits (cycleCoordinator.ts). Before each decision,
+// each agent's management and the protective drain it re-verifies the lock
+// (input.guard) and stops there if it was lost. `completion` says whether the
+// cycle finished: a step that threw, a bounded wait that expired, a lost
+// database connection, a protective outcome that is not proven or a stop is
+// never reported as COMPLETED.
 //
 // SAFETY (inviolable): no always-on loop, no new MT5 path, no gate bypass, no
 // fabricated fills. This orchestrator only sequences the existing, gated steps.
@@ -29,6 +40,7 @@ import { logger } from "../logger.js";
 import { runDecisionCycle, buildFleetSafetyContext } from "./decisionEngine.js";
 import { executeAgentDecision, reconcileAgentExecutions, type AgentExecutionStatus } from "./agentExecutor.js";
 import { manageAgentPositions } from "./livePositionManager.js";
+import { createProtectiveCycle, drainProtectiveCycle } from "./protectiveActionPath.js";
 import { applyRealizedFromFills } from "./agentLedger.js";
 import { countAgentFilledTradesToday } from "./agentQuotaEngine.js";
 import { writeSelfTradeAudit } from "./audit.js";
@@ -39,6 +51,7 @@ import { evaluateEntityDrift } from "../aaci/learning/driftService.js";
 import { getOperationalMode } from "../security/operationalMode.js";
 import { evaluateTradeAnomalyForUser } from "../security/anomalyService.js";
 import { DEFAULT_ANOMALY_POLICY } from "@workspace/domain/security";
+import { isDbConnectionLost, isDbWaitTimeout, type CycleGuard } from "./cycleCoordinator.js";
 
 const EXECUTABLE_OUTCOMES = ["APPROVED", "APPROVED_REDUCED", "PREPARE_ONLY"] as const;
 const ACTIVE_EXEC_STATUSES = ["PENDING_TICKET", "DISPATCHED", "FILLED"] as const;
@@ -49,6 +62,42 @@ export interface RunAutonomousCycleInput {
   actorRole?: string | null;
   force?: boolean;
   reason?: string | null;
+  /** Cross-process lock checks and wait accounting (route); omitted, the cycle runs unguarded. */
+  guard?: CycleGuard;
+}
+
+/**
+ * Whether the cycle finished. COMPLETED only when every step ran and none
+ * threw, hit a bounded database wait, lost its database connection or left a
+ * protective outcome unproven (PROTECTIVE_HOLD_OUTCOME_UNCERTAIN /
+ * PROTECTIVE_HOLD_INTERNAL_ERROR / PROTECTIVE_DRAIN_FAILED). A failed step's outcome is not proven
+ * by the cycle: a decision whose executor threw may have created a command
+ * (its reservation, if any, is kept), so the operator checks the execution
+ * feed rather than reading the tallies as the whole truth.
+ */
+export interface CycleCompletion {
+  status: "COMPLETED" | "INCOMPLETE" | "STOPPED";
+  /** LEASE_LOST: the cross-process lock was lost, so the cycle stopped at a safe point. */
+  stopReason: "LEASE_LOST" | null;
+  /** Executor threw; whether a command was created is not proven here. */
+  decisionsFailed: number;
+  /** Not reached because the cycle stopped. */
+  decisionsNotStarted: number;
+  /** Reconcile/manage threw for the agent. */
+  agentsFailed: number;
+  agentsNotStarted: number;
+  /** Loading the agents to manage failed, so no agent was managed. */
+  managementStepFailed: boolean;
+  /** Queued protective candidates not drained because the cycle stopped (nothing claimed or sent). */
+  protectiveNotRun: number;
+  /** Connection, statement, lock, idle-transaction or client-read timeouts seen during the cycle. */
+  dbWaitTimeouts: number;
+  /**
+   * Database connections lost during the cycle (terminated backend, restart,
+   * network failure). A lower layer may have turned one into an "outcome
+   * uncertain" hold, so the cycle is not COMPLETED.
+   */
+  dbConnectionFailures: number;
 }
 
 export interface RunAutonomousCycleResult {
@@ -60,12 +109,50 @@ export interface RunAutonomousCycleResult {
   positionsClosed: number;
   reconciled: { filled: number; rejected: number; closed: number; expired: number };
   realizedPosted: number;
+  /**
+   * Management holds by structured reason: ordinary observation holds
+   * (MANAGEMENT_OBSERVATION_*), protective-path holds (PROTECTIVE_*) and the
+   * per-agent AACI pause. Read-only visibility for the operator surface.
+   */
+  managementHeld: Record<string, number>;
+  /** Protective-action drain (step 5); holds are also counted in managementHeld. */
+  protective: {
+    considered: number;
+    acted: number;
+    bridges: number;
+    elapsedMs: number;
+  };
+  completion: CycleCompletion;
 }
 
 export async function runAutonomousCycle(
   input: RunAutonomousCycleInput,
 ): Promise<RunAutonomousCycleResult> {
-  const { scope, actorUserId, actorRole, reason } = input;
+  const { scope, actorUserId, actorRole, reason, guard } = input;
+  const completion: CycleCompletion = {
+    status: "COMPLETED",
+    stopReason: null,
+    decisionsFailed: 0,
+    decisionsNotStarted: 0,
+    agentsFailed: 0,
+    agentsNotStarted: 0,
+    managementStepFailed: false,
+    protectiveNotRun: 0,
+    dbWaitTimeouts: 0,
+    dbConnectionFailures: 0,
+  };
+  const caught = { timeouts: 0, connectionFailures: 0 };
+  const noteFailure = (err: unknown) => {
+    if (isDbWaitTimeout(err)) caught.timeouts++;
+    else if (isDbConnectionLost(err)) caught.connectionFailures++;
+  };
+  // Safe point: false once the cross-process lock is gone (stop, never continue unguarded).
+  const mayContinue = async (): Promise<boolean> => {
+    if (completion.stopReason) return false;
+    if (!guard || (await guard.stillHeld())) return true;
+    completion.stopReason = "LEASE_LOST";
+    return false;
+  };
 
   // 0. Fail-closed invocation audit: a durable record of WHO triggered this
   // controlled run, with what reason and scope, BEFORE any side effect. If the
@@ -139,7 +226,11 @@ export async function runAutonomousCycle(
     });
   }
 
-  for (const decision of decisions) {
+  for (const [index, decision] of decisions.entries()) {
+    if (!(await mayContinue())) {
+      completion.decisionsNotStarted = decisions.length - index;
+      break;
+    }
     const bundle = bundles.get(decision.agentId);
     if (!bundle || !bundle.settings) {
       logger.warn({ agentId: decision.agentId }, "self-trade: missing agent/settings for decision");
@@ -230,31 +321,45 @@ export async function runAutonomousCycle(
       });
       executed[outcome.status] = (executed[outcome.status] ?? 0) + 1;
     } catch (err) {
+      completion.decisionsFailed++;
+      noteFailure(err);
       logger.error({ err, decisionId: decision.id }, "self-trade: executeAgentDecision threw");
     }
   }
 
   // 4. Distinct agents to manage/reconcile: decision agents ∪ agents with any
-  // active execution row.
-  const activeExecAgents = await db
-    .selectDistinct({ agentId: selfTradeAgentExecutionsTable.agentId })
-    .from(selfTradeAgentExecutionsTable)
-    .where(inArray(selfTradeAgentExecutionsTable.status, ACTIVE_EXEC_STATUSES as unknown as string[]));
+  // active execution row. Entries may already be dispatched, so a failure from
+  // here on is reported in `completion` instead of discarding the tallies.
+  let agentIds = new Set<number>();
+  let manageBundles = new Map<number, AgentBundle>();
+  if (!completion.stopReason) {
+    try {
+      const activeExecAgents = await db
+        .selectDistinct({ agentId: selfTradeAgentExecutionsTable.agentId })
+        .from(selfTradeAgentExecutionsTable)
+        .where(inArray(selfTradeAgentExecutionsTable.status, ACTIVE_EXEC_STATUSES as unknown as string[]));
 
-  const agentIds = new Set<number>([
-    ...decisions.map((d) => d.agentId),
-    ...activeExecAgents.map((r) => r.agentId),
-  ]);
+      agentIds = new Set<number>([
+        ...decisions.map((d) => d.agentId),
+        ...activeExecAgents.map((r) => r.agentId),
+      ]);
 
-  // A scoped run must never manage/reconcile an out-of-scope agent: the active
-  // execution query is fleet-wide, so intersect with the scope's visible ids.
-  if (scopedAgentIds) {
-    for (const id of [...agentIds]) {
-      if (!scopedAgentIds.has(id)) agentIds.delete(id);
+      // A scoped run must never manage/reconcile an out-of-scope agent: the active
+      // execution query is fleet-wide, so intersect with the scope's visible ids.
+      if (scopedAgentIds) {
+        for (const id of [...agentIds]) {
+          if (!scopedAgentIds.has(id)) agentIds.delete(id);
+        }
+      }
+
+      manageBundles = await loadAgentBundles([...agentIds]);
+    } catch (err) {
+      completion.managementStepFailed = true;
+      noteFailure(err);
+      agentIds = new Set();
+      logger.error({ err }, "self-trade: loading agents to manage failed; no agent managed this cycle");
     }
   }
-
-  const manageBundles = await loadAgentBundles([...agentIds]);
 
   const result: RunAutonomousCycleResult = {
     cycleId: cycle.cycleId,
@@ -265,9 +370,21 @@ export async function runAutonomousCycle(
     positionsClosed: 0,
     reconciled: { filled: 0, rejected: 0, closed: 0, expired: 0 },
     realizedPosted: 0,
+    managementHeld: {},
+    protective: { considered: 0, acted: 0, bridges: 0, elapsedMs: 0 },
+    completion,
   };
+  // Protective candidates are only collected per agent below and run in step 5,
+  // so a justified ordinary exit for a later agent never waits behind them.
+  const protectiveCycle = createProtectiveCycle();
 
+  let agentsReached = 0;
   for (const agentId of agentIds) {
+    if (!(await mayContinue())) {
+      completion.agentsNotStarted = agentIds.size - agentsReached;
+      break;
+    }
+    agentsReached++;
     const bundle = manageBundles.get(agentId);
     if (!bundle) continue;
     result.agentsManaged++;
@@ -289,9 +406,16 @@ export async function runAutonomousCycle(
       // 3. Manage open positions (L2 alert-only / L3+ act) — SKIPPED when AACI
       //    detected an incoherent chain that needs operator review first.
       if (!chain.shouldPauseManagement) {
-        const managed = await manageAgentPositions(bundle.agent, actorUserId, actorRole);
+        const managed = await manageAgentPositions(bundle.agent, actorUserId, actorRole, {
+          protectiveCycle,
+        });
         result.positionsModified += managed.modified;
         result.positionsClosed += managed.closed;
+        for (const [reason, count] of Object.entries(managed.heldReasons))
+          result.managementHeld[reason] = (result.managementHeld[reason] ?? 0) + count;
+      } else {
+        result.managementHeld.MANAGEMENT_PAUSED_AACI_REVIEW =
+          (result.managementHeld.MANAGEMENT_PAUSED_AACI_REVIEW ?? 0) + 1;
       }
 
       // 4. Post realized P/L from real closed fills into the ledger.
@@ -335,10 +459,74 @@ export async function runAutonomousCycle(
         }
       }
     } catch (err) {
+      completion.agentsFailed++;
+      noteFailure(err);
       logger.error({ err, agentId }, "self-trade: manage/reconcile threw");
     }
   }
 
+  // 5. Protective-action candidates queued above (only from agents whose
+  //    management was not paused). Each re-reads the platform stop, arming and
+  //    kill switch at run time and dispatches through the same gated pipeline.
+  const protectiveQueued = protectiveCycle.candidates.length;
+  if (completion.stopReason || (protectiveQueued > 0 && !(await mayContinue()))) {
+    // Not drained: no protective claim was taken, so nothing was sent.
+    completion.protectiveNotRun = protectiveQueued;
+    return finishCompletion(result, guard, caught);
+  }
+  try {
+    const drained = await drainProtectiveCycle(protectiveCycle);
+    result.protective = {
+      considered: drained.considered,
+      acted: drained.acted,
+      bridges: drained.bridges,
+      elapsedMs: drained.elapsedMs,
+    };
+    for (const [reason, count] of Object.entries(drained.held))
+      result.managementHeld[reason] = (result.managementHeld[reason] ?? 0) + count;
+  } catch (err) {
+    // The drain guards each candidate itself, so this is a setup/accounting
+    // failure. Report it instead of a silent 0/0/0: every queued candidate is
+    // counted under PROTECTIVE_DRAIN_FAILED, whose text claims neither
+    // "nothing was sent" nor a dispatch (the outcome is unknown here).
+    logger.error({ err, queued: protectiveQueued }, "self-trade: protective drain threw");
+    noteFailure(err);
+    if (protectiveQueued > 0) {
+      result.protective = { considered: protectiveQueued, acted: 0, bridges: 0, elapsedMs: 0 };
+      result.managementHeld.PROTECTIVE_DRAIN_FAILED =
+        (result.managementHeld.PROTECTIVE_DRAIN_FAILED ?? 0) + protectiveQueued;
+    }
+  }
+
+  return finishCompletion(result, guard, caught);
+}
+
+/** Protective holds whose outcome the cycle did not establish (a command may exist, or a step broke). */
+const UNPROVEN_PROTECTIVE_HOLDS = [
+  "PROTECTIVE_HOLD_OUTCOME_UNCERTAIN",
+  "PROTECTIVE_HOLD_INTERNAL_ERROR",
+  "PROTECTIVE_DRAIN_FAILED",
+] as const;
+
+/** Settle `completion.status` from what happened; never COMPLETED after a failure or stop. */
+function finishCompletion(
+  result: RunAutonomousCycleResult,
+  guard: CycleGuard | undefined,
+  caught: { timeouts: number; connectionFailures: number },
+): RunAutonomousCycleResult {
+  const c = result.completion;
+  // The guard also counts errors a lower layer absorbed into a refusal or hold.
+  const stats = guard?.stats();
+  c.dbWaitTimeouts = Math.max(caught.timeouts, stats?.dbWaitTimeouts ?? 0);
+  c.dbConnectionFailures = Math.max(caught.connectionFailures, stats?.dbConnectionFailures ?? 0);
+  const failed =
+    c.decisionsFailed > 0 ||
+    c.agentsFailed > 0 ||
+    c.managementStepFailed ||
+    c.dbWaitTimeouts > 0 ||
+    c.dbConnectionFailures > 0 ||
+    UNPROVEN_PROTECTIVE_HOLDS.some((reason) => (result.managementHeld[reason] ?? 0) > 0);
+  c.status = c.stopReason ? "STOPPED" : failed ? "INCOMPLETE" : "COMPLETED";
   return result;
 }
 

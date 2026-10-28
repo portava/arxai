@@ -226,6 +226,12 @@ const MANUAL_ONLY = new Set<string>([
   // umbrella's DB route leg cannot run in the offline `ci` lane. It exists only
   // as a one-shot local/manual aggregate, so it is deliberately not in `ci`.
   "workspace::test:one-click-safety",
+  // The legacy server-backed lane (tests/*.test.mjs) on an isolated server it
+  // starts itself: disposable PostgreSQL, no background workers, external
+  // connections refused. It must run as a non-root user and still carries
+  // known-gap failures for requirements the governed paths do not yet enforce
+  // (phase1/phase2 notes), so it is run by hand, not in `ci` or `ci:integration`.
+  "@workspace/api-server::test:isolated-server-lane",
 ]);
 
 // DB-backed / in-process-app tests that run automatically before every release

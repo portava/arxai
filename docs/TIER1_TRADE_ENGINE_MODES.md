@@ -322,6 +322,63 @@ flight refused.
     stopped by the Trade Action duplicate check (an identical open in flight
     within 5 minutes), not by a key.
 
+### Legacy server-backed lane after the retirement
+
+The 16 cases in `artifacts/api-server/tests/phase1.test.mjs` and
+`phase2.test.mjs` that drove the Safety Core through `/execute-trade` now
+assert the same requirement against the governed paths (PAPER through
+`POST /api/paper/orders`, SIMULATED / DEMO / LIVE through the Trade Action
+Center, decisions read from `GET /api/me/risk/events`). Four cases in
+`phase2-validation.test.mjs` also still called the retired endpoint and
+passed without testing anything: V-S3, V-QY5 and V-QY6 now make their trade
+decision on the governed paths, and V-R1 drops the call, because
+`GET /system/status` runs the state machine itself. RG-1 covers the simulator
+OMS entry (`POST /orders/create`) only; RG-1b covers the named replacement
+paths. LOG-3 drives a LIVE action with a resolved (token-less, EA-less)
+live connection to its refusal by the broker-execution halt; the original
+LOG-3 requirement, an approved LIVE trade recorded in the vault, is LOG-3b,
+which is skipped because it needs an armed trader and live broker execution,
+and is not met in the code (gap 2).
+`tests/execute-trade-retired.test.mjs` proves the endpoint answers 410 for
+PAPER-, DEMO- and LIVE-shaped bodies and that every table in the schema keeps
+its row count. Run the lane with
+`pnpm --filter @workspace/api-server run test:isolated-server-lane` (non-root;
+disposable PostgreSQL, no background workers, outbound TCP/TLS, UDP and DNS
+refused; see `artifacts/api-server/scripts/isolated-lane/run.mjs`).
+
+Cases fail on purpose: the governed paths do not enforce these original
+requirements. They are open, not accepted:
+
+1. **Safety Core mode and state are not enforced on PAPER** (CT-2, CT-3,
+   RG-2, LOG-5). `POST /paper/orders` books an order while the Safety Core is
+   `OBSERVE_ONLY`, `SUGGEST_ONLY` or in a non-trading global state; the PAPER
+   halt reads only the kill switches (`lib/safety/tradingHalt.ts`).
+2. **Governed trade decisions do not reach the Black Box vault or the
+   Phase-2 audit log** (LOG-2, QUERY-2, QUERY-3, V-QY6; LOG-3b). Blocked and
+   allowed decisions are audited only in `user_risk_events`; no vault row
+   carries their symbol or the `RISK_GOVERNOR` source, and nothing reaches
+   `audit_events`, which only `safetyCore` `emit()` mirrors into. The vault
+   trade loggers in `lib/vaultLogger.ts` (including `logApprovedTrade`) have
+   no caller (see "What remains" 1), and no file on the governed LIVE path
+   (`lib/live/`, `lib/tradeEngine/pipeline.ts`, `routes/meLive.ts`,
+   `routes/mt5Live*.ts`) writes the vault, so an approved LIVE trade would
+   not be recorded there either.
+3. **The paper order's vault row is not linked** (LOG-4, QUERY-7, V-QY5).
+   `PAPER_ORDER_PLACED` carries the order id only in its payload
+   (`lib/tradeEngine/paperVenue.ts` `vaultBehavior`), so `linkedTradeId`
+   queries cannot find it, and it is written straight to `vault_events`, so
+   the audit log's trade-id query cannot either.
+4. **No confidence floor on the named replacement paths** (RG-1b). The floor
+   is a venue rule (`lib/riskGovernor/preTrade.ts` `minAiConfidence`) that
+   only the simulator OMS sets (`lib/oms.ts`). A Ruby- or
+   automation-originated SIMULATED trade action is judged with origin
+   `ruby` / `automation` but without venue rules, so a confidence-10 order
+   passes the Risk Governor; the draft cannot carry a model confidence at all
+   (`routes/meTradeActions.ts` `draftSchema`), and `POST /paper/orders` has no
+   origin. In this offline lane the PAPER venue then refuses for want of a
+   real provider quote, so the case shows the Risk Governor's decision, not a
+   booked order.
+
 ## Round 3: one entry for every producer
 
 ### What changed in this round

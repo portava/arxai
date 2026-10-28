@@ -72,11 +72,13 @@ import { checkSingleRiskAuthority } from "./check-single-risk-authority.js";
 import { checkBrokerConnectionSingleOwner } from "./check-broker-connection-single-owner.js";
 import { checkLearningMemorySingleOwner } from "./check-learning-memory-single-owner.js";
 import { checkPositionGuardianWired } from "./check-position-guardian-wired.js";
+import { checkSelfTradeKillSwitchCoverage } from "./check-self-trade-kill-switch-coverage.js";
 import { checkSingleRoleModel } from "./check-single-role-model.js";
 import { checkStopModificationAuthority } from "./check-stop-modification-authority.js";
 import { checkSinglePositionSizer } from "./check-single-position-sizer.js";
 import { checkSinglePositionLedger } from "./check-single-position-ledger.js";
 import { checkSinglePositionGuardian } from "./check-single-position-guardian.js";
+import { checkProtectiveActionPath } from "./check-protective-action-path.js";
 import { checkSingleOpenPositionView } from "./check-single-open-position-view.js";
 import { checkTradeEngineSinglePipeline } from "./check-trade-engine-single-pipeline.js";
 import { checkSinglePaperBook } from "./check-single-paper-book.js";
@@ -175,6 +177,8 @@ const checks: Array<() => CheckResult> = [
   checkSinglePositionGuardian,
   checkSingleOpenPositionView,
   checkTradeEngineSinglePipeline,
+  checkSelfTradeKillSwitchCoverage,
+  checkProtectiveActionPath,
   checkSinglePaperBook,
   checkSingleLimitStore,
   checkLegacyLiveStateConfined,

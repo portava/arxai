@@ -25,6 +25,13 @@ import {
 import { runDecisionCycle } from "../lib/selfTrade/decisionEngine.js";
 import { getVolatilityMatrix } from "../lib/selfTrade/volatilityMatrixService.js";
 import { runAutonomousCycle } from "../lib/selfTrade/autonomousCycle.js";
+import {
+  buildRunCycleResponse,
+  createCycleSingleFlight,
+  describeCycleConflict,
+  describeCycleFailure,
+} from "../lib/selfTrade/cycleReport.js";
+import { CycleCoordinationError, isDbWaitTimeout, runCoordinatedCycle } from "../lib/selfTrade/cycleCoordinator.js";
 import { managementNote } from "../lib/selfTrade/executionLifecycle.js";
 
 const router = Router();
@@ -159,6 +166,10 @@ const runCycleInput = z
     path: ["ownerId"],
   });
 
+// One admin-triggered cycle at a time in this process (see createCycleSingleFlight),
+// and across API processes through the database cycle lock (runCoordinatedCycle).
+const autonomousCycleFlight = createCycleSingleFlight();
+
 router.post("/self-trade-ai/run-autonomous-cycle", requireUser, async (req, res) => {
   // ADMIN/OWNER only, audited. Drives ONE controlled autonomous cycle through
   // the existing gated pipeline — no always-on loop, no gate bypass.
@@ -171,14 +182,48 @@ router.post("/self-trade-ai/run-autonomous-cycle", requireUser, async (req, res)
     p.data.ownerType != null
       ? { ownerType: p.data.ownerType, ownerId: p.data.ownerId ?? null }
       : undefined;
-  req.log.warn({ actorUserId, scope, reason: p.data.reason }, "self-trade autonomous cycle invoked");
-  const result = await runAutonomousCycle({
-    scope,
-    actorUserId,
-    actorRole: req.authUser?.role ?? null,
-    reason: p.data.reason,
-  });
-  res.json({ ok: true, ...result });
+  const runFlight = () =>
+    autonomousCycleFlight.run(() =>
+      runCoordinatedCycle((guard) => {
+        // Logged only once both locks are taken, so a refused run is not logged as invoked.
+        req.log.warn({ actorUserId, scope, reason: p.data.reason }, "self-trade autonomous cycle invoked");
+        return runAutonomousCycle({
+          scope,
+          actorUserId,
+          actorRole: req.authUser?.role ?? null,
+          reason: p.data.reason,
+          guard,
+        });
+      }),
+    );
+  let flight: Awaited<ReturnType<typeof runFlight>>;
+  try {
+    flight = await runFlight();
+  } catch (e) {
+    // Both locks are already released here. Never answered as success.
+    const coordination = e instanceof CycleCoordinationError;
+    const dbWaitTimeout = isDbWaitTimeout(e);
+    req.log.error({ err: e, actorUserId, scope, coordination, dbWaitTimeout }, "self-trade autonomous cycle failed");
+    err(res, 500, "CYCLE_FAILED", describeCycleFailure(dbWaitTimeout, coordination));
+    return;
+  }
+  const refusal = !flight.ran
+    ? { startedAt: flight.startedAt, where: "this-process" as const }
+    : !flight.value.ran
+      ? { startedAt: flight.value.holderStartedAt, where: "another-process" as const }
+      : null;
+  if (refusal) {
+    const conflict = describeCycleConflict(refusal.startedAt, Date.now(), refusal.where);
+    const logFields = { actorUserId, scope, reason: p.data.reason, runningForSec: conflict.runningForSec, where: refusal.where };
+    if (conflict.stuck) {
+      req.log.error(logFields, "self-trade autonomous cycle refused: a cycle has held the single-flight slot unusually long (possibly stuck)");
+    } else {
+      req.log.warn(logFields, "self-trade autonomous cycle refused: one is already running");
+    }
+    err(res, 409, "CYCLE_ALREADY_RUNNING", conflict.message);
+    return;
+  }
+  if (flight.ran && flight.value.ran) res.json(buildRunCycleResponse(flight.value.value));
 });
 
 export default router;

@@ -167,9 +167,9 @@ const { verifyCommandIntegrityForDispatch } =
 const { manageAgentPositions } = await import("../livePositionManager.js");
 const { guardianInstantManage } =
   await import("../../positionGuardian/manage.js");
-const { livePositionWriter } = await import("../../positions/ledger.js");
+const { livePositionWriter, livePositionLedger } = await import("../../positions/ledger.js");
 const { updateConnection } = await import("../../brokerHub/connections.js");
-const { reportedManagementIdentity } =
+const { reportedManagementIdentity, managementPositionScope } =
   await import("../managementConsumers.js");
 const { reconcileAgentExecutions } = await import("../agentReconciliation.js");
 const { applyRealizedFromFills, defundAgent } =
@@ -2333,9 +2333,18 @@ it("actual concurrent cold-map manual polls complete with a one-connection pool"
   await db.insert(commands).values([1,2].map(n=>({commandId:`cold-manual-${n}`,userId:9,bridgeConnectionId:1,
     commandType:"CLOSE_LIVE_POSITION",symbol:"INTERNAL",side:"BUY",orderType:"CLOSE",requestedVolume:.1,
     status:"SENT_TO_MT5_LIVE",payload:{brokerTicket:"123"}})));
+  // The child enforces the poll deadline itself (the property); this timeout is
+  // liveness only and must cover a cold ~360-module tsx bootstrap on a slow
+  // host (6-10 s measured on a loaded 4-vCPU VM) while staying well inside the
+  // runner's 120 s suite budget.
   const result=spawnSync(process.execPath,["--import","tsx",fileURLToPath(new URL("./terminalPollSingleConnection.ts",import.meta.url))],
-    {env:process.env,encoding:"utf8",timeout:8000});
+    {env:process.env,encoding:"utf8",timeout:45_000});
   assert.equal(result.status,0,`${result.error ?? ""} ${result.stdout} ${result.stderr}`);
+  const report=result.stdout.split("\n").map(line=>{try{return JSON.parse(line);}catch{return null;}})
+    .find(v=>v?.terminalPollSingleConnection)?.terminalPollSingleConnection;
+  assert.ok(report,`child reported no poll timing: ${result.stdout} ${result.stderr}`);
+  assert.ok(Number.isFinite(report.pollsMs)&&report.pollsMs>=0&&report.pollsMs<report.pollDeadlineMs,
+    `polls took ${report.pollsMs} ms over a one-connection pool (deadline ${report.pollDeadlineMs} ms, bootstrap ${report.bootstrapMs} ms)`);
 });
 it("actual precision-rich automatic mirror survives float4 storage through mailbox poll and extracted EA", async () => {
   await updateConnection(1,{accountNumber:"100"});
@@ -2427,6 +2436,33 @@ it("byte prefilter and UTF16 envelope budget remain distinct for Unicode payload
   assert.equal(response.commands.length,3);assert.ok(body.length<=65536);assert.ok(Buffer.byteLength(body)>65536);
   const rows=await db.select().from(mailbox);assert.equal(rows.find(r=>r.id===large!.id)!.status,"PENDING");
   assert.equal(rows.filter(r=>r.status==="PENDING").length,2);
+});
+
+// ── Fresh position observation at the final management claim (2026-10-27) ──
+for (const [label, offsetMs, reason] of [
+  ["stale", -91_000, "MANAGEMENT_OBSERVATION_STALE"],
+  ["future-dated", 60_000, "MANAGEMENT_OBSERVATION_FUTURE_DATED"],
+] as const)
+  it(`final claim refuses a ${label} broker position observation`, async () => {
+    const row = await approved();
+    await db
+      .update(positions)
+      .set({ lastSyncedAt: new Date(Date.now() + offsetMs) })
+      .where(eq(positions.id, 1));
+    await denied(send(row), reason);
+    const [current] = await db
+      .select()
+      .from(commands)
+      .where(eq(commands.commandId, row.commandId));
+    assert.equal(current!.status, "LIVE_APPROVED");
+  });
+it("final claim accepts a just-refreshed observation with unchanged geometry", async () => {
+  const row = await approved();
+  await db
+    .update(positions)
+    .set({ lastSyncedAt: new Date() })
+    .where(eq(positions.id, 1));
+  assert.equal((await send(row))?.status, "SENT_TO_MT5_LIVE");
 });
 
 // Versioned synchronous CTrade reports pass through both actual route handlers
@@ -2719,3 +2755,370 @@ it("direct live route: unversioned acceptance/partial claims without terminal ev
     assert.equal(stored!.status, "LIVE_UNKNOWN", status); assert.equal(stored!.executedVolume, null, status); assert.equal((await db.select().from(reservations))[0]!.status, "RESERVED");
   }
 });
+
+// ── Protective-action final-claim parity (owner decision 2026-10-27) ─────────
+// A claim taken by the protective path carries the sweep evidence it was
+// justified by. The final claim re-checks, over the rows it already locks, that
+// the row is still complete-sweep evidence not older than that, and that a stop
+// move still tightens against the locked price. Ordinary claims are unchanged.
+type ProtectiveAction = "EXIT" | "TIGHTEN_SL";
+async function protectivePending(action: ProtectiveAction, evidenceAt: Date) {
+  await db
+    .update(executions)
+    .set({
+      managementState: {
+        pendingManagement: {
+          claimId: "claim-1",
+          action,
+          stopLoss: action === "EXIT" ? null : 1.095,
+          requestedAt: new Date().toISOString(),
+          protective: {
+            trigger: action === "EXIT" ? "EXIT_INVALIDATION" : "TIGHTEN_SL",
+            heldReason: "MANAGEMENT_OBSERVATION_STALE",
+            heldAtMs: evidenceAt.getTime() - 3_000,
+            evidence: {
+              lastSyncedAt: evidenceAt.toISOString(),
+              sweepAt: new Date(evidenceAt.getTime() + 5).toISOString(),
+              heartbeatAt: evidenceAt.toISOString(),
+              serverName: "Venue-Server-1",
+              currentPrice: 1.112,
+              volume: 0.1,
+              stopLoss: 1.09,
+              takeProfit: 1.12,
+            },
+          },
+        },
+      },
+    })
+    .where(eq(executions.id, 1));
+}
+/** The row and bridge as a complete sweep at `at` leaves them. */
+async function sweepEvidence(at: Date, patch: Record<string, unknown> = {}) {
+  await db
+    .update(positions)
+    .set({ lastSyncedAt: at, lastReliableSnapshotAt: at, brokerAbsentSnapshotCount: 0, currentPrice: 1.112, ...patch })
+    .where(eq(positions.id, 1));
+  await updateConnection(1, { lastPositionsSnapshotAt: new Date(at.getTime() + 5), lastHeartbeat: new Date() });
+}
+async function commandStatus(commandId: string) {
+  return (await db.select().from(commands).where(eq(commands.commandId, commandId)))[0]!.status;
+}
+for (const action of ["EXIT", "TIGHTEN_SL"] as const)
+  it(`protective ${action} claim with complete-sweep evidence is accepted at the final claim`, async () => {
+    const T = new Date();
+    await protectivePending(action, T);
+    await sweepEvidence(T);
+    const row = await approved();
+    assert.equal((await send(row))?.status, "SENT_TO_MT5_LIVE");
+  });
+it("protective claim refuses a locked row older than its claimed evidence; row stays approved", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(new Date(T.getTime() - 1));
+  const row = await approved();
+  await denied(send(row), "PROTECTIVE_OBSERVATION_NOT_NEWER");
+  assert.equal(await commandStatus(row.commandId), "LIVE_APPROVED");
+});
+it("a 45 s old reconciler-written row passes the ordinary claim but not the protective claim", async () => {
+  const old = new Date(Date.now() - 45_000);
+  // Ordinary management claim: the existing 90 s rule accepts the age.
+  const ordinary = await approved();
+  await db.update(positions).set({ lastSyncedAt: old, lastReliableSnapshotAt: null }).where(eq(positions.id, 1));
+  assert.equal((await send(ordinary))?.status, "SENT_TO_MT5_LIVE");
+  // Protective claim on the same row: not complete-sweep evidence.
+  await resetFixture();
+  await protectivePending("EXIT", new Date(Date.now() - 60_000));
+  await sweepEvidence(old);
+  await db.update(positions).set({ lastReliableSnapshotAt: null }).where(eq(positions.id, 1));
+  const protective = await approved();
+  await denied(send(protective), "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP");
+  assert.equal(await commandStatus(protective.commandId), "LIVE_APPROVED");
+});
+it("protective claim refuses when the bridge has no complete-sweep marker", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await updateConnection(1, { lastPositionsSnapshotAt: null });
+  await denied(send(row), "PROTECTIVE_SWEEP_MARKER_STALE");
+});
+it("protective claim refuses when the ticket went absent from a sweep between draft and claim", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await livePositionWriter.update(
+    { brokerAbsentSnapshotCount: 1, lastBrokerAbsentAt: new Date(), lastReliableSnapshotAt: new Date() },
+    eq(positions.id, 1),
+  );
+  await denied(send(row), "PROTECTIVE_POSITION_ABSENT_AT_BROKER");
+});
+it("protective claim: a serverName change after the claim is still the existing bridge refusal", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await updateConnection(1, { serverName: "Other-Server" });
+  await denied(send(row), "MANAGEMENT_BRIDGE_IDENTITY_CHANGED");
+});
+it("protective stop move refuses when the locked price moved through the next stop; the ordinary move is unchanged", async () => {
+  // Ordinary TIGHTEN_SL to 1.095 with price 1.094: today's claim does not look at price.
+  const ordinary = await prepareModify();
+  await db.update(positions).set({ currentPrice: 1.094, lastSyncedAt: new Date() }).where(eq(positions.id, 1));
+  assert.equal((await send(ordinary))?.status, "SENT_TO_MT5_LIVE");
+  await resetFixture();
+  const T = new Date();
+  await protectivePending("TIGHTEN_SL", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await db.update(positions).set({ currentPrice: 1.094 }).where(eq(positions.id, 1));
+  await denied(send(row), "PROTECTIVE_STOP_THROUGH_PRICE");
+  assert.equal(await commandStatus(row.commandId), "LIVE_APPROVED");
+});
+it("protective stop move refuses a stop that no longer tightens the locked row", async () => {
+  const T = new Date();
+  await protectivePending("TIGHTEN_SL", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  // A manual move already placed the stop at the proposed level: a no-op must not be sent.
+  await db.update(positions).set({ stopLoss: 1.095 }).where(eq(positions.id, 1));
+  // Geometry drift is refused first by the existing target comparison.
+  await denied(send(row), "MANAGEMENT_TARGET_CHANGED");
+});
+/** Another (manual) close/modify for the managed ticket, as the live pipeline records it. */
+async function manualTicketCommand(patch: Partial<typeof commands.$inferInsert>) {
+  await db.insert(commands).values({
+    commandId: "manual-modify-1",
+    userId: 9,
+    bridgeConnectionId: 1,
+    accountLogin: "A",
+    brokerServer: "Venue Company",
+    commandType: "MODIFY_LIVE_SLTP",
+    status: "LIVE_FILLED",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    orderType: "MODIFY",
+    requestedVolume: 0.1,
+    stopLoss: 1.091,
+    sourcePage: "INSTANT_MODIFY",
+    payload: { brokerTicket: "123" },
+    ...patch,
+  });
+}
+it("protective claim refuses a manual modify on the ticket sent after its evidence; the ordinary claim is unchanged", async () => {
+  // Ordinary claim: today's parity does not look at other ticket commands.
+  const ordinary = await approved();
+  const now = Date.now();
+  await db.update(positions).set({ lastSyncedAt: new Date(now) }).where(eq(positions.id, 1));
+  await manualTicketCommand({ sentToMt5At: new Date(now + 1_000), filledAt: new Date(now + 1_500) });
+  assert.equal((await send(ordinary))?.status, "SENT_TO_MT5_LIVE");
+  await resetFixture();
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await manualTicketCommand({ sentToMt5At: new Date(T.getTime() + 1_000), filledAt: new Date(T.getTime() + 1_500) });
+  await denied(send(row), "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE");
+  assert.equal(await commandStatus(row.commandId), "LIVE_APPROVED");
+});
+it("protective claim refuses while a manual command on the ticket is still in flight", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await manualTicketCommand({ status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date(T.getTime() - 10_000) });
+  await denied(send(row), "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT");
+  assert.equal(await commandStatus(row.commandId), "LIVE_APPROVED");
+});
+it("protective claim accepts a manual command that settled before its evidence, and ignores other tickets", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  await manualTicketCommand({ sentToMt5At: new Date(T.getTime() - 10_000), filledAt: new Date(T.getTime() - 9_000) });
+  await manualTicketCommand({
+    commandId: "manual-other-ticket",
+    status: "SENT_TO_MT5_LIVE",
+    sentToMt5At: new Date(T.getTime() + 1_000),
+    payload: { brokerTicket: "999" },
+  });
+  assert.equal((await send(row))?.status, "SENT_TO_MT5_LIVE");
+});
+it("protective claim ignores a same-numbered ticket's command in flight on another bridge/login; unattributed still refuses", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  // Same user, same ticket number, another terminal: a different position.
+  await manualTicketCommand({
+    commandId: "other-account-close",
+    bridgeConnectionId: 2,
+    accountLogin: "B",
+    commandType: "CLOSE_LIVE_POSITION",
+    status: "SENT_TO_MT5_LIVE",
+    sentToMt5At: new Date(T.getTime() - 10_000),
+  });
+  await manualTicketCommand({
+    commandId: "other-login-close",
+    accountLogin: "B",
+    commandType: "CLOSE_LIVE_POSITION",
+    status: "LIVE_UNKNOWN",
+    sentToMt5At: new Date(T.getTime() + 1_000),
+  });
+  assert.equal((await send(row))?.status, "SENT_TO_MT5_LIVE");
+  await resetFixture();
+  const T2 = new Date();
+  await protectivePending("EXIT", T2);
+  await sweepEvidence(T2);
+  const again = await approved();
+  // A command whose account was never recorded cannot be placed: fail closed.
+  await manualTicketCommand({
+    commandId: "unattributed-close",
+    bridgeConnectionId: null,
+    accountLogin: null,
+    commandType: "CLOSE_LIVE_POSITION",
+    status: "SENT_TO_MT5_LIVE",
+    sentToMt5At: new Date(T2.getTime() - 10_000),
+  });
+  await denied(send(again), "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT");
+  assert.equal(await commandStatus(again.commandId), "LIVE_APPROVED");
+});
+it("the 9-field protective scope reads only the exact row when another account reuses the ticket", async () => {
+  await otherAccountRow(2);
+  const scope = managementPositionScope({
+    positionRowId: 1,
+    userId: 9,
+    bridgeConnectionId: 1,
+    accountLogin: "A",
+    legacyBrokerCompany: "Venue Company",
+    brokerTicket: "123",
+    entryCommandId: "entry-1",
+    symbol: "EURUSD.a",
+    side: "BUY",
+  });
+  const rows = await livePositionLedger.read({ where: scope });
+  assert.deepEqual(rows.map((r) => r.id), [1]);
+  const wrongSource = managementPositionScope({
+    positionRowId: 2,
+    userId: 9,
+    bridgeConnectionId: 2,
+    accountLogin: "B",
+    legacyBrokerCompany: "Venue Company",
+    brokerTicket: "123",
+    entryCommandId: "entry-1",
+    symbol: "EURUSD.a",
+    side: "BUY",
+  });
+  assert.deepEqual(await livePositionLedger.read({ where: wrongSource }), []);
+});
+for (const [label, write, expected] of [
+  [
+    "a complete sweep committed while the claim waits is accepted",
+    "UPDATE arx_live_positions SET last_synced_at=now(), last_reliable_snapshot_at=now(), current_price=1.113 WHERE id=1",
+    "SENT_TO_MT5_LIVE",
+  ],
+  [
+    "a reconciler write committed while the claim waits is refused as non-sweep evidence",
+    "UPDATE arx_live_positions SET last_synced_at=now() WHERE id=1",
+    "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP",
+  ],
+] as const)
+  it(`protective claim lock race: ${label}`, async () => {
+    const T = new Date();
+    await protectivePending("EXIT", T);
+    await sweepEvidence(T);
+    const row = await approved();
+    // The claim locks the bridge row before the position row, so the writer must
+    // not touch mt5_connection while holding the position lock (deadlock). The
+    // complete-sweep marker is stamped ahead, committed, before the race.
+    await updateConnection(1, { lastPositionsSnapshotAt: new Date(Date.now() + 2_000) });
+    const writer = await pool.connect();
+    const writerPid = (await writer.query("SELECT pg_backend_pid() AS pid")).rows[0]!.pid as number;
+    let settled = false;
+    let observed: Promise<unknown> = Promise.resolve(undefined);
+    try {
+      await writer.query("BEGIN");
+      const locked = await writer.query("SELECT id FROM arx_live_positions WHERE id=1 FOR UPDATE");
+      assert.equal(locked.rows.length, 1, "writer must hold the position row");
+      const claim = send(row).finally(() => {
+        settled = true;
+      });
+      observed = claim.catch((e) => e);
+      // Observed from a separate autocommit connection: inside the writer's own
+      // transaction pg_stat_activity is a snapshot frozen at its first read, so
+      // a claim that connects after that read would never show up there.
+      const started = performance.now();
+      let waiting = false;
+      while (performance.now() - started < 2000) {
+        const r = await pool.query(
+          "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS waiting",
+          [writerPid],
+        );
+        if (r.rows[0]!.waiting) {
+          waiting = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assert.ok(waiting, "Expected a real PostgreSQL row-lock waiter on the writer");
+      assert.equal(settled, false);
+      await writer.query(write);
+      await writer.query("COMMIT");
+    } catch (e) {
+      // Never leave the row lock held: a hung writer would stall every later test's TRUNCATE.
+      await writer.query("ROLLBACK").catch(() => undefined);
+      writer.release();
+      throw e;
+    }
+    writer.release();
+    const result = await observed;
+    const cause = result instanceof Error ? String((result as { cause?: unknown }).cause) : "";
+    if (expected === "SENT_TO_MT5_LIVE") assert.equal((result as { status?: string } | undefined)?.status, "SENT_TO_MT5_LIVE", `${String(result)} ${cause}`);
+    else {
+      assert.ok(result instanceof ManagementTargetError, `${String(result)} ${cause}`);
+      assert.equal(result.reason, expected);
+      assert.equal(await commandStatus(row.commandId), "LIVE_APPROVED");
+    }
+  });
+// Opt-in: ARX_PROTECTIVE_BENCHMARK names the JSON output file. Local
+// disposable-cluster timing only; no provider or broker timing is inferred.
+it(
+  "protective final-claim parity cost: 300 paired claims with and without protective evidence",
+  { skip: !process.env.ARX_PROTECTIVE_BENCHMARK },
+  async () => {
+    const summary = (xs: number[]) => {
+      const s = [...xs].sort((a, b) => a - b);
+      const q = (p: number) => s[Math.min(s.length - 1, Math.floor(p * s.length))]!;
+      return { median: q(0.5), p95: q(0.95), p99: q(0.99), n: s.length };
+    };
+    const samples: Record<"ordinary" | "protective", number[]> = { ordinary: [], protective: [] };
+    for (let i = 0; i < 320; i++) {
+      for (const variant of ["ordinary", "protective"] as const) {
+        await resetFixture();
+        const T = new Date();
+        if (variant === "protective") await protectivePending("EXIT", T);
+        await sweepEvidence(T);
+        const row = await approved();
+        const started = performance.now();
+        const sent = await send(row);
+        const elapsed = performance.now() - started;
+        assert.equal(sent?.status, "SENT_TO_MT5_LIVE");
+        if (i >= 20) samples[variant].push(elapsed);
+      }
+    }
+    writeFileSync(
+      process.env.ARX_PROTECTIVE_BENCHMARK!,
+      JSON.stringify(
+        {
+          unit: "milliseconds",
+          fixture: "disposable PostgreSQL; final dispatch claim (claimLiveCommandForDispatch) on an EXIT management command; 20 warm-up pairs discarded",
+          ordinary: summary(samples.ordinary),
+          protective: summary(samples.protective),
+          raw: samples,
+        },
+        null,
+        2,
+      ),
+    );
+  },
+);
