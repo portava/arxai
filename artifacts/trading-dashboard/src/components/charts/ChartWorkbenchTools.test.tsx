@@ -1,9 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { ChartWorkbenchTools, exportLabels } from "./ChartWorkbenchTools";
 import type { ChartAnchor, ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
-import { DEFAULT_PREFERENCES, drawingStorageKey, TEMPLATE_KEY } from "@/lib/chart-engine/chartWorkspace";
+import { CHART_STYLES, DEFAULT_PREFERENCES, drawingStorageKey, TEMPLATE_KEY } from "@/lib/chart-engine/chartWorkspace";
+import { STUDY_DEFAULTS, studyLabel } from "@/lib/chart-engine/chartStudies";
 import { __resetBrowserZoneCacheForTests } from "@/lib/chart-engine/chartTimeZone";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 let click: ((anchor:ChartAnchor)=>void) | null;
@@ -183,5 +184,28 @@ describe("display time zone controls",()=>{
     texts.length=0;chooseZone("UTC");
     fireEvent.click(screen.getByRole("button",{name:"Export PNG"}));
     expect(texts).toContain("Captured 2026-10-28T05:46:11.123Z");
+  });
+});
+
+describe("chart style picker and PNG labels",()=>{
+  it("offers the seven styles in CHART_STYLES order with display names and stores the choice",()=>{
+    let latest=DEFAULT_PREFERENCES;
+    function Harness() {
+      const [preferences,setPreferences]=useState(DEFAULT_PREFERENCES);latest=preferences;
+      return <ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={setPreferences} hasCandles feedLabel="Offline fixture"/>;
+    }
+    render(<Harness/>);
+    const select=screen.getByLabelText("Chart style") as HTMLSelectElement;
+    expect([...select.options].map(option=>option.value)).toEqual([...CHART_STYLES]);
+    expect([...select.options].map(option=>option.textContent)).toEqual(["Candlesticks","OHLC bars","Close line","Close area","Close baseline","Heikin Ashi","Hollow candles"]);
+    fireEvent.change(select,{target:{value:"heikinAshi"}});
+    expect(latest.style).toBe("heikinAshi");expect(select.value).toBe("heikinAshi");
+  });
+  it("names the style in the PNG header and marks Heikin Ashi as averaged, not traded, prices",()=>{
+    const base={symbol:"EURUSD",timeframe:"M15",capture:"Captured 2026-10-28T05:46:11.123Z",feedLabel:"Offline fixture",studies:[STUDY_DEFAULTS[0]!]};
+    expect(exportLabels({...base,style:"candles"})).toEqual(["ARX · EURUSD M15","Captured 2026-10-28T05:46:11.123Z","Offline fixture","Style Candlesticks",studyLabel(STUDY_DEFAULTS[0]!)]);
+    expect(exportLabels({...base,style:"heikinAshi"})[3]).toBe("Style Heikin Ashi (averaged bodies, not traded prices)");
+    expect(exportLabels({...base,style:"baseline",studies:[]})).toEqual(["ARX · EURUSD M15","Captured 2026-10-28T05:46:11.123Z","Offline fixture","Style Close baseline"]);
+    for(const style of CHART_STYLES.filter(style=>style!=="heikinAshi"))expect(exportLabels({...base,style}).join("\n")).not.toContain("averaged");
   });
 });

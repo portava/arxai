@@ -91,7 +91,9 @@ dispatches and reports it as untrusted. The fixture does not mount
 `ChartReplayBoundary`, so replay step/seek is not measured here.
 
 The script always fails on a page error, a missing control or sample (the exact
-41-control set is asserted), or a completion witness that does not appear within
+49-control set is asserted; 41 before the four display-style pairs line/area,
+area/baseline, baseline/Heikin Ashi and Heikin Ashi/hollow were appended after every
+earlier group), or a completion witness that does not appear within
 5 s. `ENFORCE_P95_GATE` adds the scanner rule of failing when any control's
 second-rAF p95 exceeds 100 ms. It is **off (report-only)** while recorded controls
 miss the target, so every miss is reported in `targetMisses` and in

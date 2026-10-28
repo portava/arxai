@@ -3,6 +3,8 @@ import {
   CandlestickSeries,
   BarSeries,
   LineSeries,
+  AreaSeries,
+  BaselineSeries,
   createSeriesMarkers,
   ColorType,
   CrosshairMode,
@@ -33,9 +35,10 @@ import type {
 } from "./types";
 import { candleDisplayPrecision, incrementalCandles, historyRangeShift, unchangedCandlePrefix } from "./candleReconciliation";
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
-import { ChartAnalysisRenderer } from "./chartAnalysisRenderer";
+import { ChartAnalysisRenderer, type PriceSeries } from "./chartAnalysisRenderer";
 import type { ChartStudy } from "./chartStudies";
-import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
+import { closeOnlyStyle, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
+import { heikinAshiBar, heikinAshiSuffix, hollowPoint } from "./heikinAshi";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
 import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
 import { panChartWindow, zoomChartWindow } from "./chartNavigation";
@@ -46,6 +49,9 @@ import { crosshairTimeLabel, tickMarkLabel, type ChartTickMarkType, type ChartTi
 const TICK_MARK_TYPES_MATCH: Record<TickMarkType, ChartTickMarkType> = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4 } satisfies Record<ChartTickMarkType, ChartTickMarkType>;
 void TICK_MARK_TYPES_MATCH;
 
+
+type DisplayMode = "ohlc" | "close" | "heikinAshi" | "hollow";
+const displayModeOf = (style: ChartStyle): DisplayMode => style === "heikinAshi" || style === "hollow" ? style : closeOnlyStyle(style) ? "close" : "ohlc";
 
 const DEFAULT_VISIBLE_DESKTOP = 150;
 const DEFAULT_VISIBLE_MOBILE = 80;
@@ -87,8 +93,19 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   readonly capabilities = CAPABILITIES;
 
   private chart: IChartApi | null = null;
-  private series: ISeriesApi<"Candlestick" | "Bar" | "Line"> | null = null;
+  private series: PriceSeries | null = null;
   private style: ChartStyle = "candles";
+  // How this.style maps a canonical candle to a series point, resolved once per
+  // style switch so the tick and full-write paths make one comparison per point
+  // for candles and bars.
+  private displayMode: DisplayMode = "ohlc";
+  // Display-only Heikin Ashi bars, index-aligned with this.candles while the
+  // style is heikinAshi (empty otherwise). Never read by studies, drawings,
+  // overlays or the reader; those use this.candles.
+  private haBars: ChartEngineCandle[] = [];
+  // Baseline style: the price currently applied as the series base value (the
+  // first loaded close), or null when none has been applied.
+  private baselineValue: number | null = null;
   private analysis: ChartAnalysisRenderer | null = null;
   private drawingEditor: ChartDrawingEditor | null = null;
   private drawingHandler: ((anchor: ChartAnchor) => void) | null = null;
@@ -172,6 +189,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.container = el;
     this.didFit = false;
     this.candles = [];
+    this.haBars = [];
+    this.baselineValue = null;
     this.newestSeriesTime = null;
     this.streamTip = null;
     this.precision = -1;
@@ -311,6 +330,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     });
 
     this.style = "candles";
+    this.displayMode = "ohlc";
     this.analysis = new ChartAnalysisRenderer(chart, series);
     this.lastPriceLine = null;
     this.overlayLines = [];
@@ -362,6 +382,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.hoveredCandle = null;
     this.streamTip = null;
     this.candles = [];
+    this.haBars = [];
+    this.baselineValue = null;
     this.reachStartHandler = null;
     this.drawingEditor?.destroy(); this.drawingEditor = null;
     this.analysis?.destroy();
@@ -450,6 +472,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const trimTail = removed > 0 && removed <= 32 && unchanged === sanitized.length;
     const bulk = updates != null && updates.length > 32;
     this.candles = sanitized;
+    this.syncDisplay(unchanged);
     this.smartAnnotationPrimitive?.setData(this.smartAnnotation, this.candles);
     this.newestSeriesTime = sanitized.at(-1)?.time ?? null;
     this.applyPricePrecision();
@@ -457,9 +480,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       if (trimTail) {
         series.pop(removed);
       } else if (updates === null || bulk) {
-        series.setData(sanitized.map(c => this.priceData(c)));
+        series.setData(this.displayPoints());
       } else {
-        for (const candle of updates) series.update(this.priceData(candle));
+        // incrementalCandles returns a tail slice of sanitized.
+        const base = sanitized.length - updates.length;
+        for (let k = 0; k < updates.length; k++) series.update(this.displayPoint(base + k));
       }
       if (!this.didFit && sanitized.length > 0) {
         this.applyDefaultVisibleRange();
@@ -475,6 +500,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     };
     if (this.analysis) this.analysis.batchViewport(reconcile);
     else reconcile();
+    this.applyBaselineValue();
 
     // Re-anchor any structural markers onto the NEW bar set. When the fixed-size
     // window slides forward (oldest bars roll off), a marker still pointing at a
@@ -810,8 +836,35 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     });
   }
 
-  private priceData(candle: ChartEngineCandle) {
-    return this.style === "line" ? {time:candle.time as UTCTimestamp,value:candle.close} : {...candle,time:candle.time as UTCTimestamp};
+  /** Series point for this.candles[index] in the current style. Close-only
+   * styles plot canonical closes; Heikin Ashi reads the display cache. */
+  private displayPoint(index: number) {
+    const candle = this.candles[index]!, time = candle.time as UTCTimestamp, mode = this.displayMode;
+    if (mode === "ohlc") return {...candle,time};
+    if (mode === "close") return {time,value:candle.close};
+    if (mode === "heikinAshi") return {...this.haBars[index]!,time};
+    return {...hollowPoint(candle, index > 0 ? this.candles[index - 1]!.close : null),time};
+  }
+  private displayPoints() { return this.candles.map((_, i) => this.displayPoint(i)); }
+  /** Keep the Heikin Ashi cache equal to heikinAshi(this.candles) from `from`. */
+  private syncDisplay(from: number): void {
+    if (this.displayMode === "heikinAshi") heikinAshiSuffix(this.candles, this.haBars, from);
+    else if (this.haBars.length) this.haBars = [];
+  }
+  /** Baseline base = first loaded close; one applyOptions only when it changes
+   * (prepend, replay seek, reset, or the live window rolling forward). */
+  private applyBaselineValue(): void {
+    const series = this.series, first = this.candles[0];
+    if (this.style !== "baseline" || !series || !first || first.close === this.baselineValue) return;
+    this.baselineValue = first.close;
+    series.applyOptions({baseValue:{type:"price",price:first.close}});
+  }
+  /** Transformed display bar at this time (Heikin Ashi only); null in other
+   * styles. Legend text only; never used for studies, drawings or orders. */
+  getDisplayCandle(time: number): ChartEngineCandle | null {
+    if (this.displayMode !== "heikinAshi") return null;
+    const bar = this.haBars[candleIndex(this.candles, time)];
+    return bar && bar.time === time ? {...bar} : null;
   }
 
   setChartStyle(style: ChartStyle): void {
@@ -821,13 +874,24 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.markersApi?.detach(); this.markersApi = null;
     this.clearStructureOverlays();
     const options = {priceLineVisible:false,lastValueVisible:false};
-    const next: ISeriesApi<"Candlestick" | "Bar" | "Line"> = style === "line"
+    const firstClose = this.candles[0]?.close ?? null;
+    const next: PriceSeries = style === "line"
       ? chart.addSeries(LineSeries, {...options,color:"#38bdf8",lineWidth:2})
+      : style === "area"
+      ? chart.addSeries(AreaSeries, {...options,lineColor:"#38bdf8",topColor:"rgba(56, 189, 248, 0.28)",bottomColor:"rgba(56, 189, 248, 0.02)",lineWidth:2})
+      : style === "baseline"
+      ? chart.addSeries(BaselineSeries, {...options,baseValue:{type:"price",price:firstClose ?? 0},lineWidth:2,
+          topLineColor:"#10b981",topFillColor1:"rgba(16, 185, 129, 0.28)",topFillColor2:"rgba(16, 185, 129, 0.05)",
+          bottomLineColor:"#ef4444",bottomFillColor1:"rgba(239, 68, 68, 0.05)",bottomFillColor2:"rgba(239, 68, 68, 0.28)"})
       : style === "bars"
       ? chart.addSeries(BarSeries, {...options,upColor:"#10b981",downColor:"#ef4444"})
+      : style === "hollow"
+      ? chart.addSeries(CandlestickSeries, {...options,upColor:"#10b981",downColor:"#ef4444",borderUpColor:"#10b981",borderDownColor:"#ef4444",wickUpColor:"#10b981",wickDownColor:"#ef4444",borderVisible:true})
       : chart.addSeries(CandlestickSeries, {...options,upColor:"#10b981",downColor:"#ef4444",wickUpColor:"#10b981",wickDownColor:"#ef4444",borderVisible:false});
-    this.style = style; this.series = next;
-    next.setData(this.candles.map(c => this.priceData(c)));
+    this.style = style; this.displayMode = displayModeOf(style); this.series = next;
+    this.baselineValue = style === "baseline" ? firstClose : null;
+    this.syncDisplay(0);
+    next.setData(this.displayPoints());
     this.analysis?.replacePriceSeries(next, this.candles);
     if (this.smartAnnotationPrimitive) {
       previous.detachPrimitive(this.smartAnnotationPrimitive);
@@ -841,6 +905,9 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.applyStructureFromRaw(true);
     if (range) chart.timeScale().setVisibleLogicalRange(range);
     if (this.linkedCursor !== undefined) this.setLinkedCrosshair(this.linkedCursor);
+    // Refresh the legend in the next frame without pointer movement, so the
+    // Heikin Ashi suffix appears or disappears with the style.
+    this.queueLegendUpdate();
   }
   setStudies(studies: ChartStudy[]): void { this.analysis?.setStudies(studies, this.candles); }
   setDrawings(drawings: ChartDrawing[]): void { this.drawingEditor?.setDrawings(drawings); this.analysis?.setDrawings(drawings, this.candles); }
@@ -892,13 +959,21 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       return;
     }
     try {
-      series.update(this.priceData(candle));
       const changedIndex = this.candles.at(-1)?.time === candle.time ? this.candles.length - 1 : this.candles.length;
+      const time = candle.time as UTCTimestamp, mode = this.displayMode;
+      // O(1): one display bar from the previous display/canonical bar.
+      const ha = mode === "heikinAshi" ? heikinAshiBar(candle, changedIndex > 0 ? this.haBars[changedIndex - 1] ?? null : null) : null;
+      series.update(mode === "ohlc" ? {...candle,time}
+        : mode === "close" ? {time,value:candle.close}
+        : ha ? {...ha,time}
+        : {...hollowPoint(candle, changedIndex > 0 ? this.candles[changedIndex - 1]!.close : null),time});
       this.newestSeriesTime = candle.time;
       this.streamTip = { ...candle };
       if (this.hoveredCandle?.time === candle.time) this.hoveredCandle = { ...candle };
       if (this.candles.at(-1)?.time === candle.time) this.candles[this.candles.length - 1] = { ...candle };
       else this.candles.push({ ...candle });
+      if (ha) { this.haBars.length = changedIndex; this.haBars.push(ha); }
+      if (changedIndex === 0) this.applyBaselineValue();
       this.analysis?.refreshLater(this.candles, changedIndex);
       this.queueLegendUpdate();
       if (this.lastPriceLine && this.feedState.livePriceAffordance) this.lastPriceLine.applyOptions({ price: candle.close });
@@ -933,8 +1008,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
 
     // Suppress the candlestick last-value / price-line label unless the feed is
     // genuinely LIVE — a frozen, delayed or composite feed must never imply a
-    // live last price (shared honesty rule).
-    series.applyOptions({ priceLineVisible: live, lastValueVisible: live });
+    // live last price (shared honesty rule). A Heikin Ashi series' own label
+    // would show the averaged close, so it stays hidden; the dashed "Last"
+    // line below always carries the canonical last close.
+    const seriesLabel = live && this.displayMode !== "heikinAshi";
+    series.applyOptions({ priceLineVisible: seriesLabel, lastValueVisible: seriesLabel });
 
     const last = this.candles.at(-1);
     if (!live || !last) {

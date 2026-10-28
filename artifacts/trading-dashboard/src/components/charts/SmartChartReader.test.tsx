@@ -152,6 +152,18 @@ describe("embedded chart reader follows applied candles",()=>{
     expect(screen.getByText(/The line shows closes; candle patterns also use open, high and low/)).toBeTruthy();
     expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("are nearly equal");
   });
+  it.each([
+    ["heikinAshi","Display: Heikin Ashi · linear scale","Heikin Ashi bodies are averaged, not traded prices; readings, pattern anchors, drawings and trade levels use the underlying candles."],
+    ["area","Display: Close area · linear scale","The area shows closes; candle patterns also use open, high and low prices."],
+    ["hollow","Display: Hollow candles · linear scale","Hollow candle fill and colour are display encodings of the same OHLC"],
+  ] as const)("names the %s style and states what it shows",(style,name,note)=>{
+    const f=fixture();render(<SmartChartReader {...f.props} view={{style,scale:"linear"}}/>);
+    const display=screen.getByText(text=>text.startsWith("Display: "));
+    expect(display.textContent).toContain(name);
+    expect(display.textContent).toContain("Readings use the underlying prices and selected period.");
+    expect(display.textContent).toContain(note);
+    expect(display.textContent).not.toContain("The line shows closes");
+  });
   it("keeps factual context concise and metric details collapsed with visible-only warmup",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);
     expect(screen.getByTestId("chart-reader-context").textContent).toContain("30 closed candles");

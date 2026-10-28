@@ -1,7 +1,27 @@
 import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy } from "./chartStudies";
 import { isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 export type ChartScaleMode = "linear" | "log" | "percent" | "indexed";
-export type ChartStyle = "candles" | "bars" | "line";
+/** Display styles in picker order. The first three keep their original order
+ * so existing keyboard steps (candles <-> bars) measure the same thing. */
+export const CHART_STYLES = ["candles", "bars", "line", "area", "baseline", "heikinAshi", "hollow"] as const;
+export type ChartStyle = typeof CHART_STYLES[number];
+export const CHART_STYLE_NAMES: Record<ChartStyle, string> = { candles: "Candlesticks", bars: "OHLC bars", line: "Close line", area: "Close area", baseline: "Close baseline", heikinAshi: "Heikin Ashi", hollow: "Hollow candles" };
+/** Styles that plot only canonical closes. */
+export function closeOnlyStyle(style: ChartStyle): style is "line" | "area" | "baseline" { return style === "line" || style === "area" || style === "baseline"; }
+const STYLE_NOTES: Record<ChartStyle, string> = {
+  candles: "",
+  bars: "",
+  line: "The line shows closes; candle patterns also use open, high and low prices.",
+  area: "The area shows closes; candle patterns also use open, high and low prices.",
+  baseline: "The baseline shows closes against the first loaded close; candle patterns also use open, high and low prices.",
+  heikinAshi: "Heikin Ashi bodies are averaged, not traded prices; readings, pattern anchors, drawings and trade levels use the underlying candles.",
+  hollow: "Hollow candle fill and colour are display encodings of the same OHLC: fill compares close with open, colour compares close with the previous close.",
+};
+/** Reader text for a style: display name plus what the style does and does not show. */
+export function describeChartStyle(style: ChartStyle): { name: string; note: string } {
+  const known: ChartStyle = (CHART_STYLES as readonly string[]).includes(style) ? style : "candles";
+  return { name: CHART_STYLE_NAMES[known], note: STYLE_NOTES[known] };
+}
 export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci";
 export const DRAWING_NAMES: Record<DrawingKind, string> = { horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement" };
 export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical"; }
@@ -47,7 +67,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(["atr", "envelopes"].includes(s.kind) && s.method ? { method: s.method } : {}),
     });
   }
-  return { style: ["candles", "bars", "line"].includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), studies, ...(isChartTimeZone(v.timeZone) && v.timeZone !== "UTC" ? {timeZone:v.timeZone} : {}) };
+  return { style: (CHART_STYLES as readonly unknown[]).includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), studies, ...(isChartTimeZone(v.timeZone) && v.timeZone !== "UTC" ? {timeZone:v.timeZone} : {}) };
 }
 export function validateDrawings(value: unknown): ChartDrawing[] {
   const seen = new Set<string>();

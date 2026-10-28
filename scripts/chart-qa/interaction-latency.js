@@ -12,8 +12,9 @@ async outer => {
   // docs/SMART_CHART_ACCEPTANCE.md); set to true to fail like the scanner scenario
   // whenever any control's second-rAF p95 exceeds 100 ms.
   const ENFORCE_P95_GATE = false;
-  // 41 controls: the exact set is asserted so a control cannot silently drop out.
-  const EXPECTED_CONTROLS = 41;
+  // 49 controls (41 before the four display-style pairs were appended): the exact set is
+  // asserted so a control cannot silently drop out.
+  const EXPECTED_CONTROLS = 49;
   // Own page: the init script and capture listeners below never leak into a shared
   // session page that later acceptance scripts reuse.
   const page = await outer.context().newPage();
@@ -133,6 +134,20 @@ async outer => {
       await measure(`${label} (${value})`, { event: 'keydown', key: direction, witness: { type: 'value', selector: `select[aria-label="${label}"]`, value } }, () => page.keyboard.press(direction), ctx);
     }
   };
+  // Display-style switches on the same select. Each pair is named with both styles because
+  // a style appears in two pairs; the candles <-> bars group keeps its original names.
+  const styleSelect = () => primary.getByLabel('Chart style', { exact: true });
+  const styleGroup = (from, to) => ({ name: `chart style (${from} to ${to})`,
+    // Untrusted selectOption outside measurement puts the select on `from`.
+    setup: async () => { await styleSelect().selectOption(from); await settle(); },
+    step: async ctx => {
+      for (const [direction, origin, value] of [['ArrowDown', from, to], ['ArrowUp', to, from]]) {
+        await styleSelect().focus();
+        await measure(`Chart style (${origin} to ${value})`, { event: 'keydown', key: direction, witness: { type: 'value', selector: 'select[aria-label="Chart style"]', value } }, () => page.keyboard.press(direction), ctx);
+      }
+    },
+    // Restore candles so the next pass's earlier groups run exactly as before.
+    teardown: async () => { await styleSelect().selectOption('candles'); await settle(); } });
   let horizontalId = null, horizontalY = 80;
 
   const groups = [
@@ -208,6 +223,12 @@ async outer => {
         await page.waitForFunction(n => [...document.querySelectorAll('[data-testid="arx-native-canvas"]')].filter(node => node.querySelector('canvas')).length === n, count);
       }
     } },
+    // Appended last: every group above still runs in candles, so its columns stay comparable.
+    // Measured on the same 5,000-bar, 11-study, 40-drawing fixture.
+    styleGroup('line', 'area'),
+    styleGroup('area', 'baseline'),
+    styleGroup('baseline', 'heikinAshi'),
+    styleGroup('heikinAshi', 'hollow'),
   ];
 
   const nearest = (sorted, p) => sorted.length ? sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)] : null;
@@ -262,6 +283,7 @@ async outer => {
       for (const group of groups) {
         await group.setup?.();
         for (let rep = 0; rep < WARMUP + REPS; rep++) await group.step({ cpuRate, pass, record: rep >= WARMUP });
+        await group.teardown?.();
       }
     }
     const { samples, longTasks, longTasksUnsupported } = await page.evaluate(() => ({ samples: window.__latency.samples, longTasks: window.__latency.longTasks, longTasksUnsupported: !!window.__latency.longTasksUnsupported }));

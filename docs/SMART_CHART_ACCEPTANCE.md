@@ -83,7 +83,8 @@ Current development validation passed: 232 tests in 27 chart-related suites, 87/
 guards, dashboard typechecking and production build. Browser checks cover
 desktop/mobile controls, symbol/timeframe changes, canvas
 lifecycle, crosshair inspection and no page overflow at 390px. Workbench browser
-acceptance additionally covers all three styles, the original five-study starter collection and pane
+acceptance additionally covers all three styles (the script now checks seven, with the canonical/HA
+legend; not yet re-run), the original five-study starter collection and pane
 cleanup, the original three drawing tools, object edits, undo/redo, saved drawings/settings,
 symbol/timeframe isolation, templates, PNG export, two-chart layout persistence,
 independent intervals and touch drawing. Linked-workspace acceptance adds four
@@ -244,6 +245,11 @@ Findings (both runs agree within a few milliseconds at 1x):
 
 Raw results: `validation-2026-10-27/smart-chart-interaction-latency/` in the
 project files (both full runs, the smoke run and the post-change acceptance runs).
+
+Since this baseline the script has appended four display-style pairs after every
+earlier group (line/area, area/baseline, baseline/Heikin Ashi, Heikin Ashi/hollow;
+49 controls in all), each restoring candles afterwards so the 41 controls above
+run as before. Those eight controls have not been measured yet.
 
 ## Calculation conventions
 

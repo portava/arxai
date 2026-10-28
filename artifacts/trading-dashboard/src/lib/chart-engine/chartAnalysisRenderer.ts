@@ -4,7 +4,7 @@ import { StudyCalculator, studyDefinition, studyLabel, type ChartStudy, type Stu
 import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
 import { validateDrawings, validatePreferences, type ChartDrawing } from "./chartWorkspace";
 
-type PriceSeries = ISeriesApi<"Candlestick" | "Bar" | "Line">;
+export type PriceSeries = ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area" | "Baseline">;
 interface StudyHandle { calculator: StudyCalculator; lines: ISeriesApi<"Line" | "Histogram">[]; rendered: StudyPoint[] }
 
 /** Separate ownership for user studies/drawings. Clearing these never removes

@@ -351,8 +351,12 @@ export function ARXNativeChart({
     inspectedCandleRef.current = bar;
     if (!legendRef.current) return;
     const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
+    // Canonical OHLC always comes first. In Heikin Ashi style the averaged
+    // display bar is appended, labelled HA; it is re-queried here so every
+    // caller shows the same text.
+    const ha = bar ? adapterRef.current?.getDisplayCandle?.(bar.time) ?? null : null;
     legendRef.current.textContent = bar
-      ? `${formatChartTime(bar.time, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}`
+      ? `${formatChartTime(bar.time, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}${ha ? `  ·  HA O ${ha.open.toFixed(digits)}  H ${ha.high.toFixed(digits)}  L ${ha.low.toFixed(digits)}  C ${ha.close.toFixed(digits)}` : ""}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];

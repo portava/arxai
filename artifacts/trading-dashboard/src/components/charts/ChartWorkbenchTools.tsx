@@ -1,13 +1,20 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
-import { studyId, studyLabel } from "@/lib/chart-engine/chartStudies";
+import { studyId, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
 import { CHART_TIME_ZONES, captureLabel, convertWallClock, effectiveDisplayZone, formatChartTime, parseWallClockInZone, resolveTimeZone, zoneShortLabel, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
-import { DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, TEMPLATE_KEY, validateDrawings, validatePreferences, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
+import { CHART_STYLES, CHART_STYLE_NAMES, DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, TEMPLATE_KEY, validateDrawings, validatePreferences, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type ChartStyle, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut } from "lucide-react";
 
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
+/** PNG header lines: instrument, interval, capture time, feed verdict, display
+ * style and studies. Heikin Ashi is marked as averaged, not traded, prices. */
+export function exportLabels({symbol,timeframe,capture,feedLabel,style,studies}: {symbol:string;timeframe:string;capture:string;feedLabel:string;style:ChartStyle;studies:readonly ChartStudy[]}): string[] {
+  return [`ARX · ${symbol} ${timeframe}`, capture, feedLabel,
+    `Style ${CHART_STYLE_NAMES[style] ?? CHART_STYLE_NAMES.candles}${style === "heikinAshi" ? " (averaged bodies, not traded prices)" : ""}`,
+    studies.map(studyLabel).join(" · ")].filter(Boolean);
+}
 const names = DRAWING_NAMES;
 interface Props {
   adapter: ChartEngineAdapter | null; epoch: number; symbol: string; timeframe: string;
@@ -110,8 +117,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         const canvas = document.createElement("canvas");
         const ctx=canvas.getContext("2d");if(!ctx) return;
         ctx.font="12px sans-serif";
-        const labels = [`ARX · ${symbol} ${timeframe}`, captureLabel(Date.now(),zone), feedLabel,
-          preferences.studies.map(studyLabel).join(" · ")].filter(Boolean);
+        const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel,style:preferences.style,studies:preferences.studies});
         const lines:string[]=[];
         for(const label of labels) {
           let line="";
@@ -136,7 +142,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom out chart" title="Zoom out (− on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(4/3)}><ZoomOut className="h-3.5 w-3.5"/></Button>
       </div>
       <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
-        <option value="candles">Candlesticks</option><option value="bars">OHLC bars</option><option value="line">Close line</option>
+        {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
       </select></label>
       <label className="flex items-center gap-2" title="Display only. Candle times, drawings, links and data requests stay in UTC. No zone here represents broker server time.">Time zone <select className={field} aria-label="Display time zone" value={selectedZone} onChange={e=>{const value=e.target.value as ChartTimeZone;onPreferences(p=>{const next={...p};if(value==="UTC")delete next.timeZone;else next.timeZone=value;return next;});}}>
         {CHART_TIME_ZONES.map(option=><option key={option} value={option}>{option==="local" ? `Browser local (${resolveTimeZone("local")})` : option}</option>)}

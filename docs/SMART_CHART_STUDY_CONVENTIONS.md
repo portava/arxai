@@ -90,13 +90,75 @@ Volume, VWAP, money-flow and footprint studies are not simulated from price.
 Real/tick-volume semantics and complete provider coverage must be established
 before those studies can be described as available.
 
+## Chart styles
+
+Seven display styles, in picker order: candlesticks, OHLC bars, close line,
+close area, close baseline, Heikin Ashi and hollow candles. A style changes only
+how the main price series is drawn. Studies, the smart reader, magnet snapping,
+drawings, trade price lines, the dashed "Last" line and `getVisibleCandles` always
+read the canonical candles. The definitions below are ARX conventions; where a
+TradingView help page is cited, only the quoted rule is compared, and no other
+TradingView behaviour is claimed.
+
+**Area and baseline** plot canonical closes. The baseline base is a price: the
+first loaded bar's close. It is pinned when the style is selected and moves only
+when that first bar changes: a deep-history prepend, a replay seek, a context
+reset, a correction of that bar, and each time the fixed-size live window rolls
+forward by one bar. Each move is one `applyOptions` call. This differs from
+TradingView's baseline help page ([T13](SMART_CHART_PLATFORM_COMPARISON.md#reference-key)),
+which describes the base level as a percentage of the chart's height with a 50%
+default. Whether to keep "first loaded close" or to fix the base for a session or
+context is an open owner decision.
+
+**Heikin Ashi** is a display transform of the canonical OHLC:
+
+- close = (O + H + L + C) / 4
+- open = (previous HA open + previous HA close) / 2; the first loaded bar uses
+  (O + C) / 2
+- high = max(H, HA open, HA close); low = min(L, HA open, HA close)
+
+The close and open rules are the formulas quoted on TradingView's Heikin Ashi
+help page ([T12](SMART_CHART_PLATFORM_COMPARISON.md#reference-key)); its high/low
+wording ("the highest value of a recent high, open, or close") is read here as
+max(H, HA open, HA close), which is an interpretation, not a quoted formula. That
+page does not state a first-bar seed, so the (O + C) / 2 seed is an ARX choice. The
+recursion makes the leftmost HA bodies depend on where loaded history starts:
+after a prepend or a roll-off the seed moves, and the open difference at the n-th
+bar after the old first bar is |Δopen₀| / 2ⁿ, because the HA closes are
+unchanged. This is the same caveat as "Additional backfill can change recursive
+values" above. Corrections rebuild the HA suffix from the first changed bar, a
+short replay rewind removes bars from the end, and a live tip is one O(1) bar.
+The legend shows canonical OHLC first and then a separate "HA O H L C" suffix in
+Heikin Ashi only. The series' own last-value label is hidden in Heikin Ashi
+(it would show the averaged close); the dashed "Last" line stays at the canonical
+last close. Trade and structure markers keep their above-bar/below-bar positions:
+HA high ≥ H and HA low ≤ L, so they clear the canonical extremes, at the cost of
+sitting slightly further from the canonical bar. Smart-reader annotations stay at
+canonical prices, so a pattern anchor can sit beside a non-matching HA body; the
+reader's display note says this.
+
+**Hollow candles** draw the canonical OHLC unchanged. The body is hollow when
+close ≥ open and filled otherwise. The colour is up (green) when close ≥ the
+previous bar's close and down (red) otherwise. Both rules follow the four cases
+quoted on TradingView's hollow candles help page
+([T11](SMART_CHART_PLATFORM_COMPARISON.md#reference-key)) for strict
+inequalities. Equal prices (hollow, up) and the first loaded bar, which compares
+close with its own open because it has no previous close, are ARX conventions.
+
 ## Evidence
 
 `chartStudies.test.ts` covers hand-computed means, weights, cascade warm-ups,
 ATR gaps, SMA-vs-EMA MACD, CCI direction, range oscillators, applied-price choices,
 and every catalog study's repeated forming-bar replacement, append, historical
 correction, shrink and no-lookahead behavior. `chartWorkspace.test.ts` covers
-legacy migration, distinct instances, malformed settings and bounded storage.
+legacy migration, distinct instances, malformed settings and bounded storage,
+and the seven chart styles' round trip and fallback. `heikinAshi.test.ts` covers
+hand-computed HA bars, suffix rebuilds, causality, seed convergence after a
+prepend and the hollow fill/colour rule. `lightweightChartsAdapter.workbench.test.ts`
+covers each new style's switch, the legend refresh, the baseline base on append,
+roll-off, prepend and reset, Heikin Ashi data after corrections, appends, tips,
+retained stream tips, prepends, roll-off and replay seeks, the canonical "Last"
+line, and study values under every style.
 UI tests cover independent duplicate editing, invalid input, removal, limits and
 signal-method selection. Browser acceptance checks the real canvas and local
 persistence. These tests do not establish production feed or broker equivalence.

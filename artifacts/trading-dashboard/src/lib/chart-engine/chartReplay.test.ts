@@ -17,6 +17,12 @@ describe("source-bound historical replay snapshot",()=>{
   expect(snapshot.preferences.timeZone).toBe("Asia/Tokyo");expect(Object.isFrozen(snapshot.preferences)).toBe(true);
   expect(Object.hasOwn(capture().snapshot!.preferences,"timeZone")).toBe(false);
  });
+ it("keeps each display style with its frozen preferences",()=>{
+  for (const style of ["area","baseline","heikinAshi","hollow"] as const) {
+   const snapshot=captureChartReplay(replayResponse(),7,{...DEFAULT_PREFERENCES,style},NOW).snapshot!;
+   expect(snapshot.preferences.style).toBe(style);expect(Object.isFrozen(snapshot.preferences)).toBe(true);
+  }
+ });
  it("does not promote a forming tick when the clock advances",()=>{
   const data=replayResponse();const c=data.candles.at(-1)!;data.candles.push({...c,openTime:c.closeTime,closeTime:new Date(NOW+900_000).toISOString(),isComplete:false,isFinal:false,isForming:true});
   const result=captureChartReplay(data,7,DEFAULT_PREFERENCES,NOW+1_800_000);expect(result.snapshot?.bars.length).toBe(200);

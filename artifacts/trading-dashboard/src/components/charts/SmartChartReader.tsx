@@ -10,7 +10,7 @@ import { captureReplayAnalysisPrefix, type ChartReplayReadWindow } from "@/lib/c
 import { smartChartNarrative } from "@/lib/chart-engine/smartChartNarrative";
 import { chartNumber, chartChangeSummary } from "@/lib/chart-engine/chartDescriptiveStats";
 import { describeSmartChartWindow, type ChartDescriptiveAnalysis, type ObservedMetric } from "@/lib/chart-engine/chartDescriptiveAnalysis";
-import type { ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
+import { describeChartStyle, type ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
 import { effectiveDisplayZone, formatChartTime, zoneShortLabel } from "@/lib/chart-engine/chartTimeZone";
 import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotation";
 import { Button } from "@/components/ui/button";
@@ -120,7 +120,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
         </div>}
         <p>{symbol} · {timeframe} · {bound.context.source??"Source unavailable"} · {result?.closedBarsUsed??0} closed candles analyzed. {result?.coverage.note} Statistics describe visible closes; variability is their population standard deviation. Drawdown is a price series measure, not trading P/L.</p>
         {gaps&&<p>{gaps.gaps?`${gaps.gaps} elapsed gap${gaps.gaps===1?"":"s"} between observations; the largest spans ${chartNumber(gaps.largestSeconds/60)} minutes. Market closures or missing intervals may explain these gaps; this view cannot distinguish them.`:"No elapsed gaps between the observed candles in this window."} Missing volume is not treated as zero trading activity.</p>}
-        {view&&<p>Display: {view.style} · {view.scale} scale{view.inverted?" · inverted":""}. Readings use the underlying prices and selected period. {view.style==="line"?"The line shows closes; candle patterns also use open, high and low prices.":""}{view.scale!=="linear"?" Axis transformations change visual spacing, not the observed price change.":""}</p>}
+        {view&&<p>Display: {describeChartStyle(view.style).name} · {view.scale} scale{view.inverted?" · inverted":""}. Readings use the underlying prices and selected period. {describeChartStyle(view.style).note}{view.scale!=="linear"?" Axis transformations change visual spacing, not the observed price change.":""}</p>}
         {moreFindings.length>0&&<div className="space-y-2">
           <p className="text-[10px]">More readings · {bound.context.source??"Source unavailable"} · times in {zoneShortLabel(zone)}</p>
           <div className="flex flex-wrap gap-2" aria-label="More observed patterns">{moreFindings.map(finding=>{

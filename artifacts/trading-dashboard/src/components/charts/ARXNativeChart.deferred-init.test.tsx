@@ -185,6 +185,41 @@ describe("deferred comparison engine init", () => {
     expect(created[0]!.init).toHaveBeenCalledWith(expect.objectContaining({ container: canvas, height: 520 }));
   });
 
+  it("gives the deferred comparison engine its stored Heikin Ashi style in the post-build sequence", () => {
+    localStorage.setItem("arx.chart.preferences.v1:comparison", JSON.stringify({ style: "heikinAshi", scale: "linear", studies: [] }));
+    candleResponse = liveResponse("EURUSD", "H1");
+    render(<ARXNativeChart workspaceId="comparison" symbol="EURUSD" timeframe="H1" showFeedStatus overlays={NO_OVERLAYS} />);
+    expect(created).toHaveLength(0);
+    runFrame(); runTasks();
+    const engine = created[0]!;
+    expect(engine.setChartStyle).toHaveBeenCalledWith("heikinAshi");
+    expect(engine.setChartStyle.mock.calls.every(args => args[0] === "heikinAshi")).toBe(true);
+    // Same post-build sequence as the synchronous path: after the context
+    // reset, alongside the context's candles (the candle layout effect runs
+    // before the passive style effect, exactly as on the primary chart).
+    const order = calls.map(call => call.slice(2));
+    expect(order.indexOf("setChartStyle")).toBeGreaterThan(order.lastIndexOf("resetDataContext"));
+    expect(engine.setCandles.mock.calls.some(args => (args[0] as unknown[]).length > 0)).toBe(true);
+  });
+
+  it("legend shows canonical OHLC first and a labelled HA suffix only when the engine reports a display bar", () => {
+    render(<ARXNativeChart symbol="EURUSD" timeframe="M15" showFeedStatus={false} overlays={NO_OVERLAYS} />);
+    const engine = created[0]! as FakeAdapter & { getDisplayCandle?: Spy };
+    const handler = engine.setCrosshairHandler.mock.lastCall![0] as (candle: unknown) => void;
+    const bar = { time: 1_700_000_100, open: 1.1, high: 1.104, low: 1.099, close: 1.102 };
+    const legend = screen.getByTestId("chart-candle-inspector");
+    act(() => handler(bar));
+    expect(legend.textContent).toContain("O 1.10000  H 1.10400  L 1.09900  C 1.10200");
+    expect(legend.textContent).not.toContain("HA");
+    engine.getDisplayCandle = vi.fn(() => ({ time: bar.time, open: 1.1005, high: 1.104, low: 1.099, close: 1.10125 }));
+    act(() => handler(bar));
+    expect(engine.getDisplayCandle).toHaveBeenCalledWith(bar.time);
+    expect(legend.textContent).toMatch(/O 1\.10000 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10200 {2}· {2}HA O 1\.10050 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10125$/);
+    engine.getDisplayCandle = vi.fn(() => null);
+    act(() => handler(bar));
+    expect(legend.textContent).not.toContain("HA");
+  });
+
   it("keeps the comparison tick stream opening at mount and applies its live frames to the deferred engine", () => {
     candleResponse = liveResponse("EURUSD", "H1");
     render(<ARXNativeChart workspaceId="comparison" symbol="EURUSD" timeframe="H1" showFeedStatus overlays={NO_OVERLAYS} />);

@@ -93,6 +93,12 @@ describe("isolated chart replay player",()=>{
   expect(screen.getByRole("button",{name:"Play",exact:true}).getAttribute("aria-pressed")).toBe("false");
   expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(100);
  });
+ it("forwards a frozen Heikin Ashi style to the replay engine",()=>{
+  const data={...snapshot(),preferences:{style:"heikinAshi",scale:"linear",studies:[]}} as ChartReplaySnapshot;
+  render(<ChartReplayPlayer snapshot={data} onExit={vi.fn()}/>);
+  expect(engine.setChartStyle).toHaveBeenLastCalledWith("heikinAshi");
+  expect(engine.setChartStyle.mock.calls.every(args=>args[0]==="heikinAshi")).toBe(true);
+ });
  it("keeps the UTC default and prints the capture time to the second with its zone",()=>{
   render(<ChartReplayPlayer snapshot={{...snapshot(),capturedAt:1800000000123}} onExit={vi.fn()}/>);
   expect(screen.getByText(/Captured 2027-01-15 08:00:00 UTC\./)).toBeTruthy();

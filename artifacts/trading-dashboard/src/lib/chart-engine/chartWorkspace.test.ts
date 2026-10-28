@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { drawingSegments, drawingStorageKey, PREFERENCES_KEY, readChartStorage, validateDrawings, validatePreferences, writeChartStorage } from "./chartWorkspace";
+import { CHART_STYLE_NAMES, CHART_STYLES, closeOnlyStyle, describeChartStyle, drawingSegments, drawingStorageKey, PREFERENCES_KEY, readChartStorage, validateDrawings, validatePreferences, writeChartStorage } from "./chartWorkspace";
 import { STUDY_DEFAULTS } from "./chartStudies";
 afterEach(()=>vi.restoreAllMocks());
 describe("bounded chart workspace persistence",()=>{
@@ -48,6 +48,19 @@ describe("bounded chart workspace persistence",()=>{
     writeChartStorage(compKey,{...seeded,timeZone:"Europe/London"});
     expect(validatePreferences(readChartStorage(compKey) ?? readChartStorage(PREFERENCES_KEY)).timeZone).toBe("Europe/London");
     expect(validatePreferences(readChartStorage(PREFERENCES_KEY)).timeZone).toBe("Asia/Tokyo");
+  });
+  it("round-trips all seven chart styles in picker order and falls back to candles",()=>{
+    expect(CHART_STYLES).toEqual(["candles","bars","line","area","baseline","heikinAshi","hollow"]);
+    for (const style of CHART_STYLES) {
+      writeChartStorage("style-roundtrip",validatePreferences({style,scale:"linear",studies:[]}));
+      expect(validatePreferences(readChartStorage("style-roundtrip"))).toEqual({style,scale:"linear",studies:[]});
+      expect(CHART_STYLE_NAMES[style]).toBeTruthy();
+    }
+    for (const style of ["renko","HeikinAshi","heikinashi","Area","",1,null,undefined,{},["line"]]) expect(validatePreferences({style,studies:[]}).style).toBe("candles");
+    expect(CHART_STYLES.filter(closeOnlyStyle)).toEqual(["line","area","baseline"]);
+    expect(describeChartStyle("heikinAshi").note).toContain("not traded prices");
+    expect(describeChartStyle("candles")).toEqual({name:"Candlesticks",note:""});
+    expect(describeChartStyle("renko" as never)).toEqual(describeChartStyle("candles"));
   });
   it("handles corrupt data, oversized data and denied storage",()=>{
     localStorage.setItem("bad","{");expect(readChartStorage("bad")).toBeNull();
