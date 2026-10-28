@@ -38,19 +38,23 @@ export function describeOnboardingTradingStatus(
   const env = tradingMode.envelope;
   const approvalRaw = (env?.userApprovalStatus ?? env?.accountShellStatus?.approvalStatus ?? "").toUpperCase();
   const platform = (() => {
-    if (!env) return { tone: "muted" as const, title: "Checking trading status", note: "ARX AI is verifying your bridge, permissions, and safety controls." };
+    if (!env) return { tone: "muted" as const, title: "Checking trading status", note: "ARX AI is reading your account permissions." };
     if (tradingMode.isFrozen) return { tone: "danger" as const, title: "Risk lock active", note: "Trading is paused by your account safety controls." };
     if (tradingMode.isDemo) return { tone: "primary" as const, title: "Demo mode active", note: "You can explore ARX AI without placing live broker orders." };
     if (approvalRaw && approvalRaw !== "APPROVED" && approvalRaw !== "ACTIVE") return { tone: "warning" as const, title: "Waiting for approval", note: "Your trading access must be approved before live trades can be placed." };
     // cleanBlockedReason is an account/permission/arming blocker, not a bridge
     // observation — name the block and show the server's own reason.
     if (tradingMode.cleanBlockedReason) return { tone: "warning" as const, title: "Trading blocked", note: tradingMode.cleanBlockedReason };
-    if (tradingMode.isLiveShared && tradingMode.canManualTrade) return { tone: "success" as const, title: "Live trading available", note: "Your account is approved and connected through the active trading route." };
-    return { tone: "muted" as const, title: "Checking trading status", note: "ARX AI is verifying your bridge, permissions, and safety controls." };
+    // userCanManualTrade is status + approval only — it reads no heartbeat, so
+    // the note must not claim a connection.
+    if (tradingMode.isLiveShared && tradingMode.canManualTrade) return { tone: "success" as const, title: "Live trading available", note: "Your account is approved for live trading. Bridge connection is not checked here — see MT5 status." };
+    return { tone: "muted" as const, title: "Checking trading status", note: "ARX AI is reading your account permissions." };
   })();
 
-  // Readiness chips — only truthful state; MT5 bridge has no direct field on
-  // this envelope, so it reflects blocked-reason / live state / "Checking".
+  // Readiness chips — only truthful state. The MT5 bridge has no heartbeat
+  // field on this envelope (cleanBlockedReason is an approval/arming blocker,
+  // isLiveShared is a mode), so the chip says it was not checked here instead
+  // of inferring Connected / Unavailable.
   const approvalChip = !env
     ? { label: "Checking", tone: "muted" as const }
     : (approvalRaw === "APPROVED" || approvalRaw === "ACTIVE")
@@ -60,11 +64,7 @@ export function describeOnboardingTradingStatus(
         : { label: "Checking", tone: "muted" as const };
   const bridgeChip = !env
     ? { label: "Checking", tone: "muted" as const }
-    : tradingMode.cleanBlockedReason
-      ? { label: "Unavailable", tone: "danger" as const }
-      : tradingMode.isLiveShared
-        ? { label: "Connected", tone: "success" as const }
-        : { label: "Checking", tone: "muted" as const };
+    : { label: "Not checked here", tone: "muted" as const };
   return { platform, approvalChip, bridgeChip };
 }
 

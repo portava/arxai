@@ -31,6 +31,7 @@ import {
   AdvancedPanel, RiskGovernorCard, DecisionStreamCard,
 } from "@/components/dashboard/trade/TradePanels";
 import { resolveTradeRoomStatus } from "@/components/dashboard/trade/tradeRoomStatus";
+import { describeBridgeObservation, isOnSharedMasterRoute } from "@/components/dashboard/cockpit/bridgeObservation";
 
 type Opp = {
   symbol: string; timeframe: string; bias: string; recommendedAction: string;
@@ -78,6 +79,13 @@ export default function TradeCommandRoom() {
   const master = summaryQ.data?.masterMt5 ?? null;
   const broker = master?.brokerName ?? summaryQ.data?.accounts?.[0]?.masterBrokerName ?? "—";
   const account = master?.accountNumberMasked ?? summaryQ.data?.accounts?.[0]?.masterAccountNumberMasked ?? "—";
+  // Bridge connectivity from the shared master pool's heartbeat-derived
+  // availability — never inferred from the account-mode blocker.
+  const bridgeObs = describeBridgeObservation({
+    onSharedRoute: isOnSharedMasterRoute(tradingMode),
+    allocationView: summaryQ.data?.allocationView ?? null,
+    summaryLoading: summaryQ.isLoading,
+  });
 
   async function load() {
     const bare = symbol.includes(":") ? symbol.split(":")[1] : symbol;
@@ -130,7 +138,7 @@ export default function TradeCommandRoom() {
   const isLive = tradingMode.isLiveShared;
   const {
     canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge,
-  } = resolveTradeRoomStatus(tradingMode);
+  } = resolveTradeRoomStatus(tradingMode, bridgeObs);
 
   const heroDescription = `Place manual, ${name}-assisted, or advanced trades through your approved account route.`;
 
@@ -211,7 +219,7 @@ export default function TradeCommandRoom() {
         }
       />
       <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} />
-      <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} broker={broker} account={account} />
+      <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} bridge={bridgeObs} broker={broker} account={account} />
 
       <PageTabs
         storageKey="trade-command-room"

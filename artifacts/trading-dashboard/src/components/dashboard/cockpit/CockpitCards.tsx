@@ -57,6 +57,7 @@ import { formatPnl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
+import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
 
 const money = (n: number | null | undefined) =>
   n == null ? "—" : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -377,7 +378,17 @@ export function TradingPermissionSummaryCard() {
     : mode.cleanUserMessage || "Your account is approved for trading.";
 
   const sessionActive = !mode.isLoading && !frozen;
-  const bridge = blocked ? "Disconnected" : "Connected";
+  // Bridge connectivity comes from the shared master pool's heartbeat-derived
+  // availability (same query the account snapshot card uses), never from the
+  // presence or absence of an account-mode blocker.
+  const summaryQ = useGetMeSharedAccountSummary({
+    query: { queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
+  });
+  const bridge = describeBridgeObservation({
+    onSharedRoute: isOnSharedMasterRoute(mode),
+    allocationView: summaryQ.data?.allocationView ?? null,
+    summaryLoading: summaryQ.isLoading,
+  });
 
   return (
     <CockpitCard
@@ -394,7 +405,7 @@ export function TradingPermissionSummaryCard() {
 
       <dl className="mt-4 space-y-2.5 text-sm">
         <Row label="Risk level" value={mode.envelope?.userRiskCaps ? "Managed" : "Low"} valueClass="text-success" />
-        <Row label="Bridge" value={bridge} valueClass={blocked ? "text-danger" : "text-success"} />
+        <Row label="Bridge" value={bridge.label} valueClass={BRIDGE_TEXT[bridge.tone]} title={bridge.detail} data-testid="permission-bridge" />
         <Row label="Session" value={sessionActive ? "Active" : "Inactive"} valueClass={sessionActive ? "text-success" : "text-txt-muted"} />
         <Row label="Market" value={active} valueClass="text-foreground font-mono" />
       </dl>
@@ -411,9 +422,16 @@ export function TradingPermissionSummaryCard() {
   );
 }
 
-function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+const BRIDGE_TEXT: Record<"success" | "warning" | "danger" | "muted", string> = {
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-danger",
+  muted: "text-txt-muted",
+};
+
+function Row({ label, value, valueClass, title, "data-testid": testId }: { label: string; value: string; valueClass?: string; title?: string; "data-testid"?: string }) {
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex items-center justify-between gap-2" title={title} data-testid={testId}>
       <dt className="text-txt-secondary">{label}</dt>
       <dd className={cn("font-medium", valueClass)}>{value}</dd>
     </div>

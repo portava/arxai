@@ -45,6 +45,8 @@ import { EnvironmentPill } from "./EnvironmentPill";
 import { TradingPermissionSummaryCard } from "./CockpitCards";
 import { describeOnboardingTradingStatus } from "@/components/onboarding/OnboardingProvider";
 import { resolveTradeRoomStatus } from "@/components/dashboard/trade/tradeRoomStatus";
+import { TradeHero } from "@/components/dashboard/trade/TradePanels";
+import { describeBridgeObservation } from "./bridgeObservation";
 
 const OPERATOR_PAUSED = "Your operator has paused trading on your account. Live dispatch will remain blocked until trading is re-enabled.";
 const CONFIRM_LIVE = "Complete live confirmation to start placing live orders. Your operator can enable Full Live Activation on your behalf.";
@@ -138,12 +140,75 @@ describe("account-mode blocker is labelled as a block, never as a bridge disconn
 
   it("trade room mode label / blocked label / risk governor status name the block", () => {
     setMode({ cleanBlockedReason: OPERATOR_PAUSED });
-    const s = resolveTradeRoomStatus(h.mode as never);
+    const s = resolveTradeRoomStatus(h.mode as never, describeBridgeObservation({ onSharedRoute: true, allocationView: allocationView() }));
     expect(s.canTrade).toBe(false);
     expect(s.modeLabel).toBe("Trading blocked");
     expect(s.blockedLabel).toBe("Trading blocked");
     expect(s.gatesLabel).toBe(OPERATOR_PAUSED);
     expect(s.rgStatus.label).toBe("Trading blocked");
     for (const v of [s.modeLabel, s.blockedLabel, s.gatesLabel, s.rgStatus.label]) expect(v).not.toMatch(/bridge/i);
+  });
+});
+
+describe("bridge connectivity comes from a heartbeat-derived observation, not the envelope", () => {
+  it("Case A: approved LIVE_SHARED, no blocker, shared master bridge offline → Bridge row is not 'Connected'", () => {
+    setMode();
+    setSummary(allocationView({ bridgeAvailability: "UNAVAILABLE", bridgeMessage: "Live bridge is offline." }));
+    render(<TradingPermissionSummaryCard />);
+    expect(bridgeRow()).not.toBe("Connected");
+    expect(bridgeRow()).toBe("Unavailable");
+    expect(screen.getByTestId("permission-bridge").getAttribute("title")).toBe("Live bridge is offline.");
+  });
+
+  it("Case B: arming blocker while the shared master heartbeat is fresh → Bridge row is 'Online', not 'Disconnected'", () => {
+    setMode({ cleanBlockedReason: CONFIRM_LIVE });
+    setSummary(allocationView({ bridgeAvailability: "HEALTHY" }));
+    render(<TradingPermissionSummaryCard />);
+    expect(bridgeRow()).not.toBe("Disconnected");
+    expect(bridgeRow()).toBe("Online");
+  });
+
+  it("no bridge observation (summary unreadable) → says it was not checked, never 'Connected'", () => {
+    setMode();
+    setSummary(null);
+    render(<TradingPermissionSummaryCard />);
+    expect(bridgeRow()).toBe("Not checked");
+  });
+
+  it("not on the shared master route → the shared bridge is not presented as the user's bridge", () => {
+    setMode({ isLiveShared: false, isDemo: true, envelope: envelope({ currentAccountMode: "DEMO", accountShellStatus: { accountMode: "PERSONAL_MT5", tradingMode: "DEMO", tradingModeLabel: "Demo", approvalStatus: "APPROVED", tradingStatus: "ACTIVE" } }) });
+    setSummary(allocationView({ bridgeAvailability: "HEALTHY" }));
+    render(<TradingPermissionSummaryCard />);
+    expect(bridgeRow()).toBe("Not checked here");
+  });
+
+  it("onboarding: no 'Connected' chip and no 'connected through the active trading route' without a heartbeat", () => {
+    setMode();
+    const ok = describeOnboardingTradingStatus(h.mode as never);
+    expect(ok.bridgeChip.label).not.toBe("Connected");
+    expect(ok.platform.note).not.toMatch(/connected through/i);
+    setMode({ cleanBlockedReason: CONFIRM_LIVE });
+    const blocked = describeOnboardingTradingStatus(h.mode as never);
+    expect(blocked.bridgeChip.label).not.toBe("Unavailable");
+    expect(blocked.bridgeChip.label).toBe("Not checked here");
+  });
+
+  it("trade room: blocker → connection pill is not 'Disconnected'; Risk Governor bridge follows the observation", () => {
+    setMode({ cleanBlockedReason: CONFIRM_LIVE });
+    const online = describeBridgeObservation({ onSharedRoute: true, allocationView: allocationView() });
+    const s = resolveTradeRoomStatus(h.mode as never, online);
+    expect(s.connStatus).not.toBe("Disconnected");
+    expect(s.bridge).toBe("Online");
+    setMode();
+    const offline = describeBridgeObservation({ onSharedRoute: true, allocationView: allocationView({ bridgeAvailability: "UNAVAILABLE", bridgeMessage: "Live bridge is offline." }) });
+    const s2 = resolveTradeRoomStatus(h.mode as never, offline);
+    expect(s2.bridge).not.toBe("Connected");
+    expect(s2.bridge).toBe("Unavailable");
+  });
+
+  it("trade room connection card shows the bridge observation and does not paint LIVE green when the bridge is offline", () => {
+    const offline = describeBridgeObservation({ onSharedRoute: true, allocationView: allocationView({ bridgeAvailability: "UNAVAILABLE", bridgeMessage: "Live bridge is offline." }) });
+    render(<TradeHero description="d" connStatus="LIVE" isLive bridge={offline} broker="—" account="—" />);
+    expect(screen.getByTestId("trade-connection-bridge").textContent).toBe("Bridge: Unavailable");
   });
 });

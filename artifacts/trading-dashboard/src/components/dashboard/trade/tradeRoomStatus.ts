@@ -10,6 +10,7 @@
 // Disconnected".
 
 import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
+import type { BridgeObservation } from "@/components/dashboard/cockpit/bridgeObservation";
 
 export interface TradeRoomModeInput {
   isLiveShared: boolean;
@@ -25,12 +26,14 @@ export interface TradeRoomStatus {
   modeLabel: string;
   gatesLabel: string;
   blockedLabel: string;
+  /** The account route's mode (LIVE / Demo / Sim / Blocked) — not a connection observation. */
   connStatus: string;
   rgStatus: { label: string; tone: "warning" | "success" | "danger" };
+  /** Bridge row value, from the bridge observation (never from the envelope). */
   bridge: string;
 }
 
-export function resolveTradeRoomStatus(m: TradeRoomModeInput): TradeRoomStatus {
+export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeObservation): TradeRoomStatus {
   const isLive = m.isLiveShared;
   const blocked = Boolean(m.cleanBlockedReason);
   const frozen = m.isFrozen;
@@ -47,14 +50,14 @@ export function resolveTradeRoomStatus(m: TradeRoomModeInput): TradeRoomStatus {
   // …but its "Bridge disconnected" wording is not what a server blocker means.
   const blockedLabel = blocked && !canTrade ? "Trading blocked" : caps.blockedLabel;
 
-  const connStatus = blocked ? "Disconnected" : isLive ? "LIVE" : m.isDemo ? "Demo" : "Sim";
+  const connStatus = blocked ? "Blocked" : isLive ? "LIVE" : m.isDemo ? "Demo" : "Sim";
 
   const rgStatus = frozen ? { label: "Trading paused", tone: "warning" as const }
     : blocked ? { label: "Trading blocked", tone: "warning" as const }
     : canTrade ? { label: "Trading available", tone: "success" as const }
     : { label: "Risk lock active", tone: "danger" as const };
 
-  const bridge = blocked ? "Disconnected" : "Connected";
+  const bridge = bridgeObs.label;
 
   return { canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge };
 }
