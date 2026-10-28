@@ -67,6 +67,43 @@ function formatAge(ms: number): string {
 }
 
 // ── Evaluator ──────────────────────────────────────────────────────────────
+// What a broker_health_logs status says about the broker for readiness. The
+// statuses come from lib/domain/src/broker-health/evaluator.ts. `detail` is
+// the checklist sentence, `short` the warning / blocker phrase after "Broker".
+interface BrokerStatusMeaning { kind: "connected" | "warn" | "block"; detail: string; short: string }
+const BROKER_STATUS_MEANING: Record<string, BrokerStatusMeaning> = {
+  CONNECTED: { kind: "connected", detail: "Connected", short: "connected" },
+  OK: { kind: "connected", detail: "Connected", short: "connected" },
+  HEALTHY: { kind: "connected", detail: "Connected", short: "connected" },
+  DEGRADED: {
+    kind: "warn",
+    detail: "Connected but slow: the MT5 heartbeat was 15–60 s old",
+    short: "link was slow (MT5 heartbeat 15–60 s old)",
+  },
+  EXECUTION_DISABLED: {
+    kind: "warn",
+    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was turned off by the operator: no new DEMO or LIVE positions can be opened while it stays off; paper trading is not affected",
+    short: "execution was turned off by the operator; the link was up",
+  },
+  PRICE_FEED_DELAYED: {
+    kind: "block",
+    detail: "Connected, but the price feed was delayed past the safe live-execution threshold",
+    short: "price feed delayed",
+  },
+  DISCONNECTED: { kind: "block", detail: "Not connected: no MT5 heartbeat in the last 60 s", short: "not connected" },
+  AUTH_ERROR: { kind: "block", detail: "Broker login failed", short: "login failed" },
+  MAINTENANCE_MODE: {
+    kind: "block",
+    detail: "Broker in maintenance mode: live execution paused by the operator",
+    short: "in maintenance mode",
+  },
+};
+function brokerStatusMeaning(status: string): BrokerStatusMeaning {
+  // An unrecognised status fails closed, but is named as what it is.
+  return BROKER_STATUS_MEANING[status]
+    ?? { kind: "block", detail: `Status ${status}, which readiness does not recognise`, short: `status ${status} not recognised` };
+}
+
 interface ChecklistItem {
   id: string; label: string;
   status: "PASS"|"WARN"|"FAIL"|"INFO";
@@ -131,20 +168,29 @@ export function evaluateReadiness(
   const blockers: string[] = [];
   let lockedByHard = false;
 
-  // 1. Broker connected
+  // 1. Broker health check
   // Source: the newest broker_health_logs row — a PLATFORM-wide snapshot that
   // is written only when an operator runs POST /broker/health-check. It is a
   // past observation, so a connected verdict older than the broker-health
   // stale window cannot PASS (it degrades to WARN / UNKNOWN). A stale
-  // not-connected verdict still blocks: age never weakens a failure.
+  // blocking verdict still blocks: age never weakens a failure, but the
+  // blocker says how old it is.
+  //
+  // Only DISCONNECTED means the link was observed down. The broker health
+  // evaluator writes EXECUTION_DISABLED and DEGRADED only while the MT5
+  // heartbeat is under 60 s old, so those say the link was up: a warning
+  // (execution switched off by the operator / a slow link), never "not
+  // connected" and never a readiness lock on their own.
   const log = signals.brokerLog;
   const loggedStatus = log?.status ?? "UNKNOWN";
   const checkedAtMs = log?.createdAt ? new Date(log.createdAt).getTime() : NaN;
   const ageMs = Number.isFinite(checkedAtMs) ? Math.max(0, Date.now() - checkedAtMs) : NaN;
   const logFresh = Number.isFinite(ageMs) && ageMs <= BROKER_HEALTH_VERDICT_STALE_MS;
-  const loggedOk = loggedStatus === "OK" || loggedStatus === "CONNECTED" || loggedStatus === "HEALTHY";
+  const meaning = brokerStatusMeaning(loggedStatus);
+  const loggedOk = meaning.kind === "connected";
   const brokerOk = loggedOk && logFresh;
-  const bs = log == null ? "UNKNOWN" : (loggedOk && !logFresh ? "UNKNOWN" : loggedStatus);
+  const brokerWarn = meaning.kind === "warn" && logFresh;
+  const bs = log == null ? "UNKNOWN" : (meaning.kind !== "block" && !logFresh ? "UNKNOWN" : loggedStatus);
   const checkedAtText = Number.isFinite(checkedAtMs)
     ? `${new Date(checkedAtMs).toISOString().slice(0, 16).replace("T", " ")} UTC, ${formatAge(ageMs)} ago`
     : "time not recorded";
@@ -152,13 +198,19 @@ export function evaluateReadiness(
     ? "No broker health check on record — the broker connection has not been checked"
     : brokerOk
       ? `${loggedStatus} per the last platform broker health check (${checkedAtText})`
-      : loggedOk
+      : meaning.kind !== "block" && !logFresh
         ? `Last platform broker health check said ${loggedStatus} (${checkedAtText}) — too old to count as connected now`
-        : `${loggedStatus} per the last platform broker health check (${checkedAtText})`;
-  checklist.push({ id: "broker", label: "Broker connected",
-    status: brokerOk ? "PASS" : (bs === "UNKNOWN" ? "WARN" : "FAIL"),
+        : `${meaning.detail} — ${loggedStatus} per the last platform broker health check (${checkedAtText})`;
+  // Labelled for what it reads (the broker health check), so a FAIL for a
+  // delayed feed or a login error does not read as "Broker connected: FAIL".
+  checklist.push({ id: "broker", label: "Broker health check",
+    status: brokerOk ? "PASS" : (bs === "UNKNOWN" || brokerWarn ? "WARN" : "FAIL"),
     detail: brokerDetail });
-  if (!brokerOk && bs !== "UNKNOWN") { blockers.push(`Broker not connected (${bs})`); lockedByHard = true; }
+  if (meaning.kind === "block" && log != null) {
+    blockers.push(`Broker ${meaning.short} (${loggedStatus}, checked ${checkedAtText}${logFresh ? "" : " — no newer check on record"})`);
+    lockedByHard = true;
+  }
+  else if (brokerWarn) warnings.push(`Broker ${meaning.short} (${loggedStatus}, checked ${checkedAtText})`);
   else if (log == null) warnings.push("Broker connection not checked — no broker health check on record");
   else if (bs === "UNKNOWN") warnings.push("Broker connection unknown — the last broker health check is too old");
 
