@@ -80,6 +80,10 @@ let shadowStartedAt: string | null = null;
 let scanTimer: NodeJS.Timeout | null = null;
 let trackTimer: NodeJS.Timeout | null = null;
 let totalsObserved = 0;
+// Creation order of every decision (monotonic). Start/Stop record it so a
+// window edge is exact even when decisions share a millisecond with it.
+const decisionSeq = new Map<string, number>();
+let lastDecisionSeq = 0;
 
 /** A proposed trade (BUY/SELL) the risk governor blocked. A WAIT proposes no trade and is never a block. */
 function rgBlocked(d: ShadowDecision): boolean {
@@ -175,6 +179,7 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
     featureSnapshot,
   };
   decisions.set(d.id, d);
+  decisionSeq.set(d.id, ++lastDecisionSeq);
   totalsObserved++;
   // Durability is purely additive: the in-memory store stays the source of
   // truth. Candles come from marketSimulator (synthetic) until the real-data
@@ -297,6 +302,10 @@ let forwardStartedAt: string | null = null;
 let forwardEndsAt: string | null = null;
 let forwardEndedAt: string | null = null;
 let forwardEndReason: "duration_elapsed" | "stopped" | null = null;
+// Decision sequence at Start (window holds later ones) and at Stop (window
+// holds none after it); null end = still running or ended by duration.
+let forwardStartSeq = 0;
+let forwardEndSeq: number | null = null;
 
 /** Longest forward test accepted (7 days), in minutes. */
 export const FORWARD_MAX_DURATION_MIN = 7 * 24 * 60;
@@ -336,6 +345,8 @@ export function startForwardTest(c: Partial<ForwardTestConfig> = {}): { running:
   forwardEndsAt = new Date(Date.now() + forwardConfig.durationMin * 60_000).toISOString();
   forwardEndedAt = null;
   forwardEndReason = null;
+  forwardStartSeq = lastDecisionSeq;
+  forwardEndSeq = null;
   if (!shadowEnabled) startShadowMode({ symbols: forwardConfig.symbols });
   return { running: true, endsAt: forwardEndsAt };
 }
@@ -346,6 +357,7 @@ export function stopForwardTest() {
     forwardConfig = null;
     forwardEndedAt = new Date().toISOString();
     forwardEndReason = "stopped";
+    forwardEndSeq = lastDecisionSeq;
   }
   return { stopped: true, was: c };
 }
@@ -374,12 +386,14 @@ export function forwardStatus() {
 function forwardWindowDecisions(byStrategy: boolean): ShadowDecision[] {
   settleForwardTest();
   if (!forwardStartedAt) return [];
-  const since = Date.parse(forwardStartedAt);
   const until = forwardEndedAt ? Date.parse(forwardEndedAt) : Number.POSITIVE_INFINITY;
   const strategy = byStrategy ? (forwardConfig ?? forwardLastConfig)?.strategy : undefined;
   return [...decisions.values()].filter((d) => {
-    const ts = Date.parse(d.ts);
-    return ts >= since && ts <= until && (!strategy || d.strategy === strategy);
+    const seq = decisionSeq.get(d.id) ?? 0;
+    if (seq <= forwardStartSeq) return false;
+    // Stopped: by creation order. Ended by duration: by time (settled at read).
+    const inside = forwardEndSeq !== null ? seq <= forwardEndSeq : Date.parse(d.ts) <= until;
+    return inside && (!strategy || d.strategy === strategy);
   });
 }
 
