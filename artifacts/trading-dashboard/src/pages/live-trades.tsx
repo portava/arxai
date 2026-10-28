@@ -11,6 +11,16 @@ import { AaciSyncChip } from "@/components/aaci/AaciSyncChip";
 import { LiveBridgeAutoRefreshControl } from "@/components/live/LiveBridgeAutoRefreshControl";
 import { useLiveBridgeRefresh } from "@/hooks/useLiveBridgeRefresh";
 
+// mt5_state.positions is a single platform-wide row written by whichever EA
+// last called POST /mt5/sync-positions; it is never cleared when the bridge
+// goes offline. Say when it was pushed, or that the time is unknown.
+function describeSyncTime(lastSyncAt: string | null | undefined): string {
+  if (!lastSyncAt) return "push time unknown";
+  const t = Date.parse(lastSyncAt);
+  if (!Number.isFinite(t)) return "push time unknown";
+  return `last pushed ${new Date(t).toLocaleString()}`;
+}
+
 export default function LiveTrades() {
   const bridge = useLiveBridgeRefresh();
   const pollInterval = bridge.autoRefreshEnabled ? 5000 : false;
@@ -65,19 +75,36 @@ export default function LiveTrades() {
       }
 
       {mt5 && mt5.positions && mt5.positions.length > 0 ? (
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">MT5 Positions ({mt5.positions.length})</CardTitle></CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {mt5.positions.map((p) => (
-                <div key={p.ticket} className="flex justify-between items-center p-2 rounded border border-border/50 text-sm font-mono">
-                  <span>#{p.ticket} {p.symbol} {p.side} {p.lot} @ {p.entry}</span>
-                  <span className={(p.profit ?? 0) >= 0 ? "text-green-500" : "text-destructive"}>{(p.profit ?? 0).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        mt5.connected ? (
+          <Card data-testid="mt5-positions-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">System MT5 Bridge Positions ({mt5.positions.length})</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Platform-wide snapshot from the MT5 bridge ({describeSyncTime(mt5.lastSyncAt)}); not filtered to your account.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1">
+                {mt5.positions.map((p) => (
+                  <div key={p.ticket} className="flex justify-between items-center p-2 rounded border border-border/50 text-sm font-mono">
+                    <span>#{p.ticket} {p.symbol} {p.side} {p.lot} @ {p.entry}</span>
+                    {typeof p.profit === "number" && Number.isFinite(p.profit) ? (
+                      <span className={p.profit >= 0 ? "text-green-500" : "text-destructive"}>{p.profit.toFixed(2)}</span>
+                    ) : (
+                      <span className="text-muted-foreground" title="Profit not reported by the bridge">—</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card data-testid="mt5-positions-stale">
+            <CardContent className="py-3 text-xs text-muted-foreground">
+              System MT5 bridge is offline. Its last snapshot ({mt5.positions.length} position{mt5.positions.length === 1 ? "" : "s"}, {describeSyncTime(mt5.lastSyncAt)}) is not current and is not listed here.
+            </CardContent>
+          </Card>
+        )
       ) : null}
     </div>
   );
