@@ -37,6 +37,18 @@ function payloadNum(p: Record<string, unknown> | null, k: string): number | null
 
 // Status tone/label moved to @/lib/statusLabels for cross-surface reuse.
 
+/** Date and time the command was created ("Oct 27, 2:05:00 PM"); "—" when unreadable. */
+function commandTime(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${d.toLocaleTimeString()}`;
+}
+
+/** Scanner signal strength on its 0–100 scale, as the trade modal shows it. */
+function strengthText(v: number | null): string {
+  return v != null && Number.isFinite(v) ? `${Math.round(v)} / 100` : "—";
+}
+
 // Recent Scanner Trades — compact table on the Market Scanner page. Lists
 // commands whose payload.source === "MARKET_SCANNER". Polls every 5s.
 export function RecentScannerTrades() {
@@ -214,7 +226,7 @@ export function RecentScannerTrades() {
                   <th className="text-right font-medium px-2 py-1.5">Vol</th>
                   <th className="text-left font-medium px-2 py-1.5">Status</th>
                   <th className="text-left font-medium px-2 py-1.5">Ticket</th>
-                  <th className="text-right font-medium px-2 py-1.5">Conf</th>
+                  <th className="text-right font-medium px-2 py-1.5" title="Scanner signal strength (0–100), not a calibrated win probability.">Strength</th>
                   <th className="text-left font-medium px-2 py-1.5">{name} reason</th>
                 </tr>
               </thead>
@@ -228,7 +240,7 @@ export function RecentScannerTrades() {
                   const why = sc && typeof sc.reasonForTrade === "string" ? sc.reasonForTrade as string : null;
                   return (
                     <tr key={c.commandId} className="border-b border-slate-800/60 last:border-0">
-                      <td className="px-2 py-1 font-mono whitespace-nowrap">{new Date(c.createdAt).toLocaleTimeString()}</td>
+                      <td className="px-2 py-1 font-mono whitespace-nowrap" data-testid="recent-scanner-trade-time">{commandTime(c.createdAt)}</td>
                       <td className="px-2 py-1 font-mono">{sym}</td>
                       <td className={`px-2 py-1 font-mono ${side === "BUY" ? "text-success" : side === "SELL" ? "text-danger" : ""}`}>{side}</td>
                       <td className="px-2 py-1 font-mono text-right">{vol ?? "—"}</td>
@@ -239,7 +251,7 @@ export function RecentScannerTrades() {
                         )}
                       </td>
                       <td className="px-2 py-1 font-mono">{c.brokerTicket ?? "—"}</td>
-                      <td className="px-2 py-1 font-mono text-right">{conf ?? "—"}</td>
+                      <td className="px-2 py-1 font-mono text-right whitespace-nowrap" data-testid="recent-scanner-trade-strength">{strengthText(conf)}</td>
                       <td className="px-2 py-1 text-muted-foreground truncate max-w-[200px]" title={why ?? ""}>{why ?? "—"}</td>
                     </tr>
                   );

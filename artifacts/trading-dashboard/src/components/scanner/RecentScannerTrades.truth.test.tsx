@@ -191,3 +191,28 @@ describe("RecentScannerTrades — no empty state before the first read", () => {
     expect(screen.queryByTestId("recent-scanner-trades-loading")).toBeNull();
   });
 });
+
+// Item: rows showed a bare clock time (no date) and a raw confidence float.
+describe("RecentScannerTrades — row time carries its date; strength carries its scale", () => {
+  it("a command from yesterday shows its date, and 72.4567 renders as '72 / 100'", async () => {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60_000);
+    yesterday.setHours(14, 5, 0, 0);
+    stubItems([demoCommand({ createdAt: yesterday.toISOString() })]);
+    render(<RecentScannerTrades />);
+    expect(await screen.findByText("EURUSD")).toBeTruthy();
+    const time = screen.getByTestId("recent-scanner-trade-time").textContent ?? "";
+    expect(time).toContain(yesterday.toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+    expect(time).toContain(yesterday.toLocaleTimeString());
+    const conf = screen.getByTestId("recent-scanner-trade-strength");
+    expect(conf.textContent).toBe("72 / 100");
+    expect(screen.queryByText("72.4567")).toBeNull();
+  });
+
+  it("an unreadable createdAt is shown as '—', never 'Invalid Date'", async () => {
+    stubItems([demoCommand({ createdAt: "not-a-date" })]);
+    render(<RecentScannerTrades />);
+    expect(await screen.findByText("EURUSD")).toBeTruthy();
+    expect(screen.getByTestId("recent-scanner-trade-time").textContent).toBe("—");
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
+  });
+});
