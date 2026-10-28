@@ -254,3 +254,71 @@ test("structure read uses the grader's A+…F vocabulary and leaves unrated read
   assert.equal(s.score, 60);
   assert.match(s.note, /rated A\+ or A/);
 });
+
+// ── Feed facts come from chartTruthSnapshot; P/L quality is user-entered ────
+// readSnapshot read intelligenceSnapshot, which never holds stale/aiUsable,
+// so Feed Truth was always "Insufficient data" and the stale-feed warning
+// never fired. Exit Realism called the user's own plQuality "broker-known".
+test("feed truth reads the chart-truth snapshot: stale, unusable feeds score 0 and warn", async () => {
+  reset();
+  receipts = Array.from({ length: 4 }, (_, i) =>
+    receipt(i, {
+      chartTruthSnapshot: { truthState: "STALE", stale: true, aiUsable: false },
+      intelligenceSnapshot: { bias: "neutral", setupStage: "no_setup" },
+    }),
+  );
+  const b = await computeChartBrainBenchmark({ windowDays: 30 });
+  const s = scoreOf(b, "feed_truth");
+  assert.equal(s.sampleSize, 4);
+  assert.equal(s.score, 0);
+  assert.ok(
+    b.warnings.some((w) => /100% of recent reads ran on a stale or unusable feed/.test(w)),
+    JSON.stringify(b.warnings),
+  );
+});
+
+test("feed truth counts clean reads from the chart-truth snapshot", async () => {
+  reset();
+  receipts = Array.from({ length: 4 }, (_, i) =>
+    receipt(i, {
+      chartTruthSnapshot: i < 3 ? { stale: false, aiUsable: true } : { stale: true, aiUsable: false },
+    }),
+  );
+  const b = await computeChartBrainBenchmark({ windowDays: 30 });
+  assert.equal(scoreOf(b, "feed_truth").score, 75);
+});
+
+test("speed says it counts governance runs only when receipts record no read build time", async () => {
+  reset();
+  receipts = [receipt(0)];
+  traces = Array.from({ length: 4 }, (_, i) => ({
+    totalGovernanceRuntimeMs: i === 0 ? 900 : 50,
+    createdAt: new Date(NOW),
+  }));
+  const b = await computeChartBrainBenchmark({ windowDays: 30 });
+  const s = scoreOf(b, "speed");
+  assert.equal(s.score, 75);
+  assert.match(s.note, /3\/4 governance runs finished within 400ms/);
+  assert.match(s.note, /Read build times are not recorded/);
+  assert.doesNotMatch(s.note, /reads\/governance runs/);
+});
+
+test("exit realism: user-entered plQuality KNOWN earns no points and is never called broker-known", async () => {
+  reset();
+  receipts = Array.from({ length: 4 }, (_, i) => receipt(i, { direction: "BUY" }));
+  outcomes = receipts.map((r, i) => ({
+    receiptRef: r.receiptId,
+    kind: "OUTCOME",
+    outcome: i % 2 === 0 ? "WIN" : "LOSS",
+    plQuality: "KNOWN",
+    evidence: {},
+    createdAt: new Date(NOW - i * 1000),
+  }));
+  const b = await computeChartBrainBenchmark({ windowDays: 30 });
+  const s = scoreOf(b, "exit_realism");
+  assert.equal(s.score, null);
+  assert.doesNotMatch(s.note, /broker-known/);
+  assert.match(s.note, /^Not measured/);
+  assert.match(s.note, /4 of 4 resolved trades were reported by the user/);
+  assert.equal(b.weakAreas.some((w) => w.key === "exit_realism"), false);
+});

@@ -152,6 +152,12 @@ interface SnapshotView {
   stateBuildMs: number | null;
 }
 
+/**
+ * Feed/speed facts recorded on a receipt. They live in the receipt's
+ * chartTruthSnapshot (truthState / stale / aiUsable; see decisionReceipts.ts);
+ * intelligenceSnapshot holds none of them. No snapshot records the state-build
+ * time today, so stateBuildMs is null unless a receipt carries speedState.
+ */
 function readSnapshot(raw: unknown): SnapshotView {
   const s = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const speed = (s["speedState"] && typeof s["speedState"] === "object"
@@ -310,7 +316,7 @@ export async function computeChartBrainBenchmark(opts?: {
   let slowReads = 0;
   let speedKnown = 0;
   for (const r of receipts) {
-    const snap = readSnapshot(r.intelligenceSnapshot);
+    const snap = readSnapshot(r.chartTruthSnapshot);
     if (snap.aiUsable !== null || snap.stale !== null) {
       feedKnown++;
       if (snap.aiUsable === true && snap.stale !== true) feedClean++;
@@ -451,7 +457,7 @@ export async function computeChartBrainBenchmark(opts?: {
       "feed_truth",
       feedClean,
       feedKnown,
-      `${feedClean}/${feedKnown} reads on a clean, AI-usable feed.`,
+      `${feedClean}/${feedKnown} reads were on a clean, AI-usable feed (from each receipt's chart-truth snapshot).`,
     ),
     ratioScore(
       "reliability",
@@ -463,7 +469,9 @@ export async function computeChartBrainBenchmark(opts?: {
       "speed",
       speedFast,
       speedDen,
-      `${speedFast}/${speedDen} reads/governance runs within speed budget.`,
+      speedKnown === 0
+        ? `${speedFast}/${speedDen} governance runs finished within ${GOV_RUNTIME_BUDGET_MS}ms. Read build times are not recorded on receipts, so reads are not counted.`
+        : `${speedFast}/${speedDen} within budget: ${speedKnown - slowReads}/${speedKnown} reads built within ${STATE_BUILD_BUDGET_MS}ms and ${traces.length - slowGov}/${traces.length} governance runs finished within ${GOV_RUNTIME_BUDGET_MS}ms.`,
     ),
     ratioScore(
       "structure_read",
@@ -495,11 +503,11 @@ export async function computeChartBrainBenchmark(opts?: {
       highConfTrades,
       `${highConfWins}/${highConfTrades} high-confidence entries won.`,
     ),
-    ratioScore(
+    // P/L quality is whatever the user sent with POST …/outcome; nothing checks
+    // it against broker fills, so it cannot earn points as "broker-known".
+    notMeasured(
       "exit_realism",
-      plKnown,
-      plResolved,
-      `${plKnown}/${plResolved} resolved trades had broker-known P/L.`,
+      `Not measured: P/L quality on outcomes is entered by the user and not checked against broker fills. ${plKnown} of ${plResolved} resolved trades were reported by the user as having known P/L.`,
     ),
     agentAgreement,
     notMeasured(
