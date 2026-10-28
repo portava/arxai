@@ -74,6 +74,8 @@ it("retains manual ticket values, exact selected market and confirmation while c
 it("keeps AI analysis and its chart on the selected synthetic instead of substituting EURUSD", async () => {
   render(<LiveAiAssistPage/>);
   expect(screen.getByTestId("native-chart").textContent).toBe("V75:default");
+  expect(screen.getByText("AI Trade Card · M15")).toBeTruthy();
+  expect(screen.getByText(/Changing the chart interval does not change this analysis/).textContent).toContain("15-minute candles (M15)");
   expect(screen.getByTestId("ai-symbol-select")).toHaveProperty("value","V75");
   fireEvent.click(screen.getByTestId("generate-card"));
   await waitFor(()=>expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes("selected-market?symbol=V75&timeframe=M15"))).toBe(true));

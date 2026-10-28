@@ -157,10 +157,10 @@ export default function LiveAiAssistPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex justify-between items-center text-sm">
-                <span>AI Trade Card</span>
+                <span>AI Trade Card · M15</span>
                 <SmartChartSymbolSelect symbol={symbol} onSymbolChange={setChartSymbol} label="Market" testId="ai-symbol-select" />
               </CardTitle>
-              <CardDescription>Reads the live market feed. No setup is shown unless the data supports one.</CardDescription>
+              <CardDescription>Analyzes 15-minute candles (M15). Changing the chart interval does not change this analysis. No setup is shown unless the data supports one.</CardDescription>
             </CardHeader>
             <CardContent>
               <Button onClick={loadCard} className="w-full" data-testid="generate-card" disabled={feed.kind === "loading"}>
@@ -192,7 +192,7 @@ export default function LiveAiAssistPage() {
 
           {card && (
             <Card className="border-blue-500/30">
-              <CardHeader><CardTitle className="text-sm flex justify-between">{card.symbol} <Badge>{card.direction}</Badge></CardTitle><CardDescription>{card.setup}</CardDescription></CardHeader>
+              <CardHeader><CardTitle className="text-sm flex justify-between">{card.symbol} · M15 <Badge>{card.direction}</Badge></CardTitle><CardDescription>{card.setup}</CardDescription></CardHeader>
               <CardContent className="space-y-2 text-xs">
                 <div className="grid grid-cols-3 gap-1 font-mono">
                   <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">Entry</div>{card.entry || "—"}</div>
