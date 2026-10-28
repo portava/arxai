@@ -8,6 +8,20 @@ const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b),close=(a,b)=>Number.isF
 const assess=vm.runInNewContext('('+extract('assessCompletion','    ')+')',{equal,close});
 const stats=vm.runInNewContext('('+extract('stats')+')');
 const summarize=vm.runInNewContext('('+extract('summarizeControl')+')',{stats});
+const isolateSource=source.match(/  async function performWithStyleIsolation\([^]*?\n  \}/)?.[0];
+assert.ok(isolateSource);const isolate=vm.runInNewContext('('+isolateSource+')');
+test('unsupported native style is attempted once, preserves proof, and cannot suppress navigation samples',async()=>{
+  const run={controlFailures:[],skippedActions:[]};let navigation=0,style=0;
+  for(let rep=0;rep<82;rep++){
+    await isolate({kind:'zoom',control:'Zoom in',rep,pass:1,record:rep>=2},run,async()=>{navigation++;},async()=>{throw Error('not used');});
+    await isolate({kind:'style',control:'Style bars',rep,pass:1,record:rep>=2},run,async()=>{style++;throw Error('no trusted change');},async()=>({kind:'trusted selection change was not observed',pendingArm:{id:1},inputAttempts:[{type:'keydown',trusted:true}]}));
+  }
+  assert.equal(navigation,82);assert.equal(style,1);assert.equal(run.controlFailures.length,1);assert.equal(run.controlFailures[0].pendingArm.id,1);assert.equal(run.skippedActions.filter(x=>x.record).length,80);
+  const summary=summarize([],'Style bars',80,100);assert.equal(summary.meetsTarget,false);assert.equal(summary.recordedSamples,0);
+});
+test('isolation never converts an observed navigation failure into a skipped style',async()=>{
+  await assert.rejects(isolate({kind:'pan',control:'Pan earlier'},{controlFailures:[],skippedActions:[]},async()=>{throw Error('wrong actual range');},async()=>({})),/wrong actual range/);
+});
 const bars=[{time:100,open:1,high:3,low:0,close:2},{time:400,open:2,high:4,low:1,close:3}];
 function baseline(){return {state:{adapterId:1,containerId:2,chartId:3,seriesId:4,canvasIds:[5],candlesId:6,dataRevision:1,symbol:'EURUSD',intervalSeconds:900,barCount:2,style:'candles',feed:{source:'offline_fixture',livePriceAffordance:false},range:{from:20,to:100},bounds:{x:100,y:200,width:900,height:520}},data:{canonical:structuredClone(bars),display:structuredClone(bars)}};}
 function arm(kind,extra={}){return {id:1,kind,control:kind,event:kind==='style'?'change':'click',selector:'button',record:true,timeoutMs:1000,before:baseline(),authority:bars,viewport:{width:1440,height:1100},...extra};}
@@ -81,6 +95,9 @@ test('completion requires consecutive correct frames and includes input capture 
 test('rAF starvation preserves the failed sample; untrusted or mismatched inputs preserve pending arm',()=>{
   const s=sampler();s.state.armed=arm('zoom',{factor:.75});s.event({isTrusted:false});assert.ok(s.state.armed);assert.equal(s.state.inFlight,null);
   s.event();s.timeout();assert.equal(s.state.samples.length,1);assert.equal(s.state.samples[0].failure,'completion deadline exceeded');assert.equal(s.state.samples[0].completedOpportunityMs,null);
+});
+test('clearing a failed style arm cannot later capture an unrelated trusted event',()=>{
+  const s=sampler();s.state.armed=arm('style',{style:'bars'});s.state.cancelPending('failed style');s.event();assert.equal(s.state.armed,null);assert.equal(s.state.inFlight,null);assert.equal(s.state.samples.length,0);
 });
 test('future or negative input clocks fail rather than silently exclude capture delay',()=>{
   for(const stamp of [-1,1000000000000]){const s=sampler();s.state.armed=arm('zoom',{factor:.75});s.event({timeStamp:stamp});assert.equal(s.state.samples[0].failure,'unsupported input event clock');}

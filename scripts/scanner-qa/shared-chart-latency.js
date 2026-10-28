@@ -12,6 +12,7 @@ async page => {
       completion:'Exact canonical/display data, engine/source, and intended logical range or style/disclosure, observed correct across two consecutive animation frames.',
       opportunity:'The second consecutive successful animation frame; not hardware paint, pixel presentation or 60fps.',
       overhead:'Full 200-bar canonical/display observation is included in measured time; witness cost is reported without subtracting it.',
+      setup:'Untrusted selectOption may establish a style origin or recover candles outside measured actions; it never supplies a measured sample.',
       environment:'Actual Scanner route/providers, minified production fixture, offline historical synthetic bars. Periodic app reads remain active and are logged.'},
     limitations:['Native style timing excludes opening/navigating the native selection menu.','Unavailable AI truth: active automatic-analysis performance is not measured.',
       'No broker, real feed, network latency, equivalent-condition TradingView/MT5 comparison, or architecture-completion claim.',
@@ -32,10 +33,20 @@ async page => {
     item.meetsTarget=samples.length===expectedSamples&&success.length===samples.length&&item.completedOpportunity.p95!==null&&item.completedOpportunity.p95<=target;
     return item;
   }
+  async function performWithStyleIsolation(spec,run,perform,recover) {
+    const previous=run.controlFailures.find(f=>f.control===spec.control);
+    if(previous){run.skippedActions.push({control:spec.control,pass:spec.pass,rep:spec.rep,record:spec.record,reason:previous.reason});return;}
+    try{await perform();}
+    catch(error){
+      if(spec.kind!=='style')throw error; // Do not mask an application/navigation failure.
+      const proof=await recover();
+      run.controlFailures.push({control:spec.control,pass:spec.pass,rep:spec.rep,record:spec.record,reason:String(error?.stack??error),...proof});
+    }
+  }
   // Self-contained because Playwright serializes this function into the page.
   function installSampler() {
     window.__scannerLatency?.dispose?.();
-    const state=window.__scannerLatency={armed:null,inFlight:null,samples:[],longTasks:[],longTasksUnsupported:false};
+    const state=window.__scannerLatency={armed:null,inFlight:null,samples:[],longTasks:[],inputAttempts:[],longTasksUnsupported:false};
     const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
     const close=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<.002;
     function assessCompletion(arm,current,controls) {
@@ -85,6 +96,7 @@ async page => {
     const finish=(sample,failure)=>{if(state.inFlight!==sample)return;clearTimeout(sample.timer);delete sample.timer;sample.failure=failure??null;state.samples.push(sample);state.inFlight=null;};
     const capture=event=>{
       const arm=state.armed;
+      if(arm?.kind==='style'&&['keydown','keyup','change','input'].includes(event.type)&&event.target.closest?.(arm.selector))state.inputAttempts.push({sampleId:arm.id,type:event.type,key:event.key??null,value:event.target.value,trusted:event.isTrusted,eventTimeStamp:event.timeStamp,capturedAt:performance.now()});
       if(!arm||event.type!==arm.event||!event.isTrusted||!event.target.closest?.(arm.selector))return;
       if(arm.kind==='style'&&event.target.value!==arm.style)return;
       state.armed=null;
@@ -120,10 +132,11 @@ async page => {
       };
       requestAnimationFrame(poll);
     };
-    for(const event of ['click','change'])window.addEventListener(event,capture,true);
+    for(const event of ['click','change','input','keydown','keyup'])window.addEventListener(event,capture,true);
     let observer;
     try{observer=new PerformanceObserver(list=>state.longTasks.push(...list.getEntries().map(e=>({start:e.startTime,duration:e.duration}))));observer.observe({type:'longtask',buffered:true});}catch{state.longTasksUnsupported=true;}
-    state.dispose=()=>{for(const event of ['click','change'])window.removeEventListener(event,capture,true);observer?.disconnect();if(state.inFlight)finish(state.inFlight,'sampler disposed while pending');};
+    state.cancelPending=reason=>{if(state.inFlight)finish(state.inFlight,reason);state.armed=null;};
+    state.dispose=()=>{for(const event of ['click','change','input','keydown','keyup'])window.removeEventListener(event,capture,true);observer?.disconnect();if(state.inFlight)finish(state.inFlight,'sampler disposed while pending');};
     state.assessCompletion=assessCompletion;
   }
   const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -135,7 +148,7 @@ async page => {
   try {
     check(new URL(page.url()).hostname==='127.0.0.1'&&new URL(page.url()).pathname==='/market-scanner','Run offline Scanner setup first');
     for(const cpuRate of [1,4])for(const plan of plans) {
-      const run={name:plan.name,cpuRate,viewport:plan.viewport,startedAt:new Date().toISOString(),verdict:'FAIL',samples:[],summary:[],failure:null,pendingSample:null};
+      const run={name:plan.name,cpuRate,viewport:plan.viewport,startedAt:new Date().toISOString(),verdict:'FAIL',samples:[],summary:[],controlFailures:[],skippedActions:[],failure:null,pendingSample:null};
       result.runs.push(run);const wallStart=Date.now();
       try {
         await cdp.send('Emulation.setCPUThrottlingRate',{rate:cpuRate});await page.setViewportSize(plan.viewport);await page.reload();
@@ -164,6 +177,13 @@ async page => {
         await page.evaluate(()=>document.fonts.ready);await frames();await page.evaluate(installSampler);
         const act=async(spec,pass,rep)=>{
           check(Date.now()-wallStart<MAX_RUN_MS,'Run time budget exceeded; remaining samples not attempted');
+          if(spec.kind==='style') {
+            const origin=spec.style==='bars'?'candles':'bars';
+            // A failed opposite direction must not make this direction a no-op.
+            // This preparation is explicitly outside the measured trusted input.
+            if(await style.inputValue()!==origin)await style.selectOption(origin);
+            await page.waitForFunction(origin=>window.__arxChartQa.snapshot()?.style===origin,origin);await frames();
+          }
           const before=await page.evaluate(()=>({state:window.__arxChartQa.snapshot(),data:window.__arxChartQa.data()}));
           const arm={...spec,id:++sequence,cpuRate,pass,rep,record:rep>=WARMUPS,timeoutMs:TIMEOUT_MS,viewport:plan.viewport,before,authority:expected.canonical};
           run.pendingSample=arm;
@@ -184,15 +204,29 @@ async page => {
             {control:'Zoom in',kind:'zoom',button:'Zoom in chart',factor:.75},{control:'Zoom out',kind:'zoom',button:'Zoom out chart',factor:4/3},
             {control:'Pan earlier',kind:'pan',button:'Pan to earlier candles',fraction:-.25},{control:'Pan later',kind:'pan',button:'Pan to later candles',fraction:.25},
             {control:'Style bars',kind:'style',style:'bars'},{control:'Style candles',kind:'style',style:'candles'}];
-          for(const spec of actions)await act({...spec,event:spec.kind==='style'?'change':'click',selector:spec.kind==='style'?'[data-testid="scanner-chart-panel"] select[aria-label="Chart style"]':`[data-testid="scanner-chart-panel"] button[aria-label="${spec.button}"]`},pass,rep);
+          for(const spec of actions) {
+            const action={...spec,event:spec.kind==='style'?'change':'click',selector:spec.kind==='style'?'[data-testid="scanner-chart-panel"] select[aria-label="Chart style"]':`[data-testid="scanner-chart-panel"] button[aria-label="${spec.button}"]`};
+            await performWithStyleIsolation({...action,pass,rep,record:rep>=WARMUPS},run,()=>act(action,pass,rep),async()=>{
+              const proof=await page.evaluate(()=>{const s=window.__scannerLatency;return{pendingArm:s.armed,inFlight:s.inFlight?{...s.inFlight,timer:undefined}:null,inputAttempts:s.inputAttempts.filter(e=>e.sampleId===s.armed?.id||e.sampleId===s.inFlight?.id),current:{state:window.__arxChartQa.snapshot(),data:window.__arxChartQa.data()}};});
+              proof.pendingSample=run.pendingSample;
+              proof.kind=proof.pendingArm&&!proof.inFlight?'trusted selection change was not observed':'observed style did not complete correctly';
+              await page.evaluate(()=>window.__scannerLatency.cancelPending('style control failed; evidence retained'));
+              run.pendingSample=null;
+              await page.keyboard.press('Escape');await style.selectOption('candles');
+              await page.waitForFunction(()=>window.__arxChartQa.snapshot()?.style==='candles');await frames();
+              return proof;
+            });
+          }
         }
         run.verdict='PASS';
       } catch(error) {run.failure=String(error?.stack??error);}
       finally {
-        const observed=await page.evaluate(()=>{const s=window.__scannerLatency;return {samples:s?.samples??[],inFlight:s?.inFlight?{...s.inFlight,timer:undefined}:null,pendingArm:s?.armed??null,longTasks:s?.longTasks??[],longTasksUnsupported:s?.longTasksUnsupported??true};}).catch(()=>({samples:[],observationUnavailable:true}));
+        const observed=await page.evaluate(()=>{const s=window.__scannerLatency;return {samples:s?.samples??[],inFlight:s?.inFlight?{...s.inFlight,timer:undefined}:null,pendingArm:s?.armed??null,inputAttempts:s?.inputAttempts??[],longTasks:s?.longTasks??[],longTasksUnsupported:s?.longTasksUnsupported??true};}).catch(()=>({samples:[],observationUnavailable:true}));
         Object.assign(run,observed);run.after=await page.evaluate(()=>({state:window.__arxChartQa?.snapshot(),data:window.__arxChartQa?.data()})).catch(()=>null);
         for(const control of plan.controls) {
           const item=summarizeControl(run.samples,control,REPS*PASSES,TARGET_MS);
+          item.controlFailure=run.controlFailures.find(f=>f.control===control)?.kind??null;
+          item.skippedMeasuredActions=run.skippedActions.filter(a=>a.record&&a.control===control).length;
           run.summary.push(item);if(!item.meetsTarget)run.verdict='FAIL';
         }
         if(run.failure||run.inFlight||run.pendingArm||run.pendingSample)run.verdict='FAIL';
