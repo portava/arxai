@@ -49,4 +49,12 @@ describe("LiveTradeTicket status truth", () => {
       liveOneClickEnabled: true, serverLiveExecutionEnabled: false, armingKnown: true, serverSwitchKnown: false,
     }).label).toBe("STATUS UNKNOWN");
   });
+
+  it("an access read that failed is ACCESS NOT CHECKED, not ACCOUNT NOT APPROVED", () => {
+    const base = { accessLoaded: true, canTrade: false, armingLoaded: true, armed: false, killSwitch: false,
+      liveOneClickEnabled: false, serverLiveExecutionEnabled: false };
+    expect(deriveStatus({ ...base, accessError: true }).label).toBe("ACCESS NOT CHECKED");
+    expect(deriveStatus({ ...base, accessError: false }).label).toBe("ACCOUNT NOT APPROVED");
+    expect(deriveStatus(base).label).toBe("ACCOUNT NOT APPROVED");
+  });
 });

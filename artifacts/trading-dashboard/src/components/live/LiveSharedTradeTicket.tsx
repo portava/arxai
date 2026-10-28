@@ -521,7 +521,17 @@ export function LiveSharedTradeTicket({
         )}
 
         {/* Unapproved users see the block above and no executable button. */}
-        {access.loaded && !access.canTrade && (
+        {/* A failed access read is "could not be checked", never a refusal. */}
+        {access.loaded && !access.canTrade && access.error && (
+          <Alert variant="destructive" data-testid="ls-access-unknown">
+            <ShieldAlert className="h-4 w-4" />
+            <AlertTitle>Live access could not be checked</AlertTitle>
+            <AlertDescription className="text-xs">
+              {access.error} Reopen the ticket to retry.
+            </AlertDescription>
+          </Alert>
+        )}
+        {access.loaded && !access.canTrade && !access.error && (
           <Alert variant="destructive">
             <ShieldAlert className="h-4 w-4" />
             <AlertTitle>Live access pending</AlertTitle>
