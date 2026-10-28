@@ -170,6 +170,20 @@ export function SelectedMarketPanel() {
     });
   }, [ok]);
 
+  // The bias badge sits beside the BUY / SELL buttons. A directional bias read
+  // off a feed that is not confirmed live is the last read, not a current one:
+  // say which feed state it came from and drop the buy/sell colour, matching the
+  // reasoning block's "WAIT — live feed not confirmed".
+  const biasBadge = ((): { text: string; tone: "BUY" | "SELL" | "NEUTRAL" | "WAIT" } => {
+    if (!ok) return { text: "", tone: "NEUTRAL" };
+    const b = ok.highlights.bias;
+    if ((b === "BUY" || b === "SELL") && ok.dataState !== "LIVE_CONFIRMED") {
+      const state = ok.dataState ? ok.dataState.toLowerCase() : "not stated";
+      return { text: `${b} (last read · feed ${state})`, tone: "WAIT" };
+    }
+    return { text: b, tone: b };
+  })();
+
   return (
     <Card className="rounded-2xl border-success/25 bg-card" data-testid="selected-market-panel">
       <CardHeader className="pb-3">
@@ -248,7 +262,7 @@ export function SelectedMarketPanel() {
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="outline">{ok.symbol}</Badge>
               <Badge variant="outline">{ok.timeframe}</Badge>
-              <Badge className={biasBadgeClass(ok.highlights.bias)}>{ok.highlights.bias}</Badge>
+              <Badge className={biasBadgeClass(biasBadge.tone)} data-testid="badge-selected-bias">{biasBadge.text}</Badge>
               <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
               <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
               <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>

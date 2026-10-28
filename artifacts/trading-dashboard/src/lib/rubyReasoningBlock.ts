@@ -796,7 +796,10 @@ export function buildReasoningFromOppMap(
   const dir = bias === "BUY" || bias === "SELL" ? bias : null;
   const ds = clean(input.dataState).toUpperCase();
   const feedDegraded = ds === "STALE" || ds === "UNAVAILABLE";
-  const withheld = input.levelsWithheld === true || input.entryZone == null || feedDegraded;
+  // Levels are only stated as numbers on a confirmed live feed — the same rule
+  // the panel's Highlights box applies (selectedMarketView), so a SYNCING or
+  // unstated feed withholds them here too instead of printing them beside it.
+  const withheld = input.levelsWithheld === true || input.entryZone == null || ds !== "LIVE_CONFIRMED";
   const lowConf = /low|weak|uncertain/i.test(clean(input.confidenceLabel));
   const newsLabel = clean(input.newsRiskLevel);
 

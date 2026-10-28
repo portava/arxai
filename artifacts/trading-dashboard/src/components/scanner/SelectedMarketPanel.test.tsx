@@ -416,3 +416,42 @@ describe("SelectedMarketPanel — every load state renders without crashing", ()
     expect(screen.queryByTestId("live-trade-ticket-stub")).toBeNull();
   });
 });
+
+// Truth fix — a STALE / SYNCING selected-market envelope whose levels passed the
+// stale-level guard used to print BUY + numeric entry/stop/target in Highlights
+// while the reasoning block beside it said "WAIT — live feed not confirmed" and
+// "withheld until a confirmed live feed".
+describe("SelectedMarketPanel — Highlights agree with the reasoning block on a non-live feed", () => {
+  function staleLevelsSnapshot(dataState: "STALE" | "SYNCING") {
+    const base = degradedOkSnapshot();
+    return {
+      ...base,
+      highlights: {
+        ...base.highlights,
+        bias: "BUY" as const,
+        confidenceLabel: "High",
+        entryZone: { low: 1.0841, high: 1.0849 },
+        suggestedStop: 1.0821,
+        suggestedTakeProfit: 1.0891,
+        riskRewardRatio: 2,
+      },
+      dataSource: "LIVE_FEED",
+      dataSourceLabel: "MT5 broker feed",
+      dataState,
+      dataAsOf: new Date(Date.now() - 120_000).toISOString(),
+      levelsWithheld: false,
+    };
+  }
+
+  it.each(["STALE", "SYNCING"] as const)("%s: no numeric levels and no bare BUY badge", (dataState) => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: staleLevelsSnapshot(dataState) }));
+    render(<SelectedMarketPanel />);
+    const reasoning = screen.getByTestId("opp-map-reasoning").textContent ?? "";
+    expect(reasoning).toMatch(/withheld until a confirmed live feed/);
+    expect(screen.queryByTestId("selected-market-levels")).toBeNull();
+    expect(screen.getByTestId("selected-market-levels-waiting")).toBeTruthy();
+    const badge = screen.getByTestId("badge-selected-bias").textContent ?? "";
+    expect(badge).not.toBe("BUY");
+    expect(badge).toContain(dataState === "STALE" ? "feed stale" : "feed syncing");
+  });
+});

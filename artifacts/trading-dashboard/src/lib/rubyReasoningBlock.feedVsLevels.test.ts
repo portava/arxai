@@ -180,3 +180,16 @@ describe("cross-builder invariant — a confirmed-feed line never pairs with fee
     });
   }
 });
+
+describe("Opportunity Map detail — a syncing feed withholds levels like the Highlights box", () => {
+  it("SYNCING with levels does not print entry/stop/target as numbers", () => {
+    const d = buildReasoningFromOppMap(oppInput({
+      dataState: "SYNCING", bias: "BUY", confidenceLabel: "High",
+      entryZone: { low: 1.1, high: 1.2 }, suggestedStop: 1.05, suggestedTakeProfit: 1.3, riskRewardRatio: 2,
+    }));
+    expect(d.decision).toBe("Conditional BUY — levels pending");
+    expect(d.evidence.supportResistance).toMatch(/until a confirmed live feed/);
+    expect(d.evidence.supportResistance).not.toMatch(/1\.05|1\.3/);
+    expect(d.traderTest).not.toMatch(/1\.05/);
+  });
+});
