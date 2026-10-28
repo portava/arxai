@@ -78,6 +78,9 @@ router.get("/admin/handshake-monitor", async (req: Request, res: Response) => {
     ).length,
     blocked: verdictViews.filter((v) => v.overallStatus === "BLOCKED").length,
     errors: verdictViews.filter((v) => v.overallStatus === "ERROR").length,
+    // Not wired, or no context (investor-scoped handshakes in this admin
+    // view): nothing was checked and nothing errored.
+    notChecked: verdictViews.filter((v) => v.overallStatus === "NOT_CHECKED").length,
   };
   const payload = {
     ok: true,

@@ -43,6 +43,15 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
   const result = mut.data;
   const failed = mut.isError;
   const gateActive = result && (result.riskLevel === "high" || result.riskLevel === "critical" || result.riskLevel === "medium");
+  // Scheduled event risk was not checked (no economic calendar connected, or
+  // its read failed): riskLevel "none" and timing "quiet" are then defaults,
+  // not observations. An older server without the field: a disconnected
+  // calendar is treated the same way (downgrade only).
+  const eventsUnchecked = !!result && result.riskLevel === "none" && (
+    result.scheduledEventRisk
+      ? result.scheduledEventRisk === "not_checked"
+      : result.dataSources.calendar.connected !== true
+  );
 
   return (
     <>
@@ -84,8 +93,11 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
           News Risk Check
           {result && (
             <>
-              <span className={`ml-1 font-semibold uppercase ${RISK_TONE[result.riskLevel]}`}>
-                · {result.riskLevel}
+              <span
+                className={`ml-1 font-semibold uppercase ${eventsUnchecked ? "text-amber-300" : RISK_TONE[result.riskLevel]}`}
+                data-testid="news-risk-level"
+              >
+                · {eventsUnchecked ? "not checked" : result.riskLevel}
               </span>
               <span className="ml-1 text-slate-500">
                 ({REC_LABEL[result.recommendation] ?? result.recommendation})
@@ -122,7 +134,9 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
                 </div>
                 <div className="rounded border border-slate-700 bg-slate-900 p-1">
                   <div className="text-[10px] text-slate-500">Timing</div>
-                  <div className="font-mono text-slate-200">{result.timing}</div>
+                  <div className="font-mono text-slate-200" data-testid="news-risk-timing">
+                    {eventsUnchecked && result.timing === "quiet" ? "not checked" : result.timing}
+                  </div>
                 </div>
                 <div className="rounded border border-slate-700 bg-slate-900 p-1">
                   <div className="text-[10px] text-slate-500">Headlines</div>
@@ -165,13 +179,13 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
 
               {!result.dataSources.headlines.connected && (
                 <div className="text-[10px] text-slate-500">
-                  News feed not configured — relying on scheduled-event risk only.
+                  News headlines feed is not connected — no headlines were checked.
                 </div>
               )}
 
               {!result.dataSources.calendar.connected && (
                 <div className="text-[10px] text-slate-500">
-                  Live economic-calendar provider not configured.
+                  {result.dataSources.calendar.note || "No live economic-calendar provider answered — scheduled events were not checked."}
                 </div>
               )}
 

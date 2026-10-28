@@ -20,20 +20,27 @@ function candles(n: number, startMs: number, stepMs: number) {
 
 let candleProvider = "mt5_broker";
 let quoteResult: Record<string, unknown> | null = null;
+const CONNECTED_ADAPTER = { name: "twelve_data", connected: true, features: { quotes: true, candles: true, news: false } };
+let adapter: { name: string; connected: boolean; features: { quotes: boolean; candles: boolean; news: boolean } } = CONNECTED_ADAPTER;
+let candlesOk = true;
+let adapterStatus = { stale: false, staleAfterMs: 300_000, lastError: null as string | null };
 
 const realProvider = await import("../marketProvider.js");
 mock.module("../marketProvider.js", {
   namedExports: {
     ...realProvider,
-    getMarketProvider: () => ({ name: "twelve_data", connected: true, features: { quotes: true, candles: true, news: false } }),
-    getMarketStatus: () => ({ stale: false, staleAfterMs: 300_000, lastError: null }),
+    getMarketProvider: () => adapter,
+    getMarketStatus: () => adapterStatus,
   },
 });
 const realRouter = await import("../../data/marketDataRouter.js");
 mock.module("../../data/marketDataRouter.js", {
   namedExports: {
     ...realRouter,
-    routeCandles: async (symbol: string, tf: string) => ({
+    routeCandles: async (symbol: string, tf: string) => (!candlesOk ? {
+      ok: false, symbol, assetClass: "forex", candles: [],
+      primaryProvider: null, attempts: [], userMessage: "No candle feed answered", adminDetail: "",
+    } : {
       ok: true, symbol, assetClass: "forex",
       candles: candles(30, NOW - 30 * (tf === "H1" ? 3_600_000 : 900_000), tf === "H1" ? 3_600_000 : 900_000),
       primaryProvider: candleProvider, attempts: [], userMessage: "Live feed active", adminDetail: "",
@@ -105,5 +112,62 @@ test("no quote: entry is labelled a candle close, never a live quote", async () 
     assert.equal(c.entryBasis, "last_candle_close");
     assert.equal(c.quoteSource, null);
     assert.match(String(c.entryNote), /No quote — entry is the last (M15|H1) candle close/);
+  }
+});
+
+// The scan is gated on the ASSISTANT market-data adapter, while candles come
+// from the router (mt5_broker / deriv). When that adapter is off the scan
+// still fails closed (no candidates — unchanged), but the result must say the
+// adapter gate stopped it, not that no market data provider is connected:
+// the router's feed was never asked.
+test("adapter not connected: fails closed, says the adapter gate stopped the scan, not that no provider is connected", async () => {
+  adapter = { name: "none", connected: false, features: { quotes: false, candles: false, news: false } };
+  try {
+    const r = await scoreLiveCandidates(["EURUSD"], 10);
+    assert.equal(r.connected, false);
+    assert.equal(r.candidates.length, 0);
+    assert.equal(r.reason, "PROVIDER_NOT_CONFIGURED");
+    assert.equal(r.gateProvider, "none");
+    assert.equal(r.source, "none", "no candles were served, so no feed is named as their source");
+    assert.doesNotMatch(r.reasonDetail, /No market data provider is connected/i);
+    assert.match(r.reasonDetail, /assistant's market-data adapter/i);
+    assert.match(r.reasonDetail, /not checked/i);
+    for (const w of r.warnings) assert.doesNotMatch(w, /No market data provider is connected/i);
+  } finally {
+    adapter = CONNECTED_ADAPTER;
+  }
+});
+
+test("adapter without candle support: says the adapter gate stopped the scan, not that real candles are unavailable", async () => {
+  adapter = { name: "newsapi", connected: true, features: { quotes: false, candles: false, news: true } };
+  try {
+    const r = await scoreLiveCandidates(["EURUSD"], 10);
+    assert.equal(r.connected, false);
+    assert.equal(r.candidates.length, 0);
+    assert.equal(r.reason, "PROVIDER_UNAVAILABLE");
+    assert.equal(r.gateProvider, "newsapi");
+    assert.equal(r.source, "none");
+    assert.doesNotMatch(r.reasonDetail, /cannot rank candidates without real candles/i);
+    assert.match(r.reasonDetail, /not checked/i);
+  } finally {
+    adapter = CONNECTED_ADAPTER;
+  }
+});
+
+test("router served no candles: the failure is the router's, never pinned on the assistant adapter", async () => {
+  candlesOk = false;
+  try {
+    let r = await scoreLiveCandidates(["EURUSD"], 10);
+    assert.equal(r.reason, "CANDLES_UNAVAILABLE");
+    assert.doesNotMatch(r.reasonDetail, /Provider 'twelve_data' is connected but returned no usable candle/);
+    assert.match(r.reasonDetail, /market-data router/);
+    adapterStatus = { stale: true, staleAfterMs: 300_000, lastError: null };
+    r = await scoreLiveCandidates(["EURUSD"], 10);
+    assert.equal(r.reason, "MARKET_DATA_STALE");
+    assert.doesNotMatch(r.reasonDetail, /Provider 'twelve_data' is connected but market data is stale/);
+    assert.match(r.reasonDetail, /market-data router/);
+  } finally {
+    candlesOk = true;
+    adapterStatus = { stale: false, staleAfterMs: 300_000, lastError: null };
   }
 });

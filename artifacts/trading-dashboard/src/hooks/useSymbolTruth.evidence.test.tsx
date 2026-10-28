@@ -197,3 +197,47 @@ it("focus rechecks a server deadline after the browser clock jumps forward", asy
   expectExpiredAdviceKeepsCalendar(result.current);
   expect(requests).toHaveLength(0);
 });
+
+// The server's truth snapshot reports data.lastCandleAt as the newest CLOSED
+// bar's close. feedStatus.lastCandleTime is the newest PROVIDER bar's close,
+// which for a still-forming bar is a scheduled future instant, so comparing the
+// two could never match on a feed that serves a forming bar: the read was always
+// capped to "Watch only — the live feed isn't confirmed" while both sources
+// observed the same closed bar.
+function formingBarPayload() {
+  const base = candlePayload();
+  const closed = base.candles.map((c) => ({ ...c, isComplete: true }));
+  const formingOpen = CLOSE;
+  const formingClose = new Date(Date.parse(CLOSE) + 60_000).toISOString();
+  return {
+    candles: [...closed, { openTime: formingOpen, closeTime: formingClose, open: 1.1, high: 1.11, low: 1.09, close: 1.1, isComplete: false }],
+    feedStatus: { ...base.feedStatus, lastCandleTime: formingClose },
+  };
+}
+
+it("confirms a read when the server's closed bar is the chart's newest closed bar, even with a forming bar on the feed", async () => {
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M1"), { wrapper });
+  for (const request of requests.slice()) {
+    if (request.url.includes("/market/truth/")) await respond(request, snapshot());
+    else if (request.url.includes("/chart/candles")) await respond(request, formingBarPayload());
+    else if (request.url.includes("selected-market")) await respond(request, { ok: true, symbol: "EURUSD", timeframe: "M1", highlights: {}, explanation: {} });
+  }
+  await waitFor(() => expect(result.current.scannerTruth?.actionable).toBe(true));
+  await waitFor(() => expect(result.current.verdict?.bestAction).toBe("BUY"));
+  expect(result.current.actionCapped).toBe(false);
+  expect(result.current.data?.state).toBe("LIVE_CONFIRMED");
+});
+
+it("still caps the read when the server's closed bar is not the chart's newest closed bar", async () => {
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M1"), { wrapper });
+  const older = snapshot();
+  older.data.lastCandleAt = new Date(Date.parse(CLOSE) - 60_000).toISOString();
+  for (const request of requests.slice()) {
+    if (request.url.includes("/market/truth/")) await respond(request, older);
+    else if (request.url.includes("/chart/candles")) await respond(request, formingBarPayload());
+    else if (request.url.includes("selected-market")) await respond(request, { ok: true, symbol: "EURUSD", timeframe: "M1", highlights: {}, explanation: {} });
+  }
+  await waitFor(() => expect(result.current.scannerTruth?.actionable).toBe(true));
+  expect(result.current.verdict?.bestAction).toBe("WATCH_ONLY");
+  expect(result.current.actionCapped).toBe(true);
+});

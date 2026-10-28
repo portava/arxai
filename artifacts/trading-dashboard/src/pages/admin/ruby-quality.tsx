@@ -147,6 +147,7 @@ function MetricsTab() {
             <StatCard label="Tracked" value={num(m.totals.tracked)} />
             <StatCard label="Resolved" value={num(m.totals.resolved)} />
             <StatCard label="Pending" value={num(m.totals.pending)} sub="Awaiting real evidence" />
+            <StatCard label="Unresolved" value={num(m.totals.unresolved)} sub="Marked unresolved — not graded, not counted as pending" />
             <StatCard label="Graded" value={num(m.totals.graded)} />
             <StatCard label="Win rate" value={pct(m.rates.winRate)} />
             <StatCard label="TP rate" value={pct(m.rates.tpRate)} />
@@ -164,9 +165,17 @@ function MetricsTab() {
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <RankTable title="Best symbols" rows={m.bestSymbols} />
-            <RankTable title="Worst symbols" rows={m.worstSymbols} />
+            <RankTable
+              title="Worst symbols"
+              rows={m.worstSymbols}
+              emptyText={m.bestSymbols.length > 0 ? "Only one graded symbol so far — it is listed under Best, not ranked both ways." : undefined}
+            />
             <RankTable title="Best sessions" rows={m.bestSessions} />
-            <RankTable title="Worst sessions" rows={m.worstSessions} />
+            <RankTable
+              title="Worst sessions"
+              rows={m.worstSessions}
+              emptyText={m.bestSessions.length > 0 ? "Only one graded session so far — it is listed under Best, not ranked both ways." : undefined}
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -191,13 +200,13 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
-function RankTable({ title, rows }: { title: string; rows: { key: string; graded: number; wins: number; winRate: number; avgPnlR?: number | null }[] }) {
+function RankTable({ title, rows, emptyText }: { title: string; rows: { key: string; graded: number; wins: number; winRate: number; avgPnlR?: number | null }[]; emptyText?: string }) {
   return (
-    <Card>
+    <Card data-testid={`rank-${title.replace(/\s+/g, "-").toLowerCase()}`}>
       <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <div className="text-sm text-txt-secondary">No graded signals yet.</div>
+          <div className="text-sm text-txt-secondary">{emptyText ?? "No graded signals yet."}</div>
         ) : (
           <Table>
             <TableHeader>
@@ -227,7 +236,7 @@ function RankTable({ title, rows }: { title: string; rows: { key: string; graded
   );
 }
 
-function BucketTable({ title, rows }: { title: string; rows: { bucket: string; total: number; wins: number; losses: number; winRate: number }[] }) {
+function BucketTable({ title, rows }: { title: string; rows: { bucket: string; total: number; wins: number; losses: number; winRate: number | null }[] }) {
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>

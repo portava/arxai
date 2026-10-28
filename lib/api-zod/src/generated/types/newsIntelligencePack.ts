@@ -10,6 +10,7 @@ import type { NewsIntelligencePackDataSources } from "./newsIntelligencePackData
 import type { NewsIntelligencePackRecentHeadlinesItem } from "./newsIntelligencePackRecentHeadlinesItem";
 import type { NewsIntelligencePackRecommendation } from "./newsIntelligencePackRecommendation";
 import type { NewsIntelligencePackRiskLevel } from "./newsIntelligencePackRiskLevel";
+import type { NewsIntelligencePackScheduledEventRisk } from "./newsIntelligencePackScheduledEventRisk";
 import type { NewsIntelligencePackTiming } from "./newsIntelligencePackTiming";
 import type { NewsIntelligencePackUpcomingEvent } from "./newsIntelligencePackUpcomingEvent";
 
@@ -20,6 +21,13 @@ export interface NewsIntelligencePack {
   bias: NewsIntelligencePackBias;
   timing: NewsIntelligencePackTiming;
   warningSummary: string;
+  /** Whether scheduled (economic-calendar) event risk was actually
+checked. "checked": a live calendar answered. "not_checked": no
+calendar is connected or its read failed, so riskLevel "none" and
+timing "quiet" were not observed and upcoming events are unknown.
+"not_applicable": a synthetic instrument scheduled events do not move.
+ */
+  scheduledEventRisk?: NewsIntelligencePackScheduledEventRisk;
   recommendation: NewsIntelligencePackRecommendation;
   upcomingEvent: NewsIntelligencePackUpcomingEvent;
   recentHeadlines: NewsIntelligencePackRecentHeadlinesItem[];

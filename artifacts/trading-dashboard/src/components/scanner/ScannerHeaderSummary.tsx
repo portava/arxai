@@ -27,7 +27,7 @@ import {
   isFeedLimitedAction,
   resolveCappedRubyReadStatus,
 } from "@/lib/rubyReadPanelState";
-import { thresholdsFor } from "@/lib/scannerTruth";
+import { candleIntervalMs } from "@workspace/domain/market";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import {
@@ -291,14 +291,14 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   //   3. a would-be "Full read" with NO chart read for this key is only a
   //      client capability forecast, never a read anyone produced → "Read not
   //      run". "No read" / "Limited read" are honest limitations and stay.
-  //   4. a non-gated read past this timeframe's candle budget (or with no
-  //      valid time) is no longer a current read — the SAME expiry the Ruby
+  //   4. a non-gated read whose next candle has closed (observedAt + one
+  //      interval, or with no valid time) is no longer a current read — the SAME expiry the Ruby
   //      Chart Read panel applies (chartReadExpiresAtMs + useEvidenceDeadline).
   //      It is dropped from the cap, and a would-be "Full read" says
   //      "Read expired" instead.
   const readExpiresAtMs = chartReadExpiresAtMs(
     sharedRead,
-    thresholdsFor(normalizeChartTimeframe(coercedTf)).candleMaxAgeMs,
+    candleIntervalMs(normalizeChartTimeframe(coercedTf)) ?? Number.NaN,
   );
   const readNowMs = useEvidenceDeadline(
     readExpiresAtMs != null && Number.isFinite(readExpiresAtMs) ? readExpiresAtMs : null,

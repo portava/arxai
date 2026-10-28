@@ -423,6 +423,31 @@ router.patch("/positions/:id/take-profit", requireUser, async (req, res): Promis
   }
 });
 
+// The confirmation summary says only what the ledger row holds and when the
+// broker last updated it. A missing price is never filled with the entry price
+// and a missing P/L is never 0; the close itself fills at the broker's price.
+function closeConfirmationSummary(row: DemoPositionRow, now: Date = new Date()): string {
+  const parts = [`Close ${row.direction} ${row.symbol}.`];
+  parts.push(row.currentPrice != null
+    ? `Last stored price ${row.currentPrice} (entry price ${row.entryPrice});`
+    : `No current price is stored for this position (entry price ${row.entryPrice});`);
+  parts.push(row.unrealizedProfitLoss != null
+    ? `unrealized P/L ${row.unrealizedProfitLoss}.`
+    : "unrealized P/L is not known.");
+  if (row.lastSyncedAt) {
+    const ageMs = now.getTime() - row.lastSyncedAt.getTime();
+    const age = ageMs < 0 ? "a time ahead of the server clock"
+      : ageMs < 60_000 ? `${Math.floor(ageMs / 1000)} s ago`
+      : ageMs < 3_600_000 ? `${Math.floor(ageMs / 60_000)} min ago`
+      : `${Math.floor(ageMs / 3_600_000)} h ago`;
+    parts.push(`Last updated from the broker at ${row.lastSyncedAt.toISOString()} (${age}).`);
+  } else {
+    parts.push("ARX has no record of when this position was last updated from the broker.");
+  }
+  parts.push("The close fills at the broker's price when it runs, which can differ.");
+  return parts.join(" ");
+}
+
 // POST /positions/:id/close-confirmation — returns a verdict the UI must echo back to /close
 router.post("/positions/:id/close-confirmation", requireUser, async (req, res): Promise<void> => {
   try {
@@ -435,9 +460,9 @@ router.post("/positions/:id/close-confirmation", requireUser, async (req, res): 
     }
     res.json({
       requiresConfirmation: true,
-      summary: `Close ${row.direction} ${row.symbol} @ ${row.currentPrice ?? row.entryPrice} (uPnL ${row.unrealizedProfitLoss ?? 0})`,
+      summary: closeConfirmationSummary(row),
       blockers: [],
-      aiExplanation: "Manual closes lock in current P&L and skip the planned exit. Confirm only if your original setup is truly invalidated.",
+      aiExplanation: "A manual close takes the P&L at the broker's fill price and skips the planned exit. Confirm only if your original setup is truly invalidated.",
     });
   } catch (err) {
     req.log.error({ err: String(err) }, "close-confirmation failed");

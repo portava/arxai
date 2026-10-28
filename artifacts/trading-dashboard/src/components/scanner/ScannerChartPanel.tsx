@@ -20,6 +20,7 @@ import {
   CHART_TIME_AXIS_LABEL,
   CHART_TIME_AXIS_TITLE,
   formatUtcClock,
+  lastClosedCandleCloseMs,
   type ServerClockSample,
   NEWS_MARKER_LOOKAHEAD_BARS,
   isFeedConfirmedForEventMarkers,
@@ -897,6 +898,9 @@ export function ScannerChartPanel() {
     marketClosed: truth?.marketClosure != null || scheduledClosure,
     hasCandles: candles.length > 0,
   });
+  // Close time of the newest CLOSED candle for the strip's "last candle closed"
+  // note (null when none: the note is then omitted, never guessed).
+  const lastClosedCloseMs = lastClosedCandleCloseMs(candles, timeframe, Date.now());
 
   // The user's own alert preferences govern whether a high-impact news event is
   // allowed to interrupt with a toast. Market-condition news routes through the
@@ -2782,15 +2786,14 @@ export function ScannerChartPanel() {
                 when the chart is showing candles that are not from a live feed.
                 Copy is FIXED per display state; feedStatus.message / .warning are
                 never surfaced here (they can carry live wording or an internal
-                source token). Only the lastCandleTime timestamp — safe — is
-                shown, on the STALE strip (Task #347). */}
+                source token). Only the newest CLOSED candle's close time is
+                shown (Task #347) — never feedStatus.lastCandleTime, which for a
+                still-forming bar is its scheduled FUTURE close. */}
             {feedStrip === "market_closed" && (
               <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-status-market-closed">
                 <span className="font-medium">Market closed · last session's candles</span>
-                {feedStatus?.lastCandleTime && (
-                  formatUtcClock(feedStatus.lastCandleTime) && (
-                    <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle {formatUtcClock(feedStatus.lastCandleTime)}</span>
-                  )
+                {lastClosedCloseMs != null && (
+                  <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcClock(lastClosedCloseMs)}</span>
                 )}
                 <span className="ml-auto text-amber-400/50 text-[10px]">No live price until the market reopens</span>
               </div>
@@ -2804,10 +2807,8 @@ export function ScannerChartPanel() {
             {feedStrip === "stale" && (
               <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stale">
                 <span className="font-medium">Stale · last-known candles</span>
-                {feedStatus?.lastCandleTime && (
-                  formatUtcClock(feedStatus.lastCandleTime) && (
-                    <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle {formatUtcClock(feedStatus.lastCandleTime)}</span>
-                  )
+                {lastClosedCloseMs != null && (
+                  <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcClock(lastClosedCloseMs)}</span>
                 )}
                 <span className="ml-auto text-orange-400/50 text-[10px]">No live price marker</span>
               </div>

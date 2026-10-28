@@ -133,7 +133,7 @@ const m = computeRubyQualityMetrics(rows);
 check("metrics: tracked counts all rows", m.totals.tracked === 7);
 check("metrics: graded excludes PENDING/UNRESOLVED/no-trade", m.totals.graded === 3);
 check("metrics: winRate = 2/3 graded", m.rates.winRate === Math.round((2 / 3) * 1000) / 1000);
-check("metrics: lateRate reflects 1 late of entered-timed", m.rates.lateRate > 0);
+check("metrics: lateRate reflects 1 late of entered-timed", (m.rates.lateRate ?? 0) > 0);
 check("metrics: avoided bad trades counted", m.avoidedBadTrades === 1);
 check("metrics: missed opportunities counted", m.missedOpportunities === 1);
 check("metrics: confidence buckets present", m.confidenceVsOutcome.length === 4);

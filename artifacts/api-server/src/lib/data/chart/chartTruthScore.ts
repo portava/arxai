@@ -326,7 +326,10 @@ export function computeChartTruthScore(
       break;
     case "stale":
       freshnessRaw = 35;
-      freshnessDetail = "Feed stale — lagging by 3+ intervals.";
+      // The feed status's own lag wording: a closed market ("Market closed …
+      // Not a feed fault"), a session market that may be closed or delayed, a
+      // silent forming-tip tick stream, or a 24/7 feed lagging 3+ intervals.
+      freshnessDetail = feedStatus.warning?.trim() || "Feed stale — lagging by 3+ intervals.";
       break;
     case "partial":
       freshnessRaw = 55;

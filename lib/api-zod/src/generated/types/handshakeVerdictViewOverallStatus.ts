@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored.
+ */
 export type HandshakeVerdictViewOverallStatus =
   (typeof HandshakeVerdictViewOverallStatus)[keyof typeof HandshakeVerdictViewOverallStatus];
 
@@ -17,4 +20,5 @@ export const HandshakeVerdictViewOverallStatus = {
   DEGRADED: "DEGRADED",
   BLOCKED: "BLOCKED",
   ERROR: "ERROR",
+  NOT_CHECKED: "NOT_CHECKED",
 } as const;

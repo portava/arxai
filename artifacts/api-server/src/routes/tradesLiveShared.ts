@@ -808,6 +808,27 @@ router.get("/trades/live-shared/suggest-sltp", requireUser, async (req, res) => 
   const suggestedStopLoss = roundTo(side === "BUY" ? entry - slDist : entry + slDist, decimals);
   const suggestedTakeProfit = roundTo(side === "BUY" ? entry + tpDist : entry - tpDist, decimals);
 
+  // Say what the levels were measured from and as of when: the last M15
+  // candle can be old (closed market, stalled feed), so its close is never
+  // called "current" and never a live quote.
+  const lastOpenMs = candles[candles.length - 1].time;
+  const lastCandleOpenedAt = Number.isFinite(lastOpenMs) && lastOpenMs > 0 ? new Date(lastOpenMs).toISOString() : null;
+  const lastCandleAge = (() => {
+    if (lastCandleOpenedAt == null) return null;
+    const ageMs = Date.now() - lastOpenMs;
+    if (ageMs < 0) return "stamped ahead of the server clock";
+    if (ageMs < 3_600_000) return `${Math.floor(ageMs / 60_000)} min ago`;
+    if (ageMs < 86_400_000) return `${Math.floor(ageMs / 3_600_000)} h ago`;
+    return `${Math.floor(ageMs / 86_400_000)} d ago`;
+  })();
+  const candleWhen = lastCandleOpenedAt
+    ? `the last one opened at ${lastCandleOpenedAt} (${lastCandleAge})`
+    : "the time of the last one is not known";
+  const anchor = entryOverride != null
+    ? `your entry ${roundTo(entry, decimals)}`
+    : `the last M15 close ${roundTo(entry, decimals)}`;
+  const note = `Measured from ${anchor} and ${vol.state.toLowerCase()} volatility (ATR ${roundTo(atr, decimals)}) on M15 candles; ${candleWhen}. Not a live quote. Editable — advisory only.`;
+
   res.json({
     ok: true,
     symbol,
@@ -821,7 +842,8 @@ router.get("/trades/live-shared/suggest-sltp", requireUser, async (req, res) => 
     suggestedStopLoss,
     suggestedTakeProfit,
     method: "ATR(14) · M15 · SL 1.5×ATR · TP 2R",
-    note: `Suggested from current ${vol.state.toLowerCase()} volatility (ATR ${roundTo(atr, decimals)}). Editable — advisory only.`,
+    lastCandleOpenedAt,
+    note,
     ...envelope(),
   });
 });

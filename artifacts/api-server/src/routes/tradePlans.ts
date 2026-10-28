@@ -17,7 +17,7 @@ import { readBrokerHealthState } from "../lib/brokerHub/brokerHealthState.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
-import { evaluateChecklist, summarizePlan, type ChecklistInputs } from "@workspace/domain/trade-plan";
+import { evaluateChecklist, planRewardToRisk, summarizePlan, type ChecklistInputs } from "@workspace/domain/trade-plan";
 import { gatherInputsAndEvaluate } from "./permission.js";
 import { getCachedIntelligenceContext } from "../lib/data/chart/chartIntelligence.js";
 import type { ChartTimeframe } from "../lib/data/chart/timeframes.js";
@@ -314,12 +314,18 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     const checklist = result.checklist!;
     const itemSig = checklist.items.map((i) => `${i.key}:${i.status}`).join(",");
     const revision = createHashShort(`${result.nextStatus}|${itemSig}`);
+    // Items the user typed (market condition, confidence, risk amount) are
+    // UNKNOWN — not checks ARX ran — so "passed all readiness checks" would
+    // overstate what was verified.
+    const uncheckedCount = checklist.items.filter((i) => i.status === "UNKNOWN").length;
     if (result.nextStatus === "READY") {
       void createAlert({
         userId: plan.userId,
         type: "TRADE_PLAN_READY", priority: "MEDIUM", severity: "success",
         title: `Trade plan ready: ${plan.symbol ?? `#${plan.id}`}`,
-        message: `Plan #${plan.id} passed all readiness checks. Final execution remains gated by the live-execution safety layer.`,
+        message: uncheckedCount > 0
+          ? `Plan #${plan.id} passed every check ARX ran; ${uncheckedCount} item${uncheckedCount === 1 ? " is your own input" : "s are your own inputs"} that ARX did not verify. Final execution remains gated by the live-execution safety layer.`
+          : `Plan #${plan.id} passed all readiness checks. Final execution remains gated by the live-execution safety layer.`,
         symbol: plan.symbol ?? undefined, relatedTradePlanId: plan.id, actionRequired: true,
         dedupeKey: `plan-ready:${plan.id}:${revision}`,
       });
@@ -447,9 +453,14 @@ router.post("/trade-plans/:id/convert", requireUser, async (req, res): Promise<v
           (plan.directionBias !== "BUY" && plan.directionBias !== "SELL")) {
         return { error: { code: 400, msg: "Plan is missing required execution fields (symbol, directionBias=BUY|SELL, entryPrice, stopLoss, takeProfit, lotSize)." } };
       }
-      const slDist = Math.abs(plan.entryPrice - plan.stopLoss);
-      const tpDist = Math.abs(plan.takeProfit - plan.entryPrice);
-      const rr = slDist > 0 ? tpDist / slDist : 0;
+      // Directional R:R (the same rule validation uses): a stop or target on
+      // the wrong side of entry is an impossible plan, never a 2.0 R:R. A
+      // READY row stored before validation checked sides is refused here.
+      const geo = planRewardToRisk(plan.directionBias, plan.entryPrice, plan.stopLoss, plan.takeProfit);
+      if (geo.stopSide === "WRONG" || geo.targetSide === "WRONG") {
+        return { error: { code: 409, msg: `Stop loss or take profit is on the wrong side of entry for a ${plan.directionBias.toLowerCase()} — fix the plan and validate it again.` } };
+      }
+      const rr = geo.rr ?? 0;
 
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5-minute confirmation window
       const conf = await tx.insert(executionConfirmationsTable).values({

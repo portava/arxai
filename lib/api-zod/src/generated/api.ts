@@ -9487,15 +9487,20 @@ export const GetAdminHandshakeMonitorResponse = zod.object({
     zod.object({
       type: zod.string(),
       label: zod.string(),
-      overallStatus: zod.enum([
-        "READY",
-        "READY_WITH_WARNINGS",
-        "WAITING_FOR_DATA",
-        "STALE",
-        "DEGRADED",
-        "BLOCKED",
-        "ERROR",
-      ]),
+      overallStatus: zod
+        .enum([
+          "READY",
+          "READY_WITH_WARNINGS",
+          "WAITING_FOR_DATA",
+          "STALE",
+          "DEGRADED",
+          "BLOCKED",
+          "ERROR",
+          "NOT_CHECKED",
+        ])
+        .describe(
+          "ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored.",
+        ),
       aggregateStatus: zod.enum(["PASS", "WARN", "BLOCK", "UNKNOWN"]),
       safeToProceed: zod.boolean(),
       implemented: zod.boolean(),
@@ -9566,7 +9571,14 @@ export const GetAdminHandshakeMonitorResponse = zod.object({
     warnings: zod.number(),
     waiting: zod.number(),
     blocked: zod.number(),
-    errors: zod.number(),
+    errors: zod
+      .number()
+      .describe("Verdicts whose evaluation failed (ERROR) only."),
+    notChecked: zod
+      .number()
+      .describe(
+        "Verdicts with nothing evaluated (NOT_CHECKED) — not wired or no context; not errors.",
+      ),
   }),
 });
 
@@ -9959,6 +9971,12 @@ export const PostMarketNewsIntelligenceResponse = zod.object({
   bias: zod.enum(["bullish", "bearish", "mixed", "unclear"]),
   timing: zod.enum(["now", "upcoming", "recent", "quiet"]),
   warningSummary: zod.string(),
+  scheduledEventRisk: zod
+    .enum(["checked", "not_checked", "not_applicable"])
+    .optional()
+    .describe(
+      'Whether scheduled (economic-calendar) event risk was actually\nchecked. \"checked\": a live calendar answered. \"not_checked\": no\ncalendar is connected or its read failed, so riskLevel \"none\" and\ntiming \"quiet\" were not observed and upcoming events are unknown.\n\"not_applicable\": a synthetic instrument scheduled events do not move.\n',
+    ),
   recommendation: zod.enum(["watch", "wait", "avoid", "proceed_with_caution"]),
   upcomingEvent: zod.union([
     zod.object({
@@ -24550,15 +24568,26 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
     totals: zod.object({
       tracked: zod.number(),
       resolved: zod.number(),
-      pending: zod.number(),
+      pending: zod
+        .number()
+        .describe("PENDING rows only — still awaiting real evidence."),
+      unresolved: zod
+        .number()
+        .describe(
+          "UNRESOLVED rows — no longer awaiting evidence and never graded.",
+        ),
       graded: zod.number(),
     }),
-    rates: zod.object({
-      winRate: zod.number(),
-      tpRate: zod.number(),
-      slRate: zod.number(),
-      lateRate: zod.number(),
-    }),
+    rates: zod
+      .object({
+        winRate: zod.number().nullable(),
+        tpRate: zod.number().nullable(),
+        slRate: zod.number().nullable(),
+        lateRate: zod.number().nullable(),
+      })
+      .describe(
+        "Each rate is null when its denominator is empty (nothing to rate), never 0.",
+      ),
     timing: zod.record(zod.string(), zod.number()),
     averages: zod.object({
       slippage: zod.number().nullish(),
@@ -24566,15 +24595,19 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
       mfe: zod.number().nullish(),
       mae: zod.number().nullish(),
     }),
-    bestSymbols: zod.array(
-      zod.object({
-        key: zod.string(),
-        graded: zod.number(),
-        wins: zod.number(),
-        winRate: zod.number(),
-        avgPnlR: zod.number().nullish(),
-      }),
-    ),
+    bestSymbols: zod
+      .array(
+        zod.object({
+          key: zod.string(),
+          graded: zod.number(),
+          wins: zod.number(),
+          winRate: zod.number(),
+          avgPnlR: zod.number().nullish(),
+        }),
+      )
+      .describe(
+        "Top half of the ranking (at most 5); never lists a symbol that is in worstSymbols.",
+      ),
     worstSymbols: zod.array(
       zod.object({
         key: zod.string(),
@@ -24604,26 +24637,45 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
     ),
     newsFailures: zod.number(),
     executionFailures: zod.number(),
-    explanationAccuracy: zod.number(),
+    explanationAccuracy: zod
+      .number()
+      .nullable()
+      .describe(
+        "Win rate among graded rows where the explanation was used; null when there are none.",
+      ),
     ignoredWarnings: zod.number(),
     avoidedBadTrades: zod.number(),
     missedOpportunities: zod.number(),
-    confidenceVsOutcome: zod.array(
-      zod.object({
-        bucket: zod.string(),
-        total: zod.number(),
-        wins: zod.number(),
-        losses: zod.number(),
-        winRate: zod.number(),
-      }),
-    ),
+    confidenceVsOutcome: zod
+      .array(
+        zod.object({
+          bucket: zod.string(),
+          total: zod.number(),
+          wins: zod.number(),
+          losses: zod.number(),
+          winRate: zod
+            .number()
+            .nullable()
+            .describe(
+              "wins \/ (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).",
+            ),
+        }),
+      )
+      .describe(
+        "Buckets hold lo ≤ value < hi (the last also includes hi), so each row counts once.",
+      ),
     edgeVsOutcome: zod.array(
       zod.object({
         bucket: zod.string(),
         total: zod.number(),
         wins: zod.number(),
         losses: zod.number(),
-        winRate: zod.number(),
+        winRate: zod
+          .number()
+          .nullable()
+          .describe(
+            "wins \/ (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).",
+          ),
       }),
     ),
   }),

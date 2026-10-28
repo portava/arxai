@@ -257,7 +257,7 @@ export function enrichStateWithBrokerAlignment(
     state.chartReadScore,
     brokerAlignment,
     truthResult,
-    feedStatus.stale,
+    feedStatus,
   );
   return { ...state, brokerAlignment, chartTruthScore, gateOutput };
 }
@@ -597,7 +597,7 @@ export async function buildChartIntelligenceState(
     chartReadScore,
     brokerAlignment,
     truth.truthResult,
-    truth.feedStatus.stale,
+    truth.feedStatus,
   );
 
   // Natural-language reader over the assembled engine outputs. Deterministic

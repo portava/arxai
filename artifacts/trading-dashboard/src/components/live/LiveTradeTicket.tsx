@@ -84,6 +84,7 @@ type StatusBadge =
   | { label: "READY TO ARM"; tone: "warn" }
   | { label: "KILL SWITCH ACTIVE"; tone: "danger" }
   | { label: "ACCOUNT NOT APPROVED"; tone: "danger" }
+  | { label: "ACCESS NOT CHECKED"; tone: "muted" }
   | { label: "STATUS UNKNOWN"; tone: "muted" }
   | { label: "LOADING"; tone: "muted" };
 
@@ -113,8 +114,11 @@ export function deriveStatus(args: {
   armingKnown?: boolean;
   /** False when the server master switch was not reported. Defaults to true. */
   serverSwitchKnown?: boolean;
+  /** True when the live-access read failed: approval is unknown, not refused. */
+  accessError?: boolean;
 }): StatusBadge {
   if (!args.accessLoaded || !args.armingLoaded) return { label: "LOADING", tone: "muted" };
+  if (!args.canTrade && args.accessError) return { label: "ACCESS NOT CHECKED", tone: "muted" };
   if (!args.canTrade) return { label: "ACCOUNT NOT APPROVED", tone: "danger" };
   // Display only: an unanswered arming / master-switch read is never shown as
   // "READY TO ARM" (a known state). Submit stays disabled either way (armed=false).
@@ -259,6 +263,7 @@ export function LiveTradeTicket({
     serverSwitchKnown: armingKnown.serverSwitch,
     accessLoaded: access.loaded,
     canTrade: access.canTrade,
+    accessError: !!access.error,
     armingLoaded: !arming.isLoading,
     armed,
     killSwitch,
@@ -509,6 +514,7 @@ export function LiveTradeTicket({
   // Single explicit reason the Confirm button is disabled (shown verbatim
   // beneath it) so the user always knows what to fix.
   const submitDisabledReason = (() => {
+    if (!access.canTrade && access.error) return "Live access could not be checked. Reopen the ticket to retry.";
     if (!access.canTrade) return "Live access is not ready yet. Contact your operator.";
     if (!armingKnown.arming) return "Couldn't read whether live execution is armed. Reopen the ticket to retry.";
     if (!armed) return "Arm live execution on the MT5 Setup page to confirm.";

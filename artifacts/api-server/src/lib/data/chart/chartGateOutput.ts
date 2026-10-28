@@ -76,13 +76,39 @@ export interface ChartGateOutput {
 
 const TRUTH_THRESHOLD = 75;
 
+/**
+ * The feed fields the stale gate reads. A bare boolean is the stale flag
+ * alone (no feed wording available → the generic reason).
+ */
+export type ChartGateFeedInput =
+  | boolean
+  | { stale: boolean; quality?: string | null; warning?: string | null };
+
+/**
+ * Why the stale gate is closed, in the feed status's OWN words when it graded
+ * the series "stale": inside a scheduled weekend close that is "Market closed
+ * … Not a feed fault", for a session market "The market may be closed or the
+ * feed delayed", for a 24/7 market the measured trailing gap. A stale flag on a
+ * feed graded for something else (partial / invalid) keeps the generic reason,
+ * since its warning describes that other fault.
+ */
+function staleBlockReason(feed: ChartGateFeedInput): string {
+  const blocked = "Autonomous chart-based actions are blocked until the chart has current data.";
+  const warning = typeof feed === "object" && feed.quality === "stale" && typeof feed.warning === "string"
+    ? feed.warning.trim()
+    : "";
+  if (warning) return `${/[.!?]$/.test(warning) ? warning : `${warning}.`} ${blocked}`;
+  return "The chart's newest bars are not current — autonomous chart-based actions are blocked until the chart has current data.";
+}
+
 export function computeChartGateOutput(
   truthScore: ChartTruthScore,
   readScore: ChartReadScore,
   alignment: BrokerPriceAlignment,
   truthResult: TimeframeTruthResult | null,
-  feedStale: boolean,
+  feed: ChartGateFeedInput,
 ): ChartGateOutput {
+  const feedStale = typeof feed === "boolean" ? feed : feed.stale === true;
   const blockedReasons: string[] = [];
 
   // ── 1. confident read / scanner / self-trade — Truth ≥ 75 ─────────────────
@@ -109,7 +135,7 @@ export function computeChartGateOutput(
   // ── 3. autonomous chart action — feed must not be stale ───────────────────
   const autonomousChartActionAllowed = !feedStale;
   if (feedStale) {
-    blockedReasons.push("Feed is stale — autonomous chart-based actions are blocked until the feed is current.");
+    blockedReasons.push(staleBlockReason(feed));
   }
 
   // ── 4. trade confirmation — mirror must not have failed ───────────────────

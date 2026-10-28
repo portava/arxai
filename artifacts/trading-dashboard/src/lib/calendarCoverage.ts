@@ -59,6 +59,48 @@ export function describeCalendarCoverage(input: {
   return { read: true, note: "" };
 }
 
+/** The calendar read state GET /news/calendar/envelope returns with its events. */
+export interface CalendarEnvelopeState {
+  read: boolean;
+  provider?: string | null;
+  eventsAsOf?: string | null;
+  note?: string | null;
+}
+
+/**
+ * What a surface may say about a calendar it read through ONE envelope
+ * response (events + read state together). A failed request is "could not
+ * load", a read that did not reach a connected provider carries the server's
+ * plain note, and only a read calendar may call an empty list "no events".
+ */
+export function describeCalendarEnvelope(input: {
+  envelope: CalendarEnvelopeState | undefined;
+  isError: boolean;
+}): CalendarCoverage {
+  const notAllClear = "This is not an all-clear.";
+  if (input.isError) {
+    return { read: false, note: `Could not load the economic calendar, so scheduled events were not checked. ${notAllClear}` };
+  }
+  const env = input.envelope;
+  if (!env) return { read: false, note: "Checking the calendar provider…" };
+  if (env.read === true) return { read: true, note: "" };
+  const note = typeof env.note === "string" && env.note.trim() ? env.note.trim() : "";
+  return {
+    read: false,
+    note: note || `${calendarProviderLabel(env.provider)} was not read, so scheduled events were not checked. ${notAllClear}`,
+  };
+}
+
+/** "Trading Economics · events fetched 09:15 UTC", or null when the fetch time is unknown. */
+export function calendarEventsAsOfLabel(env: CalendarEnvelopeState | undefined): string | null {
+  if (!env || env.read !== true || !env.eventsAsOf) return null;
+  const t = Date.parse(env.eventsAsOf);
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t);
+  const hhmm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  return `${calendarProviderLabel(env.provider)} · events fetched ${hhmm} UTC`;
+}
+
 export function isDateOnlyCalendarSource(source: string | null | undefined): boolean {
   return typeof source === "string" && source.trim().toLowerCase() === "fred";
 }

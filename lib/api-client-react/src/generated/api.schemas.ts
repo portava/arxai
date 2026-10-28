@@ -3088,21 +3088,35 @@ export interface RubyQualityScoreBucket {
   total: number;
   wins: number;
   losses: number;
-  winRate: number;
+  /**
+   * wins / (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).
+   * @nullable
+   */
+  winRate: number | null;
 }
 
 export type RubyQualityMetricsTotals = {
   tracked: number;
   resolved: number;
+  /** PENDING rows only — still awaiting real evidence. */
   pending: number;
+  /** UNRESOLVED rows — no longer awaiting evidence and never graded. */
+  unresolved: number;
   graded: number;
 };
 
+/**
+ * Each rate is null when its denominator is empty (nothing to rate), never 0.
+ */
 export type RubyQualityMetricsRates = {
-  winRate: number;
-  tpRate: number;
-  slRate: number;
-  lateRate: number;
+  /** @nullable */
+  winRate: number | null;
+  /** @nullable */
+  tpRate: number | null;
+  /** @nullable */
+  slRate: number | null;
+  /** @nullable */
+  lateRate: number | null;
 };
 
 export type RubyQualityMetricsTiming = { [key: string]: number };
@@ -3116,19 +3130,26 @@ export type RubyQualityMetricsAverages = {
 
 export interface RubyQualityMetrics {
   totals: RubyQualityMetricsTotals;
+  /** Each rate is null when its denominator is empty (nothing to rate), never 0. */
   rates: RubyQualityMetricsRates;
   timing: RubyQualityMetricsTiming;
   averages: RubyQualityMetricsAverages;
+  /** Top half of the ranking (at most 5); never lists a symbol that is in worstSymbols. */
   bestSymbols: RubyQualitySymbolSessionStat[];
   worstSymbols: RubyQualitySymbolSessionStat[];
   bestSessions: RubyQualitySymbolSessionStat[];
   worstSessions: RubyQualitySymbolSessionStat[];
   newsFailures: number;
   executionFailures: number;
-  explanationAccuracy: number;
+  /**
+   * Win rate among graded rows where the explanation was used; null when there are none.
+   * @nullable
+   */
+  explanationAccuracy: number | null;
   ignoredWarnings: number;
   avoidedBadTrades: number;
   missedOpportunities: number;
+  /** Buckets hold lo ≤ value < hi (the last also includes hi), so each row counts once. */
   confidenceVsOutcome: RubyQualityScoreBucket[];
   edgeVsOutcome: RubyQualityScoreBucket[];
 }
@@ -5540,6 +5561,9 @@ export interface HandshakePermissionsView {
   executionCritical: boolean;
 }
 
+/**
+ * ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored.
+ */
 export type HandshakeVerdictViewOverallStatus =
   (typeof HandshakeVerdictViewOverallStatus)[keyof typeof HandshakeVerdictViewOverallStatus];
 
@@ -5551,6 +5575,7 @@ export const HandshakeVerdictViewOverallStatus = {
   DEGRADED: "DEGRADED",
   BLOCKED: "BLOCKED",
   ERROR: "ERROR",
+  NOT_CHECKED: "NOT_CHECKED",
 } as const;
 
 export type HandshakeVerdictViewAggregateStatus =
@@ -5566,6 +5591,7 @@ export const HandshakeVerdictViewAggregateStatus = {
 export interface HandshakeVerdictView {
   type: string;
   label: string;
+  /** ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored. */
   overallStatus: HandshakeVerdictViewOverallStatus;
   aggregateStatus: HandshakeVerdictViewAggregateStatus;
   safeToProceed: boolean;
@@ -5602,7 +5628,10 @@ export interface HandshakeMonitorSummaryView {
   warnings: number;
   waiting: number;
   blocked: number;
+  /** Verdicts whose evaluation failed (ERROR) only. */
   errors: number;
+  /** Verdicts with nothing evaluated (NOT_CHECKED) — not wired or no context; not errors. */
+  notChecked: number;
 }
 
 export interface HandshakeMonitorResponse {
@@ -9536,6 +9565,23 @@ export const NewsIntelligencePackTiming = {
   quiet: "quiet",
 } as const;
 
+/**
+ * Whether scheduled (economic-calendar) event risk was actually
+checked. "checked": a live calendar answered. "not_checked": no
+calendar is connected or its read failed, so riskLevel "none" and
+timing "quiet" were not observed and upcoming events are unknown.
+"not_applicable": a synthetic instrument scheduled events do not move.
+
+ */
+export type NewsIntelligencePackScheduledEventRisk =
+  (typeof NewsIntelligencePackScheduledEventRisk)[keyof typeof NewsIntelligencePackScheduledEventRisk];
+
+export const NewsIntelligencePackScheduledEventRisk = {
+  checked: "checked",
+  not_checked: "not_checked",
+  not_applicable: "not_applicable",
+} as const;
+
 export type NewsIntelligencePackRecommendation =
   (typeof NewsIntelligencePackRecommendation)[keyof typeof NewsIntelligencePackRecommendation];
 
@@ -9592,6 +9638,13 @@ export interface NewsIntelligencePack {
   bias: NewsIntelligencePackBias;
   timing: NewsIntelligencePackTiming;
   warningSummary: string;
+  /** Whether scheduled (economic-calendar) event risk was actually
+checked. "checked": a live calendar answered. "not_checked": no
+calendar is connected or its read failed, so riskLevel "none" and
+timing "quiet" were not observed and upcoming events are unknown.
+"not_applicable": a synthetic instrument scheduled events do not move.
+ */
+  scheduledEventRisk?: NewsIntelligencePackScheduledEventRisk;
   recommendation: NewsIntelligencePackRecommendation;
   upcomingEvent: NewsIntelligencePackUpcomingEvent;
   recentHeadlines: NewsIntelligencePackRecentHeadlinesItem[];

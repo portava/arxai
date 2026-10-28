@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { useGetEconomicCalendar, useGetLiveCalendarEvents } from "@workspace/api-client-react";
-import { calendarEventWhen, describeCalendarCoverage } from "@/lib/calendarCoverage";
+import { useGetEconomicCalendarEnvelope } from "@workspace/api-client-react";
+import { calendarEventWhen, calendarEventsAsOfLabel, describeCalendarEnvelope } from "@/lib/calendarCoverage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,18 +10,17 @@ import { CalendarDays } from "lucide-react";
 export default function Calendar() {
   const [impact, setImpact] = useState<string>("ALL");
   const [days, setDays] = useState<string>("7");
-  const { data, isLoading, isError } = useGetEconomicCalendar({
-    impact: impact === "ALL" ? undefined : (impact as "low" | "medium" | "high"),
+  // ONE read: the events and whether the calendar was actually read come from
+  // the same response, so an empty list is "no events" only when THAT read
+  // reached a connected provider (never paired with a second endpoint's status).
+  const { data: envelope, isLoading, isError } = useGetEconomicCalendarEnvelope({
+    impact: impact === "ALL" ? undefined : impact,
     days: Number(days),
   });
-  // /news/calendar returns [] when the provider could not be read too, so an
-  // empty list only means "no events" when the provider status says connected.
-  const providerQ = useGetLiveCalendarEvents({ daysAhead: Number(days) });
-  const coverage = describeCalendarCoverage({
-    status: providerQ.data,
-    statusError: providerQ.isError,
-    listError: isError,
-  });
+  const coverage = describeCalendarEnvelope({ envelope, isError });
+  // A failed refresh never keeps the last list on screen as current.
+  const data = coverage.read ? envelope?.events ?? [] : [];
+  const asOf = calendarEventsAsOfLabel(isError ? undefined : envelope);
   const nowMs = Date.now();
 
   return (
@@ -56,12 +55,15 @@ export default function Calendar() {
       </div>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Events</CardTitle></CardHeader>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Events</CardTitle>
+          {asOf && <p data-testid="calendar-events-as-of" className="text-xs text-muted-foreground">{asOf}</p>}
+        </CardHeader>
         <CardContent>
           {isLoading ? <div className="space-y-2">{Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div> :
-            !data || data.length === 0 ? (
+            data.length === 0 ? (
               <p data-testid="calendar-empty" className="text-sm text-muted-foreground py-8 text-center">
-                {coverage.read && !isError ? "No events in this period." : coverage.note}
+                {coverage.read ? "No events in this period." : coverage.note}
               </p>
             ) :
             <div className="space-y-2">

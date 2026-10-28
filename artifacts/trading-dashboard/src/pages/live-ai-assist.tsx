@@ -71,10 +71,18 @@ async function jget(url: string, init?: RequestInit) {
 }
 
 // Admin diagnostics: a flag the permission route did not return is "unknown",
-// never a default that reads as a checked answer.
+// never a default that reads as a checked answer. null means the server tried
+// and could not check it (e.g. the broker status read failed).
 function permFlag(perm: any, key: string): string {
-  const v = perm?.testerAccess?.[key];
-  return typeof v === "boolean" ? String(v) : "unknown (permission status not loaded)";
+  const t = perm?.testerAccess;
+  const v = t?.[key];
+  if (typeof v === "boolean") return String(v);
+  if (!t || typeof t !== "object") return "unknown (permission status not loaded)";
+  if (v === null) {
+    const why = typeof t.reason === "string" && t.reason ? `: ${t.reason}` : "";
+    return `unknown (could not be checked${why})`;
+  }
+  return "unknown (not reported by the server)";
 }
 
 // Map the real selected-market snapshot → trade card. Returns a FeedState so
@@ -312,6 +320,13 @@ export default function LiveAiAssistPage() {
                         : "Approve → live-intent"}
                   </Button>
                 </div>
+                {/* The live ticket is opened with this card's symbol and side
+                    only; say so before the user approves. */}
+                {liveAccess.loaded && liveAccess.canTrade && (
+                  <p className="text-[11px] text-amber-300" data-testid="ai-live-ticket-levels-note">
+                    The live ticket opens with this card&apos;s symbol and side only. It does not copy this card&apos;s stop and target: it fills them from its own ATR suggestion when one is available, which can differ from the levels above. If one-click trading is armed on your account, the ticket sends the order as soon as its form is valid, without a Confirm click.
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}

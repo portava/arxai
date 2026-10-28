@@ -129,9 +129,11 @@ export function useSymbolTruth(
   const nowMs = useEvidenceDeadline(symbolTruthRecheckAt(rawSnapshot, Date.now()));
   const { snapshot, actionCapped } = useMemo(() => resolveSymbolTruthEvidence({
     snapshot: rawSnapshot, symbol, apiTimeframe: apiTf, scannerTruth,
-    scannerLastCandleAt: scanner.feedStatus?.lastCandleTime ?? null,
+    // The newest CLOSED bar's close — the same observation the snapshot's
+    // data.lastCandleAt carries — never the forming bar's scheduled close.
+    scannerLastCandleAt: scanner.lastClosedCandleAt ?? null,
     scannerError: scanner.isError, snapshotError: snapQ.isError, nowMs,
-  }), [rawSnapshot, symbol, apiTf, scannerTruth, scanner.feedStatus, scanner.isError, snapQ.isError, nowMs]);
+  }), [rawSnapshot, symbol, apiTf, scannerTruth, scanner.lastClosedCandleAt, scanner.isError, snapQ.isError, nowMs]);
 
   return {
     snapshot,

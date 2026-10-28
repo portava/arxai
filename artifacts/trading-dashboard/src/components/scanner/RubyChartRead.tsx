@@ -7,7 +7,7 @@ import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromChartRead } from "@/lib/rubyReasoningBlock";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
-import { thresholdsFor } from "@/lib/scannerTruth";
+import { candleIntervalMs } from "@workspace/domain/market";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import {
   chartReadAsOfLabel,
@@ -130,11 +130,11 @@ export function RubyChartRead({
   // server read-chart response — so they can never render contradictory claims
   // (e.g. badge "Clean · AI" + banner "not confirmed" + body "cannot verify").
   // A read is a one-shot snapshot of the chart at its newest CLOSED candle
-  // (server `observedAt`). Once that is older than this timeframe's candle
-  // budget — or its time is unknown — it no longer describes the current chart.
+  // (server `observedAt`). Once the next candle has closed (observedAt + one
+  // interval) — or its time is unknown — it no longer describes the current chart.
   const readExpiresAtMs = chartReadExpiresAtMs(
     read,
-    thresholdsFor(normalizeChartTimeframe(timeframe)).candleMaxAgeMs,
+    candleIntervalMs(normalizeChartTimeframe(timeframe)) ?? Number.NaN,
   );
   const readNowMs = useEvidenceDeadline(
     readExpiresAtMs != null && Number.isFinite(readExpiresAtMs) ? readExpiresAtMs : null,

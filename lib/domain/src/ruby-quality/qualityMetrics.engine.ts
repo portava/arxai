@@ -8,6 +8,8 @@
 //
 // Only EVIDENCE-RESOLVED rows count toward graded rates. PENDING/UNRESOLVED rows
 // are reported separately and never inflate a win/loss rate (no fabrication).
+// A rate whose denominator is empty is null (unknown — nothing to rate), never
+// 0, which would read as a measured 0%.
 
 import type { ExitReason, SignalOutcomeStatus, TimingClass } from "./rubyQuality.types";
 
@@ -40,7 +42,7 @@ export interface ScoreOutcomeBucket {
   total: number;
   wins: number;
   losses: number;
-  winRate: number;         // wins / graded, 0 when none graded
+  winRate: number | null;  // wins / (wins + losses), null when none graded
 }
 
 export interface SymbolSessionStat {
@@ -55,14 +57,16 @@ export interface RubyQualityMetrics {
   totals: {
     tracked: number;
     resolved: number;
-    pending: number;
+    pending: number;       // PENDING only — still awaiting real evidence
+    unresolved: number;    // UNRESOLVED — no longer awaiting evidence, never graded
     graded: number;        // WIN+LOSS+BREAKEVEN (trades that resolved)
   };
+  /** Each rate is null when its denominator is empty (nothing to rate). */
   rates: {
-    winRate: number;       // wins / graded
-    tpRate: number;        // TP exits / entered-resolved
-    slRate: number;        // SL exits / entered-resolved
-    lateRate: number;      // LATE / entered-with-timing
+    winRate: number | null;   // wins / graded
+    tpRate: number | null;    // TP exits / entered-resolved
+    slRate: number | null;    // SL exits / entered-resolved
+    lateRate: number | null;  // LATE / entered-with-timing
   };
   timing: Record<TimingClass | "UNKNOWN", number>;
   averages: {
@@ -71,19 +75,24 @@ export interface RubyQualityMetrics {
     mfe: number | null;
     mae: number | null;
   };
+  /** Top of the ranking; never shares a key with worstSymbols. */
   bestSymbols: SymbolSessionStat[];
   worstSymbols: SymbolSessionStat[];
   bestSessions: SymbolSessionStat[];
   worstSessions: SymbolSessionStat[];
   newsFailures: number;        // entered + LOSS + news nearby
   executionFailures: number;   // actual slippage worse than expected
-  explanationAccuracy: number; // win rate among graded rows where explanation was used
+  explanationAccuracy: number | null; // win rate among graded rows where explanation was used; null when none
   ignoredWarnings: number;     // user entered against a reject/no_trade call
   avoidedBadTrades: number;    // credited no-trades
   missedOpportunities: number; // NO_TRADE_MISSED
   confidenceVsOutcome: ScoreOutcomeBucket[];
   edgeVsOutcome: ScoreOutcomeBucket[];
 }
+
+/** part / whole rounded to 3 dp, or null when there is nothing to rate. */
+const rate = (part: number, whole: number): number | null =>
+  whole > 0 ? Math.round((part / whole) * 1000) / 1000 : null;
 
 const avg = (xs: number[]): number | null =>
   xs.length === 0 ? null : Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10000) / 10000;
@@ -93,20 +102,25 @@ const isGraded = (s: SignalOutcomeStatus): boolean =>
 const isResolved = (s: SignalOutcomeStatus): boolean =>
   s !== "PENDING" && s !== "UNRESOLVED";
 
+/**
+ * Buckets are lower-inclusive and upper-exclusive ("60-75" holds 60 ≤ v < 75),
+ * except the last, which includes its upper edge — so a boundary value such as
+ * 75 is counted once, in "75-90", never in two buckets.
+ */
 function bucketStat(rows: QualitySampleRow[], pick: (r: QualitySampleRow) => number | null, edges: number[]): ScoreOutcomeBucket[] {
-  const labels: { label: string; lo: number; hi: number }[] = [];
+  const labels: { label: string; lo: number; hi: number; last: boolean }[] = [];
   for (let i = 0; i < edges.length - 1; i++) {
-    labels.push({ label: `${edges[i]}-${edges[i + 1]}`, lo: edges[i], hi: edges[i + 1] });
+    labels.push({ label: `${edges[i]}-${edges[i + 1]}`, lo: edges[i], hi: edges[i + 1], last: i === edges.length - 2 });
   }
-  return labels.map(({ label, lo, hi }) => {
+  return labels.map(({ label, lo, hi, last }) => {
     const inBucket = rows.filter((r) => {
       const v = pick(r);
-      return v != null && v >= lo && v <= hi && isGraded(r.outcomeStatus);
+      return v != null && v >= lo && (last ? v <= hi : v < hi) && isGraded(r.outcomeStatus);
     });
     const wins = inBucket.filter((r) => r.outcomeStatus === "WIN").length;
     const losses = inBucket.filter((r) => r.outcomeStatus === "LOSS").length;
     const gradedN = wins + losses;
-    return { bucket: label, total: inBucket.length, wins, losses, winRate: gradedN ? Math.round((wins / gradedN) * 1000) / 1000 : 0 };
+    return { bucket: label, total: inBucket.length, wins, losses, winRate: rate(wins, gradedN) };
   });
 }
 
@@ -133,6 +147,17 @@ function groupStats(rows: QualitySampleRow[], keyOf: (r: QualitySampleRow) => st
   return out;
 }
 
+/**
+ * Best = the top half of the ranking (at most 5), worst = the bottom of what
+ * is left (at most 5), so no key is listed as both best and worst. With one
+ * ranked key it is only "best"; with two, one each.
+ */
+function bestAndWorst(ranked: SymbolSessionStat[]): { best: SymbolSessionStat[]; worst: SymbolSessionStat[] } {
+  const best = ranked.slice(0, Math.min(5, Math.ceil(ranked.length / 2)));
+  const worst = ranked.slice(best.length).slice(-5).reverse();
+  return { best, worst };
+}
+
 export function computeRubyQualityMetrics(rows: QualitySampleRow[]): RubyQualityMetrics {
   const resolved = rows.filter((r) => isResolved(r.outcomeStatus));
   const graded = rows.filter((r) => isGraded(r.outcomeStatus));
@@ -156,19 +181,22 @@ export function computeRubyQualityMetrics(rows: QualitySampleRow[]): RubyQuality
   const byWinRate = (a: SymbolSessionStat, b: SymbolSessionStat) => b.winRate - a.winRate;
   const rankedSymbols = [...symbolStats].filter((s) => s.graded > 0).sort(byWinRate);
   const rankedSessions = [...sessionStats].filter((s) => s.graded > 0).sort(byWinRate);
+  const symbols = bestAndWorst(rankedSymbols);
+  const sessions = bestAndWorst(rankedSessions);
 
   return {
     totals: {
       tracked: rows.length,
       resolved: resolved.length,
-      pending: rows.length - resolved.length,
+      pending: rows.filter((r) => r.outcomeStatus === "PENDING").length,
+      unresolved: rows.filter((r) => r.outcomeStatus === "UNRESOLVED").length,
       graded: graded.length,
     },
     rates: {
-      winRate: graded.length ? Math.round((wins / graded.length) * 1000) / 1000 : 0,
-      tpRate: enteredResolved.length ? Math.round((tp / enteredResolved.length) * 1000) / 1000 : 0,
-      slRate: enteredResolved.length ? Math.round((sl / enteredResolved.length) * 1000) / 1000 : 0,
-      lateRate: enteredTimed.length ? Math.round((late / enteredTimed.length) * 1000) / 1000 : 0,
+      winRate: rate(wins, graded.length),
+      tpRate: rate(tp, enteredResolved.length),
+      slRate: rate(sl, enteredResolved.length),
+      lateRate: rate(late, enteredTimed.length),
     },
     timing,
     averages: {
@@ -177,13 +205,13 @@ export function computeRubyQualityMetrics(rows: QualitySampleRow[]): RubyQuality
       mfe: avg(rows.map((r) => r.maxFavorableExcursion).filter((x): x is number => x != null)),
       mae: avg(rows.map((r) => r.maxAdverseExcursion).filter((x): x is number => x != null)),
     },
-    bestSymbols: rankedSymbols.slice(0, 5),
-    worstSymbols: rankedSymbols.slice(-5).reverse(),
-    bestSessions: rankedSessions.slice(0, 5),
-    worstSessions: rankedSessions.slice(-5).reverse(),
+    bestSymbols: symbols.best,
+    worstSymbols: symbols.worst,
+    bestSessions: sessions.best,
+    worstSessions: sessions.worst,
     newsFailures: enteredResolved.filter((r) => r.outcomeStatus === "LOSS" && r.newsNearby).length,
     executionFailures: rows.filter((r) => r.actualSlippage != null && r.expectedSlippage != null && r.actualSlippage > r.expectedSlippage).length,
-    explanationAccuracy: expWithExplain.length ? Math.round((explainWins / expWithExplain.length) * 1000) / 1000 : 0,
+    explanationAccuracy: rate(explainWins, expWithExplain.length),
     ignoredWarnings: rows.filter((r) => r.userEntered && (r.decision === "reject" || r.decision === "no_trade")).length,
     avoidedBadTrades: rows.filter((r) => r.noTradeCredited).length,
     missedOpportunities: rows.filter((r) => r.outcomeStatus === "NO_TRADE_MISSED").length,

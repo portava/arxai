@@ -5,22 +5,29 @@
 // spec, quote, ATR, slippage history, balance) and surfaces the result in the
 // trade modal. Nothing here can place, modify, or block a trade.
 //
-// Money model: where the broker has not reported a tick value (always, for now,
-// since the EA reports `point` but not tickValue), money is derived from ARX's
-// standard per-symbol contract model — the SAME assumptions the live position
-// sizer already uses (forex $10 per pip per lot; synthetic indices $1 per
-// price unit per lot). This is spec-derived + a documented model, never a
-// fabricated broker number; `dataQuality` says so honestly.
+// Money model, in order of authority (all money is US dollars):
+//   1. The broker's own figures for this symbol (arx_symbol_specs, reported by
+//      the EA): tick value / tick size when the account's deposit currency is
+//      USD, else contract size when the symbol's profit currency is USD.
+//   2. ARX's standard contract model: currency pairs are 100,000 base units
+//      per lot, so a pip is worth 10 units of the QUOTE currency — dollars for
+//      XXXUSD, converted at the pair's own price for USDXXX, and withheld for
+//      crosses (EURGBP, GBPJPY) that need a third rate; synthetic indices are
+//      $1 per price unit per lot. Spec-derived + documented, never a
+//      fabricated broker number; `dataQuality` says which basis was used.
+//   3. Otherwise money is WITHHELD (null + a plain note saying exactly what is
+//      missing) and costs stay in points.
 //
 // "Forex" means BOTH halves of the symbol are ISO-4217 fiat codes (the same
 // strict rule as the server's contractSize.ts). Metals (XAUUSD = 100 oz,
 // XAGUSD = 5,000 oz), crypto and stock indices have broker-specific contract
-// sizes that the EA does not report yet, so their money figures are WITHHELD
-// (null + a plain note) rather than priced with the FX lot — the loose
-// "six letters / contains USD" test overstated a gold spread ~1,000x.
+// sizes, so without the broker's figures they are never priced with the FX
+// lot — the loose "six letters / contains USD" test overstated a gold spread
+// ~1,000x.
 
 import type {
   AccountImpact,
+  BrokerContractSpec,
   AfterCostOutcome,
   BrokerCondition,
   CostAmount,
@@ -68,9 +75,7 @@ const FIAT_CODES: ReadonlySet<string> = new Set([
 ]);
 /** Strict forex: both halves are fiat codes (a broker suffix like `.raw` is ok). */
 function isForex(symbol: string): boolean {
-  const m = /^([A-Z]{3})([A-Z]{3})([._-][A-Z0-9]+)?$/.exec(symbol.replace(/\s/g, "").toUpperCase());
-  if (!m) return false;
-  return FIAT_CODES.has(m[1]!) && FIAT_CODES.has(m[2]!);
+  return splitFiatPair(symbol) != null;
 }
 function isJpy(symbol: string): boolean {
   return symbol.toUpperCase().includes("JPY");
@@ -88,36 +93,190 @@ function inferPointSize(price: number, symbol: string): number {
 }
 
 /**
- * True when ARX has a documented contract model for this symbol: a strict fiat
- * forex pair, or a synthetic index. Metals, crypto, stock indices and anything
- * unrecognised have no trustworthy default contract size.
+ * Base / quote halves of a symbol's name, tolerating a broker suffix that is
+ * separated (`EURUSD.raw`) or lower-case (`EURUSDm`, `XAUUSDpro`). An upper-case
+ * tail (`BTCUSDT`) is not a suffix, so it does not parse.
  */
-function hasContractModel(symbol: string): boolean {
-  return isSynthetic(symbol) || isForex(symbol);
+function nameHalves(symbol: string): { base: string; quote: string } | null {
+  const m = /^([A-Za-z]{3})([A-Za-z]{3})(?:[._-][A-Za-z0-9]+|[a-z][a-z0-9]*)?$/.exec(symbol.replace(/\s/g, ""));
+  if (!m) return null;
+  return { base: m[1]!.toUpperCase(), quote: m[2]!.toUpperCase() };
+}
+
+function currencyCode(v: string | null | undefined): string | null {
+  return typeof v === "string" && /^[A-Za-z]{3}$/.test(v.trim()) ? v.trim().toUpperCase() : null;
+}
+
+/** "as of 2026-10-28 10:00 UTC" for a broker report time, or "" when unknown. */
+function asOf(reportedAt: string | null | undefined): string {
+  if (!reportedAt) return "";
+  const t = Date.parse(reportedAt);
+  if (!Number.isFinite(t)) return "";
+  return `, as of ${new Date(t).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/** The standard FX lot: 100,000 units of the base currency. */
+const FX_STANDARD_LOT_UNITS = 100_000;
+
+/** Strict fiat pair halves (same rule as isForex), or null. */
+function splitFiatPair(symbol: string): { base: string; quote: string } | null {
+  const m = /^([A-Z]{3})([A-Z]{3})([._-][A-Z0-9]+)?$/.exec(symbol.replace(/\s/g, "").toUpperCase());
+  if (!m || !FIAT_CODES.has(m[1]!) || !FIAT_CODES.has(m[2]!)) return null;
+  return { base: m[1]!, quote: m[2]! };
 }
 
 /**
- * Money value of ONE point of price movement, per `lots` lots. Mirrors the live
- * position sizer's contract model so previews and sizing agree.
- *   forex:      $10 per pip per lot; pip = 10 points (5/3-digit) → per-point
- *               derived from pip size & point size.
- *   synthetic:  $1 per 1.0 of price per lot → per-point = pointSize.
- *   otherwise:  null — metals / crypto / indices need a broker-reported
- *               contract size, which we do not have, so we never guess.
+ * Profit-currency → US-dollar factor, from this symbol alone (the same two
+ * cases the server's resolveQuoteToAccountFx and Quick Trade's risk readout
+ * accept): USD profit → 1; a USD-base pair (USDJPY) → 1 / its own price.
+ * Anything else needs a third rate ARX does not hold here → null.
  */
-function moneyPerPoint(symbol: string, pointSize: number, lots: number): number | null {
-  if (!isPos(pointSize) || !isPos(lots)) return null;
-  if (isSynthetic(symbol)) {
-    // synthetic indices: $1 per 1.0 price unit per lot
-    return 1 * pointSize * lots;
-  }
-  if (isForex(symbol)) {
-    const pipSize = isJpy(symbol) ? 0.01 : 0.0001;
-    const pipValuePerLot = 10; // $10 per pip per standard lot (model)
-    const valuePerPricePerLot = pipValuePerLot / pipSize; // money per 1.0 price per lot
-    return valuePerPricePerLot * pointSize * lots;
+function profitToUsd(
+  symbol: string,
+  profit: string,
+  price: number | null,
+): { factor: number; converted: boolean } | null {
+  if (profit === "USD") return { factor: 1, converted: false };
+  const halves = nameHalves(symbol);
+  if (halves && halves.base === "USD" && halves.quote === profit && isPos(price)) {
+    return { factor: 1 / price, converted: true };
   }
   return null;
+}
+
+function noUsdRate(symbol: string, profit: string, price: number | null): string {
+  const halves = nameHalves(symbol);
+  if (halves && halves.base === "USD" && halves.quote === profit && !isPos(price)) {
+    return `${symbol}'s profit is booked in ${profit}, and there is no live price to convert it to US dollars`;
+  }
+  return `${symbol}'s profit is booked in ${profit}, and ARX has no ${profit}→USD rate here`;
+}
+
+/**
+ * How money is derived for this symbol: US dollars per 1.0 of price per 1.00
+ * lot, plus the plain-English basis (or the reason it is withheld).
+ */
+interface ValueModel {
+  perPricePerLot: number | null;
+  /** True when the figure comes from the broker's own report. */
+  fromBroker: boolean;
+  /** Data-quality note: the basis used, or why money is withheld. */
+  note: string;
+  /** Short clause for the account-impact note when withheld. */
+  withheldBecause: string | null;
+}
+
+function resolveValueModel(a: {
+  symbol: string;
+  contract: BrokerContractSpec | null;
+  accountCurrency: string | null;
+  hasBrokerTruth: boolean;
+  /** Reference price (entry / quote), used to convert USD-base pairs. */
+  price: number | null;
+}): ValueModel {
+  const { symbol, contract, hasBrokerTruth, price } = a;
+  const when = asOf(contract?.reportedAt);
+  const account = currencyCode(a.accountCurrency);
+
+  // 1a. Broker tick value / tick size — money per tick in the deposit currency.
+  const hasTick = contract != null && isPos(contract.tickValue) && isPos(contract.tickSize);
+  if (hasTick && account === "USD") {
+    return {
+      perPricePerLot: contract!.tickValue! / contract!.tickSize!,
+      fromBroker: true,
+      note: `Money values use the tick value your broker reported for ${symbol} ` +
+        `($${contract!.tickValue} per ${contract!.tickSize} price step per lot${when}).`,
+      withheldBecause: null,
+    };
+  }
+
+  // 1b. Broker contract size — money in the symbol's profit currency,
+  // converted to dollars when that is possible from this symbol alone.
+  if (contract != null && isPos(contract.contractSize)) {
+    const reported = currencyCode(contract.profitCurrency);
+    const profit = reported ?? nameHalves(symbol)?.quote ?? null;
+    const fromName = reported == null && profit != null;
+    const fx = profit != null ? profitToUsd(symbol, profit, price) : null;
+    if (fx != null) {
+      return {
+        perPricePerLot: contract.contractSize * fx.factor,
+        fromBroker: true,
+        note: `Money values use the contract size your broker reported for ${symbol} ` +
+          `(${contract.contractSize.toLocaleString("en-US")} units per lot${when})` +
+          (fromName ? `; its profit currency (${profit}) is read from the symbol name` : "") +
+          (fx.converted ? `; ${profit} amounts are converted to US dollars at the pair's own price.` : "."),
+        withheldBecause: null,
+      };
+    }
+    if (!isSynthetic(symbol) && !isForex(symbol)) {
+      const because = profit == null
+        ? `your broker reported a contract size for ${symbol} but not the currency its profit is booked in`
+        : noUsdRate(symbol, profit, price);
+      return {
+        perPricePerLot: null,
+        fromBroker: false,
+        note: `Money values withheld — ${because}, so costs are shown in points only.`,
+        withheldBecause: because,
+      };
+    }
+  }
+
+  // 2. ARX's standard contract model.
+  if (isSynthetic(symbol)) {
+    return {
+      perPricePerLot: 1,
+      fromBroker: false,
+      note: "Money values use ARX's standard contract model for this symbol, not broker-reported tick value.",
+      withheldBecause: null,
+    };
+  }
+  const pair = splitFiatPair(symbol);
+  if (pair) {
+    // 100,000 base units per lot: a pip is worth 10 units of the QUOTE
+    // currency (1,000 for JPY quotes), which is dollars only for XXXUSD.
+    const fx = profitToUsd(symbol, pair.quote, price);
+    if (fx == null) {
+      const because = noUsdRate(symbol, pair.quote, price);
+      return {
+        perPricePerLot: null,
+        fromBroker: false,
+        note: `Money values withheld — ${because}, so costs are shown in points only.`,
+        withheldBecause: because,
+      };
+    }
+    return {
+      perPricePerLot: FX_STANDARD_LOT_UNITS * fx.factor,
+      fromBroker: false,
+      note: "Money values use ARX's standard contract model for currency pairs (100,000 units per lot), " +
+        "not broker-reported tick value" +
+        (fx.converted ? `; ${pair.quote} amounts are converted to US dollars at the pair's own price.` : "."),
+      withheldBecause: null,
+    };
+  }
+
+  // 3. Withheld — say exactly what is missing.
+  let because: string;
+  if (hasTick) {
+    because = account == null
+      ? `your broker reported a tick value for ${symbol}, but ARX does not know which currency your account is in`
+      : `your broker reported ${symbol}'s tick value in your account's currency (${account}), not US dollars`;
+  } else if (!hasBrokerTruth) {
+    because = `ARX has no broker report for ${symbol} yet, and it only has a standard contract model for plain currency pairs (like EURUSD) and synthetic indices`;
+  } else {
+    because = `your broker has not reported a contract size or tick value for ${symbol}, and ARX only has a standard contract model for plain currency pairs (like EURUSD) and synthetic indices`;
+  }
+  return {
+    perPricePerLot: null,
+    fromBroker: false,
+    note: `Money values withheld — ${because}, so costs are shown in points only.`,
+    withheldBecause: because,
+  };
+}
+
+/** Money value of ONE point of price movement, per `lots` lots. */
+function moneyPerPoint(model: ValueModel, pointSize: number, lots: number): number | null {
+  if (!isPos(pointSize) || !isPos(lots) || model.perPricePerLot == null) return null;
+  return model.perPricePerLot * pointSize * lots;
 }
 
 export function estimateExecutionPreview(input: ExecutionPreviewInput): ExecutionPreview {
@@ -154,21 +313,23 @@ export function estimateExecutionPreview(input: ExecutionPreviewInput): Executio
     degraded = true;
   }
 
-  const mpp = moneyPerPoint(symbol, pointSize, lots);
+  const valueModel = resolveValueModel({
+    symbol,
+    contract: input.contract ?? null,
+    accountCurrency: input.accountCurrency ?? null,
+    hasBrokerTruth,
+    price: referencePrice,
+  });
+  const mpp = moneyPerPoint(valueModel, pointSize, lots);
   if (mpp == null) {
-    if (isPos(pointSize) && isPos(lots) && !hasContractModel(symbol)) {
-      notes.push(
-        `Money values withheld — your broker has not reported a contract size for ${symbol}, ` +
-        "and metals, crypto and indices differ by broker, so costs are shown in points only.",
-      );
+    if (isPos(pointSize) && isPos(lots) && valueModel.perPricePerLot == null) {
+      notes.push(valueModel.note);
     } else {
       notes.push("Lot size or price increment unavailable — money values can't be computed.");
     }
     degraded = true;
   } else {
-    // The EA reports `point` but never a tick value, so every money figure is
-    // model-derived — say so even when the point size is broker truth.
-    notes.push("Money values use ARX's standard contract model for this symbol, not broker-reported tick value.");
+    notes.push(valueModel.note);
   }
 
   // ── Spread cost ───────────────────────────────────────────────────────────
@@ -280,6 +441,7 @@ export function estimateExecutionPreview(input: ExecutionPreviewInput): Executio
   const accountImpact = computeAccountImpact({
     referencePrice, lots, leverage, accountBalance, mpp, pointSize,
     side, stopLoss: effectiveStopLoss, costPoints: startPoints, riskPercent, symbol,
+    valueModel,
   });
   if (
     accountImpact.riskPctOfBalance != null && riskPercent != null &&
@@ -494,20 +656,20 @@ function computeAccountImpact(a: {
   costPoints: number;
   riskPercent: number | null;
   symbol: string;
+  valueModel: ValueModel;
 }): AccountImpact {
   const {
     referencePrice, lots, leverage, accountBalance, mpp, pointSize, stopLoss,
-    costPoints, symbol,
+    costPoints, valueModel,
   } = a;
 
-  // Margin: contract notional / leverage. Notional uses the contract model.
+  // Margin: contract notional / leverage, in dollars. Notional = price ×
+  // (dollars per 1.0 of price per lot) × lots — for USDJPY that is 100,000
+  // USD per lot, for EURUSD price × 100,000, for XAUUSD price × 100 oz.
   let marginRequired: number | null = null;
-  const modelled = hasContractModel(symbol);
+  const modelled = valueModel.perPricePerLot != null;
   if (modelled && isPos(referencePrice) && isPos(lots) && isPos(leverage)) {
-    const contractSize = isSynthetic(symbol) ? 1 : 100_000;
-    const notional = referencePrice * contractSize * lots;
-    // For synthetics the "$1 per price unit per lot" model implies a
-    // notional ≈ price * lots; either way notional/leverage is the margin.
+    const notional = referencePrice * valueModel.perPricePerLot! * lots;
     marginRequired = round(notional / leverage, 2);
   }
   const marginPct =
@@ -528,13 +690,15 @@ function computeAccountImpact(a: {
 
   let note: string;
   if (!modelled) {
-    note = "Margin and risk in money need your broker's contract size for this symbol, which hasn't been reported yet.";
+    note = `Margin and risk are not shown in money — ${valueModel.withheldBecause ?? "money values can't be derived for this symbol"}.`;
   } else if (marginRequired == null && riskMoney == null) {
     note = "Add your balance and a stop loss to see margin and risk in money.";
   } else if (riskMoney != null) {
     note = "Risk includes the stop distance plus expected entry cost.";
   } else {
-    note = "Margin estimated from the standard contract model for this symbol.";
+    note = valueModel.fromBroker
+      ? "Margin estimated from your broker's reported figures for this symbol."
+      : "Margin estimated from the standard contract model for this symbol.";
   }
   return { marginRequired, marginPctOfBalance: marginPct, riskMoney, riskPctOfBalance: riskPct, note };
 }

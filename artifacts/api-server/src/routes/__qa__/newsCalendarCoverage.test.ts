@@ -105,3 +105,14 @@ test("a cached read reports when the events were fetched, not the request time",
   assert.ok(headerAsOf <= before - 119_000 && headerAsOf >= before - 125_000, "the array route's header carries the same fetch time");
   assert.equal(arr.headers["x-calendar-read"], "true");
 });
+
+test("a failing provider's note names the (redacted) error the service recorded", async () => {
+  result = {
+    status: "error", connected: false, configured: true, provider: "trading_economics", events: [],
+    diagnostics: { cacheAgeMs: null, lastSuccessAt: null, lastError: "HTTP 503" } as Result["diagnostics"], message: "",
+  };
+  const env = await invoke("/news/calendar/envelope");
+  assert.equal(env.body.read, false);
+  assert.match(env.body.note, /Trading Economics could not be read \(HTTP 503\), so scheduled events were not checked/);
+  assert.match(env.body.note, /not an all-clear/);
+});
