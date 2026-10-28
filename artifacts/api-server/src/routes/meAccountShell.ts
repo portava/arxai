@@ -57,6 +57,9 @@ export type AccountShellResponse = {
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   // Money view — user's own slice only.
   allocation: {
+    // Legacy: with no user_slot_allocation row but virtual accounts present
+    // this is the running balance (P&L included), not an assignment. Use
+    // totalAllocation to tell whether an operator assigned anything.
     assignedStartingBalance: number | null;
     currentBalance: number;
     equity: number;

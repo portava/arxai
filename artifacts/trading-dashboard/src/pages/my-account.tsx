@@ -208,15 +208,12 @@ export default function MyAccountPage() {
           <Stat label="My Balance" value={fmtMoney(s.allocation.currentBalance)} testid="my-balance" />
           <Stat label="My Equity" value={fmtMoney(s.allocation.equity)} testid="my-equity" />
           <Stat label="Margin Used" value={fmtMoney(s.allocation.marginUsed)} testid="my-margin-used" />
+          {/* Only an operator's allocation row (totalAllocation) is an
+              assignment. assignedStartingBalance falls back to the running
+              balance when no row exists, so it is never shown here. */}
           <Stat
             label="Assigned Allocation"
-            value={
-              s.allocation.assignedStartingBalance != null
-                ? fmtMoney(s.allocation.assignedStartingBalance)
-                : s.allocation.currentBalance > 0
-                  ? fmtMoney(s.allocation.currentBalance)
-                  : "—"
-            }
+            value={s.allocation.totalAllocation != null ? fmtMoney(s.allocation.totalAllocation) : "Not assigned"}
             testid="my-allocation"
           />
         </CardContent>
