@@ -497,14 +497,17 @@ export function ScannerChartPanel() {
     {
       query: {
         queryKey: [...getGetMeChartIntelligenceQueryKey({ symbol, timeframe: apiTf as GetMeChartIntelligenceTimeframe, limit: 200 }), { chartContext }],
-        enabled: symbol.length > 0 && hasCandles && overlayTf != null,
+        enabled: symbol.length > 0 && hasCandles && isChartInterval(apiTf),
         refetchInterval: 8000,
         staleTime: 4000,
       },
     },
   );
   const structureEvidenceMissing = overlayRequiresEvidence && !hasMatchingOverlayEvidence(candlesQuery.data?.marketEvidence, intelligenceQuery.data);
-  const trendlineOverlay = structureEvidenceMissing || overlayTf == null ? null : intelligenceQuery.data?.state?.trendlineOverlay ?? null;
+  const intelligenceState = intelligenceQuery.data?.state;
+  const trendlineOverlay = structureEvidenceMissing || !isChartInterval(apiTf)
+    || intelligenceState?.symbol !== symbol || intelligenceState.timeframe !== apiTf
+    ? null : intelligenceState.trendlineOverlay ?? null;
 
   const [positions, setPositions] = useState<ChartPosition[]>([]);
   const [pending, setPending] = useState<ChartPending[]>([]);
@@ -2229,7 +2232,7 @@ export function ScannerChartPanel() {
               </div>
             )}
 
-            {overlayTf == null && <p className="text-xs text-amber-300" role="status" data-testid="scanner-overlay-interval-unavailable">Server overlays, saved notes and receipts are unavailable on {apiTf}. Smart Chart's local reader and drawing tools use this exact interval.</p>}
+            {overlayTf == null && <p className="text-xs text-amber-300" role="status" data-testid="scanner-overlay-interval-unavailable">Smart layers, saved notes and receipts are unavailable on {apiTf}. {isChartInterval(apiTf) ? "Chart intelligence and the local reader still use this exact interval when their source evidence is available." : "Calendar-boundary verification is also required before displaying this interval."}</p>}
 
             {/* Smart Chart Layers & Market Impact Radar (Task #197) — read-only,
                 advisory overlays with honest empty/absent states throughout. */}

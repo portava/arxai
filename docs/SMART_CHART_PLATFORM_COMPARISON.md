@@ -37,9 +37,9 @@ M12, M15, M20, M30, H1, H2, H3, H4, H6, H8, H12 and D1. The shared picker,
 layout state, Scanner timeframe bus and replay use the same interval definitions.
 W1 and MN1 remain explicitly unavailable: epoch-aligned weeks and fixed-length
 months do not establish the provider's calendar boundaries. Stored calendar
-selections are not silently replaced. Server intelligence, saved annotations and
-decision receipts still accept only their seven original intervals; unsupported
-intervals receive no nearest-timeframe substitution.
+selections are not silently replaced. Server intelligence accepts the exact fixed-duration chart interval. Smart
+layers, saved annotations and decision receipts still accept only their seven
+original intervals; unsupported intervals receive no nearest-timeframe substitution.
 
 The actual Scanner page now mounts `ARXNativeChart` with its existing shared
 candle query and original response evidence. Native owns candle rendering,
