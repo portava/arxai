@@ -112,6 +112,17 @@ interface Eval {
   violations: Array<{ type: string; severity: "INFO"|"WARN"|"HARD"; message: string }>;
   resolvedStatus: "ACTIVE" | "PASSED" | "FAILED";
   failureReason: string | null;
+  /** True for a finished challenge (PASSED, FAILED, CANCELED): judged only up to its end. */
+  final: boolean;
+  /** The end of the evaluated window (ISO): completedAt for a finished challenge, now otherwise. */
+  evaluatedThrough: string;
+}
+
+// A challenge in one of these states is over. It is judged on what happened
+// up to its end, never on trades or days after it.
+const FINISHED_STATUSES: ReadonlySet<string> = new Set(["PASSED", "FAILED", "CANCELED"]);
+function isFinishedChallenge(status: string): boolean {
+  return FINISHED_STATUSES.has(status);
 }
 
 async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
@@ -130,7 +141,13 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   const orders = await db.select().from(paperOrdersTable)
     .where(orderWhere)
     .orderBy(asc(paperOrdersTable.openedAt));
-  const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt);
+  // A finished challenge ends at completedAt (updatedAt for an older row that
+  // has none: status changes stamp it, and a finished challenge's rules cannot
+  // be edited). Trades closed after the end are not part of the challenge.
+  const final = isFinishedChallenge(ch.status);
+  const endAt: Date = final ? (ch.completedAt ?? ch.updatedAt ?? new Date()) : new Date();
+  const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt
+    && (!final || o.closedAt <= endAt));
 
   // Bucket by UTC date.
   const byDay = new Map<string, typeof closed>();
@@ -251,7 +268,8 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   const totalPnl = runningBalance - ch.startingBalance;
   const totalPct = totalPnl / ch.startingBalance;
   const daysWorked = sortedDates.length;
-  const daysSinceStart = Math.max(1, Math.ceil((Date.now() - ch.startedAt.getTime()) / 86_400_000));
+  // The day count stops at the end of a finished challenge.
+  const daysSinceStart = Math.max(1, Math.ceil((endAt.getTime() - ch.startedAt.getTime()) / 86_400_000));
 
   // Time-limit (max trading days) — HARD terminal rule. Even if profit target
   // is reached later, the challenge must be passed WITHIN maxTradingDays. If
@@ -287,7 +305,8 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   // OPEN paper orders = currently open positions. Paper schema has no
   // PENDING status (LIMIT orders fill immediately at entryPrice), so
   // pending-orders rule cannot be evaluated honestly today → INSUFFICIENT_DATA.
-  const openOrders = orders.filter((o) => o.status === "OPEN");
+  // Rules about positions open now say nothing about a finished challenge.
+  const openOrders = final ? [] : orders.filter((o) => o.status === "OPEN");
   if (openOrders.length >= ch.maxOpenTrades) {
     violations.push({
       type: "MAX_OPEN_TRADES",
@@ -368,6 +387,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
     worstDayPct, worstDayDate, bestDayPnl: bestDayPnl === -Infinity ? 0 : bestDayPnl,
     consistencyTopShare, tradeCount: closed.length, daysSinceStart,
     days, violations, resolvedStatus, failureReason,
+    final, evaluatedThrough: endAt.toISOString(),
   };
 }
 
@@ -455,38 +475,42 @@ router.post("/prop-challenges/:id/evaluate", async (req, res): Promise<void> => 
     const ev = await evaluateChallenge(id);
     if (!ev) { fail(res, 404, "Not found"); return; }
 
-    // Persist day rows (replace existing for idempotency). Stamp userId
-    // for defense-in-depth ownership integrity (architect P1).
-    await db.delete(propChallengeDaysTable).where(eq(propChallengeDaysTable.challengeId, id));
-    if (ev.days.length > 0) {
-      await db.insert(propChallengeDaysTable).values(ev.days.map((d) => ({
-        challengeId: id, userId, tradeDate: d.tradeDate,
-        startingBalance: d.startingBalance, endingBalance: d.endingBalance,
-        dailyProfitLoss: d.dailyProfitLoss, dailyLossPercent: d.dailyLossPercent,
-        tradesTaken: d.tradesTaken, rulesViolated: d.rulesViolated.join(","),
-      })));
-    }
+    // A finished challenge is evaluated read-only: its stored day and
+    // violation rows are not rewritten and no prop-firm alerts are sent.
+    if (!ev.final) {
+      // Persist day rows (replace existing for idempotency). Stamp userId
+      // for defense-in-depth ownership integrity (architect P1).
+      await db.delete(propChallengeDaysTable).where(eq(propChallengeDaysTable.challengeId, id));
+      if (ev.days.length > 0) {
+        await db.insert(propChallengeDaysTable).values(ev.days.map((d) => ({
+          challengeId: id, userId, tradeDate: d.tradeDate,
+          startingBalance: d.startingBalance, endingBalance: d.endingBalance,
+          dailyProfitLoss: d.dailyProfitLoss, dailyLossPercent: d.dailyLossPercent,
+          tradesTaken: d.tradesTaken, rulesViolated: d.rulesViolated.join(","),
+        })));
+      }
 
-    // Persist violations (replace existing). Stamp userId.
-    await db.delete(propChallengeViolationsTable).where(eq(propChallengeViolationsTable.challengeId, id));
-    if (ev.violations.length > 0) {
-      await db.insert(propChallengeViolationsTable).values(ev.violations.map((v) => ({
-        challengeId: id, userId, violationType: v.type, message: v.message, severity: v.severity,
-      })));
-    }
+      // Persist violations (replace existing). Stamp userId.
+      await db.delete(propChallengeViolationsTable).where(eq(propChallengeViolationsTable.challengeId, id));
+      if (ev.violations.length > 0) {
+        await db.insert(propChallengeViolationsTable).values(ev.violations.map((v) => ({
+          challengeId: id, userId, violationType: v.type, message: v.message, severity: v.severity,
+        })));
+      }
 
-    // Phase 27-B: emit per-rule notifications with verbatim safety language.
-    // Per-user scoped, deduped 1h/day/rule. Never blocks evaluation on
-    // notification failure (notify() is fire-and-forget here).
-    for (const v of ev.violations) {
-      const kind = violationToAlertKind({ type: v.type, severity: v.severity });
-      if (!kind) continue;
-      const alert = buildPropFirmAlert(kind, {
-        challengeId: id, ruleChecked: v.type, detail: v.message, userId,
-      });
-      notify({ ...alert, userId }).catch((e) => {
-        req.log.warn({ err: String(e), challengeId: id, kind }, "prop-firm notify failed");
-      });
+      // Phase 27-B: emit per-rule notifications with verbatim safety language.
+      // Per-user scoped, deduped 1h/day/rule. Never blocks evaluation on
+      // notification failure (notify() is fire-and-forget here).
+      for (const v of ev.violations) {
+        const kind = violationToAlertKind({ type: v.type, severity: v.severity });
+        if (!kind) continue;
+        const alert = buildPropFirmAlert(kind, {
+          challengeId: id, ruleChecked: v.type, detail: v.message, userId,
+        });
+        notify({ ...alert, userId }).catch((e) => {
+          req.log.warn({ err: String(e), challengeId: id, kind }, "prop-firm notify failed");
+        });
+      }
     }
 
     // Update status only if challenge is ACTIVE (PAUSED/CANCELED stay; PASSED/FAILED are terminal).
@@ -520,6 +544,8 @@ router.post("/prop-challenges/:id/evaluate", async (req, res): Promise<void> => 
         maxTotalDrawdown: ch.maxTotalDrawdown,
         minTradingDays: ch.minTradingDays, maxTradingDays: ch.maxTradingDays,
         currentBalance: ch.startingBalance + ev.totalPnl,
+        final: ev.final,
+        evaluatedThrough: ev.evaluatedThrough,
       },
       days: ev.days,
       violations: ev.violations,

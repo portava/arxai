@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 
 /**
  * Feature Truth Audit — LiveTradeCard badge honesty.
@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   mt5State: undefined as undefined | { connected?: boolean; liveAllowed?: boolean },
   snap: undefined as unknown,
   queries: {} as Record<string, unknown>,
+  closeMutate: (() => Promise.resolve()) as (...a: unknown[]) => Promise<unknown>,
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
@@ -26,7 +27,7 @@ vi.mock("@workspace/api-client-react", () => ({
   useMoveTradeToBreakeven: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTrailTradeStop: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePartialCloseTrade: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCloseTradeManually: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCloseTradeManually: () => ({ mutateAsync: h.closeMutate, isPending: false }),
   useGetMt5State: () => ({ data: h.mt5State }),
   useGetAaciDecision: () => ({ data: undefined }),
   getGetTradeSnapshotQueryKey: (id: number) => ["snap", id],
@@ -59,6 +60,7 @@ beforeEach(() => {
   h.mt5State = undefined;
   h.snap = undefined;
   h.queries = {};
+  h.closeMutate = () => Promise.resolve();
 });
 afterEach(() => cleanup());
 
@@ -138,5 +140,79 @@ describe("LiveTradeCard header mode badge", () => {
     expect(b.textContent).not.toBe("LIVE");
     expect(b.textContent).toMatch(/Safety Core/);
     expect(b.getAttribute("title") ?? "").toMatch(/not a broker/i);
+  });
+});
+
+// Round 3: the stop / close badges must follow what /trade-management
+// actually enforces. Those routes act on the paper book through the Position
+// Guardian, with no MT5 bridge dependency, and close / trail answer 409
+// NO_CURRENT_QUOTE when the server has no quote for the symbol.
+describe("LiveTradeCard capability badges follow the server's real conditions", () => {
+  const noQuoteSnap = {
+    currentPrice: null,
+    floatingPnl: null,
+    rMultiple: null,
+    health: null,
+    priceUnavailableReason: "No quote for EURUSD.",
+    primarySuggestion: "No live quote.",
+    suggestions: { breakEven: { recommended: false }, trail: { recommended: false }, partial: { recommended: false } },
+  };
+
+  it("does not claim close / stop moves while the server has no quote (close and trail return 409)", () => {
+    h.snap = noQuoteSnap;
+    h.mt5State = { connected: true, liveAllowed: true };
+    h.queries["/me/protective-auto-close/settings"] = { settings: { killSwitchEngaged: false } };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("snap-current-1").textContent).toMatch(/Unavailable/);
+    expect(screen.queryByTestId("badge-manual-close")).toBeNull();
+    expect(screen.queryByTestId("badge-sltp-editable")).toBeNull();
+  });
+
+  it("claims them with the MT5 bridge offline, because these controls act on the ARX paper record, not the bridge", () => {
+    h.snap = snap;
+    h.mt5State = { connected: false, liveAllowed: false };
+    h.queries["/me/protective-auto-close/settings"] = { settings: { killSwitchEngaged: false } };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("badge-manual-close")).toBeTruthy();
+    expect(screen.getByTestId("badge-sltp-editable")).toBeTruthy();
+  });
+
+  it("claims them while the bridge status has not loaded, since the controls do not depend on it", () => {
+    h.snap = snap;
+    h.mt5State = undefined;
+    h.queries["/me/protective-auto-close/settings"] = { settings: { killSwitchEngaged: false } };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("badge-manual-close")).toBeTruthy();
+  });
+});
+
+describe("LiveTradeCard management buttons report a refused request", () => {
+  it("says the close did not go through when the server answers 409, instead of failing silently", async () => {
+    h.snap = snap;
+    h.closeMutate = () => Promise.reject(new Error("HTTP 409 Conflict: NO_CURRENT_QUOTE"));
+    render(<LiveTradeCard trade={trade} />);
+    fireEvent.click(screen.getByTestId("button-close-1"));
+    await waitFor(() => expect(screen.getByTestId("trade-action-error-1")).toBeTruthy());
+    const msg = screen.getByTestId("trade-action-error-1").textContent ?? "";
+    expect(msg).toMatch(/Close did not go through/);
+    expect(msg).toMatch(/NO_CURRENT_QUOTE/);
+  });
+});
+
+// Round 3: trades.mode is the Safety Core state at entry, not a venue. Every
+// row this card renders is a simulated ARX record (lib/db schema/trades.ts),
+// so the simulated badge must not depend on mode.
+describe("LiveTradeCard simulated-record badge does not read trades.mode as a venue", () => {
+  it("marks a record written while Safety Core was LIVE as simulated", () => {
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("badge-trade-mode-1").getAttribute("title") ?? "").toMatch(/not a broker venue/i);
+    const b = screen.getByTestId("badge-paper-only");
+    expect(b.textContent).toMatch(/Simulated/);
+    expect(b.getAttribute("title") ?? "").toMatch(/no broker order/i);
+  });
+
+  it("marks a DEMO-mode record the same way", () => {
+    render(<LiveTradeCard trade={{ ...(trade as object), mode: "DEMO" } as never} />);
+    expect(screen.getByTestId("badge-paper-only").textContent).toMatch(/Simulated/);
   });
 });

@@ -427,6 +427,11 @@ export function pnlSummary(env?: Environment, scope?: OmsOwnerScope) {
     winRate: wins + losses > 0 ? Number(((wins / (wins + losses)) * 100).toFixed(1)) : 0,
     averageR: avgR,
     maxDrawdown: Number(dd.toFixed(2)),
+    // With no closed positions, winRate, averageR and maxDrawdown above were
+    // not measured (they read 0); closedCount lets a reader say so.
+    closedCount: closed.length,
+    // dailyPnL is the UTC calendar day (00:00 UTC onward), not the viewer's day.
+    dayBoundary: "UTC" as const,
     dataSource: "SIMULATOR" as const,
   };
 }

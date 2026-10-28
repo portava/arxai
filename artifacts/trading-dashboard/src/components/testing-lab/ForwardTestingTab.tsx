@@ -224,7 +224,7 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
       )}
       {results && resultsState === "ok" ? (
         results.totalShadowDecisions > 0 ? (
-          <ForwardStats results={results} startedAt={status?.startedAt ?? null} />
+          <ForwardStats results={results} statusStartedAt={status?.startedAt ?? null} />
         ) : (
           <p className="text-xs text-slate-500">No forward-test results yet.</p>
         )
@@ -259,7 +259,28 @@ function calibrationLabel(token: string | null | undefined): string {
   return (token && CALIBRATION_LABELS[token]) ?? "Unknown";
 }
 
-function ForwardStats({ results, startedAt }: { results: ForwardResults; startedAt: string | null }) {
+function localTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? new Date(ms).toLocaleString() : null;
+}
+
+/**
+ * What window the stats cover. The results only count decisions inside the
+ * forward-test window and report it themselves (testStartedAt/testEndedAt),
+ * so those are used first; /status is a fallback for a server that does not
+ * send them. With neither, the window is "not reported" — the stats are still
+ * the forward test's, never "all recorded shadow decisions".
+ */
+function forwardWindowCaption(results: ForwardResults, statusStartedAt: string | null): string {
+  const start = localTime(results.testStartedAt) ?? localTime(statusStartedAt);
+  const end = localTime(results.testEndedAt);
+  if (start && end) return `Forward test from ${start} to ${end}`;
+  if (start) return `Since the forward test started at ${start}`;
+  return "Forward-test decisions (the test window was not reported)";
+}
+
+function ForwardStats({ results, statusStartedAt }: { results: ForwardResults; statusStartedAt: string | null }) {
   // Win rate, average R, drawdown and best/worst rankings are only measured
   // once at least one shadow trade has a win/loss outcome. With zero tracked
   // trades the server still returns 0s and an arbitrary symbol/strategy; the
@@ -268,10 +289,8 @@ function ForwardStats({ results, startedAt }: { results: ForwardResults; started
   const measured = (v: string) => (tracked ? v : UNAVAILABLE_NO_TRACKED);
   return (
     <div className="space-y-1">
-      <p className="text-[10px] text-slate-500">
-        {startedAt
-          ? `Since the forward test started at ${new Date(startedAt).toLocaleString()}`
-          : "All recorded shadow decisions (start time unavailable)"}
+      <p data-testid="forward-stats-window" className="text-[10px] text-slate-500">
+        {forwardWindowCaption(results, statusStartedAt)}
         {" · all shadow strategies and symbols"}
       </p>
       <div className="grid gap-2 md:grid-cols-4">

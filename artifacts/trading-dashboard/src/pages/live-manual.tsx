@@ -9,9 +9,11 @@ import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 import { formatMoneyEstimate, type MoneyEstimate } from "@/lib/fxRiskEstimate";
 
 // What POST /api/live-intent/submit checks: three static tester caps
-// (routes/liveIntent.ts TESTER_CAPS). It does not run the pre-trade Risk
+// (routes/liveIntent.ts TESTER_CAPS). The max-loss cap compares only the Max
+// Loss figure typed here (maxLossUsd); the server never computes the loss at
+// the stop from lot, stop and price. It does not run the pre-trade Risk
 // Governor, does not read the kill switch and executes nothing anywhere.
-const TESTER_CAPS_TEXT = "lot ≤ 0.01, stop-loss required, max loss ≤ $5";
+const TESTER_CAPS_TEXT = "lot ≤ 0.01, stop-loss required, and the Max Loss you enter ≤ $5 (the loss at your stop is not computed)";
 
 type SubmitResp = {
   accepted: boolean; riskCheckPassed?: boolean; testerAccess: boolean; brokerExecution: boolean;
@@ -41,7 +43,7 @@ export default function LiveManualPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [resp, setResp] = useState<SubmitResp | null>(null);
   // undefined while loading; null when the read failed or did not answer.
-  const [perm, setPerm] = useState<{ killSwitchEngaged?: unknown } | null | undefined>(undefined);
+  const [perm, setPerm] = useState<{ reasons?: unknown } | null | undefined>(undefined);
   const [masterBridge, setMasterBridge] = useState<any>(null);
   const [quote, setQuote] = useState<any>(null);
 
@@ -76,13 +78,18 @@ export default function LiveManualPage() {
   const bridgeLoaded = masterBridge != null;
   const bridgeConnected = masterBridge?.detected === true;
   // Kill switch state comes only from the permission status (the safety-core
-  // kill switch). /api/system/mt5-deferred-status `simulator.enforcesKillSwitch`
-  // is a constant capability description, never the engaged state.
+  // kill switch). GET /api/permission/status returns the PermissionVerdict,
+  // which has no killSwitchEngaged field: an engaged switch is a reason with
+  // code KILL_SWITCH. A verdict without a reasons list was not read.
+  // /api/system/mt5-deferred-status `simulator.enforcesKillSwitch` is a
+  // constant capability description, never the engaged state.
+  const permReasons: Array<{ code?: unknown }> | null =
+    perm && Array.isArray(perm.reasons) ? (perm.reasons as Array<{ code?: unknown }>) : null;
   const killSwitch: "checking" | "engaged" | "off" | "unknown" =
     perm === undefined ? "checking"
-      : perm?.killSwitchEngaged === true ? "engaged"
-      : perm?.killSwitchEngaged === false ? "off"
-      : "unknown";
+      : permReasons === null ? "unknown"
+      : permReasons.some((r) => r?.code === "KILL_SWITCH") ? "engaged"
+      : "off";
   // The only quote this page loads is the ARX market simulator's
   // (/api/market/quote, executionEnvironment SIMULATOR): a random walk from a
   // fixed base price, not the market. A stop or target set off the real chart
@@ -164,7 +171,7 @@ export default function LiveManualPage() {
               <div><Label>Take Profit</Label><Input type="number" step="0.0001" value={takeProfit} onChange={e => setTakeProfit(e.target.value === "" ? "" : Number(e.target.value))} data-testid="ticket-tp" /></div>
             </div>
             <div>
-              <Label>Max Loss (USD)</Label>
+              <Label>Max Loss (USD) <span className="text-[10px] text-txt-muted" data-testid="ticket-maxloss-hint">(declared — not checked against your stop)</span></Label>
               <Input type="number" step="0.5" value={maxLoss} onChange={e => setMaxLoss(Number(e.target.value))} data-testid="ticket-maxloss" />
             </div>
             <div>
@@ -246,7 +253,7 @@ export default function LiveManualPage() {
                 </div>
                 <p className="text-txt-muted mt-1">{resp.reason}</p>
                 {typeof resp.riskCheckPassed === "boolean" && (
-                  <p className="mt-1" data-testid="ticket-response-caps">Tester caps: {resp.riskCheckPassed ? "passed" : "failed"} (Risk Governor not run)</p>
+                  <p className="mt-1" data-testid="ticket-response-caps">Tester caps: {resp.riskCheckPassed ? "passed" : "failed"} (lot, stop-loss set and your declared Max Loss; the loss at your stop was not computed; Risk Governor not run)</p>
                 )}
                 <p className="font-mono text-[10px] mt-1">intentId: {resp.intentId}</p>
               </div>

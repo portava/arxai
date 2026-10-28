@@ -12,8 +12,16 @@
 //   - The canonical freshness.status (fresh|stale|unavailable) drives a
 //     FreshnessBadge so a stale figure is clearly marked, never relabelled live.
 //   - realizedPnLPendingCount > 0 (closed trades whose realized P/L the server
-//     withheld) marks Realized P/L and Live equity "incomplete" — freshness
-//     says nothing about completeness.
+//     withheld) marks Realized P/L, Live equity and Equity after reserve
+//     "incomplete" — freshness says nothing about completeness.
+//   - floatingPnL null: the server builds liveEquity as allocated + realized +
+//     (floatingPnL ?? 0), so the unknown floating P/L is counted as 0. Live
+//     equity and Equity after reserve are marked "incomplete — floating P/L
+//     not included", and Available (which subtracts open-trade losses) says
+//     those losses are not included.
+//   - Open trades is only a count when the server read a live snapshot; with
+//     no balance, or no live snapshot (floatingPnL null and count 0), it
+//     reads "—", never a 0 nobody counted.
 //   - marginUsed / freeMargin are computed from ARX reserved risk, not broker
 //     margin, so they are labelled "Reserved risk" / "Equity after reserve".
 
@@ -66,6 +74,15 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
   const pendingCount = live?.realizedPnLPendingCount ?? 0;
   const pending = pendingCount > 0;
   const pendingSub = pending ? `incomplete — ${pendingCount} pending` : undefined;
+  // Figures built from liveEquity inherit both gaps: withheld realized P/L
+  // and an unavailable floating P/L (counted as 0 by the server).
+  const equityGaps: string[] = [];
+  if (pending) equityGaps.push(`${pendingCount} realized P/L pending`);
+  if (floatingUnavailable) equityGaps.push("floating P/L not included");
+  const equitySub = equityGaps.length > 0 ? `incomplete — ${equityGaps.join("; ")}` : undefined;
+  // With no live snapshot the server reports openTradeCount 0 and floating
+  // null without having counted anything.
+  const openTradesUnread = live == null || (live.floatingPnL == null && live.openTradeCount === 0);
 
   return (
     <div className={cn("rounded-xl border border-border bg-surface/40 p-3", className)}>
@@ -79,8 +96,12 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Tile label="Allocated" value={money(live?.allocatedBalance ?? null)} />
-        <Tile label="Live equity" value={money(live?.liveEquity ?? null)} sub={pending ? "incomplete" : undefined} />
-        <Tile label="Available" value={money(live?.availableBalance ?? null)} />
+        <Tile label="Live equity" value={money(live?.liveEquity ?? null)} sub={equitySub} />
+        <Tile
+          label="Available"
+          value={money(live?.availableBalance ?? null)}
+          sub={floatingUnavailable ? "open-trade losses not included" : undefined}
+        />
         <Tile
           label="Floating P/L"
           value={floating.text}
@@ -89,9 +110,19 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
         />
         <Tile label="Realized P/L" value={realized.text} tone={realized.tone} sub={pendingSub} />
         <Tile label="Reserved risk" value={money(live?.marginUsed ?? null)} sub="ARX reserve, not broker margin" />
-        <Tile label="Equity after reserve" value={money(live?.freeMargin ?? null)} />
-        <Tile label="Open trades" value={String(live?.openTradeCount ?? 0)} />
+        <Tile label="Equity after reserve" value={money(live?.freeMargin ?? null)} sub={equitySub} />
+        <Tile
+          label="Open trades"
+          value={openTradesUnread || live == null ? "—" : String(live.openTradeCount)}
+          sub={live != null && openTradesUnread ? "not read — no live snapshot" : undefined}
+        />
       </div>
+      {floatingUnavailable && live != null && live.openTradeCount > 0 && (
+        <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-floating-missing-note">
+          Live equity and equity after reserve are incomplete: the floating P/L of {live.openTradeCount} open
+          trade{live.openTradeCount === 1 ? "" : "s"} could not be read, so it is not included. No estimate is shown in its place.
+        </p>
+      )}
       {pending && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-pnl-pending-note">
           Realized P/L and live equity are incomplete: {pendingCount} closed trade{pendingCount === 1 ? " is" : "s are"} awaiting

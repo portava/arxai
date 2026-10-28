@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { PositionSideCard, type UnifiedPosition } from "./PositionSideCard";
+import { PositionSideCard, positionReportState, useNowMs, type UnifiedPosition } from "./PositionSideCard";
 import { resolveSafetyError } from "./safetyMessages";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -30,11 +30,15 @@ type ConfirmState =
 export function PositionPickerPanel() {
   const [data, setData] = useState<Resp | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>({ kind: "none" });
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
   const { user } = useCurrentUser();
+  // Same clock and freshness rule as the side card, so a row's P/L is only
+  // shown as current while the bridge report behind it is.
+  const nowMs = useNowMs();
   const isAdmin = user?.role === "ADMIN" || user?.role === "OWNER";
   const describe = (payload: unknown, status?: number) => {
     const r = resolveSafetyError(payload, status);
@@ -49,7 +53,7 @@ export function PositionPickerPanel() {
         const r = await fetch(u("/api/me/positions/all"), { credentials: "include" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as Resp;
-        if (!cancelled) { setData(j); setErr(null); }
+        if (!cancelled) { setData(j); setErr(null); setLoadedAt(Date.now()); }
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
       } finally {
@@ -124,7 +128,13 @@ export function PositionPickerPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {err && <div className="rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">Couldn't load positions: {err}</div>}
+          {err && (
+            <div data-testid="positions-load-error" className="rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">
+              {data && loadedAt != null
+                ? `Could not refresh positions (${err}). The list below is from the last successful load at ${new Date(loadedAt).toLocaleTimeString()}.`
+                : `Positions could not be loaded: ${err}`}
+            </div>
+          )}
           {!err && notLiveMode && !hasLive && (
             <div data-testid="positions-not-live" className="rounded border border-zinc-700 bg-zinc-900/40 p-2 text-xs text-zinc-400">
               <div>You are not currently in live trading mode.</div>
@@ -139,6 +149,10 @@ export function PositionPickerPanel() {
           {all.map((p) => {
             const key = `${p.scope}:${p.brokerTicket}`;
             const isSel = key === selected;
+            const report = positionReportState(p, nowMs);
+            const pnlClass = !report.confirmed || p.floatingPnl == null
+              ? "text-zinc-400"
+              : p.floatingPnl >= 0 ? "text-emerald-300" : "text-rose-300";
             return (
               <button
                 key={key}
@@ -157,7 +171,11 @@ export function PositionPickerPanel() {
                       {p.accountMode}
                     </Badge>
                   </div>
-                  <span className={`font-mono ${(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  <span
+                    data-testid={`text-row-pnl-${p.scope}-${p.brokerTicket}`}
+                    className={`font-mono ${pnlClass}`}
+                    title={report.confirmed ? "Floating P/L" : "Last reported P/L — not confirmed as current"}
+                  >
                     {p.floatingPnl == null ? "—" : (p.floatingPnl >= 0 ? "+" : "") + p.floatingPnl.toFixed(2)}
                   </span>
                 </div>
@@ -165,6 +183,11 @@ export function PositionPickerPanel() {
                   <span>#{p.brokerTicket ?? "—"}</span>
                   <span>lot {p.lotSize ?? "—"}</span>
                   <span>entry {p.entryPrice ?? "—"}</span>
+                  {!report.confirmed && (
+                    <span data-testid={`text-row-report-${p.scope}-${p.brokerTicket}`} className="text-amber-300">
+                      {report.status}
+                    </span>
+                  )}
                 </div>
               </button>
             );

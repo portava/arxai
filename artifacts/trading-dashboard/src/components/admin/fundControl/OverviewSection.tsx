@@ -40,6 +40,11 @@ function Unavailable() {
   return <span className="text-sm font-normal text-muted-foreground">Unavailable</span>;
 }
 
+// A query that has not answered yet is neither a zero nor a failure.
+function Loading() {
+  return <span className="text-sm font-normal text-muted-foreground">Loading…</span>;
+}
+
 const PENDING_STATUSES = new Set([
   "REQUESTED",
   "PENDING",
@@ -84,8 +89,18 @@ export function OverviewSection() {
   const requests = requestsQ.data?.requests ?? [];
   const settings = settingsQ.data?.settings;
 
-  const totalBrokerEquity = bridges.reduce((s, b) => s + (b.accountEquity ?? 0), 0);
-  const totalBrokerBalance = bridges.reduce((s, b) => s + (b.accountBalance ?? 0), 0);
+  // The mirror sends 0 for a balance / equity the EA never reported
+  // (accountBalanceReported / accountEquityReported false). Those bridges are
+  // left out of the totals and the tile says how many — a partial sum is
+  // never presented as the whole, and all-unreported reads "Unavailable".
+  const equityReported = (b: (typeof bridges)[number]) => b.accountEquityReported !== false && b.accountEquity != null;
+  const balanceReported = (b: (typeof bridges)[number]) => b.accountBalanceReported !== false && b.accountBalance != null;
+  const equityUnreported = bridges.filter((b) => !equityReported(b)).length;
+  const balanceUnreported = bridges.filter((b) => !balanceReported(b)).length;
+  const equityAllUnreported = bridges.length > 0 && equityUnreported === bridges.length;
+  const balanceAllUnreported = bridges.length > 0 && balanceUnreported === bridges.length;
+  const totalBrokerEquity = bridges.reduce((s, b) => s + (equityReported(b) ? b.accountEquity : 0), 0);
+  const totalBrokerBalance = bridges.reduce((s, b) => s + (balanceReported(b) ? b.accountBalance : 0), 0);
   const totalPoolValue = pools.reduce((s, p) => s + (p.totalPoolValue ?? 0), 0);
   const totalFeesAccrued = pools.reduce((s, p) => s + (p.feesAccrued ?? 0), 0);
   const totalFloating = bridges.reduce((s, b) => s + (b.floatingPlTotal ?? 0), 0);
@@ -100,6 +115,12 @@ export function OverviewSection() {
     (r) => r.movementType === "WITHDRAWAL" && PENDING_STATUSES.has(r.status.toUpperCase()),
   ).length;
 
+  // These three queries do not gate the skeleton above, so each card shows
+  // "Loading…" until its own data arrives instead of zeros.
+  const reconPending = !reconQ.isError && recon == null;
+  const plPending = !plQ.isError && pl == null;
+  const requestsPending = !requestsQ.isError && requestsQ.data == null;
+
   const openDiscrepancies = recon?.openCount ?? 0;
   const criticalDiscrepancies = recon?.criticalOpenCount ?? 0;
 
@@ -113,13 +134,23 @@ export function OverviewSection() {
             mirrorQ.isError ? (
               "Broker mirror unavailable"
             ) : (
-              <span className="flex items-center gap-1">
-                Balance {fmtMoney(totalBrokerBalance)} <FreshnessBadge freshness={bridgeFreshness} />
+              <span className="flex flex-col gap-0.5">
+                <span className="flex items-center gap-1">
+                  Balance {balanceAllUnreported ? "not reported" : fmtMoney(totalBrokerBalance)}
+                  {balanceUnreported > 0 && !balanceAllUnreported ? ` (${balanceUnreported} not reported)` : null}
+                  {bridges.length > 0 ? <FreshnessBadge freshness={bridgeFreshness} /> : " · no bridges registered"}
+                </span>
+                {equityUnreported > 0 ? (
+                  <span className="text-amber-400" data-testid="kpi-broker-equity-unreported">
+                    {equityUnreported} of {bridges.length} {bridges.length === 1 ? "bridge" : "bridges"}{" "}
+                    {equityUnreported === 1 ? "has" : "have"} not reported equity — not included
+                  </span>
+                ) : null}
               </span>
             )
           }
         >
-          {mirrorQ.isError ? <Unavailable /> : fmtMoney(totalBrokerEquity)}
+          {mirrorQ.isError || equityAllUnreported ? <Unavailable /> : fmtMoney(totalBrokerEquity)}
         </StatCard>
 
         <StatCard
@@ -150,7 +181,9 @@ export function OverviewSection() {
               ? "Pool ledger unavailable"
               : settings
                 ? `Mgmt ${fmtPct(settings.managementFeeAnnualPct)} · Perf ${fmtPct(settings.performanceFeePct)}`
-                : "Fee policy unavailable"
+                : settingsQ.isLoading
+                  ? "Fee policy loading…"
+                  : "Fee policy unavailable"
           }
         >
           {poolsQ.isError ? <Unavailable /> : fmtMoney(totalFeesAccrued)}
@@ -167,6 +200,8 @@ export function OverviewSection() {
           <CardContent className="space-y-2 text-sm">
             {reconQ.isError ? (
               <Row label="Status" value={<Unavailable />} testid="kpi-recon-unavailable" />
+            ) : reconPending ? (
+              <Row label="Status" value={<Loading />} testid="kpi-recon-loading" />
             ) : (
               <>
                 <Row label="Open discrepancies" value={fmtInt(openDiscrepancies)} testid="kpi-open-discrepancies" />
@@ -197,6 +232,8 @@ export function OverviewSection() {
           <CardContent className="space-y-2 text-sm">
             {requestsQ.isError ? (
               <Row label="Status" value={<Unavailable />} testid="kpi-capital-unavailable" />
+            ) : requestsPending ? (
+              <Row label="Status" value={<Loading />} testid="kpi-capital-loading" />
             ) : (
               <>
                 <Row
@@ -234,6 +271,8 @@ export function OverviewSection() {
           <CardContent className="space-y-2 text-sm">
             {plQ.isError ? (
               <Row label="Status" value={<Unavailable />} testid="kpi-allocation-unavailable" />
+            ) : plPending ? (
+              <Row label="Status" value={<Loading />} testid="kpi-allocation-loading" />
             ) : (
               <>
                 <Row

@@ -43,9 +43,16 @@ export function FirstRunReadinessPanel() {
       <CardHeader className="pb-3 border-b border-border">
         <CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
           First-run readiness
-          <span className="text-[10px] font-normal text-zinc-400 normal-case">
-            live trading armed
-          </span>
+          {/* Derived from the server's liveLocked field, never a fixed string. */}
+          {(q.data || q.isError) && (
+            <span data-testid="text-first-run-live-lock" className="text-[10px] font-normal text-zinc-400 normal-case">
+              {!q.data
+                ? "live lock status could not be loaded"
+                : q.data.liveLocked === true
+                  ? "live trading locked"
+                  : "server does not report live trading as locked"}
+            </span>
+          )}
         </CardTitle>
         {q.data && (
           <p className="text-xs text-zinc-400 mt-1">
@@ -87,9 +94,14 @@ export function FirstRunReadinessPanel() {
             ))}
           </ul>
         )}
-        <p className="text-[11px] text-zinc-500 mt-4 leading-relaxed">
-          Every status is read from the backend. Live trading remains BLOCKED; all order
-          flows route to the demo engine. Safety alerts are read-only — they never close a trade.
+        <p data-testid="text-first-run-footer" className="text-[11px] text-zinc-500 mt-4 leading-relaxed">
+          Every status is read from the backend.{" "}
+          {q.data?.liveLocked === true
+            ? "Live trading remains BLOCKED; all order flows route to the demo engine. "
+            : q.data
+              ? "The server does not report live trading as locked. "
+              : ""}
+          Safety alerts are read-only — they never close a trade.
         </p>
       </CardContent>
     </Card>

@@ -13826,6 +13826,22 @@ export const GetSystemStatusResponse = zod.object({
   allowedModes: zod.array(
     zod.enum(["OBSERVE_ONLY", "SUGGEST_ONLY", "PAPER_TRADING", "LIVE_TRADING"]),
   ),
+  activeHalts: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Every stop that halts the viewer's demo and live broker orders right now, read by the pre-trade Risk Governor's own reader (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). killSwitchEngaged is the safety-core switch only. An empty list means none is engaged; null means the stops could not be checked. GET \/system\/status only.",
+    ),
+  activeHaltReasons: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "One plain-English sentence per entry of activeHalts, in the same order.",
+    ),
+  activeHaltsCheckedAt: zod
+    .string()
+    .optional()
+    .describe("When activeHalts was read (ISO 8601)."),
 });
 
 /**
@@ -13898,6 +13914,22 @@ export const EngageKillSwitchResponse = zod.object({
         "LIVE_TRADING",
       ]),
     ),
+    activeHalts: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Every stop that halts the viewer's demo and live broker orders right now, read by the pre-trade Risk Governor's own reader (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). killSwitchEngaged is the safety-core switch only. An empty list means none is engaged; null means the stops could not be checked. GET \/system\/status only.",
+      ),
+    activeHaltReasons: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "One plain-English sentence per entry of activeHalts, in the same order.",
+      ),
+    activeHaltsCheckedAt: zod
+      .string()
+      .optional()
+      .describe("When activeHalts was read (ISO 8601)."),
   }),
 });
 
@@ -13940,6 +13972,22 @@ export const ResetKillSwitchResponse = zod.object({
         "LIVE_TRADING",
       ]),
     ),
+    activeHalts: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Every stop that halts the viewer's demo and live broker orders right now, read by the pre-trade Risk Governor's own reader (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). killSwitchEngaged is the safety-core switch only. An empty list means none is engaged; null means the stops could not be checked. GET \/system\/status only.",
+      ),
+    activeHaltReasons: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "One plain-English sentence per entry of activeHalts, in the same order.",
+      ),
+    activeHaltsCheckedAt: zod
+      .string()
+      .optional()
+      .describe("When activeHalts was read (ISO 8601)."),
   }),
 });
 
@@ -21673,6 +21721,18 @@ export const GetAdminFundBookBrokerMirrorResponse = zod.object({
       freshnessAsOf: zod.string().nullish(),
       openPositionCount: zod.number(),
       floatingPlTotal: zod.number(),
+      accountBalanceReported: zod
+        .boolean()
+        .optional()
+        .describe(
+          "False when the EA never reported a balance for this bridge; accountBalance is then 0 and is not a measured value.",
+        ),
+      accountEquityReported: zod
+        .boolean()
+        .optional()
+        .describe(
+          "False when the EA never reported equity for this bridge; accountEquity is then 0 and is not a measured value.",
+        ),
     }),
   ),
   openPositions: zod.array(

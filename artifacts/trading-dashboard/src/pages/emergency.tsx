@@ -49,11 +49,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+// The safety core's operating mode. The governed order pipeline (paper, demo
+// and live tickets) does not read it; only the legacy /mt5 command endpoints
+// and broker reconnect do, and they act only in LIVE_TRADING. The subs name
+// the posture each mode records, not something the order paths enforce.
+// PAPER_TRADING is simulated execution (safetyCore.ts), not an MT5 demo account.
 const MODE_DEFS: { mode: SetSystemModeBodyMode; label: string; sub: string; icon: typeof Eye }[] = [
-  { mode: "OBSERVE_ONLY", label: "OBSERVE", sub: "Watch market, no signals", icon: Eye },
-  { mode: "SUGGEST_ONLY", label: "SUGGEST", sub: "Generate signals, no execution", icon: Lightbulb },
-  { mode: "PAPER_TRADING", label: "DEMO", sub: "Execute on demo account", icon: FileText },
-  { mode: "LIVE_TRADING", label: "LIVE", sub: "Real capital at risk", icon: Zap },
+  { mode: "OBSERVE_ONLY", label: "OBSERVE", sub: "Watch-only posture", icon: Eye },
+  { mode: "SUGGEST_ONLY", label: "SUGGEST", sub: "Signals-only posture", icon: Lightbulb },
+  { mode: "PAPER_TRADING", label: "PAPER", sub: "Simulated-execution posture, not a demo account", icon: FileText },
+  { mode: "LIVE_TRADING", label: "LIVE", sub: "Real-money posture", icon: Zap },
 ];
 
 function severityClass(sev: string): string {
@@ -71,24 +76,60 @@ function linkHealthClass(h: string): string {
   return "bg-destructive/20 text-destructive border border-destructive/40";
 }
 
-function StatusBanner({ status }: { status: SystemStatus }) {
+// The stops GET /system/status reports in activeHalts (the pre-trade Risk
+// Governor's own reader). killSwitchEngaged is only the safety-core switch.
+const HALT_NAMES: Record<string, string> = {
+  platform_emergency_stop: "the platform emergency stop",
+  safety_core_kill_switch: "the safety-core kill switch",
+  trader_kill_switch: "your kill switch",
+};
+const haltName = (s: string) => HALT_NAMES[s] ?? s;
+
+/** Stops other than the safety-core switch that halt trading; null when they were not checked. */
+function otherHaltsOf(status: SystemStatus): { sources: string[]; reasons: string[] } | null {
+  if (!Array.isArray(status.activeHalts)) return null;
+  const sources: string[] = [];
+  const reasons: string[] = [];
+  status.activeHalts.forEach((s, i) => {
+    if (s === "safety_core_kill_switch") return;
+    sources.push(s);
+    reasons.push(status.activeHaltReasons?.[i] ?? `${haltName(s)} is engaged.`);
+  });
+  return { sources, reasons };
+}
+
+function StatusBanner({ status, stale = false }: { status: SystemStatus; stale?: boolean }) {
   const ks = status.killSwitchEngaged;
+  const others = otherHaltsOf(status);
+  const otherHalted = (others?.sources.length ?? 0) > 0;
   const profile = status.effectiveProfile as { description?: string; executionPermission?: string };
   const reasons = status.reasons ?? [];
   const blockers = status.blockers ?? [];
+  const checkedAt = status.activeHaltsCheckedAt ? new Date(status.activeHaltsCheckedAt).toLocaleTimeString() : null;
+  const title = ks
+    ? "KILL SWITCH ENGAGED"
+    : otherHalted
+      ? "Trading halted by another stop"
+      : others === null
+        ? "Safety-core kill switch released"
+        : "Safety Core Online";
+  // A status kept from an earlier read is never shown as a current all-clear.
+  const headline = stale && !ks && !otherHalted ? "Safety core status not current" : title;
   return (
-    <Card className={ks ? "border-destructive bg-destructive/5" : "border-border"}>
+    <Card className={ks || otherHalted ? "border-destructive bg-destructive/5" : "border-border"}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            {ks ? (
+            {ks || otherHalted ? (
               <AlertOctagon className="text-destructive" size={28} />
+            ) : others === null || stale ? (
+              <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={28} />
             ) : (
               <ShieldCheck className="text-primary" size={28} />
             )}
             <div>
-              <CardTitle className="text-xl tracking-wide">
-                {ks ? "KILL SWITCH ENGAGED" : "Safety Core Online"}
+              <CardTitle className="text-xl tracking-wide" data-testid="safety-core-headline">
+                {headline}
               </CardTitle>
               <CardDescription className="mt-1">
                 Operational Mode <Badge variant="outline" className="ml-1 font-mono">{status.operationalMode}</Badge>
@@ -102,12 +143,46 @@ function StatusBanner({ status }: { status: SystemStatus }) {
               MT5 LINK: {status.mt5LinkHealth}
               {status.secondsSinceMt5Heartbeat !== null && status.secondsSinceMt5Heartbeat !== undefined ? ` · ${status.secondsSinceMt5Heartbeat}s` : ""}
             </Badge>
-            <Badge variant="outline" className="font-mono text-xs">
-              EXEC: {profile.executionPermission ?? "—"}
+            <Badge
+              variant="outline"
+              className="font-mono text-xs"
+              data-testid="state-profile-exec"
+              title="The execution permission the global state's profile names. It is advisory: no order path reads it, and it does not reflect the operational mode."
+            >
+              STATE PROFILE: {profile.executionPermission ?? "—"} · advisory
             </Badge>
           </div>
         </div>
       </CardHeader>
+      <CardContent className="pt-0 space-y-2">
+        <div className="text-sm" data-testid="safety-core-halts">
+          {others === null ? (
+            <p className="text-yellow-700 dark:text-yellow-400">
+              The other stops (the platform emergency stop and your kill switch) could not be checked, so this page
+              cannot say whether they halt trading. Only the safety-core kill switch is shown here.
+            </p>
+          ) : otherHalted ? (
+            <div className="flex items-start gap-2">
+              <XCircle size={16} className="text-destructive shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-destructive">
+                  Demo and live broker orders are halted by {others.sources.map(haltName).join(" and ")}
+                  {ks ? " as well" : ""}:
+                </span>{" "}
+                {others.reasons.join(" ")}
+                {checkedAt && <span className="text-muted-foreground"> Checked at {checkedAt}.</span>}
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">
+              {ks
+                ? "No other stop is engaged (the platform emergency stop and your kill switch are released)."
+                : "No stop is engaged: the platform emergency stop, the safety-core kill switch and your kill switch are released."}
+              {checkedAt && ` Checked at ${checkedAt}.`}
+            </p>
+          )}
+        </div>
+      </CardContent>
       {(reasons.length > 0 || blockers.length > 0 || profile.description) && (
         <CardContent className="pt-0 space-y-2">
           {profile.description && (
@@ -182,7 +257,12 @@ function ModeSwitcher({ status }: { status: SystemStatus }) {
         <CardTitle className="flex items-center gap-2">
           <ShieldCheck size={20} /> Operational Mode
         </CardTitle>
-        <CardDescription>Control Tower governs which mode is allowed. LIVE requires multi-step acknowledgement.</CardDescription>
+        <CardDescription data-testid="mode-scope">
+          Records the safety core&apos;s operating mode. The governed order pipeline (paper, demo and live tickets)
+          does not read it: OBSERVE or SUGGEST does not stop those orders (use the kill switch to halt them), and
+          LIVE does not enable live orders. Only the legacy MT5 command endpoints and broker reconnect read it,
+          and they act only in LIVE. LIVE requires multi-step acknowledgement.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -227,7 +307,7 @@ function ModeSwitcher({ status }: { status: SystemStatus }) {
             </AlertDialogTitle>
             <AlertDialogDescription className="py-3 text-base">
               {confirmLive?.step === 1
-                ? "LIVE mode places real capital at risk. The Risk Governor and Control Tower will still gate every order, but live executions cannot be undone. Continue?"
+                ? "This records LIVE_TRADING as the safety core's mode. The legacy MT5 command endpoints and broker reconnect act only in this mode. Whether a live order can be placed is decided by the live venue switch, the stop switches and the pre-trade Risk Governor, not by this mode, and live executions cannot be undone. Continue?"
                 : "Final confirmation: switching to LIVE_TRADING now. Type-equivalent click required."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -307,6 +387,8 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
   };
 
   const ks = status.killSwitchEngaged;
+  const others = otherHaltsOf(status);
+  const otherHalted = (others?.sources.length ?? 0) > 0;
 
   return (
     <Card className={ks ? "border-destructive/60" : ""}>
@@ -321,6 +403,12 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {!ks && otherHalted && (
+          <p className="mb-4 text-sm text-muted-foreground" data-testid="kill-switch-other-halts">
+            Trading is already halted by {others!.sources.map(haltName).join(" and ")}. This switch is separate:
+            engaging it adds the safety-core stop, and resetting it later does not release the others.
+          </p>
+        )}
         {ks && status.killSwitchReason && (
           <div className="mb-4 p-3 rounded-md bg-destructive/10 border border-destructive/40 text-sm">
             <span className="font-semibold">Reason:</span> {status.killSwitchReason}
@@ -482,6 +570,29 @@ export default function Emergency() {
   const vaultQ = useGetSystemVault({ limit: 50 }, { query: { queryKey: getGetSystemVaultQueryKey({ limit: 50 }), refetchInterval: 5000 } });
   const transitionsQ = useGetSystemStateTransitions({ limit: 50 }, { query: { queryKey: getGetSystemStateTransitionsQueryKey({ limit: 50 }), refetchInterval: 10000 } });
 
+  if (!statusQ.data && statusQ.isError) {
+    return (
+      <div className="space-y-4 p-2">
+        <Card className="border-destructive/60" data-testid="status-load-error">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle size={20} /> Safety core status could not be loaded
+            </CardTitle>
+            <CardDescription>
+              GET /api/system/status failed, so the kill switch, operational mode and the other stops are unknown
+              here. Nothing on this page is shown until a read succeeds.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button variant="outline" onClick={() => void statusQ.refetch()} data-testid="button-retry-status">
+              <RefreshCw size={16} className="mr-2" /> Retry
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
   if (statusQ.isLoading || !statusQ.data) {
     return (
       <div className="space-y-4 p-2">
@@ -493,6 +604,8 @@ export default function Emergency() {
   }
 
   const status = statusQ.data;
+  // react-query keeps the last good status while a later poll fails.
+  const staleSince = statusQ.isError ? (statusQ.dataUpdatedAt || null) : null;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 p-2">
@@ -514,7 +627,22 @@ export default function Emergency() {
         )}
       </div>
 
-      <StatusBanner status={status} />
+      {statusQ.isError && (
+        <div
+          className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300"
+          data-testid="status-stale"
+        >
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>
+            The latest status read failed
+            {statusQ.errorUpdatedAt ? ` at ${new Date(statusQ.errorUpdatedAt).toLocaleTimeString()}` : ""}. Showing the
+            last status read
+            {staleSince ? ` at ${new Date(staleSince).toLocaleTimeString()}` : ""}; it may be out of date.
+          </span>
+        </div>
+      )}
+
+      <StatusBanner status={status} stale={statusQ.isError} />
 
       <div className="grid lg:grid-cols-2 gap-6">
         <ModeSwitcher status={status} />
@@ -551,6 +679,8 @@ export default function Emergency() {
                 <div className="space-y-2">
                   {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
                 </div>
+              ) : vaultQ.isError && !vaultQ.data ? (
+                <p className="text-sm text-destructive p-4 text-center" data-testid="vault-load-error">Vault events could not be loaded.</p>
               ) : (
                 <VaultList events={vaultQ.data?.events ?? []} />
               )}
@@ -560,6 +690,8 @@ export default function Emergency() {
                 <div className="space-y-2">
                   {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
                 </div>
+              ) : transitionsQ.isError && !transitionsQ.data ? (
+                <p className="text-sm text-destructive p-4 text-center" data-testid="transitions-load-error">State transitions could not be loaded.</p>
               ) : (
                 <TransitionsList transitions={transitionsQ.data?.transitions ?? []} />
               )}

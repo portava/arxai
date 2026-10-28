@@ -171,9 +171,13 @@ export function PropExtendedRulesPanel({ challengeId, rules, disabled }: Props) 
               onChange={bool("strictGuardrailsEnabled")} disabled={disabled} />
             <span className="font-medium text-slate-100">Strict guardrails</span>
           </label>
-          <p className="mt-1 text-[11px] text-slate-400">
-            When enabled, HARD rule violations escalate demo rule status to <span className="font-mono text-amber-300">BLOCKED</span>{" "}
-            (demo actions are flagged, never executed). Live execution remains locked at all times.
+          {/* Only the assistant's prop-status tool reads this flag. The challenge
+              evaluator and the paper order path do not, so the copy must not
+              promise BLOCKED status or flagged demo actions. */}
+          <p data-testid="text-strict-guardrails-scope" className="mt-1 text-[11px] text-slate-400">
+            Saved with this challenge. Today it only changes what the assistant reports: with it on, a hard rule
+            violation is reported as <span className="font-mono text-amber-300">BLOCKED</span> instead of VIOLATION.
+            It does not block, flag or change any order, and the challenge evaluation on this page ignores it.
           </p>
         </div>
       </div>

@@ -36,12 +36,16 @@ type Headline = { label: string; tone: "ok" | "warn" | "bad" };
 /**
  * Headline from what was actually checked: the database ping AND the MT5/EA
  * bridge heartbeat aggregate. The server's `ok` can only be downgraded here.
+ * The server already folds an unread bridge aggregate and all-bridges-down
+ * into ok:false, so the specific causes are checked before the generic
+ * "Degraded" — otherwise an unknown bridge state reads as a measured failure.
  */
 function workflowHeadline(d: RuntimeHealth): Headline {
   const b = d.bridge;
-  if (!d.ok || !d.database.ok) return { label: "Degraded", tone: "bad" };
+  if (!d.database.ok) return { label: "Degraded", tone: "bad" };
   if (b.readable === false) return { label: "Bridge status unknown", tone: "warn" };
   if (b.total > 0 && b.healthy === 0) return { label: "Degraded — no bridge heartbeating", tone: "bad" };
+  if (!d.ok) return { label: "Degraded", tone: "bad" };
   const notFresh = b.stale + b.down;
   if (notFresh > 0) return { label: `Attention — ${notFresh} bridge${notFresh === 1 ? "" : "s"} not fresh`, tone: "warn" };
   return { label: "Healthy", tone: "ok" };

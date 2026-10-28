@@ -46,8 +46,31 @@ function fmtAgeShort(ms: number): string {
   return `${h}h ${m % 60}m ago`;
 }
 
+/**
+ * How long a bridge report counts as current. Mirrors the server's
+ * UNIFIED_POSITION_FRESH_MS (api-server routes/mePositionsUnified.ts). The
+ * server's FRESH verdict is only true when it was built; the client re-checks
+ * the report age against the same window so a verdict cached across failed
+ * polls is downgraded, never kept forever.
+ */
+export const POSITION_REPORT_FRESH_MS = 30_000;
+
+/**
+ * Wall clock that re-renders the caller every `intervalMs`, so report ages
+ * ("3s ago") and the freshness re-check keep moving even when no new data
+ * arrives (for example while the positions poll keeps failing).
+ */
+export function useNowMs(intervalMs = 1000): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return nowMs;
+}
+
 export interface PositionReportState {
-  /** True only when the server marked the row FRESH. */
+  /** True only when the server marked the row FRESH and the report is still within POSITION_REPORT_FRESH_MS. */
   confirmed: boolean;
   /** Status field text. */
   status: string;
@@ -57,14 +80,15 @@ export interface PositionReportState {
 
 // What the side card may say about whether this position is open right now.
 // The feed lists rows that passed the open-exposure predicate; "open now" is
-// only asserted when the bridge reported the row recently (server FRESH).
+// only asserted when the bridge reported the row recently (server FRESH) AND
+// that report is still recent now — the client may only downgrade the server.
 export function positionReportState(p: Pick<UnifiedPosition, "observedAt" | "freshness">, nowMs = Date.now()): PositionReportState {
   const observedMs = p.observedAt ? new Date(p.observedAt).getTime() : NaN;
   const known = Number.isFinite(observedMs);
   const lastReported = known
     ? `${new Date(observedMs).toLocaleTimeString()} (${fmtAgeShort(nowMs - observedMs)})`
     : "Not reported";
-  if (p.freshness === "FRESH" && known) {
+  if (p.freshness === "FRESH" && known && nowMs - observedMs <= POSITION_REPORT_FRESH_MS) {
     return { confirmed: true, status: "Open — reported by bridge", lastReported };
   }
   if (known) {
@@ -207,7 +231,8 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
   const rr = useMemo(() => calcRR(p.side, p.entryPrice, p.stopLoss, p.takeProfit), [p.side, p.entryPrice, p.stopLoss, p.takeProfit]);
 
   const openedAtLabel = p.openedAt ? new Date(p.openedAt).toLocaleString() : "—";
-  const report = positionReportState(p);
+  const nowMs = useNowMs();
+  const report = positionReportState(p, nowMs);
   const isLive = p.accountMode === "LIVE";
 
   const handleRefreshAnalysis = () => {

@@ -20,7 +20,7 @@ import type {
   ScalpJournalEntry,
   ScalpSymbolPersonality,
 } from "@workspace/api-client-react";
-import { directionTone, fmtMoney } from "./scalpLabels";
+import { directionTone, fmtScalpMoney } from "./scalpLabels";
 import { useAssistantName } from "@/lib/assistant-name";
 
 // RubyScalpReviewPanel (Phase 3) — the after-action review of recently closed
@@ -43,15 +43,17 @@ function resultBadge(entry: ScalpJournalEntry): { label: string; tone: string; i
 
 // Outcome P/L line — honest about what we actually know. KNOWN = the broker's
 // realised number; ESTIMATED = our last observed floating figure; UNKNOWN =
-// we never got a trustworthy close figure (common on the demo path).
+// we never got a trustworthy close figure (common on the demo path). The
+// figures are in the account's currency, which the entry does not carry, so
+// no "$" is assumed.
 function plLine(entry: ScalpJournalEntry): { text: string; tone: string; note: string | null } {
   if (entry.plQuality === "KNOWN" && entry.realizedPl != null) {
     const tone = entry.realizedPl > 0 ? "text-success" : entry.realizedPl < 0 ? "text-danger" : "text-muted-foreground";
-    return { text: fmtMoney(entry.realizedPl), tone, note: null };
+    return { text: fmtScalpMoney(entry.realizedPl, null), tone, note: null };
   }
   if (entry.plQuality === "ESTIMATED" && entry.lastFloatingPl != null) {
     const tone = entry.lastFloatingPl > 0 ? "text-success" : entry.lastFloatingPl < 0 ? "text-danger" : "text-muted-foreground";
-    return { text: `${fmtMoney(entry.lastFloatingPl)}`, tone, note: "estimated from the last reading" };
+    return { text: fmtScalpMoney(entry.lastFloatingPl, null), tone, note: "estimated from the last reading" };
   }
   return { text: "—", tone: "text-muted-foreground", note: "the broker never sent a final figure" };
 }

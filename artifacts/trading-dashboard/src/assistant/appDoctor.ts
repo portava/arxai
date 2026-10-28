@@ -222,6 +222,10 @@ export function explainAppStatus(ctx: RuntimeContext): {
 
   const whyLiveUnavailable = ctx.emergencyStopActive === true
     ? "Emergency Stop is engaged."
+    : ctx.bridge === null && ctx.bridgeStatus === "loading"
+      // First read still in flight — nothing has failed yet (diagnose() also
+      // waits for "unavailable" before it reports doc-posture-unknown).
+      ? "The server's bridge and safety posture is still loading, so ARX cannot say yet which lock applies."
     : ctx.bridge === null
       ? "The server's bridge and safety posture could not be read, so ARX cannot say which lock applies."
     : !ctx.heartbeatPresent

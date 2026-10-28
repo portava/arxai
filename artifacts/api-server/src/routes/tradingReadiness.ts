@@ -128,7 +128,9 @@ async function gatherSignals(userId: number) {
   const safety = posture.present || !posture.readable
     ? {
       killSwitchEngaged: stopSourceEngaged(stop, "safety_core_kill_switch"),
-      operationalMode: posture.operationalMode ?? "OBSERVE_ONLY",
+      // null = the mode could not be read. The evaluator still treats it as
+      // OBSERVE_ONLY (fail-closed) but says it was not read.
+      operationalMode: posture.operationalMode ?? null,
     }
     : null;
   const emergencyStopEngaged = stopSourceEngaged(stop, "platform_emergency_stop");
@@ -324,20 +326,30 @@ export function evaluateReadiness(
   const coreKs = signals.safety?.killSwitchEngaged === true;
   const emergency = signals.emergencyStopEngaged;
   const ks = coreKs || emergency;
-  const opMode = signals.safety?.operationalMode ?? "OBSERVE_ONLY";
+  // An unread mode is treated as OBSERVE_ONLY (fail-closed, unchanged), but
+  // it is never shown as if the safety core had reported it.
+  const modeRead = signals.safety?.operationalMode ?? null;
+  const opMode = modeRead ?? "OBSERVE_ONLY";
   const modeBlocks = opMode === "OBSERVE_ONLY" || opMode === "SUGGEST_ONLY";
-  const safetyBlocks = lockCount > 0 || ks || modeBlocks;
+  const modeText = modeRead != null
+    ? `Operational mode: ${modeRead}`
+    : signals.safety == null
+      ? "No safety core posture on record — operational mode treated as OBSERVE_ONLY"
+      : "Operational mode could not be read from the safety core — treated as OBSERVE_ONLY";
   checklist.push({ id: "safety", label: "No active risk lock",
     status: ks ? "FAIL" : lockCount > 0 ? "FAIL" : modeBlocks ? "WARN" : "PASS",
     detail: coreKs ? "Kill switch engaged"
       : emergency ? "Platform emergency stop engaged"
       : lockCount > 0 ? `${lockCount} active risk lock(s)`
-      : modeBlocks ? `Operational mode: ${opMode}`
-      : `Operational mode: ${opMode}` });
+      : modeText });
   if (coreKs) { blockers.push("Kill switch engaged"); lockedByHard = true; }
   if (emergency) { blockers.push("Platform emergency stop engaged"); lockedByHard = true; }
   if (lockCount > 0) { blockers.push(`${lockCount} active risk lock(s)`); lockedByHard = true; }
-  if (modeBlocks && !ks && lockCount === 0) warnings.push(`Operational mode '${opMode}' does not permit live execution`);
+  if (modeBlocks && !ks && lockCount === 0) {
+    warnings.push(modeRead != null
+      ? `Operational mode '${opMode}' does not permit live execution`
+      : "Operational mode not read — treated as OBSERVE_ONLY, which does not permit live execution");
+  }
 
   // ── Score ────────────────────────────────────────────────────────────────
   const passes = checklist.filter((c) => c.status === "PASS").length;
@@ -375,8 +387,10 @@ function buildSummary(
     return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged || signals.emergencyStopEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
   }
   if (status === "NOT_READY") {
+    // Name the checks that actually failed. Broker / news / risk-lock failures
+    // always give LOCKED, so a fixed list here would point at the wrong items.
     const failed = checklist.filter((c) => c.status === "FAIL").map((c) => c.label);
-    return `NOT_READY — readiness score ${score}/100. Complete the failed checklist items (${failed.join(", ")}) before starting.`;
+    return `NOT_READY — readiness score ${score}/100. Failed checks: ${failed.join(", ")}. Complete them before starting.`;
   }
   if (status === "CAUTION") {
     const sleep = inp.sleepQuality ?? 0;

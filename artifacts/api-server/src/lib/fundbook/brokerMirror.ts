@@ -119,6 +119,11 @@ export interface BridgeMirror {
   freshnessAsOf: Date | null;
   openPositionCount: number;
   floatingPlTotal: number;
+  // accountBalance / accountEquity are sent as 0 when the EA never reported
+  // them; these say whether the figure is a reported value, so a total can
+  // disclose the bridges it leaves out instead of counting them as $0.00.
+  accountBalanceReported: boolean;
+  accountEquityReported: boolean;
 }
 
 /**
@@ -180,6 +185,8 @@ export async function getBrokerMirror(now: number = Date.now()): Promise<{
       freshnessAsOf: freshnessAsOf ?? null,
       openPositionCount: list.length,
       floatingPlTotal: floatingPlTotal,
+      accountBalanceReported: c.accountBalance != null,
+      accountEquityReported: c.accountEquity != null,
     };
   });
 

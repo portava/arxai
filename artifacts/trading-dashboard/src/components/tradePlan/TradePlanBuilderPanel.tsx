@@ -45,6 +45,13 @@ const STATUS_COLORS: Record<Status, string> = {
   CANCELED: "bg-slate-800 text-slate-400",
 };
 
+// What a failed request reports: the HTTP status, or the browser's network
+// error. Shown verbatim so the user knows the request failed rather than
+// seeing an empty or unchanged screen.
+function failureDetail(e: unknown): string {
+  return e instanceof Error && e.message ? e.message : "unknown error";
+}
+
 function asNum(v: string): number | null {
   if (v === "" || v == null) return null;
   const n = Number(v);
@@ -58,7 +65,7 @@ export function TradePlanBuilderPanel() {
     queryKey: ["trade-plans"],
     queryFn: async () => {
       const r = await fetch("/api/trade-plans?limit=20");
-      if (!r.ok) throw new Error("Failed to load trade plans");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
   });
@@ -75,7 +82,7 @@ export function TradePlanBuilderPanel() {
   const create = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/trade-plans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
-      if (!r.ok) throw new Error("create failed");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json() as Promise<TradePlan>;
     },
     onSuccess: (p) => { setActiveId(p.id); qc.invalidateQueries({ queryKey: ["trade-plans"] }); },
@@ -92,7 +99,7 @@ export function TradePlanBuilderPanel() {
       ];
       for (const k of keys) if (input[k] !== undefined) body[k] = input[k];
       const r = await fetch(`/api/trade-plans/${active.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      if (!r.ok) throw new Error("save failed");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
@@ -102,7 +109,7 @@ export function TradePlanBuilderPanel() {
     mutationFn: async () => {
       if (!active) return;
       const r = await fetch(`/api/trade-plans/${active.id}/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      if (!r.ok) throw new Error("validate failed");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
@@ -112,13 +119,35 @@ export function TradePlanBuilderPanel() {
     mutationFn: async () => {
       if (!active) return;
       const r = await fetch(`/api/trade-plans/${active.id}/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      if (!r.ok) throw new Error("cancel failed");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
+  // A failed save / validate / cancel belongs to the plan it was tried on;
+  // clear it when the user switches plans so it is not shown against another.
+  useEffect(() => {
+    save.reset();
+    validate.reset();
+    cancel.reset();
+  }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const editable = active && active.status !== "EXECUTED" && active.status !== "CANCELED";
+
+  // "No plans yet" is only true once the list has actually loaded empty. A
+  // failed or still-pending request says nothing about whether plans exist.
+  const listLoaded = list.status === "success";
+  const listFailed = list.isError;
+  const hasStaleList = listFailed && (list.data?.plans?.length ?? 0) > 0;
+
+  const actionError = save.isError
+    ? `Your changes were not saved (${failureDetail(save.error)}).`
+    : validate.isError
+      ? `The plan was not validated (${failureDetail(validate.error)}). Its status and checklist below are unchanged.`
+      : cancel.isError
+        ? `The plan was not cancelled (${failureDetail(cancel.error)}).`
+        : null;
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
@@ -131,6 +160,26 @@ export function TradePlanBuilderPanel() {
         >
           {create.isPending ? "Creating…" : "+ New trade plan"}
         </button>
+        {create.isError && (
+          <p data-testid="trade-plan-create-error" role="alert" className="text-xs text-red-300">
+            A new plan was not created ({failureDetail(create.error)}).
+          </p>
+        )}
+        {listFailed && (
+          <div data-testid="trade-plans-load-error" role="alert" className="rounded-md border border-red-800 bg-red-950/40 p-2 text-xs text-red-200">
+            {hasStaleList
+              ? `Your trade plans could not be loaded just now (${failureDetail(list.error)}). The list below is from the last successful load and may be out of date.`
+              : `Your trade plans could not be loaded (${failureDetail(list.error)}). This is not an empty list — saved plans are not shown because the request failed.`}
+            <button
+              type="button"
+              onClick={() => list.refetch()}
+              className="ml-1 underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {list.isPending && <p className="text-xs text-slate-500">Loading your trade plans…</p>}
         <div className="space-y-1">
           {(list.data?.plans ?? []).map((p) => (
             <button
@@ -149,15 +198,25 @@ export function TradePlanBuilderPanel() {
               </div>
             </button>
           ))}
-          {!list.data?.plans?.length && <p className="text-xs text-slate-500">No plans yet.</p>}
+          {listLoaded && !list.data?.plans?.length && <p className="text-xs text-slate-500">No plans yet.</p>}
         </div>
       </aside>
 
       {/* editor */}
       {!active ? (
-        <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
-          Create a new trade plan to begin.
-        </div>
+        listFailed ? (
+          <div data-testid="trade-plan-editor-unavailable" className="rounded-lg border border-red-800 bg-red-950/30 p-6 text-sm text-red-200">
+            Your trade plans could not be loaded, so ARX cannot show whether you already have a plan for this trade. Retry loading before starting a new one.
+          </div>
+        ) : list.isPending ? (
+          <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
+            Loading your trade plans…
+          </div>
+        ) : (
+          <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
+            Create a new trade plan to begin.
+          </div>
+        )
       ) : (
         <section className="space-y-4">
           <div className="flex items-center justify-between">
@@ -230,6 +289,11 @@ export function TradePlanBuilderPanel() {
                 Cancel plan
               </button>
             </div>
+            {actionError && (
+              <p data-testid="trade-plan-action-error" role="alert" className="sm:col-span-2 text-xs text-red-300">
+                {actionError}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

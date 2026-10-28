@@ -22,8 +22,13 @@ function statusColor(s: string) {
   return "bg-muted text-foreground";
 }
 
+// The server computes counts over the newest `limit` intents it returns
+// (default 100). `hasMore` says whether older intents exist beyond that
+// window; null when the server did not say.
+type QueueWindow = { limit: number | null; hasMore: boolean | null };
+
 type QueueLoad =
-  | { kind: "ok"; intents: Intent[]; counts: Record<string, number> }
+  | { kind: "ok"; intents: Intent[]; counts: Record<string, number>; window: QueueWindow }
   | { kind: "withheld"; note: string }
   | { kind: "error"; message: string };
 
@@ -45,7 +50,11 @@ async function loadQueue(): Promise<QueueLoad> {
       return { kind: "error", message: "Response did not include an intents list." };
     }
     const counts = (body.counts && typeof body.counts === "object") ? body.counts as Record<string, number> : {};
-    return { kind: "ok", intents: body.intents as Intent[], counts };
+    const queueWindow: QueueWindow = {
+      limit: typeof body.limit === "number" ? body.limit : null,
+      hasMore: typeof body.hasMore === "boolean" ? body.hasMore : null,
+    };
+    return { kind: "ok", intents: body.intents as Intent[], counts, window: queueWindow };
   } catch (e) {
     return { kind: "error", message: e instanceof Error ? e.message : "Network error" };
   }
@@ -70,6 +79,17 @@ export default function LiveIntentQueuePage() {
   useEffect(() => { void load(); }, []);
 
   const loaded = loadState?.kind === "ok";
+  const win: QueueWindow | null = loadState?.kind === "ok" ? loadState.window : null;
+  // The page asks for the server's default window (100).
+  const windowSize = win?.limit ?? 100;
+  const wholeQueue = win?.hasMore === false;
+  const countScope = !loaded
+    ? null
+    : wholeQueue
+      ? `Counts cover all ${intents.length} intents in the queue.`
+      : win?.hasMore === true
+        ? `Counts cover the newest ${windowSize} intents only. Older intents exist and are not counted.`
+        : `Counts cover the ${intents.length} newest intents returned (the server returns at most ${windowSize}). Older intents, if any, are not counted.`;
   const filtered = intents.filter(i =>
     (sourceFilter === "ALL" || i.source === sourceFilter) &&
     (statusFilter === "ALL" || i.status === statusFilter)
@@ -87,7 +107,7 @@ export default function LiveIntentQueuePage() {
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         {[
-          { k: "total", l: "Total" },
+          { k: "total", l: wholeQueue ? "Total" : `Total (latest ${windowSize})` },
           { k: "pendingMt5", l: "Pending MT5" },
           { k: "ready", l: "Ready" },
           { k: "rejected", l: "Rejected" },
@@ -96,6 +116,9 @@ export default function LiveIntentQueuePage() {
           <Card key={s.k}><CardContent className="pt-3"><div className="text-[11px] text-muted-foreground">{s.l}</div><div className="text-2xl font-mono" data-testid="intent-count-value">{loaded && typeof counts[s.k] === "number" ? counts[s.k] : "—"}</div></CardContent></Card>
         ))}
       </div>
+      {countScope && (
+        <p className="text-[11px] text-muted-foreground -mt-2" data-testid="intent-count-scope">{countScope}</p>
+      )}
 
       {loadState?.kind === "withheld" && (
         <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm" data-testid="intent-queue-scope-note">
@@ -111,7 +134,7 @@ export default function LiveIntentQueuePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Intents</CardTitle>
-          <CardDescription>{loaded ? <>Newest first. {filtered.length} of {intents.length} shown.</> : loading ? "Loading…" : "Queue not available."}</CardDescription>
+          <CardDescription>{loaded ? <>Newest first. {filtered.length} of {intents.length} shown{wholeQueue ? "" : ` (the newest ${windowSize} at most)`}.</> : loading ? "Loading…" : "Queue not available."}</CardDescription>
           <div className="flex flex-wrap gap-2 pt-2">
             <select className="text-xs bg-background border border-border rounded px-2 py-1" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} data-testid="source-filter">
               <option value="ALL">all sources</option>

@@ -3,16 +3,46 @@ import { useGetPortfolioExposure, useGetCorrelationWarnings, getGetPortfolioExpo
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { Briefcase, AlertTriangle, TrendingDown } from "lucide-react";
 
 const FALLBACK_SOURCE_NOTE =
-  "From the legacy trades table only. Broker positions are not included, so an empty view does not mean you have no open exposure.";
+  "From the legacy trades table only: simulated rows that no broker order stood behind. This table no longer records new trades. Your paper book (paper orders) and DEMO EA positions are not included. Broker positions are not included, so an empty view does not mean you have no open exposure.";
+
+// Fixed client-side scope line, shown whatever the server note says (the
+// client may only downgrade): every figure here comes from a frozen table of
+// simulated rows, not from the trader's current paper book or EA positions.
+const SCOPE_LINE =
+  "Simulated rows from the legacy trades table, which no longer records new trades. Your current paper book, DEMO EA positions and broker positions are not shown here.";
+
+// Sign before the symbol: "-$12.00", not "$-12.00".
+function money(v: number): string {
+  return `${v < 0 ? "-" : ""}$${Math.abs(v).toFixed(2)}`;
+}
 
 export default function Portfolio() {
-  const { data: exp, isLoading } = useGetPortfolioExposure({ query: { queryKey: getGetPortfolioExposureQueryKey(), refetchInterval: 10000 } });
-  const { data: warns } = useGetCorrelationWarnings({ query: { queryKey: getGetCorrelationWarningsQueryKey(), refetchInterval: 10000 } });
+  const expQ = useGetPortfolioExposure({ query: { queryKey: getGetPortfolioExposureQueryKey(), refetchInterval: 10000 } });
+  const warnQ = useGetCorrelationWarnings({ query: { queryKey: getGetCorrelationWarningsQueryKey(), refetchInterval: 10000 } });
+  const exp = expQ.data;
+  const warns = warnQ.data;
 
-  if (isLoading || !exp) return <Skeleton className="h-96 w-full" />;
+  // A failed first read is "could not be loaded", never an endless skeleton.
+  if (!exp) {
+    if (expQ.isError) {
+      return (
+        <Card className="border-destructive/40" data-testid="portfolio-load-error">
+          <CardContent className="py-6 space-y-3">
+            <p className="text-sm">Portfolio exposure could not be loaded. No figures are shown because none were read.</p>
+            <Button size="sm" variant="outline" onClick={() => void expQ.refetch?.()} data-testid="button-retry-exposure">Retry</Button>
+          </CardContent>
+        </Card>
+      );
+    }
+    return <Skeleton className="h-96 w-full" />;
+  }
+  // A failed poll after a good read keeps the last figures; say they are not current.
+  const loadedAt = expQ.dataUpdatedAt ? new Date(expQ.dataUpdatedAt).toLocaleTimeString() : null;
+  const failedAt = expQ.errorUpdatedAt ? new Date(expQ.errorUpdatedAt).toLocaleTimeString() : null;
 
   const renderBars = (label: string, data: Record<string, number> | undefined) => {
     const entries = Object.entries(data ?? {});
@@ -37,36 +67,55 @@ export default function Portfolio() {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
         <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Briefcase className="text-primary" /> Portfolio Exposure
+          <Briefcase className="text-primary" /> Legacy Simulated Trades: Exposure
         </h2>
-        <p className="text-muted-foreground">Risk distribution across markets, strategies, and currencies.</p>
+        <p className="text-muted-foreground" data-testid="portfolio-scope">{SCOPE_LINE}</p>
         {/* Scope first: these figures do not include broker positions, so an
             empty or quiet view is not an all-clear. Shown even if an older
             server omits the note (the client may only downgrade). */}
         <p className="mt-1 text-xs text-yellow-600" data-testid="portfolio-source-note">{exp.sourceNote ?? FALLBACK_SOURCE_NOTE}</p>
+        {expQ.isError ? (
+          <p className="mt-1 text-xs text-destructive" data-testid="portfolio-stale">
+            The latest exposure read failed{failedAt ? ` at ${failedAt}` : ""}. These figures are not current: they were last loaded{loadedAt ? ` at ${loadedAt}` : " earlier"}.
+          </p>
+        ) : loadedAt ? (
+          <p className="mt-1 text-xs text-muted-foreground" data-testid="portfolio-loaded-at">Loaded at {loadedAt}.</p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Open Trades</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono">{exp.totalOpen}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Floating P&L</CardTitle></CardHeader><CardContent>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Open legacy rows</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono">{exp.totalOpen}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Simulated floating P&L</CardTitle></CardHeader><CardContent>
           {exp.floatingPnl == null ? (
             <>
               <div className="text-2xl font-bold font-mono text-muted-foreground" data-testid="floating-pnl">Unavailable</div>
               <div className="text-xs text-muted-foreground">{exp.floatingPnlUnavailableReason ?? "Open rows have no recorded P&L."}</div>
             </>
           ) : (
-            <div className={`text-2xl font-bold font-mono ${exp.floatingPnl >= 0 ? "text-success" : "text-destructive"}`} data-testid="floating-pnl">${exp.floatingPnl.toFixed(2)}</div>
+            <div className={`text-2xl font-bold font-mono ${exp.floatingPnl >= 0 ? "text-success" : "text-destructive"}`} data-testid="floating-pnl">{money(exp.floatingPnl)}</div>
           )}
         </CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Realized P&L</CardTitle></CardHeader><CardContent>
-          <div className={`text-2xl font-bold font-mono ${exp.realizedPnl >= 0 ? "text-success" : "text-destructive"}`}>${exp.realizedPnl.toFixed(2)}</div>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Simulated realized P&L</CardTitle></CardHeader><CardContent>
+          <div className={`text-2xl font-bold font-mono ${exp.realizedPnl >= 0 ? "text-success" : "text-destructive"}`} data-testid="realized-pnl">{money(exp.realizedPnl)}</div>
           {(exp.realizedPnlExcludedUnknown ?? 0) > 0 ? (
             <div className="text-xs text-muted-foreground">{exp.realizedPnlExcludedUnknown} closed trade{exp.realizedPnlExcludedUnknown === 1 ? "" : "s"} excluded: P/L unknown</div>
           ) : null}
         </CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown size={12}/>Net Loss, Last 24h</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono text-destructive">${Math.abs(exp.dailyDrawdown).toFixed(2)}</div><div className="text-xs text-muted-foreground">Closed trades only; not a peak-to-trough drawdown.</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown size={12}/>Simulated Net Loss, Last 24h</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold font-mono ${exp.dailyDrawdown < 0 ? "text-destructive" : ""}`} data-testid="daily-net-loss">${Math.abs(exp.dailyDrawdown).toFixed(2)}</div><div className="text-xs text-muted-foreground">Closed trades only; not a peak-to-trough drawdown.</div></CardContent></Card>
       </div>
 
+      {!warns && warnQ.isError ? (
+        <p className="text-sm text-muted-foreground" data-testid="correlation-load-error">
+          Correlation warnings could not be loaded, so correlated positions in this source were not checked.
+        </p>
+      ) : warns && warnQ.isError ? (
+        <p className="text-xs text-destructive" data-testid="correlation-stale">
+          The latest correlation check failed. What is shown here is from an earlier check and may not be current.
+        </p>
+      ) : null}
+      {warns && warns.length === 0 ? (
+        <p className="text-sm text-muted-foreground" data-testid="correlation-none">No correlated open rows in this source.</p>
+      ) : null}
       {warns && warns.length > 0 ? (
         <Card className="border-yellow-500/30 bg-yellow-500/5">
           <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="text-yellow-500" size={18}/> Correlation Warnings</CardTitle></CardHeader>
@@ -89,7 +138,7 @@ export default function Portfolio() {
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Net Currency Exposure</CardTitle></CardHeader>
         <CardContent>
-          {exp.exposureByCurrency.length === 0 ? <p className="text-sm text-muted-foreground">No currency exposure.</p> :
+          {exp.exposureByCurrency.length === 0 ? <p className="text-sm text-muted-foreground">No open forex rows in this source.</p> :
             <div className="grid gap-2 sm:grid-cols-3">
               {exp.exposureByCurrency.map((c) => (
                 <div key={c.currency} className="p-2 rounded border border-border/50 flex justify-between"><span className="font-mono font-bold">{c.currency}</span><span className={`font-mono ${c.netLots >= 0 ? "text-success" : "text-destructive"}`}>{c.netLots > 0 ? "+" : ""}{c.netLots.toFixed(2)}</span></div>

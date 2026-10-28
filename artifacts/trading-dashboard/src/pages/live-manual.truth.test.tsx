@@ -19,6 +19,26 @@ const deferredStatus = {
   simulator: { mutatesLivePositions: false, sendsRealOrders: false, enforcesRiskGovernor: true, enforcesKillSwitch: true },
 };
 
+// The real GET /api/permission/status shape: the PermissionVerdict
+// (lib/domain safety-permission evaluate.ts) plus explanation and
+// testerAccess. It has no killSwitchEngaged field; an engaged safety-core
+// kill switch is a reason with code KILL_SWITCH (and a blocker).
+const KILL_SWITCH_MSG = "Kill switch is engaged — all trading is paused.";
+const permissionVerdict = (killSwitch: boolean) => ({
+  status: killSwitch ? "LOCKED" : "LIVE_TRADING_DISABLED",
+  riskLevel: killSwitch ? "HIGH" : "LOW",
+  canPlaceTrades: false,
+  liveTradingDisabled: true,
+  activeLockType: null,
+  reasons: killSwitch ? [{ code: "KILL_SWITCH", severity: "BLOCK", message: KILL_SWITCH_MSG }] : [],
+  blockers: killSwitch ? [KILL_SWITCH_MSG] : [],
+  warnings: [],
+  activeLocks: [],
+  evaluatedAtIso: "2026-10-28T11:00:00.000Z",
+  explanation: { headline: "", details: [] },
+  testerAccess: {},
+});
+
 type Route = { status?: number; body: unknown };
 function stubFetch(routes: Record<string, Route>) {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
@@ -28,7 +48,7 @@ function stubFetch(routes: Record<string, Route>) {
   }));
 }
 const baseRoutes = (over: Record<string, Route> = {}): Record<string, Route> => ({
-  "/api/permission/status": { body: { killSwitchEngaged: false } },
+  "/api/permission/status": { body: permissionVerdict(false) },
   "/api/system/mt5-deferred-status": { body: deferredStatus },
   "/api/me/master-bridge/status": { body: { detected: false } },
   "/api/market/quote/": { body: { symbol: "EURUSD", bid: 1.0849, ask: 1.0851, mid: 1.085, spread: 0.0002, volatility: "MEDIUM" } },
@@ -51,9 +71,16 @@ describe("Manual Trade Ticket — kill switch row", () => {
   });
 
   it("reads ENGAGED only when the permission status says so", async () => {
-    stubFetch(baseRoutes({ "/api/permission/status": { body: { killSwitchEngaged: true } } }));
+    stubFetch(baseRoutes({ "/api/permission/status": { body: permissionVerdict(true) } }));
     await renderSettled();
     expect(killSwitchBadge().textContent).toBe("ENGAGED");
+  });
+
+  it("a 200 answer without the verdict's reasons list is 'not checked', never 'off'", async () => {
+    // A top-level killSwitchEngaged is not part of the verdict; it must not be read.
+    stubFetch(baseRoutes({ "/api/permission/status": { body: { killSwitchEngaged: false } } }));
+    await renderSettled();
+    expect(killSwitchBadge().textContent).toBe("not checked");
   });
 
   it("says it could not be checked when the permission status fails, never 'off'", async () => {
@@ -117,5 +144,32 @@ describe("Manual Trade Ticket — estimated loss / gain", () => {
     await act(async () => { fireEvent.change(screen.getByTestId("ticket-sl"), { target: { value: "2390" } }); });
     expect(screen.getByTestId("ticket-quote").textContent).toContain("2400");
     expect(screen.getByTestId("ticket-est-loss").textContent).toBe("Not estimated");
+  });
+});
+
+// POST /api/live-intent/submit compares only the Max Loss figure the trader
+// types (maxLossUsd) with the $5 cap. It never works out the loss at the stop
+// from lot, stop and price, so "max loss ≤ $5" and "Tester caps: passed" must
+// not read as a checked bound on the real loss.
+describe("Manual Trade Ticket — the max-loss cap is the declared figure only", () => {
+  it("names the cap as the Max Loss you enter, and the passed result says the loss at the stop was not computed", async () => {
+    stubFetch(baseRoutes({
+      "/api/live-intent/submit": { body: {
+        accepted: false, riskCheckPassed: true, testerAccess: true, brokerExecution: false,
+        status: "PENDING_MT5_CONNECTION", intentId: "intent_x", mt5Connected: false, reason: "Captured.",
+      } },
+    }));
+    await renderSettled();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/max loss ≤ \$5\)/);
+    expect(text).toMatch(/the Max Loss you enter ≤ \$5 \(the loss at your stop is not computed\)/);
+    expect(screen.getByTestId("ticket-maxloss-hint").textContent).toMatch(/not checked against your stop/);
+    await act(async () => { fireEvent.change(screen.getByTestId("ticket-sl"), { target: { value: "1.0450" } }); });
+    await act(async () => { screen.getByTestId("ticket-submit").click(); });
+    await act(async () => { (await screen.findByTestId("ticket-confirm-submit")).click(); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    const caps = screen.getByTestId("ticket-response-caps").textContent ?? "";
+    expect(caps).toMatch(/^Tester caps: passed/);
+    expect(caps).toMatch(/loss at your stop was not computed/);
   });
 });

@@ -48,3 +48,14 @@ test("the response names its source and says broker positions are not included",
   assert.equal(e.source, "LEGACY_TRADES_TABLE");
   assert.match(e.sourceNote, /broker positions are not included/i);
 });
+
+// Regression: the note said only that broker positions were left out, which
+// implied the trader's paper book and DEMO EA positions were included. The
+// trades table is a frozen record of simulated rows that takes no new trades.
+test("the source note says the rows are simulated and the paper book and DEMO EA positions are not included", () => {
+  const e = computeExposure([]);
+  assert.match(e.sourceNote, /simulated/i);
+  assert.match(e.sourceNote, /paper book/i);
+  assert.match(e.sourceNote, /DEMO EA positions/);
+  assert.match(e.sourceNote, /no (longer|new)/i);
+});

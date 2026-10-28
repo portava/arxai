@@ -74,8 +74,10 @@ export default function SyntheticCenter() {
           <div className="text-foreground font-semibold">Synthetic analytics unavailable</div>
           <div className="text-txt-secondary text-sm max-w-md mx-auto">
             No backend synthetic-analytics provider is connected. ATR, trend, volatility state and
-            recommended lot size cannot be shown honestly, so nothing is displayed. Synthetic
-            instruments remain fully tradable on the Scanner, which uses real broker data.
+            recommended lot size cannot be shown honestly, so nothing is displayed. Synthetic prices
+            and setups are on the Scanner. Its prices come from your MT5 broker feed when your bridge is
+            connected, otherwise from Deriv's public price feed, and a row whose live feed is not current
+            is shown as not tradeable.
           </div>
         </CardContent>
       </Card>

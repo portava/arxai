@@ -12,6 +12,7 @@ import { logUserOverride } from "../lib/vaultLogger.js";
 import { scanVaultIntegrity } from "../lib/vaultIntegrity.js";
 import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets } from "../lib/broker/secrets.js";
 import { getBrokerProvider } from "../lib/broker/registry.js";
+import { haltFrom, loadPlatformHalt, loadTradingHalt, type HaltSource } from "../lib/safety/tradingHalt.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // /api/system/* — Phase 1 Safety Core + Phase 2 Vault endpoints
@@ -155,11 +156,42 @@ router.get("/system/mt5-deferred-status", async (req, res) => {
   }
 });
 
-router.get("/system/status", async (_req, res) => {
+// Every stop that halts this viewer's broker-venue (demo and live) orders,
+// read by the reader the pre-trade Risk Governor uses (lib/safety/tradingHalt):
+// the platform emergency stop, the safety-core kill switch and the viewer's
+// own kill switch. killSwitchEngaged is the safety-core switch only, so
+// without this the Control Tower said "Safety Core Online" while another stop
+// halted trading. Read-only: it adds and loosens no gate. The reader fails
+// closed (a stop it cannot read is listed as engaged); if the read itself
+// throws, activeHalts is null, meaning "could not be checked", never "none".
+export interface StatusHalts {
+  activeHalts: HaltSource[] | null;
+  /** One plain-English sentence per entry of activeHalts, same order. */
+  activeHaltReasons: string[];
+  activeHaltsCheckedAt: string;
+}
+
+export async function readStatusHalts(userId: number | null | undefined): Promise<StatusHalts> {
+  const activeHaltsCheckedAt = new Date().toISOString();
+  try {
+    const halt = userId != null && userId > 0
+      ? await loadTradingHalt({ userId, venue: "LIVE" })
+      : await loadPlatformHalt();
+    return {
+      activeHalts: [...halt.sources],
+      activeHaltReasons: halt.sources.map((s, i) => (i === 0 ? halt.reason : haltFrom([s]).reason) ?? s),
+      activeHaltsCheckedAt,
+    };
+  } catch {
+    return { activeHalts: null, activeHaltReasons: [], activeHaltsCheckedAt };
+  }
+}
+
+router.get("/system/status", async (req, res) => {
   try {
     await driveGlobalState();
-    const status = await getStatus();
-    res.json(status);
+    const [status, halts] = await Promise.all([getStatus(), readStatusHalts(req.authUser?.id)]);
+    res.json({ ...status, ...halts });
   } catch (err) {
     (res.req as { log?: { error: (e: unknown) => void } }).log?.error(err);
     res.status(500).json({ error: "Failed to load safety core status" });

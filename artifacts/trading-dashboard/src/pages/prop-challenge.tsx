@@ -29,6 +29,9 @@ interface EvalResp {
     tradeCount: number; profitTarget: number; maxDailyLoss: number;
     maxTotalDrawdown: number; minTradingDays: number; maxTradingDays: number;
     currentBalance: number;
+    /** True when the challenge is finished: judged only up to its end. */
+    final?: boolean;
+    evaluatedThrough?: string;
   };
   days: Array<{ tradeDate: string; dailyProfitLoss: number; tradesTaken: number; dailyLossPercent: number }>;
   violations: Array<{ type: string; severity: "INFO"|"WARN"|"HARD"; message: string }>;
@@ -44,9 +47,13 @@ export default function PropChallengePage() {
     queryFn: async () => (await fetch("/api/prop-challenges")).json(),
     refetchInterval: 8000,
   });
-  const active = list.data?.challenges.find((c) => c.status === "ACTIVE" || c.status === "PAUSED")
-              ?? list.data?.challenges[0]
-              ?? null;
+  const challenges = list.data?.challenges ?? [];
+  // Only an ACTIVE or PAUSED challenge is the current one. A finished one
+  // (PASSED, FAILED, CANCELED) is shown as the last result, is not polled,
+  // and does not hide the form to start a new challenge.
+  const current = challenges.find((c) => c.status === "ACTIVE" || c.status === "PAUSED") ?? null;
+  const active = current ?? challenges[0] ?? null;
+  const finished = active != null && current == null;
 
   const evalQ = useQuery<EvalResp>({
     queryKey: ["prop-eval", active?.id],
@@ -56,7 +63,7 @@ export default function PropChallengePage() {
       return r.json();
     },
     enabled: active != null,
-    refetchInterval: 8000,
+    refetchInterval: finished ? false : 8000,
   });
 
   const create = useMutation({
@@ -87,13 +94,16 @@ export default function PropChallengePage() {
     <div className="space-y-4 p-4">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Prop Firm Challenge Mode</h1>
+          <h1 className="text-xl font-semibold text-slate-100">Prop Challenge Practice</h1>
           <p className="text-xs text-amber-300">Practice/training only — does not promise funded-account approval or guaranteed profits.</p>
+          <p className="text-xs text-slate-400" data-testid="prop-challenge-separate">
+            Challenges here are scored from your closed paper orders. This is separate from <a href="/prop-firm-mode" className="underline">Prop Firm Risk Mode</a>, which has its own target, limits and status; a status on one page says nothing about the other.
+          </p>
         </div>
         <span className="rounded bg-amber-700 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
       </header>
 
-      {!active && (
+      {!current && list.data && (
         <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 space-y-2">
           <h3 className="text-sm font-semibold text-slate-100">Start a practice challenge</h3>
           <div className="grid grid-cols-2 gap-2 text-xs">
@@ -113,6 +123,12 @@ export default function PropChallengePage() {
 
       {active && (
         <>
+          {finished && (
+            <p className="text-xs text-slate-400" data-testid="prop-finished-note">
+              Your last challenge, {active.challengeName}, ended{active.completedAt ? ` on ${new Date(active.completedAt).toLocaleString()}` : ""} ({active.status}).
+              The results below cover only trades closed up to that time. Later paper trades are not part of it.
+            </p>
+          )}
           <PropPassFailBanner status={active.status} reason={active.failureReason} />
           <div className="flex flex-wrap gap-2">
             {active.status === "ACTIVE" && (
@@ -124,7 +140,9 @@ export default function PropChallengePage() {
             {(active.status === "ACTIVE" || active.status === "PAUSED") && (
               <button onClick={()=>transition.mutate("CANCELED")} className="rounded bg-slate-700 px-3 py-1 text-xs text-white hover:bg-slate-600">Cancel</button>
             )}
-            <button onClick={()=>evalQ.refetch()} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">Re-evaluate</button>
+            {!finished && (
+              <button onClick={()=>evalQ.refetch()} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">Re-evaluate</button>
+            )}
           </div>
           {evalQ.data && (
             <>

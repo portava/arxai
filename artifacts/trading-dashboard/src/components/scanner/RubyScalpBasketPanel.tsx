@@ -13,7 +13,7 @@ import {
   FLAME_STAGE_LABEL,
   FLAME_STAGE_TONE,
   directionTone,
-  fmtMoney,
+  fmtScalpMoney,
 } from "./scalpLabels";
 import { useAssistantName } from "@/lib/assistant-name";
 
@@ -28,7 +28,9 @@ import { useAssistantName } from "@/lib/assistant-name";
 function pl(v: number | null | undefined): { text: string; tone: string } {
   if (v == null || !Number.isFinite(v)) return { text: "—", tone: "text-muted-foreground" };
   const tone = v > 0 ? "text-success" : v < 0 ? "text-danger" : "text-muted-foreground";
-  return { text: fmtMoney(v), tone };
+  // Broker P/L is in the account's currency, which the basket does not carry —
+  // so no "$" is assumed.
+  return { text: fmtScalpMoney(v, null), tone };
 }
 
 function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
