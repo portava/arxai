@@ -69,4 +69,22 @@ describe("Trader Coach pre-session checklist", () => {
     expect(row.textContent).toMatch(/Risk Governor reports LOCKED/);
     expect(row.textContent).not.toMatch(/not checked by this report/i);
   });
+
+  it("the LOCKED stop row is a measured finding the user cannot tick off", async () => {
+    checklist = [
+      { id: "system_locked", label: "STOP — Risk Governor is LOCKED. Do NOT proceed.", required: true, auto: true },
+      ...CHECKLIST,
+    ];
+    render(<TraderCoachPage />);
+    const list = await screen.findByTestId("pre-session-checklist");
+    const row = within(list).getByTestId("checklist-system_locked");
+    // No checkbox at all: ticking a stop condition would read as clearing it.
+    expect(row.querySelector("input")).toBeNull();
+    expect(row.getAttribute("role")).toBe("alert");
+    // The user-confirmation rows stay tickable.
+    const box = within(list).getByTestId("checklist-spread_ok").querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(box.disabled).toBe(false);
+    // The instruction to tick rows does not cover the stop row.
+    expect(list.parentElement?.textContent).toMatch(/cannot be ticked/i);
+  });
 });
