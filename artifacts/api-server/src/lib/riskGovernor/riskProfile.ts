@@ -140,27 +140,54 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   };
 }
 
-/** Prop-firm progress on the paper ledger, against the trader's stored challenge. */
+export type PropFirmStatusCode = "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
+export interface PropFirmRuleNotChecked { rule: string; reason: string }
+
+/**
+ * Prop-firm progress on the paper ledger, against the trader's stored challenge.
+ *
+ * A rule is scored (passed / failed) only from a measured paper equity. When
+ * equity cannot be read (no active paper account) nothing is measured: the
+ * money figures are null, no rule is passed or failed, each such rule is in
+ * `notChecked` with the reason, and an enabled challenge reads NOT_MEASURED,
+ * never ACTIVE.
+ */
 export async function propFirmStatus(userId: number) {
   const settings = await getOrCreateRiskSettings(userId);
   const cfg: PropFirmConfig = { ...DEFAULT_PROP_FIRM, ...((settings.propFirm as Partial<PropFirmConfig> | null) ?? {}) };
   const ov = await riskOverview(userId, "PAPER");
   const equity = ov.budget.equity;
-  const profit = equity != null ? equity - cfg.startingBalance : 0;
+  const passed: string[] = []; const failed: string[] = [];
+  const notChecked: PropFirmRuleNotChecked[] = [];
+  const base = { config: cfg, equitySource: "paper_ledger" as const };
+
+  if (equity == null) {
+    const reason = "No active paper account, so paper equity could not be read.";
+    for (const rule of ["PROFIT_TARGET", "DAILY_DD", "TOTAL_DD"]) notChecked.push({ rule, reason });
+    return {
+      ...base, measured: false, notMeasuredReason: reason as string | null,
+      profitUsd: null as number | null, profitTargetProgress: null as number | null,
+      dailyDrawdownRemainingUsd: null as number | null, totalDrawdownRemainingUsd: null as number | null,
+      passed, failed, notChecked,
+      status: (cfg.enabled ? "NOT_MEASURED" : "OFF") as PropFirmStatusCode,
+    };
+  }
+
+  const profit = equity - cfg.startingBalance;
   const dailyDD = ov.budget.dailyRiskUsed;
   const totalDD = Math.max(0, -profit);
-  const passed: string[] = []; const failed: string[] = [];
   if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
   if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
   if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
-  const status = !cfg.enabled ? "OFF" : failed.length ? "FAILED" : profit >= cfg.profitTarget ? "PASSED"
+  const status: PropFirmStatusCode = !cfg.enabled ? "OFF" : failed.length ? "FAILED" : profit >= cfg.profitTarget ? "PASSED"
     : dailyDD > cfg.maxDailyDrawdownUsd * 0.7 || totalDD > cfg.maxTotalDrawdownUsd * 0.7 ? "WARNING" : "ACTIVE";
   return {
-    config: cfg, profitUsd: r2(profit),
-    profitTargetProgress: cfg.profitTarget > 0 ? r2((profit / cfg.profitTarget) * 100) : 0,
-    dailyDrawdownRemainingUsd: r2(cfg.maxDailyDrawdownUsd - dailyDD),
-    totalDrawdownRemainingUsd: r2(cfg.maxTotalDrawdownUsd - totalDD),
-    passed, failed, status, equitySource: "paper_ledger" as const,
+    ...base, measured: true, notMeasuredReason: null as string | null,
+    profitUsd: r2(profit) as number | null,
+    profitTargetProgress: (cfg.profitTarget > 0 ? r2((profit / cfg.profitTarget) * 100) : 0) as number | null,
+    dailyDrawdownRemainingUsd: r2(cfg.maxDailyDrawdownUsd - dailyDD) as number | null,
+    totalDrawdownRemainingUsd: r2(cfg.maxTotalDrawdownUsd - totalDD) as number | null,
+    passed, failed, notChecked, status,
   };
 }
 

@@ -13,7 +13,7 @@ type Limits = { maxLotSize: number; maxDailyLossPercent: number | null; maxDaily
 type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };
 type Money = number | null;
 type Budget = { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
-type Cards = { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
+type Cards = { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number | null } | null };
 
 const usd = (v: Money) => (v == null ? "none set" : `$${v}`);
 
@@ -166,7 +166,7 @@ export default function RiskCommandCenter() {
         {cards?.propFirm ? (
           <div className="text-xs space-y-1">
             <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{cards.propFirm.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress}%</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress == null ? "not measured" : `${cards.propFirm.profitTargetProgress}%`}</span></div>
             <a className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</a>
           </div>
         ) : (

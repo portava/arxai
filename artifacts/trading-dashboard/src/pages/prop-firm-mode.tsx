@@ -7,11 +7,15 @@ import { Trophy } from "lucide-react";
 
 type Status = {
   config: { enabled: boolean; startingBalance: number; profitTarget: number; maxDailyDrawdownUsd: number; maxTotalDrawdownUsd: number; minTradingDays: number; maxLotSize: number; maxPositions: number; newsTradingAllowed: boolean; weekendHoldingAllowed: boolean; consistencyRulePctOfTotal: number };
-  profitUsd: number; profitTargetProgress: number;
-  dailyDrawdownRemainingUsd: number; totalDrawdownRemainingUsd: number;
-  passed: string[]; failed: string[]; status: "OFF" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
+  // null = not measured (e.g. no active paper account); never shown as $0.
+  profitUsd: number | null; profitTargetProgress: number | null;
+  dailyDrawdownRemainingUsd: number | null; totalDrawdownRemainingUsd: number | null;
+  measured?: boolean; notMeasuredReason?: string | null;
+  passed: string[]; failed: string[]; notChecked?: Array<{ rule: string; reason: string }>;
+  status: "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
 };
-const STATUS_COLOR: Record<string, string> = { OFF: "bg-muted text-muted-foreground", ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
+const STATUS_LABEL: Record<string, string> = { NOT_MEASURED: "NOT MEASURED" };
+const STATUS_COLOR: Record<string, string> = { OFF: "bg-muted text-muted-foreground", NOT_MEASURED: "bg-amber-500/20 text-amber-400", ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
 
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, { credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
@@ -37,19 +41,26 @@ export default function PropFirmMode() {
           <p className="text-sm text-muted-foreground">Practise a prop-firm challenge on your paper account. Saving writes the daily and total drawdown, lot and position caps into your own risk limits, which the Risk Governor enforces. Turning it off keeps those limits until you change them.</p>
         </div>
         <Badge variant="outline">PAPER</Badge>
-        {s && <Badge className={STATUS_COLOR[s.status]}>{s.status}</Badge>}
+        {s && <Badge className={STATUS_COLOR[s.status]} data-testid="prop-status-badge">{STATUS_LABEL[s.status] ?? s.status}</Badge>}
       </div>
+
+      {s && s.measured === false && (
+        <p className="text-sm rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-300" data-testid="prop-not-measured">
+          Not measured: {s.notMeasuredReason ?? "paper equity could not be read."} No challenge rule has been checked.
+        </p>
+      )}
 
       {s && (
         <div className="grid gap-2 md:grid-cols-4">
           <Stat label="Enabled" value={s.config.enabled ? "YES" : "NO"} />
-          <Stat label="Profit USD" value={`$${s.profitUsd}`} />
-          <Stat label="Target progress" value={`${s.profitTargetProgress}%`} />
-          <Stat label="Daily DD left" value={`$${s.dailyDrawdownRemainingUsd}`} />
-          <Stat label="Total DD left" value={`$${s.totalDrawdownRemainingUsd}`} />
+          <Stat label="Profit USD" value={money(s.profitUsd)} />
+          <Stat label="Target progress" value={s.profitTargetProgress == null ? NOT_MEASURED : `${s.profitTargetProgress}%`} />
+          <Stat label="Daily DD left" value={money(s.dailyDrawdownRemainingUsd)} />
+          <Stat label="Total DD left" value={money(s.totalDrawdownRemainingUsd)} />
           <Stat label="Passed rules" value={String(s.passed.length)} />
           <Stat label="Failed rules" value={String(s.failed.length)} />
-          <Stat label="Account status" value={s.status} />
+          <Stat label="Not checked" value={String(s.notChecked?.length ?? 0)} />
+          <Stat label="Account status" value={STATUS_LABEL[s.status] ?? s.status} />
         </div>
       )}
 
@@ -82,12 +93,18 @@ export default function PropFirmMode() {
           <CardContent className="flex flex-wrap gap-1">
             {s.passed.map((p) => <Badge key={p} className="bg-emerald-500/20 text-emerald-400">✓ {p}</Badge>)}
             {s.failed.map((f) => <Badge key={f} variant="destructive">✗ {f}</Badge>)}
+            {(s.notChecked ?? []).map((n) => (
+              <Badge key={n.rule} variant="outline" title={n.reason} data-testid={`prop-rule-not-checked-${n.rule}`}>– {n.rule} not checked</Badge>
+            ))}
           </CardContent>
         </Card>
       )}
     </div>
   );
 }
+
+const NOT_MEASURED = "not measured";
+const money = (v: number | null) => (v == null ? NOT_MEASURED : `$${v}`);
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <Card><CardContent className="p-2"><p className="text-[10px] text-muted-foreground uppercase">{label}</p><p className="text-sm font-mono font-semibold">{value}</p></CardContent></Card>;
