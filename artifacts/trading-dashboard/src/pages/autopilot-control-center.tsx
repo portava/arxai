@@ -19,6 +19,12 @@ type Status = {
   consecutiveLossesMeasured?: boolean;
   /** The platform's install-wide stops as they bear on the autopilot. Missing = not reported. */
   platformStop?: PlatformStop;
+  /** Today's orders the MAX_TRADES rule counts (every non-manual simulator order, any user). */
+  tradesCountedToday?: number;
+  /** "ALL_SIMULATOR_USERS": open positions and daily P/L are the whole simulator book. */
+  bookScope?: string;
+  /** Recent decisions (last 50) discipline is based on. Missing or 0 = not measured. */
+  disciplineDecisions?: number;
   discipline: number;
   lastDecision: Decision | null;
 };
@@ -39,6 +45,10 @@ type Decision = {
   marketHealth: string; newsRisk: string; sessionRisk: string;
   finalDecision: string; nextAction: string; orderId?: string;
   humanOverride?: { mark: string; note?: string };
+  /** "SIMULATED_PRICE_DRIFT" today. Anything else (or missing) is not confirmed as a model score. */
+  scoreBasis?: string;
+  newsBasis?: string;
+  newsDetail?: string;
 };
 
 type Lock = {
@@ -268,12 +278,19 @@ export default function AutopilotControlCenter() {
         <div className="grid gap-2 md:grid-cols-4">
           <Stat label="Mode" value={s.mode} />
           <Stat label="State" value={s.state} />
-          <Stat label="Open positions" value={String(s.openSimulatedPositions)} />
-          <Stat label="Daily risk left" value={`$${s.dailyRiskRemainingUsd}`} />
-          <Stat label="Trades remaining" value={String(s.dailyTradesRemaining)} />
+          <Stat label="Open sim positions (all users)" value={String(s.openSimulatedPositions)} />
+          <Stat label="Daily risk left (whole sim book)" value={s.session ? `$${s.dailyRiskRemainingUsd}` : "no session"} />
+          <Stat label="Trades remaining today" value={s.session ? String(s.dailyTradesRemaining) : "no session"} />
           <Stat label="Consec losses" value={s.consecutiveLossesMeasured === true ? String(s.consecutiveLosses) : "not measured"} />
-          <Stat label="Discipline" value={`${s.discipline}/100`} />
+          <Stat label="Discipline" value={(s.disciplineDecisions ?? 0) > 0 ? `${s.discipline}/100` : "not measured"} />
           <Stat label="MT5" value={s.mt5Connected ? "ON" : "DEFERRED"} />
+          <p className="md:col-span-4 text-xs text-muted-foreground" data-testid="autopilot-tile-basis">
+            Open positions and daily risk use the whole simulator book (every user), not one trader's.
+            Trades remaining counts every non-manual simulator order created today (UTC) by anyone, as the MAX_TRADES rule does
+            {typeof s.tradesCountedToday === "number" ? ` (${s.tradesCountedToday} so far)` : ""}.
+            Discipline is 100 minus 5 for each of the last 50 decisions marked bad
+            {(s.disciplineDecisions ?? 0) > 0 ? ` (${s.disciplineDecisions} decisions)` : "; with no decisions there is nothing to measure"}.
+          </p>
         </div>
       )}
 
@@ -313,7 +330,11 @@ export default function AutopilotControlCenter() {
 
       <Card>
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><Brain className="h-4 w-4" />Decisions</CardTitle>
-          <CardDescription>Each AI decision shows scores, rules passed/failed, market context, and next action.</CardDescription>
+          <CardDescription data-testid="decisions-basis">
+            Scores are simulated: confidence, opportunity, sniper and grade come from the simulator's price drift against its
+            30-bar average, not from a trained model, and risk is 100 minus grade. News comes from the simulator's news list
+            (seeded simulated events and any added by hand), not a live economic calendar.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {decisions.length === 0 && <p className="text-xs text-muted-foreground">No decisions yet — start a session and force a scan.</p>}
@@ -328,10 +349,15 @@ export default function AutopilotControlCenter() {
                 <span className="ml-auto text-muted-foreground">{new Date(d.ts).toLocaleTimeString()}</span>
               </div>
               <div className="flex flex-wrap gap-2 text-muted-foreground">
+                <Badge variant="outline" className="border-dashed">
+                  {d.scoreBasis === "SIMULATED_PRICE_DRIFT" ? "simulated scores" : "score source not reported"}
+                </Badge>
                 <span>conf {d.confidenceScore}</span><span>opp {d.opportunityScore}</span>
                 <span>sniper {d.entrySniperScore}</span><span>grade {d.tradeGrade}</span>
-                <span>risk {d.riskScore}</span>
-                <span>mh {d.marketHealth}</span><span>news {d.newsRisk}</span><span>session {d.sessionRisk}</span>
+                <span>risk {d.riskScore} (100 − grade)</span>
+                <span>mh {d.marketHealth}</span>
+                <span title={d.newsDetail ?? "News source not reported."}>simulated news {d.newsRisk}</span>
+                <span>session {d.sessionRisk}</span>
               </div>
               {d.rulesPassed.length > 0 && <div className="text-emerald-400">✓ {d.rulesPassed.join(", ")}</div>}
               {d.rulesFailed.length > 0 && <div className="text-rose-400">✗ {d.rulesFailed.join(", ")}</div>}

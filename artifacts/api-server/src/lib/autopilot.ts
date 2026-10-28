@@ -115,6 +115,17 @@ export interface AutopilotDecision {
   orderId?: string;
   humanOverride?: { mark: "GOOD" | "BAD"; note?: string; ts: string };
   dataSource: "SIMULATOR";
+  /**
+   * Where the scores come from. Always SIMULATED_PRICE_DRIFT: confidence,
+   * opportunity, sniper and grade are computed from the simulator's price
+   * drift against its 30-bar average (scoreSetup), not by a model. riskScore
+   * is 100 - grade.
+   */
+  scoreBasis: "SIMULATED_PRICE_DRIFT";
+  /** Where newsRisk comes from: the simulator's news list, not a live calendar. */
+  newsBasis: "SIMULATOR_NEWS_LIST";
+  /** Plain English: the event behind newsRisk and its source, or that none was in an avoid window. */
+  newsDetail: string;
 }
 
 export interface AutopilotStateLog {
@@ -303,6 +314,16 @@ function scoreSetup(symbol: string) {
   return { symbol, direction, entryPrice: q.mid, stopLoss: sl, takeProfit: tp, confidence: conf, opportunity: opp, sniper, grade };
 }
 
+/**
+ * Orders the MAX_TRADES rule counts: every non-MANUAL simulator order created
+ * today (UTC), from any user and any source. status() reports the same count
+ * so "trades remaining" agrees with the rule.
+ */
+function ordersCountedTowardMaxTrades(): number {
+  const today = new Date().toISOString().slice(0, 10);
+  return listOrders({}).filter((o) => o.createdAt.slice(0, 10) === today && o.source !== "MANUAL").length;
+}
+
 // ── Decision pipeline ──────────────────────────────────────────────────────
 export interface RunPipelineOptions {
   force?: boolean;
@@ -367,7 +388,7 @@ export async function runDecisionPipeline(opts: RunPipelineOptions = {}): Promis
   // capacity rules
   const openPos = listPositions({ status: "OPEN" }).length;
   if (openPos >= session.rules.maxOpenPositions) rulesFailed.push("MAX_OPEN_POSITIONS"); else rulesPassed.push("MAX_OPEN_POSITIONS");
-  const todayOrders = listOrders({}).filter((o) => o.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10) && o.source !== "MANUAL").length;
+  const todayOrders = ordersCountedTowardMaxTrades();
   if (todayOrders >= session.rules.maxTrades) rulesFailed.push("MAX_TRADES"); else rulesPassed.push("MAX_TRADES");
 
   const pnl = pnlSummary();
@@ -473,6 +494,15 @@ interface FinalizeArgs {
   nr: ReturnType<typeof currentNewsRisk>; sc: ReturnType<typeof sessionClock>;
   next: string; orderId?: string;
 }
+function newsDetailOf(nr: ReturnType<typeof currentNewsRisk>): string {
+  const hit = nr.events.find((e) => e.inWindow && e.event.impact === "high");
+  if (hit) {
+    const src = hit.event.source === "SIMULATED" ? "simulated event" : hit.event.source === "MANUAL" ? "added by hand" : "external event";
+    return `${hit.event.eventName} (${src}) is in its avoid window. Source: the simulator's news list, not a live economic calendar.`;
+  }
+  return "No high-impact event in an avoid window on the simulator's news list. This is not a live economic calendar.";
+}
+
 function finalize(a: FinalizeArgs): AutopilotDecision {
   const d: AutopilotDecision = {
     decisionId: newId("apd"),
@@ -493,6 +523,9 @@ function finalize(a: FinalizeArgs): AutopilotDecision {
     finalDecision: a.action, nextAction: a.next,
     orderId: a.orderId,
     dataSource: "SIMULATOR",
+    scoreBasis: "SIMULATED_PRICE_DRIFT",
+    newsBasis: "SIMULATOR_NEWS_LIST",
+    newsDetail: newsDetailOf(a.nr),
   };
   decisions.unshift(d);
   if (decisions.length > 500) decisions.pop();
@@ -555,8 +588,8 @@ export function status() {
   const lastDecision = decisions[0] ?? null;
   const pnl = pnlSummary();
   const openPos = listPositions({ status: "OPEN" });
-  const todayAuto = listOrders({}).filter((o) => o.source === "AI_AUTO" && o.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
-  const remaining = session ? Math.max(0, session.rules.maxTrades - todayAuto) : 0;
+  const counted = ordersCountedTowardMaxTrades();
+  const remaining = session ? Math.max(0, session.rules.maxTrades - counted) : 0;
   const dailyRiskRemaining = session ? Math.max(0, session.rules.maxDailyLossUsd + Math.min(0, pnl.dailyPnL)) : 0;
   return {
     mode: currentMode, state: currentState,
@@ -569,11 +602,22 @@ export function status() {
     openSimulatedPositions: openPos.length,
     dailyRiskRemainingUsd: dailyRiskRemaining,
     dailyTradesRemaining: remaining,
+    /** Today's orders the MAX_TRADES rule counts (every non-manual simulator order, any user). */
+    tradesCountedToday: counted,
+    /**
+     * Open positions and daily P/L (behind dailyRiskRemainingUsd) are the
+     * whole simulator book, every user, not the operator's own. With no
+     * session, dailyRiskRemainingUsd and dailyTradesRemaining are 0 because
+     * there is no limit to measure against, not because it is used up.
+     */
+    bookScope: "ALL_SIMULATOR_USERS" as const,
     activeRiskLocks: Object.values(safetyLocks).filter((l) => l.tripped).map((l) => l.code),
     mt5Connected: false,
     killSwitchEngaged: safetyLocks.KILL_SWITCH.tripped,
     lastDecision,
     discipline: discipline(),
+    /** How many recent decisions (last 50) discipline is based on; 0 = nothing to measure. */
+    disciplineDecisions: Math.min(decisions.length, 50),
     dataSource: "SIMULATOR" as const,
   };
 }

@@ -55,7 +55,7 @@ afterEach(() => {
 async function renderPage() {
   render(<AutopilotControlCenter />);
   // The page has loaded once the status-driven tiles are on screen.
-  await screen.findByText("Trades remaining");
+  await screen.findByText(/^Trades remaining/);
 }
 
 describe("Autopilot safety locks", () => {
@@ -82,7 +82,7 @@ describe("Autopilot safety locks", () => {
   it("the losing-streak tile says 'not measured' when nothing feeds the counter", async () => {
     status = { ...BASE_STATUS, consecutiveLossesMeasured: false };
     await renderPage();
-    expect(screen.getByText("not measured")).toBeTruthy();
+    expect(screen.getByText("Consec losses").parentElement?.textContent).toMatch(/not measured/);
   });
 });
 
