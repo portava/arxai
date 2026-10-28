@@ -71,7 +71,7 @@ const BIAS_LABEL: Record<string, string> = {
 // as the signal's "Setup forming"). describeEngineAgreement labels what was
 // counted, or nothing when it cannot reproduce the server's stage.
 
-function dataTone(v: DataVerdict): string {
+function dataTone(v: DataCellVerdict): string {
   switch (v) {
     case "Live": return "text-success";
     case "Delayed": return "text-warning";
@@ -91,7 +91,9 @@ function tradingTone(v: TradingVerdict): string {
 // The Eleanor CELL's label. Header-local so the shared `strip.ruby.verdict`
 // contract keeps its three values: "Read not run" is a display substitution for
 // a FULL_READ capability that no chart read has actually produced yet.
-type RubyCellVerdict = RubyVerdict | "Read not run";
+type RubyCellVerdict = RubyVerdict | "Read not run" | "Checking…";
+// The Data CELL's label: "Checking…" before the first candles response.
+type DataCellVerdict = DataVerdict | "Checking…";
 const READ_NOT_RUN_DETAIL = "No chart read yet — tap Read this chart.";
 
 function rubyTone(v: RubyCellVerdict): string {
@@ -151,7 +153,11 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   const [symbol] = useChartSymbol();
   const bare = bareSymbol(symbol);
   const [timeframe] = useScannerTimeframe();
-  const { scannerTruth: truth, verdict, components } = useSymbolTruth(bare, timeframe);
+  const { scannerTruth: truth, verdict, components, isError: truthError } = useSymbolTruth(bare, timeframe);
+  // No truth yet and no failed request: nothing has been measured, so the
+  // strip says it is still checking — never the red "Unavailable" a measured
+  // empty feed or a failed load earns.
+  const truthPending = truth == null && truthError !== true;
   const { shouldShowAdminDiagnostics } = useTradingMode();
   const { name } = useAssistantName();
   const rubyStore = useRubyReadStore();
@@ -186,7 +192,9 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   const shownClose = resolveDisplayClose({ tipClose: liveTip, lastClose: truth?.candles.lastClose ?? null, isLive: priceIsLive });
   const price = formatInstrumentPrice(shownClose.value, truth?.candles.pricePrecision ?? null);
   const priceIsLastKnown = shownClose.value != null && !priceIsLive;
-  const dataV = truth?.strip.data.verdict ?? "Unavailable";
+  const dataV: DataCellVerdict = truth?.strip.data.verdict ?? (truthPending ? "Checking…" : "Unavailable");
+  const dataDetail = truth?.strip.data.detail
+    ?? (truthPending ? "Waiting for market data…" : "Market data could not be loaded — retrying.");
   const tradingV = truth?.strip.trading.verdict ?? "Read-only";
 
   // Ruby cell reconciliation (Task #600): the base read CAPABILITY comes from the
@@ -277,10 +285,15 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
     isFeedLimitedAction(finalActionWithEleanor),
   );
   const readNotRun = cappedRuby.status === "FULL_READ" && sharedRead == null;
-  const rubyV: RubyCellVerdict = readNotRun ? "Read not run" : RUBY_STATUS_LABEL[cappedRuby.status];
-  const rubyDetail = readNotRun
-    ? READ_NOT_RUN_DETAIL
-    : cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
+  const rubyPending = truthPending && sharedRead == null;
+  const rubyV: RubyCellVerdict = rubyPending
+    ? "Checking…"
+    : readNotRun ? "Read not run" : RUBY_STATUS_LABEL[cappedRuby.status];
+  const rubyDetail = rubyPending
+    ? "Waiting for market data…"
+    : readNotRun
+      ? READ_NOT_RUN_DETAIL
+      : cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
   const actionDirection = eleanorFeedGated ? null : biasToActionDirection(verdict?.bias);
   const visibleActionLabel = resolveVisibleActionLabel(finalActionWithEleanor, actionDirection);
   const whyMessage = truth?.consolidated.userMessage ?? "";
@@ -366,7 +379,7 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
           four cells derive from the SAME shared contract, so they can never
           disagree with each other or with a card's badge. */}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4" data-testid="scanner-header-strip">
-        <TruthPill label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
+        <TruthPill label="Data" verdict={dataV} tone={dataTone(dataV)} detail={dataDetail} testId="scanner-header-data" />
         <TruthPill label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
         <TruthPill label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
         <TruthPill
