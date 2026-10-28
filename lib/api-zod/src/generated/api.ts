@@ -12997,8 +12997,32 @@ export const ToggleWatchlistItemFavoriteResponse = zod.object({
 export const GetPortfolioExposureResponse = zod.object({
   totalOpen: zod.number(),
   totalClosed: zod.number(),
-  floatingPnl: zod.number(),
-  realizedPnl: zod.number(),
+  floatingPnl: zod
+    .number()
+    .nullable()
+    .describe(
+      "null when any open row has no marked-to-market P&L (never a guessed 0).",
+    ),
+  floatingPnlUnavailableReason: zod.string().nullish(),
+  realizedPnl: zod
+    .number()
+    .describe("Excludes closed rows whose pnlStatus is UNKNOWN."),
+  realizedPnlExcludedUnknown: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows left out of realized\/daily\/weekly figures because pnlStatus is UNKNOWN.",
+    ),
+  source: zod
+    .enum(["LEGACY_TRADES_TABLE"])
+    .optional()
+    .describe("Where the figures come from."),
+  sourceNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Plain-English scope of the figures (e.g. broker positions not included).",
+    ),
   exposureByMarket: zod.record(zod.string(), zod.number()),
   exposureByStrategy: zod.record(zod.string(), zod.number()),
   exposureByCurrency: zod.array(
@@ -13007,8 +13031,16 @@ export const GetPortfolioExposureResponse = zod.object({
       netLots: zod.number(),
     }),
   ),
-  dailyDrawdown: zod.number(),
-  weeklyDrawdown: zod.number(),
+  dailyDrawdown: zod
+    .number()
+    .describe(
+      "Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown.",
+    ),
+  weeklyDrawdown: zod
+    .number()
+    .describe(
+      "Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown.",
+    ),
 });
 
 /**

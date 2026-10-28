@@ -1337,6 +1337,7 @@ export * from "./portfolioExposure";
 export * from "./portfolioExposureExposureByCurrencyItem";
 export * from "./portfolioExposureExposureByMarket";
 export * from "./portfolioExposureExposureByStrategy";
+export * from "./portfolioExposureSource";
 export * from "./portfolioRiskSnapshot";
 export * from "./portfolioRiskSnapshotPortfolioRiskLevel";
 export * from "./positionCloseConfirmation";

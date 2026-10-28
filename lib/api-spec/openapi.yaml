@@ -20069,8 +20069,23 @@ components:
       properties:
         totalOpen: { type: integer }
         totalClosed: { type: integer }
-        floatingPnl: { type: number }
-        realizedPnl: { type: number }
+        floatingPnl:
+          type: ["number", "null"]
+          description: null when any open row has no marked-to-market P&L (never a guessed 0).
+        floatingPnlUnavailableReason: { type: ["string", "null"] }
+        realizedPnl:
+          type: number
+          description: Excludes closed rows whose pnlStatus is UNKNOWN.
+        realizedPnlExcludedUnknown:
+          type: integer
+          description: Closed rows left out of realized/daily/weekly figures because pnlStatus is UNKNOWN.
+        source:
+          type: string
+          enum: [LEGACY_TRADES_TABLE]
+          description: Where the figures come from.
+        sourceNote:
+          type: string
+          description: Plain-English scope of the figures (e.g. broker positions not included).
         exposureByMarket:
           type: object
           additionalProperties: { type: number }
@@ -20085,8 +20100,12 @@ components:
             properties:
               currency: { type: string }
               netLots: { type: number }
-        dailyDrawdown: { type: number }
-        weeklyDrawdown: { type: number }
+        dailyDrawdown:
+          type: number
+          description: Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown.
+        weeklyDrawdown:
+          type: number
+          description: Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown.
 
     CorrelationWarning:
       type: object

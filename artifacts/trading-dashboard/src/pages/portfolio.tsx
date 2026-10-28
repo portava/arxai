@@ -5,6 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Briefcase, AlertTriangle, TrendingDown } from "lucide-react";
 
+const FALLBACK_SOURCE_NOTE =
+  "From the legacy trades table only. Broker positions are not included, so an empty view does not mean you have no open exposure.";
+
 export default function Portfolio() {
   const { data: exp, isLoading } = useGetPortfolioExposure({ query: { queryKey: getGetPortfolioExposureQueryKey(), refetchInterval: 10000 } });
   const { data: warns } = useGetCorrelationWarnings({ query: { queryKey: getGetCorrelationWarningsQueryKey(), refetchInterval: 10000 } });
@@ -13,7 +16,7 @@ export default function Portfolio() {
 
   const renderBars = (label: string, data: Record<string, number> | undefined) => {
     const entries = Object.entries(data ?? {});
-    if (entries.length === 0) return <p className="text-sm text-muted-foreground">No exposure.</p>;
+    if (entries.length === 0) return <p className="text-sm text-muted-foreground">No open rows in this source.</p>;
     const max = Math.max(...entries.map(([, v]) => Math.abs(v)));
     return (
       <div className="space-y-2">
@@ -37,13 +40,31 @@ export default function Portfolio() {
           <Briefcase className="text-primary" /> Portfolio Exposure
         </h2>
         <p className="text-muted-foreground">Risk distribution across markets, strategies, and currencies.</p>
+        {/* Scope first: these figures do not include broker positions, so an
+            empty or quiet view is not an all-clear. Shown even if an older
+            server omits the note (the client may only downgrade). */}
+        <p className="mt-1 text-xs text-yellow-600" data-testid="portfolio-source-note">{exp.sourceNote ?? FALLBACK_SOURCE_NOTE}</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Open Trades</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono">{exp.totalOpen}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Floating P&L</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold font-mono ${exp.floatingPnl >= 0 ? "text-success" : "text-destructive"}`}>${exp.floatingPnl.toFixed(2)}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Realized P&L</CardTitle></CardHeader><CardContent><div className={`text-2xl font-bold font-mono ${exp.realizedPnl >= 0 ? "text-success" : "text-destructive"}`}>${exp.realizedPnl.toFixed(2)}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown size={12}/>Daily Drawdown</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono text-destructive">${Math.abs(exp.dailyDrawdown).toFixed(2)}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Floating P&L</CardTitle></CardHeader><CardContent>
+          {exp.floatingPnl == null ? (
+            <>
+              <div className="text-2xl font-bold font-mono text-muted-foreground" data-testid="floating-pnl">Unavailable</div>
+              <div className="text-xs text-muted-foreground">{exp.floatingPnlUnavailableReason ?? "Open rows have no recorded P&L."}</div>
+            </>
+          ) : (
+            <div className={`text-2xl font-bold font-mono ${exp.floatingPnl >= 0 ? "text-success" : "text-destructive"}`} data-testid="floating-pnl">${exp.floatingPnl.toFixed(2)}</div>
+          )}
+        </CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Realized P&L</CardTitle></CardHeader><CardContent>
+          <div className={`text-2xl font-bold font-mono ${exp.realizedPnl >= 0 ? "text-success" : "text-destructive"}`}>${exp.realizedPnl.toFixed(2)}</div>
+          {(exp.realizedPnlExcludedUnknown ?? 0) > 0 ? (
+            <div className="text-xs text-muted-foreground">{exp.realizedPnlExcludedUnknown} closed trade{exp.realizedPnlExcludedUnknown === 1 ? "" : "s"} excluded: P/L unknown</div>
+          ) : null}
+        </CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown size={12}/>Net Loss, Last 24h</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold font-mono text-destructive">${Math.abs(exp.dailyDrawdown).toFixed(2)}</div><div className="text-xs text-muted-foreground">Closed trades only; not a peak-to-trough drawdown.</div></CardContent></Card>
       </div>
 
       {warns && warns.length > 0 ? (
