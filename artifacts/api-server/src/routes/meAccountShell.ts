@@ -21,7 +21,6 @@ import {
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
   userMasterLiveAccessTable,
-  performanceDailyTable,
   paperTradesTable,
   userTradingPermissionsTable,
   userSlotAllocationTable,
@@ -78,16 +77,25 @@ export type AccountShellResponse = {
   };
   pnl: {
     openPnl: number;
-    closedPnlToday: number;
-    closedPnlWeek: number;
-    closedPnlTotal: number;
-    tradesToday: number;
-    winsToday: number;
-    lossesToday: number;
+    // Closed P/L and today's trade counts. null = not measured: this view has
+    // no ledger for closed trades (performance_daily, the table it used to
+    // read, has no writer), so it reports them as unknown rather than 0.
+    closedPnlToday: number | null;
+    closedPnlWeek: number | null;
+    closedPnlTotal: number | null;
+    tradesToday: number | null;
+    winsToday: number | null;
+    lossesToday: number | null;
+    closedMeasured: boolean;
+    /** Plain-English reason when closedMeasured is false, else null. */
+    closedNote: string | null;
   };
   risk: {
     availableRiskAmount: number | null;
+    // null when there is no daily-loss cap, or when today's closed P/L is not
+    // measured (then dailyLossRemainingNote says so) — never the whole cap.
     dailyLossRemaining: number | null;
+    dailyLossRemainingNote: string | null;
     openExposureLots: number;
     maxLotSize: number | null;
     maxOpenTrades: number | null;
@@ -134,6 +142,12 @@ export type AccountShellResponse = {
     };
   };
 };
+
+/** Loss left under the daily cap; null when there is no cap or today's closed P/L is unknown. */
+function remainingDailyLoss(cap: number | null, closedPnlToday: number | null): number | null {
+  if (cap == null || closedPnlToday == null) return null;
+  return Math.max(0, cap - Math.max(0, -closedPnlToday));
+}
 
 // Exported so Ruby (the assistant) can call it directly without an HTTP
 // round-trip. Same per-user scoping; same shape; never returns other
@@ -284,29 +298,15 @@ export async function computeAccountShell(
     const rs = storedLimits.userSettings;
     const { limits: L, views: limitViews } = effectiveLimitViews(storedLimits);
 
-    // 5) Performance — closed P/L today / week / total + counts.
-    const today = new Date().toISOString().slice(0, 10);
-    const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
-    const perfRows = await db
-      .select({
-        date: performanceDailyTable.date,
-        pnl: performanceDailyTable.pnl,
-        trades: performanceDailyTable.trades,
-        wins: performanceDailyTable.wins,
-        losses: performanceDailyTable.losses,
-      })
-      .from(performanceDailyTable)
-      .where(eq(performanceDailyTable.userId, userId));
-
-    const todayRow = perfRows.find((r) => r.date === today);
-    const closedPnlToday = todayRow ? Number(todayRow.pnl || 0) : 0;
-    const tradesToday = todayRow ? Number(todayRow.trades || 0) : 0;
-    const winsToday = todayRow ? Number(todayRow.wins || 0) : 0;
-    const lossesToday = todayRow ? Number(todayRow.losses || 0) : 0;
-    const closedPnlWeek = perfRows
-      .filter((r) => r.date >= weekAgo)
-      .reduce((s, r) => s + Number(r.pnl || 0), 0);
-    const closedPnlTotal = perfRows.reduce((s, r) => s + Number(r.pnl || 0), 0);
+    // 5) Performance — closed P/L today / week / total + counts. NOT
+    //    MEASURED here. This used to read performance_daily, but nothing in
+    //    the app writes that table, so every user saw $0 and 0 trades. Until a
+    //    real closed-trade ledger feeds this view, the figures are unknown.
+    const closedPnlToday: number | null = null;
+    const closedMeasured = false;
+    const closedNote =
+      "Not measured: this card has no source for your closed trades yet, so today's P/L, " +
+      "closed P/L and trade counts are not shown.";
 
     // 6) Open exposure & open P/L (per-user). For SHARED_MASTER_MT5 use
     //    open attributions; otherwise use open paper trades. Both already
@@ -404,8 +404,12 @@ export async function computeAccountShell(
       ? gov.requireStopLoss
       : (mla?.requireStopLoss ?? false)) || L.requireStopLoss;
 
-    const dailyLossRemaining = effMaxDailyLossAmount != null
-      ? Math.max(0, effMaxDailyLossAmount - Math.max(0, -closedPnlToday))
+    // The loss left today needs today's closed P/L. When that is not
+    // measured the remainder is unknown — showing the whole cap would
+    // overstate it for anyone who has lost money today.
+    const dailyLossRemaining = remainingDailyLoss(effMaxDailyLossAmount, closedPnlToday);
+    const dailyLossRemainingNote = effMaxDailyLossAmount != null && dailyLossRemaining == null
+      ? "Not measured: today's closed P/L is not available here, so the loss left under your daily limit cannot be worked out."
       : null;
     // Best-effort available risk: per-trade % of current balance, if known.
     // Never fabricate capital. When no real allocated balance is known we
@@ -473,15 +477,18 @@ export async function computeAccountShell(
       pnl: {
         openPnl,
         closedPnlToday,
-        closedPnlWeek,
-        closedPnlTotal,
-        tradesToday,
-        winsToday,
-        lossesToday,
+        closedPnlWeek: null,
+        closedPnlTotal: null,
+        tradesToday: null,
+        winsToday: null,
+        lossesToday: null,
+        closedMeasured,
+        closedNote,
       },
       risk: {
         availableRiskAmount,
         dailyLossRemaining,
+        dailyLossRemainingNote,
         openExposureLots,
         maxLotSize: effMaxLotSize,
         maxOpenTrades: effMaxOpenTrades,

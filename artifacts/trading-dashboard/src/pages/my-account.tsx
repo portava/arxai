@@ -42,16 +42,20 @@ type ShellResponse = {
   };
   pnl: {
     openPnl: number;
-    closedPnlToday: number;
-    closedPnlWeek: number;
-    closedPnlTotal: number;
-    tradesToday: number;
-    winsToday: number;
-    lossesToday: number;
+    // null = not measured (the server has no closed-trade source for this view).
+    closedPnlToday: number | null;
+    closedPnlWeek: number | null;
+    closedPnlTotal: number | null;
+    tradesToday: number | null;
+    winsToday: number | null;
+    lossesToday: number | null;
+    closedMeasured?: boolean;
+    closedNote?: string | null;
   };
   risk: {
     availableRiskAmount: number | null;
     dailyLossRemaining: number | null;
+    dailyLossRemainingNote?: string | null;
     openExposureLots: number;
     maxLotSize: number | null;
     maxOpenTrades: number | null;
@@ -73,7 +77,9 @@ function fmtMoney(v: number | null | undefined): string {
   const sign = n < 0 ? "-" : "";
   return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
-function fmtPnl(v: number): string {
+const NOT_MEASURED = "Not measured";
+function fmtPnl(v: number | null | undefined): string {
+  if (v == null || !isFinite(Number(v))) return NOT_MEASURED;
   const sign = v > 0 ? "+" : v < 0 ? "-" : "";
   return `${sign}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
@@ -157,7 +163,8 @@ export default function MyAccountPage() {
   }
 
   const s = q.data;
-  const pnlClass = (v: number) => v > 0 ? "text-success" : v < 0 ? "text-danger" : "";
+  const pnlClass = (v: number | null | undefined) => v == null ? "text-txt-secondary" : v > 0 ? "text-success" : v < 0 ? "text-danger" : "";
+  const fmtCount = (v: number | null | undefined) => v == null ? NOT_MEASURED : String(v);
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="my-account-page">
@@ -285,7 +292,9 @@ export default function MyAccountPage() {
       <Card data-testid="my-pnl-card" className="rounded-2xl border-border bg-card">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            {s.pnl.closedPnlToday >= 0 ? <TrendingUp className="h-4 w-4 text-success" /> : <TrendingDown className="h-4 w-4 text-danger" />}
+            {s.pnl.closedPnlToday == null
+              ? <Activity className="h-4 w-4" />
+              : s.pnl.closedPnlToday >= 0 ? <TrendingUp className="h-4 w-4 text-success" /> : <TrendingDown className="h-4 w-4 text-danger" />}
             My P/L
           </CardTitle>
         </CardHeader>
@@ -294,10 +303,15 @@ export default function MyAccountPage() {
           <Stat label="Open P/L" valueClass={pnlClass(s.pnl.openPnl)} value={fmtPnl(s.pnl.openPnl)} testid="my-pnl-open" />
           <Stat label="Closed P/L (7d)" valueClass={pnlClass(s.pnl.closedPnlWeek)} value={fmtPnl(s.pnl.closedPnlWeek)} testid="my-pnl-week" />
           <Stat label="Closed P/L (total)" valueClass={pnlClass(s.pnl.closedPnlTotal)} value={fmtPnl(s.pnl.closedPnlTotal)} testid="my-pnl-total" />
-          <Stat label="Trades Today" value={String(s.pnl.tradesToday)} testid="my-trades-today" />
-          <Stat label="Wins Today" value={String(s.pnl.winsToday)} testid="my-wins-today" />
-          <Stat label="Losses Today" value={String(s.pnl.lossesToday)} testid="my-losses-today" />
+          <Stat label="Trades Today" value={fmtCount(s.pnl.tradesToday)} testid="my-trades-today" />
+          <Stat label="Wins Today" value={fmtCount(s.pnl.winsToday)} testid="my-wins-today" />
+          <Stat label="Losses Today" value={fmtCount(s.pnl.lossesToday)} testid="my-losses-today" />
         </CardContent>
+        {s.pnl.closedNote && (
+          <CardContent className="pt-0 text-xs text-txt-secondary" data-testid="my-pnl-closed-note">
+            {s.pnl.closedNote}
+          </CardContent>
+        )}
       </Card>
 
       {/* My Risk */}
@@ -309,7 +323,11 @@ export default function MyAccountPage() {
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Stat label="Available Risk" value={fmtMoney(s.risk.availableRiskAmount)} testid="my-available-risk" />
-          <Stat label="Daily Loss Remaining" value={fmtMoney(s.risk.dailyLossRemaining)} testid="my-daily-loss-remaining" />
+          <Stat
+            label="Daily Loss Remaining"
+            value={s.risk.dailyLossRemaining == null && s.risk.dailyLossRemainingNote ? NOT_MEASURED : fmtMoney(s.risk.dailyLossRemaining)}
+            testid="my-daily-loss-remaining"
+          />
           <Stat label="Open Exposure (lots)" value={s.risk.openExposureLots.toFixed(2)} testid="my-open-exposure" />
           <Stat label="Max Lot Size" value={s.risk.maxLotSize != null ? s.risk.maxLotSize.toFixed(2) : "—"} testid="my-max-lot" />
           <Stat label="Max Open Trades" value={s.risk.maxOpenTrades != null ? String(s.risk.maxOpenTrades) : "—"} testid="my-max-open" />
@@ -323,6 +341,7 @@ export default function MyAccountPage() {
         </CardContent>
         <CardContent className="pt-0 text-xs text-txt-secondary space-y-1" data-testid="my-risk-limits-in-force">
           <div>Limits shown are the ones enforced on every order. Your saved preferences are edited in Risk settings.</div>
+          {s.risk.dailyLossRemainingNote && <div data-testid="my-daily-loss-remaining-note">{s.risk.dailyLossRemainingNote}</div>}
           {Object.entries(s.risk.limits ?? {})
             .filter(([k, v]) => ["maxLotSize", "maxOpenTrades", "maxDailyLossAmount", "maxRiskPerTradePercent"].includes(k) && v.reason && v.overriddenBy !== "default")
             .map(([k, v]) => <div key={k} data-testid={`my-risk-override-${k}`}>{v.label}: {v.reason}</div>)}
