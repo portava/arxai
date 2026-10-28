@@ -22,10 +22,12 @@ function ms(n: number | null | undefined): string {
 }
 
 
+// candleStats.changePct is already a percent on the server
+// ((changeAbs / prev.close) * 100), so it prints as-is — never ×100 again.
 function pct(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   const sign = n > 0 ? "+" : "";
-  return `${sign}${(n * 100).toFixed(2)}%`;
+  return `${sign}${n.toFixed(2)}%`;
 }
 
 // Quality → human-readable failure category. Never exposes internal gate names,
