@@ -119,3 +119,30 @@ describe("Manual Trade Ticket — estimated loss / gain", () => {
     expect(screen.getByTestId("ticket-est-loss").textContent).toBe("Not estimated");
   });
 });
+
+// POST /api/live-intent/submit compares only the Max Loss figure the trader
+// types (maxLossUsd) with the $5 cap. It never works out the loss at the stop
+// from lot, stop and price, so "max loss ≤ $5" and "Tester caps: passed" must
+// not read as a checked bound on the real loss.
+describe("Manual Trade Ticket — the max-loss cap is the declared figure only", () => {
+  it("names the cap as the Max Loss you enter, and the passed result says the loss at the stop was not computed", async () => {
+    stubFetch(baseRoutes({
+      "/api/live-intent/submit": { body: {
+        accepted: false, riskCheckPassed: true, testerAccess: true, brokerExecution: false,
+        status: "PENDING_MT5_CONNECTION", intentId: "intent_x", mt5Connected: false, reason: "Captured.",
+      } },
+    }));
+    await renderSettled();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/max loss ≤ \$5\)/);
+    expect(text).toMatch(/the Max Loss you enter ≤ \$5 \(the loss at your stop is not computed\)/);
+    expect(screen.getByTestId("ticket-maxloss-hint").textContent).toMatch(/not checked against your stop/);
+    await act(async () => { fireEvent.change(screen.getByTestId("ticket-sl"), { target: { value: "1.0450" } }); });
+    await act(async () => { screen.getByTestId("ticket-submit").click(); });
+    await act(async () => { (await screen.findByTestId("ticket-confirm-submit")).click(); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    const caps = screen.getByTestId("ticket-response-caps").textContent ?? "";
+    expect(caps).toMatch(/^Tester caps: passed/);
+    expect(caps).toMatch(/loss at your stop was not computed/);
+  });
+});

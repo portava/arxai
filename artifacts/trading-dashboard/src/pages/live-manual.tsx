@@ -9,9 +9,11 @@ import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 import { formatMoneyEstimate, type MoneyEstimate } from "@/lib/fxRiskEstimate";
 
 // What POST /api/live-intent/submit checks: three static tester caps
-// (routes/liveIntent.ts TESTER_CAPS). It does not run the pre-trade Risk
+// (routes/liveIntent.ts TESTER_CAPS). The max-loss cap compares only the Max
+// Loss figure typed here (maxLossUsd); the server never computes the loss at
+// the stop from lot, stop and price. It does not run the pre-trade Risk
 // Governor, does not read the kill switch and executes nothing anywhere.
-const TESTER_CAPS_TEXT = "lot ≤ 0.01, stop-loss required, max loss ≤ $5";
+const TESTER_CAPS_TEXT = "lot ≤ 0.01, stop-loss required, and the Max Loss you enter ≤ $5 (the loss at your stop is not computed)";
 
 type SubmitResp = {
   accepted: boolean; riskCheckPassed?: boolean; testerAccess: boolean; brokerExecution: boolean;
@@ -164,7 +166,7 @@ export default function LiveManualPage() {
               <div><Label>Take Profit</Label><Input type="number" step="0.0001" value={takeProfit} onChange={e => setTakeProfit(e.target.value === "" ? "" : Number(e.target.value))} data-testid="ticket-tp" /></div>
             </div>
             <div>
-              <Label>Max Loss (USD)</Label>
+              <Label>Max Loss (USD) <span className="text-[10px] text-txt-muted" data-testid="ticket-maxloss-hint">(declared — not checked against your stop)</span></Label>
               <Input type="number" step="0.5" value={maxLoss} onChange={e => setMaxLoss(Number(e.target.value))} data-testid="ticket-maxloss" />
             </div>
             <div>
@@ -246,7 +248,7 @@ export default function LiveManualPage() {
                 </div>
                 <p className="text-txt-muted mt-1">{resp.reason}</p>
                 {typeof resp.riskCheckPassed === "boolean" && (
-                  <p className="mt-1" data-testid="ticket-response-caps">Tester caps: {resp.riskCheckPassed ? "passed" : "failed"} (Risk Governor not run)</p>
+                  <p className="mt-1" data-testid="ticket-response-caps">Tester caps: {resp.riskCheckPassed ? "passed" : "failed"} (lot, stop-loss set and your declared Max Loss; the loss at your stop was not computed; Risk Governor not run)</p>
                 )}
                 <p className="font-mono text-[10px] mt-1">intentId: {resp.intentId}</p>
               </div>

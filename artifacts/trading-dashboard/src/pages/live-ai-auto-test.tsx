@@ -46,8 +46,11 @@ type LastResult = {
 };
 
 // Only maxLotSize / maxLossPerTrade / stop-loss are checked by the server
-// (routes/liveIntent.ts). The per-session cap and cooldown are this page's own
-// loop limits and are labelled as such.
+// (routes/liveIntent.ts). maxLossPerTrade is compared with the maxLossUsd the
+// client declares (this page always sends 5); the server never computes the
+// loss at the stop from lot, stop and price, so it is labelled as declared.
+// The per-session cap and cooldown are this page's own loop limits and are
+// labelled as such.
 const TESTER_CAPS = {
   maxAiLiveIntentPerSession: 1,
   maxLotSize: 0.01,
@@ -224,7 +227,12 @@ export default function LiveAiAutoTestPage() {
             <div className="text-xs text-muted-foreground mt-1" data-testid="caps-server">
               <span className="font-medium text-foreground">Checked by the server on every submit (server-enforced):</span>
               <ul className="list-disc pl-5">
-                <li>max lot 0.01 · max loss/intent $5 · stop-loss required</li>
+                <li>max lot 0.01 · stop-loss required (a stop must be set)</li>
+                <li data-testid="caps-declared-loss">
+                  declared max loss ≤ $5 only: the server compares the max-loss figure this page sends (always
+                  $5) with the cap. It does not work out the loss at the stop-loss from lot, stop and price, so
+                  the real loss at the stop is not checked.
+                </li>
               </ul>
             </div>
             <div className="text-xs text-muted-foreground mt-1" data-testid="caps-browser">
