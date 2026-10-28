@@ -26,11 +26,13 @@ const MAP: Record<StatusKind, { label: string; icon: LucideIcon; cls: string; ar
   INACTIVE:            { label: "INACTIVE",            icon: Circle,       cls: "bg-muted text-muted-foreground border-border",              aria: "status: inactive" },
 };
 
-export function StatusPill({ status, label, className, size = "sm" }: { status: StatusKind; label?: string; className?: string; size?: "xs" | "sm" }) {
+// `ariaLabel` overrides the kind's accessible label when a caller shows its own
+// `label` text, so screen readers hear the same status the pill displays.
+export function StatusPill({ status, label, ariaLabel, className, size = "sm" }: { status: StatusKind; label?: string; ariaLabel?: string; className?: string; size?: "xs" | "sm" }) {
   const m = MAP[status];
   const Icon = m.icon;
   return (
-    <Badge variant="outline" className={cn(m.cls, "font-semibold inline-flex items-center", size === "xs" ? "text-[10px] py-0 px-1.5" : "", className)} aria-label={m.aria}>
+    <Badge variant="outline" className={cn(m.cls, "font-semibold inline-flex items-center", size === "xs" ? "text-[10px] py-0 px-1.5" : "", className)} aria-label={ariaLabel ?? m.aria}>
       <Icon className={cn(size === "xs" ? "h-2.5 w-2.5 mr-1" : "h-3 w-3 mr-1")} aria-hidden="true" />
       {label ?? m.label}
     </Badge>
