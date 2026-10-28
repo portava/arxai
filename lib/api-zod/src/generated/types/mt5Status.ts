@@ -36,5 +36,9 @@ export interface Mt5Status {
   accountType: Mt5StatusAccountType;
   maxDemoLot: number;
   openPositions: Mt5Position[];
+  /** False when openPositions was not read from the broker. An empty list is then not a count of open trades. */
+  openPositionsMeasured?: boolean;
+  /** Plain statement of whether and where open positions were read. */
+  openPositionsNote?: string;
   accountSnapshot: Mt5StatusAccountSnapshot;
 }

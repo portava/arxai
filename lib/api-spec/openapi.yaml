@@ -18995,6 +18995,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Mt5Position"
+        openPositionsMeasured:
+          type: boolean
+          description: False when openPositions was not read from the broker. An empty list is then not a count of open trades.
+        openPositionsNote:
+          type: string
+          description: Plain statement of whether and where open positions were read.
         accountSnapshot:
           type: object
           required: [account, balance, equity, currency]
@@ -19008,6 +19014,9 @@ components:
             freeMargin: { type: ["number", "null"] }
             marginLevel: { type: ["number", "null"] }
             currency: { type: ["string", "null"] }
+            syncedAt:
+              type: ["string", "null"]
+              description: When the EA last pushed these account figures (ISO). Null when never synced.
 
     Mt5BridgeInfo:
       type: object

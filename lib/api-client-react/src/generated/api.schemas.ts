@@ -9891,6 +9891,11 @@ export type Mt5StatusAccountSnapshot = {
   marginLevel?: number | null;
   /** @nullable */
   currency: string | null;
+  /**
+   * When the EA last pushed these account figures (ISO). Null when never synced.
+   * @nullable
+   */
+  syncedAt?: string | null;
 };
 
 export interface Mt5Status {
@@ -9917,6 +9922,10 @@ export interface Mt5Status {
   accountType: Mt5StatusAccountType;
   maxDemoLot: number;
   openPositions: Mt5Position[];
+  /** False when openPositions was not read from the broker. An empty list is then not a count of open trades. */
+  openPositionsMeasured?: boolean;
+  /** Plain statement of whether and where open positions were read. */
+  openPositionsNote?: string;
   accountSnapshot: Mt5StatusAccountSnapshot;
 }
 

@@ -4893,6 +4893,16 @@ export const GetMt5StatusResponse = zod.object({
       profit: zod.number().nullish(),
     }),
   ),
+  openPositionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "False when openPositions was not read from the broker. An empty list is then not a count of open trades.",
+    ),
+  openPositionsNote: zod
+    .string()
+    .optional()
+    .describe("Plain statement of whether and where open positions were read."),
   accountSnapshot: zod.object({
     account: zod.string().nullable(),
     broker: zod.string().nullish(),
@@ -4903,6 +4913,12 @@ export const GetMt5StatusResponse = zod.object({
     freeMargin: zod.number().nullish(),
     marginLevel: zod.number().nullish(),
     currency: zod.string().nullable(),
+    syncedAt: zod
+      .string()
+      .nullish()
+      .describe(
+        "When the EA last pushed these account figures (ISO). Null when never synced.",
+      ),
   }),
 });
 
