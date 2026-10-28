@@ -22,15 +22,15 @@ async page => {
     const q=p=>sorted.length?sorted[Math.ceil(sorted.length*p)-1]:null;
     return {n:sorted.length,p50:q(.5),p95:q(.95),p99:q(.99),max:sorted.at(-1)??null};
   }
-  function summarizeControl(allSamples,control,expectedSamples,target) {
+  function summarizeControl(allSamples,control,expectedSamples,target,controlFailure=null) {
     const samples=allSamples.filter(s=>s.record&&s.control===control);
     const success=samples.filter(s=>s.trusted===true&&!s.failure&&Number.isFinite(s.completedOpportunityMs)&&s.completedOpportunityMs>=0);
-    const item={control,expectedSamples,recordedSamples:samples.length,failedSamples:samples.length-success.length,
+    const item={control,expectedSamples,recordedSamples:samples.length,failedSamples:samples.length-success.length,controlFailure,
       inputCaptured:stats(samples.map(s=>s.inputCapturedMs)),controlAcknowledgement:stats(samples.map(s=>s.controlAcknowledgementMs)),
       actualState:stats(success.map(s=>s.actualStateMs)),completedOpportunity:stats(success.map(s=>s.completedOpportunityMs)),witnessCost:stats(samples.map(s=>s.witnessCostMs)),
       captureToActualState:stats(success.map(s=>s.captureToActualStateMs)),captureToCompletedOpportunity:stats(success.map(s=>s.captureToCompletedOpportunityMs)),
       outlierSampleIds:samples.filter(s=>!success.includes(s)||s.completedOpportunityMs>target).map(s=>s.id),successfulTimingDistributionOnly:true};
-    item.meetsTarget=samples.length===expectedSamples&&success.length===samples.length&&item.completedOpportunity.p95!==null&&item.completedOpportunity.p95<=target;
+    item.meetsTarget=!controlFailure&&samples.length===expectedSamples&&success.length===samples.length&&item.completedOpportunity.p95!==null&&item.completedOpportunity.p95<=target;
     return item;
   }
   async function performWithStyleIsolation(spec,run,perform,recover) {
@@ -224,12 +224,11 @@ async page => {
         const observed=await page.evaluate(()=>{const s=window.__scannerLatency;return {samples:s?.samples??[],inFlight:s?.inFlight?{...s.inFlight,timer:undefined}:null,pendingArm:s?.armed??null,inputAttempts:s?.inputAttempts??[],longTasks:s?.longTasks??[],longTasksUnsupported:s?.longTasksUnsupported??true};}).catch(()=>({samples:[],observationUnavailable:true}));
         Object.assign(run,observed);run.after=await page.evaluate(()=>({state:window.__arxChartQa?.snapshot(),data:window.__arxChartQa?.data()})).catch(()=>null);
         for(const control of plan.controls) {
-          const item=summarizeControl(run.samples,control,REPS*PASSES,TARGET_MS);
-          item.controlFailure=run.controlFailures.find(f=>f.control===control)?.kind??null;
+          const item=summarizeControl(run.samples,control,REPS*PASSES,TARGET_MS,run.controlFailures.find(f=>f.control===control)?.kind??null);
           item.skippedMeasuredActions=run.skippedActions.filter(a=>a.record&&a.control===control).length;
           run.summary.push(item);if(!item.meetsTarget)run.verdict='FAIL';
         }
-        if(run.failure||run.inFlight||run.pendingArm||run.pendingSample)run.verdict='FAIL';
+        if(run.failure||run.inFlight||run.pendingArm||run.pendingSample||run.controlFailures.length)run.verdict='FAIL';
         await page.evaluate(()=>window.__scannerLatency?.dispose?.()).catch(()=>{});
       }
     }

@@ -73,6 +73,13 @@ test('summary retains a slow outlier and fails missing, failed or malformed samp
     const next=structuredClone(samples);Object.assign(next[0],mutation);const summary=summarize(next,'zoom',80,100);assert.equal(summary.meetsTarget,false);assert.equal(summary.failedSamples,1);assert.ok(summary.outlierSampleIds.includes(0));
   }
 });
+test('a late transport/control failure rejects an otherwise complete passing sample set',()=>{
+  const samples=Array.from({length:80},(_,id)=>({id,control:'Style bars',record:true,trusted:true,failure:null,completedOpportunityMs:40}));
+  const summary=summarize(samples,'Style bars',80,100,'transport failed after last completed sample');
+  assert.equal(summary.recordedSamples,80);assert.equal(summary.completedOpportunity.n,80);
+  assert.equal(summary.completedOpportunity.p95,40);assert.equal(summary.meetsTarget,false);
+  assert.equal(summary.controlFailure,'transport failed after last completed sample');
+});
 function sampler(){
   let now=10,current=baseline();const events={},frames=[],timers=new Map();let sequence=0;
   const select={value:'candles'};
