@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Bot, Play, Pause, StopCircle, AlertOctagon, Zap, ThumbsUp, ThumbsDown, Brain, ShieldAlert } from "lucide-react";
+import { rowTimeLabel } from "@/lib/rowTimeLabel";
 
 type Status = {
   mode: string; state: string;
@@ -259,7 +260,7 @@ export default function AutopilotControlCenter() {
                 <Badge variant="outline">{d.timeframe}</Badge>
                 <Badge variant="outline">{d.strategy}</Badge>
                 <span className="text-muted-foreground">{d.reason}</span>
-                <span className="ml-auto text-muted-foreground">{new Date(d.ts).toLocaleTimeString()}</span>
+                <span className="ml-auto text-muted-foreground">{rowTimeLabel(d.ts)}</span>
               </div>
               <div className="flex flex-wrap gap-2 text-muted-foreground">
                 <span>conf {d.confidenceScore}</span><span>opp {d.opportunityScore}</span>

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { NotebookPen } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
+import { rowTimeLabel } from "@/lib/rowTimeLabel";
 
 type Entry = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; aiSaw: string; whatHappened: string; rightOrWrong: "RIGHT" | "WRONG" | "PENDING"; lesson: string };
 const RW_COLOR: Record<string, string> = { RIGHT: "bg-emerald-500/20 text-emerald-400", WRONG: "bg-rose-500/20 text-rose-400", PENDING: "bg-slate-500/20 text-slate-300" };
@@ -66,7 +67,7 @@ export default function ShadowJournal() {
                 <Badge variant="outline">{e.symbol}</Badge>
                 <Badge variant="outline">{e.strategy}</Badge>
                 <Badge variant="outline">mc {e.marketCondition}</Badge>
-                <span className="ml-auto text-muted-foreground">{new Date(e.ts).toLocaleTimeString()}</span>
+                <span className="ml-auto text-muted-foreground">{rowTimeLabel(e.ts)}</span>
               </div>
               <div className="mt-1"><span className="text-muted-foreground">AI saw:</span> {e.aiSaw}</div>
               <div><span className="text-muted-foreground">Outcome:</span> {e.whatHappened}</div>

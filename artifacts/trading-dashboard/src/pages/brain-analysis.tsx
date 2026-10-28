@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DisclaimerBanner } from "@/components/compliance/DisclaimerBanner";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import {
   Brain,
   Search,
@@ -87,7 +88,9 @@ function SectionCard({ title, icon: Icon, children, className }: { title: string
   );
 }
 
-function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] }) {
+// Levels carry no instrument precision here: each is printed at its
+// magnitude's precision (indices 2, JPY-style 3, FX 5), never a blanket 5.
+export function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] }) {
   const d = data as any;
   return (
     <div className="space-y-3 text-sm">
@@ -113,7 +116,7 @@ function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] 
         <div>
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Support Levels</p>
           <div className="flex flex-wrap gap-1">
-            {d.supportLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-emerald-900/30 border border-emerald-700/30 rounded text-emerald-400 text-xs font-mono">{l.toFixed(5)}</span>)}
+            {d.supportLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-emerald-900/30 border border-emerald-700/30 rounded text-emerald-400 text-xs font-mono">{formatInstrumentPrice(l, null)}</span>)}
           </div>
         </div>
       )}
@@ -121,7 +124,7 @@ function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] 
         <div>
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Resistance Levels</p>
           <div className="flex flex-wrap gap-1">
-            {d.resistanceLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-red-900/30 border border-red-700/30 rounded text-red-400 text-xs font-mono">{l.toFixed(5)}</span>)}
+            {d.resistanceLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-red-900/30 border border-red-700/30 rounded text-red-400 text-xs font-mono">{formatInstrumentPrice(l, null)}</span>)}
           </div>
         </div>
       )}

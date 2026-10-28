@@ -5,6 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Eye, Play, StopCircle } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
+import { formatInstrumentPrice, magnitudeDecimals } from "@/lib/instrumentPriceFormat";
+import { rowTimeLabel } from "@/lib/rowTimeLabel";
+
+// Decisions carry no instrument precision, so one precision per row comes
+// from the entry's magnitude (indices 2, JPY-style 3, FX 5), never a blanket
+// 5 decimals. A missing price (stored as 0) is "—", not "0.00".
+function decisionPrices(d: { entry: number; sl: number; tp: number }): string {
+  const ok = (v: number) => Number.isFinite(v) && v > 0;
+  const p = ok(d.entry) ? magnitudeDecimals(d.entry) : null;
+  const f = (v: number) => (ok(v) ? formatInstrumentPrice(v, p) : "—");
+  return `entry ${f(d.entry)} sl ${f(d.sl)} tp ${f(d.tp)}`;
+}
 
 type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number };
 type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number; tp: number; confidence: number; status: string; pnlR?: number; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
@@ -108,9 +120,9 @@ export default function ShadowMode() {
                 <span className="text-muted-foreground">conf {d.confidence}</span>
                 <span className="text-muted-foreground">mc {d.marketCondition}</span>
                 {d.pnlR != null && <span className="text-muted-foreground">R={d.pnlR.toFixed(2)}</span>}
-                <span className="ml-auto text-muted-foreground">{new Date(d.ts).toLocaleTimeString()}</span>
+                <span className="ml-auto text-muted-foreground">{rowTimeLabel(d.ts)}</span>
               </div>
-              <div className="text-muted-foreground mt-1">entry {d.entry.toFixed(5)} sl {d.sl.toFixed(5)} tp {d.tp.toFixed(5)}</div>
+              <div className="text-muted-foreground mt-1">{decisionPrices(d)}</div>
               <div className="text-muted-foreground">{d.reason}</div>
               {d.reasonToAvoid && <div className="text-rose-400">avoid: {d.reasonToAvoid}</div>}
             </div>
