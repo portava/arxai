@@ -6,6 +6,8 @@
 //   - profit was paper equity minus the configured $100k challenge size, with
 //     no challenge start: a default $10k paper account read −$90,000 and
 //     FAILED, and P&L from before the challenge was counted.
+//   - reaching the profit target read PASSED although minimum trading days,
+//     consistency, news, weekend, lot and position rules are never evaluated.
 //
 // propFirmStatus / configurePropFirm run for real; their fact sources (the
 // governor's context builder, the trader's settings row, the paper book
@@ -22,7 +24,8 @@ type Acct = { id: number; equity: number; currentBalance: number; startingBalanc
 const state: {
   ctx: Ctx; settings: Record<string, unknown>; acct: Acct | null; realized: number; realizedSince: Date[];
   written: Array<Record<string, unknown>>;
-} = { ctx: {}, settings: {}, acct: null, realized: 0, realizedSince: [], written: [] };
+  limitsReadable: boolean;
+} = { ctx: {}, settings: {}, acct: null, realized: 0, realizedSince: [], written: [], limitsReadable: true };
 
 const LIMITS = {
   maxLotSize: 1, maxDailyLossPercent: null, maxDailyLossAmount: 5000, maxRiskPerTradePercent: 1,
@@ -56,6 +59,11 @@ mock.module("@workspace/db", {
 });
 mock.module("../enforce.js", { namedExports: { buildRiskContext: async () => state.ctx } });
 mock.module("../riskEvents.js", { namedExports: { getOrCreateRiskSettings: async () => state.settings } });
+mock.module("../limitSettings.js", {
+  namedExports: {
+    loadEffectiveLimits: async () => { if (!state.limitsReadable) throw new Error("db down"); return LIMITS; },
+  },
+});
 mock.module("../../tradeEngine/paperBookReader.js", {
   namedExports: {
     readActivePaperAccount: async () => state.acct,
@@ -187,4 +195,46 @@ test("turning the challenge on with no paper account records no start, so it rea
   state.settings = { riskPreset: null, propFirm: { enabled: false } };
   const on = await configurePropFirm(1, { enabled: true });
   assert.equal(on.config.challengeStart, null);
+});
+
+test("reaching the profit target on day one is TARGET_REACHED, not PASSED: the other rules are listed as not checked", async () => {
+  state.limitsReadable = true;
+  state.acct = paper({ equity: 10_900, currentBalance: 10_900 });
+  state.realized = 900;
+  const start = { at: "2026-10-28T08:00:00.000Z", paperAccountId: 3, equity: 10_000, equityAsOf: "2026-10-28T07:59:00.000Z" };
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, profitTarget: 800, challengeStart: start } };
+  const s = await propFirmStatus(1, NOW);
+  assert.ok(s.passed.includes("PROFIT_TARGET"));
+  assert.notEqual(s.status, "PASSED");
+  assert.equal(s.status, "TARGET_REACHED");
+  const byRule = new Map(s.notChecked.map((r) => [r.rule, r.reason]));
+  for (const rule of ["MIN_TRADING_DAYS", "CONSISTENCY", "NEWS_TRADING", "WEEKEND_HOLDING", "MAX_LOT_SIZE", "MAX_POSITIONS", "TOTAL_DD_LOWEST_EQUITY"]) {
+    assert.ok(byRule.has(rule), `${rule} is listed as not checked`);
+  }
+  assert.ok(!byRule.has("DAILY_DD_EARLIER_DAYS"), "a challenge started today has no earlier days");
+  assert.match(byRule.get("MIN_TRADING_DAYS")!, /5 days is not checked/);
+  assert.match(byRule.get("MAX_LOT_SIZE")!, /Risk Governor refuses new orders above 1 lots/);
+  assert.match(byRule.get("MAX_POSITIONS")!, /when 3 trades are open/);
+});
+
+test("a challenge started before today says earlier days' losses are not checked", async () => {
+  state.acct = paper();
+  state.realized = 0;
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000,
+    challengeStart: { at: "2026-10-25T08:00:00.000Z", paperAccountId: 3, equity: 10_000, equityAsOf: "2026-10-25T07:59:00.000Z" } } };
+  const s = await propFirmStatus(1, NOW);
+  assert.ok(s.notChecked.some((r) => r.rule === "DAILY_DD_EARLIER_DAYS"));
+});
+
+test("allowed news / weekend trading is not listed; unreadable limits are said to be unreadable", async () => {
+  state.limitsReadable = false;
+  state.acct = paper();
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, newsTradingAllowed: true, weekendHoldingAllowed: true,
+    challengeStart: { at: "2026-10-28T08:00:00.000Z", paperAccountId: 3, equity: 10_000, equityAsOf: "2026-10-28T07:59:00.000Z" } } };
+  const s = await propFirmStatus(1, NOW);
+  const rules = s.notChecked.map((r) => r.rule);
+  assert.ok(!rules.includes("NEWS_TRADING"));
+  assert.ok(!rules.includes("WEEKEND_HOLDING"));
+  assert.match(s.notChecked.find((r) => r.rule === "MAX_LOT_SIZE")!.reason, /could not be read/);
+  state.limitsReadable = true;
 });

@@ -13,6 +13,7 @@ import { buildRiskContext } from "./enforce.js";
 import { tradingDayStart, type RiskContext, type RiskVenue } from "./preTrade.js";
 import { readActivePaperAccount, sumPaperRealizedSince } from "../tradeEngine/paperBookReader.js";
 import { getOrCreateRiskSettings } from "./riskEvents.js";
+import { loadEffectiveLimits } from "./limitSettings.js";
 import { loadPlatformHalt } from "../safety/tradingHalt.js";
 
 export const RISK_PRESETS = ["ULTRA_CONSERVATIVE", "CONSERVATIVE", "BALANCED_TESTER", "AGGRESSIVE_SIMULATOR", "PROP_FIRM_CHALLENGE"] as const;
@@ -172,8 +173,41 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   };
 }
 
-export type PropFirmStatusCode = "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
+export type PropFirmStatusCode = "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "TARGET_REACHED" | "PASSED";
 export interface PropFirmRuleNotChecked { rule: string; reason: string }
+
+/**
+ * The challenge rules this view does not evaluate, with what (if anything)
+ * stands behind them. Only the profit target and today's / current
+ * drawdown are measured; everything here is listed as not checked, so a
+ * reached target can never read as a passed challenge.
+ */
+function uncheckedChallengeRules(
+  cfg: PropFirmConfig,
+  limits: { maxLotSize: number; discipline: { maxOpenTrades: number | null } } | null,
+  // Caveats on the two drawdown rules, when they were measured.
+  drawdown: { earlierDays: boolean; lowestEquity: boolean },
+): PropFirmRuleNotChecked[] {
+  const out: PropFirmRuleNotChecked[] = [];
+  if (drawdown.earlierDays) out.push({ rule: "DAILY_DD_EARLIER_DAYS", reason: "Only today's loss is checked. Daily losses on earlier days of the challenge are not." });
+  if (drawdown.lowestEquity) out.push({ rule: "TOTAL_DD_LOWEST_EQUITY", reason: "Only current equity is checked. A deeper dip earlier in the challenge is not recorded." });
+  out.push({ rule: "MIN_TRADING_DAYS", reason: `Trading days are not counted, so the minimum of ${cfg.minTradingDays} days is not checked.` });
+  out.push({ rule: "CONSISTENCY", reason: `The ${cfg.consistencyRulePctOfTotal}% consistency rule (best day against total profit) is not checked.` });
+  if (!cfg.newsTradingAllowed) out.push({ rule: "NEWS_TRADING", reason: "Trades opened around news are not checked against the no-news-trading rule." });
+  if (!cfg.weekendHoldingAllowed) out.push({ rule: "WEEKEND_HOLDING", reason: "Positions held over a weekend are not checked against the no-weekend-holding rule." });
+  const lot = limits?.maxLotSize ?? null;
+  out.push({ rule: "MAX_LOT_SIZE", reason: `Your trades are not checked against the ${cfg.maxLotSize}-lot cap. `
+    + (lot == null ? "Your lot limit in force could not be read."
+      : lot <= cfg.maxLotSize ? `The Risk Governor refuses new orders above ${lot} lots (your limit in force).`
+        : `Your lot limit in force is ${lot}, above the cap, so larger orders are not refused.`) });
+  const open = limits ? limits.discipline.maxOpenTrades : undefined;
+  out.push({ rule: "MAX_POSITIONS", reason: `Your trades are not checked against the ${cfg.maxPositions}-position cap. `
+    + (open === undefined ? "Your open-trade limit in force could not be read."
+      : open == null ? "No open-trade limit is in force, so extra positions are not refused."
+        : open <= cfg.maxPositions ? `The Risk Governor refuses a new order when ${open} trades are open (your limit in force).`
+          : `Your open-trade limit in force is ${open}, above the cap, so extra positions are not refused.`) });
+  return out;
+}
 
 /**
  * Prop-firm progress on the paper ledger, against the trader's stored challenge.
@@ -194,6 +228,7 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   const settings = await getOrCreateRiskSettings(userId);
   const cfg: PropFirmConfig = { ...DEFAULT_PROP_FIRM, ...((settings.propFirm as Partial<PropFirmConfig> | null) ?? {}) };
   const acct = await readActivePaperAccount(userId);
+  const limits = await loadEffectiveLimits(userId).catch(() => null);
   const start = cfg.challengeStart ?? null;
   const passed: string[] = []; const failed: string[] = [];
   const notChecked: PropFirmRuleNotChecked[] = [];
@@ -219,6 +254,7 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   if (notMeasuredReason != null || !acct || !start) {
     const reason = notMeasuredReason ?? "Not measured.";
     for (const rule of ["PROFIT_TARGET", "DAILY_DD", "TOTAL_DD"]) notChecked.push({ rule, reason });
+    notChecked.push(...uncheckedChallengeRules(cfg, limits, { earlierDays: false, lowestEquity: false }));
     return {
       ...base, measured: false, notMeasuredReason: reason as string | null,
       profitUsd: null as number | null, profitTargetProgress: null as number | null,
@@ -230,7 +266,8 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   }
 
   const profit = acct.equity - start.equity;
-  const since = new Date(Math.max(tradingDayStart(now).getTime(), Date.parse(start.at) || 0));
+  const dayStart = tradingDayStart(now).getTime();
+  const since = new Date(Math.max(dayStart, Date.parse(start.at) || 0));
   const realizedToday = await sumPaperRealizedSince({ account: acct.id }, since);
   const floating = acct.equity - acct.currentBalance;
   const dailyDD = Math.max(0, -(realizedToday + Math.min(0, floating)));
@@ -242,7 +279,10 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
   if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
   if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
-  const status: PropFirmStatusCode = !cfg.enabled ? "OFF" : failed.length ? "FAILED" : profit >= cfg.profitTarget ? "PASSED"
+  notChecked.push(...uncheckedChallengeRules(cfg, limits, { earlierDays: !(Date.parse(start.at) >= dayStart), lowestEquity: true }));
+  // A reached target is not a passed challenge while any rule is unchecked.
+  const status: PropFirmStatusCode = !cfg.enabled ? "OFF" : failed.length ? "FAILED"
+    : profit >= cfg.profitTarget ? (notChecked.length ? "TARGET_REACHED" : "PASSED")
     : dailyDD > cfg.maxDailyDrawdownUsd * 0.7 || totalDD > cfg.maxTotalDrawdownUsd * 0.7 ? "WARNING" : "ACTIVE";
   return {
     ...base, measured: true, notMeasuredReason: null as string | null,

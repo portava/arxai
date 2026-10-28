@@ -17,10 +17,12 @@ type Status = {
   challengeStartedAt?: string | null; startEquityUsd?: number | null; dailyDrawdownSince?: string | null;
   notes?: string[];
   passed: string[]; failed: string[]; notChecked?: Array<{ rule: string; reason: string }>;
-  status: "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
+  // TARGET_REACHED: profit target met, but some rules are not checked, so it
+  // is not a confirmed pass.
+  status: "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "TARGET_REACHED" | "PASSED";
 };
-const STATUS_LABEL: Record<string, string> = { NOT_MEASURED: "NOT MEASURED" };
-const STATUS_COLOR: Record<string, string> = { OFF: "bg-muted text-muted-foreground", NOT_MEASURED: "bg-amber-500/20 text-amber-400", ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
+const STATUS_LABEL: Record<string, string> = { NOT_MEASURED: "NOT MEASURED", TARGET_REACHED: "TARGET REACHED" };
+const STATUS_COLOR: Record<string, string> = { OFF: "bg-muted text-muted-foreground", NOT_MEASURED: "bg-amber-500/20 text-amber-400", TARGET_REACHED: "bg-blue-500/20 text-blue-400", ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
 
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, { credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
@@ -60,6 +62,11 @@ export default function PropFirmMode() {
           Measured on paper account #{s.paperAccountId}: equity ${s.equityUsd} as of {when(s.equityAsOf)} (the account's last stored mark),
           against ${s.startEquityUsd} when the challenge started {when(s.challengeStartedAt)}.
           {s.dailyDrawdownSince && <> Today's drawdown counts paper P/L settled since {when(s.dailyDrawdownSince)} plus the current floating loss.</>}
+        </p>
+      )}
+      {s && s.status === "TARGET_REACHED" && (
+        <p className="text-sm rounded border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-blue-300" data-testid="prop-target-reached">
+          Profit target reached. {s.notChecked?.length ?? 0} challenge rule{(s.notChecked?.length ?? 0) === 1 ? " is" : "s are"} not checked, so this is not a confirmed pass.
         </p>
       )}
       {s && (s.notes ?? []).map((n) => (
@@ -106,12 +113,19 @@ export default function PropFirmMode() {
       {s && (
         <Card>
           <CardHeader><CardTitle className="text-base">Rule status</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap gap-1">
+          <CardContent className="space-y-2">
+            <div className="flex flex-wrap gap-1">
             {s.passed.map((p) => <Badge key={p} className="bg-emerald-500/20 text-emerald-400">✓ {p}</Badge>)}
             {s.failed.map((f) => <Badge key={f} variant="destructive">✗ {f}</Badge>)}
             {(s.notChecked ?? []).map((n) => (
               <Badge key={n.rule} variant="outline" title={n.reason} data-testid={`prop-rule-not-checked-${n.rule}`}>– {n.rule} not checked</Badge>
             ))}
+            </div>
+            {(s.notChecked ?? []).length > 0 && (
+              <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5" data-testid="prop-not-checked-reasons">
+                {(s.notChecked ?? []).map((n) => <li key={n.rule}><span className="font-mono">{n.rule}</span>: {n.reason}</li>)}
+              </ul>
+            )}
           </CardContent>
         </Card>
       )}

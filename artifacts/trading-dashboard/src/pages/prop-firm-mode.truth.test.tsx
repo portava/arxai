@@ -63,3 +63,27 @@ describe("Prop Firm Mode — measured from the challenge start", () => {
     expect(screen.queryByText("$-90000")).toBeNull();
   });
 });
+
+describe("Prop Firm Mode — target reached with unchecked rules", () => {
+  it("says the target is reached but not a confirmed pass, and lists each unchecked rule with its reason", async () => {
+    const notChecked = [
+      { rule: "MIN_TRADING_DAYS", reason: "Trading days are not counted, so the minimum of 5 days is not checked." },
+      { rule: "CONSISTENCY", reason: "The 40% consistency rule (best day against total profit) is not checked." },
+      { rule: "MAX_LOT_SIZE", reason: "Your trades are not checked against the 1-lot cap. The Risk Governor refuses new orders above 1 lots (your limit in force)." },
+    ];
+    stubStatus({
+      config: CONFIG, measured: true, notMeasuredReason: null,
+      profitUsd: 900, profitTargetProgress: 112.5, dailyDrawdownRemainingUsd: 5000, totalDrawdownRemainingUsd: 10000,
+      passed: ["PROFIT_TARGET", "DAILY_DD", "TOTAL_DD"], failed: [], notChecked, status: "TARGET_REACHED", equitySource: "paper_ledger",
+      paperAccountId: 3, equityUsd: 10900, equityAsOf: "2026-10-28T11:59:00.000Z",
+      challengeStartedAt: "2026-10-28T08:00:00.000Z", startEquityUsd: 10000, dailyDrawdownSince: "2026-10-28T08:00:00.000Z", notes: [],
+    });
+    render(<PropFirmMode />);
+    const banner = await screen.findByTestId("prop-target-reached");
+    expect(banner.textContent).toMatch(/3 challenge rules are not checked, so this is not a confirmed pass/);
+    expect(screen.getByTestId("prop-status-badge").textContent).toBe("TARGET REACHED");
+    expect(screen.queryByText("PASSED")).toBeNull();
+    const reasons = screen.getByTestId("prop-not-checked-reasons");
+    for (const n of notChecked) expect(reasons.textContent).toContain(n.reason);
+  });
+});
