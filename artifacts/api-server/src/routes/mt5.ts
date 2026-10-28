@@ -12,6 +12,7 @@ import {
 } from "../lib/brokerHub/freshness.js";
 import { findConnectionByBridgeTokenHash, getUserActiveConnection, updateConnection, type BrokerConnectionPatch, type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
 import { applyOwnPositionSnapshot } from "../lib/mt5/executionReconciler.js";
+import { readSharedMasterBridgeForUser } from "./mt5SharedBridgeStatus.js";
 import { noteBridgeHeartbeat, scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod/v4";
@@ -1592,16 +1593,24 @@ router.get("/mt5/status", requireUser, async (req, res) => {
   };
 
   if (!userConn) {
+    // No connection of the user's own. A shared-master user routes through
+    // the master bridge, so report THAT (re-aged now) alongside — `connected`
+    // stays about the user's own connection and is false.
+    const shared = await readSharedMasterBridgeForUser(userId);
     res.json({
       ...safetyEnvelope,
       connected: false,
       mode: "NOT_CONNECTED",
+      route: shared.route,
+      sharedMasterBridge: shared.sharedMasterBridge,
       lastHeartbeatAt: null,
       secondsSinceHeartbeat: null,
       accountType: "NONE",
       openPositions: [],
       accountSnapshot: null,
-      userSafeMessage: "MT5 bridge not connected for this user. Set up an MT5 connection in MT5 Bridge settings.",
+      userSafeMessage: shared.sharedMasterBridge
+        ? `You trade through the shared MT5 bridge. ${shared.sharedMasterBridge.message}`
+        : "MT5 bridge not connected for this user. Set up an MT5 connection in MT5 Bridge settings.",
     });
     return;
   }
@@ -1622,6 +1631,8 @@ router.get("/mt5/status", requireUser, async (req, res) => {
     ...safetyEnvelope,
     connected,
     mode,
+    route: "OWN_CONNECTION",
+    sharedMasterBridge: null,
     lastHeartbeatAt: lastHb?.toISOString() ?? null,
     secondsSinceHeartbeat,
     accountType,
