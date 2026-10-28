@@ -17,6 +17,7 @@
 
 import type { ChartIntelligenceState } from "./chartIntelligence.js";
 import type { ChartLevel } from "./engines/marketUnderstandingTypes.js";
+import { chartReadVerification } from "./chartDecisionTruthCap.js";
 
 export type ChartSentenceTone =
   | "bullish"
@@ -314,6 +315,14 @@ function sentenceRisk(s: SentenceInput): ChartMarketSentence {
   };
 }
 
+// The chart-truth gate's verdict on this read, in plain words. An unverified
+// read (Chart Truth < 75, stale feed, failed mirror, feed not live) may still
+// be described, but no sentence may invite acting on it.
+function unverifiedWhy(s: SentenceInput): string | null {
+  const v = chartReadVerification(s.gateOutput, s.truthState);
+  return v.verified ? null : v.reasons.join("; ");
+}
+
 // ── 5. Entry-timing sentence ──────────────────────────────────────────────
 function sentenceEntryTiming(s: SentenceInput): ChartMarketSentence {
   const base = { key: "entryTiming", label: "Entry timing" } as const;
@@ -350,7 +359,15 @@ function sentenceEntryTiming(s: SentenceInput): ChartMarketSentence {
         tone: "caution",
         text: "Wait for confirmation — the setup is close but unproven; a confirmed close decides it.",
       };
-    case "entry_valid":
+    case "entry_valid": {
+      const why = unverifiedWhy(s);
+      if (why) {
+        return {
+          ...base,
+          tone: "caution",
+          text: `The setup's entry conditions are met on these candles, but this read is not verified (${why}) — don't time an entry off it yet.`,
+        };
+      }
       return {
         ...base,
         tone:
@@ -361,6 +378,7 @@ function sentenceEntryTiming(s: SentenceInput): ChartMarketSentence {
               : "info",
         text: "Entry timing is valid now — the conditions for this setup are in place.",
       };
+    }
     case "stale":
       return {
         ...base,
@@ -404,11 +422,18 @@ function sentenceScalp(s: SentenceInput): ChartMarketSentence {
     };
   }
   if (momentum) {
-    return {
-      ...base,
-      tone: "info",
-      text: "A momentum burst is present — a scalp can work if you respect a tight stop.",
-    };
+    const why = unverifiedWhy(s);
+    return why
+      ? {
+          ...base,
+          tone: "caution",
+          text: `A momentum burst is present, but this read is not verified (${why}) — don't scalp off it yet.`,
+        }
+      : {
+          ...base,
+          tone: "info",
+          text: "A momentum burst is present — a scalp can work if you respect a tight stop.",
+        };
   }
   if (s.marketUnderstanding.trend.regime === "quiet") {
     return {
@@ -444,6 +469,19 @@ function sentenceBestNextAction(s: SentenceInput): ChartMarketSentence {
   }
   const { level, isSupport } = nearestLevel(s);
   const levelTxt = level ? fmtPrice(level.price) : null;
+  // A read the chart-truth gate has not verified never invites action, whatever
+  // grade the candle engines gave it (the decision summary is capped to watch
+  // for the same reason). Stand-aside / unknown already invite nothing.
+  const why = unverifiedWhy(s);
+  if (why && d.actionability !== "stand_aside" && d.actionability !== "unknown") {
+    return {
+      ...base,
+      tone: "caution",
+      text: levelTxt
+        ? `Best action: watch only — this read is not verified (${why}). Watch ${levelTxt} (${isSupport ? "support" : "resistance"}) and don't act on it yet.`
+        : `Best action: watch only — this read is not verified (${why}), so don't act on it yet.`,
+    };
+  }
   switch (d.actionability) {
     case "ready":
       return {

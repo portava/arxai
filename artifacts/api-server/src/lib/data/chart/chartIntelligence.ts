@@ -58,6 +58,7 @@ import {
 import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.js";
 import { computeChartReadScore, type ChartReadScore } from "./chartReadScore.js";
 import { computeChartGateOutput, type ChartGateOutput } from "./chartGateOutput.js";
+import { capDecisionStateByChartTruth, chartReadVerification } from "./chartDecisionTruthCap.js";
 import {
   noBrokerAlignment,
   computeBrokerPriceAlignment,
@@ -259,7 +260,28 @@ export function enrichStateWithBrokerAlignment(
     truthResult,
     feedStatus.stale,
   );
-  return { ...state, brokerAlignment, chartTruthScore, gateOutput };
+  // The decision summary and sentences depend on the gate's verdict (an
+  // unverified read is capped at "watch"), so re-derive them from the engine
+  // outputs under THIS gate — a per-user verified read is no longer held at
+  // the build-time cap, and a closed gate caps a "ready" summary.
+  const decisionState = capDecisionStateByChartTruth(
+    deriveDecisionState(
+      state.marketUnderstanding.evidence,
+      state.marketUnderstanding.readiness,
+      state.setupState,
+      state.decisionFork,
+    ),
+    chartReadVerification(gateOutput, feedStatus),
+  );
+  const { marketSentences: _previous, ...rest } = state;
+  const sentenceInput: Omit<ChartIntelligenceState, "marketSentences"> = {
+    ...rest,
+    brokerAlignment,
+    chartTruthScore,
+    gateOutput,
+    decisionState,
+  };
+  return { ...sentenceInput, marketSentences: buildMarketSentences(sentenceInput) };
 }
 
 function mean(xs: number[]): number {
@@ -547,7 +569,10 @@ export async function buildChartIntelligenceState(
     setup,
   });
 
-  const decisionState: ChartDecisionState = deriveDecisionState(
+  // Engine-only summary. The read score and the (advisory) agent consensus are
+  // built from it; what the state SHOWS is capped below once the chart-truth
+  // gate has ruled on this read.
+  const engineDecisionState: ChartDecisionState = deriveDecisionState(
     evidence,
     readiness,
     setup,
@@ -557,7 +582,7 @@ export async function buildChartIntelligenceState(
   // Agent-consensus summary (advisory/shadow only; never gates a trade or the
   // live path; fail-open). Honestly absent when specialist agents are in shadow.
   const agentConsensus: ChartAgentConsensus = await computeChartAgentConsensus(
-    decisionState,
+    engineDecisionState,
     readiness.score,
   );
 
@@ -587,7 +612,7 @@ export async function buildChartIntelligenceState(
     aiUsable: truth.aiUsable,
     marketUnderstanding,
     setup: setupState,
-    decisionState,
+    decisionState: engineDecisionState,
     readiness,
     candleStats,
   });
@@ -598,6 +623,14 @@ export async function buildChartIntelligenceState(
     brokerAlignment,
     truth.truthResult,
     truth.feedStatus.stale,
+  );
+
+  // An A-grade candle read is not "ready" while the chart-truth gate has not
+  // verified it (Chart Truth < 75, stale, mirror failed, or feed not live):
+  // capped at "watch" with the reason, matching Ruby's "syncing" answer.
+  const decisionState: ChartDecisionState = capDecisionStateByChartTruth(
+    engineDecisionState,
+    chartReadVerification(gateOutput, truth.feedStatus),
   );
 
   // Natural-language reader over the assembled engine outputs. Deterministic

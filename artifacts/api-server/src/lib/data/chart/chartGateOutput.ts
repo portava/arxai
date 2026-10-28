@@ -74,7 +74,9 @@ export interface ChartGateOutput {
   note: string;
 }
 
-const TRUTH_THRESHOLD = 75;
+/** Chart Truth score a read needs before it may be called verified. */
+export const CHART_TRUTH_THRESHOLD = 75;
+const TRUTH_THRESHOLD = CHART_TRUTH_THRESHOLD;
 
 export function computeChartGateOutput(
   truthScore: ChartTruthScore,

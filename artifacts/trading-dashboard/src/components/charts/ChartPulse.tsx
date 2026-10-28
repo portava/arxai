@@ -45,9 +45,31 @@ function biasTone(b: string): ChartMarketSentenceTone {
   return "neutral";
 }
 
+// Whether the chart-truth gate has verified this read (same conditions the
+// server uses to cap the decision summary and Ruby uses for a directional
+// read: Chart Truth ≥ 75, feed not stale, broker mirror not failed, feed
+// live). The Pulse may only DOWNGRADE what the server sent — never upgrade.
+function readVerification(state: ChartState): { verified: boolean; reasons: string[] } {
+  const gate = (state as { gateOutput?: ChartState["gateOutput"] | null }).gateOutput ?? null;
+  const reasons: string[] = [];
+  if (!gate) {
+    reasons.push("the chart truth check could not be loaded");
+  } else {
+    if (!gate.confidentReadAllowed) reasons.push(`Chart Truth ${gate.chartTruthScore}/100 (needs 75)`);
+    if (!gate.autonomousChartActionAllowed) reasons.push("the feed is stale");
+    if (!gate.tradeConfirmationAllowed) reasons.push("the broker-mirror check failed");
+  }
+  if (state.truthState?.isLive !== true) reasons.push("the feed is not live right now");
+  return { verified: reasons.length === 0, reasons };
+}
+
 // Prices print at the precision the chart resolved for this symbol (shared
 // rule, lib/instrumentPriceFormat), so a level never disagrees with the axis.
-function buildItems(state: ChartState, pricePrecision: number | null): PulseItem[] {
+function buildItems(
+  state: ChartState,
+  pricePrecision: number | null,
+  verified: boolean,
+): PulseItem[] {
   const mu = state.marketUnderstanding;
   const items: PulseItem[] = [];
 
@@ -130,20 +152,28 @@ function buildItems(state: ChartState, pricePrecision: number | null): PulseItem
     testid: "pulse-risk",
   });
 
-  // Readiness (quality + actionability).
+  // Readiness (quality + actionability). An unverified read is at most
+  // "watch" (the server caps it too; an uncapped "ready"/"prepare" from an
+  // older server is downgraded here, never the other way round).
   const d = state.decisionState;
+  const actionability =
+    !verified && (d.actionability === "ready" || d.actionability === "prepare")
+      ? "watch"
+      : d.actionability;
   items.push({
     label: "Readiness",
     value: d.populated
-      ? `${d.quality} · ${titleCase(d.actionability)}`
+      ? `${d.quality} · ${titleCase(actionability)}`
       : "—",
     tone: d.vetoed
       ? "danger"
-      : d.actionability === "ready"
-        ? "bullish"
-        : d.actionability === "prepare"
-          ? "caution"
-          : "neutral",
+      : !verified && d.populated
+        ? "caution"
+        : actionability === "ready"
+          ? "bullish"
+          : actionability === "prepare"
+            ? "caution"
+            : "neutral",
     testid: "pulse-readiness",
   });
 
@@ -181,7 +211,8 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
 
   const conf = feedConfidence(state.truthState);
   const dirty = state.stale || !state.aiUsable || conf.severity === "danger";
-  const items = buildItems(state, pricePrecision);
+  const verification = readVerification(state);
+  const items = buildItems(state, pricePrecision, verification.verified);
   const bestAction = state.marketSentences.bestNextAction;
   const baTone = toneClasses(bestAction.tone);
 
@@ -221,6 +252,19 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
         >
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
           <span>{conf.message} Read with caution — not for a live decision.</span>
+        </div>
+      )}
+
+      {!dirty && !verification.verified && (
+        <div
+          className="mt-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-300"
+          data-testid="chart-pulse-unverified"
+        >
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>
+            Read not verified — {verification.reasons.join("; ")}. Readiness and
+            best action are watch-only until the chart verifies.
+          </span>
         </div>
       )}
 
