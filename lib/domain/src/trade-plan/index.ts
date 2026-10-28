@@ -125,9 +125,18 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   const rr = geo.rr;
   const minRr = (input.rewardToRiskTarget && input.rewardToRiskTarget > 0) ? input.rewardToRiskTarget : MIN_RR_DEFAULT;
 
+  // Items 1, 2 and 6 only echo values the user typed (a dropdown, a
+  // confidence number, a risk amount): ARX observed no market condition or
+  // strategy fit and computed no risk. A satisfied self-reported value is
+  // UNKNOWN ("your input — not checked by ARX"), never a PASS; one that breaks
+  // the rule still FAILs. Readiness is unchanged (UNKNOWN never blocks).
+
   // 1. Market condition supports setup
   if (input.marketCondition === "TRENDING" || input.marketCondition === "RANGING") {
-    items.push({ key: "MARKET_CONDITION", label: "Market condition supports setup", status: "PASS", detail: input.marketCondition });
+    items.push({
+      key: "MARKET_CONDITION", label: "Market condition supports setup", status: "UNKNOWN",
+      detail: `Your input — not checked by ARX: you marked the market ${input.marketCondition}.`,
+    });
   } else if (input.marketCondition === "NO_TRADE") {
     items.push({ key: "MARKET_CONDITION", label: "Market condition supports setup", status: "FAIL", detail: "Current condition is NO_TRADE." });
   } else {
@@ -138,7 +147,10 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   if (input.confidenceLevel == null) {
     items.push({ key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "WARN", detail: "Confidence level not set." });
   } else if (input.confidenceLevel >= MIN_CONFIDENCE) {
-    items.push({ key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "PASS", detail: `Confidence ${input.confidenceLevel}% (≥ ${MIN_CONFIDENCE}%).` });
+    items.push({
+      key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "UNKNOWN",
+      detail: `Your input — not checked by ARX: you set confidence ${input.confidenceLevel}% (≥ ${MIN_CONFIDENCE}%); no strategy fit was measured.`,
+    });
   } else {
     items.push({ key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "FAIL", detail: `Confidence ${input.confidenceLevel}% (< ${MIN_CONFIDENCE}%).` });
   }
@@ -178,7 +190,10 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   if (input.riskAmount == null || input.maxLossAllowed == null) {
     items.push({ key: "RISK_AMOUNT", label: "Risk amount is within limit", status: "WARN", detail: "Risk amount or max loss not set." });
   } else if (input.riskAmount <= input.maxLossAllowed) {
-    items.push({ key: "RISK_AMOUNT", label: "Risk amount is within limit", status: "PASS", detail: `Risk ${input.riskAmount} ≤ max ${input.maxLossAllowed}.` });
+    items.push({
+      key: "RISK_AMOUNT", label: "Risk amount is within limit", status: "UNKNOWN",
+      detail: `Your input — not checked by ARX: you entered risk ${input.riskAmount} ≤ max ${input.maxLossAllowed}; ARX did not compute risk from the lot size and stop distance.`,
+    });
   } else {
     items.push({ key: "RISK_AMOUNT", label: "Risk amount is within limit", status: "FAIL", detail: `Risk ${input.riskAmount} > max ${input.maxLossAllowed}.` });
   }
@@ -250,12 +265,18 @@ export function summarizePlan(plan: PlanForReview, checklist: ChecklistResult, _
 
   const fails = checklist.items.filter((i) => i.status === "FAIL");
   const warns = checklist.items.filter((i) => i.status === "WARN");
+  const unchecked = checklist.items.filter((i) => i.status === "UNKNOWN");
   if (fails.length > 0) {
     parts.push(`Blocking issues: ${fails.map((f) => f.label.toLowerCase()).join("; ")}.`);
   } else if (warns.length > 0) {
     parts.push(`Cautions to acknowledge: ${warns.map((w) => w.label.toLowerCase()).join("; ")}.`);
+  } else if (unchecked.length > 0) {
+    parts.push("Every check ARX ran passes. Proceed only if your written plan still matches what you see on the chart.");
   } else {
     parts.push("All pre-trade checks pass. Proceed only if your written plan still matches what you see on the chart.");
+  }
+  if (unchecked.length > 0) {
+    parts.push(`Not checked by ARX (your own inputs): ${unchecked.map((u) => u.label.toLowerCase()).join("; ")}.`);
   }
 
   // Inviolable advisory note — Safety Core, not this layer, gates execution.

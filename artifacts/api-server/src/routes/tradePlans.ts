@@ -314,12 +314,18 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     const checklist = result.checklist!;
     const itemSig = checklist.items.map((i) => `${i.key}:${i.status}`).join(",");
     const revision = createHashShort(`${result.nextStatus}|${itemSig}`);
+    // Items the user typed (market condition, confidence, risk amount) are
+    // UNKNOWN — not checks ARX ran — so "passed all readiness checks" would
+    // overstate what was verified.
+    const uncheckedCount = checklist.items.filter((i) => i.status === "UNKNOWN").length;
     if (result.nextStatus === "READY") {
       void createAlert({
         userId: plan.userId,
         type: "TRADE_PLAN_READY", priority: "MEDIUM", severity: "success",
         title: `Trade plan ready: ${plan.symbol ?? `#${plan.id}`}`,
-        message: `Plan #${plan.id} passed all readiness checks. Final execution remains gated by the live-execution safety layer.`,
+        message: uncheckedCount > 0
+          ? `Plan #${plan.id} passed every check ARX ran; ${uncheckedCount} item${uncheckedCount === 1 ? " is your own input" : "s are your own inputs"} that ARX did not verify. Final execution remains gated by the live-execution safety layer.`
+          : `Plan #${plan.id} passed all readiness checks. Final execution remains gated by the live-execution safety layer.`,
         symbol: plan.symbol ?? undefined, relatedTradePlanId: plan.id, actionRequired: true,
         dedupeKey: `plan-ready:${plan.id}:${revision}`,
       });

@@ -31,12 +31,16 @@ export function TradePlanChecklist({ checklist }: { checklist: Checklist | null 
       </div>
     );
   }
+  // UNKNOWN items echo the user's own inputs (market condition, confidence,
+  // risk amount); ARX did not check them, so they are counted separately.
+  const unchecked = checklist.items.filter((i) => i.status === "UNKNOWN").length;
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900/40">
       <div className="flex items-center justify-between border-b border-slate-700 px-4 py-2 text-sm">
         <span className="font-semibold text-slate-100">Pre-Trade Checklist</span>
-        <span className="text-xs text-slate-400">
+        <span className="text-xs text-slate-400" data-testid="trade-plan-checklist-counts">
           {checklist.passCount} pass · {checklist.warnCount} warn · {checklist.failCount} fail
+          {unchecked > 0 ? ` · ${unchecked} your input, not checked` : ""}
         </span>
       </div>
       <ul className="divide-y divide-slate-800">
