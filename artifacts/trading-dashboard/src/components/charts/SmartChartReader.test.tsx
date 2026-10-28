@@ -17,14 +17,14 @@ vi.mock("@/lib/chart-engine/chartDescriptiveAnalysis",async importOriginal=>{
   return {...actual,describeSmartChartWindow:vi.fn(actual.describeSmartChartWindow)};
 });
 const START=Date.parse("2026-10-25T10:00:00Z"),NOW=START+100*300_000;
-function fixture(){
-  const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe:"M5",source:"deriv_public",sourceMode:"live",openTime:new Date(START+i*300_000).toISOString(),closeTime:new Date(START+(i+1)*300_000).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
-  const data={symbol:"V75",timeframe:"M5",source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public"},marketEvidence:{symbol:"V75",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
+function fixture(timeframe="M5",start=START,step=300_000){
+  const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe,source:"deriv_public",sourceMode:"live",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
+  const data={symbol:"V75",timeframe,source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public"},marketEvidence:{symbol:"V75",timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
   let visible:ChartEngineCandle[]=candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}));
   const all=visible;let listener:(()=>void)|undefined;
   const setSmartAnnotation=vi.fn(),unsubscribe=vi.fn(()=>{listener=undefined;});
   const adapter={getVisibleCandles:()=>visible,subscribeViewport:(fn:()=>void)=>{listener=fn;return unsubscribe;},setSmartAnnotation} as unknown as ChartEngineAdapter;
-  const props={adapter,epoch:1,symbol:"V75",timeframe:"M5",data,older:[],historyEvidence:null,liveConfirmed:true,readFailed:false};
+  const props={adapter,epoch:1,symbol:"V75",timeframe,data,older:[],historyEvidence:null,liveConfirmed:true,readFailed:false};
   return {data,props,all,setSmartAnnotation,unsubscribe,show:(bars:ChartEngineCandle[])=>{visible=bars;act(()=>listener?.());}};
 }
 beforeEach(()=>{vi.mocked(describeSmartChartWindow).mockClear();vi.mocked(analyzeSmartChart).mockClear();vi.spyOn(Date,"now").mockReturnValue(NOW);});
@@ -115,6 +115,36 @@ describe("embedded chart reader follows applied candles",()=>{
     const finding={id:"head_and_shoulders:1",status:"confirmed",anchors:[{time:1,price:102,role:"left_shoulder"},{time:2,price:100,role:"neckline_left"},{time:3,price:110,role:"head"},{time:4,price:101,role:"neckline_right"},{time:5,price:103,role:"right_shoulder"}],levels:[{price:104,label:"Neckline now"}]} as SmartChartFinding;
     const annotation=findingAnnotation(finding)!;
     expect(annotation.level).toBeUndefined();expect(annotation.guide).toMatchObject({from:{time:2,price:100},to:{time:4,price:101}});
+  });
+  it("labels reading times in the view's display zone while machine-readable times stay UTC ISO",()=>{
+    const f=fixture();
+    const visible=vi.fn(f.props.adapter.getVisibleCandles!);
+    const props={...f.props,adapter:{...f.props.adapter,getVisibleCandles:visible} as ChartEngineAdapter};
+    const view=render(<SmartChartReader {...props} view={{style:"candles",scale:"linear",timeZone:"Asia/Tokyo"}}/>);
+    expect(screen.getByText("More readings · deriv_public · times in Asia/Tokyo")).toBeTruthy();
+    const dates=within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true}).map(button=>button.querySelector("time")!);
+    expect(dates.length).toBeGreaterThan(1);
+    for(const time of dates){
+      expect(time.dateTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(time.textContent).toMatch(/^As of \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} GMT\+9$/);
+    }
+    fireEvent.click(within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true}).at(-1)!);
+    expect(screen.getByText(/· observed \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} GMT\+9$/)).toBeTruthy();
+    const reads=visible.mock.calls.length,analyses=vi.mocked(analyzeSmartChart).mock.calls.length,descriptions=vi.mocked(describeSmartChartWindow).mock.calls.length;
+    view.rerender(<SmartChartReader {...props} view={{style:"candles",scale:"linear",timeZone:"America/New_York"}}/>);
+    view.rerender(<SmartChartReader {...props} view={{style:"candles",scale:"linear"}}/>);
+    expect(visible.mock.calls).toHaveLength(reads);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(analyses);expect(describeSmartChartWindow).toHaveBeenCalledTimes(descriptions);
+    expect(screen.getByText("More readings · deriv_public · times in UTC")).toBeTruthy();
+  });
+  it("keeps daily readings in UTC whatever zone the view selects",()=>{
+    const start=Date.parse("2026-09-01T00:00:00Z");
+    vi.spyOn(Date,"now").mockReturnValue(start+40*86_400_000);
+    const f=fixture("D1",start,86_400_000);
+    render(<SmartChartReader {...f.props} view={{style:"candles",scale:"linear",timeZone:"Asia/Tokyo"}}/>);
+    expect(screen.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("ready");
+    expect(screen.getByText("More readings · deriv_public · times in UTC")).toBeTruthy();
+    expect(screen.getByTestId("smart-chart-reader").textContent).not.toContain("GMT+9");
   });
   it("discloses inverted/nonlinear and close-only views while preserving underlying analysis",()=>{
     const f=fixture();render(<SmartChartReader {...f.props} view={{style:"line",scale:"log",inverted:true}}/>);

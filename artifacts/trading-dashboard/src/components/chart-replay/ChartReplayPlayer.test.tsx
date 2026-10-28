@@ -2,7 +2,8 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChartReplayPlayer from "./ChartReplayPlayer";
 import type { ChartReplaySnapshot } from "@/lib/chart-engine/chartReplay";
-const engine=vi.hoisted(()=>({init:vi.fn(),destroy:vi.fn(),resize:vi.fn(),setSymbol:vi.fn(),setTimeframe:vi.fn(),setFeedState:vi.fn(),setCandles:vi.fn(),setOverlays:vi.fn(),setStructureLines:vi.fn(),setChartStyle:vi.fn(),setScaleMode:vi.fn(),setPriceScaleInverted:vi.fn(),setStudies:vi.fn(),setDrawings:vi.fn(),setDrawingInteraction:vi.fn(),setDrawingHandler:vi.fn(),goToLatest:vi.fn(),panBy:vi.fn(),zoomBy:vi.fn(),fitHistory:vi.fn(),goToTime:vi.fn()}));
+import { parseWallClockInZone, toWallClockInput } from "@/lib/chart-engine/chartTimeZone";
+const engine=vi.hoisted(()=>({init:vi.fn(),destroy:vi.fn(),resize:vi.fn(),setSymbol:vi.fn(),setTimeframe:vi.fn(),setFeedState:vi.fn(),setCandles:vi.fn(),setOverlays:vi.fn(),setStructureLines:vi.fn(),setChartStyle:vi.fn(),setScaleMode:vi.fn(),setPriceScaleInverted:vi.fn(),setStudies:vi.fn(),setDrawings:vi.fn(),setDrawingInteraction:vi.fn(),setDrawingHandler:vi.fn(),goToLatest:vi.fn(),panBy:vi.fn(),zoomBy:vi.fn(),fitHistory:vi.fn(),goToTime:vi.fn(),setDisplayTimeZone:vi.fn()}));
 vi.mock("@/lib/chart-engine",()=>({createChartEngineAdapter:()=>engine}));
 function snapshot():ChartReplaySnapshot{return {id:"session-1",ownerId:7,symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:"a".repeat(64),capturedAt:1800000000000,lastClosedAt:1700000000+120*900,gaps:0,preferences:{style:"candles",scale:"linear",studies:[]},bars:Array.from({length:120},(_,i)=>({time:1700000000+i*900,closeTime:1700000000+(i+1)*900,open:100+i,high:102+i,low:99+i,close:101+i}))};}
 beforeEach(()=>{vi.useFakeTimers();vi.clearAllMocks();vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});vi.stubGlobal("fetch",vi.fn());vi.stubGlobal("EventSource",vi.fn());vi.spyOn(document,"hidden","get").mockReturnValue(false);localStorage.clear();});
@@ -91,5 +92,60 @@ describe("isolated chart replay player",()=>{
   event.preventDefault();fireEvent(window,event);act(()=>vi.advanceTimersByTime(2000));
   expect(screen.getByRole("button",{name:"Play",exact:true}).getAttribute("aria-pressed")).toBe("false");
   expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(100);
+ });
+ it("keeps the UTC default and prints the capture time to the second with its zone",()=>{
+  render(<ChartReplayPlayer snapshot={{...snapshot(),capturedAt:1800000000123}} onExit={vi.fn()}/>);
+  expect(screen.getByText(/Captured 2027-01-15 08:00:00 UTC\./)).toBeTruthy();
+  expect(screen.getByTestId("replay-cursor").textContent).toBe(`Bar 100 / 120 · closed ${new Date(snapshot().bars[99]!.closeTime*1000).toISOString().replace("T"," ").replace(".000Z"," UTC")} · Paused`);
+  expect(engine.setDisplayTimeZone).toHaveBeenLastCalledWith("UTC");
+ });
+ it("labels, bounds and seeks the replay in the view's display zone",()=>{
+  const data={...snapshot(),preferences:{style:"candles",scale:"linear",studies:[],timeZone:"Asia/Tokyo"}} as ChartReplaySnapshot;
+  render(<ChartReplayPlayer snapshot={data} onExit={vi.fn()}/>);
+  expect(engine.setDisplayTimeZone).toHaveBeenCalledWith("Asia/Tokyo");
+  const input=screen.getByLabelText("Replay through Asia/Tokyo close") as HTMLInputElement;
+  expect(input.min).toBe(toWallClockInput(data.bars[0]!.closeTime,"Asia/Tokyo",true));
+  expect(input.max).toBe(toWallClockInput(data.lastClosedAt,"Asia/Tokyo",true));
+  expect(screen.getByTestId("replay-cursor").textContent!.endsWith("GMT+9 · Paused")).toBe(true);
+  fireEvent.change(input,{target:{value:toWallClockInput(data.bars[49]!.closeTime,"Asia/Tokyo",true)}});
+  fireEvent.click(screen.getByRole("button",{name:"Seek",exact:true}));expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(50);
+  expect(screen.getByText("Showing closed candles at or before that Asia/Tokyo time.")).toBeTruthy();
+  expect(screen.getByLabelText("Go to Asia/Tokyo date and time")).toBeTruthy();
+ });
+ it("rejects a clock-change gap close time and converts a typed seek on a zone switch without re-applying scale or studies",()=>{
+  // 120 M15 bars across the New York spring-forward (2024-03-10 07:00 UTC).
+  const start=Date.UTC(2024,2,10,5)/1000;
+  const data={...snapshot(),lastClosedAt:start+120*900,bars:snapshot().bars.map((bar,i)=>({...bar,time:start+i*900,closeTime:start+(i+1)*900})),
+    preferences:{style:"candles",scale:"log",studies:[],timeZone:"America/New_York"}} as ChartReplaySnapshot;
+  render(<ChartReplayPlayer snapshot={data} onExit={vi.fn()}/>);
+  const calls=engine.setCandles.mock.calls.length;
+  expect((screen.getByLabelText("Replay through America/New_York close") as HTMLInputElement).min).toBe("2024-03-10T00:15:00");
+  fireEvent.change(screen.getByLabelText("Replay through America/New_York close"),{target:{value:"2024-03-10T02:30:00"}});
+  fireEvent.click(screen.getByRole("button",{name:"Seek",exact:true}));
+  expect(screen.getByText("That close time does not exist in America/New_York (clock change).")).toBeTruthy();
+  expect(engine.setCandles.mock.calls).toHaveLength(calls);
+  const typed=toWallClockInput(data.bars[49]!.closeTime,"America/New_York",true);
+  fireEvent.change(screen.getByLabelText("Replay through America/New_York close"),{target:{value:typed}});
+  const scale=engine.setScaleMode.mock.calls.length,studies=engine.setStudies.mock.calls.length;
+  fireEvent.change(screen.getByLabelText("Display time zone"),{target:{value:"Asia/Tokyo"}});
+  expect(engine.setDisplayTimeZone).toHaveBeenLastCalledWith("Asia/Tokyo");
+  expect(engine.setScaleMode.mock.calls).toHaveLength(scale);expect(engine.setStudies.mock.calls).toHaveLength(studies);
+  // The input normalizes zero seconds away, as browsers do.
+  expect((screen.getByLabelText("Replay through Asia/Tokyo close") as HTMLInputElement).value).toBe("2024-03-11T02:30");
+  expect(parseWallClockInZone("2024-03-11T02:30","Asia/Tokyo")).toEqual({kind:"ok",time:data.bars[49]!.closeTime,ambiguous:false});
+  fireEvent.click(screen.getByRole("button",{name:"Seek",exact:true}));expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(50);
+ });
+ it("passes the display zone to the replay chart reader",()=>{
+  const flat=snapshot();
+  const data={...flat,bars:flat.bars.map(bar=>({...bar,open:100,high:101,low:99,close:100})),preferences:{style:"candles",scale:"linear",studies:[],timeZone:"Asia/Tokyo"}} as ChartReplaySnapshot;
+  const visible=engine as unknown as {getVisibleCandles?:()=>unknown};
+  visible.getVisibleCandles=()=>engine.setCandles.mock.lastCall?.[0]??[];
+  try {
+   render(<ChartReplayPlayer snapshot={data} onExit={vi.fn()}/>);
+   const reader=screen.getByTestId("smart-chart-reader");
+   expect(reader.getAttribute("data-analysis-status")).toBe("ready");
+   expect(reader.textContent).toMatch(/times in Asia\/Tokyo|observed \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} GMT\+9/);
+   expect(reader.textContent).not.toMatch(/\d{2}:\d{2}:\d{2} UTC/);
+  } finally { delete visible.getVisibleCandles; }
  });
 });

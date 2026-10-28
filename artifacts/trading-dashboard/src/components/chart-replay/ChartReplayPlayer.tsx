@@ -5,9 +5,8 @@ import { SmartChartReader } from "@/components/charts/SmartChartReader";
 import { createChartEngineAdapter, type ChartEngineAdapter } from "@/lib/chart-engine";
 import { validatePreferences } from "@/lib/chart-engine/chartWorkspace";
 import { replayCount, replayCountAtClose, replayDrawingKey, replayPrefix, REPLAY_SPEEDS, type ChartReplaySnapshot } from "@/lib/chart-engine/chartReplay";
+import { convertWallClock, effectiveDisplayZone, formatChartTime, parseWallClockInZone, toWallClockInput, zoneShortLabel } from "@/lib/chart-engine/chartTimeZone";
 const NO_OLDER = [] as const;
-const utc=(time:number)=>new Date(time*1000).toISOString().replace("T"," ").replace(".000Z"," UTC");
-const dateInput=(time:number)=>new Date(time*1000).toISOString().slice(0,19);
 
 /** No data hooks, SSE, positions, order controls or current intelligence. The
  * view-only adapter receives only the immutable source-bound historical prefix. */
@@ -25,6 +24,17 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
   const replayRead=useMemo(()=>({snapshot,installedCount:installed}),[snapshot,installed]);
   const current=snapshot.bars[count-1]!;
   const seek=(next:number)=>{setPlaying(false);setCount(replayCount(next,snapshot.bars.length));setMessage("");};
+  // Display-only zone (UTC by default, always UTC on daily bars). The seek still
+  // resolves to a UTC close second through replayCountAtClose.
+  const zone=effectiveDisplayZone(preferences.timeZone,snapshot.timeframe);
+  const zoneText=zoneShortLabel(zone);
+  const fmt=(time:number)=>formatChartTime(time,zone,{seconds:true});
+  const inputValue=(time:number)=>toWallClockInput(time,zone,true);
+  const previousZone=useRef(zone);
+  useLayoutEffect(()=>{
+    const from=previousZone.current;previousZone.current=zone;
+    if(from!==zone)setDate(value=>value && convertWallClock(value,from,zone,true));
+  },[zone]);
   useLayoutEffect(()=>{
     if(!container.current)return;
     const engine=createChartEngineAdapter();adapter.current=engine;
@@ -40,7 +50,8 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
     const engine=adapter.current;if(!engine)return;
     engine.setChartStyle?.(preferences.style);engine.setScaleMode?.(preferences.scale);
     engine.setPriceScaleInverted?.(preferences.inverted===true);engine.setStudies?.(preferences.studies);
-  },[preferences,epoch]);
+  },[preferences.style,preferences.scale,preferences.inverted,preferences.studies,epoch]);
+  useLayoutEffect(()=>{adapter.current?.setDisplayTimeZone?.(zone);},[zone,epoch]);
   useLayoutEffect(()=>{
     const engine=adapter.current;if(!engine)return;
     const prefix=replayPrefix(snapshot,count);
@@ -80,7 +91,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
         <h1 className="text-xl font-semibold">{snapshot.symbol} · {snapshot.timeframe}</h1></div>
       <Button variant="outline" onClick={()=>{setPlaying(false);onExit();}}>Exit replay · load current data</Button>
     </header>
-    <p className="my-3 max-w-4xl text-xs text-zinc-400">Frozen {snapshot.source} response window: {snapshot.bars.length.toLocaleString()} closed bars, {utc(snapshot.bars[0]!.time)} to {utc(snapshot.lastClosedAt)}. Captured {utc(snapshot.capturedAt/1000)}. Current prices, positions, trading and live advice are not shown here. This is not a fill simulation or verified strategy result.</p>
+    <p className="my-3 max-w-4xl text-xs text-zinc-400">Frozen {snapshot.source} response window: {snapshot.bars.length.toLocaleString()} closed bars, {fmt(snapshot.bars[0]!.time)} to {fmt(snapshot.lastClosedAt)}. Captured {fmt(snapshot.capturedAt/1000)}. Current prices, positions, trading and live advice are not shown here. This is not a fill simulation or verified strategy result.</p>
     {snapshot.source==="mt5_broker" && <p className="mb-3 text-xs text-amber-300">This source identity does not attest each candle’s historical broker account. Account-era history remains unverified.</p>}
     {snapshot.gaps>0 && <p className="mb-3 text-xs text-amber-300">{snapshot.gaps} gaps in the available history. No missing bars were filled; session closures and missing data are not distinguished here.</p>}
     <section aria-label="Replay controls" className="space-y-3 rounded border border-amber-600/40 bg-amber-950/10 p-3">
@@ -90,11 +101,14 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
         <Button onClick={()=>{if(!document.hidden)setPlaying(value=>!value);}} disabled={count===snapshot.bars.length} aria-pressed={playing}>{playing ? "Pause" : "Play"}</Button>
         <Button variant="outline" onClick={()=>seek(count+1)} disabled={count===snapshot.bars.length} aria-label="Next replay bar">Next →</Button>
         <label className="flex items-center gap-2 text-xs">Speed <select aria-label="Replay speed" className="rounded border border-zinc-700 bg-zinc-900 p-2" value={speed} onChange={event=>setSpeed(Number(event.target.value))}>{REPLAY_SPEEDS.map(value=><option key={value} value={value}>{value} bars/s</option>)}</select></label>
-        <span role="status" className="text-xs" data-testid="replay-cursor">Bar {count.toLocaleString()} / {snapshot.bars.length.toLocaleString()} · closed {utc(current.closeTime)} · {count===snapshot.bars.length ? "End of available history" : playing ? "Playing" : "Paused"}</span>
+        <span role="status" className="text-xs" data-testid="replay-cursor">Bar {count.toLocaleString()} / {snapshot.bars.length.toLocaleString()} · closed {fmt(current.closeTime)} · {count===snapshot.bars.length ? "End of available history" : playing ? "Playing" : "Paused"}</span>
       </div>
       <input aria-label="Replay position" type="range" className="w-full accent-amber-400" min={1} max={snapshot.bars.length} value={count} onChange={event=>seek(Number(event.target.value))}/>
-      <form className="flex flex-wrap items-center gap-2 text-xs" onSubmit={event=>{event.preventDefault();const next=replayCountAtClose(snapshot,Date.parse(`${date}Z`)/1000);if(next==null)setMessage("Choose a UTC close within the loaded window.");else{seek(next);setMessage("Showing closed candles at or before that UTC time.");}}}>
-        <label>Through UTC close <input className="ml-2 max-w-full rounded border border-zinc-700 bg-zinc-900 p-2" type="datetime-local" step="1" aria-label="Replay through UTC close" min={dateInput(snapshot.bars[0]!.closeTime)} max={dateInput(snapshot.lastClosedAt)} value={date} onChange={event=>setDate(event.target.value)} required/></label>
+      <form className="flex flex-wrap items-center gap-2 text-xs" onSubmit={event=>{event.preventDefault();const parsed=parseWallClockInZone(date,zone);
+        if(parsed.kind==="invalid"){setMessage("Enter a complete close time.");return;}
+        if(parsed.kind==="gap"){setMessage(`That close time does not exist in ${zoneText} (clock change).`);return;}
+        const next=replayCountAtClose(snapshot,parsed.time);if(next==null)setMessage(`Choose a ${zoneText} close within the loaded window.`);else{seek(next);setMessage(`Showing closed candles at or before that ${zoneText} time.${parsed.ambiguous?" Repeated clock-change time: the earlier occurrence was used.":""}`);}}}>
+        <label>Through {zoneText} close <input className="ml-2 max-w-full rounded border border-zinc-700 bg-zinc-900 p-2" type="datetime-local" step="1" aria-label={`Replay through ${zoneText} close`} min={inputValue(snapshot.bars[0]!.closeTime)} max={inputValue(snapshot.lastClosedAt)} value={date} onChange={event=>setDate(event.target.value)} required/></label>
         <Button size="sm" variant="outline" type="submit">Seek</Button>
         <span className="text-zinc-400">Arrow keys step outside the chart · Space plays/pauses outside controls</span>
       </form>
@@ -105,7 +119,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
         data={undefined} older={NO_OLDER} historyEvidence={null} liveConfirmed={false} readFailed={false} view={preferences} replay={replayRead}/>
       <ChartWorkbenchTools key={snapshot.id} adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
         preferences={preferences} onPreferences={setPreferences} hasCandles={installed>0}
-        drawingKey={replayDrawingKey(snapshot)} ephemeralDrawings historyWindowOnly feedLabel={`HISTORICAL REPLAY · ${snapshot.source} · through ${utc(current.closeTime)} · not live or tradable`}/>
+        drawingKey={replayDrawingKey(snapshot)} ephemeralDrawings historyWindowOnly feedLabel={`HISTORICAL REPLAY · ${snapshot.source} · through ${fmt(current.closeTime)} · not live or tradable`}/>
       <div ref={container} className="w-full" style={{height:600}} data-testid="replay-canvas"
         tabIndex={0} role="region" aria-label={`${snapshot.symbol} ${snapshot.timeframe} historical replay chart. Arrow keys pan, plus or minus zoom; Home fits revealed bars and End returns to the replay cursor.`}
         onKeyDown={event=>{

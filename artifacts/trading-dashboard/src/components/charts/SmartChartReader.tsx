@@ -11,11 +11,12 @@ import { smartChartNarrative } from "@/lib/chart-engine/smartChartNarrative";
 import { chartNumber, chartChangeSummary } from "@/lib/chart-engine/chartDescriptiveStats";
 import { describeSmartChartWindow, type ChartDescriptiveAnalysis, type ObservedMetric } from "@/lib/chart-engine/chartDescriptiveAnalysis";
 import type { ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
+import { effectiveDisplayZone, formatChartTime, zoneShortLabel } from "@/lib/chart-engine/chartTimeZone";
 import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotation";
 import { Button } from "@/components/ui/button";
 
 interface Props {adapter:ChartEngineAdapter|null;epoch:number;symbol:string;timeframe:string;data:ChartCandlesResponse|undefined;
-  older:readonly Candle[];historyEvidence:ChartHistoryPage["historyEvidence"];liveConfirmed:boolean;readFailed:boolean;view?:Pick<ChartPreferences,"style"|"scale"|"inverted">;replay?:ChartReplayReadWindow}
+  older:readonly Candle[];historyEvidence:ChartHistoryPage["historyEvidence"];liveConfirmed:boolean;readFailed:boolean;view?:Pick<ChartPreferences,"style"|"scale"|"inverted"|"timeZone">;replay?:ChartReplayReadWindow}
 const EMPTY:readonly Candle[]=[];
 const metricNumber=(metric:ObservedMetric<number>|undefined,suffix="")=>metric?.status==="available"?`${chartNumber(metric.value)}${suffix}`:"Unavailable";
 const statusText={confirmed:"Confirmed by closed candles",developing:"Still developing",invalidated:"No longer valid",observed:"Observed shape"};
@@ -30,6 +31,9 @@ export function findingAnnotation(finding:SmartChartFinding|null):SmartChartAnno
 /** Explanations live inside the chart frame. A single selected shape owns the
  * automatic annotation layer; detailed readings stay collapsed by default. */
 export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay}:Props) {
+  // Display-only: the zone relabels times and is deliberately not in readKey,
+  // so a zone change never re-runs the analysis.
+  const zone=effectiveDisplayZone(view?.timeZone,timeframe);
   const ownershipKey=JSON.stringify([symbol,timeframe,replay?.snapshot.id,replay?.snapshot.sourceIdentity??data?.marketEvidence?.sourceIdentity,replay?.snapshot.source??data?.feedStatus?.source]);
   const contextKey=JSON.stringify([ownershipKey,replay?.installedCount]);
   const bound=useMemo<ReturnType<typeof captureSmartChartBars> & {asOfMs?:number|null;replayCutoff?:number|null}>(()=>replay?captureReplayAnalysisPrefix(replay,{symbol,timeframe}):captureSmartChartBars(data,{symbol,timeframe},older,historyEvidence,Date.now()),[data,symbol,timeframe,older,historyEvidence,replay?.snapshot,replay?.installedCount]);
@@ -94,7 +98,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
     <details className="mt-2 text-zinc-400">
       <summary className="w-fit cursor-pointer text-[11px] text-sky-300">Analysis, evidence and chart statistics</summary>
       <div className="mt-3 space-y-3">
-        {chosen&&<div className="space-y-1.5"><p className="text-zinc-200">{statusText[chosen.status]} · observed {new Date(chosen.asOf*1000).toISOString().slice(0,19).replace("T"," ")} UTC</p>{chosenNarrative?.detail&&<p data-testid="chart-reader-anatomy">{chosenNarrative.detail}</p>}{chosen.invalidation&&<p>What would change this reading: {chosen.invalidation}</p>}<p>{chosen.caveat}</p></div>}
+        {chosen&&<div className="space-y-1.5"><p className="text-zinc-200">{statusText[chosen.status]} · observed {formatChartTime(chosen.asOf,zone,{seconds:true})}</p>{chosenNarrative?.detail&&<p data-testid="chart-reader-anatomy">{chosenNarrative.detail}</p>}{chosen.invalidation&&<p>What would change this reading: {chosen.invalidation}</p>}<p>{chosen.caveat}</p></div>}
         {stats&&<dl className="grid grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-4">{[["Price change",`${chartNumber(stats.change)} (${chartNumber(stats.changePercent)}%)`],["Mean close",chartNumber(stats.mean)],["Median close",chartNumber(stats.median)],["Close variability",chartNumber(stats.stdDev)],["Highest observed price",chartNumber(stats.high)],["Lowest observed price",chartNumber(stats.low)],["Price range",chartNumber(stats.range)],["Close-to-close drawdown",`${chartNumber(stats.maxDrawdownPercent)}%`]].map(([label,value])=><div key={label}><dt className="text-[10px]">{label}</dt><dd className="mt-0.5 font-mono text-zinc-200">{value}</dd></div>)}</dl>}
         {description&&<div className="space-y-2" aria-label="Descriptive window metrics">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-4">{[
@@ -118,10 +122,10 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
         {gaps&&<p>{gaps.gaps?`${gaps.gaps} elapsed gap${gaps.gaps===1?"":"s"} between observations; the largest spans ${chartNumber(gaps.largestSeconds/60)} minutes. Market closures or missing intervals may explain these gaps; this view cannot distinguish them.`:"No elapsed gaps between the observed candles in this window."} Missing volume is not treated as zero trading activity.</p>}
         {view&&<p>Display: {view.style} · {view.scale} scale{view.inverted?" · inverted":""}. Readings use the underlying prices and selected period. {view.style==="line"?"The line shows closes; candle patterns also use open, high and low prices.":""}{view.scale!=="linear"?" Axis transformations change visual spacing, not the observed price change.":""}</p>}
         {moreFindings.length>0&&<div className="space-y-2">
-          <p className="text-[10px]">More readings · {bound.context.source??"Source unavailable"} · times in UTC</p>
+          <p className="text-[10px]">More readings · {bound.context.source??"Source unavailable"} · times in {zoneShortLabel(zone)}</p>
           <div className="flex flex-wrap gap-2" aria-label="More observed patterns">{moreFindings.map(finding=>{
             const observedAt=new Date(finding.asOf*1000).toISOString();
-            return <button type="button" key={finding.id} className="rounded border border-zinc-700 px-2 py-1 text-left text-zinc-300" onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}<time dateTime={observedAt} className="block text-[10px] text-zinc-400">As of {observedAt.slice(0,19).replace("T"," ")} UTC</time></button>;
+            return <button type="button" key={finding.id} className="rounded border border-zinc-700 px-2 py-1 text-left text-zinc-300" onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}<time dateTime={observedAt} className="block text-[10px] text-zinc-400">As of {formatChartTime(finding.asOf,zone,{seconds:true})}</time></button>;
           })}</div>
         </div>}
         <p className="text-[10px]">Volume, order flow, forecasts and statistical significance are not inferred from this OHLC window. A pattern alone does not establish causation or a profitable trade.</p>

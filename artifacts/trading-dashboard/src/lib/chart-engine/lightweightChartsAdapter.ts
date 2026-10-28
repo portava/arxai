@@ -9,6 +9,9 @@ import {
   LineStyle,
   PriceScaleMode,
   type UTCTimestamp,
+  type Time,
+  type TickMarkFormatter,
+  type TickMarkType,
   type IChartApi,
   type ISeriesApi,
   type IPriceLine,
@@ -37,6 +40,11 @@ import { applyStructureLines, clearStructureLines } from "./structureLines";
 import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
 import { panChartWindow, zoomChartWindow } from "./chartNavigation";
 import { SmartChartAnnotationPrimitive, type SmartChartAnnotation } from "./smartChartAnnotation";
+import { crosshairTimeLabel, tickMarkLabel, type ChartTickMarkType, type ChartTimeZone } from "./chartTimeZone";
+
+// The helper's tick types mirror lightweight-charts' TickMarkType numbers.
+const TICK_MARK_TYPES_MATCH: Record<TickMarkType, ChartTickMarkType> = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4 } satisfies Record<ChartTickMarkType, ChartTickMarkType>;
+void TICK_MARK_TYPES_MATCH;
 
 
 const DEFAULT_VISIBLE_DESKTOP = 150;
@@ -129,6 +137,14 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private linkedRange: ChartTimeRange | null = null;
   private linkedCursor: number | null | undefined;
   private clearViewListeners: (() => void) | null = null;
+  // Display-only time zone. Installed once at createChart as stable formatter
+  // references (applyOptions cannot remove a formatter; only destroy resets
+  // it), so a zone change is one applyOptions call with no setData.
+  private displayZone: ChartTimeZone = "UTC";
+  // lightweight-charts' own default localization.locale.
+  private locale = typeof navigator !== "undefined" ? navigator.language : "";
+  private readonly timeLabel = (time: Time): string => typeof time === "number" ? crosshairTimeLabel(time, this.displayZone, this.locale) : String(time);
+  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => typeof time === "number" ? tickMarkLabel(time, type as number as ChartTickMarkType, this.displayZone, locale) : null;
 
   private container: HTMLElement | null = null;
   private candles: ChartEngineCandle[] = [];
@@ -175,9 +191,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         horzLines: { color: "rgba(63, 63, 70, 0.25)" },
       },
       crosshair: { mode: CrosshairMode.Normal },
+      localization: { timeFormatter: this.timeLabel },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        tickMarkFormatter: this.tickLabel,
         borderColor: "rgba(63, 63, 70, 0.5)",
         // rightOffset keeps the latest candle slightly inside the canvas edge so
         // the forming bar never clips against the price axis.
@@ -694,6 +712,14 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.chart?.applyOptions({ rightPriceScale: { mode: modes[mode] } });
   }
   setPriceScaleInverted(invertScale: boolean): void { this.chart?.applyOptions({rightPriceScale:{invertScale}}); }
+  /** Relabel axis ticks and the crosshair time. Re-applying the same formatter
+   * references clears the library's tick-label cache; data, drawings, links and
+   * goToTime are untouched and stay UTC seconds. */
+  setDisplayTimeZone(zone: ChartTimeZone): void {
+    if (zone === this.displayZone) return;
+    this.displayZone = zone;
+    this.chart?.applyOptions({ timeScale: { tickMarkFormatter: this.tickLabel }, localization: { timeFormatter: this.timeLabel } });
+  }
   goToTime(time: number): boolean {
     if (!this.chart || !Number.isFinite(time) || !this.candles.length || time < this.candles[0]!.time || time > this.candles.at(-1)!.time) return false;
     this.takeRangeOwnership();

@@ -1,4 +1,5 @@
 import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy } from "./chartStudies";
+import { isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 export type ChartScaleMode = "linear" | "log" | "percent" | "indexed";
 export type ChartStyle = "candles" | "bars" | "line";
 export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci";
@@ -6,7 +7,13 @@ export const DRAWING_NAMES: Record<DrawingKind, string> = { horizontal: "Horizon
 export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical"; }
 export interface ChartAnchor { time: number; price: number }
 export interface ChartDrawing { id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; color: string; locked?: boolean; width?: 1 | 2 | 3; dashed?: boolean }
-export interface ChartPreferences { style: ChartStyle; scale: ChartScaleMode; inverted?: boolean; studies: ChartStudy[] }
+/**
+ * Per chart view (each workspace view has its own stored preferences).
+ * `timeZone` is display-only and optional: a missing value means UTC, and it is
+ * never saved in or applied by a template. Daily timeframes (D1/W1/MN1) always
+ * display UTC. Stored anchors, links and data requests stay Unix UTC seconds.
+ */
+export interface ChartPreferences { style: ChartStyle; scale: ChartScaleMode; inverted?: boolean; studies: ChartStudy[]; timeZone?: ChartTimeZone }
 export const DEFAULT_PREFERENCES: ChartPreferences = { style: "candles", scale: "linear", studies: [] };
 export const MAX_DRAWINGS = 40;
 const color = (v: unknown): v is string => typeof v === "string" && /^#[a-f\d]{6}$/i.test(v);
@@ -40,7 +47,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(["atr", "envelopes"].includes(s.kind) && s.method ? { method: s.method } : {}),
     });
   }
-  return { style: ["candles", "bars", "line"].includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), studies };
+  return { style: ["candles", "bars", "line"].includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), studies, ...(isChartTimeZone(v.timeZone) && v.timeZone !== "UTC" ? {timeZone:v.timeZone} : {}) };
 }
 export function validateDrawings(value: unknown): ChartDrawing[] {
   const seen = new Set<string>();

@@ -47,6 +47,7 @@ function makeAdapter(): FakeAdapter {
     updateActiveCandle: track("updateActiveCandle"),
     setLinkedTimeRange: track("setLinkedTimeRange"),
     setLinkedCrosshair: track("setLinkedCrosshair"),
+    setDisplayTimeZone: track("setDisplayTimeZone"),
     priceToCoordinate: vi.fn(() => null),
   } as unknown as FakeAdapter;
   created.push(adapter);
@@ -627,5 +628,48 @@ describe("deferred comparison engine init", () => {
     expect(inits()).toEqual(["1:init", "2:init", "3:init"]);
     expect(created[0]!.init).toHaveBeenCalledTimes(1);
     expect(created[0]!.destroy).not.toHaveBeenCalled();
+  });
+
+  it("gives a deferred comparison the primary's stored display zone in its build, before the next frame", () => {
+    localStorage.setItem("arx.chart.preferences.v1", JSON.stringify({ style: "candles", scale: "linear", studies: [], timeZone: "Asia/Tokyo" }));
+    render(<ARXNativeChart workspaceId="comparison" symbol="EURUSD" timeframe="H1" showFeedStatus overlays={NO_OVERLAYS} />);
+    runFrame();
+    expect(created).toHaveLength(0);
+    runTasks();
+    expect(inits()).toEqual(["1:init"]);
+    // Applied inside the build task itself: no frame has run since.
+    const order = calls.map(call => call.slice(2));
+    expect(order.slice(0, 6)).toEqual(["init", "setSymbol", "setTimeframe", "setCrosshairHandler", "setViewLinkStatusHandler", "setDisplayTimeZone"]);
+    expect(created[0]!.setDisplayTimeZone).toHaveBeenCalledWith("Asia/Tokyo");
+    expect(created[0]!.setDisplayTimeZone.mock.calls.every(([zone]) => zone === "Asia/Tokyo")).toBe(true);
+    expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).value).toBe("Asia/Tokyo");
+    // The comparison's own key now diverges without touching the primary's.
+    fireEvent.change(screen.getByLabelText("Display time zone"), { target: { value: "Europe/London" } });
+    expect(created[0]!.setDisplayTimeZone).toHaveBeenLastCalledWith("Europe/London");
+    expect(JSON.parse(localStorage.getItem("arx.chart.preferences.v1:comparison")!).timeZone).toBe("Europe/London");
+    expect(JSON.parse(localStorage.getItem("arx.chart.preferences.v1")!).timeZone).toBe("Asia/Tokyo");
+  });
+
+  it("relabels an inspected candle's legend on a zone change without another crosshair move", () => {
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS} />);
+    const engine = created[0]!;
+    const legend = engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar: unknown) => void;
+    act(() => legend({ time: OPEN_MS / 1000, open: 1.101, high: 1.103, low: 1.1, close: 1.102 }));
+    const inspector = screen.getByTestId("chart-candle-inspector");
+    expect(inspector.textContent).toBe("2023-11-14 22:13 UTC  ·  O 1.10100  H 1.10300  L 1.10000  C 1.10200");
+    const zoneCalls = engine.setDisplayTimeZone.mock.calls.length;
+    fireEvent.change(screen.getByLabelText("Display time zone"), { target: { value: "Asia/Tokyo" } });
+    expect(engine.setDisplayTimeZone.mock.calls.slice(zoneCalls)).toEqual([["Asia/Tokyo"]]);
+    expect(inspector.textContent).toBe("2023-11-15 07:13 GMT+9  ·  O 1.10100  H 1.10300  L 1.10000  C 1.10200");
+    // Daily bars keep UTC whatever the stored zone.
+    cleanup();
+    render(<ARXNativeChart symbol="EURUSD" timeframe="D1" showFeedStatus={false} overlays={NO_OVERLAYS} />);
+    const daily = created.at(-1)!;
+    expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).value).toBe("Asia/Tokyo");
+    expect(daily.setDisplayTimeZone).toHaveBeenCalled();
+    expect(daily.setDisplayTimeZone.mock.calls.every(([zone]) => zone === "UTC")).toBe(true);
+    expect(screen.getByTestId("chart-daily-zone-note")).toBeTruthy();
+    act(() => (daily.setCrosshairHandler.mock.calls.at(-1)![0] as (bar: unknown) => void)({ time: OPEN_MS / 1000, open: 1.101, high: 1.103, low: 1.1, close: 1.102 }));
+    expect(screen.getByTestId("chart-candle-inspector").textContent!.startsWith("2023-11-14 22:13 UTC")).toBe(true);
   });
 });

@@ -36,6 +36,7 @@ import {
 import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
 import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
+import { effectiveDisplayZone, formatChartTime, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
@@ -342,13 +343,16 @@ export function ARXNativeChart({
   const studyInspectorRef = useRef<HTMLOutputElement | null>(null);
   const dataWindowRef = useRef<HTMLDetailsElement | null>(null);
   const inspectedCandleRef = useRef<ChartEngineCandle | null>(null);
+  // The display zone the legend formats in. Assigned only by the zone layout
+  // effect below, immediately before it relabels the engine and the legend.
+  const timeZoneRef = useRef<ChartTimeZone>("UTC");
   const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
     const bar = candle;
     inspectedCandleRef.current = bar;
     if (!legendRef.current) return;
     const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
     legendRef.current.textContent = bar
-      ? `${new Date(bar.time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}`
+      ? `${formatChartTime(bar.time, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
@@ -389,6 +393,8 @@ export function ARXNativeChart({
 
   const [internalTf, setInternalTf] = useState<ArxTimeframe>(() => loadTimeframe());
   const timeframe = controlledTf ?? internalTf;
+  // Per-view display zone; daily bars keep UTC labels. Display only.
+  const displayZone = effectiveDisplayZone(preferences.timeZone, timeframe);
   const overlays = useMemo(() => suppliedOverlays.filter(overlay =>
     overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
   [suppliedOverlays, resolvedSymbol, timeframe]);
@@ -572,8 +578,8 @@ export function ARXNativeChart({
   // sequence a synchronously built one does (including the chartEpoch bump).
   const defersEngine = workspaceId !== "primary";
   const [engineGeneration, setEngineGeneration] = useState(0);
-  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend });
-  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend }; });
+  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone });
+  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone }; });
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -590,6 +596,8 @@ export function ARXNativeChart({
       engine.setTimeframe?.(inputs.timeframe);
       engine.setCrosshairHandler?.(inputs.updateLegend);
       engine.setViewLinkStatusHandler?.(message => {if (linkStatusRef.current) linkStatusRef.current.textContent = message;});
+      // A deferred comparison never paints UTC ticks before its zone arrives.
+      engine.setDisplayTimeZone?.(inputs.displayZone);
       inputs.updateLegend(null);
       building = null;
       adapter = engine;
@@ -670,6 +678,13 @@ export function ARXNativeChart({
     return adapter ? viewLinks?.register(workspaceId, adapter) : undefined;
   }, [viewLinks, workspaceId, chartContext, engineGeneration]);
   useLayoutEffect(() => { adapterRef.current?.setCrosshairHandler?.(updateLegend); }, [updateLegend, chartEpoch]);
+  // One effect owns the zone: the ref is assigned first, then the engine and
+  // the open legend are relabelled in the same commit (no separate ref effect).
+  useLayoutEffect(() => {
+    timeZoneRef.current = displayZone;
+    adapterRef.current?.setDisplayTimeZone?.(displayZone);
+    updateLegend(inspectedCandleRef.current);
+  }, [displayZone, chartEpoch, updateLegend]);
 
   useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);

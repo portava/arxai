@@ -4,9 +4,10 @@ const mocks = vi.hoisted(() => {
   const series = { setData: vi.fn(), update: vi.fn(), pop: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn(() => line), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
   const scale = { subscribeVisibleLogicalRangeChange: vi.fn(), getVisibleRange: vi.fn(() => ({from:100,to:400})), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 1 })), setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(), scrollToRealTime: vi.fn(), scrollToPosition: vi.fn(), options:()=>({rightOffset:8}) };
   const chart = { addSeries: vi.fn(() => series), subscribeCrosshairMove: vi.fn(), setCrosshairPosition:vi.fn(), clearCrosshairPosition:vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
-  return { line, series, scale, chart };
+  const createChart = vi.fn((_el: unknown, _options: any) => chart);
+  return { line, series, scale, chart, createChart };
 });
-vi.mock("lightweight-charts", () => ({ createChart: () => mocks.chart, CandlestickSeries: {}, LineSeries: {}, createSeriesMarkers: vi.fn(), ColorType: { Solid: "solid" }, CrosshairMode: {Normal: 0}, LineStyle: {Dashed: 2}, PriceScaleMode: {Normal: 0, Logarithmic: 1, Percentage:2, IndexedTo100:3} }));
+vi.mock("lightweight-charts", () => ({ createChart: (el: unknown, options: unknown) => mocks.createChart(el, options), CandlestickSeries: {}, LineSeries: {}, createSeriesMarkers: vi.fn(), ColorType: { Solid: "solid" }, CrosshairMode: {Normal: 0}, LineStyle: {Dashed: 2}, PriceScaleMode: {Normal: 0, Logarithmic: 1, Percentage:2, IndexedTo100:3} }));
 import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
 import { sanitizeCandlestickData } from "./candleSanitize";
 import { candleDisplayPrecision } from "./candleReconciliation";
@@ -206,5 +207,61 @@ describe("linked view adapter boundaries", () => {
     expect(publish).toHaveBeenCalledExactlyOnceWith({kind:"crosshair",time:200});publish.mockClear();
     move({time:100,point:{x:1,y:1}});vi.advanceTimersByTime(20);expect(publish).not.toHaveBeenCalled();
     move({time:200,point:{x:1,y:1},sourceEvent:{}});adapter.destroy();vi.advanceTimersByTime(20);expect(publish).not.toHaveBeenCalled();
+  });
+});
+
+describe("display time zone", () => {
+  const TOKYO_1446 = Date.UTC(2026, 9, 28, 5, 46) / 1000;
+  const installed = () => mocks.createChart.mock.calls.at(-1)![1];
+  it("installs stable formatters at createChart that reproduce the library defaults under UTC", () => {
+    const options = installed();
+    expect(navigator.language).toBe("en-US");
+    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46");
+    expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBeNull();
+    expect(options.timeScale.timeVisible).toBe(true);
+    expect(options.timeScale.secondsVisible).toBe(false);
+    mocks.chart.applyOptions.mockClear();
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(1);
+    const applied = mocks.chart.applyOptions.mock.calls[0]![0] as any;
+    expect(applied.localization.timeFormatter).toBe(options.localization.timeFormatter);
+    expect(applied.timeScale.tickMarkFormatter).toBe(options.timeScale.tickMarkFormatter);
+    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   14:46 GMT+9");
+    expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBe("14:46");
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(1);
+    adapter.setDisplayTimeZone("UTC");
+    expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(2);
+    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46");
+  });
+  it("keeps the zone across a re-init without touching data", () => {
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    adapter.init({container:document.createElement("div"),height:400});
+    expect(installed().localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   14:46 GMT+9");
+  });
+  it("leaves goToTime, candle data and UTC-second navigation unchanged", () => {
+    adapter.setCandles([bar(100),bar(200),bar(300),bar(400)]);
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    expect(adapter.goToTime(250)).toBe(true);
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:-8,to:12});
+    expect(mocks.series.setData).toHaveBeenCalledTimes(1);
+    expect(mocks.series.update).not.toHaveBeenCalled();
+  });
+  it("resolves one linked UTC second to the same candle under UTC and Tokyo, and publishes raw UTC seconds", () => {
+    vi.useFakeTimers(); adapter.setTimeframe("M1");adapter.setCandles([bar(100),bar(160,1.17),bar(500)]);
+    const legend=vi.fn(), publish=vi.fn();adapter.setCrosshairHandler(legend);adapter.setViewLinkHandler(publish);
+    adapter.setLinkedCrosshair(190);vi.advanceTimersByTime(20);
+    const utcCall=mocks.chart.setCrosshairPosition.mock.lastCall, utcBar=legend.mock.lastCall;
+    expect(utcCall).toEqual([1.17,160,mocks.series]);
+    adapter.setLinkedCrosshair(null);vi.advanceTimersByTime(20);
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    adapter.setLinkedCrosshair(190);vi.advanceTimersByTime(20);
+    expect(mocks.chart.setCrosshairPosition.mock.lastCall).toEqual(utcCall);
+    expect(legend.mock.lastCall).toEqual(utcBar);
+    expect(publish).not.toHaveBeenCalled();
+    const move=mocks.chart.subscribeCrosshairMove.mock.calls[0]![0];
+    move({time:160,point:{x:1,y:1},sourceEvent:{}});vi.advanceTimersByTime(20);
+    expect(publish).toHaveBeenCalledExactlyOnceWith({kind:"crosshair",time:160});
+    expect(mocks.series.setData).toHaveBeenCalledTimes(1);
   });
 });

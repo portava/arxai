@@ -4,6 +4,7 @@ import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 import type { ChartStudy } from "./chartStudies";
 import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
+import type { ChartTimeZone } from "./chartTimeZone";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ARX Smart Chart — swappable chart-engine adapter contract (Task #373).
@@ -174,6 +175,9 @@ export interface ChartEngineAdapter {
   setSmartAnnotation?(annotation: SmartChartAnnotation | null): void;
   setScaleMode?(mode: ChartScaleMode): void;
   setPriceScaleInverted?(inverted: boolean): void;
+  /** Display-only, already resolved for timeframe by the caller; candle times,
+   * anchors and link events stay UTC seconds. */
+  setDisplayTimeZone?(zone: ChartTimeZone): void;
   goToTime?(time: number): boolean;
   showRecentRange?(seconds: number): { complete: boolean } | null;
   getStudyValues?(time: number): { label: string; color: string; values: { name: string; value: number | null }[] }[];

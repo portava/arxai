@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { drawingSegments, drawingStorageKey, readChartStorage, validateDrawings, validatePreferences, writeChartStorage } from "./chartWorkspace";
+import { drawingSegments, drawingStorageKey, PREFERENCES_KEY, readChartStorage, validateDrawings, validatePreferences, writeChartStorage } from "./chartWorkspace";
 import { STUDY_DEFAULTS } from "./chartStudies";
 afterEach(()=>vi.restoreAllMocks());
 describe("bounded chart workspace persistence",()=>{
@@ -27,6 +27,27 @@ describe("bounded chart workspace persistence",()=>{
     const segments=drawingSegments({id:"fib",kind:"fibonacci",start:{time:200,price:20},end:{time:100,price:10},color:"#ffffff"});
     expect(segments).toHaveLength(7);expect(segments[4]!.start.price).toBeCloseTo(13.82);
     expect(segments.every(s=>s.start.time===200&&s.end.time===100&&s.start.price===s.end.price)).toBe(true);
+  });
+  it("keeps an allowlisted display zone and drops UTC, invalid and missing zones to the legacy shape",()=>{
+    expect(validatePreferences({style:"bars",scale:"log",studies:[],timeZone:"Asia/Tokyo"}).timeZone).toBe("Asia/Tokyo");
+    expect(validatePreferences({studies:[],timeZone:"local"}).timeZone).toBe("local");
+    for (const timeZone of ["UTC","utc","Mars/Olympus","Etc/GMT+5","../x",5,null,undefined]) {
+      const result=validatePreferences({style:"bars",scale:"log",studies:[],timeZone});
+      expect(result).toEqual({style:"bars",scale:"log",studies:[]});
+      expect(Object.hasOwn(result,"timeZone")).toBe(false);
+    }
+    writeChartStorage("zone-roundtrip",validatePreferences({studies:[],timeZone:"America/New_York"}));
+    expect(validatePreferences(readChartStorage("zone-roundtrip")).timeZone).toBe("America/New_York");
+  });
+  it("seeds a new comparison view from the primary's zone and lets it diverge",()=>{
+    const compKey=`${PREFERENCES_KEY}:comparison`;
+    writeChartStorage(PREFERENCES_KEY,{style:"candles",scale:"linear",studies:[],timeZone:"Asia/Tokyo"});
+    // ARXNativeChart: validatePreferences(readChartStorage(key) ?? readChartStorage(PREFERENCES_KEY)).
+    const seeded=validatePreferences(readChartStorage(compKey) ?? readChartStorage(PREFERENCES_KEY));
+    expect(seeded.timeZone).toBe("Asia/Tokyo");
+    writeChartStorage(compKey,{...seeded,timeZone:"Europe/London"});
+    expect(validatePreferences(readChartStorage(compKey) ?? readChartStorage(PREFERENCES_KEY)).timeZone).toBe("Europe/London");
+    expect(validatePreferences(readChartStorage(PREFERENCES_KEY)).timeZone).toBe("Asia/Tokyo");
   });
   it("handles corrupt data, oversized data and denied storage",()=>{
     localStorage.setItem("bad","{");expect(readChartStorage("bad")).toBeNull();
