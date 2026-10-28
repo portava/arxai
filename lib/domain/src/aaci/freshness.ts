@@ -92,7 +92,11 @@ export function computeFreshness(
   nowMs: number,
 ): AaciFreshnessReport {
   const ages: Record<AaciFreshnessSource, number | null> = {
-    marketFeed: ageFromIso(nowMs, snapshot.smartChart?.lastUpdated),
+    // Market feed: aged from the newest live tick the server received for the
+    // chart (smartChart.lastTickTime) — never from smartChart.lastUpdated,
+    // which is only when a cached chart state was computed. A state built a
+    // second ago can describe a feed whose newest candle is hours old.
+    marketFeed: ageFromIso(nowMs, snapshot.smartChart?.lastTickTime),
     candle: ageFromIso(nowMs, snapshot.smartChart?.lastCandleTime),
     scanner: ageFromIso(nowMs, snapshot.scanner?.lastUpdated),
     ruby: ageFromIso(nowMs, snapshot.ruby?.lastUpdated),
@@ -115,21 +119,36 @@ export function computeFreshness(
   let weightSum = 0;
   let criticalStale = false;
 
+  // A chart state was read for this snapshot: its feed is a known source whose
+  // age must be established. If it cannot be (no tick observed), or the chart's
+  // own verdict says the feed is stale, the feed cannot be confirmed current.
+  const chartRead = snapshot.smartChart !== undefined;
+  const chartFeedVerdictStale = snapshot.smartChart?.feedStale === true;
+
   for (const source of Object.keys(AACI_FRESHNESS_THRESHOLDS_MS) as AaciFreshnessSource[]) {
     const thresholdMs = AACI_FRESHNESS_THRESHOLDS_MS[source];
     const ageMs = ages[source];
-    const score = scoreFreshness(ageMs, thresholdMs);
+    const verdictStale = source === "marketFeed" && chartFeedVerdictStale;
+    // A feed the chart itself calls stale never scores better than unknown.
+    const score = verdictStale
+      ? Math.min(scoreFreshness(ageMs, thresholdMs), scoreFreshness(null, thresholdMs))
+      : scoreFreshness(ageMs, thresholdMs);
     const stale =
-      source === "bridgeHeartbeat"
+      verdictStale ||
+      (source === "bridgeHeartbeat"
         ? !isHeartbeatAgeMsFresh(ageMs)
-        : ageMs === null ? true : ageMs > thresholdMs;
+        : ageMs === null ? true : ageMs > thresholdMs);
     const weight = AACI_FRESHNESS_WEIGHTS[source];
     weighted += score * weight;
     weightSum += weight;
     records.push({ source, ageMs, thresholdMs, score, stale });
     if (stale) {
       staleSources.push(source);
-      if (AACI_CRITICAL_FRESHNESS_SOURCES.includes(source) && ageMs !== null) {
+      // An unknown age is critical only for the market feed of a chart that
+      // WAS read (its age could not be checked); a source that was never read
+      // stays honest-unknown without failing the hard gate on its own.
+      const ageKnownOrChartRead = ageMs !== null || (source === "marketFeed" && chartRead);
+      if (AACI_CRITICAL_FRESHNESS_SOURCES.includes(source) && ageKnownOrChartRead) {
         criticalStale = true;
       }
     }

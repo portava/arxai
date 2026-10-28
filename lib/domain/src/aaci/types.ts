@@ -137,7 +137,19 @@ export interface AaciSharedTruthSnapshot {
   smartChart?: {
     bias?: AaciChartBias;
     structureScore?: number;
+    // Close time of the newest CLOSED candle in the chart series (absent when
+    // there is none — a forming bar's scheduled close is not an observation).
     lastCandleTime?: string;
+    // Server receive time of the newest live tick for this chart's feed
+    // (absent when no tick has been observed). The market-feed freshness
+    // source is aged from this, never from lastUpdated.
+    lastTickTime?: string;
+    // The chart's own feed verdict (trailing-interval staleness). true marks
+    // the market feed stale whatever the tick age.
+    feedStale?: boolean;
+    // When the (cached) chart-intelligence state was computed. This is NOT a
+    // feed observation time: a state built a second ago can describe a feed
+    // whose newest candle is hours old.
     lastUpdated?: string;
   };
 
