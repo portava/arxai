@@ -159,3 +159,53 @@ describe("truth audit: a withheld read does not keep describing itself as curren
     expect(screen.getByTestId("ruby-market-read-what").textContent).toMatch(/^When this read was built \(not current\):/);
   });
 });
+
+// Truth audit 2026-10-28 (round 3) — an expired read on a feed the shared
+// gate confirms (level full, not downgraded): only the READ is out of date.
+// No row of the Reasoning block, nor the card's feed chip, may blame the feed
+// or call it a "historical" read; every row names the expiry instead.
+describe("truth audit: an expired read on a confirmed feed names the expiry, not the feed", () => {
+  const EXPIRED = { expiresAt: new Date(Date.now() - 1000).toISOString() };
+  const rows = () => {
+    const t = (id: string) => screen.getByTestId(`ruby-market-read-reasoning-${id}`).textContent ?? "";
+    return {
+      decision: t("decision"), why: t("why"),
+      feed: t("evidence-feedData"), sr: t("evidence-supportResistance"),
+      confirm: t("confirmation"), invalid: t("invalidation"), test: t("trader-test"), risk: t("risk-note"),
+    };
+  };
+
+  it("every reasoning row names the expired read and none blames the feed", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(EXPIRED)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    const r = rows();
+    for (const [k, v] of Object.entries(r)) {
+      expect(v, k).not.toMatch(/historical|feed not (fully )?confirmed|feed is unconfirmed|unconfirmed feed|until the live feed confirms|confirm the live feed|feed-status badge/i);
+    }
+    expect(r.decision).toMatch(/expired/i);
+    expect(r.feed).toMatch(/expired/i);
+    expect(r.sr).toMatch(/expired/i);
+    expect(r.confirm).toMatch(/refresh/i);
+    expect(r.invalid).toMatch(/expired/i);
+    expect(r.test).toMatch(/refresh/i);
+    expect(r.risk).toMatch(/expired/i);
+  });
+
+  it("the feed chip says the read expired, not that the feed is unconfirmed", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(EXPIRED)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    const chip = screen.getByTestId("ruby-market-read-freshness");
+    expect(chip.textContent).toMatch(/Read expired/);
+    expect(chip.textContent).not.toMatch(/Feed not confirmed|Live feed/);
+  });
+
+  it("a gate-downgraded read (expired or not) still names the feed", () => {
+    mockUseScannerReadGate.mockReturnValue({ truth: null, level: "limited", isFull: false, downgraded: true, reason: "Delayed market data." });
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(EXPIRED)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    const r = rows();
+    expect(r.decision).toBe("WAIT — live feed not confirmed");
+    expect(r.feed).toMatch(/Feed not fully confirmed \(delayed \/ limited read\)\. Delayed market data\./);
+    expect(screen.getByTestId("ruby-market-read-freshness").textContent).toContain("Feed not confirmed");
+  });
+});
