@@ -165,3 +165,46 @@ describe("live shared activation — EA-reported inputs", () => {
     expect(checkRow("enable_live_execution").dataset.state).toBe("fail");
   });
 });
+
+describe("live shared activation — checklist rows nothing checked", () => {
+  function minimal(): Json {
+    return readiness({
+      globalSwitches: {
+        platformMode: "DEMO", liveEnabled: false, accountRoutingMode: "USER_OWNED_MT5",
+        sharedLiveTradingEnabled: false, masterBridgeLiveEnabled: false,
+      },
+      liveAccount: {
+        pinnedBridge: null,
+        detector: { detected: false, primaryReason: "NO_LIVE_BRIDGE" },
+        detectedAccountNumber: null, detectedBrokerName: null, detectedServerName: null,
+      },
+    });
+  }
+
+  it("rows the page never checks read 'not checked', not passed", async () => {
+    const r = minimal();
+    r.approvedUsers = { approvedCount: 0, activeCount: 0, rows: [] };
+    await renderWith(r);
+    for (const id of ["audit", "queue_reachable", "attribution_reachable", "demo_works"]) {
+      const el = checkRow(id);
+      expect(el.dataset.state, id).toBe("not-checked");
+      expect(el.textContent, id).toMatch(/not checked/);
+    }
+  });
+
+  it("the passed/total badge does not count unchecked rows", async () => {
+    const r = minimal();
+    r.approvedUsers = { approvedCount: 0, activeCount: 0, rows: [] };
+    await renderWith(r);
+    // 21 rows, 4 never checked here. Passing: operator authenticated (the
+    // admin-only readiness endpoint answered) and both stops released.
+    expect(screen.getByTestId("checklist-badge").textContent).toBe("2/17 passed · 4 not checked");
+  });
+
+  it("operator authentication cites the server's admin check, not a constant", async () => {
+    await renderWith(minimal());
+    const el = checkRow("operator_auth");
+    expect(el.dataset.state).toBe("pass");
+    expect(el.textContent).toMatch(/readiness endpoint accepted this session as admin\/owner/);
+  });
+});

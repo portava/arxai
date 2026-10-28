@@ -382,7 +382,9 @@ function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
   );
 }
 
-type Check = { id: string; label: string; ok: boolean; detail?: string };
+// ok: true passed, false failed, null not checked (this page has no evidence
+// for it). A not-checked row is never shown or counted as passed.
+type Check = { id: string; label: string; ok: boolean | null; detail?: string };
 
 function useChecklist(r: ReadinessResp | null): Check[] {
   return useMemo(() => {
@@ -412,7 +414,9 @@ function useChecklist(r: ReadinessResp | null): Check[] {
       !stops.reported ? "safety-core kill switch not reported" : null,
     ].filter(Boolean).join("; ");
     return [
-      { id: "operator_auth", ok: true, label: "Admin/operator authenticated" },
+      // Evidence: readiness is only stored when the admin/owner-gated endpoint
+      // answered ok (it refuses any other session with 401/403).
+      { id: "operator_auth", ok: r.ok === true, label: "Admin/operator authenticated", detail: "readiness endpoint accepted this session as admin/owner" },
       { id: "bridge_pinned", ok: b != null, label: "Master bridge pinned" },
       { id: "heartbeat", ok: fresh, label: `Bridge heartbeat fresh (<${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s)`, detail: b?.heartbeatAgeSeconds != null ? `${b.heartbeatAgeSeconds}s old` : "no heartbeat" },
       { id: "ea_version", ok: eaOk, label: `EA ≥ ${r.constants.MIN_LIVE_EA_VERSION}`, detail: b?.eaVersion ?? "—" },
@@ -429,28 +433,34 @@ function useChecklist(r: ReadinessResp | null): Check[] {
       { id: "kill_released", ok: g.emergencyKillSwitch === false && stops.released, label: "Kill switches released (platform emergency stop and safety-core)", detail: engagedStops || undefined },
       { id: "approved_users", ok: r.approvedUsers.approvedCount > 0, label: "At least one user approved", detail: `${r.approvedUsers.approvedCount} approved` },
       { id: "user_limits", ok: usersWithCaps > 0 && usersWithCaps === r.approvedUsers.approvedCount, label: "Approved users have symbol/lot/risk caps", detail: `${usersWithCaps}/${r.approvedUsers.approvedCount} with caps` },
-      { id: "audit", ok: true, label: "Audit logging active" },
-      { id: "queue_reachable", ok: true, label: "Command queue reachable" },
-      { id: "attribution_reachable", ok: true, label: "shared_trade_attribution reachable" },
-      { id: "demo_works", ok: true, label: "Demo/paper path still works (untouched by activation)" },
+      // Nothing on this page checks these four (the readiness audit write is
+      // best-effort and swallows failures), so they are "not checked".
+      { id: "audit", ok: null, label: "Audit logging active", detail: "not checked" },
+      { id: "queue_reachable", ok: null, label: "Command queue reachable", detail: "not checked" },
+      { id: "attribution_reachable", ok: null, label: "shared_trade_attribution reachable", detail: "not checked" },
+      { id: "demo_works", ok: null, label: "Demo/paper path still works (untouched by activation)", detail: "not checked" },
     ];
   }, [r]);
 }
 
 function ChecklistCard({ items }: { items: Check[] }) {
-  const passed = items.filter(i => i.ok).length;
+  const checked = items.filter(i => i.ok !== null);
+  const passed = checked.filter(i => i.ok === true).length;
+  const notChecked = items.length - checked.length;
   return (
     <Card><CardHeader className="pb-2">
       <CardTitle className="text-sm flex items-center gap-2">
         Activation checklist
-        <Badge variant={passed === items.length ? "default" : "outline"} className="text-[10px]">
-          {passed}/{items.length}
+        <Badge variant={passed === checked.length && notChecked === 0 ? "default" : "outline"} className="text-[10px]" data-testid="checklist-badge">
+          {passed}/{checked.length} passed{notChecked > 0 ? ` · ${notChecked} not checked` : ""}
         </Badge>
       </CardTitle>
     </CardHeader><CardContent className="space-y-1">
       {items.map(i => (
-        <div key={i.id} className="flex items-center gap-2 text-xs" data-testid={`check-${i.id}`} data-state={i.ok ? "pass" : "fail"}>
-          {i.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <XCircle className="h-3 w-3 text-rose-400" />}
+        <div key={i.id} className="flex items-center gap-2 text-xs" data-testid={`check-${i.id}`} data-state={i.ok === true ? "pass" : i.ok === false ? "fail" : "not-checked"}>
+          {i.ok === true && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
+          {i.ok === false && <XCircle className="h-3 w-3 text-rose-400" />}
+          {i.ok === null && <AlertCircle className="h-3 w-3 text-zinc-500" />}
           <span>{i.label}</span>
           {i.detail && <span className="text-muted-foreground ml-auto font-mono text-[10px]">{i.detail}</span>}
         </div>
