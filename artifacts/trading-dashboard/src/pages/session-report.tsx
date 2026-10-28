@@ -5,12 +5,17 @@ interface Report {
   paper_session_id: string;
   status: string;
   duration_minutes: number;
+  /** True while the session has not ended (duration runs to report time). */
+  duration_in_progress?: boolean;
   total_trades: number;
   wins: number;
   losses: number;
   break_even: number;
+  /** Closes with no recorded result. */
+  unclassified?: number;
   net_pnl: number;
-  win_rate: number;
+  /** Over closes with a recorded result; null when none has one. */
+  win_rate: number | null;
   rule_violations: Array<{ code: string; limit?: number; actual?: number }>;
   mistakes_detected: Array<Record<string, unknown>>;
   lessons_generated: Array<Record<string, unknown>>;
@@ -51,6 +56,15 @@ export default function SessionReport() {
     } finally { setBusy(false); }
   }
 
+  // The breakdown must sum to the total: a close with no recorded result is
+  // shown as unclassified (derived from the counts when an older server omits
+  // the field), never silently dropped.
+  const unclassified = report
+    ? Math.max(report.unclassified ?? 0, report.total_trades - report.wins - report.losses - report.break_even, 0)
+    : 0;
+  const classified = report ? report.wins + report.losses + report.break_even : 0;
+  const inProgress = report ? (report.duration_in_progress ?? report.status !== "COMPLETE") : false;
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -73,8 +87,8 @@ export default function SessionReport() {
         <div className="space-y-3">
           <div className="rounded border p-4">
             <div className="text-sm text-muted-foreground">Report ID: {report.session_report_id} · Status: {report.status}</div>
-            <div>Duration: {report.duration_minutes}m · Trades: {report.total_trades} ({report.wins}W/{report.losses}L/{report.break_even}BE)</div>
-            <div>Net P&L (¢): {report.net_pnl} · Win rate: {report.win_rate}%</div>
+            <div>Duration: {report.duration_minutes}m{inProgress ? " so far (session not ended)" : ""} · Trades: {report.total_trades} ({report.wins}W/{report.losses}L/{report.break_even}BE{unclassified > 0 ? `, ${unclassified} unclassified` : ""})</div>
+            <div>Net P&L (¢): {report.net_pnl} · Win rate: {report.win_rate == null ? "not available (no close has a recorded result)" : `${report.win_rate}% of ${classified} with a recorded result`}</div>
           </div>
           <div className="rounded border p-4">
             <div className="font-semibold">Coach summary</div>
