@@ -9814,6 +9814,18 @@ export interface Mt5PositionsSync {
   timestamp: string;
 }
 
+/**
+ * Whose state this is. platform is the install-wide EA feed (operators only) and is not any one user's account.
+ */
+export type Mt5StateScope = (typeof Mt5StateScope)[keyof typeof Mt5StateScope];
+
+export const Mt5StateScope = {
+  platform: "platform",
+  own_connection: "own_connection",
+  shared_master_bridge: "shared_master_bridge",
+  none: "none",
+} as const;
+
 export interface Mt5State {
   connected: boolean;
   /** @nullable */
@@ -9840,6 +9852,15 @@ export interface Mt5State {
   lastHeartbeatAt?: string | null;
   /** @nullable */
   lastSyncAt?: string | null;
+  /** Whose state this is. platform is the install-wide EA feed (operators only) and is not any one user's account. */
+  scope?: Mt5StateScope;
+  /** Plain statement of whose state this is. */
+  scopeNote?: string;
+  /** False when positions were not read for this caller. An empty list is then not a count of open trades. */
+  positionsMeasured?: boolean;
+  positionsNote?: string;
+  /** Present when liveAllowed is the platform-wide lock rather than a value reported by the caller's terminal. */
+  liveAllowedNote?: string;
 }
 
 export type Mt5StatusMode = (typeof Mt5StatusMode)[keyof typeof Mt5StatusMode];
@@ -14989,6 +15010,13 @@ export interface MeScalpBasketsResp {
   baskets: ScalpBasket[];
   accountMode: MeScalpBasketsRespAccountMode;
   generatedAt: string;
+  /** False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
 }
 
 export type MeScalpAddOnCheckBodyDirection =
@@ -15026,6 +15054,13 @@ export interface MeScalpAddOnCheckResp {
   addOn: ScalpAddOnVerdict;
   flame: ScalpFlameRead;
   generatedAt: string;
+  /** False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
 }
 
 export interface ScalpJournalEntry {

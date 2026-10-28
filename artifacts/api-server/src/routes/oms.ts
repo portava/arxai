@@ -12,10 +12,11 @@ import {
   placeOrder, listOrders, getOrder, amendOrder, withdrawOrder,
   fillOrder, listPositions, getPosition,
   closeOmsPosition, partialCloseOmsPosition, moveOmsStop, moveOmsTakeProfit, moveOmsStopToBreakEven, setOmsTrailingStop,
-  pnlSummary, pnlBy, pnlDaily, brokerReconStatus, omsDashboardSummary,
+  pnlSummary, pnlBy, pnlDaily, brokerReconStatus,
   tickAll, type OmsActionResult, type OmsActor, type OmsOwnerScope,
 } from "../lib/oms.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { omsDashboardSummaryFor, OMS_SCOPE_NOTE } from "../lib/omsScopedSummary.js";
 
 // Every change to the simulator book is evaluated by the pre-trade Risk
 // Governor for the operator making it (lib/oms.ts, governed entry points).
@@ -183,6 +184,12 @@ router.get("/broker-reconciliation/status", (req, res) => {
   }
   return res.json(brokerReconStatus());
 });
-router.get("/oms/dashboard-summary", (_req, res) => res.json(omsDashboardSummary()));
+// The caller's own simulator book only (same owner scope as every other book
+// read here), labeled; it used to be the whole process-wide book.
+router.get("/oms/dashboard-summary", (req, res) => res.json({
+  ...omsDashboardSummaryFor(ownerScope(req)),
+  scope: "own_simulator_book",
+  scopeNote: OMS_SCOPE_NOTE.own_simulator_book,
+}));
 
 export default router;

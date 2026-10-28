@@ -27,7 +27,7 @@ import {
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { getEconomicCalendar } from "../news/economicCalendarProvider.js";
-import { readLatestUserMt5State } from "../brokerHub/mt5StateReader.js";
+import { readLatestUserMt5State, MT5_STATE_NOT_ATTRIBUTED_NOTE } from "../brokerHub/mt5StateReader.js";
 
 export interface TradeHealthServiceArgs {
   userId: number;
@@ -39,6 +39,14 @@ export interface TradeHealthServiceArgs {
 export interface TradeHealthServiceResult {
   report: TradeHealthReport;
   chartSymbol: string | null;
+  /**
+   * False when the caller's positions for their mode could not be read (a
+   * DEMO user with no mt5_state row of their own). An empty assessment list
+   * is then not "no open positions".
+   */
+  positionsMeasured: boolean;
+  /** Plain statement of why positions were not read; null when measured. */
+  positionsNote: string | null;
 }
 
 const LIVE_STALE_MS = 90_000;
@@ -87,8 +95,9 @@ async function readOpenPositions(
   includeLive: boolean,
   includeDemo: boolean,
   nowMs: number,
-): Promise<OpenPositionInput[]> {
+): Promise<{ positions: OpenPositionInput[]; measured: boolean }> {
   const out: OpenPositionInput[] = [];
+  let measured = true;
 
   // LIVE — arx_live_positions, scoped by userId, with the same ghost-reconcile
   // window the unified positions feed uses (hide rows the broker no longer
@@ -153,6 +162,9 @@ async function readOpenPositions(
   // DEMO — latest mt5_state row for the user, then map its positions JSON.
   if (includeDemo) {
     const stateRow = await readLatestUserMt5State(userId);
+    // No row of the user's own: the EA feed is install-wide and never
+    // stamped with a user, so the demo positions were not read.
+    if (stateRow == null) measured = false;
     const syncedMs = toMs(stateRow?.lastSyncAt);
     const positionsRaw: DemoRaw[] = Array.isArray(stateRow?.positions)
       ? (stateRow!.positions as DemoRaw[])
@@ -179,7 +191,7 @@ async function readOpenPositions(
     }
   }
 
-  return out;
+  return { positions: out, measured };
 }
 
 /**
@@ -376,7 +388,7 @@ export async function buildTradeHealthForUser(
   const includeLive = scope.currentAccountMode === "LIVE_SHARED";
   const includeDemo = scope.currentAccountMode === "DEMO";
 
-  const positions = await readOpenPositions(userId, includeLive, includeDemo, nowMs);
+  const { positions, measured: positionsMeasured } = await readOpenPositions(userId, includeLive, includeDemo, nowMs);
 
   const [signalsBySymbol, overtrading] = await Promise.all([
     positions.length > 0
@@ -397,5 +409,15 @@ export async function buildTradeHealthForUser(
     evaluatedAtIso: new Date(nowMs).toISOString(),
   });
 
-  return { report, chartSymbol };
+  if (!positionsMeasured) {
+    // The engine's empty-book summary ("You have no open positions…") would
+    // present an unread book as measured. Replace it with what happened.
+    return {
+      report: { ...report, summary: `Your demo positions could not be checked. ${MT5_STATE_NOT_ATTRIBUTED_NOTE}` },
+      chartSymbol,
+      positionsMeasured: false,
+      positionsNote: MT5_STATE_NOT_ATTRIBUTED_NOTE,
+    };
+  }
+  return { report, chartSymbol, positionsMeasured: true, positionsNote: null };
 }
