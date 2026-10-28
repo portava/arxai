@@ -247,12 +247,18 @@ export type LiveScannerReason =
   | "INSUFFICIENT_SYMBOLS_WITH_DATA";
 
 export interface LiveScannerResult {
+  /**
+   * Whether the scan ran. false when the assistant market-data adapter gate
+   * stopped it (adapter not connected, or no candle support) — the router's
+   * candle feed (mt5_broker / deriv) was then never asked, so false here says
+   * nothing about that feed.
+   */
   connected: boolean;
   /**
    * The feed(s) the scored candles actually came from — the router provider
    * ids, joined with "+" when several served this scan, or "none" when no
-   * candles were served. The early "not connected" returns name the assistant
-   * adapter, because that is the check that stopped the scan.
+   * candles were served (including when the adapter gate stopped the scan;
+   * `gateProvider` names that adapter).
    */
   source: string;
   /** Additive: the assistant market-data adapter whose connection gates the scan. */
@@ -269,28 +275,34 @@ export interface LiveScannerResult {
 
 export async function scoreLiveCandidates(symbols: readonly string[], limit = 10): Promise<LiveScannerResult> {
   const p = getMarketProvider();
+  // The scan is gated on the ASSISTANT market-data adapter, but candles come
+  // from the unified router (mt5_broker-first). The gate still fails closed
+  // (no candidates); these results only say truthfully what stopped the scan
+  // and that the router's candle feed was not asked.
   if (!p.connected) {
     return {
       connected: false,
-      source: p.name,
+      source: "none",
+      gateProvider: p.name,
       candidates: [],
       symbolsAttempted: 0,
       symbolsWithData: 0,
-      warnings: ["No market data provider is connected."],
+      warnings: ["The live scanner did not run: the assistant's market-data adapter is not connected."],
       reason: "PROVIDER_NOT_CONFIGURED",
-      reasonDetail: "No market data provider is connected. Set TWELVEDATA_API_KEY (or FINNHUB_API_KEY) to enable the live scanner.",
+      reasonDetail: `The live scanner only runs when the assistant's market-data adapter is connected, and it is not (${p.name && p.name !== "none" ? `'${p.name}'` : "none is configured"}). No candles were requested and nothing was scored. The chart's candle feed (MT5 / Deriv) was not checked by this scan, so this says nothing about it. Set TWELVEDATA_API_KEY (or FINNHUB_API_KEY) to connect the adapter.`,
     };
   }
   if (!p.features.candles) {
     return {
       connected: false,
-      source: p.name,
+      source: "none",
+      gateProvider: p.name,
       candidates: [],
       symbolsAttempted: 0,
       symbolsWithData: 0,
-      warnings: [`Provider '${p.name}' does not implement candle/OHLC fetching in this adapter yet.`],
+      warnings: [`The live scanner did not run: the assistant's market-data adapter '${p.name}' has no candle/OHLC support.`],
       reason: "PROVIDER_UNAVAILABLE",
-      reasonDetail: `Provider '${p.name}' has no candle/OHLC support — the scanner cannot rank candidates without real candles.`,
+      reasonDetail: `The live scanner only runs when the assistant's market-data adapter supports candles, and '${p.name}' does not. No candles were requested and nothing was scored. The chart's candle feed (MT5 / Deriv) was not checked by this scan, so this says nothing about it.`,
     };
   }
 
@@ -384,16 +396,18 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
   let reasonDetail = `Scanner returned ${out.length} ranked candidate(s) from ${withData}/${attempted} (symbol × timeframe) attempts; candles served by ${source}.`;
   if (withData === 0) {
     // No symbol produced enough candles. Differentiate stale vs unavailable.
+    // Candles come from the router, so the failure is the router's; the
+    // adapter's own status is reported as the adapter's, never as the source.
     if (statusAfter.stale && wasAlreadyStale) {
       reason = "MARKET_DATA_STALE";
-      reasonDetail = `Provider '${p.name}' is connected but market data is stale — no successful fetch in the last ${Math.round(statusAfter.staleAfterMs / 60000)} minutes. The scanner refuses to rank candidates from stale data.`;
+      reasonDetail = `The market-data router returned no usable candle data for any requested (symbol × timeframe) pair in this scan, and the assistant's market-data adapter '${p.name}' has had no successful fetch in the last ${Math.round(statusAfter.staleAfterMs / 60000)} minutes. Nothing was ranked.`;
     } else {
       reason = "CANDLES_UNAVAILABLE";
-      reasonDetail = `Provider '${p.name}' is connected but returned no usable candle data for any requested (symbol × timeframe) pair in this scan${statusAfter.lastError ? ` — last error: ${statusAfter.lastError}` : ""}.`;
+      reasonDetail = `The market-data router returned no usable candle data for any requested (symbol × timeframe) pair in this scan (see warnings for each feed's message)${statusAfter.lastError ? ` — the assistant adapter '${p.name}' last reported: ${statusAfter.lastError}` : ""}.`;
     }
   } else if (out.length === 0) {
     reason = "INSUFFICIENT_SYMBOLS_WITH_DATA";
-    reasonDetail = `Provider returned candles for ${withData}/${attempted} pairs but none scored as a ranked candidate.`;
+    reasonDetail = `The candle feed (${source}) returned candles for ${withData}/${attempted} pairs but none scored as a ranked candidate.`;
   }
 
   return {
