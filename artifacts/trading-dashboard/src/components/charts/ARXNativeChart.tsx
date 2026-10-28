@@ -223,7 +223,8 @@ export interface ARXNativeChartProps {
   overlays?: ChartOverlay[];
   /**
    * Level 5 — reports the chart's resolved symbol, current timeframe, and the
-   * Level 3 `aiUsable` verdict (true only on a clean feed) whenever any of them
+   * AI-usability verdict (true only on a clean feed whose shared scanner truth
+   * is confirmed — the same verdict the header chip shows) whenever any of them
    * change. Lets a parent source AI overlays (scanner/Ruby) against the exact
    * instrument the chart is showing and suppress them on an unconfirmed feed —
    * WITHOUT duplicating the candle fetch. Pure read-out: never gates candles
@@ -899,8 +900,7 @@ export function ARXNativeChart({
   // symbol/timeframe is downgraded or still unresolved — mirroring RubyChartRead.
   // Normalize first: `timeframe` is contract-style ("M15") but useScannerTruth's
   // toApiTimeframe only understands chart ids, so a raw label would resolve the
-  // wrong (M5) feed. This is a read-only verdict for the badge ONLY; the Level 5
-  // context report below intentionally keeps using the raw conf.aiUsable.
+  // wrong (M5) feed.
   const { truth: badgeTruth } = useScannerTruth(
     resolvedSymbol,
     normalizeChartTimeframe(timeframe),
@@ -908,6 +908,12 @@ export function ARXNativeChart({
   const badgeAiUsableResolved = resolveFeedBadgeVerdict(
     badgeTruth?.analysis.level ?? null,
   );
+  // ONE AI-usability verdict for everything this panel shows or reports: the
+  // chip, the "Not AI-confirmed" badge, the structure lines and the context the
+  // page uses to draw scanner/Ruby AI overlays. The raw feed flag can only be
+  // narrowed by the shared truth (downgraded or still resolving => not usable),
+  // so the canvas can never draw AI-derived levels next to a "No AI" chip.
+  const aiUsable = conf.aiUsable && badgeAiUsableResolved === true;
 
   // ── Level 4 — read-only structural overlay (Task #651). Draw the detected
   //    trendlines / channel rails + break/retest/reclaim markers the backend
@@ -919,7 +925,7 @@ export function ARXNativeChart({
   //    DOUBLE-GATED honesty: the backend already fails the overlay closed
   //    (`visible:false`) unless the feed was live-confirmed AND a real trendline
   //    was detected; the frontend re-gates on this chart's OWN feed-confidence
-  //    verdict (`conf.aiUsable`) and the shared live-price affordance, so a
+  //    verdict (`aiUsable`: raw feed flag capped by the shared truth) and the shared live-price affordance, so a
   //    non-live / unconfirmed feed can never show structure. When any gate is
   //    false we CLEAR the structural channel (also covers symbol/timeframe switch
   //    via chartEpoch, so structure from instrument A never bleeds onto B).
@@ -929,7 +935,7 @@ export function ARXNativeChart({
 
     const overlay = intelligenceState?.trendlineOverlay;
     const mayDraw =
-      overlay != null && overlay.visible && conf.aiUsable && isLivePriceAffordance
+      overlay != null && overlay.visible && aiUsable && isLivePriceAffordance
       && intelligenceState?.truthState?.source === historySource
       && (!overlayRequiresEvidence || hasMatchingOverlayEvidence(evidence, intelligenceQuery.data));
 
@@ -971,9 +977,9 @@ export function ARXNativeChart({
 
     adapter.setStructureLines(lines, markers);
     // displayStatus is captured via `isLivePriceAffordance` (derived from it) +
-    // `conf.aiUsable`; chartEpoch re-runs this after a context reset so structure
+    // `aiUsable`; chartEpoch re-runs this after a context reset so structure
     // is applied only to the matching instrument, timeframe and provider.
-  }, [intelligenceState, conf.aiUsable, isLivePriceAffordance, chartEpoch, historySource, overlayRequiresEvidence, evidence, intelligenceQuery.data]);
+  }, [intelligenceState, aiUsable, isLivePriceAffordance, chartEpoch, historySource, overlayRequiresEvidence, evidence, intelligenceQuery.data]);
 
   // Phase 2 — mirror status derived from feed quality + fetch state.
   const mirrorStatus = getMirrorStatus(
@@ -1003,21 +1009,21 @@ export function ARXNativeChart({
   const lastCtxRef = useRef<string>("");
   useEffect(() => {
     if (!onChartContextChange) return;
-    const key = `${resolvedSymbol}|${timeframe}|${conf.aiUsable ? 1 : 0}`;
+    const key = `${resolvedSymbol}|${timeframe}|${aiUsable ? 1 : 0}`;
     if (lastCtxRef.current === key) return;
     lastCtxRef.current = key;
     onChartContextChange({
       symbol: resolvedSymbol,
       timeframe,
-      aiUsable: conf.aiUsable,
+      aiUsable,
     });
-  }, [resolvedSymbol, timeframe, conf.aiUsable, onChartContextChange]);
+  }, [resolvedSymbol, timeframe, aiUsable, onChartContextChange]);
 
   // Only surface the prominent banner once real candles are on screen — the
   // empty/error overlays already own the no-data story.
   const showPoorBanner =
     showFeedStatus && hasCandles && !isSafeMode && conf.severity !== "clean";
-  const showNotAiConfirmed = showFeedStatus && hasCandles && !conf.aiUsable && !isSafeMode;
+  const showNotAiConfirmed = showFeedStatus && hasCandles && !aiUsable && !isSafeMode;
 
   const decimals = useMemo(() => {
     const sample = lastClose ?? 1;

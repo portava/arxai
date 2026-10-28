@@ -4,6 +4,9 @@
 // Each block below pins one inaccuracy that used to reach the screen:
 //   - a "Reconnecting — prices delayed" badge on charts that never opened a
 //     tick stream (third-party candle source, or no feed at all).
+//   - an AI chip reading "No AI" while the same panel kept AI overlays live
+//     (the "Not AI-confirmed" badge and the aiUsable context reported to the
+//     page used the uncapped raw feed flag).
 //
 // The harness renders the REAL ARXNativeChart with the candle query, the
 // chart engine and the scanner-truth hook replaced by controllable stubs.
@@ -230,5 +233,32 @@ describe("reconnecting badge only describes a tick stream that exists", () => {
     expect(openedStreams).toHaveLength(1);
     act(() => { openedSources[0]!.onerror?.({}); });
     expect(screen.queryByTestId(RECONNECTING)).not.toBeNull();
+  });
+});
+
+describe("AI usability is one verdict across chip, badge and page context", () => {
+  it.each([["historical_only"], ["limited"], [null]] as const)(
+    "a %s scanner truth over a clean feed reads not-AI everywhere",
+    (level) => {
+      truthLevel = level;
+      const onChartContextChange = vi.fn();
+      renderChart({ onChartContextChange });
+      const chip = screen.getByTestId("arx-feed-badge");
+      expect(chip.getAttribute("data-ai-usable")).toBe("false");
+      // The badge must agree with the chip, not with the raw feed flag.
+      expect(screen.queryByTestId("arx-native-not-ai")).not.toBeNull();
+      // The page sources AI overlays from this context: it must be told "no".
+      const last = onChartContextChange.mock.calls.at(-1)?.[0] as { aiUsable: boolean };
+      expect(last.aiUsable).toBe(false);
+    },
+  );
+
+  it("a full scanner truth over a clean feed keeps AI usable", () => {
+    const onChartContextChange = vi.fn();
+    renderChart({ onChartContextChange });
+    expect(screen.getByTestId("arx-feed-badge").getAttribute("data-ai-usable")).toBe("true");
+    expect(screen.queryByTestId("arx-native-not-ai")).toBeNull();
+    const last = onChartContextChange.mock.calls.at(-1)?.[0] as { aiUsable: boolean };
+    expect(last.aiUsable).toBe(true);
   });
 });
