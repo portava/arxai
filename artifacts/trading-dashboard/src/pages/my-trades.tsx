@@ -113,6 +113,9 @@ export default function MyTradesPage() {
   const [data, setData] = useState<OpenResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  // When the cards on screen were last loaded successfully. After a failed
+  // refresh the cards are a cached copy and the summary says so.
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [closing, setClosing] = useState<OpenCard | null>(null);
   const [openModal, setOpenModal] = useState(false);
   const [filter, setFilter] = useState<PosFilter>("all");
@@ -128,6 +131,7 @@ export default function MyTradesPage() {
       const r = await fetch(u("/api/me/trades/open"), { credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setData((await r.json()) as OpenResponse);
+      setLoadedAt(Date.now());
       setErr(null);
     } catch (e) {
       setErr(String((e as Error).message ?? e));
@@ -189,7 +193,10 @@ export default function MyTradesPage() {
     const shortLots = cards.filter((c) => c.side === "SELL").reduce((s, c) => s + c.lotSize, 0);
     const noSL = cards.filter((c) => c.stopLoss == null).length;
     const noTP = cards.filter((c) => c.takeProfit == null).length;
-    return { openPnl, unreportedN, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP };
+    // Shared-master rows carry an allocation estimate, not a broker figure; a
+    // total that includes one is an estimate too.
+    const estimateN = known.filter((c) => c.pnlIsEstimate).length;
+    return { openPnl, unreportedN, estimateN, totalLots, protectedN, unprotectedN, withWinner, withLoser, longLots, shortLots, noSL, noTP };
   }, [cards]);
 
   const visible = useMemo(() => {
@@ -240,9 +247,21 @@ export default function MyTradesPage() {
 
   // Strip P/L: the shared SSE snapshot when it is live, else the cards' total
   // (null while any position's P/L is not reported — never a $0.00 stand-in).
-  const stripPnl: number | null = !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
-    ? liveSnap.snapshot.openPL
+  const stripFromSnapshot = !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null;
+  const stripPnl: number | null = stripFromSnapshot
+    ? liveSnap.snapshot!.openPL
     : data == null ? null : sum.openPnl;
+  const stripIsEstimate = stripFromSnapshot ? liveSnap.isEstimate === true : sum.estimateN > 0;
+
+  // Summary badge: "Healthy" only for a book that loaded on the latest poll.
+  const summaryBadge: { label: string; tone: string } = data == null
+    ? (err ? { label: "Unavailable", tone: "border-danger/40 bg-danger/10 text-danger" } : { label: "Checking", tone: "border-border bg-secondary/40 text-txt-muted" })
+    : err ? { label: "Not current", tone: "border-warning/40 bg-warning/10 text-warning" }
+    : cards.length === 0 ? { label: "No positions", tone: "border-border bg-secondary/40 text-txt-muted" }
+    : sum.unprotectedN > 0 ? { label: "Needs Protection", tone: "border-warning/40 bg-warning/10 text-warning" }
+    : { label: "Healthy", tone: "border-success/40 bg-success/10 text-success" };
+  const loadedAtLabel = loadedAt == null ? null : new Date(loadedAt).toLocaleTimeString();
+  const notLoadedCopy = `Open positions could not be loaded (${err ?? "unknown error"}).`;
   const stripState: "error" | "loading" | "waiting" | "ok" = err
     ? "error"
     : data == null
@@ -298,7 +317,7 @@ export default function MyTradesPage() {
                 ? liveSnap.snapshot.openPositionsCount
                 : cards.length) === 1 ? "" : "s")}
         </span>
-        <span className="text-txt-muted">Open P/L <span data-testid="open-trades-strip-pnl" className={cn("font-medium", pnlTone(stripPnl))}>{stripPnl == null ? (cards.length === 0 ? "—" : `${UNREPORTED} (${sum.unreportedN} of ${cards.length} positions)`) : money(stripPnl)}</span></span>
+        <span className="text-txt-muted">Open P/L <span data-testid="open-trades-strip-pnl" className={cn("font-medium", pnlTone(stripPnl))}>{stripPnl == null ? (cards.length === 0 ? "—" : `${UNREPORTED} (${sum.unreportedN} of ${cards.length} positions)`) : <>{money(stripPnl)}{stripIsEstimate && <span className="ml-1 text-[10px] text-txt-muted">est.</span>}</>}</span></span>
         <span className="text-txt-muted">Total Lots <span className="text-foreground font-medium">{sum.totalLots.toFixed(2)}</span></span>
         <span className="text-txt-muted">Exposure <span className="text-success font-medium">{cards.length === 0 ? "None" : "Active"}</span></span>
         {liveSnap.snapshot != null && (
@@ -327,19 +346,21 @@ export default function MyTradesPage() {
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Live Position Summary</h3></div>
-            <span className={cn("rounded-md border px-2 py-0.5 text-xs",
-              cards.length === 0 ? "border-border bg-secondary/40 text-txt-muted"
-              : sum.unprotectedN > 0 ? "border-warning/40 bg-warning/10 text-warning"
-              : "border-success/40 bg-success/10 text-success")}>
-              {cards.length === 0 ? "Checking" : sum.unprotectedN > 0 ? "Needs Protection" : "Healthy"}
+            <span data-testid="position-summary-badge" className={cn("rounded-md border px-2 py-0.5 text-xs", summaryBadge.tone)}>
+              {summaryBadge.label}
             </span>
           </div>
+          {err && data != null && (
+            <p data-testid="position-summary-stale" className="mt-2 text-xs text-warning">
+              Refresh failed ({err}). Showing positions as last loaded at {loadedAtLabel ?? "an unknown time"}; the book may have changed since.
+            </p>
+          )}
           {cards.length === 0 ? (
-            <p className="mt-3 text-sm text-txt-muted">No open trades right now.</p>
+            <p className="mt-3 text-sm text-txt-muted">{data == null ? (err ? notLoadedCopy : "Checking open positions…") : "No open trades right now."}</p>
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Mini label="Open Trades" value={String(cards.length)} />
-              <Mini label="Open P/L" value={sum.openPnl == null ? UNREPORTED : money(sum.openPnl)} tone={pnlTone(sum.openPnl)} sub={sum.openPnl == null ? `${sum.unreportedN} of ${cards.length} awaiting broker P/L` : undefined} />
+              <Mini testId="position-summary-open-pnl" label="Open P/L" value={sum.openPnl == null ? UNREPORTED : `${money(sum.openPnl)}${sum.estimateN > 0 ? " est." : ""}`} tone={pnlTone(sum.openPnl)} sub={sum.openPnl == null ? `${sum.unreportedN} of ${cards.length} awaiting broker P/L` : sum.estimateN > 0 ? `${sum.estimateN} of ${cards.length} estimated (shared-account allocation)` : undefined} />
               <Mini label="Total Lots" value={sum.totalLots.toFixed(2)} />
               <Mini label="Protected" value={`${sum.protectedN} / ${cards.length}`} />
               <Mini label="Unprotected" value={String(sum.unprotectedN)} tone={sum.unprotectedN ? "text-danger" : undefined} />
@@ -429,6 +450,8 @@ export default function MyTradesPage() {
         <div className="mt-3 overflow-x-auto">
           {loading ? (
             <p className="py-8 text-center text-sm text-txt-muted"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading open trades…</p>
+          ) : data == null && err ? (
+            <p className="py-8 text-center text-sm text-danger">{notLoadedCopy}</p>
           ) : visible.length === 0 ? (
             <EmptyPositions onTrade={() => setOpenModal(true)} onScanner={() => navigate("/market-scanner")} />
           ) : (
@@ -462,9 +485,9 @@ export default function MyTradesPage() {
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.lotSize}</td>
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.entryPrice ?? "—"}</td>
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.currentPrice ?? "—"}</td>
-                        <td className={cn("py-2.5 pr-3 text-right font-mono", pnlTone(c.unrealizedPnl ?? 0))}>
-                          {c.waitingForSync ? <span className="text-warning text-xs">syncing…</span> : money(c.unrealizedPnl ?? 0)}
-                          {c.pnlIsEstimate && !c.waitingForSync && <span className="ml-1 text-[10px] text-txt-muted">est.</span>}
+                        <td className={cn("py-2.5 pr-3 text-right font-mono", pnlTone(c.unrealizedPnl))}>
+                          {c.waitingForSync ? <span className="text-warning text-xs">syncing…</span> : pnlKnown(c) ? money(c.unrealizedPnl) : <span className="text-xs text-txt-muted">{UNREPORTED}</span>}
+                          {c.pnlIsEstimate && pnlKnown(c) && <span className="ml-1 text-[10px] text-txt-muted">est.</span>}
                         </td>
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.stopLoss ?? "—"}</td>
                         <td className="py-2.5 pr-3 font-mono text-txt-secondary">{c.takeProfit ?? "—"}</td>
@@ -625,9 +648,9 @@ export default function MyTradesPage() {
   );
 }
 
-function Mini({ label, value, tone, sub }: { label: string; value: string; tone?: string; sub?: string }) {
+function Mini({ label, value, tone, sub, testId }: { label: string; value: string; tone?: string; sub?: string; testId?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-background/40 p-2.5">
+    <div data-testid={testId} className="rounded-xl border border-border bg-background/40 p-2.5">
       <div className="text-[10px] text-txt-muted">{label}</div>
       <div className={cn("text-base font-bold", tone ?? "text-foreground")}>{value}</div>
       {sub && <div className="text-[10px] text-txt-muted">{sub}</div>}
