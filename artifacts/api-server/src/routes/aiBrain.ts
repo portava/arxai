@@ -244,13 +244,17 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
         recommendedFocus: "Place a paper trade and add a journal note to begin.",
         suggestedRuleChanges: [],
         confidenceCalibration: "No trades yet — confidence cannot be calibrated.",
-        dataSource: "SIMULATOR",
+        dataSource: "JOURNAL",
         perUserScoped: true,
         generatedAt: new Date().toISOString(),
       });
     }
-    const total = journal.length;
-    const wins = journal.filter((j) => (j.pnl ?? 0) > 0).length;
+    // Only BUY/SELL rows with a recorded P/L are scored trades. WAIT rows are
+    // notes, and a row without a P/L has no outcome to count. These are the
+    // trader's own journal rows (real, demo or paper) — not simulator output.
+    const scored = journal.filter((j) => j.direction !== "WAIT" && typeof j.pnl === "number" && Number.isFinite(j.pnl));
+    const total = scored.length;
+    const wins = scored.filter((j) => (j.pnl as number) > 0).length;
     const winRate = total ? Math.round((wins / total) * 100) : 0;
 
     const bySymbol = new Map<string, number>();
@@ -271,9 +275,11 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
     const topMistake = sorted(byMistake)[0]?.[0] ?? "none";
 
     return res.json({
-      doingWell: winRate >= 50
-        ? `Win rate ${winRate}% across ${total} simulated trades — keep the same selection criteria.`
-        : `${wins} winners out of ${total} so far — discipline before frequency.`,
+      doingWell: total === 0
+        ? `${journal.length} journal ${journal.length === 1 ? "entry" : "entries"}, none with a recorded P/L on a BUY or SELL — no win rate yet.`
+        : winRate >= 50
+          ? `Win rate ${winRate}% across ${total} journal ${total === 1 ? "trade" : "trades"} with a recorded P/L — keep the same selection criteria.`
+          : `${wins} winners out of ${total} journal ${total === 1 ? "trade" : "trades"} with a recorded P/L — discipline before frequency.`,
       doingPoorly: topMistake !== "none"
         ? `Most common mistake: "${topMistake}". Add a pre-trade check that blocks this case.`
         : "No clear pattern of mistakes yet — log more trades.",
@@ -288,10 +294,11 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
         "Reject trades when marketBias is 'choppy'.",
         "Block any entry with riskRewardRatio < 1.5.",
       ],
+      // Journal rows carry no confidence score, so calibration is not measured.
       confidenceCalibration: total < 10
         ? "Sample size too small — confidence numbers are not yet calibrated."
-        : `Average confidence aligns with win rate within ${Math.abs(winRate - 60)} pts.`,
-      dataSource: "SIMULATOR",
+        : "Confidence calibration not measured — journal entries carry no confidence score.",
+      dataSource: "JOURNAL",
       generatedAt: new Date().toISOString(),
     });
   } catch (e) { return res.status(500).json({ error: String(e) }); }
