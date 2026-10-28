@@ -173,8 +173,8 @@ export default function LiveManualPage() {
             </div>
 
             <div className="rounded border border-border p-2 text-xs space-y-1 bg-background/40">
-              <div className="flex justify-between"><span>Estimated max loss <span className="text-[10px] text-txt-muted">(needs a market price)</span></span><span className="font-mono text-danger" data-testid="ticket-est-loss" title={lossEst.usd == null ? lossEst.reason : lossEst.basis}>{formatMoneyEstimate(lossEst)}</span></div>
-              <div className="flex justify-between"><span>Estimated gain <span className="text-[10px] text-txt-muted">(needs a market price)</span></span><span className="font-mono text-success" data-testid="ticket-est-gain" title={gainEst.usd == null ? gainEst.reason : gainEst.basis}>{formatMoneyEstimate(gainEst)}</span></div>
+              <div className="flex justify-between"><span>Estimated max loss <span className="text-[10px] text-txt-muted">(needs a market price)</span></span><span className="font-mono text-danger" data-testid="ticket-est-loss" title={lossEst.reason}>{formatMoneyEstimate(lossEst)}</span></div>
+              <div className="flex justify-between"><span>Estimated gain <span className="text-[10px] text-txt-muted">(needs a market price)</span></span><span className="font-mono text-success" data-testid="ticket-est-gain" title={gainEst.reason}>{formatMoneyEstimate(gainEst)}</span></div>
               <div className="flex justify-between"><span>Reward / Risk <span className="text-[10px] text-txt-muted">(needs a market price)</span></span><span className="font-mono" data-testid="ticket-rr" title={noRealPrice}>—</span></div>
               <div className="flex justify-between"><span>Risk % <span className="text-[10px] text-txt-muted">(needs account equity)</span></span><span className="font-mono text-txt-muted">—</span></div>
               <div className="flex justify-between"><span>Account mode</span><Badge variant="outline" className="text-[10px]">TESTER</Badge></div>

@@ -38,11 +38,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 describe("ticket wiring", () => {
   const strip = (s: string) => s.replace(/\/\/.*$/gm, "");
-  it("live-manual takes its dollar figures from the estimator; the Command Room from quickTradeRiskApprox", () => {
+  it("live-manual prices nothing off the simulator mid; the Command Room uses quickTradeRiskApprox", () => {
     const manual = strip(readFileSync(resolve(HERE, "../pages/live-manual.tsx"), "utf8"));
     const room = strip(readFileSync(resolve(HERE, "../pages/trade-command-room.tsx"), "utf8"));
     const quickRisk = strip(readFileSync(resolve(HERE, "../components/dashboard/trade/quickTradeRisk.ts"), "utf8"));
-    expect(manual).toMatch(/estimateMoneyAtDistance\(/);
+    // The only price live-manual loads is the ARX simulator's quote, so its
+    // estimates are the estimator's explicit "Not estimated" (usd: null with a
+    // reason), never a figure measured from the simulator mid.
+    expect(manual).toMatch(/formatMoneyEstimate\(lossEst\)/);
+    expect(manual).toMatch(/const lossEst: MoneyEstimate = \{ usd: null, reason:/);
+    expect(manual).toMatch(/const gainEst: MoneyEstimate = \{ usd: null, reason:/);
+    expect(manual).not.toMatch(/quote\??\.mid/);
     expect(manual).not.toMatch(/\*\s*10000/);
     // The Command Room's Quick Trade figure has the same contract-size and
     // USD-conversion rules, plus a market-quote gate (no figure from the
