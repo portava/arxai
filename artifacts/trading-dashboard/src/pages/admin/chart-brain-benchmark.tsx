@@ -2,8 +2,9 @@
 //
 // Aggregates REAL decision receipts, outcomes, and agent-governance traces
 // into 15 benchmark scores plus trend, weak areas, recent failed reads,
-// successful no-trades, and speed/feed warnings. No fabricated scores: a
-// dimension renders "insufficient data" when the backend returns null.
+// successful no-trades, and coverage/speed/feed warnings. No fabricated
+// scores: a dimension renders "insufficient data" when the backend returns
+// null. A failed load shows "Could not load benchmark", never an empty card.
 //
 // Access: lives under /admin so RouteAccessGuard already requires an
 // effective-admin session; AdminDiagnosticsGate is defence-in-depth for the
@@ -223,7 +224,7 @@ function BenchmarkBody() {
           {benchmark.warnings.length > 0 ? (
             <Alert className="border-warning/50 bg-warning/5">
               <Gauge className="h-4 w-4 text-warning" />
-              <AlertTitle className="text-warning">Speed &amp; feed warnings</AlertTitle>
+              <AlertTitle className="text-warning">Coverage, speed &amp; feed warnings</AlertTitle>
               <AlertDescription>
                 <ul className="ml-4 list-disc space-y-1 text-warning/90">
                   {benchmark.warnings.map((w, i) => (

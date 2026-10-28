@@ -21,6 +21,11 @@ import { logger } from "../logger.js";
 
 const MIN_SAMPLE = 3; // below this a score is "insufficient data" (null)
 const WINDOW_DAYS = 30;
+// Row caps per query. Each query asks for one row more than its cap so a
+// window that holds more rows than were read is reported, not hidden.
+const RECEIPT_CAP = 2000;
+const OUTCOME_CAP = 4000;
+const TRACE_CAP = 2000;
 const TREND_DAYS = 14;
 // Speed budgets (ms). A read is "slow" when state build OR governance runtime
 // exceeds these. Deliberately generous — these are honest soft warnings, not
@@ -170,8 +175,9 @@ const HIGH_CONF = 65;
 /**
  * Compute the Chart Brain benchmark across all users (admin surface). The caller
  * MUST enforce admin access — this function performs no role check itself.
- * Fail-open: on any storage error it returns an honest empty result rather than
- * throwing, so the dashboard degrades to "no data yet" instead of erroring.
+ * On a storage error it THROWS: an unreadable window is "could not be loaded",
+ * never an empty "no activity" scorecard. The route turns the throw into an
+ * error response, which the dashboard shows as "Could not load benchmark".
  */
 export async function computeChartBrainBenchmark(opts?: {
   windowDays?: number;
@@ -192,7 +198,7 @@ export async function computeChartBrainBenchmark(opts?: {
       label: LABELS[key],
       score: null,
       sampleSize: 0,
-      note: "No chart-brain activity recorded yet.",
+      note: `No chart-brain reads recorded in the last ${windowDays} days.`,
     })),
     trend: [],
     weakAreas: [],
@@ -211,28 +217,54 @@ export async function computeChartBrainBenchmark(opts?: {
         .from(chartDecisionReceiptsTable)
         .where(gte(chartDecisionReceiptsTable.createdAt, since))
         .orderBy(desc(chartDecisionReceiptsTable.createdAt))
-        .limit(2000),
+        .limit(RECEIPT_CAP + 1),
       db
         .select()
         .from(chartDecisionOutcomesTable)
         .where(gte(chartDecisionOutcomesTable.createdAt, since))
         .orderBy(desc(chartDecisionOutcomesTable.createdAt))
-        .limit(4000),
+        .limit(OUTCOME_CAP + 1),
       db
         .select()
         .from(agentGovernanceTracesTable)
         .where(gte(agentGovernanceTracesTable.createdAt, since))
         .orderBy(desc(agentGovernanceTracesTable.createdAt))
-        .limit(2000),
+        .limit(TRACE_CAP + 1),
     ]);
   } catch (err) {
-    logger.warn({ err }, "benchmarkScore: aggregation query failed (fail-open empty)");
-    return empty();
+    logger.warn({ err }, "benchmarkScore: aggregation query failed");
+    throw new Error(
+      "Chart Brain benchmark could not be loaded: the receipts, outcomes or governance traces could not be read.",
+      { cause: err },
+    );
+  }
+
+  // Coverage: say plainly when a window holds more rows than were read, so a
+  // capped count is never shown as the window's total.
+  const coverageWarnings: string[] = [];
+  if (receipts.length > RECEIPT_CAP) {
+    receipts = receipts.slice(0, RECEIPT_CAP);
+    coverageWarnings.push(
+      `This ${windowDays}-day window holds more than ${RECEIPT_CAP} receipts; only the newest ${RECEIPT_CAP} were read, so the Receipts total and every score cover those ${RECEIPT_CAP} only.`,
+    );
+  }
+  if (outcomes.length > OUTCOME_CAP) {
+    outcomes = outcomes.slice(0, OUTCOME_CAP);
+    coverageWarnings.push(
+      `This ${windowDays}-day window holds more than ${OUTCOME_CAP} outcomes and reviews; only the newest ${OUTCOME_CAP} were read, so older results are missing from the totals and scores.`,
+    );
+  }
+  if (traces.length > TRACE_CAP) {
+    traces = traces.slice(0, TRACE_CAP);
+    coverageWarnings.push(
+      `This ${windowDays}-day window holds more than ${TRACE_CAP} governance traces; only the newest ${TRACE_CAP} were read, so the Gov. traces total and the speed score cover those ${TRACE_CAP} only.`,
+    );
   }
 
   if (receipts.length === 0) {
     const e = empty();
     e.totalTraces = traces.length;
+    e.warnings = coverageWarnings;
     return e;
   }
 
@@ -546,8 +578,8 @@ export async function computeChartBrainBenchmark(opts?: {
     }
   }
 
-  // ── speed / feed warnings (honest, evidence-backed) ───────────────────────
-  const warnings: string[] = [];
+  // ── coverage / speed / feed warnings (honest, evidence-backed) ───────────
+  const warnings: string[] = [...coverageWarnings];
   if (feedKnown >= MIN_SAMPLE) {
     const stalePct = Math.round(((feedKnown - feedClean) / feedKnown) * 100);
     if (stalePct >= 25) {
