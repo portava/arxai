@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, ChevronDown, ChevronUp, Layers, AlertTriangle } from "lucide-react";
 import { useGetMeScalpBaskets } from "@workspace/api-client-react";
-import type { ScalpBasket } from "@workspace/api-client-react";
+import type { MeScalpBasketsResp, ScalpBasket } from "@workspace/api-client-react";
 import {
   ADD_ON_LABEL,
   ADD_ON_TONE,
@@ -166,6 +166,22 @@ function BasketRow({ basket, name, stale }: { basket: ScalpBasket; name: string;
   );
 }
 
+// An empty list is only "no open positions" when positions were actually
+// read. The Position Manager reads live and demo MT5 positions only.
+function emptyStateCopy(data: MeScalpBasketsResp, name: string): string {
+  if (data.accountMode === "PAPER") {
+    return "Your account is in Paper mode. The Position Manager covers live and demo MT5 positions only, so your paper positions are not shown or managed here.";
+  }
+  if (data.accountMode === "NONE") {
+    return "No live or demo account is active, so no MT5 positions were read here.";
+  }
+  if (data.positionsMeasured === false) {
+    return data.positionsNote ?? "Your open positions were not read here, so this is not a count of zero.";
+  }
+  const book = data.accountMode === "DEMO" ? "demo" : "live";
+  return `No open ${book} MT5 positions to manage. Once you're in a trade, ${name} will watch the flame, exit urgency, and whether it's sane to add.`;
+}
+
 export function RubyScalpBasketPanel() {
   const [collapsed, setCollapsed] = useState(false);
   const { name } = useAssistantName();
@@ -229,9 +245,8 @@ export function RubyScalpBasketPanel() {
             </p>
           )}
           {data && !baskets.isError && list.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No open scalp positions to manage. Once you're in a trade, {name} will
-              watch the flame, exit urgency, and whether it's sane to add.
+            <p className="text-sm text-muted-foreground" data-testid="scalp-baskets-empty">
+              {emptyStateCopy(data, name)}
             </p>
           )}
           {list.length > 0 && (

@@ -2,6 +2,9 @@
 //  - the server says when the bridge last reported the positions shown and
 //    flags a reading older than 90 seconds as stale. Hours-old positions,
 //    open P/L and stops must not read as the account now.
+//  - an empty list is "no open positions" only when positions were read. The
+//    Position Manager reads live and demo MT5 positions only; a Paper account
+//    or an unread demo book must say so.
 //
 // Real QueryClient; the generated baskets hook is replaced by a plain useQuery.
 
@@ -98,5 +101,43 @@ describe("Position Manager — positions reading age", () => {
     await waitFor(() => expect(screen.getByTestId("scalp-baskets-as-of")).toBeTruthy());
     expect(screen.queryByTestId("scalp-baskets-stale")).toBeNull();
     expect(screen.getByText("Open P/L")).toBeTruthy();
+  });
+});
+
+describe("Position Manager — empty list copy", () => {
+  async function emptyCopy(resp: Partial<MeScalpBasketsResp>): Promise<string> {
+    basketsFn.mockResolvedValueOnce({
+      baskets: [], accountMode: "LIVE_SHARED", generatedAt: new Date().toISOString(), ...resp,
+    } as MeScalpBasketsResp);
+    render(withClient(<RubyScalpBasketPanel />));
+    await waitFor(() => expect(screen.getByTestId("scalp-baskets-empty")).toBeTruthy());
+    return screen.getByTestId("scalp-baskets-empty").textContent ?? "";
+  }
+
+  it("Paper: says paper positions are not covered, not 'no open positions'", async () => {
+    const text = await emptyCopy({ accountMode: "PAPER", positionsMeasured: true });
+    expect(text).toMatch(/Paper mode/);
+    expect(text).toMatch(/live and demo MT5 positions only/);
+    expect(text).not.toMatch(/No open/);
+  });
+
+  it("no account: says no positions were read", async () => {
+    const text = await emptyCopy({ accountMode: "NONE", positionsMeasured: true });
+    expect(text).toMatch(/No live or demo account is active/);
+    expect(text).not.toMatch(/No open/);
+  });
+
+  it("an unread demo book shows why, not 'no open positions'", async () => {
+    const text = await emptyCopy({
+      accountMode: "DEMO", positionsMeasured: false,
+      positionsNote: "No MT5 snapshot is stored for your account, so your open positions were not read here. This is not a count of zero.",
+    });
+    expect(text).toMatch(/not read here/);
+    expect(text).not.toMatch(/No open/);
+  });
+
+  it("a read, empty live book is a real none", async () => {
+    const text = await emptyCopy({ accountMode: "LIVE_SHARED", positionsMeasured: true, positionsNote: null });
+    expect(text).toMatch(/No open live MT5 positions to manage/);
   });
 });

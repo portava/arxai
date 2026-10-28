@@ -8,7 +8,7 @@
 //  - Per-user isolation: open positions, specs, execution and lockouts are all
 //    read/written scoped by userId. No row from another user is ever returned.
 //  - Mode-scoped: a LIVE_SHARED user only sees LIVE rows; a DEMO user only DEMO.
-//    PAPER/NONE users get no baskets here.
+//    PAPER/NONE users get no baskets here (reported as not read, not as none).
 //  - ADVICE ONLY: nothing in this module places, modifies, sizes or closes a
 //    real order. Exit verdicts are ALERT_ONLY; add-on verdicts are guidance.
 //  - No fabrication: candles are real or the flame reads blind (honest NONE);
@@ -63,6 +63,11 @@ function num(v: unknown): v is number {
 
 export type ManageAccountMode = "LIVE_SHARED" | "DEMO" | "PAPER" | "NONE";
 
+export const SCALP_PAPER_NOT_READ_NOTE =
+  "Your account is in Paper mode. The Position Manager reads live and demo MT5 positions only, so your paper positions were not read here. This is not a count of zero.";
+export const SCALP_NO_ACCOUNT_NOT_READ_NOTE =
+  "No live or demo account is active, so no MT5 positions were read here. This is not a count of zero.";
+
 type DemoRaw = {
   ticket?: string | number | null;
   symbol?: string | null;
@@ -93,6 +98,8 @@ interface LoadedOpenPositions {
   positions: OpenPositionInput[];
   accountMode: ManageAccountMode;
   positionsMeasured: boolean;
+  /** Why the positions were not read; null when they were. */
+  positionsNote: string | null;
   /** Oldest bridge reading among the positions returned (ms); null when none or unrecorded. */
   readingAtMs: number | null;
   /** A returned position has no recorded reading time. */
@@ -117,7 +124,11 @@ async function loadOpenPositions(
     : "NONE";
 
   const positions: OpenPositionInput[] = [];
-  let positionsMeasured = true;
+  // Only live and demo MT5 positions are read here. A Paper (or no) account's
+  // positions are never read, so an empty list is not a measured "none".
+  let positionsMeasured = includeLive || includeDemo;
+  let positionsNote: string | null = positionsMeasured ? null
+    : accountMode === "PAPER" ? SCALP_PAPER_NOT_READ_NOTE : SCALP_NO_ACCOUNT_NOT_READ_NOTE;
   let readingAtMs: number | null = null;
   let readingTimeMissing = false;
   const noteReading = (t: number) => {
@@ -159,7 +170,10 @@ async function loadOpenPositions(
     const state = await readLatestUserMt5State(userId);
     // No row of the user's own: the EA feed is install-wide and never
     // stamped with a user, so the demo positions were not read.
-    if (state == null) positionsMeasured = false;
+    if (state == null) {
+      positionsMeasured = false;
+      positionsNote = MT5_STATE_NOT_ATTRIBUTED_NOTE;
+    }
     const raw: DemoRaw[] = Array.isArray(state?.positions)
       ? (state!.positions as DemoRaw[]) : [];
     const demoReadingMs = state?.lastSyncAt ? new Date(state.lastSyncAt).getTime() : 0;
@@ -184,7 +198,7 @@ async function loadOpenPositions(
     }
   }
 
-  return { positions, accountMode, positionsMeasured, readingAtMs, readingTimeMissing };
+  return { positions, accountMode, positionsMeasured, positionsNote, readingAtMs, readingTimeMissing };
 }
 
 /**
@@ -348,7 +362,7 @@ export async function getScalpBaskets(
   opts: { isAdmin?: boolean; riskPersonality?: RiskPersonality | null } = {},
 ): Promise<GetScalpBasketsResult> {
   const personality = opts.riskPersonality ?? "BALANCED";
-  const { positions, accountMode, positionsMeasured, readingAtMs, readingTimeMissing } =
+  const { positions, accountMode, positionsMeasured, positionsNote, readingAtMs, readingTimeMissing } =
     await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const now = Date.now();
@@ -416,7 +430,7 @@ export async function getScalpBaskets(
     baskets,
     accountMode,
     positionsMeasured,
-    positionsNote: positionsMeasured ? null : MT5_STATE_NOT_ATTRIBUTED_NOTE,
+    positionsNote,
     positionsAsOf: readingAtMs != null ? new Date(readingAtMs).toISOString() : null,
     positionsStale: baskets.length > 0 && (
       readingTimeMissing || readingAtMs == null || now - readingAtMs > SCALP_POSITIONS_FRESH_MS
@@ -456,7 +470,7 @@ export async function getAddOnCheck(
   opts: { isAdmin?: boolean } = {},
 ): Promise<GetAddOnCheckResult> {
   const personality = args.riskPersonality ?? "BALANCED";
-  const { positions, positionsMeasured } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, positionsMeasured, positionsNote } = await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const symU = args.symbol.trim().toUpperCase();
   const group = groups.find(
@@ -514,7 +528,7 @@ export async function getAddOnCheck(
     direction: args.direction,
     hasOpenBasket: group != null,
     positionsMeasured,
-    positionsNote: positionsMeasured ? null : MT5_STATE_NOT_ATTRIBUTED_NOTE,
+    positionsNote,
     basket,
     addOn,
     flame: enrichedFlame,
