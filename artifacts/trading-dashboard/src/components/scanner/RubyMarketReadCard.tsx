@@ -333,11 +333,8 @@ export function RubyMarketReadCard({
                 <MetaChip label="Bias" value={downgraded ? "—" : humanize(BIAS_LABEL, signal.bias)} testid="ruby-market-read-bias" />
                 <MetaChip
                   label="Trade quality"
-                  value={
-                    downgraded
-                      ? "—"
-                      : `${humanize(BAND_LABEL, signal.confidenceBand)}${signal.scores ? ` · ${Math.round(signal.scores.overall)}/100` : ""}`
-                  }
+                  value={downgraded ? "—" : qualityValue(signal)}
+                  hint={downgraded ? undefined : qualityHint(signal)}
                   testid="ruby-market-read-quality"
                 />
                 <MetaChip
@@ -516,13 +513,50 @@ function ReasonRow({ label, value, testid }: { label: string; value: string; tes
   );
 }
 
-function MetaChip({ label, value, testid }: { label: string; value: string; testid?: string }) {
+function MetaChip({ label, value, hint, testid }: { label: string; value: string; hint?: string; testid?: string }) {
   return (
     <div className="rounded-lg border border-border/60 bg-background/40 p-2" data-testid={testid}>
       <div className="text-[10px] uppercase tracking-wide text-txt-muted">{label}</div>
       <div className="mt-0.5 text-sm font-semibold text-foreground">{value}</div>
+      {hint && <div className="mt-0.5 text-[10px] leading-snug text-txt-muted">{hint}</div>}
     </div>
   );
+}
+
+// Trade quality: the band word ("Modest") is a grade, so it is shown only when
+// the server says every score input was observed (confidenceBandBasis FULL).
+// On a PARTIAL basis — or an older server that does not say — the card shows
+// the number and how many inputs were fixed defaults, never the grade. The
+// client never re-derives a band; it can only withhold the server's.
+const SCORE_INPUT_COUNT = 7;
+const SCORE_INPUT_PLAIN: Record<string, string> = {
+  direction: "direction",
+  entry: "entry",
+  execution: "execution",
+  risk: "reward-to-risk",
+  newsSafety: "news",
+  timing: "timing",
+  survivability: "room to target",
+};
+type QualitySignal = {
+  confidenceBand: string;
+  confidenceBandBasis?: string;
+  scores?: { overall: number; unmeasured?: string[] } | null;
+};
+function qualityValue(signal: QualitySignal): string {
+  const score = signal.scores ? `${Math.round(signal.scores.overall)}/100` : null;
+  if (signal.confidenceBandBasis === "FULL") {
+    return `${humanize(BAND_LABEL, signal.confidenceBand)}${score ? ` · ${score}` : ""}`;
+  }
+  if (!score) return "—";
+  const n = signal.scores?.unmeasured?.length ?? 0;
+  return n > 0 ? `${score} · ${n} of ${SCORE_INPUT_COUNT} inputs unmeasured` : `${score} · not graded`;
+}
+function qualityHint(signal: QualitySignal): string | undefined {
+  if (signal.confidenceBandBasis === "FULL") return undefined;
+  const missing = signal.scores?.unmeasured ?? [];
+  if (missing.length === 0) return "Not graded — the score basis was not reported.";
+  return `Not graded — no reading for ${missing.map((k) => SCORE_INPUT_PLAIN[k] ?? k).join(", ")}.`;
 }
 
 function LevelCell({ label, value }: { label: string; value: string }) {

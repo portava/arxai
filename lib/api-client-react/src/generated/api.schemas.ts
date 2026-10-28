@@ -13879,6 +13879,19 @@ export interface SignalPriceZone {
   to: number;
 }
 
+export type SignalScoresUnmeasuredItem =
+  (typeof SignalScoresUnmeasuredItem)[keyof typeof SignalScoresUnmeasuredItem];
+
+export const SignalScoresUnmeasuredItem = {
+  direction: "direction",
+  entry: "entry",
+  execution: "execution",
+  risk: "risk",
+  newsSafety: "newsSafety",
+  timing: "timing",
+  survivability: "survivability",
+} as const;
+
 /**
  * Independent 0–100 quality dimensions, always separate. Direction is never folded in, so it can never inflate a score.
  */
@@ -13892,6 +13905,8 @@ export interface SignalScores {
   survivability: number;
   overall: number;
   edge: number;
+  /** Dimensions whose score is a fixed default because no input was observed (e.g. execution with no bridge telemetry, news safety with no news provider answer, timing with no live scalp read). They still fold into overall/edge, so any grade built on them is partial. Optional for older servers (absent = not reported). */
+  unmeasured?: SignalScoresUnmeasuredItem[];
 }
 
 export interface SignalEvidenceItem {
@@ -14085,6 +14100,17 @@ export const RubyMarketEdgeSignalConfidenceBand = {
   VERY_STRONG: "VERY_STRONG",
 } as const;
 
+/**
+ * FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL.
+ */
+export type RubyMarketEdgeSignalConfidenceBandBasis =
+  (typeof RubyMarketEdgeSignalConfidenceBandBasis)[keyof typeof RubyMarketEdgeSignalConfidenceBandBasis];
+
+export const RubyMarketEdgeSignalConfidenceBandBasis = {
+  FULL: "FULL",
+  PARTIAL: "PARTIAL",
+} as const;
+
 export type RubyMarketEdgeSignalFreshness =
   (typeof RubyMarketEdgeSignalFreshness)[keyof typeof RubyMarketEdgeSignalFreshness];
 
@@ -14121,6 +14147,8 @@ export interface RubyMarketEdgeSignal {
   stopLoss: number | null;
   scores: SignalScores;
   confidenceBand: RubyMarketEdgeSignalConfidenceBand;
+  /** FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL. */
+  confidenceBandBasis?: RubyMarketEdgeSignalConfidenceBandBasis;
   edgeScore: number;
   earlyTrend: EarlyTrendReading;
   fakeout: FakeoutReading;

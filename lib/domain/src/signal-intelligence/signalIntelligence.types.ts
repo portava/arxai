@@ -101,7 +101,29 @@ export interface SignalScores {
   overall: number;
   /** Net tradeable edge after subtracting working-against evidence (0–100). */
   edge: number;
+  /**
+   * Dimensions above whose score is a fixed default because no input was
+   * observed (e.g. execution 50 with no bridge telemetry, news safety 70 with
+   * no news provider answer, timing 60 with no live scalp read). Those points
+   * still fold into `overall`/`edge` (arithmetic unchanged), so any band or
+   * adjective derived from them must say the basis is partial. Optional for
+   * older producers; absent means "not reported", never "all measured".
+   */
+  unmeasured?: SignalScoreDimension[];
 }
+
+/** One scored dimension of SignalScores (excludes the overall/edge folds). */
+export type SignalScoreDimension =
+  | "direction"
+  | "entry"
+  | "execution"
+  | "risk"
+  | "newsSafety"
+  | "timing"
+  | "survivability";
+
+/** Number of scored dimensions folded into `overall`. */
+export const SIGNAL_SCORE_DIMENSION_COUNT = 7;
 
 // ── Evidence + conflict ──────────────────────────────────────────────────────
 
@@ -286,7 +308,16 @@ export interface RubyMarketEdgeSignal {
 
   // Scoring.
   scores: SignalScores;
+  /** Band of scores.overall. Persisted/diffed as-is; see confidenceBandBasis. */
   confidenceBand: ConfidenceBand;
+  /**
+   * FULL: every dimension folded into `overall` came from an observed input,
+   * so the band may be shown as a quality adjective. PARTIAL: at least one is
+   * a fixed default (listed in scores.unmeasured) — surfaces show the number
+   * and what is unmeasured, never the band adjective. Optional for older
+   * servers; absent is treated like PARTIAL (no adjective).
+   */
+  confidenceBandBasis?: "FULL" | "PARTIAL";
   edgeScore: number;
 
   // Intelligence reads.
@@ -379,6 +410,12 @@ export interface SignalEngineInput {
   scalp: SignalScalpInput | null;
   execution: SignalExecutionInput | null;
   newsRiskLevel: NewsRiskLevel | null;
+  /**
+   * Whether `newsRiskLevel` came from a news provider that actually answered
+   * for this symbol. A fallback "none" (provider down / no news context) is
+   * not an observation. Defaults to `newsRiskLevel != null`.
+   */
+  newsMeasured?: boolean;
   /** Previous per-user snapshot for the what-changed diff. */
   previous: PreviousSignalSnapshot | null;
   /** Epoch ms; injected for deterministic tests. Defaults to Date.now() at the seam. */

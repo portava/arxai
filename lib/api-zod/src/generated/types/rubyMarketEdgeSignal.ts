@@ -10,6 +10,7 @@ import type { FakeoutReading } from "./fakeoutReading";
 import type { LateDetection } from "./lateDetection";
 import type { RubyMarketEdgeSignalBias } from "./rubyMarketEdgeSignalBias";
 import type { RubyMarketEdgeSignalConfidenceBand } from "./rubyMarketEdgeSignalConfidenceBand";
+import type { RubyMarketEdgeSignalConfidenceBandBasis } from "./rubyMarketEdgeSignalConfidenceBandBasis";
 import type { RubyMarketEdgeSignalDirection } from "./rubyMarketEdgeSignalDirection";
 import type { RubyMarketEdgeSignalFreshness } from "./rubyMarketEdgeSignalFreshness";
 import type { RubyMarketEdgeSignalLifecycleStage } from "./rubyMarketEdgeSignalLifecycleStage";
@@ -45,6 +46,8 @@ export interface RubyMarketEdgeSignal {
   stopLoss: number | null;
   scores: SignalScores;
   confidenceBand: RubyMarketEdgeSignalConfidenceBand;
+  /** FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL. */
+  confidenceBandBasis?: RubyMarketEdgeSignalConfidenceBandBasis;
   edgeScore: number;
   earlyTrend: EarlyTrendReading;
   fakeout: FakeoutReading;

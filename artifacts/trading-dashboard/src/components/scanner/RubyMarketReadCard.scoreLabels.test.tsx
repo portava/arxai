@@ -252,3 +252,79 @@ describe("RubyMarketReadCard — no-trade weight is not a probability", () => {
     expect(block).toContain("Not enough live data");
   });
 });
+
+describe("RubyMarketReadCard — trade quality grade needs every score input observed", () => {
+  const ownerScores = {
+    direction: 27,
+    entry: 40,
+    execution: 50,
+    risk: 25,
+    newsSafety: 70,
+    timing: 60,
+    survivability: 50,
+    overall: 42,
+    edge: 4,
+    unmeasured: ["entry", "execution", "risk", "newsSafety", "timing", "survivability"],
+  };
+
+  it("owner state (PARTIAL basis): shows 42/100 and what is unmeasured, never 'Modest'", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(
+      hookState({
+        data: resp({
+          signal: {
+            confidenceBand: "MODEST",
+            confidenceBandBasis: "PARTIAL",
+            edgeScore: 4,
+            scores: ownerScores,
+            lifecycleStage: "SETUP_FORMING",
+          },
+          explanation: explanation({ actionable: false }),
+        }),
+      }),
+    );
+    render(<RubyMarketReadCard symbol="R_75" timeframe="M1" />);
+    const tile = screen.getByTestId("ruby-market-read-quality").textContent ?? "";
+    expect(tile).not.toContain("Modest");
+    expect(tile).toContain("42/100");
+    expect(tile).toContain("6 of 7 inputs unmeasured");
+    expect(tile).toContain("no reading for entry, execution, reward-to-risk, news, timing, room to target");
+  });
+
+  it("an older server without a basis: number only, no grade", () => {
+    const { unmeasured: _u, ...noList } = ownerScores;
+    mockUseGetMeMarketEdge.mockReturnValue(
+      hookState({
+        data: resp({ signal: { confidenceBand: "MODEST", scores: noList, edgeScore: 4 } }),
+      }),
+    );
+    render(<RubyMarketReadCard symbol="R_75" timeframe="M1" />);
+    const tile = screen.getByTestId("ruby-market-read-quality").textContent ?? "";
+    expect(tile).not.toContain("Modest");
+    expect(tile).toContain("42/100 · not graded");
+  });
+
+  it("FULL basis keeps the server's grade", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(
+      hookState({
+        data: resp({
+          signal: {
+            confidenceBand: "MODEST",
+            confidenceBandBasis: "FULL",
+            scores: { ...ownerScores, unmeasured: [] },
+          },
+        }),
+      }),
+    );
+    render(<RubyMarketReadCard symbol="R_75" timeframe="M1" />);
+    expect(screen.getByTestId("ruby-market-read-quality").textContent).toContain("Modest · 42/100");
+  });
+
+  it("the headline is the server's explanation verbatim (no client rewrite)", () => {
+    const headline = "V75: forming — buy bias, no tradeable edge yet (4/100).";
+    mockUseGetMeMarketEdge.mockReturnValue(
+      hookState({ data: resp({ explanation: explanation({ headline }) }) }),
+    );
+    render(<RubyMarketReadCard symbol="R_75" timeframe="M1" />);
+    expect(screen.getByTestId("ruby-market-read-headline").textContent).toBe(headline);
+  });
+});

@@ -69,8 +69,19 @@ function coerceScannerAction(a: string): SignalScannerInput["recommendedAction"]
 }
 
 type DecoratedOpportunity = ScannerOpportunity & {
-  newsContext?: { riskLevel?: string | null };
+  newsContext?: { riskLevel?: string | null; headlinesConnected?: boolean };
 };
+
+/**
+ * A news risk level is an observation only when the news decorator actually got
+ * an answer from the provider for this symbol. The decorator's catch fallback
+ * (riskLevel "none", headlinesConnected false) and finalRead's `?? "none"`
+ * default are not observations, so the news-safety score built on them is a
+ * default (label-only: the level passed to scoring is unchanged).
+ */
+function newsRiskMeasured(opp: DecoratedOpportunity | null): boolean {
+  return !!opp?.newsContext && opp.newsContext.headlinesConnected === true;
+}
 
 function mapNewsRiskLevel(opp: DecoratedOpportunity): NewsRiskLevel | null {
   const fromFinal = opp.finalRead?.newsRiskLevel;
@@ -329,6 +340,7 @@ export async function buildRubyMarketEdgeForUser(
     scalp: scalpInput,
     execution: executionInput,
     newsRiskLevel,
+    newsMeasured: newsRiskLevel != null && newsRiskMeasured(scannerOpp),
     previous,
     now,
   });

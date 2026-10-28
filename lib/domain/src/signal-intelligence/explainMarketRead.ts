@@ -22,9 +22,11 @@ import type {
   SignalDirection,
   SignalEvidenceItem,
   SignalLifecycleStage,
+  SignalScoreDimension,
   NoTradeIntelligence,
   NoTradeRuleKey,
 } from "./signalIntelligence.types.js";
+import { SIGNAL_SCORE_DIMENSION_COUNT } from "./signalIntelligence.types.js";
 import { confidenceBandFor } from "./scoring.js";
 import {
   MIN_EVIDENCE_NET_SCORE,
@@ -164,6 +166,17 @@ function joinAnd(parts: string[]): string {
   return `${clean.slice(0, -1).join(", ")}, and ${clean[clean.length - 1]}`;
 }
 
+// Plain names for score dimensions that fell back to a fixed default.
+const DIMENSION_PLAIN: Record<SignalScoreDimension, string> = {
+  direction: "direction",
+  entry: "entry",
+  execution: "execution",
+  risk: "reward-to-risk",
+  newsSafety: "news",
+  timing: "timing",
+  survivability: "room to target",
+};
+
 // ── Shared derived context ────────────────────────────────────────────────────
 
 interface Derived {
@@ -177,6 +190,14 @@ interface Derived {
    * written before the word "edge". Overall quality bands never describe edge. */
   edgeBandLong: string;
   edgeBandShort: string;
+  /**
+   * True only when every dimension folded into overall/edge was observed
+   * (confidenceBandBasis FULL). Otherwise no band adjective is written for
+   * either number — they are partly fixed defaults.
+   */
+  banded: boolean;
+  /** Plain names of the score inputs that were defaults (empty when unknown). */
+  unmeasured: string[];
   stagePlain: string;
   timing: TimingClass;
   edge: number;
@@ -218,6 +239,9 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
     bandShort: BAND_SHORT[signal.confidenceBand],
     edgeBandLong: BAND_LONG[edgeBand],
     edgeBandShort: BAND_SHORT[edgeBand],
+    // Fail closed: an absent basis (older producer) is not a FULL basis.
+    banded: signal.confidenceBandBasis === "FULL",
+    unmeasured: (signal.scores.unmeasured ?? []).map((k) => DIMENSION_PLAIN[k] ?? k),
     stagePlain: STAGE_PLAIN[signal.lifecycleStage],
     timing: timingOf(signal.lifecycleStage),
     edge,
@@ -285,6 +309,15 @@ function evidenceShortfallText(signal: RubyMarketEdgeSignal): string[] {
     }
   }
   return out;
+}
+
+// "6 of 7 score inputs are unmeasured (entry, execution, …)" — or, when the
+// producer did not report which (older signal), a plain "the score basis is not
+// reported".
+function unmeasuredText(d: Derived): string {
+  if (d.unmeasured.length === 0) return "the score basis is not reported";
+  const n = d.unmeasured.length;
+  return `${n} of ${SIGNAL_SCORE_DIMENSION_COUNT} score inputs ${n === 1 ? "is" : "are"} unmeasured (${joinAnd(d.unmeasured)})`;
 }
 
 // News risk is not a typed field on the signal; it is folded into evidence
@@ -425,13 +458,23 @@ function buildMode(
   // number; the overall-quality band is only ever said next to the overall
   // number. A read below the minimum-evidence rule says so in the same words as
   // the best-action line, never as a sized edge.
-  const edgeClause = `${d.edgeBandLong} edge (${d.edge}/100)`;
-  const qualityClause = `overall setup quality is ${d.bandShort} (${d.overall}/100) on this timeframe`;
+  // When any score input was a fixed default (basis not FULL) neither number
+  // gets a band adjective: the number is shown with what was not measured.
+  const edgeClause = d.banded
+    ? `${d.edgeBandLong} edge (${d.edge}/100)`
+    : `an edge score of ${d.edge}/100`;
+  const qualityClause = d.banded
+    ? `overall setup quality is ${d.bandShort} (${d.overall}/100) on this timeframe`
+    : `overall setup quality is ${d.overall}/100 on this timeframe, not graded because ${unmeasuredText(d)}`;
   let whyThisMarket: string;
   if (!d.meetsMin) {
     whyThisMarket = advanced
       ? `This market shows ${edgeClause} — not enough confirming evidence yet; ${qualityClause}.`
       : `This market shows ${edgeClause} — not enough confirming evidence yet.`;
+  } else if (!d.banded) {
+    whyThisMarket = advanced
+      ? `This market shows ${edgeClause}; ${qualityClause}.`
+      : `This market currently shows ${edgeClause}, not graded because ${unmeasuredText(d)}.`;
   } else {
     whyThisMarket = advanced
       ? `This market shows ${edgeClause}; ${qualityClause}.`
@@ -532,9 +575,11 @@ export function explainMarketRead(
   } else if (d.neutral) {
     headline = `${d.name}: ${TIMING_SHORT[d.timing]} — no clear side yet.`;
   } else {
-    headline = d.meetsMin
-      ? `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, ${d.edgeBandShort} edge (${d.edge}/100).`
-      : `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, no tradeable edge yet (${d.edge}/100).`;
+    headline = !d.meetsMin
+      ? `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, no tradeable edge yet (${d.edge}/100).`
+      : d.banded
+        ? `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, ${d.edgeBandShort} edge (${d.edge}/100).`
+        : `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, edge ${d.edge}/100 (partly unmeasured inputs).`;
   }
 
   return {

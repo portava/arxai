@@ -22235,6 +22235,17 @@ components:
         survivability: { type: number }
         overall: { type: number }
         edge: { type: number }
+        unmeasured:
+          type: array
+          description: >-
+            Dimensions whose score is a fixed default because no input was
+            observed (e.g. execution with no bridge telemetry, news safety with
+            no news provider answer, timing with no live scalp read). They still
+            fold into overall/edge, so any grade built on them is partial.
+            Optional for older servers (absent = not reported).
+          items:
+            type: string
+            enum: [direction, entry, execution, risk, newsSafety, timing, survivability]
 
     SignalEvidenceItem:
       type: object
@@ -22411,6 +22422,14 @@ components:
         stopLoss: { type: number, nullable: true }
         scores: { $ref: "#/components/schemas/SignalScores" }
         confidenceBand: { type: string, enum: [NONE, LOW, MODEST, FAIR, STRONG, VERY_STRONG] }
+        confidenceBandBasis:
+          type: string
+          enum: [FULL, PARTIAL]
+          description: >-
+            FULL when every dimension folded into scores.overall was observed;
+            PARTIAL when any is a fixed default (scores.unmeasured). Surfaces
+            show confidenceBand as a quality grade only on FULL. Optional for
+            older servers; absent is treated like PARTIAL.
         edgeScore: { type: number }
         earlyTrend: { $ref: "#/components/schemas/EarlyTrendReading" }
         fakeout: { $ref: "#/components/schemas/FakeoutReading" }

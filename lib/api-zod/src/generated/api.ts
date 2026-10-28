@@ -18225,6 +18225,22 @@ export const GetMeMarketEdgeResponse = zod.object({
           survivability: zod.number(),
           overall: zod.number(),
           edge: zod.number(),
+          unmeasured: zod
+            .array(
+              zod.enum([
+                "direction",
+                "entry",
+                "execution",
+                "risk",
+                "newsSafety",
+                "timing",
+                "survivability",
+              ]),
+            )
+            .optional()
+            .describe(
+              "Dimensions whose score is a fixed default because no input was observed (e.g. execution with no bridge telemetry, news safety with no news provider answer, timing with no live scalp read). They still fold into overall\/edge, so any grade built on them is partial. Optional for older servers (absent = not reported).",
+            ),
         })
         .describe(
           "Independent 0–100 quality dimensions, always separate. Direction is never folded in, so it can never inflate a score.",
@@ -18237,6 +18253,12 @@ export const GetMeMarketEdgeResponse = zod.object({
         "STRONG",
         "VERY_STRONG",
       ]),
+      confidenceBandBasis: zod
+        .enum(["FULL", "PARTIAL"])
+        .optional()
+        .describe(
+          "FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL.",
+        ),
       edgeScore: zod.number(),
       earlyTrend: zod
         .object({

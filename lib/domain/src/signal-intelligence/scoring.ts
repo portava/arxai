@@ -22,6 +22,7 @@ import type {
   SignalExecutionInput,
   SignalScalpInput,
   SignalScannerInput,
+  SignalScoreDimension,
   SignalScores,
 } from "./signalIntelligence.types.js";
 import { atr, clamp, mean, round } from "./_math.js";
@@ -151,8 +152,42 @@ export interface ScoringInput {
   evidence: SignalEvidence;
   late: LateDetection;
   newsRiskLevel: NewsRiskLevel | null;
+  /** Whether newsRiskLevel is a provider observation (default: newsRiskLevel != null). */
+  newsMeasured?: boolean;
   /** Bounded session/playbook weight (0.5–1) applied to timing emphasis. */
   playbookWeight: number;
+}
+
+/**
+ * Which scored dimensions fall back to a FIXED default because no input was
+ * observed. Mirrors the scorers below exactly (each `base`/`default` branch):
+ *   entry         — no scanner entry score and no live scalp timing (base 40)
+ *   execution     — no execution telemetry (50)
+ *   risk          — no scanner reward:risk (base 50)
+ *   newsSafety    — no news provider observation (70, or a fallback "none")
+ *   timing        — no live scalp freshness read (base 60)
+ *   survivability — no scanner entry/stop/target geometry (base 50)
+ * Direction is always from the candles in the scored branch. In the
+ * insufficient/neutral branch only execution and newsSafety are non-zero, so
+ * only those can be defaults there. Label-only: arithmetic is unchanged.
+ */
+export function unmeasuredScoreDimensions(input: ScoringInput): SignalScoreDimension[] {
+  const newsMeasured = input.newsMeasured ?? input.newsRiskLevel != null;
+  const liveScalp = !!input.scalp && !input.scalp.blind;
+  const out: SignalScoreDimension[] = [];
+  const zeroIsh = !input.hasSufficientData || input.direction === "NEUTRAL";
+  if (!zeroIsh && !input.scanner && !liveScalp) out.push("entry");
+  if (!input.execution) out.push("execution");
+  if (!zeroIsh && input.scanner?.riskRewardRatio == null) out.push("risk");
+  if (!newsMeasured) out.push("newsSafety");
+  if (!zeroIsh && !liveScalp) out.push("timing");
+  if (
+    !zeroIsh &&
+    (input.scanner?.entry == null || input.scanner?.stopLoss == null || input.scanner?.takeProfit == null)
+  ) {
+    out.push("survivability");
+  }
+  return out;
 }
 
 function scoreDirection(early: EarlyTrendReading, scanner: SignalScannerInput | null): number {
@@ -273,6 +308,7 @@ export function computeScores(input: ScoringInput): SignalScores {
       survivability: 0,
       overall: 0,
       edge: 0,
+      unmeasured: unmeasuredScoreDimensions(input),
     };
     return zeroIsh;
   }
@@ -321,6 +357,7 @@ export function computeScores(input: ScoringInput): SignalScores {
     survivability,
     overall,
     edge: round(edge),
+    unmeasured: unmeasuredScoreDimensions(input),
   };
 }
 

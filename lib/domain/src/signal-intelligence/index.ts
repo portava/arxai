@@ -19,6 +19,7 @@ export {
   computeLateDetection,
   computeScores,
   confidenceBandFor,
+  unmeasuredScoreDimensions,
 } from "./scoring.js";
 export type { LateInput, ScoringInput } from "./scoring.js";
 export { diffSignal } from "./marketMemory.js";

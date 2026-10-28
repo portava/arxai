@@ -138,9 +138,15 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
     evidence,
     late,
     newsRiskLevel,
+    newsMeasured: input.newsMeasured,
     playbookWeight: pbWeight,
   });
   const confidenceBand = confidenceBandFor(scores.overall);
+  // The band is kept as the band of the number (persisted + diffed as before);
+  // its basis says whether every folded dimension was observed. Surfaces only
+  // show the band as an adjective on a FULL basis.
+  const confidenceBandBasis: "FULL" | "PARTIAL" =
+    (scores.unmeasured?.length ?? 0) === 0 ? "FULL" : "PARTIAL";
 
   // ── Zones (honest null when not derivable) ────────────────────────────────
   const rawZone: PriceZone | null = scanner?.entryZone
@@ -223,6 +229,7 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
 
     scores,
     confidenceBand,
+    confidenceBandBasis,
     edgeScore: scores.edge,
 
     earlyTrend: early,
