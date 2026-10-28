@@ -21,7 +21,8 @@
 
 import { getChartCandles } from "./chartDataService.js";
 import { CHART_TIMEFRAMES, type ChartTimeframe } from "./timeframes.js";
-import type { AssetClass } from "../marketDataRouter.js";
+import { classifySymbol, type AssetClass } from "../marketDataRouter.js";
+import { isMergeSeamMeasured } from "./chartTruthScore.js";
 
 // Small probe window — enough to assess source, freshness, integrity and the
 // forming/merge seam without pulling a full chart payload. Intentionally well
@@ -69,17 +70,28 @@ export interface ChartTruthAuditRow {
   aggregationPass: boolean;
   /** Last bar isComplete=false when its closeTime > now (forming bar present). */
   formingCandlePresent: boolean;
-  /** No seam gap/overlap between the last complete bar and the forming bar. */
+  /** The seam was measured (closed-to-forming bar pair) AND has no gap/overlap.
+   *  False when it could not be measured — see `mergeChecked`. */
   mergePass: boolean;
+  /** Additive: true only when a closed-to-forming bar pair let the seam be measured. */
+  mergeChecked: boolean;
   /** Advisory outlier flags (never degrade the verdict on their own). */
   outlierSpikeCount: number;
   outlierWickCount: number;
   historicalPeriodShiftCount: number;
-  /** Response symbol + timeframe match the requested values. */
+  /** Response symbol + timeframe match the requested values (an echo check,
+   *  not a broker-price mirror comparison). */
   mirrorPass: boolean;
-  /** Price decimal count consistent with symbolProfile.pricePrecision. */
+  /** Price decimal count consistent with symbolProfile.pricePrecision. False
+   *  when no precision profile was known — see `priceChecked`. */
   priceAlignPass: boolean;
-  /** aiUsable = (quality === "clean") — Ruby reads only when confirmed clean. */
+  /** Additive: true only when a precision profile let price scale be checked. */
+  priceChecked: boolean;
+  /** Additive: the served feed was confirmed live (false = closed market or
+   *  stored data; null = not reported). */
+  feedLive: boolean | null;
+  /** Feed aiUsable (quality clean). This is NOT Ruby's full read gate, which
+   *  also needs Chart Truth ≥ 75 and a handshake PASS (not checked here). */
   rubyAllowed: boolean;
 
   // ── Derived health verdict (small-probe aware) ──────────────────────────
@@ -159,10 +171,12 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
   try {
     resp = await getChartCandles(symbol, timeframe, AUDIT_PROBE_LIMIT);
   } catch (err) {
+    let assetClass: AssetClass;
+    try { assetClass = classifySymbol(symbol); } catch { assetClass = "unknown" as AssetClass; }
     return {
       symbol,
       displaySymbol: symbol,
-      assetClass: "forex",
+      assetClass,
       timeframe,
       candleCount: 0,
       source: null,
@@ -170,16 +184,19 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
       aggregationPass: false,
       formingCandlePresent: false,
       mergePass: false,
+      mergeChecked: false,
       outlierSpikeCount: 0,
       outlierWickCount: 0,
       historicalPeriodShiftCount: 0,
       mirrorPass: false,
       priceAlignPass: false,
+      priceChecked: false,
+      feedLive: null,
       rubyAllowed: false,
       status: "UNAVAILABLE",
       rawAssessment: "UNAVAILABLE",
       quality: "unavailable",
-      reasons: [`Probe failed: ${String((err as Error).message ?? err).slice(0, 200)}`],
+      reasons: [`Probe could not be loaded: ${String((err as Error).message ?? err).slice(0, 200)}`],
       mockDataAdminReason: null,
       newestBarTime: null,
       latencyMs: null,
@@ -195,10 +212,16 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
     (tr?.missingCandleCount ?? 1) === 0 &&
     (tr?.outOfOrderCount ?? 1) === 0 &&
     (tr?.duplicateCount ?? 1) === 0;
-  const mergePass = tr ? !tr.mergeSeam.gapAtSeam && !tr.mergeSeam.overlapAtSeam : false;
-  const precisionViolations = tr?.precisionViolationCount ?? 0;
-  const priceAlignPass = candleCount > 0 && precisionViolations === 0;
+  // A check that did not run is "not checked", never a pass: the seam needs a
+  // closed-to-forming bar pair, price scale needs a known precision profile.
+  const mergeChecked = isMergeSeamMeasured(tr);
+  const seamFailed = mergeChecked && (tr!.mergeSeam.gapAtSeam || tr!.mergeSeam.overlapAtSeam);
+  const mergePass = mergeChecked && !seamFailed;
+  const priceChecked = candleCount > 0 && tr?.pricePrecision != null && Number.isSafeInteger(tr.pricePrecision);
+  const precisionViolations = priceChecked ? (tr?.precisionViolationCount ?? 0) : 0;
+  const priceAlignPass = priceChecked && precisionViolations === 0;
   const mirrorPass = resp.symbol === symbol && resp.timeframe === timeframe;
+  const feedLive = typeof resp.feedStatus?.isLive === "boolean" ? resp.feedStatus.isLive : null;
 
   // Derive a small-probe-aware status. We do NOT use truthResult.assessment
   // directly because limit=10 always trips its ≥150-bar history-minimum check
@@ -218,21 +241,27 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
   } else if (resp.quality === "stale" || tr?.assessment === "STALE") {
     status = "STALE";
     reasons.push(resp.warning ?? "Feed is stale.");
-  } else if (!aggregationPass || !mergePass || precisionViolations > 0) {
+  } else if (!aggregationPass || seamFailed || precisionViolations > 0) {
     status = "PARTIAL";
     if (!aggregationPass) {
       reasons.push(
         `Sequence anomalies: ${tr?.missingCandleCount ?? 0} missing, ${tr?.duplicateCount ?? 0} duplicate, ${tr?.outOfOrderCount ?? 0} out-of-order.`,
       );
     }
-    if (!mergePass) reasons.push("Seam gap/overlap between last complete bar and forming bar.");
+    if (seamFailed) reasons.push("Seam gap/overlap between last complete bar and forming bar.");
     if (precisionViolations > 0) reasons.push(`${precisionViolations} bar(s) with wrong price scale.`);
   } else if (resp.quality === "delayed") {
     status = "PARTIAL";
     reasons.push(resp.warning ?? "Feed is delayed — newest bar is not the current bar.");
+  } else if (feedLive !== true) {
+    // Clean bars from a closed market or a stored mirror are not "fresh".
+    status = "PARTIAL";
+    reasons.push("Feed is not confirmed live (market closed, or stored data) — the newest bar is not confirmed current.");
   } else {
     status = "CLEAN";
   }
+  if (candleCount > 0 && !mergeChecked) reasons.push("Merge seam not checked (no closed-to-forming bar pair in the probe).");
+  if (candleCount > 0 && !priceChecked) reasons.push("Price scale not checked (no precision profile for this symbol).");
 
   // Advisory outlier context (never escalates the verdict).
   if ((tr?.historicalPeriodShiftCount ?? 0) > 0) {
@@ -250,11 +279,14 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
     aggregationPass,
     formingCandlePresent: tr?.formingCandlePresent ?? false,
     mergePass,
+    mergeChecked,
     outlierSpikeCount: tr?.outlierSpikeCount ?? 0,
     outlierWickCount: tr?.outlierWickCount ?? 0,
     historicalPeriodShiftCount: tr?.historicalPeriodShiftCount ?? 0,
     mirrorPass,
     priceAlignPass,
+    priceChecked,
+    feedLive,
     rubyAllowed: resp.aiUsable,
     status,
     rawAssessment: tr?.assessment ?? "UNAVAILABLE",
