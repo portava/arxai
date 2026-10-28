@@ -12,6 +12,9 @@
 //   - managementHeldDetails     reason, count, kind and standalone plain-English
 //                               text per hold reason (no per-position detail,
 //                               no account data; that stays in the audit log)
+//   - completion           passed through from the cycle: COMPLETED only when
+//                               every step ran without a failure, a bounded
+//                               database wait or a stop (INCOMPLETE / STOPPED)
 //
 // "acted" means handed to the EA through the gated pipeline. It is never a
 // broker-confirmed close or stop move; those arrive via reconciliation.
@@ -92,15 +95,17 @@ export type SingleFlightResult<T> = { ran: true; value: T } | { ran: false; star
 /**
  * One autonomous cycle at a time per API process. A second POST while one is
  * running (another tab, a re-click after a gateway timeout) is refused rather
- * than overlapped. Per process only: it does not coordinate several API
- * instances; the protective claim race remains the cross-process backstop.
+ * than overlapped. Across API processes the route also takes the PostgreSQL
+ * cycle lock (cycleCoordinator.ts); this in-process slot answers first and
+ * knows the start time.
  *
- * No ceiling: a cycle whose await never settles (for example a pg pool
- * checkout with no connection timeout, or a hung guardian call) keeps the slot
- * until the process restarts, and every later POST gets 409. The slot is never
- * released early, because the first cycle may still be dispatching; instead
- * describeCycleConflict says so past CYCLE_STUCK_AFTER_MS and the route logs
- * the refusal at error level.
+ * No ceiling: the slot is never released early, because the first cycle may
+ * still be dispatching. The cycle's database waits are bounded (connection,
+ * statement, lock and idle-transaction timeouts), so a database stall now ends
+ * the cycle with an honest INCOMPLETE report or a 500. A non-database await
+ * that never settles (for example a hung guardian call) still keeps the slot
+ * until the process restarts; past CYCLE_STUCK_AFTER_MS describeCycleConflict
+ * says so and the route logs the refusal at error level.
  */
 export function createCycleSingleFlight(now: () => number = Date.now) {
   let startedAt: number | null = null;
@@ -127,14 +132,35 @@ export interface CycleConflict {
   message: string;
 }
 
-/** Operator text for 409 CYCLE_ALREADY_RUNNING. */
-export function describeCycleConflict(startedAt: number, now: number): CycleConflict {
-  const runningMs = Math.max(0, now - startedAt);
+/**
+ * Operator text for 409 CYCLE_ALREADY_RUNNING. `startedAt` is null when
+ * another API process holds the cycle lock and its start time is unknown.
+ */
+export function describeCycleConflict(
+  startedAt: number | null,
+  now: number,
+  where: "this-process" | "another-process" = "this-process",
+): CycleConflict {
+  const runningMs = startedAt == null ? 0 : Math.max(0, now - startedAt);
   const runningForSec = Math.round(runningMs / 1000);
   const stuck = runningMs > CYCLE_STUCK_AFTER_MS;
-  const base = `An autonomous cycle started ${runningForSec} s ago is still running on the server, so this run was not started.`;
+  const base =
+    startedAt == null
+      ? "An autonomous cycle is still running on the server, so this run was not started."
+      : `An autonomous cycle started ${runningForSec} s ago is still running on the server, so this run was not started.`;
+  const restart = where === "this-process" ? "the API server is restarted" : "the API server process running it stops";
   const message = stuck
-    ? `${base} It has been running unusually long (over ${Math.round(CYCLE_STUCK_AFTER_MS / 60_000)} min) and may be stuck; until it finishes or the API server is restarted, every run is refused. Check the server logs, the execution feed and the audit log; a server restart may be required.`
+    ? `${base} It has been running unusually long (over ${Math.round(CYCLE_STUCK_AFTER_MS / 60_000)} min) and may be stuck; until it finishes or ${restart}, every run is refused. Check the server logs, the execution feed and the audit log; a server restart may be required.`
     : `${base} Its result appears in the execution feed and audit log; try again once it finishes.`;
   return { runningForSec, stuck, message };
+}
+
+/** Operator text for a cycle that threw (500 CYCLE_FAILED). Claims nothing about what it sent. */
+export function describeCycleFailure(dbWaitTimeout: boolean, coordination: boolean): string {
+  if (coordination)
+    return "No cycle was started: the server could not take the autonomous-cycle lock in the database. Try again; if it keeps failing, check the server logs.";
+  const cause = dbWaitTimeout
+    ? "a database wait exceeded its limit (connection, statement or lock timeout)"
+    : "an error stopped it";
+  return `The cycle did not finish: ${cause}. Anything it had already handed to the EA stands and is reconciled by later cycles; check the execution feed and audit log before running again.`;
 }
