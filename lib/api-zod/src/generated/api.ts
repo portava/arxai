@@ -18589,6 +18589,17 @@ export const GetMeOpportunityMapResponse = zod.object({
         hasLiveData: zod.boolean(),
         isLate: zod.boolean(),
         reason: zod.string().nullable(),
+        finalReadLabel: zod
+          .enum([
+            "TRADE_WATCH",
+            "WAIT_FOR_CONFIRMATION",
+            "AVOID_FOR_NOW",
+            "NO_TRADE",
+          ])
+          .nullish()
+          .describe(
+            "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+          ),
         category: zod.enum([
           "READY_NOW",
           "FORMING_SOON",
@@ -18617,6 +18628,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18644,6 +18666,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18671,6 +18704,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18698,6 +18742,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18725,6 +18780,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18752,6 +18818,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18781,6 +18858,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18808,6 +18896,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18835,6 +18934,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18862,6 +18972,17 @@ export const GetMeOpportunityMapResponse = zod.object({
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18897,6 +19018,17 @@ export const GetMeOpportunityMapResponse = zod.object({
         hasLiveData: zod.boolean(),
         isLate: zod.boolean(),
         reason: zod.string().nullable(),
+        finalReadLabel: zod
+          .enum([
+            "TRADE_WATCH",
+            "WAIT_FOR_CONFIRMATION",
+            "AVOID_FOR_NOW",
+            "NO_TRADE",
+          ])
+          .nullish()
+          .describe(
+            "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+          ),
         category: zod.enum([
           "READY_NOW",
           "FORMING_SOON",

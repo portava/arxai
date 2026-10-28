@@ -1289,6 +1289,7 @@ export * from "./opportunityMapResult";
 export * from "./opportunityMapRow";
 export * from "./opportunityMapRowCategory";
 export * from "./opportunityMapRowDirection";
+export * from "./opportunityMapRowFinalReadLabel";
 export * from "./opportunityMapRowKind";
 export * from "./opportunityMapRowNewsRisk";
 export * from "./opportunityMapRowRecommendedAction";

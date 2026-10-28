@@ -106,6 +106,9 @@ export function toInput(
     // run over live price + the row's entry/SL/TP. Honest default false when the
     // row has no live data or lateness cannot be evaluated — never fabricated.
     isLate,
+    // The row's own fused verdict. The categorizer may only file TRADE_WATCH
+    // rows as "Ready now"; null (no final read computed) withholds it too.
+    finalReadLabel: opp.finalRead?.label ?? null,
     reason:
       (timingUnknown ? "Entry timing could not be verified with a fresh quote — wait for a new scan." : null) ??
       (isLate ? late?.reason : null) ??

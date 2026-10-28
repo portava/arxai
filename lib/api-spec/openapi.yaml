@@ -22630,6 +22630,11 @@ components:
         hasLiveData: { type: boolean }
         isLate: { type: boolean }
         reason: { type: string, nullable: true }
+        finalReadLabel:
+          type: string
+          nullable: true
+          enum: [TRADE_WATCH, WAIT_FOR_CONFIRMATION, AVOID_FOR_NOW, NO_TRADE]
+          description: The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.
         category: { type: string, enum: [READY_NOW, FORMING_SOON, WATCH_AFTER_NEWS, TOO_LATE, AVOID, NO_CLEAN_SETUP] }
         kind: { type: string, enum: [MOMENTUM, RETEST, REVERSAL, OTHER] }
         bestAction: { type: string }
