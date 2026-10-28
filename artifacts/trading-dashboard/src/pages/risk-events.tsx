@@ -21,9 +21,8 @@ export default function RiskEvents() {
         <ScrollText className="h-6 w-6 text-primary" />
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Risk Event Log</h1>
-          <p className="text-sm text-muted-foreground">Every risk decision: approved, rejected, warned, blocked. Source of truth for the audit vault.</p>
+          <p className="text-sm text-muted-foreground">Risk Governor decisions recorded for your account (passed, warned, blocked) on paper, demo and live orders. Each row shows the venue its record names.</p>
         </div>
-        <Badge variant="outline">SIMULATOR</Badge>
         {(["ALL", "WARN", "BLOCK"] as const).map((f) => (
           <button key={f} className={`text-xs px-2 py-1 rounded border ${filter === f ? "bg-primary text-primary-foreground" : ""}`} onClick={() => setFilter(f)}>{f}</button>
         ))}
@@ -38,7 +37,9 @@ export default function RiskEvents() {
                 <span className="font-semibold">{e.rule}</span>
                 <Badge variant="outline">{e.decision}</Badge>
                 {e.symbol && <Badge variant="outline">{e.symbol}</Badge>}
-                {e.environment && <Badge variant="outline">{e.environment}</Badge>}
+                {e.environment
+                  ? <Badge variant="outline">{e.environment}</Badge>
+                  : <Badge variant="outline" className="text-muted-foreground">venue not recorded</Badge>}
                 {e.source && <Badge variant="outline">{e.source}</Badge>}
                 <span className="ml-auto text-muted-foreground">{new Date(e.ts).toLocaleTimeString()}</span>
               </div>

@@ -166,8 +166,15 @@ export async function propFirmStatus(userId: number) {
 
 export interface RiskEventView {
   eventId: string; ts: string; userId: number; symbol?: string; source?: string;
+  /** The venue the row itself recorded (details.intent.venue, or details.venue
+   *  for Position Guardian rows). Absent when the row does not say. */
+  environment?: RiskVenue;
   rule: string; severity: "INFO" | "WARN" | "BLOCK"; decision: string; explanation: string;
 }
+
+const RISK_VENUES = new Set<string>(["PAPER", "DEMO", "LIVE"] satisfies RiskVenue[]);
+const recordedVenue = (v: unknown): RiskVenue | undefined =>
+  (typeof v === "string" && RISK_VENUES.has(v) ? v as RiskVenue : undefined);
 
 /** Risk Governor audit rows (user_risk_events), newest first. `userId` = one trader; omit for the operator view. */
 export async function listRiskEventsView(opts: { userId?: number; limit?: number; since?: Date } = {}): Promise<RiskEventView[]> {
@@ -184,6 +191,7 @@ export async function listRiskEventsView(opts: { userId?: number; limit?: number
       eventId: `ure_${r.id}`, ts: r.createdAt.toISOString(), userId: r.userId,
       symbol: typeof intent["symbol"] === "string" ? intent["symbol"] : undefined,
       source: typeof intent["origin"] === "string" ? intent["origin"] : undefined,
+      environment: recordedVenue(intent["venue"]) ?? recordedVenue(d["venue"]),
       rule: r.eventType,
       severity: r.decision === "block" ? "BLOCK" : r.decision === "warning" ? "WARN" : "INFO",
       decision: r.decision, explanation: r.reason,
