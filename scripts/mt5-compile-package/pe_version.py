@@ -16,18 +16,22 @@ def main() -> int:
         return 2
     with open(sys.argv[1], "rb") as handle:
         data = handle.read()
-    at = data.find(SIGNATURE)
-    if at < 0:
-        print("no VS_FIXEDFILEINFO block found", file=sys.stderr)
-        return 1
-    _sig, _struct_ver, file_ms, file_ls, prod_ms, prod_ls = struct.unpack_from("<6I", data, at)
 
     def fmt(ms: int, ls: int) -> str:
         return f"{ms >> 16}.{ms & 0xFFFF}.{ls >> 16}.{ls & 0xFFFF}"
 
-    print(f"FileVersion={fmt(file_ms, file_ls)}")
-    print(f"ProductVersion={fmt(prod_ms, prod_ls)}")
-    return 0
+    # The signature bytes can also occur by chance in code or data; the real block
+    # is followed by dwStrucVersion 0x00010000.
+    at = data.find(SIGNATURE)
+    while 0 <= at <= len(data) - 24:
+        _sig, struct_ver, file_ms, file_ls, prod_ms, prod_ls = struct.unpack_from("<6I", data, at)
+        if struct_ver == 0x00010000:
+            print(f"FileVersion={fmt(file_ms, file_ls)}")
+            print(f"ProductVersion={fmt(prod_ms, prod_ls)}")
+            return 0
+        at = data.find(SIGNATURE, at + 1)
+    print("no valid VS_FIXEDFILEINFO block found", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ Allowing `download.mql5.com` in the environment's network settings would make a 
 
 ## Compile package
 
-`scripts/mt5-compile-package/build-package.sh <commit> <output-dir>` builds a downloadable zip from an exact commit. It holds both EAs and every companion include (byte-exact from `git show`), `MANIFEST.sha256`, the full commit hash, the EA changes since `cd44c73`, `COMPILE_INSTRUCTIONS.md`, and `compile_mac_wine.sh`. That script compiles with an existing macOS MetaTrader 5 Wine installation, without starting the terminal, and zips the logs, the new `.ex5` files, and the MetaEditor and Wine versions. A Mac/Wine compile is recorded as such, never as Windows validation. The result stays pending until those logs and `.ex5` files are returned.
+`scripts/mt5-compile-package/build-package.sh <commit> <output-dir>` builds a downloadable zip from an exact commit. It holds both EAs and every companion include, `MANIFEST.sha256`, the full commit hash, the EA changes since `cd44c73` (with the non-EA changes listed separately), `COMPILE_INSTRUCTIONS.md`, and `compile_mac_wine.sh`, all byte-exact from `git show` of that commit. That script compiles with an existing macOS MetaTrader 5 Wine installation. It stops if the terminal or MetaEditor is already running and never starts the terminal. It zips the logs, the new `.ex5` files, the MetaEditor and Wine versions, the standard-library hashes, and a list of every file in the Wine prefix that changed during the run. A Mac/Wine compile is recorded as such, never as Windows validation. The result stays pending until those logs and `.ex5` files are returned.
 
 ## Exact source to compile
 
@@ -61,7 +61,7 @@ Verify the hashes before compiling (PowerShell: `Get-FileHash -Algorithm SHA256 
    %MT5%\metaeditor64.exe /compile:"%DATA%\Experts\ARX\ARX_AI_Universal_Agent_v154.mq5" /include:"%DATA%" /log:"%DATA%\Experts\ARX\v154-compile.log"
    ```
 
-   `<terminal-id>` is the long hexadecimal folder name that **Open Data Folder** shows.
+   `<terminal-id>` is the long hexadecimal folder name that **Open Data Folder** shows. The exact meaning of `/include` is not confirmed (some sources use `/inc`); check the include paths the log reports.
 5. Read each log. MetaEditor writes the log in UTF-16; open it in an editor rather than `type`. The last line reads `Result: N errors, M warnings`. **Do not rely on the process exit code**, which is not a dependable success signal for MetaEditor; use the log and the presence of the `.ex5`.
 
 ## Expected outputs and pass rule
