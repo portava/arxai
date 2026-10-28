@@ -18,7 +18,11 @@ const SYMBOL_CURRENCIES: Record<string, string[]> = {
   XAUUSD: ["USD"], XAGUSD: ["USD"],
   // Indices — US indices key off US (USD) macro; European/Asian off their bloc.
   US30: ["USD"], NAS100: ["USD"], SPX500: ["USD"], US500: ["USD"], US100: ["USD"],
-  GER40: ["EUR"], UK100: ["GBP"], JP225: ["JPY"], EU50: ["EUR"],
+  // DAX: GER30 is the approved ARX canonical (arxFocusMarkets.ts); GER40 /
+  // DE40 / DE30 are broker aliases for the same index. Without these the DAX
+  // fell through to the USD default below and showed US releases as its news.
+  GER30: ["EUR"], GER40: ["EUR"], DE40: ["EUR"], DE30: ["EUR"],
+  UK100: ["GBP"], JP225: ["JPY"], EU50: ["EUR"],
 };
 
 /** ISO currency → Trading Economics country name (for fallback filtering). */
