@@ -7,7 +7,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 type Q = { data?: unknown; isLoading?: boolean; isError?: boolean; dataUpdatedAt?: number; errorUpdatedAt?: number; refetch?: () => void };
-const h = vi.hoisted(() => ({ status: {} as Q }));
+const h = vi.hoisted(() => ({ status: {} as Q, vault: {} as Q }));
 const mutation = () => ({ mutate: () => undefined, isPending: false });
 
 vi.mock("@workspace/api-client-react", () => ({
@@ -15,7 +15,7 @@ vi.mock("@workspace/api-client-react", () => ({
   useSetSystemMode: mutation,
   useEngageKillSwitch: mutation,
   useResetKillSwitch: mutation,
-  useGetSystemVault: () => ({ data: { events: [] }, isLoading: false }),
+  useGetSystemVault: () => h.vault,
   useGetSystemStateTransitions: () => ({ data: { transitions: [] }, isLoading: false }),
   getGetSystemStatusQueryKey: () => ["/api/system/status"],
   getGetSystemVaultQueryKey: () => ["/api/system/vault"],
@@ -51,7 +51,10 @@ function renderPage() {
 }
 const headline = () => screen.getByTestId("safety-core-headline").textContent ?? "";
 
-beforeEach(() => { h.status = { data: baseStatus(), isLoading: false, isError: false, dataUpdatedAt: Date.now() }; });
+beforeEach(() => {
+  h.status = { data: baseStatus(), isLoading: false, isError: false, dataUpdatedAt: Date.now() };
+  h.vault = { data: { events: [] }, isLoading: false, isError: false };
+});
 afterEach(() => cleanup());
 
 describe("Control Tower — stops other than the safety-core switch", () => {
@@ -134,5 +137,50 @@ describe("Control Tower — mode and execution labels", () => {
     expect(scope).not.toMatch(/governs which mode is allowed/);
     expect(scope).toMatch(/governed order pipeline \(paper, demo and live tickets\)\s+does not read it/);
     expect(scope).toMatch(/use the kill switch to halt them/);
+  });
+});
+
+// A failed /system/status read is "could not be loaded", never an endless
+// skeleton; a failed poll after a good read keeps the last status but marks it
+// as not current and never headlines it as an all-clear.
+describe("Control Tower — status read failures", () => {
+  it("shows an error, not skeletons, when the first status read fails", () => {
+    const refetch = vi.fn();
+    h.status = { data: undefined, isLoading: false, isError: true, refetch };
+    const { container } = renderPage();
+    expect(screen.getByTestId("status-load-error").textContent).toMatch(/could not be loaded/);
+    expect(container.querySelector(".animate-pulse")).toBeNull();
+    screen.getByTestId("button-retry-status").click();
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("marks the last status as not current when a later poll fails", () => {
+    const readAt = new Date("2026-10-28T11:00:00Z").getTime();
+    h.status = { data: baseStatus(), isLoading: false, isError: true, dataUpdatedAt: readAt, errorUpdatedAt: readAt + 10_000 };
+    renderPage();
+    const stale = screen.getByTestId("status-stale").textContent ?? "";
+    expect(stale).toMatch(/latest status read failed/);
+    expect(stale).toMatch(new RegExp(new Date(readAt).toLocaleTimeString().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    expect(headline()).not.toMatch(/Safety Core Online/);
+    expect(headline()).toBe("Safety core status not current");
+  });
+
+  it("keeps a halt headline from the last read (a warning is never upgraded) and still marks it stale", () => {
+    h.status = { data: baseStatus({ killSwitchEngaged: true }), isLoading: false, isError: true, dataUpdatedAt: Date.now() };
+    renderPage();
+    expect(headline()).toBe("KILL SWITCH ENGAGED");
+    expect(screen.getByTestId("status-stale")).toBeTruthy();
+  });
+
+  it("a failed vault read is 'could not be loaded', not 'No vault events yet.'", () => {
+    h.vault = { data: undefined, isLoading: false, isError: true };
+    renderPage();
+    expect(screen.getByTestId("vault-load-error").textContent).toMatch(/could not be loaded/);
+    expect(document.body.textContent).not.toMatch(/No vault events yet/);
+  });
+
+  it("no stale marker on a successful read", () => {
+    renderPage();
+    expect(screen.queryByTestId("status-stale")).toBeNull();
   });
 });

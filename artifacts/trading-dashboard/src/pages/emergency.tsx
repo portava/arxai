@@ -98,7 +98,7 @@ function otherHaltsOf(status: SystemStatus): { sources: string[]; reasons: strin
   return { sources, reasons };
 }
 
-function StatusBanner({ status }: { status: SystemStatus }) {
+function StatusBanner({ status, stale = false }: { status: SystemStatus; stale?: boolean }) {
   const ks = status.killSwitchEngaged;
   const others = otherHaltsOf(status);
   const otherHalted = (others?.sources.length ?? 0) > 0;
@@ -113,6 +113,8 @@ function StatusBanner({ status }: { status: SystemStatus }) {
       : others === null
         ? "Safety-core kill switch released"
         : "Safety Core Online";
+  // A status kept from an earlier read is never shown as a current all-clear.
+  const headline = stale && !ks && !otherHalted ? "Safety core status not current" : title;
   return (
     <Card className={ks || otherHalted ? "border-destructive bg-destructive/5" : "border-border"}>
       <CardHeader className="pb-3">
@@ -120,14 +122,14 @@ function StatusBanner({ status }: { status: SystemStatus }) {
           <div className="flex items-center gap-3">
             {ks || otherHalted ? (
               <AlertOctagon className="text-destructive" size={28} />
-            ) : others === null ? (
+            ) : others === null || stale ? (
               <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={28} />
             ) : (
               <ShieldCheck className="text-primary" size={28} />
             )}
             <div>
               <CardTitle className="text-xl tracking-wide" data-testid="safety-core-headline">
-                {title}
+                {headline}
               </CardTitle>
               <CardDescription className="mt-1">
                 Operational Mode <Badge variant="outline" className="ml-1 font-mono">{status.operationalMode}</Badge>
@@ -568,6 +570,29 @@ export default function Emergency() {
   const vaultQ = useGetSystemVault({ limit: 50 }, { query: { queryKey: getGetSystemVaultQueryKey({ limit: 50 }), refetchInterval: 5000 } });
   const transitionsQ = useGetSystemStateTransitions({ limit: 50 }, { query: { queryKey: getGetSystemStateTransitionsQueryKey({ limit: 50 }), refetchInterval: 10000 } });
 
+  if (!statusQ.data && statusQ.isError) {
+    return (
+      <div className="space-y-4 p-2">
+        <Card className="border-destructive/60" data-testid="status-load-error">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle size={20} /> Safety core status could not be loaded
+            </CardTitle>
+            <CardDescription>
+              GET /api/system/status failed, so the kill switch, operational mode and the other stops are unknown
+              here. Nothing on this page is shown until a read succeeds.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button variant="outline" onClick={() => void statusQ.refetch()} data-testid="button-retry-status">
+              <RefreshCw size={16} className="mr-2" /> Retry
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
   if (statusQ.isLoading || !statusQ.data) {
     return (
       <div className="space-y-4 p-2">
@@ -579,6 +604,8 @@ export default function Emergency() {
   }
 
   const status = statusQ.data;
+  // react-query keeps the last good status while a later poll fails.
+  const staleSince = statusQ.isError ? (statusQ.dataUpdatedAt || null) : null;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 p-2">
@@ -600,7 +627,22 @@ export default function Emergency() {
         )}
       </div>
 
-      <StatusBanner status={status} />
+      {statusQ.isError && (
+        <div
+          className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300"
+          data-testid="status-stale"
+        >
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>
+            The latest status read failed
+            {statusQ.errorUpdatedAt ? ` at ${new Date(statusQ.errorUpdatedAt).toLocaleTimeString()}` : ""}. Showing the
+            last status read
+            {staleSince ? ` at ${new Date(staleSince).toLocaleTimeString()}` : ""}; it may be out of date.
+          </span>
+        </div>
+      )}
+
+      <StatusBanner status={status} stale={statusQ.isError} />
 
       <div className="grid lg:grid-cols-2 gap-6">
         <ModeSwitcher status={status} />
@@ -637,6 +679,8 @@ export default function Emergency() {
                 <div className="space-y-2">
                   {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
                 </div>
+              ) : vaultQ.isError && !vaultQ.data ? (
+                <p className="text-sm text-destructive p-4 text-center" data-testid="vault-load-error">Vault events could not be loaded.</p>
               ) : (
                 <VaultList events={vaultQ.data?.events ?? []} />
               )}
@@ -646,6 +690,8 @@ export default function Emergency() {
                 <div className="space-y-2">
                   {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
                 </div>
+              ) : transitionsQ.isError && !transitionsQ.data ? (
+                <p className="text-sm text-destructive p-4 text-center" data-testid="transitions-load-error">State transitions could not be loaded.</p>
               ) : (
                 <TransitionsList transitions={transitionsQ.data?.transitions ?? []} />
               )}
