@@ -133,3 +133,25 @@ test("no smartChart in the snapshot keeps the market feed unknown and non-critic
   assert.equal(record(snap, "marketFeed").ageMs, null);
   assert.equal(computeFreshness(snap, NOW).criticalStale, false);
 });
+
+// ── Market Truth structure factor ───────────────────────────────────────────
+// smartChart.structureScore feeds Market Truth (M) as market STRUCTURE. The
+// chart's data-quality score (chartTruthScore) is not structure: it must not
+// earn structure points for a clean but structureless market.
+
+test("structureScore is the chart's structure-clarity read, not the data-quality Chart Truth score", () => {
+  const sc = smartChartFromState(chartState({ chartTruthScore: 75, structureClarity: 28 }));
+  assert.equal(sc.structureScore, 28);
+  assert.notEqual(sc.structureScore, 75);
+});
+
+test("structure is unknown (never a score) when it could not be read from a usable feed", () => {
+  assert.equal(smartChartFromState(chartState({ populated: false })).structureScore, undefined,
+    "engines not populated → structure not measured");
+  assert.equal(smartChartFromState(chartState({ stale: true })).structureScore, undefined,
+    "stale feed → structure not current");
+  assert.equal(smartChartFromState(chartState({ aiUsable: false })).structureScore, undefined,
+    "feed not usable for analysis → structure not current");
+  assert.equal(smartChartFromState(chartState({ structureClarity: null })).structureScore, undefined,
+    "no structure-clarity metric → unknown");
+});

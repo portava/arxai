@@ -136,6 +136,9 @@ export interface AaciSharedTruthSnapshot {
 
   smartChart?: {
     bias?: AaciChartBias;
+    // Market structure clarity 0–100 (trend regime + mapped levels) from the
+    // chart read; absent when not measured. Never the Chart Truth (data
+    // quality) score.
     structureScore?: number;
     // Close time of the newest CLOSED candle in the chart series (absent when
     // there is none — a forming bar's scheduled close is not an observation).

@@ -263,12 +263,25 @@ export function smartChartFromState(
             ? "bearish"
             : "neutral")
       : undefined,
-    structureScore: state.gateOutput.chartTruthScore,
+    structureScore: structureScoreFromState(state),
     lastTickTime: state.truthState.lastTickTime ?? undefined,
     lastCandleTime,
     feedStale: state.stale,
     lastUpdated: state.lastUpdated,
   };
+}
+
+/**
+ * Market structure for Market Truth (M): the chart read's structure-clarity
+ * metric (trend regime + mapped levels). The Chart Truth score is data quality
+ * and freshness, not structure, so it is never used here. Structure is unknown
+ * (undefined, so M neither gains nor loses points for it) when the engines
+ * did not populate or the feed is not usable/current for analysis.
+ */
+function structureScoreFromState(state: ChartIntelligenceState): number | undefined {
+  if (!state.marketUnderstanding.populated || !state.aiUsable || state.stale) return undefined;
+  const metric = state.chartReadScore.subMetrics.find((m) => m.key === "structure_clarity");
+  return metric && Number.isFinite(metric.rawScore) ? clamp100(metric.rawScore) : undefined;
 }
 
 function clamp100(n: number): number {
