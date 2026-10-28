@@ -120,7 +120,6 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
     const userId = req.authUser!.id;
     const journal = await db.select().from(tradeJournalTable)
       .where(eq(tradeJournalTable.userId, userId));
-    const intents: never[] = [];
 
     const wins = journal.filter((j) => (j.pnl ?? 0) > 0).length;
     const losses = journal.filter((j) => (j.pnl ?? 0) < 0).length;
@@ -156,19 +155,27 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
       mistakeDist.set(tag, (mistakeDist.get(tag) ?? 0) + 1);
     }
 
+    // Source truth: this handler reads ONLY trade_journal. That table has no
+    // environment column, so every entry is reported in one JOURNAL bucket
+    // (never filed under PAPER), and the other environments — which this
+    // handler does not read — carry an unknown (null) count, not a zero.
     return res.json({
       environments: {
-        PAPER: { trades: total, wins, losses, winRate, pnl: Math.round(pnl * 100) / 100 },
-        DEMO_SIMULATOR: { trades: 0, note: "Demo simulator results stored in paper-execution table." },
-        LIVE_TESTER_INTENT: { trades: intents.length, note: "Intent rows only — not executed." },
-        REAL_BROKER: { trades: 0, status: "MT5_DEFERRED — never executed" },
+        JOURNAL: {
+          trades: total, wins, losses, winRate, pnl: Math.round(pnl * 100) / 100,
+          note: "All your journal entries. Journal entries record no environment, so paper, demo and live are not separated here.",
+        },
+        DEMO_SIMULATOR: { trades: null, note: "Not read by this report — demo simulator results are kept in a separate table." },
+        LIVE_TESTER_INTENT: { trades: null, note: "Not read by this report — live intents are not tracked per user." },
+        REAL_BROKER: { trades: null, status: "Not read by this report — real broker execution is deferred and has never executed." },
       },
       headline: { winRate, totalPnl: Math.round(pnl * 100) / 100, totalTrades: total },
       bestSymbol, worstSymbol,
       strategyRanking,
       mistakeDistribution: Object.fromEntries(mistakeDist),
       gradeDistribution: { note: "Grades computed on-demand via /api/ai/grade-trade" },
-      dataSource: "SIMULATOR_AND_TESTER_INTENTS",
+      dataSource: "TRADE_JOURNAL",
+      dataSourceLabel: "your trade journal entries",
       perUserScoped: true,
       intentsNote: "Live-intent count not shown — liveIntentsTable has no per-user ownership column.",
       isEmpty: total === 0,
