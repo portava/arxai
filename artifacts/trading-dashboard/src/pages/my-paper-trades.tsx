@@ -108,6 +108,29 @@ function enforcedLimit(s: RiskStatus, key: string, saved: number | null | undefi
   return v ? v.effective : (saved ?? null);
 }
 
+/**
+ * The book /me/performance-calendar and /me/performance-summary read. They
+ * follow the account mode, not this page: in live trading mode they read
+ * closed live trades, and a live-shared account gets no book at all. Only
+ * paper_trades is the demo record the Trades tab lists.
+ */
+type PerformanceSource = "paper_trades" | "live_trades" | "withheld_live_shared" | "mixed" | "unknown" | "load_failed";
+function performanceSource(calendar: string | undefined, summary: string | undefined): PerformanceSource {
+  const known = (v: string | undefined): PerformanceSource =>
+    v === "paper_trades" || v === "live_trades" || v === "withheld_live_shared" ? v : "unknown";
+  const c = known(calendar);
+  const s = known(summary);
+  if (c === "unknown" || s === "unknown") return "unknown";
+  return c === s ? c : "mixed";
+}
+const PERFORMANCE_SOURCE_COPY: Record<Exclude<PerformanceSource, "paper_trades">, string> = {
+  live_trades: "Your account is in live trading mode, so the performance calendar reads your closed live trades, not the demo trades on the Trades tab.",
+  withheld_live_shared: "Your account is in live-shared mode, so the server does not return a demo-trade performance calendar for it. The demo trades on the Trades tab are not summarised here.",
+  mixed: "The performance calendar and summary came from different trade records, so they are not shown as demo-trade performance.",
+  unknown: "The server did not say which trades these performance figures come from, so they are not shown as demo-trade performance.",
+  load_failed: "The request for your demo-trade performance failed, so no figures are shown. Reload the page to try again.",
+};
+
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await fetch(`/api${path}`, {
     method, credentials: "include",
@@ -132,6 +155,8 @@ export default function MyPaperTradesPage() {
   const [journal, setJournal] = useState<Journal[]>([]);
   const [days, setDays] = useState<Day[]>([]);
   const [summary, setSummary] = useState<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean } | null>(null);
+  // Which book the performance endpoints read (see PerformanceSource).
+  const [perfSource, setPerfSource] = useState<PerformanceSource>("unknown");
   const [reviews, setReviews] = useState<Record<number, Review>>({});
   const [insights, setInsights] = useState<Insights | null>(null);
   const [coaching, setCoaching] = useState<Coaching | null>(null);
@@ -164,8 +189,8 @@ export default function MyPaperTradesPage() {
       const [t, jr, cal, sum, rv, ins, co, pb, rst, rev] = await Promise.all([
         api<{ trades: PaperTrade[] }>("GET", "/me/paper-trades"),
         api<{ entries: Journal[] }>("GET", "/me/trade-journal"),
-        api<{ days: Day[] }>("GET", "/me/performance-calendar"),
-        api<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean }>("GET", "/me/performance-summary"),
+        api<{ days: Day[]; source?: string }>("GET", "/me/performance-calendar"),
+        api<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean; source?: string }>("GET", "/me/performance-summary"),
         api<{ reviews: Review[] }>("GET", "/me/ai-trade-reviews"),
         api<Insights>("GET", "/me/performance-insights"),
         api<Coaching>("GET", "/me/coaching-plan"),
@@ -174,6 +199,7 @@ export default function MyPaperTradesPage() {
         api<{ events: RiskEvent[] }>("GET", "/me/risk/events").catch(() => ({ events: [] as RiskEvent[] })),
       ]);
       setTrades(t.trades); setJournal(jr.entries); setDays(cal.days); setSummary(sum);
+      setPerfSource(performanceSource(cal.source, sum.source));
       const rmap: Record<number, Review> = {};
       for (const r of rv.reviews) rmap[r.paperTradeId] = r;
       setReviews(rmap); setInsights(ins); setCoaching(co);
@@ -182,6 +208,7 @@ export default function MyPaperTradesPage() {
       setPlaybooks(pb.playbooks);
       if (pb.playbooks[0]) setActivePbId((cur) => cur ?? pb.playbooks[0]!.id);
     } catch (e) {
+      setPerfSource("load_failed");
       toast({ title: "Load failed", description: String(e), variant: "destructive" });
     } finally { setLoading(false); }
   }
@@ -490,6 +517,16 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="calendar" className="space-y-3">
+          {loading && perfSource === "unknown" ? (
+            <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading performance…</CardContent></Card>
+          ) : perfSource !== "paper_trades" ? (
+            <Card data-testid="performance-not-demo"><CardContent className="p-6 text-sm text-muted-foreground">
+              <p className="text-base font-semibold text-foreground mb-1">
+                {perfSource === "load_failed" ? "Performance could not be loaded" : "Demo-trade performance is not shown here"}
+              </p>
+              {PERFORMANCE_SOURCE_COPY[perfSource]}
+            </CardContent></Card>
+          ) : (<>
           {summary && (
             <Card><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div><div className="text-muted-foreground">Trades</div><div className="text-xl font-semibold">{summary.totalTrades}</div></div>
@@ -521,6 +558,7 @@ export default function MyPaperTradesPage() {
               })}
             </div>
           )}
+          </>)}
         </TabsContent>
 
         <TabsContent value="insights" className="space-y-3">

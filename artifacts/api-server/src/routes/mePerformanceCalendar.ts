@@ -52,12 +52,21 @@ type ClosedRow = {
   closedAt: Date | null;
 };
 
+/**
+ * Which book a response read, so a caller never labels one book as another:
+ *  - paper_trades: closed demo paper trades (the same rows /me/paper-trades lists);
+ *  - live_trades: closed live trades (shared_trade_attribution), read because
+ *    the safety envelope's tradingMode is LIVE;
+ *  - withheld_live_shared: the LIVE_SHARED mode scope returns no book here.
+ */
+type CalendarSource = "paper_trades" | "live_trades" | "withheld_live_shared";
+
 // Mode-aware loader. In LIVE mode the calendar reflects ONLY closed live trades
 // (shared_trade_attribution). In demo/paper/simulated it reflects paper_trades.
 // No mixing — a live calendar never shows paper P&L and vice-versa.
 async function loadClosedRows(
   userId: number, fromIso?: string, toIso?: string,
-): Promise<ClosedRow[]> {
+): Promise<{ rows: ClosedRow[]; source: CalendarSource }> {
   const env = await getEnvelope(userId);
   const isLive = env.tradingMode === "LIVE";
 
@@ -70,7 +79,7 @@ async function loadClosedRows(
     if (fromIso) conds.push(gte(sharedTradeAttributionTable.closedAt, new Date(fromIso)));
     if (toIso) conds.push(lte(sharedTradeAttributionTable.closedAt, new Date(toIso)));
     const rows = await db.select().from(sharedTradeAttributionTable).where(and(...conds));
-    return rows.map((r) => ({
+    return { source: "live_trades", rows: rows.map((r) => ({
       id: r.id,
       symbol: r.symbol,
       side: r.side,
@@ -81,7 +90,7 @@ async function loadClosedRows(
       strategyTag: null,
       riskAmount: null,
       closedAt: r.closedAt ?? null,
-    }));
+    })) };
   }
 
   const conds = [
@@ -92,7 +101,7 @@ async function loadClosedRows(
   if (fromIso) conds.push(gte(paperTradesTable.closedAt, new Date(fromIso)));
   if (toIso) conds.push(lte(paperTradesTable.closedAt, new Date(toIso)));
   const rows = await db.select().from(paperTradesTable).where(and(...conds));
-  return rows.map((r) => ({
+  return { source: "paper_trades", rows: rows.map((r) => ({
     id: r.id,
     symbol: r.symbol,
     side: r.side,
@@ -103,7 +112,7 @@ async function loadClosedRows(
     strategyTag: r.strategyTag ?? null,
     riskAmount: r.riskAmount ?? null,
     closedAt: r.closedAt ?? null,
-  }));
+  })) };
 }
 
 function aggregate(rows: ClosedRow[]): Record<string, DayAgg> {
@@ -139,6 +148,7 @@ router.get("/me/performance-calendar", requireUser, async (req, res) => {
     res.json({
       days: [],
       isEmpty: true,
+      source: "withheld_live_shared" satisfies CalendarSource,
       currentAccountMode: scope.currentAccountMode,
       modeScopeApplied: true,
     });
@@ -146,11 +156,12 @@ router.get("/me/performance-calendar", requireUser, async (req, res) => {
   }
   const from = typeof req.query.from === "string" ? `${req.query.from}T00:00:00Z` : undefined;
   const to = typeof req.query.to === "string" ? `${req.query.to}T23:59:59Z` : undefined;
-  const rows = await loadClosedRows(userId, from, to);
+  const { rows, source } = await loadClosedRows(userId, from, to);
   const days = Object.values(aggregate(rows)).sort((a, b) => a.date.localeCompare(b.date));
   res.json({
     days,
     isEmpty: days.length === 0,
+    source,
     currentAccountMode: scope.currentAccountMode,
     modeScopeApplied: true,
   });
@@ -167,12 +178,13 @@ router.get("/me/performance-calendar/:date", requireUser, async (req, res): Prom
       date, tradesCount: 0, wins: 0, losses: 0, breakeven: 0,
       totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0,
       trades: [],
+      source: "withheld_live_shared" satisfies CalendarSource,
       currentAccountMode: scope.currentAccountMode,
       modeScopeApplied: true,
     });
     return;
   }
-  const rows = await loadClosedRows(userId, `${date}T00:00:00Z`, `${date}T23:59:59Z`);
+  const { rows, source } = await loadClosedRows(userId, `${date}T00:00:00Z`, `${date}T23:59:59Z`);
   const agg = aggregate(rows)[date] ?? { date, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0 };
   res.json({
     ...agg,
@@ -181,6 +193,7 @@ router.get("/me/performance-calendar/:date", requireUser, async (req, res): Prom
       entryPrice: r.entryPrice, exitPrice: r.exitPrice, strategyTag: r.strategyTag,
       closedAt: r.closedAt?.toISOString() ?? null,
     })),
+    source,
     currentAccountMode: scope.currentAccountMode,
     modeScopeApplied: true,
   });
@@ -194,12 +207,13 @@ router.get("/me/performance-summary", requireUser, async (req, res) => {
     res.json({
       totalTrades: 0, totalPnl: 0, wins: 0, losses: 0, breakeven: 0, winRate: 0,
       activeDays: 0, bestDay: null, worstDay: null, isEmpty: true,
+      source: "withheld_live_shared" satisfies CalendarSource,
       currentAccountMode: scope.currentAccountMode,
       modeScopeApplied: true,
     });
     return;
   }
-  const rows = await loadClosedRows(userId);
+  const { rows, source } = await loadClosedRows(userId);
   const totalTrades = rows.length;
   const totalPnl = Number(rows.reduce((s, r) => s + (r.pnl ?? 0), 0).toFixed(4));
   const wins = rows.filter((r) => (r.pnl ?? 0) > 0).length;
@@ -215,6 +229,7 @@ router.get("/me/performance-summary", requireUser, async (req, res) => {
     bestDay: best ? { date: best.date, pnl: best.totalPnl } : null,
     worstDay: worst ? { date: worst.date, pnl: worst.totalPnl } : null,
     isEmpty: totalTrades === 0,
+    source,
     currentAccountMode: scope.currentAccountMode,
     modeScopeApplied: true,
   });
