@@ -28,8 +28,10 @@ interface Props {
   ephemeralDrawings?: boolean;
   /** Replay has no further history read beyond its frozen window. */
   historyWindowOnly?: boolean;
+  /** Native mounts its browser-local library outside source-keyed drawing state. */
+  showTemplates?: boolean;
 }
-export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false}: Props) {
+export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false,showTemplates=true}: Props) {
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;
@@ -214,10 +216,10 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "objects"} onClick={()=>setPanel(p=>p === "objects" ? null : "objects")}>Objects ({drawings.length})</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!history.past.length} onClick={()=>undo()}>Undo</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!history.future.length} onClick={()=>undo(true)}>Redo</Button>
-      <ChartTemplatesPanel preferences={preferences} onPreferences={onPreferences} onHiddenTriggerClose={()=>{
+      {showTemplates && <ChartTemplatesPanel preferences={preferences} onPreferences={onPreferences} onHiddenTriggerClose={()=>{
         const fallback=[toggleRef.current,panRef.current].find(button=>button && !button.disabled && button.getClientRects().length);
         if(!fallback)return false;fallback.focus();return true;
-      }}/>
+      }}/> }
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles} onClick={exportImage}>Export PNG</Button>
     <div className="basis-full mt-2 flex flex-wrap items-center gap-2 text-zinc-400" aria-label="Chart date navigation">
       <span>Range</span>{[["1D",86400],["5D",432000],["1M",2592000],["3M",7776000],["1Y",31536000]].map(([label,seconds])=><button key={label} type="button" className="rounded px-2 py-1 text-[11px] hover:bg-zinc-800 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40" disabled={!hasCandles} onClick={()=>{const range=adapter?.showRecentRange?.(Number(seconds));setMessage(range ? range.complete ? "Range shown from loaded history." : "Showing available history; the requested range starts before the loaded candles." : "No history available.");}}>{label}</button>)}

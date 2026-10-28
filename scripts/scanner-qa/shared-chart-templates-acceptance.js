@@ -4,9 +4,9 @@ async page => {
     'Actual Scanner route in isolated production fixture, synthetic historical candles and unavailable AI truth.',
     'Programmatic selectOption is used for functional style/list selection, not trusted-input latency.',
     'No timing, physical-paint, cross-browser, broker or competitor parity claim.']};
-  function matchesSeries(current,expected,style) {
+  function matchesSeries(current,expected,style,context={symbol:'EURUSD',intervalSeconds:900}) {
     const {state,data}=current??{};
-    if(!expected?.canonical?.length||!state||!data||state.symbol!=='EURUSD'||state.intervalSeconds!==900||state.style!==style||state.feed?.source!==expected.source||state.barCount!==expected.canonical.length||!Array.isArray(data.canonical)||!Array.isArray(data.display))return false;
+    if(!expected?.canonical?.length||!state||!data||state.symbol!==context.symbol||state.intervalSeconds!==context.intervalSeconds||state.style!==style||state.feed?.source!==expected.source||state.barCount!==expected.canonical.length||!Array.isArray(data.canonical)||!Array.isArray(data.display))return false;
     const bar=p=>({time:p.time,open:p.open,high:p.high,low:p.low,close:p.close});
     return JSON.stringify(data.canonical)===JSON.stringify(expected.canonical)&&JSON.stringify(data.display.map(bar))===JSON.stringify(expected.canonical);
   }
@@ -23,11 +23,18 @@ async page => {
       return Number.isFinite(point.value)&&Math.abs(point.value-mean)<1e-10;
     });
   }
+  let releasePendingResponse=()=>{}, delayedRoute=null;
   const check=(value,label)=>{if(!value)throw Error(label);report.checks.push(label);};
   const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const screenshot=async label=>{const path=prefix+'-'+label+'.png';await page.screenshot({path,fullPage:false});report.screenshots.push(path);};
   const button=name=>page.getByRole('button',{name,exact:true});
-  const open=async()=>{await button('Templates').click();const dialog=page.getByRole('dialog',{name:'Chart templates',exact:true});await dialog.waitFor();await dialog.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});};
+  const open=async()=>{await button('Templates').click();const dialog=page.getByRole('dialog',{name:'Chart templates',exact:true});await dialog.waitFor();await dialog.evaluate(async element=>{
+    let timeout;
+    try {
+      await Promise.race([Promise.all(element.getAnimations().map(animation=>animation.finished)),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(Error('Dialog animation did not finish')),3000);})]);
+      if(!element.isConnected||element.getAttribute('data-state')!=='open'||!element.getClientRects().length)throw Error('Dialog closed during opening');
+    } finally {clearTimeout(timeout);}
+  });};
   const close=async()=>{await button('Close').click();await page.getByRole('dialog',{name:'Chart templates',exact:true}).waitFor({state:'hidden'});};
   const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('arx.chart.templates.v1')??'null'));
   const save=async name=>{await page.getByLabel('Template name',{exact:true}).fill(name);await button('Save new').click();await page.getByText('Template saved in this browser.',{exact:true}).waitFor();};
@@ -105,21 +112,44 @@ async page => {
     await page.getByRole('dialog',{name:'Chart templates',exact:true}).waitFor({state:'hidden'});
     check(await button('Exit fullscreen').isVisible(),'First Escape closes the dialog and preserves fullscreen');
     await page.keyboard.press('Escape');check(await button('Fullscreen').isVisible(),'Second Escape exits fullscreen');
-    // Start with a wide toolbar and closed compact disclosure, then hide trigger by resize.
+    // The library trigger stays in the stable view toolbar when compact tools collapse.
     if(await tools.getAttribute('aria-expanded')==='true')await tools.click();
     await open();await page.setViewportSize({width:390,height:844});await frames();
     const dialog=page.getByRole('dialog',{name:'Chart templates',exact:true});
     check(await dialog.evaluate(element=>{const b=element.getBoundingClientRect();return b.left>=0&&b.right<=innerWidth&&b.top>=0&&b.bottom<=innerHeight&&element.scrollWidth<=element.clientWidth;}),'Mobile templates dialog fits viewport and has no horizontal clipping');
     await screenshot('mobile');await close();await frames();
-    check(await tools.evaluate(element=>document.activeElement===element),'Closing after resize returns focus to visible Tools');
+    check(await button('Templates').evaluate(element=>document.activeElement===element),'Closing after resize returns focus to the visible Templates trigger');
     // Saved records survive keyed chart remount without reload/storage reseeding.
-    await panel.getByTestId('arx-native-tf-M5').click();await page.waitForFunction(()=>window.__arxChartQa.snapshot()?.intervalSeconds===300);
-    if(await tools.getAttribute('aria-expanded')!=='true')await tools.click();
-    await open();await select('Trend study');check((await saved()).entries[0].id===entry.id,'Named template survives chart-context remount');await close();
+    const priorResponseCount=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.length;
+    const responseGate=new Promise(resolve=>{releasePendingResponse=resolve;});
+    delayedRoute=async route=>{
+      const url=new URL(route.request().url());
+      if(url.pathname==='/api/chart/candles'&&url.searchParams.get('timeframe')==='M5'&&url.searchParams.get('limit')==='200')await responseGate;
+      await route.fallback();
+    };
+    await page.route('**/api/chart/candles?**',delayedRoute);
+    await panel.getByTestId('arx-native-tf-M5').click();
+    await open();await page.getByLabel('Template name',{exact:true}).fill('Keep this input through loading');
+    const openedDialogId=await page.getByRole('dialog',{name:'Chart templates',exact:true}).getAttribute('id');
+    releasePendingResponse();
+    const deadline=Date.now()+15000;let rebound=false;
+    while(Date.now()<deadline) {
+      const responses=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.slice(priorResponseCount);
+      const response=responses.filter(row=>row.requestPath==='/api/chart/candles'&&row.symbol==='EURUSD'&&row.timeframe==='M5'&&new URLSearchParams(row.requestQuery).get('limit')==='200').at(-1);
+      await frames();
+      const actual=await page.evaluate(()=>({state:window.__arxChartQa.snapshot(),data:window.__arxChartQa.data()}));
+      if(matchesSeries(actual,response,'bars',{symbol:'EURUSD',intervalSeconds:300})){rebound=true;break;}
+      await page.waitForTimeout(25);
+    }
+    check(rebound,'New timeframe has its exact source-bound displayed series before checking restored templates');
+    check(await page.getByRole('dialog',{name:'Chart templates',exact:true}).getAttribute('id')===openedDialogId&&await page.getByLabel('Template name',{exact:true}).inputValue()==='Keep this input through loading','Early template interaction survives the delayed candle-response source binding');
+    await select('Trend study');check((await saved()).entries[0].id===entry.id,'Named template survives chart-context remount');await close();
     check(await page.locator('#tv-attr-logo,iframe,embed,object,script[src*="tradingview.com"]').count()===0,'No TradingView logo or embedded chart is introduced');
     report.passed=true;
   } catch(error) {report.failure=String(error?.stack??error);try{await screenshot('failure');}catch(capture){report.captureFailure=String(capture);}}
   finally {
+    releasePendingResponse();
+    if(delayedRoute)await page.unroute('**/api/chart/candles?**',delayedRoute);
     try {await page.evaluate(()=>window.__releaseTemplateLock?.());}catch{}
     try {
       report.network=await page.evaluate(()=>window.__readFixtureLog());

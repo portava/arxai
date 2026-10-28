@@ -684,6 +684,40 @@ describe("Smart Chart view controls", () => {
     expect(view.getByRole("button", {name:"Fullscreen",exact:true})).toBeTruthy();
     expect(adapterSpies.init).toHaveBeenCalledTimes(1);
   });
+  it("keeps template input and pending import through source binding but cancels drawing placement", async () => {
+    const view=renderChart();
+    fireEvent.change(view.getByLabelText("Drawing tool"),{target:{value:"trend"}});
+    expect(typeof adapterSpies.setDrawingHandler.mock.lastCall?.[0]).toBe("function");
+    fireEvent.click(view.getByRole("button",{name:"Templates",exact:true}));
+    const dialog=view.getByRole("dialog",{name:"Chart templates"});
+    fireEvent.change(view.getByLabelText("Template name"),{target:{value:"Keep my input"}});
+    let finish!: (text:string)=>void;
+    fireEvent.change(view.getByLabelText("Import chart template file"),{target:{files:[{size:200,text:()=>new Promise<string>(resolve=>{finish=resolve;})}]}});
+    currentCandleResponse=makeResponse({...liveFeedStatus(),source:"deriv_public"} as ChartFeedStatus);
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.getByRole("dialog",{name:"Chart templates"})).toBe(dialog);
+    expect((view.getByLabelText("Template name") as HTMLInputElement).value).toBe("Keep my input");
+    expect(adapterSpies.setDrawingHandler.mock.lastCall?.[0]).toBeNull();
+    await act(async()=>finish(JSON.stringify({format:"arx-chart-template",version:1,name:"Checked file",settings:{style:"line",scale:"linear",studies:[]}})));
+    expect(view.getByTestId("chart-template-import-preview")).toBeTruthy();
+    expect(adapterSpies.setChartStyle.mock.lastCall?.[0]).toBe("candles");
+  });
+  it("closes templates and cancels a pending file when the selected chart changes", async () => {
+    currentCandleResponse=undefined;
+    const view=renderChart();
+    fireEvent.click(view.getByRole("button",{name:"Templates",exact:true}));
+    let finish!: (text:string)=>void;
+    fireEvent.change(view.getByLabelText("Import chart template file"),{target:{files:[{size:200,text:()=>new Promise<string>(resolve=>{finish=resolve;})}]}});
+    currentCandleResponse=makeResponse(liveFeedStatus());
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.getByRole("dialog",{name:"Chart templates"})).toBeTruthy();
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.queryByRole("dialog",{name:"Chart templates"})).toBeNull();
+    await act(async()=>finish(JSON.stringify({format:"arx-chart-template",version:1,name:"Too late",settings:{style:"line",scale:"linear",studies:[]}})));
+    fireEvent.click(view.getByRole("button",{name:"Templates",exact:true}));
+    expect(view.queryByTestId("chart-template-import-preview")).toBeNull();
+    expect(localStorage.getItem("arx.chart.templates.v1")).toBeNull();
+  });
   it("supports Home and End only inside the focused chart", () => {
     const view = renderChart();
     const chart=view.getByTestId("arx-native-canvas");

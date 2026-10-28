@@ -16,7 +16,8 @@ configuration. [MT5 templates and profiles](https://www.metatrader5.com/en/termi
 
 ## Implemented behavior
 
-- One compact Templates dialog replaces the single-slot Save/Load buttons.
+- One compact Templates dialog replaces the single-slot Save/Load buttons. Native
+  charts keep its trigger in stable view controls, outside source-keyed drawings.
 - Up to 30 named templates; explicit Save new, Update selected, Rename, Apply,
   Export and confirmed Delete actions. Names are bounded to 64 characters.
 - Templates contain only style, price scale, inversion and up to 12 study
@@ -39,9 +40,14 @@ configuration. [MT5 templates and profiles](https://www.metatrader5.com/en/termi
 - Both same-document chart events and storage events refresh the list. An old
   selection is cleared when its record changes. Closing/unmounting invalidates
   an unfinished file read; asynchronous saves/imports never apply to a chart.
-- Modal keyboard focus follows the visible trigger or the parent Tools/Pan
-  fallback after a compact-layout resize. Escape closes the top dialog before
+- Modal keyboard focus returns to the visible Templates trigger on Native.
+  Replay retains the parent Tools/Pan fallback if its compact toolbar hides it. Escape closes the top dialog before
   exiting chart fullscreen. The latter regression failed before its fix.
+- Source binding does not close an open Native template dialog, erase a typed
+  name or cancel its file read. The library is keyed to actual symbol/timeframe;
+  intentional selection changes still close it and cancel pending file reads.
+  Drawing gestures retain the full symbol/timeframe/source/evidence reset key.
+  Two lifecycle regressions failed before this separate ownership fix.
 
 ## Evidence and explicit gaps
 

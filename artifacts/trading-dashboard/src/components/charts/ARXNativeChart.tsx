@@ -37,6 +37,7 @@ import {
   ArrowRightToLine,
 } from "lucide-react";
 import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { effectiveDisplayZone, formatChartTime, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
@@ -1424,6 +1425,8 @@ export function ARXNativeChart({
             <ArrowRightToLine className="mr-1 h-3.5 w-3.5" /> Latest
           </Button>
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
+          {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
+          <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
 
         </div>
         <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={expanded} onClick={() => setExpanded((v) => !v)}>
@@ -1431,7 +1434,7 @@ export function ARXNativeChart({
           {expanded ? "Exit fullscreen" : "Fullscreen"}
         </Button>
       </div>
-      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools key={chartContext} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
