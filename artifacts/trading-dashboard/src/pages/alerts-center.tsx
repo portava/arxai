@@ -80,9 +80,26 @@ async function postAction(kind: ActionKind, body: Record<string, unknown>): Prom
   return `${verb} failed on the server (HTTP ${r.status}), so nothing changed. The alert is still open.`;
 }
 
+/**
+ * The open-alert badge. The server's count is the true number of open alerts
+ * it holds (not the list limit); it is a lower bound only when the server says
+ * so (countComplete false). A server that does not say keeps the old cautious
+ * reading at the list limit.
+ */
+export function openAlertCountLabel(openCount: number | null, countComplete: boolean | null): string {
+  if (openCount == null) return "open count unknown";
+  if (countComplete === false) return `at least ${openCount} open`;
+  if (countComplete === true) return `${openCount} open`;
+  return openCount >= LIST_LIMIT ? `at least ${LIST_LIMIT} open` : `${openCount} open`;
+}
+
 export default function AlertsCenter() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [openCount, setOpenCount] = useState<number | null>(null);
+  // The server's own word on whether openCount is every open alert (true) or a
+  // lower bound because the in-memory store pushed older open alerts out.
+  const [countComplete, setCountComplete] = useState<boolean | null>(null);
+  const [countNote, setCountNote] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ alertId: string; message: string } | null>(null);
@@ -92,10 +109,12 @@ export default function AlertsCenter() {
     try {
       const x = await fetch(`/api/alerts/scanner?limit=${LIST_LIMIT}${showAll ? "" : "&unackedOnly=true"}`);
       if (!x.ok) throw new Error(`HTTP ${x.status}`);
-      const r = (await x.json()) as { alerts?: unknown; count?: unknown };
+      const r = (await x.json()) as { alerts?: unknown; count?: unknown; countComplete?: unknown; countNote?: unknown };
       if (!Array.isArray(r.alerts)) throw new Error("response had no alert list");
       setAlerts(r.alerts as Alert[]);
       setOpenCount(typeof r.count === "number" && Number.isFinite(r.count) ? r.count : null);
+      setCountComplete(typeof r.countComplete === "boolean" ? r.countComplete : null);
+      setCountNote(typeof r.countNote === "string" && r.countNote !== "" ? r.countNote : null);
       setLoadError(null);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "unknown error");
@@ -123,8 +142,8 @@ export default function AlertsCenter() {
           </p>
         </div>
         <Badge variant="outline">SHARED · ANALYSIS ONLY</Badge>
-        <Badge data-testid="alerts-open-count" title="Open (not acknowledged) alerts in the server's list">
-          {openCount == null ? "open count unknown" : openCount >= LIST_LIMIT ? `at least ${LIST_LIMIT} open` : `${openCount} open`}
+        <Badge data-testid="alerts-open-count" title={countNote ?? "Open (not acknowledged) alerts in the server's list"}>
+          {openAlertCountLabel(openCount, countComplete)}
         </Badge>
         <Button size="sm" variant="outline" onClick={() => setShowAll((s) => !s)}>
           {showAll ? "Show open only" : "Show all"}

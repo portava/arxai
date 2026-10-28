@@ -28,15 +28,34 @@ type Snapshot = {
   safetyMode: string;
   liveExecutionBlocked: boolean;
   lastSyncAt: string | null;
+  /**
+   * False when this user's MT5 positions could not be read; the counts are
+   * then null and an empty list is not "no open positions".
+   */
+  positionsMeasured?: boolean;
+  positionsNote?: string | null;
   openPositions: OpenPos[];
   reconciliation: {
-    mt5OpenPositionCount: number;
-    arxMatchedPositionCount: number;
-    arxOrphanPositionCount: number;
-    filledCommandHistoryCount: number;
-    inSync: boolean;
+    mt5OpenPositionCount: number | null;
+    arxMatchedPositionCount: number | null;
+    arxOrphanPositionCount: number | null;
+    filledCommandHistoryCount: number | null;
+    inSync: boolean | null;
   };
 };
+
+/** Header summary: what was read, or that the positions were not checked. */
+export function openDemoPositionsSummary(snap: Snapshot): string {
+  if (snap.positionsMeasured === false) return "positions not checked";
+  const r = snap.reconciliation;
+  const sync =
+    r?.inSync === true
+      ? "in sync"
+      : typeof r?.arxOrphanPositionCount === "number"
+        ? `${r.arxOrphanPositionCount} orphan`
+        : "sync not checked";
+  return `${snap.openPositions.length} open · ${sync}`;
+}
 
 const TERMINAL = new Set(["FILLED_DEMO", "REJECTED", "FAILED", "BLOCKED"]);
 
@@ -69,6 +88,7 @@ export function OpenDemoPositions() {
       const r = await fetch(`${BASE}/api/me/demo-positions-snapshot`, { credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = (await r.json()) as Snapshot;
+      if (!j || !Array.isArray(j.openPositions)) throw new Error("response had no position list");
       setSnap(j);
     } catch (e) {
       setErr(String((e as Error).message ?? e));
@@ -180,7 +200,7 @@ export function OpenDemoPositions() {
             Open Demo Positions
             {snap && (
               <span className="text-[10px] font-normal text-muted-foreground">
-                · {positions.length} open · {snap.reconciliation.inSync ? "in sync" : `${snap.reconciliation.arxOrphanPositionCount} orphan`}
+                · {openDemoPositionsSummary(snap)}
               </span>
             )}
           </CardTitle>
@@ -189,8 +209,18 @@ export function OpenDemoPositions() {
           </Button>
         </CardHeader>
         <CardContent className="p-0">
-          {err && <div className="text-xs text-rose-400 px-3 py-2">{err}</div>}
-          {!err && positions.length === 0 && (
+          {err && (
+            <div className="text-xs text-rose-400 px-3 py-2">
+              Demo positions could not be loaded ({err}).
+            </div>
+          )}
+          {!err && snap?.positionsMeasured === false && (
+            <div className="text-xs text-amber-300 px-3 py-3" data-testid="open-demo-positions-not-measured">
+              Your demo positions could not be checked, so they are not listed here.
+              {snap.positionsNote ? ` ${snap.positionsNote}` : ""}
+            </div>
+          )}
+          {!err && snap != null && snap.positionsMeasured !== false && positions.length === 0 && (
             <div className="text-xs text-muted-foreground px-3 py-3">
               No open demo positions. Submit a demo trade from the Market Scanner to see it here once filled.
             </div>
