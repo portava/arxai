@@ -18,6 +18,7 @@ import {
   TRUTH_EVIDENCE_CLASS_LABEL,
   TRUTH_EVIDENCE_CLASSES,
   TRUTH_EVIDENCE_REASON_TEXT,
+  TRUTH_EVIDENCE_TICK_SKEW_MS,
 } from "@workspace/domain/truth";
 
 const CLASS_TONE: Record<TruthEvidenceClass, string> = {
@@ -40,22 +41,35 @@ const ROWS: { key: string; label: string; pick: (e: TruthEvidence) => TruthClaim
   { key: "verdict", label: "Overall read", pick: (e) => e.verdict },
 ];
 
-/** "14:03:05 UTC" — the data time a claim rests on; never build time. */
-function observedLabel(iso: string | null): string | null {
+/**
+ * The time a claim rests on, in plain English. A past stamp is the data time
+ * ("Data time 14:03:05 UTC."). A FUTURE stamp is the scheduled close of a bar
+ * that is still forming (the feed's candle close boundary) — that moment has
+ * not happened, so it is never printed as the time the value was observed.
+ */
+function observedLabel(iso: string | null, nowMs: number): string | null {
   if (!iso) return null;
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return null;
-  return `${new Date(ms).toISOString().slice(11, 19)} UTC`;
+  const at = `${new Date(ms).toISOString().slice(11, 19)} UTC`;
+  if (ms > nowMs + TRUTH_EVIDENCE_TICK_SKEW_MS) {
+    return `The bar this rests on is still forming; it closes at ${at}.`;
+  }
+  return `Data time ${at}.`;
 }
 
 export function TruthEvidenceClasses({
   evidence,
   testid = "truth-evidence-classes",
+  nowMs,
 }: {
   evidence: TruthEvidence | null | undefined;
   testid?: string;
+  /** Wall clock used to tell a past data time from a future bar close. */
+  nowMs?: number;
 }) {
   if (!evidence) return null;
+  const now = nowMs ?? Date.now();
   const rows = ROWS.map((r) => ({ ...r, claim: r.pick(evidence) }));
   const counts = TRUTH_EVIDENCE_CLASSES.map((c) => ({
     cls: c,
@@ -71,7 +85,7 @@ export function TruthEvidenceClasses({
       </summary>
       <ul className="mt-2 space-y-1.5">
         {rows.map((r) => {
-          const at = observedLabel(r.claim.observedAt);
+          const at = observedLabel(r.claim.observedAt, now);
           return (
             <li
               key={r.key}
@@ -85,7 +99,7 @@ export function TruthEvidenceClasses({
               </span>
               <span className="text-txt-muted">
                 {TRUTH_EVIDENCE_REASON_TEXT[r.claim.reason]}
-                {at ? ` Data time ${at}.` : ""}
+                {at ? ` ${at}` : ""}
               </span>
             </li>
           );
