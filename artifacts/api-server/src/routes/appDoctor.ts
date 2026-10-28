@@ -88,7 +88,8 @@ router.get("/mt5/diagnostic-summary", async (req, res) => {
       hb = null; // unreadable → bridgeMode "unknown", never "connected"
     } else if (!conn) {
       heartbeatScope = "no_connection";
-      hb = { eaConnected: false, lastHeartbeatAt: null, heartbeatAgeSeconds: null };
+      // No connection with an active token: this caller has no bridge token.
+      hb = { eaConnected: false, lastHeartbeatAt: null, heartbeatAgeSeconds: null, bridgeTokenConfigured: false };
     } else {
       heartbeatScope = "your_connection";
       const at = conn.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
@@ -97,6 +98,10 @@ router.get("/mt5/diagnostic-summary", async (req, res) => {
         eaConnected: isHeartbeatAgeMsFresh(ageMs),
         lastHeartbeatAt: at ? at.toISOString() : null,
         heartbeatAgeSeconds: ageMs != null ? Math.floor(ageMs / 1000) : null,
+        // getUserActiveConnection returns only a connection with an active
+        // bridge token (activeTokenOnly), so this caller has one: a stale
+        // heartbeat is "disconnected" (the EA stopped), never "deferred".
+        bridgeTokenConfigured: true,
       };
     }
   } else {
@@ -132,10 +137,10 @@ router.get("/mt5/diagnostic-summary", async (req, res) => {
   const paperOnly = bridgeMode !== "connected";
 
   const reason =
-    bridgeMode === "deferred"
+    bridgeMode === "deferred" && heartbeatScope === "no_connection"
+      ? "You have no MT5 EA connection of your own with an active bridge token, so no heartbeat is checked for your account. ARX stays in simulator/paper mode for you."
+    : bridgeMode === "deferred"
       ? "No MT5 bridge token is active and no fresh EA heartbeat was received. ARX runs in simulator/paper mode."
-      : bridgeMode === "disconnected" && heartbeatScope === "no_connection"
-        ? "You have no MT5 EA connection of your own, so no heartbeat is checked for your account. ARX stays in simulator/paper mode for you."
       : bridgeMode === "disconnected"
         ? "A bridge token is active, but no fresh EA heartbeat was received. ARX stays in simulator/paper mode until the EA reports in."
         : bridgeMode === "connected"
