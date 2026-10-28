@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldAlert, Plus, X, Lock, Sparkles, GraduationCap, BookOpen, ListChecks, CheckCircle2, AlertTriangle, Ban } from "lucide-react";
+import { ShieldAlert, Plus, X, Sparkles, GraduationCap, BookOpen, ListChecks, CheckCircle2, AlertTriangle, Ban } from "lucide-react";
 
 type PaperTrade = {
   id: number; symbol: string; side: "buy" | "sell"; status: string; entryType: string;
@@ -290,15 +290,14 @@ export default function MyPaperTradesPage() {
           <p className="text-sm text-muted-foreground">Track decisions safely. Simulated entries only — no broker orders are sent.</p>
         </div>
         <div className="flex gap-2">
-          <Badge variant="outline" className="gap-1"><Lock className="h-3 w-3"/>Read-only MT5 bridge</Badge>
           <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-1"/>New demo trade</Button>
         </div>
       </div>
 
       <Alert>
         <ShieldAlert className="h-4 w-4" />
-        <AlertTitle>Demo-only</AlertTitle>
-        <AlertDescription>Live execution is locked. Every action here is a simulated entry/close used to journal your decisions and learn — nothing is sent to a broker.</AlertDescription>
+        <AlertTitle>Simulated trades only</AlertTitle>
+        <AlertDescription>Every trade on this page is a simulated entry or close used to journal your decisions and learn — nothing here is sent to a broker. This page does not show whether live trading is open for your account.</AlertDescription>
       </Alert>
 
       <Tabs defaultValue="trades">
@@ -314,22 +313,27 @@ export default function MyPaperTradesPage() {
         </TabsList>
 
         <TabsContent value="risk" className="space-y-3">
-          <Alert>
-            <Lock className="h-4 w-4"/>
-            <AlertTitle>Risk Governor — demo-only safety net</AlertTitle>
-            <AlertDescription>Live execution is permanently locked. These rules guard your <em>demo</em> decisions so you build discipline before any future bridge.</AlertDescription>
+          <Alert data-testid="risk-governor-scope">
+            <ShieldAlert className="h-4 w-4"/>
+            <AlertTitle>Risk Governor — your saved risk rules</AlertTitle>
+            <AlertDescription>
+              The Risk Governor checks every order against your limits before it is placed: demo trades on this page, and orders on your MT5 demo or live account.
+              Any limit an operator set for you, and the platform ceiling, apply instead where they are stricter.
+              The playbook, pre-trade check and reason-for-entry switches, and overrides, apply only to the demo trades on this page.
+              The today figures below count only the demo trades on this page, not your broker trades.
+            </AlertDescription>
           </Alert>
           {riskStatus && (
             <div className="grid gap-3 md:grid-cols-4">
               <Card><CardHeader className="pb-1"><CardDescription>Today P&amp;L</CardDescription><CardTitle className={riskStatus.today.pnl >= 0 ? "text-emerald-500" : "text-red-500"}>{riskStatus.today.pnl.toFixed(2)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Consecutive losses</CardDescription><CardTitle>{riskStatus.today.consecutiveLosses} / {enforcedLimit(riskStatus, "maxConsecutiveLosses", riskStatus.settings.maxConsecutiveLosses) ?? "off"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.maxConsecutiveLosses?.reason ?? undefined}>{enforcedLimit(riskStatus, "maxConsecutiveLosses", riskStatus.settings.maxConsecutiveLosses) != null ? "Enforced limit" : "Not enforced"}</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Cooldown</CardDescription><CardTitle className={riskStatus.cooldown.active ? "text-amber-500" : ""}>{riskStatus.cooldown.active ? `${riskStatus.cooldown.minutesRemaining}m` : "—"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.cooldownAfterLossMinutes?.reason ?? undefined}>After loss: {enforcedLimit(riskStatus, "cooldownAfterLossMinutes", riskStatus.settings.cooldownAfterLossMinutes) ?? 0}m</CardContent></Card>
-              <Card><CardHeader className="pb-1"><CardDescription>Live contract</CardDescription><CardTitle className="text-sm flex items-center gap-1"><Lock className="h-3 w-3"/>locked</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">demo_only · no broker writes</CardContent></Card>
+              <Card><CardHeader className="pb-1"><CardDescription>Applies to</CardDescription><CardTitle className="text-sm">Every order</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">Demo trades here and MT5 demo or live orders</CardContent></Card>
             </div>
           )}
           {riskDraft && (
             <Card>
-              <CardHeader><CardTitle className="text-base">Your risk rules</CardTitle><CardDescription>Conservative defaults applied. Live safety fields are read-only.</CardDescription></CardHeader>
+              <CardHeader><CardTitle className="text-base">Your risk rules</CardTitle><CardDescription>Saved for your account. An operator limit or the platform ceiling applies instead where it is stricter.</CardDescription></CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-3 text-sm">
                 {[
                   ["maxRiskPerTradePercent","Max risk per trade %"],["maxDailyLossPercent","Max daily loss %"],["minRewardRiskRatio","Min reward:risk"],
@@ -368,7 +372,7 @@ export default function MyPaperTradesPage() {
                     const u = await api<RiskSettings>("POST", "/me/risk-settings/reset-defaults");
                     setRiskDraft(u); toast({ title: "Reset to conservative defaults" });
                   }}>Reset to defaults</Button>
-                  <span className="text-xs text-muted-foreground self-center ml-auto">liveLocked, readOnlyMode, allowOrderExecution are enforced server-side and cannot be changed.</span>
+                  <span className="text-xs text-muted-foreground self-center ml-auto">Whether live trading is open for your account is set by your trading access, not by these rules.</span>
                 </div>
               </CardContent>
             </Card>
