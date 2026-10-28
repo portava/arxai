@@ -152,3 +152,30 @@ describe("My Performance: one failed endpoint is not an empty account", () => {
     expect(screen.queryByText(/your governor is quiet/)).toBeNull();
   });
 });
+
+describe("My Performance: cooldown card", () => {
+  it("says the cooldown is not enforced instead of 'After loss: 0m' when no limit applies", async () => {
+    const status = riskStatus({
+      effective: {
+        maxConsecutiveLosses: view("Losses in a row", "count", 3, 3),
+        cooldownAfterLossMinutes: { ...view("Cooldown after a loss", "min", null, null), source: "disabled_by_user" },
+      },
+    });
+    stubFetch(okBodies({ "/api/me/risk/status": status }));
+    render(<MyPerformancePage />);
+    await waitFor(() => expect(screen.getByText("EURUSD")).toBeTruthy());
+    selectTab(/Risk Governor/);
+    await waitFor(() => expect(screen.getByTestId("risk-cooldown-limit")).toBeTruthy());
+    expect(screen.getByTestId("risk-cooldown-limit").textContent).not.toMatch(/0m/);
+    expect(screen.getByTestId("risk-cooldown-limit").textContent).toMatch(/Not enforced/);
+  });
+
+  it("shows the enforced cooldown when one applies", async () => {
+    stubFetch(okBodies());
+    render(<MyPerformancePage />);
+    await waitFor(() => expect(screen.getByText("EURUSD")).toBeTruthy());
+    selectTab(/Risk Governor/);
+    await waitFor(() => expect(screen.getByTestId("risk-cooldown-limit")).toBeTruthy());
+    expect(screen.getByTestId("risk-cooldown-limit").textContent).toBe("After loss: 15m");
+  });
+});
