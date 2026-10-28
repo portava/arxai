@@ -44,10 +44,14 @@ directory). No evaluated bindings are needed for the default server.
 
 The setup labels historical data synthetic, provides disabled account gates
 and unavailable analysis truth, and intercepts every HTTP request. It blocks
-external HTTP, WebSockets and every write, including the app's presence ping.
+external HTTP, WebSockets and every write, including the app's presence ping
+and scheduled chart AI-alert scan. Those two exact POST routes are recorded
+as blocked background attempts; they never reach a server.
 Unknown API reads return 503 and remain in the report; they are not fabricated
-as valid data. Other mutation attempts, external attempts and page errors fail
-acceptance. No order control is clicked.
+as valid data. Known trade routes and other unclassified write attempts, external attempts
+and page errors fail acceptance independently. `noTradeRequests` describes the
+trade-route classification; `noWritesBeyondKnownBackground` covers all other
+writes too. No order control is clicked.
 
 Acceptance requires the shared chart inside the actual Scanner, no old Scanner
 renderer or embedded widget, exact full canonical **and real displayed** OHLC

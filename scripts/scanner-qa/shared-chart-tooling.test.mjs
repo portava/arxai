@@ -5,6 +5,23 @@ import vm from 'node:vm';
 
 const setupSource=readFileSync(new URL('./shared-chart-setup.js',import.meta.url),'utf8');
 const acceptanceSource=readFileSync(new URL('./shared-chart-acceptance.js',import.meta.url),'utf8');
+const classificationSource=acceptanceSource.match(/  function classifyWrite\(request\) \{[\s\S]*?\n  \}/)?.[0];
+assert.ok(classificationSource,'Write classifier must remain discoverable');
+const classifyWrite=vm.runInNewContext('('+classificationSource+')');
+test('background classification requires exact known routes and POST method',()=>{
+  for(const path of ['/api/me/activity-ping','/api/me/chart/ai-alerts/scan']){
+    assert.equal(classifyWrite({path,method:'POST'}),'background');
+    assert.equal(classifyWrite({path,method:'DELETE'}),'unclassified');
+  }
+  assert.equal(classifyWrite({path:'/api/me/chart/ai-alerts/scan/execute',method:'POST'}),'unclassified');
+});
+test('trade writes are distinct from blocked annotations and ordinary read requests',()=>{
+  for(const path of ['/api/trades/instant/execute','/api/trades/instant/close','/api/me/pending-order-draft/1',
+    '/api/me/live/commands/confirm','/api/me/paper/orders','/api/positions/1/close-confirmation',
+    '/api/execution-confirmations/1/confirm','/api/me/assistant/instant-trade-command'])assert.equal(classifyWrite({path,method:'POST'}),'trade',path);
+  assert.equal(classifyWrite({path:'/api/me/chart-annotations',method:'POST'}),'unclassified');
+  assert.equal(classifyWrite({path:'/api/me/live/positions',method:'GET'}),'read');
+});
 const pollSource=acceptanceSource.match(/await page\.waitForFunction\((async\(\{symbol,timeframe,intervalSeconds\}\)=>\{[\s\S]*?)\n    \},\{symbol,timeframe,intervalSeconds\}/)?.[1]+'\n}';
 assert.ok(pollSource.startsWith('async('),'Actual-series predicate must remain discoverable');
 const expected=[{time:100,open:1,high:3,low:.5,close:2},{time:400,open:2,high:4,low:1,close:3}];
@@ -44,6 +61,13 @@ test('fixture blocks external reads and mutations before any real request',async
   assert.equal((await f.call('http://127.0.0.1:4199/api/orders','POST')).status,503);
   assert.equal((await f.call('http://127.0.0.1:4199/non-api-action','POST')).status,503);
   assert.equal(f.log().blocked.length,3);
+  assert.equal(f.log().blocked.filter(x=>x.kind==='mutation').every(x=>x.status===503),true);
+});
+test('known background writes are blocked too, never fulfilled as valid side effects',async()=>{
+  const f=await fixture();
+  for(const path of ['/api/me/activity-ping','/api/me/chart/ai-alerts/scan'])assert.equal((await f.call('http://127.0.0.1:4199'+path,'POST')).status,503);
+  assert.equal(f.log().blocked.length,2);
+  assert.equal(f.log().blocked.every(x=>x.status===503),true);
 });
 test('fixture allows local assets, refuses unmocked API reads and caps synthetic history',async()=>{
   const f=await fixture();

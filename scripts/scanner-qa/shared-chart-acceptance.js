@@ -5,6 +5,16 @@ async page => {
       'Rendering opportunities and real series data are observed; hardware paint and latency targets are not measured.',
       'No broker tests and no matched TradingView or MT5 comparison.']};
   const prefix=typeof SCANNER_QA_OUTPUT_PREFIX==='string'?SCANNER_QA_OUTPUT_PREFIX:'.playwright-cli/scanner-shared-chart';
+  // Classification changes the report, never the route barrier: every write
+  // receives 503. Only these exact POSTs are known non-trading background work.
+  function classifyWrite(request) {
+    if(request.method==='GET'||request.method==='HEAD')return 'read';
+    if(request.method==='POST'&&['/api/me/activity-ping','/api/me/chart/ai-alerts/scan'].includes(request.path))return 'background';
+    // Scanner order/management routes, including preparation and confirmation.
+    // Unknown writes still fail separately, so this list is not an allowlist.
+    if(/^\/api\/(?:trades?(?:\/|$)|orders?(?:\/|$)|positions?(?:\/|$)|execution-confirmations(?:\/|$)|trade-actions?(?:-center)?(?:\/|$)|live-ops(?:\/|$)|(?:me\/)?(?:live|paper)\/(?:commands?|orders?|drafts?|positions?|execute|confirm|close|modify|cancel|reverse)(?:\/|$)|me\/(?:pending-order-drafts?(?:\/|$)|assistant\/instant-trade-command(?:\/|$)|chart\/decision-receipt(?:\/|$)))/.test(request.path))return 'trade';
+    return 'unclassified';
+  }
   const check=(condition,message)=>{if(!condition)throw Error(message);report.checks.push(message);};
   const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const snapshot=()=>page.evaluate(()=>({state:window.__arxChartQa?.snapshot(),data:window.__arxChartQa?.data()}));
@@ -92,25 +102,28 @@ async page => {
     if(await tools.getAttribute('aria-expanded')==='true')await tools.click();
     await frames();await screenshot('mobile-closed');
     check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile page has no horizontal overflow');
-    await tools.click();await panel.getByRole('button',{name:'Zoom in chart',exact:true}).waitFor({state:'visible'});await frames();
-    check(await tools.getAttribute('aria-expanded')==='true','Mobile tools expand and reveal real chart controls');
+    await tools.click();await panel.getByLabel('Chart style',{exact:true}).waitFor({state:'visible'});await frames();
+    check(await tools.getAttribute('aria-expanded')==='true'&&await panel.getByRole('button',{name:/^Studies \(/}).isVisible(),'Mobile tools expand and reveal style and study controls');
     await tools.click();await frames();
     const mobileAfter=await save('mobile-closed');
     check(mobileAfter.state.adapterId===mobileBefore.state.adapterId&&mobileAfter.state.candlesId===mobileBefore.state.candlesId&&JSON.stringify(mobileAfter.data.canonical)===JSON.stringify(mobileBefore.data.canonical),'Mobile tools preserve engine and exact canonical bars');
-    check(!await panel.getByRole('button',{name:'Zoom in chart',exact:true}).isVisible(),'Mobile tools close and hide advanced controls');
+    check(!await panel.getByLabel('Chart style',{exact:true}).isVisible()&&!await panel.getByRole('button',{name:/^Studies \(/}).isVisible(),'Mobile tools close and hide style and study controls');
+    check(await panel.getByRole('button',{name:'Zoom in chart',exact:true}).isVisible()&&await panel.getByRole('button',{name:'Zoom out chart',exact:true}).isVisible()
+      &&await panel.getByRole('button',{name:'Pan to earlier candles',exact:true}).isVisible()&&await panel.getByRole('button',{name:'Pan to later candles',exact:true}).isVisible(),'Mobile zoom and pan remain visible with advanced tools closed');
     report.passed=true;
   } catch(error) {report.failure=String(error?.stack??error);try{await save('failure');await screenshot('failure');}catch(snapshotError){report.failureCaptureError=String(snapshotError);}}
   finally {
     try {
       report.network=await page.evaluate(()=>window.__readFixtureLog());
-      // The app presence hook may attempt this write. It must be blocked too;
-      // recording it separately is not an exemption permitting any mutation.
-      report.blockedPresenceRequests=report.network.blocked.filter(x=>x.kind==='mutation'&&x.path==='/api/me/activity-ping');
-      const otherMutations=report.network.blocked.filter(x=>x.kind==='mutation'&&x.path!=='/api/me/activity-ping');
+      const writes=report.network.blocked.filter(x=>x.kind==='mutation');
+      report.blockedBackgroundRequests=writes.filter(x=>classifyWrite(x)==='background');
+      report.tradeRequests=writes.filter(x=>classifyWrite(x)==='trade');
+      report.unclassifiedWriteRequests=writes.filter(x=>classifyWrite(x)==='unclassified');
       const external=report.network.blocked.filter(x=>x.kind==='external'||x.kind==='websocket');
-      if(otherMutations.length||external.length||report.network.errors.length){report.passed=false;report.networkFailure={otherMutations,external,pageErrors:report.network.errors};}
-      report.noTradeRequests=otherMutations.length===0;
-      report.allMutationRequestsBlocked=report.network.requests.filter(x=>x.method!=='GET').every(x=>x.status===503);
+      if(report.tradeRequests.length||report.unclassifiedWriteRequests.length||external.length||report.network.errors.length){report.passed=false;report.networkFailure={tradeRequests:report.tradeRequests,unclassifiedWriteRequests:report.unclassifiedWriteRequests,external,pageErrors:report.network.errors};}
+      report.noTradeRequests=report.tradeRequests.length===0;
+      report.noWritesBeyondKnownBackground=report.tradeRequests.length===0&&report.unclassifiedWriteRequests.length===0;
+      report.allMutationRequestsBlocked=writes.every(x=>x.status===503)&&report.network.requests.filter(x=>x.method!=='GET').every(x=>x.status===503);
       if(!report.allMutationRequestsBlocked)report.passed=false;
     }catch(error){report.passed=false;report.logFailure=String(error);}
   }

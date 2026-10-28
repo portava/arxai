@@ -27,11 +27,11 @@ async page => {
  await page.context().route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url());
   if(url.origin!==origin){blocked.push({kind:'external',url:request.url()});return route.abort();}
-  if(!url.pathname.startsWith('/api/')){if(request.method()!=='GET'){blocked.push({kind:'mutation',path:url.pathname,method:request.method()});return route.fulfill({status:503,contentType:'application/json',body:'{\"error\":\"OFFLINE_MUTATION_BLOCKED\"}'});}return route.continue();}
+  if(!url.pathname.startsWith('/api/')){if(request.method()!=='GET'){blocked.push({kind:'mutation',path:url.pathname,method:request.method(),status:503});return route.fulfill({status:503,contentType:'application/json',body:'{\"error\":\"OFFLINE_MUTATION_BLOCKED\"}'});}return route.continue();}
   const item={path:url.pathname,query:url.search,method:request.method(),started:Date.now(),ended:null,status:200};requests.push(item);
   let payload,status=200,delay=20;
   const p=url.pathname,symbol=url.searchParams.get('symbol')??'EURUSD',tf=url.searchParams.get('timeframe')??'M15';
-  if(request.method()!=='GET'){status=503;payload={ok:false,error:'OFFLINE_MUTATION_BLOCKED'};blocked.push({kind:'mutation',path:p,method:request.method()});}
+  if(request.method()!=='GET'){status=503;payload={ok:false,error:'OFFLINE_MUTATION_BLOCKED'};blocked.push({kind:'mutation',path:p,method:request.method(),status:503});}
   else if(p==='/api/me')payload={user:{id:900007,email:'offline@example.invalid',name:'Offline QA',role:'USER',lastLoginAt:null,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-01T00:00:00Z'}};
   else if(p==='/api/me/account-mode')payload=mode;
   else if(p==='/api/me/assistant-settings')payload={displayName:'Eleanor',isDefault:true};
