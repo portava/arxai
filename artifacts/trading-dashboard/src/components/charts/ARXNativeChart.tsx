@@ -33,7 +33,8 @@ import {
 import { ChartWorkbenchTools, chartExportFeedLabel } from "./ChartWorkbenchTools";
 import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
-import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
+import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
+import { publishChartPricePrecision } from "@/components/charts/chartPricePrecisionStore";
 import { CHART_TIME_AXIS_LABEL, CHART_TIME_AXIS_TITLE } from "@/components/scanner/scannerChartFormat";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
@@ -252,13 +253,15 @@ export function ARXNativeChart({
   const studyInspectorRef = useRef<HTMLOutputElement | null>(null);
   const dataWindowRef = useRef<HTMLDetailsElement | null>(null);
   const inspectedCandleRef = useRef<ChartEngineCandle | null>(null);
+  const pricePrecisionRef = useRef<number | null>(null);
   const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
     const bar = candle;
     inspectedCandleRef.current = bar;
     if (!legendRef.current) return;
-    const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
+    // Same instrument precision as the axis and header (pricePrecisionRef).
+    const p = pricePrecisionRef.current;
     legendRef.current.textContent = bar
-      ? `${new Date(bar.time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}`
+      ? `${new Date(bar.time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC  ·  O ${formatInstrumentPrice(bar.open, p)}  H ${formatInstrumentPrice(bar.high, p)}  L ${formatInstrumentPrice(bar.low, p)}  C ${formatInstrumentPrice(bar.close, p)}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
@@ -595,6 +598,26 @@ export function ARXNativeChart({
       : null;
   }, [mergedEngineCandles]);
 
+  // ONE display precision for this instrument (lib/instrumentPriceFormat): the
+  // server-declared precision widened by the digits the loaded quotes carry —
+  // the same rule the Scanner chart, header and trade modal use. The axis
+  // (adapter.setDisplayPricePrecision), the header badge, the crosshair legend
+  // and the side panels (chartPricePrecisionStore) all print with it.
+  const serverPricePrecision = data?.truthResult?.pricePrecision ?? null;
+  const pricePrecision = useMemo(
+    () => resolveDisplayPricePrecision(
+      serverPricePrecision,
+      mergedEngineCandles.flatMap((c) => [c.open, c.high, c.low, c.close]),
+    ),
+    [serverPricePrecision, mergedEngineCandles],
+  );
+  pricePrecisionRef.current = pricePrecision;
+  const precisionOwner = useRef({}).current;
+  useEffect(
+    () => publishChartPricePrecision(resolvedSymbol, pricePrecision, precisionOwner),
+    [resolvedSymbol, pricePrecision, precisionOwner],
+  );
+
   const historySource = data?.feedStatus?.source ?? null;
 
   // ── Push data into the existing series on every poll WITHOUT recreating the
@@ -612,6 +635,7 @@ export function ARXNativeChart({
     // rule). chartEpoch re-runs this after a context reset so the retained engine
     // is populated immediately rather than waiting for the next poll.
     adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance, source: historySource });
+    adapter.setDisplayPricePrecision?.(pricePrecision);
     adapter.setCandles(mergedEngineCandles);
     // Keep the newest-bar watermark in sync with the authoritative closed
     // window. When the poll reconciles a new closed bar it advances here, so the
@@ -619,7 +643,7 @@ export function ARXNativeChart({
     // closed bar cleanly supersedes any prior synthesized tip with no orphan dup.
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
-  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext]);
+  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
 
   // ── Real-time forming-tip (Task #501). Subscribe to the SAME server SSE
   //    tick-stream the Scanner chart uses (Task #496) for the current
@@ -1005,12 +1029,6 @@ export function ARXNativeChart({
     showFeedStatus && hasCandles && !isSafeMode && conf.severity !== "clean";
   const showNotAiConfirmed = showFeedStatus && hasCandles && !aiUsable && !isSafeMode;
 
-  // Same digit count the price axis uses (adapter.applyPricePrecision), so the
-  // header and the axis never print the same bar with different precision.
-  const decimals = useMemo(
-    () => candleDisplayPrecision(mergedEngineCandles, resolvedSymbol),
-    [mergedEngineCandles, resolvedSymbol],
-  );
 
   // The stream's marketFrozen flag means "the broker keeps repeating one
   // quote"; only the instrument's scheduled weekend close (the same window the
@@ -1051,7 +1069,7 @@ export function ARXNativeChart({
                   : "Close of the newest bar received. The feed is not live-confirmed, so this may not be the current price."}
               >
                 {isLivePriceAffordance ? "" : "Last known "}
-                {lastClose.toFixed(decimals)}
+                {formatInstrumentPrice(lastClose, pricePrecision)}
               </Badge>
             )}
             {positionCount > 0 && (

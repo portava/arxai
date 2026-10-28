@@ -51,6 +51,7 @@ const adapterSpies = {
   setScaleMode: vi.fn(),
   setReachStartHandler: vi.fn(),
   priceToCoordinate: vi.fn(() => null),
+  setDisplayPricePrecision: vi.fn(),
 };
 
 vi.mock("@/lib/chart-engine", () => ({
@@ -417,5 +418,34 @@ describe("the frozen-quote chip follows the server's closed-market semantics", (
     renderChart();
     emitFrozen();
     expect(screen.getByTestId(CHIP).textContent).toMatch(/Quote not moving/);
+  });
+});
+
+describe("one instrument precision on the native chart's axis, header and side panels", () => {
+  function withServerPrecision(p: number | null): ChartCandlesResponse {
+    return { ...makeResponse(), truthResult: { pricePrecision: p } } as unknown as ChartCandlesResponse;
+  }
+
+  it("resolves the shared precision (server-declared, widened by observed digits) for the header and the axis", () => {
+    setResponse(withServerPrecision(4));
+    renderChart();
+    expect(screen.getByTestId("arx-native-last").textContent).toMatch(/1\.1020$/);
+    expect(adapterSpies.setDisplayPricePrecision).toHaveBeenLastCalledWith(4);
+  });
+
+  it("with no server precision the quotes' own digits decide, not a fiat-pair guess", () => {
+    setResponse(withServerPrecision(null));
+    renderChart();
+    expect(screen.getByTestId("arx-native-last").textContent).toMatch(/1\.102$/);
+    expect(adapterSpies.setDisplayPricePrecision).toHaveBeenLastCalledWith(3);
+  });
+
+  it("publishes the precision for the side panels of the same symbol and withdraws it on unmount", async () => {
+    const { readChartPricePrecision } = await import("./chartPricePrecisionStore");
+    setResponse(withServerPrecision(4));
+    const view = renderChart();
+    expect(readChartPricePrecision(SYMBOL)).toBe(4);
+    view.unmount();
+    expect(readChartPricePrecision(SYMBOL)).toBeNull();
   });
 });

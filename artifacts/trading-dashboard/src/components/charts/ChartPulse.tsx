@@ -6,6 +6,8 @@ import { Activity, AlertTriangle } from "lucide-react";
 import { feedConfidence } from "@/lib/feed-confidence";
 import { toneClasses } from "@/lib/chart-sentence-tone";
 import { useAssistantName } from "@/lib/assistant-name";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { useChartPricePrecision } from "./chartPricePrecisionStore";
 
 // ChartPulse — Chart Brain v2 (Task 3) compact at-a-glance state panel.
 //
@@ -30,12 +32,6 @@ interface PulseItem {
   testid: string;
 }
 
-function fmtPrice(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const decimals = abs < 10 ? 5 : abs < 1000 ? 3 : 2;
-  return n.toFixed(decimals);
-}
 
 function titleCase(s: string): string {
   return s
@@ -49,7 +45,9 @@ function biasTone(b: string): ChartMarketSentenceTone {
   return "neutral";
 }
 
-function buildItems(state: ChartState): PulseItem[] {
+// Prices print at the precision the chart resolved for this symbol (shared
+// rule, lib/instrumentPriceFormat), so a level never disagrees with the axis.
+function buildItems(state: ChartState, pricePrecision: number | null): PulseItem[] {
   const mu = state.marketUnderstanding;
   const items: PulseItem[] = [];
 
@@ -96,7 +94,7 @@ function buildItems(state: ChartState): PulseItem[] {
   items.push({
     label: "Active level",
     value: nearest
-      ? `${nearest.kind === "support" ? "Sup" : "Res"} ${fmtPrice(nearest.price)}`
+      ? `${nearest.kind === "support" ? "Sup" : "Res"} ${formatInstrumentPrice(nearest.price, pricePrecision)}`
       : "None",
     tone: nearest ? "info" : "neutral",
     testid: "pulse-level",
@@ -168,6 +166,7 @@ function buildItems(state: ChartState): PulseItem[] {
 }
 
 export function ChartPulse({ state }: { state: ChartState | null }) {
+  const pricePrecision = useChartPricePrecision(state?.symbol ?? null);
   const { name } = useAssistantName();
   if (!state) {
     return (
@@ -182,7 +181,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
 
   const conf = feedConfidence(state.truthState);
   const dirty = state.stale || !state.aiUsable || conf.severity === "danger";
-  const items = buildItems(state);
+  const items = buildItems(state, pricePrecision);
   const bestAction = state.marketSentences.bestNextAction;
   const baTone = toneClasses(bestAction.tone);
 
