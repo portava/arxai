@@ -114,6 +114,69 @@ function permissionWords(p: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+export interface TimingChipRead {
+  generatedAt?: string;
+  timeframe?: string;
+  timingGrade: string;
+  entryPermission: string;
+  heatScore?: number;
+  dataQuality?: { label?: string; hasCandleData?: boolean; note?: string } | null;
+}
+
+/**
+ * What a timing chip may show for one chart:
+ *  - "hidden": nothing to show (no grade, a fallback timeframe, a session-only
+ *    estimate, or the chart's feed gate is downgraded);
+ *  - "not_current": a grade exists but no current read backs it (failed
+ *    refetch, past its advice lifetime, missing/future build time);
+ *  - "current": a grade backed by a current read of this chart's candles.
+ */
+export type TimingChipReadState =
+  | { kind: "hidden" }
+  | { kind: "not_current"; isError: boolean }
+  | { kind: "current"; read: TimingChipRead };
+
+/**
+ * The ONE set of timing-chip rules, shared by the chart-header chip and the
+ * Ruby chat chip so the two can never disagree on the same screen: same
+ * request (and so the same query / server cache entry), same echo, candle,
+ * error, age and feed-gate checks.
+ *
+ * @param gateTimeframe the scanner chart timeframe the feed gate is read for (e.g. "1m")
+ */
+export function useTimingChipRead(
+  symbol: string,
+  apiTf: NonNullable<GetTimingBrainParams["timeframe"]>,
+  gateTimeframe: string,
+): TimingChipReadState {
+  const tz = useMemo(() => userTimingTimezone(), []);
+  const params = useMemo(() => timingBrainParams(apiTf, tz), [apiTf, tz]);
+  const q = useGetTimingBrain(symbol, params, {
+    query: { queryKey: getGetTimingBrainQueryKey(symbol, params), refetchInterval: 30_000, staleTime: 20_000 },
+  });
+  const gate = useScannerReadGate(symbol, gateTimeframe);
+  const read = q.data as Partial<TimingChipRead> | undefined;
+  const builtAt = typeof read?.generatedAt === "string" ? Date.parse(read.generatedAt) : NaN;
+  const expiresAt = timingReadExpiresAtMs(read?.generatedAt);
+  const nowMs = useEvidenceDeadline(Number.isFinite(expiresAt) ? expiresAt + 1 : null);
+  if (!read?.timingGrade || !read.entryPermission) return { kind: "hidden" };
+  // The server's echo is the authority on which timeframe this grade is for.
+  if (read.timeframe !== apiTf) return { kind: "hidden" };
+  // A session-only estimate is not a read of this chart's candles.
+  if (read.dataQuality?.hasCandleData !== true) return { kind: "hidden" };
+  // The chart's feed is not confirmed: no timing grade over it (the chart
+  // header already states the feed condition).
+  if (gate.downgraded) return { kind: "hidden" };
+  const current =
+    !q.isError &&
+    Number.isFinite(builtAt) &&
+    builtAt <= nowMs + FUTURE_SKEW_MS &&
+    // Past the advice lifetime (or no valid compute time): not current advice.
+    isTimingReadCurrent(read.generatedAt, nowMs);
+  if (!current) return { kind: "not_current", isError: q.isError === true };
+  return { kind: "current", read: read as TimingChipRead };
+}
+
 /**
  * @param apiTf          the chart's canonical timeframe (e.g. "M1")
  * @param timeframeLabel the chart pill label for the same timeframe (e.g. "1m")
@@ -140,46 +203,15 @@ function SupportedTimingChip({
   apiTf: NonNullable<GetTimingBrainParams["timeframe"]>;
   timeframeLabel: string;
 }) {
-  const tz = useMemo(() => userTimingTimezone(), []);
-  const params = useMemo(() => timingBrainParams(apiTf, tz), [apiTf, tz]);
-  const q = useGetTimingBrain(symbol, params, {
-    query: { queryKey: getGetTimingBrainQueryKey(symbol, params), refetchInterval: 30_000, staleTime: 20_000 },
-  });
-  const gate = useScannerReadGate(symbol, timeframeLabel);
-  const read = q.data as
-    | {
-        generatedAt?: string;
-        timeframe?: string;
-        timingGrade?: string;
-        entryPermission?: string;
-        heatScore?: number;
-        dataQuality?: { hasCandleData?: boolean } | null;
-      }
-    | undefined;
-  const builtAt = typeof read?.generatedAt === "string" ? Date.parse(read.generatedAt) : NaN;
-  const expiresAt = timingReadExpiresAtMs(read?.generatedAt);
-  const nowMs = useEvidenceDeadline(Number.isFinite(expiresAt) ? expiresAt + 1 : null);
-  if (!read?.timingGrade || !read.entryPermission) return null;
-  // The server's echo is the authority on which timeframe this grade is for.
-  if (read.timeframe !== apiTf) return null;
-  // A session-only estimate is not a read of this chart's candles.
-  if (read.dataQuality?.hasCandleData !== true) return null;
-  // The chart's feed is not confirmed: no timing grade over it (the chart
-  // header already states the feed condition).
-  if (gate.downgraded) return null;
-  const current =
-    !q.isError &&
-    Number.isFinite(builtAt) &&
-    builtAt <= nowMs + FUTURE_SKEW_MS &&
-    // Past the advice lifetime (or no valid compute time): not current advice.
-    isTimingReadCurrent(read.generatedAt, nowMs);
-  if (!current) {
+  const state = useTimingChipRead(symbol, apiTf, timeframeLabel);
+  if (state.kind === "hidden") return null;
+  if (state.kind === "not_current") {
     return (
       <Badge
         variant="outline"
         className="gap-1 border-border text-[10px] text-txt-muted"
         title={
-          q.isError
+          state.isError
             ? `The ${timeframeLabel} timing read could not be refreshed — no grade is shown until a current read arrives.`
             : `The last ${timeframeLabel} timing read is not current — no grade is shown until a fresh read arrives.`
         }
@@ -190,6 +222,7 @@ function SupportedTimingChip({
       </Badge>
     );
   }
+  const { read } = state;
   const perm = permissionWords(read.entryPermission);
   return (
     <Badge
