@@ -87,6 +87,8 @@ describe("Live AI Assist card truth", () => {
     const prov = screen.getByTestId("ai-card-provenance").textContent ?? "";
     expect(prov).toContain("MT5 broker feed");
     expect(prov).toContain("2026-10-28 09:00 UTC");
+    expect(prov).toContain("M15 read");
+    expect(screen.getByTestId("ai-chart-source-note").textContent).toMatch(/TradingView widget \(FX:EURUSD\), a third-party price source/);
 
     fireEvent.click(screen.getByTestId("approve-card"));
     await screen.findByTestId("ai-assist-response");

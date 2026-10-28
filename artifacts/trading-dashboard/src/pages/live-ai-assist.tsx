@@ -28,6 +28,8 @@ type TradeCard = {
   /** Why the levels were withheld, or null when they were shown. */
   levelsWithheldReason: string | null;
   riskWarnings: string[];
+  /** Timeframe the read was computed on (the page requests M15). */
+  timeframe: string | null;
 };
 
 function positiveOrNull(v: unknown): number | null {
@@ -129,6 +131,7 @@ export function snapshotToState(snap: any): FeedState {
         ? (snap.levelsWithheldReason || "The feed did not supply entry, stop and target levels.")
         : null,
       riskWarnings: Array.isArray(h.riskWarnings) ? h.riskWarnings.filter((w: unknown) => typeof w === "string") : [],
+      timeframe: typeof snap.timeframe === "string" && snap.timeframe ? snap.timeframe : null,
     },
   };
 }
@@ -275,7 +278,7 @@ export default function LiveAiAssistPage() {
               <CardHeader><CardTitle className="text-sm flex justify-between">{card.symbol} <Badge>{card.direction}</Badge></CardTitle><CardDescription>{card.setup}</CardDescription></CardHeader>
               <CardContent className="space-y-2 text-xs">
                 <p className="text-[11px] text-muted-foreground" data-testid="ai-card-provenance">
-                  Source: {card.sourceLabel ?? "not stated by the feed"} · data as of {fmtUtc(card.dataAsOf) ?? "an unknown time"}
+                  {card.timeframe ? `${card.timeframe} read · ` : ""}Source: {card.sourceLabel ?? "not stated by the feed"} · data as of {fmtUtc(card.dataAsOf) ?? "an unknown time"}
                   {fmtUtc(card.liveClaimExpiresAt) ? ` · live read holds until ${fmtUtc(card.liveClaimExpiresAt)}; analyze again after that` : ""}
                 </p>
                 <div className="grid grid-cols-3 gap-1 font-mono">
@@ -347,7 +350,13 @@ export default function LiveAiAssistPage() {
             </Card>
           )}
         </div>
-        <TradingViewLiveChart defaultSymbol={tvSymbol} height={620} compact />
+        <div className="space-y-1">
+          {/* The chart is a third-party widget; the card reads ARX's own feed. */}
+          <p className="text-[11px] text-muted-foreground" data-testid="ai-chart-source-note">
+            Chart: TradingView widget ({tvSymbol}), a third-party price source. The AI card reads ARX&apos;s market feed, so prices and candles can differ from this chart and from your broker.
+          </p>
+          <TradingViewLiveChart defaultSymbol={tvSymbol} height={620} compact />
+        </div>
       </div>
       {card && (
         <LiveSharedTradeTicket
