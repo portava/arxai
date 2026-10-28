@@ -330,6 +330,26 @@ export default function EconomicCalendarPage() {
     },
   });
 
+  // What the page actually read. Only a connected provider has checked the
+  // calendar; otherwise the list is stored events at best, and an empty list
+  // or a "Low" rating would be an unmeasured value shown as a pass.
+  const coverage: "loading" | "connected" | "not_configured" | "provider_error" | "status_unknown" =
+    providerStatus.isLoading ? "loading"
+    : providerStatus.isError ? "status_unknown"
+    : isConnected ? "connected"
+    : providerStatus.data?.configured ? "provider_error"
+    : "not_configured";
+  const coverageNote: string = (
+    coverage === "not_configured"
+      ? "No live calendar provider is configured, so scheduled releases were not checked. Only manually synced events are shown."
+      : coverage === "provider_error"
+        ? `${providerLabel(providerStatus.data?.provider)} is configured but the last fetch failed, so scheduled releases were not checked. Only stored events are shown.`
+        : coverage === "status_unknown"
+          ? "Could not read the calendar provider status, so scheduled releases were not checked. Only stored events are shown."
+          : ""
+  ) + (coverage !== "connected" && dbEvents.isError ? " Stored events could not be loaded either." : "")
+    + (coverage !== "connected" && coverage !== "loading" ? " The absence of an event is not an all-clear." : "");
+
   const sync = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/economic-events/sync", {
@@ -378,11 +398,17 @@ export default function EconomicCalendarPage() {
     const upcoming = dayEvents.filter((e) => eventPending(e, Date.now()));
     const next = upcoming[0] ?? null;
     const maxRank = dayEvents.reduce((m, e) => Math.max(m, IMPACT_RANK[e.impactLevel]), 0);
-    const overall = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low" : "Low";
-    const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400" : "text-primary";
+    // "Low" / "None listed" are claims about the whole calendar, so they need a
+    // connected provider. Without one, a listed Medium+ event is still a real
+    // floor ("at least"), but anything lower is Unknown.
+    const level = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low" : "None listed";
+    const overall = isConnected ? level : maxRank >= 2 ? level : "Unknown";
+    const overallQualifier = !isConnected && maxRank >= 2 ? "At least — calendar provider not read" : null;
+    const overallTone = overall === "Unknown" ? "text-txt-muted"
+      : maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400" : "text-primary";
     const affected = next?.affectedSymbols ?? [];
-    return { count: dayEvents.length, critical, high, next, overall, overallTone, affected };
-  }, [allEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { count: dayEvents.length, critical, high, next, overall, overallQualifier, overallTone, affected };
+  }, [allEvents, isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Markets to watch — derived from the next/high-impact events' affected symbols.
   const marketsToWatch = useMemo(() => {
@@ -475,6 +501,15 @@ export default function EconomicCalendarPage() {
         )
       )}
 
+      {providerStatus.isError && (
+        <div data-testid="calendar-status-unknown" className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-300">
+          <span className="font-semibold">Could not read the calendar provider status</span>
+          {providerStatus.error instanceof Error ? ` (${providerStatus.error.message})` : ""}.{" "}
+          Events below, if any, are from the local database. The absence of an event is{" "}
+          <span className="font-semibold">not an all-clear</span>.
+        </div>
+      )}
+
       {settingsOpen && (
         <div className="rounded-2xl border border-border bg-card p-4 text-sm text-txt-secondary">
           <div className="flex items-center justify-between">
@@ -490,7 +525,11 @@ export default function EconomicCalendarPage() {
       {/* Today's Market Risk */}
       <div className="rounded-2xl border border-border bg-card p-5">
         {allEvents.length === 0 && !providerStatus.isLoading && !dbEvents.isLoading ? (
-          <div className="text-sm text-txt-secondary">No major events found for today.</div>
+          <div data-testid="market-risk-empty" className="text-sm text-txt-secondary">
+            {coverage === "connected"
+              ? `${providerLabel(providerStatus.data?.provider)} lists no events in this window.`
+              : coverageNote}
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div>
@@ -505,8 +544,9 @@ export default function EconomicCalendarPage() {
                     <ShieldAlert className="h-6 w-6" />
                   </span>
                   <div>
-                    <div className={cn("text-xl font-bold", summary.overallTone)}>{summary.overall}</div>
+                    <div data-testid="overall-risk" className={cn("text-xl font-bold", summary.overallTone)}>{summary.overall}</div>
                     <div className="text-xs text-txt-muted">Overall Risk</div>
+                    {summary.overallQualifier && <div className="text-[10px] text-txt-muted">{summary.overallQualifier}</div>}
                   </div>
                 </div>
                 <div className="flex gap-5">
@@ -538,7 +578,9 @@ export default function EconomicCalendarPage() {
                   </div>
                 </>
               ) : (
-                <div className="mt-1 text-sm text-txt-secondary">No more events scheduled today.</div>
+                <div className="mt-1 text-sm text-txt-secondary">
+                  {isConnected ? "No more events scheduled today." : "Not confirmed — the calendar provider was not read."}
+                </div>
               )}
               </div>
             </div>
@@ -593,7 +635,9 @@ export default function EconomicCalendarPage() {
             <div className="mt-3 space-y-1">
               {(providerStatus.isLoading || dbEvents.isLoading) && <p className="py-6 text-center text-sm text-txt-muted">Loading events…</p>}
               {!providerStatus.isLoading && !dbEvents.isLoading && filtered.length === 0 && (
-                <p className="py-6 text-center text-sm text-txt-muted">No events match these filters.</p>
+                <p className="py-6 text-center text-sm text-txt-muted">
+                  {isConnected ? "No events match these filters." : `No stored events match these filters. ${coverageNote}`}
+                </p>
               )}
               {filtered.map((e) => {
                 const tone = IMPACT_TONE[e.impactLevel];
@@ -752,7 +796,9 @@ export default function EconomicCalendarPage() {
                 </div>
               </>
             ) : (
-              <p className="mt-2 text-sm text-txt-muted">{name} is waiting for calendar data.</p>
+              <p className="mt-2 text-sm text-txt-muted">
+                {isConnected ? `${name} has no more releases listed for today.` : `${name} cannot read today's calendar. ${coverageNote}`}
+              </p>
             )}
             </div>
             <button onClick={openRubyLiveChat} className="mt-3 flex w-full items-center justify-between rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby">
@@ -788,9 +834,11 @@ export default function EconomicCalendarPage() {
           {/* Upcoming High Impact */}
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-warning" /><h3 className="text-sm font-semibold">Upcoming High Impact</h3></div>
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2" data-testid="upcoming-high-impact">
               {upcomingHigh.length === 0 ? (
-                <p className="text-xs text-txt-muted">No high-impact events ahead in this window.</p>
+                <p className="text-xs text-txt-muted">
+                  {isConnected ? "No high-impact events ahead in this window." : "Not confirmed — the calendar provider was not read; only stored events are shown."}
+                </p>
               ) : upcomingHigh.map((e) => (
                 <div key={e.key} className="flex items-center gap-2 text-xs">
                   <span className="w-24 shrink-0 text-txt-muted">{timeLines(e).primary}<br />{timeLines(e).secondary}</span>
