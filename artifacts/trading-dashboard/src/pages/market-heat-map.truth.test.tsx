@@ -131,3 +131,16 @@ describe("News Heat — provider copy", () => {
     expect(screen.queryByText(/Live news data/)).toBeNull();
   });
 });
+
+describe("News Heat — unconfirmed release time", () => {
+  it("a pre-event with no known minute count says the release time is not confirmed", () => {
+    const newsOverlay = {
+      phase: "PRE_EVENT", eventName: "Consumer Price Index", minutesUntil: null, minutesSince: null,
+      eventType: "high_impact", surpriseScore: null, heatAdjustment: 15, blocksTrade: false,
+    } as MarketTimingRead["newsOverlay"];
+    render(<NewsHeatTab data={makeRead({ newsOverlay })} />);
+    expect(screen.getByText(/release time not confirmed/)).toBeTruthy();
+    expect(screen.queryByText(/min ago/)).toBeNull();
+    expect(screen.queryByText("Settled")).toBeNull();
+  });
+});

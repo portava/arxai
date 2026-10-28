@@ -73,7 +73,16 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
       const topEvent = radar.events[0]!;
       radarEventName = topEvent.title;
       const secsRemaining = topEvent.countdownSeconds;
-      if (secsRemaining > 30) {
+      // The radar's state is the authority on whether the release has
+      // happened. A date-only release (FRED midnight sentinel) is held
+      // UPCOMING/IMMINENT all day while its countdown runs from midnight, so a
+      // negative countdown there does NOT mean the release is past: treat it
+      // as pre-event with no known minute count.
+      const releaseTimeUnconfirmed =
+        (topEvent.state === "UPCOMING" || topEvent.state === "IMMINENT") && secsRemaining <= 30;
+      if (releaseTimeUnconfirmed) {
+        radarPhase = "PRE_EVENT";
+      } else if (secsRemaining > 30) {
         minutesUntil = Math.round(secsRemaining / 60);
         radarPhase = minutesUntil <= 30 ? "PRE_EVENT" : "NONE";
       } else if (secsRemaining >= -900) {

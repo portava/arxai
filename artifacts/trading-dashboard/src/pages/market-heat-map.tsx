@@ -864,6 +864,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
                     Type: {news.eventType.replace(/_/g, " ")}
                     {news.minutesUntil != null && news.minutesUntil > 0 && ` · in ${Math.round(news.minutesUntil)} min`}
                     {news.minutesSince != null && news.minutesSince > 0 && ` · ${Math.round(news.minutesSince)} min ago`}
+                    {news.phase === "PRE_EVENT" && news.minutesUntil == null && " · release time not confirmed"}
                   </div>
                 </div>
               </div>
