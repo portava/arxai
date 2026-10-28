@@ -2944,6 +2944,45 @@ it("protective claim accepts a manual command that settled before its evidence, 
   });
   assert.equal((await send(row))?.status, "SENT_TO_MT5_LIVE");
 });
+it("protective claim ignores a same-numbered ticket's command in flight on another bridge/login; unattributed still refuses", async () => {
+  const T = new Date();
+  await protectivePending("EXIT", T);
+  await sweepEvidence(T);
+  const row = await approved();
+  // Same user, same ticket number, another terminal: a different position.
+  await manualTicketCommand({
+    commandId: "other-account-close",
+    bridgeConnectionId: 2,
+    accountLogin: "B",
+    commandType: "CLOSE_LIVE_POSITION",
+    status: "SENT_TO_MT5_LIVE",
+    sentToMt5At: new Date(T.getTime() - 10_000),
+  });
+  await manualTicketCommand({
+    commandId: "other-login-close",
+    accountLogin: "B",
+    commandType: "CLOSE_LIVE_POSITION",
+    status: "LIVE_UNKNOWN",
+    sentToMt5At: new Date(T.getTime() + 1_000),
+  });
+  assert.equal((await send(row))?.status, "SENT_TO_MT5_LIVE");
+  await resetFixture();
+  const T2 = new Date();
+  await protectivePending("EXIT", T2);
+  await sweepEvidence(T2);
+  const again = await approved();
+  // A command whose account was never recorded cannot be placed: fail closed.
+  await manualTicketCommand({
+    commandId: "unattributed-close",
+    bridgeConnectionId: null,
+    accountLogin: null,
+    commandType: "CLOSE_LIVE_POSITION",
+    status: "SENT_TO_MT5_LIVE",
+    sentToMt5At: new Date(T2.getTime() - 10_000),
+  });
+  await denied(send(again), "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT");
+  assert.equal(await commandStatus(again.commandId), "LIVE_APPROVED");
+});
 it("the 9-field protective scope reads only the exact row when another account reuses the ticket", async () => {
   await otherAccountRow(2);
   const scope = managementPositionScope({

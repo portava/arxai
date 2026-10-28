@@ -506,6 +506,30 @@ export type TicketCommandVerdict =
       detail: Record<string, unknown>;
     };
 
+/**
+ * Only this position's account: an MT5 ticket number is unique per terminal,
+ * not per user, so the same number on another bridge or login of the same user
+ * is a different position and must neither hold nor order this one. A command
+ * with no recorded bridge or login cannot be placed and is kept (fail closed),
+ * as is everything when the position's own account is unknown.
+ */
+export function sameAccountTicketCommands<
+  T extends { bridgeConnectionId?: number | null; accountLogin?: string | null },
+>(
+  commands: readonly T[],
+  account: { bridgeConnectionId: number | null; accountLogin: string | null },
+): T[] {
+  return commands.filter(
+    (c) =>
+      (account.bridgeConnectionId == null ||
+        c.bridgeConnectionId == null ||
+        c.bridgeConnectionId === account.bridgeConnectionId) &&
+      (account.accountLogin == null ||
+        c.accountLogin == null ||
+        c.accountLogin === account.accountLogin),
+  );
+}
+
 /** Sent to the terminal, neither filled nor rejected, and not in a settled status. */
 export function ticketCommandInFlight(c: TicketCommandFacts): boolean {
   return (

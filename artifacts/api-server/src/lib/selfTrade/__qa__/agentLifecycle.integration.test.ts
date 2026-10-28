@@ -1219,6 +1219,83 @@ describe("protective-action path from an observation hold", () => {
     const drained = await drainProtectiveCycle(createProtectiveCycle());
     assert.deepEqual(drained, { considered: 0, acted: 0, waitedMs: 0, held: {}, bridges: 0, elapsedMs: 0 });
   });
+  // ── Final-claim refusals name their own cause; account-scoped ticket commands;
+  //    bridge identity re-verified on every poll ──
+  it("25. a final-claim refusal for a manual command in flight is held under that reason, naming the manual command", async () => {
+    onSleep = (poll) => {
+      if (poll === 3) sweepLands();
+    };
+    submit = async () => {
+      // The user's manual modify reaches the terminal between the path's
+      // evidence and the server-side claim, which refuses it.
+      ticketCommands = [
+        { commandId: "manual-late", status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date(clock), filledAt: null, rejectedAt: null },
+      ];
+      return { ok: false, error: "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT", commandId: "cmd-9" };
+    };
+    const result = await run();
+    assert.equal(dispatches.length, 1);
+    assert.equal(result.protective.acted, 0);
+    assert.deepEqual(result.protective.held, { PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT: 1 });
+    const held = auditRows.find((r) => r.eventType === "PROTECTIVE_ACTION_HELD")!;
+    assert.match(held.reason!, /manual-late/);
+    assert.match(held.reason!, /in flight/);
+    assert.match(held.reason!, /cmd-9/, "the refused agent command is still named for reconciliation");
+    assert.equal((held.afterState!.detail as Record<string, unknown>).stage, "final-claim");
+    // The existing command link is kept, as for any refusal after the row exists.
+    assert.equal((execution.managementState as { pendingManagement: { commandId: string } }).pendingManagement.commandId, "cmd-9");
+  });
+  it("25b. a final-claim refusal for a command after the evidence, before any command row, is held under that reason", async () => {
+    onSleep = (poll) => {
+      if (poll === 3) sweepLands();
+    };
+    submit = async () => {
+      ticketCommands = [
+        { commandId: "manual-after", status: "LIVE_FILLED", sentToMt5At: new Date(clock + 1), filledAt: new Date(clock + 2), rejectedAt: null },
+      ];
+      return { ok: false, error: "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE" };
+    };
+    const result = await run();
+    assert.deepEqual(result.protective.held, { PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE: 1 });
+    const held = auditRows.find((r) => r.eventType === "PROTECTIVE_ACTION_HELD")!;
+    assert.match(held.reason!, /manual-after/);
+    assert.deepEqual(execution.managementState, {});
+  });
+  it("25c. a non-protective pipeline refusal keeps the generic refusal reason", async () => {
+    onSleep = (poll) => {
+      if (poll === 3) sweepLands();
+    };
+    submit = async () => ({ ok: false, error: "MANAGEMENT_TARGET_CHANGED", commandId: "cmd-9" });
+    const result = await run();
+    assert.deepEqual(result.protective.held, { PROTECTIVE_HOLD_REFUSED_WITH_COMMAND: 1 });
+  });
+  it("26. a same-numbered ticket's command in flight on another bridge never holds this position", async () => {
+    ticketCommands = [
+      { commandId: "b-close", status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date(clock - 95_000), filledAt: null, rejectedAt: null, bridgeConnectionId: 13, accountLogin: "acct-13" },
+    ];
+    onSleep = (poll) => {
+      if (poll === 3) sweepLands();
+    };
+    const result = await run();
+    assert.equal(result.protective.acted, 1);
+    assert.equal(dispatches.length, 1);
+  });
+  it("26b. a command in flight with no recorded bridge still holds (attribution unknown, fail closed)", async () => {
+    ticketCommands = [
+      { commandId: "unplaced-close", status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date(clock - 95_000), filledAt: null, rejectedAt: null, bridgeConnectionId: null, accountLogin: null },
+    ];
+    await heldProtective("PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT");
+    assert.equal(sleeps.length, 0);
+  });
+  it("27. a token revoked during the wait holds as revoked at once, not as no fresh sweep", async () => {
+    onSleep = (poll) => {
+      if (poll === 2) Object.assign(connectionRow!, { tokenRevokedAt: new Date(clock), status: "revoked" });
+    };
+    await heldProtective("PROTECTIVE_BRIDGE_REVOKED");
+    assert.equal(sleeps.length, 2);
+    const held = auditRows.find((r) => r.eventType === "PROTECTIVE_ACTION_HELD")!;
+    assert.equal((held.afterState!.detail as Record<string, unknown>).stage, "wait");
+  });
   it("the user kill switch and disarmed state hold before any wait", async () => {
     arming = { isArmed: true, killSwitchEngaged: true };
     await heldProtective("PROTECTIVE_HOLD_USER_KILL_SWITCH");
