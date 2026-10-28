@@ -87,6 +87,11 @@ interface State { price: number; averages: Record<string, AverageState> }
  * See docs/SMART_CHART_STUDY_CONVENTIONS.md for seeds and flat-market choices. */
 export class StudyCalculator {
   private states: State[] = [];
+  /** prices[i] === states[i].price for every i < states.length. The O(n*p)
+   * deviation loops read this contiguous buffer instead of State objects.
+   * It persists across calls: entries at index >= states.length are stale and
+   * never read, because the loops only read j < i. */
+  private prices = new Float64Array(0);
   readonly points: StudyPoint[] = [];
   constructor(readonly config: ChartStudy) {}
 
@@ -98,6 +103,14 @@ export class StudyCalculator {
     from = Math.max(0, Math.min(from, this.states.length, bars.length));
     this.states.length = from;
     this.points.length = from;
+    if (this.prices.length < bars.length) {
+      // Double on overflow and copy only the still-valid prefix; incremental
+      // refreshes never copy the whole series.
+      const grown = new Float64Array(Math.max(bars.length, this.prices.length * 2));
+      grown.set(this.prices.subarray(0, from));
+      this.prices = grown;
+    }
+    const prices = this.prices;
     const changed: StudyPoint[] = [];
     let i = from;
     let state: State;
@@ -122,6 +135,7 @@ export class StudyCalculator {
     for (i = from; i < bars.length; i++) {
       const bar = bars[i]!;
       const price = appliedPrice(bar, c.source ?? (c.kind === "cci" ? "hlc3" : "close"));
+      prices[i] = price;
       state = { price, averages: {} };
       previous = this.states[i - 1];
       let values: (number | null)[];
@@ -143,14 +157,16 @@ export class StudyCalculator {
             // Preserve centered formulas and summation order without an
             // allocated window per bar. CCI needs absolute deviation only;
             // calculating variance/sqrt as well cannot affect its result.
+            // p is a validated integer (chartWorkspace.ts:13, Number.isInteger),
+            // so j always indexes prices exactly.
             let sum = 0;
             if (c.kind === "cci") {
-              for (let j = i - p + 1; j < i; j++) sum += Math.abs(this.states[j]!.price - mean);
+              for (let j = i - p + 1; j < i; j++) sum += Math.abs(prices[j]! - mean);
               sum += Math.abs(price - mean);
               const mad = sum / p;
               values = [mad === 0 ? 0 : (price - mean) / (.015 * mad)];
             } else {
-              for (let j = i - p + 1; j < i; j++) sum += (this.states[j]!.price - mean) ** 2;
+              for (let j = i - p + 1; j < i; j++) sum += (prices[j]! - mean) ** 2;
               sum += (price - mean) ** 2;
               const deviation = Math.sqrt(sum / p);
               values = c.kind === "stddev" ? [deviation] : [mean, mean + deviation * (c.multiplier ?? 2), mean - deviation * (c.multiplier ?? 2)];
