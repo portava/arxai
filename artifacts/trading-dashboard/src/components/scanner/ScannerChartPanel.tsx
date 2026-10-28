@@ -637,6 +637,9 @@ export function ScannerChartPanel() {
   const trendlineOverlay = structureEvidenceMissing ? null : intelligenceQuery.data?.state?.trendlineOverlay ?? null;
 
   const [positions, setPositions] = useState<ChartPosition[]>([]);
+  // The last positions/drafts poll failed (HTTP error or network). An empty
+  // list then means "unknown", not "none" — the header says so.
+  const [ownedLoadFailed, setOwnedLoadFailed] = useState(false);
   const [pending, setPending] = useState<ChartPending[]>([]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1267,6 +1270,7 @@ export function ScannerChartPanel() {
           fetch(u("/api/me/pending-order-drafts"), { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
         ]);
         if (cancelled) return;
+        setOwnedLoadFailed(posRes == null || penRes == null);
         const live = Array.isArray(posRes?.live) ? (posRes.live as ChartPosition[]) : [];
         const demo = Array.isArray(posRes?.demo) ? (posRes.demo as ChartPosition[]) : [];
         setPositions([...live, ...demo]);
@@ -1276,6 +1280,7 @@ export function ScannerChartPanel() {
         if (!cancelled) {
           setPositions([]);
           setPending([]);
+          setOwnedLoadFailed(true);
         }
       }
     };
@@ -2512,6 +2517,16 @@ export function ScannerChartPanel() {
                 loadedAny={deepHistory.loadedAny}
                 loadError={deepHistory.loadError}
               />
+            )}
+            {ownedLoadFailed && (
+              <Badge
+                variant="outline"
+                className="border-amber-500/40 text-[10px] text-amber-300"
+                data-testid="scanner-chart-owned-unavailable"
+                title="The last request for your open positions and pending-order drafts failed. Any not drawn here are unknown, not absent. Retrying every 10 s."
+              >
+                Positions not loaded
+              </Badge>
             )}
             {symbolPositions.length > 0 && (
               <Badge variant="outline" className="border-blue-500/40 text-[10px] text-blue-300" data-testid="scanner-chart-pos-count">

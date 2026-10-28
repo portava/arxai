@@ -58,3 +58,14 @@ describe("ScannerChartPanel — candle-close countdown", () => {
     expect(gate).toMatch(/formingCloseMs != null && isLiveDisplay && marketFrozen == null/);
   });
 });
+
+describe("ScannerChartPanel — your positions and drafts", () => {
+  it("a failed positions/drafts load is said out loud, never shown as 'no positions'", () => {
+    const load = code.slice(code.indexOf("const loadOwned = async"), code.indexOf("void loadOwned();"));
+    expect(load).toMatch(/setOwnedLoadFailed\(posRes == null \|\| penRes == null\)/);
+    expect(load).toMatch(/catch \{[\s\S]*setOwnedLoadFailed\(true\)/);
+    const idx = code.indexOf('data-testid="scanner-chart-owned-unavailable"');
+    expect(idx).toBeGreaterThan(-1);
+    expect(code.slice(code.lastIndexOf("{ownedLoadFailed", idx), idx)).toContain("ownedLoadFailed &&");
+  });
+});
