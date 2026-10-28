@@ -47,4 +47,22 @@ describe("portfolio page truth", () => {
     render(<Portfolio />);
     expect(screen.getByTestId("floating-pnl").textContent).toBe("$12.50");
   });
+
+  // Regression: the page was titled "Portfolio Exposure — Risk distribution
+  // across markets, strategies, and currencies" and said "No currency
+  // exposure." while every figure came from a frozen table of simulated rows;
+  // the trader's paper book and DEMO EA positions never appear here.
+  it("says the rows are simulated and the paper book and DEMO EA positions are not included, even with an older server note", () => {
+    exposure = { ...base, totalOpen: 0, totalClosed: 0, floatingPnl: 0, floatingPnlUnavailableReason: null, realizedPnlExcludedUnknown: 0 };
+    render(<Portfolio />);
+    const scope = screen.getByTestId("portfolio-scope").textContent ?? "";
+    expect(scope).toMatch(/simulat/i);
+    expect(scope).toMatch(/paper book/i);
+    expect(scope).toMatch(/DEMO EA positions/);
+    expect(screen.queryByText("No currency exposure.")).toBeNull();
+    expect(screen.queryByText(/Risk distribution across markets/)).toBeNull();
+    expect(screen.getByText(/Simulated realized P&L/)).toBeTruthy();
+    // A zero 24h net loss is not painted as a loss.
+    expect(screen.getByTestId("daily-net-loss").className).not.toMatch(/text-destructive/);
+  });
 });

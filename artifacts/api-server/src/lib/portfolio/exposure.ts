@@ -53,8 +53,11 @@ function marketTypeOf(symbol: string): string {
   return "Other";
 }
 
+// The trades table is a frozen record of simulated rows (schema/trades.ts):
+// no broker order stood behind any row and it takes no new trades. The note
+// must say so, and must not imply the paper book or DEMO EA rows are in it.
 export const LEGACY_TRADES_SOURCE_NOTE =
-  "From the legacy trades table only. Broker positions are not included, so an empty view does not mean you have no open exposure.";
+  "From the legacy trades table only: simulated rows that no broker order stood behind. This table no longer records new trades. Your paper book (paper orders) and DEMO EA positions are not included. Broker positions are not included, so an empty view does not mean you have no open exposure.";
 
 export function computeExposure(trades: Trade[]): PortfolioExposure {
   const open = trades.filter((t) => t.status === "OPEN");
