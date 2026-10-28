@@ -424,6 +424,11 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
   // never lies and says "Use my own MT5 bridge: Active" while their
   // trades actually route through the shared master.
   const onShared = sharedAttached || d.preferredBridge === "SHARED_MASTER_MT5";
+  // The badge reports the saved preference and the operator switch only.
+  // Nothing here checks that the EA is installed, connected or heartbeating,
+  // so the personal bridge is never called "Active".
+  const personalDisabled = !d.personalBridgeEnabled;
+  const personalBadge = personalDisabled ? "Disabled" : !onShared ? "Selected" : "Available";
 
   return (
     <Card data-testid="bridge-preference-card" className="rounded-2xl border-border bg-card">
@@ -436,12 +441,17 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
         <div className="flex items-start justify-between gap-3 rounded-md border p-3">
           <div className="space-y-1">
             <div className="text-sm font-medium">Use my own MT5 bridge</div>
-            <div className="text-xs text-txt-secondary">
-              Your trades route through the MT5 EA installed on your machine. This is the default and recommended path.
+            <div className="text-xs text-txt-secondary" data-testid="text-personal-bridge-note">
+              {personalDisabled
+                ? "Your personal bridge has been disabled by an operator. Contact support to turn it back on."
+                : "Routes your trades through the MT5 EA installed on your machine. This is the default and recommended path. This card shows your saved choice only and does not check that your EA is connected — MT5 Setup shows its heartbeat."}
             </div>
           </div>
-          <Badge variant={!onShared ? "default" : "outline"} data-testid="badge-personal-bridge-state">
-            {!onShared ? "Active" : "Available"}
+          <Badge
+            variant={personalDisabled ? "destructive" : !onShared ? "default" : "outline"}
+            data-testid="badge-personal-bridge-state"
+          >
+            {personalBadge}
           </Badge>
         </div>
 

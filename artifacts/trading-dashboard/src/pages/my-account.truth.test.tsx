@@ -89,3 +89,25 @@ describe("My Account: Assigned Allocation", () => {
     expect(screen.getByTestId("my-allocation").textContent).toBe("$1,000");
   });
 });
+
+describe("My Account: personal bridge badge", () => {
+  it("does not say 'Active' when the personal bridge is disabled", async () => {
+    stubFetch({
+      "/api/me/account-shell": shell(),
+      "/api/me/bridge-preference": { ...BRIDGE_PREF, preferredBridge: "USER_OWNED_MT5", personalBridgeEnabled: false },
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("badge-personal-bridge-state")).toBeTruthy());
+    expect(screen.getByTestId("badge-personal-bridge-state").textContent).not.toBe("Active");
+    expect(screen.getByTestId("badge-personal-bridge-state").textContent).toBe("Disabled");
+    expect(screen.getByTestId("bridge-preference-card").textContent).not.toMatch(/Your trades route through the MT5 EA/);
+  });
+
+  it("calls a saved preference 'Selected', not 'Active', and says the connection is not checked here", async () => {
+    stubFetch({ "/api/me/account-shell": shell(), "/api/me/bridge-preference": BRIDGE_PREF });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("badge-personal-bridge-state")).toBeTruthy());
+    expect(screen.getByTestId("badge-personal-bridge-state").textContent).toBe("Selected");
+    expect(screen.getByTestId("text-personal-bridge-note").textContent).toMatch(/does not check/i);
+  });
+});
