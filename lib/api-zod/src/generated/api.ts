@@ -18653,6 +18653,18 @@ export const GetMeScalpBasketsResponse = zod.object({
     .describe(
       "Plain statement of why positions were not read; null when they were.",
     ),
+  positionsAsOf: zod
+    .string()
+    .nullish()
+    .describe(
+      "When the MT5 bridge last reported the positions shown (the oldest leg's reading, ISO time). Null when no position is shown or no reading time is recorded.",
+    ),
+  positionsStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when positions are shown but their bridge reading is older than 90 seconds or has no recorded time. The open P\/L, stops and exit \/ add-on advice then describe that reading, not the account now.",
+    ),
 });
 
 /**

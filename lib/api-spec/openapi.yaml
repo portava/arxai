@@ -23278,6 +23278,12 @@ components:
         positionsNote:
           type: ["string", "null"]
           description: Plain statement of why positions were not read; null when they were.
+        positionsAsOf:
+          type: ["string", "null"]
+          description: When the MT5 bridge last reported the positions shown (the oldest leg's reading, ISO time). Null when no position is shown or no reading time is recorded.
+        positionsStale:
+          type: boolean
+          description: True when positions are shown but their bridge reading is older than 90 seconds or has no recorded time. The open P/L, stops and exit / add-on advice then describe that reading, not the account now.
 
     MeScalpAddOnCheckBody:
       type: object

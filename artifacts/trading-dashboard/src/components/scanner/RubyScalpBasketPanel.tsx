@@ -16,6 +16,7 @@ import {
   fmtMoney,
 } from "./scalpLabels";
 import { useAssistantName } from "@/lib/assistant-name";
+import { safeDate } from "@/lib/safeFormat";
 
 // RubyScalpBasketPanel (Phase 2) — manage-side intelligence for the open
 // positions the user already holds. It groups open positions into baskets
@@ -31,7 +32,49 @@ function pl(v: number | null | undefined): { text: string; tone: string } {
   return { text: fmtMoney(v), tone };
 }
 
-function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
+function ageText(asOf: string, now: number): string | null {
+  const t = new Date(asOf).getTime();
+  if (!Number.isFinite(t)) return null;
+  const sec = Math.round((now - t) / 1000);
+  if (sec < 0) return null;
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const h = Math.floor(min / 60);
+  return `${h}h ${min % 60}m ago`;
+}
+
+// When the positions shown were last reported by the bridge. The server
+// flags a reading older than 90 seconds (or with no recorded time) as stale:
+// the rows, P/L, stops and advice then describe that reading, not now.
+function PositionsReadingLine({ asOf, stale }: { asOf: string | null; stale: boolean }) {
+  const age = asOf ? ageText(asOf, Date.now()) : null;
+  const when = asOf ? `${safeDate(asOf, "datetime")}${age ? ` (${age})` : ""}` : null;
+  if (stale) {
+    return (
+      <p
+        className="flex items-start gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-warning"
+        data-testid="scalp-baskets-stale"
+      >
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>
+          {when
+            ? `These positions are from your MT5 bridge's reading at ${when}, not live. `
+            : "No reading time is recorded for these positions, so they may not be current. "}
+          Some may have changed or closed since. The open P/L, stops and the exit and add-on advice below describe that reading.
+        </span>
+      </p>
+    );
+  }
+  if (!when) return null;
+  return (
+    <p className="text-[11px] text-muted-foreground/70" data-testid="scalp-baskets-as-of">
+      Positions as reported by your MT5 bridge at {when}.
+    </p>
+  );
+}
+
+function BasketRow({ basket, name, stale }: { basket: ScalpBasket; name: string; stale: boolean }) {
   const combined = pl(basket.combinedFloatingPl);
   return (
     <div
@@ -68,7 +111,7 @@ function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
           <div className="font-mono">{basket.breakEvenPrice > 0 ? basket.breakEvenPrice : "—"}</div>
         </div>
         <div>
-          <span className="text-muted-foreground">Open P/L</span>
+          <span className="text-muted-foreground">{stale ? "Open P/L (old reading)" : "Open P/L"}</span>
           <div className={`font-mono ${combined.tone}`}>{combined.text}</div>
         </div>
         <div>
@@ -191,8 +234,16 @@ export function RubyScalpBasketPanel() {
               watch the flame, exit urgency, and whether it's sane to add.
             </p>
           )}
+          {list.length > 0 && (
+            <PositionsReadingLine asOf={data?.positionsAsOf ?? null} stale={data?.positionsStale === true} />
+          )}
           {list.map((b) => (
-            <BasketRow key={`${b.symbol}:${b.direction}`} basket={b} name={name} />
+            <BasketRow
+              key={`${b.symbol}:${b.direction}`}
+              basket={b}
+              name={name}
+              stale={data?.positionsStale === true}
+            />
           ))}
         </CardContent>
       )}

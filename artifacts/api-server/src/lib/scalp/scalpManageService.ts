@@ -82,10 +82,27 @@ type DemoRaw = {
  * positions feed). Returns the rows already mapped to the pure module's
  * OpenPositionInput shape, plus the resolved account mode for the response.
  */
+/**
+ * How recent a positions reading must be to be shown as current. The bridge
+ * pushes its book every few seconds; 90s is comfortably longer than that
+ * cadence (the same window the ghost filter below uses).
+ */
+export const SCALP_POSITIONS_FRESH_MS = 90_000;
+
+interface LoadedOpenPositions {
+  positions: OpenPositionInput[];
+  accountMode: ManageAccountMode;
+  positionsMeasured: boolean;
+  /** Oldest bridge reading among the positions returned (ms); null when none or unrecorded. */
+  readingAtMs: number | null;
+  /** A returned position has no recorded reading time. */
+  readingTimeMissing: boolean;
+}
+
 async function loadOpenPositions(
   userId: number,
   isAdmin: boolean,
-): Promise<{ positions: OpenPositionInput[]; accountMode: ManageAccountMode; positionsMeasured: boolean }> {
+): Promise<LoadedOpenPositions> {
   const scope = await getUserModeScope(userId, { isAdmin });
   const mode = scope.currentAccountMode;
   const includeLive = mode === "LIVE_SHARED";
@@ -101,6 +118,12 @@ async function loadOpenPositions(
 
   const positions: OpenPositionInput[] = [];
   let positionsMeasured = true;
+  let readingAtMs: number | null = null;
+  let readingTimeMissing = false;
+  const noteReading = (t: number) => {
+    if (!(t > 0)) { readingTimeMissing = true; return; }
+    if (readingAtMs === null || t < readingAtMs) readingAtMs = t;
+  };
 
   if (includeLive) {
     const liveRowsAll = await livePositionLedger.read({ where: eq(livePositionColumns.userId, userId) });
@@ -114,6 +137,7 @@ async function loadOpenPositions(
       if (r.closedAt) continue;
       const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
       if (t < liveFloor) continue;
+      noteReading(t);
       positions.push({
         ticket: r.brokerTicket ?? null,
         symbol: r.symbol,
@@ -138,9 +162,11 @@ async function loadOpenPositions(
     if (state == null) positionsMeasured = false;
     const raw: DemoRaw[] = Array.isArray(state?.positions)
       ? (state!.positions as DemoRaw[]) : [];
+    const demoReadingMs = state?.lastSyncAt ? new Date(state.lastSyncAt).getTime() : 0;
     for (const p of raw) {
       const symbol = p.symbol ?? null;
       if (!symbol) continue;
+      noteReading(Number.isFinite(demoReadingMs) ? demoReadingMs : 0);
       positions.push({
         ticket: p.ticket == null ? null : String(p.ticket),
         symbol,
@@ -158,7 +184,7 @@ async function loadOpenPositions(
     }
   }
 
-  return { positions, accountMode, positionsMeasured };
+  return { positions, accountMode, positionsMeasured, readingAtMs, readingTimeMissing };
 }
 
 /**
@@ -298,6 +324,17 @@ export interface GetScalpBasketsResult {
   /** False when the open positions could not be read; an empty list is then not "no baskets". */
   positionsMeasured: boolean;
   positionsNote: string | null;
+  /**
+   * When the bridge last reported the positions shown (the oldest leg's
+   * reading). Null when no position is shown or no reading time is recorded.
+   */
+  positionsAsOf: string | null;
+  /**
+   * True when positions are shown but their reading is older than
+   * SCALP_POSITIONS_FRESH_MS or has no recorded time: the open P/L, stops and
+   * advice describe that reading, not the account now.
+   */
+  positionsStale: boolean;
   generatedAt: string;
 }
 
@@ -311,7 +348,8 @@ export async function getScalpBaskets(
   opts: { isAdmin?: boolean; riskPersonality?: RiskPersonality | null } = {},
 ): Promise<GetScalpBasketsResult> {
   const personality = opts.riskPersonality ?? "BALANCED";
-  const { positions, accountMode, positionsMeasured } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, accountMode, positionsMeasured, readingAtMs, readingTimeMissing } =
+    await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const now = Date.now();
 
@@ -379,6 +417,10 @@ export async function getScalpBaskets(
     accountMode,
     positionsMeasured,
     positionsNote: positionsMeasured ? null : MT5_STATE_NOT_ATTRIBUTED_NOTE,
+    positionsAsOf: readingAtMs != null ? new Date(readingAtMs).toISOString() : null,
+    positionsStale: baskets.length > 0 && (
+      readingTimeMissing || readingAtMs == null || now - readingAtMs > SCALP_POSITIONS_FRESH_MS
+    ),
     generatedAt: new Date(now).toISOString(),
   };
 }
