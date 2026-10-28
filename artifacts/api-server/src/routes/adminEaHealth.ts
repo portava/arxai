@@ -29,6 +29,7 @@ import {
   normaliseCapabilities,
   featureSupportMatrix,
   isFeatureSupported,
+  FEATURE_CAPABILITY_KEYS,
 } from "../lib/mt5/bridgeCapabilities.js";
 import { classifyBridge } from "../lib/live/bridgeWatchdog.js";
 import { maskConnection } from "../lib/live/bridgeConnectionView.js";
@@ -139,6 +140,12 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
   const rows = await Promise.all(
     connections.map(async (c) => {
       const caps = normaliseCapabilities(c.capabilities);
+      // featureSupport normalises a missing capability to "unsupported" (the
+      // safe gate default). Which ones the EA actually reported is separate:
+      // a feature it never reported is unknown, not reported unsupported.
+      const capsObj = c.capabilities != null && typeof c.capabilities === "object"
+        ? (c.capabilities as Record<string, unknown>) : null;
+      const featuresNotReported = FEATURE_CAPABILITY_KEYS.filter((k) => typeof capsObj?.[k] !== "boolean");
       const rawCaps = (c.capabilities ?? {}) as { eaInputs?: Record<string, unknown> };
       const eaInputs = rawCaps.eaInputs ?? {};
       const readOnly =
@@ -259,10 +266,14 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
         eaSupportsSelfUpdate: selfUpdateSupported,
         ...gateSafety,
       });
-      const updateAvailable =
-        manifest != null &&
-        c.eaVersion != null &&
-        compareEaVersions(manifest.version, c.eaVersion) > 0;
+      // Unknown (null) when the EA has not reported its version: there is
+      // nothing to compare. No approved build means no update to take (false).
+      const updateAvailableBasis: "COMPARED" | "NO_APPROVED_MANIFEST" | "EA_VERSION_NOT_REPORTED" =
+        manifest == null ? "NO_APPROVED_MANIFEST" : c.eaVersion == null ? "EA_VERSION_NOT_REPORTED" : "COMPARED";
+      const updateAvailable: boolean | null =
+        updateAvailableBasis === "NO_APPROVED_MANIFEST" ? false
+          : updateAvailableBasis === "EA_VERSION_NOT_REPORTED" ? null
+          : compareEaVersions(manifest!.version, c.eaVersion!) > 0;
 
       return {
         connection: maskConnection(c, now),
@@ -275,6 +286,10 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
           ? new Date(c.capabilitiesReportedAt).toISOString()
           : null,
         featureSupport: featureSupportMatrix(caps),
+        /** False when the EA never reported capabilities: featureSupport is then the fail-closed default, not a report. */
+        capabilitiesReported: capsObj != null,
+        /** Feature capabilities the EA did not report (shown as "not reported", never "unsupported"). */
+        featuresNotReported,
         eaInputs: { readOnlyMode: readOnly, enableLiveExecution: enableLive, terminalConnected, algoTradingAllowed },
         allowOrderExecution: c.allowOrderExecution,
         liveLocked: c.liveLocked,
@@ -292,10 +307,13 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
         commandPollAgeSeconds: lastCommandPickedAgeSeconds,
         lastReconciliationResult: reconciliationFor(c.userId, c.id),
         selfUpdateSupported,
+        /** False when the EA did not report supportsSelfUpdate: selfUpdateSupported=false is then not a report. */
+        selfUpdateReported: !featuresNotReported.includes("supportsSelfUpdate"),
         update: {
           currentVersion: c.eaVersion,
           latestApprovedVersion: manifest?.version ?? null,
           updateAvailable,
+          updateAvailableBasis,
           decision: updateGate.decision,
           reason: updateGate.reason,
           manualBootstrapRequired: updateGate.manualBootstrapRequired,

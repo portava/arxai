@@ -46,6 +46,10 @@ type HealthRow = {
   eaVersion: string | null;
   capabilitiesReportedAt: string | null;
   featureSupport: Record<string, FeatureStatus>;
+  /** False when the EA never reported capabilities (featureSupport is then the fail-closed default). */
+  capabilitiesReported?: boolean;
+  /** Feature capabilities the EA did not report: unknown, not "unsupported". */
+  featuresNotReported?: string[];
   eaInputs: EaInputs;
   allowOrderExecution: boolean;
   liveLocked: boolean;
@@ -75,9 +79,14 @@ type HealthRow = {
     truncatedTypes?: string[];
   };
   selfUpdateSupported: boolean;
+  /** False when the EA did not report supportsSelfUpdate. */
+  selfUpdateReported?: boolean;
   update: {
     currentVersion: string | null; latestApprovedVersion: string | null;
-    updateAvailable: boolean; decision: string; reason: string | null;
+    /** null = unknown (the EA has not reported its version). */
+    updateAvailable: boolean | null;
+    updateAvailableBasis?: "COMPARED" | "NO_APPROVED_MANIFEST" | "EA_VERSION_NOT_REPORTED";
+    decision: string; reason: string | null;
     manualBootstrapRequired: boolean;
   };
   lastUpdateReport: null | {
@@ -132,6 +141,22 @@ function lastCommandPickedText(row: HealthRow): { value: string; note: string } 
       : `This user's latest command, bound to bridge #${lc.bridgeConnectionId}.`;
   if (lc.pickedByEaAt == null || age == null) return { value: "not picked yet", note: `${by} Not an EA poll time.` };
   return { value: `${age}s ago`, note: `${by} Not an EA poll time — the server does not record polls.` };
+}
+
+// "Update available" without an EA version is unknown (nothing to compare);
+// with no approved build it is "no", and says why.
+function UpdateAvailable({ u }: { u: HealthRow["update"] }) {
+  if (u.updateAvailableBasis === "EA_VERSION_NOT_REPORTED" || u.updateAvailable === null || u.currentVersion == null) {
+    return <span className="inline-flex items-center gap-1 text-txt-muted"><HelpCircle className="w-3.5 h-3.5" /> unknown — EA version not reported</span>;
+  }
+  if (u.updateAvailableBasis === "NO_APPROVED_MANIFEST") {
+    return <span className="inline-flex items-center gap-1 text-txt-secondary"><XCircle className="w-3.5 h-3.5" /> no — no approved build</span>;
+  }
+  return <Tri v={u.updateAvailable} />;
+}
+
+function NotReported() {
+  return <span className="inline-flex items-center gap-1 text-txt-muted"><HelpCircle className="w-3.5 h-3.5" /> not reported</span>;
 }
 
 function livenessBadge(l: HealthRow["liveness"]) {
@@ -255,9 +280,9 @@ function EaHealthInner() {
                     {row.clockDrift.seconds === null ? "—" : `${row.clockDrift.seconds.toFixed(1)}s`} {row.clockDrift.severity ? `(${row.clockDrift.severity})` : ""}
                   </span>
                 </div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Self-update supported</span><Tri v={row.selfUpdateSupported} /></div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Latest approved</span><span>{row.update.latestApprovedVersion ?? "—"}</span></div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Update available</span><Tri v={row.update.updateAvailable} /></div>
+                <div className="flex justify-between" data-testid={`ea-self-update-${row.connection.id}`}><span className="text-txt-secondary">Self-update supported</span>{row.selfUpdateReported === false ? <NotReported /> : <Tri v={row.selfUpdateSupported} />}</div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Latest approved</span><span>{row.update.latestApprovedVersion ?? "none approved"}</span></div>
+                <div className="flex justify-between" data-testid={`ea-update-available-${row.connection.id}`}><span className="text-txt-secondary">Update available</span><UpdateAvailable u={row.update} /></div>
                 {row.update.manualBootstrapRequired && (
                   <div className="text-warning inline-flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Manual bootstrap EA install required</div>
                 )}
@@ -266,11 +291,18 @@ function EaHealthInner() {
 
             <div className="space-y-1.5">
               <div className="text-xs uppercase tracking-wider text-txt-secondary">Capability map</div>
+              {row.capabilitiesReported === false && (
+                <div className="text-xs text-txt-muted" data-testid={`ea-caps-not-reported-${row.connection.id}`}>
+                  This EA has not reported its capabilities. Until it does, ARX treats every feature below as unsupported (the safe default).
+                </div>
+              )}
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1">
                 {featureKeys.map((k) => (
-                  <div key={k} className="flex justify-between">
+                  <div key={k} className="flex justify-between" data-testid={`ea-cap-${row.connection.id}-${k}`}>
                     <span className="text-txt-secondary">{k.replace(/^supports/, "")}</span>
-                    {row.featureSupport[k] === "SUPPORTED"
+                    {row.featuresNotReported?.includes(k) && row.featureSupport[k] !== "SUPPORTED"
+                      ? <NotReported />
+                      : row.featureSupport[k] === "SUPPORTED"
                       ? <span className="inline-flex items-center gap-1 text-success"><CheckCircle2 className="w-3.5 h-3.5" /> supported</span>
                       : <span className="inline-flex items-center gap-1 text-warning"><AlertTriangle className="w-3.5 h-3.5" /> unsupported</span>}
                   </div>

@@ -6,6 +6,12 @@
 // lastCommandPickedAgeSeconds (commandPollAgeSeconds stays as a deprecated
 // alias) with the command's bound bridge.
 //
+// Unreported version / capabilities: with no EA version the row said "Update
+// available: no", and with no capabilities report every feature (and
+// self-update) read "unsupported". updateAvailable is now null (unknown) when
+// the version is missing, with updateAvailableBasis, and capabilitiesReported
+// / featuresNotReported / selfUpdateReported say what the EA never reported.
+//
 // Only the DB handle, the connection list, the reconciliation feed and the
 // update-gate safety preview are stubbed; the real router runs. No network.
 //
@@ -108,4 +114,48 @@ test("a command not picked yet has no pick age", async () => {
   const row = (await health()).rows[0];
   assert.equal(row.lastCommandPickedAgeSeconds, null);
   assert.equal(row.lastCommand.bridgeConnectionId, null);
+});
+
+test("no EA version: update availability is unknown, not 'no'", async () => {
+  connections = [connection({ eaVersion: null })];
+  rows = { ea_update_manifest: [{ version: "1.30", channel: "stable", releaseStatus: "approved", sha256Checksum: "x", isUpdaterCapable: true, approvedAt: new Date() }] };
+  const row = (await health()).rows[0];
+  assert.equal(row.update.updateAvailable, null);
+  assert.equal(row.update.updateAvailableBasis, "EA_VERSION_NOT_REPORTED");
+});
+
+test("no approved build: no update to take, and it says why", async () => {
+  connections = [connection({ eaVersion: "1.27" })];
+  const row = (await health()).rows[0];
+  assert.equal(row.update.updateAvailable, false);
+  assert.equal(row.update.updateAvailableBasis, "NO_APPROVED_MANIFEST");
+});
+
+test("a version both sides know is compared", async () => {
+  connections = [connection({ eaVersion: "1.27" })];
+  rows = { ea_update_manifest: [{ version: "1.30", channel: "stable", releaseStatus: "approved", sha256Checksum: "x", isUpdaterCapable: true, approvedAt: new Date() }] };
+  const row = (await health()).rows[0];
+  assert.equal(row.update.updateAvailable, true);
+  assert.equal(row.update.updateAvailableBasis, "COMPARED");
+});
+
+test("capabilities never reported: marked not reported, not reported-unsupported", async () => {
+  connections = [connection({ capabilities: null })];
+  const row = (await health()).rows[0];
+  assert.equal(row.capabilitiesReported, false);
+  assert.ok(row.featuresNotReported.includes("supportsSelfUpdate"));
+  assert.equal(row.featuresNotReported.length, Object.keys(row.featureSupport).length);
+  assert.equal(row.selfUpdateReported, false);
+  // The gate default is unchanged: an unreported feature is still never "SUPPORTED".
+  assert.equal(row.featureSupport.supportsSelfUpdate, "UNSUPPORTED_ADMIN_WARNING");
+});
+
+test("a reported capability false is a report; a missing key is not", async () => {
+  connections = [connection({ capabilities: { supportsSelfUpdate: false, supportsWatchdog: true } })];
+  const row = (await health()).rows[0];
+  assert.equal(row.capabilitiesReported, true);
+  assert.equal(row.selfUpdateReported, true);
+  assert.ok(!row.featuresNotReported.includes("supportsSelfUpdate"));
+  assert.ok(!row.featuresNotReported.includes("supportsWatchdog"));
+  assert.ok(row.featuresNotReported.includes("supportsRemoteConfig"));
 });

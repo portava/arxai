@@ -4,6 +4,10 @@
 // any bridge), not how recently the EA polled: a healthy EA polling every
 // second read "Command-poll age 259200s". It now reads "Last command picked"
 // and says it is not a poll time.
+//
+// Nothing reported is not "no": with no EA version, "Update available" is
+// unknown; with no capabilities report, features and self-update read "not
+// reported", never "unsupported" / "no".
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -89,5 +93,67 @@ describe("EA Health last command pick", () => {
     await settle();
     expect(screen.getByTestId("ea-last-command-picked-9").textContent).toMatch(/not picked yet/);
     expect(screen.getByTestId("ea-last-command-picked-10").textContent).toMatch(/no commands/);
+  });
+});
+
+describe("EA Health with nothing reported", () => {
+  it("no EA version: update availability reads unknown, not 'no'", async () => {
+    stub([healthRow({
+      eaVersion: null,
+      update: { currentVersion: null, latestApprovedVersion: "1.30", updateAvailable: null, updateAvailableBasis: "EA_VERSION_NOT_REPORTED", decision: "BLOCKED", reason: null, manualBootstrapRequired: false },
+    })]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    const cell = screen.getByTestId("ea-update-available-9");
+    expect(cell.textContent).toMatch(/unknown — EA version not reported/);
+    expect(cell.textContent).not.toMatch(/\bno\b/);
+  });
+
+  it("an older server's updateAvailable:false with no EA version still reads unknown", async () => {
+    stub([healthRow({
+      eaVersion: null,
+      update: { currentVersion: null, latestApprovedVersion: "1.30", updateAvailable: false, decision: "BLOCKED", reason: null, manualBootstrapRequired: false },
+    })]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    expect(screen.getByTestId("ea-update-available-9").textContent).toMatch(/unknown/);
+  });
+
+  it("no approved build reads 'no — no approved build'", async () => {
+    stub([healthRow({
+      update: { currentVersion: "1.27", latestApprovedVersion: null, updateAvailable: false, updateAvailableBasis: "NO_APPROVED_MANIFEST", decision: "NO_UPDATE", reason: null, manualBootstrapRequired: false },
+    })]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    expect(screen.getByTestId("ea-update-available-9").textContent).toMatch(/no — no approved build/);
+  });
+
+  it("capabilities never reported: features and self-update read 'not reported', not 'unsupported' / 'no'", async () => {
+    stub([healthRow({
+      featureSupport: { supportsSelfUpdate: "UNSUPPORTED_ADMIN_WARNING", supportsWatchdog: "UNSUPPORTED_ADMIN_WARNING" },
+      capabilitiesReported: false,
+      featuresNotReported: ["supportsSelfUpdate", "supportsWatchdog"],
+      selfUpdateSupported: false,
+      selfUpdateReported: false,
+    })]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    expect(screen.getByTestId("ea-caps-not-reported-9")).toBeTruthy();
+    for (const k of ["supportsSelfUpdate", "supportsWatchdog"]) {
+      const cell = screen.getByTestId(`ea-cap-9-${k}`);
+      expect(cell.textContent).toMatch(/not reported/);
+      expect(cell.textContent).not.toMatch(/unsupported/);
+    }
+    expect(screen.getByTestId("ea-self-update-9").textContent).toMatch(/not reported/);
+  });
+
+  it("a reported unsupported feature still reads unsupported", async () => {
+    stub([healthRow({
+      featureSupport: { supportsSelfUpdate: "UNSUPPORTED_ADMIN_WARNING" },
+      capabilitiesReported: true, featuresNotReported: [], selfUpdateSupported: false, selfUpdateReported: true,
+    })]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    expect(screen.getByTestId("ea-cap-9-supportsSelfUpdate").textContent).toMatch(/unsupported/);
   });
 });
