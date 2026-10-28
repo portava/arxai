@@ -84,15 +84,40 @@ function humanize(map: Record<string, string>, raw: string | null | undefined): 
   return map[String(raw).toUpperCase()] ?? String(raw);
 }
 
-// Live "updated Xs ago" timer from generatedAt against a ticking now.
-function ageLabel(generatedAt: string | null | undefined, nowTs: number): string {
-  if (!generatedAt) return "—";
-  const t = Date.parse(generatedAt);
-  if (!Number.isFinite(t)) return "—";
+function agoText(iso: string | null | undefined, nowTs: number): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
   const s = Math.max(0, Math.round((nowTs - t) / 1000));
-  if (s < 60) return `updated ${s}s ago`;
+  if (s < 60) return `${s}s ago`;
   const m = Math.floor(s / 60);
-  return `updated ${m}m ${s % 60}s ago`;
+  if (m < 60) return s % 60 === 0 || m >= 10 ? `${m}m ago` : `${m}m ${s % 60}s ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m ago`;
+}
+
+// The read's market evidence: the close of the last CLOSED candle it rests on.
+// Present on the server response (marketTimingBrainService) though not yet in
+// the generated client type; null when no current closed candle backs it.
+type TimingMarketEvidence = { timeframe?: string; lastClosedCandleAt?: string } | null | undefined;
+
+// Two clocks, named: generatedAt is when the server recalculated (every poll),
+// lastClosedCandleAt is the data time. The recalculation age is never shown
+// as the data's age.
+function freshnessLabel(read: MarketTimingRead, nowTs: number): string {
+  const calc = agoText(read.generatedAt, nowTs);
+  const evidence = (read as MarketTimingRead & { marketEvidence?: TimingMarketEvidence }).marketEvidence;
+  const dataAgo = agoText(evidence?.lastClosedCandleAt, nowTs);
+  const tf = timingTimeframeLabel(evidence?.timeframe ?? read.timeframe);
+  const data = dataAgo
+    ? `last closed ${tf ? `${tf} ` : ""}candle ended ${dataAgo}`
+    : "no current closed candle behind this read";
+  return `${calc ? `calculated ${calc}` : "calculation time unknown"} · ${data}`;
+}
+
+function hasMarketEvidence(read: MarketTimingRead): boolean {
+  const evidence = (read as MarketTimingRead & { marketEvidence?: TimingMarketEvidence }).marketEvidence;
+  return !!evidence?.lastClosedCandleAt && Number.isFinite(Date.parse(evidence.lastClosedCandleAt));
 }
 
 function userTimezone(): string | undefined {
@@ -210,7 +235,12 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
   const newsBlocks = news?.highImpactWindowActive === true;
 
   const isUnavailable = !!read && read.dataQuality.label === "unavailable";
-  const quality = read ? QUALITY_NOTE[read.dataQuality.label] ?? QUALITY_NOTE["unavailable"]! : null;
+  const qualityBase = read ? QUALITY_NOTE[read.dataQuality.label] ?? QUALITY_NOTE["unavailable"]! : null;
+  // "Live data" needs a current closed candle behind the read; without one the
+  // label is downgraded, never kept.
+  const quality = read && qualityBase && read.dataQuality.label === "real" && !hasMarketEvidence(read)
+    ? { text: "Data time unconfirmed", tone: "text-warning" }
+    : qualityBase;
 
   return (
     <div
@@ -372,7 +402,7 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                     data-testid="timing-intelligence-quality"
                   >
                     <Clock className="h-3 w-3" />
-                    {quality.text} · {ageLabel(read.generatedAt, nowTs)}
+                    {quality.text} · {freshnessLabel(read, nowTs)}
                   </span>
                 )}
               </div>
