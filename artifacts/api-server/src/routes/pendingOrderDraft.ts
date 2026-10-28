@@ -32,6 +32,7 @@ import {
   normaliseCapabilities,
   resolvePendingSubmitStatus,
   explainStatus,
+  v150PendingSupportReported,
   ALL_FALSE_CAPABILITIES,
   type BridgeCapabilities,
   type PendingSubmitStatus,
@@ -66,50 +67,68 @@ const PendingDraftSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
-// What a freshly-saved draft's pendingStatus / reason say about the user's
-// bridge — measured from the same connection the submit route reads, never a
-// constant. The draft is NEVER sent to the broker by this route whatever the
-// answer; this only decides which reason is true:
-//   BRIDGE_DISCONNECTED   — no bridge heartbeat within the online window, so
-//                           the EA's pending-order support could not be checked
-//   EA_UPGRADE_REQUIRED   — the EA does not report support for this order type
-//   BLOCKED_BY_PAPER_LOCK — the EA reports support; the paper-only lock holds it
-type DraftPendingStatus = "BRIDGE_DISCONNECTED" | "EA_UPGRADE_REQUIRED" | "BLOCKED_BY_PAPER_LOCK";
+// One answer for every pending-order surface. Saving a draft, the
+// GET /me/bridge-capabilities probe and POST /:id/submit all describe the
+// user's bridge through this function: the same connection read, the same
+// submit gate (resolvePendingSubmitStatus with this route's SAFETY inputs and
+// the paper-only lock) and the same reason. It decides only which refusal is
+// true; it never lets a pending order reach the broker.
+type BridgeConnRow = {
+  lastHeartbeat?: Date | string | null;
+  capabilities?: unknown;
+  eaVersion?: string | null;
+};
 
 const DRAFT_SAVED = "Pending order saved as a validated draft; it has not been sent to your broker.";
 
-function resolveDraftPendingStatus(
-  conn: { lastHeartbeat?: Date | string | null; capabilities?: unknown; eaVersion?: string | null } | null,
+function resolveRoutePendingStatus(
+  conn: BridgeConnRow | null,
   needsStopLimit: boolean,
   nowMs: number,
-): { pendingStatus: DraftPendingStatus; reason: string } {
+): { status: PendingSubmitStatus; reason: string; bridgeConnected: boolean; caps: BridgeCapabilities; lastHb: Date | null } {
+  const caps = normaliseCapabilities(conn?.capabilities);
   const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-  if (!conn || !heartbeatIsOnline(classifyHeartbeatAt(lastHb, nowMs))) {
-    return {
-      pendingStatus: "BRIDGE_DISCONNECTED",
-      reason: `${DRAFT_SAVED} Your MT5 bridge has not sent a heartbeat in the last minute, so whether its EA can execute pending orders could not be checked.`,
-    };
+  // Shared heartbeat policy: online (age < 60 s).
+  const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, nowMs));
+  const status = resolvePendingSubmitStatus({
+    capabilities: caps,
+    bridgeConnected,
+    needsStopLimit,
+    paperOnlyLock: true,                  // Phase 12 invariant — never bent here
+    liveLocked: SAFETY.liveLocked,
+    readOnlyMode: SAFETY.readOnlyMode,
+    allowOrderExecution: SAFETY.allowOrderExecution,
+  });
+  const ea = conn?.eaVersion ? ` (EA v${conn.eaVersion})` : "";
+  let reason: string;
+  switch (status) {
+    case "BRIDGE_DISCONNECTED":
+      reason = conn
+        ? "Your MT5 bridge has not sent a heartbeat in the last minute, so whether its EA can execute pending orders could not be checked."
+        : "No MT5 bridge connection was found for your account, so pending-order support could not be checked.";
+      break;
+    case "BRIDGE_UNSUPPORTED":
+      if (!caps.pendingOrders && v150PendingSupportReported(conn?.capabilities)) {
+        reason = `Your connected EA${ea} reports pending-order support only in its v1.50 capability list (supportsPendingOrders). ` +
+          "The ARX pending-order check reads the pendingOrders capability, which the EA did not report, so this draft cannot be submitted.";
+      } else if (caps.pendingOrders && needsStopLimit && !caps.stopLimitOrders) {
+        reason = `Your connected EA${ea} reports pending-order support but not stop-limit orders, so a stop-limit draft cannot be submitted.`;
+      } else {
+        reason = `Your connected EA${ea} does not report pending-order support.`;
+      }
+      break;
+    case "READ_ONLY":
+    case "LIVE_LOCKED":
+    case "BLOCKED_BY_PAPER_LOCK":
+      // These come from this route's fixed SAFETY posture, not from the
+      // user's connection: the connection itself is not read-only.
+      reason = `Your connected EA${ea} reports pending-order support, but ARX is paper-only: ` +
+        "its pending-order path is read-only and does not deliver pending orders to the broker.";
+      break;
+    default:
+      reason = explainStatus(status);
   }
-  const caps = normaliseCapabilities(conn.capabilities);
-  const v150 = (conn.capabilities as { v150?: { normalized?: Record<string, unknown> } } | null | undefined)?.v150?.normalized;
-  const pending = caps.pendingOrders || v150?.["supportsPendingOrders"] === true;
-  const ea = conn.eaVersion ? ` (EA v${conn.eaVersion})` : "";
-  if (!pending) {
-    return {
-      pendingStatus: "EA_UPGRADE_REQUIRED",
-      reason: `${DRAFT_SAVED} Your connected EA${ea} does not report pending-order support.`,
-    };
-  }
-  if (needsStopLimit && !caps.stopLimitOrders) {
-    return {
-      pendingStatus: "EA_UPGRADE_REQUIRED",
-      reason: `${DRAFT_SAVED} Your connected EA${ea} reports pending-order support but not stop-limit orders.`,
-    };
-  }
-  return {
-    pendingStatus: "BLOCKED_BY_PAPER_LOCK",
-    reason: `${DRAFT_SAVED} Your connected EA${ea} reports pending-order support, but ARX is paper-only: the queue does not deliver pending orders to the broker.`,
-  };
+  return { status, reason, bridgeConnected, caps, lastHb };
 }
 
 // ── POST /me/pending-order-draft ────────────────────────────────────────────
@@ -217,17 +236,18 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
     return;
   }
 
-  // 4. What the draft's status says about the bridge — read from the same
-  //    connection the submit route uses. Unreadable → refuse to save rather
-  //    than guess a reason.
-  let draftStatus: { pendingStatus: DraftPendingStatus; reason: string };
+  // 4. What the draft's status says about the bridge — the same answer the
+  //    submit route and /me/bridge-capabilities give for this connection.
+  //    Unreadable → refuse to save rather than guess a reason.
+  let draftStatus: { pendingStatus: PendingSubmitStatus; reason: string };
   try {
     const connRows = await listUserConnections(userId, { order: "oldest", limit: 1 });
-    draftStatus = resolveDraftPendingStatus(
+    const resolved = resolveRoutePendingStatus(
       connRows[0] ?? null,
       orderType === "BUY_STOP_LIMIT" || orderType === "SELL_STOP_LIMIT",
       Date.now(),
     );
+    draftStatus = { pendingStatus: resolved.status, reason: `${DRAFT_SAVED} ${resolved.reason}` };
   } catch (e) {
     req.log?.error?.({ err: (e as Error).message, userId }, "pending-order-draft bridge read failed");
     res.status(500).json({
@@ -377,20 +397,10 @@ router.get("/me/bridge-capabilities", async (req, res): Promise<void> => {
   try {
     const rows = await listUserConnections(userId, { order: "oldest", limit: 1 });
     const conn = rows[0] ?? null;
-    const caps = normaliseCapabilities(conn?.capabilities);
-    const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
-    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
-    // Honest "what would the submit endpoint say right now" probe.
-    const probe = resolvePendingSubmitStatus({
-      capabilities: caps,
-      bridgeConnected,
-      needsStopLimit: false,
-      paperOnlyLock: true,                  // Phase 12 invariant
-      liveLocked: SAFETY.liveLocked,
-      readOnlyMode: SAFETY.readOnlyMode,
-      allowOrderExecution: SAFETY.allowOrderExecution,
-    });
+    // Honest "what would the submit endpoint say right now" probe — the same
+    // resolver (and reason) the submit route and draft save use.
+    const { status: probe, reason: probeReason, bridgeConnected, caps, lastHb } =
+      resolveRoutePendingStatus(conn, false, Date.now());
     const rawCaps = (conn?.capabilities ?? null) as Record<string, unknown> | null;
     const bridgeVersion = (rawCaps && typeof rawCaps.bridgeVersion === "string") ? rawCaps.bridgeVersion : null;
     res.status(200).json({
@@ -403,7 +413,7 @@ router.get("/me/bridge-capabilities", async (req, res): Promise<void> => {
       capabilities: caps,
       pendingOrderExecutable: probe === "QUEUED",
       currentSubmitStatus: probe,
-      currentSubmitExplanation: explainStatus(probe),
+      currentSubmitExplanation: probeReason,
       ...SAFETY,
     });
   } catch (e) {
@@ -454,22 +464,13 @@ router.post("/me/pending-order-draft/:id/submit", async (req, res): Promise<void
 
     const connRows = await listUserConnections(userId, { order: "oldest", limit: 1 });
     const conn = connRows[0] ?? null;
-    const caps = normaliseCapabilities(conn?.capabilities);
-    const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
-    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
     const needsStopLimit =
       draft.orderType === "BUY_STOP_LIMIT" || draft.orderType === "SELL_STOP_LIMIT";
 
-    const status: PendingSubmitStatus = resolvePendingSubmitStatus({
-      capabilities: caps,
-      bridgeConnected,
-      needsStopLimit,
-      paperOnlyLock: true,                  // Phase 12 invariant — never bent here
-      liveLocked: SAFETY.liveLocked,
-      readOnlyMode: SAFETY.readOnlyMode,
-      allowOrderExecution: SAFETY.allowOrderExecution,
-    });
+    // Same resolver as draft save and /me/bridge-capabilities (paper-only
+    // lock and this route's SAFETY inputs, never bent here).
+    const { status, reason: statusReason, bridgeConnected, caps } =
+      resolveRoutePendingStatus(conn, needsStopLimit, Date.now());
 
     // Phase TV forward-wired branch. ONLY reachable if every safety gate
     // opens — under today's paper-only lock `status` is never "QUEUED".
@@ -538,7 +539,7 @@ router.post("/me/pending-order-draft/:id/submit", async (req, res): Promise<void
     // Honest non-QUEUED branch. Scope UPDATE by both id AND userId.
     await db.update(tradeActionRequestsTable).set({
       pendingStatus: status,
-      reason: explainStatus(status),
+      reason: statusReason,
       updatedAt: new Date(),
     }).where(and(
       eq(tradeActionRequestsTable.id, draftId),
@@ -550,7 +551,7 @@ router.post("/me/pending-order-draft/:id/submit", async (req, res): Promise<void
       draftId,
       executable: false,                    // ALWAYS false today by construction
       pendingStatus: status,
-      reason: explainStatus(status),
+      reason: statusReason,
       bridgeConnected,
       eaVersion: conn?.eaVersion ?? null,
       capabilities: caps,
