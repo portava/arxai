@@ -53,6 +53,19 @@ export const SELECTED_MARKET_CACHE_META = {
 // How many real candles to pull for analysis (mirrors the truth brain).
 const CANDLE_LIMIT = 200;
 
+// The bias / trend / confidence read is measured over the SAME window the
+// scanner row uses: the newest 30 CLOSED bars (marketScanner.ts
+// SCAN_ANALYSIS_WINDOW, fed by prepareScannerCandles which drops forming bars).
+// Measuring over all 200 bars, or including the still-forming bar, let this
+// panel show BUY while the Results card and Opportunity Map showed SELL for the
+// same symbol and timeframe. A drift guard test pins the two constants together.
+export const SELECTED_ANALYSIS_WINDOW = 30;
+
+/** Fully closed provider bars only. A forming bar is never an analysis input. */
+function closedBars(candles: NormalizedChartCandle[]): NormalizedChartCandle[] {
+  return candles.filter((c) => c.isComplete === true && c.isForming !== true);
+}
+
 // Injectable SOURCE deps so the builder is unit-testable with crafted candle /
 // feed inputs (mirrors the truth brain's dependency-injection pattern). The real
 // dependency is the canonical chart pipeline.
@@ -402,11 +415,18 @@ async function buildSelectedMarketSnapshot(
   const dataSourceLabel = sourceLabelFor(fs?.source ?? null);
   // Freshness honesty rides on dataState / dataAsOf — NEVER on a faked source.
   const dataAsOf = fs?.lastCandleTime ?? null;
-  const analysisCandles: AnalysisCandle[] = chart.candles.map((c) => ({
+  // Closed-bar rule (same as the scanner row): the analysis window is the newest
+  // SELECTED_ANALYSIS_WINDOW closed bars; the forming bar never moves the read.
+  const closed = closedBars(chart.candles);
+  const analysisBars = closed.slice(-SELECTED_ANALYSIS_WINDOW);
+  const analysisCandles: AnalysisCandle[] = analysisBars.map((c) => ({
     o: c.open, h: c.high, l: c.low, c: c.close,
   }));
+  // The analysis prices off the newest CLOSED close (no bound quote here, the
+  // scanner does the same). The stale-level guard below still compares levels
+  // with the newest observed price, which may be the forming bar's close.
+  const quote: AnalysisQuote = { mid: newestClose(analysisBars) ?? 0, spread: 0 };
   const price = newestClose(chart.candles);
-  const quote: AnalysisQuote = { mid: price ?? 0, spread: 0 };
   const feedProvider = fs?.source ?? undefined;
   const a = analyzeMarketFromCandles(
     symbol, timeframe, analysisCandles, quote, "LIVE_FEED", feedProvider,
@@ -457,7 +477,7 @@ async function buildSelectedMarketSnapshot(
 
   // Stale-level guard (Task #512 pure domain guard): withhold geometry that has
   // drifted too far from the CURRENT real price — never show stale entries/stops.
-  const atr = computeAtr(chart.candles, 14);
+  const atr = computeAtr(closed, 14);
   const levelInput: TruthLevelInput = {
     entryFrom: a.entryZone.low,
     entryTo: a.entryZone.high,

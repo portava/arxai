@@ -23,14 +23,42 @@ import {
 } from "../selectedMarket.js";
 import type { SelectedMarketDeps } from "../selectedMarket.js";
 import type { ChartCandlesResponse, ChartFeedStatus } from "../../data/chart/chartDataService.js";
+import { SELECTED_ANALYSIS_WINDOW } from "../selectedMarket.js";
+import { analyzeMarketFromCandles } from "../../aiBrain.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export {};
 
-type Bar = { open: number; high: number; low: number; close: number };
+type Bar = { open: number; high: number; low: number; close: number; isComplete?: boolean };
 
-// A minimal but shape-faithful chart response. The builder reads only
-// `candles` (OHLC) and `feedStatus`, so we cast the rest.
+const STEP_MS = 15 * 60_000;
+const DEFAULT_LAST_CLOSE = "2025-06-12T00:00:00.000Z";
+
+// A shape-faithful chart response. Candles carry the NormalizedChartCandle time
+// bounds and completion flags the builder reads: every bar is a CLOSED provider
+// bar unless it says `isComplete: false` (a forming bar). Closed bars end at
+// feedStatus.lastCandleTime (or a fixed default); a forming bar opens there.
 function makeChart(bars: Bar[], fs: Partial<ChartFeedStatus> = {}): ChartCandlesResponse {
+  const lastClosedCloseMs = Date.parse(fs.lastCandleTime ?? DEFAULT_LAST_CLOSE);
+  const closedCount = bars.filter((b) => b.isComplete !== false).length;
+  let closedIdx = 0;
+  const candles = bars.map((b) => {
+    const forming = b.isComplete === false;
+    const closeMs = forming
+      ? lastClosedCloseMs + STEP_MS
+      : lastClosedCloseMs - (closedCount - 1 - closedIdx++) * STEP_MS;
+    return {
+      ...b,
+      openTime: new Date(closeMs - STEP_MS).toISOString(),
+      closeTime: new Date(closeMs).toISOString(),
+      volume: 0,
+      tickVolume: null,
+      isComplete: !forming,
+      isFinal: !forming,
+      isForming: false,
+    };
+  });
   const feedStatus: ChartFeedStatus = {
     symbol: "EURUSD",
     displaySymbol: "EUR/USD",
@@ -54,7 +82,7 @@ function makeChart(bars: Bar[], fs: Partial<ChartFeedStatus> = {}): ChartCandles
     completenessReason: null,
     ...fs,
   } as ChartFeedStatus;
-  return { candles: bars, feedStatus } as unknown as ChartCandlesResponse;
+  return { candles, feedStatus } as unknown as ChartCandlesResponse;
 }
 
 // Build N bars with a constant per-bar range, drifting up (bullish) into the
@@ -362,4 +390,68 @@ test("controlled latency probe: one 75ms source read serves 32 readers; warm rea
   warmMs.sort((a, b) => a - b);
   assert.equal(sourceCalls, 1); assert.equal(newsCalls, 1);
   t.diagnostic(JSON.stringify({ kind: "offline-controlled-latency-not-production-SLA", syntheticSourceDelayMs: 75, concurrentReaders: 32, sourceCalls, newsCalls, coldBatchMs, warmReads: 500, warmP50Ms: warmMs[250], warmP95Ms: warmMs[475] }));
+});
+
+// ── Closed-bar window parity with the scanner row ─────────────────────────────
+// The scanner row (analyzeViaRouter) reads the newest 30 CLOSED bars; forming
+// bars are dropped by prepareScannerCandles. The selected-market panel used all
+// 200 chart bars including the forming one, so it could say BUY / bullish while
+// the Results card said SELL / bearish for the same symbol and timeframe.
+function risingThenFallingWithFormingTip(formingClose: number, formingRange: number): Bar[] {
+  const bars: Bar[] = [];
+  // 170 older bars drift up 1.10 → 1.15; the newest 30 closed bars drift down.
+  for (let i = 0; i < 170; i++) {
+    const close = 1.10 + (0.05 * i) / 169;
+    bars.push({ open: close, high: close + 0.00025, low: close - 0.00025, close });
+  }
+  for (let i = 0; i < 30; i++) {
+    const close = 1.15 - (0.005 * (i + 1)) / 30;
+    bars.push({ open: close, high: close + 0.00025, low: close - 0.00025, close });
+  }
+  bars.push({
+    open: formingClose, high: formingClose + formingRange / 2, low: formingClose - formingRange / 2,
+    close: formingClose, isComplete: false,
+  });
+  return bars;
+}
+
+test("the selected-market read uses the scanner's closed 30-bar window, never the forming bar", async () => {
+  const run = async (bars: Bar[]) => {
+    clearSelectedMarketCache();
+    const stub = (async () => makeChart(bars, FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+    const env = await getSelectedMarketSnapshot(
+      { symbolRaw: "EURUSD", timeframe: "M15", refresh: true },
+      { getChartCandlesFn: stub, loadEventsFn: noEvents },
+    );
+    assert.equal(env.ok, true);
+    if (!env.ok) throw new Error("expected an ok envelope");
+    return env;
+  };
+  const bars = risingThenFallingWithFormingTip(1.1451, 0.0004);
+  const env = await run(bars);
+  // What the scanner computes for the same series: newest 30 closed bars.
+  const scannerWindow = bars.filter((b) => b.isComplete !== false).slice(-30)
+    .map((b) => ({ o: b.open, h: b.high, l: b.low, c: b.close }));
+  const scannerRead = analyzeMarketFromCandles(
+    "EURUSD", "M15", scannerWindow, { mid: scannerWindow[scannerWindow.length - 1]!.c, spread: 0 }, "LIVE_FEED",
+  );
+  assert.equal(scannerRead.marketBias, "bearish");
+  assert.equal(env.highlights.trendState, scannerRead.marketBias,
+    "the panel must describe the same closed window the scanner row describes");
+
+  // Changing ONLY the forming bar's OHLC (a wide, partial range) leaves the read alone.
+  const moved = await run(risingThenFallingWithFormingTip(1.1453, 0.004));
+  assert.equal(moved.highlights.trendState, env.highlights.trendState);
+  assert.equal(moved.highlights.bias, env.highlights.bias);
+  assert.equal(moved.highlights.confidenceScore, env.highlights.confidenceScore);
+  assert.equal(moved.highlights.volatilityLabel, env.highlights.volatilityLabel);
+  assert.deepEqual(moved.highlights.entryZone, env.highlights.entryZone);
+  assert.equal(moved.highlights.suggestedStop, env.highlights.suggestedStop);
+});
+
+test("drift guard: the selected-market window equals the scanner's SCAN_ANALYSIS_WINDOW", () => {
+  const src = readFileSync(fileURLToPath(new URL("../../marketScanner.ts", import.meta.url)), "utf8");
+  const m = /const SCAN_ANALYSIS_WINDOW = (\d+);/.exec(src);
+  assert.ok(m, "marketScanner.ts must still declare SCAN_ANALYSIS_WINDOW");
+  assert.equal(Number(m[1]), SELECTED_ANALYSIS_WINDOW);
 });
