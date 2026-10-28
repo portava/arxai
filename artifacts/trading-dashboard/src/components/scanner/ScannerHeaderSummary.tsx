@@ -34,7 +34,8 @@ import {
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
 import { useSelectedActionStore } from "@/components/scanner/selectedActionStore";
 import { coerceVisibleTimeframe } from "@/components/scanner/scannerChartFormat";
-import { TruthVerdictBias, TruthVerdictStage } from "@workspace/api-client-react";
+import { TruthVerdictBias } from "@workspace/api-client-react";
+import { describeEngineAgreement } from "@/lib/engineAgreement";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
 
@@ -58,12 +59,10 @@ const BIAS_LABEL: Record<string, string> = {
   [TruthVerdictBias.CONFLICT]: "Mixed signals",
   [TruthVerdictBias.UNKNOWN]: "",
 };
-const STAGE_LABEL: Record<string, string> = {
-  [TruthVerdictStage.ALIGNED]: "Aligned",
-  [TruthVerdictStage.DEVELOPING]: "Developing",
-  [TruthVerdictStage.CONFLICT]: "Conflicting",
-  [TruthVerdictStage.UNKNOWN]: "",
-};
+// The verdict's STAGE is an engine-agreement count (composeVerdict), not a
+// setup stage, so it is never printed bare ("Developing" read as the same axis
+// as the signal's "Setup forming"). describeEngineAgreement labels what was
+// counted, or nothing when it cannot reproduce the server's stage.
 
 function dataTone(v: DataVerdict): string {
   switch (v) {
@@ -125,11 +124,15 @@ function formatPrice(p: number | null): string {
   return p.toLocaleString(undefined, { maximumFractionDigits: p >= 100 ? 2 : 5 });
 }
 
-export function ScannerHeaderSummary({ running }: { running: boolean }) {
+// `running` (the operator auto-scan engine) is accepted for older call sites
+// but no longer rendered here: it describes the scan engine, not this market,
+// and printed "Idle" beside the market's bias. The page shows "Auto-scan
+// on/off" next to the Start/Stop controls instead.
+export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   const [symbol] = useChartSymbol();
   const bare = bareSymbol(symbol);
   const [timeframe] = useScannerTimeframe();
-  const { scannerTruth: truth, verdict } = useSymbolTruth(bare, timeframe);
+  const { scannerTruth: truth, verdict, components } = useSymbolTruth(bare, timeframe);
   const { shouldShowAdminDiagnostics } = useTradingMode();
   const { name } = useAssistantName();
   const rubyStore = useRubyReadStore();
@@ -138,8 +141,8 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   // ONE directional read: bias + stage come from the composed snapshot verdict
   // so the header can never disagree with the chart / Ruby surfaces about which
   // way the market is leaning (closes the header-vs-pill self-contradiction).
-  const biasLabel = verdict ? BIAS_LABEL[verdict.bias] ?? "" : "";
-  const stageLabel = verdict ? STAGE_LABEL[verdict.stage] ?? "" : "";
+  const agreement = describeEngineAgreement(verdict, components);
+  const biasLabel = agreement?.biasLabel ?? (verdict ? BIAS_LABEL[verdict.bias] ?? "" : "");
   const biasTone =
     verdict?.bias === "BULLISH"
       ? "text-success"
@@ -249,10 +252,15 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
         <span className="text-txt-secondary">{timeframe}</span>
         <Dot />
         <span className="font-mono">{price}</span>
-        <Dot />
-        <span className={cn("font-medium", running ? "text-primary" : "text-txt-muted")}>{running ? "Scanning" : "Idle"}</span>
-        {biasLabel && (<><Dot /><span className={cn("font-semibold", biasTone)}>{biasLabel}</span></>)}
-        {stageLabel && (<><Dot /><span className="text-txt-secondary">{stageLabel}</span></>)}
+        {biasLabel && (<><Dot /><span className={cn("font-semibold", biasTone)} data-testid="scanner-header-bias">{biasLabel}</span></>)}
+        {agreement && (
+          <>
+            <Dot />
+            <span className="text-txt-secondary" title={agreement.title} data-testid="scanner-header-agreement">
+              {agreement.chip}
+            </span>
+          </>
+        )}
       </div>
 
       {/* Trade-Health readiness — the ONE shared read-quality verdict

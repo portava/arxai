@@ -223,6 +223,9 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.getByTestId("ruby-market-read-what").textContent).toContain("simple:");
     // Required metadata blocks render from the signal.
     expect(screen.getByTestId("ruby-market-read-stage").textContent).toContain("Entry window open");
+    // The chip names its producer: this is the SIGNAL's lifecycle stage, not
+    // the header's engine-agreement count (owner screenshot 2026-10-27).
+    expect(screen.getByTestId("ruby-market-read-stage").textContent).toContain("Signal stage");
     expect(screen.getByTestId("ruby-market-read-bias").textContent).toContain("Bullish");
     expect(screen.getByTestId("ruby-market-read-quality").textContent).toContain("Strong");
     expect(screen.getByTestId("ruby-market-read-edge").textContent).toContain("72");

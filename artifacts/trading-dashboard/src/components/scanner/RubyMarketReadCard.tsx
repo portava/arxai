@@ -329,7 +329,7 @@ export function RubyMarketReadCard({
 
               {/* Signal metadata — stage / bias / trade quality / edge */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="ruby-market-read-meta">
-                <MetaChip label="Stage" value={downgraded ? "—" : humanize(STAGE_LABEL, signal.lifecycleStage)} testid="ruby-market-read-stage" />
+                <MetaChip label="Signal stage" value={downgraded ? "—" : humanize(STAGE_LABEL, signal.lifecycleStage)} testid="ruby-market-read-stage" />
                 <MetaChip label="Bias" value={downgraded ? "—" : humanize(BIAS_LABEL, signal.bias)} testid="ruby-market-read-bias" />
                 <MetaChip
                   label="Trade quality"
