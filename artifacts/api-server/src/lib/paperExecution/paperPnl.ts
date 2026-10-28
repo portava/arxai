@@ -33,6 +33,35 @@ export function paperMoveSign(direction: string, entry: number, price: number): 
   return move > 0 ? 1 : move < 0 ? -1 : 0;
 }
 
+/**
+ * Contract size of the Risk Governor's paper ledger model
+ * (riskGovernor/enforce.ts PAPER_LEDGER_INSTRUMENT): every paper symbol at
+ * 100 units per lot, quoted 1:1 in USD. It is the size the governor priced a
+ * paper order's loss at stop with when it allowed it, and the size the paper
+ * book held for every order before contract sizing.
+ */
+export const PAPER_LEDGER_MODEL_CONTRACT_SIZE = 100;
+
+/**
+ * P&L at the governor's paper ledger model: direction × move × lots × 100.
+ * A risk figure for an amount that could not be sized, never a measured
+ * result and never shown as one.
+ */
+export function paperLedgerModelPnl(direction: string, lots: number, entry: number, price: number): number {
+  return (direction === "SELL" ? -1 : 1) * (price - entry) * lots * PAPER_LEDGER_MODEL_CONTRACT_SIZE;
+}
+
+/**
+ * True when a settled order's stored P&L is the not-sized placeholder.
+ * paper_orders.profit_loss cannot be empty, so a close whose amount could not
+ * be sized stores 0. A 0 on an exit that moved away from entry is that
+ * placeholder, not a breakeven (the paper history reads it "not sized" by the
+ * same rule). A 0 on a flat exit is a real breakeven.
+ */
+export function isUnsizedPaperClose(o: { profitLoss: number | null; entryPrice: number; exitPrice: number | null }): boolean {
+  return o.profitLoss === 0 && o.exitPrice != null && o.exitPrice !== o.entryPrice;
+}
+
 export function paperPnl(a: {
   symbol: string;
   direction: string;

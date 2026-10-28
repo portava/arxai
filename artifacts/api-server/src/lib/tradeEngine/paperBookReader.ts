@@ -9,7 +9,8 @@
 //   settled   status <> 'OPEN' with a closed_at (CLOSED_SL / CLOSED_TP /
 //             CLOSED_MANUAL, and a CANCELLED the venue settled); a voided
 //             order (CANCELLED, no closed_at) never counts
-//   realized  sum of profit_loss over settled orders
+//   realized  sum of realizedOf() over settled orders (profit_loss, or the
+//             governor's paper model figure for an amount not sized)
 //
 // The other two tables are NOT paper facts and are never mixed in here:
 // paper_trades is the trader's hand-entered journal (lib/riskGovernor/
@@ -20,6 +21,7 @@
 
 import { db, paperAccountsTable, paperOrdersTable } from "@workspace/db";
 import { and, desc, eq, gte, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { isUnsizedPaperClose, paperLedgerModelPnl } from "../paperExecution/paperPnl.js";
 
 export type PaperOrderRow = typeof paperOrdersTable.$inferSelect;
 export type PaperAccountRow = typeof paperAccountsTable.$inferSelect;
@@ -55,15 +57,19 @@ export function isSettledPaperStatus(status: string): boolean {
 }
 
 /**
- * Realized P/L of one settled order. An order settled without a recorded
- * profit_loss (no current writer does this) reads its sign from the fill
- * prices, so missing P/L never reads as a win or resets a losing streak.
+ * Realized P/L of one settled order: the stored profit_loss when it is a
+ * sized amount. An order whose amount could not be sized (the 0 placeholder
+ * on an exit that moved from entry, see isUnsizedPaperClose) or that has no
+ * recorded profit_loss counts at the Risk Governor's paper ledger model
+ * (move × lots × 100, the size the governor priced it at), signed by the
+ * fills. So a stop-out of unknown size is never dropped from the daily loss
+ * total, never resets a losing streak and never reads as a win. That figure
+ * is a risk count, not a measured result.
  */
 export function realizedOf(o: Pick<PaperOrderRow, "exitPrice" | "entryPrice" | "direction" | "lotSize"> & { profitLoss: number | null }): number {
-  if (o.profitLoss != null) return Number(o.profitLoss);
+  if (o.profitLoss != null && !isUnsizedPaperClose(o)) return Number(o.profitLoss);
   if (o.exitPrice == null) return 0;
-  const dir = o.direction === "SELL" ? -1 : 1;
-  return (o.exitPrice - o.entryPrice) * dir * Math.abs(o.lotSize || 1);
+  return paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice);
 }
 
 /** The trader's paper account: the given id (if theirs), else the newest active one. */
