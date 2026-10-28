@@ -190,9 +190,14 @@ router.get("/live-intent/queue", async (req, res) => {
     }
 
     const limit = Math.min(500, Math.max(1, Number(req.query["limit"]) || 100));
-    const rows = await db.select().from(liveIntentsTable)
+    // One row past the window says whether older intents exist beyond it, so
+    // the counts below (over the returned rows only) can be labelled as the
+    // newest `limit` intents rather than the whole queue.
+    const fetched = await db.select().from(liveIntentsTable)
       .orderBy(desc(liveIntentsTable.createdAt))
-      .limit(limit);
+      .limit(limit + 1);
+    const hasMore = fetched.length > limit;
+    const rows = fetched.slice(0, limit);
     const counts = {
       total: rows.length,
       pendingMt5: rows.filter(r => r.status === "PENDING_MT5_CONNECTION").length,
@@ -200,7 +205,7 @@ router.get("/live-intent/queue", async (req, res) => {
       rejected: rows.filter(r => r.status === "REJECTED_BY_RISK").length,
       executedLater: rows.filter(r => r.status === "EXECUTED_LATER").length,
     };
-    return res.json({ intents: rows, counts, modeScopeApplied: true, adminScope: true });
+    return res.json({ intents: rows, counts, limit, hasMore, modeScopeApplied: true, adminScope: true });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /live-intent/queue failed");
     return res.status(500).json({ error: "Failed to load live intent queue" });
