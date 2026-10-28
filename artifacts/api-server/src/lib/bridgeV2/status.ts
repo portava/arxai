@@ -16,7 +16,11 @@
 // - Per-user isolation: every query is scoped by userId; the user DTO uses the
 //   authenticated user's id, never a bridge token.
 
-import type { HeartbeatFreshness } from "../brokerHub/freshness.js";
+import {
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
+  type HeartbeatFreshness,
+} from "../brokerHub/freshness.js";
 import { deriveBridgeV2Liveness, type BridgeV2Freshness } from "./liveness.js";
 import {
   db,
@@ -190,6 +194,48 @@ function streamLastAt(streams: StreamRow[], messageType: string): string | null 
   return isoOf(latest);
 }
 
+/**
+ * Whole seconds of a heartbeat age, floored: a floored age classifies exactly
+ * like the ms age under the shared policy (floor(x) < 15 ⇔ x < 15), so 14.6 s
+ * never shows as "15s" beside a fresh heartbeat.
+ */
+export function heartbeatAgeSecondsOf(ageMs: number | null): number | null {
+  return ageMs != null && Number.isFinite(ageMs) ? Math.floor(ageMs / 1000) : null;
+}
+
+/**
+ * Advisory reason live execution would not flow on this bridge (never a gate).
+ * A heartbeat that is not fresh is described in the shared heartbeat
+ * vocabulary with its observed age; otherwise the first EA / server lock.
+ */
+export function bridgeV2SafetyLockReason(input: {
+  heartbeatFreshness: HeartbeatFreshness;
+  heartbeatAgeMs: number | null;
+  readOnlyMode: boolean | null;
+  enableLiveExecution: boolean | null;
+  algoTradingAllowed: boolean | null;
+  executionAllowedServed: boolean;
+}): string | null {
+  const ageS = heartbeatAgeSecondsOf(input.heartbeatAgeMs);
+  switch (input.heartbeatFreshness) {
+    case "unknown":
+      return input.heartbeatAgeMs == null
+        ? "No heartbeat received from this bridge"
+        : "Heartbeat time could not be read (future-dated or invalid)";
+    case "offline":
+      return `Bridge offline — last heartbeat ${ageS}s ago (offline from ${MT5_HEARTBEAT_OFFLINE_AT_SECONDS} s)`;
+    case "degraded":
+      return `Heartbeat delayed — last one ${ageS}s ago (fresh below ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS} s, offline from ${MT5_HEARTBEAT_OFFLINE_AT_SECONDS} s)`;
+    case "fresh":
+      break;
+  }
+  if (input.readOnlyMode === true) return "EA ReadOnlyMode active";
+  if (input.enableLiveExecution === false) return "EA live execution disabled";
+  if (input.algoTradingAllowed === false) return "AlgoTrading disabled in MT5";
+  if (!input.executionAllowedServed) return "Server execution not enabled";
+  return null;
+}
+
 // Build the full admin readiness DTO for every bridge (optionally one user).
 export async function buildBridgeV2AdminStatus(
   userId: number | null,
@@ -251,13 +297,17 @@ export async function buildBridgeV2AdminStatus(
     const terminalConnected = readBool(hbPayload, "terminalConnected");
     const executionAllowedServed = manifest?.executionAllowed === true;
 
-    // Advisory safety-lock reason — informational, never a gate.
-    let safetyLockReason: string | null = null;
-    if (!connected) safetyLockReason = "Bridge offline — no fresh heartbeat";
-    else if (readOnlyMode === true) safetyLockReason = "EA ReadOnlyMode active";
-    else if (enableLiveExecution === false) safetyLockReason = "EA live execution disabled";
-    else if (algoTradingAllowed === false) safetyLockReason = "AlgoTrading disabled in MT5";
-    else if (!executionAllowedServed) safetyLockReason = "Server execution not enabled";
+    // Advisory safety-lock reason — informational, never a gate. The heartbeat
+    // part speaks the shared heartbeat vocabulary (the same word the card's
+    // heartbeat badge, EA Health and the watchdog use for this age).
+    const safetyLockReason = bridgeV2SafetyLockReason({
+      heartbeatFreshness: liveness.heartbeatFreshness,
+      heartbeatAgeMs,
+      readOnlyMode,
+      enableLiveExecution,
+      algoTradingAllowed,
+      executionAllowedServed,
+    });
 
     out.push({
       userId: key.userId,
@@ -268,7 +318,7 @@ export async function buildBridgeV2AdminStatus(
       streamHealth: liveness.streamHealth,
       streamImpliesExecutionReady: liveness.streamImpliesExecutionReady,
       lastHeartbeatAt,
-      heartbeatAgeSeconds: heartbeatAgeMs != null ? Math.round(heartbeatAgeMs / 1000) : null,
+      heartbeatAgeSeconds: heartbeatAgeSecondsOf(heartbeatAgeMs),
       eaVersion: heartbeat?.eaVersion ?? null,
       accountType: readStr(hbPayload, "accountType"),
       terminalConnected,
