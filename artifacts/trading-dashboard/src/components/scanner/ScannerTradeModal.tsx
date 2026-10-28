@@ -100,6 +100,35 @@ type DemoCommand = {
 
 const TERMINAL = new Set(["FILLED_DEMO", "REJECTED", "FAILED", "BLOCKED"]);
 
+// The server's per-user dispatch gate (GET /api/me/demo-bridge-debug →
+// bridge.gateBlockers) is evaluated with userConfirmed=false, so
+// USER_NOT_CONFIRMED is always listed and is cleared by this form's own
+// confirm step. Every other blocker means the server will refuse the order.
+const CONFIRM_STEP_BLOCKER = "USER_NOT_CONFIRMED";
+const GATE_BLOCKER_WORDS: Record<string, string> = {
+  WRONG_EXECUTION_MODE: "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)",
+  NOT_VERIFIED_DEMO: "the demo account has not passed demo verification",
+  ACCOUNT_TYPE_NOT_EXPLICIT_DEMO: "the bridge account is not confirmed as a demo account",
+  NO_BRIDGE_CONNECTION: "no demo bridge is connected",
+  BRIDGE_NOT_CONNECTED: "the demo bridge is not connected",
+  HEARTBEAT_STALE: "the demo bridge heartbeat is stale",
+  LIVE_LOCK_BROKEN: "the live lock is not in place",
+  RISK_GATE_FAILED: "the risk gate did not pass",
+  DUPLICATE_SUSPECTED: "a duplicate EA is suspected",
+};
+function gateBlockerWords(code: string): string {
+  if (GATE_BLOCKER_WORDS[code]) return GATE_BLOCKER_WORDS[code];
+  if (code.startsWith("EA_VERSION_TOO_OLD")) return "the EA version is too old";
+  return code;
+}
+
+type DemoExecutionState =
+  | { kind: "checking" }
+  | { kind: "unchecked" }
+  | { kind: "unreported" }
+  | { kind: "blocked"; reasons: string[] }
+  | { kind: "enabled" };
+
 // ScannerTradeModal — opens from a Market Scanner result card. Routes
 // MARKET orders through the demo-command queue (POST /api/me/demo-commands
 // → /confirm → /dispatch) so they appear in Recent Demo Commands, Open
@@ -138,6 +167,9 @@ export function ScannerTradeModal({
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [bridge, setBridge] = useState<BridgeReadiness | null>(null);
   const [bridgeLoading, setBridgeLoading] = useState(false);
+  // Whether the last demo-bridge-debug read succeeded ("failed" covers a
+  // non-2xx, a network error and a payload with no bridge block).
+  const [bridgeCheck, setBridgeCheck] = useState<"pending" | "ok" | "failed">("pending");
   const idempotencyKeyRef = useRef<string>(`sc-${signal.symbol}-${signal.timeframe ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
   const toastedTerminalRef = useRef<string | null>(null);
   // Tracks whether the editable "Current price" has been seeded from the shared
@@ -202,15 +234,17 @@ export function ScannerTradeModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setBridgeCheck("pending");
     async function load() {
       try {
         setBridgeLoading(true);
         const r = await fetch(u("/api/me/demo-bridge-debug"), { credentials: "include" });
-        if (!r.ok) { if (!cancelled) setBridge(null); return; }
+        if (!r.ok) { if (!cancelled) { setBridge(null); setBridgeCheck("failed"); } return; }
         const j = await r.json();
         if (cancelled) return;
         setBridge(j.bridge ?? null);
-      } catch { if (!cancelled) setBridge(null); }
+        setBridgeCheck(j.bridge ? "ok" : "failed");
+      } catch { if (!cancelled) { setBridge(null); setBridgeCheck("failed"); } }
       finally { if (!cancelled) setBridgeLoading(false); }
     }
     void load();
@@ -253,6 +287,19 @@ export function ScannerTradeModal({
     if (bridge.eaInputs.readOnlyMode === true) return "Selected bridge is read-only. In MT5 → EA → Inputs, set ReadOnlyMode=false.";
     if (bridge.eaInputs.enableDemoExecution === false) return "Selected bridge has EnableDemoExecution=false. In MT5 → EA → Inputs, set EnableDemoExecution=true.";
     return "Selected bridge is not dispatch-ready. Open MT5 Setup for details.";
+  })();
+
+  // Is demo execution enabled for THIS user right now? Read from the server's
+  // own dispatch gate, never asserted: a ready bridge is not enough (the user
+  // must also be armed for demo execution and verified), and createDraftCommand
+  // refuses an unarmed user with NOT_ARMED_FOR_DEMO_EXECUTION.
+  const demoExecution: DemoExecutionState = (() => {
+    if (bridgeCheck === "pending") return { kind: "checking" };
+    if (bridgeCheck === "failed" || !bridge) return { kind: "unchecked" };
+    if (!Array.isArray(bridge.gateBlockers)) return { kind: "unreported" };
+    const blocking = bridge.gateBlockers.filter((b) => b !== CONFIRM_STEP_BLOCKER);
+    if (blocking.length > 0) return { kind: "blocked", reasons: blocking.map(gateBlockerWords) };
+    return { kind: "enabled" };
   })();
 
   // Reset internal state every time the modal opens for a new signal,
@@ -516,7 +563,8 @@ export function ScannerTradeModal({
     (bigLot && !bigLotAck) ||
     (demoAffordance.requireAck && !feedAck) || // honest demo feed-not-live ack
     (cmd != null && !terminal) ||
-    (market && !bridgeReady); // block market dispatch when bridge isn't execution-ready
+    (market && !bridgeReady) || // block market dispatch when bridge isn't execution-ready
+    (market && demoExecution.kind === "blocked"); // the server's dispatch gate would refuse it
 
   // While either the account mode or the access verdict is still loading,
   // render a neutral skeleton — never the DEMO body, so a live account
@@ -586,9 +634,30 @@ export function ScannerTradeModal({
         />
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm min-h-0">
-          <div className="flex items-center gap-1.5 rounded border border-success/40 bg-success/5 px-2 py-1.5 text-[11px] text-success">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Demo trading enabled. Live broker execution disabled.
+          <div
+            className={`flex items-start gap-1.5 rounded border px-2 py-1.5 text-[11px] ${
+              demoExecution.kind === "enabled"
+                ? "border-success/40 bg-success/5 text-success"
+                : demoExecution.kind === "checking"
+                  ? "border-border bg-card text-muted-foreground"
+                  : "border-warning/50 bg-warning/10 text-warning"
+            }`}
+            data-testid="scanner-demo-execution-banner"
+          >
+            {demoExecution.kind === "enabled"
+              ? <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              : demoExecution.kind === "checking"
+                ? <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+                : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+            <span>
+              {demoExecution.kind === "enabled" && "Demo execution enabled for this account (server dispatch gate)."}
+              {demoExecution.kind === "checking" && "Checking demo execution for this account…"}
+              {demoExecution.kind === "unchecked" && "Demo execution for this account could not be checked — the server's dispatch gate did not respond."}
+              {demoExecution.kind === "unreported" && "The server did not report whether demo execution is allowed for this account."}
+              {demoExecution.kind === "blocked" &&
+                `Demo execution is not available for this account: ${demoExecution.reasons.join("; ")}. The server will refuse orders from this form until that is fixed.`}
+              {" "}This form sends demo orders only; live orders go through the separate LIVE ticket.
+            </span>
           </div>
 
           <SectionLabel>{name} Summary</SectionLabel>
