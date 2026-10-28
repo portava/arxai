@@ -59,6 +59,9 @@ describe("Market Health — data verdict and feed badge agree", () => {
       const badge = screen.getByTestId("arx-feed-badge");
       expect(badge.getAttribute("data-severity")).not.toBe("clean");
       expect(badge.textContent).not.toMatch(/Clean/);
+      // A stale or delayed resolved feed is not AI-usable either: the chip
+      // must not read "Stale · AI" with the shield marker.
+      expect(badge.getAttribute("data-ai-usable")).toBe("false");
       fireEvent.click(badge);
       const detail = await screen.findByTestId("arx-feed-detail");
       expect(detail.textContent).not.toMatch(/StateLive/);

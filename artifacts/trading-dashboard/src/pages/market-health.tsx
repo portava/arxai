@@ -198,9 +198,11 @@ export default function MarketHealthPage() {
   const { truth, feedStatus, isLoading, isError, refetch } = useScannerTruth(symbol, tf);
   // The raw feed status can still say clean/live after the resolved truth has
   // judged the newest bar stale or delayed (its freshness budget is tighter).
-  // The badge sits beside that verdict, so it is only ever downgraded to match.
+  // The badge sits beside that verdict, so it is only ever downgraded to match:
+  // a stale or delayed resolved feed is neither live nor AI-usable, so the
+  // chip never reads "Stale" with the AI shield beside it.
   const badgeFeedStatus = feedStatus && truth && (truth.candles.status === "stale" || truth.candles.status === "delayed")
-    ? { ...feedStatus, isLive: false, stale: feedStatus.stale || truth.candles.status === "stale" }
+    ? { ...feedStatus, isLive: false, aiUsable: false, stale: feedStatus.stale || truth.candles.status === "stale" }
     : feedStatus;
 
   const loadStatus = useCallback(async () => {
