@@ -6,6 +6,28 @@
 
 import { isMarketQuote, type Quote } from "./QuickTradePanel";
 
+// Mirrors the server's default-deny contract-size policy
+// (api-server/src/lib/mt5/contractSize.ts): the 100,000-unit FX lot may only
+// be assumed when BOTH halves of the symbol are ISO-4217 fiat codes. Metals,
+// crypto, indices and synthetics have broker-specific contract sizes this
+// panel does not know, so no figure is shown for them.
+const FIAT_CODES: ReadonlySet<string> = new Set([
+  "USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "SEK", "NOK", "DKK",
+  "SGD", "HKD", "ZAR", "MXN", "PLN", "TRY", "CZK", "HUF", "CNH", "CNY", "RUB",
+  "INR", "THB", "ILS", "KRW",
+]);
+const FX_STANDARD_LOT_UNITS = 100_000;
+
+function splitForexPair(symbol: string): { base: string; quote: string } | null {
+  const bare = symbol.includes(":") ? symbol.slice(symbol.lastIndexOf(":") + 1) : symbol;
+  const m = /^([A-Z]{3})([A-Z]{3})([._-][A-Z0-9]+)?$/.exec(bare.trim().toUpperCase());
+  if (!m) return null;
+  const base = m[1]!;
+  const quote = m[2]!;
+  if (!FIAT_CODES.has(base) || !FIAT_CODES.has(quote)) return null;
+  return { base, quote };
+}
+
 export function quickTradeRiskApprox(input: {
   symbol: string; lot: string; stopLoss: string; quote: Quote;
 }): string {
@@ -20,12 +42,16 @@ export function quickTradeRiskApprox(input: {
   if (!stopLoss || !Number.isFinite(sl) || !Number.isFinite(ref) || sl <= 0) {
     return "Set SL";
   }
-  //   risk ≈ lots × stop-distance(in pips) × pip-value-per-lot
-  const isJpy = /JPY$/i.test(symbol);
-  const pipSize = isJpy ? 0.01 : 0.0001;
-  const pips = Math.abs(ref - sl) / pipSize;
-  const pipValuePerLot = 10; // ~$10 per pip per 1.0 standard lot
-  const risk = l * pips * pipValuePerLot;
+  // Risk in the quote currency = lots × contract units × stop distance; it is
+  // shown in USD only when it is USD already (XXXUSD) or converts with the
+  // pair's own price (USDXXX). A cross pair would need another rate.
+  const pair = splitForexPair(symbol);
+  if (!pair) return "Contract size unknown";
+  const riskInQuoteCcy = l * FX_STANDARD_LOT_UNITS * Math.abs(ref - sl);
+  let risk: number;
+  if (pair.quote === "USD") risk = riskInQuoteCcy;
+  else if (pair.base === "USD") risk = riskInQuoteCcy / ref;
+  else return `Needs ${pair.quote}→USD rate`;
   if (!Number.isFinite(risk) || risk <= 0) return "—";
   return `$${risk.toFixed(2)}`;
 }
