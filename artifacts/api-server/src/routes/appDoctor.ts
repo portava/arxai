@@ -4,6 +4,7 @@
 import { Router, type IRouter } from "express";
 import { getUserActiveConnection } from "../lib/brokerHub/connections.js";
 import { isHeartbeatAgeMsFresh } from "../lib/brokerHub/freshness.js";
+import { checkDatabaseReadiness } from "../lib/startup/databaseReadiness.js";
 
 const router: IRouter = Router();
 
@@ -27,18 +28,21 @@ router.get("/app/health-summary", async (req, res) => {
   const timer = setTimeout(() => ac.abort(), 2_000);
 
   try {
-    const [healthz, feedback, mt5Hb, readiness, riskGov, simulator] = await Promise.all([
+    // databaseReachable comes from a real bounded `select 1` (the same probe
+    // as /health/ready), never from DATABASE_URL merely being set.
+    const [healthz, feedback, mt5Hb, readiness, riskGov, simulator, dbCheck] = await Promise.all([
       probe("/api/healthz", baseUrl, ac.signal),
       probe("/api/feedback", baseUrl, ac.signal),
       probe("/api/mt5/heartbeat/status", baseUrl, ac.signal),
       probe("/api/readiness/checks/latest", baseUrl, ac.signal),
       probe("/api/risk/state", baseUrl, ac.signal),
       probe("/api/market/session-status", baseUrl, ac.signal),
+      checkDatabaseReadiness(),
     ]);
-    const dbReachable = !!process.env["DATABASE_URL"];
     res.json({
       serverReachable: healthz.ok,
-      databaseReachable: dbReachable ? true : null,
+      databaseReachable: dbCheck.status === "ready",
+      databaseCheckedAt: dbCheck.checkedAt,
       authDetected: !!req.signedCookies && Object.keys(req.signedCookies).length > 0,
       // /api/feedback intentionally returns 403 for non-tester users; either is "healthy".
       feedbackHealthy: feedback.status === 200 || feedback.status === 403 || feedback.status === 401,
