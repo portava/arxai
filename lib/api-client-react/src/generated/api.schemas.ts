@@ -9894,6 +9894,11 @@ export type Mt5StatusAccountSnapshot = {
   marginLevel?: number | null;
   /** @nullable */
   currency: string | null;
+  /**
+   * When the EA last pushed these account figures (ISO). Null when never synced.
+   * @nullable
+   */
+  syncedAt?: string | null;
 };
 
 export interface Mt5Status {
@@ -9920,6 +9925,10 @@ export interface Mt5Status {
   accountType: Mt5StatusAccountType;
   maxDemoLot: number;
   openPositions: Mt5Position[];
+  /** False when openPositions was not read from the broker. An empty list is then not a count of open trades. */
+  openPositionsMeasured?: boolean;
+  /** Plain statement of whether and where open positions were read. */
+  openPositionsNote?: string;
   accountSnapshot: Mt5StatusAccountSnapshot;
 }
 
@@ -12653,6 +12662,16 @@ export type WeeklyReviewScoreTrends = {
   consistency?: number;
 } | null;
 
+/**
+ * The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).
+ */
+export type WeeklyReviewPerformanceSource =
+  (typeof WeeklyReviewPerformanceSource)[keyof typeof WeeklyReviewPerformanceSource];
+
+export const WeeklyReviewPerformanceSource = {
+  LEGACY_TRADES_RECORD: "LEGACY_TRADES_RECORD",
+} as const;
+
 export interface WeeklyReview {
   id: number;
   weekStartIso: string;
@@ -12690,6 +12709,12 @@ export interface WeeklyReview {
   /** @nullable */
   nextWeekFocus?: string | null;
   createdAtIso: string;
+  /** The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows). */
+  performanceSource?: WeeklyReviewPerformanceSource;
+  /** False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week. */
+  performanceMeasured?: boolean;
+  /** Plain statement of what the performance figures are and are not built from. */
+  performanceSourceNote?: string;
 }
 
 export interface WeeklyReviewList {
@@ -14689,6 +14714,8 @@ export interface ScalpResult {
   estimatedRiskAmount: number | null;
   rewardToRisk: number | null;
   estimatedMargin: number | null;
+  /** Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency. */
+  moneyCurrency?: string | null;
   spreadRisk: ScalpResultSpreadRisk;
   slippageRisk: ScalpResultSlippageRisk;
   newsRisk: ScalpResultNewsRisk;

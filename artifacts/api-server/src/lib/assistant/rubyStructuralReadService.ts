@@ -576,11 +576,18 @@ export async function buildRubyStructuralRead(
         ?? (rubyCtx?.basis === "PARTIAL"
           ? `${tf} chart: truth verified but ${rubyCtx.gateOutput.autonomousChartActionAllowed ? "mirror degraded" : "feed stale"} — directional read withheld.`
           : "Chart intelligence unavailable — cannot verify chart data.");
-    const headline = liveDelayedRead
-      ? "The feed is live but the latest candle is delayed. I'll give a full read once the current bar confirms."
-      : rubyCtx?.basis === "PARTIAL"
-        ? "Chart data is partially verified. I'll give a full read once the feed and mirror are healthy."
-        : "Not enough closed candle history yet to read structure on this timeframe. I'll read it once more candles load.";
+    // The headline must name the cause the read is gated on. Thin history is
+    // only one cause; an unavailable chart context or a blocked market is not
+    // fixed by more candles, so those never promise a read "once candles load".
+    const headline = !rubyCtx
+      ? "I couldn't verify the chart data for this timeframe, so I'm not reading its structure right now."
+      : rubyCtx.sufficiency.status === "blocked"
+        ? "This market can't be analyzed here, so there is no structure read for it."
+        : liveDelayedRead
+          ? "The feed is live but the latest candle is delayed. I'll give a full read once the current bar confirms."
+          : rubyCtx.basis === "PARTIAL"
+            ? "Chart data is partially verified. I'll give a full read once the feed and mirror are healthy."
+            : "Not enough closed candle history yet to read structure on this timeframe. I'll read it once more candles load.";
     const { tradeHealthFreshness, ...tradeHealthCopy } = tradeHealthDisplayFields({
       symbol,
       timeframe: tf,

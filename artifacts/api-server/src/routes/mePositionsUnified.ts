@@ -6,7 +6,12 @@
 // SAFETY:
 //  - requireUser middleware enforces auth.
 //  - Live rows are filtered by userId on arx_live_positions.
-//  - Demo rows are filtered by userId on mt5_state + mt5_demo_commands.
+//  - Demo rows are the user's broker-confirmed open DEMO positions in
+//    live_positions (read model basis CONFIRMED_OPEN, the same rows
+//    /me/trades/open lists), joined to mt5_demo_commands by ticket.
+//    The per-user mt5_state snapshot is NOT used: no EA writer stamps a
+//    user id on mt5_state and its position payload uses different field
+//    names, so it always read as "no demo positions".
 //  - No bridge tokens, no hashed-key blobs, no IPs, no account numbers leak.
 //  - Read-only. Cannot place / modify / close any trade.
 //
@@ -23,7 +28,6 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { getUserModeScope, modeScopeEnvelope } from "../lib/modeScope/getUserModeScope.js";
 import { resolveLivePositionVisibility } from "../lib/modeScope/livePositionVisibility.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
-import { readLatestUserMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -40,20 +44,6 @@ function num(v: unknown): number | null {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
 }
-
-type DemoRaw = {
-  ticket?: string | number | null;
-  symbol?: string | null;
-  side?: "BUY" | "SELL" | null;
-  lot?: number | null;
-  volume?: number | null;
-  openPrice?: number | null;
-  currentPrice?: number | null;
-  stopLoss?: number | null;
-  takeProfit?: number | null;
-  profit?: number | null;
-  openTime?: string | null;
-};
 
 router.get("/me/positions/all", requireUser, async (req, res) => {
   const userId = uid(req);
@@ -114,16 +104,17 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
     source: "MT5_LIVE_BRIDGE" as const,
   }));
 
-  // DEMO — pull latest mt5_state row for this user, then map positions.
-  // Skipped entirely when mode is not DEMO so a LIVE_SHARED user never
-  // sees their old demo positions bleed into the unified feed.
-  const demoState = includeDemo ? await readLatestUserMt5State(userId) : null;
-  const stateRows = demoState ? [demoState] : [];
-  const positionsRaw: DemoRaw[] = Array.isArray(stateRows[0]?.positions)
-    ? (stateRows[0]!.positions as DemoRaw[]) : [];
+  // DEMO — the user's broker-confirmed open DEMO book (live_positions,
+  // status OPEN, owned by this user). Skipped entirely when mode is not DEMO
+  // so a LIVE_SHARED user never sees their old demo positions bleed into the
+  // unified feed (modeScope drops the venue too). Like /me/trades/open, a row
+  // with no broker position id is an unconfirmed open and is not listed.
+  const demoRows = (includeDemo
+    ? await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN", modeScope: scope })
+    : []).filter((p) => p.ticket != null && p.ticket !== "");
 
   // Recent demo commands → resolve sourceCommandId per ticket.
-  const cmdRows = positionsRaw.length === 0 ? [] : await db.select({
+  const cmdRows = demoRows.length === 0 ? [] : await db.select({
     commandId: mt5DemoCommandsTable.commandId,
     brokerTicket: mt5DemoCommandsTable.brokerTicket,
     sourcePage: mt5DemoCommandsTable.sourcePage,
@@ -134,21 +125,23 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   const byTicket = new Map<string, typeof cmdRows[number]>();
   for (const c of cmdRows) if (c.brokerTicket) byTicket.set(String(c.brokerTicket), c);
 
-  const demo = positionsRaw.map((p) => {
-    const ticket = p.ticket == null ? null : String(p.ticket);
-    const matched = ticket ? byTicket.get(ticket) ?? null : null;
+  const demo = demoRows.map((p) => {
+    const ticket = String(p.ticket);
+    const matched = byTicket.get(ticket) ?? null;
     return {
       scope: "demo" as const,
       brokerTicket: ticket,
-      symbol: p.symbol ?? null,
-      side: p.side ?? null,
-      lotSize: num(p.lot ?? p.volume),
-      entryPrice: num(p.openPrice),
+      symbol: p.symbol,
+      side: p.side === "BUY" || p.side === "SELL" ? p.side : null,
+      lotSize: num(p.lots),
+      entryPrice: num(p.entryPrice),
       currentPrice: num(p.currentPrice),
       stopLoss: num(p.stopLoss),
       takeProfit: num(p.takeProfit),
-      floatingPnl: num(p.profit),
-      openedAt: p.openTime ?? null,
+      floatingPnl: num(p.floatingPnl),
+      openedAt: p.openedAt instanceof Date ? p.openedAt.toISOString() : null,
+      // When the broker snapshot last touched this row (null = never synced).
+      observedAt: p.observedAt instanceof Date ? p.observedAt.toISOString() : null,
       sourceCommandId: matched?.commandId ?? null,
       accountMode: "DEMO" as const,
       source: matched?.sourcePage ?? "MT5_DEMO_BRIDGE",

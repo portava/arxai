@@ -2,9 +2,16 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-interface Version { version: string; stage: string; fullTesterAccess: boolean; mt5Deferred: boolean; realBrokerExecutionAvailable: boolean; lastUpdated: string; }
-interface Gate { key: string; label: string; pass: boolean; detail?: string; }
-interface Readiness { releaseReady: boolean; readinessScore: number; stage: string; gates: Gate[]; criticalIssues: Array<{ feedbackId: string; title: string }>; mt5Deferred: boolean; }
+interface Version { version: string; stage: string; fullTesterAccess: boolean; mt5Deferred: boolean; realBrokerExecutionAvailable: boolean; lastUpdated: string; lastUpdatedBasis?: "server_start"; }
+/** measured === false ⇒ no check runs behind the gate (never shown as PASS). */
+interface Gate { key: string; label: string; pass: boolean; detail?: string; measured?: boolean; }
+interface Readiness {
+  releaseReady: boolean; readinessScore: number; stage: string; gates: Gate[];
+  criticalIssues: Array<{ feedbackId: string; title: string }>; mt5Deferred: boolean;
+  /** Observed MT5 feed state at evaluation; null = could not be checked. */
+  mt5Connected?: boolean | null;
+  evaluatedAt?: string;
+}
 
 export default function ReleaseStatus() {
   const [v, setV] = useState<Version | null>(null);
@@ -33,9 +40,14 @@ export default function ReleaseStatus() {
             <Badge className="bg-cyan-500/20 text-cyan-300 font-mono">{v.version}</Badge>
             <Badge className="bg-amber-500/20 text-amber-300">{v.stage}</Badge>
             <Pill ok={v.fullTesterAccess} label="Full tester access" />
-            <Pill ok={v.mt5Deferred} label="MT5 deferred" />
+            {/* Downgrade-only: the static "MT5 deferred" flag reads NO when the
+                readiness check observed the MT5 feed connected or could not check it. */}
+            <Pill ok={v.mt5Deferred && (r == null || r.mt5Connected === false)} label="MT5 deferred" />
             <Pill ok={!v.realBrokerExecutionAvailable} label="Real broker locked" />
-            <span className="text-xs text-muted-foreground ml-auto">{new Date(v.lastUpdated).toLocaleString()}</span>
+            <span className="text-xs text-muted-foreground ml-auto" data-testid="release-version-time">
+              {v.lastUpdatedBasis === "server_start" ? "Server started " : "Version info as of "}
+              {new Date(v.lastUpdated).toLocaleString()}
+            </span>
           </CardContent>
         </Card>
       )}
@@ -47,14 +59,21 @@ export default function ReleaseStatus() {
               Readiness Score
               <Badge className={r.readinessScore >= 90 ? "bg-emerald-500/20 text-emerald-300" : r.readinessScore >= 70 ? "bg-amber-500/20 text-amber-300" : "bg-rose-500/20 text-rose-300"}>{r.readinessScore}/100</Badge>
               <Pill ok={r.releaseReady} label="Release ready" />
+              {r.evaluatedAt && (
+                <span className="ml-auto text-xs font-normal text-muted-foreground">Checked {new Date(r.evaluatedAt).toLocaleString()}</span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm" data-testid="release-gates">
               {r.gates.map((g) => (
                 <li key={g.key} className="flex items-center justify-between gap-2 rounded border border-border/40 px-2 py-1.5">
-                  <span className="truncate">{g.label}</span>
-                  <Pill ok={g.pass} label={g.pass ? "PASS" : "FAIL"} />
+                  <span className="truncate" title={g.detail}>{g.label}</span>
+                  {g.measured === false ? (
+                    <Badge className="bg-amber-500/20 text-amber-300" title={g.detail}>NOT CHECKED</Badge>
+                  ) : (
+                    <Pill ok={g.pass} label={g.pass ? "PASS" : "FAIL"} />
+                  )}
                 </li>
               ))}
             </ul>

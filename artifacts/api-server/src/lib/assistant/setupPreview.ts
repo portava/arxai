@@ -23,7 +23,8 @@
 //     and reference the exact drawn levels so the words match the chart.
 
 import type { Candle } from "../data/types.js";
-import type { ChartReadResult, StructureBias } from "./chartStructure.js";
+import { resolvePriceDecimals, type ChartReadResult, type StructureBias } from "./chartStructure.js";
+import { knownPricePrecision } from "../data/chart/symbolProfile.js";
 import type { RubyChartReadBasis } from "../data/chart/rubyChartContext.js";
 
 export type SetupSide = "BUY" | "SELL";
@@ -188,14 +189,6 @@ function atr(candles: Candle[], period: number): number | null {
   return trs.reduce((a, b) => a + b, 0) / trs.length;
 }
 
-function decimalsFor(price: number): number {
-  const p = Math.abs(price);
-  if (p >= 1000) return 1;
-  if (p >= 100) return 2;
-  if (p >= 1) return 4;
-  return 5;
-}
-
 function roundTo(n: number, decimals: number): number {
   const f = Math.pow(10, decimals);
   return Math.round(n * f) / f;
@@ -339,7 +332,9 @@ export function buildSetupPreview(input: BuildSetupPreviewInput): SetupPreview {
   const candles = sortAscending(input.candles);
   const closes = candles.map((c) => c.close);
   const last = closes[closes.length - 1]!;
-  const decimals = decimalsFor(last);
+  // The instrument's own precision, else the precision the candles are quoted
+  // in — never a magnitude guess that rounds the entry itself (1.08523 → 1.0852).
+  const decimals = resolvePriceDecimals(candles, knownPricePrecision(input.symbol), last);
   const lookback = Math.min(candles.length, 60);
   const window = candles.slice(candles.length - lookback);
   const swingHigh = Math.max(...window.map((c) => c.high));

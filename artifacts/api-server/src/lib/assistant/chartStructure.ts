@@ -117,16 +117,65 @@ function atr(candles: Candle[], period: number): number | null {
   return trs.reduce((a, b) => a + b, 0) / trs.length;
 }
 
-// Decimal precision suitable for the instrument's price magnitude. FALLBACK
-// only: when the caller knows the instrument's own precision (symbolProfile,
-// venue-pip-derived) that wins, so a V75 zone reads 33250.6123 – 33273.2045
-// rather than being rounded to one decimal the instrument never quotes in.
+// Decimal precision suitable for the instrument's price magnitude. LAST-RESORT
+// fallback only: the instrument's own precision (symbolProfile, venue-pip-
+// derived) wins, then the precision the candles themselves are quoted in, so a
+// gold zone never reads in tenths and a 5-digit pair never loses a digit.
 function decimalsFor(price: number): number {
   const p = Math.abs(price);
   if (p >= 1000) return 1;
   if (p >= 100) return 2;
   if (p >= 1) return 4;
   return 5;
+}
+
+const MAX_PRICE_DECIMALS = 8;
+
+/** Fewest decimals that reproduce `x` (float noise tolerated), capped at 8. */
+function decimalsOf(x: number): number {
+  const tol = 1e-9 * Math.max(1, Math.abs(x));
+  for (let d = 0; d <= MAX_PRICE_DECIMALS; d++) {
+    const f = Math.pow(10, d);
+    if (Math.abs(Math.round(x * f) / f - x) <= tol) return d;
+  }
+  return MAX_PRICE_DECIMALS;
+}
+
+/**
+ * The decimal precision the candle data itself is quoted in: the most
+ * decimals any OHLC price in the most recent `maxBars` candles carries.
+ * Null when there is no finite price to look at.
+ */
+export function observedPriceDecimals(candles: readonly Candle[], maxBars = 60): number | null {
+  let best: number | null = null;
+  for (let i = Math.max(0, candles.length - maxBars); i < candles.length; i++) {
+    const c = candles[i]!;
+    for (const v of [c.open, c.high, c.low, c.close]) {
+      if (typeof v !== "number" || !Number.isFinite(v)) continue;
+      const d = decimalsOf(v);
+      if (best == null || d > best) best = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Display decimals for prices on this chart: the instrument's known precision
+ * when valid, else the precision observed in the candles, else the magnitude
+ * heuristic. Display only — never an order tick size.
+ */
+export function resolvePriceDecimals(
+  candles: readonly Candle[],
+  pricePrecision: number | null | undefined,
+  referencePrice: number,
+): number {
+  if (
+    pricePrecision != null && Number.isSafeInteger(pricePrecision)
+    && pricePrecision >= 0 && pricePrecision <= MAX_PRICE_DECIMALS
+  ) {
+    return pricePrecision;
+  }
+  return observedPriceDecimals(candles) ?? decimalsFor(referencePrice);
 }
 
 function fmt(price: number, decimals: number): string {
@@ -206,11 +255,7 @@ export function analyzeChartStructure(
   const closes = candles.map((c) => c.close);
   const n = closes.length;
   const last = closes[n - 1]!;
-  const decimals =
-    opts.pricePrecision != null && Number.isSafeInteger(opts.pricePrecision)
-      && opts.pricePrecision >= 0 && opts.pricePrecision <= 8
-      ? opts.pricePrecision
-      : decimalsFor(last);
+  const decimals = resolvePriceDecimals(candles, opts.pricePrecision, last);
 
   // Trend via SMA stack + slope.
   const sma20 = sma(closes, Math.min(20, n));

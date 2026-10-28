@@ -65,6 +65,10 @@ interface ScannerOpportunityLite {
     htfAligned: boolean;
     activeFvg: { high: number; low: number; midpoint: number; direction: "bullish" | "bearish"; isMitigated: boolean } | null;
     canSignal: boolean;
+    /** Timeframe the FVG zone was found on (server: always "M5"). */
+    entryTimeframe?: string;
+    /** Close time of the newest closed M5 bar the read used. */
+    asOf?: string | null;
     overlays: Array<{
       id: string;
       kind: "zone" | "line" | "marker";
@@ -305,7 +309,16 @@ export function buildFvgOverlays(
     return [];
   }
   const out: ChartOverlay[] = [];
-  for (const raw of fvg.overlays) {
+  // The read is computed on M5 bars whatever chart timeframe is showing, so
+  // every drawn level says which timeframe it came from and as of when.
+  const tfLabel = typeof fvg.entryTimeframe === "string" && fvg.entryTimeframe ? fvg.entryTimeframe : "M5";
+  const asOfMs = typeof fvg.asOf === "string" ? Date.parse(fvg.asOf) : NaN;
+  const asOfLabel = Number.isFinite(asOfMs)
+    ? ` as of ${new Date(asOfMs).toISOString().slice(11, 16)} UTC`
+    : "";
+  const suffix = ` (${tfLabel} FVG read${asOfLabel})`;
+  for (const raw0 of fvg.overlays) {
+    const raw = { ...raw0, label: `${raw0.label}${suffix}` };
     const kind = raw.kind;
     if (kind === "zone") {
       if (

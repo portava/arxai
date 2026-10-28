@@ -142,8 +142,20 @@ function analyzeCore(
   (trendStrength >= 40 ? rulesPassed : rulesFailed).push("trend_strength_>=_40");
   (volatilityRatio < 1.8 ? rulesPassed : rulesFailed).push("volatility_in_range");
   (spreadPenalty < 30 ? rulesPassed : rulesFailed).push("spread_acceptable");
-  (riskRewardRatio >= 1.5 ? rulesPassed : rulesFailed).push("min_risk_reward_1.5");
+  // No reward-to-risk rule: the target is placed at exactly 2× the stop
+  // distance, so a ">= 1.5" check could never fail and would only claim a
+  // check that was not made.
   (confidenceScore >= 60 ? rulesPassed : rulesFailed).push("min_confidence_60");
+
+  // Plain-English description of each failed rule with the observed value.
+  const failedText: Record<string, string> = {
+    "trend_strength_>=_40": `trend strength ${trendStrength}/100 is below the 40 needed`,
+    volatility_in_range: `the last candle's range is ${volatilityRatio.toFixed(1)}× the average (limit 1.8×)`,
+    spread_acceptable: `the spread is too wide for this price (spread penalty ${spreadPenalty}, limit 30)`,
+    min_confidence_60: `confidence ${confidenceScore}/100 is below the 60 needed`,
+  };
+  const avoidParts = rulesFailed.map((r) => failedText[r] ?? "a scanner rule did not pass");
+  const spreadOk = spreadPenalty < 30;
 
   let recommendedAction: MarketAnalysis["recommendedAction"] = "WAIT";
   if (marketBias === "choppy" || rulesFailed.length >= 3) recommendedAction = "REJECT";
@@ -155,14 +167,20 @@ function analyzeCore(
     entryQualityScore, riskScore, confidenceScore, recommendedAction,
     entryZone: { low: round(entry - avgRange * 0.25, 5), high: round(entry + avgRange * 0.25, 5) },
     stopLoss, takeProfit, riskRewardRatio,
-    // Say what was measured: "choppy" is only a last-bar range spike, and the
-    // spread is "ok" only when its rule passed.
-    reasonForTrade: `${
-      marketBias === "choppy"
-        ? `volatility spike (last bar range ${volatilityRatio.toFixed(1)}x the ${candles.length}-bar average)`
-        : `${marketBias} bias`
-    } on ${symbol} ${timeframe}; trend=${trendStrength}, ${spreadNote(spread, spreadPenalty)}, RR ${riskRewardRatio}`,
-    reasonToAvoid: rulesFailed.length ? `Failed rules: ${rulesFailed.join(", ")}` : "",
+    // Say what was measured: "choppy" is only a last-bar range spike, the
+    // spread is "acceptable" only when its rule passed on an observed spread,
+    // and the reward-to-risk is fixed by construction (target = 2x stop).
+    reasonForTrade:
+      `${
+        marketBias === "choppy"
+          ? `volatility spike (last bar range ${volatilityRatio.toFixed(1)}x the ${candles.length}-bar average)`
+          : `${marketBias} bias`
+      } on ${symbol} ${timeframe}; trend strength ${trendStrength}/100, ` +
+      `${!Number.isFinite(spread) || spread <= 0 ? "spread not observed" : spreadOk ? "spread acceptable" : "spread too wide"}; ` +
+      `target set at 2× the stop distance (reward-to-risk ${riskRewardRatio}:1 by construction)`,
+    reasonToAvoid: avoidParts.length
+      ? `Not passing: ${avoidParts.join("; ")}.`
+      : "",
     invalidationReason: dir === "BUY" ? `Close below ${stopLoss}` : `Close above ${stopLoss}`,
     rulesPassed, rulesFailed,
     dataSource: source, executionEnvironment: source,
@@ -173,11 +191,6 @@ function analyzeCore(
 
 // "spread ok" only when a positive spread was observed and passed the rule. A
 // zero/absent spread is the callers' "no quote spread" substitute, not a cost.
-function spreadNote(spread: number, spreadPenalty: number): string {
-  if (!Number.isFinite(spread) || spread <= 0) return "spread not observed";
-  return spreadPenalty < 30 ? "spread ok" : "spread wide";
-}
-
 export interface TradeCard extends MarketAnalysis {
   cardId: string;
   positionSizingHint: { maxRiskUsd: number; suggestedLot: number };

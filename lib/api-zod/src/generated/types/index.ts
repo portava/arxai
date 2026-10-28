@@ -1796,6 +1796,7 @@ export * from "./weeklyReportPoolLine";
 export * from "./weeklyReportWatchItem";
 export * from "./weeklyReview";
 export * from "./weeklyReviewList";
+export * from "./weeklyReviewPerformanceSource";
 export * from "./weeklyReviewScoreTrends";
 export * from "./weeklyReviewWithGoals";
 export * from "./weeklyScoreTrends";

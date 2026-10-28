@@ -46,7 +46,7 @@ import {
   directionTone,
   riskTone,
   fmtPrice,
-  fmtMoney,
+  fmtScalpMoney,
   fmtRr,
 } from "./scalpLabels";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
@@ -362,11 +362,11 @@ export function ScalpSignalCard({
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded border border-border bg-background/40 p-2">
               <div className="text-txt-muted">Target profit (main TP)</div>
-              <div className="font-mono text-success">{fmtMoney(r.estimatedProfitMainTP)}</div>
+              <div className="font-mono text-success">{fmtScalpMoney(r.estimatedProfitMainTP, r.moneyCurrency)}</div>
             </div>
             <div className="rounded border border-border bg-background/40 p-2">
               <div className="text-txt-muted">Risk if stopped</div>
-              <div className="font-mono text-danger">{fmtMoney(r.estimatedRiskAmount)}</div>
+              <div className="font-mono text-danger">{fmtScalpMoney(r.estimatedRiskAmount, r.moneyCurrency)}</div>
             </div>
           </div>
         )}

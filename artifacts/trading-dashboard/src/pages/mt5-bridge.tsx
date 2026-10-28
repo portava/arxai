@@ -148,7 +148,9 @@ export default function MT5BridgePage() {
   const bridgeHealthy = connected && !frozen;
   const allocation = (mode as any).userAllocation ?? (mode as any).assignedStartingBalance ?? null;
   const openPnl = acct?.pnl ?? null;
-  const openTrades = Array.isArray(s?.openPositions) ? s.openPositions.length : null;
+  // The status endpoint says whether it read the broker's positions at all
+  // (openPositionsMeasured). An unread list is not "0 open trades".
+  const openTrades = s?.openPositionsMeasured === true && Array.isArray(s?.openPositions) ? s.openPositions.length : null;
   const lastSync = fmtAge(s?.secondsSinceHeartbeat ?? null);
 
   const riskTone: Tone = frozen ? "danger" : "success";
@@ -177,8 +179,12 @@ export default function MT5BridgePage() {
   if (s?.secondsSinceHeartbeat != null) {
     activity.push({ time: lastSync, event: connected ? "Market data heartbeat" : "Last heartbeat received", tone: connected ? "success" : "warning", chip: connected ? "Connected" : "Stale" });
   }
-  if (snapshot?.account) activity.push({ time: lastSync, event: "Account snapshot synced", tone: "success", chip: "Success" });
-  if (openTrades != null) activity.push({ time: lastSync, event: "Position sync completed", tone: "success", chip: "Success" });
+  // Sync rows are shown only from the sync's own timestamp, never from the
+  // heartbeat age: a heartbeat is not an account or position sync.
+  const snapshotSyncedMs = typeof snapshot?.syncedAt === "string" ? Date.parse(snapshot.syncedAt) : NaN;
+  if (snapshot?.account && Number.isFinite(snapshotSyncedMs)) {
+    activity.push({ time: fmtAge(Math.max(0, Math.floor((Date.now() - snapshotSyncedMs) / 1000))), event: "Account snapshot synced", tone: "success", chip: "Synced" });
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-mt5-bridge">

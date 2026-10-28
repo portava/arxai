@@ -79,7 +79,9 @@ function mean(xs: number[]): number {
   return xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
-function fmt(v: number, digits: number): string {
+/** Price text at the broker's digits; unknown digits → the price as reported (float noise trimmed, never padded). */
+function fmt(v: number, digits: number | null): string {
+  if (digits === null) return String(Number(v.toPrecision(10)));
   return v.toFixed(Math.max(0, Math.min(8, digits)));
 }
 
@@ -103,7 +105,8 @@ export interface FlameReadArgs {
   invalidationPrice: number;
   quickTpPrice: number;
   mainTpPrice: number;
-  digits: number;
+  /** Broker price digits for text prices. Null when not reported (prices shown as reported). */
+  digits: number | null;
 }
 
 export interface FlameReadCore {

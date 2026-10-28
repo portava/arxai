@@ -175,6 +175,19 @@ export function fmtMoney(v: number | null | undefined): string {
   return `$${v.toFixed(2)}`;
 }
 
+/**
+ * Scalp money tile formatter. The figures are in the trading account's
+ * currency; name it only when the server reported it. "$" only for USD —
+ * never assumed. Unknown currency → the bare amount plus "(account currency)".
+ */
+export function fmtScalpMoney(v: number | null | undefined, currency: string | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const code = typeof currency === "string" && currency.trim() ? currency.trim().toUpperCase() : null;
+  if (code === "USD") return `$${v.toFixed(2)}`;
+  if (code) return `${v.toFixed(2)} ${code}`;
+  return `${v.toFixed(2)} (account currency)`;
+}
+
 export function fmtRr(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return `1 : ${v.toFixed(2)}`;

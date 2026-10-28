@@ -48,6 +48,7 @@ export async function loadSpecInput(userId: number, symbol: string): Promise<Sca
       stopsLevelPoints: null, spreadPoints: null,
       category: registry?.category ?? null,
       displayName: registry?.displayName ?? symbol,
+      profitCurrency: null,
     };
   }
   return {
@@ -68,6 +69,7 @@ export async function loadSpecInput(userId: number, symbol: string): Promise<Sca
     spreadPoints: num(row.spreadPoints) ? row.spreadPoints : null,
     category: row.category ?? registry?.category ?? null,
     displayName: row.displaySymbol ?? registry?.displayName ?? symbol,
+    profitCurrency: typeof row.profitCurrency === "string" && row.profitCurrency.trim() ? row.profitCurrency.trim() : null,
   };
 }
 
@@ -80,9 +82,13 @@ export async function loadAccountInput(userId: number): Promise<ScalpAccountInpu
       equity: num(view.assignedAllocation) ? view.assignedAllocation : null,
       freeMargin: num(view.availableAllocation) ? view.availableAllocation : null,
       leverage: null,
+      // The allocation is held on the master MT5 account, in its currency.
+      currency: typeof view.pool?.accountCurrency === "string" && view.pool.accountCurrency.trim()
+        ? view.pool.accountCurrency.trim()
+        : null,
     };
   } catch {
-    return { balance: null, equity: null, freeMargin: null, leverage: null };
+    return { balance: null, equity: null, freeMargin: null, leverage: null, currency: null };
   }
 }
 

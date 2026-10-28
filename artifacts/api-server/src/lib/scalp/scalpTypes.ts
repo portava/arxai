@@ -266,6 +266,13 @@ export interface ScalpResult {
   estimatedRiskAmount: number | null;
   rewardToRisk: number | null;
   estimatedMargin: number | null;
+  /**
+   * Currency of estimatedProfitMainTP / estimatedRiskAmount / estimatedMargin /
+   * targetProfitAmount: the trading account's currency as the broker reported
+   * it. Null when the account currency is not known — the money figures are
+   * then in the account currency but the UI must not name one.
+   */
+  moneyCurrency?: string | null;
   spreadRisk: RiskBand;
   slippageRisk: RiskBand;
   newsRisk: RiskBand;
@@ -426,6 +433,11 @@ export interface ScalpSpecInput {
   spreadPoints: number | null;
   category: string | null;
   displayName: string | null;
+  /**
+   * Currency the symbol's profit is computed in (MT5 SYMBOL_CURRENCY_PROFIT),
+   * e.g. "JPY" for USDJPY. Null/absent when the broker did not report it.
+   */
+  profitCurrency?: string | null;
 }
 
 /** Scanner technical read, normalized (from ScannerOpportunity / MarketAnalysis). */
@@ -470,6 +482,8 @@ export interface ScalpAccountInput {
   equity: number | null;
   freeMargin: number | null;
   leverage?: number | null;
+  /** The trading account's currency as the broker reported it. Null when unknown. */
+  currency?: string | null;
 }
 
 /** One OHLC candle for the flame window (oldest → newest in the array). */

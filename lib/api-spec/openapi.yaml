@@ -19001,6 +19001,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Mt5Position"
+        openPositionsMeasured:
+          type: boolean
+          description: False when openPositions was not read from the broker. An empty list is then not a count of open trades.
+        openPositionsNote:
+          type: string
+          description: Plain statement of whether and where open positions were read.
         accountSnapshot:
           type: object
           required: [account, balance, equity, currency]
@@ -19014,6 +19020,9 @@ components:
             freeMargin: { type: ["number", "null"] }
             marginLevel: { type: ["number", "null"] }
             currency: { type: ["string", "null"] }
+            syncedAt:
+              type: ["string", "null"]
+              description: When the EA last pushed these account figures (ISO). Null when never synced.
 
     Mt5BridgeInfo:
       type: object
@@ -21124,6 +21133,16 @@ components:
         aiSummary: { type: ["string", "null"] }
         nextWeekFocus: { type: ["string", "null"] }
         createdAtIso: { type: string }
+        performanceSource:
+          type: string
+          enum: [LEGACY_TRADES_RECORD]
+          description: The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).
+        performanceMeasured:
+          type: boolean
+          description: False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week.
+        performanceSourceNote:
+          type: string
+          description: Plain statement of what the performance figures are and are not built from.
 
     WeeklyReviewList:
       type: object
@@ -22853,6 +22872,14 @@ components:
         estimatedRiskAmount: { type: number, nullable: true }
         rewardToRisk: { type: number, nullable: true }
         estimatedMargin: { type: number, nullable: true }
+        moneyCurrency:
+          type: string
+          nullable: true
+          description: >-
+            Currency of estimatedProfitMainTP, estimatedRiskAmount,
+            estimatedMargin and targetProfitAmount: the trading account's
+            currency as the broker reported it. Null when not known; the UI
+            must then not name a currency.
         spreadRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }
         slippageRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }
         newsRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }

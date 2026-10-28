@@ -1545,6 +1545,10 @@ function serializeCommand(r: typeof mt5CommandsTable.$inferSelect) {
   };
 }
 
+/** /mt5/status does not read positions; said plainly instead of a confident empty list. */
+const MT5_STATUS_POSITIONS_NOT_READ =
+  "Open positions are not read by this status. See Live Trades or My Trades for broker-reported positions.";
+
 router.get("/mt5/status", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   // ── Canonical safety posture ─────────────────────────────────────────
@@ -1600,6 +1604,8 @@ router.get("/mt5/status", requireUser, async (req, res) => {
       secondsSinceHeartbeat: null,
       accountType: "NONE",
       openPositions: [],
+      openPositionsMeasured: false,
+      openPositionsNote: MT5_STATUS_POSITIONS_NOT_READ,
       accountSnapshot: null,
       userSafeMessage: "MT5 bridge not connected for this user. Set up an MT5 connection in MT5 Bridge settings.",
     });
@@ -1625,7 +1631,12 @@ router.get("/mt5/status", requireUser, async (req, res) => {
     lastHeartbeatAt: lastHb?.toISOString() ?? null,
     secondsSinceHeartbeat,
     accountType,
+    // This status reads the connection row only; it does not read the
+    // broker's open positions. The empty list is NOT a broker-confirmed
+    // "no open trades" (openPositionsMeasured false says so).
     openPositions: [],
+    openPositionsMeasured: false,
+    openPositionsNote: MT5_STATUS_POSITIONS_NOT_READ,
     accountSnapshot: lastHb ? {
       account: userConn.accountNumber,
       broker: userConn.brokerName,
@@ -1636,6 +1647,8 @@ router.get("/mt5/status", requireUser, async (req, res) => {
       freeMargin: userConn.freeMargin,
       marginLevel: null,
       currency: userConn.accountCurrency,
+      // When the EA last pushed the account figures (null = never).
+      syncedAt: userConn.accountSyncedAt ? new Date(userConn.accountSyncedAt).toISOString() : null,
     } : null,
     userSafeMessage: !lastHb
       ? "Bridge connection registered but no heartbeat received yet. Start the EA in MetaTrader."
