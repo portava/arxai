@@ -175,10 +175,29 @@ test("forward aggregate records R uncertainty over exactly the observed-R subset
   assert.match(notes, /2 observed R values/);
   assert.match(notes, /includes 0R/);
   assert.match(notes, /\(costs unverified\)/);
+  // Exact forward note: the backtest-only "without positive stop distance ... counts those
+  // trades as 0R" disclosure must not appear, although excludedCount is 1.
+  assert.deepEqual(r.result.notes.filter((n) => /R sample interval|R uncertainty unavailable/.test(n)), [
+    "R sample interval (95%, Student t, 1 degree of freedom): -9.28R to 9.78R around a mean of 0.25R "
+    + "over 2 observed R values (standard error 0.75R). Assumes independent, identically distributed trade outcomes; "
+    + "a sample interval, not a forecast. The interval includes 0R, so this sample does not distinguish the sample mean from 0R (costs unverified).",
+  ]);
+  assert.doesNotMatch(notes, /without positive stop distance|counts those trades as 0R/);
   const [history] = await listMissionTestResults(10, 1);
   assert.deepEqual(history!.notes, r.result.notes, "read-back projection matches the write-time projection");
   assert.deepEqual(await listMissionTestResults(11, 1), []);
   assert.equal(r.result.promotionEligible, false);
+  // A DB-edited row (available record with n 1) reads the invalid note; the history read does not throw.
+  const tampered = structuredClone(stored!.metricsJson) as { experiment: { rObservedCount: number; rStatistics: Record<string, unknown> } };
+  Object.assign(tampered.experiment.rStatistics, { n: 1, degreesOfFreedom: 0, excludedCount: 2 });
+  tampered.experiment.rObservedCount = 1;
+  await db.insert(results).values({ userId: 10, missionId: 1, kind: "FORWARD", strategyKey: stored!.strategyKey, symbol: stored!.symbol, timeframe: stored!.timeframe, label: stored!.label, sampleSize: stored!.sampleSize, isVerified: false, metricsJson: tampered });
+  const both = await listMissionTestResults(10, 1);
+  assert.equal(both.length, 2);
+  const edited = both.find((h) => h.id !== history!.id)!;
+  assert.deepEqual(edited.notes.filter((n) => /R sample interval|R uncertainty unavailable/.test(n)),
+    ["R uncertainty unavailable: no valid sample statistics are stored for this record; no interval is reported."]);
+  assert.deepEqual(both.find((h) => h.id === history!.id)!.notes, r.result.notes);
 });
 
 test("forward drawdown keeps an earlier loss against its contemporaneous peak", async () => {

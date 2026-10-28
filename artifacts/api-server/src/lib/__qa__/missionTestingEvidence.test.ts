@@ -4,7 +4,7 @@ import { computeMetrics, type BacktestSimTrade } from "@workspace/domain/backtes
 import { summarizeMissionTest, hasSufficientSample, type MissionTestMetrics } from "@workspace/domain/profit-mission";
 import {
   GENERATED_PRICE_EVIDENCE, CLOSED_DRAFT_EVIDENCE, backtestToMissionMetrics,
-  projectMissionTestResult, readMissionMetrics,
+  projectMissionTestResult, readMissionMetrics, readRStatistics,
 } from "../missionTestingEvidence.js";
 import {
   summarizeRObservations, studentT975, STUDENT_T_975, detectMissionDrift, checkMissionCopyDeep,
@@ -197,6 +197,10 @@ test("boundary pins: equal rounded bounds, rounded no_variation value, a bound e
   assert.deepEqual(summarizeRObservations(narrow), { status: "unavailable", n: 400, reason: "interval_below_precision" });
   // The common value is stored at 6 decimals.
   assert.deepEqual(summarizeRObservations([.1234567, .1234567]), { status: "unavailable", n: 2, reason: "no_variation", value: .123457 });
+  // The note prints that value with the fewest of 2/4/6 decimals that reproduce it.
+  const two = { ...fiveTrades, totalTrades: 2, winningTrades: 2, losingTrades: 0, winRate: 1, expectancyR: .1235 };
+  assert.equal(uncertaintyNote(projectMissionTestResult(backtestRow(buildRStatisticsRecord([.1234567, .1234567], 0), two))),
+    "R uncertainty unavailable: all 2 observed R values equal 0.123457R; no interval is reported.");
   // mean 12.706205 and SE 1 with t(1) 12.706205: the low bound is exactly 0 and counts as including 0R.
   const touching = buildRStatisticsRecord([13.706205, 11.706205], 0);
   assert.equal(touching.status, "available"); if (touching.status !== "available") return;
@@ -308,6 +312,30 @@ test("summarizeRObservations is deterministic and does not mutate its input", ()
   assert.deepEqual(input, [.3, -1, 2.5, -1, .7]);
 });
 
+// Reference t(0.975, df) for every tabulated df, computed independently of the table
+// (2026-10-28) by bisection on the Student t CDF, P(T > t) = I_{df/(df+t²)}(df/2, 1/2)/2,
+// with the regularized incomplete beta from a Lentz continued fraction in double
+// precision, then rounded to 6 decimals. Every unrounded value is more than 0.016 of a
+// unit in the 6th decimal away from a rounding tie, so the rounding is unambiguous.
+const T975_REFERENCE: ReadonlyArray<readonly [number, number]> = [
+  [1, 12.706205], [2, 4.302653], [3, 3.182446], [4, 2.776445], [5, 2.570582],
+  [6, 2.446912], [7, 2.364624], [8, 2.306004], [9, 2.262157], [10, 2.228139],
+  [11, 2.200985], [12, 2.178813], [13, 2.160369], [14, 2.144787], [15, 2.13145],
+  [16, 2.119905], [17, 2.109816], [18, 2.100922], [19, 2.093024], [20, 2.085963],
+  [21, 2.079614], [22, 2.073873], [23, 2.068658], [24, 2.063899], [25, 2.059539],
+  [26, 2.055529], [27, 2.051831], [28, 2.048407], [29, 2.04523], [30, 2.042272],
+  [40, 2.021075], [50, 2.008559], [60, 2.000298], [80, 1.990063], [100, 1.983972],
+  [120, 1.97993], [200, 1.971896], [500, 1.96472], [1000, 1.962339],
+];
+
+test("STUDENT_T_975 matches the independent reference at every tabulated df", () => {
+  assert.deepEqual(STUDENT_T_975.map(([df, q]) => [df, q]), T975_REFERENCE.map(([df, q]) => [df, q]));
+  for (const [df, q] of T975_REFERENCE) assert.equal(studentT975(df), q, `df ${df}`);
+  // Closed forms for df 1 (Cauchy) and df 2 cross-check the reference itself.
+  assert.equal(Math.round(Math.tan(.475 * Math.PI) * 1e6) / 1e6, T975_REFERENCE[0]![1]);
+  assert.equal(Math.round(.95 / Math.sqrt(2 * .975 * .025) * 1e6) / 1e6, T975_REFERENCE[1]![1]);
+});
+
 test("studentT975 table values, monotonicity and conservative step-down", () => {
   assert.equal(studentT975(1), 12.706205); assert.equal(studentT975(4), 2.776445);
   assert.equal(studentT975(30), 2.042272); assert.equal(studentT975(120), 1.97993);
@@ -374,6 +402,10 @@ test("an unavailable backtest record still discloses excluded trades", () => {
   assert.match(note, /the headline expectancy counts those trades as 0R\.$/);
 });
 
+const FORWARD_NOTE_1_MINUS_HALF = "R sample interval (95%, Student t, 1 degree of freedom): -9.28R to 9.78R around a mean of 0.25R "
+  + "over 2 observed R values (standard error 0.75R). Assumes independent, identically distributed trade outcomes; "
+  + "a sample interval, not a forecast. The interval includes 0R, so this sample does not distinguish the sample mean from 0R (costs unverified).";
+
 test("forward uncertainty note only appears when it agrees with the coverage note", () => {
   const forty = { ...strong };
   const rec = buildRStatisticsRecord([1, -.2], 38);
@@ -393,6 +425,11 @@ test("forward uncertainty note only appears when it agrees with the coverage not
   assert.match(note, /1 degree of freedom/);
   assert.match(note, /\(costs unverified\)/);
   assert.match(note, /^R sample interval/);
+  // The exact forward note: the backtest-only exclusion disclosure ("without positive
+  // stop distance", "counts those trades as 0R") must not appear, because forward
+  // missing R is not counted as 0R (see the "Missing R outcomes are not zero" note).
+  assert.equal(note, FORWARD_NOTE_1_MINUS_HALF);
+  assert.doesNotMatch(note, /without positive stop distance|counts those trades as 0R/);
   // A forward count that disagrees with rStatistics.n is unavailable.
   const off = projectMissionTestResult(forwardRow(buildRStatisticsRecord([1, -.5], 1), three, { rObservedCount: 1, closedDraftCount: 3 }));
   assert.equal(uncertaintyNote(off), R_INVALID);
@@ -413,7 +450,30 @@ test("forward n === coverage and excludedCount === total - coverage are each enf
   assert.match(uncertaintyNote(projectMissionTestResult(forwardRow(buildRStatisticsRecord([1, -.5], 1), three, { rObservedCount: 2, closedDraftCount: 3 }))), /^R sample interval/);
 });
 
+test("forward records must agree with the headline expectancy within 1e-4", () => {
+  const three = { ...fiveTrades, totalTrades: 3, winningTrades: 2, losingTrades: 1, expectancyR: .25 };
+  const note = (expectancyR: number) => uncertaintyNote(projectMissionTestResult(forwardRow(
+    buildRStatisticsRecord([1, -.5], 1), { ...three, expectancyR }, { rObservedCount: 2, closedDraftCount: 3 })));
+  // Counts are coherent; only the headline differs from the record mean (0.25).
+  assert.equal(note(.9), R_INVALID);
+  assert.equal(note(.25 + 1.1e-4), R_INVALID);
+  // Near-miss controls inside the tolerance read the interval.
+  assert.equal(note(.25), FORWARD_NOTE_1_MINUS_HALF);
+  assert.equal(note(.25 + 9e-5), FORWARD_NOTE_1_MINUS_HALF);
+});
+
+const TWO_AT_04 = { ...fiveTrades, totalTrades: 2, winningTrades: 2, losingTrades: 0, winRate: 1, expectancyR: .4 };
+const SD_ZERO = {
+  version: 1, excludedCount: 0, status: "available", n: 2, mean: .4, sampleSd: 0, standardError: 1e-6,
+  degreesOfFreedom: 1, quantile: 12.706205, interval95: { low: .399987, high: .400013, method: "student_t" }, includesZero: false,
+};
+
 test("incoherent or edited records read as unavailable", () => {
+  // Controls for two tamper fixtures listed below: with sampleSd 1e-6 the SD_ZERO record
+  // reads an interval, and the no_variation record with its value rounded reads "all equal".
+  assert.match(uncertaintyNote(projectMissionTestResult(backtestRow({ ...SD_ZERO, sampleSd: 1e-6 }, TWO_AT_04))), /^R sample interval .*: 0\.399987R to 0\.400013R around/);
+  assert.equal(uncertaintyNote(projectMissionTestResult(backtestRow({ version: 1, excludedCount: 0, status: "unavailable", n: 5, reason: "no_variation", value: .4 }))),
+    "R uncertainty unavailable: all 5 observed R values equal 0.40R; no interval is reported.");
   const base = buildRStatisticsRecord([1, -1, 2, -1, 1], 0) as Record<string, any>;
   assert.match(uncertaintyNote(projectMissionTestResult(backtestRow(base))), /^R sample interval/);
   const clone = () => structuredClone(base);
@@ -422,6 +482,10 @@ test("incoherent or edited records read as unavailable", () => {
     ["quantile 1.96", () => backtestRow({ ...clone(), quantile: 1.96 })],
     ["SE off by 1e-4", () => backtestRow({ ...clone(), standardError: .6001 })],
     ["low shifted", () => { const r = clone(); r.interval95.low -= .001; r.interval95.low = Math.round(r.interval95.low * 1e6) / 1e6; return backtestRow(r); }],
+    ["high shifted", () => { const r = clone(); r.interval95.high += .001; r.interval95.high = Math.round(r.interval95.high * 1e6) / 1e6; return backtestRow(r); }],
+    // Available records with n < 2 (counts still add up to totalTrades); see also the no-throw test below.
+    ["available with n 1", () => backtestRow({ ...clone(), n: 1, degreesOfFreedom: 0, excludedCount: 4 })],
+    ["available with n 0", () => backtestRow({ ...clone(), n: 0, degreesOfFreedom: -1, excludedCount: 5 })],
     ["mean vs expectancyR", () => backtestRow(clone(), { ...fiveTrades, expectancyR: .41 })],
     ["n + excluded", () => backtestRow({ ...clone(), excludedCount: 1 })],
     ["low > high", () => { const r = clone(); [r.interval95.low, r.interval95.high] = [r.interval95.high, r.interval95.low]; return backtestRow(r); }],
@@ -442,6 +506,10 @@ test("incoherent or edited records read as unavailable", () => {
     ["unrounded standardError", () => backtestRow({ ...clone(), standardError: .6000001 })],
     ["unrounded low", () => { const r = clone(); r.interval95.low = -1.2658671; return backtestRow(r); }],
     ["unrounded high", () => { const r = clone(); r.interval95.high = 2.0658671; return backtestRow(r); }],
+    // A no_variation value left unrounded; the headline (0.4) agrees within 1e-4.
+    ["unrounded no_variation value", () => backtestRow({ version: 1, excludedCount: 0, status: "unavailable", n: 5, reason: "no_variation", value: .4000001 })],
+    // sampleSd 0 with SE 1e-6 (within 1.5e-6 of 0/sqrt(2)) and bounds coherent with SE; control at the top of this test.
+    ["available with sampleSd 0", () => backtestRow(SD_ZERO, TWO_AT_04)],
     // SE and bounds agree with each other, but SE is not sampleSd/sqrt(n) (1.5/sqrt(5) = 0.67).
     ["SE vs sampleSd/sqrt(n)", () => backtestRow({ ...clone(), sampleSd: 1.5 })],
     // Bounds within the (2+q)e-6 tolerance of mean ± q·SE, but the mean lies below the low bound.
@@ -449,12 +517,35 @@ test("incoherent or edited records read as unavailable", () => {
       version: 1, excludedCount: 0, status: "available", n: 2, mean: 0, sampleSd: 1e-6, standardError: 1e-6,
       degreesOfFreedom: 1, quantile: 12.706205, interval95: { low: 1e-6, high: 2e-6, method: "student_t" }, includesZero: false,
     }, { ...fiveTrades, totalTrades: 2, winningTrades: 1, losingTrades: 1, winRate: .5, expectancyR: 0 })],
+    // The mirror case: bounds within tolerance, but the mean lies above the high bound.
+    ["mean above high", () => backtestRow({
+      version: 1, excludedCount: 0, status: "available", n: 2, mean: 0, sampleSd: 1e-6, standardError: 1e-6,
+      degreesOfFreedom: 1, quantile: 12.706205, interval95: { low: -2e-6, high: -1e-6, method: "student_t" }, includesZero: false,
+    }, { ...fiveTrades, totalTrades: 2, winningTrades: 1, losingTrades: 1, winRate: .5, expectancyR: 0 })],
   ];
   for (const [label, make] of edits) {
     const note = uncertaintyNote(projectMissionTestResult(make()));
     // The exact invalid note: the no_variation and insufficient notes share its prefix.
     assert.equal(note, R_INVALID, label);
   }
+});
+
+test("an available record with n < 2 is rejected by the reader without throwing", () => {
+  const base = buildRStatisticsRecord([1, -1, 2, -1, 1], 0) as Record<string, unknown>;
+  for (const n of [1, 0]) {
+    const experiment = { version: 1, engine: "generated-price-diagnostic-v1", rStatistics: { ...base, n, degreesOfFreedom: n - 1, excludedCount: 5 - n } };
+    // Called directly: the reader itself must not reach studentT975 with df < 1.
+    const read = () => readRStatistics({ experiment, metrics: fiveTrades, parsedOk: true, source: "generated_prices", coverageCount: null });
+    assert.doesNotThrow(read, `n ${n}`);
+    assert.equal(read(), null);
+  }
+});
+
+test("a row whose stored record throws on read still projects, with the invalid note", () => {
+  const experiment = { version: 1, engine: "generated-price-diagnostic-v1", get rStatistics(): unknown { throw new RangeError("tampered"); } };
+  const result = projectMissionTestResult(row({ metrics: fiveTrades, evidence: GENERATED_PRICE_EVIDENCE, experiment }));
+  assert.equal(uncertaintyNote(result), R_INVALID);
+  assert.deepEqual(result.metrics, fiveTrades);
 });
 
 test("legacy, unknown-provenance and invalid-metrics rows read uncertainty unavailable", () => {

@@ -138,10 +138,16 @@ export function projectMissionTestResult(row: StoredMissionTestResult) {
       warning = [warning, coverage, "R metrics are incomplete."].filter(Boolean).join(" ");
     }
   }
-  const rStatistics = readRStatistics({
-    experiment, metrics, parsedOk: parsed != null, source: summary.evidence.source, coverageCount: rCoverageCount,
-  });
-  notes.push(rUncertaintyNote(rStatistics, summary.evidence.source));
+  // listMissionTestResults maps every row through this projection, so an uncertainty
+  // read that throws for one stored record must not break the whole history read:
+  // that row reads the invalid-record note instead.
+  let uncertaintyNote = R_UNAVAILABLE_INVALID;
+  try {
+    uncertaintyNote = rUncertaintyNote(readRStatistics({
+      experiment, metrics, parsedOk: parsed != null, source: summary.evidence.source, coverageCount: rCoverageCount,
+    }), summary.evidence.source);
+  } catch { /* fail safe: the invalid-record note */ }
+  notes.push(uncertaintyNote);
   return {
     id: row.id, missionId: row.missionId, kind,
     strategyKey: row.strategyKey, symbol: row.symbol, timeframe: row.timeframe,
