@@ -161,7 +161,12 @@ function rejectResult(
     displayName,
     assetClass: assetClassFor(input.spec.category),
     direction: null,
-    scalpType: profile.label,
+    scalpType: scalpTypeLabel(
+      input.mode,
+      null,
+      num(input.scanner?.trendStrength) ? input.scanner!.trendStrength! : null,
+      profile.label,
+    ),
     mode: input.mode,
     status,
     ...(opts.rejectReason ? { rejectReason: opts.rejectReason } : {}),
@@ -420,14 +425,16 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
 
   // ── Quality score (shared, mode-weighted).
   let quality = 0.5 * scanner.confidenceScore + 0.5 * scanner.entrySniperScore;
-  const trend = num(scanner.trendStrength) ? scanner.trendStrength : 50;
+  // Trend measure, when the scanner read carries one. Never assumed: with no
+  // measure the trend-based mode tilts do not apply and the type label says so.
+  const trend: number | null = num(scanner.trendStrength) ? scanner.trendStrength : null;
   // Mode tilts.
   switch (input.mode) {
     case "SNIPER": quality += (scanner.entrySniperScore - 60) * 0.2; break;
     case "SAFER": quality += (rewardToRisk - 1.5) * 6 - (spreadRisk === "MEDIUM" ? 8 : 0); break;
-    case "FAST": quality += (trend - 50) * 0.15; break;
-    case "MOMENTUM": quality += (trend - 50) * 0.25; break;
-    case "REVERSAL": quality += (60 - trend) * 0.15; break;
+    case "FAST": if (trend !== null) quality += (trend - 50) * 0.15; break;
+    case "MOMENTUM": if (trend !== null) quality += (trend - 50) * 0.25; break;
+    case "REVERSAL": if (trend !== null) quality += (60 - trend) * 0.15; break;
     case "ANY": break;
   }
   if (spreadRisk === "MEDIUM") quality -= 5;
@@ -825,11 +832,24 @@ function assessTargetReality(a: TargetRealityArgs): TargetRealityCheck {
   return "TOO_RISKY";
 }
 
-function scalpTypeLabel(mode: ScalpMode, direction: ScalpDirection, trend: number, fallback: string): string {
+/**
+ * The type badge names only a characteristic that was measured or a mode
+ * floor that was applied:
+ *  - SNIPER / SAFER / FAST: the mode's own thresholds were applied.
+ *  - MOMENTUM / REVERSAL: the label needs a trend measure; without one the
+ *    mode could not test its idea, so the badge says the trend was not measured.
+ *  - ANY: momentum / reversal only from a measured trend; otherwise plain
+ *    "Scalp" (the Sniper floor is never applied in ANY mode).
+ */
+function scalpTypeLabel(mode: ScalpMode, _direction: ScalpDirection | null, trend: number | null, fallback: string): string {
+  if (mode === "MOMENTUM" || mode === "REVERSAL") {
+    return trend === null ? "Scalp (trend not measured)" : fallback;
+  }
   if (mode !== "ANY") return fallback;
+  if (trend === null) return fallback;
   if (trend >= 60) return "Momentum Scalp";
   if (trend <= 40) return "Reversal Scalp";
-  return "Sniper Scalp";
+  return fallback;
 }
 
 interface PlainReasonArgs {

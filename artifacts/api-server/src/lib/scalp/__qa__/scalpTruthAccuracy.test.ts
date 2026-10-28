@@ -143,3 +143,82 @@ test("money: tick truth sizes in account currency and margin is converted out of
   // not 0.75 × 100000 × 150 / 100 = 112,500 (yen).
   assert.ok(r.estimatedMargin != null && Math.abs(r.estimatedMargin - 750) <= 1, `margin ≈ 750 USD, got ${r.estimatedMargin}`);
 });
+
+// ── Finding: every ANY-mode scalp was badged "Sniper Scalp" ────────────────
+
+/** A scanner row as the production scanner emits it (no trendStrength field). */
+function productionScannerRow(): Record<string, unknown> {
+  return {
+    symbol: "EURUSD",
+    timeframe: "M5",
+    bias: "bullish",
+    recommendedAction: "BUY",
+    confidenceScore: 80,
+    entrySniperScore: 78,
+    setupType: "Continuation",
+    entry: 1.085,
+    stopLoss: 1.083,
+    takeProfit: 1.089,
+    reasonForTrade: "Upward drift",
+    reasonToAvoid: "",
+    dataSource: "LIVE_FEED",
+    sufficiency: sufficientVerdict(),
+    newsContext: null,
+    generatedAt: new Date(NOW).toISOString(),
+  };
+}
+
+function eurUsdTickSpec(): ScalpSpecInput {
+  return usdJpySpec({
+    digits: 5, point: 0.00001, tickSize: 0.00001, tickValue: 1, profitCurrency: "USD", displayName: "EURUSD",
+  });
+}
+
+async function productionScalp(mode: ScalpEngineInput["mode"]) {
+  const { oppToScannerInput } = await import("../scalpService.js");
+  const scanner = oppToScannerInput(productionScannerRow() as never);
+  assert.equal(scanner.trendStrength, undefined, "the production scanner row carries no trend measure");
+  return evaluateScalp(usdJpyInput({
+    symbol: "EURUSD",
+    currentPrice: 1.085,
+    spec: eurUsdTickSpec(),
+    scanner,
+    mode,
+  }));
+}
+
+test("scalp type: ANY mode with no trend measure is a plain 'Scalp', never 'Sniper Scalp'", async () => {
+  const r = await productionScalp("ANY");
+  assert.notEqual(r.scalpType, "Sniper Scalp", "the Sniper floor was not applied in ANY mode");
+  assert.equal(r.scalpType, "Scalp");
+});
+
+test("scalp type: ANY mode with a measured mid trend is still not 'Sniper Scalp'", () => {
+  const r = evaluateScalp(usdJpyInput({
+    symbol: "EURUSD",
+    currentPrice: 1.085,
+    spec: eurUsdTickSpec(),
+    scanner: usdJpyScanner({ entry: 1.085, stopLoss: 1.083, takeProfit: 1.089, entryZone: { low: 1.0848, high: 1.0852 }, trendStrength: 50 }),
+  }));
+  assert.equal(r.scalpType, "Scalp");
+});
+
+test("scalp type: MOMENTUM / REVERSAL modes with no trend measure say the trend was not measured and get no tilt", async () => {
+  const any = await productionScalp("ANY");
+  const momentum = await productionScalp("MOMENTUM");
+  const reversal = await productionScalp("REVERSAL");
+  assert.equal(momentum.scalpType, "Scalp (trend not measured)");
+  assert.equal(reversal.scalpType, "Scalp (trend not measured)");
+  // No trend characteristic was measured, so neither mode may move the score.
+  assert.equal(momentum.qualityScore, any.qualityScore);
+  assert.equal(reversal.qualityScore, any.qualityScore, "REVERSAL used to add +1.5 from an assumed trend of 50");
+});
+
+test("scalp type: a measured trend still drives the MOMENTUM label and tilt", () => {
+  const scanner = usdJpyScanner({ entry: 1.085, stopLoss: 1.083, takeProfit: 1.089, entryZone: { low: 1.0848, high: 1.0852 } });
+  const base = { symbol: "EURUSD", currentPrice: 1.085, spec: eurUsdTickSpec() };
+  const weak = evaluateScalp(usdJpyInput({ ...base, mode: "MOMENTUM", scanner: { ...scanner, trendStrength: 50 } }));
+  const strong = evaluateScalp(usdJpyInput({ ...base, mode: "MOMENTUM", scanner: { ...scanner, trendStrength: 80 } }));
+  assert.equal(strong.scalpType, "Momentum Scalp");
+  assert.ok(strong.qualityScore > weak.qualityScore);
+});

@@ -154,7 +154,8 @@ function oppToScalpPatternImpact(
   };
 }
 
-function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
+/** Exported for the truth-accuracy regression test (production mapping). */
+export function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
   return {
     bias: coerceBias(opp.bias),
     recommendedAction: coerceAction(opp.recommendedAction),
