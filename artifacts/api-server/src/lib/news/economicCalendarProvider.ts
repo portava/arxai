@@ -71,6 +71,12 @@ export interface EconomicCalendarSnapshot {
    * alone cannot distinguish "not configured" from "fetch failed".
    */
   providerState: CalendarProviderState;
+  /**
+   * When the connected provider's events were last SUCCESSFULLY fetched (ISO),
+   * or null when not connected. A failed attempt is never a "check".
+   * Optional so older stubs remain valid.
+   */
+  lastSuccessAt?: string | null;
 }
 
 /**
@@ -104,6 +110,7 @@ export async function getEconomicCalendar(
     status: result.status,
     events: toRawCalendarEvents(symbolEvents),
     providerState,
+    lastSuccessAt: result.connected ? (result.diagnostics.lastSuccessAt ?? null) : null,
   };
 }
 

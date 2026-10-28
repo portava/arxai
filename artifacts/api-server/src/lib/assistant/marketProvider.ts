@@ -308,8 +308,21 @@ function cacheGet<T>(map: Map<string, { at: number; value: T }>, key: string, tt
   if (Date.now() - e.at > ttl) { map.delete(key); return null; }
   return e.value;
 }
+// When each cached provider result was actually fetched. A cache hit returns
+// the SAME object, so its fetch time travels with it (heat "News Xm ago" must
+// be the headline fetch time, not the provider-wide last-success clock that
+// any quote/candle call moves).
+const cachedResultFetchedAt = new WeakMap<object, number>();
+/** ISO time a provider result was fetched (null when unknown / not cached). */
+export function providerResultFetchedAt(result: unknown): string | null {
+  if (result == null || typeof result !== "object") return null;
+  const at = cachedResultFetchedAt.get(result);
+  return at != null ? new Date(at).toISOString() : null;
+}
 function cacheSet<T>(map: Map<string, { at: number; value: T }>, key: string, value: T): void {
-  map.set(key, { at: Date.now(), value });
+  const at = Date.now();
+  map.set(key, { at, value });
+  if (value != null && typeof value === "object") cachedResultFetchedAt.set(value as object, at);
   if (map.size > 200) {
     // Drop oldest entries
     const entries = Array.from(map.entries()).sort((a, b) => a[1].at - b[1].at).slice(0, map.size - 100);

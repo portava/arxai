@@ -403,3 +403,30 @@ test("15. cache is keyed by daysAhead — a different horizon never reuses anoth
   await getEconomicCalendarResult({ daysAhead: 14, nowMs: t + 2_000 });
   assert.equal(fetchCount, 2, "a different horizon must NOT reuse the days=7 cache");
 });
+
+
+// Owner screenshot 2026-10-27: the heat list printed "Calendar never" because
+// the calendar time was hard-coded null even when a calendar was connected.
+test("11. heat readCalendarProvider reports the last SUCCESSFUL fetch time, never a failed attempt", async () => {
+  const t1 = Date.parse("2030-01-10T09:00:00.000Z");
+  configure();
+  fetcherReturning([rawEvent({ CalendarId: "u7" })]);
+  const live = await readCalendarProvider("EURUSD", t1);
+  assert.equal(live.connected, true);
+  assert.equal(live.updatedAt, new Date(t1).toISOString());
+  assert.equal(live.source.updatedAt, new Date(t1).toISOString());
+
+  // A later failed attempt (past the cache window) is not a check.
+  fetcherHttpError(503);
+  const failed = await readCalendarProvider("EURUSD", t1 + 24 * 3_600_000);
+  assert.equal(failed.connected, false);
+  assert.equal(failed.updatedAt, null);
+  assert.equal(failed.source.updatedAt, null);
+
+  // Not configured ⇒ no time.
+  __resetEconomicCalendarStateForTests();
+  __setEconomicCalendarFetcherForTests(null);
+  unconfigureNoKey();
+  const missing = await readCalendarProvider("EURUSD", t1);
+  assert.equal(missing.updatedAt, null);
+});

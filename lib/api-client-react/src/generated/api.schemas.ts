@@ -1881,6 +1881,7 @@ export type MarketHeatVerdictSourceStatus =
 export const MarketHeatVerdictSourceStatus = {
   confirmed: "confirmed",
   price_only: "price_only",
+  partial: "partial",
   delayed: "delayed",
   stale: "stale",
   provider_missing: "provider_missing",

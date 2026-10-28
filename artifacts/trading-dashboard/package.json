@@ -29,7 +29,7 @@
     "test:chart-deep-history-hook": "vitest run src/lib/useChartDeepHistory.test.ts",
     "test:chart-display-status": "vitest run src/lib/chart-display-status.test.ts",
     "test:scanner-feed-badge": "vitest run src/components/scanner/ScannerChartFeedBadge.test.tsx",
-    "test:news-risk-honesty": "vitest run src/components/news/NewsRiskCard.honesty.test.tsx",
+    "test:news-risk-honesty": "vitest run src/components/news/NewsRiskCard.honesty.test.tsx src/components/scanner/GlobalMarketHeatCard.test.tsx",
     "test:chart-tick-stream": "vitest run src/components/charts/ARXNativeChart.tick-stream.test.tsx",
     "test:chart-stream-watchdog": "vitest run src/components/charts/useTickStreamWatchdog.test.ts",
     "test:chart-stall-badge": "vitest run src/components/charts/ARXNativeChart.stall-badge.test.tsx",

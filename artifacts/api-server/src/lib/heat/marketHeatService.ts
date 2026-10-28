@@ -84,7 +84,7 @@ function calendarSignalOf(read: CalendarProviderRead): CalendarSignal {
     impactScore: read.connected ? Math.max(0, Math.min(1, read.eventCount / 8)) : 0,
     eventCount: read.eventCount,
     highImpactActive: read.highImpactActive,
-    updatedAt: null,
+    updatedAt: read.connected ? read.updatedAt : null,
     source: read.provider,
   };
 }

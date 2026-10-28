@@ -357,3 +357,70 @@ describe("GlobalMarketHeatCard driving headlines", () => {
     expect(screen.queryByText("Driving headlines")).toBeNull();
   });
 });
+
+// Owner screenshot 2026-10-27 (/market-scanner heat list): "Global Calm" in
+// green from headlines alone, and synthetic rows reading "Price 4m ago · News
+// 2m ago · Calendar never" for markets that do not use news at all.
+describe("GlobalMarketHeatCard — what each row was actually built from", () => {
+  function src(kind: MarketHeatSource["kind"], over: Partial<MarketHeatSource>): MarketHeatSource {
+    return { kind, name: kind === "calendar" ? "none" : "Test", status: "live", configured: true, connected: true, updatedAt: null, recordCount: 0, note: null, ...over } as MarketHeatSource;
+  }
+  const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+  function ownerData(): MarketHeatResponse {
+    const data = buildData();
+    const calendarMissing = src("calendar", { status: "missing", configured: false, connected: false });
+    data.global = verdict({
+      id: "global", scope: "global", key: "global", displayName: "Global Markets",
+      intensity: "calm", direction: "neutral", sourceStatus: "partial", confidence: "low",
+      priceSource: src("price", { status: "unavailable", connected: false }),
+      newsSource: src("news", { updatedAt: minsAgo(2) }),
+      calendarSource: calendarMissing,
+      newsUpdatedAt: minsAgo(2), calendarUpdatedAt: null, priceUpdatedAt: null,
+      reason: "Partial heat — from headlines only (no price feed). Calendar unavailable.",
+    });
+    data.synthetics = [verdict({
+      id: "synthetic:V75", scope: "synthetic", key: "V75", displayName: "Volatility 75 Index",
+      intensity: "moderate", sourceStatus: "price_only", confidence: "medium",
+      priceSource: src("price", { updatedAt: minsAgo(4) }),
+      newsSource: src("news", { connected: false, status: "unavailable" }),
+      calendarSource: calendarMissing,
+      priceUpdatedAt: minsAgo(4), newsUpdatedAt: null, calendarUpdatedAt: null,
+      reason: "Synthetic market — not driven by scheduled economic events; the economic calendar is not consulted for this market. Heat here is from price action only; headlines are not used.",
+    })];
+    return data;
+  }
+  beforeEach(() => {
+    mockUseGetMarketHeat.mockReturnValue({ data: ownerData(), isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
+  });
+
+  it("the collapsed Global row names its sources and the calendar gap, never a plain green calm", () => {
+    render(<GlobalMarketHeatCard />);
+    const row = screen.getByText("Global Markets").closest("button")!;
+    expect(row.textContent).toContain("Calm");
+    const status = row.querySelector('[data-testid="heat-verdict-source-status"]')!;
+    expect(status.textContent).toBe("Headlines only · price not available · calendar not configured");
+    expect(row.textContent).not.toContain("Price only");
+    expect(row.innerHTML).not.toContain("text-success");
+  });
+
+  it("a synthetic row claims no news/calendar check time", () => {
+    render(<GlobalMarketHeatCard />);
+    fireEvent.click(screen.getByText("Volatility 75 Index").closest("button")!);
+    const checked = screen.getByTestId("heat-verdict-checked").textContent ?? "";
+    expect(checked).toContain("Price 4m ago");
+    expect(checked).toContain("news/calendar not used (synthetic market)");
+    expect(checked).not.toMatch(/News \d|Calendar/);
+  });
+
+  it("the Global row's chips say the calendar is not configured — no chip or status ever says 'never'", () => {
+    render(<GlobalMarketHeatCard />);
+    fireEvent.click(screen.getByText("Global Markets").closest("button")!);
+    const checked = screen.getByTestId("heat-verdict-checked").textContent ?? "";
+    expect(checked).toContain("News 2m ago");
+    expect(checked).toContain("Calendar not configured");
+    expect(checked).toContain("Price not available");
+    for (const el of [...screen.getAllByTestId("heat-verdict-checked"), ...screen.getAllByTestId("heat-verdict-source-status")]) {
+      expect(el.textContent ?? "").not.toMatch(/\bnever\b/i);
+    }
+  });
+});

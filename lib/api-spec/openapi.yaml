@@ -12412,7 +12412,7 @@ components:
         heatScore: { type: number, description: "-100..+100" }
         direction: { type: string, enum: [bullish, bearish, neutral, unavailable] }
         intensity: { type: string, enum: [extreme, high, moderate, low, calm, unavailable] }
-        sourceStatus: { type: string, enum: [confirmed, price_only, delayed, stale, provider_missing, unavailable] }
+        sourceStatus: { type: string, enum: [confirmed, price_only, partial, delayed, stale, provider_missing, unavailable] }
         priceSource: { $ref: "#/components/schemas/MarketHeatSource" }
         newsSource: { $ref: "#/components/schemas/MarketHeatSource" }
         calendarSource: { $ref: "#/components/schemas/MarketHeatSource" }

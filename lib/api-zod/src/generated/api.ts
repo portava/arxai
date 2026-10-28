@@ -25811,6 +25811,7 @@ export const GetMarketHeatResponse = zod.object({
       sourceStatus: zod.enum([
         "confirmed",
         "price_only",
+        "partial",
         "delayed",
         "stale",
         "provider_missing",
@@ -25911,6 +25912,7 @@ export const GetMarketHeatResponse = zod.object({
         sourceStatus: zod.enum([
           "confirmed",
           "price_only",
+          "partial",
           "delayed",
           "stale",
           "provider_missing",
@@ -26012,6 +26014,7 @@ export const GetMarketHeatResponse = zod.object({
         sourceStatus: zod.enum([
           "confirmed",
           "price_only",
+          "partial",
           "delayed",
           "stale",
           "provider_missing",
@@ -26113,6 +26116,7 @@ export const GetMarketHeatResponse = zod.object({
         sourceStatus: zod.enum([
           "confirmed",
           "price_only",
+          "partial",
           "delayed",
           "stale",
           "provider_missing",
