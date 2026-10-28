@@ -18753,6 +18753,15 @@ components:
           type: string
           enum: [now, upcoming, recent, quiet]
         warningSummary: { type: string }
+        scheduledEventRisk:
+          type: string
+          enum: [checked, not_checked, not_applicable]
+          description: |
+            Whether scheduled (economic-calendar) event risk was actually
+            checked. "checked": a live calendar answered. "not_checked": no
+            calendar is connected or its read failed, so riskLevel "none" and
+            timing "quiet" were not observed and upcoming events are unknown.
+            "not_applicable": a synthetic instrument scheduled events do not move.
         recommendation:
           type: string
           enum: [watch, wait, avoid, proceed_with_caution]

@@ -9971,6 +9971,12 @@ export const PostMarketNewsIntelligenceResponse = zod.object({
   bias: zod.enum(["bullish", "bearish", "mixed", "unclear"]),
   timing: zod.enum(["now", "upcoming", "recent", "quiet"]),
   warningSummary: zod.string(),
+  scheduledEventRisk: zod
+    .enum(["checked", "not_checked", "not_applicable"])
+    .optional()
+    .describe(
+      'Whether scheduled (economic-calendar) event risk was actually\nchecked. \"checked\": a live calendar answered. \"not_checked\": no\ncalendar is connected or its read failed, so riskLevel \"none\" and\ntiming \"quiet\" were not observed and upcoming events are unknown.\n\"not_applicable\": a synthetic instrument scheduled events do not move.\n',
+    ),
   recommendation: zod.enum(["watch", "wait", "avoid", "proceed_with_caution"]),
   upcomingEvent: zod.union([
     zod.object({

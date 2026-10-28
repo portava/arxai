@@ -1279,6 +1279,7 @@ export * from "./newsIntelligencePackDataSourcesSocial";
 export * from "./newsIntelligencePackRecentHeadlinesItem";
 export * from "./newsIntelligencePackRecommendation";
 export * from "./newsIntelligencePackRiskLevel";
+export * from "./newsIntelligencePackScheduledEventRisk";
 export * from "./newsIntelligencePackTiming";
 export * from "./newsIntelligencePackUpcomingEvent";
 export * from "./newsOverlay";

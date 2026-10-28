@@ -70,3 +70,27 @@ test("synthetic instrument keeps its copy when the calendar fails", async () => 
   const pack = await getNewsIntelligence("Volatility 75 Index");
   assert.doesNotMatch(pack.warningSummary, /could not be checked/i);
 });
+
+// No calendar configured: nothing scheduled was looked at. Every consumer of
+// the pack (scanner news warning, trade-ticket News Risk Check) shows its
+// warningSummary, so it must say scheduled news was not checked — never the
+// "No major scheduled news" all-clear — and the pack must name that state.
+test("calendar not configured: summary says scheduled news was not checked, never an all-clear", async () => {
+  calMode = "not_configured";
+  const pack = await getNewsIntelligence("NZDUSD");
+  assert.equal(pack.scheduledEventRisk, "not_checked");
+  assert.doesNotMatch(pack.warningSummary, /No major scheduled news/i);
+  assert.match(pack.warningSummary, /not checked/i);
+  assert.match(pack.warningSummary, /no economic-calendar provider is connected/i);
+});
+
+test("scheduledEventRisk names what was checked: failed read, connected calendar, synthetic", async () => {
+  calMode = "fetch_error";
+  assert.equal((await getNewsIntelligence("EURCHF")).scheduledEventRisk, "not_checked");
+  calMode = "connected";
+  assert.equal((await getNewsIntelligence("EURGBP")).scheduledEventRisk, "checked");
+  calMode = "not_configured";
+  const synth = await getNewsIntelligence("Volatility 10 Index");
+  assert.equal(synth.scheduledEventRisk, "not_applicable");
+  assert.doesNotMatch(synth.warningSummary, /not checked/i);
+});

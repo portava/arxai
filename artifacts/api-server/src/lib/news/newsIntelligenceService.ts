@@ -46,6 +46,14 @@ export interface NewsIntelligencePack {
   bias: NewsBias;
   timing: "now" | "upcoming" | "recent" | "quiet";
   warningSummary: string;
+  /**
+   * Whether scheduled (economic-calendar) event risk was actually checked:
+   * "checked" — a live calendar answered; "not_checked" — no calendar is
+   * connected or its read failed, so `riskLevel` "none" / `timing` "quiet"
+   * were NOT observed and upcoming events are unknown; "not_applicable" — a
+   * synthetic instrument scheduled events do not move.
+   */
+  scheduledEventRisk: "checked" | "not_checked" | "not_applicable";
   recommendation: "watch" | "wait" | "avoid" | "proceed_with_caution";
   upcomingEvent: UpcomingEventSummary | null;
   recentHeadlines: NewsHeadline[];
@@ -277,9 +285,20 @@ export async function getNewsIntelligence(
   const timing = deriveTiming(newsRisk);
   const bias = deriveBiasFromHeadlines(recentHeadlines);
   const recommendation = deriveRecommendation(riskLevel, timing);
+  // What was actually checked. A calendar that is not configured is not a
+  // FAILED check (calendarCheckFailed stays false, so scanner gating is
+  // unchanged), but nothing scheduled was looked at either: riskLevel "none"
+  // there is a default, so the copy must never read as an all-clear.
+  const scheduledEventRisk: NewsIntelligencePack["scheduledEventRisk"] = synthetic
+    ? "not_applicable"
+    : calendar.connected
+      ? "checked"
+      : "not_checked";
   const warningSummary = eventRiskUnchecked && riskLevel === "none"
     ? `Scheduled news risk for ${symbol} could not be checked — the economic calendar did not answer.`
-    : summarizeWarning(symbol, riskLevel, upcoming, bias);
+    : scheduledEventRisk === "not_checked" && riskLevel === "none"
+      ? `Scheduled news for ${symbol} was not checked — no economic-calendar provider is connected, so upcoming events are unknown (not none).`
+      : summarizeWarning(symbol, riskLevel, upcoming, bias);
 
   const pack: NewsIntelligencePack = {
     symbol,
@@ -288,6 +307,7 @@ export async function getNewsIntelligence(
     bias,
     timing,
     warningSummary,
+    scheduledEventRisk,
     recommendation,
     upcomingEvent: upcoming,
     recentHeadlines,

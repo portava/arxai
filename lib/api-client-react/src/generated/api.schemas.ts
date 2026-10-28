@@ -9561,6 +9561,23 @@ export const NewsIntelligencePackTiming = {
   quiet: "quiet",
 } as const;
 
+/**
+ * Whether scheduled (economic-calendar) event risk was actually
+checked. "checked": a live calendar answered. "not_checked": no
+calendar is connected or its read failed, so riskLevel "none" and
+timing "quiet" were not observed and upcoming events are unknown.
+"not_applicable": a synthetic instrument scheduled events do not move.
+
+ */
+export type NewsIntelligencePackScheduledEventRisk =
+  (typeof NewsIntelligencePackScheduledEventRisk)[keyof typeof NewsIntelligencePackScheduledEventRisk];
+
+export const NewsIntelligencePackScheduledEventRisk = {
+  checked: "checked",
+  not_checked: "not_checked",
+  not_applicable: "not_applicable",
+} as const;
+
 export type NewsIntelligencePackRecommendation =
   (typeof NewsIntelligencePackRecommendation)[keyof typeof NewsIntelligencePackRecommendation];
 
@@ -9617,6 +9634,13 @@ export interface NewsIntelligencePack {
   bias: NewsIntelligencePackBias;
   timing: NewsIntelligencePackTiming;
   warningSummary: string;
+  /** Whether scheduled (economic-calendar) event risk was actually
+checked. "checked": a live calendar answered. "not_checked": no
+calendar is connected or its read failed, so riskLevel "none" and
+timing "quiet" were not observed and upcoming events are unknown.
+"not_applicable": a synthetic instrument scheduled events do not move.
+ */
+  scheduledEventRisk?: NewsIntelligencePackScheduledEventRisk;
   recommendation: NewsIntelligencePackRecommendation;
   upcomingEvent: NewsIntelligencePackUpcomingEvent;
   recentHeadlines: NewsIntelligencePackRecentHeadlinesItem[];
