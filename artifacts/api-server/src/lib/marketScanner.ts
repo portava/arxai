@@ -454,7 +454,12 @@ export interface ScannerTimingContext {
   roomToMove: number;         // 0-100
   heatBoost: number;          // bounded −10..+10 adjustment applied to score
   dataQualityLabel: string;   // real/partial/basic_timing_estimate
+  /** The timeframe this timing read was computed on — always the row's own. */
+  timeframe?: string;
 }
+
+/** Timeframes the timing brain reads (mirrors the /me/timing-brain route). */
+const TIMING_READ_TIMEFRAMES = new Set(["M1", "M5", "M15", "M30", "H1", "H4", "D1"]);
 
 /**
  * Effective ranking score. Governance (when applied) wins because it is bounded
@@ -995,18 +1000,28 @@ export async function decorateOpportunitiesWithTimingContext(
   opps: ScannerOpportunity[],
 ): Promise<ScannerOpportunity[]> {
   if (opps.length === 0) return opps;
-  const uniqueSymbols = Array.from(new Set(opps.map((o) => o.symbol)));
-  const ctxBySymbol = new Map<string, ScannerTimingContext>();
+  // One read per (symbol, timeframe) on the ROW'S OWN timeframe: an H4 or M1
+  // row must never show (or be scored by) an M15 grade / permission. A
+  // timeframe the timing brain does not read gets no timing context (honest
+  // absence) rather than a read from another timeframe.
+  const keyOf = (o: ScannerOpportunity) => `${o.symbol}|${o.timeframe}`;
+  const uniqueKeys = Array.from(new Set(
+    opps.filter((o) => TIMING_READ_TIMEFRAMES.has(o.timeframe)).map(keyOf),
+  ));
+  const ctxByKey = new Map<string, ScannerTimingContext>();
 
-  await mapWithConcurrency(uniqueSymbols, ENRICHMENT_CONCURRENCY, async (sym) => {
+  await mapWithConcurrency(uniqueKeys, ENRICHMENT_CONCURRENCY, async (key) => {
+      const sep = key.lastIndexOf("|");
+      const sym = key.slice(0, sep);
+      const timeframe = key.slice(sep + 1);
       try {
-        const read = await runWithScannerBudget(() => computeTimingRead({ symbol: sym, timeframe: "M15", persistSnapshot: false }));
+        const read = await runWithScannerBudget(() => computeTimingRead({ symbol: sym, timeframe, persistSnapshot: false }));
         // Heat boost: GO=+10, WAIT_FOR_ENTRY=+4, WAIT_NEWS/NO_TRADE=−6, STAND_DOWN=−10
         const permBoost: Record<string, number> = {
           GO: 10, WAIT_FOR_ENTRY: 4, WAIT_NEWS: -6, NO_TRADE: -6, STAND_DOWN: -10,
         };
         const heatBoost = Math.max(-10, Math.min(10, permBoost[read.entryPermission] ?? 0));
-        ctxBySymbol.set(sym, {
+        ctxByKey.set(key, {
           heatScore: read.heatScore,
           tradeabilityScore: read.tradeabilityScore,
           edgeScore: read.edgeScore,
@@ -1025,6 +1040,7 @@ export async function decorateOpportunitiesWithTimingContext(
           roomToMove: read.roomToMove,
           heatBoost,
           dataQualityLabel: read.dataQuality.label,
+          timeframe,
         });
       } catch {
         // Fail-open: timing is advisory; any error leaves the opportunity untouched.
@@ -1032,7 +1048,7 @@ export async function decorateOpportunitiesWithTimingContext(
     });
 
   return opps.map((o) => {
-    const ctx = ctxBySymbol.get(o.symbol);
+    const ctx = ctxByKey.get(keyOf(o));
     if (!ctx) return o;
     // Fold heat boost into opportunity score (bounded, clamped 0..100).
     const boostedScore = Math.max(0, Math.min(100, o.opportunity.score + ctx.heatBoost));

@@ -776,7 +776,7 @@ export default function MarketScanner() {
                   dense
                 />
                 {o.timingContext && (
-                  <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} />
+                  <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} rowTimeframe={o.timeframe} />
                 )}
                 <div className="grid grid-cols-3 gap-1 pt-2 border-t">
                   <Button

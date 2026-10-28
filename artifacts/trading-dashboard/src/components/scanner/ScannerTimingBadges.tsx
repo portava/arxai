@@ -25,6 +25,8 @@ export interface ScannerTimingContext {
   roomToMove: number;
   heatBoost: number;
   dataQualityLabel: string;
+  /** Timeframe the server computed this read on (the row's own timeframe). */
+  timeframe?: string;
 }
 
 const PERMISSION_COLORS: Record<string, string> = {
@@ -76,8 +78,11 @@ function ScorePill({ label, value, lo, hi, tone }: { label: string; value: numbe
   );
 }
 
-export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTimingContext; className?: string; isGold?: boolean }) {
+export function ScannerTimingBadges({ ctx, className, isGold, rowTimeframe }: { ctx: ScannerTimingContext; className?: string; isGold?: boolean; rowTimeframe?: string }) {
   if (!ctx) return null;
+  // Downgrade-only: a timing read that is not stamped with THIS row's timeframe
+  // (another timeframe, or an older unstamped read) is not shown on the row.
+  if (rowTimeframe && ctx.timeframe !== rowTimeframe) return null;
 
   const isEstimate = ctx.dataQualityLabel === "basic_timing_estimate";
   const showNewsPhase = ctx.newsPhase !== "NONE" && !!NEWS_PHASE_LABELS[ctx.newsPhase];
@@ -105,11 +110,17 @@ export function ScannerTimingBadges({ ctx, className, isGold }: { ctx: ScannerTi
             "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none",
             GRADE_COLORS[ctx.timingGrade] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/40",
           )}
-          title={`Timing grade: ${ctx.timingGrade}`}
+          title={`Timing grade: ${ctx.timingGrade}${ctx.timeframe ? ` (${ctx.timeframe} timing read)` : ""}`}
+          data-testid="scanner-timing-grade"
         >
           <Flame className="h-2.5 w-2.5" />
           {ctx.timingGrade}
         </span>
+        {ctx.timeframe && (
+          <span className="text-[9px] text-txt-muted leading-none" data-testid="scanner-timing-timeframe">
+            timing {ctx.timeframe}
+          </span>
+        )}
 
         {/* Entry permission */}
         <span
