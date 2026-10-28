@@ -24,6 +24,7 @@ vi.mock("@/hooks/useProductRole", () => ({
 import StrategyTournament from "./strategy-tournament";
 import ShadowMode from "./shadow-mode";
 import ShadowJournal from "./shadow-journal";
+import ConfidenceCalibration from "./confidence-calibration";
 
 function jsonResponse(status: number, body: unknown): Response {
   return { status, ok: status >= 200 && status < 300, json: async () => body } as unknown as Response;
@@ -125,5 +126,25 @@ describe("Shadow Journal", () => {
     await show(<ShadowJournal />);
     expect(screen.getByText("NOT MEASURED")).toBeTruthy();
     expect(screen.queryByText("PENDING")).toBeNull();
+  });
+});
+
+describe("Confidence Calibration", () => {
+  it("an empty bucket reads 'no data', never 0%", async () => {
+    bodies["/api/confidence-calibration"] = {
+      totalSample: 20, label: "NEEDS_MORE_DATA",
+      labelBasis: "Needs at least 20 tracked outcomes with 10+ at confidence 80-100 and 10+ at 50-70; observed 20 in total, 0 high and 20 low.",
+      buckets: [
+        { bucket: "60-70", sample: 20, winRate: 60, avgR: 0.8 },
+        { bucket: "80-90", sample: 0, winRate: null, avgR: null },
+        // An older server sends 0 for an empty bucket: still "no data".
+        { bucket: "90-100", sample: 0, winRate: 0, avgR: 0 },
+      ],
+    };
+    await show(<ConfidenceCalibration />);
+    expect(screen.getAllByText("no data")).toHaveLength(2);
+    expect(screen.queryByText("0%")).toBeNull();
+    expect(screen.getByText("60%")).toBeTruthy();
+    expect(screen.getByText(/0 high and 20 low/)).toBeTruthy();
   });
 });

@@ -512,6 +512,10 @@ export function tournamentResults() {
 }
 
 // ── Confidence Calibration ────────────────────────────────────────────────
+/** Tracked outcomes needed before a calibration label is computed. */
+export const CALIBRATION_MIN_TOTAL = 20;
+/** Tracked outcomes needed on EACH side (confidence 80-100 and 50-70). */
+export const CALIBRATION_MIN_PER_SIDE = 10;
 export function confidenceCalibration() {
   const arr = [...decisions.values()].filter((d) => d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS");
   const buckets = [
@@ -519,26 +523,41 @@ export function confidenceCalibration() {
     { label: "70-80", min: 70, max: 80 }, { label: "80-90", min: 80, max: 90 },
     { label: "90-100", min: 90, max: 101 },
   ];
-  const out = buckets.map((b) => {
+  const counted = buckets.map((b) => {
     const xs = arr.filter((d) => d.confidence >= b.min && d.confidence < b.max);
-    const wins = xs.filter((d) => d.status === "SHADOW_WIN").length;
-    const winRate = xs.length ? wins / xs.length : 0;
-    const avgR = xs.length ? xs.reduce((a, d) => a + (d.pnlR ?? 0), 0) / xs.length : 0;
-    return { bucket: b.label, sample: xs.length, winRate: Number((winRate * 100).toFixed(1)), avgR: Number(avgR.toFixed(2)) };
+    return { b, n: xs.length, wins: xs.filter((d) => d.status === "SHADOW_WIN").length, sumR: xs.reduce((a, d) => a + (d.pnlR ?? 0), 0) };
   });
+  // An empty bucket has no win rate or average R (null) — never 0%.
+  const out = counted.map(({ b, n, wins, sumR }) => ({
+    bucket: b.label, sample: n,
+    winRate: n ? Number(((wins / n) * 100).toFixed(1)) : null,
+    avgR: n ? Number((sumR / n).toFixed(2)) : null,
+  }));
+  // Calibration compares observed high-confidence (80-100) with low-confidence
+  // (50-70) outcomes, pooled per side. Without enough of BOTH it cannot be
+  // judged, so it stays NEEDS_MORE_DATA.
+  const side = (labels: string[]) => counted.filter((c) => labels.includes(c.b.label))
+    .reduce((a, c) => ({ n: a.n + c.n, wins: a.wins + c.wins }), { n: 0, wins: 0 });
+  const high = side(["80-90", "90-100"]);
+  const low = side(["50-60", "60-70"]);
   let label: "WELL_CALIBRATED" | "OVERCONFIDENT" | "UNDERCONFIDENT" | "RANDOM_CONFIDENCE" | "NEEDS_MORE_DATA" = "NEEDS_MORE_DATA";
-  if (arr.length >= 20) {
-    const high = out.filter((b) => b.bucket === "80-90" || b.bucket === "90-100");
-    const low = out.filter((b) => b.bucket === "50-60" || b.bucket === "60-70");
-    const highWR = avg(high.map((b) => b.winRate));
-    const lowWR = avg(low.map((b) => b.winRate));
+  if (arr.length >= CALIBRATION_MIN_TOTAL && high.n >= CALIBRATION_MIN_PER_SIDE && low.n >= CALIBRATION_MIN_PER_SIDE) {
+    const highWR = (high.wins / high.n) * 100;
+    const lowWR = (low.wins / low.n) * 100;
     const slope = highWR - lowWR;
     if (Math.abs(slope) < 5) label = "RANDOM_CONFIDENCE";
     else if (slope > 15) label = "WELL_CALIBRATED";
-    else if (highWR > 0 && highWR < 60) label = "OVERCONFIDENT";
+    else if (highWR < 60) label = "OVERCONFIDENT";
     else label = "UNDERCONFIDENT";
   }
-  return { buckets: out, totalSample: arr.length, label, dataSource: "SHADOW" as const };
+  const labelBasis = label !== "NEEDS_MORE_DATA"
+    ? `Compared ${high.n} high-confidence (80-100) with ${low.n} low-confidence (50-70) tracked outcomes.`
+    : `Needs at least ${CALIBRATION_MIN_TOTAL} tracked outcomes with ${CALIBRATION_MIN_PER_SIDE}+ at confidence 80-100 and ${CALIBRATION_MIN_PER_SIDE}+ at 50-70; observed ${arr.length} in total, ${high.n} high and ${low.n} low.`;
+  return {
+    buckets: out, totalSample: arr.length, label, labelBasis,
+    highConfidenceSample: high.n, lowConfidenceSample: low.n,
+    dataSource: "SHADOW" as const,
+  };
 }
 function avg(xs: number[]) { return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0; }
 function confidenceAccuracyFor(strategy: string): number {
