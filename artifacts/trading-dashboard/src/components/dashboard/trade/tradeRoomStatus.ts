@@ -46,7 +46,10 @@ export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeO
   const canTrade = caps.canOpen;
 
   const modeLabel = blocked ? "Trading blocked" : frozen ? "Trading Paused" : isLive ? "LIVE · Shared Master MT5" : m.isDemo ? "Demo" : (m.cleanModeLabel || "Simulator");
-  const gatesLabel = blocked ? (m.cleanBlockedReason || "Trading blocked") : frozen ? "Trading paused" : canTrade ? "All safety gates enforced" : "Waiting for approval";
+  // canTrade is a permission (approved, not frozen, no blocker). No gate,
+  // bridge heartbeat or risk read stands behind it, so it is never worded as
+  // "All safety gates enforced".
+  const gatesLabel = blocked ? (m.cleanBlockedReason || "Trading blocked") : frozen ? "Trading paused" : canTrade ? "Approved to trade" : "Waiting for approval";
   // …but its "Bridge disconnected" wording is not what a server blocker means.
   const blockedLabel = blocked && !canTrade ? "Trading blocked" : caps.blockedLabel;
 
