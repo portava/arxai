@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:isolated-server-lane": "node scripts/isolated-lane/run.mjs",
     "qa:stop-limit": "tsx src/lib/tradeAction/__qa__/stopLimitValidatorTests.ts",
     "qa:symbol-category": "tsx src/lib/mt5/__qa__/symbolCategoryTests.ts",
     "qa:assistant-routing": "tsx src/lib/assistant/__qa__/performanceRoutingTests.ts",
