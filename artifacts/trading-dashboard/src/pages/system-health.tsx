@@ -12,7 +12,7 @@ type Report = {
   databaseStatus: { connected: boolean; missingTables: string[]; rowCounts: Record<string, number> };
   endpointStatus: { totalChecked: number; passed: number; failed: number; degraded: number; results: Array<{ path: string; status: number|null; ok: boolean; latencyMs: number }> };
   safetyStatus: { hardBlocks: Array<{ code: string; severity: string; message: string }>; warnings: string[] };
-  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean; scanChecked?: boolean };
+  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean; scanChecked?: boolean; frontendScanChecked?: boolean; logScanChecked?: boolean };
   performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number | null };
   recommendedAdminActions: string[]; warnings: string[]; errors: string[];
 };
@@ -26,6 +26,18 @@ export function subsystemBadgeLabel(v: Pick<Subsys, "status" | "checkScope">): s
 export function redactionLabel(s: Report["secretSafetyStatus"]): string {
   if (s.scanChecked !== true) return "not checked (scan could not run)";
   return s.redactionWorking ? "no secret-shaped strings found" : "secret-shaped strings found";
+}
+
+/**
+ * One half of the secret scan. Its count is a placeholder 0 when that query
+ * did not run, so it is shown only when that half was checked (per-half flag,
+ * or the summary flag on an older report).
+ */
+export function leakCountLabel(s: Report["secretSafetyStatus"], half: "frontend" | "logs"): string {
+  const perHalf = half === "frontend" ? s.frontendScanChecked : s.logScanChecked;
+  const checked = typeof perHalf === "boolean" ? perHalf : s.scanChecked === true;
+  if (!checked) return "not checked (scan query failed)";
+  return String(half === "frontend" ? s.secretsDetectedInFrontend : s.secretsDetectedInLogs);
 }
 
 // The health report (lib/systemHealth/health.ts) covers the paper stack and
@@ -155,8 +167,8 @@ export default function SystemHealthPage() {
             <Card>
               <CardHeader><CardTitle>Secret redaction</CardTitle></CardHeader>
               <CardContent className="text-sm space-y-1">
-                <div>Frontend leaks: {report.secretSafetyStatus.secretsDetectedInFrontend}</div>
-                <div>Log leaks: {report.secretSafetyStatus.secretsDetectedInLogs}</div>
+                <div data-testid="text-leaks-frontend">Frontend leaks: {leakCountLabel(report.secretSafetyStatus, "frontend")}</div>
+                <div data-testid="text-leaks-logs">Log leaks: {leakCountLabel(report.secretSafetyStatus, "logs")}</div>
                 <div data-testid="text-redaction-status">Scan: {redactionLabel(report.secretSafetyStatus)}</div>
               </CardContent>
             </Card>
