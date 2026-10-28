@@ -1,5 +1,5 @@
 // Testing Lab — Comparison tab. Compares the backtest aggregate (historical)
-// against the forward-test results (live simulator stream) for the selected
+// against the forward-test results (synthetic simulator, not live data) for the selected
 // strategy. Every number is derived from the real /api/backtest-runs and
 // /api/forward-testing/results responses; missing data shows an honest empty
 // state and is never fabricated.
