@@ -1,6 +1,7 @@
 // Trading Readiness truth: the mental check-in starts unanswered (no invented
-// 4/5 self-report earning a PASS), and a failed "last check" read says it
-// could not be loaded instead of crashing the board.
+// 4/5 self-report earning a PASS), a failed "last check" read says it could
+// not be loaded instead of crashing the board, and a failed evaluation is
+// never hidden behind the last good READY.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -111,5 +112,36 @@ describe("Trading Readiness last submitted check", () => {
     renderPage();
     const summary = await screen.findByTestId("readiness-last-check-summary");
     expect(summary.textContent).toMatch(/CAUTION · 72\/100/);
+  });
+});
+
+describe("Trading Readiness evaluation failures", () => {
+  it("a refresh that fails after a READY hides the old READY and says readiness could not be loaded", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let fail = false;
+    stubFetch({
+      evaluate: () => (fail ? { status: 500, body: { error: "Failed to evaluate readiness" } } : { status: 200, body: READY_EVAL }),
+      latest: () => NO_CHECK,
+    });
+    renderPage();
+    expect(await screen.findByText("Start trading session")).toBeTruthy();
+    expect(screen.getByTestId("readiness-evaluated-at").textContent).toMatch(/Evaluated at/);
+    fail = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    const notice = await screen.findByTestId("readiness-eval-error");
+    expect(notice.textContent).toMatch(/could not be loaded/i);
+    expect(notice.textContent).toMatch(/last successful evaluation/i);
+    expect(screen.queryByText("Start trading session")).toBeNull();
+    expect(screen.queryByText("Readiness score")).toBeNull();
+    expect(screen.queryByText(/of 100 — READY/)).toBeNull();
+  });
+
+  it("a first evaluation that fails shows an error, not an empty board", async () => {
+    stubFetch({ evaluate: () => "reject", latest: () => NO_CHECK });
+    renderPage();
+    const notice = await screen.findByTestId("readiness-eval-error");
+    expect(notice.textContent).toMatch(/could not be loaded/i);
+    expect(notice.textContent).toMatch(/no readiness evaluation has been received/i);
+    expect(screen.queryByText("Readiness score")).toBeNull();
   });
 });

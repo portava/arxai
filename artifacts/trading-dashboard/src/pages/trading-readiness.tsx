@@ -44,12 +44,18 @@ export default function TradingReadinessPage() {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...report, sessionName }),
       });
-      if (!r.ok) throw new Error("eval failed");
-      return r.json();
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const body = await r.json() as { evaluation?: Evaluation } | null;
+      if (!body?.evaluation || !Array.isArray(body.evaluation.checklist)) throw new Error("unexpected response");
+      return { evaluation: body.evaluation };
     },
     refetchInterval: 15_000,
   });
-  const evald = evalQ.data?.evaluation ?? null;
+  // A failed request (including one still being retried) means the current
+  // readiness is unknown: the last good result is not shown as current.
+  const evalFailed = evalQ.isError || evalQ.failureCount > 0;
+  const evald = evalFailed ? null : (evalQ.data?.evaluation ?? null);
+  const evaluatedAt = evalQ.dataUpdatedAt > 0 ? new Date(evalQ.dataUpdatedAt) : null;
 
   // 404 is the server's "no check on record"; any other non-OK reply (not
   // signed in, server error) or an unexpected body is a failed read, shown as
@@ -105,6 +111,25 @@ export default function TradingReadinessPage() {
             </label>
           </div>
           <MentalStateCheckIn value={report} onChange={setReport} />
+          {evalFailed && (
+            <div role="alert" data-testid="readiness-eval-error"
+              className="rounded-lg border border-red-800 bg-red-950/40 p-3 text-xs text-red-200">
+              Readiness could not be loaded
+              {evalQ.failureReason ? ` (${(evalQ.failureReason as Error).message})` : ""}
+              {evalQ.isError ? "." : " — retrying."}{" "}
+              {evalQ.data && evaluatedAt
+                ? `The last successful evaluation (${evaluatedAt.toLocaleTimeString()}) is not shown because it may no longer be current.`
+                : "No readiness evaluation has been received yet."}
+            </div>
+          )}
+          {!evalFailed && evalQ.isPending && (
+            <p className="text-xs text-slate-500">Evaluating readiness…</p>
+          )}
+          {evald && evaluatedAt && (
+            <p data-testid="readiness-evaluated-at" className="text-[11px] text-slate-500">
+              Evaluated at {evaluatedAt.toLocaleTimeString()} from the server's current checks; refreshes every 15 s.
+            </p>
+          )}
           {evald && <PreSessionChecklist items={evald.checklist} />}
         </div>
 
