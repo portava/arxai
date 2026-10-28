@@ -118,3 +118,32 @@ test("no candles, or no seam and no bound broker comparison, never allows trade 
   assert.equal(mirrorTrustSegment(false, noBrokerAlignment(1.1, "MID"), gateMirrorBlockCause(overlapGate)), "Mirror degraded");
   assert.equal(buildChartHandshake(overlapGate, computeChartTruthScore(overlap, feed)).MirrorSync, "FAIL");
 });
+
+test("a failed deviation from another feed's quote or an old tick is named for what it is", () => {
+  const truth = fixture();
+  for (const [name, alignment, why, short] of [
+    ["another feed", quoteAlignment(2, 2.0001, { bridgeConnectionId: 8 }), /from a different feed or account than this chart/, "broker quote is from another feed"],
+    ["old tick", quoteAlignment(2, 2.0001, { tickAgeMs: 3 * 86_400_000 }), /from an old broker tick/, "broker tick is old"],
+  ] as const) {
+    assert.notEqual(alignment.quoteBinding?.status, "BOUND", name); assert.equal(alignment.tolerance, "failed", name);
+    const score = computeChartTruthScore(truth, feed, alignment);
+    const gate = computeChartGateOutput(score, read, alignment, truth, false);
+    // Report only: the gate stays closed exactly as before.
+    assert.equal(gate.tradeConfirmationAllowed, false, name);
+    const text = gate.blockedReasons.join(" ");
+    assert.doesNotMatch(text, /Broker price alignment failed/, name);
+    assert.match(text, why, name);
+    assert.match(text, /does not show whether this chart matches your broker/, name);
+    assert.equal(mirrorTrustSegment(gate.tradeConfirmationAllowed, alignment, gateMirrorBlockCause(gate)), `Mirror not confirmed (${short})`, name);
+  }
+  // A BOUND failed comparison is still "alignment failed" / "Mirror degraded".
+  const bound = quoteAlignment(2, 2.0001);
+  const boundGate = computeChartGateOutput(computeChartTruthScore(truth, feed, bound), read, bound, truth, false);
+  assert.ok(boundGate.blockedReasons.includes("Broker price alignment failed — chart-based trade confirmation blocked."));
+  assert.equal(mirrorTrustSegment(false, bound, gateMirrorBlockCause(boundGate)), "Mirror degraded");
+  // An observed seam failure alongside an unbound quote still reads "degraded".
+  const overlap = fixture({ mergeSeam: { formingBarDetected: true, formingBarCount: 1, gapAtSeam: false, overlapAtSeam: true, seamGapIntervals: 0 } });
+  const other = quoteAlignment(2, 2.0001, { bridgeConnectionId: 8 });
+  const both = computeChartGateOutput(computeChartTruthScore(overlap, feed, other), read, other, overlap, false);
+  assert.equal(mirrorTrustSegment(false, other, gateMirrorBlockCause(both)), "Mirror degraded");
+});

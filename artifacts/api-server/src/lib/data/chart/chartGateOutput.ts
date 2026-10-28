@@ -19,7 +19,7 @@
 
 import { isMergeSeamMeasured, type ChartTruthScore } from "./chartTruthScore.js";
 import type { ChartReadScore } from "./chartReadScore.js";
-import { hasMeasuredBrokerAlignment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
+import { hasMeasuredBrokerAlignment, unboundQuoteDescription, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
 import type { TimeframeTruthResult } from "./candleTruthEngine.js";
 
 export interface ChartGateOutput {
@@ -164,7 +164,13 @@ export function computeChartGateOutput(
     blockedReasons.push(MERGE_SEAM_FAILED_REASON);
   }
   if (alignmentFailed) {
-    blockedReasons.push("Broker price alignment failed — chart-based trade confirmation blocked.");
+    // The gate stays closed either way; the copy names what was compared. A
+    // quote from another feed or an old tick says nothing about this chart.
+    const unbound = unboundQuoteDescription(alignment.quoteBinding);
+    blockedReasons.push(unbound
+      ? `The chart price differs beyond the failure band from ${unbound.reason} — chart-based trade confirmation blocked. ` +
+        "That comparison does not show whether this chart matches your broker."
+      : "Broker price alignment failed — chart-based trade confirmation blocked.");
   }
   if (mirrorNotChecked) {
     blockedReasons.push(MIRROR_NOT_CHECKED_REASON);
