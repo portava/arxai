@@ -2,7 +2,7 @@
 // time, never as a "capture" of the data (the data time is in the feed label).
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { ChartWorkbenchTools, chartExportFeedLabel } from "./ChartWorkbenchTools";
 import { DEFAULT_PREFERENCES } from "@/lib/chart-engine/chartWorkspace";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 
@@ -29,5 +29,15 @@ describe("chart PNG export header", () => {
     expect(text).not.toMatch(/Captured/);
     expect(text).toMatch(/Image exported \d{4}-\d{2}-\d{2}T/);
     expect(text).toContain("Newest bar opened 2026-10-27T15:55:00.000Z");
+  });
+});
+
+describe("chart export feed label", () => {
+  it("a frozen broker quote is never exported as live-confirmed, and is not called a closed market", () => {
+    const label = chartExportFeedLabel({ source: "mt5_broker", liveConfirmed: true, warning: null,
+      newestBarOpenTime: "2026-10-28T09:30:00.000Z", quoteFrozen: true });
+    expect(label).not.toMatch(/live-confirmed at last update/);
+    expect(label).toMatch(/Broker quote not moving/);
+    expect(label).not.toMatch(/Market closed/);
   });
 });

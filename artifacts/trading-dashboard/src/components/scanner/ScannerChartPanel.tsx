@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CandlestickChart, RefreshCw, Loader2, X, Flame, AlertTriangle, Clock } from "lucide-react";
-import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
+import { frozenQuoteChip } from "@/components/charts/marketFrozenFormat";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 // `Candle` + the pure `adaptChartCandles` mapping live in scannerCandleAdapter.ts
 // so the field-shape handling is unit-tested (Task #367 — see that test).
@@ -51,7 +51,7 @@ import { computeRiskReward, pipDistance, validateModifyLevels } from "@/lib/char
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
-import { resolveChartFeedStrip } from "@/lib/scannerTruth";
+import { resolveChartFeedStrip, scheduledWeekendClosureFor } from "@/lib/scannerTruth";
 import { candlestickPriceFormat, formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
 import { publishScannerTip, scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
@@ -838,8 +838,16 @@ export function ScannerChartPanel() {
   // The notice strip under the canvas. A closed market (the truth's scheduled
   // closure or the stream's closed-market signal) reads "Market closed", never
   // "Stale" next to the "Market closed" chip.
+  // The stream's marketFrozen flag only says the broker keeps repeating one
+  // quote. It reads "Market closed" only inside the instrument's scheduled
+  // weekend close (the window the server's feed status uses); otherwise the
+  // chip says the quote is not moving and the strip keeps the feed verdict.
+  const feedAssetClass = (candlesQuery.data?.feedStatus as { assetClass?: string } | undefined)?.assetClass ?? null;
+  const scheduledClosure = marketFrozen != null
+    && (truth?.marketClosure != null || scheduledWeekendClosureFor(feedAssetClass, Date.now()) != null);
+  const frozenChip = marketFrozen ? frozenQuoteChip(marketFrozen.lastBrokerTimeMs, scheduledClosure) : null;
   const feedStrip = resolveChartFeedStrip(displayStatus, {
-    marketClosed: truth?.marketClosure != null || marketFrozen != null,
+    marketClosed: truth?.marketClosure != null || scheduledClosure,
     hasCandles: candles.length > 0,
   });
 
@@ -2427,18 +2435,19 @@ export function ScannerChartPanel() {
               testIdPrefix="scanner-chart"
               trailingIntervals={candlesQuery.data?.feedStatus?.trailingIntervals}
             />
-            {/* Market-frozen / closed-market indicator (display/telemetry only).
-                Derived from the latest tick's BROKER-time staleness via the
-                tick-stream `feed_status` event, so a still-forming bar reads as
-                closed-market, not a broken feed. Calendar-independent. */}
-            {marketFrozen && (
+            {/* Frozen-quote indicator (display/telemetry only). The tick-stream
+                `feed_status` event reports the broker repeating one quote; the
+                chip says "Market closed" only inside the scheduled weekend
+                close, otherwise "Quote not moving" (see frozenQuoteChip). */}
+            {frozenChip && (
               <Badge
                 variant="outline"
                 className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
                 data-testid="scanner-chart-market-closed"
-                title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
+                data-scheduled-closure={scheduledClosure ? "true" : "false"}
+                title={frozenChip.title}
               >
-                <Clock className="h-3 w-3" /> {formatMarketClosedLabel(marketFrozen.lastBrokerTimeMs)}
+                <Clock className="h-3 w-3" /> {frozenChip.label}
               </Badge>
             )}
             {/* Candle-close countdown (Task #524). Honesty-gated: only when the

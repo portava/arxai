@@ -377,3 +377,45 @@ describe("the header chip and its cap describe the same candle window", () => {
     expect(scannerTruthCalls.at(-1)![2]).toEqual({ limit: 500, refetchInterval: 8000 });
   });
 });
+
+describe("the frozen-quote chip follows the server's closed-market semantics", () => {
+  const CHIP = "arx-native-market-closed";
+  function emitFrozen() {
+    act(() => {
+      openedSources[0]!.onmessage?.({
+        data: JSON.stringify({
+          type: "feed_status", source: "mt5_broker", symbol: SYMBOL, timeframe: TF,
+          marketFrozen: true, lastBrokerTimeMs: Date.UTC(2026, 9, 28, 9, 30), ts: Date.now(),
+        }),
+      });
+    });
+  }
+
+  it("a frozen quote on a weekday reads 'Quote not moving', never 'Market closed'", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 28, 12, 0)); // Wednesday
+    renderChart();
+    emitFrozen();
+    const chip = screen.getByTestId(CHIP);
+    expect(chip.textContent).toMatch(/Quote not moving — last quote Wed 09:30 UTC/);
+    expect(chip.textContent).not.toMatch(/market closed/i);
+    expect(chip.getAttribute("title") ?? "").not.toMatch(/the market is closed/i);
+  });
+
+  it("inside the scheduled weekend close the same signal reads 'Market closed'", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 12, 0)); // Saturday
+    renderChart();
+    emitFrozen();
+    expect(screen.getByTestId(CHIP).textContent).toMatch(/Market closed — last quote/);
+  });
+
+  it("a 24/7 market is never called closed by a frozen quote", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 12, 0)); // Saturday
+    setResponse(makeResponse({ assetClass: "crypto" } as Partial<ChartFeedStatus>));
+    renderChart();
+    emitFrozen();
+    expect(screen.getByTestId(CHIP).textContent).toMatch(/Quote not moving/);
+  });
+});

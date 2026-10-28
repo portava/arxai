@@ -31,3 +31,21 @@ describe("ScannerChartPanel — deep-history badge", () => {
     expect(badge).toMatch(/loadError=\{deepHistory\.loadError\}/);
   });
 });
+
+describe("ScannerChartPanel — frozen-quote chip", () => {
+  it("uses the scheduled-closure-aware chip, never a bare 'Market closed' on a frozen quote", () => {
+    expect(code).not.toContain("formatMarketClosedLabel(");
+    const idx = code.indexOf('data-testid="scanner-chart-market-closed"');
+    expect(idx).toBeGreaterThan(-1);
+    const chip = code.slice(code.lastIndexOf("<Badge", idx), code.indexOf("</Badge>", idx));
+    expect(chip).toContain("{frozenChip.label}");
+    expect(chip).toContain("title={frozenChip.title}");
+    expect(code).toMatch(/frozenQuoteChip\(marketFrozen\.lastBrokerTimeMs, scheduledClosure\)/);
+    expect(code).toMatch(/scheduledWeekendClosureFor\(feedAssetClass, Date\.now\(\)\)/);
+  });
+
+  it("the notice strip calls the market closed only for a scheduled closure, not for any frozen quote", () => {
+    expect(code).not.toMatch(/marketClosed: truth\?\.marketClosure != null \|\| marketFrozen != null/);
+    expect(code).toMatch(/marketClosed: truth\?\.marketClosure != null \|\| scheduledClosure/);
+  });
+});

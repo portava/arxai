@@ -33,14 +33,16 @@ export function chartExportFeedLabel(input: {
   newestBarOpenTime: string | null | undefined;
   streamReconnecting?: boolean;
   marketClosed?: boolean;
+  /** The broker keeps repeating one quote outside a scheduled close. */
+  quoteFrozen?: boolean;
 }): string {
-  const live = input.liveConfirmed && !input.streamReconnecting && !input.marketClosed;
+  const live = input.liveConfirmed && !input.streamReconnecting && !input.marketClosed && !input.quoteFrozen;
   const newestMs = input.newestBarOpenTime ? Date.parse(input.newestBarOpenTime) : NaN;
   return [
     input.source || "Unknown source",
     live ? "Feed graded live-confirmed at last update" : "Not live-confirmed",
     input.streamReconnecting ? "Tick stream reconnecting, prices delayed" : null,
-    input.marketClosed ? "Market closed" : null,
+    input.marketClosed ? "Market closed" : input.quoteFrozen ? "Broker quote not moving" : null,
     input.warning || null,
     input.newestBarOpenTime == null
       ? "No bars received"
