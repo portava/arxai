@@ -1,5 +1,9 @@
+import { CandleCloseCountdown } from "./CandleCloseCountdown";
+import { ChartLibraryCredit } from "./ChartLibraryCredit";
+import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext } from "react";
+import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds } from "@/lib/chart-engine/chartIntervals";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "../scanner/useDerivedOverlayContext";
@@ -19,7 +23,6 @@ import {
   CandlestickChart,
   Loader2,
   AlertTriangle,
-  BarChart3,
   ShieldAlert,
   RotateCcw,
   Lock,
@@ -34,6 +37,7 @@ import {
   ArrowRightToLine,
 } from "lucide-react";
 import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { effectiveDisplayZone, formatChartTime, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
@@ -66,21 +70,20 @@ import {
 //
 // Renders clean candlesticks from the Level 1 normalized contract
 // (GET /api/chart/candles via the generated useGetChartCandles hook). This is a
-// reusable, self-contained chart placed BESIDE the TradingView embed so the
-// native pipeline can be proven before becoming the default.
+// shared ARX Smart Chart, used by the Scanner and the standalone chart pages.
 //
 // HONESTY / SAFETY:
 //  - Candles come ONLY from the normalized /api/chart/candles contract, which is
 //    itself built over the existing market-data router. We NEVER fabricate bars.
 //    When the contract returns an honest empty/unavailable state we show a clear
-//    "no native candles" message (with an optional TradingView fallback) — never
+//    "no candles" message — never
 //    a blank or fake chart.
 //  - This is a view-only chart: it has no order-placement surface. Trade actions
 //    live elsewhere (the gated instant-trade router).
 //  - Level 3 feed confidence: the header renders a FeedConfidenceBadge driven by
 //    the contract's embedded feedStatus (source/live/stale/latency/last update/
 //    missing-candle count/AI-usable/warning). When the feed is stale or poor a
-//    prominent banner offers the TradingView fallback, and when aiUsable=false
+//    prominent banner explains the feed limitation, and when aiUsable=false
 //    the chart is visibly marked "not AI-confirmed" so Level 5 overlays respect it.
 //
 // Phase 2 additions:
@@ -107,15 +110,8 @@ const u = (p: string) => `${BASE}${p}`;
 
 export type ArxTimeframe = (typeof GetChartCandlesTimeframe)[keyof typeof GetChartCandlesTimeframe];
 
-const TIMEFRAMES: { id: ArxTimeframe; label: string }[] = [
-  { id: "M1", label: "M1" },
-  { id: "M5", label: "M5" },
-  { id: "M15", label: "M15" },
-  { id: "M30", label: "M30" },
-  { id: "H1", label: "H1" },
-  { id: "H4", label: "H4" },
-  { id: "D1", label: "D1" },
-];
+const TIMEFRAMES = CHART_QUICK_INTERVALS.map(id => ({id,label:id}));
+const MORE_TIMEFRAMES = CHART_INTERVALS.filter(id => !(CHART_QUICK_INTERVALS as readonly string[]).includes(id));
 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
@@ -179,7 +175,7 @@ function loadTimeframe(): ArxTimeframe {
   if (typeof window === "undefined") return DEFAULT_TF;
   let v: string | null = null;
   try { v = localStorage.getItem(TF_KEY); } catch { /* private storage unavailable */ }
-  return (TIMEFRAMES.some((t) => t.id === v) ? (v as ArxTimeframe) : DEFAULT_TF);
+  return restoreChartInterval(v, DEFAULT_TF);
 }
 
 // Mirror status — derived from feed quality + fetch state.
@@ -262,10 +258,19 @@ export interface ARXNativeChartProps {
   mobileHeight?: number;
   /** Show the minimal honest quality chip (default true). Level 3 owns the rich badge. */
   showFeedStatus?: boolean;
-  /** Render a "Use TradingView" button in the empty/error state. */
-  showFallbackToggle?: boolean;
-  /** Called when the user asks to fall back to the TradingView reference chart. */
-  onRequestFallback?: () => void;
+  /** Scanner supplies its existing shared query, including original candle
+   * provenance/finality. Supplying this disables the standalone candle fetch. */
+  externalFeed?: {
+    data: ChartCandlesResponse | undefined;
+    isLoading: boolean;
+    isFetching: boolean;
+    isError: boolean;
+    refetch: () => unknown;
+    livePriceAllowed: boolean;
+  };
+  onScannerSurfaceChange?: (surface: ScannerChartSurface | null) => void;
+  canvasEvents?: Pick<HTMLAttributes<HTMLDivElement>, "onContextMenu" | "onPointerDown" | "onPointerUp" | "onPointerMove">;
+  canvasOverlay?: ReactNode;
   /** Max candles to request (default 300; contract caps at 5000). */
   limit?: number;
   /**
@@ -314,8 +319,10 @@ export function ARXNativeChart({
   height = 520,
   mobileHeight,
   showFeedStatus = true,
-  showFallbackToggle = false,
-  onRequestFallback,
+  externalFeed,
+  onScannerSurfaceChange,
+  canvasEvents,
+  canvasOverlay,
   limit = 300,
   overlays: suppliedOverlays = EMPTY_OVERLAYS,
   onChartContextChange,
@@ -382,9 +389,11 @@ export function ARXNativeChart({
     const previousFocus = document.activeElement as HTMLElement | null;
     document.body.style.overflow = "hidden";
     const escape = (event: KeyboardEvent) => {
+      // Portalled dialogs consume Escape/Tab before the chart-level trap.
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") setExpanded(false);
       if (event.key === "Tab") {
-        const items = cardRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), summary, a[href], [tabindex="0"]');
+        const items = [...(cardRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), summary, a[href], [tabindex="0"]') ?? [])].filter(item=>item.getClientRects().length > 0 && getComputedStyle(item).visibility !== "hidden");
         const first = items?.[0];
         const last = items?.[items.length - 1];
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -397,6 +406,7 @@ export function ARXNativeChart({
 
   const [internalTf, setInternalTf] = useState<ArxTimeframe>(() => loadTimeframe());
   const timeframe = controlledTf ?? internalTf;
+  const supportedTimeframe = isChartInterval(timeframe);
   // Per-view display zone; daily bars keep UTC labels. Display only.
   const displayZone = effectiveDisplayZone(preferences.timeZone, timeframe);
   const overlays = useMemo(() => suppliedOverlays.filter(overlay =>
@@ -437,25 +447,27 @@ export function ARXNativeChart({
 
   // Level 1 contract via the generated hook. Polls on an interval; the global
   // QueryClient already pauses polling while the tab is hidden.
-  const query = useGetChartCandles(
+  const standaloneQuery = useGetChartCandles(
     { symbol: resolvedSymbol, timeframe, limit },
     {
       query: {
         queryKey: getGetChartCandlesQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
-        enabled: resolvedSymbol.length > 0,
+        enabled: externalFeed == null && resolvedSymbol.length > 0 && supportedTimeframe,
         refetchInterval: 8000,
         staleTime: 4000,
       },
     },
   );
 
+  const query = externalFeed ?? standaloneQuery;
+
   const replay = useContext(ChartReplayContext);
   const [replayError,setReplayError] = useState<string | null>(null);
   const response: ChartCandlesResponse | undefined = query.data;
-  const data = useMemo(() => response?.symbol === resolvedSymbol && response.timeframe === timeframe
+  const data = useMemo(() => supportedTimeframe && response?.symbol === resolvedSymbol && response.timeframe === timeframe
     && response.candles.every(candle => candle.symbol === resolvedSymbol
       && candle.timeframe === timeframe && candle.source === response.feedStatus?.source)
-    ? response : undefined, [response, resolvedSymbol, timeframe]);
+    ? response : undefined, [response, resolvedSymbol, timeframe, supportedTimeframe]);
   const candles = data?.candles ?? [];
   const hasCandles = candles.length > 0;
 
@@ -480,7 +492,7 @@ export function ARXNativeChart({
   // own feed-confidence badge system (which stays as the header). The header
   // here derives from the same feedStatus, so chart and header can never
   // disagree and no separate header cap is needed.
-  const isLivePriceAffordance = isLivePriceDisplay(
+  const isLivePriceAffordance = externalFeed?.livePriceAllowed !== false && isLivePriceDisplay(
     resolveDisplayStatus(data?.feedStatus ?? null, hasCandles),
   );
   // NOTE (Theme C3.3): this verdict is NOT mirrored into a ref for the SSE tick
@@ -494,6 +506,7 @@ export function ARXNativeChart({
   // latest tick's BROKER-time staleness (calendar-independent), so a still-
   // forming bar reads as closed-market rather than a broken feed. null = not
   // frozen (or no tick seen yet → assert nothing).
+  const [formingCloseMs, setFormingCloseMs] = useState<number | null>(null);
   const [marketFrozen, setMarketFrozen] = useState<{ lastBrokerTimeMs: number | null } | null>(
     null,
   );
@@ -517,14 +530,14 @@ export function ARXNativeChart({
     {
       query: {
         queryKey: getGetMeChartIntelligenceQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
-        enabled: resolvedSymbol.length > 0 && onIntelligenceChange != null,
+        enabled: externalFeed == null && resolvedSymbol.length > 0 && supportedTimeframe && onIntelligenceChange != null,
         refetchInterval: 8000,
         staleTime: 4000,
       },
     },
   );
   const intelligenceResponse = intelligenceQuery.data?.state;
-  const intelligenceState = intelligenceResponse?.symbol === resolvedSymbol && intelligenceResponse.timeframe === timeframe
+  const intelligenceState = externalFeed == null && supportedTimeframe && intelligenceResponse?.symbol === resolvedSymbol && intelligenceResponse.timeframe === timeframe
     ? intelligenceResponse : undefined;
 
   useEffect(() => {
@@ -648,6 +661,7 @@ export function ARXNativeChart({
       inspectedCandleRef.current = null;
       updateLegend(null);
       setMarketFrozen(null);
+      setFormingCloseMs(null);
       setBubbles([]);
       return;
     }
@@ -672,6 +686,7 @@ export function ARXNativeChart({
     updateLegend(null);
     if (!engineArrived) {
       setMarketFrozen(null);
+      setFormingCloseMs(null);
       setBubbles([]);
     }
     // Rebind channel ownership even when identity changes within one provider.
@@ -694,7 +709,7 @@ export function ARXNativeChart({
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
   useEffect(() => { adapterRef.current?.setPriceScaleInverted?.(preferences.inverted === true); }, [preferences.inverted, chartEpoch]);
 
-  useEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);
+  useLayoutEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);
   useEffect(() => {
     adapterRef.current?.setStudies?.(preferences.studies);
     updateLegend(inspectedCandleRef.current);
@@ -787,6 +802,13 @@ export function ARXNativeChart({
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
   }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext]);
+  useLayoutEffect(() => {
+    if (!onScannerSurfaceChange) return;
+    const surface = hasCandles ? adapterRef.current?.getScannerOverlaySurface?.() : null;
+    onScannerSurfaceChange(surface ? { ...surface, symbol: resolvedSymbol, timeframe, context: chartContext, style: preferences.style } : null);
+    return () => onScannerSurfaceChange(null);
+  }, [onScannerSurfaceChange, hasCandles, resolvedSymbol, timeframe, chartContext, preferences.style, chartEpoch]);
+
   // A forming tip that reached a deferred comparison before its engine existed
   // is applied once that engine holds the context's candles, with the same
   // out-of-order guard as a live frame. Never set for the primary.
@@ -833,6 +855,7 @@ export function ARXNativeChart({
     // symbol/timeframe's verdict is no longer relevant, and a new stream with no
     // tick yet emits no feed_status, so a stale badge would otherwise linger.
     setMarketFrozen(null);
+    setFormingCloseMs(null);
     if (resolvedSymbol.length === 0 || !tickSource) return;
     const url = u(
       `/api/chart/tick-stream?symbol=${encodeURIComponent(resolvedSymbol)}&timeframe=${encodeURIComponent(timeframe)}&source=${encodeURIComponent(tickSource)}`,
@@ -870,7 +893,7 @@ export function ARXNativeChart({
         tickWallMs?: number;
         marketFrozen?: boolean;
         lastBrokerTimeMs?: number | null;
-        bar?: { openTimeMs?: number; open?: number; high?: number; low?: number; close?: number };
+        bar?: { openTimeMs?: number; closeTimeMs?: number; open?: number; high?: number; low?: number; close?: number };
       };
       try {
         msg = JSON.parse(ev.data) as typeof msg;
@@ -882,6 +905,7 @@ export function ARXNativeChart({
       // guards below because it must surface even when no live tip is applied
       // (a frozen broker quote is exactly the case where we apply NO tip).
       if (msg.type === "feed_status") {
+        if (msg.marketFrozen === true) setFormingCloseMs(null);
         setMarketFrozen(
           msg.marketFrozen === true ? { lastBrokerTimeMs: msg.lastBrokerTimeMs ?? null } : null,
         );
@@ -892,7 +916,8 @@ export function ARXNativeChart({
       if (engineBound && !adapter?.updateActiveCandle) return;
       // Gate on THIS frame's own freshness marker (server-computed from the real
       // tick age), exactly like the Scanner — not on the sticky closed-feed grade.
-      if (msg.type !== "forming_bar" || msg.frozen || !msg.bar) return;
+      if (msg.type !== "forming_bar") return;
+      if (msg.frozen || !msg.bar) { setFormingCloseMs(null); return; }
       // Task #496 latency addendum: measure ingest→browser latency in dev from
       // the ingest-accept wall clock the server stamped on the tip.
       if (typeof msg.tickWallMs === "number" && import.meta.env.DEV) {
@@ -930,6 +955,10 @@ export function ARXNativeChart({
         close: b.close,
       });
       newestBarSecRef.current = tipSec;
+      const seconds = chartIntervalSeconds(timeframe);
+      const closeMs = b.closeTimeMs;
+      setFormingCloseMs(seconds && typeof closeMs === "number" && Number.isFinite(closeMs)
+        && closeMs - b.openTimeMs === seconds * 1000 ? closeMs : null);
     };
     es.onerror = () => {
       if (!accepts()) return;
@@ -1064,7 +1093,7 @@ export function ARXNativeChart({
   // wrong (M5) feed. This is a read-only verdict for the badge ONLY; the Level 5
   // context report below intentionally keeps using the raw conf.aiUsable.
   const { truth: badgeTruth } = useScannerTruth(
-    resolvedSymbol,
+    supportedTimeframe ? resolvedSymbol : "",
     normalizeChartTimeframe(timeframe),
   );
   const badgeAiUsableResolved = resolveFeedBadgeVerdict(
@@ -1147,7 +1176,7 @@ export function ARXNativeChart({
 
   // Phase 2 — Chart Safe Mode: active when candles exist but the integrity
   // check failed (quality="invalid"). We still show the candles (they are
-  // real, just flagged) but overlay a clear warning so no AI/analysis relies
+  // real, just flagged) but show a clear warning so no AI/analysis relies
   // on them. The open-positions overlays remain visible because execution state
   // is independent from feed quality.
   const isSafeMode = hasCandles && feedStatus?.quality === "invalid";
@@ -1197,7 +1226,7 @@ export function ARXNativeChart({
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <CandlestickChart className="h-4 w-4 text-primary" />
-            <Badge variant="outline" className="text-[10px]">ARX NATIVE</Badge>
+            <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
             <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
               {resolvedSymbol}
             </span>
@@ -1208,7 +1237,7 @@ export function ARXNativeChart({
             )}
             {lastClose != null && (
               <Badge variant="outline" className="font-mono text-xs" data-testid="arx-native-last">
-                {lastClose.toFixed(decimals)}
+                {lastClose.toFixed(decimals)}{!isLivePriceAffordance && <span className="ml-1 text-[9px] text-zinc-400">last-known</span>}
               </Badge>
             )}
             {positionCount > 0 && (
@@ -1224,8 +1253,6 @@ export function ARXNativeChart({
               <FeedConfidenceBadge
                 feedStatus={feedStatus}
                 aiUsableResolved={badgeAiUsableResolved}
-                showFallback={showFallbackToggle}
-                onRequestFallback={onRequestFallback}
               />
             )}
             {showNotAiConfirmed && (
@@ -1262,6 +1289,9 @@ export function ARXNativeChart({
                 <RefreshCw className="h-3 w-3 animate-spin" /> Reconnecting — prices delayed
               </Badge>
             )}
+            {formingCloseMs != null && isLivePriceAffordance && !marketFrozen && (
+              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} />
+            )}
             {hasCandles && (
               <ChartHistoryBadge
                 loading={deepHistory.loading}
@@ -1291,6 +1321,14 @@ export function ARXNativeChart({
                 {tf.label}
               </Button>
             ))}
+            <select className="h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100" aria-label="More chart intervals" title="Additional intervals; weekly and monthly source boundaries are not yet supported"
+              value={(MORE_TIMEFRAMES as readonly string[]).includes(timeframe) ? timeframe : ""}
+              onChange={event => {if (isChartInterval(event.target.value)) setTimeframe(event.target.value);}}>
+              <option value="" disabled>More intervals</option>
+              {MORE_TIMEFRAMES.map(id => <option key={id} value={id}>{id}</option>)}
+              <option value="W1" disabled>W1 — source week boundaries not verified</option>
+              <option value="MN1" disabled>MN1 — calendar boundaries not verified</option>
+            </select>
             {hasCandles && (
               <Button
                 size="sm"
@@ -1309,6 +1347,7 @@ export function ARXNativeChart({
       </CardHeader>
 
       {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
+      {!supportedTimeframe && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the
@@ -1335,7 +1374,7 @@ export function ARXNativeChart({
         {/* Mirror state detail */}
         {mirrorStatus === "Conflict" && (
           <span className="rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-300" data-testid="arx-mirror-conflict">
-            Data integrity failed — use TradingView for reference
+            Data integrity failed — analysis paused
           </span>
         )}
         {mirrorStatus === "Stale" && (
@@ -1386,31 +1425,95 @@ export function ARXNativeChart({
             <ArrowRightToLine className="mr-1 h-3.5 w-3.5" /> Latest
           </Button>
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
-          <label className="ml-1 flex items-center gap-2 text-xs text-zinc-400">Scale<select aria-label="Price scale" className="h-8 rounded border border-zinc-700 bg-zinc-900 px-2 text-zinc-100" value={scaleMode} onChange={event => setPreferences(p => ({...p, scale:event.target.value as typeof p.scale}))}>
-            <option value="linear">Regular price</option><option value="log">Logarithmic</option><option value="percent">Percentage</option><option value="indexed">Indexed to 100</option>
-          </select></label>
-          <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.inverted === true} onClick={() => setPreferences(p => ({...p,inverted:!p.inverted}))}>Invert scale</Button>
+          {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
+          <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
+
         </div>
         <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={expanded} onClick={() => setExpanded((v) => !v)}>
           {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
           {expanded ? "Exit fullscreen" : "Fullscreen"}
         </Button>
       </div>
-      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools key={chartContext} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
-      <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>
       <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
-      <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
-        <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
-        <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
-      </details>
+
+      {/* Persistent notices stay in normal flow so they cannot obscure candles,
+          user notes or projected position controls. The relative canvas/overlay
+          container below retains one unchanged coordinate origin. */}
+      {/* Phase 2 — Chart Safe Mode notice.
+          When quality="invalid" (integrity check failed) we show a clear
+          user-safe message above the chart. Candles are still drawn below
+          because they are real data (just flagged). Open position overlays
+          remain visible. AI reads are paused (conf.aiUsable will be false).
+          This is NOT an error state — it is a "read with extreme caution"
+          state. We never invent a safe state or pretend the data is clean. */}
+      {isSafeMode && (
+        <div
+          className="flex flex-wrap items-start gap-3 bg-red-950/80 px-3 py-3 text-xs backdrop-blur-sm"
+          data-testid="arx-native-safe-mode"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-red-100">Chart Safe Mode — data validation failed</div>
+            <div className="mt-0.5 text-[11px] text-red-300/90">
+              {warning || "Candle integrity checks failed. This chart is not confirmed for AI analysis or live decisions."}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 2 — OHLC mode indicator.
+          When candles are present but the spread check fails (flat bars), the
+          candlestick label is misleading. We add a labeled banner so the user
+          knows what they are looking at. This is NOT an error — the feed is
+          returning data, it just lacks meaningful OHLC spread. */}
+      {hasCandles && !ohlcAvailable && !isSafeMode && (
+        <div
+          className="flex items-center gap-2 bg-amber-950/70 px-3 py-2 text-xs backdrop-blur-sm"
+          data-testid="arx-native-line-mode"
+        >
+          <LineChart className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+          <span className="text-amber-200">
+            Line mode — OHLC candles are flat on this feed. Price action shown, no spread.
+          </span>
+        </div>
+      )}
+
+      {/* Prominent feed banner — only when candles are drawn but the feed is
+          degraded/stale (and NOT in safe mode, which has its own notice). */}
+      {showPoorBanner && (
+        <div
+          data-testid="arx-native-feed-banner"
+          data-severity={conf.severity}
+          className={`flex flex-wrap items-center gap-2 px-3 py-2 text-xs backdrop-blur-sm ${
+            conf.severity === "danger"
+              ? "bg-red-950/70 text-red-100"
+              : conf.severity === "caution"
+                ? "bg-amber-950/60 text-amber-100"
+                : "bg-zinc-900/70 text-zinc-100"
+          }`}
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span className="font-semibold">{conf.statusLabel} feed</span>
+          <span className="min-w-0 flex-1 truncate text-[11px] opacity-90">
+            {conf.message}
+          </span>
+          {query.isFetching && !query.isLoading && (
+            <RefreshCw className="h-3 w-3 animate-spin opacity-60" />
+          )}
+        </div>
+      )}
+
       <CardContent className="relative p-0">
         {/* The chart canvas is always mounted so the v5 series handle is stable;
             overlays cover it for loading / empty / error. */}
         <div
+          {...canvasEvents}
           ref={containerRef}
           tabIndex={0}
           role="region"
@@ -1427,6 +1530,8 @@ export function ARXNativeChart({
           className="w-full overflow-hidden"
           style={{ height: effectiveHeight }}
         />
+
+        {hasCandles && canvasOverlay}
 
         {/* Level 4 — floating P/L bubbles. Pure visual layer (pointer-events
             none): anchored to each position's price via priceToCoordinate, so
@@ -1454,92 +1559,6 @@ export function ARXNativeChart({
           </div>
         )}
 
-        {/* Phase 2 — Chart Safe Mode overlay.
-            When quality="invalid" (integrity check failed) we show a clear
-            user-safe message over the chart. Candles are still drawn beneath
-            because they are real data (just flagged). Open position overlays
-            remain visible. AI reads are paused (conf.aiUsable will be false).
-            This is NOT an error state — it is a "read with extreme caution"
-            state. We never invent a safe state or pretend the data is clean. */}
-        {isSafeMode && (
-          <div
-            className="absolute inset-x-0 top-0 z-20 flex flex-wrap items-start gap-3 bg-red-950/80 px-3 py-3 text-xs backdrop-blur-sm"
-            data-testid="arx-native-safe-mode"
-          >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-red-100">Chart Safe Mode — data validation failed</div>
-              <div className="mt-0.5 text-[11px] text-red-300/90">
-                {warning || "Candle integrity checks failed. This chart is not confirmed for AI analysis or live decisions."}
-              </div>
-            </div>
-            {showFallbackToggle && onRequestFallback && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 border-red-500/40 px-2 text-xs text-red-200 hover:bg-red-950/60"
-                onClick={onRequestFallback}
-                data-testid="arx-native-fallback-safemode"
-              >
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* Phase 2 — OHLC mode indicator.
-            When candles are present but the spread check fails (flat bars), the
-            candlestick label is misleading. We add a labeled banner so the user
-            knows what they are looking at. This is NOT an error — the feed is
-            returning data, it just lacks meaningful OHLC spread. */}
-        {hasCandles && !ohlcAvailable && !isSafeMode && (
-          <div
-            className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 bg-amber-950/70 px-3 py-2 text-xs backdrop-blur-sm"
-            data-testid="arx-native-line-mode"
-          >
-            <LineChart className="h-3.5 w-3.5 shrink-0 text-amber-300" />
-            <span className="text-amber-200">
-              Line mode — OHLC candles are flat on this feed. Price action shown, no spread.
-            </span>
-          </div>
-        )}
-
-        {/* Prominent feed banner — only when candles are drawn but the feed is
-            degraded/stale (and NOT in safe mode, which has its own overlay). */}
-        {showPoorBanner && (
-          <div
-            data-testid="arx-native-feed-banner"
-            data-severity={conf.severity}
-            className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 px-3 py-2 text-xs backdrop-blur-sm ${
-              conf.severity === "danger"
-                ? "bg-red-950/70 text-red-100"
-                : conf.severity === "caution"
-                  ? "bg-amber-950/60 text-amber-100"
-                  : "bg-zinc-900/70 text-zinc-100"
-            }`}
-          >
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            <span className="font-semibold">{conf.statusLabel} feed</span>
-            <span className="min-w-0 flex-1 truncate text-[11px] opacity-90">
-              {conf.message}
-            </span>
-            {query.isFetching && !query.isLoading && (
-              <RefreshCw className="h-3 w-3 animate-spin opacity-60" />
-            )}
-            {conf.suggestFallback && showFallbackToggle && onRequestFallback && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                onClick={onRequestFallback}
-                data-testid="arx-native-fallback-stale"
-              >
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-              </Button>
-            )}
-          </div>
-        )}
-
         {isInitialLoading && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-background/60 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading native candles…
@@ -1557,11 +1576,6 @@ export function ARXNativeChart({
               <Button size="sm" variant="outline" onClick={() => void query.refetch()} data-testid="arx-native-retry">
                 Retry
               </Button>
-              {showFallbackToggle && onRequestFallback && (
-                <Button size="sm" onClick={onRequestFallback} data-testid="arx-native-fallback-error">
-                  <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-                </Button>
-              )}
             </div>
           </div>
         )}
@@ -1576,18 +1590,19 @@ export function ARXNativeChart({
             </p>
             <p className="max-w-md text-xs text-muted-foreground">
               {feedStatus?.quality === "unavailable"
-                ? "Waiting for a live feed to connect. Try again in a moment or use TradingView for reference."
+                ? "Waiting for a live feed to connect. Try again when the feed is available."
                 : warning ||
                   `No native candles available for ${resolvedSymbol} on ${timeframe} right now.`}
             </p>
-            {showFallbackToggle && onRequestFallback && (
-              <Button size="sm" onClick={onRequestFallback} data-testid="arx-native-fallback-empty">
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView reference
-              </Button>
-            )}
           </div>
         )}
       </CardContent>
+      <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+      <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
+        <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
+        <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
+      </details>
+      <ChartLibraryCredit />
     </Card>
   );
 }

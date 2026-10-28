@@ -44,3 +44,48 @@ describe("strict history continuation transport", () => {
     reply(value); expect((await fetchChartHistory(args)).historyEvidence).toBeNull();
   });
 });
+
+describe("original candle evidence retention", () => {
+  function reply(data: unknown) {
+    const transport = vi.fn(async () => ({ok:true,json:async () => data}));
+    vi.stubGlobal("fetch",transport);
+    return transport;
+  }
+  it("retains the complete original normalized response alongside legacy display bars", async () => {
+    const bar = {symbol:"V75",timeframe:"H12",source:"mt5_broker",
+      openTime:"2026-10-27T00:00:00Z",closeTime:"2026-10-27T12:00:00Z",
+      open:100,high:110,low:90,close:105,volume:42,tickVolume:82,
+      isComplete:true,isFinal:true,isForming:false,qualityFlags:["SOURCE_OBSERVATION"],
+      sourceMode:"demo",priceBasis:"BID",brokerSymbol:"Volatility75",receivedAt:"2026-10-27T12:01:00Z"};
+    const original = {symbol:"V75",timeframe:"H12",source:"mt5_broker",candles:[bar],feedStatus:{source:"mt5_broker"},
+      marketEvidence:{symbol:"V75",timeframe:"H12",source:"mt5_broker",sourceIdentity:"a".repeat(64),
+        lastClosedCandleAt:bar.closeTime,userId:7},additionalProviderEvidence:{clock:"observed"}};
+    reply(original);
+    const result = await fetchChartCandles("V75","H12",200);
+    expect(result.originalResponse).toBe(original);
+    expect((result.originalResponse as typeof original).candles[0]).toEqual(bar);
+    expect(result.candles).toEqual([{time:Date.parse(bar.openTime),open:100,high:110,low:90,close:105}]);
+    result.candles[0]!.close=999;
+    expect(bar.close).toBe(105);
+    expect((result.originalResponse as typeof original).marketEvidence.userId).toBe(7);
+  });
+  it("does not add close, source or finality metadata to legacy OHLC", async () => {
+    const original = [{time:1700000000000,open:100,high:110,low:90,close:105}];
+    reply(original);
+    const result = await fetchChartCandles("V75","M15",200);
+    expect(result.originalResponse).toBe(original);
+    expect(result.marketEvidence).toBeUndefined();
+    expect(Object.keys(original[0]!)).toEqual(["time","open","high","low","close"]);
+  });
+  it("retains contradictory untrusted evidence without promoting or repairing it", async () => {
+    const original = {candles:[{openTime:"2026-10-27T00:00:00Z",open:100,high:110,low:90,close:105,
+      isComplete:true,isFinal:false,isForming:true}],feedStatus:{source:"mt5_broker"},
+      marketEvidence:{symbol:"V25",timeframe:"M5",source:"deriv_public",sourceIdentity:"other-source"}};
+    reply(original);
+    const result = await fetchChartCandles("V75","M15",200);
+    expect(result.originalResponse).toBe(original);
+    expect(result.marketEvidence).toBeUndefined();
+    expect((result.originalResponse as typeof original).candles[0]).toMatchObject({isComplete:true,isFinal:false,isForming:true});
+    expect((result.originalResponse as typeof original).candles[0]).not.toHaveProperty("closeTime");
+  });
+});

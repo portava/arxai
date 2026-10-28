@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
 import { readChartStorage, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
-import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
+import { restoreChartInterval } from "@/lib/chart-engine/chartIntervals";
+import { SmartChartSymbolSelect } from "@/components/charts/SmartChartView";
 import {
   ARXNativeChart,
   type ArxTimeframe,
@@ -19,13 +20,10 @@ import { useAiChartOverlays } from "@/hooks/useAiChartOverlays";
 import { useChartSetupPreview } from "@/hooks/useChartSetupPreview";
 import type { SetupPreview } from "@/lib/setup-preview";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { AlertTriangle, CandlestickChart, BarChart3 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
-
-type ChartView = "tv" | "native";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Smart Chart Shell (Task #373).
@@ -34,8 +32,7 @@ type ChartView = "tv" | "native";
 // intelligence — the symbol (shared bus), the timeframe (controlled), the chart
 // context + intelligence snapshot, the read-only position + AI overlays, and the
 // role gating — and drives the chart RENDERER (ARX Native, which renders through
-// the swappable chart-engine adapter). The TradingView reference remains a
-// labeled toggle. The actual rendering engine is pluggable behind the adapter;
+// the swappable chart-engine adapter). The actual rendering engine is pluggable behind the adapter;
 // the Shell never touches engine-specific code.
 //
 // SAFETY: the Shell is view + state only. The single trade-entry surface
@@ -55,16 +52,13 @@ export default function LiveChartPage() {
   // as a small label so the Shell is honest about which engine is drawing and so
   // a future engine swap is visible without code spelunking.
   const activeEngine = CHART_ENGINE_DESCRIPTORS[DEFAULT_CHART_ENGINE_ID];
-  // Smart Chart is the workspace default; the external reference is optional.
-  const [chartView, setChartView] = useState<ChartView>(()=>readChartStorage("arx.chart.view.v1") === "tv" ? "tv" : "native");
-  useEffect(()=>{writeChartStorage("arx.chart.view.v1",chartView);},[chartView]);
-  const [chartSymbol] = useChartSymbol();
+  const [chartSymbol, setChartSymbol] = useChartSymbol();
   // The Shell owns the timeframe (controlled). The Native renderer reflects this
   // value and reports user changes back via onTimeframeChange, so the Shell — not
   // the renderer — is the single source of truth for the timeframe on screen.
   const [timeframe, setTimeframe] = useState<ArxTimeframe>(()=>{
     const saved=readChartStorage("arx.chart.primaryTimeframe.v1");
-    return ["M1","M5","M15","M30","H1","H4","D1"].includes(String(saved)) ? saved as ArxTimeframe : "M15";
+    return restoreChartInterval(saved);
   });
   useEffect(()=>{writeChartStorage("arx.chart.primaryTimeframe.v1",timeframe);},[timeframe]);
   const onTimeframeChange = useCallback((tf: ArxTimeframe) => setTimeframe(tf), []);
@@ -143,35 +137,10 @@ export default function LiveChartPage() {
           )}
         </h1>
         <p className="text-sm text-txt-secondary">
-          {chartView === "tv"
-            ? "TradingView Advanced Real-Time Chart. Symbols, intervals, indicators, and watchlist available below."
-            : "Your chart workspace — price action, studies, drawings and multiple timeframes with visible feed quality."}
+          Your chart workspace — price action, studies, drawings and multiple timeframes with visible feed quality.
         </p>
       </div>
-      <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card p-1" role="tablist" data-testid="chart-view-toggle">
-        <Button
-          size="sm"
-          variant={chartView === "tv" ? "default" : "ghost"}
-          className="h-8 px-3 text-xs"
-          onClick={() => setChartView("tv")}
-          role="tab"
-          aria-selected={chartView === "tv"}
-          data-testid="chart-view-tv"
-        >
-          <BarChart3 className="mr-1.5 h-3.5 w-3.5" /> TradingView Reference
-        </Button>
-        <Button
-          size="sm"
-          variant={chartView === "native" ? "default" : "ghost"}
-          className="h-8 px-3 text-xs"
-          onClick={() => setChartView("native")}
-          role="tab"
-          aria-selected={chartView === "native"}
-          data-testid="chart-view-native"
-        >
-          <CandlestickChart className="mr-1.5 h-3.5 w-3.5" /> Smart Chart
-        </Button>
-      </div>
+      <SmartChartSymbolSelect symbol={chartSymbol} onSymbolChange={setChartSymbol} />
       <div className="flex items-start gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm">
         <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />
         <p>
@@ -181,9 +150,6 @@ export default function LiveChartPage() {
         </p>
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        {chartView === "tv" ? (
-          <TradingViewLiveChart defaultSymbol={chartSymbol || "V75"} height={680} />
-        ) : (
           <div className="min-w-0 space-y-4">
             <SmartChartLayout symbol={chartSymbol}>
               <ARXNativeChart
@@ -193,8 +159,6 @@ export default function LiveChartPage() {
                 onTimeframeChange={onTimeframeChange}
                 height={680}
                 showFeedStatus
-                showFallbackToggle
-                onRequestFallback={() => setChartView("tv")}
                 overlays={[...overlayData.overlays, ...aiOverlays.overlays, ...setupPreview.overlays]}
                 onChartContextChange={onChartContextChange}
                 onIntelligenceChange={onIntelligenceChange}
@@ -212,7 +176,6 @@ export default function LiveChartPage() {
             />
             <ChartModes state={chartIntelligence} />
           </div>
-        )}
         <div className="space-y-4">
           {/* Trade entry is the single gated order surface. Hidden from view-only
               (investor) roles and while identity resolves; placement itself still

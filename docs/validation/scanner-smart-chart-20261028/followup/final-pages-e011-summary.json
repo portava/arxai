@@ -1,0 +1,153 @@
+{
+  "status": "PASS",
+  "functionalStatus": "PASS",
+  "visualStatus": "PASS_BOUNDED_DESKTOP_MOBILE_CHART_CHECK",
+  "applicationCommit": "e011f25aca6dfd2913dda134ca59c86a5b124a95",
+  "fixtureBuildId": "c4d30f0544b392e4",
+  "fixtureRole": "ADMIN",
+  "assertions": 158,
+  "routes": [
+    "/live-chart",
+    "/live-manual",
+    "/live-ai-assist",
+    "/live-ai-auto-test"
+  ],
+  "viewportSizes": [
+    {
+      "width": 1440,
+      "height": 1100
+    },
+    {
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "screenshotsInspected": [
+    "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-e011-live-chart-desktop.png",
+    "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-e011-live-chart-mobile.png",
+    "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-e011-live-manual-desktop.png",
+    "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-e011-live-manual-mobile.png",
+    "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-e011-live-ai-assist-desktop.png",
+    "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-e011-live-ai-assist-mobile.png",
+    "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-e011-live-ai-auto-test-desktop.png",
+    "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-e011-live-ai-auto-test-mobile.png"
+  ],
+  "browserClosed": true,
+  "network": {
+    "pageExceptions": 0,
+    "tradeRequests": 0,
+    "unclassifiedWrites": 0,
+    "externalRequests": 0,
+    "blockedWrites": 6,
+    "allWrites503": true,
+    "unknownApiReads503": 77,
+    "consoleErrors": 83
+  },
+  "mobileBounds": [
+    {
+      "route": "/live-chart",
+      "canvas": {
+        "left": 29,
+        "right": 363.640625,
+        "viewportWidth": 390,
+        "intersection": {
+          "width": 334.640625,
+          "height": 380
+        }
+      },
+      "selector": {
+        "left": 28,
+        "right": 330,
+        "viewportWidth": 390
+      },
+      "visibleChartControlCount": 22
+    },
+    {
+      "route": "/live-manual",
+      "canvas": {
+        "left": 29,
+        "right": 361,
+        "viewportWidth": 390,
+        "intersection": {
+          "width": 332,
+          "height": 379.578125
+        }
+      },
+      "selector": {
+        "left": 28,
+        "right": 330,
+        "viewportWidth": 390
+      },
+      "visibleChartControlCount": 22
+    },
+    {
+      "route": "/live-ai-assist",
+      "canvas": {
+        "left": 25,
+        "right": 365,
+        "viewportWidth": 390,
+        "intersection": {
+          "width": 340,
+          "height": 379.75
+        }
+      },
+      "selector": {
+        "left": 49,
+        "right": 344,
+        "viewportWidth": 390
+      },
+      "visibleChartControlCount": 22
+    },
+    {
+      "route": "/live-ai-auto-test",
+      "canvas": {
+        "left": 25,
+        "right": 365,
+        "viewportWidth": 390,
+        "intersection": {
+          "width": 340,
+          "height": 379.71875
+        }
+      },
+      "selector": {
+        "left": 24,
+        "right": 326,
+        "viewportWidth": 390
+      },
+      "visibleChartControlCount": 22
+    }
+  ],
+  "visualResult": "All8 screenshots inspected. All four charts and their price scales fit horizontally; AI Assist mobile clipping is corrected. Market selectors and visible chart controls fit the390pxviewport. Advanced controls collapse; chart warnings remain. No graphic TradingView logo or embedded widget was observed; required plain-text rendering-library credit remains.",
+  "correctionEvidence": {
+    "reversibleProbe": "ai-assist-width-probe.json",
+    "oldCanvasRight": 403.609375,
+    "newCanvasRight": 365,
+    "viewportWidth": 390
+  },
+  "preservedEarlierRuns": [
+    "final-pages.log",
+    "final-pages-rerun.log",
+    "final-pages-rerun2.log",
+    "final-pages-rerun3.log",
+    "final-pages-rerun4.log",
+    "final-pages-browser-summary.json",
+    "ai-assist-width-probe.log"
+  ],
+  "priorRunDisposition": "The8e87 run passed142 functional assertions but remains VISUALLY_INCOMPLETE in its separate summary. The new158-check run supersedes mobile acceptance only after the layout correction; no old failure was overwritten.",
+  "limits": [
+    "Actual routes/providers in an isolated production fixture; not the deployable bundle.",
+    "Synthetic historical candles and unavailable truth; no active analysis or broker acceptance.",
+    "Synthetic ADMIN identity opens the restricted tester routes; trading is frozen/unarmed/unallocated. USER route containment is a separate observation.",
+    "No order, confirmation, approval or test-loop control is clicked. Server gates are not exercised.",
+    "Enabled review/test controls are not claimed to be disabled trading gates.",
+    "Unknown API reads and their console errors remain recorded; no latency or hardware paint claim.",
+    "Only1440x1100desktop and390x844mobile layouts sampled; not exhaustive responsive/accessibility or browser coverage.",
+    "Mobile screenshots scroll to the chart; no claim that every page initially places the chart above the fold.",
+    "No latency measurement. Functional browser work ran concurrently with the separate Scanner functional session.",
+    "SyntheticADMIN trading permissions remain frozen/unarmed/unallocated; enabled review/test controls were not activated or presented as disabled.",
+    "Actual USER redirect from/live-manual remains a separate observed containment result; this is not a complete authorization audit."
+  ],
+  "rawReport": "final-pages-e011.json",
+  "rawLog": "final-pages-e011.log",
+  "closeLog": "final-pages-e011-close.log"
+}

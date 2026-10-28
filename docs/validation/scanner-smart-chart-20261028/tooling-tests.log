@@ -1,0 +1,26 @@
+✔ fixture supplies dashboard source to Tailwind before compilation without changing app files (0.475291ms)
+✔ generated-CSS guard rejects the unstyled fixture and accepts real layout utilities (0.344709ms)
+✔ newly fetched metadata cannot validate an older already-executed fixture bundle (0.058125ms)
+✔ runtime build identity is immutable after the fixture entry executes (0.776166ms)
+✔ background classification requires exact known routes and POST method (0.373542ms)
+✔ trade writes are distinct from blocked annotations and ordinary read requests (0.080917ms)
+✔ only the proven scalp focus POST is classified as blocked analysis (0.064666ms)
+✔ post-frame completion rejects displayed-only corruption after canonical success (0.195958ms)
+✔ post-frame completion rejects changed context even when both arrays match (0.080916ms)
+✔ pending series returns primitive false even in a runner that treats Promises as truthy (1.062167ms)
+✔ expected response is awaited outside the browser predicate and missing evidence times out (0.447542ms)
+✔ source completion accepts the actual complete canonical and displayed OHLC arrays (0.263833ms)
+✔ updated label with old interval or source cannot complete (0.453542ms)
+✔ same count and last bar cannot conceal an incorrect interior canonical bar (0.219459ms)
+✔ canonical update without actual displayed series update cannot complete (0.20025ms)
+✔ fixture blocks external reads and mutations before any real request (0.897125ms)
+✔ known background writes are blocked too, never fulfilled as valid side effects (0.34275ms)
+✔ fixture allows local assets, refuses unmocked API reads and caps synthetic history (4.300458ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 50.835042

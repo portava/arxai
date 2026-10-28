@@ -97,9 +97,9 @@ describe("source and observation boundaries", () => {
     expect(result.coverage).toMatchObject({ available: 5000, analyzed: 600, truncated: true });
     expect(result.coverage.note).toContain("600 of 5000");
   });
-  it("matches all canonical chart intervals and never guesses an unknown timeframe", () => {
+  it("matches supported fixed chart intervals and never guesses a calendar month or unknown timeframe", () => {
     expect(smartChartIntervalSeconds("M5")).toBe(300);
-    expect(smartChartIntervalSeconds("MN1")).toBe(30 * 86400);
+    expect(smartChartIntervalSeconds("MN1")).toBeNull();
     expect(smartChartIntervalSeconds("5m")).toBeNull();
   });
 });

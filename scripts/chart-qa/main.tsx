@@ -3,6 +3,9 @@ import {createRoot} from "react-dom/client";
 import "./styles.css";
 import {ARXNativeChart} from "../../artifacts/trading-dashboard/src/components/charts/ARXNativeChart";
 import {SmartChartLayout} from "../../artifacts/trading-dashboard/src/components/charts/SmartChartLayout";
+import {LightweightChartsAdapter} from "../../artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter";
+import {installChartQaWitnesses} from "./witness";
+const removeQaWitnesses = installChartQaWitnesses(LightweightChartsAdapter);
 // This browser-only fixture cannot open a network stream or execute an order.
 class OfflineEventSource { onmessage: any; onerror: any; constructor(){ (window as any).chartStream=this; } close(){} }
 (window as any).EventSource=OfflineEventSource;
@@ -17,7 +20,7 @@ function Workbench(){
 }
 const root=createRoot(document.getElementById("root")!);
 root.render(<Workbench/>);
-if(import.meta.hot) import.meta.hot.dispose(()=>root.unmount());
+if(import.meta.hot) import.meta.hot.dispose(()=>{root.unmount();removeQaWitnesses();});
 
 // Exposed only by this isolated fixture, never by the shipped application.
 (window as any).runChartBenchmark = async (moduleUrl?: string, withStudies = false) => {

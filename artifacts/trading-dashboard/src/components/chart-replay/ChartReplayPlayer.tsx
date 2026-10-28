@@ -1,3 +1,4 @@
+import { ChartLibraryCredit } from "@/components/charts/ChartLibraryCredit";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChartWorkbenchTools } from "@/components/charts/ChartWorkbenchTools";
@@ -115,8 +116,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
       {message && <p role="status" className="text-xs text-amber-200">{message}</p>}
     </section>
     <div className="mt-3 overflow-hidden rounded border border-zinc-800">
-      <SmartChartReader adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
-        data={undefined} older={NO_OLDER} historyEvidence={null} liveConfirmed={false} readFailed={false} view={preferences} replay={replayRead}/>
+
       <ChartWorkbenchTools key={snapshot.id} adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
         preferences={preferences} onPreferences={setPreferences} hasCandles={installed>0}
         drawingKey={replayDrawingKey(snapshot)} ephemeralDrawings historyWindowOnly feedLabel={`HISTORICAL REPLAY · ${snapshot.source} · through ${fmt(current.closeTime)} · not live or tradable`}/>
@@ -133,6 +133,9 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
           if(event.key==="End")adapter.current?.goToLatest?.(false);
         }} data-installed-count={installed}
         data-source={snapshot.source} data-source-identity={snapshot.sourceIdentity} data-last-open={snapshot.bars[Math.max(0,installed-1)]?.time}/>
+      <ChartLibraryCredit />
+      <SmartChartReader adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
+        data={undefined} older={NO_OLDER} historyEvidence={null} liveConfirmed={false} readFailed={false} view={preferences} replay={replayRead}/>
     </div>
     <p className="mt-3 text-xs text-zinc-400">Studies use only revealed bars. Replay drawings are separate from live charts and belong only to this private session. Multi-chart replay, saved sessions and historical order simulation are not yet available.</p>
   </main>;

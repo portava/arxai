@@ -114,7 +114,7 @@ describe("scanner chart assistant read context", () => {
     expect(result.current.read).toBeNull();
     expect(result.current.busy).toBe(false);
   });
-  it("reports current failure and labels the actual supported analysis timeframe", async () => {
+  it("reports current failure and refuses unsupported server intervals instead of substituting H4", async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503 } as Response).mockResolvedValueOnce(response("H4 read"));
     const { result, rerender } = setup();
     await act(async () => { await result.current.ask("analyze"); });
@@ -122,7 +122,9 @@ describe("scanner chart assistant read context", () => {
     expect(result.current.busy).toBe(false);
     rerender({ symbol: "EURUSD", timeframe: "8h" });
     await act(async () => { await result.current.ask("analyze"); });
-    expect(JSON.parse(fetchMock.mock.calls[1]![1]!.body as string).timeframe).toBe("H4");
-    expect(result.current.read?.title).toBe("Ruby read — EURUSD (H4)");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(failed).toHaveBeenCalledTimes(2);
+    expect(failed.mock.calls[1]![0].message).toContain("not available for this interval");
+    expect(result.current.read).toBeNull();
   });
 });

@@ -110,6 +110,17 @@ beforeEach(() => {
 });
 
 describe("PositionMiniChart ResizeObserver disposal race", () => {
+  it("disables the provider logo and retains a plain-text library credit", () => {
+    const view = renderMiniChart();
+    expect(createChartMock).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ layout: expect.objectContaining({ attributionLogo: false }) }),
+    );
+    const credit = view.getByTestId("chart-library-credit");
+    expect(credit.querySelector("svg, img, canvas")).toBeNull();
+    expect(view.getByRole("link", { name: "TradingView Lightweight Charts™" }).getAttribute("href")).toBe("https://www.tradingview.com/");
+  });
+
   it("a late RO callback after unmount must not throw (Object is disposed lock)", () => {
     const { unmount } = renderMiniChart();
     expect(roCallbacks.length).toBeGreaterThan(0);

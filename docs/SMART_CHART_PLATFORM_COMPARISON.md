@@ -1,7 +1,7 @@
 # Smart Chart: TradingView and MetaTrader 5 comparison
 
-Research updated 2026-10-27. Scope: ARX Smart Chart development branch / PR #76,
-not a deployment. **Full platform parity and speed superiority remain unproven.**
+Research updated 2026-10-27; implementation status updated 2026-10-28. Scope:
+ARX Smart Chart development branch / draft PR #103, not a deployment. **Full platform parity and speed superiority remain unproven.**
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
@@ -10,8 +10,9 @@ A feature count alone cannot establish professional quality.
 TradingView Supercharts is the end-user platform. Advanced Charts is a separate
 embeddable library; its public demo is useful for observing interactions but does
 not contain the entire Supercharts service. Trading Platform adds broker-facing
-integration APIs. The free hosted widget already used by ARX cannot be fed ARX
-candles or manipulated as an owned chart. ARX uses Lightweight Charts v5 behind
+integration APIs. The former free hosted widget could not be fed ARX candles or manipulated as
+an owned chart. Its four page integrations and loader have now been removed
+from this development branch; those pages use ARX Smart Chart. ARX uses Lightweight Charts v5 behind
 its own adapter. No approved proprietary Advanced Charts bundle or license grant
 was found in this repository. [TradingView products/API](https://www.tradingview.com/charting-library-docs/latest/api/),
 [datafeed integration](https://tradingview.com/charting-library-docs/latest/connecting_data/).
@@ -31,18 +32,22 @@ these counts must not be treated as equivalent catalog coverage.
 [MT5 charts](https://www.metatrader5.com/en/terminal/help/charts_analysis/charts),
 [technical-analysis catalog](https://www.metatrader5.com/en/trading-platform/technical-analysis).
 
-ARX timeframe exposure (Custom intervals row): the chart API contract accepts 21
-codes (`lib/api-spec/openapi.yaml:2154`;
-`artifacts/api-server/src/lib/data/chart/timeframes.ts:9-12`). The Smart Chart
-offers seven. Under `artifacts/trading-dashboard/src/`, the picker renders
-`TIMEFRAMES` (`components/charts/ARXNativeChart.tsx:109-117,1113`), layout views
-use `CHART_INTERVALS` (`lib/chart-engine/chartLayout.ts:4`), page state accepts
-the same seven (`pages/live-chart.tsx:67`), and unrecognised saved values fall
-back to M15 (`ARXNativeChart.tsx:120,128`). Replay inherits the chart timeframe
-and refuses any other interval with "Replay needs a source-identified candle
-window" (`lib/chart-engine/chartReplay.ts:7,32-39`). Scanner Chart's separate
-labels, such as 1W, map onto these seven for overlays
-(`components/scanner/ScannerChartPanel.tsx:111-123`) and are outside that row.
+ARX now exposes 19 fixed-duration intervals: M1, M2, M3, M4, M5, M6, M10,
+M12, M15, M20, M30, H1, H2, H3, H4, H6, H8, H12 and D1. The shared picker,
+layout state, Scanner timeframe bus and replay use the same interval definitions.
+W1 and MN1 remain explicitly unavailable: epoch-aligned weeks and fixed-length
+months do not establish the provider's calendar boundaries. Stored calendar
+selections are not silently replaced. Server intelligence accepts the exact fixed-duration chart interval. Smart
+layers, saved annotations and decision receipts still accept only their seven
+original intervals; unsupported intervals receive no nearest-timeframe substitution.
+
+The actual Scanner page now mounts `ARXNativeChart` with its existing shared
+candle query and original response evidence. Native owns candle rendering,
+streaming and history; Scanner retains its owned-position, pending-order,
+annotation, context-menu and confirmation controls through a view-only surface
+bridge. Standalone native performance figures cannot be attributed to Scanner. A bounded
+actual-Scanner check is now recorded separately in the 28 October follow-up;
+its missing native-menu style samples keep its overall timing verdict partial.
 
 ## Comparison and implementation checklist
 
@@ -53,16 +58,16 @@ this Smart Chart implementation. None means production verification is complete.
 | Capability | Reference behavior | ARX status and concrete gap |
 |---|---|---|
 | Candles / OHLC bars / line | All three in MT5 [M1] | Implemented; real-browser style switching retains canonical OHLC and viewport |
-| Extended time-based styles | TV area, baseline, hollow, Heikin Ashi and others [T1] | Partial (unit-tested; real-browser evidence pending): close area, close baseline, Heikin Ashi and hollow candles added to the style picker, with canonical studies, drawings, price lines and Last line; legend keeps canonical OHLC and adds a labelled HA suffix in Heikin Ashi. Differences from the cited TV help pages: the baseline base is the first loaded close, not TV's chart-height percentage [T13]; the HA first-bar seed (O+C)/2 is not stated by TV [T12]; hollow equal-price and first-bar handling are ARX conventions [T11]. Real-browser switching (`workbench-acceptance.js`, styles:7) and the four new style-switch latency groups are not yet run. Other [T1] types remain open, for example line with markers, step line, HLC area, high-low, column, and volume candles (which also need trustworthy volume) |
+| Extended time-based styles | TV area, baseline, hollow, Heikin Ashi and others [T1] | Partial: close area, close baseline, Heikin Ashi and hollow candles added to the style picker, with canonical studies, drawings, price lines and Last line; legend keeps canonical OHLC and adds a labelled HA suffix in Heikin Ashi. Differences from the cited TV help pages: the baseline base is the first loaded close, not TV's chart-height percentage [T13]; the HA first-bar seed (O+C)/2 is not stated by TV [T12]; hollow equal-price and first-bar handling are ARX conventions [T11]. Seven-style standalone browser switching is accepted in the [round-3 receipt](SMART_CHART_ROUND3_BROWSER_ACCEPTANCE_2026_10_28.md); integrated Scanner Heikin Ashi replacement is accepted in the [Scanner receipt](SCANNER_SMART_CHART_INTEGRATION_2026_10_28.md). The four new style-switch latency groups remain unmeasured. Other [T1] types remain open, for example line with markers, step line, HLC area, high-low, column, and volume candles (which also need trustworthy volume) |
 | Price-based charts | TV Renko, Kagi, point-and-figure, range, line break [T1] | Open; aggregation and nonstandard-price labeling required |
 | Footprint / TPO / volume profile | TV specialized chart types [T1] | Open; trustworthy volume/trade data is also required |
 | Pan / zoom / return to latest | MT5/TV chart navigation [M1,T2] | Implemented; history anchoring, Latest/Fit/Reset, Home/End |
 | Scale modes | TV regular, log, percentage and indexed-to-100 [T2] | Implemented: regular/log/percentage/indexed modes |
 | Scale inversion / auto / price-only | TV scale settings [T2] | Partial: automatic price scale and inversion; price-only scaling settings remain open |
 | Date jump / range presets | Observed in official demo; TV navigation [T2] | Implemented: go-to in the chart's selected display time zone (UTC by default and on daily bars; clock-change gap times are rejected, repeated times use the earlier occurrence) and 1D/5D/1M/3M/1Y loaded-history ranges; unavailable history is explicitly reported |
-| Timezone / session / countdown | TV chart settings [T2] | Partial: display timezone selectable; session shading and countdown remain open. Per chart view, not saved in templates; a new comparison view starts from the primary view's choice. UTC (default), browser local and 8 named IANA zones relabel the time axis, crosshair, candle legend, object list, go-to, replay seek and labels, chart reader and PNG capture time, each with its zone abbreviation. Display only: candle times, drawings, links and data requests stay UTC seconds. Kept in UTC: link events, the deep-history request cursor, the market-closed last-quote banner, the embedded TradingView widget, machine-readable time attributes, and every surface on daily (D1) charts, whose bars keep UTC day labels. Axis limitation: lightweight-charts 5.2.0 places day, month and year ticks at UTC boundaries, so in other zones those ticks show a local date or time rather than falling on local midnight. No selectable zone represents broker server time. Evidence: artifacts/trading-dashboard/src/lib/chart-engine/chartTimeZone.ts |
-| Custom intervals | MT5 21 presets; TV interval controls [M1,T3] | Partial: Smart Chart exposes 7 of the 21 contract timeframes (M1, M5, M15, M30, H1, H4, D1); the other 14 (M2, M3, M4, M6, M10, M12, M20, H2, H3, H6, H8, H12, W1, MN1) are accepted by the API but not offered by the chart picker, layout views or page state, unrecognised saved values fall back to M15, and replay rejects them; no user-defined intervals. File references in the timeframe note above |
-| OHLC inspection | MT5 crosshair/data window [M1] | Implemented, canonical values also for line style; area, baseline, Heikin Ashi (HA values labelled separately after the canonical OHLC) and hollow are unit-tested, real-browser check pending |
+| Timezone / session / countdown | TV chart settings [T2] | Partial: display timezone selectable; validated forming-candle countdown shared with Scanner; session shading remains open. Per chart view, not saved in templates; a new comparison view starts from the primary view's choice. UTC (default), browser local and 8 named IANA zones relabel the time axis, crosshair, candle legend, object list, go-to, replay seek and labels, chart reader and PNG capture time, each with its zone abbreviation. Display only: candle times, drawings, links and data requests stay UTC seconds. Kept in UTC: link events, the deep-history request cursor, the market-closed last-quote banner, machine-readable time attributes, and every surface on daily (D1) charts, whose bars keep UTC day labels. Axis limitation: lightweight-charts 5.2.0 places day, month and year ticks at UTC boundaries, so in other zones those ticks show a local date or time rather than falling on local midnight. No selectable zone represents broker server time. Evidence: artifacts/trading-dashboard/src/lib/chart-engine/chartTimeZone.ts |
+| Custom intervals | MT5 21 presets; TV interval controls [M1,T3] | Partial: 19 fixed-duration intervals exposed across the shared chart and Scanner; W1/MN1 explicitly unavailable pending calendar-boundary correctness. Server overlays/receipts retain seven supported intervals and explain when unavailable; no user-defined intervals. See timeframe note above |
+| OHLC inspection | MT5 crosshair/data window [M1] | Implemented, canonical values also for line style; area, baseline, Heikin Ashi (HA values labelled separately after the canonical OHLC) and hollow are unit-tested and checked in the isolated real-browser workbench; see [round-3 acceptance](SMART_CHART_ROUND3_BROWSER_ACCEPTANCE_2026_10_28.md) |
 | Study-value data window | MT5 indicator values in data window [M1] | Implemented in this branch; inspect the same timestamp across price/oscillator panes |
 | Study catalog | MT5 38; Advanced Charts 100+ [M2,T4] | Partial: 17 OHLC-based types, searchable library |
 | Moving-average methods | MT5 SMA, EMA, SMMA, LWMA [M3] | Implemented; explicit SMA seeds and tested weights |
@@ -72,18 +77,18 @@ this Smart Chart implementation. None means production verification is complete.
 | Oscillator panes | MT5 separate indicator windows [M4] | Implemented; resizable panes and reference levels |
 | Indicator custom scripting | Pine/MQL5/platform APIs [T3,T4,M4] | Open; no user script execution sandbox |
 | Volume studies / VWAP | MT5 distinguishes tick and actual traded volume [M4] | Open; volume semantics must be preserved end to end |
-| User levels / trend / Fibonacci | TV drawing families [T5] | Implemented: seven tools, real candle anchors, reversible edits |
+| User levels / trend / Fibonacci | TV drawing families [T5] | Implemented: eight tools including manual text notes, real candle anchors, reversible edits; latest notes browser run remains visually incomplete pending warning-layout recheck |
 | Pointer/touch placement | Drawing interaction [T5] | Implemented; rapid two-anchor mouse/touch tested |
 | Drag handles / whole object | MT5 graphical objects / drawing interaction [M6,T5] | Implemented: selection, whole-object/anchor mouse and touch drag; one undo entry, cancel rollback |
 | Snap / lock / styling | MT5 object settings [M6] | Implemented: OHLC magnetic anchors, geometry locks, width/dash/color and exact prices; no object groups |
-| Rays / channels / geometry / text | TV/MT5 drawing families [T5,M2] | Partial: rays, extended/vertical lines and rectangles implemented; channels, text and broader tools remain |
+| Rays / channels / geometry / text | TV/MT5 drawing families [T5,M2] | Partial: rays, extended/vertical lines, rectangles and time/price-anchored manual text notes implemented; fixed-screen labels, rich text styling, channels and broader tools remain. Latest mobile note warning-occlusion fix needs fresh browser acceptance; see [workspace checkpoint](SMART_CHART_WORKSPACE_CHECKPOINT_2026_10_28.md) |
 | Gann / Elliott / pitchfork / patterns | TV/MT5 analytical families [T5,M2] | Open |
 | Object management | TV object tree / MT5 object list [T5,M6] | Partial: list, hide-all, delete, undo/redo; no groups/search/reorder |
 | Multi-chart workspace | TV layouts; MT5 chart profiles [T6,M7] | Partial: one/two/four responsive charts, independent instruments/intervals/settings; no cloud profiles |
 | Crosshair / time-range synchronization | TV selectable chart synchronization [T6] | Implemented within workspace: optional links on UTC seconds (each view labels times in its own display zone), own-instrument candle close, clipped/unavailable loaded-history disclosure |
 | Different-symbol comparison | TV compare/overlay [T3] | Partial: independent comparison panes implemented; overlaid/normalized comparison series remain open |
 | Drawing synchronization | TV within/across layouts [T6] | Partial: browser-local matching symbol/timeframe sync; no account cloud sync |
-| Templates / profiles | TV layouts; MT5 templates/profiles [T7,M7] | Partial: autosave plus one local template; named/importable/account workspaces open |
+| Templates / profiles | TV layouts; MT5 templates/profiles [T7,M7] | Partial: autosave plus up to30 named browser settings templates with guarded JSON import/export. Account/cloud and named multi-chart workspaces remain open. Final template interaction fix has targeted checks; fresh combined browser acceptance is pending in the [workspace checkpoint](SMART_CHART_WORKSPACE_CHECKPOINT_2026_10_28.md) |
 | Bar replay | TV select start, seek, step, speed, multi-chart replay [T8]; no equivalent MT5 bar-replay criterion in this row (MT5 visual strategy tester [M8] is documentation, not measurement) | Partial: single-chart replay of up to 5,000 closed bars from the loaded response window ("Replay loaded bars", `components/charts/ARXNativeChart.tsx:1112`) with Start, Previous/Next, Play/Pause at 0.5–8 bars/s, position slider, close-time seek in the selected display zone (UTC by default) and arrow/Space keys; studies receive only the revealed prefix; private `/chart-replay` route outside the live layout unmounts prices, Truth, positions and tickets. View-only; not a backtest or fill simulation. Latency (Apple M4 Pro, 4× CPU throttle, 5,000 constructed bars, 12 studies, 37-name reader): step second-rAF p95 36.9 ms; full forward-seek second-rAF p95 105.7 ms, **FAIL** against 100 ms; no competitor comparison. Remaining: multi-chart replay, saved sessions, deeper attested history (older paginated history excluded), order simulation, costs/slippage. Evidence under `artifacts/trading-dashboard/src/`: `lib/chart-engine/chartReplay.ts`, `components/chart-replay/ChartReplayPlayer.tsx`, `components/chart-replay/ChartReplayBoundary.tsx`; [replay](SMART_CHART_REPLAY.md), [completion performance](SMART_CHART_REPLAY_COMPLETION_PERFORMANCE.md) |
 | Strategy testing | Pine strategy tester / MQL5 tester ecosystem [T3,M2] | Open in Smart Chart; other ARX backtesting surfaces are not equivalent evidence |
 | Server alerts | TV price, study, strategy and drawing alerts [T9] | Open for native chart drawings/studies; a browser timer would not be equivalent |
@@ -146,9 +151,9 @@ this Smart Chart implementation. None means production verification is complete.
    engine may reduce renderer work but does not supply ARX data truth, alerts,
    execution safety, a Pine ecosystem, or production acceptance automatically.
 
-The native improvements do not automatically upgrade Scanner Chart's separate
-renderer. A separate scanner workstream was requested by the owner and must be
-assessed and tested independently. Self-trading reliability is also a separate
+Scanner now uses the shared native chart, so these features reach its real page.
+Integrated Scanner acceptance and performance must still be tested independently;
+prior standalone measurements are not Scanner results. Self-trading reliability is also a separate
 workstream; chart quality is not evidence of trading profitability or readiness.
 
 ## Performance reporting rules
@@ -189,3 +194,23 @@ See [calculation conventions](SMART_CHART_STUDY_CONVENTIONS.md) and
 [acceptance evidence](SMART_CHART_ACCEPTANCE.md). The Tier 1 architecture gate
 score is independent of this feature checklist and must not be reused as a
 Smart Chart completion percentage.
+
+Integrated Scanner replacement and exact-source browser evidence: [28 October integration receipt](SCANNER_SMART_CHART_INTEGRATION_2026_10_28.md).
+
+
+28 October follow-up: Scanner zoom/pan and mobile Tools each have 80 retained
+samples per CPU setting on `cc7ad0e0`, below 100 ms p95 in the bounded 200-bar
+unavailable-analysis fixture. Trusted native style selection could not be exercised,
+so the overall run remains FAIL/partial. The small mixed before/after differences
+do not establish faster clicks. Idle note/drawing work decreased in a separate
+18-second diagnostic; neither result supersedes the heavy-load and replay misses
+above. All TradingView logos are disabled in the two runtime constructors at
+`8e87e55d`; required plain-text library credit remains. See the exact sources,
+controls, failures and limitations in the [follow-up receipt](SCANNER_SMART_CHART_INTEGRATION_2026_10_28.md#follow-up-no-chart-logos-and-measured-scanner-work).
+
+
+Final functional source `e011f25a`: 43 ordinary-user Scanner assertions and
+158 synthetic-admin assertions across the four former embed pages pass, including
+logo absence and full horizontal mobile chart/control bounds. This fixes a verified
+AI Assist mobile grid clipping defect; earlier failures remain in the receipt.
+Required library credit is plain text. The bounded timing source remains `cc7ad0e0`.

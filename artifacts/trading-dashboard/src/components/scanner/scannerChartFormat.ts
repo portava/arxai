@@ -5,13 +5,13 @@
 // candles/tick-stream contract, or any execution path — it is display-only.
 
 import type { ChartDisplayStatus } from "@/lib/chart-display-status";
+import { chartIntervalDisplayId, chartIntervalLimitation, parseChartInterval, restoreChartInterval } from "@/lib/chart-engine/chartIntervals";
 
 export type Timeframe = { id: string; label: string };
 
-// Fixed timeframe chips. EXACTLY these nine render as always-visible buttons, in
-// this order. The backend candles contract still accepts the full 21 MT5
-// timeframes via toApiTimeframe — this only constrains which chips the user can
-// pick.
+// Legacy quick chips. Their presence must not limit the shared Scanner bus:
+// Smart Chart offers additional supported intervals through its compact picker.
+// W1/MN1 remain recognized requests with an explicit unavailable reason.
 export const PRIMARY_TIMEFRAMES: Timeframe[] = [
   { id: "1m", label: "1m" },
   { id: "5m", label: "5m" },
@@ -25,14 +25,14 @@ export const PRIMARY_TIMEFRAMES: Timeframe[] = [
 ];
 
 export const FALLBACK_TIMEFRAME = "15m";
-const VISIBLE_TIMEFRAME_IDS = new Set(PRIMARY_TIMEFRAMES.map((t) => t.id));
-
-// Coerce any persisted / bus / deep-link timeframe to one of the nine visible
-// chips. An unknown value (e.g. a previously-selectable exotic timeframe like
-// "1mo" or "6h") falls back to FALLBACK_TIMEFRAME so the chart, the highlighted
-// chip, and the shared scanner truth never disagree.
+// Preserve every recognized interval in the shared bus. A saved unsupported
+// W1/MN1 request must reach Smart Chart's limitation notice, not become M15.
 export function coerceVisibleTimeframe(raw: string): string {
-  return VISIBLE_TIMEFRAME_IDS.has(raw) ? raw : FALLBACK_TIMEFRAME;
+  return chartIntervalDisplayId(restoreChartInterval(raw));
+}
+
+export function scannerTimeframeLimitation(raw: string): string | null {
+  return chartIntervalLimitation(parseChartInterval(raw));
 }
 
 // Format the time remaining until the current candle closes, scaled to the

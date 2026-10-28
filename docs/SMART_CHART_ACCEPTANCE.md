@@ -276,9 +276,11 @@ is claimed without matching data, seed boundary and configuration.
 - Saving is local to the current browser/device, shared by users of that browser
   profile, and may be unavailable in restrictive browsing modes. It is not an
   account-backed cloud workspace or a backup service.
-- Scanner Chart still has its own renderer. Its shared sanitizer benefits from
-  this change, but the native renderer performance results must not be attributed
-  to Scanner Chart without its own migration and measurement.
+- Scanner now mounts the shared ARX Smart Chart with its original candle evidence
+  and a view-only bridge for existing Scanner controls. Earlier standalone native
+  renderer performance results must not be attributed to the integrated Scanner;
+  its own acceptance and measurement are separate. The old TradingView embeds
+  have also been removed from the four live-chart pages in this development branch.
 - The unused unified intelligence builder identified in the earlier audit is
   separate from the already active chart intelligence and rendering paths.
 
@@ -287,3 +289,5 @@ The rendering approach follows the library's
 and [multi-pane API](https://tradingview.github.io/lightweight-charts/tutorials/how_to/panes).
 
 History requests now cancel on symbol/timeframe changes and cannot publish late results, failures or loading state into the new chart. Linked follower ranges do not autonomously page provider history; a new local navigation gesture restores normal older-history loading.
+
+Integrated Scanner replacement and exact-source browser evidence: [28 October integration receipt](SCANNER_SMART_CHART_INTEGRATION_2026_10_28.md).

@@ -11,6 +11,7 @@ vi.mock("lightweight-charts", () => ({ createChart: (el: unknown, options: unkno
 import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
 import { sanitizeCandlestickData } from "./candleSanitize";
 import { candleDisplayPrecision } from "./candleReconciliation";
+import { CHART_INTERVALS, chartIntervalSeconds } from "./chartIntervals";
 const bar = (time: number, close = 1.15) => ({time,open:1.1,high:1.2,low:1.0,close});
 let adapter: LightweightChartsAdapter;
 beforeEach(() => {
@@ -170,6 +171,22 @@ describe("chart refresh and inspection", () => {
 });
 
 describe("linked view adapter boundaries", () => {
+  it.each(CHART_INTERVALS)("uses %s's observed span for crosshair and range linking without bridging missing bars", timeframe => {
+    const seconds=chartIntervalSeconds(timeframe)!, start=Date.parse("2026-10-19T00:00:00Z")/1000;
+    adapter.setTimeframe(timeframe);adapter.setCandles([bar(start),bar(start+seconds*2,1.17)]);
+    adapter.setLinkedCrosshair(start+seconds-1);
+    expect(mocks.chart.setCrosshairPosition).toHaveBeenLastCalledWith(1.15,start,mocks.series);
+    adapter.setLinkedCrosshair(start+seconds);
+    expect(mocks.chart.clearCrosshairPosition).toHaveBeenCalled();
+    const status=vi.fn();adapter.setViewLinkStatusHandler(status);
+    mocks.scale.setVisibleLogicalRange.mockClear();
+    adapter.setLinkedTimeRange({from:start+seconds,to:start+seconds*2-1});
+    expect(mocks.scale.setVisibleLogicalRange).not.toHaveBeenCalled();
+    expect(status).toHaveBeenLastCalledWith(expect.stringContaining("has not moved"));
+    adapter.setLinkedTimeRange({from:start+seconds*2+1,to:start+seconds*3-1});
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:1,to:1});
+    expect(status).toHaveBeenLastCalledWith("");
+  });
   it("uses the target candle's own close and clears missing times rather than substituting latest", () => {
     vi.useFakeTimers(); adapter.setTimeframe("M1");adapter.setCandles([bar(100),bar(160,1.17),bar(500)]);
     const legend=vi.fn(), publish=vi.fn();adapter.setCrosshairHandler(legend);adapter.setViewLinkHandler(publish);

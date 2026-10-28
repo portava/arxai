@@ -13,7 +13,125 @@ const adapter={setDrawings:drawings,setDrawingHandler:(handler:typeof click)=>{c
 const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkbenchTools key={`${symbol}:${timeframe}`} adapter={engine} epoch={1} symbol={symbol} timeframe={timeframe} preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline fixture"/>);
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
+describe("manual text note controls",()=>{
+  const createNote=(text="My own observation")=>{
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"text"}});
+    expect(click).toBeNull();
+    fireEvent.change(screen.getByLabelText("New user note"),{target:{value:text}});
+    act(()=>click?.({time:100,price:1.2}));
+  };
+  it("creates literal text at the chosen candle, edits once with undo/redo and reloads without API calls",()=>{
+    const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+    const view=mount();createNote("<b>My note</b>\nSecond line");
+    const stored=()=>JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!);
+    expect(stored()[0]).toMatchObject({kind:"text",text:"<b>My note</b>\nSecond line",start:{time:100,price:1.2}});
+    expect(screen.getByText(/This is your annotation, not an automated reading/)).toBeTruthy();
+    expect(view.container.querySelector("b")).toBeNull();
+    expect(screen.queryByLabelText("Drawing 1 line width")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Drawing 1 note text"),{target:{value:"Edited note"}});
+    expect(stored()[0].text).toBe("<b>My note</b>\nSecond line");
+    fireEvent.click(screen.getByRole("button",{name:"Save note",exact:true}));
+    expect(stored()[0].text).toBe("Edited note");
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(stored()[0].text).toBe("<b>My note</b>\nSecond line");
+    expect((screen.getByLabelText("Drawing 1 note text") as HTMLTextAreaElement).value).toBe("<b>My note</b>\nSecond line");
+    fireEvent.click(screen.getByRole("button",{name:"Redo",exact:true}));
+    expect(stored()[0].text).toBe("Edited note");
+    view.unmount();mount();
+    expect(drawings.mock.calls.at(-1)![0][0].text).toBe("Edited note");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("refuses empty or invalid text without discarding a saved note or adding undo history",()=>{
+    mount();
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"text"}});
+    fireEvent.change(screen.getByLabelText("New user note"),{target:{value:" \u202E "}});
+    expect(click).toBeNull();
+    expect(localStorage.getItem(drawingStorageKey("EURUSD","M15"))).toBeNull();
+    fireEvent.change(screen.getByLabelText("New user note"),{target:{value:"Valid note"}});
+    act(()=>click?.({time:100,price:1.2}));
+    fireEvent.change(screen.getByLabelText("Drawing 1 note text"),{target:{value:""}});
+    expect(screen.getByRole("button",{name:"Save note",exact:true}).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("visible plain text");
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)[0].text).toBe("Valid note");
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+  });
+  it("uses existing selection, lock, hide, delete and undo without sharing notes across chart contexts",()=>{
+    const engine={...adapter,setDrawingInteraction:vi.fn()} as unknown as ChartEngineAdapter;
+    const view=mount("EURUSD","M15",engine);createNote();
+    expect(screen.getByRole("button",{name:"Select drawing 1"}).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button",{name:"Lock drawing 1"}));
+    expect(screen.getByLabelText("Drawing 1 note text").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByLabelText("Drawing 1 start price").hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button",{name:"Hide drawings",exact:true}));
+    expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+    expect(engine.setDrawingInteraction).toHaveBeenLastCalledWith(null);
+    fireEvent.click(screen.getByRole("button",{name:"Show drawings",exact:true}));
+    expect(drawings.mock.calls.at(-1)![0][0]).toMatchObject({kind:"text",locked:true});
+    fireEvent.click(screen.getByRole("button",{name:"Delete drawing 1"}));
+    expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(drawings.mock.calls.at(-1)![0][0].text).toBe("My own observation");
+    view.unmount();const other=mount("GBPUSD","M15");expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+    other.unmount();mount("EURUSD","H1");expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+  });
+});
 describe("drawing workspace controls",()=>{
+  it("keeps an in-progress drawing visible and cancellable when tools close",()=>{
+    mount();
+    const toggle=screen.getByRole("button",{name:"Chart tools",exact:true});
+    const advanced=screen.getByTestId("chart-advanced-tools");
+    expect(toggle.getAttribute("aria-controls")).toBe(advanced.id);
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"trend"}});
+    act(()=>click?.({time:100,price:1.2}));
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByTestId("chart-advanced-tools")).toBe(advanced);
+    const cancel=screen.getByRole("button",{name:"Cancel drawing",exact:true});
+    expect(advanced.contains(cancel)).toBe(false);
+    expect(screen.getByText(/choose the second candle and price/)).toBeTruthy();
+    fireEvent.click(cancel);
+    expect(click).toBeNull();
+    expect(localStorage.getItem(drawingStorageKey("EURUSD","M15"))).toBeNull();
+  });
+  it("preserves exact-price edits and undo history across tools disclosure",()=>{
+    mount();
+    const toggle=screen.getByRole("button",{name:"Chart tools",exact:true});
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"horizontal"}});
+    act(()=>click?.({time:100,price:1.2}));
+    fireEvent.click(screen.getByRole("button",{name:"Objects (1)"}));
+    const field=screen.getByLabelText("Drawing 1 start price");
+    fireEvent.blur(field,{target:{value:"1.3"}});
+    fireEvent.click(toggle);fireEvent.click(toggle);
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)[0].start.price).toBe(1.3);
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)[0].start.price).toBe(1.2);
+  });
+  it("explains transformed styles beside the controls and associates each view with its own explanation",()=>{
+    function View(){const [preferences,onPreferences]=useState(DEFAULT_PREFERENCES);return <ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={onPreferences} hasCandles feedLabel="Offline fixture"/>;}
+    const first=render(<View/>), second=render(<View/>);
+    const a=within(first.container), b=within(second.container);
+    expect(a.queryByTestId("chart-style-note")).toBeNull();
+    fireEvent.change(a.getByLabelText("Chart style"),{target:{value:"heikinAshi"}});
+    fireEvent.change(b.getByLabelText("Chart style"),{target:{value:"baseline"}});
+    const ha=a.getByTestId("chart-style-note"), base=b.getByTestId("chart-style-note");
+    expect(ha.closest("details")).toBeNull();
+    expect(ha.textContent).toContain("averaged candles");
+    expect(ha.textContent).toContain("Analysis uses original candles");
+    expect(ha.textContent).toContain("original price scale");
+    expect(base.textContent).toContain("Loading older history can change this reference");
+    expect(ha.id).not.toBe(base.id);
+    expect(a.getByLabelText("Chart style").getAttribute("aria-describedby")).toBe(ha.id);
+    expect(b.getByLabelText("Chart style").getAttribute("aria-describedby")).toBe(base.id);
+    fireEvent.change(a.getByLabelText("Chart style"),{target:{value:"hollow"}});
+    expect(a.getByTestId("chart-style-note").textContent).toContain("previous close");
+    expect(a.getByTestId("chart-style-note").textContent).toContain("own open for the first loaded candle");
+    fireEvent.change(a.getByLabelText("Chart style"),{target:{value:"candles"}});
+    expect(a.queryByTestId("chart-style-note")).toBeNull();
+    expect(a.getByLabelText("Chart style").hasAttribute("aria-describedby")).toBe(false);
+  });
   it("offers explicit pan and zoom and restores drawing placement when a tool is selected",()=>{
     const engine={...adapter,setNavigationMode:vi.fn(),panBy:vi.fn(),zoomBy:vi.fn()} as unknown as ChartEngineAdapter;
     mount("EURUSD","M15",engine);
@@ -123,19 +241,12 @@ describe("display time zone controls",()=>{
     chooseZone("UTC");
     expect(screen.getByText("2026-10-28 05:46 UTC")).toBeTruthy();
   });
-  it("(f, g) never saves or applies a zone through the template",()=>{
-    show({timeZone:"Asia/Tokyo",style:"bars"});
-    fireEvent.click(screen.getByRole("button",{name:"Save template"}));
-    const saved=JSON.parse(localStorage.getItem(TEMPLATE_KEY)!);
-    expect(saved.style).toBe("bars");expect(Object.hasOwn(saved,"timeZone")).toBe(false);
-    cleanup();
+  it("(g) applies the legacy template without changing the current display zone",()=>{
     localStorage.setItem(TEMPLATE_KEY,JSON.stringify({style:"line",scale:"log",studies:[],timeZone:"Asia/Tokyo"}));
-    show();
-    fireEvent.click(screen.getByRole("button",{name:"Load template"}));
-    expect(latest.style).toBe("line");expect(Object.hasOwn(latest,"timeZone")).toBe(false);
-    cleanup();
     show({timeZone:"America/New_York"});
-    fireEvent.click(screen.getByRole("button",{name:"Load template"}));
+    fireEvent.click(screen.getByRole("button",{name:"Templates",exact:true}));
+    fireEvent.change(screen.getByRole("listbox"),{target:{value:"legacy"}});
+    fireEvent.click(screen.getByRole("button",{name:"Apply selected"}));
     expect(latest.style).toBe("line");expect(latest.timeZone).toBe("America/New_York");
   });
   it("(h) converts a typed go-to value on a zone switch and clears one that cannot convert",()=>{

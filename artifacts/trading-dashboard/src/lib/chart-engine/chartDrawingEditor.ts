@@ -29,6 +29,15 @@ export function candleIndex(candles: ChartEngineCandle[], time: number): number 
 /** Translate in candle indices and screen-space prices. Weekends never become
  * invented bars, and logarithmic/inverted scales keep their visible geometry. */
 export function moveDrawing(drawing: ChartDrawing, part: "start" | "end" | "body", origin: PixelPoint, point: PixelPoint, projection: DrawingProjection, snap: boolean): ChartDrawing | null {
+  if (drawing.kind === "text" && part === "body") {
+    // A note's card can extend over whitespace with no candle beneath it. Move
+    // the actual anchor by the pointer delta rather than rebinding that card
+    // pixel to an unrelated candle. Body movement keeps the unsnapped price.
+    const start = projection.project(drawing.start);
+    if (!start) return null;
+    const moved = projection.anchor({ x: start.x + point.x - origin.x, y: start.y + point.y - origin.y }, false);
+    return moved ? validateDrawings([{ ...drawing, start: moved }])[0] ?? null : null;
+  }
   const target = projection.anchor(point, snap);
   if (!target) return null;
   if (part !== "body") {

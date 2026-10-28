@@ -1,0 +1,12 @@
+### Result
+{"selects":[{"id":"«rt»","aria":null,"labels":["Chart marketV75 · Volatility 75 IndexV75_1S · Volatility 75 (1s) IndexV100 · Volatility 100 IndexV50 · Volatility 50 IndexV50_1S · Volatility 50 (1s) IndexV25_1S · Volatility 25 (1s) IndexV10 · Volatility 10 IndexBOOM1000 · Boom 1000 IndexCRASH1000 · Crash 1000 IndexBOOM500 · Boom 500 IndexCRASH500 · Crash 500 IndexJUMP10 · Jump 10 IndexJUMP25 · Jump 25 IndexJUMP50 · Jump 50 IndexJUMP75 · Jump 75 IndexJUMP100 · Jump 100 IndexBOOM300 · Boom 300 IndexCRASH300 · Crash 300 IndexEURUSD · EUR/USDGBPUSD · GBP/USDUSDJPY · USD/JPYUSDCHF · USD/CHFUSDCAD · USD/CADAUDUSD · AUD/USDNZDUSD · NZD/USDEURJPY · EUR/JPYEURGBP · EUR/GBPEURAUD · EUR/AUDEURCAD · EUR/CADGBPJPY · GBP/JPYGBPAUD · GBP/AUDGBPCAD · GBP/CADAUDJPY · AUD/JPYCADJPY · CAD/JPYCHFJPY · CHF/JPYXAUUSD · Gold (XAU/USD)XAGUSD · Silver (XAG/USD)DXY · US Dollar Index (DXY)SPX500 · S&P 500 (SPX500)GER30 · Germany 40 / DAX (GER30)US30 · Dow Jones (US30)BTCUSD · Bitcoin (BTC/USD)ETHUSD · Ethereum (ETH/USD)"],"value":"EURUSD"},{"id":"","aria":"More chart intervals","labels":[],"value":""},{"id":"","aria":"Price scale","labels":["ScaleRegular priceLogarithmicPercentageIndexed to 100"],"value":"linear"},{"id":"","aria":"Chart style","labels":["Style CandlesticksOHLC barsClose lineClose areaClose baselineHeikin AshiHollow candles"],"value":"candles"},{"id":"","aria":"Display time zone","labels":["Time zone UTCBrowser local (America/New_York)America/New_YorkAmerica/ChicagoEurope/LondonEurope/BerlinAsia/DubaiAsia/SingaporeAsia/TokyoAustralia/Sydney"],"value":"UTC"},{"id":"","aria":"Drawing tool","labels":[],"value":""}],"count":0}
+### Ran Playwright code
+```js
+await (async page => ({selects:await page.locator("select").evaluateAll(nodes=>nodes.map(n=>({id:n.id,aria:n.getAttribute("aria-label"),labels:[...n.labels].map(l=>l.textContent),value:n.value}))),count:await page.getByLabel("Chart market",{exact:true}).count()}))(page);
+```
+### Page
+- Page URL: http://127.0.0.1:4199/live-chart
+- Page Title: ARX actual Scanner — offline acceptance
+- Console: 51 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-10-28T17-49-02-347Z.log#L72-L86

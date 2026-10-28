@@ -1,3 +1,4 @@
+import { chartIntervalSeconds } from "./chartIntervals";
 import {
   createChart,
   CandlestickSeries,
@@ -201,6 +202,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       width: el.clientWidth,
       height: options.height,
       layout: {
+        // Both native/replay shells render ChartLibraryCredit below the plot.
+        attributionLogo: false,
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#a1a1aa",
         fontSize: 11,
@@ -927,6 +930,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
   exportImage(): string | null { this.analysis?.flushPending(); return this.chart?.takeScreenshot().toDataURL("image/png") ?? null; }
 
+  getScannerOverlaySurface() {
+    return this.chart && this.series && this.container
+      ? { chart: this.chart, series: this.series, container: this.container } : null;
+  }
+
   priceToCoordinate(price: number): number | null {
     const s = this.series;
     if (!s) return null;
@@ -988,8 +996,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   setTimeframe(timeframe: string): void {
-    const intervals: Record<string, number> = {M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400};
-    this.intervalSeconds = intervals[timeframe] ?? 0;
+    this.intervalSeconds = chartIntervalSeconds(timeframe) ?? 0;
   }
 
   setReachStartHandler(handler: (() => void) | null, thresholdBars?: number): void {

@@ -1,0 +1,191 @@
+{
+  "before": {
+    "viewport": 390,
+    "documentWidth": 390,
+    "grid": {
+      "left": 24,
+      "right": 366,
+      "width": 342,
+      "scrollWidth": 381,
+      "clientWidth": 342
+    },
+    "gridTemplateColumns": "380.609px",
+    "left": {
+      "left": 24,
+      "right": 404.609375,
+      "width": 380.609375,
+      "scrollWidth": 381,
+      "clientWidth": 381
+    },
+    "title": {
+      "left": 49,
+      "right": 379.609375,
+      "width": 330.609375,
+      "scrollWidth": 331,
+      "clientWidth": 331
+    },
+    "label": {
+      "left": 84.609375,
+      "right": 379.609375,
+      "width": 295,
+      "scrollWidth": 295,
+      "clientWidth": 295
+    },
+    "select": {
+      "left": 84.609375,
+      "right": 379.609375,
+      "width": 295,
+      "scrollWidth": 293,
+      "clientWidth": 293
+    },
+    "canvas": {
+      "left": 25,
+      "right": 403.609375,
+      "width": 378.609375,
+      "scrollWidth": 379,
+      "clientWidth": 379
+    }
+  },
+  "singleColumn": {
+    "viewport": 390,
+    "documentWidth": 390,
+    "grid": {
+      "left": 24,
+      "right": 366,
+      "width": 342,
+      "scrollWidth": 356,
+      "clientWidth": 342
+    },
+    "gridTemplateColumns": "342px",
+    "left": {
+      "left": 24,
+      "right": 366,
+      "width": 342,
+      "scrollWidth": 356,
+      "clientWidth": 342
+    },
+    "title": {
+      "left": 49,
+      "right": 341,
+      "width": 292,
+      "scrollWidth": 331,
+      "clientWidth": 292
+    },
+    "label": {
+      "left": 84.609375,
+      "right": 379.609375,
+      "width": 295,
+      "scrollWidth": 295,
+      "clientWidth": 295
+    },
+    "select": {
+      "left": 84.609375,
+      "right": 379.609375,
+      "width": 295,
+      "scrollWidth": 293,
+      "clientWidth": 293
+    },
+    "canvas": {
+      "left": 25,
+      "right": 365,
+      "width": 340,
+      "scrollWidth": 340,
+      "clientWidth": 340
+    }
+  },
+  "wrapped": {
+    "viewport": 390,
+    "documentWidth": 390,
+    "grid": {
+      "left": 24,
+      "right": 366,
+      "width": 342,
+      "scrollWidth": 342,
+      "clientWidth": 342
+    },
+    "gridTemplateColumns": "342px",
+    "left": {
+      "left": 24,
+      "right": 366,
+      "width": 342,
+      "scrollWidth": 342,
+      "clientWidth": 342
+    },
+    "title": {
+      "left": 49,
+      "right": 341,
+      "width": 292,
+      "scrollWidth": 295,
+      "clientWidth": 292
+    },
+    "label": {
+      "left": 49,
+      "right": 344,
+      "width": 295,
+      "scrollWidth": 295,
+      "clientWidth": 295
+    },
+    "select": {
+      "left": 49,
+      "right": 344,
+      "width": 295,
+      "scrollWidth": 293,
+      "clientWidth": 293
+    },
+    "canvas": {
+      "left": 25,
+      "right": 365,
+      "width": 340,
+      "scrollWidth": 340,
+      "clientWidth": 340
+    }
+  },
+  "restored": {
+    "viewport": 390,
+    "documentWidth": 390,
+    "grid": {
+      "left": 24,
+      "right": 366,
+      "width": 342,
+      "scrollWidth": 381,
+      "clientWidth": 342
+    },
+    "gridTemplateColumns": "380.609px",
+    "left": {
+      "left": 24,
+      "right": 404.609375,
+      "width": 380.609375,
+      "scrollWidth": 381,
+      "clientWidth": 381
+    },
+    "title": {
+      "left": 49,
+      "right": 379.609375,
+      "width": 330.609375,
+      "scrollWidth": 331,
+      "clientWidth": 331
+    },
+    "label": {
+      "left": 84.609375,
+      "right": 379.609375,
+      "width": 295,
+      "scrollWidth": 295,
+      "clientWidth": 295
+    },
+    "select": {
+      "left": 84.609375,
+      "right": 379.609375,
+      "width": 295,
+      "scrollWidth": 293,
+      "clientWidth": 293
+    },
+    "canvas": {
+      "left": 25,
+      "right": 403.609375,
+      "width": 378.609375,
+      "scrollWidth": 379,
+      "clientWidth": 379
+    }
+  },
+  "scope": "Reversible inline CSS probe in offline fixture only; no app source changed"
+}
