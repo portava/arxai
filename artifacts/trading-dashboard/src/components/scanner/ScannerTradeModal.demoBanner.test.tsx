@@ -111,4 +111,17 @@ describe("ScannerTradeModal — demo execution banner reflects the server's disp
     expect(banner.className).not.toContain("text-success");
     expect((screen.getByTestId("scanner-trade-submit") as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("names DEMO_EXECUTION_NOT_ARMED in plain English, never as the raw code", async () => {
+    // The server renames WRONG_EXECUTION_MODE to DEMO_EXECUTION_NOT_ARMED.
+    const unarmed = bridge(["DEMO_EXECUTION_NOT_ARMED"]);
+    unarmed.bridge.bridgeReady = false;
+    routes.push((u) => (u.endsWith("/api/me/demo-bridge-debug") ? json(unarmed) : undefined));
+    render(<ScannerTradeModal open onClose={() => {}} signal={signal} defaultSide="BUY" />);
+    await flush();
+    const banner = screen.getByTestId("scanner-demo-execution-banner");
+    expect(banner.textContent).not.toContain("DEMO_EXECUTION_NOT_ARMED");
+    expect(banner.textContent).toContain("not armed for demo execution");
+    expect(banner.textContent).toContain("MT5 Setup → Demo Execution Control");
+  });
 });

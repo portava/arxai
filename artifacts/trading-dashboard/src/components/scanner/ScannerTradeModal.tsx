@@ -177,8 +177,12 @@ const POLL_FAILURES_BEFORE_UNKNOWN = 3;
 // USER_NOT_CONFIRMED is always listed and is cleared by this form's own
 // confirm step. Every other blocker means the server will refuse the order.
 const CONFIRM_STEP_BLOCKER = "USER_NOT_CONFIRMED";
+const NOT_ARMED_WORDS = "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)";
 const GATE_BLOCKER_WORDS: Record<string, string> = {
-  WRONG_EXECUTION_MODE: "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)",
+  // The debug endpoint renames the gate's WRONG_EXECUTION_MODE to
+  // DEMO_EXECUTION_NOT_ARMED; older servers still send the gate's own code.
+  DEMO_EXECUTION_NOT_ARMED: NOT_ARMED_WORDS,
+  WRONG_EXECUTION_MODE: NOT_ARMED_WORDS,
   NOT_VERIFIED_DEMO: "the demo account has not passed demo verification",
   ACCOUNT_TYPE_NOT_EXPLICIT_DEMO: "the bridge account is not confirmed as a demo account",
   NO_BRIDGE_CONNECTION: "no demo bridge is connected",
