@@ -63,7 +63,7 @@ export interface LiveCandidate {
   riskRewardRatio: number;
   reasonForTrade: string;
   reasonToAvoid: string;
-  statusBadge: "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION" | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE";
+  statusBadge: "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION" | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE" | "LOW_OPPORTUNITY_SCORE";
   opportunityLabel: "ELITE" | "STRONG" | "ACCEPTABLE" | "WEAK" | "REJECT";
   entry: number;
   stopLoss: number;

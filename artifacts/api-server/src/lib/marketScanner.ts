@@ -113,7 +113,10 @@ export function isApprovedScannerSymbol(sym: string): boolean {
 export type StatusBadge =
   | "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION"
   | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE"
-  | "SPREAD_TOO_HIGH" | "PENDING_MT5_CONNECTION";
+  | "SPREAD_TOO_HIGH" | "PENDING_MT5_CONNECTION"
+  // The opportunity score is below the scanner's minimum (REJECT band) while
+  // the analysis itself rejected nothing: a weak score, NOT a risk rejection.
+  | "LOW_OPPORTUNITY_SCORE";
 
 export type OpportunityLabel = "ELITE" | "STRONG" | "ACCEPTABLE" | "WEAK" | "REJECT";
 
@@ -555,6 +558,10 @@ export function computeFinalRead(
   if (opp.statusBadge === "REJECTED_BY_RISK" || opp.statusBadge === "CHOPPY_MARKET") {
     label = "NO_TRADE";
     reasons.push("No clean trade right now — setup rejected by risk rules.");
+  } else if (opp.statusBadge === "LOW_OPPORTUNITY_SCORE") {
+    // Same non-actionable outcome as before (never raised), with the true cause.
+    label = "NO_TRADE";
+    reasons.push("No clean trade right now — the opportunity score at scan time was below the scanner's minimum of 60. No risk rule failed.");
   } else if (opp.statusBadge === "LOW_CONFIDENCE" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical confidence is low.");
@@ -1193,11 +1200,16 @@ function setupTypeFor(a: MarketAnalysis): string {
   return a.recommendedAction === "WAIT" ? "Pullback watch" : "Trend continuation";
 }
 
-function statusBadgeFor(a: MarketAnalysis, opp: OpportunityScore): StatusBadge {
+export function statusBadgeFor(a: MarketAnalysis, opp: OpportunityScore): StatusBadge {
   if (a.recommendedAction === "REJECT" || opp.label === "REJECT") {
     if (a.marketBias === "choppy") return "CHOPPY_MARKET";
     if (a.riskScore > 65) return "SPREAD_TOO_HIGH";
-    return "REJECTED_BY_RISK";
+    // "Rejected by risk" only when the analysis rejected the setup or a rule
+    // actually failed. A row that passed every rule and is in the REJECT band
+    // only because its opportunity score is under 60 has a weak score, not a
+    // risk problem — badge it as such (still non-actionable).
+    if (a.recommendedAction === "REJECT" || a.rulesFailed.length > 0) return "REJECTED_BY_RISK";
+    return "LOW_OPPORTUNITY_SCORE";
   }
   if (a.confidenceScore < 50) return "LOW_CONFIDENCE";
   if (a.recommendedAction === "WAIT") return "WAIT_FOR_CONFIRMATION";
