@@ -1,10 +1,14 @@
 // Simulator OMS — the book shown on /orders and /positions belongs to the
-// user who placed it.
+// user who placed it, and a partial close is booked as realized P/L on the
+// day it happened.
 //
 // Before this, lib/oms.ts kept one process-wide orders/positions Map with no
 // owner, and GET /orders, /oms/positions and /pnl/summary returned it to any
 // signed-in caller: user B saw operator A's simulator book as "your
-// positions".
+// positions". A ½ close added to the open row's realizedPnL, but pnlSummary
+// summed realizedPnL over CLOSED positions only, so Daily/Weekly left the
+// partial out until the remainder closed (and closePosition then overwrote
+// the partial with the remainder's P/L).
 //
 // The pre-trade Risk Governor is mocked to "allow" so this runs without a
 // database; its own behaviour is covered by omsGovernance.test.ts.
@@ -72,4 +76,36 @@ test("the HTTP routes pass the signed-in user's scope to every book read", () =>
   }
   assert.match(src, /getOrder\(String\(req\.params\.id\)\)[\s\S]{0,200}ownedBy/, "GET /orders/:id checks ownership");
   assert.match(src, /getPosition\(String\(req\.params\.id\)\)[\s\S]{0,200}ownedBy/, "GET /oms/positions/:id checks ownership");
+});
+
+test("a partial close is realized P/L today and survives the final close", async () => {
+  const actor = { userId: 9103 };
+  const { position } = await openFor(actor, 0.2);
+  // Move the mark price so the partial close realizes a non-zero amount.
+  const live = oms.getPosition(position.positionId)!;
+  const realizedHalf = (() => {
+    (live as { currentPrice: number }).currentPrice = Number((live.entryPrice - 0.0025).toFixed(5));
+    return Number((((live.currentPrice - live.entryPrice) / 0.0001) * 10 * 0.1).toFixed(2));
+  })();
+  assert.ok(realizedHalf < 0, "fixture moves price against the BUY");
+
+  const r = await oms.partialCloseOmsPosition(position.positionId, 0.5, actor);
+  assert.ok(r.ok, r.ok ? "" : r.message);
+  assert.equal(r.value.status, "OPEN");
+  assert.equal(r.value.realizedPnL, realizedHalf);
+
+  const mid = oms.pnlSummary(undefined, { ownerUserId: actor.userId });
+  assert.equal(mid.dailyPnL, realizedHalf, "Daily includes the partial close realized today");
+  assert.equal(mid.weeklyPnL, realizedHalf, "Weekly includes it too");
+  assert.equal(mid.closedRealizedPnL, realizedHalf, "realized total includes it");
+
+  // Close the remainder at entry (0.00 on the remaining half): total stays the partial.
+  const remaining = oms.getPosition(position.positionId)!;
+  (remaining as { currentPrice: number }).currentPrice = remaining.entryPrice;
+  const closed = await oms.closeOmsPosition(position.positionId, actor);
+  assert.ok(closed.ok, closed.ok ? "" : closed.message);
+  assert.equal(closed.value.realizedPnL, realizedHalf, "final close adds to, never overwrites, the partial");
+  const end = oms.pnlSummary(undefined, { ownerUserId: actor.userId });
+  assert.equal(end.dailyPnL, realizedHalf, "the partial is booked once, not twice");
+  assert.equal(end.closedRealizedPnL, realizedHalf);
 });

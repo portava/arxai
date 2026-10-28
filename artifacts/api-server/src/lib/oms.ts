@@ -90,6 +90,12 @@ export interface Position {
   trailingDistance?: number;
   /** The user the position belongs to (from its order); null when unknown. */
   ownerUserId: number | null;
+  /**
+   * Every realization booked on this position, in order: one per partial
+   * close and one for the final close. `realizedPnL` is their sum, and the
+   * P/L engine buckets them by their own time, not by the position's close.
+   */
+  realizations: Array<{ at: string; pnl: number }>;
   dataSource: "SIMULATOR";
 }
 
@@ -249,7 +255,7 @@ function submitToSimulator(orderId: string): { order: Order; position?: Position
     stopLoss: o.stopLoss, takeProfit: o.takeProfit,
     unrealizedPnL: 0, realizedPnL: 0, rMultiple: 0,
     riskAmount: risk, status: "OPEN",
-    openedAt: nowIso(), ownerUserId: o.ownerUserId, dataSource: "SIMULATOR",
+    openedAt: nowIso(), ownerUserId: o.ownerUserId, realizations: [], dataSource: "SIMULATOR",
   };
   positions.set(p.positionId, p);
   o.positionId = p.positionId;
@@ -316,10 +322,14 @@ function closePosition(id: string, reason: PositionStatus = "MANUALLY_CLOSED", o
   const p = positions.get(id); if (!p) return null;
   if (p.status !== "OPEN") return p;
   if (overridePrice != null) p.currentPrice = overridePrice;
-  p.realizedPnL = pnlFor(p);
+  // The remainder's P/L adds to anything a partial close already realized.
+  const final = pnlFor(p);
+  const at = nowIso();
+  p.realizations.push({ at, pnl: final });
+  p.realizedPnL = Number((p.realizedPnL + final).toFixed(2));
   p.unrealizedPnL = 0;
   p.rMultiple = p.riskAmount > 0 ? Number((p.realizedPnL / p.riskAmount).toFixed(2)) : 0;
-  p.status = reason; p.closedAt = nowIso();
+  p.status = reason; p.closedAt = at;
   p.closeReason = reason;
   // Mark linked order CLOSED.
   const ord = orders.get(p.orderId); if (ord) { ord.status = "CLOSED"; ord.updatedAt = nowIso(); }
@@ -335,6 +345,7 @@ function partialClose(id: string, fraction: number) {
   // Realize a partial PnL using a clone, then reduce the live position.
   const closedShare: Position = { ...p, lotSize: closedLots };
   const realized = pnlFor(closedShare);
+  p.realizations.push({ at: nowIso(), pnl: realized });
   p.realizedPnL = Number((p.realizedPnL + realized).toFixed(2));
   p.lotSize = Number((p.lotSize - closedLots).toFixed(2));
   audit("POSITION_PARTIAL_CLOSE", `Partial close ${id} ${closedLots} lots, pnl+=${realized}`, {});
@@ -377,11 +388,11 @@ export function pnlSummary(env?: Environment, scope?: OmsOwnerScope) {
   const startWeek = new Date(); startWeek.setUTCDate(startWeek.getUTCDate() - 7);
   const startMonth = new Date(); startMonth.setUTCMonth(startMonth.getUTCMonth() - 1);
 
-  const closedToday = closed.filter((p) => bucketByDay(p) === today);
-  const closedWeek = closed.filter((p) => Date.parse(p.closedAt ?? p.openedAt) >= +startWeek);
-  const closedMonth = closed.filter((p) => Date.parse(p.closedAt ?? p.openedAt) >= +startMonth);
-
-  const sum = (arr: Position[]) => Number(arr.reduce((a, b) => a + b.realizedPnL, 0).toFixed(2));
+  // Realized P/L is booked when it is realized: a partial close on a still
+  // open position counts on its own day, the final close on its day.
+  const realized = all.flatMap((p) => p.realizations);
+  const sumRealized = (since: (at: string) => boolean) =>
+    Number(realized.filter((r) => since(r.at)).reduce((a, r) => a + r.pnl, 0).toFixed(2));
   const wins = closed.filter((p) => p.realizedPnL > 0).length;
   const losses = closed.filter((p) => p.realizedPnL < 0).length;
   const avgR = closed.length ? Number((closed.reduce((a, b) => a + b.rMultiple, 0) / closed.length).toFixed(2)) : 0;
@@ -394,11 +405,11 @@ export function pnlSummary(env?: Environment, scope?: OmsOwnerScope) {
   }
   return {
     environment: env ?? "ALL",
-    dailyPnL: sum(closedToday),
-    weeklyPnL: sum(closedWeek),
-    monthlyPnL: sum(closedMonth),
+    dailyPnL: sumRealized((at) => at.slice(0, 10) === today),
+    weeklyPnL: sumRealized((at) => Date.parse(at) >= +startWeek),
+    monthlyPnL: sumRealized((at) => Date.parse(at) >= +startMonth),
     openUnrealizedPnL: Number(open.reduce((a, b) => a + b.unrealizedPnL, 0).toFixed(2)),
-    closedRealizedPnL: sum(closed),
+    closedRealizedPnL: sumRealized(() => true),
     wins, losses,
     winRate: wins + losses > 0 ? Number(((wins / (wins + losses)) * 100).toFixed(1)) : 0,
     averageR: avgR,

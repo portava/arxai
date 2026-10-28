@@ -60,3 +60,14 @@ describe("Positions page — simulator source", () => {
     expect(document.body.textContent).not.toMatch(/\$undefined/);
   });
 });
+
+describe("Positions page — realized P/L on an open position", () => {
+  it("shows the realized amount from a partial close next to the unrealized P/L", async () => {
+    stubFetch({ "/api/oms/positions": () => json({ positions: [openWithPartial], dataSource: "SIMULATOR" }), "/api/pnl/summary": () => json(pnl) });
+    render(<PositionsPage />);
+    await screen.findByText("EURUSD");
+    const pnlCell = screen.getByTestId("position-pnl-pos_1");
+    expect(pnlCell.textContent).toMatch(/Unrealized\s*\$0\.00/);
+    expect(pnlCell.textContent).toMatch(/Realized\s*-\$12\.50/);
+  });
+});

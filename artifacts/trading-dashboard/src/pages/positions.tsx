@@ -35,6 +35,7 @@ const STATUS_LABEL: Record<string, string> = {
 /** Signed dollars to the cent: "-$12.50", "$0.00". Not a number → "—". */
 const usd = (n: unknown): string =>
   typeof n === "number" && Number.isFinite(n) ? `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}` : "—";
+const pnlTone = (n: number) => (n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-txt-muted");
 
 const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
@@ -157,8 +158,19 @@ export default function PositionsPage() {
                 <Badge variant="outline">{p.environment}</Badge>
                 <span className="text-base font-semibold">{p.symbol}</span>
                 <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-semibold", p.direction === "BUY" ? "bg-success/15 text-success" : "bg-danger/15 text-danger")}>{p.direction} ×{p.lotSize}</span>
-                <span className={cn("ml-auto font-mono font-bold", (p.unrealizedPnL || p.realizedPnL) >= 0 ? "text-success" : "text-danger")}>
-                  ${p.status === "OPEN" ? p.unrealizedPnL : p.realizedPnL} {p.rMultiple !== 0 && `(${p.rMultiple}R)`}
+                <span className="ml-auto flex flex-wrap items-baseline gap-2 font-mono font-bold" data-testid={`position-pnl-${p.positionId}`}>
+                  {p.status === "OPEN" ? (
+                    <>
+                      <span className={pnlTone(p.unrealizedPnL)}><span className="text-[10px] font-normal text-txt-muted">Unrealized </span>{usd(p.unrealizedPnL)}</span>
+                      {/* A partial close realizes P/L while the position stays open. */}
+                      {p.realizedPnL !== 0 && (
+                        <span className={pnlTone(p.realizedPnL)}><span className="text-[10px] font-normal text-txt-muted">Realized </span>{usd(p.realizedPnL)}</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className={pnlTone(p.realizedPnL)}><span className="text-[10px] font-normal text-txt-muted">Realized </span>{usd(p.realizedPnL)}</span>
+                  )}
+                  {p.rMultiple !== 0 && <span className="text-txt-muted">({p.rMultiple}R)</span>}
                 </span>
               </div>
               <div className="space-y-2 text-xs">
