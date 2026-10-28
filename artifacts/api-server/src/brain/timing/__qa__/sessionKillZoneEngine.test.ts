@@ -201,3 +201,35 @@ test("13:45 UTC: overlap kill zone label states the real overlap (13:00-16:00) a
     mock.timers.reset();
   }
 });
+
+// Crypto trades 24/7: the FX weekend close must not describe a live crypto
+// market as having "no trading session".
+test("Saturday 13:30 UTC, BTCUSD (crypto) → says crypto is trading 24/7, not 'FX market closed / no session'", () => {
+  atUtcDate(2026, 9, 31, 13, 30); // Sat 2026-10-31
+  try {
+    const out = computeSessionKillZone({ symbol: "BTCUSD", isSynthetic: false, assetClass: "crypto" });
+    assert.notEqual(out.sessionName, "Weekend — FX market closed");
+    assert.match(out.sessionName, /crypto/i);
+    assert.match(out.sessionName, /24\/7/);
+    assert.doesNotMatch(out.sessionDescription, /No trading session/i);
+    assert.match(out.sessionDescription, /crypto trades 24\/7/i);
+    assert.match(out.sessionDescription, /FX is closed for the weekend/);
+    // No FX session or kill zone is open at the weekend, so none is claimed.
+    assert.equal(out.killZone, "OFF_KILLZONE");
+    assert.equal(out.isKillZoneActive, false);
+    assert.doesNotMatch(out.sessionName, /London|New York|Overlap|Asia|Sydney/);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("Saturday 13:30 UTC, EURUSD (forex) keeps the FX weekend-closed read", () => {
+  atUtcDate(2026, 9, 31, 13, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false, assetClass: "forex" });
+    assert.equal(out.sessionName, "Weekend — FX market closed");
+    assert.match(out.sessionDescription, /No trading session or kill zone is active/);
+  } finally {
+    mock.timers.reset();
+  }
+});

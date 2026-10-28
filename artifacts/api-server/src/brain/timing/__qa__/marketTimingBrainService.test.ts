@@ -190,3 +190,23 @@ test("calendar not connected but the schedule fallback has an event → hasNewsD
   assert.equal(read.dataQuality.hasNewsData, false);
   assert.match(read.dataQuality.note, /economic calendar not connected/);
 });
+
+test("crypto at the weekend: the session read says crypto trades 24/7, not 'FX market closed / no session'", async () => {
+  mock.timers.enable({ apis: ["Date"], now: Date.UTC(2026, 9, 31, 13, 30) }); // Sat 2026-10-31
+  try {
+    const read = await computeTimingRead(
+      { symbol: "BTCUSD", persistSnapshot: false },
+      baseDeps({
+        classifyFn: () => "crypto",
+        routeCandlesFn: async () => marketFixture({ symbol: "BTCUSD", now: Date.now() }).result,
+        routeQuoteFn: async () => marketFixture({ symbol: "BTCUSD", now: Date.now() }).quote,
+      }),
+    );
+    assert.equal(read.dataQuality.hasCandleData, true);
+    assert.notEqual(read.session.sessionName, "Weekend — FX market closed");
+    assert.match(read.session.sessionName, /crypto/i);
+    assert.doesNotMatch(read.session.sessionDescription, /No trading session/i);
+  } finally {
+    mock.timers.reset();
+  }
+});
