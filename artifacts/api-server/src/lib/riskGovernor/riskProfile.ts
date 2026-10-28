@@ -154,8 +154,18 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     return s + Math.abs(p.entryPrice - p.stopLoss) * p.lots * inst.contractSize * (inst.quoteToAccountFx ?? 1);
   }, 0);
   const halt = ctx.halt ?? { engaged: false, sources: [], reason: null };
-  const status = halt.engaged || (dailyLimit != null && dailyUsed >= dailyLimit) || (weeklyLimit != null && weekUsed >= weeklyLimit)
+  const dailyReached = dailyLimit != null && dailyUsed >= dailyLimit;
+  const weeklyReached = weeklyLimit != null && weekUsed >= weeklyLimit;
+  const status = halt.engaged || dailyReached || weeklyReached
     ? "BLOCK" : dailyLimit != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : "OK";
+  // What stops new trades, as this view measures it. A read model only: the
+  // Risk Governor decides each order. trading is false whenever anything here
+  // blocks, so it never says "trading" next to a BLOCK status.
+  const blockedBy = [
+    ...(halt.engaged ? ["stop_switch" as const] : []),
+    ...(dailyReached ? ["daily_loss_limit" as const] : []),
+    ...(weeklyReached ? ["weekly_loss_limit" as const] : []),
+  ];
   return {
     venue,
     preset: settings.riskPreset ?? null,
@@ -169,7 +179,7 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     },
     activity: ctx.activity ?? null,
     halt,
-    permissions: { trading: !halt.engaged, pauseReason: halt.reason },
+    permissions: { trading: blockedBy.length === 0, pauseReason: halt.reason, stopSwitchEngaged: halt.engaged, blockedBy },
   };
 }
 

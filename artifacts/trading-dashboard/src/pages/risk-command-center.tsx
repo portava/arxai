@@ -13,7 +13,34 @@ type Limits = { maxLotSize: number; maxDailyLossPercent: number | null; maxDaily
 type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };
 type Money = number | null;
 type Budget = { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
-type Cards = { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number | null } | null };
+type Cards = { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: Permissions; propFirm: { status: string; profitTargetProgress: number | null } | null };
+
+// permissions.trading is false when a stop switch is engaged or a loss limit
+// is reached; blockedBy names which (older servers sent only trading +
+// pauseReason, where trading reflected the stop switches alone).
+type Permissions = { trading: boolean; pauseReason: string | null; stopSwitchEngaged?: boolean; blockedBy?: string[] };
+
+const BLOCK_REASON: Record<string, string> = {
+  stop_switch: "A stop switch is engaged",
+  daily_loss_limit: "Your daily loss limit is reached",
+  weekly_loss_limit: "Your weekly loss limit is reached",
+};
+
+/**
+ * What stops new trades, in plain words. Only ever downgrades the server's
+ * answer: a BLOCK status or an active halt reads blocked even if an older
+ * server said trading: true.
+ */
+function newTradesVerdict(c: Pick<Cards, "permissions" | "riskStatus" | "activeHalts">): { blocked: boolean; reasons: string[] } {
+  const p = c.permissions;
+  const reasons = (p.blockedBy ?? []).map((b) => (b === "stop_switch" && p.pauseReason ? `${BLOCK_REASON[b]}: ${p.pauseReason}` : BLOCK_REASON[b] ?? b));
+  if (!p.blockedBy) {
+    if (p.pauseReason || c.activeHalts.length > 0) reasons.push(`A stop switch is engaged${p.pauseReason ? `: ${p.pauseReason}` : ""}`);
+    if (c.riskStatus === "BLOCK" && reasons.length === 0) reasons.push("A loss limit is reached (risk status BLOCK)");
+  }
+  if (reasons.length === 0 && (!p.trading || c.riskStatus === "BLOCK" || c.activeHalts.length > 0)) reasons.push("Blocked (risk status " + c.riskStatus + ")");
+  return { blocked: reasons.length > 0, reasons };
+}
 
 const usd = (v: Money) => (v == null ? "none set" : `$${v}`);
 
@@ -146,14 +173,23 @@ export default function RiskCommandCenter() {
     <div className="space-y-3" data-testid="risk-rules-tab">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Permissions</CardTitle>
-          <CardDescription>Whether your account can open new trades right now. Every order is still checked by the Risk Governor.</CardDescription>
+          <CardDescription>What stops new trades on your account right now: your stop switches and your daily and weekly loss limits. Every order is still checked by the Risk Governor against all of your rules.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-1">
-          {cards && Object.entries(cards.permissions).filter(([k]) => k !== "pauseReason").map(([k, v]) => (
-            <Badge key={k} variant={v ? "default" : "destructive"} data-testid={`risk-perm-${k}`}>
-              {k}: {String(v)}
-            </Badge>
-          ))}
+        <CardContent className="space-y-1">
+          {cards && (() => {
+            const v = newTradesVerdict(cards);
+            return v.blocked ? (
+              <div data-testid="risk-perm-new-trades">
+                <Badge variant="destructive">New trades: blocked</Badge>
+                <ul className="mt-1 text-xs text-muted-foreground list-disc pl-4">{v.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+              </div>
+            ) : (
+              <div data-testid="risk-perm-new-trades">
+                <Badge variant="outline">New trades: not blocked by a stop switch or loss limit</Badge>
+                <p className="mt-1 text-xs text-muted-foreground">This is not an approval: each order is still checked by the Risk Governor when you place it.</p>
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
