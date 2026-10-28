@@ -207,3 +207,30 @@ describe("DB fallback window and the 'events in window' count", () => {
     expect(banner.textContent).toMatch(/1 event\b/);
   });
 });
+
+describe("the assistant card never presents a template as the assistant's read", () => {
+  it("one LOW-impact event: no 'Best action', no static guidance chips, no 'major release'", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "pmi", title: "Chicago PMI", when: at(0, 11), impact: "low", impactTier: "low" }),
+    ] });
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    const card = screen.getByTestId("eco-assistant-card");
+    expect(card.textContent).not.toMatch(/Best action/);
+    expect(card.textContent).not.toMatch(/major releases/);
+    for (const chip of ["Reduce Size", "Avoid Scalp", "Watch Spread", "Confirm After"]) {
+      expect(within(card).queryByText(chip)).toBeNull();
+    }
+    // It still states the scheduled fact, with its source.
+    expect(card.textContent).toMatch(/Chicago PMI/);
+    expect(card.textContent).toMatch(/has not assessed/);
+  });
+
+  it("no events today is not 'Low' risk", async () => {
+    stubServer({ live: [liveEvt({ id: "nfp", title: "Non Farm Payrolls", when: at(2, 13, 30) })] });
+    renderPage();
+    await screen.findByText("Overall Risk");
+    expect(screen.getByTestId("eco-overall-risk").textContent).not.toBe("Low");
+    expect(screen.getByTestId("eco-overall-risk").textContent).toMatch(/No events today/);
+  });
+});

@@ -343,10 +343,11 @@ export default function EconomicCalendarPage() {
     const next = upcoming[0] ?? null;
     const maxRank = dayEvents.reduce((m, e) => Math.max(m, IMPACT_RANK[e.impactLevel]), 0);
     const unknownImpact = dayEvents.filter((e) => e.impactLevel === "UNKNOWN").length;
+    // No events today is not "Low" risk — nothing was rated.
     const overall = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low"
-      : unknownImpact > 0 ? "Unknown" : "Low";
+      : unknownImpact > 0 ? "Unknown" : "No events today";
     const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400"
-      : maxRank === 0 && unknownImpact > 0 ? "text-txt-muted" : "text-primary";
+      : maxRank === 0 ? "text-txt-muted" : "text-primary";
     const affected = next?.affectedSymbols ?? [];
     return { count: dayEvents.length, critical, high, next, overall, overallTone, affected, unknownImpact };
   }, [allEvents]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -473,7 +474,7 @@ export default function EconomicCalendarPage() {
                     <ShieldAlert className="h-6 w-6" />
                   </span>
                   <div>
-                    <div className={cn("text-xl font-bold", summary.overallTone)}>{summary.overall}</div>
+                    <div data-testid="eco-overall-risk" className={cn("text-xl font-bold", summary.overallTone)}>{summary.overall}</div>
                     <div className="text-xs text-txt-muted">Overall Risk</div>
                     {summary.unknownImpact > 0 && summary.overall !== "Unknown" && (
                       <div className="text-[11px] text-txt-muted">
@@ -693,22 +694,27 @@ export default function EconomicCalendarPage() {
         {/* Right rail */}
         <div className="space-y-4">
           {/* Ruby's News Read */}
-          <div className="rounded-2xl border border-ruby/25 bg-card p-4">
-            <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-ruby" /><h3 className="text-sm font-semibold text-ruby">{name}’s News Read</h3></div>
+          <div data-testid="eco-assistant-card" className="rounded-2xl border border-ruby/25 bg-card p-4">
+            {/* No assistant verdict is consulted here, so the card states only the
+                scheduled fact from the calendar and says plainly that it is not an
+                assessment. It never offers a "best action" or guidance chips. */}
+            <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-ruby" /><h3 className="text-sm font-semibold text-ruby">Next Release</h3></div>
             {summary.next ? (
               <>
                 <div className="mt-2 flex gap-2 text-sm text-txt-secondary">
                   <Quote className="h-4 w-4 shrink-0 text-ruby/70" />
-                  <p>{summary.next.eventName} {timeUntil(summary.next.eventTime)}. Risk is {summary.overall.toLowerCase()} — major releases can move {summary.next.currency} pairs quickly. Best action: wait for the first reaction, then let Scanner confirm direction.</p>
+                  <p>
+                    {summary.next.eventName} ({summary.next.currency}) {timeUntil(summary.next.eventTime)}.
+                    {" "}Calendar impact: {IMPACT_TONE[summary.next.impactLevel].label}.
+                    {summary.next.riskNote ? ` Provider note: ${summary.next.riskNote}` : ""}
+                  </p>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {["Wait","Reduce Size","Avoid Scalp","Watch Spread","Confirm After"].map((g) => (
-                    <span key={g} className="rounded-lg border border-border bg-secondary/60 px-2 py-0.5 text-[11px] text-txt-secondary">{g}</span>
-                  ))}
-                </div>
+                <p className="mt-2 text-[11px] text-txt-muted">
+                  From the economic calendar only — {name} has not assessed this event. Ask {name} for a read.
+                </p>
               </>
             ) : (
-              <p className="mt-2 text-sm text-txt-muted">{name} is waiting for calendar data.</p>
+              <p className="mt-2 text-sm text-txt-muted">No more events scheduled today in the loaded calendar.</p>
             )}
             <button onClick={openRubyLiveChat} className="mt-3 flex w-full items-center justify-between rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby">
               <span className="inline-flex items-center gap-1.5"><MessageCircle className="h-4 w-4" /> Ask {name}</span>
