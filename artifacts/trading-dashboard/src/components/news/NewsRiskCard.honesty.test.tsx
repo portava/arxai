@@ -202,3 +202,31 @@ describe("NewsRiskCard driving headlines", () => {
     expect(screen.queryByText(/Driving headlines/i)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The event countdown counts from the event time implied by the report
+// (createdAt + timeUntilEventMinutes), never the frozen report-time offset.
+// ---------------------------------------------------------------------------
+describe("NewsRiskCard event countdown", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("a report built 10 minutes ago for an event 12 minutes out says 'in 2m', not 'in 12m'", async () => {
+    const report = { ...reportWith(CONNECTED_NEWS), createdAt: new Date(Date.now() - 10 * 60_000).toISOString() };
+    vi.stubGlobal("fetch", mockFetch([NEWS_UP, CAL_UP], report));
+    renderCard();
+    const el = await screen.findByTestId("text-news-risk-event-countdown");
+    expect(el.textContent).toBe("Event in 2m");
+  });
+
+  it("an event that has already happened reads as past", async () => {
+    const report = { ...reportWith(CONNECTED_NEWS), createdAt: new Date(Date.now() - 20 * 60_000).toISOString() };
+    vi.stubGlobal("fetch", mockFetch([NEWS_UP, CAL_UP], report));
+    renderCard();
+    const el = await screen.findByTestId("text-news-risk-event-countdown");
+    expect(el.textContent).toBe("Event 8m ago");
+  });
+});

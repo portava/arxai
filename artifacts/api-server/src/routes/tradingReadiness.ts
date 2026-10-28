@@ -23,6 +23,8 @@ import { z } from "zod/v4";
 import { platformStop, readSafetyCorePosture, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { readLatestBrokerHealthLog } from "../lib/brokerHub/brokerHealthState.js";
+import { BROKER_HEALTH_VERDICT_STALE_MS } from "../lib/brokerHub/freshness.js";
+import { readStoredCalendarCoverage } from "./newsCalendar.js";
 
 const router = Router();
 
@@ -54,6 +56,16 @@ const SelfReport = z.object({
   riskRulesConfirmed: z.boolean().default(false),
 });
 
+function formatAge(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 120) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 120) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
 // ── Evaluator ──────────────────────────────────────────────────────────────
 interface ChecklistItem {
   id: string; label: string;
@@ -81,6 +93,9 @@ async function gatherSignals(userId: number) {
   const upcomingNews = await db.select().from(economicEventsTable)
     .where(and(gte(economicEventsTable.eventTime, now), lte(economicEventsTable.eventTime, in2h)))
     .orderBy(asc(economicEventsTable.eventTime)).limit(20);
+  // The stored calendar is filled only by a manual sync; an empty read is a
+  // real "no news" only when that calendar reaches the end of the window.
+  const calendarCoverage = await readStoredCalendarCoverage(in2h);
   const activeContract = (await db.select().from(tradingRuleContractsTable)
     .where(and(eq(tradingRuleContractsTable.userId, userId), eq(tradingRuleContractsTable.isActive, 1)))
     .orderBy(desc(tradingRuleContractsTable.createdAt)).limit(1))[0] ?? null;
@@ -88,7 +103,7 @@ async function gatherSignals(userId: number) {
   const recentReview = (await db.select().from(weeklyPerformanceReviewsTable)
     .where(and(eq(weeklyPerformanceReviewsTable.userId, userId), gte(weeklyPerformanceReviewsTable.weekStart, fourteenDaysAgo)))
     .orderBy(desc(weeklyPerformanceReviewsTable.weekStart)).limit(1))[0] ?? null;
-  return { safety, emergencyStopEngaged, activeLocks, brokerLog, upcomingNews, activeContract, recentReview };
+  return { safety, emergencyStopEngaged, activeLocks, brokerLog, upcomingNews, calendarCoverage, activeContract, recentReview };
 }
 
 interface EvalInput {
@@ -106,7 +121,7 @@ interface EvalOut {
   aiSummary: string;
 }
 
-function evaluateReadiness(
+export function evaluateReadiness(
   signals: Awaited<ReturnType<typeof gatherSignals>>,
   inp: EvalInput,
 ): EvalOut {
@@ -117,23 +132,51 @@ function evaluateReadiness(
   let lockedByHard = false;
 
   // 1. Broker connected
-  const bs = signals.brokerLog?.status ?? "UNKNOWN";
-  const brokerOk = bs === "OK" || bs === "CONNECTED" || bs === "HEALTHY";
+  // Source: the newest broker_health_logs row — a PLATFORM-wide snapshot that
+  // is written only when an operator runs POST /broker/health-check. It is a
+  // past observation, so a connected verdict older than the broker-health
+  // stale window cannot PASS (it degrades to WARN / UNKNOWN). A stale
+  // not-connected verdict still blocks: age never weakens a failure.
+  const log = signals.brokerLog;
+  const loggedStatus = log?.status ?? "UNKNOWN";
+  const checkedAtMs = log?.createdAt ? new Date(log.createdAt).getTime() : NaN;
+  const ageMs = Number.isFinite(checkedAtMs) ? Math.max(0, Date.now() - checkedAtMs) : NaN;
+  const logFresh = Number.isFinite(ageMs) && ageMs <= BROKER_HEALTH_VERDICT_STALE_MS;
+  const loggedOk = loggedStatus === "OK" || loggedStatus === "CONNECTED" || loggedStatus === "HEALTHY";
+  const brokerOk = loggedOk && logFresh;
+  const bs = log == null ? "UNKNOWN" : (loggedOk && !logFresh ? "UNKNOWN" : loggedStatus);
+  const checkedAtText = Number.isFinite(checkedAtMs)
+    ? `${new Date(checkedAtMs).toISOString().slice(0, 16).replace("T", " ")} UTC, ${formatAge(ageMs)} ago`
+    : "time not recorded";
+  const brokerDetail = log == null
+    ? "No broker health check on record — the broker connection has not been checked"
+    : brokerOk
+      ? `${loggedStatus} per the last platform broker health check (${checkedAtText})`
+      : loggedOk
+        ? `Last platform broker health check said ${loggedStatus} (${checkedAtText}) — too old to count as connected now`
+        : `${loggedStatus} per the last platform broker health check (${checkedAtText})`;
   checklist.push({ id: "broker", label: "Broker connected",
     status: brokerOk ? "PASS" : (bs === "UNKNOWN" ? "WARN" : "FAIL"),
-    detail: `Status: ${bs}` });
+    detail: brokerDetail });
   if (!brokerOk && bs !== "UNKNOWN") { blockers.push(`Broker not connected (${bs})`); lockedByHard = true; }
-  else if (bs === "UNKNOWN") warnings.push("Broker health unknown — last heartbeat missing");
+  else if (log == null) warnings.push("Broker connection not checked — no broker health check on record");
+  else if (bs === "UNKNOWN") warnings.push("Broker connection unknown — the last broker health check is too old");
 
   // 2. Market conditions acceptable (proxy: any CRITICAL upcoming news ⇒ poor)
   const criticalSoon = signals.upcomingNews.filter((e) => e.impactLevel === "CRITICAL").length;
   const highSoon = signals.upcomingNews.filter((e) => e.impactLevel === "HIGH").length;
-  const marketCondition = criticalSoon > 0 ? "VOLATILE" : highSoon > 0 ? "ELEVATED" : "NORMAL";
+  // Calendar not covering the next 2h: what was found is real, but the
+  // absence of events is not — those checks read "not checked", never PASS.
+  const calendarCovered = signals.calendarCoverage.windowCovered;
+  const marketCondition = criticalSoon > 0 ? "VOLATILE" : highSoon > 0 ? "ELEVATED" : calendarCovered ? "NORMAL" : "UNKNOWN";
   checklist.push({ id: "market", label: "Market conditions acceptable",
-    status: criticalSoon > 0 ? "FAIL" : highSoon > 0 ? "WARN" : "PASS",
-    detail: `${marketCondition} (${highSoon} HIGH, ${criticalSoon} CRITICAL upcoming)` });
+    status: criticalSoon > 0 ? "FAIL" : highSoon > 0 ? "WARN" : calendarCovered ? "PASS" : "WARN",
+    detail: criticalSoon > 0 || highSoon > 0 || calendarCovered
+      ? `${marketCondition} (${highSoon} HIGH, ${criticalSoon} CRITICAL upcoming)`
+      : `Not checked: ${signals.calendarCoverage.note ?? "the stored economic calendar does not cover the next 2h."}` });
   if (criticalSoon > 0) reasons.push(`${criticalSoon} CRITICAL economic event(s) within 2h`);
   else if (highSoon > 0) warnings.push(`${highSoon} HIGH-impact event(s) within 2h`);
+  if (!calendarCovered) warnings.push("Economic calendar not checked for the next 2h — the stored calendar does not reach that far");
 
   // 3. No high-impact news conflict (within 30 min)
   const within30 = signals.upcomingNews.filter((e) => {
@@ -142,10 +185,12 @@ function evaluateReadiness(
   });
   const newsRiskLevel = within30.some((e) => e.impactLevel === "CRITICAL") ? "CRITICAL"
     : within30.length > 0 ? "HIGH"
-    : highSoon > 0 ? "ELEVATED" : "NONE";
+    : highSoon > 0 ? "ELEVATED" : calendarCovered ? "NONE" : "UNKNOWN";
   checklist.push({ id: "news", label: "No high-impact news conflict",
-    status: newsRiskLevel === "CRITICAL" ? "FAIL" : newsRiskLevel === "HIGH" ? "WARN" : "PASS",
-    detail: `${within30.length} HIGH/CRITICAL within 30 min` });
+    status: newsRiskLevel === "CRITICAL" ? "FAIL" : newsRiskLevel === "HIGH" || newsRiskLevel === "UNKNOWN" ? "WARN" : "PASS",
+    detail: newsRiskLevel === "UNKNOWN"
+      ? "Not checked: the stored economic calendar does not cover the next 30 min"
+      : `${within30.length} HIGH/CRITICAL within 30 min` });
   if (newsRiskLevel === "CRITICAL") { blockers.push("CRITICAL news within 30 min"); lockedByHard = true; }
   else if (newsRiskLevel === "HIGH") warnings.push("HIGH-impact news within 30 min — consider waiting");
 

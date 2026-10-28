@@ -14,13 +14,19 @@ import { evaluateMarketDataSufficiency, MIN_SUFFICIENT_CLOSED_BARS } from "@work
 import {
   resolveScannerActionability,
   SCANNER_ACTIONABILITY_UI,
+  type ActionDirection,
   type ScannerActionability,
 } from "@/lib/scannerActionability";
 import { RubyChartRead } from "@/components/scanner/RubyChartRead";
 import { SetupSignalStrip } from "@/components/signals/SetupSignalStrip";
 import {
   scalpStatusToSetup,
-  SCALP_STATUS_LABEL,
+  scalpStatusLabel,
+  isScalpAwaitingFeed,
+  hasKnownScalpRejectReason,
+  scalpBusTimeframe,
+  scalpEngineTimeframe,
+  SCALP_ENGINE_FALLBACK_TIMEFRAME,
   SCALP_STATUS_TONE,
   SCALP_MODE_LABEL,
   SCALP_TIMING_LABEL,
@@ -41,12 +47,13 @@ import {
   directionTone,
   riskTone,
   fmtPrice,
-  fmtMoney,
+  fmtScalpMoney,
   fmtRr,
 } from "./scalpLabels";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromScalp } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 
 // ScalpSignalCard — one shared, mobile-clean card that renders a single
 // Ruby Scalp Signal (the `ScalpResult` the shared engine produced). Used by
@@ -88,13 +95,15 @@ function Tip({
   );
 }
 
-// The scalp engine reads M1 (see `evaluateMarketDataSufficiency` + RubyChartRead
-// below, both timeframe "M1"). Its lifted action verdict is therefore the M1
-// verdict — published under the SCANNER BUS form of M1 ("1m") so it keys
-// identically to what the header reads via `coerceVisibleTimeframe(selectedTf)`.
-// Do NOT pass "M1" through coerceVisibleTimeframe (it isn't a visible chip and
-// would wrongly fall back to "15m").
-export const SCALP_SIGNAL_BUS_TIMEFRAME = "1m";
+// The Focus scalp engine reads M5 (server SCALP_TIMEFRAME; every Focus result
+// carries it as `timeframe`). Its lifted action verdict is therefore an M5
+// verdict — published under the SCANNER BUS form of the engine timeframe ("5m")
+// so the header adopts it ONLY when the user is viewing 5m, never under the 1m
+// cell (owner screenshot 2026-10-27: an M5 "Feed limited" sat under V75 1m).
+// This constant is the key used before any result exists (the CHECK_FAILED
+// marker); a result's own `timeframe` always decides its publish key.
+export const SCALP_SIGNAL_BUS_TIMEFRAME =
+  scalpBusTimeframe({ timeframe: SCALP_ENGINE_FALLBACK_TIMEFRAME }) ?? "5m";
 
 export function ScalpSignalCard({
   result,
@@ -109,7 +118,13 @@ export function ScalpSignalCard({
   onWatch?: (r: ScalpResult) => void;
   compact?: boolean;
   highlightLabel?: string;
-  onActionability?: (symbol: string, timeframe: string, a: ScannerActionability) => void;
+  /** Publish (or retract with null) this card's verdict for symbol+timeframe. */
+  onActionability?: (
+    symbol: string,
+    timeframe: string,
+    a: ScannerActionability | null,
+    side?: ActionDirection,
+  ) => void;
 }) {
   const r = result;
   const { name } = useAssistantName();
@@ -130,10 +145,17 @@ export function ScalpSignalCard({
   // candle count, which would wrongly hide the intentionally-blind Broad reads.
   // Display-only — build/watch eligibility is re-gated server-side on every action
   // regardless of what is shown here.
-  const scalpDataReady = r.status !== "AWAITING_DATA";
+  //
+  // AWAITING_DATA has four engine reasons. Only the feed/data ones (no scanner
+  // read / not live / insufficient — or an unnamed reason from an older server,
+  // fail-closed) collapse the data cap. NO_SPECS means the feed passed every
+  // check and the scalp stopped only because the broker's symbol details are
+  // unavailable — that is never shown as "Feed limited".
+  const scalpDataReady = !isScalpAwaitingFeed(r);
+  const engineTf = scalpEngineTimeframe(r);
   const readability = evaluateMarketDataSufficiency({
     symbol: r.symbol,
-    timeframe: "M1",
+    timeframe: engineTf,
     freshnessVerdict: scalpDataReady ? "LIVE" : "AWAITING",
     availableClosedCandles: scalpDataReady ? MIN_SUFFICIENT_CLOSED_BARS : 0,
   });
@@ -157,18 +179,44 @@ export function ScalpSignalCard({
   );
   const actionUi = SCANNER_ACTIONABILITY_UI[actionability];
 
+  // The scalp read is one-shot (the Focus card does not poll). Past its
+  // server-declared expiresAt — or with no parseable expiresAt — it is not a
+  // current read: its verdict is retracted from the page (the header and chart
+  // fall back to the current data-only verdict), Build is disabled, and the
+  // card says the read expired instead of "Valid now".
+  const expiresAtMs = typeof r.expiresAt === "string" ? Date.parse(r.expiresAt) : NaN;
+  const expiryNowMs = useEvidenceDeadline(Number.isFinite(expiresAtMs) ? expiresAtMs : null);
+  const scalpExpired = !(Number.isFinite(expiresAtMs) && expiryNowMs < expiresAtMs);
+
   // Lift the ONE selected-symbol verdict to the page (Task #600): the Focus card
   // passes onActionability so the header's Action cell shows EXACTLY this card's
   // setup-aware verdict instead of its own data-only one. Keyed by r.symbol (the
-  // engine's bare symbol) AND the scalp's bus timeframe ("1m") — matching the
-  // rubyReadStore symbol+timeframe convention — so the header only adopts this
-  // verdict when the user is actually viewing 1m, and a timeframe switch can
-  // never leave a stale M1 verdict showing under another timeframe. MUST sit
+  // engine's bare symbol) AND the bus form of the engine timeframe the result
+  // was read on ("5m" for M5) — matching the rubyReadStore symbol+timeframe
+  // convention — so the header only adopts this verdict when the user is
+  // actually viewing that timeframe, and a timeframe switch can never leave an
+  // M5 verdict showing under another timeframe (e.g. 1m). MUST sit
   // after `actionability` is declared (temporal-dead-zone trap). Other render
   // sites omit the prop, so only the Focus card publishes.
+  //
+  // What may be lifted: any non-AWAITING verdict, and a feed-reason
+  // AWAITING_DATA the server explicitly named (a genuine engine-timeframe feed
+  // verdict). NOT lifted (retracted with null so a stale earlier verdict can't
+  // survive a refresh): NO_SPECS — the engine never evaluated a setup, so the
+  // header falls back to its own data-only verdict — and an AWAITING_DATA with no
+  // named reason, whose feed state this card cannot vouch for.
+  const busTf = scalpBusTimeframe(r);
+  const liftable =
+    r.status !== "AWAITING_DATA" || (isScalpAwaitingFeed(r) && hasKnownScalpRejectReason(r));
+  const published: ScannerActionability | null = liftable && !scalpExpired ? actionability : null;
+  // The scalp's OWN side, published alongside the verdict so the header can
+  // drop a contradicting side from its label (never add one).
+  const publishedSide: ActionDirection =
+    published != null && (r.direction === "BUY" || r.direction === "SELL") ? r.direction : null;
   useEffect(() => {
-    onActionability?.(r.symbol, SCALP_SIGNAL_BUS_TIMEFRAME, actionability);
-  }, [r.symbol, actionability, onActionability]);
+    if (!busTf) return;
+    onActionability?.(r.symbol, busTf, published, publishedSide);
+  }, [r.symbol, busTf, published, publishedSide, onActionability]);
 
   const borderColor =
     r.direction === "BUY" ? "#10b981" : r.direction === "SELL" ? "#f43f5e" : "#3f3f46";
@@ -202,7 +250,7 @@ export function ScalpSignalCard({
             className={`${SCALP_STATUS_TONE[r.status]} text-xs shrink-0`}
             data-status-token={r.status}
           >
-            {SCALP_STATUS_LABEL[r.status]}
+            {scalpStatusLabel(r)}
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -221,7 +269,7 @@ export function ScalpSignalCard({
             help="Whether now is a good moment to act on this setup — it flags if the ideal entry window is open, still early, or already passing."
           >
             <Clock className="h-3 w-3" />
-            {SCALP_TIMING_LABEL[r.timingStatus]}
+            {scalpExpired ? "Expired" : SCALP_TIMING_LABEL[r.timingStatus]}
           </Tip>
         </div>
 
@@ -249,8 +297,8 @@ export function ScalpSignalCard({
               className="ml-auto text-[10px] text-muted-foreground"
               help="How recent the live candle read behind this signal is — a fresher read is more reliable, while a stale read means the signal may be out of date."
             >
-              {FLAME_FRESHNESS_LABEL[flame.freshness]}
-              {flame.flameAgeCandles > 0 ? ` · ${flame.flameAgeCandles} ${flame.flameAgeCandles === 1 ? "candle" : "candles"}` : ""}
+              {scalpExpired ? "Read expired" : FLAME_FRESHNESS_LABEL[flame.freshness]}
+              {!scalpExpired && flame.flameAgeCandles > 0 ? ` · ${flame.flameAgeCandles} ${flame.flameAgeCandles === 1 ? "candle" : "candles"}` : ""}
             </Tip>
           </div>
         )}
@@ -334,11 +382,11 @@ export function ScalpSignalCard({
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded border border-border bg-background/40 p-2">
               <div className="text-txt-muted">Target profit (main TP)</div>
-              <div className="font-mono text-success">{fmtMoney(r.estimatedProfitMainTP)}</div>
+              <div className="font-mono text-success">{fmtScalpMoney(r.estimatedProfitMainTP, r.moneyCurrency)}</div>
             </div>
             <div className="rounded border border-border bg-background/40 p-2">
               <div className="text-txt-muted">Risk if stopped</div>
-              <div className="font-mono text-danger">{fmtMoney(r.estimatedRiskAmount)}</div>
+              <div className="font-mono text-danger">{fmtScalpMoney(r.estimatedRiskAmount, r.moneyCurrency)}</div>
             </div>
           </div>
         )}
@@ -359,7 +407,12 @@ export function ScalpSignalCard({
             Slippage <span className={riskTone(r.slippageRisk)}>{r.slippageRisk}</span>
           </Tip>
           <Tip className="text-txt-muted" help="The risk of upcoming or recent news shaking this market — a higher reading means more event risk around now, so the move can turn sharply.">
-            News <span className={riskTone(r.newsRisk)}>{r.newsRisk}</span>
+            News{" "}
+            {r.newsRiskUnchecked ? (
+              <span className="text-warning" data-testid="scalp-news-unchecked">Unchecked</span>
+            ) : (
+              <span className={riskTone(r.newsRisk)}>{r.newsRisk}</span>
+            )}
           </Tip>
           {r.targetRealityCheck && (
             <Tip className="text-txt-muted ml-auto" help="A sanity check on whether the planned target is realistically reachable in current conditions — not just mathematically possible.">
@@ -416,6 +469,19 @@ export function ScalpSignalCard({
             <span>{r.riskWarning}</span>
           </div>
         )}
+        {scalpExpired && (
+          <div
+            className="flex items-start gap-1.5 rounded border border-warning/30 bg-warning/5 p-2 text-warning"
+            data-testid={`scalp-expired-${r.symbol}`}
+          >
+            <Clock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>
+              {Number.isFinite(expiresAtMs)
+                ? "This scalp read has expired — its status, entry and targets describe the market when it was read, not now. Refresh for a current read."
+                : "This scalp read has no valid expiry time, so it can't be treated as current. Refresh for a current read."}
+            </span>
+          </div>
+        )}
         {r.noTradeReason && (
           <div className="rounded border border-border bg-background/40 p-2 text-txt-secondary">
             {r.noTradeReason}
@@ -426,7 +492,7 @@ export function ScalpSignalCard({
         <div className="grid grid-cols-2 gap-2 pt-1">
           <Button
             className="h-11 text-sm font-bold bg-success hover:bg-success/90 text-white disabled:opacity-50"
-            disabled={!r.canBuildTrade || !actionUi.canAct || !onBuild}
+            disabled={!r.canBuildTrade || !actionUi.canAct || scalpExpired || !onBuild}
             onClick={() => onBuild?.(r)}
             data-testid={`scalp-build-${r.symbol}`}
           >
@@ -456,7 +522,7 @@ export function ScalpSignalCard({
         {askRuby && (
           <RubyChartRead
             symbol={r.symbol}
-            timeframe="M1"
+            timeframe={engineTf}
             draft={
               r.direction && r.entryZone && r.stopLoss != null && r.takeProfit.main != null
                 ? {

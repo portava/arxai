@@ -14,13 +14,15 @@ import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
 
 type Scorecard = {
-  environments: Record<string, { trades?: number; wins?: number; losses?: number; winRate?: number; pnl?: number; note?: string; status?: string }>;
-  headline: { winRate: number; totalPnl: number; totalTrades: number };
+  environments: Record<string, { trades?: number | null; wins?: number; losses?: number; winRate?: number; pnl?: number; note?: string; status?: string }>;
+  // tradesWithRecordedPnl: entries whose P/L is known. totalPnl counts a
+  // missing P/L as 0, so this is what separates "net $0" from "unknown".
+  headline: { winRate: number; totalPnl: number; totalTrades: number; tradesWithRecordedPnl?: number };
   bestSymbol: string | null; worstSymbol: string | null;
   strategyRanking: Array<{ strategy: string; count: number; pnl: number }>;
   mistakeDistribution: Record<string, number>;
   gradeDistribution: Record<string, unknown>;
-  dataSource: string; generatedAt: string;
+  dataSource: string; dataSourceLabel?: string; generatedAt: string;
 };
 
 type HeatReport = {
@@ -47,7 +49,8 @@ function openRubyLiveChat() {
 }
 
 function money(n: number): string {
-  const s = n >= 0 ? "+" : "-";
+  if (n === 0) return "$0.00";
+  const s = n > 0 ? "+" : "-";
   return `${s}$${Math.abs(n).toFixed(2)}`;
 }
 // Humanize raw mistake keys (e.g. CHASED_ENTRY → Chased entry).
@@ -86,6 +89,19 @@ export default function PerformanceScorecard() {
 
   const pnlTone = (n: number) => (n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-txt-secondary");
 
+  // P/L is unknown (not $0) when entries exist but none has a recorded P/L.
+  const recorded = s?.headline.tradesWithRecordedPnl;
+  const total = s?.headline.totalTrades ?? 0;
+  const pnlUnknown = s != null && total > 0 && recorded === 0;
+  const missingPnl = recorded != null && recorded > 0 && recorded < total ? total - recorded : 0;
+  const verdict = (() => {
+    if (!s) return "";
+    if (pnlUnknown) return `Your ${total} journal ${total === 1 ? "entry has" : "entries have"} no recorded P/L yet, so the net result is unknown.`;
+    if (s.headline.totalPnl > 0) return "You’re net profitable across recorded trades.";
+    if (s.headline.totalPnl < 0) return "You’re net negative across recorded trades.";
+    return "You’re flat — net P/L is $0.00 across recorded trades.";
+  })();
+
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
       {/* Hero */}
@@ -118,15 +134,17 @@ export default function PerformanceScorecard() {
                 <span className="text-foreground font-medium">{s.headline.totalTrades}</span> Trades ·{" "}
                 <span className="text-success font-medium">{totals.wins}</span> Wins ·{" "}
                 <span className="text-danger font-medium">{totals.losses}</span> Losses ·{" "}
-                Net P/L <span className={cn("font-semibold", pnlTone(s.headline.totalPnl))}>{money(s.headline.totalPnl)}</span>
+                Net P/L {pnlUnknown
+                  ? <span className="font-semibold text-txt-muted">not recorded</span>
+                  : <span className={cn("font-semibold", pnlTone(s.headline.totalPnl))}>{money(s.headline.totalPnl)}</span>}
               </>
             )}
           </div>
 
           {/* Performance summary cards */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-            <MetricCard label="Net P/L" value={money(s.headline.totalPnl)} tone={pnlTone(s.headline.totalPnl)} />
-            <MetricCard label="Win Rate" value={`${s.headline.winRate}%`} tone="text-foreground" />
+            <MetricCard label="Net P/L" value={pnlUnknown ? "—" : money(s.headline.totalPnl)} tone={pnlUnknown ? "text-txt-muted" : pnlTone(s.headline.totalPnl)} />
+            <MetricCard label="Win Rate" value={pnlUnknown ? "—" : `${s.headline.winRate}%`} tone={pnlUnknown ? "text-txt-muted" : "text-foreground"} />
             <MetricCard label="Wins" value={String(totals.wins)} tone="text-success" icon={<Trophy className="h-4 w-4 text-success" />} />
             <MetricCard label="Losses" value={String(totals.losses)} tone="text-danger" icon={<XCircle className="h-4 w-4 text-danger" />} />
             <MetricCard label="Total Trades" value={String(s.headline.totalTrades)} tone="text-foreground" />
@@ -139,9 +157,10 @@ export default function PerformanceScorecard() {
               {s.headline.totalTrades === 0 ? (
                 <p className="mt-2 text-sm text-txt-muted">{name} will generate a performance read after more closed trades are available.</p>
               ) : (
-                <p className="mt-2 text-sm text-txt-secondary">
-                  {s.headline.totalPnl >= 0 ? "You’re net profitable across recorded trades." : "You’re net negative across recorded trades."}{" "}
-                  Win rate is {s.headline.winRate}%.{" "}
+                <p className="mt-2 text-sm text-txt-secondary" data-testid="performance-read">
+                  {verdict}{" "}
+                  {missingPnl > 0 ? <>{missingPnl} of {total} journal {missingPnl === 1 ? "entries has" : "entries have"} no P/L recorded yet and {missingPnl === 1 ? "is" : "are"} not counted in that result.{" "}</> : null}
+                  {pnlUnknown ? null : <>Win rate is {s.headline.winRate}%.{" "}</>}
                   {s.bestSymbol ? <>Your strongest symbol is <span className="text-success font-medium">{s.bestSymbol}</span>.</> : null}{" "}
                   {s.worstSymbol ? <>Watch <span className="text-danger font-medium">{s.worstSymbol}</span> — it’s been your weakest.</> : null}
                 </p>
@@ -169,7 +188,7 @@ export default function PerformanceScorecard() {
           {/* Environment separation (preserved — never mixed) */}
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center gap-2"><Layers className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Environment Separation</h3></div>
-            <p className="mt-0.5 text-xs text-txt-muted">Results are never mixed across environments.</p>
+            <p className="mt-0.5 text-xs text-txt-muted">Which sources this report read. A dash means the source was not read, not zero trades.</p>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -185,9 +204,9 @@ export default function PerformanceScorecard() {
                   {Object.entries(s.environments).map(([envName, v]) => (
                     <tr key={envName} className="border-b border-border/50 last:border-0">
                       <td className="py-2.5 pr-3 font-mono text-xs">{envName}</td>
-                      <td className="py-2.5 pr-3">{v.trades ?? 0}</td>
+                      <td className="py-2.5 pr-3" data-testid={`env-trades-${envName}`}>{v.trades ?? "—"}</td>
                       <td className="py-2.5 pr-3">{v.winRate != null ? `${v.winRate}%` : "—"}</td>
-                      <td className={cn("py-2.5 pr-3 text-right font-mono", v.pnl != null ? pnlTone(v.pnl) : "text-txt-muted")}>{v.pnl != null ? money(v.pnl) : "—"}</td>
+                      <td className={cn("py-2.5 pr-3 text-right font-mono", v.pnl != null && !(envName === "PAPER" && pnlUnknown) ? pnlTone(v.pnl) : "text-txt-muted")}>{v.pnl != null && !(envName === "PAPER" && pnlUnknown) ? money(v.pnl) : "—"}</td>
                       <td className="py-2.5 pr-3 text-txt-muted">{v.status ?? v.note ?? ""}</td>
                     </tr>
                   ))}
@@ -297,8 +316,8 @@ export default function PerformanceScorecard() {
             </div>
           )}
 
-          <p className="text-xs text-txt-muted">
-            Data source: {s.dataSource} · generated {new Date(s.generatedAt).toLocaleString()}
+          <p className="text-xs text-txt-muted" data-testid="scorecard-source">
+            Data source: {s.dataSourceLabel ?? s.dataSource} · generated {new Date(s.generatedAt).toLocaleString()}
           </p>
         </>
       )}

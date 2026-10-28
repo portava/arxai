@@ -44,7 +44,7 @@ import { submitInstantTrade } from "../lib/tradeEngine/pipeline.js";
 import { runHandshake } from "../lib/handshake/coordinator.js";
 import { classifyTradeHealth, computeSlDistance, type OpenPositionInput } from "@workspace/domain/trade-health";
 import { getMarketData } from "../lib/data/dataManager.js";
-import { analyzeChartStructure, quickTrend, type StructureBias } from "../lib/assistant/chartStructure.js";
+import { analyzeChartStructure, readHigherTimeframeBias, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { isUniqueViolation } from "../lib/pgError.js";
@@ -67,6 +67,7 @@ import { buildRubyContext, composeRubyBriefing, type RubyRole } from "../lib/ass
 import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { knownPricePrecision } from "../lib/data/chart/symbolProfile.js";
 import { buildRubyChartContext, buildGatedTrustLine } from "../lib/data/chart/rubyChartContext.js";
 import { buildRubyStructuralRead } from "../lib/assistant/rubyStructuralReadService.js";
 import { buildDecisionSnapshot, recordDecisionSnapshot } from "../lib/data/chart/chartDecisionSnapshot.js";
@@ -454,7 +455,7 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
   const cautions: string[] = [];
   if ((s.riskScore ?? 0) >= 70) cautions.push("Volatility risk elevated — size smaller.");
   if (conf < 50) cautions.push("Confidence is not high — wait for confirmation if momentum is weak.");
-  if (s.statusBadge && /SPREAD|CHOPPY|REJECT/i.test(s.statusBadge)) {
+  if (s.statusBadge && /SPREAD|CHOPPY|REJECT|LOW_OPPORTUNITY/i.test(s.statusBadge)) {
     cautions.push(`Scanner flagged ${s.statusBadge.replace(/_/g, " ").toLowerCase()}.`);
   }
 
@@ -671,6 +672,10 @@ router.post("/me/assistant/read-chart", requireUser, safe(async (req, res) => {
   ]);
   res.json({
     chartRead: outcome.chartRead,
+    // The service's own read layer, beside chartRead, so the Scanner panel and
+    // the chat tool (tools.ts forwards outcome.readLayer) share one source.
+    // Display-only; the client may only use it to DOWNGRADE a missing layer.
+    readLayer: outcome.readLayer,
     ...(aaci ? { aaci } : {}),
     ...envelope,
     readOnlyMode: true,
@@ -723,9 +728,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   }
 
   const candles = rubyCtx?.candles ?? [];
-  let htfBias: StructureBias = "No clear edge";
-  if ((rubyCtx?.htfCandles.length ?? 0) >= 10) htfBias = quickTrend(rubyCtx!.htfCandles);
-  const read = analyzeChartStructure(candles, { htfBias, draft: draft ?? null });
+  const htfTimeframe = rubyCtx?.htfTimeframe ?? null;
+  const htfBias: StructureBias | null = readHigherTimeframeBias(rubyCtx?.htfCandles, htfTimeframe);
+  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null, pricePrecision: knownPricePrecision(symbol) });
   if (clientFeedUnconfirmed) {
     read.dataQuality = "insufficient";
     if (!read.cautions.includes("Feed not confirmed at draw-time — limited visibility.")) {

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
 
 interface PaperOrder {
   id: number; symbol: string; direction: string; lotSize: number;
@@ -37,19 +38,26 @@ export function PaperOpenPositionsPanel({ accountId }: { accountId: number | nul
               <tr><th className="p-1">Symbol</th><th className="p-1">Dir</th><th className="p-1">Lot</th><th className="p-1">Entry</th><th className="p-1">SL/TP</th><th className="p-1"></th></tr>
             </thead>
             <tbody>
-              {orders.map((o) => (
+              {orders.map((o) => {
+                // One precision per row, from the digits this order's own
+                // prices carry (no server spec on this endpoint) — never a
+                // fixed 4 dp that rounds away or invents digits.
+                const dp = resolveDisplayPricePrecision(null, [o.entryPrice, o.stopLoss, o.takeProfit]);
+                const px = (v: number) => formatInstrumentPrice(v, dp);
+                return (
                 <tr key={o.id} className="border-t border-slate-800">
                   <td className="p-1 font-mono">{o.symbol}</td>
                   <td className="p-1">{o.direction}</td>
                   <td className="p-1">{o.lotSize}</td>
-                  <td className="p-1 font-mono">{o.entryPrice.toFixed(4)}</td>
-                  <td className="p-1 font-mono text-[10px]">{o.stopLoss.toFixed(4)} / {o.takeProfit.toFixed(4)}</td>
+                  <td className="p-1 font-mono">{px(o.entryPrice)}</td>
+                  <td className="p-1 font-mono text-[10px]">{`${px(o.stopLoss)} / ${px(o.takeProfit)}`}</td>
                   <td className="p-1">
                     <button onClick={()=>close.mutate(o.id)} disabled={close.isPending}
                       className="rounded bg-slate-700 px-2 py-0.5 text-[10px] hover:bg-slate-600 disabled:opacity-50">Close</button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

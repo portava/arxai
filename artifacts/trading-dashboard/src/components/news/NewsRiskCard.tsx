@@ -4,7 +4,10 @@
 // trade-plan checklist will surface a FAIL but this card alone does not
 // stop the user from saving the plan (only the validate flow blocks).
 
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { eventCountdownLabel } from "@/lib/eventCountdown";
+import type { CalendarCoverage } from "./UpcomingEventsList";
 
 type Risk = "CLEAR" | "CAUTION" | "HIGH_RISK" | "NO_TRADE_WINDOW";
 
@@ -34,6 +37,8 @@ export interface NewsRiskReport {
   aiSummary: string;
   createdAt: string;
   news?: NewsContext | null;
+  /** Whether the stored calendar the report scored reaches the next 24h. */
+  calendarCoverage?: CalendarCoverage | null;
 }
 
 // Severity badge tone for a surfaced driving headline.
@@ -79,12 +84,36 @@ const STYLES: Record<Risk, string> = {
   NO_TRADE_WINDOW:  "bg-red-700 text-white animate-pulse",
 };
 
+// A persisted report is a snapshot taken when the scan ran: its risk label and
+// countdown were computed for THAT moment. The scorer's narrowest window edge
+// is 10-15 minutes, so a report older than this may already have crossed one
+// (a no-trade window closed, or a CLEAR read now inside a window). Past this
+// age the card labels the report as outdated instead of presenting it as the
+// current risk.
+export const NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS = 5 * 60_000;
+
+function fmtAgo(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h ${rem}m ago` : `${h}h ago`;
+}
+
+// Minutes until (positive) or since (negative) the event, recomputed from the
+// report's own createdAt so the countdown never freezes at scan time.
 interface HeatDiagnosticsLite {
   providers: Array<{ kind: string; connected: boolean; name: string }>;
 }
 
 export function NewsRiskCard({ symbol }: { symbol: string | null }) {
   const qc = useQueryClient();
+  // Re-render every 30s so the report age / countdown keep moving.
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const enabled = !!symbol;
   // Provider honesty: a green "CLEAR" must never imply a confident all-clear
   // when the economic-calendar / news providers are not connected. Reuse the
@@ -135,6 +164,14 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
   }
 
   const r = latest.data;
+  const createdMs = r ? new Date(r.createdAt).getTime() : NaN;
+  const reportAgeMs = Number.isFinite(createdMs) ? Math.max(0, nowMs - createdMs) : null;
+  // Unknown age is treated as outdated (fail closed).
+  const reportOutdated = r ? reportAgeMs == null || reportAgeMs > NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS : false;
+  const scanTime = r && Number.isFinite(createdMs) ? new Date(createdMs).toLocaleTimeString() : "an unknown time";
+  // A CLEAR scored from a stored calendar that does not reach the next 24h is
+  // not an all-clear: shown as "not checked" with the server's reason.
+  const clearNotChecked = r?.riskLevel === "CLEAR" && r.calendarCoverage?.windowCovered === false;
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
       <header className="flex items-center justify-between">
@@ -181,15 +218,37 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
 
       {r && (
         <>
+          {reportOutdated && (
+            <div
+              className="rounded-md border border-slate-600 bg-slate-800/60 p-3 text-xs text-slate-300"
+              data-testid="news-risk-outdated"
+            >
+              <span className="font-semibold text-slate-200">Outdated scan.</span>{" "}
+              This report was generated {reportAgeMs == null ? "at an unknown time" : `${fmtAgo(reportAgeMs)} (at ${scanTime})`}.
+              The risk level below is what the scan found then, not now. Run a new scan for the current risk.
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-3">
-            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STYLES[r.riskLevel]}`}>
-              {r.riskLevel.replace(/_/g, " ")}
-            </span>
-            {r.timeUntilEventMinutes !== null && (
-              <span className="text-sm text-slate-300">
-                Event {r.timeUntilEventMinutes >= 0
-                  ? `in ${r.timeUntilEventMinutes}m`
-                  : `${Math.abs(r.timeUntilEventMinutes)}m ago`}
+            {clearNotChecked ? (
+              // A CLEAR from a calendar that does not cover the window is not an all-clear.
+              <span data-testid="news-risk-not-checked" className="rounded bg-slate-700 px-2 py-0.5 text-xs font-semibold text-slate-100">
+                {reportOutdated ? `At ${scanTime}: ` : ""}NOT CHECKED
+              </span>
+            ) : (
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                  reportOutdated ? "border border-slate-600 bg-slate-800 text-slate-300" : STYLES[r.riskLevel]
+                }`}
+                data-testid="news-risk-level"
+              >
+                {reportOutdated ? `At ${scanTime}: ` : ""}{r.riskLevel.replace(/_/g, " ")}
+              </span>
+            )}
+            {r.timeUntilEventMinutes !== null && Number.isFinite(createdMs) && (
+              // The minute offset is true only at report time (createdAt); count
+              // from the event time it implies, against the ticking clock.
+              <span className="text-sm text-slate-300" data-testid="text-news-risk-event-countdown">
+                Event {eventCountdownLabel(createdMs + r.timeUntilEventMinutes * 60_000, nowMs)}
               </span>
             )}
             {r.relatedCurrency && (
@@ -198,16 +257,26 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
           </div>
           {r.tradeWarning && (
             <div className={`rounded-md border p-3 text-xs ${
-              r.riskLevel === "NO_TRADE_WINDOW" ? "border-red-700 bg-red-950/40 text-red-200"
+              reportOutdated ? "border-slate-700 bg-slate-900/40 text-slate-400"
+              : r.riskLevel === "NO_TRADE_WINDOW" ? "border-red-700 bg-red-950/40 text-red-200"
               : r.riskLevel === "HIGH_RISK"     ? "border-orange-700 bg-orange-950/40 text-orange-200"
               : "border-amber-700 bg-amber-950/40 text-amber-200"
-            }`}>
-              <div className="mb-1 font-semibold uppercase tracking-wide">⚠ {r.riskLevel === "NO_TRADE_WINDOW" ? "Do not trade" : "Caution"}</div>
+            }`} data-testid="news-risk-warning">
+              <div className="mb-1 font-semibold uppercase tracking-wide">
+                {reportOutdated
+                  ? `At scan time (${scanTime}): ${r.riskLevel === "NO_TRADE_WINDOW" ? "do not trade" : "caution"}`
+                  : `⚠ ${r.riskLevel === "NO_TRADE_WINDOW" ? "Do not trade" : "Caution"}`}
+              </div>
               <p>{r.tradeWarning}</p>
             </div>
           )}
-          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300">
-            {r.aiSummary}
+          {r.calendarCoverage?.windowCovered === false && (
+            <div data-testid="news-risk-calendar-not-covered" className="rounded-md border border-amber-800/60 bg-amber-950/30 p-3 text-xs text-amber-200">
+              {r.calendarCoverage.note ?? "The stored economic calendar does not cover the next 24h, so scheduled events cannot be ruled out."}
+            </div>
+          )}
+          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300" data-testid="news-risk-summary">
+            {reportOutdated ? `At scan time (${scanTime}): ` : ""}{r.aiSummary}
           </p>
           {/* Driving headlines — the same severity-ranked headlines surfaced on
               the Global Market Heat card, shown only when risk is elevated/high

@@ -32,13 +32,19 @@ export interface CoachReport {
   mode: "PAPER_ONLY";
   liveTradingStatus: "DISABLED";
   reportType: CoachReportType;
+  // Truth rule: readiness fields come only from a Risk Governor evaluation.
+  // When it could not run they are null (with readinessUnavailableReason) —
+  // never 0 / "F" / "NOT_READY", which read as a measured verdict — and the
+  // paper/autopilot permissions are unknown (null), not false.
   traderStatus: {
-    readinessScore: number;
-    readinessGrade: string;
-    readinessLevel: string;
+    readinessEvaluated: boolean;
+    readinessUnavailableReason: string | null;
+    readinessScore: number | null;
+    readinessGrade: string | null;
+    readinessLevel: string | null;
     governorStatus: string;
-    paperTradingAllowed: boolean;
-    autopilotAllowed: boolean;
+    paperTradingAllowed: boolean | null;
+    autopilotAllowed: boolean | null;
     liveTradingAllowed: false;
   };
   performanceSummary: {
@@ -76,7 +82,10 @@ interface Logger {
 }
 const NOOP_LOG: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
-const LIVE_DISABLED_REMINDER = "Live trading remains DISABLED. Build II is paper-only coaching and never recommends live execution.";
+// This coach never reads the caller's account mode, so it must not claim the
+// account's live trading is disabled (a LIVE_SHARED user may be armed). It
+// can only say what it does itself: review only, no orders.
+const LIVE_DISABLED_REMINDER = "Coaching only: this report places no orders and never recommends live execution. It does not show whether your account is armed for live trading — check Account Mode for that.";
 const PAPER_MODE_REMINDER = "All guidance applies to PAPER mode only.";
 
 const SAFE_DEFAULT_CHECKLIST: CoachReport["preSessionChecklist"] = [
@@ -91,8 +100,10 @@ const SAFE_DEFAULT_CHECKLIST: CoachReport["preSessionChecklist"] = [
   { id: "confidence_threshold", label: "AI decision confidence meets your minimum", required: true, auto: false },
   { id: "risk_score_ok", label: "AI decision risk score is below your maximum", required: true, auto: false },
   { id: "sl_tp_set", label: "Stop loss and take profit are explicitly defined", required: true, auto: false },
-  { id: "live_disabled", label: "Live trading is DISABLED (Build HH check)", required: true, auto: true },
-  { id: "paper_only", label: "Mode is PAPER_ONLY (no live execution attempted)", required: true, auto: true },
+  { id: "live_disabled", label: "Account mode checked: this session is paper practice, not live execution", required: true, auto: false },
+  // The coach never reads the account mode (an armed LIVE_SHARED trader is
+  // not paper-only), so this auto item states only what the coach knows.
+  { id: "paper_only", label: "This coaching session sends no orders (it only reviews; your account mode is on the dashboard's Trading Permission card)", required: true, auto: true },
 ];
 
 const SAFE_DEFAULT_REVIEW_QUESTIONS = [
@@ -390,12 +401,14 @@ export async function generateCoachReport(opts: GenerateCoachOptions): Promise<C
     liveTradingStatus: "DISABLED",
     reportType,
     traderStatus: {
-      readinessScore: governor?.readinessScore ?? 0,
-      readinessGrade: governor?.readinessGrade ?? "F",
-      readinessLevel: governor?.readinessLevel ?? "NOT_READY",
+      readinessEvaluated: governor != null,
+      readinessUnavailableReason: governor ? null : "Readiness could not be evaluated: the Risk Governor did not respond for this report.",
+      readinessScore: governor?.readinessScore ?? null,
+      readinessGrade: governor?.readinessGrade ?? null,
+      readinessLevel: governor?.readinessLevel ?? null,
       governorStatus: govStatus,
-      paperTradingAllowed: governor?.paperTradingAllowed ?? false,
-      autopilotAllowed: governor?.autopilotAllowed ?? false,
+      paperTradingAllowed: governor?.paperTradingAllowed ?? null,
+      autopilotAllowed: governor?.autopilotAllowed ?? null,
       liveTradingAllowed: false,
     },
     performanceSummary: {
@@ -433,9 +446,13 @@ export async function generateCoachReport(opts: GenerateCoachOptions): Promise<C
         userId,
         coachReportId,
         reportType,
-        readinessScore: report.traderStatus.readinessScore,
-        readinessGrade: report.traderStatus.readinessGrade,
-        readinessLevel: report.traderStatus.readinessLevel,
+        // The columns are NOT NULL (no migration here). An unevaluated
+        // report is stored with level "UNAVAILABLE" / grade "N/A" so the row
+        // never reads as a measured NOT_READY / F verdict; the score column
+        // must hold a number and is 0 only alongside that marker.
+        readinessScore: report.traderStatus.readinessScore ?? 0,
+        readinessGrade: report.traderStatus.readinessGrade ?? "N/A",
+        readinessLevel: report.traderStatus.readinessLevel ?? "UNAVAILABLE",
         governorStatus: govStatus,
         performanceSummary: report.performanceSummary as unknown as Record<string, unknown>,
         topStrengths,

@@ -36,9 +36,16 @@ import {
   isChartTimeframe,
   type ChartTimeframe,
 } from "../data/chart/timeframes.js";
-import { scoreNewsRisk } from "../news/calendar/newsRiskScorer.js";
+import {
+  evaluateMarketDataSufficiency,
+  type MarketDataSufficiencyVerdict,
+} from "@workspace/domain/market";
+import { newsRiskUnavailable, scoreNewsRisk } from "../news/calendar/newsRiskScorer.js";
+import { isSyntheticSymbol as isSyntheticCalendarSymbol } from "../news/calendar/calendarSymbolMap.js";
+import { isCalendarProviderEnabled } from "../news/economicCalendarProvider.js";
+import { SYNTHETIC_EVENT_RISK_LABEL } from "@workspace/domain/truth";
 import type { EconomicEvent } from "../news/calendar/economicEvents.js";
-import { isSupported, normalizeSymbol } from "../instruments/index.js";
+import { isSupported, normalizeSymbol, resolveCanonicalSymbol } from "../instruments/index.js";
 import { getCache } from "../cache/cacheAdapter.js";
 
 // Namespace + TTL are intentionally hard-coded so the cache shape stays
@@ -52,6 +59,36 @@ export const SELECTED_MARKET_CACHE_META = {
 
 // How many real candles to pull for analysis (mirrors the truth brain).
 const CANDLE_LIMIT = 200;
+
+// The bias / trend / confidence read is measured over the SAME window the
+// scanner row uses: the newest 30 CLOSED bars (marketScanner.ts
+// SCAN_ANALYSIS_WINDOW, fed by prepareScannerCandles which drops forming bars).
+// Measuring over all 200 bars, or including the still-forming bar, let this
+// panel show BUY while the Results card and Opportunity Map showed SELL for the
+// same symbol and timeframe. A drift guard test pins the two constants together.
+export const SELECTED_ANALYSIS_WINDOW = 30;
+
+// Clock-skew allowance for a closed bar's close time. A closed bar cannot close
+// in the future; beyond this allowance its time is not an observation.
+const DATA_AS_OF_SKEW_MS = 5_000;
+
+/**
+ * The observation time of the analysis data: the newest CLOSED bar's close
+ * time. Never the forming bar's scheduled close (which lies in the future and
+ * read as "Data as of 0s ago"), and never a time later than now.
+ */
+function closedBarDataAsOf(closed: NormalizedChartCandle[], nowMs: number): string | null {
+  const last = closed[closed.length - 1];
+  if (!last) return null;
+  const closeMs = Date.parse(last.closeTime);
+  if (!Number.isFinite(closeMs) || closeMs > nowMs + DATA_AS_OF_SKEW_MS) return null;
+  return new Date(closeMs).toISOString();
+}
+
+/** Fully closed provider bars only. A forming bar is never an analysis input. */
+function closedBars(candles: NormalizedChartCandle[]): NormalizedChartCandle[] {
+  return candles.filter((c) => c.isComplete === true && c.isForming !== true);
+}
 
 // Injectable SOURCE deps so the builder is unit-testable with crafted candle /
 // feed inputs (mirrors the truth brain's dependency-injection pattern). The real
@@ -72,7 +109,12 @@ export interface SelectedMarketHighlights {
   bias: "BUY" | "SELL" | "NEUTRAL" | "WAIT";
   confidenceLabel: "Very Low" | "Low" | "Medium" | "High";
   confidenceScore: number;
-  volatilityLabel: "Calm" | "Normal" | "Elevated" | "Choppy";
+  /**
+   * Measured volatility: the newest 14-bar ATR against the mean true range of
+   * the older closed bars. "Unmeasured" when there are too few closed bars to
+   * compare; "Choppy" when the read itself is choppy.
+   */
+  volatilityLabel: "Calm" | "Normal" | "Elevated" | "Choppy" | "Unmeasured";
   trendState: "bullish" | "bearish" | "neutral" | "choppy";
   // Level geometry is NULL when withheld by the stale-level guard or when there
   // is no live data — never zeros styled as levels (Task #518).
@@ -114,6 +156,14 @@ export interface SelectedMarketResult {
     riskLevel: "none" | "low" | "medium" | "high";
     blockTrading: boolean;
     summary: string;
+    /**
+     * True only when a configured calendar supplied a non-empty stored window,
+     * or scheduled events do not apply (synthetic). false means the calendar
+     * was NOT checked: an empty event list is then not a confirmed quiet day.
+     */
+    calendarChecked: boolean;
+    /** Plain-English limit of the event list (not checked / synthetic / unmapped), or null. */
+    calendarNote: string | null;
   };
   /**
    * Honest data source for THIS envelope. Always the real market-data pipeline
@@ -122,16 +172,25 @@ export interface SelectedMarketResult {
    * SIMULATOR (Task #518).
    */
   dataSource: AnalysisDataSource;
-  /** Clean-English source label (e.g. "Live broker feed"); null when unknown. */
+  /** Clean-English source label (e.g. "MT5 broker feed"); null when unknown. */
   dataSourceLabel: string | null;
   /** Honest freshness state derived from the feed status. */
   dataState: TruthDataState;
-  /** The DATA timestamp (newest candle time from the feed), NOT the build time. */
+  /**
+   * The DATA timestamp: the newest CLOSED bar's close time, NOT the build time
+   * and never a forming bar's scheduled future close. null when unknown.
+   */
   dataAsOf: string | null;
   /** True when saved geometry drifted too far from price and was withheld. */
   levelsWithheld: boolean;
   /** The guard's reason sentence when levels are withheld, else null. */
   levelsWithheldReason: string | null;
+  /**
+   * Why NO directional read (bias, confidence, trend, levels) is shown, or null
+   * when one is. Set whenever the feed is not LIVE_CONFIRMED or the shared
+   * data-sufficiency verdict (the scanner row's) withholds direction.
+   */
+  readWithheldReason: string | null;
   generatedAt: string;
   cacheHit: boolean;
 }
@@ -180,11 +239,41 @@ function confidenceLabel(score: number): SelectedMarketHighlights["confidenceLab
   return "Very Low";
 }
 
-function volatilityLabel(riskScore: number, bias: MarketAnalysis["marketBias"]): SelectedMarketHighlights["volatilityLabel"] {
+// Recent-vs-baseline volatility. The label used to map the analysis riskScore,
+// which (with no spread observed here) is a constant 20 — so every non-choppy
+// market read "Calm" whatever its ranges were. It now MEASURES the bars.
+const VOL_RECENT_BARS = 14;
+const VOL_MIN_BASELINE_BARS = 14;
+const VOL_ELEVATED_RATIO = 1.5;
+const VOL_CALM_RATIO = 0.67;
+
+function trueRanges(candles: NormalizedChartCandle[]): number[] {
+  const trs: number[] = [];
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i];
+    const p = candles[i - 1];
+    if (!c || !p) continue;
+    const tr = Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+    if (Number.isFinite(tr)) trs.push(tr);
+  }
+  return trs;
+}
+
+function volatilityLabel(
+  closed: NormalizedChartCandle[], bias: MarketAnalysis["marketBias"],
+): SelectedMarketHighlights["volatilityLabel"] {
   if (bias === "choppy") return "Choppy";
-  if (riskScore >= 70) return "Elevated";
-  if (riskScore >= 40) return "Normal";
-  return "Calm";
+  const trs = trueRanges(closed);
+  if (trs.length < VOL_RECENT_BARS + VOL_MIN_BASELINE_BARS) return "Unmeasured";
+  const recent = trs.slice(-VOL_RECENT_BARS);
+  const baseline = trs.slice(0, -VOL_RECENT_BARS);
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const base = mean(baseline);
+  if (!(base > 0)) return "Unmeasured";
+  const ratio = mean(recent) / base;
+  if (ratio >= VOL_ELEVATED_RATIO) return "Elevated";
+  if (ratio <= VOL_CALM_RATIO) return "Calm";
+  return "Normal";
 }
 
 function biasFromAction(a: MarketAnalysis["recommendedAction"]): SelectedMarketHighlights["bias"] {
@@ -200,7 +289,10 @@ function impactDbToLower(level: string): "low" | "medium" | "high" {
   return "low";
 }
 
-function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: string): SelectedMarketExplanation {
+function buildExplanation(
+  a: MarketAnalysis, newsBlocking: boolean, newsReason: string,
+  volatility: SelectedMarketHighlights["volatilityLabel"],
+): SelectedMarketExplanation {
   const side = biasFromAction(a.recommendedAction);
   const hedge = side === "BUY"
     ? "This looks like a possible buy setup right now."
@@ -218,7 +310,7 @@ function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: 
   if (newsBlocking) {
     whyItMattersBits.push("A high-impact event is near — large moves are possible.");
   }
-  if (a.riskScore >= 70) whyItMattersBits.push("Volatility is elevated, so position sizing matters.");
+  if (volatility === "Elevated") whyItMattersBits.push("Recent bars are much wider than usual, so position sizing matters.");
   if (a.confidenceScore < 50) whyItMattersBits.push("Confidence is not high — wait for confirmation before sizing up.");
   if (!whyItMattersBits.length) whyItMattersBits.push("Conditions look stable for the scanner's read.");
   const whyItMatters = whyItMattersBits.join(" ");
@@ -233,7 +325,7 @@ function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: 
   const cautions: string[] = [];
   if (newsReason) cautions.push(newsReason);
   if (a.confidenceScore < 50) cautions.push("Confidence is low — confirm with price action.");
-  if (a.riskScore >= 70) cautions.push("Size smaller than usual while volatility is elevated.");
+  if (volatility === "Elevated") cautions.push("Size smaller than usual while volatility is elevated.");
   if (a.marketBias === "choppy") cautions.push("Market is choppy — wait for a clear direction.");
   return {
     hedge, why, whyItMatters, risk, invalidation, cautions,
@@ -241,10 +333,76 @@ function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: 
   };
 }
 
+/** Non-directional copy for a withheld read: no side, no level, no "setup". */
+function withheldExplanation(reason: string, newsReason: string): SelectedMarketExplanation {
+  return {
+    hedge: "No directional read right now.",
+    why: reason,
+    whyItMatters: "Direction, confidence and levels return once the feed is confirmed live with enough closed bars.",
+    risk: "There is no actionable read until the feed is confirmed live.",
+    invalidation: "Not available without a current read.",
+    cautions: newsReason ? [newsReason] : [],
+    disclaimer: "Decision support only — confirm live readiness and risk before trading.",
+  };
+}
+
+/** Calendar check outcome for the selected symbol's event list. */
+export interface SelectedMarketCalendarStatus {
+  checked: boolean;
+  note: string | null;
+}
+
+export const CALENDAR_NOT_CONFIGURED_NOTE =
+  "No economic-calendar provider is configured, so scheduled events were not checked.";
+export const CALENDAR_EMPTY_WINDOW_NOTE =
+  "No economic-calendar events are stored for the next 24 hours. The calendar may not have been synced, so this is not a confirmed quiet day.";
+
+/** Synthetic markets are not moved by scheduled economic events. */
+export function isSyntheticEventSymbol(symbol: string): boolean {
+  try {
+    if (resolveCanonicalSymbol(symbol).assetClass === "synthetic") return true;
+  } catch {
+    // fall through to the calendar matcher
+  }
+  return isSyntheticCalendarSymbol(symbol);
+}
+
+interface EventRowLike {
+  currency: string;
+  affectedSymbols: unknown;
+  source?: string | null;
+}
+
+/**
+ * The stored calendar rows that may move `symbol`: a row whose currency is one
+ * of the symbol's currencies, or that names the symbol explicitly. With no
+ * currency mapping only explicitly tagged rows match (never every row), a
+ * synthetic market matches none, and rows written by the mock provider are
+ * never listed as real events.
+ */
+export function filterEventRowsForSymbol<R extends EventRowLike>(
+  rows: R[], symbol: string, currencyHints: string[],
+): R[] {
+  if (isSyntheticEventSymbol(symbol)) return [];
+  return rows.filter((r) => {
+    if (r.source === "mock") return false;
+    if (currencyHints.includes(r.currency)) return true;
+    const affected = r.affectedSymbols;
+    return Array.isArray(affected) && affected.some((s) => typeof s === "string" && s.toUpperCase() === symbol);
+  });
+}
+
 async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
   events: SelectedMarketEvent[];
   scorerInput: EconomicEvent[];
+  calendar?: SelectedMarketCalendarStatus;
 }> {
+  if (isSyntheticEventSymbol(symbol)) {
+    return { events: [], scorerInput: [], calendar: { checked: true, note: SYNTHETIC_EVENT_RISK_LABEL } };
+  }
+  if (!isCalendarProviderEnabled()) {
+    return { events: [], scorerInput: [], calendar: { checked: false, note: CALENDAR_NOT_CONFIGURED_NOTE } };
+  }
   const now = new Date();
   const until = new Date(now.getTime() + 24 * 3600 * 1000);
   const rows = await db.select().from(economicEventsTable)
@@ -252,12 +410,16 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
       gte(economicEventsTable.eventTime, now),
       lte(economicEventsTable.eventTime, until),
     ));
-  const matching = rows.filter((r) => {
-    if (currencyHints.length === 0) return true;
-    if (currencyHints.includes(r.currency)) return true;
-    const affected = (r.affectedSymbols ?? []) as unknown as string[];
-    return Array.isArray(affected) && affected.some((s) => s.toUpperCase() === symbol);
-  });
+  const realRows = rows.filter((r) => r.source !== "mock");
+  const calendar: SelectedMarketCalendarStatus = realRows.length === 0
+    ? { checked: false, note: CALENDAR_EMPTY_WINDOW_NOTE }
+    : {
+      checked: true,
+      note: currencyHints.length === 0
+        ? `No currency mapping for ${symbol}, so only calendar events tagged to ${symbol} are listed.`
+        : null,
+    };
+  const matching = filterEventRowsForSymbol(realRows, symbol, currencyHints);
   const sorted = matching
     .filter((r) => ["MEDIUM", "HIGH", "CRITICAL"].includes(String(r.impactLevel)))
     .sort((a, b) => +new Date(a.eventTime) - +new Date(b.eventTime));
@@ -269,6 +431,8 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
     eventTime: new Date(r.eventTime).toISOString(),
     minutesUntil: Math.round((+new Date(r.eventTime) - Date.now()) / 60000),
   }));
+  // The scorer reasons over exactly the events listed for this symbol, so the
+  // risk line and the list can never disagree about which events apply.
   const scorerInput: EconomicEvent[] = sorted.map((r) => ({
     id: r.externalId,
     title: r.eventName,
@@ -279,10 +443,10 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
     forecast: r.forecast ?? null,
     previous: r.previous ?? null,
     eventTime: new Date(r.eventTime).toISOString(),
-    affectedMarkets: (r.affectedSymbols ?? []) as unknown as string[],
+    affectedMarkets: [...((r.affectedSymbols ?? []) as unknown as string[]), symbol],
     source: r.source ?? "db",
   }));
-  return { events, scorerInput };
+  return { events, scorerInput, calendar };
 }
 
 function currencyHintsFor(symbol: string): string[] {
@@ -296,7 +460,9 @@ function currencyHintsFor(symbol: string): string[] {
 function sourceLabelFor(source: string | null): string | null {
   if (!source) return null;
   const s = source.toLowerCase();
-  if (s.startsWith("mt5_broker")) return "Live broker feed";
+  // Source identity only — liveness is the data state's job (a stored mirror
+  // or stale series is still "mt5_broker").
+  if (s.startsWith("mt5_broker")) return "MT5 broker feed";
   if (s.startsWith("deriv")) return "Deriv feed";
   return "Market data feed";
 }
@@ -319,22 +485,34 @@ function newestClose(candles: NormalizedChartCandle[]): number | null {
 }
 
 function computeAtr(candles: NormalizedChartCandle[], period = 14): number | null {
-  if (candles.length < 2) return null;
-  const trs: number[] = [];
-  for (let i = 1; i < candles.length; i++) {
-    const c = candles[i];
-    const p = candles[i - 1];
-    if (!c || !p) continue;
-    const tr = Math.max(
-      c.high - c.low,
-      Math.abs(c.high - p.close),
-      Math.abs(c.low - p.close),
-    );
-    if (Number.isFinite(tr)) trs.push(tr);
-  }
-  const window = trs.slice(-period);
+  const window = trueRanges(candles).slice(-period);
   if (window.length === 0) return null;
   return window.reduce((a, b) => a + b, 0) / window.length;
+}
+
+/** The shared freshness scale the scanner row feeds the sufficiency verdict. */
+function freshnessVerdictFor(state: TruthDataState): "LIVE" | "LIVE_DELAYED" | "AWAITING" {
+  if (state === "LIVE_CONFIRMED") return "LIVE";
+  if (state === "STALE") return "LIVE_DELAYED";
+  return "AWAITING";
+}
+
+/**
+ * Why the directional read is withheld, or null when it may be shown. Only a
+ * LIVE_CONFIRMED feed that also passes the scanner's shared sufficiency verdict
+ * may show a bias, confidence, trend or levels.
+ */
+function readWithheldReasonFor(state: TruthDataState, sufficiency: MarketDataSufficiencyVerdict): string | null {
+  if (state === "STALE") {
+    return "The market data feed is stale: its newest bars are not current, so no direction, confidence or levels are shown.";
+  }
+  if (state === "SYNCING") {
+    return "The market data feed is not confirmed live yet (it is still syncing), so no direction, confidence or levels are shown.";
+  }
+  if (state !== "LIVE_CONFIRMED") {
+    return "No confirmed market data feed, so no direction, confidence or levels are shown.";
+  }
+  return sufficiency.mayShowBias ? null : sufficiency.humanReason;
 }
 
 // ── Public ────────────────────────────────────────────────────────────────
@@ -398,13 +576,23 @@ async function buildSelectedMarketSnapshot(
   const chart = await deps.getChartCandlesFn(symbol, timeframe, CANDLE_LIMIT, false);
   const fs = chart.feedStatus;
   const dataSourceLabel = sourceLabelFor(fs?.source ?? null);
+  // Closed-bar rule (same as the scanner row): the analysis window is the newest
+  // SELECTED_ANALYSIS_WINDOW closed bars; the forming bar never moves the read.
+  const closed = closedBars(chart.candles);
   // Freshness honesty rides on dataState / dataAsOf — NEVER on a faked source.
-  const dataAsOf = fs?.lastCandleTime ?? null;
-  const analysisCandles: AnalysisCandle[] = chart.candles.map((c) => ({
+  // dataAsOf is the newest closed bar's close time, not feedStatus.lastCandleTime:
+  // the latter is the newest provider bar's closeTime, which for a forming bar
+  // is a scheduled FUTURE instant, not an observation.
+  const dataAsOf = closedBarDataAsOf(closed, Date.now());
+  const analysisBars = closed.slice(-SELECTED_ANALYSIS_WINDOW);
+  const analysisCandles: AnalysisCandle[] = analysisBars.map((c) => ({
     o: c.open, h: c.high, l: c.low, c: c.close,
   }));
+  // The analysis prices off the newest CLOSED close (no bound quote here, the
+  // scanner does the same). The stale-level guard below still compares levels
+  // with the newest observed price, which may be the forming bar's close.
+  const quote: AnalysisQuote = { mid: newestClose(analysisBars) ?? 0, spread: 0 };
   const price = newestClose(chart.candles);
-  const quote: AnalysisQuote = { mid: price ?? 0, spread: 0 };
   const feedProvider = fs?.source ?? undefined;
   const a = analyzeMarketFromCandles(
     symbol, timeframe, analysisCandles, quote, "LIVE_FEED", feedProvider,
@@ -422,7 +610,7 @@ async function buildSelectedMarketSnapshot(
         bias: "WAIT",
         confidenceLabel: "Very Low",
         confidenceScore: 0,
-        volatilityLabel: "Calm",
+        volatilityLabel: "Unmeasured",
         trendState: "neutral",
         entryZone: null,
         suggestedStop: null,
@@ -440,13 +628,18 @@ async function buildSelectedMarketSnapshot(
         disclaimer: "Decision support only — confirm live readiness and risk before trading.",
       },
       upcomingEvents: [],
-      newsRisk: { riskLevel: "none", blockTrading: false, summary: "" },
+      newsRisk: {
+        riskLevel: "none", blockTrading: false, summary: "",
+        calendarChecked: false,
+        calendarNote: "Scheduled events are not checked until market data is available for this market.",
+      },
       dataSource: a.dataSource,
       dataSourceLabel,
       dataState: "UNAVAILABLE",
       dataAsOf,
       levelsWithheld: true,
       levelsWithheldReason: null,
+      readWithheldReason: "No closed candles from the market data feed yet, so there is no read to show.",
       generatedAt: new Date().toISOString(),
       cacheHit: false,
     };
@@ -455,7 +648,7 @@ async function buildSelectedMarketSnapshot(
 
   // Stale-level guard (Task #512 pure domain guard): withhold geometry that has
   // drifted too far from the CURRENT real price — never show stale entries/stops.
-  const atr = computeAtr(chart.candles, 14);
+  const atr = computeAtr(closed, 14);
   const levelInput: TruthLevelInput = {
     entryFrom: a.entryZone.low,
     entryTo: a.entryZone.high,
@@ -465,23 +658,47 @@ async function buildSelectedMarketSnapshot(
   };
   const staleness = evaluateLevelStaleness({ price, levels: levelInput, atr });
   const dataState = deriveDataState(fs);
+  // ONE data-sufficiency truth: the SAME shared verdict the scanner row applies.
+  // A stale or syncing feed, or too few closed bars, withholds every directional
+  // field — never a BUY / High confidence / levels read on data that is not current.
+  const sufficiency = evaluateMarketDataSufficiency({
+    symbol,
+    timeframe,
+    freshnessVerdict: freshnessVerdictFor(dataState),
+    availableClosedCandles: closed.length,
+  });
+  const readWithheldReason = readWithheldReasonFor(dataState, sufficiency);
+  const readShown = readWithheldReason === null;
+  const levelsShown = readShown && !staleness.stale;
 
   const hints = currencyHintsFor(symbol);
-  const { events, scorerInput } = await deps.loadEventsFn(symbol, hints);
-  const news = scoreNewsRisk(symbol, scorerInput);
+  const loaded = await deps.loadEventsFn(symbol, hints);
+  // A loader that does not state the calendar's status has not checked it.
+  const calendar: SelectedMarketCalendarStatus = loaded.calendar
+    ?? { checked: false, note: "The economic calendar's status is unknown, so scheduled events could not be confirmed." };
+  const synthetic = isSyntheticEventSymbol(symbol);
+  const events = synthetic ? [] : loaded.events;
+  const news = synthetic
+    ? { ...scoreNewsRisk(symbol, []), reason: SYNTHETIC_EVENT_RISK_LABEL, riskLevel: "none" as const, blockTrading: false }
+    : calendar.checked
+      ? scoreNewsRisk(symbol, loaded.scorerInput)
+      : newsRiskUnavailable(symbol, calendar.note ?? CALENDAR_NOT_CONFIGURED_NOTE);
+  const volatility = volatilityLabel(closed, a.marketBias);
   const highlights: SelectedMarketHighlights = {
-    bias: biasFromAction(a.recommendedAction),
-    confidenceLabel: confidenceLabel(a.confidenceScore),
-    confidenceScore: Math.round(a.confidenceScore),
-    volatilityLabel: volatilityLabel(a.riskScore, a.marketBias),
-    trendState: a.marketBias,
-    entryZone: staleness.stale ? null : a.entryZone,
-    suggestedStop: staleness.stale ? null : a.stopLoss,
-    suggestedTakeProfit: staleness.stale ? null : a.takeProfit,
-    riskRewardRatio: a.riskRewardRatio,
+    bias: readShown ? biasFromAction(a.recommendedAction) : "WAIT",
+    confidenceLabel: readShown ? confidenceLabel(a.confidenceScore) : "Very Low",
+    confidenceScore: readShown ? Math.round(a.confidenceScore) : 0,
+    volatilityLabel: volatility,
+    trendState: readShown ? a.marketBias : "neutral",
+    entryZone: levelsShown ? a.entryZone : null,
+    suggestedStop: levelsShown ? a.stopLoss : null,
+    suggestedTakeProfit: levelsShown ? a.takeProfit : null,
+    riskRewardRatio: levelsShown ? a.riskRewardRatio : 0,
     riskWarnings: news.blockTrading ? [news.reason] : [],
   };
-  const explanation = buildExplanation(a, news.blockTrading, news.reason);
+  const explanation = readWithheldReason === null
+    ? buildExplanation(a, news.blockTrading, news.reason, volatility)
+    : withheldExplanation(readWithheldReason, news.reason);
   const result: SelectedMarketResult = {
     ok: true,
     symbolRaw,
@@ -490,13 +707,18 @@ async function buildSelectedMarketSnapshot(
     highlights,
     explanation,
     upcomingEvents: events,
-    newsRisk: { riskLevel: news.riskLevel, blockTrading: news.blockTrading, summary: news.reason },
+    newsRisk: {
+      riskLevel: news.riskLevel, blockTrading: news.blockTrading, summary: news.reason,
+      calendarChecked: synthetic || calendar.checked,
+      calendarNote: synthetic ? SYNTHETIC_EVENT_RISK_LABEL : calendar.note,
+    },
     dataSource: a.dataSource,
     dataSourceLabel,
     dataState,
     dataAsOf,
-    levelsWithheld: staleness.stale,
-    levelsWithheldReason: staleness.stale ? staleness.reason : null,
+    levelsWithheld: !levelsShown,
+    levelsWithheldReason: !readShown ? readWithheldReason : staleness.stale ? staleness.reason : null,
+    readWithheldReason,
     generatedAt: new Date().toISOString(),
     cacheHit: false,
   };

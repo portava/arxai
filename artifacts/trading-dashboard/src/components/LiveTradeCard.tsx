@@ -179,8 +179,18 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   } else {
     badges.push({ label: "TP Targets Available", tone: "ok", testId: "badge-tp-available" });
   }
-  badges.push({ label: "SL/TP Editable", tone: "ok", testId: "badge-sltp-editable" });
-  badges.push({ label: "Manual Close Available", tone: "ok", testId: "badge-manual-close" });
+  // The stop / close capability badges used to be pushed UNCONDITIONALLY.
+  // They are claimed only when the card actually shows those controls (the
+  // snapshot loaded), the kill switch has been read and is not engaged, and
+  // the bridge status has been read as connected. Anything unknown or
+  // blocking claims nothing. The card can move the stop (Break-Even / Trail)
+  // but has no take-profit editor, so the label names the stop only.
+  const killRead = typeof safety?.settings?.killSwitchEngaged === "boolean";
+  const controlsUsable = Boolean(snap) && killRead && !killEngaged && mt5State?.connected === true;
+  if (controlsUsable) {
+    badges.push({ label: "Stop Adjustable", tone: "ok", testId: "badge-sltp-editable" });
+    badges.push({ label: "Manual Close Available", tone: "ok", testId: "badge-manual-close" });
+  }
 
   return (
     <div className="flex flex-wrap gap-1" data-testid={`safety-badges-${trade.id}`}>
@@ -276,7 +286,14 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
     qc.invalidateQueries({ queryKey: getGetOpenTradesQueryKey() });
   };
 
-  const healthColor = snap ? (snap.health.score >= 70 ? "[&>div]:bg-green-500" : snap.health.score >= 40 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-destructive") : "";
+  // Truth rule: Current / P&L / R / Health are null when the server had no
+  // quote — render "Unavailable" with the server's reason, never 0 or entry.
+  const health = snap?.health ?? null;
+  const healthColor = health ? (health.score >= 70 ? "[&>div]:bg-green-500" : health.score >= 40 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-destructive") : "";
+  const currentPrice = snap?.currentPrice ?? null;
+  const floatingPnl = snap?.floatingPnl ?? null;
+  const rMultiple = snap?.rMultiple ?? null;
+  const quoteAt = snap?.quoteAt ?? null;
 
   return (
     <Card data-testid={`live-trade-card-${trade.id}`}>
@@ -288,7 +305,16 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
             </span>
             <span className="font-mono">{trade.symbol}</span>
             <Badge variant="outline" className="text-[10px]">{trade.lot} lots</Badge>
-            <Badge variant="outline" className="text-[10px]">{trade.mode}</Badge>
+            {/* trades.mode is the Safety Core state when the record was written,
+                not a broker venue (lib/db schema/trades.ts) — label it so. */}
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              data-testid={`badge-trade-mode-${trade.id}`}
+              title="Safety Core state when this ARX trade record was written. It is not a broker venue; this record is not a broker order."
+            >
+              Safety Core: {trade.mode ?? "unknown"} (at entry)
+            </Badge>
           </CardTitle>
           <Button variant="ghost" size="icon" onClick={() => { setCoachOpen(true); onCoach?.(); }} data-testid={`button-coach-${trade.id}`}>
             <Brain size={16} className="text-primary" />
@@ -311,18 +337,30 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
           <>
             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
               <div><div className="text-muted-foreground">Entry</div><div>{trade.entryPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">Current</div><div>{snap.currentPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">P&L</div><div className={snap.floatingPnl >= 0 ? "text-green-500" : "text-destructive"}>${snap.floatingPnl.toFixed(2)}</div></div>
+              <div><div className="text-muted-foreground">Current</div><div data-testid={`snap-current-${trade.id}`}>{currentPrice != null ? currentPrice.toFixed(5) : <span className="text-muted-foreground">Unavailable</span>}</div></div>
+              <div><div className="text-muted-foreground">P&L</div>{floatingPnl != null
+                ? <div data-testid={`snap-pnl-${trade.id}`} className={floatingPnl >= 0 ? "text-green-500" : "text-destructive"}>{floatingPnl < 0 ? "-" : ""}${Math.abs(floatingPnl).toFixed(2)}</div>
+                : <div data-testid={`snap-pnl-${trade.id}`} className="text-muted-foreground">Unavailable</div>}</div>
               <div><div className="text-muted-foreground">SL</div><div className="text-destructive">{trade.stopLoss.toFixed(5)}</div></div>
               <div><div className="text-muted-foreground">TP</div><div className="text-green-500">{trade.takeProfit.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">R</div><div className={snap.rMultiple >= 0 ? "text-green-500" : "text-destructive"}>{snap.rMultiple.toFixed(2)}R</div></div>
+              <div><div className="text-muted-foreground">R</div>{rMultiple != null
+                ? <div data-testid={`snap-r-${trade.id}`} className={rMultiple >= 0 ? "text-green-500" : "text-destructive"}>{rMultiple.toFixed(2)}R</div>
+                : <div data-testid={`snap-r-${trade.id}`} className="text-muted-foreground">Unavailable</div>}</div>
             </div>
+            {currentPrice != null && quoteAt ? (
+              <div className="text-[10px] text-muted-foreground" data-testid={`snap-quote-at-${trade.id}`}>Quote as of {new Date(quoteAt).toLocaleTimeString()}</div>
+            ) : null}
+            {currentPrice != null && floatingPnl == null && snap.pnlUnavailableReason ? (
+              <div className="text-[10px] text-amber-300" data-testid={`snap-pnl-unavailable-${trade.id}`}>{snap.pnlUnavailableReason}</div>
+            ) : null}
             <div>
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="text-muted-foreground">Health</span>
-                <Badge variant="outline" className="text-[10px] capitalize">{snap.health.state.replace("_", " ")}</Badge>
+                {health
+                  ? <Badge variant="outline" className="text-[10px] capitalize">{health.state.replace("_", " ")}</Badge>
+                  : <Badge variant="outline" className="text-[10px]" data-testid={`snap-health-unavailable-${trade.id}`}>Not measured</Badge>}
               </div>
-              <Progress value={snap.health.score} className={`h-2 ${healthColor}`} />
+              {health ? <Progress value={health.score} className={`h-2 ${healthColor}`} /> : null}
             </div>
             <div className="text-xs p-2 rounded bg-muted/30 border border-border/50">{snap.primarySuggestion}</div>
             <div className="grid grid-cols-2 gap-2">

@@ -88,30 +88,62 @@ export function prepareScannerCandles(
   };
 }
 
+/**
+ * How a quote binds to the bars it would price:
+ *  - BOUND     — same feed/instrument, fresh, with an observed positive spread.
+ *  - LAST_ONLY — same feed/instrument and fresh, but only a last/mid price is
+ *                observed (no bid/ask, or bid == ask): there is no spread to
+ *                bind, so no entry/stop may be priced from it.
+ *  - NONE      — no fresh quote from the same feed/instrument as the bars.
+ */
+export type ScannerQuoteBinding = "BOUND" | "LAST_ONLY" | "NONE";
+
+export interface ScannerQuoteBindingResult {
+  binding: ScannerQuoteBinding;
+  /** The bound mid (BOUND only). LAST_ONLY never exposes a price for geometry. */
+  mid: number | null;
+  /** The observed positive spread (BOUND only). Never synthesized. */
+  spread: number | null;
+}
+
+const UNBOUND: ScannerQuoteBindingResult = { binding: "NONE", mid: null, spread: null };
+
+/**
+ * Classify the quote against the bars with the SAME identity / freshness /
+ * delayed / provenance checks `scannerQuoteFor` applies. Provider-agnostic.
+ * Display/reason input only: LAST_ONLY must never be treated as a usable quote.
+ */
+export function classifyScannerQuoteBinding(
+  candles: MarketCandlesResult, quote: MarketQuoteResult, symbol: string, now: number,
+): ScannerQuoteBindingResult {
+  const q = quote.quote;
+  if (!quote.ok || !q || !sameSymbol(quote.symbol, symbol) || !sameSymbol(q.symbol, symbol) ||
+      !candles.primaryProvider || candles.primaryProvider !== quote.primaryProvider) return UNBOUND;
+  if (!classifyQuoteFreshness(now - Date.parse(q.timestamp)).fresh) return UNBOUND;
+  const cp = candles.provenance, qp = quote.provenance;
+  if (cp?.delayed === true || qp?.delayed === true) return UNBOUND;
+  if (qp && (qp.source !== "LIVE_TICK" || qp.sourceId !== `${quote.primaryProvider}:${symbol.trim().toUpperCase()}` ||
+      qp.providerId !== (quote.primaryProvider?.startsWith("assistant_real:") ? "assistant_real" : quote.primaryProvider))) return UNBOUND;
+  if (cp && qp) {
+    for (const key of ["bridgeConnectionId", "userId", "brokerSymbol", "environment"] as const) {
+      if (cp[key] != null && qp[key] != null && cp[key] !== "unknown" && qp[key] !== "unknown" && cp[key] !== qp[key]) return UNBOUND;
+    }
+  }
+  if (q.bid != null && q.ask != null && (!Number.isFinite(q.bid) || !Number.isFinite(q.ask) || q.bid <= 0 || q.ask < q.bid)) return UNBOUND;
+  const mid = q.bid != null && q.ask != null ? (q.bid + q.ask) / 2 : q.last;
+  if (mid == null || !Number.isFinite(mid) || mid <= 0) return UNBOUND;
+  const observedSpread = q.bid != null && q.ask != null ? q.ask - q.bid : q.spread;
+  const spread = observedSpread != null && Number.isFinite(observedSpread) && observedSpread > 0 ? observedSpread : null;
+  if (spread == null) return { binding: "LAST_ONLY", mid: null, spread: null };
+  return { binding: "BOUND", mid, spread };
+}
+
 /** A live quote must belong to the same feed and instrument as the bars.
  * An independent router fallback must never silently price a different venue's
  * setup. Unknown quote facts produce no usable quote, not a zero-spread fill. */
 export function scannerQuoteFor(
   candles: MarketCandlesResult, quote: MarketQuoteResult, symbol: string, now: number,
 ): { mid: number; spread: number | null } | null {
-  const q = quote.quote;
-  if (!quote.ok || !q || !sameSymbol(quote.symbol, symbol) || !sameSymbol(q.symbol, symbol) ||
-      !candles.primaryProvider || candles.primaryProvider !== quote.primaryProvider) return null;
-  if (!classifyQuoteFreshness(now - Date.parse(q.timestamp)).fresh) return null;
-  const cp = candles.provenance, qp = quote.provenance;
-  if (cp?.delayed === true || qp?.delayed === true) return null;
-  if (qp && (qp.source !== "LIVE_TICK" || qp.sourceId !== `${quote.primaryProvider}:${symbol.trim().toUpperCase()}` ||
-      qp.providerId !== (quote.primaryProvider?.startsWith("assistant_real:") ? "assistant_real" : quote.primaryProvider))) return null;
-  if (cp && qp) {
-    for (const key of ["bridgeConnectionId", "userId", "brokerSymbol", "environment"] as const) {
-      if (cp[key] != null && qp[key] != null && cp[key] !== "unknown" && qp[key] !== "unknown" && cp[key] !== qp[key]) return null;
-    }
-  }
-  if (q.bid != null && q.ask != null && (!Number.isFinite(q.bid) || !Number.isFinite(q.ask) || q.bid <= 0 || q.ask < q.bid)) return null;
-  const mid = q.bid != null && q.ask != null ? (q.bid + q.ask) / 2 : q.last;
-  if (mid == null || !Number.isFinite(mid) || mid <= 0) return null;
-  const observedSpread = q.bid != null && q.ask != null ? q.ask - q.bid : q.spread;
-  const spread = observedSpread != null && Number.isFinite(observedSpread) && observedSpread > 0 ? observedSpread : null;
-  if (spread == null) return null;
-  return { mid, spread };
+  const r = classifyScannerQuoteBinding(candles, quote, symbol, now);
+  return r.binding === "BOUND" && r.mid != null ? { mid: r.mid, spread: r.spread } : null;
 }

@@ -65,6 +65,8 @@ export default function Analytics() {
 
   const acct = acctQ.data as { balance?: number; equity?: number; pnl?: number } | undefined;
   const positions = (posQ.data?.rows ?? []) as unknown as Array<{ symbol: string; side: string; lotSize: number; entryPrice: number; pnl: number }>;
+  // An unread positions list is not "no open positions".
+  const positionsRead = Array.isArray(posQ.data?.rows);
   const daily: DailyRow[] = useMemo(() => (Array.isArray(dailyPerf) ? (dailyPerf as DailyRow[]) : []), [dailyPerf]);
 
   const equity = acct?.equity ?? null;
@@ -120,7 +122,7 @@ export default function Analytics() {
           summary={summary} loadingSummary={loadingSummary}
           daily={daily} loadingDaily={loadingDaily}
           balance={balance} equity={equity} openPnl={openPnl}
-          positions={positions} navigate={navigate}
+          positions={positions} positionsRead={positionsRead} navigate={navigate}
           strategiesCount={Array.isArray(strategies) ? strategies.length : 0}
         />
       )}
@@ -182,7 +184,7 @@ function Chip({ label, value, tone }: { label: string; value: string; tone: stri
 }
 
 // ── Overview tab ────────────────────────────────────────────────────────────
-function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, positions, navigate }: any) {
+function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, positions, positionsRead, navigate }: any) {
   const { name } = useAssistantName();
   const realized = summary?.totalPnl ?? null;
   const maxDD = summary?.maxDrawdown ?? null;
@@ -204,7 +206,10 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardTitle icon={<ShieldCheck className="h-4 w-4 text-primary" />} title="Account Health"
-            action={hasAcct ? <span className="rounded-md border border-success/40 bg-success/10 px-2 py-0.5 text-xs text-success">Healthy</span> : <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-muted">Checking</span>} />
+            /* Only balance/equity numbers are read here — no margin level,
+               drawdown limit or equity/balance ratio is evaluated, so the
+               account is never called "Healthy". */
+            action={hasAcct ? <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-secondary">Not assessed</span> : <span className="rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-xs text-txt-muted">Checking</span>} />
           {!hasAcct ? (
             <p className="mt-3 text-sm text-txt-muted">Account health will appear once MT5/account data is available.</p>
           ) : (
@@ -216,7 +221,7 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
               <Metric label="Max Drawdown" value={maxDD != null ? formatPercent(maxDD) : "—"} tone="text-danger" />
               <Metric label="Total Trades" value={String(totalTrades)} />
               <Metric label="Profit Factor" value={profitFactor != null ? profitFactor.toFixed(2) : "—"} />
-              <Metric label="Open Positions" value={String(positions.length)} />
+              <Metric label="Open Positions" value={positionsRead ? String(positions.length) : "—"} />
             </div>
           )}
         </Card>
@@ -227,14 +232,19 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
             <p className="mt-3 text-sm text-txt-muted">{name} needs more account history before giving a trend read.</p>
           ) : (
             <p className="mt-2 text-sm text-txt-secondary">
-              {openPnl != null && openPnl === 0 ? "No open positions are stressing margin right now." : "Open positions are active — keep an eye on exposure."}{" "}
+              {!positionsRead
+                ? "Open positions could not be read."
+                : positions.length === 0
+                  ? "No open positions right now."
+                  : `${positions.length} open position${positions.length === 1 ? " is" : "s are"} active — keep an eye on exposure.`}{" "}
               {realized != null ? (realized >= 0 ? "Realized P/L is positive over the recorded window." : "Realized P/L is negative over the recorded window — focus on quality setups.") : ""}
             </p>
           )}
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <Chip label="Drawdown" value={maxDD != null && maxDD < 5 ? "Low" : maxDD != null ? "Watch" : "—"} tone="text-success" />
-            <Chip label="Margin" value={hasAcct ? "Healthy" : "—"} tone="text-success" />
-            <Chip label="Exposure" value={positions.length === 0 ? "Clear" : "Active"} tone={positions.length === 0 ? "text-success" : "text-warning"} />
+            <Chip label="Drawdown" value={maxDD != null && maxDD < 5 ? "Low" : maxDD != null ? "Watch" : "—"} tone={maxDD != null && maxDD < 5 ? "text-success" : maxDD != null ? "text-warning" : "text-txt-muted"} />
+            {/* No margin level is read on this page. */}
+            <Chip label="Margin" value="Not measured" tone="text-txt-muted" />
+            <Chip label="Exposure" value={!positionsRead ? "—" : positions.length === 0 ? "Clear" : "Active"} tone={!positionsRead ? "text-txt-muted" : positions.length === 0 ? "text-success" : "text-warning"} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-2.5 py-1.5 text-xs text-ruby"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>

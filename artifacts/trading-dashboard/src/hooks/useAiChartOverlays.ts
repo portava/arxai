@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 import { useAssistantName, DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-name";
+import {
+  canUseScannerOpportunity,
+  nextScannerMapFreshnessChange,
+} from "@/components/scanner/scannerMapFreshness";
 
 // useAiChartOverlays — ARX Native Chart Level 5 AI-overlay FOUNDATION.
 //
@@ -20,7 +24,9 @@ import { useAssistantName, DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-name";
 //
 // HONESTY / SAFETY:
 //   - Never fabricates a marker: scanner overlays are built ONLY for a real
-//     BUY/SELL opportunity with finite levels, and the opportunity's honest
+//     BUY/SELL opportunity with finite levels from a scan the scanner page
+//     would still act on (≤30 s old, live + tradeable, final read TRADE_WATCH;
+//     see isDrawableScannerRow), every level names its scan timeframe, and the opportunity's honest
 //     `dataSource` (SIMULATOR / LIVE_FEED / …) is carried in metadata + label.
 //   - Any fetch failure renders NOTHING (no fake lines), and never throws into
 //     the chart — chart rendering and the Ruby/scanner pages keep working.
@@ -57,6 +63,12 @@ interface ScannerOpportunityLite {
   stopLoss: number;
   takeProfit: number;
   dataSource: string;
+  /** When this row was analysed (server ISO stamp). */
+  generatedAt?: string | null;
+  /** Server feed state for this row: only "live" may be drawn as a signal. */
+  dataStatus?: string;
+  /** Server says this row is on a live feed that may be traded. */
+  tradeable?: boolean;
   finalRead?: { label?: string; headline?: string } | null;
   /** HTF Trend FVG Pullback advisory block (Task #675). Display-only. */
   fvgRead?: {
@@ -65,6 +77,10 @@ interface ScannerOpportunityLite {
     htfAligned: boolean;
     activeFvg: { high: number; low: number; midpoint: number; direction: "bullish" | "bearish"; isMitigated: boolean } | null;
     canSignal: boolean;
+    /** Timeframe the FVG zone was found on (server: always "M5"). */
+    entryTimeframe?: string;
+    /** Close time of the newest closed M5 bar the read used. */
+    asOf?: string | null;
     overlays: Array<{
       id: string;
       kind: "zone" | "line" | "marker";
@@ -88,14 +104,45 @@ export interface AiSignalSummary {
   timeframeMatchesChart: boolean;
   side: ScannerSide;
   bias: string;
-  /** 0..1 (confidenceScore / 100). */
+  /** 0..1 (confidenceScore / 100). Overlay opacity hint only; 0 when the score is missing. */
   confidence: number;
+  /**
+   * The scanner's raw 0..100 heuristic score (mean of setup quality, entry
+   * quality and inverted risk; not a win probability). Null when the scanner
+   * sent no finite score, so the panel can say so instead of showing 0.
+   */
+  confidenceScore: number | null;
   statusBadge: string;
   dataSource: string;
   entry: number;
   stopLoss: number;
   takeProfit: number;
   finalReadHeadline: string | null;
+  /**
+   * Epoch ms after which this signal is older than the scanner's 30 s limit
+   * (row or scan stamp, whichever expires first) and must stop being drawn.
+   */
+  freshUntilMs: number;
+}
+
+/**
+ * The only scanner rows the chart may draw as a BUY/SELL signal: the same rule
+ * the scanner page uses before it offers a trade (recent scan, live and
+ * tradeable row), plus a final read that is a trade watch. A NO_TRADE, AVOID
+ * or WAIT final read, a stale or simulated row, or an old scan draws nothing.
+ */
+export function isDrawableScannerRow(
+  o: Pick<ScannerOpportunityLite, "generatedAt" | "dataStatus" | "tradeable" | "finalRead">,
+  scanGeneratedAt: string | null | undefined,
+  now: number,
+): boolean {
+  if (!canUseScannerOpportunity({
+    generatedAt: o.generatedAt ?? null,
+    scanGeneratedAt: scanGeneratedAt ?? null,
+    dataStatus: o.dataStatus,
+    tradeable: o.tradeable,
+  }, now)) return false;
+  return (o.finalRead?.label ?? "") === "TRADE_WATCH";
 }
 
 export type RubyReadStatus = "idle" | "loading" | "ok" | "insufficient" | "error";
@@ -130,7 +177,13 @@ function toSignalSummary(
   o: ScannerOpportunityLite,
   symbol: string,
   chartTimeframe: string,
+  scanGeneratedAt: string | null,
+  now: number,
 ): AiSignalSummary | null {
+  if (!isDrawableScannerRow(o, scanGeneratedAt, now)) return null;
+  const rowExpiry = nextScannerMapFreshnessChange(o.generatedAt ?? null, now);
+  const scanExpiry = nextScannerMapFreshnessChange(scanGeneratedAt, now);
+  if (rowExpiry == null || scanExpiry == null) return null;
   const action = (o.recommendedAction || "").toUpperCase();
   const side: ScannerSide | null =
     action === "BUY" ? "BUY" : action === "SELL" ? "SELL" : null;
@@ -149,12 +202,16 @@ function toSignalSummary(
     side,
     bias: o.bias || "",
     confidence: conf,
+    confidenceScore: Number.isFinite(o.confidenceScore)
+      ? Math.max(0, Math.min(100, o.confidenceScore))
+      : null,
     statusBadge: o.statusBadge || "",
     dataSource: o.dataSource || "",
     entry: o.entry,
     stopLoss: o.stopLoss,
     takeProfit: o.takeProfit,
     finalReadHeadline: o.finalRead?.headline?.trim() || null,
+    freshUntilMs: Math.min(rowExpiry, scanExpiry),
   };
 }
 
@@ -164,6 +221,9 @@ export function buildSignalOverlays(
   symbol: string,
 ): ChartOverlay[] {
   const arrow = sig.side === "BUY" ? "▲" : "▼";
+  // Every drawn level names the scan timeframe it came from, so an H4 level on
+  // a 1m chart is never read as this chart's own setup.
+  const tf = sig.timeframe ? ` ${sig.timeframe}` : "";
   const tag = sig.dataSource && sig.dataSource !== "LIVE_FEED" ? ` · ${sig.dataSource}` : "";
   const meta = {
     source: "signal",
@@ -177,7 +237,7 @@ export function buildSignalOverlays(
       type: "line",
       symbol,
       price: sig.entry,
-      label: `Scanner ${sig.side} ${arrow} Entry${tag}`,
+      label: `Scanner${tf} ${sig.side} ${arrow} Entry${tag}`,
       severity: "info",
       source: "signal",
       confidence: sig.confidence,
@@ -190,7 +250,7 @@ export function buildSignalOverlays(
       type: "line",
       symbol,
       price: sig.stopLoss,
-      label: "Scanner SL",
+      label: `Scanner${tf} SL`,
       severity: "danger",
       source: "signal",
       confidence: sig.confidence,
@@ -203,7 +263,7 @@ export function buildSignalOverlays(
       type: "line",
       symbol,
       price: sig.takeProfit,
-      label: "Scanner TP",
+      label: `Scanner${tf} TP`,
       severity: "success",
       source: "signal",
       confidence: sig.confidence,
@@ -216,7 +276,7 @@ export function buildSignalOverlays(
       type: "marker",
       symbol,
       price: sig.entry,
-      label: `Scanner ${sig.side}`,
+      label: `Scanner${tf} ${sig.side}`,
       severity: sig.side === "BUY" ? "success" : "danger",
       source: "signal",
       confidence: sig.confidence,
@@ -305,7 +365,16 @@ export function buildFvgOverlays(
     return [];
   }
   const out: ChartOverlay[] = [];
-  for (const raw of fvg.overlays) {
+  // The read is computed on M5 bars whatever chart timeframe is showing, so
+  // every drawn level says which timeframe it came from and as of when.
+  const tfLabel = typeof fvg.entryTimeframe === "string" && fvg.entryTimeframe ? fvg.entryTimeframe : "M5";
+  const asOfMs = typeof fvg.asOf === "string" ? Date.parse(fvg.asOf) : NaN;
+  const asOfLabel = Number.isFinite(asOfMs)
+    ? ` as of ${new Date(asOfMs).toISOString().slice(11, 16)} UTC`
+    : "";
+  const suffix = ` (${tfLabel} FVG read${asOfLabel})`;
+  for (const raw0 of fvg.overlays) {
+    const raw = { ...raw0, label: `${raw0.label}${suffix}` };
     const kind = raw.kind;
     if (kind === "zone") {
       if (
@@ -474,6 +543,9 @@ export function useAiChartOverlays({
         const list: ScannerOpportunityLite[] = Array.isArray(res?.opportunities)
           ? res.opportunities
           : [];
+        const scanGeneratedAt: string | null =
+          typeof res?.generatedAt === "string" ? res.generatedAt : null;
+        const now = Date.now();
         // Prefer an opportunity on the chart's own timeframe; otherwise fall
         // back to any same-symbol opportunity (its timeframe is surfaced
         // honestly so a different-timeframe read is never shown as this one).
@@ -483,7 +555,14 @@ export function useAiChartOverlays({
           symMatches.find((o) => (o.timeframe || "").toUpperCase() === tfUpper) ??
           symMatches[0] ??
           null;
-        setSignal(match ? toSignalSummary(match, normalized, timeframe) : null);
+        // Only a row the scanner itself would still act on may be drawn as a
+        // signal: same timeframe first, else another timeframe (labelled).
+        const drawable = symMatches.filter((o) => isDrawableScannerRow(o, scanGeneratedAt, now));
+        const signalRow =
+          drawable.find((o) => (o.timeframe || "").toUpperCase() === tfUpper) ??
+          drawable[0] ??
+          null;
+        setSignal(signalRow ? toSignalSummary(signalRow, normalized, timeframe, scanGeneratedAt, now) : null);
         setFvgOpp(match ? { symbol: match.symbol, fvgRead: match.fvgRead ?? null } : null);
       } catch {
         // Honest empty on failure — never fabricate a signal.
@@ -503,6 +582,16 @@ export function useAiChartOverlays({
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [normalized, timeframe, suppressed]);
+
+  // A drawn signal disappears the moment its scan passes the 30 s limit, even
+  // between polls (or while a hidden tab has polling paused).
+  useEffect(() => {
+    if (!signal) return;
+    const wait = signal.freshUntilMs - Date.now();
+    if (wait <= 0) { setSignal(null); return; }
+    const t = setTimeout(() => setSignal((cur) => (cur === signal ? null : cur)), wait);
+    return () => clearTimeout(t);
+  }, [signal]);
 
   // Monotonic request token. Bumped on every new Ruby request AND whenever the
   // instrument changes, so a slow in-flight read can never apply its result to a

@@ -21,8 +21,12 @@
 // exhaustively without rendering.
 
 import type { ReadLevel } from "./scannerTruth";
-import type { RubyReadStatus } from "./scannerActionability";
+import type { RubyReadStatus, ScannerActionabilityDisplay } from "./scannerActionability";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import type {
+  TradeDataFreshnessBand,
+  TradeHealthReadinessVerdict,
+} from "@workspace/domain/market";
 
 export type RubyReadVerdict =
   | "confirmed"
@@ -49,6 +53,134 @@ export interface RubyReadServerState {
   readLayer?: RubyReadLayer;
   /** The exact live trade setup is withheld (true on a STRUCTURAL_ONLY read). */
   liveSetupWithheld?: boolean;
+  /** Enough closed history to read structure (transparency boolean). */
+  canReadStructure?: boolean;
+  /** The exact live trade setup may be shown (false on STRUCTURAL_ONLY). */
+  canShowLiveTradeSetup?: boolean;
+  /**
+   * The server's Trade-Health contract verdict for THIS read (same contract the
+   * Scanner composes): freshness band, display label and trust line. Used only
+   * to cap the header's Trade Health chip DOWN to what the read actually had.
+   */
+  tradeHealthFreshness?: string;
+  tradeHealthLabel?: string;
+  tradeHealthTrustLine?: string;
+  /**
+   * Data time of the read: the latest CLOSED candle's close boundary (ISO), or
+   * null when the server did not know it. A read is a one-shot snapshot, so this
+   * is what "as of" means — never the time the read was requested.
+   */
+  observedAt?: string | null;
+  /** Gate that withheld the exact setup on a structural read (display-only). */
+  withheldBy?: string | null;
+}
+
+/**
+ * When a non-gated chart read stops describing the current chart: its newest
+ * closed candle + the timeframe's candle freshness budget (the same
+ * `candleMaxAgeMs` the shared scanner truth uses). Returns `null` for a gated
+ * read (nothing directional to expire) and `NaN` when the read carries no valid
+ * `observedAt` — the caller treats NaN as already expired (fail-closed).
+ */
+export function chartReadExpiresAtMs(
+  read: RubyReadServerState | null | undefined,
+  candleMaxAgeMs: number,
+): number | null {
+  if (!read || read.gated === true) return null;
+  const t = typeof read.observedAt === "string" ? Date.parse(read.observedAt) : Number.NaN;
+  if (!Number.isFinite(t)) return Number.NaN;
+  return t + candleMaxAgeMs;
+}
+
+/** "HH:MM UTC" for a read's observedAt, or null when unknown. */
+export function chartReadAsOfLabel(read: RubyReadServerState | null | undefined): string | null {
+  const t = typeof read?.observedAt === "string" ? Date.parse(read.observedAt) : Number.NaN;
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+}
+
+/**
+ * True when a server read is a STRUCTURAL_ONLY read — direction from closed
+ * candles, exact entry/stop/target withheld.
+ *
+ * Primary signal: `readLayer === "STRUCTURAL_ONLY"`. Belt-and-braces: the
+ * transparency booleans (`liveSetupWithheld`, `canShowLiveTradeSetup`) travel
+ * beside it and survive the server's user-copy scrubber, which once blanked
+ * `readLayer` to "" (owner screenshot 2026-10-27: "Full read" + "Live read on
+ * V75 1m." beside "Exact entry, stop, and target levels withheld"). A non-gated
+ * read that says its live setup is withheld is therefore treated as structural
+ * even when `readLayer` is missing, empty or contradicts it. DOWNGRADE-ONLY: this
+ * can only lower the panel/header verdict, never raise it. A gated read is the
+ * stricter "not confirmed" state and is left to that path.
+ */
+export function isStructuralOnlyRead(read: RubyReadServerState | null | undefined): boolean {
+  if (!read) return false;
+  if (read.readLayer === "STRUCTURAL_ONLY") return true;
+  // Gated / insufficient reads also carry liveSetupWithheld but are the harder
+  // "not confirmed" block, so they are left to that path.
+  if (read.gated === true || read.dataQuality === "insufficient" || read.readLayer === "INSUFFICIENT") {
+    return false;
+  }
+  return (
+    read.canReadStructure !== false &&
+    (read.liveSetupWithheld === true || read.canShowLiveTradeSetup === false)
+  );
+}
+
+const FRESHNESS_RANK: Record<TradeDataFreshnessBand, number> = {
+  LIVE_CONFIRMED: 4,
+  LIVE_DELAYED: 3,
+  HISTORICAL_ONLY: 2,
+  AWAITING: 1,
+  UNKNOWN: 0,
+};
+
+const FALLBACK_FRESHNESS_LABEL: Record<TradeDataFreshnessBand, string> = {
+  LIVE_CONFIRMED: "Live-confirmed",
+  LIVE_DELAYED: "Delayed feed",
+  HISTORICAL_ONLY: "Historical read only",
+  AWAITING: "Awaiting live feed",
+  UNKNOWN: "Unconfirmed",
+};
+
+function isFreshnessBand(v: unknown): v is TradeDataFreshnessBand {
+  return typeof v === "string" && Object.prototype.hasOwnProperty.call(FRESHNESS_RANK, v);
+}
+
+/**
+ * Cap the header's Trade Health readiness DISPLAY by the same-key server read.
+ *
+ * The header chip is composed client-side from the scanner's own candle verdict;
+ * the Ruby read for the same symbol+timeframe carries the server's contract
+ * verdict (`tradeHealthFreshness` / label / trust line). When the server read is
+ * strictly LESS fresh (LIVE_CONFIRMED > LIVE_DELAYED > HISTORICAL_ONLY >
+ * AWAITING > UNKNOWN) the chip adopts the server's label and trust line and every
+ * affordance flag drops to false, so the board can never say "Live-confirmed 1m
+ * read with enough recent closed candles" next to a read whose exact levels are
+ * withheld because the feed is delayed. Never upgrades: an equal or fresher
+ * server band, a missing/unknown band, or no read returns `readiness` unchanged.
+ * DISPLAY-ONLY — no execution path reads this.
+ */
+export function capReadinessByServerRead(
+  readiness: TradeHealthReadinessVerdict,
+  read: RubyReadServerState | null | undefined,
+): TradeHealthReadinessVerdict {
+  const band = read?.tradeHealthFreshness;
+  if (!read || !isFreshnessBand(band)) return readiness;
+  if (FRESHNESS_RANK[band] >= FRESHNESS_RANK[readiness.dataFreshness]) return readiness;
+  const label = typeof read.tradeHealthLabel === "string" ? read.tradeHealthLabel.trim() : "";
+  const trust = typeof read.tradeHealthTrustLine === "string" ? read.tradeHealthTrustLine.trim() : "";
+  return {
+    ...readiness,
+    dataFreshness: band,
+    displayLabel: label || FALLBACK_FRESHNESS_LABEL[band],
+    userFacingTrustLine: trust || read.blockedReason || "",
+    mayDescribeSetup: false,
+    mayShowTradeButton: false,
+    mayShowOneClickButton: false,
+    mayOfferLiveExecutionRequest: false,
+  };
 }
 
 /**
@@ -68,9 +200,111 @@ export interface ChartRead extends RubyReadServerState {
   sellCondition?: string;
   invalidation?: string;
   riskNote?: string;
-  htfBias?: string;
+  /** Higher-timeframe bias; null/absent ⇒ the HTF was NOT read. */
+  htfBias?: string | null;
+  /** Canonical code of the timeframe htfBias came from (server-supplied). */
+  htfTimeframe?: string | null;
+  /**
+   * Bars the server's chart-structure read ran over (a moving-average trend /
+   * location read — a different classifier and window from the scanner's swing
+   * structure). Display-only; absent on older payloads ⇒ no window is named.
+   */
+  structureWindow?: number | null;
+  /**
+   * DISPLAY-ONLY child inputs from the server's pattern / trendline detectors on
+   * the same closed-candle window. `*Detection` says whether the detector found
+   * something, looked and found nothing ("none"), or had too few bars
+   * ("insufficient"). Absent ⇒ the read did not assess it (unavailable).
+   */
+  patternRead?: {
+    patternNote?: string;
+    patternStatus?: string;
+    patternConditional?: boolean;
+    patternContextOnly?: boolean;
+    patternDetection?: string;
+  } | null;
+  trendlineRead?: {
+    trendlineNote?: string;
+    trendlineStatus?: string;
+    trendlineConditional?: boolean;
+    trendlineContextOnly?: boolean;
+    trendlineDetection?: string;
+  } | null;
   cautions?: string[];
   disclaimer?: string;
+  /** Server-measured momentum sentence (separate from the structure `confidence`). */
+  momentumNote?: string;
+}
+
+const READ_LAYER_RANK: Record<RubyReadLayer, number> = {
+  INSUFFICIENT: 0,
+  STRUCTURAL_ONLY: 1,
+  FULL: 2,
+};
+function asReadLayer(v: unknown): RubyReadLayer | null {
+  return v === "FULL" || v === "STRUCTURAL_ONLY" || v === "INSUFFICIENT" ? v : null;
+}
+
+/**
+ * Fold the route's top-level `readLayer` (the read-chart service's own layer,
+ * returned beside `chartRead`) into the read — DOWNGRADE-ONLY. A missing or
+ * blank `chartRead.readLayer` takes the route layer only when that layer is
+ * STRUCTURAL_ONLY / INSUFFICIENT; a route "FULL" never promotes a blank layer,
+ * and a lower route layer always wins over a higher payload layer.
+ */
+export function withRouteReadLayer<T extends RubyReadServerState>(
+  read: T | null | undefined,
+  routeLayer: unknown,
+): T | null {
+  if (!read || typeof read !== "object") return read ?? null;
+  const route = asReadLayer(routeLayer);
+  if (!route) return read;
+  const own = asReadLayer(read.readLayer);
+  if (own == null) return route === "FULL" ? read : { ...read, readLayer: route };
+  return READ_LAYER_RANK[route] < READ_LAYER_RANK[own] ? { ...read, readLayer: route } : read;
+}
+
+/**
+ * The server's higher-timeframe read, resolved for display. `bias` is null when
+ * the HTF was not read — including the legacy "No clear edge" sentinel older
+ * servers sent when they never fetched HTF candles (quickTrend never yields it
+ * once it has bars). `label` is the server's htfTimeframe as a chart-pill label
+ * ("M15" → "15m"); the client never derives which timeframe is "higher".
+ */
+export function resolveHtfRead(read: Pick<ChartRead, "htfBias" | "htfTimeframe"> | null | undefined): {
+  bias: string | null;
+  label: string | null;
+} {
+  const raw = (read?.htfBias ?? "").trim();
+  const bias = raw && raw.toLowerCase() !== "no clear edge" ? raw : null;
+  const code = (read?.htfTimeframe ?? "").trim().toUpperCase();
+  const m = /^(MN|[MHDW])(\d+)$/.exec(code);
+  let label: string | null = null;
+  if (m) {
+    const unit = m[1] === "MN" ? "mo" : m[1] === "M" ? "m" : m[1] === "H" ? "h" : m[1] === "D" ? "D" : "W";
+    label = `${m[2]}${unit}`;
+  }
+  return { bias, label };
+}
+
+/**
+ * True when the page's ONE action verdict for this symbol+timeframe is itself a
+ * FEED/DATA limitation ("Feed limited" / "Analysis only"). Only those two: a
+ * CHECK_FAILED is a setup-check error whose own copy says live data is
+ * unaffected, and PENDING / NO_CONFIRMATION only occur with no truth at all
+ * (where the read is already NO_READ). DISPLAY-ONLY — used to cap the Eleanor
+ * cell/panel DOWN so they can never say "Full read" / Clean·AI beside an Action
+ * cell that says the live feed isn't fully confirmed.
+ */
+export function isFeedLimitedAction(
+  action: ScannerActionabilityDisplay | null | undefined,
+): boolean {
+  return action === "FEED_LIMITED" || action === "ANALYSIS_ONLY";
+}
+
+/** Shared downgrade copy for a feed-limited Eleanor read (header + panel). */
+export function feedLimitedReadReason(assistantName: string = DEFAULT_ASSISTANT_NAME): string {
+  return `The live feed isn't fully confirmed — ${assistantName} reads with caution.`;
 }
 
 /** The Ruby read status capped against the server read + an optional override. */
@@ -101,10 +335,16 @@ export function resolveCappedRubyReadStatus(
   read: RubyReadServerState | null,
   aiUsableOverride?: boolean,
   assistantName: string = DEFAULT_ASSISTANT_NAME,
+  /**
+   * The page's action verdict is a feed/data limitation (`isFeedLimitedAction`).
+   * Downgrade-only: caps FULL_READ to LIMITED_READ exactly like a blocking
+   * override; never raises anything.
+   */
+  actionFeedLimited = false,
 ): CappedRubyRead {
   if (base === "NO_READ") return { status: "NO_READ", reason: null };
 
-  const overrideBlocks = aiUsableOverride === false;
+  const overrideBlocks = aiUsableOverride === false || actionFeedLimited;
   // A STRUCTURAL_ONLY read is a DOWNGRADE (direction readable, exact setup
   // withheld) — it caps a FULL_READ to LIMITED_READ exactly like a gated /
   // insufficient read, even though `gated` is false and dataQuality is "ok".
@@ -112,7 +352,7 @@ export function resolveCappedRubyReadStatus(
     !!read &&
     (read.gated === true ||
       read.dataQuality === "insufficient" ||
-      read.readLayer === "STRUCTURAL_ONLY");
+      isStructuralOnlyRead(read));
   const serverReason = readDowngraded
     ? read?.blockedReason ?? read?.headline ?? null
     : null;
@@ -121,9 +361,7 @@ export function resolveCappedRubyReadStatus(
     if (overrideBlocks || readDowngraded) {
       return {
         status: "LIMITED_READ",
-        reason:
-          serverReason ??
-          `The live feed isn't fully confirmed — ${assistantName} reads with caution.`,
+        reason: serverReason ?? feedLimitedReadReason(assistantName),
       };
     }
     return { status: "FULL_READ", reason: null };
@@ -152,6 +390,21 @@ export interface RubyReadPanelInputs {
   aiUsableProp: boolean | undefined;
   /** The server read-chart response once a read has run; `null` before. */
   read: RubyReadServerState | null;
+  /**
+   * The read's data is older than the timeframe's candle budget (or its time is
+   * unknown). Downgrade-only: the badge can no longer claim clean/AI.
+   */
+  readExpired?: boolean;
+  /**
+   * The page's canonical action verdict is a feed/data limitation
+   * (`isFeedLimitedAction`). Display-only downgrade: the badge can never claim
+   * Clean/AI and the panel says the feed isn't confirmed. It is NOT forwarded to
+   * the read-chart endpoint (`reportedAiUsable` is unchanged), so it never
+   * alters what the server reads.
+   */
+  actionFeedLimited?: boolean;
+  /** Assistant display name for the shared downgrade copy. */
+  assistantName?: string;
 }
 
 export interface RubyReadPanelState {
@@ -174,12 +427,15 @@ export interface RubyReadPanelState {
    * the server falls back to its own gate.
    */
   reportedAiUsable: boolean | undefined;
+  /** The shown read no longer describes the current chart (see input). */
+  readExpired: boolean;
 }
 
 export function resolveRubyReadPanelState(
   input: RubyReadPanelInputs,
 ): RubyReadPanelState {
   const { truthLevel, truthReason, aiUsableProp, read } = input;
+  const actionFeedLimited = input.actionFeedLimited === true;
 
   const truthKnown = truthLevel != null;
   // The read is "usable" only when the shared truth is fully actionable. Any
@@ -199,12 +455,42 @@ export function resolveRubyReadPanelState(
   // available, but the exact live setup is withheld. It takes precedence over a
   // generic "not confirmed" (it's the more specific, more honest state) and over
   // "confirmed" (the badge must never claim clean/AI while the setup is withheld).
-  const structuralOnly = read?.readLayer === "STRUCTURAL_ONLY";
+  const structuralOnlyRead = isStructuralOnlyRead(read);
+  // CURRENT truth outranks a STORED structural tier when the truth has since
+  // degraded below what the read was produced on: the read's own freshness
+  // band (server `tradeHealthFreshness`) is fresher than the current shared
+  // truth for the same key, or the truth now has no data at all (blocked). The
+  // read's reason then describes a past state ("Live feed is delayed…") while
+  // the header says historical / no data — so the panel takes the current
+  // not-confirmed verdict and the truth's current reason. Downgrade-only: an
+  // unknown read band (older / scrubbed wire) keeps the structural verdict.
+  const readBand = read?.tradeHealthFreshness;
+  const truthBandRank: number | null =
+    truthLevel === "full"
+      ? FRESHNESS_RANK.LIVE_CONFIRMED
+      : truthLevel === "limited"
+        ? FRESHNESS_RANK.LIVE_DELAYED
+        : truthLevel === "historical_only"
+          ? FRESHNESS_RANK.HISTORICAL_ONLY
+          : truthLevel === "blocked"
+            ? FRESHNESS_RANK.AWAITING
+            : null;
+  const truthDegradedSinceRead =
+    structuralOnlyRead &&
+    truthBandRank != null &&
+    (truthLevel === "blocked" ||
+      (isFreshnessBand(readBand) && FRESHNESS_RANK[readBand] > truthBandRank));
+  const structuralOnly = structuralOnlyRead && !truthDegradedSinceRead;
 
   let verdict: RubyReadVerdict;
   if (structuralOnly) {
     verdict = "structural_only";
-  } else if (readInsufficient || effectiveAiUsable === false) {
+  } else if (
+    truthDegradedSinceRead ||
+    readInsufficient ||
+    effectiveAiUsable === false ||
+    actionFeedLimited
+  ) {
     verdict = "not_confirmed";
   } else if (effectiveAiUsable === true) {
     verdict = "confirmed";
@@ -228,6 +514,8 @@ export function resolveRubyReadPanelState(
       reason = truthReason;
     } else if (readInsufficient) {
       reason = read?.blockedReason ?? read?.headline ?? null;
+    } else if (actionFeedLimited) {
+      reason = feedLimitedReadReason(input.assistantName);
     }
   }
 
@@ -238,14 +526,17 @@ export function resolveRubyReadPanelState(
 
   // The badge may claim clean/AI only on a fully-confirmed read. A
   // structural-only read is a downgrade → never clean/AI.
+  // An expired read (older than its timeframe's candle budget, or of unknown
+  // time) can never back a clean/AI claim either.
+  const readExpired = !!read && read.gated !== true && input.readExpired === true;
   const badgeAiUsable: boolean | null =
-    verdict === "confirmed"
+    verdict === "confirmed" && !readExpired
       ? true
-      : verdict === "not_confirmed" || verdict === "structural_only"
+      : verdict === "not_confirmed" || verdict === "structural_only" || readExpired
         ? false
         : null;
 
-  return { verdict, feedNotConfirmed, reason, badgeAiUsable, reportedAiUsable };
+  return { verdict, feedNotConfirmed, reason, badgeAiUsable, reportedAiUsable, readExpired };
 }
 
 /**

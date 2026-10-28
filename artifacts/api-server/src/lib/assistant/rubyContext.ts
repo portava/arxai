@@ -536,10 +536,19 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
     // Shared chart-truth feed line — same source/quality/freshness as the chart.
     const mf = ctx.symbol.marketFeed;
     if (mf) {
+      // Each freshness verdict gets its own sentence: UNAVAILABLE means there
+      // is nothing to read, and STALE data is not a current read.
+      const sym = ctx.symbol.symbol;
       if (mf.aiUsable && mf.freshness === "REALTIME") {
-        lines.push(`Live data for ${ctx.symbol.symbol} is clean right now — I can read it confidently.`);
+        lines.push(`Live data for ${sym} is clean right now — I can read it confidently.`);
+      } else if (mf.freshness === "REALTIME") {
+        lines.push(`Market data for ${sym} is arriving in real time but isn't clean enough for a confident read — I'll read it cautiously.`);
+      } else if (mf.freshness === "DELAYED") {
+        lines.push(`Market data for ${sym} is delayed right now — I'll read it cautiously.`);
+      } else if (mf.freshness === "STALE") {
+        lines.push(`Market data for ${sym} is stale right now — I won't treat it as a current read.`);
       } else {
-        lines.push(`Live data for ${ctx.symbol.symbol} is ${mf.freshness.toLowerCase()} right now — I'll read it cautiously.`);
+        lines.push(`Market data for ${sym} is unavailable right now, so I can't read it.`);
       }
     }
   }

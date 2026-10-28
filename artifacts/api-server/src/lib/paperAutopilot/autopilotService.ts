@@ -315,7 +315,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
       // post-loss cooldown for any losing closure & count debriefs.
       for (const cl of monitor.closures) {
         await logCycle({ cycleId, symbol: cl.symbol, step: "CLOSE", status: "OK",
-          message: `Paper trade #${cl.paperOrderId} closed via ${cl.hit} pnl=${cl.pnl}`,
+          message: `Paper trade #${cl.paperOrderId} closed via ${cl.hit} pnl=${cl.pnl ?? `not sized (${cl.pnlUnavailableReason})`}`,
           details: { closure: cl } });
         if (cl.bbStatus === "created") {
           summary.debriefs_triggered += 1;
@@ -333,7 +333,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
                 details: { learningEventId: lev[0].id, mistakeTags: lev[0].mistakeTags } });
             }
           }
-          if (cl.pnl < 0) {
+          if (cl.outcome === "LOSS") {
             await applyCooldown(cl.symbol, cl.direction,
               `Post-loss cooldown after trade #${cl.paperOrderId}`,
               settings.cooldownMinutesAfterLoss, { tradeId: cl.paperOrderId });

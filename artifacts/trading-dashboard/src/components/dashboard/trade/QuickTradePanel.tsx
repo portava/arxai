@@ -13,7 +13,24 @@ import { CockpitCard } from "@/components/dashboard/cockpit/primitives";
 import { ChartFeedConfidence } from "@/components/charts/ChartFeedConfidence";
 import { cn } from "@/lib/utils";
 
-export type Quote = { bid: number; ask: number; spread: number; mid: number } | null;
+export type Quote = {
+  bid: number; ask: number; spread: number; mid: number;
+  /** Where the quote came from. /api/market/quote always says "SIMULATOR". */
+  executionEnvironment?: string | null;
+} | null;
+
+/**
+ * Quote sources whose bid/ask may be shown as tradable prices. Fail closed:
+ * a quote with no source, or from the ARX price simulator (a random walk off
+ * fixed base prices), is not a market price and is never displayed as one.
+ */
+const MARKET_QUOTE_SOURCES: ReadonlySet<string> = new Set(["BROKER", "MT5"]);
+
+export function isMarketQuote(q: Quote): q is NonNullable<Quote> {
+  return q != null
+    && typeof q.executionEnvironment === "string"
+    && MARKET_QUOTE_SOURCES.has(q.executionEnvironment.toUpperCase());
+}
 
 const ORDER_TYPES = [
   "Market", "Buy Limit", "Sell Limit", "Buy Stop", "Sell Stop", "Buy Stop Limit", "Sell Stop Limit",
@@ -52,9 +69,13 @@ export function QuickTradePanel({
 }) {
   const [, navigate] = useLocation();
 
-  const sell = quote ? quote.bid : null;
-  const buy = quote ? quote.ask : null;
-  const spread = quote ? quote.spread : null;
+  // Only a market quote is shown as Sell / Buy. A simulator quote is withheld
+  // (it is synthetic, not the market), and the strip says so.
+  const marketQuote = isMarketQuote(quote) ? quote : null;
+  const simulatedOnly = quote != null && marketQuote == null;
+  const sell = marketQuote ? marketQuote.bid : null;
+  const buy = marketQuote ? marketQuote.ask : null;
+  const spread = marketQuote ? marketQuote.spread : null;
 
   // Buy/Sell → existing manual ticket. Symbol is already synced globally
   // (useChartSymbol) by the page, so the ticket opens prefilled. No new path.
@@ -108,7 +129,7 @@ export function QuickTradePanel({
       </div>
 
       {/* Price strip — SELL | spread | BUY */}
-      <div className="mt-3 grid grid-cols-3 items-center rounded-xl border border-border bg-background/40 px-4 py-3">
+      <div className="mt-3 grid grid-cols-3 items-center rounded-xl border border-border bg-background/40 px-4 py-3" data-testid="quick-trade-price-strip">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-danger">Sell</div>
           <div className="font-mono text-lg font-bold text-danger">{sell ?? "—"}</div>
@@ -122,6 +143,13 @@ export function QuickTradePanel({
           <div className="font-mono text-lg font-bold text-success">{buy ?? "—"}</div>
         </div>
       </div>
+      <p className="mt-1 text-xs text-txt-muted" data-testid="quick-trade-quote-source">
+        {marketQuote
+          ? `Quote source: ${marketQuote.executionEnvironment}.`
+          : simulatedOnly
+            ? "No market price on this panel. The only quote it can read comes from the ARX price simulator (synthetic, not the market or your broker), so it is not shown. Check the chart feed for the current price."
+            : "No quote available for this symbol."}
+      </p>
 
       {/* Lot sizing */}
       <div className="mt-3 flex items-end gap-3">

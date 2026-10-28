@@ -7,12 +7,14 @@
 
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
-import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, bindScannerSource } from "./scannerInputIntegrity.js";
+import { prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
 import { getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
 import { buildTrendlineTruthVerdict } from "./data/chart/trendlineTruthService.js";
 import { resolveSymbolFeedVerdict } from "./data/symbolFeedVerdict.js";
+import { classifyCandleFreshness } from "./data/freshness.js";
+import type { Candle } from "./data/types.js";
 import { computeTimingRead } from "../brain/timing/marketTimingBrainService.js";
 import {
   computeScannerAdvisory,
@@ -30,12 +32,13 @@ import {
   type UserGovernance,
 } from "./agentEcosystem/governance.js";
 import type { AdvisoryDirection } from "@workspace/domain/agent-system";
+import { isSyntheticInstrument } from "@workspace/domain/smart-chart";
 import { getDerivFeedStatus, hasRecentDerivTickFor } from "./data/providers/derivProvider.js";
 import {
   resolveScannerRegime,
   type ScannerRegimeRead,
 } from "./regime/marketRegimeAuthority.js";
-import { routeCandles, routeQuote } from "./data/marketDataRouter.js";
+import { routeCandles, routeQuote, quotePinForSeries } from "./data/marketDataRouter.js";
 import { classifySymbol, resolveDerivSymbol } from "./data/marketDataRouter.js";
 import {
   buildFeatureSnapshot,
@@ -112,7 +115,10 @@ export function isApprovedScannerSymbol(sym: string): boolean {
 export type StatusBadge =
   | "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION"
   | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE"
-  | "SPREAD_TOO_HIGH" | "PENDING_MT5_CONNECTION";
+  | "SPREAD_TOO_HIGH" | "PENDING_MT5_CONNECTION"
+  // The opportunity score is below the scanner's minimum (REJECT band) while
+  // the analysis itself rejected nothing: a weak score, NOT a risk rejection.
+  | "LOW_OPPORTUNITY_SCORE";
 
 export type OpportunityLabel = "ELITE" | "STRONG" | "ACCEPTABLE" | "WEAK" | "REJECT";
 
@@ -274,6 +280,14 @@ export interface ScannerOpportunity {
   statusBadge: StatusBadge;
   opportunity: OpportunityScore;
   entry: number; stopLoss: number; takeProfit: number;
+  /**
+   * ADDITIVE, optional. The analysed entry zone behind `entry` (its midpoint),
+   * present ONLY when the shared sufficiency verdict allows a trade setup and
+   * the zone is a real finite, positive, ordered range (a blank analysis carries
+   * {0,0}). Lets the market-edge read reach its entry stages with the scanner's
+   * real zone instead of a degenerate point. Display/reason input only.
+   */
+  entryZone?: { low: number; high: number } | null;
   generatedAt: string;
   dataSource: "SIMULATOR" | "LIVE_FEED" | "LIVE_DELAYED" | "AWAITING_FEED" | "HISTORY_READY_AWAITING_LIVE_TICK" | "STALE_FEED";
   feedProvider?: string;
@@ -378,6 +392,14 @@ export interface ScannerOpportunity {
 // User-safe projection only (no raw candles, no internal gate keys).
 export interface FvgScannerContext {
   strategy: "HTF_TREND_FVG_PULLBACK";
+  /**
+   * The read is computed on these bars whatever row/chart timeframe it is
+   * attached to: M5 for the FVG/entry zone, H4 + H1 for the trend filter.
+   */
+  entryTimeframe: "M5";
+  trendTimeframes: ["H4", "H1"];
+  /** Close time of the newest CLOSED M5 bar the read used; null when none. */
+  asOf: string | null;
   direction: "BUY" | "SELL" | "WAIT";
   stage: string;
   htfAligned: boolean;
@@ -442,7 +464,12 @@ export interface ScannerTimingContext {
   roomToMove: number;         // 0-100
   heatBoost: number;          // bounded −10..+10 adjustment applied to score
   dataQualityLabel: string;   // real/partial/basic_timing_estimate
+  /** The timeframe this timing read was computed on — always the row's own. */
+  timeframe?: string;
 }
+
+/** Timeframes the timing brain reads (mirrors the /me/timing-brain route). */
+const TIMING_READ_TIMEFRAMES = new Set(["M1", "M5", "M15", "M30", "H1", "H4", "D1"]);
 
 /**
  * Effective ranking score. Governance (when applied) wins because it is bounded
@@ -510,7 +537,9 @@ export function computeFinalRead(
   const reasons: string[] = [];
   const histScore = hist && hist.available && hist.winRate != null ? hist.winRate : null;
   const newsLevel = news?.riskLevel ?? "none";
-  const newsAvail = !!news;
+  // A failed check is not news data: "none" there was never observed.
+  const newsUnchecked = news?.eventRiskUnchecked === true;
+  const newsAvail = !!news && !newsUnchecked;
   const histAvail = !!hist?.available;
 
   // Conflict = scanner direction opposes either news bias or historical bias.
@@ -544,6 +573,10 @@ export function computeFinalRead(
   if (opp.statusBadge === "REJECTED_BY_RISK" || opp.statusBadge === "CHOPPY_MARKET") {
     label = "NO_TRADE";
     reasons.push("No clean trade right now — setup rejected by risk rules.");
+  } else if (opp.statusBadge === "LOW_OPPORTUNITY_SCORE") {
+    // Same non-actionable outcome as before (never raised), with the true cause.
+    label = "NO_TRADE";
+    reasons.push("No clean trade right now — the opportunity score at scan time was below the scanner's minimum of 60. No risk rule failed.");
   } else if (opp.statusBadge === "LOW_CONFIDENCE" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical confidence is low.");
@@ -561,6 +594,15 @@ export function computeFinalRead(
     confidence = "MEDIUM";
   } else {
     confidence = techScore >= 75 && newsLevel === "none" && !conflict ? "HIGH" : "MEDIUM";
+  }
+
+  // 4b. EVENT-RISK-UNCHECKED CAP. Scheduled event risk applies but could not be
+  //     checked, so a release minutes away would not be seen. Downgrade-only:
+  //     withhold the actionable label, floor confidence, and say so plainly.
+  if (newsUnchecked) {
+    confidence = "LOW";
+    if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
+    reasons.push(NEWS_RISK_UNCHECKED_REASON);
   }
 
   // 5. DATA-SOURCE TRUTH CAP (ARX Scanner Truth Principle). A read can only be
@@ -597,7 +639,11 @@ export function computeFinalRead(
       // Real feed, but lagging (chart calls it delayed/stale). Already demoted
       // from HIGH above; a still-MEDIUM read drops to LOW. Be plain about why.
       if (confidence === "MEDIUM") confidence = "LOW";
-      reasons.push("Live feed is delayed — read is based on the last available candles, not current market data.");
+      // A live price with no bound bid/ask spread is not a delayed feed — the
+      // shared sufficiency reason (step 5b) states the quote-binding limit.
+      if (opp.sufficiency?.reasonCode !== "quote_unbound") {
+        reasons.push("Live feed is delayed — read is based on the last available candles, not current market data.");
+      }
     } else {
       // AWAITING_FEED / HISTORY_READY_AWAITING_LIVE_TICK — warming up. Already
       // demoted from HIGH above; a still-MEDIUM read drops to LOW (LOW stays LOW).
@@ -871,6 +917,28 @@ export interface ScannerNewsContext {
   minutesUntilEvent: number | null;
   warning: string;
   alignsWithScanner: boolean | null;
+  /**
+   * True when scheduled event risk applies to this market but could NOT be
+   * checked: the news lookup failed, or a configured economic calendar did not
+   * answer. `riskLevel` is then "none" only because nothing was observed — it is
+   * not an all-clear. Never set for synthetic instruments (scheduled events do
+   * not move them) or when no calendar is configured (technicals-only by design).
+   */
+  eventRiskUnchecked?: boolean;
+}
+
+/** Plain-English reason shown when scheduled event risk could not be checked. */
+export const NEWS_RISK_UNCHECKED_REASON =
+  "Scheduled news risk could not be checked right now — the economic calendar did not answer.";
+
+/** A configured calendar that did not answer (or failed outright) is a failed check, not "no news". */
+function scannerCalendarCheckFailed(
+  calendar: { connected?: boolean | null; provider?: string | null; providerState?: string | null } | null | undefined,
+): boolean {
+  if (!calendar || calendar.connected === true) return false;
+  if (calendar.providerState === "fetch_error") return true;
+  if (calendar.providerState === "not_configured") return false;
+  return typeof calendar.provider === "string" && calendar.provider !== "none" && calendar.provider !== "";
 }
 
 // Phase News — decorate scanner opportunities with news intelligence. Pure
@@ -897,8 +965,13 @@ export async function decorateOpportunitiesWithNewsRisk(
           minutesUntilEvent: pack.upcomingEvent?.minutesUntil ?? null,
           warning: pack.warningSummary,
           alignsWithScanner: null,
+          eventRiskUnchecked: !isSyntheticInstrument(sym) && scannerCalendarCheckFailed(pack.dataSources?.calendar),
         });
       } catch {
+        // The lookup failed: nothing was observed. riskLevel "none" here means
+        // "not checked", so the row carries eventRiskUnchecked and the final
+        // read / map / scalp withhold any clean or actionable read.
+        const synthetic = isSyntheticInstrument(sym);
         ctxBySymbol.set(sym, {
           riskLevel: "none",
           bias: "unclear",
@@ -908,8 +981,11 @@ export async function decorateOpportunitiesWithNewsRisk(
           headlinesConnected: false,
           upcomingEventTitle: null,
           minutesUntilEvent: null,
-          warning: "News intelligence temporarily unavailable.",
+          warning: synthetic
+            ? "News intelligence temporarily unavailable."
+            : "News intelligence temporarily unavailable — scheduled news risk could not be checked.",
           alignsWithScanner: null,
+          eventRiskUnchecked: !synthetic,
         });
       }
     });
@@ -934,18 +1010,28 @@ export async function decorateOpportunitiesWithTimingContext(
   opps: ScannerOpportunity[],
 ): Promise<ScannerOpportunity[]> {
   if (opps.length === 0) return opps;
-  const uniqueSymbols = Array.from(new Set(opps.map((o) => o.symbol)));
-  const ctxBySymbol = new Map<string, ScannerTimingContext>();
+  // One read per (symbol, timeframe) on the ROW'S OWN timeframe: an H4 or M1
+  // row must never show (or be scored by) an M15 grade / permission. A
+  // timeframe the timing brain does not read gets no timing context (honest
+  // absence) rather than a read from another timeframe.
+  const keyOf = (o: ScannerOpportunity) => `${o.symbol}|${o.timeframe}`;
+  const uniqueKeys = Array.from(new Set(
+    opps.filter((o) => TIMING_READ_TIMEFRAMES.has(o.timeframe)).map(keyOf),
+  ));
+  const ctxByKey = new Map<string, ScannerTimingContext>();
 
-  await mapWithConcurrency(uniqueSymbols, ENRICHMENT_CONCURRENCY, async (sym) => {
+  await mapWithConcurrency(uniqueKeys, ENRICHMENT_CONCURRENCY, async (key) => {
+      const sep = key.lastIndexOf("|");
+      const sym = key.slice(0, sep);
+      const timeframe = key.slice(sep + 1);
       try {
-        const read = await runWithScannerBudget(() => computeTimingRead({ symbol: sym, timeframe: "M15", persistSnapshot: false }));
+        const read = await runWithScannerBudget(() => computeTimingRead({ symbol: sym, timeframe, persistSnapshot: false }));
         // Heat boost: GO=+10, WAIT_FOR_ENTRY=+4, WAIT_NEWS/NO_TRADE=−6, STAND_DOWN=−10
         const permBoost: Record<string, number> = {
           GO: 10, WAIT_FOR_ENTRY: 4, WAIT_NEWS: -6, NO_TRADE: -6, STAND_DOWN: -10,
         };
         const heatBoost = Math.max(-10, Math.min(10, permBoost[read.entryPermission] ?? 0));
-        ctxBySymbol.set(sym, {
+        ctxByKey.set(key, {
           heatScore: read.heatScore,
           tradeabilityScore: read.tradeabilityScore,
           edgeScore: read.edgeScore,
@@ -964,6 +1050,7 @@ export async function decorateOpportunitiesWithTimingContext(
           roomToMove: read.roomToMove,
           heatBoost,
           dataQualityLabel: read.dataQuality.label,
+          timeframe,
         });
       } catch {
         // Fail-open: timing is advisory; any error leaves the opportunity untouched.
@@ -971,7 +1058,7 @@ export async function decorateOpportunitiesWithTimingContext(
     });
 
   return opps.map((o) => {
-    const ctx = ctxBySymbol.get(o.symbol);
+    const ctx = ctxByKey.get(keyOf(o));
     if (!ctx) return o;
     // Fold heat boost into opportunity score (bounded, clamped 0..100).
     const boostedScore = Math.max(0, Math.min(100, o.opportunity.score + ctx.heatBoost));
@@ -1022,28 +1109,61 @@ export async function decorateOpportunitiesWithFvgRead(
         p != null && (p === "assistant_real:mock" || p.endsWith(":mock") || p === "mock");
       const isSimulator = [h4r, h1r, m5r].some((r) => r.ok && isMockProvider(r.primaryProvider));
 
-      // Stale: any provider attempt reported a STALE reason — flag the TF.
+      // Same input integrity as the scanner rows: symbol/source validation and
+      // forming/future bars excluded, so a still-forming M5 bar can never
+      // complete a gap. An invalid series reads as missing (no bars).
+      const now = Date.now();
+      const tfs = [["H4", h4r], ["H1", h1r], ["M5", m5r]] as const;
+      const prepared = tfs.map(([tf, r]) => prepareScannerCandles(r, sym, tf, now));
+
+      // Not current: a router attempt reported STALE, OR the newest CLOSED bar
+      // trails by the shared delayed/stale threshold. A cached series served
+      // after its writer stopped pushing still carries no STALE attempt, so
+      // the bars' own age is the authority here.
       const hasStaleAttempt = (r: typeof h4r) =>
         r.attempts.some((a) => a.reason?.includes("STALE"));
       const staleTimeframes: string[] = [];
-      if (hasStaleAttempt(h4r)) staleTimeframes.push("H4");
-      if (hasStaleAttempt(h1r)) staleTimeframes.push("H1");
-      if (hasStaleAttempt(m5r)) staleTimeframes.push("M5");
+      tfs.forEach(([tf, r], i) => {
+        const p = prepared[i];
+        const fresh = p && p.rawClosed.length > 0 ? classifyCandleFreshness(p.trailingIntervals) : null;
+        if (hasStaleAttempt(r) || (fresh != null && fresh.freshness !== "clean")) staleTimeframes.push(tf);
+      });
 
-      const adapt = (cs: typeof h4r.candles) =>
+      // One source across all three timeframes: provider plus the attributed
+      // feed (bridge/account/environment). Mixed feeds are not one market read.
+      const sourceKey = (r: typeof h4r) => JSON.stringify([
+        r.primaryProvider, r.provenance?.providerId ?? null, r.provenance?.subProviderId ?? null,
+        r.provenance?.bridgeConnectionId ?? null, r.provenance?.userId ?? null,
+        r.provenance?.environment ?? null, r.provenance?.brokerSymbol ?? null,
+      ]);
+      const mixedSources =
+        h4r.ok && h1r.ok && m5r.ok && new Set([h4r, h1r, m5r].map(sourceKey)).size > 1;
+
+      const adapt = (cs: Candle[]) =>
         cs.map((c) => ({ open: c.open, high: c.high, low: c.low, close: c.close }));
+      const [h4p, h1p, m5p] = prepared;
 
       const result = analyzeFvgTrendPullback({
         symbol: sym,
-        h4Candles: adapt(h4r.ok ? h4r.candles : []),
-        h1Candles: adapt(h1r.ok ? h1r.candles : []),
-        m5Candles: adapt(m5r.ok ? m5r.candles : []),
+        h4Candles: adapt(h4p?.openClosed ?? []),
+        h1Candles: adapt(h1p?.openClosed ?? []),
+        m5Candles: adapt(m5p?.openClosed ?? []),
         isSimulator,
         staleTimeframes,
+        mixedSources,
       });
+
+      const m5Newest = m5p?.openClosed[m5p.openClosed.length - 1];
+      const m5NewestOpenMs = m5Newest ? Date.parse(m5Newest.time) : NaN;
+      const asOf = Number.isFinite(m5NewestOpenMs)
+        ? new Date(m5NewestOpenMs + 5 * 60_000).toISOString()
+        : null;
 
       ctxBySymbol.set(sym, {
         strategy: "HTF_TREND_FVG_PULLBACK",
+        entryTimeframe: "M5",
+        trendTimeframes: ["H4", "H1"],
+        asOf,
         direction: result.direction,
         stage: result.stage,
         htfAligned: result.htfAligned,
@@ -1133,17 +1253,33 @@ export async function decorateOpportunitiesWithHistory(
   });
 }
 
-function setupTypeFor(a: MarketAnalysis): string {
-  if (a.marketBias === "choppy") return "Range / chop";
-  if (a.marketBias === "neutral") return "Consolidation";
-  return a.recommendedAction === "WAIT" ? "Pullback watch" : "Trend continuation";
+/**
+ * Plain name for what the analysis actually measured. The analyser has no
+ * range, pullback, retest or continuation detector: its bias is the sign of the
+ * 30-bar close drift, and "choppy" means only that the LAST bar's range is more
+ * than 1.8x the window average (usually an expansion bar). Names must not claim
+ * more than that. `mayShowBias` false (direction withheld) gets no directional
+ * name.
+ */
+export function setupTypeFor(a: MarketAnalysis, mayShowBias = true): string {
+  if (!mayShowBias) return "Direction withheld";
+  if (a.marketBias === "choppy") return "Volatility spike";
+  if (a.marketBias === "neutral") return "Flat drift";
+  if (a.recommendedAction === "REJECT") return "No setup — rules failed";
+  const side = a.marketBias === "bullish" ? "Upward" : "Downward";
+  return a.recommendedAction === "WAIT" ? `${side} drift — not confirmed` : `${side} drift`;
 }
 
-function statusBadgeFor(a: MarketAnalysis, opp: OpportunityScore): StatusBadge {
+export function statusBadgeFor(a: MarketAnalysis, opp: OpportunityScore): StatusBadge {
   if (a.recommendedAction === "REJECT" || opp.label === "REJECT") {
     if (a.marketBias === "choppy") return "CHOPPY_MARKET";
     if (a.riskScore > 65) return "SPREAD_TOO_HIGH";
-    return "REJECTED_BY_RISK";
+    // "Rejected by risk" only when the analysis rejected the setup or a rule
+    // actually failed. A row that passed every rule and is in the REJECT band
+    // only because its opportunity score is under 60 has a weak score, not a
+    // risk problem — badge it as such (still non-actionable).
+    if (a.recommendedAction === "REJECT" || a.rulesFailed.length > 0) return "REJECTED_BY_RISK";
+    return "LOW_OPPORTUNITY_SCORE";
   }
   if (a.confidenceScore < 50) return "LOW_CONFIDENCE";
   if (a.recommendedAction === "WAIT") return "WAIT_FOR_CONFIRMATION";
@@ -1251,6 +1387,9 @@ async function analyzeViaRouter(
    *  Feeds opportunityScore's spreadCondition factor — never riskScore. */
   quoteSpreadPrice: number | null;
   quoteUsable: boolean;
+  /** How the quote binds to these bars (LAST_ONLY = fresh price, no spread).
+   *  Reason input only — quoteUsable stays false for LAST_ONLY. */
+  quoteBinding: ScannerQuoteBinding;
   sourceIdentity: string;
 } | null> {
   try {
@@ -1261,17 +1400,19 @@ async function analyzeViaRouter(
     // its own typed slot (no casts, no result-union).
     let cr!: Awaited<ReturnType<typeof routeCandles>>;
     let qr!: Awaited<ReturnType<typeof routeQuote>>;
-    await Promise.all([
-      runWithScannerBudget(async () => { cr = await routeCandles(sym, tf, SCAN_ROUTED_LIMIT); }),
-      runWithScannerBudget(async () => { qr = await routeQuote(sym); }),
-    ]);
+    // The quote follows the candles, pinned to the served series' MT5 writer
+    // (several bridges on one symbol must never pair across writers).
+    await runWithScannerBudget(async () => { cr = await routeCandles(sym, tf, SCAN_ROUTED_LIMIT); });
+    await runWithScannerBudget(async () => { qr = await routeQuote(sym, quotePinForSeries(cr)); });
     const now = Date.now();
     const prepared = prepareScannerCandles(cr, sym, tf, now);
     if (!prepared || prepared.rawClosed.length === 0) return null;
     const analysisWindow = prepared.rawClosed.slice(-SCAN_ANALYSIS_WINDOW);
     const candles = analysisWindow.map((c) => ({ o: c.open, h: c.high, l: c.low, c: c.close }));
     const last = candles[candles.length - 1];
-    const usableQuote = scannerQuoteFor(cr, qr, sym, now);
+    const binding = classifyScannerQuoteBinding(cr, qr, sym, now);
+    const usableQuote = binding.binding === "BOUND" && binding.mid != null
+      ? { mid: binding.mid, spread: binding.spread } : null;
     // A closed candle can support historical context, but quoteUsable below
     // prevents its close or an unknown spread from becoming live trade geometry.
     const quote = usableQuote ? { mid: usableQuote.mid, spread: usableQuote.spread ?? 0 }
@@ -1295,6 +1436,7 @@ async function analyzeViaRouter(
       primaryProvider: cr.primaryProvider ?? null,
       quoteSpreadPrice: usableQuote?.spread ?? null,
       quoteUsable: usableQuote !== null,
+      quoteBinding: binding.binding,
       sourceIdentity: scannerSourceIdentity(cr),
     };
   } catch { return null; }
@@ -1451,13 +1593,17 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     const sufficiency = evaluateMarketDataSufficiency({
       symbol: sym,
       timeframe: tf,
+      // A fresh same-feed price with no bid/ask spread (LAST_ONLY) is still a
+      // LIVE feed: the shared verdict withholds the setup for the quote-binding
+      // reason (quote_unbound) instead of calling the feed delayed.
       freshnessVerdict:
         ds === "LIVE_FEED"
-          ? routed?.quoteUsable ? "LIVE" : "LIVE_DELAYED"
+          ? routed?.quoteUsable || routed?.quoteBinding === "LAST_ONLY" ? "LIVE" : "LIVE_DELAYED"
           : ds === "LIVE_DELAYED" || ds === "STALE_FEED"
             ? "LIVE_DELAYED"
             : "AWAITING",
       availableClosedCandles: routed?.closedCandleCount ?? 0,
+      quoteBinding: ds === "LIVE_FEED" ? routed?.quoteBinding ?? null : null,
     });
     // The ONLY state the data-source switch above misses is a feed reporting
     // LIVE_FEED with too few closed bars to analyse — force that row honest.
@@ -1475,9 +1621,13 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       disabledReason = sufficiency.humanReason;
     }
     if (ds === "LIVE_FEED" && !routed?.quoteUsable) {
+      // Not selectable without a bound quote (gating unchanged). The stated
+      // reason distinguishes a spread-less live price from a missing quote.
       ds = "STALE_FEED";
       dataStatus = "stale";
-      disabledReason = "Waiting for a fresh quote from the same market feed as the candles.";
+      disabledReason = sufficiency.reasonCode === "quote_unbound"
+        ? sufficiency.humanReason
+        : "Waiting for a fresh quote from the same market feed as the candles.";
     }
     const selectable = dataStatus === "live";
 
@@ -1554,7 +1704,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     const op: ScannerOpportunity = {
       symbol: sym, timeframe: tf, bias: displayBias,
       recommendedAction: displayAction,
-      setupType: setupTypeFor(a),
+      setupType: setupTypeFor(a, mayShowBias),
       confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
       entrySniperScore: displayEntrySniperScore,
       riskRewardRatio: a.riskRewardRatio,
@@ -1563,6 +1713,12 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       statusBadge: statusBadgeFor(a, opp),
       opportunity: opp,
       entry, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
+      entryZone:
+        sufficiency.canShowTradeSetup &&
+        Number.isFinite(a.entryZone.low) && Number.isFinite(a.entryZone.high) &&
+        a.entryZone.low > 0 && a.entryZone.low <= a.entryZone.high
+          ? { low: a.entryZone.low, high: a.entryZone.high }
+          : null,
       generatedAt: a.generatedAt,
       dataSource: ds,
       feedProvider: a.feedProvider,
@@ -1874,6 +2030,13 @@ type Alert = {
 };
 const alerts: Alert[] = [];
 const MAX_ALERTS = 200;
+/** Alerts older than this are dropped from the shared list: they describe a market read long gone. */
+export const SCANNER_ALERT_EXPIRE_MS = 24 * 60 * 60_000;
+/** Minutes in one bar of each scanner timeframe; one bar after it was raised an alert is superseded. */
+const ALERT_TF_MINUTES: Record<string, number> = { M1: 1, M5: 5, M15: 15, M30: 30, H1: 60, H4: 240, D1: 1440 };
+const ALERT_DEFAULT_STALE_MIN = 15;
+/** Open alerts pushed out of the full store since this process started (count is then incomplete). */
+let alertsEvictedOpen = 0;
 
 export function pushAlert(a: Omit<Alert, "alertId" | "createdAt" | "acknowledgedAt" | "dismissedAt" | "snoozedUntil">) {
   // Lightweight dedupe within last minute on same source+symbol+message.
@@ -1887,19 +2050,51 @@ export function pushAlert(a: Omit<Alert, "alertId" | "createdAt" | "acknowledged
     acknowledgedAt: null, dismissedAt: null, snoozedUntil: null,
   };
   alerts.unshift(item);
-  if (alerts.length > MAX_ALERTS) alerts.length = MAX_ALERTS;
+  if (alerts.length > MAX_ALERTS) {
+    for (const dropped of alerts.slice(MAX_ALERTS)) {
+      if (!dropped.dismissedAt && !dropped.acknowledgedAt) alertsEvictedOpen += 1;
+    }
+    alerts.length = MAX_ALERTS;
+  }
   return item;
 }
 
-export function listAlerts(opts?: { unackedOnly?: boolean; limit?: number }) {
-  const now = Date.now();
-  const visible = alerts.filter((a) => {
+/** Drop alerts past SCANNER_ALERT_EXPIRE_MS (or with an unreadable time). */
+function pruneExpiredAlerts(now: number): void {
+  for (let i = alerts.length - 1; i >= 0; i -= 1) {
+    const t = Date.parse(alerts[i]!.createdAt);
+    if (!Number.isFinite(t) || now - t >= SCANNER_ALERT_EXPIRE_MS) alerts.splice(i, 1);
+  }
+}
+
+function visibleAlerts(now: number, unackedOnly: boolean): Alert[] {
+  pruneExpiredAlerts(now);
+  return alerts.filter((a) => {
     if (a.dismissedAt) return false;
     if (a.snoozedUntil && Date.parse(a.snoozedUntil) > now) return false;
-    if (opts?.unackedOnly && a.acknowledgedAt) return false;
+    if (unackedOnly && a.acknowledgedAt) return false;
     return true;
   });
-  return visible.slice(0, opts?.limit ?? 100);
+}
+
+/**
+ * Listed alerts carry their own age and whether one bar of their timeframe has
+ * passed since they were raised (stale): nothing re-checks an alert after it
+ * is raised, so a stale one may no longer hold.
+ */
+export function listAlerts(opts?: { unackedOnly?: boolean; limit?: number }) {
+  const now = Date.now();
+  return visibleAlerts(now, opts?.unackedOnly === true).slice(0, opts?.limit ?? 100).map((a) => {
+    const t = Date.parse(a.createdAt);
+    const barMin = (a.timeframe && ALERT_TF_MINUTES[a.timeframe.toUpperCase()]) || ALERT_DEFAULT_STALE_MIN;
+    const staleAt = t + barMin * 60_000;
+    return {
+      ...a,
+      ageSeconds: Math.max(0, Math.floor((now - t) / 1000)),
+      staleAfter: new Date(staleAt).toISOString(),
+      stale: now >= staleAt,
+    };
+  });
 }
 
 export function alertAction(alertId: string, action: "acknowledge" | "dismiss" | "snooze", snoozeMs = 10 * 60 * 1000) {
@@ -1912,6 +2107,24 @@ export function alertAction(alertId: string, action: "acknowledge" | "dismiss" |
   return a;
 }
 
+/** Every open (not acknowledged, dismissed, snoozed or expired) alert in the store; not capped by a list limit. */
 export function alertCount() {
-  return listAlerts({ unackedOnly: true }).length;
+  return visibleAlerts(Date.now(), true).length;
+}
+
+/**
+ * How complete alertCount() is. The store holds at most MAX_ALERTS; once it
+ * has pushed out open alerts the count is a lower bound, and it is always
+ * empty after a server restart.
+ */
+export function alertCountCoverage(): { complete: boolean; storeCapacity: number; evictedOpenAlerts: number; note: string } {
+  const complete = alertsEvictedOpen === 0;
+  return {
+    complete,
+    storeCapacity: MAX_ALERTS,
+    evictedOpenAlerts: alertsEvictedOpen,
+    note: complete
+      ? `Every open alert still held in server memory (up to ${MAX_ALERTS}, kept for ${SCANNER_ALERT_EXPIRE_MS / 3_600_000} hours). The list is cleared when the API server restarts.`
+      : `At least this many: ${alertsEvictedOpen} older open alert${alertsEvictedOpen === 1 ? " was" : "s were"} pushed out because the server keeps only the newest ${MAX_ALERTS}. The list is cleared when the API server restarts.`,
+  };
 }

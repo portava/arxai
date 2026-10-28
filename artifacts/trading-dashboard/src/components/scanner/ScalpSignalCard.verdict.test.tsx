@@ -17,7 +17,7 @@
 // Display-only assertions: no gate, feed, scoring, or execution logic is
 // touched — onBuild still routes through the fully-gated trade ticket.
 
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 
 import { ScalpSignalCard } from "./ScalpSignalCard";
@@ -201,5 +201,130 @@ describe("ScalpSignalCard — ONE shared verdict, no contradictory co-render", (
       }
       unmount();
     }
+  });
+});
+
+// ── AWAITING_DATA split by engine reason (owner screenshot 2026-10-27) ────────
+// V75 1m, Deriv public data, no MT5 bridge: the engine passed every feed gate
+// and stopped only because the broker's symbol details were missing (NO_SPECS),
+// yet the header ACTION cell read "Feed limited — The live feed isn't fully
+// confirmed" under the 1m key while DATA said "Live, confirmed candles.".
+describe("ScalpSignalCard — AWAITING_DATA reasons and the lifted verdict", () => {
+  function noSpecs(over: Partial<ScalpResult> = {}): ScalpResult {
+    return makeResult({
+      symbol: "V75",
+      displayName: "Volatility 75 Index",
+      status: "AWAITING_DATA",
+      rejectReason: "NO_SPECS",
+      timeframe: "M5",
+      direction: null,
+      canBuildTrade: false,
+      canWatch: true,
+      entryZone: null,
+      stopLoss: null,
+      suggestedLot: null,
+      takeProfit: { quick: null, main: null, stretch: null },
+      noTradeReason: "Eleanor needs live symbol specs before building a scalp for this market.",
+      plainEnglishReason:
+        "Eleanor needs the broker's live symbol details (lot size, point value) for this market before building a scalp.",
+      ...over,
+    } as Partial<ScalpResult>);
+  }
+
+  it("NO_SPECS is not a feed problem: no 'Feed limited', honest badge, Build disabled", () => {
+    const { container } = render(<ScalpSignalCard result={noSpecs()} onBuild={() => {}} />);
+    const card = container.querySelector('[data-testid="scalp-card-V75"]');
+    expect(card?.getAttribute("data-actionability")).not.toBe("FEED_LIMITED");
+    expect(card?.getAttribute("data-actionability")).toBe("WAIT_FOR_CONFIRMATION");
+    const text = textOf(container);
+    expect(text).not.toMatch(/feed limited/i);
+    expect(text).not.toMatch(/waiting for live data/i);
+    expect(text).toContain("Broker symbol details needed");
+    expect(text).not.toMatch(/awaiting live feed/i);
+    expect(text).not.toMatch(/until live candles confirm/i);
+    const btn = container.querySelector<HTMLButtonElement>('[data-testid="scalp-build-V75"]');
+    expect(btn!.disabled).toBe(true);
+  });
+
+  for (const reason of ["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA"] as const) {
+    it(`${reason} stays a feed/data reason → FEED_LIMITED`, () => {
+      const { container } = render(
+        <ScalpSignalCard result={noSpecs({ rejectReason: reason })} onBuild={() => {}} />,
+      );
+      expect(
+        container.querySelector('[data-testid="scalp-card-V75"]')?.getAttribute("data-actionability"),
+      ).toBe("FEED_LIMITED");
+    });
+  }
+
+  it("publishes under the engine timeframe ('5m'), never the 1m key", () => {
+    const spy = vi.fn();
+    render(
+      <ScalpSignalCard
+        result={makeResult({ symbol: "V75", timeframe: "M5" } as Partial<ScalpResult>)}
+        onActionability={spy}
+      />,
+    );
+    expect(spy).toHaveBeenCalledWith("V75", "5m", "READY_NOW", "BUY");
+    for (const call of spy.mock.calls) expect(call[1]).not.toBe("1m");
+  });
+
+  it("NO_SPECS publishes a retraction (null), so the header keeps its own data-only verdict", () => {
+    const spy = vi.fn();
+    render(<ScalpSignalCard result={noSpecs()} onActionability={spy} />);
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null, null);
+  });
+
+  it("a named feed reason is lifted as FEED_LIMITED under the engine timeframe", () => {
+    const spy = vi.fn();
+    render(<ScalpSignalCard result={noSpecs({ rejectReason: "NOT_LIVE" })} onActionability={spy} />);
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", "FEED_LIMITED", null);
+  });
+
+  it("an AWAITING_DATA with no named reason (older server) is FEED_LIMITED on the card but never lifted", () => {
+    const spy = vi.fn();
+    const { container } = render(
+      <ScalpSignalCard result={noSpecs({ rejectReason: undefined })} onActionability={spy} />,
+    );
+    expect(
+      container.querySelector('[data-testid="scalp-card-V75"]')?.getAttribute("data-actionability"),
+    ).toBe("FEED_LIMITED");
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null, null);
+  });
+
+  it("a READY verdict replaced by NO_SPECS on refresh is retracted, not left standing", () => {
+    const spy = vi.fn();
+    const { rerender } = render(
+      <ScalpSignalCard
+        result={makeResult({ symbol: "V75", timeframe: "M5" } as Partial<ScalpResult>)}
+        onActionability={spy}
+      />,
+    );
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", "READY_NOW", "BUY");
+    rerender(<ScalpSignalCard result={noSpecs()} onActionability={spy} />);
+    expect(spy).toHaveBeenLastCalledWith("V75", "5m", null, null);
+  });
+});
+
+// A failed news check is not LOW news risk: the risk chip must say it was not
+// checked instead of rendering "News LOW" beside a no-scalp reason.
+describe("ScalpSignalCard — unchecked news risk", () => {
+  it("renders 'Unchecked' and never 'LOW' for news when the check failed", () => {
+    const { container } = render(
+      <ScalpSignalCard
+        result={makeResult({
+          status: "NO_CLEAN_SCALP",
+          direction: null,
+          canBuildTrade: false,
+          canWatch: true,
+          newsRisk: "LOW",
+          newsRiskUnchecked: true,
+          noTradeReason: "Scheduled news risk could not be checked, so no scalp is offered right now.",
+          plainEnglishReason: "Scheduled news risk for this market could not be checked right now.",
+        })}
+      />,
+    );
+    expect(container.querySelector('[data-testid="scalp-news-unchecked"]')?.textContent).toBe("Unchecked");
+    expect(textOf(container)).not.toMatch(/News\s*LOW/);
   });
 });

@@ -156,3 +156,20 @@ test("component expiry inside the 4.5-second cache window withdraws votes withou
   assert.equal(after.generatedAt, before.generatedAt); assert.deepEqual(after.data, before.data);
   assert.equal(before.components.scanner.present, true, "cached original is not mutated");
 });
+
+// Contract the dashboard honours (symbolTruthEvidence.ts): validUntil is never
+// later than the scheduled close of the forming bar, so on 1m a read expires
+// every minute; expiry withdraws the candle-derived advice but the calendar
+// state is NOT candle evidence and survives unchanged. The client must not
+// discard it either (owner screenshot 2026-10-27: "Event risk is loading…").
+test("validUntil never outlives the forming bar, and expiry keeps the calendar state unchanged", async () => {
+  const news = { radar: { provider: { connected: false, name: "none" }, events: [], highImpactWindowActive: false, topSeverity: null } };
+  const before = await snapshot(signal(), { buildNewsFn: async () => news as never });
+  const barClose = Date.parse(fixture.evidence.lastClosedCandleAt) + 15 * 60_000;
+  assert.ok(before.validUntil != null && Date.parse(before.validUntil) <= barClose);
+  assert.equal(before.news.riskLabel, "No event calendar is connected.");
+  const after = capExpiredTruthSnapshot(before, Date.parse(before.validUntil!));
+  assert.equal(after.verdict.bestAction, "WATCH_ONLY");
+  assert.deepEqual(after.news, before.news);
+  assert.deepEqual(after.data, before.data);
+});

@@ -34,6 +34,14 @@ export interface TickStreamWatchdogOptions {
   silenceMs?: number;
   /** Watchdog check cadence. */
   tickMs?: number;
+  /**
+   * Whether a stream is actually being watched. Defaults to true. When false
+   * (the chart's candle source has no tick stream, or there is no feed at all)
+   * the silence clock does not run and `stalled` stays false: a stream that was
+   * never opened cannot be "reconnecting", and saying so would describe a
+   * failure that is not happening.
+   */
+  active?: boolean;
 }
 
 export interface TickStreamWatchdog {
@@ -70,6 +78,7 @@ export function useTickStreamWatchdog(
 ): TickStreamWatchdog {
   const silenceMs = opts.silenceMs ?? STREAM_SILENCE_MS;
   const tickMs = opts.tickMs ?? STREAM_WATCHDOG_TICK_MS;
+  const active = opts.active ?? true;
 
   const [epoch, setEpoch] = useState(0);
   const [stalled, setStalled] = useState(false);
@@ -94,6 +103,13 @@ export function useTickStreamWatchdog(
   }, []);
 
   useEffect(() => {
+    if (!active) {
+      // Nothing is being watched: withdraw any verdict about a previous stream.
+      setStalled((prev) => (prev ? false : prev));
+      return;
+    }
+    // Watching starts now; silence before a stream existed is not a stall.
+    lastFrameAtRef.current = Date.now();
     const timer = setInterval(() => {
       if (Date.now() - lastFrameAtRef.current < silenceMs) return;
       // Reset the clock AT the decision, so a stream that stays dead retries
@@ -103,7 +119,7 @@ export function useTickStreamWatchdog(
       setEpoch((n) => n + 1);
     }, tickMs);
     return () => clearInterval(timer);
-  }, [silenceMs, tickMs]);
+  }, [silenceMs, tickMs, active]);
 
-  return { epoch, stalled, noteFrame, noteError, noteStreamOpened };
+  return { epoch, stalled: active && stalled, noteFrame, noteError, noteStreamOpened };
 }

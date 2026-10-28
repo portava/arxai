@@ -4,6 +4,8 @@ import type { ScannerTruth } from "@/lib/scannerTruth";
 import {
   resolveRubyReadPanelState,
   resolveCappedRubyReadStatus,
+  withRouteReadLayer,
+  chartReadExpiresAtMs,
   type RubyReadServerState,
 } from "@/lib/rubyReadPanelState";
 import type { RubyReadStatus } from "@/lib/scannerActionability";
@@ -649,5 +651,558 @@ describe("Task #609 — RubyChartRead survives a half-loaded read payload", () =
     fireEvent.click(screen.getByTestId("ruby-chart-read-ask"));
     expect(await screen.findByTestId("ruby-chart-read-body")).toBeTruthy();
     fetchSpy.mockRestore();
+  });
+});
+
+// ── Owner screenshot 2026-10-27 (V75 1m, Deriv public data) ───────────────────
+//
+// The server's STRUCTURAL_ONLY read reached the client with `readLayer: ""` and
+// `tradeHealthFreshness: ""` (blanked by the user-copy scrubber), so the panel
+// treated it as a full read: Feed/Data "Live read on V75 1m.", S/R "… Mind room
+// into these levels." and Pattern/Trendline "No specific … named" — while the
+// SAME read's Risk line said "Exact entry, stop, and target levels withheld —
+// Live feed is delayed …". The server now keeps the enum; the client also reads
+// the transparency booleans (which always survived) and the cautions, so either
+// wire shape renders the withheld state. Downgrade-only.
+describe("owner screenshot 2026-10-27 — STRUCTURAL_ONLY read never renders as a live read", () => {
+  const WITHHELD_REASON =
+    "Live feed is delayed — read uses the last confirmed bars, not the current candle.";
+  function serverStructuralRead(readLayer: string, tradeHealthFreshness: string): RubyReadServerState {
+    return {
+      symbol: "V75",
+      timeframe: "M1",
+      bias: "Mixed",
+      htfBias: "No clear edge",
+      confidence: "Low",
+      why: "Higher-timeframe bias is unclear. On this timeframe the trend structure leans up, with momentum cooling; price is trading up near resistance.",
+      supportZone: "33250.6 – 33273.2",
+      resistanceZone: "33639.4 – 33662.0",
+      cautions: [
+        `Exact entry, stop, and target levels withheld — ${WITHHELD_REASON}`,
+        "Read is from closed candles only — current-candle/entry confirmation pending.",
+      ],
+      gated: false,
+      dataQuality: "ok",
+      readLayer,
+      liveSetupWithheld: true,
+      canReadStructure: true,
+      canShowLiveTradeSetup: false,
+      tradeHealthFreshness,
+      tradeHealthLabel: "Historical read only",
+      tradeHealthTrustLine:
+        "Historical/closed-candle M1 structural read — feed not confirmed for live entry.",
+      basis: "VERIFIED",
+      blockedReason: WITHHELD_REASON,
+      // Fresh data time (newest closed candle) so the read is not expired.
+      observedAt: new Date(Date.now() - 10_000).toISOString(),
+    } as unknown as RubyReadServerState;
+  }
+
+  for (const [label, read] of [
+    ["fixed server wire (readLayer STRUCTURAL_ONLY)", () => serverStructuralRead("STRUCTURAL_ONLY", "HISTORICAL_ONLY")],
+    ["pre-fix scrubbed wire (readLayer \"\")", () => serverStructuralRead("", "")],
+  ] as const) {
+    it(`${label}: Feed/Data, S/R, notice and header cap all say the setup is withheld`, () => {
+      mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full", "Live data — valid for a live read") }));
+      mockStoredRead = read();
+      render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+
+      const feedData = screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent ?? "";
+      expect(feedData).not.toContain("Live read on");
+      expect(feedData).toContain("Structural read only on V75 1m — exact entry/stop/target withheld:");
+      expect(feedData).not.toContain("until V75 1m confirms");
+      expect(feedData).toContain(WITHHELD_REASON);
+      const sr = screen.getByTestId("ruby-chart-read-reasoning-evidence-supportResistance").textContent ?? "";
+      expect(sr).toContain("Exact entry/stop/target withheld");
+      expect(sr).not.toContain("Mind room into these levels");
+      expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-pattern").textContent).not.toContain("No specific chart pattern named");
+      expect(screen.getByTestId("ruby-chart-read-structural-notice")).toBeTruthy();
+      expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+
+      const capped = resolveCappedRubyReadStatus("FULL_READ", mockStoredRead);
+      expect(capped.status).toBe("LIMITED_READ");
+      expect(capped.reason).toBe(WITHHELD_REASON);
+    });
+  }
+
+  it("contradiction guard: cautions that withhold levels never pair with 'Live read on'", () => {
+    // Even a read whose panel verdict was not structural (no layer, no
+    // transparency booleans) may not claim a live read while its own cautions
+    // say the exact levels are withheld.
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = {
+      gated: false,
+      dataQuality: "ok",
+      bias: "Bullish",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: ["Exact entry, stop, and target levels withheld — Live feed is delayed."],
+    } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const feedData = screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent ?? "";
+    expect(feedData).not.toContain("Live read on");
+    expect(
+      screen.getByTestId("ruby-chart-read-reasoning-evidence-supportResistance").textContent,
+    ).not.toContain("Mind room into these levels");
+  });
+
+  it("a genuine FULL read with no withheld signals still renders the live read (no over-downgrade)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = {
+      gated: false,
+      dataQuality: "ok",
+      readLayer: "FULL",
+      liveSetupWithheld: false,
+      canShowLiveTradeSetup: true,
+      bias: "Bullish",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: [],
+      observedAt: new Date(Date.now() - 10_000).toISOString(),
+    } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent).toBe("Live read on V75 1m.");
+    expect(screen.queryByTestId("ruby-chart-read-structural-notice")).toBeNull();
+  });
+});
+
+// ── levels-withheld-vs-shown (owner's V75 1m screenshot [F]) ──────────────────
+//
+// The read-chart service used to scrub its WHOLE payload through the user-copy
+// scrubber, which deletes SCREAMING_SNAKE tokens: "STRUCTURAL_ONLY" reached the
+// wire as "". The panel then compared `readLayer === "STRUCTURAL_ONLY"` → false,
+// fell to "confirmed" on a full shared truth, and rendered "WAIT — no confirmed
+// direction" / "Live read on V75 1m." / "Mind room into these levels." beside
+// the server's own caution "Exact entry, stop, and target levels withheld — …".
+// The withheld-setup flags that survived the scrubber must be enough to keep the
+// panel structural (downgrade-only), and the route's top-level readLayer may only
+// lower the payload's.
+describe("RubyChartRead — a withheld structural read never renders as a live read (owner's [F])", () => {
+  const BLOCKED = "Live feed is delayed — read uses the last confirmed bars, not the current candle.";
+  const OWNER_WIRE = {
+    gated: false,
+    readLayer: "",
+    liveSetupWithheld: true,
+    canReadStructure: true,
+    canShowLiveTradeSetup: false,
+    dataQuality: undefined,
+    // Fresh data time (newest closed candle 10s ago) so this pins the
+    // structural copy, not the expiry downgrade covered below.
+    observedAt: new Date(Date.now() - 10_000).toISOString(),
+    bias: "Mixed",
+    confidence: "Low",
+    htfBias: "No clear edge",
+    why: "Higher-timeframe bias is unclear. On this timeframe the trend structure leans up, with momentum cooling; price is trading up near resistance.",
+    supportZone: "33250.6 – 33273.2",
+    resistanceZone: "33639.4 – 33662.0",
+    blockedReason: BLOCKED,
+    cautions: [
+      `Exact entry, stop, and target levels withheld — ${BLOCKED}`,
+      "Read is from closed candles only — current-candle/entry confirmation pending.",
+    ],
+  } as unknown as RubyReadServerState;
+
+  it("resolver: liveSetupWithheld without a readLayer resolves structural_only (badge never Clean/AI)", () => {
+    const panel = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: OWNER_WIRE,
+    });
+    expect(panel.verdict).toBe("structural_only");
+    expect(panel.badgeAiUsable).toBe(false);
+    expect(panel.reason).toBe(BLOCKED);
+    expect(resolveCappedRubyReadStatus("FULL_READ", OWNER_WIRE).status).toBe("LIMITED_READ");
+  });
+
+  it("resolver: an INSUFFICIENT-shaped read (also liveSetupWithheld) stays not_confirmed, not structural_only", () => {
+    const panel = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: {
+        gated: true,
+        readLayer: "INSUFFICIENT",
+        liveSetupWithheld: true,
+        canReadStructure: false,
+        canShowLiveTradeSetup: false,
+        dataQuality: "insufficient",
+        blockedReason: "Not enough closed candles yet (5/150).",
+      },
+    });
+    expect(panel.verdict).toBe("not_confirmed");
+  });
+
+  it("resolver: a FULL read with the live setup allowed stays confirmed on a full truth", () => {
+    const panel = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: { gated: false, readLayer: "FULL", liveSetupWithheld: false, canReadStructure: true, canShowLiveTradeSetup: true },
+    });
+    expect(panel.verdict).toBe("confirmed");
+  });
+
+  it("withRouteReadLayer is downgrade-only", () => {
+    expect(withRouteReadLayer({ readLayer: "" } as unknown as RubyReadServerState, "STRUCTURAL_ONLY")?.readLayer).toBe("STRUCTURAL_ONLY");
+    expect(withRouteReadLayer({} as RubyReadServerState, "FULL")?.readLayer).toBeUndefined();
+    expect(withRouteReadLayer({ readLayer: "FULL" }, "STRUCTURAL_ONLY")?.readLayer).toBe("STRUCTURAL_ONLY");
+    expect(withRouteReadLayer({ readLayer: "STRUCTURAL_ONLY" }, "FULL")?.readLayer).toBe("STRUCTURAL_ONLY");
+    expect(withRouteReadLayer(null, "FULL")).toBeNull();
+  });
+
+  it("render: the owner's wire payload shows the structural notice, cites the server reason, and never says 'Live read on'", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full", "Live data — valid for a live read") }));
+    mockStoredRead = OWNER_WIRE;
+    const { container } = render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+
+    const notice = screen.getByTestId("ruby-chart-read-structural-notice");
+    expect(notice.textContent).toContain(BLOCKED);
+    expect(screen.queryByTestId("ruby-chart-read-feed-warning")).toBeNull();
+    const text = container.textContent ?? "";
+    expect(text).not.toContain("Live read on");
+    expect(text).not.toContain("WAIT — no confirmed direction");
+    expect(text).not.toContain("Mind room into these levels");
+    expect(text).toContain("WAIT — structure only");
+    expect(text).toContain(`Exact entry/stop/target withheld — ${BLOCKED}`);
+    expect(text).not.toMatch(/Mark support .* on V75; watch which one price tests first/);
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+    for (const token of FORBIDDEN_TRUST_TOKENS) {
+      expect(screen.getByTestId("feed-confidence-badge").textContent).not.toContain(token);
+    }
+  });
+
+  it("render: the route's top-level readLayer restores STRUCTURAL_ONLY when chartRead.readLayer is blank", async () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          chartRead: { gated: false, readLayer: "", blockedReason: BLOCKED, bias: "Mixed" },
+          readLayer: "STRUCTURAL_ONLY",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    fireEvent.click(screen.getByTestId("ruby-chart-read-ask"));
+    expect(await screen.findByTestId("ruby-chart-read-structural-notice")).toBeTruthy();
+    fetchSpy.mockRestore();
+  });
+});
+
+// ── Read data time + expiry (levels-withheld-vs-shown RC4) ────────────────────
+//
+// A chart read is a one-shot snapshot kept in the page store. Its caution
+// ("… withheld — <reason>") described the feed at READ time, but nothing on the
+// panel said when that was, so a minutes-old read sat under a live page as if
+// current. The server now ships `observedAt` (newest CLOSED candle close); the
+// panel shows it and, past the timeframe's candle budget (or with no time at
+// all), downgrades the read — never upgrades it.
+describe("RubyChartRead — read data time and expiry", () => {
+  const FRESH = () => new Date(Date.now() - 10_000).toISOString();
+  const OLD = () => new Date(Date.now() - 10 * 60_000).toISOString();
+
+  it("chartReadExpiresAtMs: gated → null, missing time → NaN (fail-closed), else observedAt + budget", () => {
+    expect(chartReadExpiresAtMs({ gated: true }, 90_000)).toBeNull();
+    expect(Number.isNaN(chartReadExpiresAtMs({ gated: false }, 90_000))).toBe(true);
+    expect(Number.isNaN(chartReadExpiresAtMs({ gated: false, observedAt: "not-a-time" }, 90_000))).toBe(true);
+    expect(chartReadExpiresAtMs({ gated: false, observedAt: "2026-10-27T16:03:00.000Z" }, 90_000)).toBe(
+      Date.parse("2026-10-27T16:03:00.000Z") + 90_000,
+    );
+  });
+
+  it("resolver: an expired read never lets the badge claim clean/AI, even on a confirmed FULL read", () => {
+    const panel = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true },
+      readExpired: true,
+    });
+    expect(panel.readExpired).toBe(true);
+    expect(panel.badgeAiUsable).toBe(false);
+  });
+
+  it("render: a fresh FULL read shows its newest-closed-candle time and is not expired", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, observedAt: FRESH(), bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const asOf = screen.getByTestId("ruby-chart-read-asof").textContent ?? "";
+    expect(asOf).toMatch(/newest closed candle \d\d:\d\d UTC/);
+    expect(asOf).not.toContain("expired");
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(true);
+  });
+
+  it("render: a read older than the 1m candle budget is labelled expired and the reasoning says so", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, observedAt: OLD(), bias: "Bullish" } as RubyReadServerState;
+    const { container } = render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-asof").textContent).toContain("expired");
+    const text = container.textContent ?? "";
+    expect(text).toContain("WAIT — this read has expired");
+    expect(text).not.toContain("Live read on");
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+  });
+
+  it("render: the same age is still current on 1h (budget follows the timeframe, normalised from H1)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, observedAt: OLD(), bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="EURUSD" timeframe="H1" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-asof").textContent).not.toContain("expired");
+  });
+
+  it("render: a non-gated read with no data time is treated as expired (fail-closed)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const asOf = screen.getByTestId("ruby-chart-read-asof").textContent ?? "";
+    expect(asOf).toContain("Read time unknown");
+    expect(asOf).toContain("expired");
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+  });
+});
+
+// ── Owner screenshot 2026-10-27 — the HTF was never read ──────────────────────
+//
+// The chart read printed "Higher-timeframe bias No clear edge; Mixed on 1m." and
+// an "HTF Bias: No clear edge" tile, but the server had never fetched HTF candles
+// (higherTimeframeOf("M1") → null). The server now sends htfBias null +
+// htfTimeframe; the client renders "not read" (and treats the legacy sentinel the
+// same way), and names the HTF timeframe only from the server's field.
+describe("owner screenshot 2026-10-27 — HTF bias is stated only when it was read", () => {
+  function fullRead(extra: Record<string, unknown>): RubyReadServerState {
+    return {
+      gated: false,
+      dataQuality: "ok",
+      readLayer: "FULL",
+      liveSetupWithheld: false,
+      canShowLiveTradeSetup: true,
+      bias: "Mixed",
+      confidence: "Low",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: [],
+      ...extra,
+    } as unknown as RubyReadServerState;
+  }
+
+  it("htfBias null + htfTimeframe M15 → 'Higher-timeframe (15m) bias not read' and an em-dash tile", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead({ htfBias: null, htfTimeframe: "M15" });
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent).toBe(
+      "Higher-timeframe (15m) bias not read; Mixed on 1m. Structure-read confidence: Low (structure scale: Low / Medium / High).",
+    );
+    const tile = screen.getByTestId("ruby-chart-read-htf-bias");
+    expect(tile.textContent).toBe("—");
+    expect(screen.getByText("HTF (15m) bias")).toBeTruthy();
+  });
+
+  it("legacy sentinel 'No clear edge' with no htfTimeframe is 'not read', never a bias", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead({ htfBias: "No clear edge" });
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const structure = screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent ?? "";
+    expect(structure).toBe("Higher-timeframe bias not read; Mixed on 1m. Structure-read confidence: Low (structure scale: Low / Medium / High).");
+    expect(structure).not.toContain("No clear edge");
+    expect(screen.getByTestId("ruby-chart-read-htf-bias").textContent).toBe("—");
+  });
+
+  it("a read 15m bias is named with its timeframe", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead({ htfBias: "Bullish", htfTimeframe: "M15" });
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent).toBe(
+      "Higher timeframe (15m) leans bullish; Mixed on 1m. Structure-read confidence: Low (structure scale: Low / Medium / High).",
+    );
+    expect(screen.getByTestId("ruby-chart-read-htf-bias").textContent).toBe("Bullish");
+  });
+});
+
+// ── Owner screenshot 2026-10-27 — trendline drawn on the chart, "none named" in the read ──
+describe("owner screenshot 2026-10-27 — the chart read's Trendline row is the server's detector note", () => {
+  it("a STRUCTURAL_ONLY payload with trendlineRead renders the note, not 'No specific trendline named.'", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    const note =
+      "Rising support trendline (bullish) has broken on a decisive close. Feed is not live-confirmed, so treat this trendline as context only.";
+    mockStoredRead = {
+      gated: false,
+      dataQuality: "ok",
+      readLayer: "STRUCTURAL_ONLY",
+      liveSetupWithheld: true,
+      canShowLiveTradeSetup: false,
+      bias: "Mixed",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: ["Exact entry, stop, and target levels withheld — Live feed is delayed."],
+      trendlineRead: { trendlineNote: note, trendlineStatus: "broken", trendlineContextOnly: true, trendlineDetection: "detected" },
+    } as unknown as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const row = screen.getByTestId("ruby-chart-read-reasoning-evidence-trendline").textContent ?? "";
+    expect(row).toBe(note);
+    expect(row).not.toContain("No specific trendline named.");
+    expect(row).not.toContain("Trendline read withheld");
+  });
+});
+
+// Owner screenshot 2026-10-27 [F]: the chart read's Risk row said "News/calendar
+// unavailable — event risk not assessed." on every read, although the
+// read-chart endpoint consults no calendar and the market-read card on the same
+// page printed the truth read's own calendar label.
+describe("RubyChartRead — Risk row states event risk exactly as checked", () => {
+  function fullRead(): RubyReadServerState {
+    return {
+      gated: false, dataQuality: "ok", readLayer: "FULL", liveSetupWithheld: false, canShowLiveTradeSetup: true,
+      bias: "Bullish", supportZone: "1", resistanceZone: "2", cautions: [],
+    } as RubyReadServerState;
+  }
+  it("mirrors the page's truth-read event-risk line verbatim", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead();
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} newsRiskLabel="No event calendar is connected." />);
+    const risk = screen.getByTestId("ruby-chart-read-reasoning-evidence-risk").textContent ?? "";
+    expect(risk).toContain("No event calendar is connected.");
+    expect(risk).not.toContain("News/calendar unavailable");
+  });
+  it("with no page line, says only that this read did not assess event risk", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead();
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const risk = screen.getByTestId("ruby-chart-read-reasoning-evidence-risk").textContent ?? "";
+    expect(risk).toContain("Event risk not assessed in this read.");
+    expect(risk).not.toMatch(/unavailable/i);
+  });
+});
+
+// Owner screenshot 2026-10-27: the header Action cell said "Feed limited" while
+// the Eleanor tile said "Full read" and the panel's chip could still read
+// Clean/AI. The page's canonical action verdict now caps both, downgrade-only.
+describe("feed-limited action verdict caps the Eleanor read (header + panel agree)", () => {
+  it("pure: FEED_LIMITED / ANALYSIS_ONLY cap a FULL_READ; CHECK_FAILED does not", async () => {
+    const { isFeedLimitedAction } = await import("@/lib/rubyReadPanelState");
+    expect(isFeedLimitedAction("FEED_LIMITED")).toBe(true);
+    expect(isFeedLimitedAction("ANALYSIS_ONLY")).toBe(true);
+    expect(isFeedLimitedAction("CHECK_FAILED")).toBe(false);
+    expect(isFeedLimitedAction("WAIT_FOR_CONFIRMATION")).toBe(false);
+    expect(isFeedLimitedAction("PENDING")).toBe(false);
+    const full: RubyReadServerState = { gated: false, dataQuality: "ok", readLayer: "FULL" };
+    expect(resolveCappedRubyReadStatus("FULL_READ", full, undefined, "Eleanor", true)).toEqual({
+      status: "LIMITED_READ",
+      reason: "The live feed isn't fully confirmed — Eleanor reads with caution.",
+    });
+    expect(resolveCappedRubyReadStatus("FULL_READ", full, undefined, "Eleanor", false).status).toBe("FULL_READ");
+    // never raises
+    expect(resolveCappedRubyReadStatus("NO_READ", full, undefined, "Eleanor", true).status).toBe("NO_READ");
+  });
+
+  it("pure: panel verdict is not_confirmed and the badge can't claim Clean/AI; the endpoint report is unchanged", () => {
+    const s = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: { gated: false, dataQuality: "ok", readLayer: "FULL" },
+      actionFeedLimited: true,
+      assistantName: "Eleanor",
+    });
+    expect(s.verdict).toBe("not_confirmed");
+    expect(s.badgeAiUsable).toBe(false);
+    expect(s.reason).toBe("The live feed isn't fully confirmed — Eleanor reads with caution.");
+    expect(s.reportedAiUsable).toBe(true);
+  });
+
+  it("render: a FULL read under a FEED_LIMITED canonical action never feeds the chip a confirmed verdict", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, dataQuality: "ok", readLayer: "FULL", bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="FEED_LIMITED" />);
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+    expect(screen.getByTestId("ruby-chart-read-feed-warning").textContent).toContain(
+      "isn't fully confirmed",
+    );
+  });
+
+  it("render: a FULL read under WAIT_FOR_CONFIRMATION keeps the confirmed chip (no over-downgrade)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = {
+      gated: false, dataQuality: "ok", readLayer: "FULL", bias: "Bullish",
+      // Fresh data time: a read with none is treated as expired (fail-closed).
+      observedAt: new Date(Date.now() - 10_000).toISOString(),
+    } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="WAIT_FOR_CONFIRMATION" />);
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(true);
+    expect(screen.queryByTestId("ruby-chart-read-feed-warning")).toBeNull();
+  });
+});
+
+// Owner screenshot 2026-10-27: TRADING "Blocked — Trading is restricted on your
+// account" and the chart footer "Manual trading is currently blocked for your
+// account." while the Eleanor read panel offered "Prepare Trade" (dimmed, with a
+// FEED tooltip) — and would have offered an enabled link on READY_NOW.
+describe("Prepare Trade CTA honours the account's trading block (separate authority)", () => {
+  function truthWithTrading(
+    tradingStatus: "ENABLED" | "BLOCKED" | "DISABLED" | "REVIEW_REQUIRED",
+    detail: string,
+  ): ScannerTruth {
+    return {
+      analysis: { level: "full", reason: "Live data — valid for a live read" },
+      consolidated: { tradingStatus },
+      strip: { trading: { detail } },
+    } as unknown as ScannerTruth;
+  }
+  const FULL = { gated: false, dataQuality: "ok", readLayer: "FULL", bias: "Bullish" } as RubyReadServerState;
+  const RESTRICTED = "Trading is restricted on your account. Contact support.";
+
+  it("(a) BLOCKED + READY_NOW BUY: disabled button (no link), tooltip names the restriction, inline note, neutral label", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthWithTrading("BLOCKED", RESTRICTED) }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="READY_NOW" canonicalDirection="BUY" />);
+    const cta = screen.getByTestId("ruby-chart-prepare-trade");
+    expect(cta.tagName).toBe("BUTTON");
+    expect(cta.getAttribute("href")).toBeNull();
+    expect((cta as HTMLButtonElement).disabled).toBe(true);
+    expect(cta.getAttribute("title")).toBe(RESTRICTED);
+    expect(cta.textContent).toContain("Prepare Trade");
+    expect(cta.textContent).not.toContain("Prepare Buy");
+    expect(screen.getByTestId("ruby-chart-trading-blocked").textContent).toBe(
+      "Trading is blocked on your account — this read is for information only.",
+    );
+  });
+
+  it("(b) ENABLED + READY_NOW: the link to the trade room renders (existing behaviour)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthWithTrading("ENABLED", "You can place demo trades.") }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="READY_NOW" canonicalDirection="BUY" />);
+    const cta = screen.getByTestId("ruby-chart-prepare-trade");
+    expect(cta.tagName).toBe("A");
+    expect(cta.getAttribute("href")).toContain("/trade-command-room");
+    expect(cta.textContent).toContain("Prepare Buy");
+    expect(screen.queryByTestId("ruby-chart-trading-blocked")).toBeNull();
+  });
+
+  it("(c) BLOCKED + FEED_LIMITED (the screenshot state): tooltip names the trading block, not the feed", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthWithTrading("BLOCKED", RESTRICTED) }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="FEED_LIMITED" />);
+    const title = screen.getByTestId("ruby-chart-prepare-trade").getAttribute("title") ?? "";
+    expect(title).toBe(RESTRICTED);
+    expect(title).not.toContain("live feed");
+  });
+
+  it("(d) truth unresolved + READY_NOW: disabled with the pending copy, never a 'blocked' claim", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: null }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="READY_NOW" canonicalDirection="BUY" />);
+    const cta = screen.getByTestId("ruby-chart-prepare-trade");
+    expect(cta.tagName).toBe("BUTTON");
+    expect(cta.getAttribute("title") ?? "").not.toMatch(/blocked|restricted/i);
+    expect(screen.queryByTestId("ruby-chart-trading-blocked")).toBeNull();
+  });
+
+  it("(e) DISABLED (read-only mode): the tile's own detail, verbatim — not 'blocked'", () => {
+    const RO = "Read-only — trading isn't available from the scanner in this mode.";
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthWithTrading("DISABLED", RO) }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="READY_NOW" />);
+    expect(screen.getByTestId("ruby-chart-prepare-trade").tagName).toBe("BUTTON");
+    expect(screen.getByTestId("ruby-chart-trading-blocked").textContent).toBe(RO);
   });
 });

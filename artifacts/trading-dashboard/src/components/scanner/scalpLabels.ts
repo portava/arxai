@@ -175,6 +175,19 @@ export function fmtMoney(v: number | null | undefined): string {
   return `$${v.toFixed(2)}`;
 }
 
+/**
+ * Scalp money tile formatter. The figures are in the trading account's
+ * currency; name it only when the server reported it. "$" only for USD —
+ * never assumed. Unknown currency → the bare amount plus "(account currency)".
+ */
+export function fmtScalpMoney(v: number | null | undefined, currency: string | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const code = typeof currency === "string" && currency.trim() ? currency.trim().toUpperCase() : null;
+  if (code === "USD") return `$${v.toFixed(2)}`;
+  if (code) return `${v.toFixed(2)} ${code}`;
+  return `${v.toFixed(2)} (account currency)`;
+}
+
 export function fmtRr(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return `1 : ${v.toFixed(2)}`;
@@ -356,4 +369,86 @@ export function flameRunwayTone(level: ScalpFlameReadRunway): string {
   if (level === "MODERATE") return "text-sky-300";
   if (level === "TIGHT") return "text-amber-300";
   return "text-zinc-400";
+}
+
+// ── AWAITING_DATA reason split + engine timeframe (owner screenshot 2026-10-27) ─
+//
+// The scalp engine returns AWAITING_DATA for four different reasons. Three are
+// genuine feed/data reasons; NO_SPECS means the feed passed every check (live,
+// sufficient) but the broker's symbol details (lot size, point value) are not
+// available — e.g. no MT5 bridge has synced them — so no scalp can be sized.
+// Before this split the page rendered NO_SPECS as "Feed limited — The live feed
+// isn't fully confirmed" next to DATA "Live, confirmed candles."
+
+type ScalpReasonCarrier = { status: ScalpResultStatus; rejectReason?: string | null };
+
+/** AWAITING_DATA because broker symbol details are missing (NOT a feed reason). */
+export function isScalpAwaitingBrokerSpecs(r: ScalpReasonCarrier): boolean {
+  return r.status === "AWAITING_DATA" && r.rejectReason === "NO_SPECS";
+}
+
+/**
+ * AWAITING_DATA for a feed/data reason. Fail-closed: an AWAITING_DATA result
+ * with no (or an unknown) reason — e.g. from an older server — counts as a feed
+ * reason for the card's own gating.
+ */
+export function isScalpAwaitingFeed(r: ScalpReasonCarrier): boolean {
+  return r.status === "AWAITING_DATA" && !isScalpAwaitingBrokerSpecs(r);
+}
+
+/** True when the AWAITING_DATA reason is one the server explicitly named. */
+export function hasKnownScalpRejectReason(r: ScalpReasonCarrier): boolean {
+  return (
+    r.rejectReason === "NO_SCANNER_READ" ||
+    r.rejectReason === "NOT_LIVE" ||
+    r.rejectReason === "INSUFFICIENT_DATA" ||
+    r.rejectReason === "NO_SPECS"
+  );
+}
+
+/** Status chip copy that names the real reason for an AWAITING_DATA result. */
+export function scalpStatusLabel(r: ScalpReasonCarrier): string {
+  if (isScalpAwaitingBrokerSpecs(r)) return "Broker symbol details needed";
+  return SCALP_STATUS_LABEL[r.status];
+}
+
+/**
+ * The engine timeframe the Focus scalp reads when the server does not say
+ * (older servers). Mirrors the server's SCALP_TIMEFRAME; the server now stamps
+ * `timeframe` on every Focus result, which always wins.
+ */
+export const SCALP_ENGINE_FALLBACK_TIMEFRAME = "M5";
+
+const CANONICAL_TO_BUS: Record<string, string> = {
+  M1: "1m",
+  M5: "5m",
+  M15: "15m",
+  M30: "30m",
+  H1: "1h",
+  H4: "4h",
+  H8: "8h",
+  D1: "1d",
+  W1: "1w",
+};
+
+/** Canonical engine timeframe ("M5") for a scalp result. */
+export function scalpEngineTimeframe(r: { timeframe?: string | null }): string {
+  const tf = typeof r.timeframe === "string" ? r.timeframe.trim().toUpperCase() : "";
+  return tf || SCALP_ENGINE_FALLBACK_TIMEFRAME;
+}
+
+/**
+ * The scanner-bus timeframe ("5m") a scalp result's lifted verdict is keyed
+ * under, so the header adopts it ONLY when the user views the timeframe the
+ * engine actually read. Null when the engine timeframe has no visible chip —
+ * the caller then publishes nothing rather than guessing a key.
+ */
+export function scalpBusTimeframe(r: { timeframe?: string | null }): string | null {
+  return CANONICAL_TO_BUS[scalpEngineTimeframe(r)] ?? null;
+}
+
+/** Plain-English minutes label ("5-minute") for the engine timeframe, or null. */
+export function scalpTimeframeWords(r: { timeframe?: string | null }): string | null {
+  const m = /^M(\d+)$/.exec(scalpEngineTimeframe(r));
+  return m ? `${m[1]}-minute` : null;
 }

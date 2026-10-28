@@ -18,6 +18,7 @@
 
 import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
 import { selectDemoOpenPositions } from "../lib/positions/openPositions.js";
+import { ownPositionPnlView } from "../lib/mt5/ownPositionPnl.js";
 import { getUserPrimaryConnection } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
@@ -68,6 +69,8 @@ type OpenCard = {
   openedAt: string | null;
   brokerLabelMasked: string | null;
   waitingForSync: boolean;
+  /** When the broker last reported this position's P/L (ISO), when known. */
+  pnlObservedAt?: string | null;
 };
 
 router.get("/me/trades/open", async (req, res) => {
@@ -109,13 +112,15 @@ router.get("/me/trades/open", async (req, res) => {
         confirmedTicket: true,
         orderBy: [desc(demoPositionColumns.openedAt)],
       });
+      const nowMs = Date.now();
       for (const r of rows) {
         const entry = r.entryPrice ?? null;
         const cur = r.currentPrice ?? null;
-        const upnl = r.unrealizedProfitLoss ?? null;
-        const pnlPct = (upnl !== null && entry && r.lotSize)
-          ? Math.round((upnl / Math.max(1, entry * r.lotSize * 100)) * 10000) / 100
-          : null;
+        // Broker floating profit from the trader's own bridge snapshot; shown
+        // only while that observation is current. currentPrice is not part of
+        // the bridge push, so it never gates the P/L ("syncing…" forever).
+        const pnl = ownPositionPnlView({ unrealizedProfitLoss: r.unrealizedProfitLoss ?? null, lastSyncedAt: r.lastSyncedAt ?? null }, nowMs);
+        const upnl = pnl.unrealizedPnl;
         cards.push({
           id: `lp_${r.id}`,
           source: "user_owned_mt5",
@@ -130,12 +135,15 @@ router.get("/me/trades/open", async (req, res) => {
           takeProfit: r.takeProfit ?? null,
           unrealizedPnl: upnl,
           pnlIsEstimate: false,
-          pnlPercent: pnlPct,
+          // No account-equity or margin basis is held for this card; the old
+          // P/L ÷ (entry × lots × 100) was not a percentage of anything.
+          pnlPercent: null,
           pips: null,
           status: r.status,
           openedAt: r.openedAt?.toISOString() ?? r.createdAt?.toISOString() ?? null,
           brokerLabelMasked: null,
-          waitingForSync: upnl === null || cur === null,
+          waitingForSync: pnl.waitingForSync,
+          pnlObservedAt: pnl.pnlObservedAt,
         });
       }
     } else {
@@ -167,9 +175,6 @@ router.get("/me/trades/open", async (req, res) => {
           labels.set(r.sharedMasterAccountId, label);
         }
         const upnl = r.pnl ?? null;
-        const pnlPct = (upnl !== null && r.entryPrice && r.lotSize)
-          ? Math.round((upnl / Math.max(1, r.entryPrice * r.lotSize * 100)) * 10000) / 100
-          : null;
         cards.push({
           id: `att_${r.id}`,
           source: "shared_master_attribution",
@@ -185,7 +190,11 @@ router.get("/me/trades/open", async (req, res) => {
           unrealizedPnl: upnl,
           // Shared master is netting — per-user P&L is an allocation estimate.
           pnlIsEstimate: true,
-          pnlPercent: pnlPct,
+          // No notional (contract size) or allocated-equity basis is held for
+          // an attribution row; P/L ÷ (entry × lots × 100) assumed a 100-unit
+          // contract (EURUSD 1 lot +1000 read 921.66%). Withheld, as on the
+          // user-owned card.
+          pnlPercent: null,
           pips: null,
           status: r.status,
           openedAt: r.openedAt?.toISOString() ?? r.createdAt?.toISOString() ?? null,

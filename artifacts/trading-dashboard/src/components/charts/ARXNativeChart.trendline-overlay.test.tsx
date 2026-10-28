@@ -108,11 +108,14 @@ vi.mock("@workspace/api-client-react", () => ({
   },
 }));
 
-// useScannerTruth needs react-query this hermetic render does not set up; the
-// badge it feeds is suppressed (showFeedStatus={false}). Stub it inert.
+// useScannerTruth needs react-query this hermetic render does not set up. It is
+// stubbed to a resolved verdict: "full" (confirmed) by default, so the drawing
+// gates under test are the only thing that can withhold structure, and a
+// downgraded / unresolved verdict for the AI gate test below.
+let scannerTruthLevel: "full" | "historical_only" | null = "full";
 vi.mock("@/hooks/useScannerTruth", () => ({
   useScannerTruth: () => ({
-    truth: null,
+    truth: scannerTruthLevel == null ? null : { analysis: { level: scannerTruthLevel } },
     feedStatus: null,
     isLoading: false,
     isError: false,
@@ -291,6 +294,7 @@ beforeEach(() => {
   };
   currentCandleResponse = makeResponse("EURUSD", liveFeedStatus("EURUSD"));
   currentIntelligence = intelligenceWith(makeOverlay(true));
+  scannerTruthLevel = "full";
 });
 
 afterEach(() => {
@@ -348,6 +352,15 @@ describe("ARXNativeChart structural trendline overlay drawing (Task #669)", () =
     expect(lastStructureCall()).toEqual({lines:[],markers:[]});
     expect(adapterSpies.init).toHaveBeenCalledOnce();
   });
+
+  it.each([["historical_only"], [null]] as const)(
+    "CLEARS the structure when the shared scanner truth is %s, even on a clean live AI-usable feed",
+    (level) => {
+      scannerTruthLevel = level;
+      renderChart("EURUSD");
+      expect(lastStructureCall()).toEqual({ lines: [], markers: [] });
+    },
+  );
 
   it("CLEARS the structure on a non-live (stale) feed even when overlay.visible is true", () => {
     currentCandleResponse = makeResponse("EURUSD", staleFeedStatus("EURUSD"));

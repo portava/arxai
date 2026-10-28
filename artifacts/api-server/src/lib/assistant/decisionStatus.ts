@@ -88,6 +88,7 @@ export function mapLegacyToDecisionStatus(input: DecisionStatusInput): DecisionS
     case "WAIT_FOR_CONFIRMATION": return "WAIT";
     case "REJECTED_BY_RISK": return "AVOID";
     case "CHOPPY_MARKET": return "AVOID";
+    case "LOW_OPPORTUNITY_SCORE": return "AVOID";
     case "LOW_CONFIDENCE": return "REVIEW";
   }
   switch (opportunityLabel) {

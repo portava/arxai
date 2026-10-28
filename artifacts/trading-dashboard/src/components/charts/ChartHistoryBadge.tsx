@@ -9,8 +9,10 @@ import { Loader2, History, CircleSlash } from "lucide-react";
 //   - loading: a back-page fetch is in flight
 //   - provider ceiling: the provider cannot reach deeper (honest cap, verbatim
 //     limitationReason) — NOT a fabricated/extrapolated history
-//   - depth: how far back real cached/fetched bars actually reach (coverage vs
-//     the per-timeframe target)
+//   - load error: the last back-page request failed and paging stopped
+//   - cache depth: how far the SERVER CACHE for this series reaches (oldest to
+//     newest cached row). It is labelled "cached" because it is not the span
+//     of bars the chart currently holds.
 //
 // It NEVER implies live: a back-page is historical by definition. This component
 // is purely informational and gates nothing.
@@ -24,12 +26,14 @@ export interface ChartHistoryBadgeProps {
   providerCapped: boolean;
   /** Verbatim reason deeper history is unavailable (shown when capped). */
   limitationReason: string | null;
-  /** Deepest real coverage observed so far, in days (null if unknown). */
+  /** Server cache span for this series, in days (null if unknown). Not the on-chart span. */
   coverageDays: number | null;
   /** Per-timeframe deep-history target in days (reporting only). */
   depthTargetDays: number;
-  /** True once at least one back-page has been requested for this series. */
+  /** True once at least one back-page has delivered older bars for this series. */
   loadedAny: boolean;
+  /** Reason the last back-page request failed (paging stopped), if any. */
+  loadError?: string | null;
   className?: string;
 }
 
@@ -50,6 +54,7 @@ export function ChartHistoryBadge({
   coverageDays,
   depthTargetDays,
   loadedAny,
+  loadError = null,
   className,
 }: ChartHistoryBadgeProps) {
   if (loading) {
@@ -82,6 +87,21 @@ export function ChartHistoryBadge({
     );
   }
 
+  // A failed back-page: say so plainly instead of implying history loaded.
+  if (loadError) {
+    return (
+      <Badge
+        variant="outline"
+        className={`flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200 ${className ?? ""}`}
+        data-testid="chart-history-error"
+        title={loadError}
+      >
+        <CircleSlash className="h-3 w-3" />
+        <span className="max-w-[14rem] truncate">{loadError}</span>
+      </Badge>
+    );
+  }
+
   // Nothing scrolled back yet and no coverage known — render nothing.
   if (!loadedAny && coverageDays == null) return null;
 
@@ -94,13 +114,13 @@ export function ChartHistoryBadge({
       className={`flex items-center gap-1 border-zinc-700 bg-zinc-800/40 text-[10px] text-zinc-300 ${className ?? ""}`}
       data-testid="chart-history-depth"
       title={
-        depthTargetDays > 0
-          ? `History loaded${depthLabel ? ` · ${depthLabel}` : ""} (target ${formatDepth(depthTargetDays)})`
-          : "Historical bars loaded"
+        depthLabel
+          ? `Server cache for this series spans ${depthLabel}${depthTargetDays > 0 ? ` (target ${formatDepth(depthTargetDays)})` : ""}. The chart shows only the bars loaded so far.`
+          : "Older bars loaded"
       }
     >
       <History className="h-3 w-3" />
-      {depthLabel ? `${depthLabel} history` : "History loaded"}
+      {depthLabel ? `${depthLabel} cached` : "Older bars loaded"}
       {hasMore ? " · scroll for more" : ""}
     </Badge>
   );

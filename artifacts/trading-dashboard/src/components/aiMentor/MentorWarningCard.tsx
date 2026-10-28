@@ -9,9 +9,13 @@ function label(t: string): string {
     .join(" ");
 }
 
+/** Sessions this card renders in full (focus + message). */
+export function isMentorWarningSession(session: Pick<MentorSession, "sessionType">): boolean {
+  return session.sessionType === "RISK_WARNING" || session.sessionType === "DISCIPLINE_CHECK";
+}
+
 export function MentorWarningCard({ session }: { session: MentorSession }) {
-  const isWarn = session.sessionType === "RISK_WARNING" || session.sessionType === "DISCIPLINE_CHECK";
-  if (!isWarn) return null;
+  if (!isMentorWarningSession(session)) return null;
   return (
     <div className="rounded-2xl border border-danger/40 bg-danger/10 p-4">
       <div className="mb-1 flex items-center gap-2">

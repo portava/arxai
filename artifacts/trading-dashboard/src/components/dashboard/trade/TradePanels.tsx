@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { CockpitCard, Pill, ActionButton, SectionLink } from "@/components/dashboard/cockpit/primitives";
 import { cn } from "@/lib/utils";
+import type { BridgeObservation } from "@/components/dashboard/cockpit/bridgeObservation";
+import type { RiskCapsStatus } from "@/lib/riskCapsStatus";
 
 /* ── 1 · Top status bar ─────────────────────────────────────────────── */
 export function TradeStatusBar({
@@ -34,8 +36,8 @@ export function TradeStatusBar({
 
 /* ── 2 · Hero + connection card ─────────────────────────────────────── */
 export function TradeHero({
-  description, connStatus, isLive, broker, account,
-}: { description: string; connStatus: string; isLive: boolean; broker: string; account: string }) {
+  description, connStatus, isLive, bridge, routeHeading, broker, account,
+}: { description: string; connStatus: string; isLive: boolean; bridge: BridgeObservation; routeHeading: string; broker: string; account: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
       <div className="flex items-start gap-3">
@@ -52,10 +54,13 @@ export function TradeHero({
       <CockpitCard accent="blue" data-testid="trade-connection-card">
         <div className="flex items-start justify-between">
           <span className="text-sm text-txt-secondary">Connection</span>
-          <Pill tone={isLive ? "success" : connStatus === "Disconnected" ? "danger" : "info"}>{connStatus}</Pill>
+          {/* connStatus is the account route's mode; it turns green only when the
+              bridge observation is also online. */}
+          <Pill tone={connStatus === "Blocked" ? "danger" : isLive && bridge.state === "online" ? "success" : isLive ? "warning" : "info"}>{connStatus}</Pill>
         </div>
-        <div className="mt-1 text-lg font-semibold">Shared Master MT5</div>
-        <div className="mt-1 text-sm text-txt-secondary">Broker: {broker}</div>
+        <div className="mt-1 text-lg font-semibold" data-testid="trade-connection-route">{routeHeading}</div>
+        <div className="mt-1 text-sm text-txt-secondary" title={bridge.detail} data-testid="trade-connection-bridge">Bridge: {bridge.label}</div>
+        <div className="text-sm text-txt-secondary">Broker: {broker}</div>
         <div className="text-sm text-txt-secondary">Acc: {account}</div>
         <ActionButton href="/live-shared" subtle data-testid="trade-view-account">View account</ActionButton>
       </CockpitCard>
@@ -211,17 +216,20 @@ export function AdvancedPanel({ isAdmin }: { isAdmin: boolean }) {
 
 /* ── 6 · Risk Governor card ─────────────────────────────────────────── */
 export function RiskGovernorCard({
-  statusLabel, statusTone, riskLevel, bridge, approval, isAdmin, rawCanPlace, rawMode,
+  statusLabel, statusTone, riskCaps, bridge, approval, isAdmin, rawCanPlace, rawMode,
 }: {
   statusLabel: string; statusTone: "success" | "warning" | "danger";
-  riskLevel: string; bridge: string; approval: string;
+  /** From riskCapsStatus(): freeze state + whether caps are assigned. Never a measured risk level. */
+  riskCaps: RiskCapsStatus; bridge: string; approval: string;
   isAdmin: boolean; rawCanPlace: boolean; rawMode: string;
 }) {
   return (
     <CockpitCard title="Risk Governor" subtitle="Account risk status and controls" icon={<ShieldCheck className="h-[18px] w-[18px]" />} accent={statusTone} data-testid="risk-governor-card">
       <div className="grid grid-cols-2 gap-y-2.5 text-sm sm:grid-cols-4">
         <Stat label="Status" value={statusLabel} tone={statusTone} />
-        <Stat label="Risk level" value={riskLevel} tone="success" />
+        <div title={riskCaps.detail}>
+          <Stat label="Risk caps" value={riskCaps.label} tone={riskCaps.tone === "muted" ? undefined : riskCaps.tone} />
+        </div>
         <Stat label="Bridge" value={bridge} />
         <Stat label="Approval" value={approval} />
       </div>

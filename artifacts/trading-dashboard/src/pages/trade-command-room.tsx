@@ -17,20 +17,23 @@ import { useEffect, useState, useMemo } from "react";
 import { PageTabs } from "@/components/ui/PageTabs";
 import { Zap, Layers, ListChecks, Wrench } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { riskCapsStatus } from "@/lib/riskCapsStatus";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useAssistantName } from "@/lib/assistant-name";
-import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
 import { useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey, useGetMeSharedAccountPositions, getGetMeSharedAccountPositionsQueryKey } from "@workspace/api-client-react";
 
 import { CockpitHeader } from "@/components/dashboard/cockpit/CockpitHeader";
 import { MobileMenuTrigger } from "@/components/layout/Topbar";
 import { SidebarContent } from "@/components/layout/AppLayout";
 import { QuickTradePanel, type Quote } from "@/components/dashboard/trade/QuickTradePanel";
+import { quickTradeRiskApprox } from "@/components/dashboard/trade/quickTradeRisk";
 import { PreTradeHeatChecklist } from "@/components/dashboard/trade/PreTradeHeatChecklist";
 import {
   TradeStatusBar, TradeHero, PositionsPanel, OrdersPanel,
   AdvancedPanel, RiskGovernorCard, DecisionStreamCard,
 } from "@/components/dashboard/trade/TradePanels";
+import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
+import { describeBridgeObservation, isOnSharedMasterRoute } from "@/components/dashboard/cockpit/bridgeObservation";
 
 type Opp = {
   symbol: string; timeframe: string; bias: string; recommendedAction: string;
@@ -76,8 +79,18 @@ export default function TradeCommandRoom() {
   // Connection card data — existing shared master summary (no fake data).
   const summaryQ = useGetMeSharedAccountSummary({ query: { queryKey: getGetMeSharedAccountSummaryQueryKey() } });
   const master = summaryQ.data?.masterMt5 ?? null;
-  const broker = master?.brokerName ?? summaryQ.data?.accounts?.[0]?.masterBrokerName ?? "—";
-  const account = master?.accountNumberMasked ?? summaryQ.data?.accounts?.[0]?.masterAccountNumberMasked ?? "—";
+  // The shared master summary only describes the user's route when they trade
+  // through the shared master; otherwise its broker/account are not theirs.
+  const route = resolveTradeRoomRoute(tradingMode);
+  const broker = !route.onSharedRoute ? "Not shown here" : master?.brokerName ?? summaryQ.data?.accounts?.[0]?.masterBrokerName ?? "—";
+  const account = !route.onSharedRoute ? "Not shown here" : master?.accountNumberMasked ?? summaryQ.data?.accounts?.[0]?.masterAccountNumberMasked ?? "—";
+  // Bridge connectivity from the shared master pool's heartbeat-derived
+  // availability — never inferred from the account-mode blocker.
+  const bridgeObs = describeBridgeObservation({
+    onSharedRoute: isOnSharedMasterRoute(tradingMode),
+    allocationView: summaryQ.data?.allocationView ?? null,
+    summaryLoading: summaryQ.isLoading,
+  });
 
   async function load() {
     const bare = symbol.includes(":") ? symbol.split(":")[1] : symbol;
@@ -101,53 +114,20 @@ export default function TradeCommandRoom() {
     setPicked(o); setSymbol(o.symbol); setTimeframe(o.timeframe);
   }
 
-  // Risk approximation — simple display of lot × notional placeholder, using
-  // the existing quote. (Mirrors the mockup's "Risk approx." readout.)
-  // Real risk-at-stop estimate. Only shows a dollar figure when a stop-loss
-  // is set, since risk is undefined without one — we never fabricate a number.
-  //   risk ≈ lots × stop-distance(in pips) × pip-value-per-lot
-  // Pip value uses the standard 100k contract (~$10/pip per 1.0 lot for
-  // 4-digit FX pairs, ~$1000/pip per 1.0 lot for 2-digit JPY pairs). The
-  // server's risk governor remains the source of truth on submit.
-  const riskApprox = useMemo(() => {
-    const l = Number(lot) || 0;
-    const sl = Number(stopLoss);
-    const ref = quote ? (quote.mid ?? quote.bid ?? quote.ask) : NaN;
-    if (!l) return "—";
-    if (!stopLoss || !Number.isFinite(sl) || !Number.isFinite(ref) || sl <= 0) {
-      return "Set SL";
-    }
-    const isJpy = /JPY$/i.test(symbol);
-    const pipSize = isJpy ? 0.01 : 0.0001;
-    const pips = Math.abs(ref - sl) / pipSize;
-    const pipValuePerLot = 10; // ~$10 per pip per 1.0 standard lot
-    const risk = l * pips * pipValuePerLot;
-    if (!Number.isFinite(risk) || risk <= 0) return "—";
-    return `$${risk.toFixed(2)}`;
-  }, [lot, stopLoss, quote, symbol]);
+  // Risk-at-stop readout (display only; the server risk governor decides on
+  // submit). See quickTradeRiskApprox for when a figure is withheld.
+  const riskApprox = useMemo(
+    () => quickTradeRiskApprox({ symbol, lot, stopLoss, quote }),
+    [lot, stopLoss, quote, symbol],
+  );
 
   // ── Mode / permission → plain English ───────────────────────────────
   const isLive = tradingMode.isLiveShared;
-  const blocked = Boolean(tradingMode.cleanBlockedReason);
-  const frozen = tradingMode.isFrozen;
-  const caps = resolveLiveActionCapabilities({
-    canManualTrade: tradingMode.canManualTrade,
-    isFrozen: frozen,
-    bridgeBlocked: blocked,
-  });
-  const canTrade = caps.canOpen;
-
-  const modeLabel = blocked ? "Bridge Disconnected" : frozen ? "Trading Paused" : isLive ? "LIVE · Shared Master MT5" : tradingMode.isDemo ? "Demo" : (tradingMode.cleanModeLabel || "Simulator");
-  const gatesLabel = blocked ? (tradingMode.cleanBlockedReason || "Bridge unavailable") : frozen ? "Trading paused" : canTrade ? "All safety gates enforced" : "Waiting for approval";
-  const blockedLabel = caps.blockedLabel;
+  const {
+    canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge,
+  } = resolveTradeRoomStatus(tradingMode, bridgeObs);
 
   const heroDescription = `Place manual, ${name}-assisted, or advanced trades through your approved account route.`;
-  const connStatus = blocked ? "Disconnected" : isLive ? "LIVE" : tradingMode.isDemo ? "Demo" : "Sim";
-
-  // Risk governor (plain English + admin raw detail preserved)
-  const rgStatus = frozen || blocked ? { label: "Trading paused", tone: "warning" as const }
-    : canTrade ? { label: "Trading available", tone: "success" as const }
-    : { label: "Risk lock active", tone: "danger" as const };
 
   // ── Tabs ─────────────────────────────────────────────────────────────
   const quickTradeTab = (
@@ -207,7 +187,7 @@ export default function TradeCommandRoom() {
     <div className="space-y-4">
       <RiskGovernorCard
         statusLabel={rgStatus.label} statusTone={rgStatus.tone}
-        riskLevel="Low" bridge={blocked ? "Disconnected" : "Connected"}
+        riskCaps={riskCapsStatus(tradingMode.envelope)} bridge={bridge}
         approval={tradingMode.canManualTrade ? "Approved" : "Pending"}
         isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
       />
@@ -226,7 +206,7 @@ export default function TradeCommandRoom() {
         }
       />
       <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} />
-      <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} broker={broker} account={account} />
+      <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} bridge={bridgeObs} routeHeading={route.heading} broker={broker} account={account} />
 
       <PageTabs
         storageKey="trade-command-room"

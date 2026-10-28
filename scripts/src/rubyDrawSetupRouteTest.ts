@@ -29,10 +29,15 @@
 //   so the push wins outright. source === "mt5_broker" → ohlcSourceType
 //   "true_ohlc" → providerDeliversRealOhlc=true, satisfying the chart-truth +
 //   handshake gates. The newest bar opens at the CURRENT bucket (trailing 0) so
-//   feed quality resolves "clean" (aiUsable=true). The user's spec row carries
-//   an EA bid/ask straddling the newest CLOSED bar, so the per-user broker
-//   comparison is actually measured (an absent quote can no longer pass the
-//   mirror check) and the basis is VERIFIED.
+//   feed quality resolves "clean" (aiUsable=true). The window is pushed WITH
+//   the test user's bridge identity, so the served series is attributed
+//   (provider + bridge + owner observed). A live quote straddling the newest
+//   CLOSED bar is pushed by the SAME bridge with its own observed tick time, so
+//   the per-user broker comparison is BOUND (brokerQuoteBinding.ts) and
+//   actually measured, and the basis is VERIFIED. The user's spec row carries
+//   no bid/ask here, so the bound live quote is the only thing that can pass.
+//   An unbound quote (no observed tick time on the live quote; a stale
+//   lastTickTime on the spec row) must leave the read non-VERIFIED.
 //
 // SAFETY / ISOLATION
 //   - Seeds a single isolated system user (isSystemUser=true, fixed email) and
@@ -61,7 +66,10 @@ import {
   authUserSessionsTable,
   arxSymbolSpecsTable,
 } from "@workspace/db";
-import { updateCandlesFromMT5 } from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
+import {
+  updateCandlesFromMT5,
+  updateQuoteFromMT5,
+} from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
 import {
   _setMarketProviderForTests,
   _resetMarketProviderForTests,
@@ -93,6 +101,9 @@ const TIMEFRAME = "M5";
 const M5_MS = 5 * 60 * 1000;
 // Comfortably above MIN_CANDLE_HISTORY_COUNT (150) for the M5 chart-truth gate.
 const CANDLE_COUNT = 220;
+// Synthetic bridge connection id for the test user's in-memory MT5 pushes
+// (negative so it can never collide with a real bridge connection).
+const TEST_BRIDGE_CONNECTION_ID = -385_001;
 
 let passes = 0;
 let failures = 0;
@@ -184,7 +195,9 @@ function buildChoppyCandles(): Candle[] {
 /**
  * A moderate bid/ask spread (0.0003 ≈ 27 spread-penalty points). Combined with
  * the choppy bias's +30, the scanner's riskScore lands at ~77 — in the RISK
- * agent's [70, 85) DOWNGRADE band, below the 85 rejection threshold.
+ * agent's [70, 85) DOWNGRADE band, below the 85 rejection threshold. The live
+ * scanner routes quotes mt5_broker-first, so the treatment's bound MT5 tick
+ * carries this same spread (see pushBoundQuote).
  */
 const CHOPPY_QUOTE: MarketQuote = {
   symbol: VERIFIED_SYMBOL,
@@ -235,13 +248,11 @@ function makeScannerProvider(candles: Candle[], quote: MarketQuote): MarketProvi
   };
 }
 
-/** Per-user broker-truth spec row for a forex symbol, with the EA's bid/ask. */
-function specRow(userId: number, symbol: string, quote: { bid: number; ask: number }) {
+/** Per-user broker-truth spec row for a forex symbol (no EA quote). */
+function specRow(userId: number, symbol: string) {
   return {
     userId,
     symbol,
-    bid: quote.bid,
-    ask: quote.ask,
     accountType: "demo",
     visible: true,
     tradeAllowed: true,
@@ -325,10 +336,25 @@ export async function run(): Promise<CiTestResultLike> {
   // close against the broker mid, so straddle that close by one point.
   const cleanWindow = buildCleanWindow();
   const lastClosedClose = cleanWindow[cleanWindow.length - 2]!.close;
-  await db.insert(arxSymbolSpecsTable).values([
-    specRow(user.id, VERIFIED_SYMBOL, { bid: lastClosedClose - 0.00001, ask: lastClosedClose + 0.00001 }),
-  ]);
-  updateCandlesFromMT5(VERIFIED_SYMBOL, cleanWindow);
+  const bridge = { bridgeConnectionId: TEST_BRIDGE_CONNECTION_ID, userId: user.id };
+  await db.insert(arxSymbolSpecsTable).values([specRow(user.id, VERIFIED_SYMBOL)]);
+  updateCandlesFromMT5(VERIFIED_SYMBOL, cleanWindow, TIMEFRAME, bridge);
+  // A live tick from the SAME bridge, stamped with the producer's own tick
+  // time. Re-pushed before each VERIFIED request (as a live EA keeps ticking)
+  // so the quote stays inside the binding's freshness budget.
+  // `halfSpread` defaults to one point; the scanner treatment (section 3)
+  // widens it to CHOPPY_QUOTE's spread, because the live scanner reads the
+  // quote through the mt5_broker-first router and so sees THIS quote.
+  const pushQuote = (opts: { tickTimeObserved: boolean; halfSpread?: number }) => {
+    const half = opts.halfSpread ?? 0.00001;
+    updateQuoteFromMT5(VERIFIED_SYMBOL, {
+      symbol: VERIFIED_SYMBOL,
+      bid: Number((lastClosedClose - half).toFixed(6)),
+      ask: Number((lastClosedClose + half).toFixed(6)),
+      timestamp: new Date().toISOString(),
+    }, bridge, { tickTimeObserved: opts.tickTimeObserved });
+  };
+  const pushBoundQuote = (halfSpread?: number) => pushQuote({ tickTimeObserved: true, halfSpread });
 
   const postJson = async (body: unknown) => {
     const res = await fetch(`${baseUrl}/api/me/assistant/draw-setup`, {
@@ -356,7 +382,8 @@ export async function run(): Promise<CiTestResultLike> {
 
     // ── 1. VERIFIED feed → the route draws a real setup ─────────────────────
     // eslint-disable-next-line no-console
-    console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL}) — verified feed, side BUY → drawable`);
+    console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL}) — verified feed + bound quote, side BUY → drawable`);
+    pushBoundQuote();
     const verified = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
     assert(verified.status === 200, `verified HTTP 200 (got ${verified.status})`);
     const preview = verified.json?.setupPreview;
@@ -454,6 +481,7 @@ export async function run(): Promise<CiTestResultLike> {
     _setMarketProviderForTests(makeScannerProvider([], CHOPPY_QUOTE));
     // eslint-disable-next-line no-console
     console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL}) — control: no scanner signal`);
+    pushBoundQuote();
     const control = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
     assert(control.status === 200, `control HTTP 200 (got ${control.status})`);
     const controlPreview = control.json?.setupPreview;
@@ -474,6 +502,9 @@ export async function run(): Promise<CiTestResultLike> {
     _setMarketProviderForTests(makeScannerProvider(buildChoppyCandles(), CHOPPY_QUOTE));
     // eslint-disable-next-line no-console
     console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL}) — treatment: populated low-score scanner signal`);
+    // Same bound quote, but with CHOPPY_QUOTE's moderate spread (still centred
+    // on the closed close, so the broker comparison stays tight and bound).
+    pushBoundQuote((CHOPPY_QUOTE.ask! - CHOPPY_QUOTE.bid!) / 2);
     const treatment = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
     assert(treatment.status === 200, `treatment HTTP 200 (got ${treatment.status})`);
     const treatmentPreview = treatment.json?.setupPreview;
@@ -519,6 +550,40 @@ export async function run(): Promise<CiTestResultLike> {
 
     // Restore the real provider for the side-effect tally below.
     _resetMarketProviderForTests();
+
+    // ── 3b. UNBOUND quote → never VERIFIED (fail closed) ─────────────────────
+    // Same attributed, clean feed and the SAME straddling numbers, but no
+    // quote is bound: the live tick carries no observed tick time, and the
+    // spec row's EA quote (same bridge, same owner) is stale. Numbers alone
+    // cannot measure the broker comparison, so the read must not be VERIFIED.
+    // eslint-disable-next-line no-console
+    console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL}) — unbound broker quote → not VERIFIED`);
+    pushQuote({ tickTimeObserved: false });
+    await db.update(arxSymbolSpecsTable).set({
+      bid: lastClosedClose - 0.00001,
+      ask: lastClosedClose + 0.00001,
+      bridgeConnectionId: TEST_BRIDGE_CONNECTION_ID,
+      lastTickTime: new Date(Date.now() - 120_000),
+    }).where(eq(arxSymbolSpecsTable.userId, user.id));
+    const unbound = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+    assert(unbound.status === 200, `unbound HTTP 200 (got ${unbound.status})`);
+    const unboundPreview = unbound.json?.setupPreview;
+    assert(!!unboundPreview, "unbound: setupPreview present");
+    assert(
+      unboundPreview?.dataFreshness?.basis !== "VERIFIED",
+      `unbound: basis is not VERIFIED (got ${String(unboundPreview?.dataFreshness?.basis)})`,
+    );
+    assert(unboundPreview?.verdict === "refused", `unbound: verdict === "refused" (got ${String(unboundPreview?.verdict)})`);
+    assert(unboundPreview?.levels === null, `unbound: no levels drawn (got ${unboundPreview?.levels === null ? "null" : "set"})`);
+    assert(unbound.json?.allowOrderExecution === false, "unbound: allowOrderExecution === false");
+    // Binding was the ONLY difference: the same feed with a bound tick from
+    // the same bridge is VERIFIED again (the stale spec row is not used).
+    pushBoundQuote();
+    const rebound = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+    assert(
+      rebound.json?.setupPreview?.dataFreshness?.basis === "VERIFIED",
+      `rebound: bound tick restores VERIFIED (got ${String(rebound.json?.setupPreview?.dataFreshness?.basis)})`,
+    );
 
     // ── 4. NO LIVE SIDE EFFECTS — a drawing can never act ───────────────────
     const cmdAfter = await countCommands();

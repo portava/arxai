@@ -10,12 +10,16 @@ export {
   computeFreshness,
   buildEvidence,
   timeframeValiditySeconds,
+  minimumEvidenceShortfall,
+  MIN_EVIDENCE_SUPPORTING_ITEMS,
+  MIN_EVIDENCE_NET_SCORE,
 } from "./freshnessEvidence.js";
-export type { FreshnessVerdict, EvidenceInput } from "./freshnessEvidence.js";
+export type { FreshnessVerdict, EvidenceInput, MinimumEvidenceShortfall } from "./freshnessEvidence.js";
 export {
   computeLateDetection,
   computeScores,
   confidenceBandFor,
+  unmeasuredScoreDimensions,
 } from "./scoring.js";
 export type { LateInput, ScoringInput } from "./scoring.js";
 export { diffSignal } from "./marketMemory.js";
@@ -24,6 +28,7 @@ export {
   resolveSession,
   sessionContext,
   playbookWeight,
+  SYNTHETIC_SESSION_NOTE,
 } from "./sessionIntelligence.js";
 export { buildRubyMarketEdge } from "./buildSignal.js";
 export { explainMarketRead } from "./explainMarketRead.js";

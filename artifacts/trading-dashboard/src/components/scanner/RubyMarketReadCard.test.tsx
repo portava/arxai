@@ -121,6 +121,7 @@ function signal(over: Record<string, unknown> = {}) {
     lifecycleStage: "ENTRY_WINDOW_OPEN",
     lifecycleReasons: [],
     confidenceBand: "STRONG",
+    confidenceBandBasis: "FULL",
     edgeScore: 72,
     scores: {
       direction: 80,
@@ -141,6 +142,9 @@ function signal(over: Record<string, unknown> = {}) {
       netScore: 1,
     },
     freshness: "FRESH",
+    // Required by the API contract; the card withholds advice past this time.
+    validForSeconds: 900,
+    expiresAt: new Date(Date.now() + 900_000).toISOString(),
     late: { isLate: false, doNotChase: false, reason: null },
     ...over,
   };
@@ -189,7 +193,8 @@ beforeEach(() => {
       highImpactWindowActive: false,
       disclaimer: null,
     },
-    data: { lastTickAt: recentIso, lastCandleAt: recentIso },
+    data: { state: "LIVE_CONFIRMED", lastTickAt: recentIso, lastCandleAt: recentIso },
+    isLoading: false,
   });
   window.localStorage.clear();
 });
@@ -220,6 +225,9 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.getByTestId("ruby-market-read-what").textContent).toContain("simple:");
     // Required metadata blocks render from the signal.
     expect(screen.getByTestId("ruby-market-read-stage").textContent).toContain("Entry window open");
+    // The chip names its producer: this is the SIGNAL's lifecycle stage, not
+    // the header's engine-agreement count (owner screenshot 2026-10-27).
+    expect(screen.getByTestId("ruby-market-read-stage").textContent).toContain("Signal stage");
     expect(screen.getByTestId("ruby-market-read-bias").textContent).toContain("Bullish");
     expect(screen.getByTestId("ruby-market-read-quality").textContent).toContain("Strong");
     expect(screen.getByTestId("ruby-market-read-edge").textContent).toContain("72");
@@ -303,5 +311,211 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.queryByTestId("ruby-market-read-reasoning")).toBeNull();
     expect(screen.queryByTestId("ruby-market-read-best-action")).toBeNull();
     expect(screen.queryByText("Levels")).toBeNull();
+  });
+
+describe("RubyMarketReadCard — one event-risk sentence (owner screenshot 2026-10-27)", () => {
+  function riskRow() {
+    return screen.getByTestId("ruby-market-read-reasoning-evidence-risk").textContent ?? "";
+  }
+  function newsBox() {
+    return screen.getByTestId("ruby-market-read-news").textContent ?? "";
+  }
+  it("a withdrawn truth read says 'not checked' in BOTH the News block and the Risk row — never 'loading'", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, newsState: "unavailable", data: null });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    const line = "Event risk not checked — the truth read is unavailable right now.";
+    expect(newsBox()).toContain(line);
+    expect(riskRow()).toContain(line);
+    expect(newsBox()).not.toMatch(/loading/i);
+    expect(riskRow()).not.toMatch(/loading/i);
+    expect(riskRow()).not.toContain("News/calendar unavailable");
+  });
+  it("an older mock/caller with no newsState and no news is never described as loading", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, data: null });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    expect(newsBox()).not.toMatch(/loading/i);
+  });
+  it("only a genuinely in-flight first fetch says 'Checking event risk…', in both places", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, newsState: "loading", data: null });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    expect(newsBox()).toContain("Checking event risk…");
+    expect(riskRow()).toContain("Checking event risk…");
+  });
+  it("the server's calendar label is printed verbatim in both places (V75, no calendar configured)", () => {
+    mockUseSymbolTruth.mockReturnValue({
+      news: { providerConnected: false, events: [], riskLabel: "No event calendar is connected.", highImpactWindowActive: false, riskUnchecked: false, disclaimer: "No economic-calendar provider is connected, so no scheduled events are shown." },
+      newsState: "available",
+      data: null,
+    });
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="V75" timeframe="1m" />);
+    expect(newsBox()).toContain("No event calendar is connected.");
+    expect(riskRow()).toContain("No event calendar is connected.");
+    expect(riskRow()).not.toContain("News/calendar unavailable");
+  });
+});
+});
+
+// levels-withheld-vs-shown (owner's [H]): a live, non-actionable read on a full
+// shared truth must not blame the feed for missing levels on the same card that
+// says "Live feed confirmed.".
+describe("RubyMarketReadCard — missing levels are never attributed to a confirmed feed", () => {
+  it("full gate + live non-actionable read: no 'until the live feed confirms' anywhere, server reason shown", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(
+      hookState({
+        data: resp({
+          signal: { lifecycleStage: "SETUP_FORMING", evidence: { for: [{ key: "hh", label: "Higher highs / higher lows", weight: 2 }], against: [], conflicts: [], meetsMinimum: false, netScore: 1 } },
+          explanation: explanation({
+            actionable: false,
+            missingContext: ["enough confirming evidence"],
+            levels: { entryZone: null, watchZone: null, lateZone: null, invalidation: null, takeProfits: [], stopLoss: null },
+            levelsWithheldReason: "No scanner entry or stop is attached to this read yet.",
+            noTrade: { isNoTrade: true, confidence: 66, reason: "There isn't enough confirming evidence yet to justify the risk." },
+          }),
+        }),
+      }),
+    );
+    const { container } = render(<RubyMarketReadCard symbol="R_75" timeframe="M1" />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("Live feed confirmed.");
+    expect(text).not.toMatch(/until the live feed confirms/);
+    expect(text).toContain("No scanner entry or stop is attached to this read yet.");
+  });
+});
+
+// Owner screenshot 2026-10-27 [H]: "Before acting, Eleanor still needs • enough
+// confirming evidence" while the same card's Risk row said "News/calendar
+// unavailable — event risk not assessed". The needs list now carries the news
+// gap in the SAME state the Risk row states — and never "unavailable" while the
+// read is still loading.
+describe("RubyMarketReadCard — 'still needs' includes the news gap, in the truthful state", () => {
+  function renderWithNews(truth: Record<string, unknown>, sig: Record<string, unknown> = {}) {
+    mockUseSymbolTruth.mockReturnValue(truth);
+    mockUseGetMeMarketEdge.mockReturnValue(
+      hookState({
+        data: resp({
+          signal: sig,
+          explanation: explanation({ actionable: false, missingContext: ["one more independent confirming signal (1 of 2 found)"] }),
+        }),
+      }),
+    );
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    return screen.getByTestId("ruby-market-read-missing").textContent ?? "";
+  }
+  const recent = () => new Date(Date.now() - 4000).toISOString();
+
+  it("snapshot withdrawn (news null, not loading) → 'event-risk read unavailable'; Risk row agrees", () => {
+    const text = renderWithNews({ news: null, data: null, isLoading: false });
+    expect(text).toContain("1 of 2 found");
+    expect(text).toContain("a scheduled-news check (event-risk read unavailable)");
+    // The Risk row prints the same event-risk sentence as the News tile.
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain(
+      "Event risk not checked — the truth read is unavailable right now.",
+    );
+  });
+
+  it("still loading → says loading, never 'unavailable'", () => {
+    const text = renderWithNews({ news: null, data: null, isLoading: true });
+    expect(text).toContain("still loading");
+    expect(text).not.toContain("unavailable");
+  });
+
+  it("calendar check failed → 'could not be checked'", () => {
+    const text = renderWithNews({
+      news: { providerConnected: true, riskUnchecked: true, events: [], riskLabel: "Event risk is unavailable right now.", highImpactWindowActive: false, disclaimer: null },
+      data: { state: "LIVE_CONFIRMED", lastTickAt: recent(), lastCandleAt: recent() },
+      isLoading: false,
+    });
+    expect(text).toContain("the calendar could not be checked");
+    // The Risk row mirrors the server's unchecked-calendar label verbatim.
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain("Event risk is unavailable right now.");
+  });
+
+  it("calendar connected and checked → no news item", () => {
+    const text = renderWithNews({
+      news: { providerConnected: true, riskUnchecked: false, events: [], riskLabel: "No scheduled high-impact events affect this market.", highImpactWindowActive: false, disclaimer: null },
+      data: { state: "LIVE_CONFIRMED", lastTickAt: recent(), lastCandleAt: recent() },
+      isLoading: false,
+    });
+    expect(text).not.toContain("scheduled-news check");
+  });
+
+  it("synthetic index (price-driven, no calendar) → no news requirement invented", () => {
+    const text = renderWithNews(
+      { news: null, data: null, isLoading: false },
+      { symbol: "V75", displayName: "V75", assetClass: "synthetic" },
+    );
+    expect(text).not.toContain("scheduled-news check");
+  });
+});
+
+// Owner screenshot 2026-10-27 [H]: the Market Read header said "⏱ Live feed · —"
+// (the signal's once-fetched LIVE_FEED word with NO data time) beside a news tile
+// stuck on "Event risk is loading…" — the market-truth snapshot that anchors both
+// had been withdrawn.
+describe("RubyMarketReadCard — the feed row never says 'Live feed' without a confirmed data time", () => {
+  const recent = () => new Date(Date.now() - 4000).toISOString();
+  function renderCard() {
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    return screen.getByTestId("ruby-market-read-freshness");
+  }
+
+  it("(i) snapshot withdrawn: 'Feed time unconfirmed', warning tone; news tile not 'loading'; Feed/Data agrees", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, data: null, isLoading: false });
+    const row = renderCard();
+    expect(row.textContent).not.toContain("Live feed");
+    expect(row.textContent).toContain("Feed time unconfirmed");
+    expect(row.textContent).not.toContain("· —");
+    expect(row.className).toContain("text-warning");
+    expect(row.className).not.toContain("text-success");
+    const tile = screen.getByTestId("ruby-market-read-news").textContent ?? "";
+    expect(tile).not.toMatch(/loading/i);
+    expect(tile).toContain("Event risk not checked — the truth read is unavailable right now.");
+    const reasoning = screen.getByTestId("ruby-market-read-reasoning").textContent ?? "";
+    expect(reasoning).not.toContain("Live feed confirmed.");
+    expect(reasoning).toContain("Feed time unconfirmed");
+  });
+
+  it("(ii) snapshot still loading: the news tile says it is checking", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, data: null, isLoading: true });
+    renderCard();
+    expect(screen.getByTestId("ruby-market-read-news").textContent).toContain("Checking event risk");
+  });
+
+  it("(iii) shared gate downgraded, timestamps present: never 'Live feed'", () => {
+    mockUseScannerReadGate.mockReturnValue({
+      truth: null,
+      level: "limited",
+      isFull: false,
+      downgraded: true,
+      reason: "Delayed market data.",
+    });
+    const row = renderCard();
+    expect(row.textContent).not.toContain("Live feed");
+    expect(row.textContent).toContain("Feed not confirmed");
+  });
+
+  it("(iv) snapshot STALE with a recent tick: 'Live (unconfirmed)' in warning tone", () => {
+    mockUseSymbolTruth.mockReturnValue({
+      news: null,
+      data: { state: "STALE", lastTickAt: recent(), lastCandleAt: recent() },
+      isLoading: false,
+    });
+    const row = renderCard();
+    expect(row.textContent).toMatch(/Live \(unconfirmed\) · updated \d+s ago/);
+    expect(row.className).toContain("text-warning");
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain(
+      "the market-truth snapshot reads stale",
+    );
+  });
+
+  it("(v) control: confirmed snapshot keeps 'Live feed · updated Ns ago'", () => {
+    const row = renderCard();
+    expect(row.textContent).toMatch(/Live feed · updated \d+s ago/);
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain("Live feed confirmed.");
   });
 });

@@ -7,6 +7,7 @@ import { formatBacktestPriceUnits, formatBacktestNumber, formatBacktestPercent, 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { BACKTEST_NOT_MEASURED, backtestMetricsUnmeasured } from "@/components/backtesting/backtestRunMeasurement";
 import type { BacktestRunRow, ForwardResults } from "./types";
 
 function readiness(r: BacktestRunRow): { label: string; tone: "ready" | "warn" | "muted" } {
@@ -18,7 +19,10 @@ function exportCsv(runs: BacktestRunRow[]) {
   const header = ["id", "strategy", "symbol", "timeframe", "trades", "winRate", "profitFactor", "grossPriceUnits", "status", "verification", "createdAt"];
   const lines = runs.map((r) => [
     r.id, r.strategyId, r.symbol, r.timeframe, r.totalTrades,
-    formatBacktestPercent(r.winRate), formatBacktestProfitFactor(r.profitFactor), formatBacktestPriceUnits(r.netProfitLoss), r.status, "UNVERIFIED", r.createdAt,
+    ...(backtestMetricsUnmeasured(r)
+      ? [BACKTEST_NOT_MEASURED, BACKTEST_NOT_MEASURED, BACKTEST_NOT_MEASURED]
+      : [formatBacktestPercent(r.winRate), formatBacktestProfitFactor(r.profitFactor), formatBacktestPriceUnits(r.netProfitLoss)]),
+    r.status, "UNVERIFIED", r.createdAt,
   ].map((value) => {
     const text = String(value);
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -94,15 +98,17 @@ export function ResultsHistoryTab({ strategyId }: { strategyId?: string }) {
                 <tbody className="font-mono text-slate-200">
                   {runs.map((r) => {
                     const rd = readiness(r);
+                    // Zero completed trades → stored metric zeros are not observations.
+                    const unmeasured = backtestMetricsUnmeasured(r);
                     return (
                       <tr key={r.id} className="border-t border-slate-800">
                         <td className="py-1 pr-3">{r.strategyId}</td>
                         <td className="py-1 pr-3">{r.symbol}</td>
                         <td className="py-1 pr-3">{r.timeframe}</td>
                         <td className="py-1 pr-3">{formatBacktestNumber(r.totalTrades)}</td>
-                        <td className="py-1 pr-3">{formatBacktestPercent(r.winRate)}</td>
-                        <td className="py-1 pr-3">{formatBacktestProfitFactor(r.profitFactor)}</td>
-                        <td className={`py-1 pr-3 ${typeof r.netProfitLoss !== "number" || !Number.isFinite(r.netProfitLoss) ? "text-slate-400" : r.netProfitLoss >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatBacktestPriceUnits(r.netProfitLoss)}</td>
+                        <td className={`py-1 pr-3 ${unmeasured ? "text-slate-400" : ""}`}>{unmeasured ? BACKTEST_NOT_MEASURED : formatBacktestPercent(r.winRate)}</td>
+                        <td className={`py-1 pr-3 ${unmeasured ? "text-slate-400" : ""}`}>{unmeasured ? BACKTEST_NOT_MEASURED : formatBacktestProfitFactor(r.profitFactor)}</td>
+                        <td className={`py-1 pr-3 ${unmeasured || typeof r.netProfitLoss !== "number" || !Number.isFinite(r.netProfitLoss) ? "text-slate-400" : r.netProfitLoss >= 0 ? "text-emerald-400" : "text-red-400"}`}>{unmeasured ? BACKTEST_NOT_MEASURED : formatBacktestPriceUnits(r.netProfitLoss)}</td>
                         <td className="py-1 pr-3">
                           <Badge className={
                             rd.tone === "ready" ? "bg-emerald-500/20 text-emerald-300"

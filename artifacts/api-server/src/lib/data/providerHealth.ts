@@ -25,6 +25,7 @@
 //   - NEVER touches MT5 dispatch, live order pipeline, or any safety state.
 
 import { classifyHeartbeatAgeSeconds, type HeartbeatFreshness } from "../brokerHub/freshness.js";
+import { MT5_FEED_FRESH_MS } from "./freshness.js";
 import {
   classifySymbol,
   getRouterDiagnostics,
@@ -242,9 +243,11 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     selectedForAssetClasses: classesWhereSelected("mt5_broker"),
     configuredButUnused: false,
     status: mt5Connected ? "healthy" : "reserved",
+    // Describe what was observed (mt5Provider.isConnected(): any candle or
+    // quote push within MT5_FEED_FRESH_MS), never an EA-version assumption.
     statusReason: mt5Connected
-      ? "Broker tick push active."
-      : "EA v1.27 heartbeat-only — tick push not yet implemented. Slot reserved for EA v1.28+.",
+      ? `An MT5 bridge pushed candles or quotes within the last ${Math.round(MT5_FEED_FRESH_MS / 1000)} seconds.`
+      : `No MT5 candle or quote push in the last ${Math.round(MT5_FEED_FRESH_MS / 1000)} seconds — the router serves stored broker candles when fresh enough, otherwise falls through to Deriv / the assistant composite.`,
     features: { liveQuote: mt5Connected, historicalCandles: mt5Connected, news: false, symbolSearch: false },
     rateLimitNote: null,
     lastSelfTestAt: null, lastSelfTestMs: null, lastSelfTestOk: null,
@@ -452,8 +455,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     !bridgeEv ? "none" : HB_FEED_STATUS[classifyHeartbeatAgeSeconds(hbAgeSec)];
 
   // MT5 quote push — honest count of probe symbols with a fresh usable quote.
-  // EA v1.27/1.50 is heartbeat-only, so this stays 0/false until a quote-push
-  // EA lands; we never fabricate a quote to make this look active.
+  // We never fabricate a quote to make this look active.
   let symbolsWithFreshQuote = 0;
   for (const { symbol } of PROBE_SYMBOLS) {
     const qa = getMt5QuoteAvailability(symbol);
@@ -499,14 +501,13 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
         note:
           symbolsWithFreshQuote > 0
             ? "Broker quote push active for at least one probed symbol."
-            : "No broker tick push — EA heartbeat-only. Router falls through to Deriv / assistant composite.",
+            : "No fresh MT5 broker quote for any probed symbol. Router falls through to Deriv / assistant composite.",
       },
       candlePush: {
         // Honest: candle push is "active" ONLY when at least one symbol+timeframe
         // series is actually contributing fresh, usable candles — NOT derived from
         // general MT5 connectivity (which a quote-only/heartbeat-only EA satisfies).
-        // EA v1.27/1.50 is heartbeat-only, so this stays false until a candle-push
-        // EA lands; we never fabricate candle activity from a quote/heartbeat.
+        // We never fabricate candle activity from a quote/heartbeat.
         active: mt5Contributing > 0,
         totalSeries: mt5Series.length,
         contributing: mt5Contributing,

@@ -400,6 +400,8 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
       // unified mode envelope by up to 60s.
       qc.invalidateQueries({ queryKey: ["me", "account-mode"] });
       qc.invalidateQueries({ queryKey: ["me", "account-shell"] });
+      // The setup-reason routing note (RubySetupReason) reads routing-status.
+      qc.invalidateQueries({ queryKey: ["me", "routing-status"] });
     },
   });
 

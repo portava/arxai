@@ -35,7 +35,7 @@ delete process.env.NEWSAPI_API_KEY;
 delete process.env.DERIV_APP_ID;
 delete process.env.DERIV_API_TOKEN;
 
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { Candle } from "../types.js";
 
@@ -123,7 +123,7 @@ test("unscoped read serves the single most-recent writer and carries its identit
   }
 });
 
-test("contention warn is rate-limited: once per symbol per hour", () => {
+test("contention warn is rate-limited: once per symbol per window", () => {
   __resetMt5ProviderStore();
   updateCandlesFromMT5("EURUSD", bars(5, 1.1), "M1", { bridgeConnectionId: 1 });
   updateCandlesFromMT5("EURUSD", bars(5, 2.2), "M1", { bridgeConnectionId: 2 });
@@ -138,6 +138,38 @@ test("contention warn is rate-limited: once per symbol per hour", () => {
     assert.equal(warns.length, 1, "the WARN fires once within the hour window");
   } finally {
     restore();
+  }
+});
+
+test("contention warn is not hourly noise: an unchanged bridge set re-warns at most daily, a changed set warns again", () => {
+  // Review 2026-10-27: v1 sync-candles is now attributed, so several users'
+  // EAs on one symbol is a normal multi-user state, not an hourly incident.
+  __resetMt5ProviderStore();
+  const t0 = Date.UTC(2026, 9, 27, 0, 0, 0);
+  mock.timers.enable({ apis: ["Date"], now: t0 });
+  const { warns, restore } = warnCapture();
+  const pushAndRead = (ids: number[]) => {
+    for (const id of ids) updateCandlesFromMT5("EURUSD", bars(5, 1 + id), "M1", { bridgeConnectionId: id });
+    return readMt5Candles("EURUSD", "M1", 100);
+  };
+  try {
+    assert.equal(pushAndRead([1, 2]).contention, true);
+    assert.equal(warns.length, 1, "first sighting of the set warns");
+    for (let h = 1; h <= 23; h++) {
+      mock.timers.setTime(t0 + h * 3_600_000);
+      assert.equal(pushAndRead([1, 2]).contention, true, "the per-read flag stays truthful");
+    }
+    assert.equal(warns.length, 1, "an unchanged set does not re-warn every hour");
+    mock.timers.setTime(t0 + 23 * 3_600_000 + 30 * 60_000);
+    pushAndRead([1, 2, 3]);
+    assert.equal(warns.length, 2, "a changed contending set warns again");
+    assert.deepEqual(warns[1]?.contendingBridgeIds, [1, 2, 3]);
+    mock.timers.setTime(t0 + 47 * 3_600_000 + 31 * 60_000);
+    pushAndRead([1, 2, 3]);
+    assert.equal(warns.length, 3, "an unchanged set re-warns after a day");
+  } finally {
+    restore();
+    mock.timers.reset();
   }
 });
 
@@ -238,4 +270,43 @@ test("router threads serving identity into the provenance envelope; contention n
   } finally {
     restore();
   }
+});
+
+// Review 2026-10-27 finding 3: v1 /mt5/sync-candles now writes the bridge's
+// partition, which also holds deeper bars merged by /mt5/candles/ingest, v2
+// CANDLE events and /mt5/sync-candle-history. A short rolling-window push used
+// to REPLACE the partition and wipe that history.
+test("v1 short-window push merges into, and never truncates, deeper same-bridge history", () => {
+  __resetMt5ProviderStore();
+  const start = Date.UTC(2026, 5, 9, 0, 0, 0);
+  const deep = bars(300, 1.1, start); // backfill via a merge path
+  for (const c of deep) mergeCandleFromMT5("EURUSD", c, "M1", { bridgeConnectionId: 7, userId: 70 });
+  // v1 rolling window: last 3 stored bars (revised; one with ".000Z" spelling) + 2 new bars.
+  const window = bars(5, 9.9, start + 297 * 60_000).map((c, i) =>
+    i === 0 ? { ...c, time: c.time.replace(/\.000Z$/, "Z") } : c);
+  updateCandlesFromMT5("EURUSD", window, "M1", { bridgeConnectionId: 7, userId: 70 });
+
+  const r = readMt5Candles("EURUSD", "M1", 1000, { bridgeConnectionId: 7 });
+  assert.equal(r.candles.length, 302, "300 deep bars + 2 new bars; overlap upserted, nothing truncated");
+  assert.equal(r.candles[0]!.time, deep[0]!.time, "oldest backfilled bar survives the v1 push");
+  const times = r.candles.map((c) => Date.parse(c.time));
+  assert.ok(times.every((t, i) => i === 0 || t > times[i - 1]!), "ascending, one bar per instant");
+  assert.equal(r.candles[297]!.open, 9.9, "overlapping bar takes the newer push (last write wins)");
+  assert.equal(r.candles.at(-1)!.time, window.at(-1)!.time);
+  assert.equal(r.userId, 70);
+});
+
+test("v1 merge stays inside the writer's partition; unattributed v1 pushes still replace", () => {
+  __resetMt5ProviderStore();
+  const start = Date.UTC(2026, 5, 9, 0, 0, 0);
+  updateCandlesFromMT5("EURUSD", bars(50, 1.1, start), "M1", { bridgeConnectionId: 1 });
+  updateCandlesFromMT5("EURUSD", bars(3, 2.2, start + 60 * 60_000), "M1", { bridgeConnectionId: 2 });
+  assert.equal(readMt5Candles("EURUSD", "M1", 1000, { bridgeConnectionId: 1 }).candles.length, 50);
+  assert.equal(readMt5Candles("EURUSD", "M1", 1000, { bridgeConnectionId: 2 }).candles.length, 3, "no cross-bridge merge");
+
+  updateCandlesFromMT5("GBPUSD", bars(50, 1.3, start), "M1");
+  updateCandlesFromMT5("GBPUSD", bars(2, 1.4, start + 60 * 60_000), "M1");
+  const u = readMt5Candles("GBPUSD", "M1", 1000);
+  assert.equal(u.bridgeConnectionId, null);
+  assert.equal(u.candles.length, 2, "legacy unattributed writer keeps replace semantics");
 });

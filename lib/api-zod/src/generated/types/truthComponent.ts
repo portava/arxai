@@ -12,4 +12,6 @@ export interface TruthComponent {
   alignment: TruthComponentAlignment;
   label: string;
   asOf: string | null;
+  /** The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one. */
+  belowEvidenceFloor?: boolean;
 }

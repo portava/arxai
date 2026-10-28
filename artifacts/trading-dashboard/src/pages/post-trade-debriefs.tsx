@@ -17,6 +17,32 @@ interface ClosedOrder {
   profitLoss: number; closedAt: string | null;
 }
 
+// GET /post-trade-debriefs caps at 200 rows; GET /paper/orders returns at
+// most the newest 200 orders of one account (any status) and ignores ?limit.
+const DEBRIEF_PAGE = 200;
+const ORDERS_PAGE_CAP = 200;
+
+class HttpError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+
+/** Fetch JSON, throwing on a non-2xx so a failed read is never parsed as "no rows". */
+async function getJson<T>(url: string): Promise<T> {
+  const r = await fetch(url);
+  let body: unknown = null;
+  try { body = await r.json(); } catch { body = null; }
+  if (!r.ok) {
+    const msg = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+      ? (body as { error: string }).error : r.statusText;
+    throw new HttpError(r.status, `HTTP ${r.status}${msg ? `: ${msg}` : ""}`);
+  }
+  return body as T;
+}
+
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : "unknown error";
+}
+
 const resultTone = (r: string) =>
   r === "WIN" ? "bg-success/20 text-success"
   : r === "LOSS" ? "bg-danger/20 text-danger"
@@ -28,26 +54,49 @@ export default function PostTradeDebriefsPage() {
 
   const debriefs = useQuery<{ debriefs: Debrief[] }>({
     queryKey: ["debriefs"],
-    queryFn: async () => (await fetch("/api/post-trade-debriefs?limit=100")).json(),
+    queryFn: () => getJson<{ debriefs: Debrief[] }>(`/api/post-trade-debriefs?limit=${DEBRIEF_PAGE}`),
   });
 
   // Resolve active paper account first, then pull its orders and filter to
-  // closed (non-OPEN) trades client-side. paper API requires accountId.
+  // closed (non-OPEN) trades client-side. paper API requires accountId and
+  // returns only that account's newest ORDERS_PAGE_CAP orders.
   const activeAcct = useQuery<{ account: { id: number } | null }>({
     queryKey: ["active-paper-account"],
-    queryFn: async () => (await fetch("/api/paper/accounts/active")).json(),
+    queryFn: () => getJson<{ account: { id: number } | null }>("/api/paper/accounts/active"),
   });
   const closed = useQuery<{ orders: ClosedOrder[] }>({
     queryKey: ["closed-orders", activeAcct.data?.account?.id],
     enabled: !!activeAcct.data?.account?.id,
-    queryFn: async () =>
-      (await fetch(`/api/paper/orders?accountId=${activeAcct.data!.account!.id}&limit=100`)).json(),
+    queryFn: () =>
+      getJson<{ orders: ClosedOrder[] }>(`/api/paper/orders?accountId=${activeAcct.data!.account!.id}`),
   });
 
-  const debriefedIds = new Set((debriefs.data?.debriefs ?? []).map((d) => d.tradeId));
-  const undebriefed = (closed.data?.orders ?? [])
-    .filter((o) => o.status !== "OPEN" && !debriefedIds.has(o.id));
-  const sel = (debriefs.data?.debriefs ?? []).find((d) => d.id === selected);
+  const debriefRows = debriefs.data?.debriefs ?? [];
+  const debriefedIds = new Set(debriefRows.map((d) => d.tradeId));
+  const orderRows = closed.data?.orders ?? [];
+  // The waiting list is only meaningful when both reads succeeded.
+  const waitingKnown = debriefs.isSuccess && closed.isSuccess;
+  const undebriefed = waitingKnown
+    ? orderRows.filter((o) => o.status !== "OPEN" && !debriefedIds.has(o.id))
+    : [];
+  const ordersCapped = orderRows.length >= ORDERS_PAGE_CAP;
+  const debriefsCapped = debriefRows.length >= DEBRIEF_PAGE;
+  const sel = debriefRows.find((d) => d.id === selected);
+
+  // Why the waiting list could not be checked, if it could not.
+  let waitingUnchecked: string | null = null;
+  if (activeAcct.isError) {
+    const e = activeAcct.error;
+    waitingUnchecked = e instanceof HttpError && e.status === 404
+      ? "You have no active paper account, so closed paper trades waiting for a debrief were not checked."
+      : `Closed trades waiting for a debrief could not be checked: the active paper account could not be read (${errText(e)}).`;
+  } else if (activeAcct.isSuccess && !activeAcct.data?.account?.id) {
+    waitingUnchecked = "You have no active paper account, so closed paper trades waiting for a debrief were not checked.";
+  } else if (closed.isError) {
+    waitingUnchecked = `Closed trades waiting for a debrief could not be checked: paper orders could not be loaded (${errText(closed.error)}).`;
+  } else if (debriefs.isError && closed.isSuccess) {
+    waitingUnchecked = "Closed trades waiting for a debrief could not be checked because your debrief history could not be loaded.";
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
@@ -56,9 +105,21 @@ export default function PostTradeDebriefsPage() {
         <p className="text-sm text-txt-secondary">Quick reflection right after a trade closes — process beats outcome. Coaching aid, not predictive.</p>
       </header>
 
+      {waitingUnchecked && (
+        <p className="rounded-lg border border-border bg-background/40 p-3 text-xs text-txt-secondary" data-testid="debriefs-waiting-unchecked">
+          {waitingUnchecked}
+        </p>
+      )}
+
       {undebriefed.length > 0 && (
-        <div className="rounded-lg border border-warning/40 bg-warning/10 p-3">
-          <h2 className="mb-1.5 text-sm font-semibold text-warning">{undebriefed.length} closed trade(s) waiting for debrief</h2>
+        <div className="rounded-lg border border-warning/40 bg-warning/10 p-3" data-testid="debriefs-waiting">
+          <h2 className="mb-1.5 text-sm font-semibold text-warning">
+            {ordersCapped ? "At least " : ""}{undebriefed.length} closed trade{undebriefed.length === 1 ? "" : "s"} waiting for debrief
+          </h2>
+          <p className="mb-1.5 text-[11px] text-txt-secondary">
+            Checked on your active paper account only{ordersCapped ? `, among its newest ${orderRows.length} orders; older closed trades were not checked` : ""}. Other paper accounts are not included.
+            {debriefsCapped ? ` Only your newest ${debriefRows.length} debriefs were compared, so a trade you debriefed earlier may also be listed here.` : ""}
+          </p>
           <ul className="space-y-1 text-xs">
             {undebriefed.slice(0, 8).map((o) => (
               <li key={o.id} className="flex items-center justify-between gap-2 rounded border border-warning/30 bg-background/40 p-2">
@@ -79,9 +140,16 @@ export default function PostTradeDebriefsPage() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <div className="lg:col-span-1">
-          <h2 className="mb-2 text-sm font-semibold text-foreground">History ({debriefs.data?.debriefs.length ?? 0})</h2>
+          <h2 className="mb-2 text-sm font-semibold text-foreground">
+            History ({debriefs.isError ? "unavailable" : debriefs.isLoading ? "loading" : debriefsCapped ? `newest ${debriefRows.length}` : debriefRows.length})
+          </h2>
           <ul className="max-h-[60vh] space-y-1 overflow-auto">
-            {(debriefs.data?.debriefs ?? []).map((d) => (
+            {debriefs.isError && (
+              <li className="rounded border border-danger/40 bg-danger/10 p-3 text-xs text-danger" data-testid="debriefs-load-error">
+                Your debrief history could not be loaded ({errText(debriefs.error)}). Whether you have any debriefs is unknown.
+              </li>
+            )}
+            {debriefRows.map((d) => (
               <li key={d.id}>
                 <button onClick={() => setSelected(d.id)}
                   className={`flex w-full items-center justify-between rounded border p-2 text-xs text-left transition ${
@@ -94,7 +162,7 @@ export default function PostTradeDebriefsPage() {
                 </button>
               </li>
             ))}
-            {(debriefs.data?.debriefs.length ?? 0) === 0 && (
+            {debriefs.isSuccess && debriefRows.length === 0 && (
               <li className="rounded border border-border bg-background/40 p-3 text-center text-xs text-txt-muted">No debriefs yet.</li>
             )}
           </ul>

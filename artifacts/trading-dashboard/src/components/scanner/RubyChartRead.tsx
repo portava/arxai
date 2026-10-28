@@ -6,13 +6,23 @@ import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromChartRead } from "@/lib/rubyReasoningBlock";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
+import { thresholdsFor } from "@/lib/scannerTruth";
+import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import {
+  chartReadAsOfLabel,
+  chartReadExpiresAtMs,
+  resolveHtfRead,
+  isFeedLimitedAction,
   resolveRubyReadPanelState,
+  withRouteReadLayer,
   type ChartRead,
 } from "@/lib/rubyReadPanelState";
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
 import { useAssistantName } from "@/lib/assistant-name";
+import { resolveRubyCtaState } from "@/lib/rubyCtaState";
 import {
+  ACTIONABILITY_PENDING_UI,
   actionabilityDisplayUi,
   resolveVisibleActionButtonLabel,
   type ScannerActionabilityDisplay,
@@ -62,6 +72,7 @@ export function RubyChartRead({
   canonicalAction,
   canonicalDirection,
   canonicalReadId,
+  newsRiskLabel,
 }: {
   symbol: string;
   timeframe: string;
@@ -72,6 +83,13 @@ export function RubyChartRead({
    * panel resolves the verdict itself from the feed-status contract.
    */
   aiUsable?: boolean;
+  /**
+   * The page's event-risk sentence (lib/eventRiskCopy eventRiskLine) from the
+   * parent's per-symbol truth read — the SAME line the market-read card prints.
+   * The chart-read endpoint consults no calendar, so when omitted the Risk row
+   * says "Event risk not assessed in this read." and claims nothing else.
+   */
+  newsRiskLabel?: string | null;
   /**
    * Canonical verdict from the parent's shared scanner-truth cycle. When provided,
    * the "Prepare Trade" button is display-gated on this verdict (canAct) so the
@@ -111,11 +129,29 @@ export function RubyChartRead({
   // this single resolution — the shared scanner truth folded together with the
   // server read-chart response — so they can never render contradictory claims
   // (e.g. badge "Clean · AI" + banner "not confirmed" + body "cannot verify").
+  // A read is a one-shot snapshot of the chart at its newest CLOSED candle
+  // (server `observedAt`). Once that is older than this timeframe's candle
+  // budget — or its time is unknown — it no longer describes the current chart.
+  const readExpiresAtMs = chartReadExpiresAtMs(
+    read,
+    thresholdsFor(normalizeChartTimeframe(timeframe)).candleMaxAgeMs,
+  );
+  const readNowMs = useEvidenceDeadline(
+    readExpiresAtMs != null && Number.isFinite(readExpiresAtMs) ? readExpiresAtMs : null,
+  );
+  const readExpired =
+    readExpiresAtMs != null && !(Number.isFinite(readExpiresAtMs) && readNowMs < readExpiresAtMs);
+  const readAsOf = chartReadAsOfLabel(read);
   const panel = resolveRubyReadPanelState({
     truthLevel: truth?.analysis.level ?? null,
     truthReason: truth?.analysis.reason ?? null,
     aiUsableProp,
     read,
+    readExpired,
+    // The page's canonical action says the feed is limited → the badge can't
+    // claim Clean/AI and the panel agrees with the header's "Limited read".
+    actionFeedLimited: isFeedLimitedAction(canonicalAction),
+    assistantName: name,
   });
   const feedNotConfirmed = panel.feedNotConfirmed;
   // Task #602 — a directional STRUCTURAL read is available, but the exact live
@@ -132,10 +168,22 @@ export function RubyChartRead({
   // verdict permits. When no canonical is provided (e.g. standalone use), fall back
   // to PENDING which resolves to canAct: false (safe default).
   const canonicalUi = actionabilityDisplayUi(canonicalAction ?? "PENDING");
-  const buttonLabel = resolveVisibleActionButtonLabel(
-    canonicalAction ?? "PENDING",
-    canonicalDirection ?? null,
-  );
+  // The account's trading status is a SEPARATE authority from the data/setup
+  // verdict: read from the SAME shared truth the TRADING tile uses, so a blocked
+  // account is never offered "Prepare Trade" and the disabled button names the
+  // account-level reason (not the feed) — identical wording to the tile.
+  const cta = resolveRubyCtaState({
+    canAct: canonicalUi.canAct,
+    verdictCopy: canonicalUi.copy,
+    pendingCopy: ACTIONABILITY_PENDING_UI.copy,
+    verdictLabel: resolveVisibleActionButtonLabel(
+      canonicalAction ?? "PENDING",
+      canonicalDirection ?? null,
+    ),
+    tradingStatus: truth?.consolidated?.tradingStatus,
+    tradingDetail: truth?.strip?.trading?.detail,
+  });
+  const buttonLabel = cta.label;
 
   const ask = async () => {
     setLoading(true);
@@ -154,8 +202,9 @@ export function RubyChartRead({
         body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as { chartRead: ChartRead };
-      setRead(j.chartRead);
+      const j = (await r.json()) as { chartRead: ChartRead; readLayer?: unknown };
+      // Downgrade-only: the route's own readLayer can only lower the payload's.
+      setRead(withRouteReadLayer(j.chartRead, j.readLayer));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "network error");
     } finally {
@@ -214,7 +263,7 @@ export function RubyChartRead({
         >
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Structural read available — exact entry, stop, and target are withheld until {symbol} {timeframe} confirms.
+            Structural read available — exact entry, stop, and target are withheld for {symbol} {timeframe}.
             {panel.reason ? ` ${panel.reason}` : ""}
           </span>
         </div>
@@ -238,11 +287,34 @@ export function RubyChartRead({
 
       {read && !read.gated && (
         <div className="mt-3 space-y-3" data-testid="ruby-chart-read-body">
+          {/* Data time of this one-shot read — never presented as "now". */}
+          <p
+            className={`text-[11px] ${panel.readExpired ? "text-warning" : "text-txt-muted"}`}
+            data-testid="ruby-chart-read-asof"
+          >
+            {readAsOf
+              ? `Read from closed candles · newest closed candle ${readAsOf}`
+              : "Read time unknown"}
+            {panel.readExpired ? " · expired — tap Re-read for the current chart" : ""}
+          </p>
+
           {/* Bias / Confidence / HTF row */}
           <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
             <Metric label="Bias" value={read.bias ?? "—"} className={biasTone(read.bias ?? "")} testid="ruby-chart-read-bias" />
-            <Metric label="Confidence" value={read.confidence ?? "—"} className={confTone(read.confidence ?? "")} />
-            <Metric label="HTF Bias" value={read.htfBias ?? "—"} className={biasTone(read.htfBias ?? "")} />
+            <Metric label="Structure confidence" value={read.confidence ?? "—"} className={confTone(read.confidence ?? "")} />
+            {(() => {
+              // "—" when the server did not read the HTF (null / legacy sentinel);
+              // the label names the server's HTF timeframe when it sent one.
+              const htf = resolveHtfRead(read);
+              return (
+                <Metric
+                  label={htf.label ? `HTF (${htf.label}) bias` : "HTF Bias"}
+                  value={htf.bias ?? "—"}
+                  className={biasTone(htf.bias ?? "")}
+                  testid="ruby-chart-read-htf-bias"
+                />
+              );
+            })()}
           </div>
 
           {/* Ruby's full reasoning — ALWAYS visible (no accordion). Honesty flags
@@ -257,11 +329,20 @@ export function RubyChartRead({
               structuralOnly,
               feedNotConfirmed,
               reason: panel.reason,
+              expired: panel.readExpired,
+              asOf: readAsOf,
+              newsRiskLabel,
             }, name)}
             testid="ruby-chart-read-reasoning"
           />
 
           {read.disclaimer && <p className="text-[10px] italic text-txt-muted">{read.disclaimer}</p>}
+
+          {cta.tradingNote && (
+            <p className="text-xs text-txt-secondary" data-testid="ruby-chart-trading-blocked">
+              {cta.tradingNote}
+            </p>
+          )}
 
           {/* Actions — "Prepare Trade" CTA is display-gated on the canonical verdict
               so the Eleanor panel can never show an actionable CTA while the
@@ -270,7 +351,7 @@ export function RubyChartRead({
             className="grid grid-cols-2 gap-2 pt-1"
             {...(import.meta.env.DEV && canonicalReadId ? { "data-canonical-read-id": canonicalReadId } : {})}
           >
-            {canonicalUi.canAct ? (
+            {cta.showLink ? (
               <Link
                 href="/trade-command-room"
                 className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary text-sm font-semibold text-white hover:bg-primary/90"
@@ -284,7 +365,7 @@ export function RubyChartRead({
                 className="flex h-10 cursor-not-allowed items-center justify-center gap-1.5 rounded-xl bg-primary/30 text-sm font-semibold text-white/50"
                 disabled
                 data-testid="ruby-chart-prepare-trade"
-                title={canonicalUi.copy}
+                title={cta.disabledTitle ?? undefined}
               >
                 <Crosshair className="h-4 w-4" /> {buttonLabel}
               </button>

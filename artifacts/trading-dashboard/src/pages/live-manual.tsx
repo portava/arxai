@@ -6,9 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown } from "lucide-react";
 import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
+import { estimateMoneyAtDistance, formatMoneyEstimate } from "@/lib/fxRiskEstimate";
+
+// What POST /api/live-intent/submit checks: three static tester caps
+// (routes/liveIntent.ts TESTER_CAPS). It does not run the pre-trade Risk
+// Governor, does not read the kill switch and executes nothing anywhere.
+const TESTER_CAPS_TEXT = "lot ≤ 0.01, stop-loss required, max loss ≤ $5";
 
 type SubmitResp = {
-  accepted: boolean; testerAccess: boolean; brokerExecution: boolean;
+  accepted: boolean; riskCheckPassed?: boolean; testerAccess: boolean; brokerExecution: boolean;
   status: string; intentId: string; mt5Connected: boolean; reason: string;
   intent?: any;
 };
@@ -34,14 +40,15 @@ export default function LiveManualPage() {
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [resp, setResp] = useState<SubmitResp | null>(null);
-  const [perm, setPerm] = useState<any>(null);
-  const [defStatus, setDefStatus] = useState<any>(null);
+  // undefined while loading; null when the read failed or did not answer.
+  const [perm, setPerm] = useState<{ killSwitchEngaged?: unknown } | null | undefined>(undefined);
   const [masterBridge, setMasterBridge] = useState<any>(null);
   const [quote, setQuote] = useState<any>(null);
 
   useEffect(() => {
-    void jget("/api/permission/status").then(r => setPerm(r.body));
-    void jget("/api/system/mt5-deferred-status").then(r => setDefStatus(r.body));
+    void jget("/api/permission/status")
+      .then(r => setPerm(r.ok && r.body && typeof r.body === "object" ? r.body : null))
+      .catch(() => setPerm(null));
     // Real master shared-bridge health — the bridge that actually carries
     // live-shared dispatch. The per-user permission flag is NOT the bridge.
     void jget("/api/me/master-bridge/status").then(r => setMasterBridge(r.body));
@@ -68,10 +75,24 @@ export default function LiveManualPage() {
   // show "checking…" rather than asserting a state.
   const bridgeLoaded = masterBridge != null;
   const bridgeConnected = masterBridge?.detected === true;
-  const killSwitch = perm?.killSwitchEngaged === true || defStatus?.simulator?.enforcesKillSwitch;
-  const estLoss = stopLoss !== "" && quote ? Math.abs(quote.mid - Number(stopLoss)) * lotSize * 10000 : 0;
-  const estGain = takeProfit !== "" && quote ? Math.abs(Number(takeProfit) - quote.mid) * lotSize * 10000 : 0;
-  const rr = estLoss > 0 ? (estGain / estLoss) : 0;
+  // Kill switch state comes only from the permission status (the safety-core
+  // kill switch). /api/system/mt5-deferred-status `simulator.enforcesKillSwitch`
+  // is a constant capability description, never the engaged state.
+  const killSwitch: "checking" | "engaged" | "off" | "unknown" =
+    perm === undefined ? "checking"
+      : perm?.killSwitchEngaged === true ? "engaged"
+      : perm?.killSwitchEngaged === false ? "off"
+      : "unknown";
+  // Dollar estimates against the simulator quote's mid (/api/market/quote).
+  // Only spot FX with USD on one side is estimated (standard 100k contract);
+  // other markets say "Not estimated" rather than show a wrong figure.
+  const ref = typeof quote?.mid === "number" ? quote.mid : NaN;
+  const lossEst = estimateMoneyAtDistance(symbol, lotSize, ref, stopLoss === "" ? NaN : Number(stopLoss));
+  const gainEst = estimateMoneyAtDistance(symbol, lotSize, ref, takeProfit === "" ? NaN : Number(takeProfit));
+  // Reward:risk is a ratio of price distances; it needs no contract size.
+  const slDist = stopLoss === "" ? NaN : Math.abs(ref - Number(stopLoss));
+  const tpDist = takeProfit === "" ? NaN : Math.abs(Number(takeProfit) - ref);
+  const rr: number | null = Number.isFinite(slDist) && slDist > 0 && Number.isFinite(tpDist) ? tpDist / slDist : null;
 
   async function submit() {
     setConfirmOpen(false);
@@ -103,7 +124,7 @@ export default function LiveManualPage() {
         <ShieldAlert className="mt-0.5 h-4 w-4 text-danger" />
         <div>
           <p className="font-semibold text-danger">Review required before any order</p>
-          <p className="text-xs text-txt-muted">No order is placed until you confirm. The kill switch and risk governor always apply.</p>
+          <p className="text-xs text-txt-muted">This ticket only captures an intent for review — nothing is sent to a broker or the simulator. On submit the server checks the tester caps only ({TESTER_CAPS_TEXT}); the Risk Governor and kill switch are not run on this capture.</p>
         </div>
       </div>
 
@@ -151,14 +172,15 @@ export default function LiveManualPage() {
             </div>
 
             <div className="rounded border border-border p-2 text-xs space-y-1 bg-background/40">
-              <div className="flex justify-between"><span>Estimated max loss</span><span className="font-mono text-danger">${estLoss.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>Estimated gain</span><span className="font-mono text-success">${estGain.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>Risk / Reward</span><span className="font-mono">{rr.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Estimated max loss <span className="text-[10px] text-txt-muted">(vs simulator mid)</span></span><span className="font-mono text-danger" data-testid="ticket-est-loss" title={lossEst.usd == null ? lossEst.reason : lossEst.basis}>{formatMoneyEstimate(lossEst)}</span></div>
+              <div className="flex justify-between"><span>Estimated gain <span className="text-[10px] text-txt-muted">(vs simulator mid)</span></span><span className="font-mono text-success" data-testid="ticket-est-gain" title={gainEst.usd == null ? gainEst.reason : gainEst.basis}>{formatMoneyEstimate(gainEst)}</span></div>
+              <div className="flex justify-between"><span>Reward / Risk</span><span className="font-mono" data-testid="ticket-rr">{rr == null ? "—" : rr.toFixed(2)}</span></div>
               <div className="flex justify-between"><span>Risk % <span className="text-[10px] text-txt-muted">(needs account equity)</span></span><span className="font-mono text-txt-muted">—</span></div>
               <div className="flex justify-between"><span>Account mode</span><Badge variant="outline" className="text-[10px]">TESTER</Badge></div>
-              <div className="flex justify-between"><span>Execution environment</span><Badge className="bg-warning/20 text-warning text-[10px]">SIMULATOR</Badge></div>
-              <div className="flex justify-between"><span>Risk governor</span><Badge className="bg-success/20 text-success text-[10px]">active</Badge></div>
-              <div className="flex justify-between"><span>Kill switch</span><Badge variant={killSwitch ? "destructive" : "outline"} className="text-[10px]">{killSwitch ? "ENGAGED" : "off"}</Badge></div>
+              <div className="flex justify-between"><span>Execution environment</span><Badge className="bg-warning/20 text-warning text-[10px]">none — capture only</Badge></div>
+              <div className="flex justify-between"><span>Risk governor</span><Badge variant="outline" className="text-[10px] text-txt-muted">not run — tester caps only</Badge></div>
+              <div className="flex justify-between"><span>Checks on submit</span><span className="text-[10px] text-txt-muted">{TESTER_CAPS_TEXT}</span></div>
+              <div className="flex justify-between"><span>Kill switch</span><Badge variant={killSwitch === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={killSwitch === "unknown" ? "The permission status could not be read." : "From your permission status (safety-core kill switch)."}>{killSwitch === "engaged" ? "ENGAGED" : killSwitch === "off" ? "off" : killSwitch === "checking" ? "checking…" : "not checked"}</Badge></div>
               <div className="flex justify-between"><span>Master bridge</span><Badge className={!bridgeLoaded ? "bg-muted text-txt-muted text-[10px]" : bridgeConnected ? "bg-success/20 text-success text-[10px]" : "bg-warning/20 text-warning text-[10px]"}>{!bridgeLoaded ? "checking…" : bridgeConnected ? "connected" : "not connected"}</Badge></div>
             </div>
 
@@ -189,8 +211,9 @@ export default function LiveManualPage() {
                     <div className="text-sm">
                       <h2 id="ticket-confirm-title" className="font-semibold text-warning">Confirm live-intent submission</h2>
                       <p className="text-txt-muted text-xs mt-1">
-                        Review the order before submitting. This goes through the risk governor and
-                        kill switch. Once captured, the intent is permanently logged.
+                        Review the order before submitting. The server checks the tester caps only
+                        ({TESTER_CAPS_TEXT}); the Risk Governor and kill switch are not run, and no
+                        order is sent anywhere. Once captured, the intent is permanently logged.
                       </p>
                     </div>
                   </div>
@@ -201,10 +224,10 @@ export default function LiveManualPage() {
                     <div><div className="text-txt-muted text-[10px]">Lot</div>{lotSize}</div>
                     <div><div className="text-txt-muted text-[10px]">SL</div>{stopLoss === "" ? "—" : stopLoss}</div>
                     <div><div className="text-txt-muted text-[10px]">TP</div>{takeProfit === "" ? "—" : takeProfit}</div>
-                    <div className="col-span-2"><div className="text-txt-muted text-[10px]">Max loss</div>${maxLoss} · R:R {rr.toFixed(2)}</div>
+                    <div className="col-span-2"><div className="text-txt-muted text-[10px]">Max loss</div>${maxLoss} · R:R {rr == null ? "—" : rr.toFixed(2)}</div>
                   </div>
                   {(stopLoss === "" || takeProfit === "") && (
-                    <p className="mt-2 text-[11px] text-warning">Warning: missing {stopLoss === "" ? "SL" : ""}{stopLoss === "" && takeProfit === "" ? " + " : ""}{takeProfit === "" ? "TP" : ""}. Risk governor may reject this intent.</p>
+                    <p className="mt-2 text-[11px] text-warning">Warning: missing {stopLoss === "" ? "SL" : ""}{stopLoss === "" && takeProfit === "" ? " + " : ""}{takeProfit === "" ? "TP" : ""}.{stopLoss === "" ? " The tester caps reject an intent without a stop-loss." : ""}</p>
                   )}
                   <div className="mt-3 flex justify-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => setConfirmOpen(false)} data-testid="ticket-confirm-cancel">Cancel</Button>
@@ -221,6 +244,9 @@ export default function LiveManualPage() {
                   status: {resp.status}
                 </div>
                 <p className="text-txt-muted mt-1">{resp.reason}</p>
+                {typeof resp.riskCheckPassed === "boolean" && (
+                  <p className="mt-1" data-testid="ticket-response-caps">Tester caps: {resp.riskCheckPassed ? "passed" : "failed"} (Risk Governor not run)</p>
+                )}
                 <p className="font-mono text-[10px] mt-1">intentId: {resp.intentId}</p>
               </div>
             )}

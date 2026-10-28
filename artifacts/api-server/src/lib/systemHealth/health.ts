@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { auditEvent } from "./audit.js";
 import { platformStop, platformStopForVenue, readSafetyCorePosture } from "../safety/platformSwitches.js";
 import { patchConfig, getConfig } from "./config.js";
+import { readPlatformLivePosture, type PlatformLivePosture } from "./platformLivePosture.js";
 import { marketDataHealthCheck } from "../marketData/marketDataService.js";
 
 export type SubsystemBuild = "AA"|"BB"|"CC"|"DD"|"EE"|"FF"|"GG"|"HH"|"II"|"JJ"|"KK"|"LL";
@@ -30,6 +31,12 @@ export type SubsystemStatus = "OK" | "DEGRADED" | "UNAVAILABLE" | "UNSAFE";
 
 export interface SubsystemReport {
   status: SubsystemStatus;
+  /**
+   * What the probe actually measured. "REACHABILITY_ONLY": an unauthenticated
+   * GET answered 2xx — the service's own health was NOT checked, so "OK" means
+   * reachable, nothing more. "IN_PROCESS": the service was called directly.
+   */
+  checkScope?: "REACHABILITY_ONLY" | "IN_PROCESS";
   notes: string[];
   metrics?: Record<string, unknown>;
   paperOnly?: boolean;
@@ -72,7 +79,10 @@ export interface SafetyStatus {
 export interface SecretSafetyStatus {
   secretsDetectedInFrontend: number;
   secretsDetectedInLogs: number;
+  /** true only when BOTH scans ran and found nothing; false when either failed. */
   redactionWorking: boolean;
+  /** false when a scan query failed: zero findings then means "not checked". */
+  scanChecked: boolean;
   warnings: string[];
 }
 
@@ -82,15 +92,24 @@ export interface PerformanceStatus {
   errorRate: number;
   latestAutopilotCycle: { cycleId: string | number; status?: string; startedAt?: string | Date } | null;
   latestRiskGovernorStatus: { overallStatus?: string; createdAt?: string | Date } | null;
-  latestNotificationCriticalCount: number;
+  /** Unread CRITICAL notifications; null when the count query failed (not zero). */
+  latestNotificationCriticalCount: number | null;
 }
 
 export interface HealthCheckReport {
   health_check_id: string;
   generated_at: string;
   overallStatus: "HEALTHY" | "DEGRADED" | "UNSAFE" | "FAILED";
+  /**
+   * Legacy constants (also persisted): they name the paper stack this report
+   * covers, NOT the platform's live-trading state. See liveTradingStatusScope
+   * and livePosture.
+   */
   liveTradingStatus: "DISABLED";
   mode: "PAPER_ONLY";
+  liveTradingStatusScope: string;
+  /** The platform's live-execution switch, read when the report ran. */
+  livePosture: PlatformLivePosture;
   subsystemStatus: Record<SubsystemBuild, SubsystemReport>;
   databaseStatus: DatabaseStatus;
   endpointStatus: EndpointStatus;
@@ -144,26 +163,33 @@ async function probeEndpoint(path: string, timeoutMs = 2500): Promise<EndpointRe
 }
 
 // ── Subsystem probes (READ-ONLY) ────────────────────────────────────────────
+// An HTTP probe only proves the route answered; it says nothing about the
+// service behind it. Notes state exactly that, never an unmeasured claim
+// ("critical alerts work", "secrets redacted", "paper-only enforced", ...).
+function reachableNote(r: EndpointResult): string {
+  return `${r.path} answered HTTP ${r.status} (reachability only; service health not checked)`;
+}
+const REACHABILITY = "REACHABILITY_ONLY" as const;
 async function probeAA(): Promise<SubsystemReport> {
   const res = await probeEndpoint("/api/trade-decision/status").catch(() => null);
-  if (res?.ok) return { status: "OK", notes: ["decision endpoint reachable"], metrics: { latencyMs: res.latencyMs } };
+  if (res?.ok) return { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(res)], metrics: { latencyMs: res.latencyMs } };
   // Fallback: try alt route
   const alt = await probeEndpoint("/api/decisions?limit=1").catch(() => null);
-  if (alt?.ok) return { status: "OK", notes: ["decision-log endpoint reachable"], metrics: { latencyMs: alt.latencyMs } };
+  if (alt?.ok) return { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(alt)], metrics: { latencyMs: alt.latencyMs } };
   return { status: "DEGRADED", notes: ["AA decision endpoints not reachable on standard paths — non-fatal"] };
 }
 async function probeBB(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/post-trade-debriefs");
   return r.ok
-    ? { status: "OK", notes: ["debrief endpoint reachable"], metrics: { latencyMs: r.latencyMs } }
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r)], metrics: { latencyMs: r.latencyMs } }
     : { status: "DEGRADED", notes: [`debrief endpoint http=${r.status ?? "ERR"}`] };
 }
 async function probeCC(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/learning/insights");
-  if (r.ok) return { status: "OK", notes: ["learning endpoint reachable"] };
+  if (r.ok) return { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r)] };
   // Fallback: check table
   const cnt = await db.execute(sql`select count(*)::int as c from learning_events`).catch(() => null);
-  if (cnt) return { status: "OK", notes: ["learning_events table reachable"] };
+  if (cnt) return { status: "OK", checkScope: REACHABILITY, notes: ["learning_events table answered a count query (reachability only)"] };
   return { status: "DEGRADED", notes: ["learning endpoints/tables not reachable"] };
 }
 async function probeDD(): Promise<SubsystemReport> {
@@ -191,52 +217,62 @@ async function probeDD(): Promise<SubsystemReport> {
         liveTradingAllowed: false,
       };
     }
-    return { status: "OK", notes, paperOnly: true, liveTradingAllowed: false };
+    return { status: "OK", checkScope: "IN_PROCESS", notes, paperOnly: true, liveTradingAllowed: false };
   } catch (err) {
-    return { status: "DEGRADED", notes: [`market data health check failed: ${String(err).slice(0, 120)}`] };
+    return { status: "DEGRADED", checkScope: "IN_PROCESS", notes: [`market data health check failed: ${String(err).slice(0, 120)}`] };
   }
 }
 async function probeEE(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/paper-execution/status");
-  const cnt = await db.select({ c: sql<number>`count(*)::int` }).from(paperOrdersTable).catch(() => [{ c: 0 }]);
+  // A failed count is unknown (null), never zero orders.
+  const cnt = await db.select({ c: sql<number>`count(*)::int` }).from(paperOrdersTable).catch(() => null);
+  const paperOrders = cnt ? cnt[0]?.c ?? 0 : null;
   return r.ok
-    ? { status: "OK", notes: ["paper execution endpoint reachable", "paper-only enforced"], metrics: { paperOrders: cnt[0]?.c ?? 0 }, paperOnly: true, liveTradingAllowed: false }
-    : { status: "DEGRADED", notes: [`paper execution endpoint http=${r.status ?? "ERR"}`], metrics: { paperOrders: cnt[0]?.c ?? 0 }, paperOnly: true, liveTradingAllowed: false };
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r)], metrics: { paperOrders }, paperOnly: true, liveTradingAllowed: false }
+    : { status: "DEGRADED", notes: [`paper execution endpoint http=${r.status ?? "ERR"}`], metrics: { paperOrders }, paperOnly: true, liveTradingAllowed: false };
 }
 async function probeFF(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/paper-autopilot/status");
-  const cfg = await db.select().from(autopilotSettingsTable).limit(1).catch(() => []);
+  const cfgRead = await db.select().from(autopilotSettingsTable).limit(1).catch(() => null);
   const lastCycle = await db.select().from(autopilotCyclesTable).orderBy(desc(autopilotCyclesTable.id)).limit(1).catch(() => []);
+  const cfg = cfgRead ?? [];
   const liveAllowed = (cfg[0] as { liveTradingAllowed?: boolean } | undefined)?.liveTradingAllowed === true;
   if (liveAllowed) return { status: "UNSAFE", notes: ["FF reports liveTradingAllowed=true — CRITICAL"], paperOnly: false, liveTradingAllowed: true };
+  // The settings read is what proves liveTradingAllowed=false; a failed read proves nothing.
+  if (cfgRead === null) {
+    return { status: "DEGRADED", notes: ["autopilot settings could not be read, so liveTradingAllowed is not verified"], paperOnly: true, liveTradingAllowed: false };
+  }
+  const settingsNote = cfg.length > 0
+    ? "autopilot settings read: liveTradingAllowed is not true"
+    : "no autopilot settings row";
   return r.ok
-    ? { status: "OK", notes: ["autopilot status reachable", "mode=PAPER_ONLY", "liveTradingAllowed=false"], metrics: { hasConfig: cfg.length > 0, lastCycleId: lastCycle[0]?.id ?? null }, paperOnly: true, liveTradingAllowed: false }
-    : { status: "DEGRADED", notes: [`autopilot status http=${r.status ?? "ERR"}`], paperOnly: true, liveTradingAllowed: false };
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r), settingsNote], metrics: { hasConfig: cfg.length > 0, lastCycleId: lastCycle[0]?.id ?? null }, paperOnly: true, liveTradingAllowed: false }
+    : { status: "DEGRADED", notes: [`autopilot status http=${r.status ?? "ERR"}`, settingsNote], paperOnly: true, liveTradingAllowed: false };
 }
 async function probeGG(): Promise<SubsystemReport> {
   const r1 = await probeEndpoint("/api/performance/ai-command-center");
   const r2 = await probeEndpoint("/api/trading-calendar");
   return r1.ok
-    ? { status: "OK", notes: ["command center reachable", `calendar http=${r2.status ?? "n/a"}`] }
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r1), `${r2.path} http=${r2.status ?? "ERR"}`] }
     : { status: "DEGRADED", notes: [`command center http=${r1.status ?? "ERR"}`] };
 }
 async function probeHH(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/risk-governor/status");
   const last = await db.select().from(riskGovernorEvaluationsTable).orderBy(desc(riskGovernorEvaluationsTable.id)).limit(1).catch(() => []);
   return r.ok
-    ? { status: "OK", notes: ["risk governor status reachable", "liveTradingStatus=DISABLED", "canPlaceLiveTrade=false"], metrics: { lastEval: last[0]?.overallStatus ?? null }, paperOnly: true, liveTradingAllowed: false }
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r)], metrics: { lastEval: last[0]?.overallStatus ?? null }, paperOnly: true, liveTradingAllowed: false }
     : { status: "DEGRADED", notes: [`risk governor http=${r.status ?? "ERR"}`], paperOnly: true, liveTradingAllowed: false };
 }
 async function probeII(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/trader-coach/status");
   return r.ok
-    ? { status: "OK", notes: ["trader-coach reachable", "playbook readable", "no live recommendations"] }
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r)] }
     : { status: "DEGRADED", notes: [`trader-coach http=${r.status ?? "ERR"}`] };
 }
 async function probeJJ(): Promise<SubsystemReport> {
   const r = await probeEndpoint("/api/replay/runs?limit=1");
   return r.ok
-    ? { status: "OK", notes: ["replay endpoints reachable", "mode=REPLAY_ONLY", "replay trades isolated from paper trades"] }
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r)] }
     : { status: "DEGRADED", notes: [`replay http=${r.status ?? "ERR"}`] };
 }
 async function probeKK(): Promise<SubsystemReport> {
@@ -246,15 +282,15 @@ async function probeKK(): Promise<SubsystemReport> {
   const unsafe = brokerMode.toUpperCase() !== "READ_ONLY";
   if (unsafe) return { status: "UNSAFE", notes: [`BROKER_MODE=${brokerMode} is UNSAFE — should be READ_ONLY`], paperOnly: true, liveTradingAllowed: false };
   return (r1.ok && r2.ok)
-    ? { status: "OK", notes: ["data-import reachable", "broker-readonly reachable", "broker mode=READ_ONLY", "secrets redacted"], paperOnly: true, liveTradingAllowed: false }
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r1), reachableNote(r2), "BROKER_MODE env is READ_ONLY"], paperOnly: true, liveTradingAllowed: false }
     : { status: "DEGRADED", notes: [`data-import http=${r1.status ?? "ERR"}`, `broker-readonly http=${r2.status ?? "ERR"}`] };
 }
 async function probeLL(): Promise<SubsystemReport> {
   const r1 = await probeEndpoint("/api/notifications");
   const r2 = await probeEndpoint("/api/notifications/digest");
-  const counts = await db.select({ c: sql<number>`count(*) filter (where severity='CRITICAL')::int` }).from(notificationsTable).catch(() => [{ c: 0 }]);
+  const counts = await db.select({ c: sql<number>`count(*) filter (where severity='CRITICAL')::int` }).from(notificationsTable).catch(() => null);
   return r1.ok
-    ? { status: "OK", notes: ["notifications reachable", `digest http=${r2.status}`, "critical alerts work"], metrics: { criticalTotal: counts[0]?.c ?? 0 } }
+    ? { status: "OK", checkScope: REACHABILITY, notes: [reachableNote(r1), `${r2.path} http=${r2.status ?? "ERR"}`], metrics: { criticalTotal: counts ? counts[0]?.c ?? 0 : null } }
     : { status: "DEGRADED", notes: [`notifications http=${r1.status ?? "ERR"}`] };
 }
 
@@ -298,6 +334,13 @@ async function probeEndpoints(): Promise<EndpointStatus> {
   return { totalChecked: results.length, passed, failed, degraded, results };
 }
 
+// liveTradingStatus / mode are fixed labels for the paper stack this report
+// checks; an armed LIVE_SHARED trader can trade live while they read
+// DISABLED / PAPER_ONLY. Said in the report so the constants are not read as
+// the platform's live state, which is livePosture.
+const LIVE_STATUS_SCOPE =
+  "liveTradingStatus and mode describe the paper stack this health check covers, not whether live trading is on. livePosture is the platform's live-execution switch as read for this report.";
+
 // ── Safety probe (READ-ONLY) ────────────────────────────────────────────────
 async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promise<SafetyStatus> {
   const warnings: string[] = [];
@@ -329,19 +372,23 @@ async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promi
 const SECRET_SHAPED = /AKIA[0-9A-Z]{16}|sk_(?:live|test)_[A-Za-z0-9]{12,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ|ghp_[A-Za-z0-9]{20,}|postgres(?:ql)?:\/\/[^[\s]/;
 async function probeSecretSafety(): Promise<SecretSafetyStatus> {
   const warnings: string[] = [];
+  // A failed scan query is NOT zero findings: it is an unchecked scan.
   // Notification messages (frontend-visible)
   const inFrontend = await db.execute(sql`select count(*)::int as c from notifications where message ~ ${SECRET_SHAPED.source}`)
-    .catch(() => ({ rows: [{ c: 0 }] as Array<{ c: number }> }));
+    .catch(() => null);
   // Notification logs
   const inLogs = await db.execute(sql`select count(*)::int as c from notification_logs where message ~ ${SECRET_SHAPED.source}`)
-    .catch(() => ({ rows: [{ c: 0 }] as Array<{ c: number }> }));
-  const ff = (inFrontend.rows[0] as { c: number } | undefined)?.c ?? 0;
-  const lf = (inLogs.rows[0] as { c: number } | undefined)?.c ?? 0;
+    .catch(() => null);
+  const scanChecked = inFrontend !== null && inLogs !== null;
+  const ff = inFrontend ? (inFrontend.rows[0] as { c: number } | undefined)?.c ?? 0 : 0;
+  const lf = inLogs ? (inLogs.rows[0] as { c: number } | undefined)?.c ?? 0 : 0;
+  if (!scanChecked) warnings.push("secret-safety scan could not run (database query failed), so redaction is not verified");
   if (ff > 0) warnings.push(`possible secret-shaped strings in ${ff} notification messages`);
   if (lf > 0) warnings.push(`possible secret-shaped strings in ${lf} notification log messages`);
   return {
     secretsDetectedInFrontend: ff, secretsDetectedInLogs: lf,
-    redactionWorking: ff === 0 && lf === 0,
+    redactionWorking: scanChecked && ff === 0 && lf === 0,
+    scanChecked,
     warnings,
   };
 }
@@ -354,14 +401,14 @@ async function probePerformance(eps: EndpointStatus): Promise<PerformanceStatus>
   const lastCycle = await db.select().from(autopilotCyclesTable).orderBy(desc(autopilotCyclesTable.id)).limit(1).catch(() => []);
   const lastGov = await db.select().from(riskGovernorEvaluationsTable).orderBy(desc(riskGovernorEvaluationsTable.id)).limit(1).catch(() => []);
   const critUnread = await db.execute(sql`select count(*)::int as c from notifications where severity='CRITICAL' and status='UNREAD'`)
-    .catch(() => ({ rows: [{ c: 0 }] as Array<{ c: number }> }));
+    .catch(() => null);
   return {
     slowEndpoints: slow,
     failedJobs: failed,
     errorRate: Number(errorRate.toFixed(3)),
     latestAutopilotCycle: lastCycle[0] ? { cycleId: lastCycle[0].id, status: (lastCycle[0] as { status?: string }).status, startedAt: (lastCycle[0] as { startedAt?: Date }).startedAt } : null,
     latestRiskGovernorStatus: lastGov[0] ? { overallStatus: (lastGov[0] as { overallStatus?: string }).overallStatus, createdAt: (lastGov[0] as { createdAt?: Date }).createdAt } : null,
-    latestNotificationCriticalCount: (critUnread.rows[0] as { c: number } | undefined)?.c ?? 0,
+    latestNotificationCriticalCount: critUnread ? (critUnread.rows[0] as { c: number } | undefined)?.c ?? 0 : null,
   };
 }
 
@@ -395,25 +442,37 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
     if (s.status === "DEGRADED")    warnings.push(`Subsystem ${b} degraded: ${s.notes.join("; ")}`);
     if (s.status === "UNSAFE")      errors.push(`Subsystem ${b} UNSAFE: ${s.notes.join("; ")}`);
   }
+  if (!databaseStatus.connected) errors.push(`database not reachable: ${databaseStatus.migrationWarnings[0] ?? "query failed"}`);
   if (databaseStatus.missingTables.length) warnings.push(`missing tables: ${databaseStatus.missingTables.join(",")}`);
   if (endpointStatus.failed > 0) warnings.push(`${endpointStatus.failed} endpoint(s) failing`);
-  if (!secretSafetyStatus.redactionWorking) errors.push("secret redaction warnings — investigate");
+  if (!secretSafetyStatus.scanChecked) warnings.push("secret-safety scan could not run — redaction not verified");
+  else if (!secretSafetyStatus.redactionWorking) errors.push("secret redaction warnings — investigate");
   if (safetyStatus.hardBlocks.length) errors.push(`${safetyStatus.hardBlocks.length} hard safety block(s) active`);
-  if (performanceStatus.latestNotificationCriticalCount > 0)
-    recommendedAdminActions.push(`Acknowledge ${performanceStatus.latestNotificationCriticalCount} unread CRITICAL notification(s)`);
+  const criticalUnread = performanceStatus.latestNotificationCriticalCount;
+  if (criticalUnread !== null && criticalUnread > 0)
+    recommendedAdminActions.push(`Acknowledge ${criticalUnread} unread CRITICAL notification(s)`);
   if (subsystemStatus.FF.status === "OK") recommendedAdminActions.push("Stop autopilot before next session if not in use");
-  if (warnings.length === 0 && errors.length === 0) recommendedAdminActions.push("System healthy — no admin action required");
+  const HEALTHY_ACTION = "System healthy — no admin action required";
+  if (warnings.length === 0 && errors.length === 0) recommendedAdminActions.push(HEALTHY_ACTION);
 
-  // Overall
-  let overallStatus: HealthCheckReport["overallStatus"] = "HEALTHY";
-  if (warnings.length) overallStatus = "DEGRADED";
-  if (errors.length)   overallStatus = "FAILED";
-  if (safetyStatus.hardBlocks.length || Object.values(subsystemStatus).some((s) => s.status === "UNSAFE"))
-    overallStatus = "UNSAFE";
+  // Overall — derived from the SAME warnings/errors the report carries, and
+  // re-derived below if persisting the report adds an error.
+  const deriveOverall = (): HealthCheckReport["overallStatus"] => {
+    let o: HealthCheckReport["overallStatus"] = "HEALTHY";
+    if (warnings.length) o = "DEGRADED";
+    if (errors.length)   o = "FAILED";
+    if (safetyStatus.hardBlocks.length || Object.values(subsystemStatus).some((s) => s.status === "UNSAFE"))
+      o = "UNSAFE";
+    return o;
+  };
+  let overallStatus = deriveOverall();
 
+  const livePosture = await readPlatformLivePosture();
   const report: HealthCheckReport = {
     health_check_id: id, generated_at, overallStatus,
     liveTradingStatus: "DISABLED", mode: "PAPER_ONLY",
+    liveTradingStatusScope: LIVE_STATUS_SCOPE,
+    livePosture,
     subsystemStatus, databaseStatus, endpointStatus, safetyStatus, secretSafetyStatus, performanceStatus,
     recommendedAdminActions, warnings, errors,
   };
@@ -433,6 +492,11 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
     await patchConfig({ lastHealthCheckAt: new Date(), currentSafetyLock: safetyStatus.hardBlocks.length ? safetyStatus.hardBlocks[0]!.code : null });
   } catch (err) {
     errors.push(`failed to persist health check: ${String(err).slice(0, 120)}`);
+    // The returned report must agree with its own errors list.
+    overallStatus = deriveOverall();
+    report.overallStatus = overallStatus;
+    const i = recommendedAdminActions.indexOf(HEALTHY_ACTION);
+    if (i >= 0) recommendedAdminActions.splice(i, 1);
   }
 
   await auditEvent({

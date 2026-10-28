@@ -3,19 +3,44 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-type Subsys = { status: string; notes: string[]; metrics?: Record<string, unknown>; paperOnly?: boolean; liveTradingAllowed?: boolean };
+type Subsys = { status: string; checkScope?: "REACHABILITY_ONLY" | "IN_PROCESS"; notes: string[]; metrics?: Record<string, unknown>; paperOnly?: boolean; liveTradingAllowed?: boolean };
 type Report = {
   health_check_id: string; generated_at: string;
   overallStatus: "HEALTHY"|"DEGRADED"|"UNSAFE"|"FAILED";
-  liveTradingStatus: "DISABLED"; mode: "PAPER_ONLY";
+  liveTradingStatus: string; mode: string;
   subsystemStatus: Record<string, Subsys>;
   databaseStatus: { connected: boolean; missingTables: string[]; rowCounts: Record<string, number> };
   endpointStatus: { totalChecked: number; passed: number; failed: number; degraded: number; results: Array<{ path: string; status: number|null; ok: boolean; latencyMs: number }> };
   safetyStatus: { hardBlocks: Array<{ code: string; severity: string; message: string }>; warnings: string[] };
-  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean };
-  performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number };
+  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean; scanChecked?: boolean };
+  performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number | null };
   recommendedAdminActions: string[]; warnings: string[]; errors: string[];
 };
+
+/** "OK" from an HTTP probe only means the route answered — say exactly that. */
+export function subsystemBadgeLabel(v: Pick<Subsys, "status" | "checkScope">): string {
+  return v.status === "OK" && v.checkScope === "REACHABILITY_ONLY" ? "Reachable" : v.status;
+}
+
+/** A scan that did not run is "not checked", never "true". Downgrade-only. */
+export function redactionLabel(s: Report["secretSafetyStatus"]): string {
+  if (s.scanChecked !== true) return "not checked (scan could not run)";
+  return s.redactionWorking ? "no secret-shaped strings found" : "secret-shaped strings found";
+}
+
+// The health report (lib/systemHealth/health.ts) covers the paper stack and
+// sets liveTradingStatus / mode to fixed constants on every path; it never
+// reads live-trading state. When the safety core is not in a paper mode,
+// probeSafety adds the warning "safetyCore.operationalMode=<mode>". Read the
+// mode from there and never repeat the constants as system truth.
+const OPERATIONAL_MODE_WARNING = /^safetyCore\.operationalMode=(.+)$/;
+function reportedOperationalMode(r: Report): string | null {
+  for (const w of r.safetyStatus?.warnings ?? []) {
+    const m = OPERATIONAL_MODE_WARNING.exec(w);
+    if (m) return m[1]!.trim();
+  }
+  return null;
+}
 
 const tone = (s: string): "default"|"secondary"|"destructive"|"outline" => {
   if (s === "HEALTHY" || s === "OK") return "default";
@@ -39,6 +64,7 @@ export default function SystemHealthPage() {
   };
   useEffect(() => { void run(); }, []);
 
+  const nonPaperMode = report ? reportedOperationalMode(report) : null;
   const banner = report && (report.overallStatus !== "HEALTHY" || report.safetyStatus.hardBlocks.length > 0);
 
   return (
@@ -46,7 +72,7 @@ export default function SystemHealthPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">System Health</h1>
-          <p className="text-sm text-muted-foreground">Build MM — Diagnostics, audit & admin (PAPER_ONLY, live trading DISABLED)</p>
+          <p className="text-sm text-muted-foreground">Build MM — Diagnostics, audit & admin for the paper stack. This report does not read live-trading state.</p>
         </div>
         <Button onClick={run} disabled={loading} data-testid="btn-run-health-check">{loading ? "Running…" : "Run health check"}</Button>
       </div>
@@ -65,9 +91,18 @@ export default function SystemHealthPage() {
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Card><CardHeader><CardTitle className="text-xs">Overall</CardTitle></CardHeader><CardContent><Badge variant={tone(report.overallStatus)}>{report.overallStatus}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent><Badge variant="outline">{report.liveTradingStatus}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent><Badge>{report.mode}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent>{report.performanceStatus.latestNotificationCriticalCount}</CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent>
+              <Badge variant="outline" data-testid="system-health-live-trading">Not checked by this report</Badge>
+            </CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent data-testid="system-health-mode">
+              {nonPaperMode
+                ? <Badge variant="destructive">Safety core: {nonPaperMode}</Badge>
+                : <Badge variant="outline">Report scope: paper stack</Badge>}
+              {nonPaperMode && (
+                <div className="mt-1 text-xs text-muted-foreground">The safety core is not in a paper mode; this paper-stack report does not cover it.</div>
+              )}
+            </CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent>{report.performanceStatus.latestNotificationCriticalCount ?? "not checked"}</CardContent></Card>
           </div>
 
           <Card>
@@ -78,7 +113,7 @@ export default function SystemHealthPage() {
                   <div key={k} className="rounded border p-3" data-testid={`subsystem-${k}`}>
                     <div className="flex items-center justify-between mb-1">
                       <strong>{k}</strong>
-                      <Badge variant={tone(v.status)}>{v.status}</Badge>
+                      <Badge variant={tone(v.status)}>{subsystemBadgeLabel(v)}</Badge>
                     </div>
                     <div className="text-xs text-muted-foreground">{v.notes.join(" · ")}</div>
                   </div>
@@ -122,7 +157,7 @@ export default function SystemHealthPage() {
               <CardContent className="text-sm space-y-1">
                 <div>Frontend leaks: {report.secretSafetyStatus.secretsDetectedInFrontend}</div>
                 <div>Log leaks: {report.secretSafetyStatus.secretsDetectedInLogs}</div>
-                <div>Working: {String(report.secretSafetyStatus.redactionWorking)}</div>
+                <div data-testid="text-redaction-status">Scan: {redactionLabel(report.secretSafetyStatus)}</div>
               </CardContent>
             </Card>
           </div>

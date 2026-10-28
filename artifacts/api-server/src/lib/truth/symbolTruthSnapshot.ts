@@ -37,6 +37,10 @@ import {
   type TruthInvalidation,
   type TruthStage,
   type TruthReadEvidence,
+  classifyTruthEvidence,
+  expireTruthEvidence,
+  SYNTHETIC_EVENT_RISK_LABEL,
+  type TruthEvidence,
 } from "@workspace/domain/truth";
 import type { RubyMarketEdgeSignal } from "@workspace/domain/signal-intelligence";
 import { evaluateMarketDataSufficiency } from "@workspace/domain/market";
@@ -54,6 +58,7 @@ import {
   type ChartTimeframe,
 } from "../data/chart/timeframes.js";
 import { buildMarketImpactRadar } from "../news/marketImpactRadar.js";
+import { classifySymbol } from "../data/marketDataRouter.js";
 import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { evaluateScalpForSymbol } from "../scalp/scalpService.js";
 import type { ScalpResult } from "../scalp/scalpTypes.js";
@@ -70,6 +75,12 @@ export interface TruthComponent {
   asOf: string | null;
   /** Build time is separate from the confirmed bar observation above. */
   generatedAt?: string | null;
+  /**
+   * The component's own minimum-evidence rule failed: its direction is a lean,
+   * not an edge. Set only by components that have such a rule (the market-edge
+   * scanner read); fail-closed when the evidence ledger is missing.
+   */
+  belowEvidenceFloor?: boolean;
 }
 
 export interface TruthNewsEvent {
@@ -94,8 +105,21 @@ export interface TruthNews {
   /** Clean-English risk summary. */
   riskLabel: string;
   highImpactWindowActive: boolean;
+  /**
+   * Scheduled event risk could not be checked: the radar read failed, or a
+   * configured calendar is not connected (distinct from "not configured").
+   * Drives the CALENDAR_UNCHECKED evidence reason.
+   */
+  riskUnchecked: boolean;
   /** Single clean-English disclaimer when no calendar provider is connected. */
   disclaimer: string | null;
+  /**
+   * Present (true) only for a synthetic market: scheduled economic events do
+   * not apply and the calendar is not consulted, so riskLabel is the shared
+   * SYNTHETIC_EVENT_RISK_LABEL, riskUnchecked is false, no events or
+   * disclaimer are carried, and the evidence reason is SYNTHETIC_NO_EVENT_MAPPING.
+   */
+  synthetic?: true;
 }
 
 export interface TruthData {
@@ -115,6 +139,8 @@ export interface TruthData {
 export interface TruthVerdict {
   stage: TruthStage;
   bias: TruthBias;
+  /** "LEAN" when the bias rests only on voters below their evidence rule. */
+  biasQualifier?: "LEAN" | null;
   headline: string;
   evidenceFor: string[];
   evidenceAgainst: string[];
@@ -141,6 +167,27 @@ export interface SymbolTruthSnapshot {
   };
   levels: ComposedLevels;
   verdict: TruthVerdict;
+  /**
+   * Additive per-claim evidence class (verified / estimate / stale /
+   * unavailable) + reason + the data timestamp each claim rests on. Derived
+   * only from the fields above; advisory labelling, never an execution gate.
+   */
+  evidence: TruthEvidence;
+}
+
+/** Classify a built snapshot's claims from its own fields (see evidenceClass.ts). */
+export function classifySnapshotEvidence(
+  s: Omit<SymbolTruthSnapshot, "evidence">,
+  nowMs: number,
+): TruthEvidence {
+  return classifyTruthEvidence({
+    nowMs,
+    data: s.data,
+    news: s.news,
+    components: s.components,
+    levels: s.levels,
+    verdict: s.verdict,
+  });
 }
 
 // ── Injectable SOURCEs (real by default; tests inject deterministic stubs) ────
@@ -181,7 +228,9 @@ function humanize(token: string): string {
 function sourceLabelFor(source: string | null): string | null {
   if (!source) return null;
   const s = source.toLowerCase();
-  if (s.startsWith("mt5_broker")) return "Live broker feed";
+  // Source identity only — liveness is the data state's job (a stored mirror
+  // or stale series is still "mt5_broker").
+  if (s.startsWith("mt5_broker")) return "MT5 broker feed";
   if (s.startsWith("deriv")) return "Deriv feed";
   return "Market data feed";
 }
@@ -247,12 +296,25 @@ function scannerComponent(signal: RubyMarketEdgeSignal | null): TruthComponent {
   else alignment = "NEUTRAL";
   const biasWord = SIGNAL_BIAS_WORD[signal.bias] ?? humanize(signal.bias);
   const stageWord = humanize(signal.lifecycleStage);
+  // A direction that failed the minimum-evidence rule is a lean, not an edge.
+  // Fail closed: a missing evidence ledger is never treated as met.
+  const belowEvidenceFloor = signal.evidence?.meetsMinimum !== true;
+  const directional = alignment === "BULLISH" || alignment === "BEARISH";
+  let lead = biasWord;
+  if (belowEvidenceFloor && directional) {
+    lead =
+      (signal.bias === "BULLISH" && alignment === "BULLISH") ||
+      (signal.bias === "BEARISH" && alignment === "BEARISH")
+        ? `${biasWord} lean`
+        : `${biasWord}, ${alignment === "BULLISH" ? "bullish" : "bearish"} lean`;
+  }
   return {
     present: true,
     alignment,
-    label: `${biasWord} · ${stageWord}`,
+    label: `${lead} · ${stageWord}`,
     asOf: signal.marketEvidence?.lastClosedCandleAt ?? null,
     generatedAt: signal.generatedAt,
+    belowEvidenceFloor,
   };
 }
 
@@ -317,15 +379,40 @@ const SEVERITY_LABEL: Record<string, string> = {
 
 type RadarResult = Awaited<ReturnType<typeof buildMarketImpactRadar>>;
 
-function buildNews(radar: RadarResult | null): TruthNews {
+/** Scheduled event risk applies but could not be checked: the radar read failed,
+ * or a configured calendar ("none" means not configured) is not connected. */
+function eventRiskUnchecked(radar: RadarResult | null): boolean {
+  return radar == null || (!radar.radar.provider.connected && radar.radar.provider.name !== "none");
+}
+
+const CALENDAR_UNCHECKED_RISK_LABEL = "Event risk is unavailable — the economic calendar could not be checked.";
+const CALENDAR_UNCHECKED_DISCLAIMER = "The economic calendar could not be checked, so scheduled events are not shown.";
+
+function buildNews(radar: RadarResult | null, synthetic: boolean): TruthNews {
+  if (synthetic) {
+    // The calendar's state (not configured / failed / connected) says nothing
+    // about a market scheduled events do not move: never describe it as a
+    // missing or failed calendar, and never list world events beside it.
+    return {
+      providerConnected: radar?.radar.provider.connected ?? false,
+      events: [],
+      riskLabel: SYNTHETIC_EVENT_RISK_LABEL,
+      highImpactWindowActive: false,
+      riskUnchecked: false,
+      disclaimer: null,
+      synthetic: true,
+    };
+  }
   if (!radar) {
+    // The radar read itself failed: whether a calendar is configured is not
+    // known here, so never claim "not connected" — it could not be checked.
     return {
       providerConnected: false,
       events: [],
-      riskLabel: "Event risk is unavailable.",
+      riskLabel: CALENDAR_UNCHECKED_RISK_LABEL,
       highImpactWindowActive: false,
-      disclaimer:
-        "No economic-calendar provider is connected, so no scheduled events are shown.",
+      riskUnchecked: true,
+      disclaimer: CALENDAR_UNCHECKED_DISCLAIMER,
     };
   }
   const { radar: r } = radar;
@@ -358,17 +445,23 @@ function buildNews(radar: RadarResult | null): TruthNews {
   } else {
     riskLabel = providerConnected
       ? "No scheduled events affect this symbol."
-      : "No event calendar is connected.";
+      : eventRiskUnchecked(radar)
+        ? CALENDAR_UNCHECKED_RISK_LABEL
+        : "No event calendar is connected.";
   }
 
+  const riskUnchecked = eventRiskUnchecked(radar);
   return {
     providerConnected,
     events,
     riskLabel,
     highImpactWindowActive: r.highImpactWindowActive,
+    riskUnchecked,
     disclaimer: providerConnected
       ? null
-      : "No economic-calendar provider is connected, so no scheduled events are shown.",
+      : riskUnchecked
+        ? CALENDAR_UNCHECKED_DISCLAIMER
+        : "No economic-calendar provider is connected, so no scheduled events are shown.",
   };
 }
 
@@ -461,7 +554,10 @@ export async function buildSymbolTruthSnapshot(
   }
 
   // ── news ────────────────────────────────────────────────────────────────────
-  const newsBlock = buildNews(news);
+  // ONE synthetic authority (the canonical resolver) for the news copy and the
+  // verdict's event-risk input below.
+  const synthetic = classifySymbol(symbol) === "synthetic";
+  const newsBlock = buildNews(news, synthetic);
 
   // ── level geometry (from the scanner signal only) ──────────────────────────
   const hasScannerLevels = scannerUsable && scanner!.hasSufficientData;
@@ -509,6 +605,8 @@ export async function buildSymbolTruthSnapshot(
     dataState: data.state,
     price: data.price,
     highImpactWindowActive: newsBlock.highImpactWindowActive,
+    // Synthetic instruments are immune to macro events (same rule as the radar).
+    eventRiskUnchecked: !synthetic && eventRiskUnchecked(news),
     components: verdictComponents.map((c, i) => {
       const key = (["scanner", "flame", "timing", "scalp"] as const)[i];
       const input: TruthComponentInput = {
@@ -517,6 +615,7 @@ export async function buildSymbolTruthSnapshot(
         alignment: c.alignment,
         label: c.label,
         asOf: c.asOf,
+        ...(c.belowEvidenceFloor !== undefined ? { belowEvidenceFloor: c.belowEvidenceFloor } : {}),
       };
       return input;
     }),
@@ -550,7 +649,7 @@ export async function buildSymbolTruthSnapshot(
   if (components.scanner.present) deadlines.push(Date.parse(scanner!.expiresAt));
   if (components.flame.present || components.scalp.present) deadlines.push(Date.parse(scalp!.expiresAt));
   if (deadlines.length && expected) deadlines.push(Date.parse(expected.lastClosedCandleAt) + timeframeMs(timeframe));
-  return {
+  const snapshot: Omit<SymbolTruthSnapshot, "evidence"> = {
     symbol,
     displaySymbol: chart?.displaySymbol ?? symbol,
     timeframe,
@@ -563,6 +662,7 @@ export async function buildSymbolTruthSnapshot(
     verdict: {
       stage: composed.stage,
       bias: composed.bias,
+      biasQualifier: composed.biasQualifier,
       headline: composed.headline,
       evidenceFor: composed.evidenceFor,
       evidenceAgainst: composed.evidenceAgainst,
@@ -571,6 +671,7 @@ export async function buildSymbolTruthSnapshot(
       invalidation: directionReadable ? composed.invalidation : null,
     },
   };
+  return { ...snapshot, evidence: classifySnapshotEvidence(snapshot, now) };
 }
 
 /** A read can expire inside the cache window. Withdraw the directional advice
@@ -582,10 +683,12 @@ export function capExpiredTruthSnapshot(snapshot: SymbolTruthSnapshot, now = Dat
     highImpactWindowActive: snapshot.news.highImpactWindowActive, components: [], levels });
   const expired = (component: TruthComponent): TruthComponent => component.present
     ? { ...component, present: false, alignment: "UNKNOWN", label: "This read expired; waiting for current evidence." } : component;
-  return { ...snapshot, components: { scanner: expired(snapshot.components.scanner), flame: expired(snapshot.components.flame),
+  // Classes: claims the read derived become stale/EXPIRED; data claims keep theirs.
+  return { ...snapshot, evidence: expireTruthEvidence(snapshot.evidence),
+    components: { scanner: expired(snapshot.components.scanner), flame: expired(snapshot.components.flame),
     timing: expired(snapshot.components.timing), scalp: expired(snapshot.components.scalp) },
     levels: { ...composed.levels, withheldReason: "The component evidence expired; waiting for a new read." },
-    verdict: { stage: composed.stage, bias: composed.bias, headline: composed.headline, bestAction: composed.bestAction,
+    verdict: { stage: composed.stage, bias: composed.bias, biasQualifier: null, headline: composed.headline, bestAction: composed.bestAction,
       bestActionText: composed.bestActionText, evidenceFor: [], evidenceAgainst: [], invalidation: null } };
 }
 

@@ -32,8 +32,16 @@ export interface ChartDeepHistoryState {
   coverageDays: number | null;
   /** Per-timeframe deep-history target in days (reporting only). */
   depthTargetDays: number;
-  /** True once at least one back-page has been requested for this series. */
+  /**
+   * True once at least one back-page has actually delivered older bars for this
+   * series. A requested, failed or empty page never sets it.
+   */
   loadedAny: boolean;
+  /**
+   * Plain-English reason the last back-page request failed (network/parse),
+   * after which paging stopped. Null when no request has failed.
+   */
+  loadError: string | null;
   /**
    * Request the next older page, strictly older than `oldestLoadedIso` (the
    * oldest bar currently on screen). No-op while loading, when exhausted, or
@@ -68,6 +76,7 @@ export function useChartDeepHistory(
   const [coverageDays, setCoverageDays] = useState<number | null>(null);
   const [depthTargetDays, setDepthTargetDays] = useState(0);
   const [loadedAny, setLoadedAny] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [analysisEvidence, setAnalysisEvidence] = useState<ChartHistoryPage["historyEvidence"]>(null);
   const analysisRefused = useRef(false);
   const analysisObservations = useRef(new Map<number,string>());
@@ -103,6 +112,7 @@ export function useChartDeepHistory(
     setCoverageDays(null);
     setDepthTargetDays(0);
     setLoadedAny(false);
+    setLoadError(null);
     setAnalysisEvidence(null);
     analysisRefused.current = false;
     analysisObservations.current.clear();
@@ -142,7 +152,6 @@ export function useChartDeepHistory(
       requestRef.current = controller;
       const isCurrent = () => mountedRef.current && generationRef.current === generation;
       setLoading(true);
-      setLoadedAny(true);
 
       void (async () => {
         try {
@@ -197,6 +206,7 @@ export function useChartDeepHistory(
           cursorRef.current = page.nextBefore;
           if (page.candles.length > 0) {
             setOlderCandles((prev) => isCurrent() ? dedupeAscending(prev, page.candles) : prev);
+            setLoadedAny(true);
           }
           setHasMore(page.hasMoreHistory && page.nextBefore != null);
           setProviderCapped(page.providerLimitReached);
@@ -206,7 +216,10 @@ export function useChartDeepHistory(
         } catch {
           // Network/parse failure: stop paging rather than silently retrying in a
           // loop. The chart keeps the bars it already has; nothing is fabricated.
-          if (isCurrent()) setHasMore(false);
+          if (isCurrent()) {
+            setHasMore(false);
+            setLoadError("Older history could not be loaded; scroll-back paging stopped.");
+          }
         } finally {
           if (isCurrent()) {
             requestRef.current = null;
@@ -232,6 +245,7 @@ export function useChartDeepHistory(
     coverageDays: currentState ? coverageDays : null,
     depthTargetDays: currentState ? depthTargetDays : 0,
     loadedAny: currentState ? loadedAny : false,
+    loadError: currentState ? loadError : null,
     loadOlder,
     reset,
   };

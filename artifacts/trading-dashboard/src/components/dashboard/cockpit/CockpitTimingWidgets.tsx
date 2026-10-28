@@ -1,7 +1,8 @@
 // Cockpit Timing Widgets — Phase 3 Best Markets / Avoid Right Now.
 // Uses useGetTimingBrainMulti to pull timing reads for major pairs and
 // classifies them into "best now" (GO + grade A/B) and "avoid now"
-// (STAND_DOWN / NO_TRADE / grade D/F).
+// (STAND_DOWN / NO_TRADE / grade D/F). Only reads measured from current candles
+// are classified; unmeasured reads are named as such.
 // Honest empty when timing data is unavailable — never fabricated.
 
 import { cn } from "@/lib/utils";
@@ -25,13 +26,72 @@ const GRADE_BAD = new Set(["D", "F"]);
 const PERMISSION_PASS = new Set(["GO"]);
 const PERMISSION_BLOCK = new Set(["STAND_DOWN", "NO_TRADE"]);
 
-// Honest source/freshness footer (Task #611). Timing reads are real-or-empty —
-// this label never claims live data when the feed is stale or absent.
-function freshnessFooter(updatedAt: number | undefined, count: number): string {
-  if (!updatedAt || count === 0) return "Source: live market provider when connected";
-  const s = Math.max(0, Math.round((Date.now() - updatedAt) / 1000));
-  const age = s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
-  return `Source: live market provider · updated ${age}`;
+// Honest source/freshness footer (Task #611). A timing read is "measured" only
+// when the server says it was computed from current candles; a read built from
+// session constants alone (no candles, no quote) is never listed as a best or
+// avoid market and never counted as live — it is named as not measured. The
+// age comes from the measured reads' own generatedAt (the OLDEST one, the most
+// conservative), never the browser fetch time, and the source line is derived
+// from each row's dataQuality instead of a fixed "live market provider" string.
+type TimingRow = Record<string, unknown>;
+
+function rowQuality(row: TimingRow): { label: string; hasCandleData: boolean } {
+  const dq = row["dataQuality"];
+  if (!dq || typeof dq !== "object") return { label: "unknown", hasCandleData: false };
+  const d = dq as Record<string, unknown>;
+  return { label: String(d["label"] ?? "unknown"), hasCandleData: d["hasCandleData"] === true };
+}
+
+export function isMeasuredTimingRead(row: TimingRow): boolean {
+  const q = rowQuality(row);
+  return q.hasCandleData && (q.label === "real" || q.label === "partial");
+}
+
+/** Short caveat for a listed (measured) row that is not on full candle + quote data; null when it is. */
+export function timingRowCaveat(row: TimingRow): string | null {
+  const q = rowQuality(row);
+  if (q.label === "real") return null;
+  if (!q.hasCandleData) return "Session-only estimate";
+  return "Partial data";
+}
+
+function asRows(results: unknown[]): TimingRow[] {
+  return results.filter((r): r is TimingRow => !!r && typeof r === "object");
+}
+
+function formatAge(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`;
+}
+
+export function timingFooter(rows: TimingRow[], opts: { isError?: boolean; now?: number } = {}): string {
+  if (rows.length === 0) {
+    return opts.isError ? "Timing reads could not be loaded." : "No timing reads returned.";
+  }
+  const measured = rows.filter(isMeasuredTimingRead);
+  if (measured.length === 0) {
+    return "No current candles for any scanned market — timing not measured.";
+  }
+  const now = opts.now ?? Date.now();
+  const tfs = Array.from(new Set(measured.map((r) => String(r["timeframe"] ?? "")).filter(Boolean)));
+  const tf = tfs.length === 1 ? `${tfs[0]} ` : "";
+  const full = measured.filter((r) => rowQuality(r).label === "real").length;
+  const coverage = `current candles for ${measured.length} of ${rows.length} markets, ${full} with a live quote`;
+  const times = measured
+    .map((r) => Date.parse(String(r["generatedAt"] ?? "")))
+    .filter((t) => Number.isFinite(t));
+  if (times.length < measured.length) return `${tf}timing reads · read time not reported · ${coverage}`;
+  return `${tf}timing reads computed ${formatAge(now - Math.min(...times))} · ${coverage}`;
+}
+
+function UnmeasuredLine({ rows }: { rows: TimingRow[] }) {
+  const unmeasured = rows.filter((r) => !isMeasuredTimingRead(r)).map((r) => String(r["symbol"] ?? "")).filter(Boolean);
+  if (unmeasured.length === 0) return null;
+  return (
+    <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-unmeasured">
+      Not measured (no current candles): {unmeasured.join(", ")}
+    </p>
+  );
 }
 
 const HEAT_STATE_SHORT: Record<string, string> = {
@@ -58,14 +118,15 @@ export function BestMarketsCard() {
     },
   );
 
-  const results = (q.data as { results?: unknown[] })?.results ?? [];
+  const rows = asRows((q.data as { results?: unknown[] })?.results ?? []);
+  const measuredCount = rows.filter(isMeasuredTimingRead).length;
 
-  const best = results.filter((r: unknown) => {
-    if (!r || typeof r !== "object") return false;
-    const row = r as Record<string, unknown>;
-    return PERMISSION_PASS.has(String(row["entryPermission"] ?? ""))
-      && GRADE_GOOD.has(String(row["timingGrade"] ?? ""));
-  }).slice(0, 3) as Array<Record<string, unknown>>;
+  const candidates = rows.filter((row) => PERMISSION_PASS.has(String(row["entryPermission"] ?? ""))
+    && GRADE_GOOD.has(String(row["timingGrade"] ?? "")));
+  const best = candidates.filter(isMeasuredTimingRead).slice(0, 3);
+  // A session/clock-only estimate (no current candles) is not a market read, so
+  // it can never be promoted to "best now"; say how many were left out.
+  const skippedNoCandles = candidates.length - candidates.filter(isMeasuredTimingRead).length;
 
   return (
     <CockpitCard
@@ -78,8 +139,20 @@ export function BestMarketsCard() {
       {!q.isLoading && best.length === 0 ? (
         <div className="py-4 text-center">
           <Flame className="mx-auto mb-1 h-5 w-5 text-txt-muted" />
-          <p className="text-sm text-txt-secondary">No A-grade setups right now.</p>
-          <p className="text-xs text-txt-muted">Check back when session conditions improve.</p>
+          {rows.length > 0 && measuredCount === 0 ? (
+            <p className="text-sm text-txt-secondary" data-testid="best-markets-empty">Timing not measured — no current candles.</p>
+          ) : (
+            <p className="text-sm text-txt-secondary" data-testid="best-markets-empty">
+              {rows.length === 0 ? "No timing reads to rank right now." : "No A-grade setups right now."}
+            </p>
+          )}
+          {skippedNoCandles > 0 ? (
+            <p className="text-xs text-warning" data-testid="best-markets-skipped">
+              {skippedNoCandles} grade A/B {skippedNoCandles === 1 ? "read was" : "reads were"} left out — {skippedNoCandles === 1 ? "it is" : "they are"} a session-only estimate without current candles.
+            </p>
+          ) : measuredCount > 0 ? (
+            <p className="text-xs text-txt-muted">Check back when session conditions improve.</p>
+          ) : null}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -99,6 +172,9 @@ export function BestMarketsCard() {
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-semibold text-sm">{sym}</span>
                     <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">{grade}</span>
+                    {timingRowCaveat(r) && (
+                      <span className="text-[10px] font-medium text-warning" data-testid="timing-row-caveat">{timingRowCaveat(r)}</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-txt-muted capitalize">{state}</span>
@@ -114,7 +190,8 @@ export function BestMarketsCard() {
           })}
         </ul>
       )}
-      <p className="mt-2 text-[10px] text-txt-muted">{freshnessFooter(q.dataUpdatedAt, results.length)}</p>
+      <UnmeasuredLine rows={rows} />
+      <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-footer">{timingFooter(rows, { isError: q.isError })}</p>
       <div className="mt-3">
         <ActionButton href="/market-scanner" subtle icon={<Flame className="h-4 w-4" />} data-testid="best-markets-scanner">
           Open Scanner
@@ -136,15 +213,15 @@ export function AvoidMarketsCard() {
     },
   );
 
-  const results = (q.data as { results?: unknown[] })?.results ?? [];
+  const rows = asRows((q.data as { results?: unknown[] })?.results ?? []);
+  const measuredCount = rows.filter(isMeasuredTimingRead).length;
 
-  const avoid = results.filter((r: unknown) => {
-    if (!r || typeof r !== "object") return false;
-    const row = r as Record<string, unknown>;
+  const avoid = rows.filter((row) => {
+    if (!isMeasuredTimingRead(row)) return false;
     return PERMISSION_BLOCK.has(String(row["entryPermission"] ?? ""))
       || GRADE_BAD.has(String(row["timingGrade"] ?? ""))
       || Number(row["dangerScore"] ?? 0) >= 65;
-  }).slice(0, 3) as Array<Record<string, unknown>>;
+  }).slice(0, 3);
 
   return (
     <CockpitCard
@@ -157,8 +234,16 @@ export function AvoidMarketsCard() {
       {!q.isLoading && avoid.length === 0 ? (
         <div className="py-4 text-center">
           <ShieldAlert className="mx-auto mb-1 h-5 w-5 text-txt-muted" />
-          <p className="text-sm text-txt-secondary">No major red flags right now.</p>
-          <p className="text-xs text-txt-muted">Market conditions look manageable.</p>
+          {rows.length === 0 ? (
+            <p className="text-sm text-txt-secondary" data-testid="avoid-markets-empty">No timing reads — red flags could not be checked.</p>
+          ) : measuredCount === 0 ? (
+            <p className="text-sm text-txt-secondary" data-testid="avoid-markets-empty">Timing not measured — no current candles.</p>
+          ) : (
+            <>
+              <p className="text-sm text-txt-secondary" data-testid="avoid-markets-empty">No major red flags in {measuredCount} measured timing {measuredCount === 1 ? "read" : "reads"}.</p>
+              <p className="text-xs text-txt-muted">Advisory only — based on the reads listed in the footer.</p>
+            </>
+          )}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -182,6 +267,9 @@ export function AvoidMarketsCard() {
                         ? "border-rose-500/40 bg-rose-500/15 text-rose-400"
                         : "border-amber-500/40 bg-amber-500/15 text-amber-400",
                     )}>{grade}</span>
+                    {timingRowCaveat(r) && (
+                      <span className="text-[10px] font-medium text-warning" data-testid="timing-row-caveat">{timingRowCaveat(r)}</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-txt-muted capitalize">{state}</span>
@@ -199,7 +287,8 @@ export function AvoidMarketsCard() {
           })}
         </ul>
       )}
-      <p className="mt-2 text-[10px] text-txt-muted">{freshnessFooter(q.dataUpdatedAt, results.length)}</p>
+      <UnmeasuredLine rows={rows} />
+      <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-footer">{timingFooter(rows, { isError: q.isError })}</p>
       <div className="mt-3">
         <ActionButton href="/market-heat-map" subtle icon={<TrendingDown className="h-4 w-4" />} data-testid="avoid-markets-heat">
           Heat Map

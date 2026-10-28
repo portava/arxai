@@ -71,6 +71,12 @@ export interface EconomicCalendarSnapshot {
    * alone cannot distinguish "not configured" from "fetch failed".
    */
   providerState: CalendarProviderState;
+  /**
+   * When the connected provider's events were last SUCCESSFULLY fetched (ISO),
+   * or null when not connected. A failed attempt is never a "check".
+   * Optional so older stubs remain valid.
+   */
+  lastSuccessAt?: string | null;
 }
 
 /**
@@ -104,6 +110,7 @@ export async function getEconomicCalendar(
     status: result.status,
     events: toRawCalendarEvents(symbolEvents),
     providerState,
+    lastSuccessAt: result.connected ? (result.diagnostics.lastSuccessAt ?? null) : null,
   };
 }
 
@@ -119,7 +126,17 @@ export interface EnrichedCalendarEvent {
   id: string;
   title: string;
   currency: string;
+  /**
+   * Back-compat three-level bucket: the provider's `critical` is folded into
+   * `high` here. Display surfaces must read `impactTier` instead.
+   */
   impact: "low" | "medium" | "high";
+  /**
+   * The provider's own tier, unfolded (a central-bank rate decision stays
+   * `critical`). Additive alongside `impact` so the calendar page can show the
+   * same tier the DB path shows for the same event.
+   */
+  impactTier: "low" | "medium" | "high" | "critical";
   /** ISO-8601 UTC event time (alias of `eventTimeUtc` for back-compat). */
   eventTimeIso: string;
   eventTimeUtc: string;
@@ -192,6 +209,7 @@ function toEnriched(e: CalendarEvent): EnrichedCalendarEvent {
     title: e.title,
     currency: e.currency,
     impact: toThreeLevel(e.impact),
+    impactTier: e.impact,
     eventTimeIso: e.eventTimeUtc,
     eventTimeUtc: e.eventTimeUtc,
     eventTimeLocal: e.eventTimeLocal,

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Mt5Position } from "./mt5Position";
+import type { Mt5StateScope } from "./mt5StateScope";
 
 export interface Mt5State {
   connected: boolean;
@@ -33,4 +34,13 @@ export interface Mt5State {
   lastHeartbeatAt?: string | null;
   /** @nullable */
   lastSyncAt?: string | null;
+  /** Whose state this is. platform is the install-wide EA feed (operators only) and is not any one user's account. */
+  scope?: Mt5StateScope;
+  /** Plain statement of whose state this is. */
+  scopeNote?: string;
+  /** False when positions were not read for this caller. An empty list is then not a count of open trades. */
+  positionsMeasured?: boolean;
+  positionsNote?: string;
+  /** Present when liveAllowed is the platform-wide lock rather than a value reported by the caller's terminal. */
+  liveAllowedNote?: string;
 }

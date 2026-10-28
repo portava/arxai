@@ -41,8 +41,10 @@ import {
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
-import { resolveSymbolTruthEvidence, symbolTruthDeadline } from "@/lib/symbolTruthEvidence";
+import { resolveSymbolTruthEvidence, symbolTruthRecheckAt } from "@/lib/symbolTruthEvidence";
+import type { TruthNewsState } from "@/lib/eventRiskCopy";
 import type { ScannerTruth } from "@/lib/scannerTruth";
+import type { TruthEvidence } from "@workspace/domain/truth";
 
 export interface UseSymbolTruthResult {
   /** Snapshot after the evidence cap (null while loading / on error / expired). */
@@ -55,6 +57,18 @@ export interface UseSymbolTruthResult {
   /** Snapshot sub-objects, surfaced for convenience (null while loading). */
   data: TruthData | null;
   news: TruthNews | null;
+  /**
+   * What `news` being null MEANS, so no surface has to guess:
+   *  - "loading": the first truth fetch for this symbol/timeframe is genuinely
+   *    in flight (enabled, loading, nothing cached) — the only state that may
+   *    say "Checking event risk…".
+   *  - "available": `news` is the server's calendar read (kept even after the
+   *    candle-derived advice expired at a bar close).
+   *  - "unavailable": anything else — fetch failed (even with cached data),
+   *    the read was withdrawn (too old, clock skew, symbol/timeframe mismatch,
+   *    malformed), or the query is disabled (no signed-in user). Never "loading".
+   */
+  newsState: TruthNewsState;
   components: TruthComponents | null;
   levels: TruthLevels | null;
   /**
@@ -70,6 +84,12 @@ export interface UseSymbolTruthResult {
   verdict: TruthVerdict | null;
   /** True when the cap neutralized the directional read / best action. */
   actionCapped: boolean;
+  /**
+   * Per-claim evidence classes (verified / estimate / stale / unavailable),
+   * re-validated against the capped snapshot — the client can only downgrade
+   * the server's classes. Null when no snapshot or the server sent none.
+   */
+  evidence: TruthEvidence | null;
 
   isLoading: boolean;
   isError: boolean;
@@ -106,7 +126,7 @@ export function useSymbolTruth(
 
   const rawSnapshot = enabled ? snapQ.data ?? null : null;
   const scannerTruth = scanner.truth;
-  const nowMs = useEvidenceDeadline(symbolTruthDeadline(rawSnapshot));
+  const nowMs = useEvidenceDeadline(symbolTruthRecheckAt(rawSnapshot, Date.now()));
   const { snapshot, actionCapped } = useMemo(() => resolveSymbolTruthEvidence({
     snapshot: rawSnapshot, symbol, apiTimeframe: apiTf, scannerTruth,
     scannerLastCandleAt: scanner.feedStatus?.lastCandleTime ?? null,
@@ -119,10 +139,13 @@ export function useSymbolTruth(
     feedStatus: scanner.feedStatus,
     data: snapshot?.data ?? null,
     news: snapshot?.news ?? null,
+    newsState: snapshot?.news != null ? "available"
+      : enabled && snapQ.isLoading && snapQ.data === undefined ? "loading" : "unavailable",
     components: snapshot?.components ?? null,
     levels: snapshot?.levels ?? null,
     verdict: snapshot?.verdict ?? null,
     actionCapped,
+    evidence: (snapshot?.evidence as TruthEvidence | undefined) ?? null,
     isLoading: scanner.isLoading || snapQ.isLoading,
     isError: scanner.isError || snapQ.isError,
     refetch: () => {

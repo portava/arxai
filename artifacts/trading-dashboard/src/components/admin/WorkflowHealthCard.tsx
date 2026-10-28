@@ -25,9 +25,33 @@ interface RuntimeHealth {
     stale: number;
     down: number;
     latestHeartbeatAgeSeconds: number | null;
+    /** false when the server's bridge aggregate query failed (counts unknown). Absent on older servers. */
+    readable?: boolean;
   };
   notes: string[];
 }
+
+type Headline = { label: string; tone: "ok" | "warn" | "bad" };
+
+/**
+ * Headline from what was actually checked: the database ping AND the MT5/EA
+ * bridge heartbeat aggregate. The server's `ok` can only be downgraded here.
+ */
+function workflowHeadline(d: RuntimeHealth): Headline {
+  const b = d.bridge;
+  if (!d.ok || !d.database.ok) return { label: "Degraded", tone: "bad" };
+  if (b.readable === false) return { label: "Bridge status unknown", tone: "warn" };
+  if (b.total > 0 && b.healthy === 0) return { label: "Degraded — no bridge heartbeating", tone: "bad" };
+  const notFresh = b.stale + b.down;
+  if (notFresh > 0) return { label: `Attention — ${notFresh} bridge${notFresh === 1 ? "" : "s"} not fresh`, tone: "warn" };
+  return { label: "Healthy", tone: "ok" };
+}
+
+const HEADLINE_TONE: Record<Headline["tone"], string> = {
+  ok: "bg-emerald-500/20 text-emerald-300",
+  warn: "bg-amber-500/20 text-amber-300",
+  bad: "bg-rose-500/20 text-rose-300",
+};
 
 function fmtUptime(s: number): string {
   if (!Number.isFinite(s) || s < 0) return "—";
@@ -85,18 +109,18 @@ export function WorkflowHealthCard() {
           <HeartPulse className="h-4 w-4 text-emerald-400" />
           Workflow Health
           <Badge variant="outline">Admin</Badge>
-          {data && (
-            <Badge
-              className={
-                data.ok
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : "bg-rose-500/20 text-rose-300"
-              }
-              data-testid="badge-workflow-health"
-            >
-              {data.ok ? "Healthy" : "Degraded"}
-            </Badge>
-          )}
+          {data && (() => {
+            const h = workflowHeadline(data);
+            return (
+              <Badge
+                className={HEADLINE_TONE[h.tone]}
+                data-testid="badge-workflow-health"
+                title="From the database ping and the MT5/EA bridge heartbeat aggregate at the last check."
+              >
+                {h.label}
+              </Badge>
+            );
+          })()}
           <Button
             size="sm"
             variant="outline"
@@ -149,6 +173,10 @@ export function WorkflowHealthCard() {
             <div className="text-xs">
               <div className="text-muted-foreground mb-1">MT5 / EA bridges (aggregate heartbeat)</div>
               <div className="flex gap-3 font-mono" data-testid="workflow-health-bridge">
+                {data.bridge.readable === false ? (
+                  <span className="text-amber-300">Bridge counts could not be read (aggregate query failed).</span>
+                ) : (
+                <>
                 <span>total {data.bridge.total}</span>
                 <span className="text-emerald-300">healthy {data.bridge.healthy}</span>
                 <span className="text-amber-300">stale {data.bridge.stale}</span>
@@ -159,6 +187,8 @@ export function WorkflowHealthCard() {
                     ? "—"
                     : `${data.bridge.latestHeartbeatAgeSeconds}s ago`}
                 </span>
+                </>
+                )}
               </div>
             </div>
 

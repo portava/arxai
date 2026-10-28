@@ -35,6 +35,52 @@ export const LIVE_TRAILING_INTERVALS = 1;
 export const DELAYED_TRAILING_INTERVALS = 2;
 /** Trailing by >= this many intervals → stale (not safe as live truth). */
 export const STALE_TRAILING_INTERVALS = 3;
+/**
+ * Absolute clock-skew allowance (ms) between a producer's clock and this
+ * server's clock. A newest bar may OPEN at most this far after `now`: a bar
+ * cannot open before its first tick, so anything further ahead is a
+ * mis-stamped series (e.g. broker server time read as UTC) whose freshness
+ * cannot be confirmed. The allowance is absolute, not "one interval", so a
+ * +2h/+3h offset is caught on every timeframe (H2/H4/D1 included). Same value
+ * as the Truth evidence tick-time allowance (`TRUTH_EVIDENCE_TICK_SKEW_MS`,
+ * lib/domain truth/evidenceClass.ts); a test pins the two together.
+ */
+export const MAX_FUTURE_CLOCK_SKEW_MS = 5_000;
+
+/**
+ * Router/provider note: the producing series was OBSERVED stamped ahead of its
+ * own receipt time (newest bar opened after the server received it, beyond
+ * MAX_FUTURE_CLOCK_SKEW_MS). Sticky for the life of the stored series, so a
+ * mis-stamped series that later stalls (and whose offset then hides the stall)
+ * cannot read current.
+ */
+export const FUTURE_STAMPED_SERIES_NOTE = "FUTURE_STAMPED_SERIES";
+
+/** newestOpenMs − now (ms). Positive = the newest bar opens in the future.
+ *  null/non-finite inputs → null (unknown). */
+export function newestBarLeadMs(newestOpenMs: number | null | undefined, now: number): number | null {
+  if (newestOpenMs == null || !Number.isFinite(newestOpenMs) || !Number.isFinite(now)) return null;
+  return newestOpenMs - now;
+}
+
+/**
+ * True when the newest bar's recency cannot be confirmed: unknown gap, a
+ * newest bar opening more than MAX_FUTURE_CLOCK_SKEW_MS after `now`, or a
+ * series the producer observed future-stamped. When the caller does not
+ * supply `newestOpenLeadMs`, a negative gap alone cannot separate clock skew
+ * from a mis-stamped series, so it fails closed.
+ */
+export function feedTimestampsUnconfirmed(inputs: {
+  trailingIntervals: number | null;
+  newestOpenLeadMs?: number | null;
+  futureStampObserved?: boolean;
+}): boolean {
+  const { trailingIntervals, newestOpenLeadMs, futureStampObserved = false } = inputs;
+  if (trailingIntervals == null || !Number.isFinite(trailingIntervals)) return true;
+  if (futureStampObserved) return true;
+  if (newestOpenLeadMs === undefined) return trailingIntervals < 0;
+  return newestOpenLeadMs == null || !Number.isFinite(newestOpenLeadMs) || newestOpenLeadMs > MAX_FUTURE_CLOCK_SKEW_MS;
+}
 
 // ── MT5 broker in-memory provider TTLs ───────────────────────────────────────
 
@@ -85,6 +131,49 @@ export const MARKET_FROZEN_BROKER_STALE_MS = 5 * 60_000; // 5 minutes
  * lingers before degrading. Display/telemetry only — never a gate.
  */
 export const MARKET_FROZEN_WALL_FRESH_MS = 2 * 60_000; // 2 minutes
+/**
+ * The session fields the scheduled-closure check reads (structurally the
+ * chart SymbolProfile.session shape; kept local so this module stays leaf).
+ */
+export interface WeekendSessionShape {
+  alwaysOpen: boolean;
+  closedOnWeekends: boolean;
+  openHourUtc: number | null;
+  closeHourUtc: number | null;
+}
+
+/** A scheduled weekend closure window, in epoch ms. */
+export interface ScheduledClosure {
+  /** Friday close (UTC) the window started at. */
+  closedAtMs: number;
+  /** Monday open (UTC) the window ends at (the market may reopen earlier — callers must accept observed trading over the schedule). */
+  reopensAtMs: number;
+}
+
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+
+/**
+ * The scheduled weekend closure that contains `nowMs`, or null when the
+ * instrument trades 24/7, has no weekend closure, or `nowMs` is outside the
+ * window [Fri closeHourUtc, Mon openHourUtc). Approximate by design (session
+ * hours are static UTC estimates), so callers use it ONLY to withhold a
+ * "live" claim for a series whose newest bar predates the close and that
+ * shows no observed trading — never to promote anything.
+ */
+export function scheduledWeekendClosure(session: WeekendSessionShape, nowMs: number): ScheduledClosure | null {
+  if (session.alwaysOpen || !session.closedOnWeekends || !Number.isFinite(nowMs)) return null;
+  const closeHour = session.closeHourUtc ?? 22;
+  const openHour = session.openHourUtc ?? 0;
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  const daysSinceFriday = (new Date(dayStart).getUTCDay() - 5 + 7) % 7;
+  let fridayStart = dayStart - daysSinceFriday * DAY_MS;
+  if (fridayStart + closeHour * HOUR_MS > nowMs) fridayStart -= 7 * DAY_MS;
+  const closedAtMs = fridayStart + closeHour * HOUR_MS;
+  const reopensAtMs = fridayStart + 3 * DAY_MS + openHour * HOUR_MS;
+  return nowMs < reopensAtMs ? { closedAtMs, reopensAtMs } : null;
+}
+
 /** A provider's last successful fetch older than this counts as stale. */
 export const QUOTE_STALE_AFTER_MS = 5 * 60_000; // 5 minutes
 /** A cached third-party candle window is reusable for this long. */
@@ -212,6 +301,14 @@ export interface FeedQualityInputs {
   formingTipPresent?: boolean;
   /** Age (ms) of the last tick folded into the forming tip (null when none). */
   formingTickAgeMs?: number | null;
+  /**
+   * Newest PROVIDER bar's open time minus `now` (ms; see newestBarLeadMs).
+   * Bounded by the absolute MAX_FUTURE_CLOCK_SKEW_MS. Omitted → a negative
+   * trailing gap fails closed (see feedTimestampsUnconfirmed).
+   */
+  newestOpenLeadMs?: number | null;
+  /** The producer observed this series stamped ahead of its receipt time. */
+  futureStampObserved?: boolean;
 }
 
 export interface FeedQualityVerdict {
@@ -246,6 +343,8 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
     completenessReason = null,
     formingTipPresent = false,
     formingTickAgeMs = null,
+    newestOpenLeadMs,
+    futureStampObserved = false,
   } = inputs;
 
   const freshness = classifyCandleFreshness(trailingIntervals, { syntheticAwaitingTick });
@@ -271,6 +370,12 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
   } else if (missingCandleCount > 0 || duplicateCount > 0 || outOfOrderCount > 0) {
     quality = "partial";
     warning = `Incomplete sequence: ${missingCandleCount} missing, ${duplicateCount} duplicate, ${outOfOrderCount} out-of-order bar(s).`;
+  } else if (feedTimestampsUnconfirmed({ trailingIntervals, newestOpenLeadMs, futureStampObserved })) {
+    // Candles exist but their recency is unknown, the newest bar opens after
+    // now (beyond the absolute clock-skew allowance), or the producer saw the
+    // series stamped ahead of receipt. Unverifiable recency is never "clean".
+    quality = "invalid";
+    warning = "Candle timestamps could not be confirmed (newest bar is missing a usable time or is stamped in the future). Not safe for analysis.";
   } else if (formingTipPresent) {
     // Forming-tip path takes over the freshness verdict (integrity checks above
     // still run on the closed bars first).

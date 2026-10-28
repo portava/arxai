@@ -171,6 +171,32 @@ function htfPriorPeriod(htf: Candle[]): PivotPriorPeriod | null {
  * RubyChartContext. Returns `null` on an unsupported timeframe or any error —
  * the caller then leaves its base read completely untouched.
  */
+/**
+ * Classic pivots are DAILY pivots: only a D1 higher-timeframe series may supply
+ * the prior period. The HTF fetched for intraday charts is 15m/1h/4h — labelling
+ * its prior bar "daily" would misstate where the levels came from, so those keep
+ * the honest "session" source (no prior ⇒ pivots unavailable).
+ */
+export function pivotPriorFromHtf(
+  htfCandles: Candle[],
+  htfTimeframe: ChartTimeframe | null | undefined,
+  nowMs: number = Date.now(),
+): { prior: ReturnType<typeof htfPriorPeriod>; pivotSourceTimeframe: PivotSourceTimeframe } {
+  // htfPriorPeriod takes the bar BEFORE the newest one as "yesterday", which is
+  // only true when the newest D1 bar is today's (forming) bar. Otherwise the
+  // series is stale or closed-only and the "prior" bar is not the prior day —
+  // fail closed to no daily pivots.
+  const newest = htfCandles.length ? Date.parse(htfCandles[htfCandles.length - 1]!.time) : NaN;
+  const newestIsToday =
+    Number.isFinite(newest) &&
+    new Date(newest).toISOString().slice(0, 10) === new Date(nowMs).toISOString().slice(0, 10);
+  const dailyHtf = htfTimeframe === "D1" && newestIsToday ? htfCandles : [];
+  return {
+    prior: htfPriorPeriod(dailyHtf),
+    pivotSourceTimeframe: dailyHtf.length ? "daily" : "session",
+  };
+}
+
 export function buildMarketIntelligenceSnapshot(
   ctx: RubyChartContext,
   opts: BuildMarketIntelligenceOptions = {},
@@ -267,10 +293,7 @@ export function buildMarketIntelligenceSnapshot(
     });
 
     // ── Pivot Truth ───────────────────────────────────────────────────────────
-    const prior = htfPriorPeriod(ctx.htfCandles);
-    const pivotSourceTimeframe: PivotSourceTimeframe = ctx.htfCandles.length
-      ? "daily"
-      : "session";
+    const { prior, pivotSourceTimeframe } = pivotPriorFromHtf(ctx.htfCandles, ctx.htfTimeframe);
     const pivot = resolvePivotTruth(
       {
         pivotSourceTimeframe,

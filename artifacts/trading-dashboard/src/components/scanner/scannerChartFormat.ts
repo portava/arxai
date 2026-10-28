@@ -122,3 +122,61 @@ export function resolveEventMarkerSec(
 // lightweight-charts' findBar() return null and the candlestick colorer throw
 // "Value is null" on every repaint (SeriesBarColorer.Candlestick → ensureNotNull).
 export { snapSecToCandle } from "@/lib/chart-engine/candleSanitize";
+
+// ── Chart time zone + candle-close countdown (owner screenshots 2026-10-27) ──
+//
+// lightweight-charts formats the time axis and crosshair from the UTC fields of
+// each bar's timestamp, so the axis read 14:00 … 16:00 at 16:04 UTC for a
+// viewer whose wall clock said 12:04 (New York) — with no zone stated anywhere.
+// The repo's explicit-time convention is UTC (market-closed chip, ARX native
+// legend, heat-card event times), so every chart states it with ONE shared
+// label rather than switching the axis to local time.
+
+/** Visible zone label rendered beside the timeframe chips on every chart. */
+export const CHART_TIME_AXIS_LABEL = "Times: UTC";
+export const CHART_TIME_AXIS_TITLE =
+  "Chart time axis and candle times are shown in UTC (coordinated universal time), not your local time.";
+
+/** "HH:MM UTC" for an epoch-ms / ISO time, or null when it cannot be parsed. */
+export function formatUtcClock(time: number | string | null | undefined): string | null {
+  if (time == null) return null;
+  const ms = typeof time === "number" ? time : Date.parse(time);
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+}
+
+/** Server clock captured from one accepted tick-stream frame. */
+export interface ServerClockSample {
+  /** Server wall clock (`ts`) stamped on the frame, epoch ms. */
+  serverTs: number;
+  /** performance.now() when the frame was received. */
+  receivedPerf: number;
+}
+
+/**
+ * Time left until the forming candle closes, measured against the SERVER clock
+ * (the frame's `ts` advanced by monotonic performance.now() elapsed) so a
+ * client wall clock running fast/slow can neither shrink, inflate nor hide the
+ * countdown. Without a server sample (older server) it falls back to the client
+ * wall clock — never a fabricated offset. Residual: closeTimeMs is bucketed on
+ * the provider tick epoch while `ts` is the API server clock, so provider-vs-
+ * server skew is not removed, only client skew.
+ */
+export function computeCandleRemainingMs(args: {
+  closeTimeMs: number;
+  clock: ServerClockSample | null;
+  nowPerf: number;
+  fallbackNowMs: number;
+}): number {
+  const { closeTimeMs, clock, nowPerf, fallbackNowMs } = args;
+  if (clock && Number.isFinite(clock.serverTs) && Number.isFinite(clock.receivedPerf) && Number.isFinite(nowPerf)) {
+    return closeTimeMs - (clock.serverTs + Math.max(0, nowPerf - clock.receivedPerf));
+  }
+  return closeTimeMs - fallbackNowMs;
+}
+
+/** Chip text for the candle-close countdown, e.g. "closes in 0:15". */
+export function candleCountdownLabel(remainingMs: number, timeframe: string): string {
+  return `closes in ${formatCandleCountdown(remainingMs, timeframe)}`;
+}

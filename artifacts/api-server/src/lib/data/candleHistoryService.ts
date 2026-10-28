@@ -39,7 +39,7 @@ import {
   getProviderRoute,
   sourceSupportsDeepCursor,
 } from "./providerRoutingMap.js";
-import { buildFeedStatus } from "./freshness.js";
+import { buildFeedStatus, newestBarLeadMs } from "./freshness.js";
 import type { Candle } from "./types.js";
 import { prepareMarketRead } from "../truth/marketReadEvidence.js";
 import { normalizeChartTimeframe, timeframeMs as chartTimeframeMs } from "./chart/timeframes.js";
@@ -427,6 +427,8 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
       hasSource: true,
       candleCount: page.count,
       trailingIntervals,
+      // Absolute clock-skew bound on the newest bar (never "one interval").
+      newestOpenLeadMs: newestBarLeadMs(newestMs, Date.now()),
       syntheticAwaitingTick: false,
       routerUserMessage,
     });

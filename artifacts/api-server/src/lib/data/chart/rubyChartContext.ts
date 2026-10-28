@@ -105,6 +105,13 @@ export interface RubyChartContext {
    * Same source as candles above.
    */
   htfCandles: Candle[];
+
+  /**
+   * The canonical timeframe `htfCandles` were fetched on, or null when this
+   * timeframe has no higher timeframe. Consumers must label any HTF-derived
+   * statement with it (and must not assume the HTF is daily).
+   */
+  htfTimeframe: ChartTimeframe | null;
 }
 
 export function buildTrustLine(
@@ -251,8 +258,10 @@ export async function buildRubyChartContext(
   opts: { userId?: number | null } = {},
 ): Promise<RubyChartContext> {
   let state = await buildChartIntelligenceState(symbol, timeframe, limit);
-  // A VERIFIED read needs a measured broker comparison; only the requesting
-  // user's own EA quote can supply one. Without it the mirror stays unmeasured.
+  // A VERIFIED read needs a measured broker comparison: a quote BOUND to the
+  // served series (same provider, bridge and owner; owner == this user;
+  // observed, fresh tick time — brokerQuoteBinding.ts). Absent or unbound, the
+  // mirror stays unmeasured and sourceOverall cannot PASS.
   if (opts.userId != null) {
     try {
       state = await enrichStateWithUserBrokerQuote(state, { userId: opts.userId, symbol, timeframe, limit });
@@ -321,5 +330,6 @@ export async function buildRubyChartContext(
     state,
     candles,
     htfCandles,
+    htfTimeframe: htf,
   };
 }

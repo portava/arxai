@@ -81,42 +81,60 @@ function bucketKey(t: TradeLike, by: z.infer<typeof GroupBy>): string {
   }
 }
 
-function computeStats(b: Bucket): {
+// Stored in profit_factor when a slice has wins but no losing trade (gross
+// loss 0 → the ratio is undefined). It is a storage marker, never a measured
+// value: it must not qualify a slice for STRONG_EDGE, must not lift
+// confidence, and must never be printed as "PF 999.00".
+export const PF_NO_LOSSES_MARKER = 999;
+
+interface Stats {
   sampleSize: number; winRate: number; averageRr: number;
   expectancy: number; profitFactor: number;
-} {
+  /** false when there is no losing trade, so profitFactor is the marker. */
+  profitFactorMeasured: boolean;
+}
+
+function computeStats(b: Bucket): Stats {
   const sample = b.wins + b.losses;       // ignore breakevens for win-rate base
-  if (sample === 0) return { sampleSize: 0, winRate: 0, averageRr: 0, expectancy: 0, profitFactor: 0 };
+  if (sample === 0) return { sampleSize: 0, winRate: 0, averageRr: 0, expectancy: 0, profitFactor: 0, profitFactorMeasured: false };
   const winRate = b.wins / sample;
   const avgWin  = b.wins   ? b.grossWin / b.wins   : 0;
   const avgLoss = b.losses ? b.grossLoss / b.losses : 0;
   const expectancy = (winRate * avgWin) - ((1 - winRate) * avgLoss);
   const profitFactor = b.grossLoss > 0 ? b.grossWin / b.grossLoss
-                     : b.grossWin > 0  ? 999 : 0;
+                     : b.grossWin > 0  ? PF_NO_LOSSES_MARKER : 0;
   const averageRr = b.rrCount ? b.rrSum / b.rrCount : 0;
-  return { sampleSize: sample, winRate, averageRr, expectancy, profitFactor };
+  return { sampleSize: sample, winRate, averageRr, expectancy, profitFactor,
+    profitFactorMeasured: b.grossLoss > 0 };
 }
 
-function classifyStatus(s: ReturnType<typeof computeStats>):
+function classifyStatus(s: Stats):
   "STRONG_EDGE"|"DEVELOPING_EDGE"|"WEAK_EDGE"|"NO_EDGE"|"INSUFFICIENT_DATA" {
   if (s.sampleSize < MIN_SAMPLE_FOR_LABEL) return "INSUFFICIENT_DATA";
   if (s.expectancy < 0)  return s.expectancy < -0.5 * Math.max(1, Math.abs(s.expectancy)) ? "NO_EDGE" : "WEAK_EDGE";
   if (s.expectancy === 0) return "WEAK_EDGE";
+  // No losing trade recorded: expectancy is positive but the profit factor is
+  // undefined, so the PF-based STRONG_EDGE test cannot be passed. Cap at
+  // DEVELOPING_EDGE until a loss is on record.
+  if (!s.profitFactorMeasured) return "DEVELOPING_EDGE";
   if (s.sampleSize >= MIN_SAMPLE_FOR_STRONG && s.profitFactor >= STRONG_PF) return "STRONG_EDGE";
   if (s.profitFactor >= DEVELOPING_PF) return "DEVELOPING_EDGE";
   return "WEAK_EDGE";
 }
 
-function confidence(s: ReturnType<typeof computeStats>, status: string): number {
+function confidence(s: Stats, status: string): number {
   if (status === "INSUFFICIENT_DATA") return Math.min(40, s.sampleSize * 3);
   // Logistic-ish growth on sample size, modulated by profit factor proximity.
   const sampleFactor = Math.min(1, s.sampleSize / 100);          // 0..1
-  const pfFactor     = Math.min(1, Math.max(0, (s.profitFactor - 1) / 1.5));
+  // An unmeasured profit factor adds nothing (never saturates on the marker).
+  const pfFactor     = s.profitFactorMeasured
+    ? Math.min(1, Math.max(0, (s.profitFactor - 1) / 1.5))
+    : 0;
   return Math.round(30 + sampleFactor * 50 + pfFactor * 20);
 }
 
 interface Warning { warningType: string; message: string; severity: "INFO"|"WARN"|"DANGER" }
-function warnings(b: Bucket, s: ReturnType<typeof computeStats>): Warning[] {
+function warnings(b: Bucket, s: Stats): Warning[] {
   const w: Warning[] = [];
   if (s.sampleSize < MIN_SAMPLE_FOR_LABEL && s.sampleSize > 0)
     w.push({ warningType: "LOW_SAMPLE", severity: "WARN",
@@ -138,24 +156,102 @@ function warnings(b: Bucket, s: ReturnType<typeof computeStats>): Warning[] {
   if (s.profitFactor > 0 && s.profitFactor < 1)
     w.push({ warningType: "NEGATIVE_PF", severity: "DANGER",
       message: `Profit factor ${s.profitFactor.toFixed(2)} is below 1.00 — losses outweigh wins on this slice.` });
-  if (s.sampleSize >= MIN_SAMPLE_FOR_LABEL && s.sampleSize < MIN_SAMPLE_FOR_STRONG && s.profitFactor >= STRONG_PF)
+  if (!s.profitFactorMeasured && s.sampleSize > 0)
+    w.push({ warningType: "NO_LOSSES_RECORDED", severity: "INFO",
+      message: `No losing trade is recorded in this slice (${s.sampleSize} trade(s)), so profit factor cannot be measured. Check that losing trades are journaled with their P&L.` });
+  if (s.profitFactorMeasured && s.sampleSize >= MIN_SAMPLE_FOR_LABEL && s.sampleSize < MIN_SAMPLE_FOR_STRONG && s.profitFactor >= STRONG_PF)
     w.push({ warningType: "PROMISING_BUT_THIN", severity: "INFO",
       message: `Profit factor looks strong but sample size (${s.sampleSize}) is too small for STRONG_EDGE.` });
   return w;
 }
 
-function summarize(name: string, status: string, s: ReturnType<typeof computeStats>): string {
+function summarize(name: string, status: string, s: Stats): string {
   const lines: string[] = [];
+  const pf = s.profitFactorMeasured
+    ? `PF ${s.profitFactor.toFixed(2)}`
+    : "profit factor not measurable — no losing trade recorded";
   if (status === "INSUFFICIENT_DATA") {
     lines.push(`${name}: not enough data yet (${s.sampleSize} trade(s)). Keep paper trading and journaling — confidence grows with sample size, not certainty.`);
   } else if (status === "NO_EDGE" || status === "WEAK_EDGE") {
-    lines.push(`${name}: ${status === "NO_EDGE" ? "no measurable" : "a weak"} edge in your data (PF ${s.profitFactor.toFixed(2)}, expectancy ${s.expectancy.toFixed(2)}). Consider a paper-only reset for this slice.`);
+    lines.push(`${name}: ${status === "NO_EDGE" ? "no measurable" : "a weak"} edge in your data (${pf}, expectancy ${s.expectancy.toFixed(2)}). Consider a paper-only reset for this slice.`);
   } else if (status === "DEVELOPING_EDGE") {
-    lines.push(`${name}: developing edge (PF ${s.profitFactor.toFixed(2)}, ${s.sampleSize} trades). Promising — keep the conditions consistent and re-evaluate in 20 more trades.`);
+    lines.push(`${name}: developing edge (${pf}, ${s.sampleSize} trades). Promising — keep the conditions consistent and re-evaluate in 20 more trades.`);
   } else {
-    lines.push(`${name}: a measurable historical edge (PF ${s.profitFactor.toFixed(2)}, win rate ${(s.winRate*100).toFixed(0)}%, ${s.sampleSize} trades). Past results do not guarantee future results.`);
+    lines.push(`${name}: a measurable historical edge (${pf}, win rate ${(s.winRate*100).toFixed(0)}%, ${s.sampleSize} trades). Past results do not guarantee future results.`);
   }
   return lines.join(" ");
+}
+
+type ReportRow = typeof edgeDiscoveryReportsTable.$inferSelect;
+
+// Rows written before the marker fix carry PF 999 with a STRONG_EDGE status,
+// a saturated confidence and a "PF 999.00" summary. Re-derive status,
+// confidence and summary from the stored numbers so no read presents the
+// marker as a measured profit factor. Rows with a measured PF are unchanged.
+function presentReport(r: ReportRow): ReportRow {
+  if (r.profitFactor < PF_NO_LOSSES_MARKER) return r;
+  const s: Stats = {
+    sampleSize: r.sampleSize, winRate: r.winRate, averageRr: r.averageRr,
+    expectancy: r.expectancy, profitFactor: r.profitFactor, profitFactorMeasured: false,
+  };
+  const status = classifyStatus(s);
+  const eqAt = r.edgeName.indexOf("=");
+  const name = eqAt >= 0 ? r.edgeName.slice(eqAt + 1) : r.edgeName;
+  return { ...r, status, confidenceScore: confidence(s, status), aiSummary: summarize(name, status, s) };
+}
+
+// Every POST inserts a fresh row per slice and never supersedes the old ones.
+// The boards describe the CURRENT edge picture, so they show only the newest
+// generation of each slice (by createdAt, then id). Ordering is done here, not
+// trusted to SQL, so a past run can never be presented as current.
+// Cap on rows scanned when building the latest-per-slice view.
+const SLICE_SCAN_LIMIT = 1000;
+function createdMs(r: ReportRow): number {
+  const t = r.createdAt instanceof Date ? r.createdAt.getTime() : Date.parse(String(r.createdAt));
+  return Number.isFinite(t) ? t : 0;
+}
+function latestPerSlice(rows: ReportRow[]): ReportRow[] {
+  const sorted = [...rows].sort((a, b) => (createdMs(b) - createdMs(a)) || (b.id - a.id));
+  const seen = new Set<string>();
+  const out: ReportRow[] = [];
+  for (const r of sorted) {
+    if (seen.has(r.edgeName)) continue;
+    seen.add(r.edgeName);
+    out.push(r);
+  }
+  return out;
+}
+async function loadLatestSlices(userId: number): Promise<ReportRow[]> {
+  const rows = await db.select().from(edgeDiscoveryReportsTable)
+    .where(eq(edgeDiscoveryReportsTable.userId, userId))
+    .orderBy(desc(edgeDiscoveryReportsTable.createdAt)).limit(SLICE_SCAN_LIMIT);
+  return latestPerSlice(rows).map(presentReport);
+}
+
+// ── Behaviour basis ─────────────────────────────────────────────────────────
+// SLICE_DEBRIEFS: discipline/emotional averaged over debriefs linked to the
+//   slice's own trades (summary names the count).
+// NOT_MEASURED: no debrief is linked to a trade in the slice; stored 0s are
+//   placeholders.
+// ACCOUNT_WIDE_LEGACY: a report generated before per-slice scoring, whose
+//   numbers were averaged over every debrief the user has (or 0 with none).
+type BehaviourBasis = "SLICE_DEBRIEFS" | "NOT_MEASURED" | "ACCOUNT_WIDE_LEGACY";
+const BEHAVIOUR_NOT_MEASURED = "BEHAVIOUR_NOT_MEASURED";
+const BEHAVIOUR_NOT_MEASURED_MESSAGE =
+  "No post-trade debrief is linked to a trade in this slice, so discipline and emotional scores were not measured. The stored 0s are placeholders, not scores.";
+const BEHAVIOUR_SLICE_RE = /post-trade debriefs? on trades in this slice/;
+function behaviourSentence(linked: number): string {
+  return linked > 0
+    ? `Behaviour scores come from ${linked} post-trade debrief${linked === 1 ? "" : "s"} on trades in this slice; execution is not measured by debriefs.`
+    : "Behaviour scores: not measured — no post-trade debrief is linked to a trade in this slice.";
+}
+function behaviourBasisOf(
+  r: { aiSummary: string },
+  ws: ReadonlyArray<{ warningType: string }>,
+): BehaviourBasis {
+  if (ws.some((w) => w.warningType === BEHAVIOUR_NOT_MEASURED) || /Behaviour scores: not measured/.test(r.aiSummary)) return "NOT_MEASURED";
+  if (BEHAVIOUR_SLICE_RE.test(r.aiSummary)) return "SLICE_DEBRIEFS";
+  return "ACCOUNT_WIDE_LEGACY";
 }
 
 // ── Source loader (READ-ONLY) ──────────────────────────────────────────────
@@ -217,15 +313,16 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
       groups.set(k, g);
     }
 
-    // Behavior overlays from debriefs (averages over the union of trade ids in
-    // the buckets that came from PAPER trades; we approximate by all debriefs).
+    // Behavior overlays come from the debriefs linked to THIS slice's trades
+    // (debriefs key on paper_orders.id; journal rows have none). A slice with
+    // no linked debrief is "not measured": the columns are NOT NULL, so they
+    // hold 0 as a placeholder, and a BEHAVIOUR_NOT_MEASURED warning plus the
+    // summary say so. There is no execution measure in a debrief, so
+    // executionScoreAvg is never derived (it stays 0, read as not measured).
     const debriefs = await db.select().from(postTradeDebriefsTable)
       .where(eq(postTradeDebriefsTable.userId, userId)).limit(2000);
-    const followed = debriefs.filter((d) => d.followedPlan === 1).length;
-    const calmish  = debriefs.filter((d) => ["CALM","RELIEVED","NEUTRAL"].includes(d.traderEmotionAfter ?? "")).length;
-    const disciplineAvg = debriefs.length ? Math.round((followed / debriefs.length) * 100) : 0;
-    const emotionalAvg  = debriefs.length ? Math.round((calmish  / debriefs.length) * 100) : 0;
-    const executionAvg  = Math.round((disciplineAvg + emotionalAvg) / 2);
+    const debriefByPaperId = new Map<number, (typeof debriefs)[number]>();
+    for (const d of debriefs) debriefByPaperId.set(d.tradeId, d);
 
     // Build reports, persist, and persist per-report warnings.
     const created: typeof edgeDiscoveryReportsTable.$inferSelect[] = [];
@@ -234,7 +331,17 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
       if (stats.sampleSize === 0) continue;
       const status = classifyStatus(stats);
       const conf   = confidence(stats, status);
-      const summary = summarize(name, status, stats);
+      const linked = bucket.trades
+        .filter((t) => t.source === "PAPER")
+        .map((t) => debriefByPaperId.get(t.id))
+        .filter((d): d is (typeof debriefs)[number] => d != null);
+      const measured = linked.length > 0;
+      const followed = linked.filter((d) => d.followedPlan === 1).length;
+      const calmish  = linked.filter((d) => ["CALM","RELIEVED","NEUTRAL"].includes(d.traderEmotionAfter ?? "")).length;
+      const disciplineAvg = measured ? Math.round((followed / linked.length) * 100) : 0;
+      const emotionalAvg  = measured ? Math.round((calmish  / linked.length) * 100) : 0;
+      const executionAvg  = 0;
+      const summary = `${summarize(name, status, stats)} ${behaviourSentence(linked.length)}`;
       const ins = await db.insert(edgeDiscoveryReportsTable).values({
         userId,
         edgeName:  `${b.groupBy}=${name}`,
@@ -252,6 +359,7 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
       const rep = ins[0]!;
       created.push(rep);
       const ws = warnings(bucket, stats);
+      if (!measured) ws.push({ warningType: BEHAVIOUR_NOT_MEASURED, severity: "INFO", message: BEHAVIOUR_NOT_MEASURED_MESSAGE });
       for (const w of ws) {
         await db.insert(edgeWarningsTable).values({
           userId,
@@ -264,7 +372,10 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
           profitFactor: stats.profitFactor, expectancy: stats.expectancy });
     }
 
-    ok(res, { reports: created, generated: created.length, groupBy: b.groupBy });
+    ok(res, {
+      reports: created.map((r) => ({ ...r, behaviourBasis: behaviourBasisOf(r, []) })),
+      generated: created.length, groupBy: b.groupBy,
+    });
   } catch (err) {
     if (err instanceof z.ZodError) { fail(res, 400, "Invalid", { issues: err.issues }); return; }
     req.log.error({ err: String(err) }, "POST /edge/reports failed");
@@ -276,10 +387,17 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
 router.get("/edge/reports", requireUser, async (req, res): Promise<void> => {
   const raw = Number(req.query["limit"]);
   const limit = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 200)) : 100;
-  const rows = await db.select().from(edgeDiscoveryReportsTable)
-    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
-    .orderBy(desc(edgeDiscoveryReportsTable.createdAt)).limit(limit);
-  ok(res, { reports: rows });
+  // ?history=1 → every past generation (newest first). Default → the latest
+  // generation of each slice only, so "All slices" counts current slices.
+  if (req.query["history"] === "1") {
+    const rows = await db.select().from(edgeDiscoveryReportsTable)
+      .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
+      .orderBy(desc(edgeDiscoveryReportsTable.createdAt)).limit(limit);
+    ok(res, { reports: rows.map(presentReport), view: "history" });
+    return;
+  }
+  const latest = await loadLatestSlices(req.authUser!.id);
+  ok(res, { reports: latest.slice(0, limit), view: "latest_per_slice" });
 });
 
 // ── GET /edge/reports/:id ──────────────────────────────────────────────────
@@ -290,31 +408,30 @@ router.get("/edge/reports/:id", requireUser, async (req, res): Promise<void> => 
   const r = (await db.select().from(edgeDiscoveryReportsTable)
     .where(and(eq(edgeDiscoveryReportsTable.id, id), eq(edgeDiscoveryReportsTable.userId, userId))).limit(1))[0];
   if (!r) { fail(res, 404, "Not found"); return; }
+  const report = presentReport(r);
   const ws = await db.select().from(edgeWarningsTable)
     .where(and(eq(edgeWarningsTable.edgeReportId, id), eq(edgeWarningsTable.userId, userId)));
-  ok(res, { report: r, warnings: ws });
+  ok(res, { report, warnings: ws, behaviourBasis: behaviourBasisOf(report, ws) });
 });
 
 // ── GET /edge/strongest ────────────────────────────────────────────────────
 router.get("/edge/strongest", requireUser, async (req, res): Promise<void> => {
-  const rows = await db.select().from(edgeDiscoveryReportsTable)
-    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
-    .orderBy(desc(edgeDiscoveryReportsTable.confidenceScore)).limit(50);
-  const strong = rows
+  const latest = await loadLatestSlices(req.authUser!.id);
+  const strong = latest
     .filter((r) => r.status === "STRONG_EDGE" || r.status === "DEVELOPING_EDGE")
+    .sort((a, b) => b.confidenceScore - a.confidenceScore)
     .slice(0, 10);
-  ok(res, { reports: strong });
+  ok(res, { reports: strong, view: "latest_per_slice" });
 });
 
 // ── GET /edge/weakest ──────────────────────────────────────────────────────
 router.get("/edge/weakest", requireUser, async (req, res): Promise<void> => {
-  const rows = await db.select().from(edgeDiscoveryReportsTable)
-    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
-    .orderBy(edgeDiscoveryReportsTable.expectancy).limit(50);
-  const weak = rows
+  const latest = await loadLatestSlices(req.authUser!.id);
+  const weak = latest
     .filter((r) => r.status === "WEAK_EDGE" || r.status === "NO_EDGE")
+    .sort((a, b) => a.expectancy - b.expectancy)
     .slice(0, 10);
-  ok(res, { reports: weak });
+  ok(res, { reports: weak, view: "latest_per_slice" });
 });
 
 // ── GET /edge/warnings ─────────────────────────────────────────────────────

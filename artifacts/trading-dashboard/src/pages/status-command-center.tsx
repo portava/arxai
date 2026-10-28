@@ -22,6 +22,7 @@ import type { ReadinessSection, SectionLevel } from "@/statusCommand/readinessSc
 import { buildBlockerCards } from "@/statusCommand/blockerCards";
 import type { BlockerCard } from "@/statusCommand/blockerCards";
 import { buildSetupWizard } from "@/statusCommand/setupWizard";
+import { heartbeatLine } from "@/statusCommand/heartbeatLine";
 import type { WizardStep } from "@/statusCommand/setupWizard";
 import { resolveRoute } from "@/knowledge/routeKnowledge";
 import type { AskContext } from "@/knowledge/answerEngine";
@@ -51,7 +52,8 @@ function toAskContext(ctx: RuntimeContext): AskContext {
     route: ctx.route,
     selectedSymbol: ctx.selectedSymbol ?? undefined,
     safetyStatuses: ctx.activeSafetyLocks,
-    mt5Hint: ctx.mt5BridgeConnected ? "connected" : ctx.mt5Deferred ? "deferred" : "disconnected",
+    // An unread bridge summary is "unknown", never "disconnected".
+    mt5Hint: ctx.bridge === null ? "unknown" : ctx.mt5BridgeConnected ? "connected" : ctx.mt5Deferred ? "deferred" : "disconnected",
     tradingModeHint: ctx.paperOnly ? "paper" : ctx.simulatorMode ? "simulator" : ctx.tradingMode === "broker-readonly" ? "broker-readonly" : "unknown",
   } as AskContext;
 }
@@ -69,6 +71,14 @@ export default function StatusCommandCenter() {
   const ff = useMemo(() => fixFirst(ctx), [ctx]);
   const status = useMemo(() => explainAppStatus(ctx), [ctx]);
   const reportContext = useMemo(() => buildSafeReportContext(ctx, "status-command-center"), [ctx]);
+  // One mode authority for the whole page: the account-mode envelope. The
+  // legacy diagnostic-summary mode (status.mode, from the bridge summary) is
+  // shown only as a labelled bridge-diagnostic row, never as the account mode.
+  const accountModeLabel = tradingMode.envelope
+    ? tradingMode.cleanModeLabel
+    : tradingMode.isLoading
+      ? "Account mode not resolved yet (loading)"
+      : "Account mode not resolved (could not be read)";
 
   return (
     <div
@@ -78,7 +88,7 @@ export default function StatusCommandCenter() {
     >
       <SummaryHeader
         score={score.total}
-        mode={tradingMode.envelope ? tradingMode.cleanModeLabel : status.mode}
+        mode={accountModeLabel}
         progress={progress}
       />
 
@@ -105,7 +115,7 @@ export default function StatusCommandCenter() {
 
         <section className="lg:col-span-5 space-y-4" data-testid="scc-mid-col">
           <BlockersCard cards={blockers} />
-          <RuntimeSummaryCard ctx={ctx} status={status} />
+          <RuntimeSummaryCard ctx={ctx} status={status} accountModeLabel={accountModeLabel} />
         </section>
 
         <section className="lg:col-span-3 space-y-4" data-testid="scc-right-col">
@@ -300,7 +310,7 @@ function ChecklistCard({ items, progress }: { items: ReturnType<typeof buildSetu
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${tone.chip}`}>{tone.icon} {tone.label}</span>
               </div>
               <div className="mt-1 text-xs text-zinc-400">{item.explanation}</div>
-              <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Why:</span> {item.safeNextAction}</div>
+              <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Next step:</span> {item.safeNextAction}</div>
               {item.blockerReason && <div className="text-xs text-rose-300">Blocker: {item.blockerReason}</div>}
               {item.related && (
                 <Link href={item.related.route}>
@@ -360,21 +370,42 @@ function BlockersCard({ cards }: { cards: BlockerCard[] }) {
   );
 }
 
-function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: ReturnType<typeof explainAppStatus> }) {
+/** A server-read flag; null (not read) renders as "unknown", never a default. */
+function tri(v: boolean | null): string {
+  return v === null ? "unknown" : String(v);
+}
+
+function postureSource(ctx: RuntimeContext): string {
+  if (ctx.bridge) {
+    const at = new Date(ctx.bridge.fetchedAt);
+    const when = Number.isFinite(at.getTime()) ? at.toLocaleTimeString() : "unknown time";
+    return `read from /api/mt5/diagnostic-summary at ${when}`;
+  }
+  return ctx.bridgeStatus === "loading"
+    ? "loading /api/mt5/diagnostic-summary…"
+    : "could not be read — /api/mt5/diagnostic-summary failed or returned no data";
+}
+
+
+function RuntimeSummaryCard({ ctx, status, accountModeLabel }: { ctx: RuntimeContext; status: ReturnType<typeof explainAppStatus>; accountModeLabel: string }) {
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-4" data-testid="scc-runtime-card">
       <h2 className="font-semibold text-zinc-100">Runtime Status</h2>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-zinc-300">
-        <dt className="text-zinc-500">Mode</dt><dd>{status.mode}</dd>
-        <dt className="text-zinc-500">Demo-only</dt><dd>{String(ctx.paperOnly)}</dd>
-        <dt className="text-zinc-500">Simulator</dt><dd>{String(ctx.simulatorMode)}</dd>
-        <dt className="text-zinc-500">Live trading disabled</dt><dd>{String(ctx.liveTradingDisabled)}</dd>
-        <dt className="text-zinc-500">Broker exec disabled</dt><dd>{String(ctx.brokerExecutionDisabled)}</dd>
+        <dt className="text-zinc-500">Mode</dt><dd data-testid="scc-runtime-mode">{accountModeLabel}</dd>
+        <dt className="text-zinc-500" title="From the legacy bridge diagnostic summary; the account mode above is the mode authority.">Bridge diagnostic mode</dt><dd data-testid="scc-runtime-diagnostic-mode">{status.mode}</dd>
+        <dt className="text-zinc-500">Server posture</dt><dd data-testid="scc-posture-source">{postureSource(ctx)}</dd>
+        <dt className="text-zinc-500">Demo-only</dt><dd>{tri(ctx.paperOnly)}</dd>
+        <dt className="text-zinc-500">Simulator</dt><dd>{tri(ctx.simulatorMode)}</dd>
+        <dt className="text-zinc-500">Live trading disabled</dt><dd>{tri(ctx.liveTradingDisabled)}</dd>
+        <dt className="text-zinc-500">Broker exec disabled</dt><dd>{tri(ctx.brokerExecutionDisabled)}</dd>
         <dt className="text-zinc-500">Bridge mode</dt><dd>{ctx.bridge?.bridgeMode ?? "unknown"}</dd>
-        <dt className="text-zinc-500">Heartbeat</dt><dd>{ctx.heartbeatPresent ? `present (${ctx.heartbeatAgeSeconds ?? "?"}s)` : "absent"}</dd>
-        <dt className="text-zinc-500">Broker read-only</dt><dd>{String(ctx.brokerReadOnly)}</dd>
-        <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness}</dd>
-        <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive ? "ENGAGED" : "off"}</dd>
+        <dt className="text-zinc-500">Heartbeat</dt><dd>{heartbeatLine(ctx.bridge)}</dd>
+        <dt className="text-zinc-500">Broker read-only</dt><dd>{tri(ctx.brokerReadOnly)}</dd>
+        {/* The runtime context does not read a readiness verdict from the
+            server, so "unknown" is not a measurement. */}
+        <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness === "unknown" ? "not checked by this page" : ctx.readiness}</dd>
+        <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive === true ? "ENGAGED" : ctx.emergencyStopActive === false ? "off" : "not checked here (open Emergency page)"}</dd>
         <dt className="text-zinc-500">Selected symbol</dt><dd>{ctx.selectedSymbol ?? "—"}</dd>
         <dt className="text-zinc-500">Route</dt><dd className="truncate">{ctx.route}</dd>
         <dt className="text-zinc-500">Recent failed APIs</dt><dd>{ctx.recentFailedEndpoints.length}</dd>

@@ -20,7 +20,16 @@ import {
   type RubyVerdict,
   type ScannerTruth,
 } from "@/lib/scannerTruth";
-import { resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
+import {
+  capReadinessByServerRead,
+  chartReadAsOfLabel,
+  chartReadExpiresAtMs,
+  isFeedLimitedAction,
+  resolveCappedRubyReadStatus,
+} from "@/lib/rubyReadPanelState";
+import { thresholdsFor } from "@/lib/scannerTruth";
+import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import {
   type RubyReadStatus,
   type ActionabilityTone,
@@ -29,12 +38,17 @@ import {
   resolveSelectedSymbolActionabilityDisplay,
   resolveVisibleActionLabel,
   biasToActionDirection,
+  reconcileLiftedActionDirection,
   PENDING_RESOLVE_TIMEOUT_MS,
 } from "@/lib/scannerActionability";
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
 import { useSelectedActionStore } from "@/components/scanner/selectedActionStore";
 import { coerceVisibleTimeframe } from "@/components/scanner/scannerChartFormat";
-import { TruthVerdictBias, TruthVerdictStage } from "@workspace/api-client-react";
+import { formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
+import { scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
+import { isLivePriceDisplay } from "@/lib/chart-display-status";
+import { TruthVerdictBias } from "@workspace/api-client-react";
+import { describeEngineAgreement } from "@/lib/engineAgreement";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
 
@@ -58,14 +72,12 @@ const BIAS_LABEL: Record<string, string> = {
   [TruthVerdictBias.CONFLICT]: "Mixed signals",
   [TruthVerdictBias.UNKNOWN]: "",
 };
-const STAGE_LABEL: Record<string, string> = {
-  [TruthVerdictStage.ALIGNED]: "Aligned",
-  [TruthVerdictStage.DEVELOPING]: "Developing",
-  [TruthVerdictStage.CONFLICT]: "Conflicting",
-  [TruthVerdictStage.UNKNOWN]: "",
-};
+// The verdict's STAGE is an engine-agreement count (composeVerdict), not a
+// setup stage, so it is never printed bare ("Developing" read as the same axis
+// as the signal's "Setup forming"). describeEngineAgreement labels what was
+// counted, or nothing when it cannot reproduce the server's stage.
 
-function dataTone(v: DataVerdict): string {
+function dataTone(v: DataCellVerdict): string {
   switch (v) {
     case "Live": return "text-success";
     case "Delayed": return "text-warning";
@@ -82,10 +94,26 @@ function tradingTone(v: TradingVerdict): string {
     default: return "text-txt-muted";
   }
 }
-function rubyTone(v: RubyVerdict): string {
+// The Eleanor CELL's label. Header-local so the shared `strip.ruby.verdict`
+// contract keeps its three values: "Read not run" is a display substitution for
+// a FULL_READ capability that no chart read has actually produced yet.
+// "Read expired" substitutes for a FULL_READ whose only chart read is past this
+// timeframe's candle budget (the same expiry the Ruby Chart Read panel applies).
+type RubyCellVerdict = RubyVerdict | "Read not run" | "Read expired" | "Checking…";
+// The Data CELL's label: "Checking…" before the first candles response.
+type DataCellVerdict = DataVerdict | "Checking…";
+const READ_NOT_RUN_DETAIL = "No chart read yet — tap Read this chart.";
+function readExpiredDetail(asOf: string | null): string {
+  return asOf
+    ? `The last chart read (as of ${asOf}) no longer describes the current chart — tap Re-read.`
+    : "The last chart read has no valid time, so it can't be treated as current — tap Re-read.";
+}
+
+function rubyTone(v: RubyCellVerdict): string {
   switch (v) {
     case "Full read": return "text-success";
     case "Limited read": return "text-warning";
+    case "Read expired": return "text-warning";
     default: return "text-txt-muted";
   }
 }
@@ -120,16 +148,30 @@ function readinessTone(r: ScannerTruth["readiness"]): { container: string; label
   }
 }
 
-function formatPrice(p: number | null): string {
-  if (p == null || !Number.isFinite(p)) return "—";
-  return p.toLocaleString(undefined, { maximumFractionDigits: p >= 100 ? 2 : 5 });
+// Admin candle diagnostic — never a "200/150" ratio: bars LOADED (incl. a
+// forming tip) vs the CLOSED bars the readiness verdict actually counted vs the
+// minimum CLOSED bars required. `closedCount` falls back to `count` for a
+// partial truth payload.
+function candleDiagnostic(c: ScannerTruth["candles"]): string {
+  const closed = typeof c.closedCount === "number" ? c.closedCount : c.count;
+  const forming = c.hasFormingBar === true || closed < c.count;
+  return `candles ${c.count} loaded${forming ? " (incl. forming)" : ""} · ${closed} closed · min ${c.minRequired} closed`;
 }
 
-export function ScannerHeaderSummary({ running }: { running: boolean }) {
+
+// `running` (the operator auto-scan engine) is accepted for older call sites
+// but no longer rendered here: it describes the scan engine, not this market,
+// and printed "Idle" beside the market's bias. The page shows "Auto-scan
+// on/off" next to the Start/Stop controls instead.
+export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   const [symbol] = useChartSymbol();
   const bare = bareSymbol(symbol);
   const [timeframe] = useScannerTimeframe();
-  const { scannerTruth: truth, verdict } = useSymbolTruth(bare, timeframe);
+  const { scannerTruth: truth, verdict, components, isError: truthError } = useSymbolTruth(bare, timeframe);
+  // No truth yet and no failed request: nothing has been measured, so the
+  // strip says it is still checking — never the red "Unavailable" a measured
+  // empty feed or a failed load earns.
+  const truthPending = truth == null && truthError !== true;
   const { shouldShowAdminDiagnostics } = useTradingMode();
   const { name } = useAssistantName();
   const rubyStore = useRubyReadStore();
@@ -138,17 +180,35 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   // ONE directional read: bias + stage come from the composed snapshot verdict
   // so the header can never disagree with the chart / Ruby surfaces about which
   // way the market is leaning (closes the header-vs-pill self-contradiction).
-  const biasLabel = verdict ? BIAS_LABEL[verdict.bias] ?? "" : "";
-  const stageLabel = verdict ? STAGE_LABEL[verdict.stage] ?? "" : "";
-  const biasTone =
-    verdict?.bias === "BULLISH"
+  const agreement = describeEngineAgreement(verdict, components);
+  // A server-marked LEAN (every voter below its own evidence rule) is said as a
+  // lean and not emphasised as a confirmed direction. Absent on older servers →
+  // the agreement/unqualified label, which is what the server claimed (never a
+  // promotion). LEAN only ever downgrades the agreement label.
+  const isLean =
+    verdict?.biasQualifier === "LEAN" && (verdict.bias === "BULLISH" || verdict.bias === "BEARISH");
+  const biasBase = verdict ? BIAS_LABEL[verdict.bias] ?? "" : "";
+  const biasLabel = isLean && biasBase ? `${biasBase} lean` : agreement?.biasLabel ?? biasBase;
+  const biasTone = isLean
+    ? "text-txt-secondary"
+    : verdict?.bias === "BULLISH"
       ? "text-success"
       : verdict?.bias === "BEARISH"
         ? "text-danger"
         : "text-primary";
 
-  const price = formatPrice(truth?.candles.lastClose ?? null);
-  const dataV = truth?.strip.data.verdict ?? "Unavailable";
+  // ONE price observation + ONE precision with the chart: on a live display the
+  // header shows the same forming-bar tip the chart's price axis and badge show
+  // (published by the chart from the tick stream), else the poll close — which
+  // off a live display is labelled last-known, never dressed as current.
+  const priceIsLive = truth ? isLivePriceDisplay(truth.displayStatus) : false;
+  const liveTip = useScannerTip(truth ? scannerTipKey(bare, coerceVisibleTimeframe(timeframe)) : null);
+  const shownClose = resolveDisplayClose({ tipClose: liveTip, lastClose: truth?.candles.lastClose ?? null, isLive: priceIsLive });
+  const price = formatInstrumentPrice(shownClose.value, truth?.candles.pricePrecision ?? null);
+  const priceIsLastKnown = shownClose.value != null && !priceIsLive;
+  const dataV: DataCellVerdict = truth?.strip.data.verdict ?? (truthPending ? "Checking…" : "Unavailable");
+  const dataDetail = truth?.strip.data.detail
+    ?? (truthPending ? "Waiting for market data…" : "Market data could not be loaded — retrying.");
   const tradingV = truth?.strip.trading.verdict ?? "Read-only";
 
   // Ruby cell reconciliation (Task #600): the base read CAPABILITY comes from the
@@ -159,9 +219,6 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   // store key exactly.
   const sharedRead = rubyStore.get(bare, coerceVisibleTimeframe(timeframe));
   const rubyBase: RubyReadStatus = truth?.consolidated.rubyReadStatus ?? "NO_READ";
-  const cappedRuby = resolveCappedRubyReadStatus(rubyBase, sharedRead, undefined, name);
-  const rubyV: RubyVerdict = RUBY_STATUS_LABEL[cappedRuby.status];
-  const rubyDetail = cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
 
   // Action cell + single "Why?" (Task #600): the Action cell shows the SELECTED
   // symbol+timeframe's verdict. The Focus scalp card lifts its setup-aware
@@ -224,7 +281,59 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   // PENDING, NO_CONFIRMATION, or CHECK_FAILED) — the cell never shows a bare
   // "Waiting" placeholder.
   const actionUi = actionabilityDisplayUi(finalActionWithEleanor);
-  const actionDirection = eleanorFeedGated ? null : biasToActionDirection(verdict?.bias);
+
+  // Eleanor cell, in order (display-only, downgrade-only):
+  //   1. cap by the lifted same-key server read (gated / insufficient /
+  //      STRUCTURAL_ONLY → "Limited read");
+  //   2. cap by this strip's OWN Action verdict when it is a feed/data
+  //      limitation ("Feed limited" / "Analysis only") — the cell can never say
+  //      "Full read" beside an Action cell saying the feed isn't confirmed;
+  //   3. a would-be "Full read" with NO chart read for this key is only a
+  //      client capability forecast, never a read anyone produced → "Read not
+  //      run". "No read" / "Limited read" are honest limitations and stay.
+  //   4. a non-gated read past this timeframe's candle budget (or with no
+  //      valid time) is no longer a current read — the SAME expiry the Ruby
+  //      Chart Read panel applies (chartReadExpiresAtMs + useEvidenceDeadline).
+  //      It is dropped from the cap, and a would-be "Full read" says
+  //      "Read expired" instead.
+  const readExpiresAtMs = chartReadExpiresAtMs(
+    sharedRead,
+    thresholdsFor(normalizeChartTimeframe(coercedTf)).candleMaxAgeMs,
+  );
+  const readNowMs = useEvidenceDeadline(
+    readExpiresAtMs != null && Number.isFinite(readExpiresAtMs) ? readExpiresAtMs : null,
+  );
+  const sharedReadExpired =
+    readExpiresAtMs != null && !(Number.isFinite(readExpiresAtMs) && readNowMs < readExpiresAtMs);
+  const currentRead = sharedReadExpired ? null : sharedRead;
+  const cappedRuby = resolveCappedRubyReadStatus(
+    rubyBase,
+    currentRead,
+    undefined,
+    name,
+    isFeedLimitedAction(finalActionWithEleanor),
+  );
+  const readNotRun = cappedRuby.status === "FULL_READ" && currentRead == null;
+  const readExpired = readNotRun && sharedReadExpired;
+  const rubyPending = truthPending && sharedRead == null;
+  const rubyV: RubyCellVerdict = rubyPending
+    ? "Checking…"
+    : readExpired ? "Read expired" : readNotRun ? "Read not run" : RUBY_STATUS_LABEL[cappedRuby.status];
+  const rubyDetail = rubyPending
+    ? "Waiting for market data…"
+    : readExpired
+      ? readExpiredDetail(chartReadAsOfLabel(sharedRead))
+      : readNotRun
+        ? READ_NOT_RUN_DETAIL
+        : cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
+  // The side comes from the composed bias, but a lifted card verdict carries
+  // its own scalp side: when they disagree no side is shown (downgrade-only).
+  const actionDirection = eleanorFeedGated
+    ? null
+    : reconcileLiftedActionDirection(
+        biasToActionDirection(verdict?.bias),
+        liftedAction != null ? selectedActionStore.getSide(bare, coercedTf) : null,
+      );
   const visibleActionLabel = resolveVisibleActionLabel(finalActionWithEleanor, actionDirection);
   const whyMessage = truth?.consolidated.userMessage ?? "";
   const whyCode = truth?.consolidated.internalReasonCode ?? "";
@@ -248,11 +357,23 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
         <Dot />
         <span className="text-txt-secondary">{timeframe}</span>
         <Dot />
-        <span className="font-mono">{price}</span>
-        <Dot />
-        <span className={cn("font-medium", running ? "text-primary" : "text-txt-muted")}>{running ? "Scanning" : "Idle"}</span>
-        {biasLabel && (<><Dot /><span className={cn("font-semibold", biasTone)}>{biasLabel}</span></>)}
-        {stageLabel && (<><Dot /><span className="text-txt-secondary">{stageLabel}</span></>)}
+        <span
+          className={cn("font-mono", priceIsLastKnown && "text-txt-muted")}
+          data-testid="scanner-header-price"
+          title={priceIsLastKnown ? "Last-known candle close — not a live price" : undefined}
+        >
+          {price}
+          {priceIsLastKnown && <span className="ml-1 text-[10px] uppercase tracking-wide">last-known</span>}
+        </span>
+        {biasLabel && (<><Dot /><span className={cn("font-semibold", biasTone)} data-testid="scanner-header-bias">{biasLabel}</span></>)}
+        {agreement && (
+          <>
+            <Dot />
+            <span className="text-txt-secondary" title={agreement.title} data-testid="scanner-header-agreement">
+              {agreement.chip}
+            </span>
+          </>
+        )}
       </div>
 
       {/* Trade-Health readiness — the ONE shared read-quality verdict
@@ -265,7 +386,10 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
           more trade-ready than it is. Guarded on truth.readiness so a partial
           payload can never crash the header. */}
       {truth?.readiness && (() => {
-        const r = truth.readiness;
+        // Capped DOWN (never up) by the same-key Ruby read's server Trade-Health
+        // verdict, so this chip can't say "Live-confirmed" while that read's
+        // exact levels are withheld because the feed is delayed/closed-only.
+        const r = capReadinessByServerRead(truth.readiness, sharedRead);
         const tone = readinessTone(r);
         return (
           <div
@@ -294,7 +418,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
           four cells derive from the SAME shared contract, so they can never
           disagree with each other or with a card's badge. */}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4" data-testid="scanner-header-strip">
-        <TruthPill label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
+        <TruthPill label="Data" verdict={dataV} tone={dataTone(dataV)} detail={dataDetail} testId="scanner-header-data" />
         <TruthPill label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
         <TruthPill label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
         <TruthPill
@@ -338,8 +462,8 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
       )}
 
       {shouldShowAdminDiagnostics && truth && (
-        <p className="text-[11px] text-txt-muted">
-          source: {truth.candles.sourceTechnical} · candles {truth.candles.count}/{truth.candles.minRequired} · {truth.candles.status}
+        <p className="text-[11px] text-txt-muted" data-testid="scanner-header-candle-diag">
+          source: {truth.candles.sourceTechnical} · {candleDiagnostic(truth.candles)} · {truth.candles.status}
         </p>
       )}
       {shouldShowAdminDiagnostics && truth?.consolidated.readId && (

@@ -48,6 +48,52 @@ type Attribution = {
   createdAt: string | null; updatedAt: string | null;
 };
 
+// ── Open-position derivation ───────────────────────────────────────────────
+// GET /trades/live-shared/commands returns the user's whole command history:
+// entries, CLOSE_LIVE_POSITION and MODIFY_LIVE_SLTP commands, and terminal
+// rows (LIVE_CLOSED, closedAt stamped). A CLOSE / MODIFY command's
+// brokerTicket names the position it acted on, so "has a brokerTicket" is
+// not "is open". An open position here is an ENTRY command the broker filled
+// (LIVE_FILLED / LIVE_PARTIALLY_FILLED) with a ticket, no closedAt, and no
+// later filled CLOSE command naming the same ticket. A row with no
+// commandType is not counted (fail closed).
+const ENTRY_COMMAND_TYPES: ReadonlySet<string> = new Set(["PLACE_LIVE_MARKET_ORDER", "PLACE_LIVE_PENDING_ORDER"]);
+const FILLED_STATUSES: ReadonlySet<string> = new Set(["LIVE_FILLED", "LIVE_PARTIALLY_FILLED"]);
+// Dispatched entries with no settled broker outcome yet. A position may or
+// may not exist at the broker — shown separately, never as an open position.
+const AWAITING_OUTCOME_STATUSES: ReadonlySet<string> = new Set([
+  "SENT_TO_MT5_LIVE", "LIVE_ACKNOWLEDGED", "LIVE_UNKNOWN", "LIVE_RECONCILIATION_REQUIRED",
+]);
+
+function isEntryCommand(c: LiveSharedCommandRow): boolean {
+  return typeof c.commandType === "string" && ENTRY_COMMAND_TYPES.has(c.commandType);
+}
+
+export function selectOpenLivePositions(rows: LiveSharedCommandRow[]): LiveSharedCommandRow[] {
+  const closedTickets = new Set<string>();
+  for (const c of rows) {
+    if (c.commandType === "CLOSE_LIVE_POSITION" && c.status === "LIVE_FILLED" && c.brokerTicket) {
+      closedTickets.add(String(c.brokerTicket));
+    }
+  }
+  const seen = new Set<string>();
+  const out: LiveSharedCommandRow[] = [];
+  for (const c of rows) {
+    if (!isEntryCommand(c) || !FILLED_STATUSES.has(c.status)) continue;
+    if (c.brokerTicket == null || c.brokerTicket === "") continue;
+    if (c.closedAt != null) continue;
+    const t = String(c.brokerTicket);
+    if (closedTickets.has(t) || seen.has(t)) continue;
+    seen.add(t);
+    out.push(c);
+  }
+  return out;
+}
+
+export function selectAwaitingBrokerOutcome(rows: LiveSharedCommandRow[]): LiveSharedCommandRow[] {
+  return rows.filter((c) => isEntryCommand(c) && AWAITING_OUTCOME_STATUSES.has(c.status) && c.closedAt == null);
+}
+
 type TabKey = "place" | "open" | "pending" | "sltp" | "rr" | "history" | "ruby";
 
 // Tabs that need the commands list (open/pending/sltp/rr).
@@ -94,10 +140,8 @@ export default function LiveSharedPage() {
     // ruby uses LiveSharedStatusPanel which has its own internal fetch).
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const open = useMemo(
-    () => safeArray(commands).filter((c) => c.status === "SENT_TO_MT5_LIVE" || c.brokerTicket != null),
-    [commands],
-  );
+  const open = useMemo(() => selectOpenLivePositions(safeArray(commands)), [commands]);
+  const awaitingOutcome = useMemo(() => selectAwaitingBrokerOutcome(safeArray(commands)), [commands]);
   const pending = useMemo(
     () => safeArray(commands).filter((c) => c.status === "LIVE_CONFIRMATION_REQUIRED" || c.status === "LIVE_APPROVED"),
     [commands],
@@ -218,14 +262,26 @@ export default function LiveSharedPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="open" className="mt-3">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Open Positions ({open.length})</CardTitle></CardHeader><CardContent>
+        <TabsContent value="open" className="mt-3 space-y-3">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Open Positions ({open.length})</CardTitle></CardHeader><CardContent className="space-y-2">
+            <p className="text-[11px] text-muted-foreground" data-testid="ls-open-source-note">
+              From your last 100 ARX live commands: filled entries with a broker ticket that ARX has not recorded as closed.
+              This is not a live read of broker positions.
+            </p>
             <CommandList rows={open} loading={commandsBusy && commands === null}
               actions={(c) => access.canTrade && c.brokerTicket && (
                 <Button size="sm" variant="outline" disabled={actionBusy === `close-${c.brokerTicket}`}
                   onClick={() => onClose(c.brokerTicket!)} data-testid={`ls-close-${c.brokerTicket}`}>Close</Button>
               )} />
           </CardContent></Card>
+          {awaitingOutcome.length > 0 && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Awaiting broker outcome ({awaitingOutcome.length})</CardTitle></CardHeader><CardContent className="space-y-2">
+              <p className="text-[11px] text-amber-300">
+                Sent to the broker with no confirmed fill yet. A position may or may not exist; these are not counted as open.
+              </p>
+              <CommandList rows={awaitingOutcome} loading={false} />
+            </CardContent></Card>
+          )}
         </TabsContent>
 
         <TabsContent value="pending" className="mt-3">

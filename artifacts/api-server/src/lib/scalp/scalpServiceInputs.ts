@@ -13,7 +13,7 @@ import { isHeartbeatAgeMsOnline } from "../brokerHub/freshness.js";
 import { getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db, arxSymbolSpecsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { routeQuote, routeCandles } from "../data/marketDataRouter.js";
+import { routeQuote, routeCandles, quotePinForSeries } from "../data/marketDataRouter.js";
 import { getUserAllocationView } from "../live/masterBridgePool.js";
 import { getSymbolInfo } from "../instruments/index.js";
 import type {
@@ -48,6 +48,7 @@ export async function loadSpecInput(userId: number, symbol: string): Promise<Sca
       stopsLevelPoints: null, spreadPoints: null,
       category: registry?.category ?? null,
       displayName: registry?.displayName ?? symbol,
+      profitCurrency: null,
     };
   }
   return {
@@ -68,6 +69,7 @@ export async function loadSpecInput(userId: number, symbol: string): Promise<Sca
     spreadPoints: num(row.spreadPoints) ? row.spreadPoints : null,
     category: row.category ?? registry?.category ?? null,
     displayName: row.displaySymbol ?? registry?.displayName ?? symbol,
+    profitCurrency: typeof row.profitCurrency === "string" && row.profitCurrency.trim() ? row.profitCurrency.trim() : null,
   };
 }
 
@@ -80,9 +82,13 @@ export async function loadAccountInput(userId: number): Promise<ScalpAccountInpu
       equity: num(view.assignedAllocation) ? view.assignedAllocation : null,
       freeMargin: num(view.availableAllocation) ? view.availableAllocation : null,
       leverage: null,
+      // The allocation is held on the master MT5 account, in its currency.
+      currency: typeof view.pool?.accountCurrency === "string" && view.pool.accountCurrency.trim()
+        ? view.pool.accountCurrency.trim()
+        : null,
     };
   } catch {
-    return { balance: null, equity: null, freeMargin: null, leverage: null };
+    return { balance: null, equity: null, freeMargin: null, leverage: null, currency: null };
   }
 }
 
@@ -175,8 +181,10 @@ export function deriveHtfBias(candles: ScalpCandle[] | null): "bullish" | "beari
 /** Focus reads bind the actual M5 bars and price before discarding timestamps.
  * Legacy management input loaders retain their separate protective-command path. */
 export async function scalpMarketInputsFor(symbol: string) {
-  const [bars, quote] = await Promise.allSettled([
-    routeCandles(symbol, SCALP_TIMEFRAME, SCALP_CANDLE_LIMIT), routeQuote(symbol),
+  // Quote pinned to the served series' MT5 writer (never another bridge).
+  const [bars] = await Promise.allSettled([routeCandles(symbol, SCALP_TIMEFRAME, SCALP_CANDLE_LIMIT)]);
+  const [quote] = await Promise.allSettled([
+    routeQuote(symbol, quotePinForSeries(bars.status === "fulfilled" ? bars.value : null)),
   ]);
   const now = Date.now();
   const read = bars.status === "fulfilled" ? prepareMarketRead(bars.value, symbol, SCALP_TIMEFRAME, now) : null;

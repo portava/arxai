@@ -1,5 +1,5 @@
 import type { Candle, DataProvider, MarketQuote } from "../types.js";
-import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS } from "../freshness.js";
+import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS, MAX_FUTURE_CLOCK_SKEW_MS } from "../freshness.js";
 
 // ── MT5 broker market-data provider ──────────────────────────────────────────
 //
@@ -28,16 +28,41 @@ import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS } from "../freshness.js";
 //   - CONTENTION: when two or more DISTINCT ATTRIBUTED bridges have fresh
 //     non-empty series for the same symbol|timeframe, the read still serves
 //     the most recent one but flags MULTI_BRIDGE_CONTENTION and emits a
-//     rate-limited logger.warn (once per symbol per hour). An unattributed
+//     rate-limited logger.warn. Since v1 sync-candles is attributed, several
+//     users' EAs on one symbol is a normal multi-user state, so the warn fires
+//     when a symbol's contending bridge SET is first seen or changes (at most
+//     hourly), and repeats for an unchanged set at most once a day. The
+//     per-read `contention` flag stays truthful on every read. An unattributed
 //     writer alongside one attributed bridge is NOT flagged as contention —
 //     the unattributed writer's identity is unknown and may be the same
 //     physical bridge; claiming "multi-bridge" there would be fabrication.
+//
+// QUOTES:
+//   The latest quote is kept per symbol AND per writer partition (same bridge
+//   keying as candles). An unscoped read serves the most recent writer (the
+//   previous single-latest behavior) and reports its bridge/owner; a pinned
+//   read never falls back to another writer. Each quote also records whether
+//   its timestamp is the producer's own tick time (`tickTimeObserved`) or a
+//   receive-time stamp — the latter cannot prove quote freshness.
 //
 // FRESHNESS:
 //   Each series stores `updatedAt`. Reads return [] for a series older than
 //   CANDLE_TTL_MS (so the router falls through / refuses rather than serving
 //   stale broker bars). isConnected() is true when ANY series OR quote is
 //   fresh within FEED_FRESH_MS — i.e. the EA is actively pushing.
+//
+// FUTURE-STAMP OBSERVATION:
+//   At write time the store records, PER WRITER (bridge key), whether any
+//   incoming bar opened more than MAX_FUTURE_CLOCK_SKEW_MS after the server
+//   received it (e.g. broker server time pushed as UTC). One terminal stamps
+//   every symbol/timeframe with the same clock, so a +2h offset exposed by an
+//   M5 or forming H4/D1 bar marks that writer's H4/D1 series too. The mark is
+//   sticky while the writer keeps pushing (cleared only after the writer was
+//   silent past CANDLE_TTL_MS), so a mis-stamped series that later stalls —
+//   whose offset then makes old bars look current — still reads
+//   `futureStamped`. Limit: an offset the writer's pushed bars never expose
+//   (e.g. +2h on closed-only H4 pushes with no lower timeframe) cannot be
+//   seen from bar times alone.
 
 const DEFAULT_TIMEFRAME = "M5";
 
@@ -55,8 +80,10 @@ const FEED_FRESH_MS = MT5_FEED_FRESH_MS; // 60s
  *  it serves the primary (most recent) and names the contention. */
 export const MULTI_BRIDGE_CONTENTION_NOTE = "MULTI_BRIDGE_CONTENTION";
 
-// Contention warn rate limit: once per SYMBOL per hour.
+// Contention warn rate limit (per SYMBOL): a new/changed contending set warns
+// at most hourly; an unchanged set re-warns at most once a day.
 const CONTENTION_WARN_INTERVAL_MS = 60 * 60_000;
+const CONTENTION_REPEAT_INTERVAL_MS = 24 * 60 * 60_000;
 
 function normalizeTf(tf: string | undefined | null): string {
   const t = (tf ?? "").trim();
@@ -113,14 +140,57 @@ interface CandleSeries {
   userId: number | null;
 }
 
+/** Per-writer future-stamp marks: bridgeKey → { first observed, last write }. */
+const futureStampMarks = new Map<string, { firstAt: number; lastWriteAt: number }>();
+
+/** Record a write by `bKey` at `now`; mark the writer when any incoming bar
+ *  opens beyond receipt + MAX_FUTURE_CLOCK_SKEW_MS. A mark survives while the
+ *  writer keeps pushing; a writer silent past CANDLE_TTL_MS starts clean.
+ *  Unparseable bar times are ignored here (the ingest paths reject them). */
+function observeFutureStamp(bKey: string, incoming: Candle[], now: number): void {
+  const mark = futureStampMarks.get(bKey);
+  if (mark && now - mark.lastWriteAt > CANDLE_TTL_MS) futureStampMarks.delete(bKey);
+  const live = futureStampMarks.get(bKey);
+  if (live) {
+    live.lastWriteAt = now;
+    return;
+  }
+  for (const c of incoming) {
+    const t = Date.parse(c.time);
+    if (Number.isFinite(t) && t - now > MAX_FUTURE_CLOCK_SKEW_MS) {
+      futureStampMarks.set(bKey, { firstAt: now, lastWriteAt: now });
+      return;
+    }
+  }
+}
+
+function writerFutureStamped(s: CandleSeries): boolean {
+  return futureStampMarks.has(s.bridgeConnectionId != null ? String(s.bridgeConnectionId) : UNATTRIBUTED_BRIDGE_KEY);
+}
+
 // symbol|timeframe → (bridgeKey → series). Partitions are hard walls: no read
 // or write path may merge candles across two partition entries.
 const candleStore = new Map<string, Map<string, CandleSeries>>();
-const quoteStore = new Map<string, { quote: MarketQuote; updatedAt: number }>();
+/** One writer's latest quote. Quotes are partitioned by bridge exactly like
+ *  candle series, so a quote can carry the identity of the bridge that pushed
+ *  it. `tickTimeObserved` is true only when the producer received the tick's
+ *  own timestamp; a receive-time stamp is not an observed tick time. */
+interface QuoteEntry {
+  quote: MarketQuote;
+  updatedAt: number;
+  writeSeq: number;
+  /** null = unattributed partition (writer identity unknown — never guessed). */
+  bridgeConnectionId: number | null;
+  userId: number | null;
+  tickTimeObserved: boolean;
+}
+// symbol → (bridgeKey → latest quote). Unscoped reads serve the most recent
+// writer, which preserves the previous single-latest-quote behavior.
+const quoteStore = new Map<string, Map<string, QuoteEntry>>();
 let lastUpdate = 0;
 let writeCounter = 0;
 // symbol → last contention-warn emit time (rate limit state).
-const contentionWarnAt = new Map<string, number>();
+const contentionWarnAt = new Map<string, { at: number; setKey: string }>();
 
 type ContentionWarnSink = (payload: Record<string, unknown>) => void;
 let contentionWarnSink: ContentionWarnSink | null = null;
@@ -168,10 +238,19 @@ function servingSeries(partitions: Map<string, CandleSeries> | undefined): Candl
 }
 
 /**
- * Push a candle series for an exact symbol+timeframe. Replaces the stored series
- * FOR THAT WRITER'S PARTITION only (the EA sends the latest window each push).
- * Stamps freshness. The legacy 3-arg form (no bridge identity) still works and
- * writes the unattributed partition, so un-threaded callers compile unchanged.
+ * Push a candle WINDOW for an exact symbol+timeframe.
+ *
+ * - Attributed writer (bridge identity known): the window is MERGED into that
+ *   bridge's partition by bar time (upsert, last write wins, ascending, capped
+ *   to MAX_MERGED_BARS). The same partition also holds deeper bars merged by
+ *   /mt5/candles/ingest, bridge v2 CANDLE events and /mt5/sync-candle-history,
+ *   so a short v1 rolling window must never truncate that history.
+ * - Unattributed writer (legacy 3-arg form): REPLACES the unattributed
+ *   partition, exactly as before (the EA sends the latest window each push).
+ *
+ * Callers validate bars before calling (the /mt5/sync-candles route rejects
+ * impossible OHLC and unparseable times, like the other ingest paths).
+ * Stamps freshness.
  */
 export function updateCandlesFromMT5(
   symbol: string,
@@ -180,18 +259,46 @@ export function updateCandlesFromMT5(
   bridge?: Mt5BridgeIdentity | null,
 ): void {
   const partitions = partitionsFor(symbol, timeframe);
-  partitions.set(bridgeKeyOf(bridge), {
-    candles,
-    updatedAt: Date.now(),
+  const bKey = bridgeKeyOf(bridge);
+  const now = Date.now();
+  const stored = bridge != null ? mergeByBarTime(partitions.get(bKey)?.candles ?? [], candles) : candles;
+  partitions.set(bKey, {
+    candles: stored,
+    updatedAt: now,
     writeSeq: ++writeCounter,
     bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
     userId: bridge?.userId ?? null,
   });
-  lastUpdate = Date.now();
+  observeFutureStamp(bKey, candles, now);
+  lastUpdate = now;
+}
+
+/** Bar identity for merging: the parsed instant, so "…T08:00:00Z" and
+ *  "…T08:00:00.000Z" are the same bar; unparseable times key by raw string. */
+function barKey(c: Candle): string {
+  const t = Date.parse(c.time);
+  return Number.isFinite(t) ? `t${t}` : `s${c.time}`;
+}
+function barOrder(c: Candle): number {
+  const t = Date.parse(c.time);
+  return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+}
+
+/** Upsert `incoming` into `existing` by bar time (incoming wins), ascending,
+ *  capped to the most recent MAX_MERGED_BARS. Never mixes partitions. */
+function mergeByBarTime(existing: Candle[], incoming: Candle[]): Candle[] {
+  const byTime = new Map<string, Candle>();
+  for (const c of existing) byTime.set(barKey(c), c);
+  for (const c of incoming) byTime.set(barKey(c), c);
+  const merged = Array.from(byTime.values()).sort((a, b) => {
+    const d = barOrder(a) - barOrder(b);
+    return d !== 0 && Number.isFinite(d) ? d : a.time < b.time ? -1 : a.time > b.time ? 1 : 0;
+  });
+  return merged.length > MAX_MERGED_BARS ? merged.slice(-MAX_MERGED_BARS) : merged;
 }
 
 // The most bars a single series retains. The v2 bridge pushes ONE closed bar
-// per CANDLE event (unlike the v1 sync path, which replaces the whole window),
+// per CANDLE event (unlike an unattributed v1 sync push, which replaces the whole window),
 // so a long-running stream would grow unboundedly without a cap. Keep the most
 // recent window — more than enough for every chart/scan timeframe.
 const MAX_MERGED_BARS = 1500;
@@ -218,30 +325,97 @@ export function mergeCandleFromMT5(
   const partitions = partitionsFor(symbol, timeframe);
   const bKey = bridgeKeyOf(bridge);
   const existing = partitions.get(bKey);
-  const byTime = new Map<string, Candle>();
-  if (existing) {
-    for (const c of existing.candles) byTime.set(c.time, c);
-  }
   // Last-write-wins on identical bar time (an idempotent re-send is a no-op).
-  byTime.set(candle.time, candle);
-  const merged = Array.from(byTime.values()).sort((a, b) =>
-    a.time < b.time ? -1 : a.time > b.time ? 1 : 0,
-  );
-  const capped =
-    merged.length > MAX_MERGED_BARS ? merged.slice(-MAX_MERGED_BARS) : merged;
+  const capped = mergeByBarTime(existing?.candles ?? [], [candle]);
+  const now = Date.now();
   partitions.set(bKey, {
     candles: capped,
-    updatedAt: Date.now(),
+    updatedAt: now,
     writeSeq: ++writeCounter,
     bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
     userId: bridge?.userId ?? null,
   });
+  observeFutureStamp(bKey, [candle], now);
+  lastUpdate = now;
+}
+
+/**
+ * Store the latest quote for a symbol WITHIN THE WRITER'S PARTITION. The
+ * legacy 2-arg form writes the unattributed partition. `tickTimeObserved`
+ * must be true only when `quote.timestamp` is the producer-supplied tick time;
+ * omitted means unknown and is reported as not observed.
+ */
+export function updateQuoteFromMT5(
+  symbol: string,
+  quote: MarketQuote,
+  bridge?: Mt5BridgeIdentity | null,
+  observation?: { tickTimeObserved?: boolean },
+): void {
+  const key = normalizeSymbolKey(symbol);
+  let partitions = quoteStore.get(key);
+  if (!partitions) {
+    partitions = new Map<string, QuoteEntry>();
+    quoteStore.set(key, partitions);
+  }
+  partitions.set(bridgeKeyOf(bridge), {
+    quote,
+    updatedAt: Date.now(),
+    writeSeq: ++writeCounter,
+    bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+    userId: bridge?.bridgeConnectionId != null ? bridge.userId ?? null : null,
+    tickTimeObserved: observation?.tickTimeObserved === true,
+  });
   lastUpdate = Date.now();
 }
 
-export function updateQuoteFromMT5(symbol: string, quote: MarketQuote): void {
-  quoteStore.set(normalizeSymbolKey(symbol), { quote, updatedAt: Date.now() });
-  lastUpdate = Date.now();
+export interface Mt5QuoteRead {
+  quote: MarketQuote;
+  /** Identity of the serving writer; null = unattributed partition served. */
+  bridgeConnectionId: number | null;
+  userId: number | null;
+  /** True only when the producer supplied the tick's own timestamp. */
+  tickTimeObserved: boolean;
+}
+
+/**
+ * Read the latest quote. With opts.bridgeConnectionId: ONLY that bridge's
+ * partition (miss/stale → null; no fallback to another writer). With
+ * opts.writer: ONLY that writer's partition, where `bridgeConnectionId: null`
+ * names the unattributed partition (used to pair a quote with a served
+ * candle series from the same writer). Without either: the most recent
+ * writer, reporting its identity. Never blends writers.
+ */
+export function readMt5Quote(
+  symbol: string,
+  opts?: { bridgeConnectionId?: number | null; writer?: { bridgeConnectionId: number | null }; now?: number },
+): Mt5QuoteRead | null {
+  const now = opts?.now ?? Date.now();
+  const partitions = quoteStore.get(normalizeSymbolKey(symbol));
+  if (!partitions || partitions.size === 0) return null;
+  let entry: QuoteEntry | null = null;
+  if (opts?.writer) {
+    const id = opts.writer.bridgeConnectionId;
+    entry = partitions.get(id != null ? String(id) : UNATTRIBUTED_BRIDGE_KEY) ?? null;
+  } else if (opts?.bridgeConnectionId != null) {
+    entry = partitions.get(String(opts.bridgeConnectionId)) ?? null;
+  } else {
+    for (const e of partitions.values()) if (!entry || e.writeSeq > entry.writeSeq) entry = e;
+  }
+  if (!entry || now - entry.updatedAt > CANDLE_TTL_MS) return null;
+  return {
+    quote: entry.quote,
+    bridgeConnectionId: entry.bridgeConnectionId,
+    userId: entry.userId,
+    tickTimeObserved: entry.tickTimeObserved,
+  };
+}
+
+/** The most recently written quote partition for a symbol (any age). */
+function servingQuote(symbol: string): QuoteEntry | null {
+  const partitions = quoteStore.get(normalizeSymbolKey(symbol));
+  let best: QuoteEntry | null = null;
+  for (const e of partitions?.values() ?? []) if (!best || e.writeSeq > best.writeSeq) best = e;
+  return best;
 }
 
 /** Test/diagnostic helper — clear all pushed data + contention-warn state. */
@@ -249,6 +423,7 @@ export function __resetMt5ProviderStore(): void {
   candleStore.clear();
   quoteStore.clear();
   contentionWarnAt.clear();
+  futureStampMarks.clear();
   lastUpdate = 0;
   writeCounter = 0;
 }
@@ -266,6 +441,9 @@ export interface Mt5CandleRead {
   contention: boolean;
   /** The distinct attributed bridge ids that were fresh at read time. */
   contendingBridgeIds: number[];
+  /** The serving writer was observed stamping bars ahead of their receipt
+   *  time (sticky; see FUTURE-STAMP OBSERVATION). Recency cannot be confirmed. */
+  futureStamped: boolean;
 }
 
 const EMPTY_READ: Mt5CandleRead = {
@@ -274,6 +452,7 @@ const EMPTY_READ: Mt5CandleRead = {
   userId: null,
   contention: false,
   contendingBridgeIds: [],
+  futureStamped: false,
 };
 
 /**
@@ -301,6 +480,7 @@ export function readMt5Candles(
       userId: s.userId,
       contention: false,
       contendingBridgeIds: [],
+      futureStamped: writerFutureStamped(s),
     };
   }
 
@@ -322,9 +502,14 @@ export function readMt5Candles(
   const contention = freshAttributed.length >= 2;
   if (contention) {
     const symKey = normalizeSymbolKey(symbol);
+    const setKey = [...freshAttributed].sort((a, b) => a - b).join(",");
     const lastWarn = contentionWarnAt.get(symKey);
-    if (lastWarn == null || now - lastWarn >= CONTENTION_WARN_INTERVAL_MS) {
-      contentionWarnAt.set(symKey, now);
+    const due =
+      lastWarn == null ||
+      (lastWarn.setKey !== setKey && now - lastWarn.at >= CONTENTION_WARN_INTERVAL_MS) ||
+      now - lastWarn.at >= CONTENTION_REPEAT_INTERVAL_MS;
+    if (due) {
+      contentionWarnAt.set(symKey, { at: now, setKey });
       emitContentionWarn({
         symbol: symKey,
         timeframe: normalizeTf(timeframe),
@@ -341,6 +526,7 @@ export function readMt5Candles(
     userId: serving.userId,
     contention,
     contendingBridgeIds: contention ? [...freshAttributed].sort((a, b) => a - b) : [],
+    futureStamped: writerFutureStamped(serving),
   };
 }
 
@@ -406,7 +592,7 @@ export function getMt5QuoteAvailability(
   symbol: string,
   now: number = Date.now(),
 ): { hasQuote: boolean; fresh: boolean; hasPrice: boolean; ageMs: number | null } {
-  const q = quoteStore.get(normalizeSymbolKey(symbol));
+  const q = servingQuote(symbol);
   if (!q) return { hasQuote: false, fresh: false, hasPrice: false, ageMs: null };
   const ageMs = Math.max(0, now - q.updatedAt);
   const fresh = ageMs <= CANDLE_TTL_MS;
@@ -490,8 +676,10 @@ export class Mt5Provider implements DataProvider {
   }
 
   async getQuote(symbol: string): Promise<MarketQuote> {
-    const q = quoteStore.get(normalizeSymbolKey(symbol));
-    if (q && Date.now() - q.updatedAt <= CANDLE_TTL_MS) return q.quote;
+    // Legacy DataProvider surface — bridge-unscoped and identity-free
+    // (callers needing identity use readMt5Quote directly).
+    const q = readMt5Quote(symbol);
+    if (q) return q.quote;
     return { symbol, timestamp: new Date().toISOString() };
   }
 

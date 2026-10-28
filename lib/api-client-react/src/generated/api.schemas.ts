@@ -872,6 +872,9 @@ export interface MissionExposureAggregates {
   totalOpenRisk: number;
   riskByAssetClass: MissionExposureAggregatesRiskByAssetClass;
   countByAssetClass: MissionExposureAggregatesCountByAssetClass;
+  /** Open positions whose money at risk to the stop is not known. totalOpenRisk and riskByAssetClass sum only current floating losses, so when this is > 0 they are a lower bound, not the open risk.
+   */
+  riskUnknownCount?: number;
 }
 
 /**
@@ -1881,10 +1884,24 @@ export type MarketHeatVerdictSourceStatus =
 export const MarketHeatVerdictSourceStatus = {
   confirmed: "confirmed",
   price_only: "price_only",
+  partial: "partial",
   delayed: "delayed",
   stale: "stale",
   provider_missing: "provider_missing",
   unavailable: "unavailable",
+} as const;
+
+/**
+ * What priceUpdatedAt measures. "tick" = the symbol's own last venue tick (when the price was observed); "bar_open" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as "bar_open".
+
+ */
+export type MarketHeatVerdictPriceTimeBasis =
+  | (typeof MarketHeatVerdictPriceTimeBasis)[keyof typeof MarketHeatVerdictPriceTimeBasis]
+  | null;
+
+export const MarketHeatVerdictPriceTimeBasis = {
+  tick: "tick",
+  bar_open: "bar_open",
 } as const;
 
 export type MarketHeatVerdictConfidence =
@@ -1915,6 +1932,9 @@ export interface MarketHeatVerdict {
   newsSource: MarketHeatSource;
   calendarSource: MarketHeatSource;
   priceUpdatedAt?: string | null;
+  /** What priceUpdatedAt measures. "tick" = the symbol's own last venue tick (when the price was observed); "bar_open" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as "bar_open".
+   */
+  priceTimeBasis?: MarketHeatVerdictPriceTimeBasis;
   newsUpdatedAt?: string | null;
   calendarUpdatedAt?: string | null;
   confidence: MarketHeatVerdictConfidence;
@@ -3828,6 +3848,70 @@ export const BrokerPriceAlignmentTolerance = {
 } as const;
 
 /**
+ * BOUND only when every condition holds; MISMATCH names an observed identity contradiction; STALE an observed tick outside the budget; UNVERIFIED a required fact is unknown.
+ */
+export type BrokerQuoteBindingStatus =
+  (typeof BrokerQuoteBindingStatus)[keyof typeof BrokerQuoteBindingStatus];
+
+export const BrokerQuoteBindingStatus = {
+  BOUND: "BOUND",
+  MISMATCH: "MISMATCH",
+  STALE: "STALE",
+  UNVERIFIED: "UNVERIFIED",
+} as const;
+
+export type BrokerQuoteBindingReasonsItem =
+  (typeof BrokerQuoteBindingReasonsItem)[keyof typeof BrokerQuoteBindingReasonsItem];
+
+export const BrokerQuoteBindingReasonsItem = {
+  QUOTE_ABSENT: "QUOTE_ABSENT",
+  REQUESTER_UNKNOWN: "REQUESTER_UNKNOWN",
+  SERIES_UNATTRIBUTED: "SERIES_UNATTRIBUTED",
+  QUOTE_UNATTRIBUTED: "QUOTE_UNATTRIBUTED",
+  PROVIDER_MISMATCH: "PROVIDER_MISMATCH",
+  BRIDGE_MISMATCH: "BRIDGE_MISMATCH",
+  OWNER_MISMATCH: "OWNER_MISMATCH",
+  ACCOUNT_NOT_REQUESTER: "ACCOUNT_NOT_REQUESTER",
+  ENVIRONMENT_MISMATCH: "ENVIRONMENT_MISMATCH",
+  BROKER_SYMBOL_MISMATCH: "BROKER_SYMBOL_MISMATCH",
+  QUOTE_TIME_UNKNOWN: "QUOTE_TIME_UNKNOWN",
+  QUOTE_TIME_FUTURE: "QUOTE_TIME_FUTURE",
+  QUOTE_STALE: "QUOTE_STALE",
+} as const;
+
+/**
+ * @nullable
+ */
+export type BrokerQuoteBindingQuoteSource =
+  | (typeof BrokerQuoteBindingQuoteSource)[keyof typeof BrokerQuoteBindingQuoteSource]
+  | null;
+
+export const BrokerQuoteBindingQuoteSource = {
+  mt5_live_quote: "mt5_live_quote",
+  mt5_symbol_snapshot: "mt5_symbol_snapshot",
+} as const;
+
+export interface BrokerQuoteBinding {
+  /** BOUND only when every condition holds; MISMATCH names an observed identity contradiction; STALE an observed tick outside the budget; UNVERIFIED a required fact is unknown. */
+  status: BrokerQuoteBindingStatus;
+  /** Every failed condition, in evaluation order. Empty only when BOUND. */
+  reasons: BrokerQuoteBindingReasonsItem[];
+  /** @nullable */
+  quoteSource: BrokerQuoteBindingQuoteSource;
+  /**
+   * Producer-observed tick time; null when unknown
+   * @nullable
+   */
+  quoteObservedAt: string | null;
+  /**
+   * Age of the observed tick time; null when unknown
+   * @nullable
+   */
+  quoteAgeMs: number | null;
+  freshnessBudgetMs: number;
+}
+
+/**
  * Chart latest-close vs MT5 broker bid/ask alignment. User-safe message only;
 adminDetail is admin-only. Honest unknown when broker data unavailable.
 
@@ -3861,6 +3945,14 @@ export interface BrokerPriceAlignment {
    */
   adminDetail: string | null;
   brokerDataAvailable: boolean;
+  /** Additive. Whether the compared broker quote is bound to the chart
+series: same observed provider, bridge and owner (the requesting
+user), no observed environment/broker-symbol contradiction, and an
+observed tick time within the quote freshness budget. Only BOUND
+comparisons earn Symbol Mirror Accuracy points or claim alignment.
+null or absent means no binding was evaluated (unmeasured).
+ */
+  quoteBinding?: BrokerQuoteBinding | null;
 }
 
 /**
@@ -6221,6 +6313,8 @@ export interface TruthComponent {
   alignment: TruthComponentAlignment;
   label: string;
   asOf: string | null;
+  /** The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one. */
+  belowEvidenceFloor?: boolean;
 }
 
 export type TruthNewsEventSeverity =
@@ -6259,7 +6353,11 @@ export interface TruthNews {
   events: TruthNewsEvent[];
   riskLabel: string;
   highImpactWindowActive: boolean;
+  /** Scheduled event risk could not be checked (the calendar read failed, or a configured calendar is not connected). Distinct from "no calendar configured". Absent on older servers; treat absent as false. */
+  riskUnchecked?: boolean;
   disclaimer: string | null;
+  /** Present (true) only for a synthetic market: scheduled economic events do not apply and the economic calendar is not consulted. riskLabel is then the shared synthetic sentence, riskUnchecked is false and no events or disclaimer are carried. Absent means not synthetic (or an older server). */
+  synthetic?: boolean;
 }
 
 export type TruthDataState =
@@ -6319,6 +6417,17 @@ export const TruthVerdictBias = {
   UNKNOWN: "UNKNOWN",
 } as const;
 
+/**
+ * LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers.
+ */
+export type TruthVerdictBiasQualifier =
+  | (typeof TruthVerdictBiasQualifier)[keyof typeof TruthVerdictBiasQualifier]
+  | null;
+
+export const TruthVerdictBiasQualifier = {
+  LEAN: "LEAN",
+} as const;
+
 export type TruthVerdictBestAction =
   (typeof TruthVerdictBestAction)[keyof typeof TruthVerdictBestAction];
 
@@ -6347,12 +6456,75 @@ export type TruthVerdictInvalidation = {
 export interface TruthVerdict {
   stage: TruthVerdictStage;
   bias: TruthVerdictBias;
+  /** LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers. */
+  biasQualifier?: TruthVerdictBiasQualifier;
   headline: string;
   evidenceFor: string[];
   evidenceAgainst: string[];
   bestAction: TruthVerdictBestAction;
   bestActionText: string;
   invalidation: TruthVerdictInvalidation;
+}
+
+export type TruthEvidenceClaimEvidenceClass =
+  (typeof TruthEvidenceClaimEvidenceClass)[keyof typeof TruthEvidenceClaimEvidenceClass];
+
+export const TruthEvidenceClaimEvidenceClass = {
+  verified: "verified",
+  estimate: "estimate",
+  stale: "stale",
+  unavailable: "unavailable",
+} as const;
+
+export type TruthEvidenceClaimReason =
+  (typeof TruthEvidenceClaimReason)[keyof typeof TruthEvidenceClaimReason];
+
+export const TruthEvidenceClaimReason = {
+  LIVE_FEED_OBSERVATION: "LIVE_FEED_OBSERVATION",
+  MODEL_ESTIMATE: "MODEL_ESTIMATE",
+  FEED_UNCONFIRMED: "FEED_UNCONFIRMED",
+  CALENDAR_FETCH_TIME_UNKNOWN: "CALENDAR_FETCH_TIME_UNKNOWN",
+  SYNTHETIC_NO_EVENT_MAPPING: "SYNTHETIC_NO_EVENT_MAPPING",
+  FEED_STALE: "FEED_STALE",
+  EXPIRED: "EXPIRED",
+  NO_FEED: "NO_FEED",
+  NO_VALUE: "NO_VALUE",
+  NO_OBSERVATION_TIME: "NO_OBSERVATION_TIME",
+  INVALID_TIMESTAMP: "INVALID_TIMESTAMP",
+  NO_CALENDAR: "NO_CALENDAR",
+  CALENDAR_UNCHECKED: "CALENDAR_UNCHECKED",
+  COMPONENT_ABSENT: "COMPONENT_ABSENT",
+  LEVELS_WITHHELD: "LEVELS_WITHHELD",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
+  UNCLASSIFIED: "UNCLASSIFIED",
+} as const;
+
+/**
+ * Per-claim evidence class. "verified" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; "estimate" = calculated/heuristic (never better than this) or observed on an unconfirmed feed; "stale" = past its freshness budget or expired; "unavailable" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.
+
+ */
+export interface TruthEvidenceClaim {
+  evidenceClass: TruthEvidenceClaimEvidenceClass;
+  reason: TruthEvidenceClaimReason;
+  /** Data timestamp the claim rests on (never build time), or null. */
+  observedAt: string | null;
+}
+
+export interface TruthEvidenceComponents {
+  scanner: TruthEvidenceClaim;
+  flame: TruthEvidenceClaim;
+  timing: TruthEvidenceClaim;
+  scalp: TruthEvidenceClaim;
+}
+
+export interface TruthEvidence {
+  price: TruthEvidenceClaim;
+  lastCandle: TruthEvidenceClaim;
+  lastTick: TruthEvidenceClaim;
+  news: TruthEvidenceClaim;
+  components: TruthEvidenceComponents;
+  levels: TruthEvidenceClaim;
+  verdict: TruthEvidenceClaim;
 }
 
 export interface MarketTruthResponse {
@@ -6365,6 +6537,7 @@ export interface MarketTruthResponse {
   components: TruthComponents;
   levels: TruthLevels;
   verdict: TruthVerdict;
+  evidence?: TruthEvidence;
 }
 
 export type ChartIntelligenceResponseSafetyMode =
@@ -9641,6 +9814,18 @@ export interface Mt5PositionsSync {
   timestamp: string;
 }
 
+/**
+ * Whose state this is. platform is the install-wide EA feed (operators only) and is not any one user's account.
+ */
+export type Mt5StateScope = (typeof Mt5StateScope)[keyof typeof Mt5StateScope];
+
+export const Mt5StateScope = {
+  platform: "platform",
+  own_connection: "own_connection",
+  shared_master_bridge: "shared_master_bridge",
+  none: "none",
+} as const;
+
 export interface Mt5State {
   connected: boolean;
   /** @nullable */
@@ -9667,6 +9852,15 @@ export interface Mt5State {
   lastHeartbeatAt?: string | null;
   /** @nullable */
   lastSyncAt?: string | null;
+  /** Whose state this is. platform is the install-wide EA feed (operators only) and is not any one user's account. */
+  scope?: Mt5StateScope;
+  /** Plain statement of whose state this is. */
+  scopeNote?: string;
+  /** False when positions were not read for this caller. An empty list is then not a count of open trades. */
+  positionsMeasured?: boolean;
+  positionsNote?: string;
+  /** Present when liveAllowed is the platform-wide lock rather than a value reported by the caller's terminal. */
+  liveAllowedNote?: string;
 }
 
 export type Mt5StatusMode = (typeof Mt5StatusMode)[keyof typeof Mt5StatusMode];
@@ -9721,6 +9915,11 @@ export type Mt5StatusAccountSnapshot = {
   marginLevel?: number | null;
   /** @nullable */
   currency: string | null;
+  /**
+   * When the EA last pushed these account figures (ISO). Null when never synced.
+   * @nullable
+   */
+  syncedAt?: string | null;
 };
 
 export interface Mt5Status {
@@ -9747,6 +9946,10 @@ export interface Mt5Status {
   accountType: Mt5StatusAccountType;
   maxDemoLot: number;
   openPositions: Mt5Position[];
+  /** False when openPositions was not read from the broker. An empty list is then not a count of open trades. */
+  openPositionsMeasured?: boolean;
+  /** Plain statement of whether and where open positions were read. */
+  openPositionsNote?: string;
   accountSnapshot: Mt5StatusAccountSnapshot;
 }
 
@@ -9911,6 +10114,19 @@ export interface TradeHealth {
   factors: TradeHealthFactors;
 }
 
+/**
+ * Which input was missing when a priced trade's P&L could not be sized.
+ * @nullable
+ */
+export type TradeSnapshotPnlDataQualityFlag =
+  | (typeof TradeSnapshotPnlDataQualityFlag)[keyof typeof TradeSnapshotPnlDataQualityFlag]
+  | null;
+
+export const TradeSnapshotPnlDataQualityFlag = {
+  MISSING_CONTRACT_SIZE: "MISSING_CONTRACT_SIZE",
+  MISSING_FX_CONVERSION: "MISSING_FX_CONVERSION",
+} as const;
+
 export interface SuggestionBreakEven {
   recommended: boolean;
   reason: string;
@@ -9946,10 +10162,39 @@ export type TradeSnapshotSuggestions = {
 
 export interface TradeSnapshot {
   tradeId: number;
-  currentPrice: number;
-  rMultiple: number;
-  floatingPnl: number;
-  health: TradeHealth;
+  /**
+   * Last price from the market-data feed; null when no quote was available (never the entry price).
+   * @nullable
+   */
+  currentPrice: number | null;
+  /**
+   * Timestamp of the quote currentPrice came from; null when there is no quote.
+   * @nullable
+   */
+  quoteAt?: string | null;
+  /**
+   * Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.
+   * @nullable
+   */
+  priceUnavailableReason?: string | null;
+  /** @nullable */
+  rMultiple: number | null;
+  /**
+   * Floating P&L in USD, contract-size aware (move x lots x contract size x quote->USD). Null when there is no price or the contract size / FX rate cannot be established.
+   * @nullable
+   */
+  floatingPnl: number | null;
+  /**
+   * Why floatingPnl is null; null when it was sized.
+   * @nullable
+   */
+  pnlUnavailableReason?: string | null;
+  /**
+   * Which input was missing when a priced trade's P&L could not be sized.
+   * @nullable
+   */
+  pnlDataQualityFlag?: TradeSnapshotPnlDataQualityFlag;
+  health: TradeHealth | null;
   primarySuggestion: string;
   invalidated: boolean;
   suggestions: TradeSnapshotSuggestions;
@@ -10072,6 +10317,18 @@ export const EdgeReportStatus = {
   INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
+/**
+ * What the report's discipline/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.
+ */
+export type EdgeBehaviourBasis =
+  (typeof EdgeBehaviourBasis)[keyof typeof EdgeBehaviourBasis];
+
+export const EdgeBehaviourBasis = {
+  SLICE_DEBRIEFS: "SLICE_DEBRIEFS",
+  NOT_MEASURED: "NOT_MEASURED",
+  ACCOUNT_WIDE_LEGACY: "ACCOUNT_WIDE_LEGACY",
+} as const;
+
 export interface EdgeReport {
   id: number;
   /** @nullable */
@@ -10099,6 +10356,7 @@ export interface EdgeReport {
   status: EdgeReportStatus;
   aiSummary: string;
   createdAt: string;
+  behaviourBasis?: EdgeBehaviourBasis;
 }
 
 export type EdgeWarningSeverity =
@@ -10879,6 +11137,37 @@ export interface EconomicEventRecord {
   createdAt: string;
 }
 
+export type StoredCalendarCoverageSource =
+  (typeof StoredCalendarCoverageSource)[keyof typeof StoredCalendarCoverageSource];
+
+export const StoredCalendarCoverageSource = {
+  ECONOMIC_EVENTS_TABLE: "ECONOMIC_EVENTS_TABLE",
+} as const;
+
+/**
+ * Whether the stored economic calendar (economic_events, filled only by POST /economic-events/sync) reaches the end of the window read. An empty event list is a real "no events" only when windowCovered is true.
+
+ */
+export interface StoredCalendarCoverage {
+  source: StoredCalendarCoverageSource;
+  /** A calendar provider is configured. It does not mean the table was synced. */
+  providerConfigured: boolean;
+  /** Rows in the stored calendar. 0 means never synced. */
+  storedEventCount: number;
+  /**
+   * Latest stored event time (ISO); null when empty.
+   * @nullable
+   */
+  coveredThrough: string | null;
+  windowEnd: string;
+  windowCovered: boolean;
+  /**
+   * Plain statement when the window is not covered.
+   * @nullable
+   */
+  note: string | null;
+}
+
 export type NewsRiskReportRiskLevel =
   (typeof NewsRiskReportRiskLevel)[keyof typeof NewsRiskReportRiskLevel];
 
@@ -10905,6 +11194,7 @@ export type NewsRiskReportNews = {
 } | null;
 
 export interface NewsRiskReport {
+  calendarCoverage?: StoredCalendarCoverage;
   id: number;
   /** @nullable */
   userId?: number | null;
@@ -10942,6 +11232,23 @@ export const RawCalendarEventImpact = {
 } as const;
 
 /**
+ * The provider's own impact tier, unfolded. `impact` folds `critical`
+into `high` for back-compat; display surfaces read this field so a
+central-bank decision shows as critical. Returned by the live
+calendar endpoint (`GET /economic-calendar/events`).
+
+ */
+export type RawCalendarEventImpactTier =
+  (typeof RawCalendarEventImpactTier)[keyof typeof RawCalendarEventImpactTier];
+
+export const RawCalendarEventImpactTier = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  critical: "critical",
+} as const;
+
+/**
  * A raw economic-calendar event from a connected real provider (Trading
 Economics). Never fabricated — the radar/Ruby surfaces these only when
 `connected:true` from the calendar seam. The live-calendar endpoint
@@ -10955,6 +11262,12 @@ export interface RawCalendarEvent {
   title: string;
   currency: string;
   impact: RawCalendarEventImpact;
+  /** The provider's own impact tier, unfolded. `impact` folds `critical`
+into `high` for back-compat; display surfaces read this field so a
+central-bank decision shows as critical. Returned by the live
+calendar endpoint (`GET /economic-calendar/events`).
+ */
+  impactTier?: RawCalendarEventImpactTier;
   eventTimeIso: string;
   affectedMarkets: string[];
   country?: string;
@@ -11145,6 +11458,16 @@ export interface DeleteResult {
   deleted: number;
 }
 
+/**
+ * Where the figures come from.
+ */
+export type PortfolioExposureSource =
+  (typeof PortfolioExposureSource)[keyof typeof PortfolioExposureSource];
+
+export const PortfolioExposureSource = {
+  LEGACY_TRADES_TABLE: "LEGACY_TRADES_TABLE",
+} as const;
+
 export type PortfolioExposureExposureByMarket = { [key: string]: number };
 
 export type PortfolioExposureExposureByStrategy = { [key: string]: number };
@@ -11157,12 +11480,27 @@ export type PortfolioExposureExposureByCurrencyItem = {
 export interface PortfolioExposure {
   totalOpen: number;
   totalClosed: number;
-  floatingPnl: number;
+  /**
+   * null when any open row has no marked-to-market P&L (never a guessed 0).
+   * @nullable
+   */
+  floatingPnl: number | null;
+  /** @nullable */
+  floatingPnlUnavailableReason?: string | null;
+  /** Excludes closed rows whose pnlStatus is UNKNOWN. */
   realizedPnl: number;
+  /** Closed rows left out of realized/daily/weekly figures because pnlStatus is UNKNOWN. */
+  realizedPnlExcludedUnknown?: number;
+  /** Where the figures come from. */
+  source?: PortfolioExposureSource;
+  /** Plain-English scope of the figures (e.g. broker positions not included). */
+  sourceNote?: string;
   exposureByMarket: PortfolioExposureExposureByMarket;
   exposureByStrategy: PortfolioExposureExposureByStrategy;
   exposureByCurrency: PortfolioExposureExposureByCurrencyItem[];
+  /** Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown. */
   dailyDrawdown: number;
+  /** Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown. */
   weeklyDrawdown: number;
 }
 
@@ -12413,6 +12751,16 @@ export type WeeklyReviewScoreTrends = {
   consistency?: number;
 } | null;
 
+/**
+ * The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).
+ */
+export type WeeklyReviewPerformanceSource =
+  (typeof WeeklyReviewPerformanceSource)[keyof typeof WeeklyReviewPerformanceSource];
+
+export const WeeklyReviewPerformanceSource = {
+  LEGACY_TRADES_RECORD: "LEGACY_TRADES_RECORD",
+} as const;
+
 export interface WeeklyReview {
   id: number;
   weekStartIso: string;
@@ -12450,6 +12798,12 @@ export interface WeeklyReview {
   /** @nullable */
   nextWeekFocus?: string | null;
   createdAtIso: string;
+  /** The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows). */
+  performanceSource?: WeeklyReviewPerformanceSource;
+  /** False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week. */
+  performanceMeasured?: boolean;
+  /** Plain statement of what the performance figures are and are not built from. */
+  performanceSourceNote?: string;
 }
 
 export interface WeeklyReviewList {
@@ -12647,6 +13001,7 @@ export const MultiTimeframeTrendSnapshotTrend = {
   UP: "UP",
   DOWN: "DOWN",
   SIDEWAYS: "SIDEWAYS",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
 export interface MultiTimeframeTrendSnapshot {
@@ -12668,6 +13023,7 @@ export const MultiTimeframeReportAlignmentLabel = {
   LOWER_TIMEFRAME_CONFLICT: "LOWER_TIMEFRAME_CONFLICT",
   HIGHER_TIMEFRAME_WARNING: "HIGHER_TIMEFRAME_WARNING",
   NO_CLEAR_BIAS: "NO_CLEAR_BIAS",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
 export type MultiTimeframeReportBestBias =
@@ -13744,6 +14100,19 @@ export interface SignalPriceZone {
   to: number;
 }
 
+export type SignalScoresUnmeasuredItem =
+  (typeof SignalScoresUnmeasuredItem)[keyof typeof SignalScoresUnmeasuredItem];
+
+export const SignalScoresUnmeasuredItem = {
+  direction: "direction",
+  entry: "entry",
+  execution: "execution",
+  risk: "risk",
+  newsSafety: "newsSafety",
+  timing: "timing",
+  survivability: "survivability",
+} as const;
+
 /**
  * Independent 0–100 quality dimensions, always separate. Direction is never folded in, so it can never inflate a score.
  */
@@ -13757,6 +14126,8 @@ export interface SignalScores {
   survivability: number;
   overall: number;
   edge: number;
+  /** Dimensions whose score is a fixed default because no input was observed (e.g. execution with no bridge telemetry, news safety with no news provider answer, timing with no live scalp read). They still fold into overall/edge, so any grade built on them is partial. Optional for older servers (absent = not reported). */
+  unmeasured?: SignalScoresUnmeasuredItem[];
 }
 
 export interface SignalEvidenceItem {
@@ -13950,6 +14321,17 @@ export const RubyMarketEdgeSignalConfidenceBand = {
   VERY_STRONG: "VERY_STRONG",
 } as const;
 
+/**
+ * FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL.
+ */
+export type RubyMarketEdgeSignalConfidenceBandBasis =
+  (typeof RubyMarketEdgeSignalConfidenceBandBasis)[keyof typeof RubyMarketEdgeSignalConfidenceBandBasis];
+
+export const RubyMarketEdgeSignalConfidenceBandBasis = {
+  FULL: "FULL",
+  PARTIAL: "PARTIAL",
+} as const;
+
 export type RubyMarketEdgeSignalFreshness =
   (typeof RubyMarketEdgeSignalFreshness)[keyof typeof RubyMarketEdgeSignalFreshness];
 
@@ -13960,6 +14342,28 @@ export const RubyMarketEdgeSignalFreshness = {
   STALE: "STALE",
   EXPIRED: "EXPIRED",
 } as const;
+
+export type RubyMarketEdgeSignalScannerBindingReasonCode =
+  | (typeof RubyMarketEdgeSignalScannerBindingReasonCode)[keyof typeof RubyMarketEdgeSignalScannerBindingReasonCode]
+  | null;
+
+export const RubyMarketEdgeSignalScannerBindingReasonCode = {
+  no_scanner_read: "no_scanner_read",
+  quote_last_only: "quote_last_only",
+  no_bound_quote: "no_bound_quote",
+  different_candles: "different_candles",
+  scanner_not_live: "scanner_not_live",
+  setup_withheld: "setup_withheld",
+} as const;
+
+/**
+ * Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers.
+ */
+export type RubyMarketEdgeSignalScannerBinding = {
+  bound: boolean;
+  reasonCode: RubyMarketEdgeSignalScannerBindingReasonCode;
+  reason: string | null;
+};
 
 /**
  * ONE normalized signal object shared by Scanner, Scalp, Ruby, and downstream explanation/UX. Direction (BUY/SELL/NEUTRAL) is always kept separate from edge/quality. When data is insufficient the read collapses to an honest WATCHING/UNKNOWN/NONE state with hasSufficientData=false — never a fabricated number.
@@ -13986,6 +14390,8 @@ export interface RubyMarketEdgeSignal {
   stopLoss: number | null;
   scores: SignalScores;
   confidenceBand: RubyMarketEdgeSignalConfidenceBand;
+  /** FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL. */
+  confidenceBandBasis?: RubyMarketEdgeSignalConfidenceBandBasis;
   edgeScore: number;
   earlyTrend: EarlyTrendReading;
   fakeout: FakeoutReading;
@@ -13999,6 +14405,10 @@ export interface RubyMarketEdgeSignal {
   expiresAt: string;
   firstSeenAt: string;
   lateReason: string | null;
+  /** Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers. */
+  scannerBinding?: RubyMarketEdgeSignalScannerBinding;
+  /** Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind. */
+  structureWindow?: number | null;
 }
 
 export type RubyMarketReadExplanationDefaultMode =
@@ -14032,9 +14442,42 @@ export interface RubyExplanationLevels {
   stopLoss: number | null;
 }
 
+/**
+ * What the confidence number is (optional for older servers).
+ */
+export type RubyNoTradeIntelligenceBasis =
+  (typeof RubyNoTradeIntelligenceBasis)[keyof typeof RubyNoTradeIntelligenceBasis];
+
+export const RubyNoTradeIntelligenceBasis = {
+  RULE_TIER: "RULE_TIER",
+  EDGE_DERIVED: "EDGE_DERIVED",
+} as const;
+
+/**
+ * The no-trade rule that fired; null when the read is actionable.
+ */
+export type RubyNoTradeIntelligenceRuleKey =
+  | (typeof RubyNoTradeIntelligenceRuleKey)[keyof typeof RubyNoTradeIntelligenceRuleKey]
+  | null;
+
+export const RubyNoTradeIntelligenceRuleKey = {
+  NO_LIVE_DATA: "NO_LIVE_DATA",
+  INVALID_OR_EXPIRED: "INVALID_OR_EXPIRED",
+  NO_DIRECTION: "NO_DIRECTION",
+  LATE: "LATE",
+  BELOW_MIN_EVIDENCE: "BELOW_MIN_EVIDENCE",
+  EARLY: "EARLY",
+  NOT_AT_ENTRY: "NOT_AT_ENTRY",
+} as const;
+
 export interface RubyNoTradeIntelligence {
   isNoTrade: boolean;
+  /** 0-100. With basis RULE_TIER this is a fixed weight for the no-trade rule that fired (one constant per rule), with basis EDGE_DERIVED it is computed from the edge score. It is NOT a measured probability and must never be rendered as "% sure". Kept for back-compat. */
   confidence: number;
+  /** What the confidence number is (optional for older servers). */
+  basis?: RubyNoTradeIntelligenceBasis;
+  /** The no-trade rule that fired; null when the read is actionable. */
+  ruleKey?: RubyNoTradeIntelligenceRuleKey;
   reason: string | null;
 }
 
@@ -14049,6 +14492,8 @@ export interface RubyMarketReadExplanation {
   hasSufficientData: boolean;
   actionable: boolean;
   missingContext: string[];
+  /** Optional. Why no entry/watch/stop/invalidation level is published on this read (plain English), or null when any level is present. Composed only from facts on the signal; absent from older servers. */
+  levelsWithheldReason?: string | null;
   disclaimer: string;
 }
 
@@ -14087,6 +14532,20 @@ export const OpportunityMapRowNewsRisk = {
   critical: "critical",
 } as const;
 
+/**
+ * The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.
+ */
+export type OpportunityMapRowFinalReadLabel =
+  | (typeof OpportunityMapRowFinalReadLabel)[keyof typeof OpportunityMapRowFinalReadLabel]
+  | null;
+
+export const OpportunityMapRowFinalReadLabel = {
+  TRADE_WATCH: "TRADE_WATCH",
+  WAIT_FOR_CONFIRMATION: "WAIT_FOR_CONFIRMATION",
+  AVOID_FOR_NOW: "AVOID_FOR_NOW",
+  NO_TRADE: "NO_TRADE",
+} as const;
+
 export type OpportunityMapRowCategory =
   (typeof OpportunityMapRowCategory)[keyof typeof OpportunityMapRowCategory];
 
@@ -14122,6 +14581,8 @@ export interface OpportunityMapRow {
   hasLiveData: boolean;
   isLate: boolean;
   reason: string | null;
+  /** The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown. */
+  finalReadLabel?: OpportunityMapRowFinalReadLabel;
   category: OpportunityMapRowCategory;
   kind: OpportunityMapRowKind;
   bestAction: string;
@@ -14234,6 +14695,20 @@ export const ScalpResultStatus = {
   AWAITING_DATA: "AWAITING_DATA",
 } as const;
 
+/**
+ * Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.
+ */
+export type ScalpResultRejectReason =
+  | (typeof ScalpResultRejectReason)[keyof typeof ScalpResultRejectReason]
+  | null;
+
+export const ScalpResultRejectReason = {
+  NO_SCANNER_READ: "NO_SCANNER_READ",
+  NOT_LIVE: "NOT_LIVE",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
+  NO_SPECS: "NO_SPECS",
+} as const;
+
 export type ScalpResultConfidenceLabel =
   (typeof ScalpResultConfidenceLabel)[keyof typeof ScalpResultConfidenceLabel];
 
@@ -14324,6 +14799,10 @@ export interface ScalpResult {
   scalpType: string;
   mode: ScalpMode;
   status: ScalpResultStatus;
+  /** Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers. */
+  rejectReason?: ScalpResultRejectReason;
+  /** The engine timeframe this result was evaluated on (e.g. "M5"). */
+  timeframe?: string | null;
   qualityScore: number;
   confidenceLabel: ScalpResultConfidenceLabel;
   entryType: ScalpResultEntryType;
@@ -14342,9 +14821,13 @@ export interface ScalpResult {
   estimatedRiskAmount: number | null;
   rewardToRisk: number | null;
   estimatedMargin: number | null;
+  /** Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency. */
+  moneyCurrency?: string | null;
   spreadRisk: ScalpResultSpreadRisk;
   slippageRisk: ScalpResultSlippageRisk;
   newsRisk: ScalpResultNewsRisk;
+  /** True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW. */
+  newsRiskUnchecked?: boolean;
   timingStatus: ScalpResultTimingStatus;
   validForSeconds: number;
   expiresAt: string;
@@ -14527,6 +15010,13 @@ export interface MeScalpBasketsResp {
   baskets: ScalpBasket[];
   accountMode: MeScalpBasketsRespAccountMode;
   generatedAt: string;
+  /** False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
 }
 
 export type MeScalpAddOnCheckBodyDirection =
@@ -14564,6 +15054,13 @@ export interface MeScalpAddOnCheckResp {
   addOn: ScalpAddOnVerdict;
   flame: ScalpFlameRead;
   generatedAt: string;
+  /** False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
 }
 
 export interface ScalpJournalEntry {
@@ -16299,6 +16796,15 @@ export type ListEconomicEventsParams = {
   currency?: string;
   impact?: ListEconomicEventsImpact;
   days?: number;
+  /**
+ * Hours before now to include (0-48, default 0). The window is
+eventTime in [now - pastHours, now + days*24h] — rolling hours, not
+calendar days. Lets a caller list events already released today.
+
+ * @minimum 0
+ * @maximum 48
+ */
+  pastHours?: number;
 };
 
 export type ListEconomicEventsImpact =
@@ -16379,6 +16885,7 @@ export type GetUpcomingEconomicEvents200 = {
   windowHours: number;
   minImpact: string;
   events: EconomicEventRecord[];
+  calendarCoverage?: StoredCalendarCoverage;
 };
 
 export type GenerateNewsRiskReportBody = {
@@ -17212,6 +17719,7 @@ export type GenerateEdgeReport200 = {
 export type GetEdgeReportById200 = {
   report?: EdgeReport;
   warnings?: EdgeWarning[];
+  behaviourBasis?: EdgeBehaviourBasis;
 };
 
 export type GetStrongestEdges200 = {

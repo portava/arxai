@@ -59,6 +59,8 @@ export interface Order {
   auditLogId?: string;
   idempotencyKey?: string;
   positionId?: string;
+  /** The user (operator, or agent owner) the order was placed for; null when unknown. */
+  ownerUserId: number | null;
   dataSource: "SIMULATOR";
 }
 
@@ -75,6 +77,15 @@ export interface Position {
   lotSize: number;
   entryPrice: number;
   currentPrice: number;
+  /**
+   * What currentPrice is: SIMULATOR_QUOTE — marked from the simulator quote
+   * at currentPriceAsOf; NO_QUOTE — the simulator had no quote on the latest
+   * tick, so it is the last mark (as of currentPriceAsOf), not a live price;
+   * EXIT_PRICE — the position is closed and this is its exit (SL/TP/close)
+   * price, as of the close.
+   */
+  currentPriceBasis: "SIMULATOR_QUOTE" | "NO_QUOTE" | "EXIT_PRICE";
+  currentPriceAsOf: string;
   stopLoss?: number;
   takeProfit?: number;
   unrealizedPnL: number;
@@ -86,8 +97,21 @@ export interface Position {
   closedAt?: string;
   closeReason?: string;
   trailingDistance?: number;
+  /** The user the position belongs to (from its order); null when unknown. */
+  ownerUserId: number | null;
+  /**
+   * Every realization booked on this position, in order: one per partial
+   * close and one for the final close. `realizedPnL` is their sum, and the
+   * P/L engine buckets them by their own time, not by the position's close.
+   */
+  realizations: Array<{ at: string; pnl: number }>;
   dataSource: "SIMULATOR";
 }
+
+/** Restricts a book read to one owner. Omitted = the whole simulator book (internal callers only). */
+export interface OmsOwnerScope { ownerUserId?: number }
+const inScope = (scope: OmsOwnerScope | undefined, row: { ownerUserId: number | null }) =>
+  scope?.ownerUserId == null || row.ownerUserId === scope.ownerUserId;
 
 const orders = new Map<string, Order>();
 const positions = new Map<string, Position>();
@@ -138,9 +162,9 @@ export interface CreateOrderInput {
   idempotencyKey?: string;
 }
 
-function createOrder(input: CreateOrderInput): Order {
+function createOrder(input: CreateOrderInput, ownerUserId: number | null): Order {
   if (input.idempotencyKey) {
-    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey);
+    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey && o.ownerUserId === ownerUserId);
     if (existing) return existing;
   }
   const o: Order = {
@@ -163,6 +187,7 @@ function createOrder(input: CreateOrderInput): Order {
     status: "RISK_CHECK_PENDING",
     createdAt: nowIso(), updatedAt: nowIso(),
     idempotencyKey: input.idempotencyKey,
+    ownerUserId,
     dataSource: "SIMULATOR",
   };
 
@@ -187,8 +212,8 @@ function createOrder(input: CreateOrderInput): Order {
   return o;
 }
 
-export function listOrders(filter?: { environment?: Environment; status?: OrderStatus; source?: OrderSource; limit?: number }) {
-  let arr = Array.from(orders.values());
+export function listOrders(filter?: { environment?: Environment; status?: OrderStatus; source?: OrderSource; limit?: number } & OmsOwnerScope) {
+  let arr = Array.from(orders.values()).filter((o) => inScope(filter, o));
   if (filter?.environment) arr = arr.filter((o) => o.environment === filter.environment);
   if (filter?.status) arr = arr.filter((o) => o.status === filter.status);
   if (filter?.source) arr = arr.filter((o) => o.source === filter.source);
@@ -236,10 +261,11 @@ function submitToSimulator(orderId: string): { order: Order; position?: Position
     positionId: newId("pos"), orderId: o.orderId,
     environment: o.environment, symbol: o.symbol, direction: o.direction,
     lotSize: o.lotSize, entryPrice: fillPrice, currentPrice: fillPrice,
+    currentPriceBasis: "SIMULATOR_QUOTE", currentPriceAsOf: q.tsIso,
     stopLoss: o.stopLoss, takeProfit: o.takeProfit,
     unrealizedPnL: 0, realizedPnL: 0, rMultiple: 0,
     riskAmount: risk, status: "OPEN",
-    openedAt: nowIso(), dataSource: "SIMULATOR",
+    openedAt: nowIso(), ownerUserId: o.ownerUserId, realizations: [], dataSource: "SIMULATOR",
   };
   positions.set(p.positionId, p);
   o.positionId = p.positionId;
@@ -254,8 +280,10 @@ function pnlFor(p: Position): number {
 
 function tickPosition(p: Position) {
   if (p.status !== "OPEN") return;
-  const q = marketSimulator.quote(p.symbol); if (!q) return;
+  const q = marketSimulator.quote(p.symbol);
+  if (!q) { p.currentPriceBasis = "NO_QUOTE"; return; }
   p.currentPrice = p.direction === "BUY" ? q.bid : q.ask;
+  p.currentPriceBasis = "SIMULATOR_QUOTE"; p.currentPriceAsOf = q.tsIso;
   p.unrealizedPnL = pnlFor(p);
   p.rMultiple = p.riskAmount > 0 ? Number((p.unrealizedPnL / p.riskAmount).toFixed(2)) : 0;
   // SL / TP triggers using mid for fairness.
@@ -293,8 +321,8 @@ const TICK_MS = 2000;
 setInterval(() => { try { tickAll(); } catch { /* swallow */ } }, TICK_MS).unref?.();
 
 // ── Position management actions ────────────────────────────────────────────
-export function listPositions(filter?: { environment?: Environment; status?: PositionStatus; limit?: number }) {
-  let arr = Array.from(positions.values());
+export function listPositions(filter?: { environment?: Environment; status?: PositionStatus; limit?: number } & OmsOwnerScope) {
+  let arr = Array.from(positions.values()).filter((p) => inScope(filter, p));
   if (filter?.environment) arr = arr.filter((p) => p.environment === filter.environment);
   if (filter?.status) arr = arr.filter((p) => p.status === filter.status);
   arr.sort((a, b) => Date.parse(b.openedAt) - Date.parse(a.openedAt));
@@ -306,11 +334,16 @@ function closePosition(id: string, reason: PositionStatus = "MANUALLY_CLOSED", o
   const p = positions.get(id); if (!p) return null;
   if (p.status !== "OPEN") return p;
   if (overridePrice != null) p.currentPrice = overridePrice;
-  p.realizedPnL = pnlFor(p);
+  // The remainder's P/L adds to anything a partial close already realized.
+  const final = pnlFor(p);
+  const at = nowIso();
+  p.realizations.push({ at, pnl: final });
+  p.realizedPnL = Number((p.realizedPnL + final).toFixed(2));
   p.unrealizedPnL = 0;
   p.rMultiple = p.riskAmount > 0 ? Number((p.realizedPnL / p.riskAmount).toFixed(2)) : 0;
-  p.status = reason; p.closedAt = nowIso();
+  p.status = reason; p.closedAt = at;
   p.closeReason = reason;
+  p.currentPriceBasis = "EXIT_PRICE"; p.currentPriceAsOf = p.closedAt;
   // Mark linked order CLOSED.
   const ord = orders.get(p.orderId); if (ord) { ord.status = "CLOSED"; ord.updatedAt = nowIso(); }
   audit("POSITION_CLOSED", `Closed ${p.symbol} ${p.direction} ${reason} pnl=${p.realizedPnL} R=${p.rMultiple}`, { positionId: id });
@@ -325,6 +358,7 @@ function partialClose(id: string, fraction: number) {
   // Realize a partial PnL using a clone, then reduce the live position.
   const closedShare: Position = { ...p, lotSize: closedLots };
   const realized = pnlFor(closedShare);
+  p.realizations.push({ at: nowIso(), pnl: realized });
   p.realizedPnL = Number((p.realizedPnL + realized).toFixed(2));
   p.lotSize = Number((p.lotSize - closedLots).toFixed(2));
   audit("POSITION_PARTIAL_CLOSE", `Partial close ${id} ${closedLots} lots, pnl+=${realized}`, {});
@@ -359,19 +393,19 @@ function applyTrailingStop(id: string, distance: number) {
 // ── P/L engine ─────────────────────────────────────────────────────────────
 function bucketByDay(p: Position): string { return (p.closedAt ?? p.openedAt).slice(0, 10); }
 
-export function pnlSummary(env?: Environment) {
-  const all = Array.from(positions.values()).filter((p) => !env || p.environment === env);
+export function pnlSummary(env?: Environment, scope?: OmsOwnerScope) {
+  const all = Array.from(positions.values()).filter((p) => (!env || p.environment === env) && inScope(scope, p));
   const closed = all.filter((p) => p.status !== "OPEN");
   const open = all.filter((p) => p.status === "OPEN");
   const today = new Date().toISOString().slice(0, 10);
   const startWeek = new Date(); startWeek.setUTCDate(startWeek.getUTCDate() - 7);
   const startMonth = new Date(); startMonth.setUTCMonth(startMonth.getUTCMonth() - 1);
 
-  const closedToday = closed.filter((p) => bucketByDay(p) === today);
-  const closedWeek = closed.filter((p) => Date.parse(p.closedAt ?? p.openedAt) >= +startWeek);
-  const closedMonth = closed.filter((p) => Date.parse(p.closedAt ?? p.openedAt) >= +startMonth);
-
-  const sum = (arr: Position[]) => Number(arr.reduce((a, b) => a + b.realizedPnL, 0).toFixed(2));
+  // Realized P/L is booked when it is realized: a partial close on a still
+  // open position counts on its own day, the final close on its day.
+  const realized = all.flatMap((p) => p.realizations);
+  const sumRealized = (since: (at: string) => boolean) =>
+    Number(realized.filter((r) => since(r.at)).reduce((a, r) => a + r.pnl, 0).toFixed(2));
   const wins = closed.filter((p) => p.realizedPnL > 0).length;
   const losses = closed.filter((p) => p.realizedPnL < 0).length;
   const avgR = closed.length ? Number((closed.reduce((a, b) => a + b.rMultiple, 0) / closed.length).toFixed(2)) : 0;
@@ -384,11 +418,11 @@ export function pnlSummary(env?: Environment) {
   }
   return {
     environment: env ?? "ALL",
-    dailyPnL: sum(closedToday),
-    weeklyPnL: sum(closedWeek),
-    monthlyPnL: sum(closedMonth),
+    dailyPnL: sumRealized((at) => at.slice(0, 10) === today),
+    weeklyPnL: sumRealized((at) => Date.parse(at) >= +startWeek),
+    monthlyPnL: sumRealized((at) => Date.parse(at) >= +startMonth),
     openUnrealizedPnL: Number(open.reduce((a, b) => a + b.unrealizedPnL, 0).toFixed(2)),
-    closedRealizedPnL: sum(closed),
+    closedRealizedPnL: sumRealized(() => true),
     wins, losses,
     winRate: wins + losses > 0 ? Number(((wins / (wins + losses)) * 100).toFixed(1)) : 0,
     averageR: avgR,
@@ -397,8 +431,8 @@ export function pnlSummary(env?: Environment) {
   };
 }
 
-export function pnlBy(group: "symbol" | "strategy" | "source" | "environment") {
-  const all = Array.from(positions.values()).filter((p) => p.status !== "OPEN");
+export function pnlBy(group: "symbol" | "strategy" | "source" | "environment", scope?: OmsOwnerScope) {
+  const all = Array.from(positions.values()).filter((p) => p.status !== "OPEN" && inScope(scope, p));
   const map = new Map<string, { count: number; pnl: number; wins: number; losses: number }>();
   for (const p of all) {
     let key: string;
@@ -416,8 +450,8 @@ export function pnlBy(group: "symbol" | "strategy" | "source" | "environment") {
   return Array.from(map.entries()).map(([key, v]) => ({ key, ...v })).sort((a, b) => b.pnl - a.pnl);
 }
 
-export function pnlDaily(env?: Environment) {
-  const all = Array.from(positions.values()).filter((p) => p.status !== "OPEN" && (!env || p.environment === env));
+export function pnlDaily(env?: Environment, scope?: OmsOwnerScope) {
+  const all = Array.from(positions.values()).filter((p) => p.status !== "OPEN" && (!env || p.environment === env) && inScope(scope, p));
   const map = new Map<string, { day: string; pnl: number; trades: number; wins: number; losses: number }>();
   for (const p of all) {
     const day = bucketByDay(p);
@@ -622,7 +656,7 @@ function blocked<T>(g: OmsGovernance): OmsActionResult<T> {
 /** Create an order. A governor refusal is recorded on the order as RISK_REJECTED. */
 export async function placeOrder(input: CreateOrderInput, actor: OmsActor): Promise<{ order: Order; governance: OmsGovernance }> {
   if (input.idempotencyKey) {
-    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey);
+    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey && o.ownerUserId === actor.userId);
     if (existing) return { order: existing, governance: { allowed: existing.status !== "RISK_REJECTED", blockedBy: [], reason: null, auditEventId: null } };
   }
   const pendingId = newId("ord");
@@ -633,7 +667,7 @@ export async function placeOrder(input: CreateOrderInput, actor: OmsActor): Prom
     stopLoss: input.stopLoss ?? null, takeProfit: input.takeProfit ?? null, ref: `oms:${pendingId}`,
     aiConfidence: input.confidenceScore ?? null,
   });
-  const order = createOrder(input);
+  const order = createOrder(input, actor.userId);
   if (!g.allowed && order.status !== "RISK_REJECTED") {
     order.status = "RISK_REJECTED";
     order.rejectionReason = `RISK_GOVERNOR_BLOCK[${g.blockedBy.join(",")}]: ${g.reason ?? ""}`.trim();

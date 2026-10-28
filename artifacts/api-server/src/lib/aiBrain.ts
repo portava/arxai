@@ -142,8 +142,20 @@ function analyzeCore(
   (trendStrength >= 40 ? rulesPassed : rulesFailed).push("trend_strength_>=_40");
   (volatilityRatio < 1.8 ? rulesPassed : rulesFailed).push("volatility_in_range");
   (spreadPenalty < 30 ? rulesPassed : rulesFailed).push("spread_acceptable");
-  (riskRewardRatio >= 1.5 ? rulesPassed : rulesFailed).push("min_risk_reward_1.5");
+  // No reward-to-risk rule: the target is placed at exactly 2× the stop
+  // distance, so a ">= 1.5" check could never fail and would only claim a
+  // check that was not made.
   (confidenceScore >= 60 ? rulesPassed : rulesFailed).push("min_confidence_60");
+
+  // Plain-English description of each failed rule with the observed value.
+  const failedText: Record<string, string> = {
+    "trend_strength_>=_40": `trend strength ${trendStrength}/100 is below the 40 needed`,
+    volatility_in_range: `the last candle's range is ${volatilityRatio.toFixed(1)}× the average (limit 1.8×)`,
+    spread_acceptable: `the spread is too wide for this price (spread penalty ${spreadPenalty}, limit 30)`,
+    min_confidence_60: `confidence ${confidenceScore}/100 is below the 60 needed`,
+  };
+  const avoidParts = rulesFailed.map((r) => failedText[r] ?? "a scanner rule did not pass");
+  const spreadOk = spreadPenalty < 30;
 
   let recommendedAction: MarketAnalysis["recommendedAction"] = "WAIT";
   if (marketBias === "choppy" || rulesFailed.length >= 3) recommendedAction = "REJECT";
@@ -155,8 +167,20 @@ function analyzeCore(
     entryQualityScore, riskScore, confidenceScore, recommendedAction,
     entryZone: { low: round(entry - avgRange * 0.25, 5), high: round(entry + avgRange * 0.25, 5) },
     stopLoss, takeProfit, riskRewardRatio,
-    reasonForTrade: `${marketBias} bias on ${symbol} ${timeframe}; trend=${trendStrength}, spread ok, RR ${riskRewardRatio}`,
-    reasonToAvoid: rulesFailed.length ? `Failed rules: ${rulesFailed.join(", ")}` : "",
+    // Say what was measured: "choppy" is only a last-bar range spike, the
+    // spread is "acceptable" only when its rule passed on an observed spread,
+    // and the reward-to-risk is fixed by construction (target = 2x stop).
+    reasonForTrade:
+      `${
+        marketBias === "choppy"
+          ? `volatility spike (last bar range ${volatilityRatio.toFixed(1)}x the ${candles.length}-bar average)`
+          : `${marketBias} bias`
+      } on ${symbol} ${timeframe}; trend strength ${trendStrength}/100, ` +
+      `${!Number.isFinite(spread) || spread <= 0 ? "spread not observed" : spreadOk ? "spread acceptable" : "spread too wide"}; ` +
+      `target set at 2× the stop distance (reward-to-risk ${riskRewardRatio}:1 by construction)`,
+    reasonToAvoid: avoidParts.length
+      ? `Not passing: ${avoidParts.join("; ")}.`
+      : "",
     invalidationReason: dir === "BUY" ? `Close below ${stopLoss}` : `Close above ${stopLoss}`,
     rulesPassed, rulesFailed,
     dataSource: source, executionEnvironment: source,
@@ -165,6 +189,8 @@ function analyzeCore(
   };
 }
 
+// "spread ok" only when a positive spread was observed and passed the rule. A
+// zero/absent spread is the callers' "no quote spread" substitute, not a cost.
 export interface TradeCard extends MarketAnalysis {
   cardId: string;
   positionSizingHint: { maxRiskUsd: number; suggestedLot: number };
@@ -289,14 +315,21 @@ interface ReplaySession {
   replayId: string; symbol: string; timeframe: string;
   strategy?: string;
   candles: ReturnType<typeof marketSimulator.candlesFor>;
+  /** The simulator's candles are 1-minute bars whatever `timeframe` says. */
+  candleTimeframe: "M1";
+  /** Simulator spread captured at start; null when the symbol had no quote. */
+  spread: number | null;
   index: number;
   decisions: Array<{
-    candleIndex: number; aiAction: string; entry?: number;
+    candleIndex: number; candleTsIso: string; candlesAnalysed: number;
+    aiAction: string; entry?: number;
     stopLoss?: number; takeProfit?: number;
     confidenceScore: number; riskScore: number; reason: string;
   }>;
   startedAt: string;
 }
+/** Candles the replay analysis looks back over (same as analyzeMarket). */
+const REPLAY_WINDOW = 30;
 const replays = new Map<string, ReplaySession>();
 const REPLAY_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -310,10 +343,14 @@ setInterval(() => {
 
 export function replayStart(symbol: string, timeframe = "M15", strategy?: string) {
   const replayId = `replay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const candles = marketSimulator.candlesFor(symbol, 60);
+  // Copy the bars: the simulator mutates its forming candle in place, and a
+  // replay must not change under the user.
+  const candles = marketSimulator.candlesFor(symbol, 60).map((c) => ({ ...c }));
+  const q = marketSimulator.quote(symbol);
   const s: ReplaySession = {
     replayId, symbol, timeframe, strategy,
-    candles, index: 0, decisions: [], startedAt: new Date().toISOString(),
+    candles, candleTimeframe: "M1", spread: q ? q.spread : null,
+    index: 0, decisions: [], startedAt: new Date().toISOString(),
   };
   replays.set(replayId, s);
   return s;
@@ -321,16 +358,32 @@ export function replayStart(symbol: string, timeframe = "M15", strategy?: string
 export function replayStep(replayId: string, humanAction?: string) {
   const s = replays.get(replayId); if (!s) return null;
   if (s.index >= s.candles.length) return { ...s, finished: true };
-  const a = analyzeMarket(s.symbol, s.timeframe);
+  // Analyse the replayed candle: the candles up to and including candles[index]
+  // (never later ones), priced at that candle's close. Not the simulator's
+  // current window, which is the same for every step.
+  const candle = s.candles[s.index]!;
+  const bars = s.candles.slice(Math.max(0, s.index + 1 - REPLAY_WINDOW), s.index + 1);
+  const a = s.spread == null
+    ? analyzeMarketFromCandles(s.symbol, s.candleTimeframe, [], { mid: 0, spread: 0 }, "SIMULATOR")
+    : analyzeMarketFromCandles(
+        s.symbol, s.candleTimeframe,
+        bars.map((c) => ({ o: c.o, h: c.h, l: c.l, c: c.c })),
+        { mid: candle.c, spread: s.spread },
+        "SIMULATOR",
+      );
   const decision = {
-    candleIndex: s.index, aiAction: a.recommendedAction,
+    candleIndex: s.index, candleTsIso: candle.tsIso, candlesAnalysed: s.spread == null ? 0 : bars.length,
+    aiAction: a.recommendedAction,
     entry: (a.entryZone.low + a.entryZone.high) / 2,
     stopLoss: a.stopLoss, takeProfit: a.takeProfit,
     confidenceScore: a.confidenceScore, riskScore: a.riskScore,
     reason: a.reasonForTrade, humanAction,
   };
   s.decisions.push(decision); s.index += 1;
-  return { replayId: s.replayId, candleIndex: decision.candleIndex, decision, totalCandles: s.candles.length };
+  return {
+    replayId: s.replayId, candleIndex: decision.candleIndex, decision,
+    totalCandles: s.candles.length, finished: s.index >= s.candles.length,
+  };
 }
 export function replayStop(replayId: string) {
   const s = replays.get(replayId); if (!s) return null;

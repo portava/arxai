@@ -66,6 +66,52 @@ const PendingDraftSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
+// What a freshly-saved draft's pendingStatus / reason say about the user's
+// bridge — measured from the same connection the submit route reads, never a
+// constant. The draft is NEVER sent to the broker by this route whatever the
+// answer; this only decides which reason is true:
+//   BRIDGE_DISCONNECTED   — no bridge heartbeat within the online window, so
+//                           the EA's pending-order support could not be checked
+//   EA_UPGRADE_REQUIRED   — the EA does not report support for this order type
+//   BLOCKED_BY_PAPER_LOCK — the EA reports support; the paper-only lock holds it
+type DraftPendingStatus = "BRIDGE_DISCONNECTED" | "EA_UPGRADE_REQUIRED" | "BLOCKED_BY_PAPER_LOCK";
+
+const DRAFT_SAVED = "Pending order saved as a validated draft; it has not been sent to your broker.";
+
+function resolveDraftPendingStatus(
+  conn: { lastHeartbeat?: Date | string | null; capabilities?: unknown; eaVersion?: string | null } | null,
+  needsStopLimit: boolean,
+  nowMs: number,
+): { pendingStatus: DraftPendingStatus; reason: string } {
+  const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
+  if (!conn || !heartbeatIsOnline(classifyHeartbeatAt(lastHb, nowMs))) {
+    return {
+      pendingStatus: "BRIDGE_DISCONNECTED",
+      reason: `${DRAFT_SAVED} Your MT5 bridge has not sent a heartbeat in the last minute, so whether its EA can execute pending orders could not be checked.`,
+    };
+  }
+  const caps = normaliseCapabilities(conn.capabilities);
+  const v150 = (conn.capabilities as { v150?: { normalized?: Record<string, unknown> } } | null | undefined)?.v150?.normalized;
+  const pending = caps.pendingOrders || v150?.["supportsPendingOrders"] === true;
+  const ea = conn.eaVersion ? ` (EA v${conn.eaVersion})` : "";
+  if (!pending) {
+    return {
+      pendingStatus: "EA_UPGRADE_REQUIRED",
+      reason: `${DRAFT_SAVED} Your connected EA${ea} does not report pending-order support.`,
+    };
+  }
+  if (needsStopLimit && !caps.stopLimitOrders) {
+    return {
+      pendingStatus: "EA_UPGRADE_REQUIRED",
+      reason: `${DRAFT_SAVED} Your connected EA${ea} reports pending-order support but not stop-limit orders.`,
+    };
+  }
+  return {
+    pendingStatus: "BLOCKED_BY_PAPER_LOCK",
+    reason: `${DRAFT_SAVED} Your connected EA${ea} reports pending-order support, but ARX is paper-only: the queue does not deliver pending orders to the broker.`,
+  };
+}
+
 // ── POST /me/pending-order-draft ────────────────────────────────────────────
 // Validate + persist a pending-order draft. NEVER calls the bridge.
 router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
@@ -171,8 +217,30 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
     return;
   }
 
-  // 4. Persist the DRAFT row. Status=awaiting_confirmation with pendingStatus
-  //    EA_UPGRADE_REQUIRED makes it crystal-clear this is not queued for execution.
+  // 4. What the draft's status says about the bridge — read from the same
+  //    connection the submit route uses. Unreadable → refuse to save rather
+  //    than guess a reason.
+  let draftStatus: { pendingStatus: DraftPendingStatus; reason: string };
+  try {
+    const connRows = await listUserConnections(userId, { order: "oldest", limit: 1 });
+    draftStatus = resolveDraftPendingStatus(
+      connRows[0] ?? null,
+      orderType === "BUY_STOP_LIMIT" || orderType === "SELL_STOP_LIMIT",
+      Date.now(),
+    );
+  } catch (e) {
+    req.log?.error?.({ err: (e as Error).message, userId }, "pending-order-draft bridge read failed");
+    res.status(500).json({
+      ok: false,
+      error: "bridge_status_unavailable",
+      reason: "Your MT5 bridge status could not be read, so the draft was not saved. Try again.",
+      ...SAFETY,
+    });
+    return;
+  }
+
+  // 5. Persist the DRAFT row. Status=awaiting_confirmation; pendingStatus is
+  //    never a queued/placed state, so this is not queued for execution.
   let draftId: number;
   try {
     const [row] = await db.insert(tradeActionRequestsTable).values({
@@ -191,7 +259,7 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
       stopTriggerPrice: body.stopTriggerPrice ?? null,
       stopLimitPrice: body.stopLimitPrice ?? null,
       expiration: body.expiration ? new Date(body.expiration) : null,
-      pendingStatus: "EA_UPGRADE_REQUIRED",
+      pendingStatus: draftStatus.pendingStatus,
       reason: body.reason ?? null,
       source: "user_initiated",
       status: "awaiting_confirmation",
@@ -218,8 +286,8 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
     ok: true,
     draftId,
     executable: false,
-    pendingStatus: "EA_UPGRADE_REQUIRED",
-    reason: "Pending order saved as a validated draft. The MT5 EA does not yet support pending-order execution; this draft will NOT be sent to the broker until the EA is upgraded.",
+    pendingStatus: draftStatus.pendingStatus,
+    reason: draftStatus.reason,
     validation: ticket.validation,
     ...SAFETY,
   });

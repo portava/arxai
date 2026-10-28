@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { WeeklyReviewPerformanceSource } from "./weeklyReviewPerformanceSource";
 import type { WeeklyReviewScoreTrends } from "./weeklyReviewScoreTrends";
 
 export interface WeeklyReview {
@@ -44,4 +45,10 @@ export interface WeeklyReview {
   /** @nullable */
   nextWeekFocus?: string | null;
   createdAtIso: string;
+  /** The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows). */
+  performanceSource?: WeeklyReviewPerformanceSource;
+  /** False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week. */
+  performanceMeasured?: boolean;
+  /** Plain statement of what the performance figures are and are not built from. */
+  performanceSourceNote?: string;
 }

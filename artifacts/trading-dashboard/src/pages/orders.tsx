@@ -24,25 +24,39 @@ const STATUS_COLOR: Record<string, string> = {
   CLOSED: "border-border bg-secondary/40 text-txt-secondary",
   ERROR: "border-danger/40 bg-danger/10 text-danger",
 };
-// Human-readable status labels (logic still uses the raw enum values).
+// Human-readable status labels (logic still uses the raw enum values). Every
+// order on this page is a simulator OMS record: a fill is a simulator fill,
+// and PENDING_MT5_CONNECTION is a live-tester intent the OMS parks and never
+// sends anywhere (routes/oms.ts), so it is not "Pending" a broker.
 const STATUS_LABEL: Record<string, string> = {
   RISK_REJECTED: "Rejected",
-  APPROVED_FOR_SIMULATION: "Approved",
-  FILLED_SIMULATOR: "Filled",
-  PENDING_MT5_CONNECTION: "Pending",
+  APPROVED_FOR_SIMULATION: "Approved for simulator",
+  FILLED_SIMULATOR: "Filled in simulator",
+  PARTIALLY_FILLED_SIMULATOR: "Part-filled in simulator",
+  PENDING_MT5_CONNECTION: "Not sent — no MT5 bridge",
+  READY_FOR_BROKER_WHEN_CONNECTED: "Not sent — waiting for broker",
   RISK_CHECK_PENDING: "Checking risk",
   CANCELLED: "Cancelled",
   CLOSED: "Closed",
   ERROR: "Error",
 };
+// Environment names. PAPER is the paper simulator, not the MT5 DEMO account mode.
+const ENV_LABEL: Record<string, string> = {
+  PAPER: "Paper (simulator)",
+  DEMO_SIMULATOR: "Demo simulator",
+  LIVE_TESTER_INTENT: "Live tester intent (not sent)",
+  FUTURE_MT5_DEMO: "Future MT5 demo (unavailable)",
+  FUTURE_MT5_LIVE: "Future MT5 live (unavailable)",
+};
+const envLabel = (e: string) => ENV_LABEL[e] ?? e;
 const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 const FILTERS = [
   { k: "all", label: "All" },
-  { k: "PAPER", label: "Demo" },
+  { k: "PAPER", label: "Paper" },
   { k: "DEMO_SIMULATOR", label: "Demo Simulator" },
   { k: "LIVE_TESTER_INTENT", label: "Live Tester Intent" },
-  { k: "PENDING_MT5_CONNECTION", label: "Pending MT5" },
+  { k: "PENDING_MT5_CONNECTION", label: "Not sent (no MT5)" },
   { k: "RISK_REJECTED", label: "Rejected" },
   { k: "FILLED_SIMULATOR", label: "Filled" },
   { k: "CLOSED", label: "Closed" },
@@ -59,6 +73,7 @@ async function api(path: string, init?: RequestInit) {
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [dataSource, setDataSource] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   const [form, setForm] = useState({
     environment: "DEMO_SIMULATOR", source: "MANUAL",
@@ -67,9 +82,24 @@ export default function OrdersPage() {
     riskAmount: 15, confidenceScore: 70,
   });
 
+  // Why the latest fetch failed (null when it succeeded), and when the list on
+  // screen was last loaded. A failed fetch is never shown as an empty book.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+
   async function load() {
-    const r = await fetch("/api/orders?limit=200").then((x) => x.json());
-    setOrders(r.orders ?? []);
+    try {
+      const res = await fetch("/api/orders?limit=200");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const r = (await res.json()) as { orders?: unknown };
+      if (!Array.isArray(r?.orders)) throw new Error("response had no orders list");
+      setOrders(r.orders as Order[]);
+      setDataSource(typeof (r as { dataSource?: unknown }).dataSource === "string" ? (r as { dataSource: string }).dataSource : null);
+      setLoadedAt(Date.now());
+      setLoadErr(null);
+    } catch (e) {
+      setLoadErr(e instanceof Error ? e.message : String(e));
+    }
   }
   useEffect(() => { void load(); const id = setInterval(load, 5000); return () => clearInterval(id); }, []);
 
@@ -102,15 +132,18 @@ export default function OrdersPage() {
         </span>
         <div className="flex-1">
           <h1 className="text-2xl font-bold leading-tight">Orders</h1>
-          <p className="text-sm text-txt-secondary">Pending, queued, filled, and cancelled order records. Open positions live under Open Trades.</p>
+          <p className="text-sm text-txt-secondary">Your own simulator order records: approved, filled in the simulator, parked tester intents and cancelled. None of these reach a broker. Open positions live under Positions.</p>
         </div>
+        <span data-testid="orders-data-source" className="rounded-md border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning">
+          {loadedAt == null && loadErr ? "Data source: not read" : `Data source: ${dataSource ?? "SIMULATOR"} (not a broker)`}
+        </span>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><PlusCircle className="h-4 w-4" /> Quick create</h2>
         <div className="grid gap-2 md:grid-cols-6">
           <select className="rounded-lg border border-border bg-background/40 px-2.5 py-1.5 text-sm" value={form.environment} onChange={(e) => setForm({ ...form, environment: e.target.value })}>
-            <option value="PAPER">DEMO</option><option value="DEMO_SIMULATOR">DEMO_SIMULATOR</option><option value="LIVE_TESTER_INTENT">LIVE_TESTER_INTENT</option>
+            <option value="PAPER">{envLabel("PAPER")}</option><option value="DEMO_SIMULATOR">{envLabel("DEMO_SIMULATOR")}</option><option value="LIVE_TESTER_INTENT">{envLabel("LIVE_TESTER_INTENT")}</option>
           </select>
           <select className="rounded-lg border border-border bg-background/40 px-2.5 py-1.5 text-sm" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
             <option>MANUAL</option><option>AI_ASSIST</option><option>AI_AUTO</option><option>SCANNER</option>
@@ -132,17 +165,33 @@ export default function OrdersPage() {
         {FILTERS.map((f) => (
           <Button key={f.k} size="sm" variant={filter === f.k ? "default" : "outline"} onClick={() => setFilter(f.k)}>{f.label}</Button>
         ))}
-        <span className="ml-auto text-xs text-muted-foreground self-center">{filtered.length} of {orders.length}</span>
+        {loadedAt != null && <span className="ml-auto text-xs text-muted-foreground self-center">{filtered.length} of {orders.length}</span>}
       </div>
 
+      {loadErr && (
+        <div data-testid="orders-load-error" className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {loadedAt == null
+            ? `Orders could not be loaded (${loadErr}).`
+            : `Could not refresh orders (${loadErr}). Showing the list as last loaded at ${new Date(loadedAt).toLocaleTimeString()}.`}
+        </div>
+      )}
+
       <div className="space-y-2">
-        {filtered.length === 0 && (
+        {loadedAt != null && filtered.length === 0 && (
           <div className="rounded-2xl border border-border bg-card p-2">
-            <EmptyState
-              icon={ListChecks}
-              title="No pending orders yet."
-              description="Orders you place will show up here. Choose a market in the Scanner to get started, or open Bot Control to let ARX scan for setups."
-            />
+            {orders.length === 0 ? (
+              <EmptyState
+                icon={ListChecks}
+                title="No simulator orders on your account."
+                description="Simulator orders placed for your account show up here. Broker orders are not listed on this page."
+              />
+            ) : (
+              <EmptyState
+                icon={ListChecks}
+                title={`No orders match the “${FILTERS.find((f) => f.k === filter)?.label ?? filter}” filter.`}
+                description={`${orders.length} order${orders.length === 1 ? " is" : "s are"} loaded; choose All to see them.`}
+              />
+            )}
           </div>
         )}
         {filtered.map((o) => (
@@ -150,7 +199,7 @@ export default function OrdersPage() {
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <Badge variant="outline" className="font-mono text-[10px]">{o.orderId.slice(-8)}</Badge>
               <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-semibold", STATUS_COLOR[o.status] ?? "border-border bg-secondary/40 text-txt-muted")}>{statusLabel(o.status)}</span>
-              <Badge variant="outline">{o.environment === "PAPER" ? "DEMO" : o.environment}</Badge>
+              <Badge variant="outline">{envLabel(o.environment)}</Badge>
               <Badge variant="outline">{o.source}</Badge>
               <span className="font-semibold">{o.symbol}</span>
               <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-semibold", o.direction === "BUY" ? "bg-success/15 text-success" : "bg-danger/15 text-danger")}>{o.direction}</span>

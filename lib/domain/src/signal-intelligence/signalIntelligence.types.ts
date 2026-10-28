@@ -101,7 +101,29 @@ export interface SignalScores {
   overall: number;
   /** Net tradeable edge after subtracting working-against evidence (0–100). */
   edge: number;
+  /**
+   * Dimensions above whose score is a fixed default because no input was
+   * observed (e.g. execution 50 with no bridge telemetry, news safety 70 with
+   * no news provider answer, timing 60 with no live scalp read). Those points
+   * still fold into `overall`/`edge` (arithmetic unchanged), so any band or
+   * adjective derived from them must say the basis is partial. Optional for
+   * older producers; absent means "not reported", never "all measured".
+   */
+  unmeasured?: SignalScoreDimension[];
 }
+
+/** One scored dimension of SignalScores (excludes the overall/edge folds). */
+export type SignalScoreDimension =
+  | "direction"
+  | "entry"
+  | "execution"
+  | "risk"
+  | "newsSafety"
+  | "timing"
+  | "survivability";
+
+/** Number of scored dimensions folded into `overall`. */
+export const SIGNAL_SCORE_DIMENSION_COUNT = 7;
 
 // ── Evidence + conflict ──────────────────────────────────────────────────────
 
@@ -252,7 +274,35 @@ export interface PreviousSignalSnapshot {
 
 // ── The normalized signal object ─────────────────────────────────────────────
 
+/**
+ * Why the scanner's read (and its entry/stop geometry) was NOT bound into a
+ * market-edge signal. lower_snake machine codes; `reason` is the user-safe
+ * clause. Display/reason only — never an execution input.
+ */
+export type ScannerBindingReasonCode =
+  | "no_scanner_read"
+  | "quote_last_only"
+  | "no_bound_quote"
+  | "different_candles"
+  | "scanner_not_live"
+  | "setup_withheld";
+
+export interface ScannerBinding {
+  /** True when the scanner read was bound into this signal. */
+  bound: boolean;
+  /** Why it was not bound (null when bound, or when there was no market read). */
+  reasonCode: ScannerBindingReasonCode | null;
+  /** Plain-English clause ("the live quote is last-price only — …"), or null. */
+  reason: string | null;
+}
+
 export interface RubyMarketEdgeSignal {
+  /**
+   * ADDITIVE, optional. Whether the scanner's read was bound into this signal
+   * and, if not, the gate that dropped it — so a card can say WHY no
+   * entry/stop level exists instead of guessing (e.g. blaming the feed).
+   */
+  scannerBinding?: ScannerBinding;
   /** First observation is not proof of when a setup formed. A read-side poll
    * or failed persistence must never claim it saved durable continuity. */
   continuity?: { basis: "source_bound_memory" | "current_observation"; saved: boolean };
@@ -286,7 +336,16 @@ export interface RubyMarketEdgeSignal {
 
   // Scoring.
   scores: SignalScores;
+  /** Band of scores.overall. Persisted/diffed as-is; see confidenceBandBasis. */
   confidenceBand: ConfidenceBand;
+  /**
+   * FULL: every dimension folded into `overall` came from an observed input,
+   * so the band may be shown as a quality adjective. PARTIAL: at least one is
+   * a fixed default (listed in scores.unmeasured) — surfaces show the number
+   * and what is unmeasured, never the band adjective. Optional for older
+   * servers; absent is treated like PARTIAL (no adjective).
+   */
+  confidenceBandBasis?: "FULL" | "PARTIAL";
   edgeScore: number;
 
   // Intelligence reads.
@@ -307,6 +366,10 @@ export interface RubyMarketEdgeSignal {
   /** When the setup first formed (ISO) — carried across reads. */
   firstSeenAt: string;
   lateReason: string | null;
+  /** Closed bars the structure/regime reads actually ran over (the engine's
+   * input length), or null when the read was blind. Optional so persisted
+   * snapshots and fixtures without it still type-check; never a constant. */
+  structureWindow?: number | null;
 }
 
 // ── Engine inputs (normalized from real subsystems by the service) ───────────
@@ -379,6 +442,12 @@ export interface SignalEngineInput {
   scalp: SignalScalpInput | null;
   execution: SignalExecutionInput | null;
   newsRiskLevel: NewsRiskLevel | null;
+  /**
+   * Whether `newsRiskLevel` came from a news provider that actually answered
+   * for this symbol. A fallback "none" (provider down / no news context) is
+   * not an observation. Defaults to `newsRiskLevel != null`.
+   */
+  newsMeasured?: boolean;
   /** Previous per-user snapshot for the what-changed diff. */
   previous: PreviousSignalSnapshot | null;
   /** Epoch ms; injected for deterministic tests. Defaults to Date.now() at the seam. */
@@ -423,11 +492,35 @@ export interface ExplanationLevels {
   stopLoss: number | null;
 }
 
-/** No-trade intelligence — why skipping is the right call, and how sure. */
+/**
+ * What the no-trade `confidence` number is. RULE_TIER: a fixed weight assigned
+ * to the rule that fired (one constant per rule) — NOT a measured or
+ * back-tested probability. EDGE_DERIVED: computed from the edge score on an
+ * actionable read. Neither may be rendered as "% sure".
+ */
+export type NoTradeBasis = "RULE_TIER" | "EDGE_DERIVED";
+
+/** The no-trade rule that fired (null when the read is actionable). */
+export type NoTradeRuleKey =
+  | "NO_LIVE_DATA"
+  | "INVALID_OR_EXPIRED"
+  | "NO_DIRECTION"
+  | "LATE"
+  | "BELOW_MIN_EVIDENCE"
+  | "EARLY"
+  | "NOT_AT_ENTRY";
+
+/** No-trade intelligence — why skipping is the right call, and which rule said so. */
 export interface NoTradeIntelligence {
   isNoTrade: boolean;
-  /** 0–100 — how confident Ruby is that not trading is correct right now. */
+  /**
+   * 0–100 fixed rule weight (basis RULE_TIER) or edge-derived value (basis
+   * EDGE_DERIVED). NOT a measured probability; never render it as "% sure".
+   * Kept for back-compat.
+   */
   confidence: number;
+  basis: NoTradeBasis;
+  ruleKey: NoTradeRuleKey | null;
   reason: string | null;
 }
 
@@ -444,6 +537,13 @@ export interface RubyMarketReadExplanation {
   actionable: boolean;
   /** Plain-English list of what's missing before acting (handshake gating). */
   missingContext: string[];
+  /**
+   * ADDITIVE, optional. Why NO entry/watch/stop/invalidation level is published
+   * on this read (one plain-English sentence), or null when
+   * any level is present. Composed only from facts the signal carries, so a
+   * card never has to guess the cause (e.g. blame the feed) for missing levels.
+   */
+  levelsWithheldReason?: string | null;
   disclaimer: string;
 }
 
@@ -477,7 +577,21 @@ export interface OpportunityInput {
   hasLiveData: boolean;
   isLate: boolean;
   reason: string | null;
+  /**
+   * The row's own fused final read (scanner computeFinalRead label). Only
+   * TRADE_WATCH may be filed as READY_NOW: NO_TRADE / AVOID_FOR_NOW → AVOID,
+   * WAIT_FOR_CONFIRMATION → at most FORMING_SOON. `null` = the read is unknown,
+   * which also withholds READY_NOW. Omitted (legacy callers) = not consulted.
+   */
+  finalReadLabel?: OpportunityFinalReadLabel | null;
 }
+
+/** The scanner's fused final-read verdict for a row. */
+export type OpportunityFinalReadLabel =
+  | "TRADE_WATCH"
+  | "WAIT_FOR_CONFIRMATION"
+  | "AVOID_FOR_NOW"
+  | "NO_TRADE";
 
 export interface OpportunityMapRow extends OpportunityInput {
   category: OpportunityCategory;

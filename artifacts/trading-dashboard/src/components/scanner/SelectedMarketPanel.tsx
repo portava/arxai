@@ -14,10 +14,16 @@ import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
-import { resolveSelectedMarketView } from "@/components/scanner/selectedMarketView";
+import {
+  resolveSelectedMarketView,
+  selectedMarketDataAsOfLabel,
+  selectedMarketReadShown,
+  NOT_LIVE_LEVELS_REASON,
+} from "@/components/scanner/selectedMarketView";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
+import { eventCountdownFromIso } from "@/lib/eventCountdown";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -34,11 +40,36 @@ function impactBadgeClass(i: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"): string {
   return "bg-zinc-500/20 text-foreground border-zinc-500/40";
 }
 
-function timeAgo(iso: string): string {
-  const diff = Math.max(0, Date.now() - +new Date(iso));
-  const s = Math.round(diff / 1000);
+// A stamp later than now (beyond this clock-skew allowance) is not an
+// observation. dataAsOf is the newest provider bar's closeTime, which for a
+// still-forming bar is its SCHEDULED close in the future.
+const FUTURE_STAMP_SKEW_MS = 5_000;
+
+// Age of a past timestamp against a ticking now; null when the stamp is
+// missing, malformed or in the future (never clamped to "0s ago").
+function timeAgo(iso: string, nowTs: number): string | null {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t) || t > nowTs + FUTURE_STAMP_SKEW_MS) return null;
+  const s = Math.max(0, Math.floor((nowTs - t) / 1000));
   if (s < 60) return `${s}s ago`;
-  return `${Math.round(s / 60)}m ago`;
+  return `${Math.floor(s / 60)}m ago`;
+}
+
+
+// Re-renders once a second while the tab is visible so the ages above advance
+// between the 15s polls instead of freezing at their first value.
+function useTickingNow(): number {
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  useEffect(() => {
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => { if (id == null) id = setInterval(() => setNowTs(Date.now()), 1000); };
+    const stop = () => { if (id != null) { clearInterval(id); id = null; } };
+    const onVis = () => (document.hidden ? stop() : (setNowTs(Date.now()), start()));
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
+  return nowTs;
 }
 
 export function SelectedMarketPanel() {
@@ -48,6 +79,9 @@ export function SelectedMarketPanel() {
   const { name } = useAssistantName();
   const activeSymbol = resolveSymbol(bareSymbol(chartSym || "EURUSD").toUpperCase())?.canonicalSymbol ?? "EURUSD";
   const [ticket, setTicket] = useState<{ selection: string; side: "BUY" | "SELL" } | null>(null);
+  // Ages and event countdowns are computed against a ticking clock (never the
+  // server's build-time minute offset), so they advance between polls.
+  const nowTs = useTickingNow();
 
   // Compact public Deriv status — drives the "Deriv feed not configured"
   // badge in SymbolExplorer. Synthetics stay selectable either way.
@@ -131,10 +165,25 @@ export function SelectedMarketPanel() {
   const fallbackMessage =
     fallback && fallback.ok === false ? fallback.message : undefined;
 
+  // Downgrade-only: a read the feed cannot support is never shown as direction.
+  const readShown = ok ? selectedMarketReadShown(ok) : false;
+  const readWithheldReason = ok && !readShown
+    ? ok.readWithheldReason ?? NOT_LIVE_LEVELS_REASON
+    : null;
+
+  // Downgrade-only: an empty event list reads as a quiet day only when the
+  // server says the calendar was actually checked.
+  const calendarChecked = ok?.newsRisk?.calendarChecked === true;
+  const calendarNote = ok
+    ? ok.newsRisk?.calendarNote
+      ?? (calendarChecked ? null : "The economic calendar could not be checked, so scheduled events are not shown.")
+    : null;
+
   const rubyNote = useMemo(() => {
     if (!ok) return null;
+    if (readWithheldReason) return `No directional read right now. ${readWithheldReason}`;
     return `${ok.explanation.hedge} ${ok.explanation.why}`;
-  }, [ok]);
+  }, [ok, readWithheldReason]);
 
   // ONE always-visible Ruby Reasoning Block for the selected/detail view.
   // Honesty: levelsWithheld / a degraded dataState collapse this to
@@ -142,6 +191,36 @@ export function SelectedMarketPanel() {
   // entry/stop/target. Display only; grants no execution permission.
   const oppReasoning = useMemo(() => {
     if (!ok) return null;
+    if (readWithheldReason) {
+      // Downgrade-only: no side, confidence, trend or level reaches the
+      // reasoning block when the feed cannot support a directional read.
+      return buildReasoningFromOppMap({
+        symbol: ok.symbol,
+        timeframe: ok.timeframe,
+        bias: "WAIT",
+        confidenceLabel: "",
+        trendState: "",
+        volatilityLabel: "",
+        entryZone: null,
+        suggestedStop: null,
+        suggestedTakeProfit: null,
+        riskRewardRatio: 0,
+        riskWarnings: ok.highlights.riskWarnings ?? [],
+        explanation: {
+          hedge: "No directional read right now.",
+          why: readWithheldReason,
+          whyItMatters: "Direction, confidence and levels return once the feed is confirmed live with enough closed bars.",
+          risk: "There is no actionable read until the feed is confirmed live.",
+          invalidation: "Not available without a current read.",
+          cautions: ok.explanation.cautions ?? [],
+        },
+        levelsWithheld: true,
+        levelsWithheldReason: readWithheldReason,
+        dataState: ok.dataState ?? null,
+        dataSourceLabel: ok.dataSourceLabel ?? null,
+        newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+      });
+    }
     return buildReasoningFromOppMap({
       symbol: ok.symbol,
       timeframe: ok.timeframe,
@@ -168,7 +247,7 @@ export function SelectedMarketPanel() {
       dataSourceLabel: ok.dataSourceLabel ?? null,
       newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
     });
-  }, [ok]);
+  }, [ok, readWithheldReason]);
 
   return (
     <Card className="rounded-2xl border-success/25 bg-card" data-testid="selected-market-panel">
@@ -248,22 +327,28 @@ export function SelectedMarketPanel() {
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="outline">{ok.symbol}</Badge>
               <Badge variant="outline">{ok.timeframe}</Badge>
-              <Badge className={biasBadgeClass(ok.highlights.bias)}>{ok.highlights.bias}</Badge>
-              <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
-              <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
-              <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>
+              {readShown ? (
+                <>
+                  <Badge className={biasBadgeClass(ok.highlights.bias)} data-testid="badge-selected-bias">{ok.highlights.bias}</Badge>
+                  <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
+                  <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
+                  <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>
+                </>
+              ) : (
+                <Badge variant="outline" data-testid="badge-read-withheld" title={readWithheldReason ?? undefined}>
+                  No directional read
+                </Badge>
+              )}
               {ok.dataSourceLabel && (
                 <Badge variant="outline" data-testid="badge-data-source">{ok.dataSourceLabel}</Badge>
               )}
               <span className="ml-auto" data-testid="text-selected-last-updated">
-                {ok.dataAsOf
-                  ? `Data as of ${timeAgo(ok.dataAsOf)}`
-                  : "Awaiting live market data"}
+                {selectedMarketDataAsOfLabel(ok.dataAsOf, nowTs)}
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-ruby-cache-note">
               {ok.dataAsOf
-                ? `Analysis built ${timeAgo(ok.generatedAt)}${ok.cacheHit ? " · cached" : ""}. `
+                ? `Analysis built ${timeAgo(ok.generatedAt, nowTs) ?? "at an unconfirmed time"}${ok.cacheHit ? " · cached" : ""}. `
                 : ""}
               {name} Market Intelligence uses cached market analysis and updates on interval/event triggers (no live AI/LLM call per refresh).
             </p>
@@ -318,10 +403,17 @@ export function SelectedMarketPanel() {
             <div className="rounded-xl border border-border bg-background/40 p-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-foreground">Upcoming events that may move {ok.symbol}</div>
-                <Badge variant="outline" className="text-[10px]">News risk: {ok.newsRisk?.riskLevel ?? "—"}</Badge>
+                <Badge variant="outline" className="text-[10px]" data-testid="badge-selected-news-risk">
+                  News risk: {calendarChecked ? ok.newsRisk?.riskLevel ?? "—" : "unknown"}
+                </Badge>
               </div>
+              {calendarNote && (
+                <div className="text-xs text-muted-foreground mb-1" data-testid="text-selected-calendar-note">{calendarNote}</div>
+              )}
               {(ok.upcomingEvents ?? []).length === 0
-                ? <div className="text-xs text-muted-foreground">No medium/high impact events in the next 24h.</div>
+                ? (calendarChecked && !calendarNote
+                  ? <div className="text-xs text-muted-foreground">No medium/high impact events in the next 24h.</div>
+                  : null)
                 : (
                   <ul className="text-xs space-y-1">
                     {(ok.upcomingEvents ?? []).map((e) => (
@@ -329,12 +421,12 @@ export function SelectedMarketPanel() {
                         <Badge className={impactBadgeClass(e.impactLevel)}>{e.impactLevel}</Badge>
                         <span className="font-mono text-txt-muted">{e.currency}</span>
                         <span className="flex-1 truncate">{e.title}</span>
-                        <span className="text-txt-muted">{e.minutesUntil >= 0 ? `in ${e.minutesUntil}m` : `${-e.minutesUntil}m ago`}</span>
+                        <span className="text-txt-muted" data-testid="text-selected-event-countdown">{eventCountdownFromIso(e.eventTime, nowTs)}</span>
                       </li>
                     ))}
                   </ul>
                 )}
-              {ok.newsRisk?.summary && (
+              {ok.newsRisk?.summary && ok.newsRisk.summary !== calendarNote && (
                 <div className="text-xs mt-2 text-warning">{ok.newsRisk.summary}</div>
               )}
             </div>

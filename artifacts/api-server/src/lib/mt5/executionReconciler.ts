@@ -617,9 +617,15 @@ async function recordPartialFillEvidence(
  * did not open; a governed row missing from the snapshot keeps its old
  * observation time, so the Guardian escalates it as unverifiable instead of
  * guessing. Returns the rows refreshed or started.
+ *
+ * The push's `profit` is the broker's floating P/L for the position, observed
+ * at `now` (lastSyncedAt). It is the only writer of unrealizedProfitLoss for
+ * these rows; a push without a finite profit clears it to null so an older
+ * figure is never re-stamped as current. currentPrice is not part of this
+ * push and is left as it is.
  */
 export async function applyOwnPositionSnapshot(userId: number,
-  positions: Array<{ ticket: number | string; lot: number; sl?: number | null; tp?: number | null; side?: string; symbol?: string; entry?: number }>,
+  positions: Array<{ ticket: number | string; lot: number; sl?: number | null; tp?: number | null; side?: string; symbol?: string; entry?: number; profit?: number | null }>,
   now = new Date()): Promise<number> {
   const rows = await demoPositionLedger.select(
     {
@@ -642,6 +648,7 @@ export async function applyOwnPositionSnapshot(userId: number,
   for (const p of positions) {
     const ticket = String(p.ticket);
     const side = String(p.side ?? "").toUpperCase();
+    const brokerProfit = typeof p.profit === "number" && Number.isFinite(p.profit) ? p.profit : null;
     if (governed.has(ticket) && p.symbol && (side === "BUY" || side === "SELL")) {
       await demoPositionWriter.insert(
         {
@@ -653,6 +660,7 @@ export async function applyOwnPositionSnapshot(userId: number,
           entryPrice: p.entry ?? 0,
           stopLoss: p.sl ?? null,
           takeProfit: p.tp ?? null,
+          unrealizedProfitLoss: brokerProfit,
           status: "OPEN",
           openedAt: now,
           lastSyncedAt: now,
@@ -669,6 +677,7 @@ export async function applyOwnPositionSnapshot(userId: number,
         lotSize: p.lot,
         stopLoss: p.sl ?? null,
         takeProfit: p.tp ?? null,
+        unrealizedProfitLoss: brokerProfit,
         lastSyncedAt: now,
         updatedAt: now,
       },

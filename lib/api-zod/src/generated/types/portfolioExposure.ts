@@ -8,15 +8,31 @@
 import type { PortfolioExposureExposureByCurrencyItem } from "./portfolioExposureExposureByCurrencyItem";
 import type { PortfolioExposureExposureByMarket } from "./portfolioExposureExposureByMarket";
 import type { PortfolioExposureExposureByStrategy } from "./portfolioExposureExposureByStrategy";
+import type { PortfolioExposureSource } from "./portfolioExposureSource";
 
 export interface PortfolioExposure {
   totalOpen: number;
   totalClosed: number;
-  floatingPnl: number;
+  /**
+   * null when any open row has no marked-to-market P&L (never a guessed 0).
+   * @nullable
+   */
+  floatingPnl: number | null;
+  /** @nullable */
+  floatingPnlUnavailableReason?: string | null;
+  /** Excludes closed rows whose pnlStatus is UNKNOWN. */
   realizedPnl: number;
+  /** Closed rows left out of realized/daily/weekly figures because pnlStatus is UNKNOWN. */
+  realizedPnlExcludedUnknown?: number;
+  /** Where the figures come from. */
+  source?: PortfolioExposureSource;
+  /** Plain-English scope of the figures (e.g. broker positions not included). */
+  sourceNote?: string;
   exposureByMarket: PortfolioExposureExposureByMarket;
   exposureByStrategy: PortfolioExposureExposureByStrategy;
   exposureByCurrency: PortfolioExposureExposureByCurrencyItem[];
+  /** Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown. */
   dailyDrawdown: number;
+  /** Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown. */
   weeklyDrawdown: number;
 }

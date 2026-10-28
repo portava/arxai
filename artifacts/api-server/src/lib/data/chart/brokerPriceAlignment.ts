@@ -17,6 +17,7 @@
 // SAFETY: read-only. Never touches any execution gate or trade path.
 
 import type { AssetClass } from "../marketDataRouter.js";
+import { isBoundBrokerQuote, type BrokerQuoteBinding } from "./brokerQuoteBinding.js";
 
 export type AlignmentTolerance = "tight" | "normal" | "wide" | "failed" | "unknown";
 
@@ -46,6 +47,13 @@ export interface BrokerPriceAlignment {
   adminDetail: string | null;
   /** True when broker bid/ask was actually available from the symbol directory. */
   brokerDataAvailable: boolean;
+  /**
+   * Additive: whether the compared quote is bound to the chart series
+   * (provider/bridge/owner identity and an observed tick time within the
+   * freshness budget). Only a BOUND comparison can earn chart-Truth points or
+   * claim alignment; null/absent = no binding evaluated (unmeasured).
+   */
+  quoteBinding?: BrokerQuoteBinding | null;
 }
 
 export interface BrokerAlignmentInputs {
@@ -61,6 +69,9 @@ export interface BrokerAlignmentInputs {
   brokerAsk: number | null;
   /** Broker-reported spread in points (null if not available). */
   spreadPoints: number | null;
+  /** Identity/freshness binding of this quote to the chart series. Omitted =
+   *  not evaluated: the numbers are compared but cannot be claimed aligned. */
+  quoteBinding?: BrokerQuoteBinding | null;
 }
 
 interface Tolerances {
@@ -89,6 +100,8 @@ function classifyDeviation(deviationPct: number, tolerances: Tolerances): Alignm
  */
 export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): BrokerPriceAlignment {
   const { chartPrice, chartPriceBasis, assetClass, brokerBid, brokerAsk, spreadPoints } = inputs;
+  const quoteBinding = inputs.quoteBinding ?? null;
+  const bound = isBoundBrokerQuote(quoteBinding);
 
   const hasBrokerData = brokerBid != null && brokerAsk != null &&
     Number.isFinite(brokerBid) && Number.isFinite(brokerAsk) && brokerBid > 0 && brokerAsk >= brokerBid;
@@ -110,6 +123,7 @@ export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): Brok
       userMessage: "No chart price available — waiting for feed.",
       adminDetail: null,
       brokerDataAvailable: false,
+      quoteBinding,
     };
   }
 
@@ -130,6 +144,7 @@ export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): Brok
       userMessage: "A usable broker quote is not available for this symbol.",
       adminDetail: "Broker comparison requires finite positive bid/ask with ask at least bid — alignment unmeasured.",
       brokerDataAvailable: false,
+      quoteBinding,
     };
   }
 
@@ -141,22 +156,35 @@ export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): Brok
     chartPriceBasis === "BID" ? brokerBid! : brokerMid;
   const deviation = Math.abs(chartPrice - referencePrice);
   const deviationPct = deviation / referencePrice;
-  if (!Number.isFinite(deviationPct)) return noBrokerAlignment(chartPrice, chartPriceBasis);
+  if (!Number.isFinite(deviationPct)) return { ...noBrokerAlignment(chartPrice, chartPriceBasis), quoteBinding };
 
   const tolerances = tolerancesFor(assetClass);
   const tolerance = classifyDeviation(deviationPct, tolerances);
-  const aligned = tolerance === "tight" || tolerance === "normal";
+  // An unbound quote's numbers are still compared (an observed "failed"
+  // deviation keeps blocking trade confirmation exactly as before), but they
+  // cannot establish that the chart is aligned with this account's broker.
+  const aligned = bound && (tolerance === "tight" || tolerance === "normal");
 
   const deviationPctDisplay = (deviationPct * 100).toFixed(4);
+  const bindingDetail = quoteBinding
+    ? ` quoteBinding=${quoteBinding.status}${quoteBinding.reasons.length ? `(${quoteBinding.reasons.join(",")})` : ""}.`
+    : " quoteBinding=not evaluated.";
   const adminDetail =
     `chartPrice=${chartPrice} (${chartPriceBasis}); brokerBid=${brokerBid}; brokerAsk=${brokerAsk}; `
-    + `brokerMid=${brokerMid.toFixed(5)}; deviation=${deviationPctDisplay}%; spread=${spreadPoints ?? "N/A"}pts; tolerance=${tolerance}.`;
+    + `brokerMid=${brokerMid.toFixed(5)}; deviation=${deviationPctDisplay}%; spread=${spreadPoints ?? "N/A"}pts; tolerance=${tolerance}.`
+    + bindingDetail;
 
-  const userMessage = aligned
-    ? "Chart price aligned with broker quote."
-    : tolerance === "wide"
-      ? "Chart is syncing with the broker — minor delay expected."
-      : "Chart price is syncing with broker — please wait.";
+  const userMessage = !bound
+    ? (quoteBinding?.status === "MISMATCH"
+      ? "Broker quote belongs to a different feed or account than this chart — alignment not confirmed."
+      : quoteBinding?.status === "STALE"
+        ? "Broker quote is not current — alignment not confirmed."
+        : "Broker quote identity or tick time is unverified — alignment not confirmed.")
+    : aligned
+      ? "Chart price aligned with broker quote."
+      : tolerance === "wide"
+        ? "Chart is syncing with the broker — minor delay expected."
+        : "Chart price is syncing with broker — please wait.";
 
   return {
     aligned,
@@ -171,12 +199,15 @@ export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): Brok
     userMessage,
     adminDetail,
     brokerDataAvailable: true,
+    quoteBinding,
   };
 }
 
-/** A cached/type-cast object cannot establish alignment from flags alone. */
+/** A cached/type-cast object cannot establish alignment from flags alone.
+ *  The compared quote must also be bound to the chart series' identity with
+ *  an observed tick time inside the freshness budget. */
 export function hasMeasuredBrokerAlignment(alignment: BrokerPriceAlignment | undefined): boolean {
-  if (!alignment || alignment.brokerDataAvailable !== true ||
+  if (!alignment || alignment.brokerDataAvailable !== true || !isBoundBrokerQuote(alignment.quoteBinding) ||
       !["tight", "normal", "wide", "failed"].includes(alignment.tolerance)) return false;
   const { chartPrice, brokerBid, brokerAsk, brokerMid, deviationPct } = alignment;
   return [chartPrice, brokerBid, brokerAsk, brokerMid].every(value => value != null && Number.isFinite(value) && value > 0) &&
@@ -197,18 +228,20 @@ export function hasMeasuredBrokerAlignment(alignment: BrokerPriceAlignment | und
  *   - unknown / no broker quote              → null (NO alignment claim)
  *
  * Honesty invariant: NEVER returns "Mirror synced" unless `aligned === true`
- * AND `brokerDataAvailable === true`. Display-copy only — never an execution
+ * AND `brokerDataAvailable === true` AND the quote binding is BOUND. Display-copy only — never an execution
  * gate, never weakens the 16-gate live pipeline.
  */
 export function mirrorTrustSegment(
   tradeConfirmationAllowed: boolean,
-  alignment: Pick<BrokerPriceAlignment, "aligned" | "tolerance" | "brokerDataAvailable">,
+  alignment: Pick<BrokerPriceAlignment, "aligned" | "tolerance" | "brokerDataAvailable" | "quoteBinding">,
 ): string | null {
   // Seam failure or alignment failure already collapsed tradeConfirmationAllowed
   // to false — surface that as degraded regardless of the raw tolerance band.
   if (!tradeConfirmationAllowed) return "Mirror degraded";
   // tradeConfirmationAllowed === true ⇒ seam clean AND tolerance !== "failed".
   if (!alignment.brokerDataAvailable) return null; // unknown → make no claim
+  // A quote not bound to this series' identity/freshness proves nothing.
+  if (!isBoundBrokerQuote(alignment.quoteBinding)) return null;
   if (alignment.aligned) return "Mirror synced"; // tight / normal
   return "Mirror drifting"; // wide
 }
@@ -233,5 +266,6 @@ export function noBrokerAlignment(chartPrice: number | null, chartPriceBasis: st
     userMessage: "Broker quote not connected.",
     adminDetail: "No MT5 bridge connection for this user — broker alignment unavailable.",
     brokerDataAvailable: false,
+    quoteBinding: null,
   };
 }

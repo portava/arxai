@@ -113,3 +113,57 @@ test("radar failure fails open — falls back to schedule engine without throwin
   assert.equal(out.phase, "NONE");
   assert.equal(out.heatAdjustment, 0);
 });
+
+test("calendarConnected reflects the radar provider, not whether an event is near", async () => {
+  const connectedEmpty: NewsHeatDeps["buildRadarFn"] = async () => ({
+    radar: {
+      symbol: "EURUSD",
+      provider: { connected: true, name: "fred", note: "live" },
+      events: [],
+      topSeverity: null,
+      highImpactWindowActive: false,
+      summary: "",
+    },
+    behavior: { mode: "NORMAL", note: "" },
+  });
+  const on = await computeNewsHeat("EURUSD", { classify: () => "forex", analyzeNewsRiskFn: () => newsRisk(), buildRadarFn: connectedEmpty });
+  assert.equal(on.phase, "NONE");
+  assert.equal(on.calendarConnected, true);
+  const off = await computeNewsHeat("EURUSD", { classify: () => "forex", analyzeNewsRiskFn: () => newsRisk(), buildRadarFn: disconnectedRadar });
+  assert.equal(off.calendarConnected, false);
+});
+
+test("FRED date-only release held IMMINENT by the radar is not 'Settled' or 'N min ago'", async () => {
+  const today = "2026-10-27";
+  const out = await computeNewsHeat("EURUSD", {
+    classify: () => "forex",
+    analyzeNewsRiskFn: () => newsRisk(),
+    buildRadarFn: async () => ({
+      radar: {
+        symbol: "EURUSD",
+        provider: { connected: true, name: "fred", note: "live" },
+        events: [{
+          id: "cpi",
+          title: "Consumer Price Index",
+          currency: "USD",
+          severity: "CRITICAL",
+          eventTimeIso: `${today}T00:00:00.000Z`, // date-only sentinel
+          countdownSeconds: -32_400, // 09:00 UTC, relative to midnight
+          state: "IMMINENT", // radar: release time not confirmed, held imminent all day
+          affectsSymbol: true,
+          affectedSymbols: ["EURUSD"],
+        }],
+        topSeverity: "CRITICAL",
+        highImpactWindowActive: true,
+        summary: "",
+      },
+      behavior: { mode: "PRE_NEWS_CAUTION", note: "" },
+    }),
+  });
+  assert.notEqual(out.phase, "SETTLED");
+  assert.notEqual(out.phase, "POST_EVENT");
+  assert.equal(out.phase, "PRE_EVENT");
+  assert.equal(out.minutesSince, null);
+  assert.equal(out.minutesUntil, null);
+  assert.equal(out.heatAdjustment, 15);
+});

@@ -27,7 +27,11 @@
 //     FIRST in the forex router chain so the push wins outright. The newest
 //     bar opens at the CURRENT 5-minute bucket (trailing 0) → feed quality
 //     "clean" → aiUsable=true → VERIFIED, satisfying the chart-truth +
-//     handshake gates that feedUsable() requires.
+//     handshake gates that feedUsable() requires. The window and a live quote
+//     are pushed with the SAME bridge identity and the quote carries its own
+//     observed tick time, so the broker comparison is BOUND through the real
+//     binding functions (brokerQuoteBinding.ts). The same numbers requested by
+//     another user, or without an observed tick time, stay unbound → unusable.
 //   - feedUsable=false: a clearly non-existent ticker with NO feed pushed and
 //     no provider coverage → the context builder honestly reports
 //     insufficient / UNAVAILABLE, never fabricating data.
@@ -56,7 +60,15 @@ import {
 } from "../../artifacts/api-server/src/lib/data/chart/chartIntelligence.js";
 import { buildRubyDraftRead } from "../../artifacts/api-server/src/lib/assistant/rubyDraftRead.js";
 import { getSymbolMarketContextTool, getTradeMarketContextTool, getMarketSnapshot } from "../../artifacts/api-server/src/lib/assistant/tools.js";
-import { updateCandlesFromMT5 } from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
+import {
+  updateCandlesFromMT5,
+  updateQuoteFromMT5,
+  readMt5Quote,
+} from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
+import {
+  observationFromMt5Quote,
+  selectBrokerQuote,
+} from "../../artifacts/api-server/src/lib/data/chart/brokerQuoteBinding.js";
 import {
   _resetMarketProviderForTests,
   _setMarketProviderForTests,
@@ -87,6 +99,9 @@ const TIMEFRAME = "M5" as const;
 const M5_MS = 5 * 60 * 1000;
 // Comfortably above MIN_CANDLE_HISTORY_COUNT (150) for the M5 chart-truth gate.
 const CANDLE_COUNT = 220;
+// Synthetic bridge identity for the attributed candle/quote pushes (negative
+// so it can never collide with a real bridge connection or user id).
+const QUOTE_BRIDGE = { bridgeConnectionId: -930_301, userId: -930_302 } as const;
 
 let passes = 0;
 let failures = 0;
@@ -197,7 +212,10 @@ export async function run(): Promise<CiTestResultLike> {
   // ── 1. buildRubyDraftRead — usable feed → dataQuality "ok", no caution ────
   // eslint-disable-next-line no-console
   console.log(`buildRubyDraftRead (${VERIFIED_SYMBOL}) — clean feed pushed → usable`);
-  updateCandlesFromMT5(VERIFIED_SYMBOL, buildCleanWindow());
+  // The window is pushed WITH a bridge identity so the served series carries
+  // observed provider/bridge/owner attribution — the only kind of series a
+  // broker quote can be bound to.
+  updateCandlesFromMT5(VERIFIED_SYMBOL, buildCleanWindow(), TIMEFRAME, QUOTE_BRIDGE);
   const sharedState = await buildChartIntelligenceState(VERIFIED_SYMBOL, TIMEFRAME, CANDLE_COUNT);
   // The shared state has no broker quote, so its mirror check is unmeasured and
   // must not count as a usable read.
@@ -205,19 +223,48 @@ export async function run(): Promise<CiTestResultLike> {
     buildRubyDraftRead(sharedState, "analyze").feedUsable === false,
     "usable: shared state without a broker quote is NOT usable (mirror unmeasured)",
   );
-  // Same enrichment the per-user routes apply: an EA bid/ask straddling the
-  // latest closed close gives a measured, tight broker comparison.
+  // Same enrichment the per-user routes apply (userBrokerAlignment.ts): a live
+  // MT5 quote pushed by the SAME bridge that produced the series, carrying the
+  // producer's own tick time, straddling the latest closed close. It is bound
+  // through the real binding functions — never a hand-built BOUND object.
   const cached = getCachedIntelligenceContext(VERIFIED_SYMBOL, TIMEFRAME, CANDLE_COUNT);
   const closedClose = sharedState.latestClosedCandle?.close ?? Number.NaN;
   assert(cached != null && Number.isFinite(closedClose), "usable: cached context and closed close present");
-  const usableState = enrichStateWithBrokerAlignment(cached!.state, cached!.truthResult, cached!.feedStatus, {
-    chartPrice: closedClose,
-    chartPriceBasis: "MID",
-    assetClass: sharedState.assetClass,
-    brokerBid: closedClose - 0.00001,
-    brokerAsk: closedClose + 0.00001,
-    spreadPoints: 2,
-  });
+  const series = cached?.seriesAttribution ?? null;
+  assert(
+    series?.providerId === "mt5_broker" &&
+      series.bridgeConnectionId === QUOTE_BRIDGE.bridgeConnectionId &&
+      series.userId === QUOTE_BRIDGE.userId,
+    `usable: served series is attributed to the pushing bridge (got ${JSON.stringify(series)})`,
+  );
+  updateQuoteFromMT5(VERIFIED_SYMBOL, {
+    symbol: VERIFIED_SYMBOL,
+    bid: closedClose - 0.00001,
+    ask: closedClose + 0.00001,
+    timestamp: new Date().toISOString(),
+  }, QUOTE_BRIDGE, { tickTimeObserved: true });
+  const liveQuote = observationFromMt5Quote(
+    readMt5Quote(VERIFIED_SYMBOL, { bridgeConnectionId: QUOTE_BRIDGE.bridgeConnectionId }),
+  );
+  const enrichWith = (requestingUserId: number) => {
+    const { quote, binding } = selectBrokerQuote([liveQuote], { series, requestingUserId, now: Date.now() });
+    const state = enrichStateWithBrokerAlignment(cached!.state, cached!.truthResult, cached!.feedStatus, {
+      chartPrice: closedClose,
+      chartPriceBasis: "MID",
+      assetClass: sharedState.assetClass,
+      brokerBid: quote?.bid ?? null,
+      brokerAsk: quote?.ask ?? null,
+      spreadPoints: quote?.spreadPoints ?? null,
+      quoteBinding: binding,
+    });
+    return { binding, state };
+  };
+  const bound = enrichWith(QUOTE_BRIDGE.userId);
+  assert(
+    bound.binding.status === "BOUND" && bound.binding.reasons.length === 0,
+    `usable: same-bridge, owner-requested, freshly ticked quote is BOUND (got ${bound.binding.status} ${bound.binding.reasons.join(",")})`,
+  );
+  const usableState = bound.state;
   const usableRead = buildRubyDraftRead(usableState, "analyze");
   assert(
     usableRead.feedUsable === true,
@@ -230,6 +277,59 @@ export async function run(): Promise<CiTestResultLike> {
   assert(
     !usableRead.cautions.includes(DRAFT_FEED_CAUTION),
     "usable: draft does NOT carry the feed-not-confirmed caution",
+  );
+
+  // ── 1b. Unbound quote → NOT usable (fail closed) ──────────────────────────
+  // The SAME numbers requested by a different user: the quote belongs to
+  // another account (ACCOUNT_NOT_REQUESTER / OWNER_MISMATCH), so it cannot
+  // measure the broker comparison and the read stays unusable.
+  // eslint-disable-next-line no-console
+  console.log(`\nbuildRubyDraftRead (${VERIFIED_SYMBOL}) — unbound broker quote → not usable`);
+  const unbound = enrichWith(QUOTE_BRIDGE.userId + 1);
+  assert(
+    unbound.binding.status !== "BOUND" && unbound.binding.reasons.includes("ACCOUNT_NOT_REQUESTER"),
+    `unbound: another user's bridge quote does not bind (got ${unbound.binding.status} ${unbound.binding.reasons.join(",")})`,
+  );
+  assert(
+    unbound.state.brokerAlignment.aligned === false,
+    "unbound: broker alignment is not claimed",
+  );
+  const unboundRead = buildRubyDraftRead(unbound.state, "analyze");
+  assert(
+    unboundRead.feedUsable === false,
+    `unbound: draft feedUsable === false (got ${String(unboundRead.feedUsable)})`,
+  );
+  assert(
+    unboundRead.cautions.includes(DRAFT_FEED_CAUTION),
+    "unbound: draft carries the feed-not-confirmed caution",
+  );
+  // A quote with no observed tick time is UNVERIFIED even from the right bridge.
+  updateQuoteFromMT5(VERIFIED_SYMBOL, {
+    symbol: VERIFIED_SYMBOL,
+    bid: closedClose - 0.00001,
+    ask: closedClose + 0.00001,
+    timestamp: new Date().toISOString(),
+  }, QUOTE_BRIDGE);
+  const untimed = selectBrokerQuote(
+    [observationFromMt5Quote(readMt5Quote(VERIFIED_SYMBOL, { bridgeConnectionId: QUOTE_BRIDGE.bridgeConnectionId }))],
+    { series, requestingUserId: QUOTE_BRIDGE.userId, now: Date.now() },
+  );
+  const untimedState = enrichStateWithBrokerAlignment(cached!.state, cached!.truthResult, cached!.feedStatus, {
+    chartPrice: closedClose,
+    chartPriceBasis: "MID",
+    assetClass: sharedState.assetClass,
+    brokerBid: untimed.quote?.bid ?? null,
+    brokerAsk: untimed.quote?.ask ?? null,
+    spreadPoints: untimed.quote?.spreadPoints ?? null,
+    quoteBinding: untimed.binding,
+  });
+  assert(
+    untimed.binding.status === "UNVERIFIED" && untimed.binding.reasons.includes("QUOTE_TIME_UNKNOWN"),
+    `unbound: same-bridge quote without an observed tick time is UNVERIFIED (got ${untimed.binding.status})`,
+  );
+  assert(
+    buildRubyDraftRead(untimedState, "analyze").feedUsable === false,
+    "unbound: untimed quote leaves the draft unusable",
   );
 
   // ── 2. buildRubyDraftRead — no feed → dataQuality "insufficient" + caution ─

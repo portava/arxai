@@ -279,8 +279,12 @@ const PERSONALITY_MIN_SAMPLE = 5;
 const WIN_RATE_MIN_SAMPLE = 5;
 
 // ── Summary strip ────────────────────────────────────────────────────────────
-// At-a-glance read of the whole scalp record. Every number is derived from the
+// At-a-glance read of the loaded scalp record. Every number is derived from the
 // existing read-only endpoints — no new backend, no fabricated realised P/L.
+// GET /me/scalp/journal returns at most JOURNAL_PAGE_LIMIT rows (newest by
+// last update); when a full page comes back the strip says it covers only
+// that window, because older signals exist but are not loaded.
+const JOURNAL_PAGE_LIMIT = 200;
 
 interface ScalpSummary {
   total: number;
@@ -372,13 +376,19 @@ function SummaryStat({
   );
 }
 
-function ScalpSummaryStrip({ summary }: { summary: ScalpSummary }) {
+function ScalpSummaryStrip({ summary, capped }: { summary: ScalpSummary; capped: boolean }) {
   const { name } = useAssistantName();
   return (
     <Card data-testid="scalp-summary-strip">
       <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-4">
+        {capped && (
+          <p className="w-full text-[11px] text-amber-300" data-testid="scalp-summary-scope">
+            Showing only the {summary.total} most recently updated signals; older signals are not loaded or counted,
+            so these totals and the win rate describe that window, not your whole scalp record.
+          </p>
+        )}
         <SummaryStat
-          label="signals tracked"
+          label={capped ? `signals tracked (newest ${summary.total} only)` : "signals tracked"}
           value={String(summary.total)}
           testid="scalp-summary-total"
         />
@@ -535,7 +545,7 @@ export default function ScalpJournalPage() {
   const [dateTo, setDateTo] = useState("");
 
   const journal = useGetMeScalpJournal(
-    { limit: 200 },
+    { limit: JOURNAL_PAGE_LIMIT },
     {
       query: {
         queryKey: ["me-scalp-journal-page"],
@@ -656,7 +666,7 @@ export default function ScalpJournalPage() {
         </Button>
       </div>
 
-      {summaryReady && summary.total > 0 && <ScalpSummaryStrip summary={summary} />}
+      {summaryReady && summary.total > 0 && <ScalpSummaryStrip summary={summary} capped={journalEntries.length >= JOURNAL_PAGE_LIMIT} />}
 
       <Tabs defaultValue="journal">
         <TabsList>
@@ -754,7 +764,7 @@ export default function ScalpJournalPage() {
           <Card data-testid="scalp-journal-card">
             <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 space-y-0">
               <CardTitle className="text-base">
-                {filteredJournal.length} of {journalEntries.length} signals
+                {filteredJournal.length} of {journalEntries.length >= JOURNAL_PAGE_LIMIT ? `the newest ${journalEntries.length}` : journalEntries.length} signals
               </CardTitle>
               <Button
                 variant="outline"

@@ -24,6 +24,46 @@ const BADGE_STYLE = {
   PENDING: "text-zinc-400 border-zinc-700/50 bg-zinc-900/40",
 } as const;
 
+export interface SymbolPickerBadge {
+  key: keyof typeof BADGE_STYLE;
+  label: string;
+  title: string;
+  freshCount: number;
+}
+
+// Overall broker-sync badge. This describes the MT5 SYMBOL-SPEC enumeration
+// (when the broker last listed each instrument's contract spec), NOT a live
+// price feed — so it never says "live". It counts only the enumerated rows
+// whose spec was refreshed inside the server's FRESH window (5 min,
+// symbolDirectory.ts), and goes green only when EVERY enumerated row is
+// fresh; one fresh row among many stale ones reads amber with the real ratio.
+export function symbolPickerBadge(
+  symbols: readonly ResolvedSymbol[],
+  enumeratedCount: number,
+  enumerationAvailable: boolean,
+): SymbolPickerBadge {
+  if (!enumerationAvailable || enumeratedCount === 0) {
+    return {
+      key: "PENDING",
+      label: "Pending sync",
+      title:
+        "Broker enumeration pending — showing approved markets. Tradeability confirms after MT5 sync.",
+      freshCount: 0,
+    };
+  }
+  const freshCount = symbols.filter((s) => s.brokerSymbol && s.freshness === "FRESH").length;
+  const title =
+    `Broker symbol list: ${enumeratedCount} instrument spec${enumeratedCount === 1 ? "" : "s"} enumerated; ` +
+    `${freshCount} refreshed in the last 5 minutes. This is the MT5 symbol-spec sync, not a live price feed.`;
+  if (freshCount > 0 && freshCount >= enumeratedCount) {
+    return { key: "CONFIRMED", label: `${enumeratedCount} specs synced`, title, freshCount };
+  }
+  if (freshCount > 0) {
+    return { key: "STALE", label: `${freshCount}/${enumeratedCount} specs fresh`, title, freshCount };
+  }
+  return { key: "STALE", label: `${enumeratedCount} specs stale`, title, freshCount };
+}
+
 function friendlyName(v: ResolvedSymbol): string {
   return v.displayName || v.symbol;
 }
@@ -45,17 +85,10 @@ export function SymbolPicker({ compact = false }: { compact?: boolean }) {
   const enumeratedCount = data?.enumerationStatus.count ?? 0;
   const enumerationAvailable = data?.enumerationStatus.available ?? false;
 
-  // Overall broker-confirmation badge: PENDING when nothing enumerated,
-  // CONFIRMED when fresh enumerated specs exist, STALE otherwise.
-  const badge = useMemo(() => {
-    if (!enumerationAvailable || enumeratedCount === 0) {
-      return { key: "PENDING" as const, label: "Pending sync" };
-    }
-    const anyFresh = symbols.some((s) => s.brokerSymbol && s.freshness === "FRESH");
-    return anyFresh
-      ? { key: "CONFIRMED" as const, label: `${enumeratedCount} live` }
-      : { key: "STALE" as const, label: `${enumeratedCount} stale` };
-  }, [symbols, enumeratedCount, enumerationAvailable]);
+  const badge = useMemo(
+    () => symbolPickerBadge(symbols, enumeratedCount, enumerationAvailable),
+    [symbols, enumeratedCount, enumerationAvailable],
+  );
 
   // Group symbols by their display category, preserving the registry's tier/
   // category order within each group (resolver returns approved order already).
@@ -133,11 +166,7 @@ export function SymbolPicker({ compact = false }: { compact?: boolean }) {
                 "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium tabular-nums",
                 BADGE_STYLE[badge.key],
               )}
-              title={
-                badge.key === "PENDING"
-                  ? "Broker enumeration pending — showing approved markets. Tradeability confirms after MT5 sync."
-                  : `Broker-confirmed instruments: ${enumeratedCount}`
-              }
+              title={badge.title}
               data-testid="symbol-picker-freshness"
             >
               {badge.label}

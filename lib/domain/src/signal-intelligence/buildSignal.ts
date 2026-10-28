@@ -62,7 +62,7 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
   const early = readEarlyTrend(candles);
   const regime = classifyRegime(candles);
   const fakeout = detectFakeout(candles, early);
-  const session = sessionContext(now);
+  const session = sessionContext(now, input.assetClass);
   const pbWeight = playbookWeight(input.assetClass, regime, session);
 
   const bias = deriveBias(early.structure, early.blind);
@@ -138,9 +138,15 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
     evidence,
     late,
     newsRiskLevel,
+    newsMeasured: input.newsMeasured,
     playbookWeight: pbWeight,
   });
   const confidenceBand = confidenceBandFor(scores.overall);
+  // The band is kept as the band of the number (persisted + diffed as before);
+  // its basis says whether every folded dimension was observed. Surfaces only
+  // show the band as an adjective on a FULL basis.
+  const confidenceBandBasis: "FULL" | "PARTIAL" =
+    (scores.unmeasured?.length ?? 0) === 0 ? "FULL" : "PARTIAL";
 
   // ── Zones (honest null when not derivable) ────────────────────────────────
   const rawZone: PriceZone | null = scanner?.entryZone
@@ -223,6 +229,7 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
 
     scores,
     confidenceBand,
+    confidenceBandBasis,
     edgeScore: scores.edge,
 
     earlyTrend: early,
@@ -239,5 +246,6 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
     expiresAt: new Date(firstSeenMs + fresh.validForSeconds * 1000).toISOString(),
     firstSeenAt: new Date(firstSeenMs).toISOString(),
     lateReason,
+    structureWindow: hasSufficientData && candles ? candles.length : null,
   } satisfies RubyMarketEdgeSignal;
 }

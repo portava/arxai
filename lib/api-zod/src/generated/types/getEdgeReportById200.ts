@@ -5,10 +5,12 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { EdgeBehaviourBasis } from "./edgeBehaviourBasis";
 import type { EdgeReport } from "./edgeReport";
 import type { EdgeWarning } from "./edgeWarning";
 
 export type GetEdgeReportById200 = {
   report?: EdgeReport;
   warnings?: EdgeWarning[];
+  behaviourBasis?: EdgeBehaviourBasis;
 };

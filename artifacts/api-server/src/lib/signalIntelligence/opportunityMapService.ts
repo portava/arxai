@@ -42,7 +42,7 @@ import {
   type UniverseId,
 } from "../marketScanner.js";
 import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
-import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
+import { routeCandles, routeQuote, quotePinForSeries } from "../data/marketDataRouter.js";
 
 /** Timeframe the opportunity map reads at (aligns with the market-edge default). */
 export const OPPORTUNITY_MAP_TIMEFRAME = "M5";
@@ -84,13 +84,18 @@ export function toInput(
   late: LateDetection | null,
 ): OpportunityInput {
   const isLate = !!late?.isLate;
-  const timingUnknown = opp.dataStatus === "live" &&
-    (opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL") && late === null;
+  const directional = opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL";
+  const timingUnknown = opp.dataStatus === "live" && directional && late === null;
+  // Scheduled event risk applies but the calendar/news lookup did not answer:
+  // "none" there was never observed, so directional readiness is withheld the
+  // same way unknown timing withholds it (never READY_NOW on an unchecked risk).
+  const newsUnchecked = directional && opp.newsContext?.eventRiskUnchecked === true;
+  const withheld = timingUnknown || newsUnchecked;
   return {
     symbol: opp.symbol,
     displayName: opp.symbol,
-    direction: timingUnknown ? "NEUTRAL" : dirFromAction(opp.recommendedAction),
-    recommendedAction: timingUnknown ? "WAIT" : actionInput(opp.recommendedAction),
+    direction: withheld ? "NEUTRAL" : dirFromAction(opp.recommendedAction),
+    recommendedAction: withheld ? "WAIT" : actionInput(opp.recommendedAction),
     setupType: opp.setupType,
     edgeScore: Math.round(effectiveOpportunityScore(opp)),
     entryQuality: Math.round(opp.entrySniperScore),
@@ -106,8 +111,12 @@ export function toInput(
     // run over live price + the row's entry/SL/TP. Honest default false when the
     // row has no live data or lateness cannot be evaluated — never fabricated.
     isLate,
+    // The row's own fused verdict. The categorizer may only file TRADE_WATCH
+    // rows as "Ready now"; null (no final read computed) withholds it too.
+    finalReadLabel: opp.finalRead?.label ?? null,
     reason:
       (timingUnknown ? "Entry timing could not be verified with a fresh quote — wait for a new scan." : null) ??
+      (newsUnchecked ? "Scheduled news risk could not be checked — the economic calendar did not answer. Wait for a new scan." : null) ??
       (isLate ? late?.reason : null) ??
       opp.finalRead?.headline ??
       opp.reasonForTrade ??
@@ -131,10 +140,9 @@ async function latenessFor(opp: ScannerOpportunity): Promise<LateDetection | nul
   try {
     let cr!: Awaited<ReturnType<typeof routeCandles>>;
     let qr!: Awaited<ReturnType<typeof routeQuote>>;
-    await Promise.all([
-      runWithScannerBudget(async () => { cr = await routeCandles(opp.symbol, opp.timeframe, 30); }),
-      runWithScannerBudget(async () => { qr = await routeQuote(opp.symbol); }),
-    ]);
+    // Quote pinned to the served series' MT5 writer (never another bridge).
+    await runWithScannerBudget(async () => { cr = await routeCandles(opp.symbol, opp.timeframe, 30); });
+    await runWithScannerBudget(async () => { qr = await routeQuote(opp.symbol, quotePinForSeries(cr)); });
     if (!opp.feedProvider || cr.primaryProvider !== opp.feedProvider ||
         scannerRowSourceIdentity(opp) !== scannerSourceIdentity(cr)) return null;
     const now = Date.now();

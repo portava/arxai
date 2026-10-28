@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { useGetEconomicCalendar } from "@workspace/api-client-react";
+import { useGetEconomicCalendar, useGetLiveCalendarEvents } from "@workspace/api-client-react";
+import { calendarEventWhen, describeCalendarCoverage } from "@/lib/calendarCoverage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,10 +10,19 @@ import { CalendarDays } from "lucide-react";
 export default function Calendar() {
   const [impact, setImpact] = useState<string>("ALL");
   const [days, setDays] = useState<string>("7");
-  const { data, isLoading } = useGetEconomicCalendar({
+  const { data, isLoading, isError } = useGetEconomicCalendar({
     impact: impact === "ALL" ? undefined : (impact as "low" | "medium" | "high"),
     days: Number(days),
   });
+  // /news/calendar returns [] when the provider could not be read too, so an
+  // empty list only means "no events" when the provider status says connected.
+  const providerQ = useGetLiveCalendarEvents({ daysAhead: Number(days) });
+  const coverage = describeCalendarCoverage({
+    status: providerQ.data,
+    statusError: providerQ.isError,
+    listError: isError,
+  });
+  const nowMs = Date.now();
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -49,11 +59,18 @@ export default function Calendar() {
         <CardHeader className="pb-3"><CardTitle className="text-base">Events</CardTitle></CardHeader>
         <CardContent>
           {isLoading ? <div className="space-y-2">{Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div> :
-            !data || data.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center">No events in this period.</p> :
+            !data || data.length === 0 ? (
+              <p data-testid="calendar-empty" className="text-sm text-muted-foreground py-8 text-center">
+                {coverage.read && !isError ? "No events in this period." : coverage.note}
+              </p>
+            ) :
             <div className="space-y-2">
               {data.map((e) => (
                 <div key={e.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded border border-border/50">
-                  <div className="text-xs font-mono text-muted-foreground sm:w-32 shrink-0">{new Date(e.eventTime).toLocaleString()}</div>
+                  <div className="text-xs font-mono text-muted-foreground sm:w-32 shrink-0">
+                    {calendarEventWhen(e, nowMs).display}
+                    <span className="block">{calendarEventWhen(e, nowMs).label}</span>
+                  </div>
                   <Badge variant="outline" className="w-fit text-xs">{e.currency}</Badge>
                   <div className="flex-1 text-sm">{e.title}</div>
                   <Badge className={`text-xs ${e.impact === "high" ? "bg-destructive/20 text-destructive" : e.impact === "medium" ? "bg-yellow-500/20 text-yellow-500" : "bg-muted text-muted-foreground"}`}>{e.impact.toUpperCase()}</Badge>

@@ -21,6 +21,7 @@ import type {
   ScalpEngineInput,
   ScalpEntryType,
   ScalpResult,
+  ScalpRejectReason,
   ScalpSpecInput,
   ScalpScannerInput,
   ScalpMode,
@@ -31,6 +32,7 @@ import type {
   TargetRealityCheck,
 } from "./scalpTypes.js";
 import { blindFlameRead, finalizeScalpVerdict, readFlame } from "./flameRead.js";
+import { resolveScalpPricePrecision } from "./scalpPrecision.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { clampLotToStep, lotForRisk } from "@workspace/domain/risk";
 
@@ -65,14 +67,50 @@ function roundTo(v: number, digits: number): number {
 }
 
 
-/** $ change per 1.0 price move per 1.0 lot — broker truth first, contract size fallback. */
-function moneyPerPricePerLot(spec: ScalpSpecInput): number | null {
-  if (num(spec.tickValue) && num(spec.tickSize) && spec.tickSize > 0) {
-    return spec.tickValue / spec.tickSize;
+/** Upper-cased currency code, or null when not reported. */
+function currencyCode(v: string | null | undefined): string | null {
+  return typeof v === "string" && v.trim() ? v.trim().toUpperCase() : null;
+}
+
+/** True only when BOTH currencies are reported and they are the same. */
+function sameCurrency(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = currencyCode(a);
+  const y = currencyCode(b);
+  return x !== null && y !== null && x === y;
+}
+
+function hasTickTruth(spec: ScalpSpecInput): boolean {
+  return num(spec.tickValue) && num(spec.tickSize) && spec.tickSize > 0;
+}
+
+/**
+ * Account-currency change per 1.0 price move per 1.0 lot.
+ *  - Broker tick value / tick size first (MT5 reports tick value in the
+ *    account's deposit currency).
+ *  - Contract size only when the symbol's profit currency is reported and is
+ *    the account currency. Otherwise contract size gives a figure in the
+ *    profit currency (e.g. yen for USDJPY), which is not account money.
+ */
+function moneyPerPricePerLot(spec: ScalpSpecInput, accountCurrency: string | null | undefined): number | null {
+  if (hasTickTruth(spec)) {
+    return spec.tickValue! / spec.tickSize!;
   }
-  if (num(spec.contractSize) && spec.contractSize > 0) {
+  if (num(spec.contractSize) && spec.contractSize > 0 && sameCurrency(spec.profitCurrency, accountCurrency)) {
     return spec.contractSize;
   }
+  return null;
+}
+
+/**
+ * Account-currency notional per 1.0 price per 1.0 lot, for the margin
+ * estimate. contractSize × price is in the profit currency; it is account
+ * money only when the currencies match, or after converting with the rate the
+ * broker's tick value implies (tickValue / tickSize / contractSize).
+ */
+function notionalPerPricePerLot(spec: ScalpSpecInput, accountCurrency: string | null | undefined): number | null {
+  if (!num(spec.contractSize) || !(spec.contractSize > 0)) return null;
+  if (sameCurrency(spec.profitCurrency, accountCurrency)) return spec.contractSize;
+  if (hasTickTruth(spec)) return spec.tickValue! / spec.tickSize!;
   return null;
 }
 
@@ -109,7 +147,12 @@ function rejectResult(
   input: ScalpEngineInput,
   status: ScalpResult["status"],
   noTradeReason: string,
-  opts: { canWatch?: boolean; userAction?: ScalpResult["userAction"]; plain?: string } = {},
+  opts: {
+    canWatch?: boolean;
+    userAction?: ScalpResult["userAction"];
+    plain?: string;
+    rejectReason?: ScalpRejectReason;
+  } = {},
 ): ScalpResult {
   const now = input.now ?? Date.now();
   const profile = MODE_PROFILES[input.mode];
@@ -119,9 +162,15 @@ function rejectResult(
     displayName,
     assetClass: assetClassFor(input.spec.category),
     direction: null,
-    scalpType: profile.label,
+    scalpType: scalpTypeLabel(
+      input.mode,
+      null,
+      num(input.scanner?.trendStrength) ? input.scanner!.trendStrength! : null,
+      profile.label,
+    ),
     mode: input.mode,
     status,
+    ...(opts.rejectReason ? { rejectReason: opts.rejectReason } : {}),
     qualityScore: 0,
     confidenceLabel: "Weak",
     entryType: null,
@@ -134,15 +183,17 @@ function rejectResult(
     minLot: num(input.spec.minLot) ? input.spec.minLot : null,
     maxLot: num(input.spec.maxLot) ? input.spec.maxLot : null,
     lotStep: num(input.spec.lotStep) ? input.spec.lotStep : null,
-    digits: num(input.spec.digits) ? input.spec.digits : null,
+    digits: resolveScalpPricePrecision(input.spec)?.digits ?? null,
     targetProfitAmount: num(input.targetProfitAmount) ? input.targetProfitAmount : null,
     estimatedProfitMainTP: null,
     estimatedRiskAmount: null,
     rewardToRisk: null,
     estimatedMargin: null,
+    moneyCurrency: currencyCode(input.account.currency),
     spreadRisk: "LOW",
     slippageRisk: "LOW",
     newsRisk: input.scanner?.newsRisk ?? "LOW",
+    ...(input.scanner?.newsRiskUnchecked === true ? { newsRiskUnchecked: true } : {}),
     timingStatus: "WAIT_FOR_ENTRY",
     validForSeconds: 0,
     expiresAt: new Date(now).toISOString(),
@@ -182,11 +233,13 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   if (!scanner || !num(input.currentPrice)) {
     return rejectResult(input, "AWAITING_DATA", "Waiting for fresh price before recommending a scalp.", {
       plain: `${DEFAULT_ASSISTANT_NAME} is waiting for live price data on this market before reading a scalp.`,
+      rejectReason: "NO_SCANNER_READ",
     });
   }
   if (!isLiveData(scanner.dataSource)) {
     return rejectResult(input, "AWAITING_DATA", "Waiting for a live market price before recommending a scalp.", {
       plain: `${DEFAULT_ASSISTANT_NAME} only builds scalps from live market data. This market does not have a live price right now.`,
+      rejectReason: "NOT_LIVE",
     });
   }
 
@@ -207,6 +260,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
         plain:
           `${DEFAULT_ASSISTANT_NAME} needs enough verified live candles before reading a scalp here. `
           + (sufficiency?.humanReason ?? "The market data is not confirmed sufficient yet."),
+        rejectReason: "INSUFFICIENT_DATA",
       },
     );
   }
@@ -243,17 +297,45 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   }
 
   const price = input.currentPrice;
-  const digits = num(spec.digits) ? spec.digits : 2;
-  const point = num(spec.point) && spec.point > 0 ? spec.point : Math.pow(10, -digits);
 
   // ── Specs needed for honest sizing.
-  const mpp = moneyPerPricePerLot(spec);
+  const accountCurrency = currencyCode(input.account.currency);
+  const mpp = moneyPerPricePerLot(spec, accountCurrency);
   if (!spec.hasBrokerTruth || !num(spec.minLot) || !num(spec.maxLot) || !num(spec.lotStep) || !num(mpp)) {
+    // Contract size is known but not in account money: say exactly which value
+    // is missing instead of sizing a lot in the wrong currency.
+    const profitCurrency = currencyCode(spec.profitCurrency);
+    const currencyGap = spec.hasBrokerTruth && num(spec.minLot) && num(spec.maxLot) && num(spec.lotStep)
+      && num(spec.contractSize) && spec.contractSize > 0 && !num(mpp);
+    const plain = currencyGap
+      ? `The broker has not reported a tick value for this market, and ${
+          profitCurrency && accountCurrency
+            ? `its profit currency (${profitCurrency}) is not the account currency (${accountCurrency})`
+            : profitCurrency
+              ? `the account currency is not known (profit is in ${profitCurrency})`
+              : "its profit currency is not known"
+        }, so ${DEFAULT_ASSISTANT_NAME} cannot work out a lot size or the money at risk.`
+      : `${DEFAULT_ASSISTANT_NAME} needs the broker's live symbol details (lot size, point value) for this market before building a scalp.`;
     return rejectResult(input, "AWAITING_DATA", `${DEFAULT_ASSISTANT_NAME} needs live symbol specs before building a scalp for this market.`, {
       canWatch: true,
-      plain: `${DEFAULT_ASSISTANT_NAME} needs the broker's live symbol details (lot size, point value) for this market before building a scalp.`,
+      plain,
+      // Not a feed reason: price, live feed and sufficiency all passed above.
+      rejectReason: "NO_SPECS",
     });
   }
+  const notionalPerLot = notionalPerPricePerLot(spec, accountCurrency);
+  // Broker price precision (digits / point size). Unknown → no levels: never
+  // round entry/stop/target to an invented number of decimals.
+  const precision = resolveScalpPricePrecision(spec);
+  if (!precision) {
+    return rejectResult(input, "AWAITING_DATA", `${DEFAULT_ASSISTANT_NAME} needs live symbol specs before building a scalp for this market.`, {
+      canWatch: true,
+      plain: `The broker has not reported this market's price precision (digits or point size), so ${DEFAULT_ASSISTANT_NAME} cannot place the entry, stop and take-profit yet.`,
+      rejectReason: "NO_SPECS",
+    });
+  }
+  const digits = precision.digits;
+  const point = precision.point;
   const minLot = spec.minLot;
   const maxLot = spec.maxLot;
   const lotStep = spec.lotStep;
@@ -292,6 +374,15 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     return rejectResult(input, "NEWS_DANGER", "High-impact news risk makes this scalp unsafe right now.", {
       canWatch: true,
       plain: "There is high-impact news risk around this market, so a scalp is unsafe right now.",
+    });
+  }
+  // Event risk applies but was never checked (news lookup failed / calendar did
+  // not answer): a release minutes away would not be seen. Fail closed and say
+  // so — never read the missing check as LOW news risk.
+  if (scanner.newsRiskUnchecked === true) {
+    return rejectResult(input, "NO_CLEAN_SCALP", "Scheduled news risk could not be checked, so no scalp is offered right now.", {
+      canWatch: true,
+      plain: "Scheduled news risk for this market could not be checked right now (the economic calendar did not answer), so no scalp is offered until it can be.",
     });
   }
 
@@ -355,14 +446,16 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
 
   // ── Quality score (shared, mode-weighted).
   let quality = 0.5 * scanner.confidenceScore + 0.5 * scanner.entrySniperScore;
-  const trend = num(scanner.trendStrength) ? scanner.trendStrength : 50;
+  // Trend measure, when the scanner read carries one. Never assumed: with no
+  // measure the trend-based mode tilts do not apply and the type label says so.
+  const trend: number | null = num(scanner.trendStrength) ? scanner.trendStrength : null;
   // Mode tilts.
   switch (input.mode) {
     case "SNIPER": quality += (scanner.entrySniperScore - 60) * 0.2; break;
     case "SAFER": quality += (rewardToRisk - 1.5) * 6 - (spreadRisk === "MEDIUM" ? 8 : 0); break;
-    case "FAST": quality += (trend - 50) * 0.15; break;
-    case "MOMENTUM": quality += (trend - 50) * 0.25; break;
-    case "REVERSAL": quality += (60 - trend) * 0.15; break;
+    case "FAST": if (trend !== null) quality += (trend - 50) * 0.15; break;
+    case "MOMENTUM": if (trend !== null) quality += (trend - 50) * 0.25; break;
+    case "REVERSAL": if (trend !== null) quality += (60 - trend) * 0.15; break;
     case "ANY": break;
   }
   if (spreadRisk === "MEDIUM") quality -= 5;
@@ -530,6 +623,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     stopDist,
     mainTpDist,
     mpp,
+    notionalPerLot,
     minLot,
     maxLot,
     lotStep,
@@ -646,6 +740,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     estimatedRiskAmount,
     rewardToRisk,
     estimatedMargin,
+    moneyCurrency: accountCurrency,
     spreadRisk,
     slippageRisk,
     newsRisk,
@@ -676,6 +771,8 @@ interface SizeArgs {
   stopDist: number;
   mainTpDist: number;
   mpp: number;
+  /** Account-currency notional per 1.0 price per lot; null when not knowable. */
+  notionalPerLot: number | null;
   minLot: number;
   maxLot: number;
   lotStep: number;
@@ -696,8 +793,8 @@ interface SizeResult {
 }
 
 function sizeLot(a: SizeArgs): SizeResult {
-  const perLotRisk = a.stopDist * a.mpp; // $ risk per 1 lot
-  const perLotProfit = a.mainTpDist * a.mpp; // $ profit per 1 lot at main TP
+  const perLotRisk = a.stopDist * a.mpp; // account-currency risk per 1 lot
+  const perLotProfit = a.mainTpDist * a.mpp; // account-currency profit per 1 lot at main TP
   if (!(perLotRisk > 0)) {
     return { lot: null, estimatedRisk: null, estimatedProfit: null, estimatedMargin: null, belowMin: false, cappedByMax: false };
   }
@@ -721,11 +818,11 @@ function sizeLot(a: SizeArgs): SizeResult {
   const estimatedRisk = roundTo(lot * perLotRisk, 2);
   const estimatedProfit = roundTo(lot * perLotProfit, 2);
 
-  // Margin estimate (best-effort): notional / leverage.
+  // Margin estimate (best-effort): account-currency notional / leverage.
   let estimatedMargin: number | null = null;
-  if (num(a.spec.contractSize) && a.spec.contractSize > 0) {
+  if (num(a.notionalPerLot) && a.notionalPerLot > 0) {
     const leverage = num(a.account.leverage) && a.account.leverage! > 0 ? a.account.leverage! : DEFAULT_LEVERAGE;
-    estimatedMargin = roundTo((lot * a.spec.contractSize * a.price) / leverage, 2);
+    estimatedMargin = roundTo((lot * a.notionalPerLot * a.price) / leverage, 2);
   }
 
   return { lot, estimatedRisk, estimatedProfit, estimatedMargin, belowMin, cappedByMax: clampedToMax };
@@ -756,11 +853,24 @@ function assessTargetReality(a: TargetRealityArgs): TargetRealityCheck {
   return "TOO_RISKY";
 }
 
-function scalpTypeLabel(mode: ScalpMode, direction: ScalpDirection, trend: number, fallback: string): string {
+/**
+ * The type badge names only a characteristic that was measured or a mode
+ * floor that was applied:
+ *  - SNIPER / SAFER / FAST: the mode's own thresholds were applied.
+ *  - MOMENTUM / REVERSAL: the label needs a trend measure; without one the
+ *    mode could not test its idea, so the badge says the trend was not measured.
+ *  - ANY: momentum / reversal only from a measured trend; otherwise plain
+ *    "Scalp" (the Sniper floor is never applied in ANY mode).
+ */
+function scalpTypeLabel(mode: ScalpMode, _direction: ScalpDirection | null, trend: number | null, fallback: string): string {
+  if (mode === "MOMENTUM" || mode === "REVERSAL") {
+    return trend === null ? "Scalp (trend not measured)" : fallback;
+  }
   if (mode !== "ANY") return fallback;
+  if (trend === null) return fallback;
   if (trend >= 60) return "Momentum Scalp";
   if (trend <= 40) return "Reversal Scalp";
-  return "Sniper Scalp";
+  return fallback;
 }
 
 interface PlainReasonArgs {
@@ -776,9 +886,12 @@ interface PlainReasonArgs {
 
 function buildPlainReason(a: PlainReasonArgs): string {
   const side = a.direction === "BUY" ? "buy" : "sell";
-  const dirWord = a.direction === "BUY" ? "support and upward pressure" : "resistance and fading upside momentum";
   if (a.status === "READY") {
-    return `This is a ${side} scalp because price is reacting to ${dirWord}, and the take-profit sits before the next ${a.direction === "BUY" ? "resistance" : "support"} area so the trade does not need a big move to work. The stop is on the other side of that level with a spread buffer, so the idea is clean while price holds the ${a.invalidationPrice} level.`;
+    // Say only what the engine used: the market read's direction, the entry
+    // zone, the stop distance (widened for spread / broker minimum) and the
+    // reward-to-risk. No support/resistance level is located here, so none is
+    // claimed.
+    return `This is a ${side} scalp: the market read points ${a.direction === "BUY" ? "up" : "down"} and price is inside the entry zone now. The stop at ${a.invalidationPrice} is the read's stop distance, widened where needed to clear the spread and the broker's minimum stop distance. The main take-profit at ${a.mainTp} gives about 1 : ${a.rewardToRisk} reward to risk. Nearby support and resistance levels were not checked for this scalp.`;
   }
   if (a.status === "WAIT_FOR_ENTRY") {
     return `A ${side} scalp is forming, but price is not yet in the entry zone. Wait for price to come back into the zone before entering — the idea stays valid while it holds the ${a.invalidationPrice} level.`;

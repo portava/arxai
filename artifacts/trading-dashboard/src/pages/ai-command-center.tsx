@@ -42,6 +42,7 @@ import {
   MentorActionItems,
   MentorHistory,
   MentorWarningCard,
+  isMentorWarningSession,
   type MentorActionItem,
   type MentorSession,
 } from "@/components/aiMentor";
@@ -90,6 +91,9 @@ interface CCResp {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   autopilot: any;
 }
+
+/** Newest mentor sessions fetched for the history groups (server caps at 100). */
+const MENTOR_HISTORY_LIMIT = 10;
 
 export default function AICommandCenterPage() {
   const { name } = useAssistantName();
@@ -186,7 +190,7 @@ function ChatTab() {
   });
   const history = useQuery<{ sessions: MentorSession[] }>({
     queryKey: ["mentor-history"],
-    queryFn: async () => (await fetch("/api/mentor/sessions?limit=10")).json(),
+    queryFn: async () => (await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`)).json(),
   });
 
   const updateStatus = useMutation({
@@ -256,7 +260,7 @@ function ChatTab() {
       ) : session ? (
         <>
           <MentorWarningCard session={session} />
-          <DailyMentorBriefingCard session={session} />
+          <DailyMentorBriefingCard session={session} summaryShownElsewhere={isMentorWarningSession(session)} />
           <Card className="rounded-2xl border-border bg-card">
             <CardContent className="p-4">
               <div className="flex items-center justify-between gap-2">
@@ -295,7 +299,7 @@ function ChatTab() {
         {history.isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : (
-          <MentorHistory sessions={history.data?.sessions ?? []} />
+          <MentorHistory sessions={history.data?.sessions ?? []} pageLimit={MENTOR_HISTORY_LIMIT} />
         )}
       </section>
 

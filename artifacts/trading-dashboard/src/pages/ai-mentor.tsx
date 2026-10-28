@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  DailyMentorBriefingCard, MentorActionItems, MentorWarningCard, MentorHistory,
+  DailyMentorBriefingCard, MentorActionItems, MentorWarningCard, MentorHistory, isMentorWarningSession,
 } from "@/components/aiMentor";
 import type { MentorSession, MentorActionItem, SessionType } from "@/components/aiMentor";
 
@@ -10,16 +10,33 @@ const TYPES: SessionType[] = [
   "WEEKLY_RESET", "CONFIDENCE_REBUILD", "DISCIPLINE_CHECK",
 ];
 
+const MENTOR_HISTORY_LIMIT = 20;
+// Reads a mentor API response and throws on a non-2xx status, so a 401/403/500
+// is an error state on the page rather than an empty "no session yet" result.
+async function readMentorJson<T>(r: Response, action: string): Promise<T> {
+  let body: unknown = null;
+  try { body = await r.json(); } catch { body = null; }
+  if (!r.ok) {
+    const err = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+      ? (body as { error: string }).error
+      : null;
+    throw new Error(`${action} failed (HTTP ${r.status}${err ? `: ${err}` : ""})`);
+  }
+  return body as T;
+}
+
 export default function AiMentorPage() {
   const qc = useQueryClient();
 
-  const latest = useQuery<{ session: MentorSession | null; actionItems: MentorActionItem[] }>({
+  type LatestResponse = { session: MentorSession | null; actionItems: MentorActionItem[] };
+  type HistoryResponse = { sessions: MentorSession[] };
+  const latest = useQuery<LatestResponse>({
     queryKey: ["mentor-latest"],
-    queryFn: async () => (await fetch("/api/mentor/sessions/latest")).json(),
+    queryFn: async () => readMentorJson<LatestResponse>(await fetch("/api/mentor/sessions/latest"), "Loading the latest mentor session"),
   });
-  const history = useQuery<{ sessions: MentorSession[] }>({
+  const history = useQuery<HistoryResponse>({
     queryKey: ["mentor-history"],
-    queryFn: async () => (await fetch("/api/mentor/sessions?limit=20")).json(),
+    queryFn: async () => readMentorJson<HistoryResponse>(await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`), "Loading mentor history"),
   });
 
   const generate = useMutation({
@@ -28,7 +45,7 @@ export default function AiMentorPage() {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify(sessionType ? { sessionType } : {}),
       });
-      return r.json();
+      return readMentorJson<unknown>(r, "Generating a mentor session");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mentor-latest"] });
@@ -46,15 +63,30 @@ export default function AiMentorPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["mentor-latest"] }),
   });
 
-  // Auto-generate a briefing on first visit if none exists.
+  // Auto-generate a briefing on first visit if none exists. This runs at most
+  // once per page visit: a failed or empty generation is shown as such, and
+  // further attempts are the user's choice (the buttons above).
+  const autoGenerateTried = useRef(false);
   useEffect(() => {
+    if (autoGenerateTried.current) return;
     if (latest.isSuccess && latest.data?.session == null && !generate.isPending) {
+      autoGenerateTried.current = true;
       generate.mutate(undefined);
     }
   }, [latest.isSuccess, latest.data?.session, generate]);
 
   const session = latest.data?.session ?? null;
   const items   = latest.data?.actionItems ?? [];
+  const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
+  const emptyState: string = latest.isError
+    ? `Could not load your mentor sessions. ${errorMessage(latest.error)}`
+    : latest.isPending
+      ? "Loading your latest mentor session…"
+      : generate.isPending
+        ? "Building your first mentor session…"
+        : generate.isError
+          ? `Your mentor session could not be generated. ${errorMessage(generate.error)}. Nothing is being built; use the buttons above to try again.`
+          : "No mentor session yet. Use the buttons above to generate one.";
 
   return (
     <div className="space-y-4 p-4">
@@ -81,13 +113,14 @@ export default function AiMentorPage() {
       </div>
 
       {!session ? (
-        <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">
-          Building your first mentor session…
+        <p data-testid="mentor-state" role={latest.isError || generate.isError ? "alert" : undefined}
+          className={`rounded border border-dashed p-6 text-center text-xs ${latest.isError || generate.isError ? "border-rose-700 text-rose-300" : "border-slate-700 text-slate-500"}`}>
+          {emptyState}
         </p>
       ) : (
         <>
           <MentorWarningCard session={session} />
-          <DailyMentorBriefingCard session={session} />
+          <DailyMentorBriefingCard session={session} summaryShownElsewhere={isMentorWarningSession(session)} />
           <section>
             <h3 className="mb-2 text-sm font-semibold text-slate-200">Action items</h3>
             <MentorActionItems items={items}
@@ -98,7 +131,13 @@ export default function AiMentorPage() {
 
       <section>
         <h3 className="mb-2 text-sm font-semibold text-slate-200">Recent sessions</h3>
-        <MentorHistory sessions={history.data?.sessions ?? []} />
+        {history.isError ? (
+          <p data-testid="mentor-history-error" role="alert" className="text-xs text-rose-300">
+            Could not load your recent mentor sessions. {history.error instanceof Error ? history.error.message : "unknown error"}
+          </p>
+        ) : (
+          <MentorHistory sessions={history.data?.sessions ?? []} pageLimit={MENTOR_HISTORY_LIMIT} />
+        )}
       </section>
     </div>
   );

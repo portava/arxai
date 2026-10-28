@@ -15,7 +15,12 @@ import { adaptChartCandles, type Candle } from "@/components/scanner/scannerCand
 import {
   PRIMARY_TIMEFRAMES,
   coerceVisibleTimeframe,
-  formatCandleCountdown,
+  candleCountdownLabel,
+  computeCandleRemainingMs,
+  CHART_TIME_AXIS_LABEL,
+  CHART_TIME_AXIS_TITLE,
+  formatUtcClock,
+  type ServerClockSample,
   NEWS_MARKER_LOOKAHEAD_BARS,
   isFeedConfirmedForEventMarkers,
   inferBarSeconds,
@@ -32,7 +37,12 @@ import type { ChartStructureLine, ChartStructureMarker } from "@/lib/chart-engin
 import { sanitizeCandlestickData } from "@/lib/chart-engine/candleSanitize";
 import { snapSecToCandle } from "@/components/scanner/scannerChartFormat";
 import { useAssistantName } from "@/lib/assistant-name";
-import { overlayBadgeLabel, OVERLAY_DEGRADED_TITLE } from "@/lib/scannerResilience";
+import {
+  overlayBadgeLabel,
+  overlayPartialTitle,
+  unavailableOverlayChecks,
+  OVERLAY_DEGRADED_TITLE,
+} from "@/lib/scannerResilience";
 import { OneClickArmedBadge } from "@/components/mt5/OneClickArmedBadge";
 import { ChartCommandMenu, type ChartCommandAnchor, type RubyChartIntent } from "@/components/scanner/ChartCommandMenu";
 import { useLocation } from "wouter";
@@ -41,6 +51,9 @@ import { computeRiskReward, pipDistance, validateModifyLevels } from "@/lib/char
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { resolveChartFeedStrip } from "@/lib/scannerTruth";
+import { candlestickPriceFormat, formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
+import { publishScannerTip, scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
@@ -51,6 +64,7 @@ import {
   actionabilityDisplayUi,
   resolveVisibleActionButtonLabel,
   biasToActionDirection,
+  reconcileLiftedActionDirection,
   type ScannerActionabilityDisplay,
   type ActionDirection,
 } from "@/lib/scannerActionability";
@@ -66,6 +80,7 @@ import { ChartFeedStatusBadge } from "@/components/charts/ChartFeedStatusBadge";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useToast } from "@/hooks/use-toast";
 import { humanizeReason } from "@/lib/humanize";
+import { eventRiskLine } from "@/lib/eventRiskCopy";
 import {
   type FeedStatus,
   type ChartDisplayStatus,
@@ -88,9 +103,8 @@ import {
   useGetAlertPreferences,
   useGetMeTradeHealth,
   getGetMeTradeHealthQueryKey,
-  useGetTimingBrain,
-  getGetTimingBrainQueryKey,
 } from "@workspace/api-client-react";
+import { ChartTimingChip } from "@/components/scanner/ChartTimingChip";
 import { cn } from "@/lib/utils";
 import type {
   ChartAnnotation,
@@ -295,34 +309,6 @@ function normSym(s: string | null | undefined): string {
   return bare.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
-// Phase 3 — compact timing status chip for the chart header. Advisory only,
-// fail-open (absent when data unavailable). Never an execution gate.
-function ChartTimingChip({ symbol }: { symbol: string }) {
-  const q = useGetTimingBrain(symbol, undefined, {
-    query: { queryKey: getGetTimingBrainQueryKey(symbol, undefined), refetchInterval: 30_000, staleTime: 20_000 },
-  });
-  const read = q.data as { timingGrade?: string; entryPermission?: string; heatScore?: number } | undefined;
-  if (!read?.timingGrade || !read.entryPermission) return null;
-  const permColor: Record<string, string> = {
-    GO: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-    WAIT_FOR_ENTRY: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-    WAIT_NEWS: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-    NO_TRADE: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-    STAND_DOWN: "border-rose-600/50 bg-rose-600/15 text-rose-300",
-  };
-  return (
-    <Badge
-      variant="outline"
-      className={cn("gap-1 text-[10px]", permColor[read.entryPermission] ?? "border-border text-txt-muted")}
-      title={`Heat grade ${read.timingGrade} · ${read.entryPermission} (H:${read.heatScore ?? "?"}) — advisory only`}
-      data-testid="scanner-chart-timing-chip"
-    >
-      <Flame className="h-2.5 w-2.5" />
-      {read.timingGrade} · {read.entryPermission.replace(/_/g, " ")}
-    </Badge>
-  );
-}
-
 // Candle-close countdown chip (Task #524). HONESTY-GATED by the parent: it only
 // mounts this when the feed is genuinely LIVE and a live (non-frozen) forming bar
 // exists, so a frozen / stale / analysis feed shows nothing. It runs its OWN 1s
@@ -333,18 +319,32 @@ function ChartTimingChip({ symbol }: { symbol: string }) {
 function CandleCloseCountdown({
   closeTimeMs,
   timeframe,
+  clockRef,
 }: {
   closeTimeMs: number;
   timeframe: string;
+  /** Server clock + bar interval from the latest accepted tick-stream frame. */
+  clockRef: { current: (ServerClockSample & { intervalMs: number | null }) | null };
 }) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [, setTick] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    const id = window.setInterval(() => setTick((n) => n + 1), 1000);
     return () => window.clearInterval(id);
   }, []);
-  const remainingMs = closeTimeMs - nowMs;
+  // Measured against the SERVER clock (frame ts + monotonic elapsed), so a
+  // client clock that runs fast/slow cannot shrink, inflate or hide it.
+  const clock = clockRef.current;
+  const remainingMs = computeCandleRemainingMs({
+    closeTimeMs,
+    clock,
+    nowPerf: performance.now(),
+    fallbackNowMs: Date.now(),
+  });
   // Bar already closed; the next forming frame supplies the new close time.
   if (remainingMs <= 0) return null;
+  // More time left than one bar lasts is impossible without skew — hide
+  // rather than show an inflated number.
+  if (clock?.intervalMs != null && remainingMs > clock.intervalMs) return null;
   return (
     <Badge
       variant="outline"
@@ -353,7 +353,7 @@ function CandleCloseCountdown({
       title="Time until the current candle closes"
     >
       <Clock className="h-2.5 w-2.5" />
-      {formatCandleCountdown(remainingMs, timeframe)}
+      {candleCountdownLabel(remainingMs, timeframe)}
     </Badge>
   );
 }
@@ -456,6 +456,25 @@ export function useScannerChartRead(
   };
 }
 
+/**
+ * Live Trade Health (Task #198) overlays for the chart symbol, as drawn on the
+ * chart. React Query keeps the last successful `data` after a failed refetch,
+ * but a failed check means position health is unknown and the position may no
+ * longer exist, so nothing from the earlier response is drawn while the latest
+ * check is in error: the overlay list is empty until a check succeeds again.
+ */
+export function useScannerTradeHealthOverlays(symbol: string) {
+  const tradeHealthParams = { chartSymbol: symbol };
+  const query = useGetMeTradeHealth(tradeHealthParams, {
+    query: {
+      queryKey: getGetMeTradeHealthQueryKey(tradeHealthParams),
+      refetchInterval: 20_000,
+    },
+  });
+  const overlays: SmartChartLayer[] = query.isError ? [] : query.data?.overlays ?? [];
+  return { query, overlays };
+}
+
 export function ScannerChartPanel() {
   const { name } = useAssistantName();
   const [chartSym] = useChartSymbol();
@@ -517,6 +536,17 @@ export function ScannerChartPanel() {
   // Shared resolved truth — drives the live-price affordance so the chart can
   // never look more live/actionable than the header strip says it is.
   const { truth } = useScannerTruth(symbol, timeframe);
+  // ONE display precision for this instrument (server-declared, widened by the
+  // digits the loaded quotes carry) — the axis, badge, level labels and the
+  // page header all format with it (lib/instrumentPriceFormat).
+  const pricePrecision = truth?.candles.pricePrecision ?? null;
+  const pricePrecisionRef = useRef(pricePrecision);
+  pricePrecisionRef.current = pricePrecision;
+  // Shared live-tip key: the tick-stream tip this chart applies to its axis is
+  // published here so the header + badge show that SAME observation.
+  const tipKey = scannerTipKey(symbol, timeframe);
+  const tipKeyRef = useRef(tipKey);
+  tipKeyRef.current = tipKey;
 
   // Canonical verdict for display convergence (Task #818). The chart derives a
   // single shared actionability verdict from the SAME lifted + data-only sources
@@ -624,6 +654,7 @@ export function ScannerChartPanel() {
   // closeTimeMs), not on every incoming tick.
   const [formingCloseMs, setFormingCloseMs] = useState<number | null>(null);
   const formingCloseRef = useRef<number | null>(null);
+  const serverClockRef = useRef<(ServerClockSample & { intervalMs: number | null }) | null>(null);
   // Market-frozen / closed-market indicator (display/telemetry only). Driven by
   // the tick-stream `feed_status` event, whose verdict is derived from the
   // latest tick's BROKER-time staleness (calendar-independent). null = not
@@ -737,11 +768,17 @@ export function ScannerChartPanel() {
   // the chart can never disagree with the scanner rows or the Ruby read on the
   // same page. The smart-layers query above still drives the NON-news overlays
   // (structure, exec-cost, trade-health) and the overlay handshake below.
-  const { news, verdict: symbolVerdict } = useSymbolTruth(symbol, timeframe);
+  const { news, newsState, verdict: symbolVerdict } = useSymbolTruth(symbol, timeframe);
+  // ONE event-risk sentence for the Impact radar strip and the chart read's Risk
+  // row — identical to the market-read card's (lib/eventRiskCopy).
+  const eventRisk = eventRiskLine(news, newsState);
   // Directional CTA label for Plan Buy/Sell and the Eleanor button. Derived here
   // (after symbolVerdict is available) and forwarded to child surfaces so they all
   // agree on the same direction without independent bias lookups.
-  const canonicalChartDirection: ActionDirection = biasToActionDirection(symbolVerdict?.bias);
+  const canonicalChartDirection: ActionDirection = reconcileLiftedActionDirection(
+    biasToActionDirection(symbolVerdict?.bias),
+    liftedChartAction != null ? chartActionStore.getSide(symbol, timeframe) : null,
+  );
   // Re-run the overlay handshake on the CLIENT with the live chart facts: the
   // real chart-bus symbol and whether candles are actually loaded. The server
   // computes a data-side handshake assuming the chart is rendered for the
@@ -775,19 +812,16 @@ export function ScannerChartPanel() {
   // so without this gate a stale PASS handshake would keep reading "verified"
   // even though the layers feed is down. Display-only; no execution concern.
   const overlayDegraded = smartLayersQuery.isError;
+  // Checks the handshake could not run at all (no news mapping, unknown overlay
+  // age). A PASS with any of these is only partially checked — never "verified".
+  const overlayUnchecked = unavailableOverlayChecks(handshake?.checks);
+  const overlayPartial = handshake?.overallStatus === "PASS" && overlayUnchecked.length > 0;
 
   // ── Live Trade Health (Task #198) — active, per-user post-entry overlays for
   //    the symbol on the chart. READ-ONLY; the endpoint returns honest empty
   //    when there are no open positions on this symbol (never fabricated).
-  const tradeHealthParams = { chartSymbol: symbol };
-  const tradeHealthQuery = useGetMeTradeHealth(tradeHealthParams, {
-    query: {
-      queryKey: getGetMeTradeHealthQueryKey(tradeHealthParams),
-      refetchInterval: 20_000,
-    },
-  });
-  const tradeHealthOverlays: SmartChartLayer[] =
-    tradeHealthQuery.data?.overlays ?? [];
+  const { query: tradeHealthQuery, overlays: tradeHealthOverlays } =
+    useScannerTradeHealthOverlays(symbol);
 
   // ── Derive the honest display status for this chart render.
   //    The shared scanner-truth (useScannerTruth) is the SINGLE resolved state:
@@ -801,6 +835,13 @@ export function ScannerChartPanel() {
   // through the shared helper so every chart surface decides "may I look live?"
   // identically (Task #351).
   const isLiveDisplay = isLivePriceDisplay(displayStatus);
+  // The notice strip under the canvas. A closed market (the truth's scheduled
+  // closure or the stream's closed-market signal) reads "Market closed", never
+  // "Stale" next to the "Market closed" chip.
+  const feedStrip = resolveChartFeedStrip(displayStatus, {
+    marketClosed: truth?.marketClosure != null || marketFrozen != null,
+    hasCandles: candles.length > 0,
+  });
 
   // The user's own alert preferences govern whether a high-impact news event is
   // allowed to interrupt with a toast. Market-condition news routes through the
@@ -1268,6 +1309,9 @@ export function ScannerChartPanel() {
       // A dedicated effect below re-applies this on status change without rebuild.
       priceLineVisible: isLiveDisplay,
       lastValueVisible: isLiveDisplay,
+      // The axis last-value label prints at the instrument's precision, not
+      // lightweight-charts' default 2 dp (owner: axis 33575.37 vs 4-dp quotes).
+      ...(candlestickPriceFormat(pricePrecisionRef.current) ? { priceFormat: candlestickPriceFormat(pricePrecisionRef.current)! } : {}),
     });
     seriesRef.current = series as unknown as {
       priceToCoordinate: (p: number) => number | null;
@@ -1413,6 +1457,9 @@ export function ScannerChartPanel() {
     // CANDLE (and, server-side, the current forming tip), so setData here both
     // reconciles the tip and replaces it with the closed bar — no orphan dup.
     newestBarSecRef.current = mapped[mapped.length - 1]!.time as number;
+    // setData just replaced any tick-stream tip on the axis with the poll's
+    // newest close, so the published tip no longer matches what the axis shows.
+    publishScannerTip(tipKeyRef.current, null);
 
     if (!didFitRef.current) {
       // Phase 2 — smart initial visible range. Show the last N candles rather
@@ -1456,8 +1503,12 @@ export function ScannerChartPanel() {
     // Reset the countdown whenever the stream key changes — the previous
     // symbol/timeframe's forming bar is no longer relevant (Task #524).
     formingCloseRef.current = null;
+    serverClockRef.current = null;
     setFormingCloseMs(null);
     setMarketFrozen(null);
+    // A tip never outlives its stream key (symbol / timeframe / source / context).
+    const streamTipKey = scannerTipKey(symbol, timeframe);
+    publishScannerTip(streamTipKey, null);
     if (symbol.length === 0 || !tickSource) return;
     const url = u(`/api/chart/tick-stream?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&source=${encodeURIComponent(tickSource)}`);
     let es: EventSource | null = null;
@@ -1476,6 +1527,8 @@ export function ScannerChartPanel() {
         timeframe?: string;
         frozen?: boolean;
         tickWallMs?: number;
+        /** Server wall clock when the frame was sent (epoch ms). */
+        ts?: number;
         marketFrozen?: boolean;
         lastBrokerTimeMs?: number | null;
         bar?: { openTimeMs?: number; closeTimeMs?: number; open?: number; high?: number; low?: number; close?: number };
@@ -1507,12 +1560,31 @@ export function ScannerChartPanel() {
           formingCloseRef.current = null;
           setFormingCloseMs(null);
         }
-      } else if (formingCloseRef.current !== msg.bar.closeTimeMs) {
-        formingCloseRef.current = msg.bar.closeTimeMs;
-        setFormingCloseMs(msg.bar.closeTimeMs);
+        serverClockRef.current = null;
+      } else {
+        // Re-captured per frame (frames arrive per tick) so the server-clock
+        // offset stays fresh; a frame without a finite ts (older server)
+        // leaves no sample and the countdown falls back to the client clock.
+        const openMs = msg.bar.openTimeMs;
+        serverClockRef.current = typeof msg.ts === "number" && Number.isFinite(msg.ts)
+          ? {
+              serverTs: msg.ts,
+              receivedPerf: performance.now(),
+              intervalMs: typeof openMs === "number" && Number.isFinite(openMs) && msg.bar.closeTimeMs > openMs
+                ? msg.bar.closeTimeMs - openMs : null,
+            }
+          : null;
+        if (formingCloseRef.current !== msg.bar.closeTimeMs) {
+          formingCloseRef.current = msg.bar.closeTimeMs;
+          setFormingCloseMs(msg.bar.closeTimeMs);
+        }
       }
-      // Series tip update — only for a live (non-frozen) forming bar.
-      if (msg.frozen || !msg.bar) return;
+      // Series tip update — only for a live (non-frozen) forming bar. A frozen
+      // or barless frame also withdraws the published tip (no stale "current").
+      if (msg.frozen || !msg.bar) {
+        publishScannerTip(streamTipKey, null);
+        return;
+      }
       const series = lineSeriesRef.current;
       if (!series) return;
       // Task #496 latency addendum: measure ingest→browser latency from the
@@ -1550,6 +1622,12 @@ export function ScannerChartPanel() {
         close: b.close,
       });
       newestBarSecRef.current = tipSec;
+      // Publish the axis' current tip (rounded to the display precision so an
+      // unchanged label never re-renders a reader) — only on a live display.
+      publishScannerTip(
+        streamTipKey,
+        isLiveDisplayRef.current ? Number(formatInstrumentPrice(b.close, pricePrecisionRef.current)) : null,
+      );
     };
     es.onerror = () => {
       // The browser auto-reconnects an EventSource; nothing to do. The poll
@@ -1558,8 +1636,9 @@ export function ScannerChartPanel() {
     return () => {
       disposed = true;
       es?.close();
+      publishScannerTip(streamTipKey, null);
     };
-  }, [symbol, apiTf, tickSource, chartContext]);
+  }, [symbol, apiTf, timeframe, tickSource, chartContext]);
 
   // ── Display-truth: keep the candlestick series' built-in last-price line +
   //    last-value label in lockstep with the live/non-live display status,
@@ -1571,6 +1650,20 @@ export function ScannerChartPanel() {
     if (!series) return;
     series.applyOptions({ priceLineVisible: isLiveDisplay, lastValueVisible: isLiveDisplay });
   }, [isLiveDisplay, chartEpoch, chartContext]);
+
+  // A non-live display never carries a tick tip (header + badge fall back to
+  // the labelled last-known close).
+  useEffect(() => {
+    if (!isLiveDisplay) publishScannerTip(tipKey, null);
+  }, [isLiveDisplay, tipKey]);
+
+  // Axis precision follows the instrument precision without a chart rebuild.
+  useEffect(() => {
+    const series = lineSeriesRef.current;
+    const priceFormat = candlestickPriceFormat(pricePrecision);
+    if (!series || !priceFormat) return;
+    series.applyOptions({ priceFormat });
+  }, [pricePrecision, chartEpoch, chartContext]);
 
   // ── Phase 3 — overlay the user's own positions + pending orders as price
   //    lines. Runs on every positions/pending poll WITHOUT recreating the
@@ -1914,6 +2007,10 @@ export function ScannerChartPanel() {
   useEffect(() => { newsAlertedRef.current = new Set(); }, [symbol]);
 
   const lastClose = candles.length > 0 ? candles[candles.length - 1]!.close : null;
+  // The CURRENT price is the same observation the axis shows: the live tick tip
+  // when one has been applied since the last poll, else the poll's close.
+  const liveTip = useScannerTip(tipKey);
+  const shownClose = resolveDisplayClose({ tipClose: liveTip, lastClose, isLive: isLiveDisplay });
 
   // ── Last-known price stamp (Task #524). The series' built-in last-value label
   //    + price line (toggled in the effect above) ONLY render when the feed is
@@ -2294,11 +2391,8 @@ export function ScannerChartPanel() {
   // review surface; in an active trade mode we keep the quick menu focused.
   const isReviewMode = tradeMode == null;
 
-  const decimals = (() => {
-    const sample = lastClose ?? draft?.entry ?? 1;
-    return sample < 10 ? 5 : sample < 1000 ? 3 : 2;
-  })();
-  const fmt = (n: number) => n.toFixed(decimals);
+  // Level / draft / position labels share the instrument precision too.
+  const fmt = (n: number) => formatInstrumentPrice(n, pricePrecision);
 
   return (
     <Card data-testid="scanner-chart-panel" className="rounded-2xl border-border bg-card">
@@ -2309,14 +2403,14 @@ export function ScannerChartPanel() {
             <span data-testid="scanner-chart-symbol" className="text-base font-semibold text-foreground">
               {symbol}
             </span>
-            {lastClose != null && isLiveDisplay && (
+            {shownClose.value != null && isLiveDisplay && (
               <Badge variant="outline" className="font-mono text-xs" data-testid="scanner-chart-last">
-                {lastClose}
+                {formatInstrumentPrice(shownClose.value, pricePrecision)}
               </Badge>
             )}
             {lastClose != null && !isLiveDisplay && displayStatus !== "UNAVAILABLE" && (
               <Badge variant="outline" className="font-mono text-xs text-zinc-500" data-testid="scanner-chart-last-stale" title="Last-known candle close — not a live price">
-                {lastClose} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
+                {formatInstrumentPrice(lastClose, pricePrecision)} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
               </Badge>
             )}
             {/* Feed-status badge — honest state of the data feed. Single-sourced
@@ -2351,7 +2445,7 @@ export function ScannerChartPanel() {
                 feed is genuinely LIVE and a live forming bar has reported its
                 broker-aligned close time. The child owns its own 1s ticker. */}
             {formingCloseMs != null && isLiveDisplay && (
-              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} />
+              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} clockRef={serverClockRef} />
             )}
             {hasCandles && (
               <ChartHistoryBadge
@@ -2375,9 +2469,18 @@ export function ScannerChartPanel() {
               </Badge>
             )}
             {/* Phase 3 — timing overlay chip (advisory, fail-open) */}
-            <ChartTimingChip symbol={symbol} />
+            <ChartTimingChip symbol={symbol} apiTf={apiTf} timeframeLabel={timeframe} />
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
+            {hasCandles && (
+              <span
+                className="mr-1 text-[10px] text-zinc-500"
+                data-testid="scanner-chart-timezone"
+                title={CHART_TIME_AXIS_TITLE}
+              >
+                {CHART_TIME_AXIS_LABEL}
+              </span>
+            )}
             {PRIMARY_TIMEFRAMES.map((tf) => (
               <Button
                 key={tf.id}
@@ -2601,22 +2704,35 @@ export function ScannerChartPanel() {
                 never surfaced here (they can carry live wording or an internal
                 source token). Only the lastCandleTime timestamp — safe — is
                 shown, on the STALE strip (Task #347). */}
-            {displayStatus === "FALLBACK_COMPOSITE" && (
+            {feedStrip === "market_closed" && (
+              <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-status-market-closed">
+                <span className="font-medium">Market closed · last session's candles</span>
+                {feedStatus?.lastCandleTime && (
+                  formatUtcClock(feedStatus.lastCandleTime) && (
+                    <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle {formatUtcClock(feedStatus.lastCandleTime)}</span>
+                  )
+                )}
+                <span className="ml-auto text-amber-400/50 text-[10px]">No live price until the market reopens</span>
+              </div>
+            )}
+            {feedStrip === "delayed" && (
               <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-status-composite">
                 <span className="font-medium">Delayed market data</span>
                 <span className="ml-auto text-amber-400/50 text-[10px]">Historical context only — no live price marker</span>
               </div>
             )}
-            {displayStatus === "STALE" && (
+            {feedStrip === "stale" && (
               <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stale">
                 <span className="font-medium">Stale · last-known candles</span>
                 {feedStatus?.lastCandleTime && (
-                  <span className="text-orange-400/70">· last updated {new Date(feedStatus.lastCandleTime).toLocaleTimeString()}</span>
+                  formatUtcClock(feedStatus.lastCandleTime) && (
+                    <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle {formatUtcClock(feedStatus.lastCandleTime)}</span>
+                  )
                 )}
                 <span className="ml-auto text-orange-400/50 text-[10px]">No live price marker</span>
               </div>
             )}
-            {displayStatus === "ANALYSIS_ONLY" && candles.length > 0 && (
+            {feedStrip === "analysis_only" && (
               <div className="flex items-center gap-2 rounded-md border border-zinc-700/50 bg-zinc-900/40 px-3 py-1.5 text-[11px] text-zinc-400" data-testid="scanner-chart-status-analysis">
                 <span className="font-medium">Live feed unavailable · Analysis only</span>
                 <span className="ml-auto text-zinc-600 text-[10px]">Historical context — no live price marker</span>
@@ -2784,15 +2900,32 @@ export function ScannerChartPanel() {
                 {handshake && (
                   <Badge
                     variant="outline"
-                    className={`ml-auto text-[10px] ${overlayDegraded ? "border-amber-500/40 text-amber-300" : handshakeBadgeStyle(handshake.overallStatus)}`}
-                    title={overlayDegraded ? OVERLAY_DEGRADED_TITLE : handshake.userFacingMessage}
+                    className={`ml-auto text-[10px] ${overlayDegraded ? "border-amber-500/40 text-amber-300" : handshakeBadgeStyle(overlayPartial ? "PARTIAL" : handshake.overallStatus)}`}
+                    title={
+                      overlayDegraded
+                        ? OVERLAY_DEGRADED_TITLE
+                        : overlayPartial
+                          ? overlayPartialTitle(overlayUnchecked)
+                          : handshake.userFacingMessage
+                    }
                     data-testid="scanner-smart-handshake"
                   >
-                    Overlays: {overlayBadgeLabel(handshake.overallStatus, overlayDegraded, isLiveDisplay)}
+                    Overlays: {overlayBadgeLabel(handshake.overallStatus, overlayDegraded, isLiveDisplay, overlayUnchecked.length > 0)}
                   </Badge>
                 )}
               </div>
 
+              {/* The Economic-events layer is never silent: with no truth read it
+                  states that event risk is being checked / was not checked, in
+                  the same words as the market-read card. */}
+              {layerToggles.news && !news && (
+                <div className="space-y-1" data-testid="scanner-news-radar">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">Impact radar</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500" data-testid="scanner-news-radar-status">{eventRisk}</div>
+                </div>
+              )}
               {layerToggles.news && news && (
                 <div className="space-y-1" data-testid="scanner-news-radar">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -2845,7 +2978,7 @@ export function ScannerChartPanel() {
                   data-testid="scanner-smart-reserved"
                 >
                   {tradeHealthQuery.isError
-                    ? "Trade-health is momentarily unavailable — the chart and your data are unaffected."
+                    ? "Trade-health could not be checked just now, so no trade-health lines are drawn until a check succeeds. The chart and your data are unaffected."
                     : tradeHealthQuery.isLoading && !tradeHealthQuery.data
                       ? "Checking trade health for this symbol…"
                       : tradeHealthOverlays.length > 0
@@ -2874,6 +3007,7 @@ export function ScannerChartPanel() {
               canonicalAction={canonicalChartActionFinal}
               canonicalDirection={canonicalChartDirection}
               canonicalReadId={truth?.consolidated.readId}
+              newsRiskLabel={eventRisk}
             />
 
             {/* Chart Brain v2 Task 6 — your marked levels / zones / price alerts.

@@ -31,14 +31,49 @@ export type OverlayHandshakeStatus = "PASS" | "WARN" | "BLOCK" | string;
 // pass while the overlays sit on non-live data, so a live-feed-gated PASS reads
 // as "limited" instead — honest about the feed state the overlays are drawn on.
 // `livePrice` defaults true so existing callers/tests keep their behaviour.
+//
+// A PASS handshake also must NOT claim "verified" when some of its checks were
+// NOT_AVAILABLE — not checked at all (e.g. no economic-calendar mapping for the
+// symbol, unknown overlay age). The domain roll-up ignores NOT_AVAILABLE, so a
+// chart whose news mapping and overlay age were never checked still rolls up
+// PASS; the badge reads "partially checked" instead. Precedence: degraded >
+// not-live > partially checked > verified. `hasUnavailableChecks` defaults
+// false so existing callers keep their behaviour.
 export function overlayBadgeLabel(
   status: OverlayHandshakeStatus | null,
   degraded: boolean,
   livePrice: boolean = true,
+  hasUnavailableChecks: boolean = false,
 ): string {
   if (degraded || status == null) return "unavailable";
-  if (status === "PASS") return livePrice ? "verified" : "limited";
+  if (status === "PASS") {
+    if (!livePrice) return "limited";
+    return hasUnavailableChecks ? "partially checked" : "verified";
+  }
   if (status === "WARN") return "check";
   if (status === "BLOCK") return "not ready";
   return "unknown";
+}
+
+/** A handshake check as the badge reads it (domain SmartChartOverlayCheck). */
+export interface OverlayBadgeCheck {
+  status: string;
+  detail: string;
+}
+
+/** The handshake checks that were NOT_AVAILABLE (never checked). */
+export function unavailableOverlayChecks<T extends OverlayBadgeCheck>(
+  checks: readonly T[] | null | undefined,
+): T[] {
+  return (checks ?? []).filter((c) => c.status === "NOT_AVAILABLE");
+}
+
+/**
+ * Honest title for a PASS handshake with unchecked items. REPLACES the PASS
+ * message ("…match the live read and are safe to use as guidance"), which would
+ * over-claim: only the checked items passed.
+ */
+export function overlayPartialTitle(unavailable: readonly OverlayBadgeCheck[]): string {
+  const details = unavailable.map((c) => c.detail.trim()).filter(Boolean);
+  return `Structure overlays match the chart; not checked: ${details.join(" ")}`.trim();
 }

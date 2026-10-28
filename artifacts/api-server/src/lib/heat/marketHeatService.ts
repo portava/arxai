@@ -84,7 +84,7 @@ function calendarSignalOf(read: CalendarProviderRead): CalendarSignal {
     impactScore: read.connected ? Math.max(0, Math.min(1, read.eventCount / 8)) : 0,
     eventCount: read.eventCount,
     highImpactActive: read.highImpactActive,
-    updatedAt: null,
+    updatedAt: read.connected ? read.updatedAt : null,
     source: read.provider,
   };
 }
@@ -101,17 +101,25 @@ function aggregatePrice(signals: PriceSignal[]): PriceSignal {
     (worst, s) => (order[s.freshness] > order[worst] ? s.freshness : worst),
     "LIVE",
   );
-  const newest = live.reduce<string | null>((acc, s) => {
-    if (!s.updatedAt) return acc;
-    if (!acc) return s.updatedAt;
-    return Date.parse(s.updatedAt) > Date.parse(acc) ? s.updatedAt : acc;
-  }, null);
+  // A tick stamp and a bar-open stamp measure different things, so they are
+  // never mixed: "tick" only when EVERY contributor is tick-stamped, otherwise
+  // the newest bar-open stamp among the bar-open contributors.
+  const allTick = live.every((s) => s.priceTimeBasis === "tick");
+  const priceTimeBasis: "tick" | "bar_open" = allTick ? "tick" : "bar_open";
+  const newest = live
+    .filter((s) => allTick || s.priceTimeBasis !== "tick")
+    .reduce<string | null>((acc, s) => {
+      if (!s.updatedAt) return acc;
+      if (!acc) return s.updatedAt;
+      return Date.parse(s.updatedAt) > Date.parse(acc) ? s.updatedAt : acc;
+    }, null);
   return {
     available: true,
     momentum,
     volatility,
     freshness,
     updatedAt: newest,
+    priceTimeBasis,
     source: live[0]!.source,
     candleCount: live.reduce((a, s) => a + s.candleCount, 0),
   };
@@ -199,7 +207,8 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
           volatility: price.volatility,
           freshness: price.freshness,
           updatedAt: price.updatedAt,
-          source: price.provider,
+          priceTimeBasis: price.priceTimeBasis,
+          source: price.source.name,
           candleCount: price.candleCount,
         },
         news: { ...newsSignal, connected: false },
@@ -228,18 +237,23 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
 
   // Price probes are only meaningful when macro is active; dedupe across scopes.
   const priceCache = new Map<string, PriceSignal>();
+  // Per-symbol "a current feed answered" (readPriceProvider source.connected):
+  // a stale series or the stored mirror returned bars but is not connected.
+  const priceConnected = new Map<string, boolean>();
   async function priceFor(symbol: string): Promise<PriceSignal> {
     if (!macroActive) return UNAVAILABLE_PRICE;
     const cached = priceCache.get(symbol);
     if (cached) return cached;
     const read = await readPriceProvider(symbol, timeframe, nowMs);
+    priceConnected.set(symbol, read.source.connected);
     const sig: PriceSignal = {
       available: read.available,
       momentum: read.momentum,
       volatility: read.volatility,
       freshness: read.freshness,
       updatedAt: read.updatedAt,
-      source: read.provider,
+      priceTimeBasis: read.priceTimeBasis,
+      source: read.source.name,
       candleCount: read.candleCount,
     };
     priceCache.set(symbol, sig);
@@ -308,8 +322,15 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
     calendar: calendarSignal,
   });
 
+  // The provider chip claims a CONNECTED price feed only when a contributing
+  // symbol's feed is current: the aggregate verdict counts any returned bars
+  // as connected, which would paint a stale/stored series as a live provider.
+  const priceFeedConnected =
+    global.priceSource.connected &&
+    global.priceSource.status !== "stale" &&
+    allMacroSymbols.some((s) => priceConnected.get(s) === true);
   const providerStatus: ProviderStatusRow = {
-    price: global.priceSource,
+    price: { ...global.priceSource, connected: priceFeedConnected },
     news: newsRead.source,
     calendar: calendarRead.source,
   };
@@ -404,7 +425,8 @@ export async function buildSymbolHeat(
       volatility: price.volatility,
       freshness: price.freshness,
       updatedAt: price.updatedAt,
-      source: price.provider,
+      priceTimeBasis: price.priceTimeBasis,
+      source: price.source.name,
       candleCount: price.candleCount,
     },
     news: isSynthetic ? { ...newsSignal, connected: false } : newsSignal,

@@ -25,6 +25,7 @@ interface CacheRuntime {
 export default function AdminDiagnostics() {
   const { name } = useAssistantName();
   const [pkg, setPkg] = useState<Record<string, unknown> | null>(null);
+  const [pkgError, setPkgError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cache, setCache] = useState<CacheRuntime | null>(null);
 
@@ -32,7 +33,22 @@ export default function AdminDiagnostics() {
     setBusy(true);
     try {
       const r = await fetch("/api/export/diagnostics", { headers: { "x-security-role": "ADMIN" } });
-      setPkg(await r.json());
+      let body: unknown = null;
+      try { body = await r.json(); } catch { body = null; }
+      if (!r.ok || !body || typeof body !== "object" || Array.isArray(body)) {
+        // An error body is not a diagnostics package: never render or offer it
+        // for download as one.
+        const msg = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+          ? (body as { error: string }).error : null;
+        setPkg(null);
+        setPkgError(`HTTP ${r.status}${msg ? ` — ${msg}` : !r.ok ? "" : " — response was not a diagnostics package"}`);
+        return;
+      }
+      setPkg(body as Record<string, unknown>);
+      setPkgError(null);
+    } catch (e) {
+      setPkg(null);
+      setPkgError(e instanceof Error ? e.message : "Network error");
     } finally { setBusy(false); }
   }
 
@@ -66,6 +82,15 @@ export default function AdminDiagnostics() {
           <Button onClick={download} disabled={!pkg} data-testid="diag-download">Download .json</Button>
         </div>
       </div>
+      {pkgError && (
+        <Alert variant="destructive" data-testid="diag-error">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Diagnostics package could not be generated</AlertTitle>
+          <AlertDescription>
+            /api/export/diagnostics failed ({pkgError}). No package is shown or downloadable until a refresh succeeds.
+          </AlertDescription>
+        </Alert>
+      )}
       <WorkflowHealthCard />
       <ChartTruthHealthCard />
       <CandleDepthDiagnosticsCard />

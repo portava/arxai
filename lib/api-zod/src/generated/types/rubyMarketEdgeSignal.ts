@@ -10,10 +10,12 @@ import type { FakeoutReading } from "./fakeoutReading";
 import type { LateDetection } from "./lateDetection";
 import type { RubyMarketEdgeSignalBias } from "./rubyMarketEdgeSignalBias";
 import type { RubyMarketEdgeSignalConfidenceBand } from "./rubyMarketEdgeSignalConfidenceBand";
+import type { RubyMarketEdgeSignalConfidenceBandBasis } from "./rubyMarketEdgeSignalConfidenceBandBasis";
 import type { RubyMarketEdgeSignalDirection } from "./rubyMarketEdgeSignalDirection";
 import type { RubyMarketEdgeSignalFreshness } from "./rubyMarketEdgeSignalFreshness";
 import type { RubyMarketEdgeSignalLifecycleStage } from "./rubyMarketEdgeSignalLifecycleStage";
 import type { RubyMarketEdgeSignalRegime } from "./rubyMarketEdgeSignalRegime";
+import type { RubyMarketEdgeSignalScannerBinding } from "./rubyMarketEdgeSignalScannerBinding";
 import type { SessionContext } from "./sessionContext";
 import type { SignalEvidence } from "./signalEvidence";
 import type { SignalPriceZone } from "./signalPriceZone";
@@ -45,6 +47,8 @@ export interface RubyMarketEdgeSignal {
   stopLoss: number | null;
   scores: SignalScores;
   confidenceBand: RubyMarketEdgeSignalConfidenceBand;
+  /** FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL. */
+  confidenceBandBasis?: RubyMarketEdgeSignalConfidenceBandBasis;
   edgeScore: number;
   earlyTrend: EarlyTrendReading;
   fakeout: FakeoutReading;
@@ -58,4 +62,8 @@ export interface RubyMarketEdgeSignal {
   expiresAt: string;
   firstSeenAt: string;
   lateReason: string | null;
+  /** Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers. */
+  scannerBinding?: RubyMarketEdgeSignalScannerBinding;
+  /** Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind. */
+  structureWindow?: number | null;
 }

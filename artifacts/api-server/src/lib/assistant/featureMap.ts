@@ -575,7 +575,7 @@ export const ARX_FEATURE_REGISTRY: FeatureRegistryEntry[] = [
 // ── Backward-compat: legacy route map ────────────────────────────────────
 export const ARX_FEATURES: FeatureEntry[] = [
   { key: "dashboard", name: "Dashboard", route: "/", summary: "Account balance, P&L, win rate, drawdown, open trades, latest signals.", tags: ["overview", "summary", "home"] },
-  { key: "scanner", name: "Market Scanner", route: "/scanner", summary: "Real-time signals with confidence scores for tracked symbols.", tags: ["signals", "scan"] },
+  { key: "scanner", name: "Market Scanner", route: "/scanner", summary: "Signals with confidence scores for tracked symbols, refreshed by polling; each read carries its own Live / Delayed / Stale / Historical data label.", tags: ["signals", "scan"] },
   { key: "bot", name: "Bot Control", route: "/bot-control", summary: "Start/Stop/Pause the bot. Demo/LIVE mode (LIVE requires multi-step confirmation).", tags: ["bot", "automation"] },
   { key: "strategies", name: "Strategy Settings", route: "/strategy-settings", summary: "Toggle the 5 modular strategies: Trend Continuation, BOS, Liquidity Sweep, Volatility Expansion, No Trade Filter.", tags: ["strategy", "rules"] },
   { key: "risk", name: "Risk Settings", route: "/risk-settings", summary: "Risk parameters: max loss, lot size, confidence threshold, daily loss cap, etc.", tags: ["risk", "rules"] },

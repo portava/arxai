@@ -280,8 +280,10 @@ router.get("/me/heat/replay", requireUser, async (req, res): Promise<void> => {
       const curr = rows[i]!;
       const prev = rows[i - 1] ?? null;
 
-      // Session open / heat rising
-      if (!prev || (curr.heatScore - (prev?.heatScore ?? 0)) >= 20) {
+      // Heat rising: a measured jump of >= 20 from the previous snapshot. The
+      // first snapshot of the window has no previous reading, so no rise can
+      // be observed there and none is reported.
+      if (prev && (curr.heatScore - prev.heatScore) >= 20) {
         events.push({ type: "heat_rising", label: "Heat rising", at: curr.generatedAt, heatScore: curr.heatScore, heatState: curr.heatState, grade: curr.timingGrade });
       }
       // News hit

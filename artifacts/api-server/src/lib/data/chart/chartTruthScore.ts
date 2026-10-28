@@ -103,9 +103,11 @@ function aggregate(subMetrics: ChartTruthSubMetric[]): ChartTruthScore {
 /**
  * Compute the Chart Truth Score from Phase 1 truth result + feed status.
  *
- * @param alignment - Optional broker price alignment. When supplied and
- *   `brokerDataAvailable === true`, the broker deviation is folded into the
- *   SymbolMirrorAccuracy sub-metric so real mis-sync degrades the score.
+ * @param alignment - Optional broker price alignment. When supplied,
+ *   `brokerDataAvailable === true` AND its quote binding is BOUND (same
+ *   provider/bridge/owner as the series, observed fresh tick), the broker
+ *   deviation is folded into the SymbolMirrorAccuracy sub-metric so real
+ *   mis-sync degrades the score. An unbound comparison stays unmeasured.
  *   Pass `undefined` or `noBrokerAlignment(...)` when no per-user broker
  *   data is available (broker mirror accuracy is then unmeasured).
  *
@@ -276,9 +278,19 @@ export function computeChartTruthScore(
     mirrorDetail += " Broker quote unavailable for alignment check.";
   }
   const alignmentMeasured = hasMeasuredBrokerAlignment(alignment);
+  // A numeric comparison whose quote is not bound to this series' identity and
+  // freshness earns nothing; the observed binding failure stays named.
+  const binding = alignment?.quoteBinding;
+  const unboundDetail = alignment?.brokerDataAvailable && binding && binding.status !== "BOUND"
+    ? `Broker mirror accuracy unmeasured — broker quote ${binding.status === "MISMATCH" ? "identity does not match this chart series"
+      : binding.status === "STALE" ? "tick time is outside the freshness budget" : "identity or tick time is unverified"}` +
+      (binding.reasons.length ? ` (${binding.reasons.join(", ")}).` : ".")
+    : alignment?.brokerDataAvailable && !binding
+      ? "Broker mirror accuracy unmeasured — broker quote identity and freshness were not evaluated."
+      : "Broker mirror accuracy unmeasured — no usable broker-price comparison.";
   subMetrics.push(sub("symbol_mirror_accuracy", "Symbol Mirror Accuracy", 0.12,
     alignmentMeasured ? mirrorRaw : null,
-    alignmentMeasured ? mirrorDetail : "Broker mirror accuracy unmeasured — no usable broker-price comparison."));
+    alignmentMeasured ? mirrorDetail : unboundDetail));
 
   // ── 5. Historical/Live Merge Quality (0.10) ───────────────────────────────
   // Strictly the quality of the merge seam itself.

@@ -6,7 +6,7 @@
 //
 //   Account snapshot ...... useGetMeSharedAccountSummary + useTradingMode
 //   Ruby market view ...... useGetBrainSymbols + useGetCoachExplanation + useActiveSymbol
-//   Critical events ....... useGetEconomicCalendar({ impact: "high" })
+//   Critical events ....... useGetEconomicCalendar({ impact: "high" }) + useGetLiveCalendarEvents (provider read state)
 //   Open positions ........ useGetMeSharedAccountPositions  (MT5-confirmed only)
 //   Today performance ..... useGetPerformanceSummary
 //   Alerts summary ........ useGetCriticalAlerts            (grouped, de-duped)
@@ -29,6 +29,7 @@ import {
   useGetPerformanceSummary,
   useGetCriticalAlerts,
   useGetEconomicCalendar,
+  useGetLiveCalendarEvents,
 } from "@workspace/api-client-react";
 import { useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
 import type { SnapshotReconciliation } from "@/hooks/useLiveAccountSnapshot";
@@ -55,8 +56,11 @@ import { useActiveSymbol } from "@/lib/symbol-context";
 import { useAssistantName } from "@/lib/assistant-name";
 import { formatPnl } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { calendarEventWhen, describeCalendarCoverage } from "@/lib/calendarCoverage";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
+import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
+import { describeRiskCaps } from "./riskCapsSummary";
 
 const money = (n: number | null | undefined) =>
   n == null ? "—" : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -207,8 +211,15 @@ export function AccountSnapshotCard() {
   const broker = master?.brokerName ?? accounts[0]?.masterBrokerName ?? "—";
   const masked = master?.accountNumberMasked ?? accounts[0]?.masterAccountNumberMasked ?? null;
   const liveLabel = mode.isLiveShared ? "LIVE" : mode.isDemo ? "DEMO" : "SIM";
-  const isActive = (accounts[0]?.status ?? master?.syncStatus ?? "").toString().toLowerCase() === "active"
-    || mode.isLiveShared || (master?.syncStatus === "LIVE");
+  // "Active" needs an observation: the allocation row's own status, or (owner/
+  // admin) a LIVE master sync. The LIVE_SHARED mode label is not one — the
+  // server also sets it for display on an approved-but-unconfirmed account
+  // whose execution is blocked — and a server blocker overrides both.
+  const executionBlocked = Boolean(mode.cleanBlockedReason);
+  const isActive = !executionBlocked && (
+    (accounts[0]?.status ?? "").toString().toLowerCase() === "active"
+    || master?.syncStatus === "LIVE"
+  );
 
   return (
     <CockpitCard
@@ -339,7 +350,9 @@ export function AccountSnapshotCard() {
               compact
             />
           )}
-          <Pill tone={isActive ? "success" : "muted"}>{isActive ? "Active" : "Inactive"}</Pill>
+          <span data-testid="cockpit-account-active-pill" title={executionBlocked ? mode.cleanBlockedReason ?? undefined : undefined}>
+            <Pill tone={isActive ? "success" : executionBlocked ? "warning" : "muted"}>{isActive ? "Active" : executionBlocked ? "Blocked" : "Inactive"}</Pill>
+          </span>
         </div>
       </div>
     </CockpitCard>
@@ -361,22 +374,44 @@ export function TradingPermissionSummaryCard() {
   const frozen = mode.isFrozen;
   const waitingApproval = !mode.canManualTrade && !blocked && !frozen;
 
+  // Bridge connectivity comes from the shared master pool's heartbeat-derived
+  // availability (same query the account snapshot card uses), never from the
+  // presence or absence of an account-mode blocker.
+  const summaryQ = useGetMeSharedAccountSummary({
+    query: { queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
+  });
+  const onSharedRoute = isOnSharedMasterRoute(mode);
+  const bridge = describeBridgeObservation({
+    onSharedRoute,
+    allocationView: summaryQ.data?.allocationView ?? null,
+    summaryLoading: summaryQ.isLoading,
+  });
+
+  // userCanManualTrade is account status + approval + no blocker. It does not
+  // read the bridge, feed, kill switch or risk caps, so the label is a
+  // permission statement ("Approved to trade"), never "All clear". On the
+  // shared master route it is downgraded while the bridge is not online.
+  const bridgeNotOnline = onSharedRoute && bridge.state !== "online";
   const status = frozen
     ? { label: "Paused", tone: "warning" as const }
     : blocked
-      ? { label: "Bridge disconnected", tone: "danger" as const }
+      // An account/permission blocker from the server (never a heartbeat read).
+      ? { label: "Trading blocked", tone: "danger" as const }
       : waitingApproval
         ? { label: "Waiting for approval", tone: "warning" as const }
         : mode.canManualTrade
-          ? { label: "All clear", tone: "success" as const }
+          ? bridgeNotOnline
+            ? { label: `Approved · bridge ${bridge.label.toLowerCase()}`, tone: "warning" as const }
+            : { label: "Approved to trade", tone: "success" as const }
           : { label: "Locked", tone: "danger" as const };
 
   const headline = blocked
     ? mode.cleanBlockedReason
-    : mode.cleanUserMessage || "Your account is approved for trading.";
+    : mode.canManualTrade && bridgeNotOnline
+      ? bridge.detail
+      : mode.cleanUserMessage || "Your account is approved for trading.";
 
-  const sessionActive = !mode.isLoading && !frozen;
-  const bridge = blocked ? "Disconnected" : "Connected";
+  const riskCaps = describeRiskCaps(mode.envelope?.userRiskCaps ?? null);
 
   return (
     <CockpitCard
@@ -392,9 +427,10 @@ export function TradingPermissionSummaryCard() {
       <p className="mt-1 text-sm text-txt-secondary">{headline}</p>
 
       <dl className="mt-4 space-y-2.5 text-sm">
-        <Row label="Risk level" value={mode.envelope?.userRiskCaps ? "Managed" : "Low"} valueClass="text-success" />
-        <Row label="Bridge" value={bridge} valueClass={blocked ? "text-danger" : "text-success"} />
-        <Row label="Session" value={sessionActive ? "Active" : "Inactive"} valueClass={sessionActive ? "text-success" : "text-txt-muted"} />
+        <Row label="Risk caps" value={riskCaps.label} valueClass={BRIDGE_TEXT[riskCaps.tone]} title={riskCaps.detail} data-testid="permission-risk-caps" />
+        <Row label="Bridge" value={bridge.label} valueClass={BRIDGE_TEXT[bridge.tone]} title={bridge.detail} data-testid="permission-bridge" />
+        {/* Only the operator pause flag is known here; no session or system health is measured. */}
+        <Row label="Account pause" value={mode.isLoading ? "Checking" : frozen ? "Paused" : "Not paused"} valueClass={frozen ? "text-warning" : "text-txt-secondary"} data-testid="permission-pause" />
         <Row label="Market" value={active} valueClass="text-foreground font-mono" />
       </dl>
 
@@ -410,9 +446,16 @@ export function TradingPermissionSummaryCard() {
   );
 }
 
-function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+const BRIDGE_TEXT: Record<"success" | "warning" | "danger" | "muted", string> = {
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-danger",
+  muted: "text-txt-muted",
+};
+
+function Row({ label, value, valueClass, title, "data-testid": testId }: { label: string; value: string; valueClass?: string; title?: string; "data-testid"?: string }) {
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex items-center justify-between gap-2" title={title} data-testid={testId}>
       <dt className="text-txt-secondary">{label}</dt>
       <dd className={cn("font-medium", valueClass)}>{value}</dd>
     </div>
@@ -557,15 +600,15 @@ export function RubyMarketViewCard() {
 export function CriticalEventsCard() {
   const eventsQ = useGetEconomicCalendar({ impact: "high", days: 3 });
   const events = (eventsQ.data ?? []).slice(0, 4);
-
-  const minsUntil = (iso: string) => {
-    const d = (new Date(iso).getTime() - Date.now()) / 60000;
-    if (Number.isNaN(d)) return "";
-    if (d < 0) return "now";
-    if (d < 60) return `${Math.round(d)}m`;
-    if (d < 1440) return `${Math.round(d / 60)}h`;
-    return `${Math.round(d / 1440)}d`;
-  };
+  // /news/calendar returns [] when the provider could not be read too; only a
+  // connected provider makes an empty list mean "no high-impact events".
+  const providerQ = useGetLiveCalendarEvents({ daysAhead: 3, impact: "high" });
+  const coverage = describeCalendarCoverage({
+    status: providerQ.data,
+    statusError: providerQ.isError,
+    listError: eventsQ.isError,
+  });
+  const nowMs = Date.now();
 
   return (
     <CockpitCard
@@ -577,7 +620,9 @@ export function CriticalEventsCard() {
       data-testid="cockpit-critical-events"
     >
       {events.length === 0 ? (
-        <p className="py-4 text-center text-sm text-txt-secondary">No high-impact events in the next 3 days.</p>
+        <p data-testid="critical-events-empty" className="py-4 text-center text-sm text-txt-secondary">
+          {coverage.read ? "No high-impact events in the next 3 days." : coverage.note}
+        </p>
       ) : (
         <ul className="space-y-2">
           {events.map((e) => (
@@ -592,11 +637,13 @@ export function CriticalEventsCard() {
                   <Pill tone="danger">High</Pill>
                 </div>
                 <div className="mt-0.5 text-[11px] text-txt-muted">
-                  {new Date(e.eventTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  {calendarEventWhen(e, nowMs).display}
                   {e.currency ? ` · ${e.currency}` : ""}
                 </div>
               </div>
-              <span className="shrink-0 text-sm font-semibold text-danger">{minsUntil(e.eventTime)}</span>
+              <span className={`shrink-0 text-sm font-semibold ${calendarEventWhen(e, nowMs).past ? "text-txt-muted" : "text-danger"}`}>
+                {calendarEventWhen(e, nowMs).label}
+              </span>
             </li>
           ))}
         </ul>

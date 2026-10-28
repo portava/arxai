@@ -21,6 +21,7 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { db, scalpFlameLockoutsTable } from "@workspace/db";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { readFlame, finalizeScalpVerdict } from "./flameRead.js";
+import { resolveScalpPricePrecision } from "./scalpPrecision.js";
 import { getSymbolInfo } from "../instruments/index.js";
 import {
   assembleBasket,
@@ -54,7 +55,7 @@ import type {
   ScalpFlameRead,
   ScalpSpecInput,
 } from "./scalpTypes.js";
-import { readLatestUserMt5State } from "../brokerHub/mt5StateReader.js";
+import { readLatestUserMt5State, MT5_STATE_NOT_ATTRIBUTED_NOTE } from "../brokerHub/mt5StateReader.js";
 
 function num(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -84,7 +85,7 @@ type DemoRaw = {
 async function loadOpenPositions(
   userId: number,
   isAdmin: boolean,
-): Promise<{ positions: OpenPositionInput[]; accountMode: ManageAccountMode }> {
+): Promise<{ positions: OpenPositionInput[]; accountMode: ManageAccountMode; positionsMeasured: boolean }> {
   const scope = await getUserModeScope(userId, { isAdmin });
   const mode = scope.currentAccountMode;
   const includeLive = mode === "LIVE_SHARED";
@@ -99,6 +100,7 @@ async function loadOpenPositions(
     : "NONE";
 
   const positions: OpenPositionInput[] = [];
+  let positionsMeasured = true;
 
   if (includeLive) {
     const liveRowsAll = await livePositionLedger.read({ where: eq(livePositionColumns.userId, userId) });
@@ -131,6 +133,9 @@ async function loadOpenPositions(
 
   if (includeDemo) {
     const state = await readLatestUserMt5State(userId);
+    // No row of the user's own: the EA feed is install-wide and never
+    // stamped with a user, so the demo positions were not read.
+    if (state == null) positionsMeasured = false;
     const raw: DemoRaw[] = Array.isArray(state?.positions)
       ? (state!.positions as DemoRaw[]) : [];
     for (const p of raw) {
@@ -153,14 +158,16 @@ async function loadOpenPositions(
     }
   }
 
-  return { positions, accountMode };
+  return { positions, accountMode, positionsMeasured };
 }
 
-/** Point size from broker spec digits when the spec doesn't carry `point`. */
+/**
+ * Point size for the flame read's internal floors: the shared broker
+ * precision (same authority as the entry engine), else a small internal floor.
+ * The floor is never used to format a price.
+ */
 function pointFor(spec: ScalpSpecInput): number {
-  if (num(spec.point) && spec.point > 0) return spec.point;
-  if (num(spec.digits) && spec.digits >= 0) return Math.pow(10, -spec.digits);
-  return 0.0001;
+  return resolveScalpPricePrecision(spec)?.point ?? 0.0001;
 }
 
 interface BasketGeometry {
@@ -171,12 +178,13 @@ interface BasketGeometry {
 }
 
 /**
+ * (Exported for the truth-accuracy regression test.)
  * Build a direction-aligned flame read for an OPEN position. Unlike the entry
  * engine (which derives direction from the scanner), the manage side always
  * reads the flame in the basket's OWN direction so exit/add-on guidance reflects
  * the side the user is actually holding. Real candles or an honest blind read.
  */
-function readManageFlame(
+export function readManageFlame(
   direction: ScalpDirection,
   candles: ScalpCandle[] | null,
   spec: ScalpSpecInput,
@@ -185,7 +193,8 @@ function readManageFlame(
   personality: RiskPersonality,
 ): ScalpFlameRead {
   const point = pointFor(spec);
-  const digits = num(spec.digits) ? spec.digits : 5;
+  // Same precision as the entry engine; null (unknown) → prices as reported.
+  const digits = resolveScalpPricePrecision(spec)?.digits ?? null;
   const spreadPrice = num(spec.spreadPoints) ? spec.spreadPoints * point : 0;
   const sign = direction === "BUY" ? 1 : -1;
 
@@ -286,6 +295,9 @@ async function upsertFailedFlameLockout(
 export interface GetScalpBasketsResult {
   baskets: ScalpBasket[];
   accountMode: ManageAccountMode;
+  /** False when the open positions could not be read; an empty list is then not "no baskets". */
+  positionsMeasured: boolean;
+  positionsNote: string | null;
   generatedAt: string;
 }
 
@@ -299,7 +311,7 @@ export async function getScalpBaskets(
   opts: { isAdmin?: boolean; riskPersonality?: RiskPersonality | null } = {},
 ): Promise<GetScalpBasketsResult> {
   const personality = opts.riskPersonality ?? "BALANCED";
-  const { positions, accountMode } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, accountMode, positionsMeasured } = await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const now = Date.now();
 
@@ -339,7 +351,9 @@ export async function getScalpBaskets(
 
   // Side effect: journal the lifecycle of every open basket (and finalize any
   // that have since closed). Per-user, advisory, best-effort. LIVE/DEMO only.
-  if (accountMode === "LIVE_SHARED" || accountMode === "DEMO") {
+  // Skipped when the positions were not read: finalizing would mark every
+  // open journal entry closed on an unread book.
+  if (positionsMeasured && (accountMode === "LIVE_SHARED" || accountMode === "DEMO")) {
     const journalMode: JournalAccountMode = accountMode;
     const snapshots: ObservationSnapshot[] = built.map(({ basket, spec, execution }) => {
       const snap = buildEntrySnapshot(basket, {
@@ -363,6 +377,8 @@ export async function getScalpBaskets(
   return {
     baskets,
     accountMode,
+    positionsMeasured,
+    positionsNote: positionsMeasured ? null : MT5_STATE_NOT_ATTRIBUTED_NOTE,
     generatedAt: new Date(now).toISOString(),
   };
 }
@@ -377,6 +393,9 @@ export interface GetAddOnCheckResult {
   symbol: string;
   direction: ScalpDirection;
   hasOpenBasket: boolean;
+  /** False when the open positions could not be read; hasOpenBasket false is then not a measured "none". */
+  positionsMeasured: boolean;
+  positionsNote: string | null;
   basket: ScalpBasket | null;
   addOn: ScalpAddOnVerdict;
   flame: ScalpFlameRead;
@@ -395,7 +414,7 @@ export async function getAddOnCheck(
   opts: { isAdmin?: boolean } = {},
 ): Promise<GetAddOnCheckResult> {
   const personality = args.riskPersonality ?? "BALANCED";
-  const { positions } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, positionsMeasured } = await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const symU = args.symbol.trim().toUpperCase();
   const group = groups.find(
@@ -452,6 +471,8 @@ export async function getAddOnCheck(
     symbol: group?.symbol ?? args.symbol,
     direction: args.direction,
     hasOpenBasket: group != null,
+    positionsMeasured,
+    positionsNote: positionsMeasured ? null : MT5_STATE_NOT_ATTRIBUTED_NOTE,
     basket,
     addOn,
     flame: enrichedFlame,

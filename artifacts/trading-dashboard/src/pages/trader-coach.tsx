@@ -6,12 +6,15 @@ interface CoachReport {
   liveTradingStatus: string;
   reportType: string;
   traderStatus: {
-    readinessScore: number;
-    readinessGrade: string;
-    readinessLevel: string;
+    /** false (or absent on an older server) when the Risk Governor did not run. */
+    readinessEvaluated?: boolean;
+    readinessUnavailableReason?: string | null;
+    readinessScore: number | null;
+    readinessGrade: string | null;
+    readinessLevel: string | null;
     governorStatus: string;
-    paperTradingAllowed: boolean;
-    autopilotAllowed: boolean;
+    paperTradingAllowed: boolean | null;
+    autopilotAllowed: boolean | null;
     liveTradingAllowed: boolean;
   };
   performanceSummary: Record<string, unknown>;
@@ -112,17 +115,31 @@ export default function TraderCoachPage() {
   if (!coach) return <div className="p-6">No coach data.</div>;
 
   const govBadge = GOV_BADGE[coach.traderStatus.governorStatus] ?? GOV_BADGE.UNKNOWN;
+  // Client may only downgrade: show a readiness figure only when the server
+  // says the governor was evaluated and every part of the figure is present.
+  const ts = coach.traderStatus;
+  const readinessKnown = ts.readinessEvaluated === true && ts.governorStatus !== "UNKNOWN"
+    && ts.readinessScore != null && ts.readinessGrade != null && ts.readinessLevel != null;
 
   return (
     <div className="p-6 space-y-6 text-gray-100">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Trader Coach</h1>
-        <span className="px-2 py-1 rounded text-xs bg-blue-700">DEMO ONLY</span>
-        <span className="px-2 py-1 rounded text-xs bg-gray-700">LIVE TRADING DISABLED</span>
+        {/* This page never reads the account mode, so it says what the coach
+            does (reviews paper trading, places no orders) — not whether the
+            account is armed for live trading. */}
+        <span className="px-2 py-1 rounded text-xs bg-blue-700">Paper trading review</span>
+        <span className="px-2 py-1 rounded text-xs bg-gray-700">Coaching only · places no orders</span>
         <span className={`px-2 py-1 rounded text-xs ${govBadge}`}>Governor: {coach.traderStatus.governorStatus === "PAPER_ALLOWED" ? "DEMO_ALLOWED" : coach.traderStatus.governorStatus === "PAPER_CAUTION" ? "DEMO_CAUTION" : coach.traderStatus.governorStatus === "PAPER_PAUSED" ? "DEMO_PAUSED" : coach.traderStatus.governorStatus}</span>
-        <span className="px-2 py-1 rounded text-xs bg-gray-700">
-          Readiness {coach.traderStatus.readinessScore}/{coach.traderStatus.readinessGrade} ({coach.traderStatus.readinessLevel})
-        </span>
+        {readinessKnown ? (
+          <span className="px-2 py-1 rounded text-xs bg-gray-700" data-testid="coach-readiness">
+            Readiness {ts.readinessScore}/{ts.readinessGrade} ({ts.readinessLevel})
+          </span>
+        ) : (
+          <span className="px-2 py-1 rounded text-xs bg-gray-700" data-testid="coach-readiness" title={ts.readinessUnavailableReason ?? undefined}>
+            Readiness unavailable — not evaluated
+          </span>
+        )}
         <button onClick={loadAll} className="ml-auto px-3 py-1 bg-blue-600 rounded text-sm">Refresh</button>
       </header>
 
@@ -176,12 +193,22 @@ export default function TraderCoachPage() {
 
       <section className="bg-gray-900 p-4 rounded">
         <h3 className="font-semibold mb-2">Daily Prep — pre-session checklist</h3>
-        <ul className="text-sm space-y-1">
+        <p className="text-xs text-gray-400 mb-2">
+          This report does not evaluate the system checks below (daily loss, cooldowns, data quality and so on).
+          Tick each row yourself once you have confirmed it on the relevant page.
+        </p>
+        <ul className="text-sm space-y-1" data-testid="pre-session-checklist">
           {coach.preSessionChecklist.map(item => (
-            <li key={item.id} className="flex gap-2">
-              <input type="checkbox" disabled={item.auto} />
+            <li key={item.id} className="flex gap-2" data-testid={`checklist-${item.id}`}>
+              <input type="checkbox" aria-label={item.label} />
               <span>{item.label}</span>
-              {item.auto && <span className="text-xs text-blue-400">(auto-checked)</span>}
+              {item.id === "system_locked" ? (
+                // The server only adds this row when the Risk Governor status it
+                // read for this report is LOCKED, so it is a measured finding.
+                <span className="text-xs text-red-400">(Risk Governor reports LOCKED)</span>
+              ) : item.auto ? (
+                <span className="text-xs text-amber-400">(system check — not checked by this report; verify before trading)</span>
+              ) : null}
             </li>
           ))}
         </ul>

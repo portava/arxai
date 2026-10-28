@@ -1,13 +1,14 @@
 // Per-user broker alignment enrichment for a shared chart intelligence state.
 //
 // The base state is shared across users and carries the noBrokerAlignment
-// placeholder (symbol mirror unmeasured). This looks up the user's EA-reported
-// bid/ask from arx_symbol_specs and, when present, recomputes broker alignment,
-// truth score and gate output from that real comparison. Missing quotes leave
-// the placeholder in place: absence is never treated as a successful match.
-//
-// Known gap: the spec row's quote age and account provenance are not checked
-// here (see docs/CHART_TRUTH_EVIDENCE_COVERAGE.md).
+// placeholder (symbol mirror unmeasured). Candidates, in order: (1) the live
+// MT5 quote pushed by the SAME bridge that produced the served series
+// (bridge-pinned in-memory read); (2) the user's EA-reported arx_symbol_specs
+// row. Each candidate is bound to the series' observed identity and its
+// observed tick time (brokerQuoteBinding.ts). Only a BOUND quote can earn
+// chart-Truth points or claim alignment; an unbound quote's numbers stay a
+// visible, unmeasured comparison with named reasons. Missing quotes leave the
+// placeholder in place: absence is never treated as a successful match.
 //
 // SAFETY: READ-ONLY. Fail-open to the unenriched state on any lookup error.
 
@@ -19,6 +20,12 @@ import {
   type ChartIntelligenceState,
 } from "./chartIntelligence.js";
 import type { ChartTimeframe } from "./timeframes.js";
+import {
+  observationFromMt5Quote,
+  observationFromSymbolSpec,
+  selectBrokerQuote,
+} from "./brokerQuoteBinding.js";
+import { readMt5Quote } from "../providers/mt5Provider.js";
 
 /**
  * Derive an appropriate chart-price basis from the asset class.
@@ -36,11 +43,24 @@ export async function enrichStateWithUserBrokerQuote(
   state: ChartIntelligenceState,
   args: { userId: number; symbol: string; timeframe: ChartTimeframe; limit: number },
 ): Promise<ChartIntelligenceState> {
+  const ctx = getCachedIntelligenceContext(args.symbol, args.timeframe, args.limit);
+  if (!ctx) return state;
+  const series = ctx.seriesAttribution;
+  // Never read another user's bridge quote: pin only to a series this user's
+  // own bridge produced.
+  const live = series?.bridgeConnectionId != null && series.userId === args.userId
+    ? observationFromMt5Quote(readMt5Quote(args.symbol, { bridgeConnectionId: series.bridgeConnectionId }))
+    : null;
   const specRow = await db
     .select({
+      userId: arxSymbolSpecsTable.userId,
+      bridgeConnectionId: arxSymbolSpecsTable.bridgeConnectionId,
+      accountType: arxSymbolSpecsTable.accountType,
+      brokerSymbol: arxSymbolSpecsTable.brokerSymbol,
       bid: arxSymbolSpecsTable.bid,
       ask: arxSymbolSpecsTable.ask,
       spreadPoints: arxSymbolSpecsTable.spreadPoints,
+      lastTickTime: arxSymbolSpecsTable.lastTickTime,
     })
     .from(arxSymbolSpecsTable)
     .where(and(
@@ -49,16 +69,18 @@ export async function enrichStateWithUserBrokerQuote(
     ))
     .limit(1)
     .then((rows) => rows[0] ?? null);
-
-  if (specRow?.bid == null || specRow.ask == null) return state;
-  const ctx = getCachedIntelligenceContext(args.symbol, args.timeframe, args.limit);
-  if (!ctx) return state;
+  const snapshot = specRow?.bid != null && specRow.ask != null ? observationFromSymbolSpec(specRow) : null;
+  const { quote, binding } = selectBrokerQuote([live, snapshot], {
+    series, requestingUserId: args.userId, now: Date.now(),
+  });
+  if (!quote) return state;
   return enrichStateWithBrokerAlignment(ctx.state, ctx.truthResult, ctx.feedStatus, {
     chartPrice: state.latestClosedCandle?.close ?? null,
     chartPriceBasis: deriveChartPriceBasis(state.assetClass),
     assetClass: state.assetClass,
-    brokerBid: specRow.bid,
-    brokerAsk: specRow.ask,
-    spreadPoints: specRow.spreadPoints ?? null,
+    brokerBid: quote.bid,
+    brokerAsk: quote.ask,
+    spreadPoints: quote.spreadPoints,
+    quoteBinding: binding,
   });
 }

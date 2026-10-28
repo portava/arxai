@@ -253,6 +253,10 @@ const providerLiveness = {
   lastErrorAt: null as string | null,
   lastObservedDataFreshness: null as "REALTIME" | "DELAYED" | "UNAVAILABLE" | null,
   lastObservedDataSource: null as string | null,
+  // When lastObservedDataFreshness was observed. markSuccess() is also called
+  // by news / calendar / overview fetches that carry no quote quality, so the
+  // quality alone cannot say whether a recent quote was real-time.
+  lastObservedDataAt: null as string | null,
 };
 function markChecked() {
   const n = new Date().toISOString();
@@ -270,7 +274,10 @@ function markSuccess(observed?: { freshness?: "REALTIME" | "DELAYED" | "UNAVAILA
   // Record the per-payload honesty signal if the caller supplied one.
   // Defaults are intentionally NOT set here — callers that omit this
   // remain "REALTIME" only if a prior call set it; otherwise null.
-  if (observed?.freshness) providerLiveness.lastObservedDataFreshness = observed.freshness;
+  if (observed?.freshness) {
+    providerLiveness.lastObservedDataFreshness = observed.freshness;
+    providerLiveness.lastObservedDataAt = n;
+  }
   if (observed?.source) providerLiveness.lastObservedDataSource = observed.source;
 }
 function markError(msg: string) {
@@ -308,8 +315,21 @@ function cacheGet<T>(map: Map<string, { at: number; value: T }>, key: string, tt
   if (Date.now() - e.at > ttl) { map.delete(key); return null; }
   return e.value;
 }
+// When each cached provider result was actually fetched. A cache hit returns
+// the SAME object, so its fetch time travels with it (heat "News Xm ago" must
+// be the headline fetch time, not the provider-wide last-success clock that
+// any quote/candle call moves).
+const cachedResultFetchedAt = new WeakMap<object, number>();
+/** ISO time a provider result was fetched (null when unknown / not cached). */
+export function providerResultFetchedAt(result: unknown): string | null {
+  if (result == null || typeof result !== "object") return null;
+  const at = cachedResultFetchedAt.get(result);
+  return at != null ? new Date(at).toISOString() : null;
+}
 function cacheSet<T>(map: Map<string, { at: number; value: T }>, key: string, value: T): void {
-  map.set(key, { at: Date.now(), value });
+  const at = Date.now();
+  map.set(key, { at, value });
+  if (value != null && typeof value === "object") cachedResultFetchedAt.set(value as object, at);
   if (map.size > 200) {
     // Drop oldest entries
     const entries = Array.from(map.entries()).sort((a, b) => a[1].at - b[1].at).slice(0, map.size - 100);
@@ -1187,6 +1207,9 @@ export function _resetMarketProviderForTests() {
   providerLiveness.lastAttemptedFetchAt = null;
   providerLiveness.lastErrorMessage = null;
   providerLiveness.lastErrorAt = null;
+  providerLiveness.lastObservedDataFreshness = null;
+  providerLiveness.lastObservedDataSource = null;
+  providerLiveness.lastObservedDataAt = null;
 }
 
 // For tests — inject a deterministic provider so the assistant marketContext
@@ -1324,6 +1347,8 @@ export function getMarketStatus() {
     // Null until the first successful fetch is observed.
     dataFreshness: providerLiveness.lastObservedDataFreshness,
     dataSource: providerLiveness.lastObservedDataSource,
+    // When `dataFreshness` was observed (null until a quote quality is seen).
+    dataFreshnessAt: providerLiveness.lastObservedDataAt,
     // Cleanup phase E — discrete rate-limit field (derived from lastError).
     rateLimitStatus: deriveRateLimitStatus(),
     // ── Backward-compat fields (kept for existing UI / tools) ──────────

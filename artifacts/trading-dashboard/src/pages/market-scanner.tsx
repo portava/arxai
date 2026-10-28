@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from "react";
+import { formatUtcClock } from "@/components/scanner/scannerChartFormat";
 import { markActionStart, markUiFeedback, markActionEnd } from "@/lib/perf";
 import { useGetAaciCohesion, getGetAaciCohesionQueryKey, type AaciCohesionItem } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -43,6 +44,7 @@ import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel"
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
 import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
+import { scannerResultActionChip } from "@/components/scanner/scannerResultAction";
 import type { ScalpResult } from "@workspace/api-client-react";
 
 type Opp = {
@@ -60,6 +62,8 @@ type Opp = {
   dataStatus?: string;
   tradeable?: boolean;
   timingContext?: ScannerTimingContext;
+  /** The server's fused final read; the card may only downgrade with it. */
+  finalRead?: { label?: string | null } | null;
 };
 
 // Mirrors the server's `MANUAL_SCAN_COOLDOWN_MS` (per-user manual-scan cooldown
@@ -89,6 +93,7 @@ const BADGE_COLORS: Record<string, string> = {
   LOW_CONFIDENCE: "bg-orange-500/20 text-orange-400 border-orange-500/40",
   SPREAD_TOO_HIGH: "bg-rose-500/20 text-rose-400 border-rose-500/40",
   PENDING_MT5_CONNECTION: "bg-purple-500/20 text-purple-400 border-purple-500/40",
+  LOW_OPPORTUNITY_SCORE: "bg-orange-500/20 text-orange-400 border-orange-500/40",
 };
 
 // Plain-language labels for the scanner status badges. Raw UPPER_SNAKE
@@ -99,10 +104,14 @@ const BADGE_LABELS: Record<string, string> = {
   WATCHLIST: "Watchlist",
   WAIT_FOR_CONFIRMATION: "Wait for confirmation",
   REJECTED_BY_RISK: "Risk too high",
-  CHOPPY_MARKET: "Choppy market",
+  // The scanner sets this when the last bar's range is > 1.8x the window
+  // average — a volatility spike (often an expansion bar), not a range/chop.
+  CHOPPY_MARKET: "Volatility spike",
   LOW_CONFIDENCE: "Low confidence",
   SPREAD_TOO_HIGH: "Spread too wide",
   PENDING_MT5_CONNECTION: "Waiting for connection",
+  // Score under the scanner's minimum while no risk rule failed — not "Risk too high".
+  LOW_OPPORTUNITY_SCORE: "Score too low",
 };
 
 const LABEL_COLORS: Record<string, string> = {
@@ -635,7 +644,7 @@ export default function MarketScanner() {
       </p>}
       {resultTimestamp && (
         <p className="text-xs text-muted-foreground">
-          Last scan {new Date(resultTimestamp).toLocaleTimeString()} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
+          Last scan {formatUtcClock(resultTimestamp) ?? "—"} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
         </p>
       )}
 
@@ -696,8 +705,11 @@ export default function MarketScanner() {
                   <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score}</Badge>
                 </div>
                 <CardDescription className="flex flex-wrap items-center gap-1.5 mt-1">
-                  <Badge variant={o.recommendedAction === "BUY" ? "default" : o.recommendedAction === "SELL" ? "destructive" : "outline"} className="text-xs">{o.recommendedAction}</Badge>
-                  <Badge variant="outline" className="text-xs">{o.bias}</Badge>
+                  {(() => {
+                    const chip = scannerResultActionChip(o.recommendedAction, o.finalRead?.label);
+                    return <Badge variant={chip.variant} className="text-xs" data-testid={`scanner-action-${o.symbol}`}>{chip.text}</Badge>;
+                  })()}
+                  <Badge variant="outline" className="text-xs">{o.bias === "choppy" ? "volatile" : o.bias}</Badge>
                   <Badge
                     className={`text-xs ${BADGE_COLORS[o.statusBadge] ?? ""}`}
                     data-status-badge={o.statusBadge}
@@ -766,7 +778,7 @@ export default function MarketScanner() {
                   dense
                 />
                 {o.timingContext && (
-                  <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} />
+                  <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} rowTimeframe={o.timeframe} />
                 )}
                 <div className="grid grid-cols-3 gap-1 pt-2 border-t">
                   <Button
@@ -878,6 +890,15 @@ export default function MarketScanner() {
               <RefreshCw className="h-4 w-4 mr-1" />
               {scanCoolingDown ? `Scan again in ${cooldownSecs}s` : "Scan"}
             </Button>
+            {/* Operator auto-scan engine state — a fact about the scan engine,
+                not about the selected market, so it lives beside its controls.
+                Shown only once /api/market-scanner/status has answered and the
+                last poll did not fail; never inferred from a missing status. */}
+            {status != null && typeof status.running === "boolean" && !err && (
+              <span className="text-xs text-muted-foreground" data-testid="scanner-autoscan-state">
+                {status.running ? "Auto-scan on" : "Auto-scan off"}
+              </span>
+            )}
             {realIsAdmin ? (
               status?.running
                 ? <Button size="sm" variant="outline" onClick={stop} disabled={busy} data-testid="scanner-btn-stop"><Square className="h-4 w-4 mr-1" />Stop</Button>
@@ -952,7 +973,7 @@ export default function MarketScanner() {
         the floating Ruby orb (bottom-20 right-4 on mobile); add the device
         safe-area inset so content is not hidden behind a home indicator. */}
     <div className="mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
-      <ScannerHeaderSummary running={Boolean(status?.running)} />
+      <ScannerHeaderSummary />
 
       {err && (
         <CompactAlert

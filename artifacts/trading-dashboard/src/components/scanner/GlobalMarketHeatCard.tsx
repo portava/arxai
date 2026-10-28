@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import {
   Flame,
   Loader2,
@@ -67,6 +68,7 @@ const DIRECTION_LABEL: Record<string, string> = {
 const SOURCE_STATUS_LABEL: Record<string, { text: string; tone: string }> = {
   confirmed: { text: "Confirmed", tone: "text-success" },
   price_only: { text: "Price only", tone: "text-warning" },
+  partial: { text: "Partial sources", tone: "text-warning" },
   delayed: { text: "Delayed", tone: "text-warning" },
   stale: { text: "Stale", tone: "text-warning" },
   provider_missing: { text: "Provider missing", tone: "text-txt-muted" },
@@ -109,6 +111,9 @@ function tileTone(intensity: string) {
 // delayed, provider_missing, unavailable — or an `unavailable` intensity is
 // forced to the gray "unavailable" tone, independent of the computed intensity.
 const DEGRADED_SOURCE_STATUS = new Set([
+  // Built from some, not all, sources (e.g. headlines only, calendar not
+  // connected): never painted as a plain green calm.
+  "partial",
   "stale",
   "delayed",
   "provider_missing",
@@ -123,22 +128,93 @@ function isHonestyMuted(v: MarketHeatVerdict): boolean {
 function mapTone(v: MarketHeatVerdict): { text: string; dot: string; label: string } {
   if (isHonestyMuted(v)) {
     const gray = INTENSITY_TONE.unavailable!;
-    const statusLabel = SOURCE_STATUS_LABEL[v.sourceStatus]?.text ?? gray.label;
+    // A partial reading keeps its intensity word, qualified, in gray.
+    const statusLabel = v.sourceStatus === "partial" && v.intensity !== "unavailable"
+      ? `${tone(v.intensity).label} (partial)`
+      : SOURCE_STATUS_LABEL[v.sourceStatus]?.text ?? gray.label;
     return { text: gray.text, dot: gray.dot, label: statusLabel };
   }
   return tone(v.intensity);
 }
 
-function freshness(updatedAt?: string | null): string {
+/** Per-source "checked" chip text from the verdict's OWN source flags: never a
+ * bare "never" that conflates not-configured with checked-and-empty. */
+function checkedLabel(source: MarketHeatSource, updatedAt: string | null | undefined, nowMs: number = Date.now()): string {
+  if (source.status === "missing") return "not configured";
+  if (source.status === "error") return "error";
+  if (!source.connected) return source.kind === "price" ? "not available" : "not checked";
+  return updatedAt ? freshness(updatedAt, nowMs) : "time not reported";
+}
+
+/** What a macro reading was built from, e.g. "Headlines only · calendar not
+ * configured" — composed from the verdict's own source flags. */
+function coverageLabel(v: MarketHeatVerdict): string | null {
+  if (v.scope === "synthetic" || v.sourceStatus !== "partial") return null;
+  const names: Array<[MarketHeatSource, string]> = [
+    [v.priceSource, "price"], [v.newsSource, "headlines"], [v.calendarSource, "calendar"],
+  ];
+  const used = names.filter(([src]) => src.connected).map(([, n]) => n);
+  const gaps = names.filter(([src]) => !src.connected).map(([src, n]) =>
+    `${n} ${src.status === "missing" ? "not configured" : src.status === "error" ? "error" : src.kind === "price" ? "not available" : "not checked"}`);
+  const head = used.length ? `${used.join(" + ")} only` : "no sources";
+  return [head.charAt(0).toUpperCase() + head.slice(1), ...gaps].join(" · ");
+}
+
+// The heat card requests ONE timeframe; bar-open stamps are labelled with it.
+export const HEAT_TIMEFRAME = "M15";
+
+// A stamp up to this far in the future is clock skew, read as "just now".
+const CLOCK_SKEW_TOLERANCE_MS = 5_000;
+
+/**
+ * Relative age of a stamp. Floors (3m31s is "3m ago", never "4m ago"), reads a
+ * small future skew as 0s, and refuses anything else non-sensical ("—").
+ */
+export function freshness(updatedAt?: string | null, nowMs: number = Date.now()): string {
   if (!updatedAt) return "never";
-  const ms = Date.now() - new Date(updatedAt).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return "—";
-  const s = Math.round(ms / 1000);
+  let ms = nowMs - new Date(updatedAt).getTime();
+  if (!Number.isFinite(ms)) return "—";
+  if (ms < 0) {
+    if (ms < -CLOCK_SKEW_TOLERANCE_MS) return "—";
+    ms = 0;
+  }
+  const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s ago`;
-  const m = Math.round(s / 60);
+  const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
+  const h = Math.floor(m / 60);
   return `${h}h ago`;
+}
+
+/**
+ * The price stamp, named by what it measures. A Deriv-style bar time is the
+ * bar's OPEN, not when its price was observed — so only a tick-basis stamp may
+ * read "Price Ns ago"; anything else (including a missing basis — downgrade
+ * only) reads "<TF> bar opened Nm ago".
+ */
+export function priceStampLabel(
+  verdict: Pick<MarketHeatVerdict, "priceUpdatedAt" | "priceTimeBasis">,
+  timeframe: string,
+  nowMs: number = Date.now(),
+): string {
+  if (!verdict.priceUpdatedAt) return "Price never";
+  const age = freshness(verdict.priceUpdatedAt, nowMs);
+  return verdict.priceTimeBasis === "tick" ? `Price ${age}` : `${timeframe} bar opened ${age}`;
+}
+
+/** Next instant any of these relative-age labels changes text (null: none). */
+export function nextHeatLabelChangeMs(stamps: ReadonlyArray<string | null | undefined>, nowMs: number): number | null {
+  let next: number | null = null;
+  for (const stamp of stamps) {
+    if (!stamp) continue;
+    const t = new Date(stamp).getTime();
+    if (!Number.isFinite(t)) continue;
+    const age = Math.max(0, nowMs - t);
+    const unit = age < 60_000 ? 1_000 : age < 3_600_000 ? 60_000 : 3_600_000;
+    const at = t + (Math.floor(age / unit) + 1) * unit;
+    next = next == null ? at : Math.min(next, at);
+  }
+  return next;
 }
 
 function eventTime(iso: string): string {
@@ -159,16 +235,21 @@ function eventTime(iso: string): string {
 }
 
 function ProviderChip({ source }: { source: MarketHeatSource }) {
-  const ok = source.connected;
+  // Success tone ONLY for a connected source the server grades live — a
+  // stale/delayed read is never painted as a healthy connection. A stale
+  // series is named stale (it returned old data), not "not connected".
+  const ok = source.connected && source.status === "live";
+  const label = source.connected ? source.status : source.status === "stale" ? "stale" : "not connected";
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
         ok ? "border-success/40 text-success" : "border-txt-muted/30 text-txt-muted"
       }`}
       title={source.note ?? undefined}
+      data-testid={`heat-provider-chip-${source.kind}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-success" : "bg-txt-muted/50"}`} />
-      {source.name}: {ok ? source.status : "not connected"}
+      {source.name}: {label}
     </span>
   );
 }
@@ -186,6 +267,7 @@ function ProviderRow({ status }: { status: MarketHeatProviderStatus }) {
 // ── Today's news risk — distinct surfaced section. Honest `unavailable` is gray,
 // never a fabricated "low risk" when the news provider is not connected. ───────
 function HeadlineRow({ h }: { h: MarketHeatNewsHeadline }) {
+  const nowMs = useEvidenceDeadline(nextHeatLabelChangeMs([h.publishedAt], Date.now()));
   return (
     <div className="flex items-start gap-2 rounded-md border border-border/50 bg-surface-1/30 px-2 py-1.5">
       <span
@@ -198,7 +280,7 @@ function HeadlineRow({ h }: { h: MarketHeatNewsHeadline }) {
       <span className="min-w-0 flex-1">
         <span className="block text-xs text-txt">{h.headline}</span>
         <span className="mt-0.5 block text-[10px] text-txt-muted">
-          {h.source ?? "unknown source"} · {freshness(h.publishedAt)}
+          {h.source ?? "unknown source"} · {freshness(h.publishedAt, nowMs)}
         </span>
       </span>
     </div>
@@ -300,6 +382,11 @@ function VerdictDetail({
   verdict: MarketHeatVerdict;
   onPickSymbol: (symbol: string) => void;
 }) {
+  // Relative-age labels re-render when their text would change, not only on
+  // the 120s refetch (they were up to 2 minutes behind the wall clock).
+  const nowMs = useEvidenceDeadline(nextHeatLabelChangeMs(
+    [verdict.priceUpdatedAt, verdict.newsUpdatedAt, verdict.calendarUpdatedAt], Date.now(),
+  ));
   return (
     <div className="space-y-2 rounded-lg border border-border/50 bg-surface-1/40 px-3 py-2 text-xs">
       <p className="text-txt-muted">{verdict.reason}</p>
@@ -313,10 +400,22 @@ function VerdictDetail({
           ))}
         </ul>
       )}
-      <div className="flex flex-wrap gap-1">
-        <span className="text-txt-muted">Price {freshness(verdict.priceUpdatedAt)}</span>
-        <span className="text-txt-muted">· News {freshness(verdict.newsUpdatedAt)}</span>
-        <span className="text-txt-muted">· Calendar {freshness(verdict.calendarUpdatedAt)}</span>
+      <div className="flex flex-wrap gap-1" data-testid="heat-verdict-checked">
+        <span className="text-txt-muted" data-testid="heat-price-stamp">
+          {verdict.priceSource.connected && verdict.priceUpdatedAt
+            ? priceStampLabel(verdict, HEAT_TIMEFRAME, nowMs)
+            : `Price ${checkedLabel(verdict.priceSource, verdict.priceUpdatedAt, nowMs)}`}
+        </span>
+        {verdict.scope === "synthetic" ? (
+          // Synthetic markets do not use headlines or the calendar: claim no
+          // check time for either.
+          <span className="text-txt-muted">· news/calendar not used (synthetic market)</span>
+        ) : (
+          <>
+            <span className="text-txt-muted">· News {checkedLabel(verdict.newsSource, verdict.newsUpdatedAt, nowMs)}</span>
+            <span className="text-txt-muted">· Calendar {checkedLabel(verdict.calendarSource, verdict.calendarUpdatedAt, nowMs)}</span>
+          </>
+        )}
       </div>
       {verdict.affectedSymbols.length > 0 && (
         <div className="flex flex-wrap gap-1 pt-1">
@@ -344,8 +443,15 @@ function VerdictRow({
   onPickSymbol: (symbol: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const t = tone(verdict.intensity);
-  const ss = SOURCE_STATUS_LABEL[verdict.sourceStatus] ?? SOURCE_STATUS_LABEL.unavailable!;
+  const partial = verdict.sourceStatus === "partial";
+  // A partial reading keeps its intensity WORD but never the green "safe" tone.
+  const t = partial
+    ? { ...tone(verdict.intensity), dot: INTENSITY_TONE.unavailable!.dot, text: "text-warning" }
+    : tone(verdict.intensity);
+  const coverage = coverageLabel(verdict);
+  const ss = coverage
+    ? { text: coverage, tone: "text-warning" }
+    : SOURCE_STATUS_LABEL[verdict.sourceStatus] ?? SOURCE_STATUS_LABEL.unavailable!;
   const unavailable = verdict.intensity === "unavailable";
 
   return (
@@ -365,7 +471,7 @@ function VerdictRow({
             {DIRECTION_LABEL[verdict.direction] ?? verdict.direction}
           </span>
         )}
-        <span className={`shrink-0 text-[10px] ${ss.tone}`}>{ss.text}</span>
+        <span className={`shrink-0 text-[10px] ${ss.tone}`} data-testid="heat-verdict-source-status">{ss.text}</span>
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 text-txt-muted transition-transform ${open ? "rotate-180" : ""}`}
         />
@@ -559,10 +665,10 @@ function WorldHeatMap({
 
 export function GlobalMarketHeatCard() {
   const { data, isLoading, isFetching, refetch, isError } = useGetMarketHeat(
-    { timeframe: "M15" },
+    { timeframe: HEAT_TIMEFRAME },
     {
       query: {
-        queryKey: getGetMarketHeatQueryKey({ timeframe: "M15" }),
+        queryKey: getGetMarketHeatQueryKey({ timeframe: HEAT_TIMEFRAME }),
         staleTime: 60_000,
         refetchInterval: 120_000,
       },
@@ -570,6 +676,7 @@ export function GlobalMarketHeatCard() {
   );
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const nowMs = useEvidenceDeadline(nextHeatLabelChangeMs([data?.generatedAt], Date.now()));
   const [macroView, setMacroView] = useState<"map" | "grid">("map");
   const onPickSymbol = (symbol: string) => setChartSymbol(symbol);
 
@@ -656,13 +763,13 @@ export function GlobalMarketHeatCard() {
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {topHot.map((v) => {
-                  const t = tone(v.intensity);
+                  const t = mapTone(v);
                   return (
                     <button
                       key={v.id}
                       type="button"
                       onClick={() => setSelectedKey(v.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${tileTone(v.intensity)}`}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${tileTone(isHonestyMuted(v) ? "unavailable" : v.intensity)}`}
                     >
                       <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />
                       {v.displayName}
@@ -724,7 +831,7 @@ export function GlobalMarketHeatCard() {
               ) : (
                 <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                   {macroCells.map((v) => {
-                    const t = tone(v.intensity);
+                    const t = mapTone(v);
                     const active = v.id === selectedKey;
                     return (
                       <button
@@ -732,7 +839,7 @@ export function GlobalMarketHeatCard() {
                         type="button"
                         onClick={() => setSelectedKey(active ? null : v.id)}
                         className={`flex flex-col items-start gap-0.5 rounded-lg border px-2 py-1.5 text-left transition-colors ${tileTone(
-                          v.intensity,
+                          isHonestyMuted(v) ? "unavailable" : v.intensity,
                         )} ${active ? "ring-1 ring-primary" : ""}`}
                       >
                         <span className="w-full truncate text-xs font-medium text-txt">
@@ -775,7 +882,7 @@ export function GlobalMarketHeatCard() {
           )}
 
           <p className="pt-1 text-[10px] text-txt-muted">
-            Updated {freshness(data.generatedAt)} · advisory only, never an execution gate.
+            Updated {freshness(data.generatedAt, nowMs)} · advisory only, never an execution gate.
           </p>
         </div>
       )}

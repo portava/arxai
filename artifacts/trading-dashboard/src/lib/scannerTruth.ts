@@ -128,13 +128,34 @@ export type CandleStatus =
   | "insufficient"
   | "unavailable";
 export type ConsistencyStatus = "aligned" | "mismatch" | "unknown";
+/**
+ * Why `headerOk` is false, when the caller knows. The header cap still
+ * withholds a live read; this only makes the stated reason true:
+ *   analysis_pending      — the selected-market analysis has not answered yet
+ *   analysis_unavailable  — it answered without an analysis (ok:false)
+ *   analysis_request_failed — the analysis request itself failed
+ *   candles_refresh_failed — the latest candle refresh failed (cached bars)
+ */
+export type ScannerHeaderCapReason =
+  | "analysis_pending"
+  | "analysis_unavailable"
+  | "analysis_request_failed"
+  | "candles_refresh_failed";
 export type ReadLevel = "full" | "limited" | "historical_only" | "blocked";
 export type OverlayStatus = "verified" | "limited" | "check" | "blocked";
 export type EffectiveMode = "demo" | "live" | "read_only";
 
 // Single plain-English data verdict for the consolidated truth strip.
-export type DataVerdict = "Live" | "Delayed" | "Stale" | "Historical only" | "Unavailable";
-export type TradingVerdict = "Enabled" | "Read-only" | "Approval required" | "Blocked";
+export type DataVerdict = "Live" | "Delayed" | "Stale" | "Market closed" | "Historical only" | "Unavailable";
+export type TradingVerdict =
+  | "Enabled"
+  | "Read-only"
+  | "Approval required"
+  | "Blocked"
+  // The account-mode envelope is still loading — nothing is known yet.
+  | "Checking…"
+  // The account-mode envelope failed to load — the trading state is unknown.
+  | "Couldn't check";
 export type RubyVerdict = "Full read" | "Limited read" | "No read";
 
 export interface ScannerTruth {
@@ -161,15 +182,38 @@ export interface ScannerTruth {
     sourceTechnical: string;
     tier: FeedProviderTier;
     timeframe: string;
+    /** Bars loaded, INCLUDING a still-forming tip. */
     count: number;
+    /**
+     * CLOSED bars (forming tip excluded) — the number every minimum-candle
+     * check and the Trade Health "closed candles" verdict use.
+     */
+    closedCount: number;
+    /** True when the loaded series ends in a still-forming bar. */
+    hasFormingBar: boolean;
     requestedCount: number;
+    /** Minimum CLOSED candles required on this timeframe. */
     minRequired: number;
     firstTime: string | null;
     lastTime: string | null;
     lastClose: number | null;
+    /**
+     * Display precision (decimal places) for this instrument — the server's
+     * declared precision widened by the digits the loaded quotes actually
+     * carry (lib/instrumentPriceFormat). Every price surface on the page
+     * formats with it so one quote never shows in two precisions. Null when
+     * unknown (formatter falls back to a magnitude heuristic).
+     */
+    pricePrecision?: number | null;
     ageMs: number | null;
     status: CandleStatus;
     reason: string;
+    /**
+     * Set only when the header cap (not the candles themselves) withheld the
+     * live read, naming why. "analysis_pending" means the downgrade is a
+     * still-confirming state, not a measured data problem.
+     */
+    headerCapReason?: ScannerHeaderCapReason | null;
   };
 
   consistency: {
@@ -231,6 +275,13 @@ export interface ScannerTruth {
   actionable: boolean;
 
   /**
+   * The scheduled weekend closure this read falls in, when no bar has opened
+   * since the close (ISO times). Null/absent otherwise. Display-only: it explains
+   * a non-live read as a closed market rather than a feed fault.
+   */
+  marketClosure?: { closedAt: string; windowEndsAt: string } | null;
+
+  /**
    * True only when the active candle source is the user's own broker feed
    * (tier === "broker"). A connected MT5 execution bridge does NOT make this
    * true — market data and the execution bridge are independent. When this is
@@ -278,6 +329,12 @@ export interface ScannerTruth {
 
 export interface ScannerTruthMode {
   isLoading: boolean;
+  /**
+   * The account-mode request failed and no envelope is available. While this
+   * or `isLoading` is true every flag below is an unmeasured default (false),
+   * so the trading verdict says the state is unknown instead of asserting one.
+   */
+  isError?: boolean;
   isDemo: boolean;
   isLiveShared: boolean;
   isPaper: boolean;
@@ -298,14 +355,29 @@ export interface ScannerTruthInputs {
   timeframe: string;
   feedStatus: ChartFeedStatus | null;
   candleCount: number;
+  /**
+   * CLOSED candles (forming tip excluded) when the bars state completeness;
+   * omitted → `candleCount` (legacy shapes that never said).
+   */
+  closedCandleCount?: number;
   requestedCount: number;
   firstTime: string | null;
   lastTime: string | null;
+  /**
+   * Open time of the newest CLOSED bar (forming tip excluded) when the bars
+   * state completeness; omitted → `lastTime`. Used only to tell a closed
+   * market from one that has traded since its scheduled close.
+   */
+  lastClosedTime?: string | null;
   lastClose: number | null;
+  /** Resolved display precision for the instrument (see ScannerTruth.candles). */
+  pricePrecision?: number | null;
   /** Optional independent quote — scanner passes null (simulator excluded). */
   quote?: { bid: number | null; ask: number | null; mid: number | null; source: string | null; timestamp: string | null } | null;
   /** Header ok flag (selected-market) — caps the display state. */
   headerOk: boolean | null;
+  /** Why headerOk is false, when known (changes the stated reason only). */
+  headerCapReason?: ScannerHeaderCapReason | null;
   mode: ScannerTruthMode;
   nowMs?: number;
   /**
@@ -320,7 +392,9 @@ export interface ScannerTruthInputs {
 function genericSourceLabel(tier: FeedProviderTier): string {
   switch (tier) {
     case "broker":
-      return "Your broker feed";
+      // Not "your": a broker-tier source names the MT5 market-data path, not
+      // the viewer's own account (the series may come from another bridge).
+      return "MT5 broker feed";
     case "synthetic":
       return "Synthetic feed";
     case "thirdParty":
@@ -337,8 +411,124 @@ function ageMsOf(iso: string | null, nowMs: number): number | null {
   return nowMs - t;
 }
 
+/** Compact elapsed span for plain-English lag copy ("2m", "9h", "9h 30m", "3d 4h"). */
+function formatLag(ms: number): string {
+  const totalMin = Math.max(0, Math.floor(ms / MIN));
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h < 48) return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh === 0 ? `${d}d` : `${d}d ${rh}h`;
+}
+
+/**
+ * A delayed feed reads as "syncing" (catching up) only while its newest bar is
+ * at most this old. Beyond it — hours on H4, days on D1 — no bar has arrived for
+ * one to two full intervals and nothing is visibly catching up, so the public
+ * candle status is STALE (the action cap is FEED_LIMITED either way).
+ */
+export const DELAYED_SYNCING_MAX_AGE_MS = 10 * MIN;
+
 function positivePrice(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+// ── Scheduled weekend closure (display truth only) ────────────────────────────
+//
+// Forex, metals, index and stock markets close for the weekend. Without this
+// the scanner described a closed market as a feed fault ("Stale", "frozen",
+// "older than expected") or, inside the freshness budget right after the
+// close, as "Live … fresh enough for a live entry".
+//
+// The window is the span in which EVERY weekend-closing class is closed in
+// both DST seasons: Friday 22:00 UTC (after the latest Friday close) to Sunday
+// 21:00 UTC (before the earliest Sunday reopen). Outside it nothing is claimed,
+// so a session close that falls outside the window keeps the existing wording
+// rather than an invented "closed". Within it, closure is reported ONLY when no
+// bar opened at/after the close — a bar after the close is observed trading and
+// always beats the schedule. This can only downgrade (MARKET_CLOSED is the most
+// severe action cap); it never promotes data, and it is not an execution gate.
+const WEEKEND_CLOSING_ASSET_CLASSES: ReadonlySet<string> = new Set([
+  "forex",
+  "metals",
+  "indices",
+  "stocks",
+]);
+const DAY_MS = 24 * 60 * MIN;
+const HOUR_MS = 60 * MIN;
+const WEEKEND_CLOSE_FRIDAY_UTC_HOUR = 22;
+const WEEKEND_REOPEN_SUNDAY_UTC_HOUR = 21;
+
+export interface ScheduledMarketClosure {
+  /** Friday close (UTC, epoch ms) the window started at. */
+  closedAtMs: number;
+  /** Sunday time (UTC, epoch ms) by which the window ends; the market may reopen later. */
+  windowEndsMs: number;
+}
+
+/** The weekend closure window containing `nowMs` for this asset class, or null. */
+export function scheduledWeekendClosureFor(
+  assetClass: string | null | undefined,
+  nowMs: number,
+): ScheduledMarketClosure | null {
+  if (!assetClass || !WEEKEND_CLOSING_ASSET_CLASSES.has(assetClass) || !Number.isFinite(nowMs)) return null;
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  const daysSinceFriday = (new Date(dayStart).getUTCDay() - 5 + 7) % 7;
+  let fridayStart = dayStart - daysSinceFriday * DAY_MS;
+  if (fridayStart + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS > nowMs) fridayStart -= 7 * DAY_MS;
+  const closedAtMs = fridayStart + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS;
+  const windowEndsMs = fridayStart + 2 * DAY_MS + WEEKEND_REOPEN_SUNDAY_UTC_HOUR * HOUR_MS;
+  return nowMs < windowEndsMs ? { closedAtMs, windowEndsMs } : null;
+}
+
+/**
+ * The next instant at which `scheduledWeekendClosureFor` changes its answer for
+ * this asset class (window start or end), or null for a market that never
+ * closes. Lets a caller re-resolve the truth exactly when the closure begins or
+ * ends instead of waiting for the next candle deadline.
+ */
+export function nextWeekendClosureBoundaryMs(
+  assetClass: string | null | undefined,
+  nowMs: number,
+): number | null {
+  if (!assetClass || !WEEKEND_CLOSING_ASSET_CLASSES.has(assetClass) || !Number.isFinite(nowMs)) return null;
+  const open = scheduledWeekendClosureFor(assetClass, nowMs);
+  if (open) return open.windowEndsMs;
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  const daysUntilFriday = (5 - new Date(dayStart).getUTCDay() + 7) % 7;
+  let next = dayStart + daysUntilFriday * DAY_MS + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS;
+  if (next <= nowMs) next += 7 * DAY_MS;
+  return next;
+}
+
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+function utcDayClock(ms: number): string {
+  const d = new Date(ms);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${WEEKDAY_SHORT[d.getUTCDay()]} ${hh}:${mm} UTC`;
+}
+
+/** Which feed-status notice strip the scanner chart shows under its canvas. */
+export type ChartFeedStripKind = "market_closed" | "delayed" | "stale" | "analysis_only" | null;
+
+/**
+ * The chart's feed notice strip. A closed market — from the truth's scheduled
+ * closure or the server's closed-market stream signal — is labelled as closed,
+ * never as "Stale" or "Delayed", so the strip cannot contradict the chart's
+ * "Market closed" chip. A LIVE display shows no strip.
+ */
+export function resolveChartFeedStrip(
+  displayStatus: ChartDisplayStatus,
+  opts: { marketClosed: boolean; hasCandles: boolean },
+): ChartFeedStripKind {
+  if (displayStatus === "LIVE" || displayStatus === "UNAVAILABLE") return null;
+  if (opts.marketClosed && opts.hasCandles) return "market_closed";
+  if (displayStatus === "FALLBACK_COMPOSITE") return "delayed";
+  if (displayStatus === "STALE") return "stale";
+  return opts.hasCandles ? "analysis_only" : null;
 }
 
 export function resolveScannerTruth(
@@ -350,6 +540,11 @@ export function resolveScannerTruth(
   const thr = thresholdsFor(tf);
   const fs = input.feedStatus;
   const count = input.candleCount;
+  const closedCount =
+    typeof input.closedCandleCount === "number" && Number.isFinite(input.closedCandleCount)
+      ? Math.max(0, Math.min(count, Math.floor(input.closedCandleCount)))
+      : count;
+  const hasFormingBar = closedCount < count;
 
   // Display status from the shared chart contract (single source of truth).
   const feedForDisplay: FeedStatus | null = fs
@@ -366,34 +561,87 @@ export function resolveScannerTruth(
     : null;
   const rawDisplay = resolveDisplayStatus(feedForDisplay, count > 0);
   const displayStatus = applyHeaderCap(rawDisplay, input.headerOk);
+  // The cap, not the candles, demoted the display: say so instead of blaming
+  // the candle data.
+  const headerCapReason: ScannerHeaderCapReason | null =
+    displayStatus !== rawDisplay && input.headerOk === false ? input.headerCapReason ?? null : null;
 
   const provider = providerInfo(fs?.source ?? null);
   const sourceLabel = genericSourceLabel(provider.tier);
   const candleAgeMs = ageMsOf(input.lastTime, nowMs);
   const lastClose = positivePrice(input.lastClose);
 
+  // Scheduled weekend closure with no bar since the close (see
+  // scheduledWeekendClosureFor). The newest CLOSED bar is used when known, so a
+  // display tip built from a replayed weekend quote is not taken as trading.
+  // Only for an integrity-clean series (clean / delayed / stale) whose header
+  // read did not fail — a failed refresh or broken OHLC keeps its own reason.
+  const closure = fs ? scheduledWeekendClosureFor(fs.assetClass, nowMs) : null;
+  const newestBarIso = input.lastClosedTime !== undefined ? input.lastClosedTime : input.lastTime;
+  const newestBarMs = newestBarIso ? Date.parse(newestBarIso) : Number.NaN;
+  const marketClosure: ScheduledMarketClosure | null =
+    closure &&
+    input.headerOk !== false &&
+    (fs?.quality === "clean" || fs?.quality === "delayed" || fs?.quality === "stale") &&
+    Number.isFinite(newestBarMs) &&
+    newestBarMs < closure.closedAtMs
+      ? closure
+      : null;
+
   // ── Candle status (freshness + minimum-candle gating) ──────────────────────
   let candleStatus: CandleStatus;
   let candleReason: string;
-  const minMet = count >= thr.minCandles;
+  let shownHeaderCapReason: ScannerHeaderCapReason | null = null;
+  const minMet = closedCount >= thr.minCandles;
   if (count === 0 || displayStatus === "UNAVAILABLE") {
     candleStatus = "unavailable";
     candleReason = "No candles are available for this market right now.";
   } else if (!minMet) {
     candleStatus = "insufficient";
-    candleReason = `Only ${count} ${count === 1 ? "candle" : "candles"} loaded — need at least ${thr.minCandles} on ${input.timeframe} for a reliable read.`;
+    candleReason = hasFormingBar
+      ? `Only ${closedCount} closed ${closedCount === 1 ? "candle" : "candles"} (${count} loaded incl. the forming bar) — need at least ${thr.minCandles} closed on ${input.timeframe} for a reliable read.`
+      : `Only ${count} ${count === 1 ? "candle" : "candles"} loaded — need at least ${thr.minCandles} on ${input.timeframe} for a reliable read.`;
   } else if (!fs?.source || fs.symbol?.trim().toUpperCase() !== input.symbolInternal.trim().toUpperCase() || candleAgeMs == null || lastClose == null) {
     candleStatus = "historical_only";
     candleReason = "The latest candle's market, source, time or price is unconfirmed — historical context only.";
+  } else if (marketClosure) {
+    // Closed market: the data is not live, but it is not a feed fault either.
+    candleStatus = "stale";
+    candleReason = `Market closed — ${input.symbolDisplay} is in its scheduled weekend close (since ${utcDayClock(marketClosure.closedAtMs)}); the newest bar opened ${utcDayClock(newestBarMs)}. This is the last session's data, not a live read.`;
   } else if (displayStatus === "STALE") {
     candleStatus = "stale";
     candleReason = "The latest candle is frozen — this is historical context, not a live read.";
+  } else if (displayStatus === "ANALYSIS_ONLY" && headerCapReason) {
+    candleStatus = "historical_only";
+    shownHeaderCapReason = headerCapReason;
+    const feedPart =
+      rawDisplay === "STALE"
+        ? "The latest candle is frozen"
+        : rawDisplay === "FALLBACK_COMPOSITE"
+          ? "Candles are delayed"
+          : candleAgeMs > thr.candleMaxAgeMs
+            ? "The latest candle is older than expected for this timeframe"
+            : "Candles are live";
+    candleReason =
+      headerCapReason === "analysis_pending"
+        ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} is still loading — not yet confirmed for a live entry.`
+        : headerCapReason === "analysis_request_failed"
+          ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} could not be loaded — not confirmed for a live entry.`
+          : headerCapReason === "analysis_unavailable"
+            ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} is unavailable — not confirmed for a live entry.`
+            : "The latest candle refresh failed — showing the last-loaded bars as historical context only, not valid for a live entry.";
   } else if (displayStatus === "ANALYSIS_ONLY") {
     candleStatus = "historical_only";
     candleReason = "Data is incomplete — historical context only, not valid for a live entry.";
   } else if (displayStatus === "FALLBACK_COMPOSITE") {
     candleStatus = "delayed";
-    candleReason = "Delayed market data — readable, but slightly behind live.";
+    // State the measured lag, never "slightly behind": on coarse timeframes a
+    // two-interval gap is hours (H4) or days (D1) with no new bar.
+    const behind =
+      typeof fs?.trailingIntervals === "number" && Number.isFinite(fs.trailingIntervals) && fs.trailingIntervals >= 2
+        ? `, ${fs.trailingIntervals} bars behind the current bar`
+        : "";
+    candleReason = `Delayed market data — the newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago${behind}. Not a live read.`;
   } else if (
     displayStatus === "LIVE" &&
     candleAgeMs <= thr.candleMaxAgeMs
@@ -408,6 +656,9 @@ export function resolveScannerTruth(
 
   // ── Quote status (no real quote source today → unavailable, honestly) ───────
   const q = input.quote ?? null;
+  // The quote's provenance is the QUOTE's own provider — never the candle
+  // provider's label. With no quote observed there is no quote source at all.
+  const quoteSourceLabel = genericSourceLabel(providerInfo(q?.source ?? null).tier);
   const quoteAgeMs = ageMsOf(q?.timestamp ?? null, nowMs);
   const quoteMid = positivePrice(q?.mid);
   let quoteStatus: QuoteStatus;
@@ -546,7 +797,15 @@ export function resolveScannerTruth(
   // ── Execution (permission-driven; server still re-runs all 16 gates) ───────
   const executionAllowed =
     (permissions.demoManualAllowed || permissions.liveManualAllowed);
-  const executionReason = executionAllowed
+  // Account mode not resolved (loading, or failed with no envelope): every
+  // permission flag is an unmeasured default, so no approval / read-only /
+  // blocked claim may be made from it. Execution stays not allowed.
+  const modeUnresolved = !executionAllowed && !m.isFrozen && (m.isLoading || m.isError === true);
+  const executionReason = modeUnresolved
+    ? m.isLoading
+      ? "Checking your account's trading access…"
+      : "Couldn't load your account's trading access — whether you can trade from here is unknown right now."
+    : executionAllowed
     ? effectiveMode === "live"
       ? "You can place live trades — every order still passes the full safety checks."
       : "You can place demo trades."
@@ -555,8 +814,9 @@ export function resolveScannerTruth(
       : manualBlocked ?? "Trading is blocked on your account.";
 
   // ── Consolidated truth strip ───────────────────────────────────────────────
-  const dataVerdict: DataVerdict =
-    candleStatus === "live"
+  const dataVerdict: DataVerdict = marketClosure && candleStatus === "stale"
+    ? "Market closed"
+    : candleStatus === "live"
       ? "Live"
       : candleStatus === "delayed"
         ? "Delayed"
@@ -568,6 +828,10 @@ export function resolveScannerTruth(
 
   const tradingVerdict: TradingVerdict = m.isFrozen
     ? "Blocked"
+    : modeUnresolved
+      ? m.isLoading
+        ? "Checking…"
+        : "Couldn't check"
     : executionAllowed
       ? "Enabled"
       : effectiveMode === "read_only" && !m.isLiveShared && !m.isDemo
@@ -608,15 +872,23 @@ export function resolveScannerTruth(
   // when the data is actually ARX market data or a synthetic feed.
   const brokerFeedActive = provider.tier === "broker";
 
-  const healthHeadline =
-    resolvedDisplayStatus === "LIVE"
+  const marketClosedRead = marketClosure != null && candleStatus === "stale";
+  const healthHeadline = marketClosedRead
+    ? "Market closed — last session's data"
+    : resolvedDisplayStatus === "LIVE"
       ? "Live market data"
       : resolvedDisplayStatus === "FALLBACK_COMPOSITE"
         ? "Delayed market data"
         : resolvedDisplayStatus === "STALE"
           ? "Stale — last-known prices"
-          : resolvedDisplayStatus === "ANALYSIS_ONLY"
-            ? "Historical data — analysis only"
+          : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason === "analysis_pending"
+            ? "Confirming market analysis"
+            : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason === "candles_refresh_failed"
+              ? "Refresh failed — last-loaded data only"
+              : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason
+                ? "Market analysis unavailable — analysis only"
+                : resolvedDisplayStatus === "ANALYSIS_ONLY"
+                  ? "Historical data — analysis only"
             : "Market data unavailable";
 
   // Honest source note. The thirdParty case is the GBPUSD situation: the data is
@@ -624,7 +896,9 @@ export function resolveScannerTruth(
   // we say so plainly and data-driven (never hardcoded to "broker dormant").
   const sourceNote =
     provider.tier === "broker"
-      ? "Live bars are coming from your broker feed."
+      ? resolvedDisplayStatus === "LIVE"
+        ? "Live bars are coming from an MT5 broker feed — not verified as your own account."
+        : "These are bars from an MT5 broker feed, but they aren't confirmed current right now (they may be a stored copy or behind)."
       : provider.tier === "synthetic"
         ? "These are synthetic-market bars (algorithmic volatility index), not your broker's bars."
         : provider.tier === "thirdParty"
@@ -635,7 +909,9 @@ export function resolveScannerTruth(
 
   const actionabilityLine = actionable
     ? "This read is fresh enough for a live entry."
-    : resolvedDisplayStatus === "UNAVAILABLE"
+    : marketClosedRead
+      ? "The market is closed — no live entry until it reopens."
+      : resolvedDisplayStatus === "UNAVAILABLE"
       ? "There's nothing to analyse until a feed comes back."
       : "Not fresh enough for a live entry — treat it as context only.";
 
@@ -660,16 +936,20 @@ export function resolveScannerTruth(
         : candleStatus === "insufficient" || candleStatus === "historical_only"
           ? "LIMITED_HISTORY"
           : candleStatus === "delayed"
-            ? "SYNCING"
+            ? candleAgeMs != null && candleAgeMs <= DELAYED_SYNCING_MAX_AGE_MS
+              ? "SYNCING"
+              : "STALE"
             : candleStatus === "live" && analysisLevel === "full" && aiUsable
               ? "CONFIRMED"
               : "UNCONFIRMED";
 
-  // No separate quote feed today → UNAVAILABLE honestly. MARKET_CLOSED / FROZEN
-  // are reserved for an explicit feed session-closed / feed-freeze signal (none
-  // exists yet) — never inferred from an account freeze.
-  const publicQuoteStatus: PublicQuoteStatus =
-    quoteStatus === "live"
+  // No separate quote feed today → UNAVAILABLE honestly. MARKET_CLOSED comes
+  // only from the scheduled weekend closure with no bar since the close (see
+  // marketClosure) — never inferred from an account freeze. FROZEN stays
+  // reserved for an explicit feed-freeze signal (none exists yet).
+  const publicQuoteStatus: PublicQuoteStatus = marketClosedRead
+    ? "MARKET_CLOSED"
+    : quoteStatus === "live"
       ? "LIVE"
       : quoteStatus === "stale" || quoteStatus === "delayed"
         ? "STALE"
@@ -692,8 +972,12 @@ export function resolveScannerTruth(
   // Mirror the existing tradingVerdict so the strip and the public block never
   // drift: frozen → BLOCKED, executable → ENABLED, pending approval →
   // REVIEW_REQUIRED, otherwise (read-only) → DISABLED.
+  // Unresolved account mode → DISABLED (nothing executable is known), never
+  // REVIEW_REQUIRED: no approval state has been read.
   const tradingStatus: TradingStatus = m.isFrozen
     ? "BLOCKED"
+    : modeUnresolved
+      ? "DISABLED"
     : executionAllowed
       ? "ENABLED"
       : tradingVerdict === "Approval required"
@@ -723,6 +1007,9 @@ export function resolveScannerTruth(
   } else if (publicCandleStatus === "LIMITED_HISTORY") {
     internalReasonCode =
       candleStatus === "insufficient" ? "CANDLES_INSUFFICIENT" : "CANDLES_HISTORICAL";
+    userMessage = candleReason;
+  } else if (marketClosedRead) {
+    internalReasonCode = "MARKET_CLOSED";
     userMessage = candleReason;
   } else if (publicCandleStatus === "STALE") {
     internalReasonCode = "CANDLES_STALE";
@@ -766,7 +1053,7 @@ export function resolveScannerTruth(
   // is preserved as the floor, so scanner readiness can only be MORE conservative
   // than Ruby's shared floor (downgrade-only, per the HARD RULE).
   const readinessReadLayer: TradeReadLayer =
-    analysisLevel === "blocked" || candleStatus === "insufficient" || count < thr.minCandles
+    analysisLevel === "blocked" || candleStatus === "insufficient" || closedCount < thr.minCandles
       ? "INSUFFICIENT"
       : rubyLevel === "full" && analysisLevel === "full"
         ? "FULL"
@@ -780,9 +1067,19 @@ export function resolveScannerTruth(
         : candleStatus === "delayed"
           ? "LIVE_DELAYED"
           : "AWAITING",
-    availableClosedCandles: count,
+    availableClosedCandles: closedCount,
     minimumRequiredCandles: thr.minCandles,
     readLayer: readinessReadLayer,
+    // The account's ALREADY-RESOLVED execution refusal (frozen / manual trading
+    // not enabled / read-only mode), so the chip reads "Live read · execution
+    // gated" instead of an unconditional "Live-confirmed … read" next to the
+    // TRADING "Blocked" tile, and the trade-button ceilings close. Never while
+    // the account mode is still loading (every flag is false then — that is not
+    // a refusal). DISPLAY-ONLY: execution gates are untouched. Ruby's server
+    // read composes the same contract without this per-user fold, so the two
+    // agree on every read-quality field (status, dataFreshness, readLayer,
+    // structureConfidence) and differ only by this gate label.
+    executionGateBlocked: !m.isLoading && !executionAllowed,
   });
 
   return {
@@ -794,7 +1091,7 @@ export function resolveScannerTruth(
       ask: positivePrice(q?.ask),
       mid: priceMid,
       source: q?.source ?? null,
-      sourceLabel,
+      sourceLabel: quoteSourceLabel,
       timestamp: q?.timestamp ?? null,
       ageMs: quoteAgeMs,
       status: quoteStatus,
@@ -807,14 +1104,18 @@ export function resolveScannerTruth(
       tier: provider.tier,
       timeframe: input.timeframe,
       count,
+      closedCount,
+      hasFormingBar,
       requestedCount: input.requestedCount,
       minRequired: thr.minCandles,
       firstTime: input.firstTime,
       lastTime: input.lastTime,
       lastClose,
+      pricePrecision: input.pricePrecision ?? null,
       ageMs: candleAgeMs,
       status: candleStatus,
       reason: candleReason,
+      headerCapReason: shownHeaderCapReason,
     },
     consistency: {
       quoteCandlePriceDelta: delta,
@@ -845,6 +1146,12 @@ export function resolveScannerTruth(
     displayStatus: resolvedDisplayStatus,
     isLivePrice: resolvedDisplayStatus === "LIVE",
     actionable,
+    marketClosure: marketClosedRead && marketClosure
+      ? {
+          closedAt: new Date(marketClosure.closedAtMs).toISOString(),
+          windowEndsAt: new Date(marketClosure.windowEndsMs).toISOString(),
+        }
+      : null,
     brokerFeedActive,
     dataHealth,
     consolidated,

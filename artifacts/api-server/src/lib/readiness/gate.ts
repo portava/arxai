@@ -1,4 +1,6 @@
-// Build OO — Master readiness gate. Read-only, additive, hard-locked PAPER_ONLY.
+// Build OO — Master readiness gate. Read-only, additive. It tests the paper
+// stack: its appMode "PAPER_ONLY" / liveTradingStatus "DISABLED" fields (also
+// persisted) name that scope, not the platform's or an account's live state.
 import { randomUUID } from "node:crypto";
 import { db } from "@workspace/db";
 import {
@@ -241,7 +243,10 @@ export async function runReadinessGate(): Promise<ReadinessReport> {
         type: "SYSTEM",
         severity: hardFailed ? "CRITICAL" : "HIGH",
         title: `Readiness gate ${overallStatus}`,
-        message: `Score ${readinessScore} (${grade}). ${criticalFailures.length} critical, ${warnings.length} warnings. Live trading remains DISABLED.`,
+        // This gate checks the paper stack; it never reads or changes live
+        // trading, so the notification says that instead of claiming live
+        // trading is disabled (an armed LIVE_SHARED trader can trade live).
+        message: `Score ${readinessScore} (${grade}). ${criticalFailures.length} critical, ${warnings.length} warnings. This gate checks the paper stack only; it does not turn live trading on or off.`,
         sourceBuild: "OO",
         dedupeKey: `oo:${reportId}`,
         metadata: { reportId, hardFailed, hardFailReasons },

@@ -11,6 +11,11 @@
 //     0-faked.
 //   - The canonical freshness.status (fresh|stale|unavailable) drives a
 //     FreshnessBadge so a stale figure is clearly marked, never relabelled live.
+//   - realizedPnLPendingCount > 0 (closed trades whose realized P/L the server
+//     withheld) marks Realized P/L and Live equity "incomplete" — freshness
+//     says nothing about completeness.
+//   - marginUsed / freeMargin are computed from ARX reserved risk, not broker
+//     margin, so they are labelled "Reserved risk" / "Equity after reserve".
 
 import { cn } from "@/lib/utils";
 import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
@@ -58,6 +63,9 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
   const floating = signedMoney(live?.floatingPnL ?? null);
   const realized = signedMoney(live?.realizedPnL ?? null);
   const floatingUnavailable = live != null && live.floatingPnL == null;
+  const pendingCount = live?.realizedPnLPendingCount ?? 0;
+  const pending = pendingCount > 0;
+  const pendingSub = pending ? `incomplete — ${pendingCount} pending` : undefined;
 
   return (
     <div className={cn("rounded-xl border border-border bg-surface/40 p-3", className)}>
@@ -71,7 +79,7 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Tile label="Allocated" value={money(live?.allocatedBalance ?? null)} />
-        <Tile label="Live equity" value={money(live?.liveEquity ?? null)} />
+        <Tile label="Live equity" value={money(live?.liveEquity ?? null)} sub={pending ? "incomplete" : undefined} />
         <Tile label="Available" value={money(live?.availableBalance ?? null)} />
         <Tile
           label="Floating P/L"
@@ -79,11 +87,17 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
           tone={floating.tone}
           sub={floatingUnavailable ? "unavailable" : undefined}
         />
-        <Tile label="Realized P/L" value={realized.text} tone={realized.tone} />
-        <Tile label="Margin used" value={money(live?.marginUsed ?? null)} />
-        <Tile label="Free margin" value={money(live?.freeMargin ?? null)} />
+        <Tile label="Realized P/L" value={realized.text} tone={realized.tone} sub={pendingSub} />
+        <Tile label="Reserved risk" value={money(live?.marginUsed ?? null)} sub="ARX reserve, not broker margin" />
+        <Tile label="Equity after reserve" value={money(live?.freeMargin ?? null)} />
         <Tile label="Open trades" value={String(live?.openTradeCount ?? 0)} />
       </div>
+      {pending && (
+        <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-pnl-pending-note">
+          Realized P/L and live equity are incomplete: {pendingCount} closed trade{pendingCount === 1 ? " is" : "s are"} awaiting
+          their broker contract size, so their P/L is not included. No estimate is shown in its place.
+        </p>
+      )}
       {status === "stale" && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-stale-note">
           Showing last known values — the live feed is overdue. Figures may be out of date.

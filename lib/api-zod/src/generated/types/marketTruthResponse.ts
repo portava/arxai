@@ -7,6 +7,7 @@
  */
 import type { TruthComponents } from "./truthComponents";
 import type { TruthData } from "./truthData";
+import type { TruthEvidence } from "./truthEvidence";
 import type { TruthLevels } from "./truthLevels";
 import type { TruthNews } from "./truthNews";
 import type { TruthVerdict } from "./truthVerdict";
@@ -21,4 +22,5 @@ export interface MarketTruthResponse {
   components: TruthComponents;
   levels: TruthLevels;
   verdict: TruthVerdict;
+  evidence?: TruthEvidence;
 }

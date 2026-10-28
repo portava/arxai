@@ -9,6 +9,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Star, Plus, Trash2, ListChecks } from "lucide-react";
 import { EmptyState } from "@/components/trading/EmptyState";
 import { suggestApprovedSymbols, type ResolvedSymbol } from "@/lib/symbolRegistry";
+import { watchlistSignalBadge, type WatchlistSignalFields } from "@/lib/watchlistSignal";
+
+function SignalBadge({ item }: { item: WatchlistSignalFields }) {
+  const b = watchlistSignalBadge(item);
+  if (!b) return null;
+  if (b.kind === "status") {
+    return <Badge variant="outline" className="text-[10px] text-muted-foreground" title={b.title}>{b.text}</Badge>;
+  }
+  return <Badge title={b.title} className={`text-[10px] ${b.direction === "BUY" ? "bg-success/20 text-success" : b.direction === "SELL" ? "bg-destructive/20 text-destructive" : "bg-muted"}`}>{b.text}</Badge>;
+}
 
 const CATEGORIES = ["Forex Majors", "Forex Minors", "US Indices", "Stocks", "Synthetic Volatility", "Custom"];
 const MARKET_TYPES = ["forex", "index", "stock", "synthetic", "crypto"];
@@ -45,7 +55,7 @@ export default function Watchlists() {
         </span>
         <div>
           <h1 className="text-2xl font-bold leading-tight">Watchlists</h1>
-          <p className="text-sm text-txt-secondary">Track symbols across multiple markets with live signals.</p>
+          <p className="text-sm text-txt-secondary">Track symbols across multiple markets. Signals are strategy-scan reads of the latest 1m bars, shown only when those bars are current.</p>
         </div>
       </div>
 
@@ -118,7 +128,7 @@ export default function Watchlists() {
                           </Button>
                           <span className="font-mono font-bold text-sm flex-1">{it.symbol}</span>
                           <Badge variant="outline" className="text-[10px]">{it.marketType}</Badge>
-                          {it.signal ? <Badge className={`text-[10px] ${it.signal === "BUY" ? "bg-success/20 text-success" : it.signal === "SELL" ? "bg-destructive/20 text-destructive" : "bg-muted"}`}>{it.signal} {it.confidence}%</Badge> : null}
+                          <SignalBadge item={it as WatchlistSignalFields} />
                           {it.newsRisk && it.newsRisk !== "none" ? <Badge variant="outline" className="text-[10px] text-warning border-warning/30">News: {it.newsRisk}</Badge> : null}
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={async () => { await delItem.mutateAsync({ id: it.id }); refresh(); }} data-testid={`button-delete-item-${it.id}`}>
                             <Trash2 size={12} className="text-muted-foreground" />

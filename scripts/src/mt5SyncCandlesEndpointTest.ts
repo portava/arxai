@@ -194,14 +194,15 @@ export async function run(): Promise<CiTestResultLike> {
     if (!bridgeUser || !adminUser || !normalUser) throw new Error("user creation failed");
 
     const rawToken = randomBytes(24).toString("base64url");
-    await db.insert(mt5ConnectionTable).values({
+    const [bridgeConn] = await db.insert(mt5ConnectionTable).values({
       userId: bridgeUser.id,
       connectionName: "QA Candle Bridge",
       status: "connected",
       apiKeyHash: sha256(rawToken),
       tokenLast4: rawToken.slice(-4),
       tokenCreatedAt: new Date(),
-    });
+    }).returning();
+    if (!bridgeConn) throw new Error("bridge connection creation failed");
 
     const adminCookie = await mintSession(adminUser.id);
     const userCookie = await mintSession(normalUser.id);
@@ -273,10 +274,12 @@ export async function run(): Promise<CiTestResultLike> {
     const m5 = (feed.body.series ?? []).find((s) => s.symbol === SYM && s.timeframe === "M5");
     const h1row = (feed.body.series ?? []).find((s) => s.symbol === SYM && s.timeframe === "H1");
     assert(!!m5 && m5.status === "contributing", `M5 series reads contributing (status=${m5?.status})`);
-    // updateCandlesFromMT5 REPLACES the series each push (the EA sends a rolling
-    // window), so the latest M5 push — the de-dupe push of 2 distinct bars —
-    // defines the current series.
-    assert(!!m5 && m5.barCount === 2, `M5 contributing barCount=2 (latest push replaces; got ${m5?.barCount})`);
+    // The push is attributed to the authenticated bridge, and an attributed
+    // v1 window MERGES into that bridge's partition by bar time (the partition
+    // also holds deeper history from /mt5/candles/ingest, v2 CANDLE and
+    // sync-candle-history, which a rolling window must not truncate). The
+    // 3-bar push (08:00–08:10) plus the de-dupe push (09:00, 09:05) = 5 bars.
+    assert(!!m5 && m5.barCount === 5, `M5 contributing barCount=5 (attributed v1 windows merge by bar time; got ${m5?.barCount})`);
     assert(!!h1row && h1row.status === "contributing" && h1row.barCount === 1, `H1 series isolated, barCount=1 (got ${h1row?.barCount})`);
 
     // Single-series probe for a never-pushed symbol while the feed is connected.
@@ -304,7 +307,7 @@ export async function run(): Promise<CiTestResultLike> {
     const feedAfter = await getFeed(base, adminCookie);
     const m5After = (feedAfter.body.series ?? []).find((s) => s.symbol === SYM && s.timeframe === "M5");
     assert(
-      !!m5After && m5After.status === "contributing" && m5After.barCount === 2,
+      !!m5After && m5After.status === "contributing" && m5After.barCount === 5,
       `prior good M5 series untouched after garbage push (status=${m5After?.status}, bars=${m5After?.barCount})`,
     );
 
@@ -335,7 +338,7 @@ export async function run(): Promise<CiTestResultLike> {
     const feedAfterGuards = await getFeed(base, adminCookie);
     const m5Guarded = (feedAfterGuards.body.series ?? []).find((s) => s.symbol === SYM && s.timeframe === "M5");
     assert(
-      !!m5Guarded && m5Guarded.status === "contributing" && m5Guarded.barCount === 2,
+      !!m5Guarded && m5Guarded.status === "contributing" && m5Guarded.barCount === 5,
       `good M5 series survives stale+invalid pushes (status=${m5Guarded?.status}, bars=${m5Guarded?.barCount})`,
     );
 
@@ -350,6 +353,23 @@ export async function run(): Promise<CiTestResultLike> {
     });
     assert(goodQuote.status === 200, `fresh quote -> 200 (got ${goodQuote.status})`);
     assert(goodQuote.body.accepted === 1, `fresh quote accepted=1 (got ${goodQuote.body.accepted})`);
+
+    // The authenticated bridge is the quote's observed writer identity, and an
+    // EA-supplied timestamp is an observed tick time (in-process store read).
+    const { readMt5Quote, readMt5Candles } = await import("../../artifacts/api-server/src/lib/data/providers/mt5Provider.js");
+    const storedQuote = readMt5Quote(SYM, { bridgeConnectionId: bridgeConn.id });
+    assert(storedQuote?.bridgeConnectionId === bridgeConn.id && storedQuote.userId === bridgeUser.id,
+      `fresh quote attributed to its bridge/owner (got ${storedQuote?.bridgeConnectionId}/${storedQuote?.userId})`);
+    assert(storedQuote?.tickTimeObserved === true, `EA-timestamped quote records an observed tick time`);
+    const storedSeries = readMt5Candles(SYM, "M5", 10, { bridgeConnectionId: bridgeConn.id });
+    assert(storedSeries.candles.length > 0 && storedSeries.userId === bridgeUser.id,
+      `synced candles attributed to the same bridge/owner (got ${storedSeries.candles.length} bars, user ${storedSeries.userId})`);
+
+    // No EA timestamp → stored with receive time, but NOT as an observed tick.
+    const untimedQuote = await syncQuotes(base, rawToken, { symbol: SYM, bid: 1.10, ask: 1.11 });
+    assert(untimedQuote.status === 200 && untimedQuote.body.accepted === 1, `untimed quote accepted (got ${untimedQuote.status})`);
+    assert(readMt5Quote(SYM, { bridgeConnectionId: bridgeConn.id })?.tickTimeObserved === false,
+      `receive-time stamped quote is not an observed tick time`);
 
     // An UNPARSABLE quote timestamp must fail CLOSED (explicit reject, never 500).
     const invalidQuote = await syncQuotes(base, rawToken, {

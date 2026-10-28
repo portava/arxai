@@ -52,6 +52,19 @@ interface Approval {
 
 const ROLE = "ADMIN";
 
+/** "loading" until the first answer; "failed" when the read was denied, errored or had no payload. */
+type ReadState = "loading" | "ok" | "failed";
+
+async function readField<T>(url: string, field: string, headers: Record<string, string>): Promise<T | null> {
+  try {
+    const r = await fetch(url, { headers });
+    if (!r.ok) return null;
+    const body: unknown = await r.json();
+    const v = body && typeof body === "object" ? (body as Record<string, unknown>)[field] : undefined;
+    return v == null ? null : (v as T);
+  } catch { return null; }
+}
+
 export default function LiveTradingControl() {
   const [readiness, setReadiness] = useState<ReadinessReport | null>(null);
   const [state, setState] = useState<LiveState | null>(null);
@@ -61,19 +74,29 @@ export default function LiveTradingControl() {
   const [killReason, setKillReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [lastResult, setLastResult] = useState<string>("");
+  const [reads, setReads] = useState<{ readiness: ReadState; state: ReadState; approvals: ReadState; audit: ReadState }>({
+    readiness: "loading", state: "loading", approvals: "loading", audit: "loading",
+  });
 
   async function load() {
     const headers = { "x-security-role": ROLE };
     const [r1, r2, r3, r4] = await Promise.all([
-      fetch("/api/live-trading/readiness", { headers }).then(r => r.json()),
-      fetch("/api/live-trading/state", { headers }).then(r => r.json()),
-      fetch("/api/live-trading/audit?limit=20", { headers }).then(r => r.json()),
-      fetch("/api/live-trading/approvals?limit=20", { headers }).then(r => r.json()),
+      readField<ReadinessReport>("/api/live-trading/readiness", "readiness", headers),
+      readField<LiveState>("/api/live-trading/state", "state", headers),
+      readField<AuditEvent[]>("/api/live-trading/audit?limit=20", "events", headers),
+      readField<Approval[]>("/api/live-trading/approvals?limit=20", "approvals", headers),
     ]);
-    setReadiness(r1.readiness ?? null);
-    setState(r2.state ?? null);
-    setAudit(r3.events ?? []);
-    setApprovals(r4.approvals ?? []);
+    const readinessOk = r1 != null && Array.isArray(r1.blockers) && Array.isArray(r1.requiredActions);
+    setReadiness(readinessOk ? r1 : null);
+    setState(r2);
+    setAudit(Array.isArray(r3) ? r3 : []);
+    setApprovals(Array.isArray(r4) ? r4 : []);
+    setReads({
+      readiness: readinessOk ? "ok" : "failed",
+      state: r2 ? "ok" : "failed",
+      audit: Array.isArray(r3) ? "ok" : "failed",
+      approvals: Array.isArray(r4) ? "ok" : "failed",
+    });
   }
 
   useEffect(() => {
@@ -96,7 +119,7 @@ export default function LiveTradingControl() {
     } finally { setBusy(false); await load(); }
   }
 
-  const banner = !state ? "loading" :
+  const banner = !state ? (reads.state === "failed" ? "unknown" : "loading") :
     state.killSwitchActive ? "locked" :
     state.armed ? "armed" :
     readiness?.liveTradingEligible ? "ready" : "locked";
@@ -106,15 +129,22 @@ export default function LiveTradingControl() {
     ready: "bg-yellow-500 text-black",
     armed: "bg-black border-2 border-red-500 text-red-400",
     loading: "bg-gray-600 text-white",
+    unknown: "bg-gray-600 text-white",
   } as const;
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
       <div className={`p-4 rounded-lg font-bold text-lg ${bannerStyles[banner]}`}>
-        {banner === "locked" && "🔒 LIVE TRADING LOCKED — kill switch active or readiness blockers present"}
-        {banner === "ready" && "⚠️ MICRO-LIVE READY — not armed. No real money at risk yet."}
-        {banner === "armed" && "🚨 MICRO-LIVE ARMED — REAL-MONEY RISK ACTIVE"}
+        {banner === "locked" && (state?.killSwitchActive
+          ? "🔒 LIVE TRADING LOCKED — kill switch active"
+          : reads.readiness === "failed"
+            ? "🔒 LIVE TRADING LOCKED — readiness could not be read"
+            : "🔒 LIVE TRADING LOCKED — readiness blockers present")}
+        {banner === "ready" && "⚠️ MICRO-LIVE READY — not armed."}
+        {/* Arming here cannot place a real order: placeLiveOrderGuarded always rejects in this build. */}
+        {banner === "armed" && "🚨 MICRO-LIVE ARMED — this control's broker placement layer is locked, so no real order can be placed from here"}
         {banner === "loading" && "Loading..."}
+        {banner === "unknown" && "Live trading state could not be read — treat live trading as locked."}
       </div>
 
       <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 text-sm text-yellow-900">
@@ -127,34 +157,40 @@ export default function LiveTradingControl() {
         <div className="bg-card border rounded-lg p-4">
           <h3 className="font-semibold text-sm text-muted-foreground">CURRENT MODE</h3>
           <p className="text-2xl font-bold mt-1">{state?.mode ?? "—"}</p>
-          <p className="text-xs mt-1">Armed: <span className={state?.armed ? "text-red-600 font-bold" : "text-emerald-600"}>{String(state?.armed)}</span></p>
+          <p className="text-xs mt-1">Armed: {state
+            ? <span className={state.armed ? "text-red-600 font-bold" : "text-emerald-600"}>{String(state.armed)}</span>
+            : <span className="text-muted-foreground">{reads.state === "failed" ? "unknown (state not read)" : "…"}</span>}</p>
         </div>
-        <div className="bg-card border rounded-lg p-4">
+        <div className="bg-card border rounded-lg p-4" data-testid="ltc-readiness">
           <h3 className="font-semibold text-sm text-muted-foreground">READINESS</h3>
-          <p className="text-2xl font-bold mt-1">{readiness?.liveTradingEligible ? "ELIGIBLE" : "NOT ELIGIBLE"}</p>
-          <p className="text-xs mt-1">Safety score: {readiness?.safetyScore ?? "—"}/100</p>
+          <p className="text-2xl font-bold mt-1">{readiness ? (readiness.liveTradingEligible ? "ELIGIBLE" : "NOT ELIGIBLE") : reads.readiness === "failed" ? "UNKNOWN" : "—"}</p>
+          <p className="text-xs mt-1">{readiness ? `Safety score: ${readiness.safetyScore ?? "—"}/100` : reads.readiness === "failed" ? "Readiness could not be read." : "Safety score: —/100"}</p>
         </div>
-        <div className="bg-card border rounded-lg p-4">
+        <div className="bg-card border rounded-lg p-4" data-testid="ltc-kill-switch">
           <h3 className="font-semibold text-sm text-muted-foreground">KILL SWITCH</h3>
-          <p className={`text-2xl font-bold mt-1 ${state?.killSwitchActive ? "text-red-600" : "text-emerald-600"}`}>
-            {state?.killSwitchActive ? "ACTIVE" : "OFF"}
+          <p className={`text-2xl font-bold mt-1 ${!state ? "text-muted-foreground" : state.killSwitchActive ? "text-red-600" : "text-emerald-600"}`}>
+            {!state ? (reads.state === "failed" ? "UNKNOWN" : "—") : state.killSwitchActive ? "ACTIVE" : "OFF"}
           </p>
-          <p className="text-xs mt-1 truncate">{state?.killSwitchReason ?? "no reason logged"}</p>
+          <p className="text-xs mt-1 truncate">{!state ? (reads.state === "failed" ? "Live trading state could not be read." : "") : state.killSwitchReason ?? "no reason logged"}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-card border rounded-lg p-4">
-          <h3 className="font-semibold mb-2">Blockers ({readiness?.blockers.length ?? 0})</h3>
-          {readiness?.blockers.length ? (
+        <div className="bg-card border rounded-lg p-4" data-testid="ltc-blockers">
+          <h3 className="font-semibold mb-2">Blockers ({readiness ? readiness.blockers.length : "?"})</h3>
+          {!readiness ? (
+            <p className="text-sm text-muted-foreground">{reads.readiness === "failed" ? "Blockers unavailable — readiness could not be read." : "Loading…"}</p>
+          ) : readiness.blockers.length ? (
             <ul className="text-sm space-y-1">
               {readiness.blockers.map((b, i) => <li key={i} className="text-red-600">• {b}</li>)}
             </ul>
           ) : <p className="text-sm text-emerald-600">No blockers.</p>}
         </div>
-        <div className="bg-card border rounded-lg p-4">
-          <h3 className="font-semibold mb-2">Required actions ({readiness?.requiredActions.length ?? 0})</h3>
-          {readiness?.requiredActions.length ? (
+        <div className="bg-card border rounded-lg p-4" data-testid="ltc-required-actions">
+          <h3 className="font-semibold mb-2">Required actions ({readiness ? readiness.requiredActions.length : "?"})</h3>
+          {!readiness ? (
+            <p className="text-sm text-muted-foreground">{reads.readiness === "failed" ? "Unavailable — readiness could not be read." : "Loading…"}</p>
+          ) : readiness.requiredActions.length ? (
             <ul className="text-sm space-y-1">
               {readiness.requiredActions.map((a, i) => <li key={i}>→ {a}</li>)}
             </ul>
@@ -212,9 +248,11 @@ export default function LiveTradingControl() {
         </div>
       </div>
 
-      <div className="bg-card border rounded-lg p-4">
-        <h3 className="font-semibold mb-2">Trade Approval Queue ({approvals.length})</h3>
-        {approvals.length === 0 ? <p className="text-sm text-muted-foreground">No trade cards.</p> : (
+      <div className="bg-card border rounded-lg p-4" data-testid="ltc-approvals">
+        <h3 className="font-semibold mb-2">Trade Approval Queue ({reads.approvals === "ok" ? approvals.length : "?"})</h3>
+        {reads.approvals !== "ok" ? (
+          <p className="text-sm text-muted-foreground">{reads.approvals === "failed" ? "The approval queue could not be read." : "Loading…"}</p>
+        ) : approvals.length === 0 ? <p className="text-sm text-muted-foreground">No trade cards.</p> : (
           <table className="w-full text-xs">
             <thead><tr className="text-left border-b"><th>ID</th><th>Status</th><th>Symbol</th><th>Dir</th><th>Lot</th><th>Risk%</th><th>Conf</th></tr></thead>
             <tbody>
@@ -233,6 +271,7 @@ export default function LiveTradingControl() {
 
       <div className="bg-card border rounded-lg p-4">
         <h3 className="font-semibold mb-2">Audit History (latest 20)</h3>
+        {reads.audit === "failed" && <p className="text-sm text-muted-foreground">The audit history could not be read.</p>}
         <div className="space-y-1 max-h-96 overflow-auto text-xs font-mono">
           {audit.map(e => (
             <div key={e.eventId} className="flex gap-2 border-b pb-1">

@@ -9,6 +9,7 @@
 import { getMarketProvider, getMarketStatus, type Candle } from "./marketProvider.js";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 import type { Candle as RouterCandle } from "../data/types.js";
+import { knownPipDistance } from "../data/chart/symbolProfile.js";
 
 const LIVE_TIMEFRAMES = ["M15", "H1"] as const;
 const MIN_CANDLES = 10;
@@ -47,7 +48,8 @@ export interface TakeProfitTarget {
   reason: string;
   rr: number;                                  // reward / risk; 0 if SL missing
   distancePoints: number;                      // absolute price distance from entry
-  distancePips: number;                        // approximate pips (10x for JPY would need symbol meta — kept as price-units * 10000)
+  /** Pips from entry using the symbol's own pip size; null when the pip size is unknown. */
+  distancePips: number | null;
   suggestedAction: "partial" | "full" | "runner";
   confidence: "low" | "medium" | "high";
 }
@@ -63,7 +65,7 @@ export interface LiveCandidate {
   riskRewardRatio: number;
   reasonForTrade: string;
   reasonToAvoid: string;
-  statusBadge: "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION" | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE";
+  statusBadge: "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION" | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE" | "LOW_OPPORTUNITY_SCORE";
   opportunityLabel: "ELITE" | "STRONG" | "ACCEPTABLE" | "WEAK" | "REJECT";
   entry: number;
   stopLoss: number;
@@ -80,7 +82,8 @@ export interface LiveCandidate {
  * Direction-validated. Returns [] only when stopDist is non-finite or zero
  * (which would make every target invalid).
  */
-function buildTpTargets(
+export function buildTpTargets(
+  symbol: string,
   action: "BUY" | "SELL",
   entry: number,
   stopDist: number,
@@ -112,9 +115,9 @@ function buildTpTargets(
 
   // Direction guard — drop any target that violates direction rule (defensive).
   const all: TakeProfitTarget[] = [
-    { label: "TP1", price: tp1Price, reason: tp1Reason, rr: 1.0, distancePoints: Math.abs(tp1Price - entry), distancePips: Math.abs(tp1Price - entry) * 10000, suggestedAction: "partial", confidence: "high" },
-    { label: "TP2", price: tp2Price, reason: tp2Reason, rr: 2.0, distancePoints: Math.abs(tp2Price - entry), distancePips: Math.abs(tp2Price - entry) * 10000, suggestedAction: "full",    confidence: "medium" },
-    { label: "TP3", price: tp3Price, reason: tp3Reason, rr: Number((tp3RawDist / stopDist).toFixed(2)), distancePoints: Math.abs(tp3Price - entry), distancePips: Math.abs(tp3Price - entry) * 10000, suggestedAction: "runner",  confidence: "low" },
+    { label: "TP1", price: tp1Price, reason: tp1Reason, rr: 1.0, distancePoints: Math.abs(tp1Price - entry), distancePips: knownPipDistance(symbol, tp1Price - entry), suggestedAction: "partial", confidence: "high" },
+    { label: "TP2", price: tp2Price, reason: tp2Reason, rr: 2.0, distancePoints: Math.abs(tp2Price - entry), distancePips: knownPipDistance(symbol, tp2Price - entry), suggestedAction: "full",    confidence: "medium" },
+    { label: "TP3", price: tp3Price, reason: tp3Reason, rr: Number((tp3RawDist / stopDist).toFixed(2)), distancePoints: Math.abs(tp3Price - entry), distancePips: knownPipDistance(symbol, tp3Price - entry), suggestedAction: "runner",  confidence: "low" },
   ];
   const candidates: TakeProfitTarget[] = all.filter((t) => action === "BUY" ? t.price > entry : t.price < entry);
 
@@ -171,7 +174,7 @@ function scoreCandles(
   const swingLow = Math.min(...candles.map((c) => c.l));
   const atrProjection = avgRange * 4; // ATR-based runner projection
   const tpBuilt = (action === "BUY" || action === "SELL")
-    ? buildTpTargets(action, mid, stopDist, swingHigh, swingLow, atrProjection)
+    ? buildTpTargets(symbol, action, mid, stopDist, swingHigh, swingLow, atrProjection)
     : { targets: [] as TakeProfitTarget[], bestLabel: null, reason: "No actionable direction — TP targets not applicable." };
 
   const score = clamp(Math.round(confidence * 0.5 + setupQ * 0.3 + entryQ * 0.2));

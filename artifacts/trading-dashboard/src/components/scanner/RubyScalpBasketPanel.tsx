@@ -134,7 +134,10 @@ export function RubyScalpBasketPanel() {
     },
   });
   const data = baskets.data;
-  const list = data?.baskets ?? [];
+  // React Query keeps the last successful data after a failed refetch. The
+  // latest read failed, so those positions (which may since have closed) and
+  // their exit / add-on advice are not shown as current.
+  const list = baskets.isError ? [] : data?.baskets ?? [];
 
   return (
     <Card data-testid="ruby-scalp-baskets" className="rounded-2xl border-ruby/25 bg-card">
@@ -174,7 +177,7 @@ export function RubyScalpBasketPanel() {
         <CardContent className="space-y-3">
           {baskets.isError && (
             <p className="text-sm text-danger">
-              {name} couldn't read your open positions right now. Try Refresh in a moment.
+              {name} couldn't read your open positions right now, so no position advice is shown. Try Refresh in a moment.
             </p>
           )}
           {baskets.isPending && !data && (
@@ -182,7 +185,7 @@ export function RubyScalpBasketPanel() {
               {name} is reading your open positions…
             </p>
           )}
-          {data && list.length === 0 && (
+          {data && !baskets.isError && list.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No open scalp positions to manage. Once you're in a trade, {name} will
               watch the flame, exit urgency, and whether it's sane to add.

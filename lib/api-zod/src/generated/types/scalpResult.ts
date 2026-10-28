@@ -12,6 +12,7 @@ import type { ScalpResultConfidenceLabel } from "./scalpResultConfidenceLabel";
 import type { ScalpResultDirection } from "./scalpResultDirection";
 import type { ScalpResultEntryType } from "./scalpResultEntryType";
 import type { ScalpResultNewsRisk } from "./scalpResultNewsRisk";
+import type { ScalpResultRejectReason } from "./scalpResultRejectReason";
 import type { ScalpResultSlippageRisk } from "./scalpResultSlippageRisk";
 import type { ScalpResultSpreadRisk } from "./scalpResultSpreadRisk";
 import type { ScalpResultStatus } from "./scalpResultStatus";
@@ -28,6 +29,10 @@ export interface ScalpResult {
   scalpType: string;
   mode: ScalpMode;
   status: ScalpResultStatus;
+  /** Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers. */
+  rejectReason?: ScalpResultRejectReason;
+  /** The engine timeframe this result was evaluated on (e.g. "M5"). */
+  timeframe?: string | null;
   qualityScore: number;
   confidenceLabel: ScalpResultConfidenceLabel;
   entryType: ScalpResultEntryType;
@@ -46,9 +51,13 @@ export interface ScalpResult {
   estimatedRiskAmount: number | null;
   rewardToRisk: number | null;
   estimatedMargin: number | null;
+  /** Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency. */
+  moneyCurrency?: string | null;
   spreadRisk: ScalpResultSpreadRisk;
   slippageRisk: ScalpResultSlippageRisk;
   newsRisk: ScalpResultNewsRisk;
+  /** True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW. */
+  newsRiskUnchecked?: boolean;
   timingStatus: ScalpResultTimingStatus;
   validForSeconds: number;
   expiresAt: string;
