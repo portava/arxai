@@ -102,3 +102,34 @@ describe("Memory tab: AI decision quality", () => {
     expect(screen.getByTestId("decision-calls-without-order").textContent).toMatch(/—/);
   });
 });
+
+describe("Memory tab: Improvement Score and setups", () => {
+  it("an unmeasured Improvement Score says so instead of 0.00", () => {
+    h.data["ai-cc"] = { commandCenter: commandCenter({
+      learningStats: {
+        learningEvents: 0, strategyEdgesUpdated: 2, mistakePatternsTracked: 0, improvementScore: null,
+        improvementScoreBasis: "Not measured: strategy edges keep only their current score, not a history, so change over time cannot be computed.",
+        learningConfidence: 50,
+      },
+    }), autopilot: AUTOPILOT_NONE_TODAY };
+    openMemory();
+    const v = screen.getByTestId("improvement-score");
+    expect(v.textContent).toBe("Not measured");
+    expect(screen.getByText(/keep only their current score/)).toBeTruthy();
+  });
+
+  it("an older server's 0 Improvement Score is not shown as a measured 0.00", () => {
+    h.data["ai-cc"] = { commandCenter: commandCenter(), autopilot: AUTOPILOT_NONE_TODAY };
+    openMemory();
+    expect(screen.getByTestId("improvement-score").textContent).toBe("Not measured");
+  });
+
+  it("best/weakest setup carries its overlapping-sum basis", () => {
+    h.data["ai-cc"] = { commandCenter: commandCenter({
+      bestSetup: "trend", weakestSetup: "session",
+      setupRankingBasis: "Setups are ranked by the summed P&L of the trades each signal supported. A trade supported by several signals counts toward each of them, so these sums overlap and do not add up to your net P&L.",
+    }), autopilot: AUTOPILOT_NONE_TODAY };
+    openMemory();
+    expect(screen.getByTestId("setup-ranking-basis").textContent).toMatch(/counts toward each/);
+  });
+});

@@ -573,9 +573,25 @@ function MemoryTab() {
             <CardTitle className="text-xs">Improvement Score</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">
-              {c.learningStats.improvementScore.toFixed(2)}
-            </div>
+            {/* Shown as a number only when the server says how it was
+                measured. A server without improvementScoreBasis computed it
+                from current edge scores ordered by id (not a trend), and
+                read 0.00 when it computed nothing. */}
+            {typeof c.learningStats.improvementScore === "number" &&
+            typeof c.learningStats.improvementScoreBasis === "string" ? (
+              <div className="text-xl font-bold" data-testid="improvement-score">
+                {c.learningStats.improvementScore.toFixed(2)}
+              </div>
+            ) : (
+              <>
+                <div className="text-xl font-bold text-txt-secondary" data-testid="improvement-score">Not measured</div>
+                <div className="text-xs text-txt-secondary">
+                  {typeof c.learningStats.improvementScoreBasis === "string"
+                    ? c.learningStats.improvementScoreBasis
+                    : "Change over time is not measured: strategy edges keep only their current score, not a history."}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -631,6 +647,13 @@ function MemoryTab() {
               Weakest setup:{" "}
               <Badge variant="outline">{c.weakestSetup ?? "—"}</Badge>
             </div>
+            {(c.bestSetup || c.weakestSetup) && (
+              <div className="text-xs text-txt-secondary" data-testid="setup-ranking-basis">
+                {typeof c.setupRankingBasis === "string"
+                  ? c.setupRankingBasis
+                  : "Setups are ranked by the summed P&L of the trades each signal supported; a trade supported by several signals counts toward each, so these sums overlap."}
+              </div>
+            )}
             <div>
               Strongest edge:{" "}
               <span className="text-xs">

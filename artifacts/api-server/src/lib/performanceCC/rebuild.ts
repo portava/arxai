@@ -181,7 +181,9 @@ export async function rebuildSnapshots(userId: number, log: RebuildLogger) {
       mostCommonBlocker: "",
       mostCommonMistake: r.most_repeated_mistake ?? "",
       learningSummary: `range=${range} winRate=${r.win_rate} netPnl=${r.net_pnl} debriefs=${debriefsInRange.length}`,
-      improvementScore: cc.learningStats.improvementScore,
+      // Not measured (null). The column is NOT NULL with default 0; nothing
+      // reads it back.
+      improvementScore: cc.learningStats.improvementScore ?? 0,
     };
     await db.insert(aiPerformanceSnapshotsTable).values(values).onConflictDoUpdate({
       target: [aiPerformanceSnapshotsTable.userId, aiPerformanceSnapshotsTable.rangeKey],

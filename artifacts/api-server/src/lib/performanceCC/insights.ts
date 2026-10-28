@@ -7,7 +7,6 @@ interface InsightInputs {
   totalTrades: number;
   winRate: number;
   netPnl: number;
-  improvementScore: number;
   /** Decisions that said to trade. */
   tradeCalls: number;
   /** Trade calls with no paper order; the reason is not recorded per decision. */
@@ -59,12 +58,8 @@ export function generateInsights(i: InsightInputs): { insights: string[]; nextBe
     if (ratio < 0.5) warnings.push("Some closed trades did not produce a learning event — check BB→CC handoff.");
   }
 
-  if (i.improvementScore > 5) {
-    insights.push("AI is showing signs of improvement after Build CC learning.");
-  } else if (i.improvementScore < -5) {
-    insights.push("Recent AI performance trend is declining — review learning adjustments.");
-    nextBestActions.push("Inspect recent strategy_edge changes that may have over-corrected.");
-  }
+  // No improving / declining insight: change over time is not measured
+  // (strategy edges keep only their current score, not a history).
 
   // Always-on safety reminder.
   nextBestActions.push("Keep paper-practicing until performance is consistent before discussing live trading.");

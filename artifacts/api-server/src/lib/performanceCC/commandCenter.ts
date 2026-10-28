@@ -62,7 +62,9 @@ export async function buildCommandCenter(userId: number) {
     ? { strategy: sortedEdges[sortedEdges.length - 1]!.strategyName, signal: sortedEdges[sortedEdges.length - 1]!.signalName, symbol: sortedEdges[sortedEdges.length - 1]!.symbol, edge_score: sortedEdges[sortedEdges.length - 1]!.edgeScore }
     : null;
 
-  // Best setup = strategy with highest aggregated PnL.
+  // Best setup = strategy (signal) with the highest summed P&L of the trades
+  // it supported. A trade's P&L is added in full to every signal that
+  // supported it, so these sums overlap — said in setupRankingBasis.
   const setupPnl: Record<string, number> = {};
   for (const e of edges) {
     const key = e.strategyName || "unknown";
@@ -109,23 +111,20 @@ export async function buildCommandCenter(userId: number) {
   // Risk safety stats (count safety-blocked autopilot rejections + cooldowns).
   const safetyBlockTotal = recentCycles.reduce((a, c) => a + c.paperTradesRejected, 0);
 
-  // Improvement score (very simple): later edges' avg edge_score vs earlier ones.
-  let improvementScore = 0;
-  if (edges.length >= 4) {
-    const sorted = [...edges].sort((a, b) => a.id - b.id);
-    const half = Math.floor(sorted.length / 2);
-    const earlyAvg = sorted.slice(0, half).reduce((a, e) => a + e.edgeScore, 0) / half;
-    const lateAvg = sorted.slice(half).reduce((a, e) => a + e.edgeScore, 0) / (sorted.length - half);
-    improvementScore = Number((lateAvg - earlyAvg).toFixed(2));
-  }
+  // Improvement over time is not measured. A strategy edge keeps only its
+  // CURRENT score — there is no score history — so comparing rows ordered by
+  // id compared which signals were seen first, not performance over time
+  // (and with fewer than 4 edges it read 0.00, "no change"). It is null.
+  const improvementScore: number | null = null;
+  const improvementScoreBasis =
+    "Not measured: strategy edges keep only their current score, not a history, so change over time cannot be computed.";
   const learningConfidence = closed.length >= 30 ? 80 : closed.length >= 10 ? 50 : 20;
 
-  // Overall status heuristic.
-  let overallStatus: "IMPROVING" | "STABLE" | "DECLINING" | "INSUFFICIENT_DATA" = "INSUFFICIENT_DATA";
-  if (closed.length < 10) overallStatus = "INSUFFICIENT_DATA";
-  else if (improvementScore > 2) overallStatus = "IMPROVING";
-  else if (improvementScore < -2) overallStatus = "DECLINING";
-  else overallStatus = "STABLE";
+  // Overall status. IMPROVING / STABLE / DECLINING were read from the
+  // improvement score, which is not measured; with enough trades the trend
+  // is NOT_MEASURED rather than a guess.
+  const overallStatus: "IMPROVING" | "STABLE" | "DECLINING" | "INSUFFICIENT_DATA" | "NOT_MEASURED" =
+    closed.length < 10 ? "INSUFFICIENT_DATA" : "NOT_MEASURED";
 
   // Paper mode status from FF settings + recent cycles.
   const paperModeStatus: "ACTIVE" | "IDLE" | "BLOCKED" =
@@ -141,7 +140,6 @@ export async function buildCommandCenter(userId: number) {
   const insightOut = generateInsights({
     bestSymbol, worstSymbol, mostRepeatedMistake,
     totalTrades: closed.length, winRate, netPnl,
-    improvementScore,
     tradeCalls: tradeCalls.length, tradeCallsWithoutOrder,
     decisionsCreated: decisions.length,
     learningEvents: learnings.length,
@@ -161,6 +159,7 @@ export async function buildCommandCenter(userId: number) {
     worstSymbol,
     bestSetup,
     weakestSetup,
+    setupRankingBasis: "Setups are ranked by the summed P&L of the trades each signal supported. A trade supported by several signals counts toward each of them, so these sums overlap and do not add up to your net P&L.",
     mostRepeatedMistake,
     strongestEdge,
     weakestEdge,
@@ -185,6 +184,7 @@ export async function buildCommandCenter(userId: number) {
       strategyEdgesUpdated: edges.length,
       mistakePatternsTracked: mistakes.length,
       improvementScore,
+      improvementScoreBasis,
       learningConfidence,
     },
     riskStats: {
