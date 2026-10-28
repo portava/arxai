@@ -117,6 +117,12 @@ export interface LastTickInfo {
    * trading market whatever its broker clock says.
    */
   quoteMovedWallMs: number | null;
+  /**
+   * Wall-clock ms since which the current quote (bid + broker time) has been
+   * observed unchanged: the tick that last moved it, or the first tick seen.
+   * Clock-independent measure of how long a replayed quote has been held.
+   */
+  quoteHeldSinceWallMs: number;
 }
 
 // source + symbolKey → last tick seen (across all timeframes).
@@ -191,6 +197,7 @@ export function foldFormingTick(
     wallMs: nowWallMs,
     bid,
     quoteMovedWallMs: quoteMoved ? nowWallMs : prevTick?.quoteMovedWallMs ?? null,
+    quoteHeldSinceWallMs: quoteMoved || prevTick == null ? nowWallMs : prevTick.quoteHeldSinceWallMs,
   });
 
   for (const tf of CHART_TIMEFRAMES) {
@@ -318,11 +325,16 @@ export function getFeedFreshness(
   // conversion is attempted on ingest) — never "closed".
   const quoteMovedRecently =
     last.quoteMovedWallMs != null && nowWallMs - last.quoteMovedWallMs <= MARKET_FROZEN_BROKER_STALE_MS;
+  // A broker clock AHEAD of server UTC clamps brokerStaleMs to 0, so the
+  // broker clock alone could never flag a closed market. The quote itself is
+  // the clock-independent signal: the same bid + broker time replayed for
+  // longer than the frozen window while ticks keep arriving.
+  const quoteHeldMs = nowWallMs - last.quoteHeldSinceWallMs;
   const marketFrozen =
-    brokerStaleMs != null &&
-    brokerStaleMs > MARKET_FROZEN_BROKER_STALE_MS &&
     wallStaleMs <= MARKET_FROZEN_WALL_FRESH_MS &&
-    !quoteMovedRecently;
+    !quoteMovedRecently &&
+    ((brokerStaleMs != null && brokerStaleMs > MARKET_FROZEN_BROKER_STALE_MS) ||
+      quoteHeldMs > MARKET_FROZEN_BROKER_STALE_MS);
   return {
     lastBrokerTimeMs: last.brokerTimeMs,
     lastTickWallMs: last.wallMs,
