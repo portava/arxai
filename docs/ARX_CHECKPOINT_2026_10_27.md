@@ -30,6 +30,8 @@ The newer combined source includes these separately reviewed and tested slices:
 
 The candle catalogue covers 65 of the owner's 104 requested names, with 62 definitions across 16 families; 39 names remain pending. The competitive scorecard retains 41 capability rows with no invented aggregate percentage. Native MT5 validation, real broker behavior, durable terminal result recovery and measured competitor performance remain incomplete.
 
+Successor (2026-10-28): catalogue v4 covers 74 of 104 names with 71 definitions across 19 families; 30 pending. See [SMART_CHART_CANDLE_CATALOGUE_V4.md](SMART_CHART_CANDLE_CATALOGUE_V4.md).
+
 ## Held experiments — GitHub backup only
 
 These branches preserve useful research history but are deliberately excluded from the combined source and Replit installation:

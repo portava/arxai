@@ -1,5 +1,7 @@
 # Smart Chart candle catalogue v3: explicit paired and grouped criteria
 
+This document records the frozen v3 checkpoint. For the next version see [v4 definitions and evidence](SMART_CHART_CANDLE_CATALOGUE_V4.md).
+
 `arx-candle-geometry-v3` adds 12 named observations to the validated v2 checkpoint. There are now 62 catalogue definitions in 16 shared geometry families. With three preserved initial-core names, 65 of the owner's 104 entries have implementations and focused fixtures; the other 39 remain in `SMART_CHART_CANDLE_COVERAGE.json`. These are named coverage counts, not independent signals, predictive reliability, application completion or parity with another chart product.
 
 All new findings remain **observed**, with the ending candle's actual close time. They retain source/symbol/timeframe/opaque-identity validation, explicit finality, chronological unique bars, interval checks, causal observation time, the 600-bar model cap and 12 recent endpoints. Prior trends exclude the pattern. Full OHLC range gaps, body gaps and missing observations remain distinct. No confidence percentage, inferred future candle, prediction, execution instruction or confirmation status is added.

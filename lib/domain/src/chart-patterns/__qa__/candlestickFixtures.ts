@@ -18,6 +18,15 @@ const kickerTail=[row(103,103,99,99),row(104,108,104,108)];
 const triTail=[row(102,102.5,101.5,102.01),row(101,101.5,100.5,101.01),row(101.5,102,101,101.51)];
 const tasukiTail=[row(103,104.3,102.8,104),row(106,108.2,105.8,108),row(107.5,107.8,105.2,105.5)];
 const separatingTail=[row(103,103.2,100.8,101),row(103.05,107.3,103.04,107.05)];
+const risingTail=[row(102,106.2,101.8,106),row(105.6,105.8,104.9,105.1),row(105.1,105.3,104.4,104.6),row(104.6,104.8,103.9,104.1),row(104.3,107.2,104.1,107)];
+// The strike's shadows (.8 of an 8.6 range) stay above 5% so it is not also a Marubozu or Belt Hold.
+const strikeTail=[row(102,104.2,101.8,104),row(103,106.2,102.8,106),row(105,108.2,104.8,108),row(108.5,109.3,100.7,101.5)];
+// The third candle keeps shadows above 5% of its range so it is not also a Marubozu or Belt Hold.
+const gap3Tail=[row(102.5,105.2,102.3,105),row(106,108.2,105.8,108),row(107.5,107.9,103,103.5)];
+const sbsUpTail=[row(102,104.7,101.8,104.5),row(105.5,107.2,105.3,107),row(105.55,107.3,105.4,107.1)];
+// Hand-built rather than mirrored: mirror() would turn both white lines black.
+const sbsDownTail=[row(101.5,101.7,99.3,99.5),row(97.5,99,97.3,98.8),row(97.55,99.1,97.4,98.9)];
+const matHoldTail=[row(102,106.2,101.8,106),row(106.8,107,106.1,106.3),row(106.2,106.4,105.4,105.7),row(105.9,106,105.1,105.4),row(105.6,108.2,105.5,108)];
 export const CANDLE_FIXTURES:{id:string;bars:CatalogueCandle[]}[]=[
 {id:"white_candle",bars:make([row(102,104,101,103)])},
 {id:"black_candle",bars:make([row(103,104,101,102)])},
@@ -81,4 +90,13 @@ export const CANDLE_FIXTURES:{id:string;bars:CatalogueCandle[]}[]=[
 {id:"upside_tasuki_gap",bars:make(tasukiTail,"up")},
 {id:"downside_tasuki_gap",bars:mirror(make(tasukiTail,"up"))},
 {id:"kicking_by_length",bars:make([row(103,103,99,99),row(104,109,104,109)])},
+{id:"rising_three_methods",bars:make(risingTail,"up")},
+{id:"falling_three_methods",bars:mirror(make(risingTail,"up"))},
+{id:"bullish_three_line_strike",bars:make(strikeTail,"up")},
+{id:"bearish_three_line_strike",bars:mirror(make(strikeTail,"up"))},
+{id:"upside_gap_three_methods",bars:make(gap3Tail,"up")},
+{id:"downside_gap_three_methods",bars:mirror(make(gap3Tail,"up"))},
+{id:"upside_gap_side_by_side_white_lines",bars:make(sbsUpTail,"up")},
+{id:"downside_gap_side_by_side_white_lines",bars:make(sbsDownTail,"down")},
+{id:"mat_hold",bars:make(matHoldTail,"up")},
 ];

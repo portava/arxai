@@ -1,14 +1,14 @@
 {
-  "criteriaVersion": "arx-candle-geometry-v3",
-  "updated": "2026-10-26",
+  "criteriaVersion": "arx-candle-geometry-v4",
+  "updated": "2026-10-28",
   "ownerManifestSha256": "6dba7b73af6242dd08d56420aea250ce0f40079967e154d26653107f100d5508",
   "meaning": "Coverage of named requirements, not independent algorithms, predictive reliability, UI parity, or architecture completion. Related variants deliberately share geometry.",
   "counts": {
     "ownerNamedEntries": 104,
-    "newCatalogueNamedVariants": 62,
-    "newGeometryFamilies": 16,
-    "includingExistingCoreNamedEntries": 65,
-    "pendingNamedEntries": 39
+    "newCatalogueNamedVariants": 71,
+    "newGeometryFamilies": 19,
+    "includingExistingCoreNamedEntries": 74,
+    "pendingNamedEntries": 30
   },
   "entries": [
     {
@@ -702,18 +702,18 @@
     {
       "name": "Upside Gap Three Methods",
       "ownerFamily": "Gap formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "upside_gap_three_methods",
+      "geometryFamily": "tasuki_gap",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Downside Gap Three Methods",
       "ownerFamily": "Gap formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "downside_gap_three_methods",
+      "geometryFamily": "tasuki_gap",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Two Black Gapping Candles",
@@ -726,58 +726,58 @@
     {
       "name": "Upside-Gap Side-by-Side White Lines",
       "ownerFamily": "Side-by-side lines",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "upside_gap_side_by_side_white_lines",
+      "geometryFamily": "side_by_side",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Downside-Gap Side-by-Side White Lines",
       "ownerFamily": "Side-by-side lines",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "downside_gap_side_by_side_white_lines",
+      "geometryFamily": "side_by_side",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bullish Three-Line Strike",
       "ownerFamily": "Three-Line Strike",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bullish_three_line_strike",
+      "geometryFamily": "three_line_strike",
+      "note": "Observed geometry only; named by TA-Lib sign; the core Engulfing label may show the last two candles in the opposite direction."
     },
     {
       "name": "Bearish Three-Line Strike",
       "ownerFamily": "Three-Line Strike",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bearish_three_line_strike",
+      "geometryFamily": "three_line_strike",
+      "note": "Observed geometry only; named by TA-Lib sign; the core Engulfing label may show the last two candles in the opposite direction."
     },
     {
       "name": "Rising Three Methods",
       "ownerFamily": "Three Methods",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "rising_three_methods",
+      "geometryFamily": "three_methods",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Falling Three Methods",
       "ownerFamily": "Three Methods",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "falling_three_methods",
+      "geometryFamily": "three_methods",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Mat Hold",
       "ownerFamily": "Other extended formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "mat_hold",
+      "geometryFamily": "three_methods",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Concealing Baby Swallow",

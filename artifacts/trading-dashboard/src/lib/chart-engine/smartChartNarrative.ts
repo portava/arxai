@@ -66,6 +66,15 @@ export const CANDLE_MEANINGS:Readonly<Record<string,string>>=Object.freeze({
  upside_tasuki_gap:"After a rise and an upward gap between candle bodies, the next down candle closed partway into that gap without filling it.",
  downside_tasuki_gap:"After a decline and a downward gap between candle bodies, the next up candle closed partway into that gap without filling it.",
  kicking_by_length:"Two large opposite-colour bodies were separated by a full-range gap. One body's open-to-close move was longer; that does not establish the next direction.",
+ rising_three_methods:"After a rise and a large up candle, three small down candles stayed within its range with falling closes; a fifth large up candle then closed above the first close.",
+ falling_three_methods:"After a decline and a large down candle, three small up candles stayed within its range with rising closes; a fifth large down candle then closed below the first close.",
+ bullish_three_line_strike:"Three up candles closed successively higher, then one down candle opened above the last close and closed below the first candle's open.",
+ bearish_three_line_strike:"Three down candles closed successively lower, then one up candle opened below the last close and closed above the first candle's open.",
+ upside_gap_three_methods:"After a rise, two up candles left a gap between their bodies; a third, down candle opened inside the second body and closed inside the first, filling that gap.",
+ downside_gap_three_methods:"After a decline, two down candles left a gap between their bodies; a third, up candle opened inside the second body and closed inside the first, filling that gap.",
+ upside_gap_side_by_side_white_lines:"After a rise, two similar up candles opened at nearly the same price, both with bodies above the earlier candle's body.",
+ downside_gap_side_by_side_white_lines:"After a decline, two similar up candles opened at nearly the same price, both with bodies below the earlier candle's body.",
+ mat_hold:"After a rise and a large up candle, a small down candle opened a gap above it and two more small candles held in the upper half of the first body; a fifth up candle then closed above all of them.",
 });
 const catalogueIds=new Set(CANDLE_DEFINITIONS.map(def=>def.id));
 export function smartChartNarrative(finding:SmartChartFinding):{summary:string;detail:string|null}{

@@ -1,8 +1,8 @@
 import type { ChartPatternCandle } from "./types.js";
 
-/** ARX explicit geometry convention v3. These are observations, not forecasts,
+/** ARX explicit geometry convention v4. These are observations, not forecasts,
  * TA-Lib output parity, calibrated confidence, or execution instructions. */
-export const CANDLE_CRITERIA_VERSION = "arx-candle-geometry-v3";
+export const CANDLE_CRITERIA_VERSION = "arx-candle-geometry-v4";
 export interface CatalogueCandle extends ChartPatternCandle { time:number; closeTime:number; isFinal:boolean }
 export interface CandleDefinition { id:string; name:string; family:string; criteria:string; sources:readonly string[]; summaryEligible:boolean }
 export interface CandleObservation {
@@ -77,12 +77,23 @@ const triDown=define("bearish_tri_star","Bearish Tri-Star","doji","After a rise,
 const tasukiUp=define("upside_tasuki_gap","Upside Tasuki Gap","tasuki_gap","After a rise, an up body is gapped above the first body, then a down candle opens inside the up body and closes strictly inside the remaining body gap. The last two body lengths differ by <=25% of the prior-10 mean range before the middle candle; first colour is unrestricted.",TA+"CDLTASUKIGAP.c");
 const tasukiDown=define("downside_tasuki_gap","Downside Tasuki Gap","tasuki_gap","After a decline, a down body is gapped below the first body, then an up candle opens inside the down body and closes strictly inside the remaining body gap. The last two body lengths differ by <=25% of the prior-10 mean range before the middle candle; first colour is unrestricted.",TA+"CDLTASUKIGAP.c");
 const kickingLength=define("kicking_by_length","Kicking by Length","marubozu","Kicking geometry with unequal body lengths; the observation identifies the longer body's colour, not the direction of the gap or a future outcome. Near-equal lengths leave this subtype unavailable.",TA+"CDLKICKINGBYLENGTH.c");
+const risingMethods=define("rising_three_methods","Rising Three Methods","three_methods","After a rise, a long up body (above its prior-10 mean body) is followed by three short down bodies (each below half its own prior-10 mean body) whose bodies lie within the first high-low range, whose closes fall, and whose first close is at or below the first close. A fifth, long up body opens strictly above the third reaction close and closes strictly above the first close.",TA+"CDLRISEFALL3METHODS.c");
+const fallingMethods=define("falling_three_methods","Falling Three Methods","three_methods","After a decline, a long down body (above its prior-10 mean body) is followed by three short up bodies (each below half its own prior-10 mean body) whose bodies lie within the first high-low range, whose closes rise, and whose first close is at or above the first close. A fifth, long down body opens strictly below the third reaction close and closes strictly below the first close.",TA+"CDLRISEFALL3METHODS.c");
+const strikeUp=define("bullish_three_line_strike","Bullish Three-Line Strike","three_line_strike","After a rise, three up candles close successively higher; the second and third each open within the preceding body extended by 25% of the prior-10 mean range. A fourth, down candle opens strictly above the third close and closes strictly below the first open. ARX names follow TA-Lib's sign: bullish = three up candles then a down strike. The core Engulfing label may describe the last two candles in the opposite direction.",TA+"CDL3LINESTRIKE.c");
+const strikeDown=define("bearish_three_line_strike","Bearish Three-Line Strike","three_line_strike","After a decline, three down candles close successively lower; the second and third each open within the preceding body extended by 25% of the prior-10 mean range. A fourth, up candle opens strictly below the third close and closes strictly above the first open. ARX names follow TA-Lib's sign: bearish = three down candles then an up strike. The core Engulfing label may describe the last two candles in the opposite direction.",TA+"CDL3LINESTRIKE.c");
+const gapMethodsUp=define("upside_gap_three_methods","Upside Gap Three Methods","tasuki_gap","After a rise, two up candles with the second body strictly gapped above the first body; then a down candle opens strictly inside the second body and closes strictly inside the first body. No body-length rule applies.",TA+"CDLXSIDEGAP3METHODS.c");
+const gapMethodsDown=define("downside_gap_three_methods","Downside Gap Three Methods","tasuki_gap","After a decline, two down candles with the second body strictly gapped below the first body; then an up candle opens strictly inside the second body and closes strictly inside the first body. No body-length rule applies.",TA+"CDLXSIDEGAP3METHODS.c");
+const sideUp=define("upside_gap_side_by_side_white_lines","Upside-Gap Side-by-Side White Lines","side_by_side","After a rise, two up candles both have bodies strictly gapped above the first candle's body. Their opens differ by <=5% and their body lengths by <=25% of the prior-10 mean range before the middle candle. The first candle's colour is unrestricted.",TA+"CDLGAPSIDESIDEWHITE.c");
+const sideDown=define("downside_gap_side_by_side_white_lines","Downside-Gap Side-by-Side White Lines","side_by_side","After a decline, two up candles both have bodies strictly gapped below the first candle's body. Their opens differ by <=5% and their body lengths by <=25% of the prior-10 mean range before the middle candle. The first candle's colour is unrestricted.",TA+"CDLGAPSIDESIDEWHITE.c");
+const matHold=define("mat_hold","Mat Hold","three_methods","After a rise, a long up body; a short down body strictly gapped above it; two more short bodies of either colour with falling body tops whose lower body edges lie inside the upper 50% of the first body. A fifth, up candle opens strictly above the last reaction close and closes strictly above the highest reaction high. Bullish only; no final long-body rule.",TA+"CDLMATHOLD.c");
 export const CANDLE_DEFINITIONS:readonly CandleDefinition[]=Object.freeze(defs.map(d=>Object.freeze(d)));
 const p=(n:number)=>Number(n.toPrecision(7)).toString();
 const body=(c:CatalogueCandle)=>Math.abs(c.close-c.open);
 const range=(c:CatalogueCandle)=>c.high-c.low;
 const upper=(c:CatalogueCandle)=>c.high-Math.max(c.open,c.close);
 const lower=(c:CatalogueCandle)=>Math.min(c.open,c.close)-c.low;
+const top=(c:CatalogueCandle)=>Math.max(c.open,c.close);
+const bot=(c:CatalogueCandle)=>Math.min(c.open,c.close);
 const up=(c:CatalogueCandle)=>c.close>c.open;
 const down=(c:CatalogueCandle)=>c.close<c.open;
 /** The shared explicit Doji threshold; callers first validate finite OHLC. */
@@ -132,6 +143,8 @@ export function scanCandlestickCatalogue(bars:readonly CatalogueCandle[],options
   }
   const observations:CandleObservation[]=[];
   const add=(definition:CandleDefinition,startIndex:number,endIndex:number,explanation:string,priorTrend:"up"|"down"|"none"="none",referenceLevel:number|null=null)=>observations.push({definition,startIndex,endIndex,observedAt:closed[endIndex]!.closeTime,explanation,priorTrend,referenceLevel});
+  /** The v1 short-body rule (:short_body) for an earlier candle in a formation. */
+  const isShortAt=(k:number)=>{const m=priorMean(closed,k,body);return m!=null&&body(closed[k]!)>0&&LT(body(closed[k]!),.5*m);};
   for(let i=Math.max(0,closed.length-lookback);i<closed.length;i++){
     const c=closed[i]!,b=body(c),r=range(c),u=upper(c),l=lower(c),meanBody=priorMean(closed,i,body),meanRange=priorMean(closed,i,range),trend=trendBefore(closed,i,intervalSeconds),long=meanBody!=null&&GT(b,meanBody);
     const anatomy=`Open ${p(c.open)}, close ${p(c.close)}; body ${p(b)}, upper shadow ${p(u)}, lower shadow ${p(l)}.`;
@@ -248,6 +261,41 @@ export function scanCandlestickCatalogue(bars:readonly CatalogueCandle[],options
           &&LT(mid.open,a.open)&&GT(mid.open,a.close)&&LT(c.open,mid.open)&&GT(c.open,mid.close)
           &&LE(lower(a),.1*range(a))&&LE(lower(mid),.1*range(mid))&&LE(l,.1*r);
         if(bullish||bearish)add(bullish?soldiers:crows,i-2,i,`Three ${bullish?"up":"down"} bodies closed successively at ${p(a.close)}, ${p(mid.close)}, and ${p(c.close)}; later opens were inside preceding bodies and the bodies did not sharply shrink. Only this completed progression is observed.`,t);
+      }
+      const gapUp=t==="up"&&up(a)&&up(mid)&&GT(mid.open,a.close)&&down(c)&&GT(c.open,mid.open)&&LT(c.open,mid.close)&&GT(c.close,a.open)&&LT(c.close,a.close);
+      const gapDown=t==="down"&&down(a)&&down(mid)&&LT(mid.open,a.close)&&up(c)&&LT(c.open,mid.open)&&GT(c.open,mid.close)&&LT(c.close,a.open)&&GT(c.close,a.close);
+      if(gapUp||gapDown)add(gapUp?gapMethodsUp:gapMethodsDown,i-2,i,`The second body gapped ${gapUp?"above":"below"} the first; the third candle opened at ${p(c.open)} inside the second body and closed at ${p(c.close)} inside the first body, filling the body gap. The fill is observed; what follows is unknown.`,t,a.close);
+      if(nearRange!=null&&up(mid)&&up(c)&&LE(Math.abs(c.open-mid.open),.05*nearRange)&&LE(Math.abs(b-mb),.25*nearRange)){
+        const sideBySideUp=t==="up"&&GT(bot(mid),top(a))&&GT(bot(c),top(a));
+        const sideBySideDown=t==="down"&&LT(top(mid),bot(a))&&LT(top(c),bot(a));
+        if(sideBySideUp||sideBySideDown)add(sideBySideUp?sideUp:sideDown,i-2,i,`Two up candles opened at ${p(mid.open)} and ${p(c.open)} (tolerance ${p(.05*nearRange)}) with bodies ${p(mb)} and ${p(b)} (tolerance ${p(.25*nearRange)}), both ${sideBySideUp?"above":"below"} the first body. Whether the gap persists is unknown.`,t,sideBySideUp?top(a):bot(a));
+      }
+    }
+    if(i>=3&&contiguous(closed,i-3,i,intervalSeconds)){
+      const a=closed[i-3]!,m1=closed[i-2]!,m2=closed[i-1]!;
+      const threeUp=up(a)&&up(m1)&&up(m2)&&down(c),threeDown=down(a)&&down(m1)&&down(m2)&&up(c);
+      const n1=threeUp||threeDown?priorMean(closed,i-3,range):null,n2=threeUp||threeDown?priorMean(closed,i-2,range):null;
+      if(n1!=null&&n2!=null){
+        const t=trendBefore(closed,i-3,intervalSeconds);
+        const opensNear=GE(m1.open,bot(a)-.25*n1)&&LE(m1.open,top(a)+.25*n1)&&GE(m2.open,bot(m1)-.25*n2)&&LE(m2.open,top(m1)+.25*n2);
+        const bullish=t==="up"&&threeUp&&opensNear&&GT(m1.close,a.close)&&GT(m2.close,m1.close)&&GT(c.open,m2.close)&&LT(c.close,a.open);
+        const bearish=t==="down"&&threeDown&&opensNear&&LT(m1.close,a.close)&&LT(m2.close,m1.close)&&LT(c.open,m2.close)&&GT(c.close,a.open);
+        if(bullish||bearish)add(bullish?strikeUp:strikeDown,i-3,i,`Three ${bullish?"up":"down"} candles closed at ${p(a.close)}, ${p(m1.close)} and ${p(m2.close)}; the fourth opened at ${p(c.open)} and closed at ${p(c.close)}, ${bullish?"below":"above"} the first open ${p(a.open)}. The observed strike implies no next move.`,t,a.open);
+      }
+    }
+    if(i>=4&&contiguous(closed,i-4,i,intervalSeconds)){
+      const a=closed[i-4]!,r1=closed[i-3]!,r2=closed[i-2]!,r3=closed[i-1]!,ab=body(a),reactions=[r1,r2,r3];
+      const risingShape=up(a)&&down(r1)&&up(c),fallingShape=down(a)&&up(r1)&&up(r2)&&up(r3)&&down(c);
+      if(risingShape||fallingShape){
+        const am=priorMean(closed,i-4,body),firstLong=am!=null&&GT(ab,am),t=trendBefore(closed,i-4,intervalSeconds);
+        const shortReactions=isShortAt(i-3)&&isShortAt(i-2)&&isShortAt(i-1);
+        const contained=reactions.every(r=>GE(bot(r),a.low)&&LE(top(r),a.high));
+        const rising=t==="up"&&risingShape&&down(r2)&&down(r3)&&firstLong&&shortReactions&&contained&&LE(r1.close,a.close)&&LT(r2.close,r1.close)&&LT(r3.close,r2.close)&&long&&GT(c.open,r3.close)&&GT(c.close,a.close);
+        const falling=t==="down"&&fallingShape&&firstLong&&shortReactions&&contained&&GE(r1.close,a.close)&&GT(r2.close,r1.close)&&GT(r3.close,r2.close)&&long&&LT(c.open,r3.close)&&LT(c.close,a.close);
+        if(rising||falling)add(rising?risingMethods:fallingMethods,i-4,i,`Three short reaction bodies stayed within the first range ${p(a.low)}-${p(a.high)}; the fifth candle closed at ${p(c.close)}, ${rising?"above":"below"} the first close ${p(a.close)}. The resumed move is observed; continuation is unknown.`,t,a.close);
+        const highest=Math.max(r1.high,r2.high,r3.high),floor=a.close-.5*ab;
+        const held=[r2,r3].every(r=>LT(bot(r),a.close)&&GT(bot(r),floor));
+        if(t==="up"&&risingShape&&firstLong&&shortReactions&&GT(r1.close,a.close)&&held&&LT(top(r2),r1.open)&&LT(top(r3),top(r2))&&GT(c.open,r3.close)&&GT(c.close,highest))add(matHold,i-4,i,`A short down body gapped above the first body; later reaction bodies held above ${p(floor)}. The fifth candle closed at ${p(c.close)}, above the highest reaction high ${p(highest)}. Continuation is unknown.`,t,a.close);
       }
     }
   }

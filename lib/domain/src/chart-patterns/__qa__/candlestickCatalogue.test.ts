@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { CANDLE_DEFINITIONS, scanCandlestickCatalogue, type CatalogueCandle } from "../candlestickCatalogue.js";
+import { CANDLE_CRITERIA_VERSION, CANDLE_DEFINITIONS, scanCandlestickCatalogue, type CatalogueCandle } from "../candlestickCatalogue.js";
 import { CANDLE_FIXTURES, observed, mirror } from "./candlestickFixtures.js";
 const scan=(bars:readonly CatalogueCandle[],asOf=bars.at(-1)!.closeTime)=>scanCandlestickCatalogue(bars,{asOf,intervalSeconds:300,eventLookback:1});
 const ids=(bars:readonly CatalogueCandle[])=>scan(bars).observations.map(o=>o.definition.id);
 const fixture=(id:string)=>CANDLE_FIXTURES.find(f=>f.id===id)!.bars.map(b=>({...b}));
 test("every advertised definition has a distinct named fixture; related variants remain grouped",()=>{
  assert.deepEqual([...CANDLE_DEFINITIONS.map(d=>d.id)].sort(),CANDLE_FIXTURES.map(f=>f.id).sort());
- assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.id)).size,62);
- assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,16);
+ assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.id)).size,71);
+ assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,19);
 });
 test("owner coverage preserves all 104 entries and never advertises a missing catalogue implementation",()=>{
  const coverage=JSON.parse(readFileSync(new URL("../../../../../docs/SMART_CHART_CANDLE_COVERAGE.json",import.meta.url),"utf8"));
@@ -17,7 +17,7 @@ test("owner coverage preserves all 104 entries and never advertises a missing ca
  const catalogue=coverage.entries.filter((r:{status:string})=>r.status==="IMPLEMENTED_EXPLICIT_ARX_VARIANT");
  assert.deepEqual(catalogue.map((r:{definitionId:string})=>r.definitionId).sort(),CANDLE_DEFINITIONS.map(d=>d.id).sort());
  const pending=coverage.entries.filter((r:{definitionId:unknown})=>r.definitionId===null);
- assert.equal(pending.length,39);
+ assert.equal(pending.length,30);
  assert.ok(pending.every((r:{status:string})=>r.status.startsWith("PENDING_")));
 });
 for(const f of CANDLE_FIXTURES){
@@ -201,7 +201,7 @@ test("public definition metadata cannot be mutated by callers",()=>{
  assert.ok(Object.isFrozen(CANDLE_DEFINITIONS));
  for(const d of CANDLE_DEFINITIONS){assert.ok(Object.isFrozen(d));assert.ok(Object.isFrozen(d.sources));}
 });
-test("v3 trend-based names do not infer context from their own formation",()=>{
+test("trend-based catalogue names do not infer context from their own formation",()=>{
  for(const f of CANDLE_FIXTURES.slice(50).filter(f=>f.id!=="kicking_by_length")){
   const bars=f.bars.map(b=>({...b}));for(let i=0;i<12;i++)bars[i]={...bars[i]!,open:101,high:103,low:100,close:102};
   assert.ok(!ids(bars).includes(f.id),f.id);
@@ -253,4 +253,83 @@ test("Kicking by Length describes the larger body, never silently the final body
  const first=scan(largerFirst).observations.find(o=>o.definition.id==="kicking_by_length")!;assert.match(first.explanation,/longer body is down/);assert.ok(ids(largerFirst).includes("bullish_kicking"));
  assert.ok(!ids(fixture("bullish_kicking")).includes("kicking_by_length"),"equal body lengths have no longer colour");
  const noGap=fixture("kicking_by_length");Object.assign(noGap.at(-1)!,{open:103,low:103,high:108,close:108});assert.ok(!ids(noGap).includes("kicking_by_length"));
+});
+test("coverage bookkeeping matches code",()=>{
+ const coverage=JSON.parse(readFileSync(new URL("../../../../../docs/SMART_CHART_CANDLE_COVERAGE.json",import.meta.url),"utf8"));
+ const entries=coverage.entries as {status:string;definitionId:string|null}[];
+ assert.equal(coverage.criteriaVersion,CANDLE_CRITERIA_VERSION);
+ assert.equal(coverage.counts.ownerNamedEntries,entries.length);
+ assert.equal(coverage.counts.newCatalogueNamedVariants,CANDLE_DEFINITIONS.length);
+ assert.equal(coverage.counts.newGeometryFamilies,new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size);
+ assert.equal(coverage.counts.includingExistingCoreNamedEntries,CANDLE_DEFINITIONS.length+entries.filter(r=>r.status==="EXISTING_CORE_IMPLEMENTATION").length);
+ assert.equal(coverage.counts.pendingNamedEntries,entries.filter(r=>r.definitionId===null).length);
+});
+/** Near misses must stay valid closed evidence, so a rejection is never just an unavailable scan. */
+const has=(bars:readonly CatalogueCandle[],id:string)=>{const result=scan(bars);assert.equal(result.status,"ready",result.reason??"");return result.observations.some(o=>o.definition.id===id);};
+/** Mutate a bullish-side fixture, then check both it and its mirrored bearish side. */
+function bothSides(upId:string,downId:string,mutate:(b:CatalogueCandle[])=>void,expected:boolean,label:string){
+ const b=fixture(upId);mutate(b);
+ assert.equal(has(b,upId),expected,`${upId}: ${label}`);
+ assert.equal(has(mirror(b),downId),expected,`${downId} (mirror): ${label}`);
+}
+test("Rising/Falling Three Methods need contained reactions and a strict final close",()=>{
+ const pair=["rising_three_methods","falling_three_methods"] as const;
+ bothSides(...pair,b=>{Object.assign(b.at(-2)!,{open:102.1,high:102.2,low:101.6,close:101.75});},false,"reaction body below the first low");
+ bothSides(...pair,b=>{Object.assign(b.at(-2)!,{open:102.1,high:102.2,low:101.6,close:101.85});},true,"control: reaction body inside the first range");
+ bothSides(...pair,b=>{b.at(-1)!.close=b.at(-5)!.close;},false,"final close equals the first close");
+ bothSides(...pair,b=>{Object.assign(b.at(-4)!,{open:105.1,close:105.6});},false,"a reaction with the first candle's colour");
+ bothSides(...pair,b=>{b.at(-3)!.open=105.5;b.at(-3)!.high=105.6;},false,"a reaction body that is not short");
+});
+test("Three-Line Strike needs strict engulfment",()=>{
+ const pair=["bullish_three_line_strike","bearish_three_line_strike"] as const;
+ bothSides(...pair,b=>{b.at(-1)!.close=b.at(-4)!.open;},false,"strike close equals the first open");
+ bothSides(...pair,b=>{b.at(-1)!.open=b.at(-2)!.close;},false,"strike open equals the third close");
+ bothSides(...pair,b=>{b.at(-3)!.open=104.7;},false,"second open beyond the first body plus .25 of the mean range");
+ bothSides(...pair,b=>{b.at(-3)!.open=104.6;},true,"control: second open inside the near tolerance");
+ bothSides(...pair,b=>{b.at(-2)!.close=b.at(-3)!.close;},false,"closes do not progress");
+});
+test("Gap Three Methods needs a body gap, opposite third colour and a fill into the first body",()=>{
+ const pair=["upside_gap_three_methods","downside_gap_three_methods"] as const;
+ bothSides(...pair,b=>{b.at(-2)!.open=b.at(-3)!.close;b.at(-2)!.low=104.8;},false,"no body gap");
+ bothSides(...pair,b=>{Object.assign(b.at(-1)!,{open:103.5,close:107.5});},false,"third candle has the second candle's colour");
+ bothSides(...pair,b=>{b.at(-1)!.open=b.at(-2)!.close;b.at(-1)!.high=b.at(-2)!.close+.2;},false,"third open touches the second close");
+ bothSides(...pair,b=>{b.at(-1)!.close=105.5;},false,"third close stays inside the gap");
+ assert.ok(!has(fixture("upside_tasuki_gap"),"upside_gap_three_methods"));
+ assert.ok(!has(fixture("upside_gap_three_methods"),"upside_tasuki_gap"));
+ assert.ok(!has(fixture("downside_tasuki_gap"),"downside_gap_three_methods"));
+ assert.ok(!has(fixture("downside_gap_three_methods"),"downside_tasuki_gap"));
+});
+test("Side-by-Side White Lines need near-equal opens, similar bodies and two white candles",()=>{
+ const upId="upside_gap_side_by_side_white_lines",downId="downside_gap_side_by_side_white_lines";
+ const open=fixture(upId);open.at(-1)!.open=open.at(-2)!.open+.5;assert.ok(!has(open,upId));
+ const near=fixture(upId);near.at(-1)!.open=near.at(-2)!.open+.1;assert.ok(has(near,upId),"control: opens within .05 of the mean range");
+ const black=fixture(upId);Object.assign(black.at(-1)!,{open:107.1,close:105.55});assert.ok(!has(black,upId));
+ const unequal=fixture(upId);unequal.at(-1)!.close=105.9;assert.ok(!has(unequal,upId),"body difference 1.15 exceeds .25 of the mean range");
+ const down=fixture(downId),[mid,last]=[down.at(-2)!,down.at(-1)!];
+ assert.ok(mid.close>mid.open&&last.close>last.open,"downside variant keeps two white candles");
+ const touching=fixture(downId);Object.assign(touching.at(-2)!,{close:99.45,high:99.5});Object.assign(touching.at(-1)!,{close:99.5,high:99.6});
+ assert.ok(!has(touching,downId),"third body touches the first body");
+ const below=fixture(downId);Object.assign(below.at(-2)!,{close:99.45,high:99.5});Object.assign(below.at(-1)!,{close:99.45,high:99.6});
+ assert.ok(has(below,downId),"control: same lengths with the gap intact");
+});
+test("Mat Hold and Rising Three Methods never alias",()=>{
+ assert.ok(!has(fixture("mat_hold"),"rising_three_methods"));
+ assert.ok(!has(fixture("rising_three_methods"),"mat_hold"));
+ const gapped=fixture("rising_three_methods");Object.assign(gapped.at(-4)!,{open:106.15,high:106.2,low:106,close:106.05});
+ assert.ok(!has(gapped,"rising_three_methods"),"a first reaction gapped above the first body is not Rising Three Methods");
+ const deep=fixture("mat_hold");Object.assign(deep.at(-2)!,{open:104.4,high:104.5,low:103.7,close:103.9});
+ assert.ok(!has(deep,"mat_hold"),"reaction penetrates more than half the first body");
+ const noClear=fixture("mat_hold");noClear.at(-1)!.close=107;
+ assert.ok(!has(noClear,"mat_hold"),"final close equals the highest reaction high");
+ const longReaction=fixture("mat_hold");Object.assign(longReaction.at(-4)!,{open:107.3,high:107.5});
+ assert.ok(!has(longReaction,"mat_hold"),"first reaction body is not short");
+});
+test("4- and 5-candle windows refuse internal gaps and short histories",()=>{
+ for(const [id,size] of [["bullish_three_line_strike",4],["bearish_three_line_strike",4],["rising_three_methods",5],["falling_three_methods",5],["mat_hold",5]] as const){
+  const bars=fixture(id);for(const b of bars.slice(-2)){b.time+=300;b.closeTime+=300;}
+  assert.ok(!has(bars,id),`${id}: internal gap`);
+  const tail=observed(fixture(id).slice(-size).map(({open,high,low,close})=>({open,high,low,close})));
+  const result=scanCandlestickCatalogue(tail,{asOf:tail.at(-1)!.closeTime,intervalSeconds:300});
+  assert.equal(result.status,"ready");assert.ok(!result.observations.some(o=>o.definition.id===id),`${id}: no prior history`);
+ }
 });

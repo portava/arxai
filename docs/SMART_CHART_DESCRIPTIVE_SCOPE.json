@@ -150,9 +150,9 @@
     }
   ],
   "candlestickCoverage": {
-    "implementedDefinitions": 62,
-    "ownerNamesCovered": 65,
+    "implementedDefinitions": 71,
+    "ownerNamesCovered": 74,
     "ownerNamesTotal": 104,
-    "pendingOwnerNames": 39
+    "pendingOwnerNames": 30
   }
 }
