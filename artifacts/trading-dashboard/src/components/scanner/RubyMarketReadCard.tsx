@@ -9,7 +9,7 @@ import { TruthEvidenceClasses } from "@/components/scanner/TruthEvidenceClasses"
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
-import { buildReasoningFromMarketRead } from "@/lib/rubyReasoningBlock";
+import { buildReasoningFromMarketRead, NEWS_UNAVAILABLE_NOTE } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { useGetMeMarketEdge, getGetMeMarketEdgeQueryKey } from "@workspace/api-client-react";
 import type {
@@ -95,6 +95,52 @@ function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
   const rem = s % 60;
   return `updated ${m}m ${rem}s ago`;
 }
+// The Market Read header's feed row, as one ordered downgrade (client can only
+// lower the server's word, never raise it):
+//   1. the shared gate is downgraded / the read expired → "Feed not confirmed";
+//   2. no data time from the market-truth snapshot → "Feed time unconfirmed";
+//   3. the snapshot's data state isn't LIVE_CONFIRMED → "Live (unconfirmed)";
+//   4. otherwise the signal's own word + "updated Xs ago".
+// `feedDataNote` is the matching Feed/Data line for the reasoning block (null
+// when the feed is confirmed or step 1 already explains it).
+function resolveFeedRow(input: {
+  signal: RubyMarketEdgeSignal | null;
+  downgraded: boolean;
+  dataUpdatedIso: string | null;
+  snapshotState: string | null;
+  nowTs: number;
+}): { text: string; tone: string; feedDataNote: string | null } {
+  const { signal, downgraded, dataUpdatedIso, snapshotState, nowTs } = input;
+  if (!signal) return { text: "", tone: "text-txt-muted", feedDataNote: null };
+  const f = freshnessLabel(signal);
+  if (downgraded) {
+    const age = dataUpdatedIso ? ` · ${ageLabel(dataUpdatedIso, nowTs)}` : "";
+    return { text: `Feed not confirmed${age}`, tone: "text-warning", feedDataNote: null };
+  }
+  if (dataUpdatedIso == null) {
+    return {
+      text: "Feed time unconfirmed — market-truth snapshot unavailable",
+      tone: "text-warning",
+      feedDataNote:
+        "Feed time unconfirmed — the market-truth snapshot is unavailable, so the live feed can't be confirmed here.",
+    };
+  }
+  const age = ageLabel(dataUpdatedIso, nowTs);
+  const state = String(snapshotState ?? "").toUpperCase();
+  if (state !== "LIVE_CONFIRMED") {
+    const word = f.text === "Live feed" ? "Live (unconfirmed)" : f.text;
+    const stateWord = state ? state.toLowerCase() : "unknown";
+    return {
+      text: `${word} · ${age}`,
+      tone: "text-warning",
+      feedDataNote: `Live feed not confirmed — the market-truth snapshot reads ${stateWord}.`,
+    };
+  }
+  const tone = FRESHNESS_TONE[String(signal.freshness ?? "").toUpperCase()] ?? f.tone;
+  // Never paint a non-live word green just because the signal is young.
+  return { text: `${f.text} · ${age}`, tone: f.text === "Live feed" ? tone : f.tone, feedDataNote: null };
+}
+
 // The per-symbol Truth Snapshot's news state, as the card states it.
 type NewsCheck = "loading" | "unavailable" | "unchecked" | "no_calendar" | "ok";
 function newsCheckState(
@@ -232,6 +278,16 @@ export function RubyMarketReadCard({
     ["EXPIRED", "STALE"].includes(String(signal.freshness ?? "").toUpperCase()) ||
     ["EXPIRED", "INVALID"].includes(String(signal.lifecycleStage ?? "").toUpperCase()));
   const downgraded = gate.downgraded || readExpired;
+  // The header's feed word is the SIGNAL's build-time dataSource (fetched once,
+  // never polled); it may only be shown as live when the market-truth snapshot
+  // on this page confirms a current data time. Ordered, downgrade-only.
+  const feedRow = resolveFeedRow({
+    signal,
+    downgraded,
+    dataUpdatedIso,
+    snapshotState: truthData?.state ?? null,
+    nowTs,
+  });
   const level = gate.level;
   const reason = readExpired && !gate.downgraded
     ? `This ${name} read has expired — refresh for a current read.`
@@ -261,9 +317,10 @@ export function RubyMarketReadCard({
             // unavailable / unchecked / no-calendar label prints the shared
             // NEWS_UNAVAILABLE_NOTE in the Risk row instead.
             newsRiskLabel: newsCheck === "ok" ? news?.riskLabel ?? null : null,
+            feedUnconfirmedReason: feedRow.feedDataNote,
           }, name)
         : null,
-    [explanation, signal, downgraded, level, reason, news?.riskLabel, newsCheck, name],
+    [explanation, signal, downgraded, level, reason, news?.riskLabel, newsCheck, feedRow.feedDataNote, name],
   );
 
   return (
@@ -344,18 +401,12 @@ export function RubyMarketReadCard({
                   <span className="text-sm font-semibold text-foreground" data-testid="ruby-market-read-headline">
                     {explanation.headline}
                   </span>
-                  {(() => {
-                    const f = freshnessLabel(signal);
-                    const tone = FRESHNESS_TONE[String(signal.freshness ?? "").toUpperCase()] ?? f.tone;
-                    return (
-                      <span
-                        className={`ml-auto flex items-center gap-1 text-xs ${tone}`}
-                        data-testid="ruby-market-read-freshness"
-                      >
-                        <Clock className="h-3 w-3" /> {f.text} · {ageLabel(dataUpdatedIso, nowTs)}
-                      </span>
-                    );
-                  })()}
+                  <span
+                    className={`ml-auto flex items-center gap-1 text-xs ${feedRow.tone}`}
+                    data-testid="ruby-market-read-freshness"
+                  >
+                    <Clock className="h-3 w-3" /> {feedRow.text}
+                  </span>
                 </div>
                 {signal.late?.isLate && (
                   <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-xs text-warning" data-testid="ruby-market-read-late">
@@ -426,7 +477,11 @@ export function RubyMarketReadCard({
               <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-news">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">News &amp; economic impact</div>
                 <p className="mt-0.5 text-sm text-txt-secondary">
-                  {news ? news.riskLabel : "Event risk is loading…"}
+                  {newsCheck === "loading"
+                    ? "Checking event risk…"
+                    : news
+                      ? news.riskLabel
+                      : NEWS_UNAVAILABLE_NOTE}
                 </p>
               </div>
 

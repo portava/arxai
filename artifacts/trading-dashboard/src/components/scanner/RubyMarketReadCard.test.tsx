@@ -192,7 +192,8 @@ beforeEach(() => {
       highImpactWindowActive: false,
       disclaimer: null,
     },
-    data: { lastTickAt: recentIso, lastCandleAt: recentIso },
+    data: { state: "LIVE_CONFIRMED", lastTickAt: recentIso, lastCandleAt: recentIso },
+    isLoading: false,
   });
   window.localStorage.clear();
 });
@@ -371,5 +372,73 @@ describe("RubyMarketReadCard — 'still needs' includes the news gap, in the tru
       { symbol: "V75", displayName: "V75", assetClass: "synthetic" },
     );
     expect(text).not.toContain("scheduled-news check");
+  });
+});
+
+// Owner screenshot 2026-10-27 [H]: the Market Read header said "⏱ Live feed · —"
+// (the signal's once-fetched LIVE_FEED word with NO data time) beside a news tile
+// stuck on "Event risk is loading…" — the market-truth snapshot that anchors both
+// had been withdrawn.
+describe("RubyMarketReadCard — the feed row never says 'Live feed' without a confirmed data time", () => {
+  const recent = () => new Date(Date.now() - 4000).toISOString();
+  function renderCard() {
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    return screen.getByTestId("ruby-market-read-freshness");
+  }
+
+  it("(i) snapshot withdrawn: 'Feed time unconfirmed', warning tone; news tile not 'loading'; Feed/Data agrees", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, data: null, isLoading: false });
+    const row = renderCard();
+    expect(row.textContent).not.toContain("Live feed");
+    expect(row.textContent).toContain("Feed time unconfirmed");
+    expect(row.textContent).not.toContain("· —");
+    expect(row.className).toContain("text-warning");
+    expect(row.className).not.toContain("text-success");
+    const tile = screen.getByTestId("ruby-market-read-news").textContent ?? "";
+    expect(tile).not.toMatch(/loading/i);
+    expect(tile).toContain("event risk not assessed");
+    const reasoning = screen.getByTestId("ruby-market-read-reasoning").textContent ?? "";
+    expect(reasoning).not.toContain("Live feed confirmed.");
+    expect(reasoning).toContain("Feed time unconfirmed");
+  });
+
+  it("(ii) snapshot still loading: the news tile says it is checking", () => {
+    mockUseSymbolTruth.mockReturnValue({ news: null, data: null, isLoading: true });
+    renderCard();
+    expect(screen.getByTestId("ruby-market-read-news").textContent).toContain("Checking event risk");
+  });
+
+  it("(iii) shared gate downgraded, timestamps present: never 'Live feed'", () => {
+    mockUseScannerReadGate.mockReturnValue({
+      truth: null,
+      level: "limited",
+      isFull: false,
+      downgraded: true,
+      reason: "Delayed market data.",
+    });
+    const row = renderCard();
+    expect(row.textContent).not.toContain("Live feed");
+    expect(row.textContent).toContain("Feed not confirmed");
+  });
+
+  it("(iv) snapshot STALE with a recent tick: 'Live (unconfirmed)' in warning tone", () => {
+    mockUseSymbolTruth.mockReturnValue({
+      news: null,
+      data: { state: "STALE", lastTickAt: recent(), lastCandleAt: recent() },
+      isLoading: false,
+    });
+    const row = renderCard();
+    expect(row.textContent).toMatch(/Live \(unconfirmed\) · updated \d+s ago/);
+    expect(row.className).toContain("text-warning");
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain(
+      "the market-truth snapshot reads stale",
+    );
+  });
+
+  it("(v) control: confirmed snapshot keeps 'Live feed · updated Ns ago'", () => {
+    const row = renderCard();
+    expect(row.textContent).toMatch(/Live feed · updated \d+s ago/);
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain("Live feed confirmed.");
   });
 });
