@@ -1375,12 +1375,15 @@ export function ARXNativeChart({
             <CandlestickChart className="h-6 w-6 text-muted-foreground" />
             <p className="text-sm font-semibold">
               {feedStatus?.quality === "unavailable"
-                ? "Chart data is syncing"
+                ? "No live feed available"
                 : "No native candles available"}
             </p>
+            {/* The server's own explanation wins; the fallback names exactly
+                what was asked for and that no provider answered. */}
             <p className="max-w-md text-xs text-muted-foreground">
               {feedStatus?.quality === "unavailable"
-                ? "Waiting for a live feed to connect. Try again in a moment or use TradingView for reference."
+                ? feedStatus.warning?.trim() || warning?.trim() ||
+                  `No data provider could serve ${resolvedSymbol} on ${timeframe} right now. Try a different symbol or use TradingView for reference.`
                 : warning ||
                   `No native candles available for ${resolvedSymbol} on ${timeframe} right now.`}
             </p>

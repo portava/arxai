@@ -13,6 +13,8 @@
 //     a "Lock ON/OFF" toggle that locked nothing.
 //   - a LIVE last-price line, "Clean · AI" chip and clean strip kept on screen
 //     after the chart's own candle refresh failed (frozen cached response).
+//   - "Chart data is syncing — waiting for a live feed to connect" when the
+//     router had exhausted every provider (the server's own message dropped).
 //
 // The harness renders the REAL ARXNativeChart with the candle query, the
 // chart engine and the scanner-truth hook replaced by controllable stubs.
@@ -336,5 +338,25 @@ describe("a failed candle refresh withdraws every live claim", () => {
     expect(screen.getByTestId("arx-feed-badge").getAttribute("data-severity")).not.toBe("clean");
     expect(screen.getByTestId("arx-native-refresh-failed").textContent).toMatch(/refresh failed/i);
     expect((onChartContextChange.mock.calls.at(-1)?.[0] as { aiUsable: boolean }).aiUsable).toBe(false);
+  });
+});
+
+describe("an unavailable feed's empty state repeats what the server said", () => {
+  const SERVER = "No live feed is available for this symbol right now. Try a different symbol.";
+
+  it("shows the server warning, not optimistic syncing copy", () => {
+    setResponse(emptyResponse({ quality: "unavailable", source: null, warning: SERVER }));
+    renderChart();
+    const empty = screen.getByTestId("arx-native-empty").textContent ?? "";
+    expect(empty).toContain(SERVER);
+    expect(empty).not.toMatch(/syncing|waiting for a live feed/i);
+  });
+
+  it("names the symbol and timeframe plainly when the server gave no message", () => {
+    setResponse(emptyResponse({ quality: "unavailable", source: null, warning: null }));
+    renderChart();
+    const empty = screen.getByTestId("arx-native-empty").textContent ?? "";
+    expect(empty).not.toMatch(/syncing|waiting for a live feed/i);
+    expect(empty).toContain(`${SYMBOL} on ${TF}`);
   });
 });
