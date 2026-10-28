@@ -1885,15 +1885,27 @@ function publishScanSnapshot(snapshot: ScannerSnapshot): void {
     summary: `Scanned [${universe}] ${syms.length}×${tfs.length}=${out.length}; top ${out[0]?.symbol}/${out[0]?.timeframe} score ${out[0]?.opportunity.score}`,
     payload: { count: out.length, universe, top: out[0] ?? null },
   });
-  // Surface a HOT_SETUP alert for elite finds (in-memory only).
+  raiseScanAlerts(out);
+}
+
+/**
+ * Raise the shared scanner alerts for the top rows of one published scan
+ * (in-memory only). Each alert carries the data source of the row behind it.
+ * A HOT_SETUP badge ignores the row's feed, but the final-read truth cap
+ * floors every non-live row (simulated, delayed, awaiting a feed) to LOW /
+ * WAIT, so only a LIVE_FEED row is announced as a "HOT setup".
+ */
+export function raiseScanAlerts(out: readonly ScannerOpportunity[]): void {
   for (const o of out.slice(0, 3)) {
     if (o.statusBadge === "HOT_SETUP") {
+      if (o.dataSource !== "LIVE_FEED") continue;
       pushAlert({
         severity: "info", source: "SCANNER",
         symbol: o.symbol, timeframe: o.timeframe,
         message: `HOT setup ${o.symbol} ${o.timeframe}: ${o.recommendedAction} (score ${o.opportunity.score})`,
         reason: o.reasonForTrade,
         recommendedAction: `Send ${o.symbol} to AI assist or backtest before any live intent.`,
+        dataSource: o.dataSource,
       });
     } else if (o.statusBadge === "REJECTED_BY_RISK" || o.statusBadge === "SPREAD_TOO_HIGH") {
       pushAlert({
@@ -1902,6 +1914,7 @@ function publishScanSnapshot(snapshot: ScannerSnapshot): void {
         message: `${o.symbol} ${o.timeframe} rejected: ${o.statusBadge}`,
         reason: o.reasonToAvoid || "Risk filter triggered.",
         recommendedAction: "Skip this symbol for now.",
+        dataSource: o.dataSource,
       });
     }
   }
@@ -2023,6 +2036,8 @@ type Alert = {
   message: string; reason: string;
   recommendedAction: string;
   source: "SCANNER" | "AI" | "RISK" | "SYSTEM";
+  /** ADDITIVE, optional: the data source of the scan row that raised this alert; absent when not recorded. */
+  dataSource?: ScannerOpportunity["dataSource"];
   createdAt: string;
   acknowledgedAt?: string | null;
   dismissedAt?: string | null;

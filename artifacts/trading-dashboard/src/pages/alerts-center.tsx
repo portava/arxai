@@ -11,7 +11,31 @@ type Alert = {
   message: string; reason: string; recommendedAction: string;
   source: string; createdAt: string;
   acknowledgedAt?: string | null;
+  /** Data source of the scan row that raised the alert; absent when the server did not record it. */
+  dataSource?: string | null;
 };
+
+/**
+ * What the scan behind an alert ran on, in plain words. Only a live-feed scan
+ * can back an open recommendation; a simulated, delayed or awaiting-feed scan
+ * is analysis only (the scanner's own final read floors those rows to WAIT).
+ */
+export function alertDataSource(ds: string | null | undefined): { text: string; nonLive: boolean } {
+  switch (ds) {
+    case "LIVE_FEED":
+      return { text: "Scan data: live feed.", nonLive: false };
+    case "LIVE_DELAYED":
+    case "STALE_FEED":
+      return { text: "Scan data: delayed feed. The read used the last available candles, not current prices, so it is analysis only.", nonLive: true };
+    case "SIMULATOR":
+      return { text: "Scan data: simulated data, not a live feed. Analysis only.", nonLive: true };
+    case "AWAITING_FEED":
+    case "HISTORY_READY_AWAITING_LIVE_TICK":
+      return { text: "Scan data: no live feed yet. Analysis only.", nonLive: true };
+    default:
+      return { text: "The data source of the scan behind this alert was not recorded.", nonLive: false };
+  }
+}
 
 const SEV: Record<string, string> = {
   info: "bg-blue-500/20 text-blue-400 border-blue-500/40",
@@ -156,6 +180,7 @@ export default function AlertsCenter() {
         : <div className="space-y-2">
             {alerts.map((a) => {
               const { ageMs, superseded } = alertAge(a, Date.now());
+              const feed = alertDataSource(a.dataSource);
               return (
               <Card key={a.alertId} className={a.acknowledgedAt || superseded ? "opacity-60" : ""} data-testid={`alert-${a.alertId}`}>
                 <CardHeader className="pb-2">
@@ -171,13 +196,14 @@ export default function AlertsCenter() {
                 </CardHeader>
                 <CardContent className="text-xs space-y-2">
                   <p className="text-muted-foreground">{a.reason}</p>
+                  <p className={feed.nonLive ? "text-amber-400" : "text-muted-foreground"} data-testid="alert-data-source">{feed.text}</p>
                   {superseded ? (
                     <p className="text-amber-400" data-testid="alert-superseded">
                       {ageMs == null
                         ? "When this alert was raised is unknown, so it cannot be treated as current. Re-check this market in the scanner before acting on it."
                         : `Not re-checked for ${fmtAge(ageMs)}, longer than ${a.timeframe && TF_MINUTES[a.timeframe.toUpperCase()] ? `one ${a.timeframe} bar` : `${DEFAULT_SUPERSEDE_MIN} minutes`}, so it may no longer hold. Re-check this market in the scanner before acting on it.`}
                     </p>
-                  ) : (
+                  ) : feed.nonLive ? null : (
                     <p>Recommended: <span className="font-medium">{a.recommendedAction}</span></p>
                   )}
                   {!a.acknowledgedAt && (
