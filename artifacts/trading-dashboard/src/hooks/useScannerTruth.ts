@@ -94,6 +94,9 @@ export function useScannerTruth(
   const env = mode.envelope;
   const truthMode: ScannerTruthMode = {
     isLoading: mode.isLoading,
+    // Only an error with NO envelope leaves the flags unmeasured; a failed
+    // refetch keeps the last envelope, whose flags are still a real read.
+    isError: mode.isError && env == null,
     isDemo: mode.isDemo,
     isLiveShared: mode.isLiveShared,
     isPaper: mode.isPaper,
