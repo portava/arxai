@@ -99,3 +99,56 @@ describe("My Performance: Risk Governor copy says what the rules do", () => {
     expect(screen.getByTestId("risk-governor-scope").textContent).toMatch(/demo trades on this page/i);
   });
 });
+
+describe("My Performance: one failed endpoint is not an empty account", () => {
+  it("shows the trades when an unrelated endpoint fails, and says which section could not be loaded", async () => {
+    stubFetch(okBodies({ "/api/me/coaching-plan": 500 }));
+    render(<MyPerformancePage />);
+    await waitFor(() => expect(screen.getByText("EURUSD")).toBeTruthy());
+    expect(screen.queryByText("No demo trades yet")).toBeNull();
+    selectTab(/Coaching/);
+    await waitFor(() => expect(screen.getByTestId("load-error-coaching").textContent).toMatch(/could not be loaded \(HTTP 500\)/));
+    expect(screen.queryByText(/Your coaching plan will improve/)).toBeNull();
+  });
+
+  it("a failed trades read says so instead of 'No demo trades yet'", async () => {
+    stubFetch(okBodies({ "/api/me/paper-trades": 500 }));
+    render(<MyPerformancePage />);
+    await waitFor(() => expect(screen.getByTestId("load-error-trades").textContent).toMatch(/could not be loaded \(HTTP 500\)/));
+    expect(screen.queryByText("No demo trades yet")).toBeNull();
+    expect(screen.queryByText("Create your first demo trade")).toBeNull();
+    expect(screen.getByRole("tab", { name: /^Trades/ }).textContent).not.toMatch(/\(0\)/);
+  });
+
+  it("failed journal, calendar, insights and playbook reads are not shown as empty", async () => {
+    stubFetch(okBodies({
+      "/api/me/trade-journal": 500, "/api/me/performance-calendar": 500, "/api/me/performance-summary": 500,
+      "/api/me/performance-insights": 500, "/api/me/playbooks": 500,
+    }));
+    render(<MyPerformancePage />);
+    await waitFor(() => expect(screen.getByText("EURUSD")).toBeTruthy());
+    selectTab(/Journal/);
+    await waitFor(() => expect(screen.getByTestId("load-error-journal")).toBeTruthy());
+    expect(screen.queryByText("No journal entries yet")).toBeNull();
+    selectTab(/Performance/);
+    await waitFor(() => expect(screen.getByTestId("load-error-calendar")).toBeTruthy());
+    expect(screen.getByTestId("load-error-summary")).toBeTruthy();
+    expect(screen.queryByText(/No fake data/)).toBeNull();
+    selectTab(/Insights/);
+    await waitFor(() => expect(screen.getByTestId("load-error-insights")).toBeTruthy());
+    expect(screen.queryByText("No AI insights yet")).toBeNull();
+    selectTab(/Playbooks/);
+    await waitFor(() => expect(screen.getByTestId("load-error-playbooks")).toBeTruthy());
+    expect(screen.queryByText("No playbooks yet")).toBeNull();
+  });
+
+  it("failed risk status and risk events reads are not a quiet governor", async () => {
+    stubFetch(okBodies({ "/api/me/risk/status": 500, "/api/me/risk/events": 500 }));
+    render(<MyPerformancePage />);
+    await waitFor(() => expect(screen.getByText("EURUSD")).toBeTruthy());
+    selectTab(/Risk Governor/);
+    await waitFor(() => expect(screen.getByTestId("load-error-riskEvents")).toBeTruthy());
+    expect(screen.getByTestId("load-error-riskStatus").textContent).toMatch(/could not be loaded/);
+    expect(screen.queryByText(/your governor is quiet/)).toBeNull();
+  });
+});

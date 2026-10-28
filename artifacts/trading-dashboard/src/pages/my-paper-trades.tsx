@@ -118,6 +118,27 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   return r.json();
 }
 
+/** The independent reads behind this page; one failing never blanks the others. */
+type LoadKey = "trades" | "journal" | "calendar" | "summary" | "reviews" | "insights" | "coaching" | "playbooks" | "riskStatus" | "riskEvents";
+const LOAD_LABEL: Record<LoadKey, string> = {
+  trades: "Your demo trades", journal: "Your journal", calendar: "Your performance calendar",
+  summary: "Your performance summary", reviews: "Your AI trade reviews", insights: "Your performance insights",
+  coaching: "Your coaching plan", playbooks: "Your playbooks", riskStatus: "Your risk status",
+  riskEvents: "Your risk events",
+};
+
+/** A read that failed: says so, instead of the section's empty state. */
+function LoadFailed({ k, error, extra }: { k: LoadKey; error: string; extra?: string }) {
+  return (
+    <Card data-testid={`load-error-${k}`} className="border-destructive/40">
+      <CardContent className="p-4 text-sm flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0"/>
+        <span>{LOAD_LABEL[k]} could not be loaded ({error}).{extra ? ` ${extra}` : ""}</span>
+      </CardContent>
+    </Card>
+  );
+}
+
 function StatusBadge({ s }: { s: string }) {
   const map: Record<string, string> = {
     planned: "bg-slate-700", open: "bg-blue-600",
@@ -147,6 +168,7 @@ export default function MyPaperTradesPage() {
   const [savingRisk, setSavingRisk] = useState(false);
   const [riskDraft, setRiskDraft] = useState<Partial<RiskSettings> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState<Partial<Record<LoadKey, string>>>({});
   const [showNew, setShowNew] = useState(false);
   const [showJournal, setShowJournal] = useState(false);
   const [closingId, setClosingId] = useState<number | null>(null);
@@ -158,33 +180,45 @@ export default function MyPaperTradesPage() {
   // journal form
   const [j, setJ] = useState({ title: "", body: "", paperTradeId: "", mood: "", disciplineScore: "", executionScore: "", lessonLearned: "" });
 
+  // Each read stands alone: a failed one clears its own section and is shown
+  // as "could not be loaded", never as an empty account, and never blanks the
+  // sections that did load.
   async function load() {
     setLoading(true);
-    try {
-      const [t, jr, cal, sum, rv, ins, co, pb, rst, rev] = await Promise.all([
-        api<{ trades: PaperTrade[] }>("GET", "/me/paper-trades"),
-        api<{ entries: Journal[] }>("GET", "/me/trade-journal"),
-        api<{ days: Day[] }>("GET", "/me/performance-calendar"),
-        api<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean }>("GET", "/me/performance-summary"),
-        api<{ reviews: Review[] }>("GET", "/me/ai-trade-reviews"),
-        api<Insights>("GET", "/me/performance-insights"),
-        api<Coaching>("GET", "/me/coaching-plan"),
-        api<{ playbooks: Playbook[] }>("GET", "/me/playbooks"),
-        api<RiskStatus>("GET", "/me/risk/status").catch(() => null),
-        api<{ events: RiskEvent[] }>("GET", "/me/risk/events").catch(() => ({ events: [] as RiskEvent[] })),
-      ]);
-      setTrades(t.trades); setJournal(jr.entries); setDays(cal.days); setSummary(sum);
-      const rmap: Record<number, Review> = {};
-      for (const r of rv.reviews) rmap[r.paperTradeId] = r;
-      setReviews(rmap); setInsights(ins); setCoaching(co);
-      if (rst) { setRiskStatus(rst); setRiskDraft(rst.settings); }
-      setRiskEvents(rev.events);
-      setPlaybooks(pb.playbooks);
-      if (pb.playbooks[0]) setActivePbId((cur) => cur ?? pb.playbooks[0]!.id);
-    } catch (e) {
-      toast({ title: "Load failed", description: String(e), variant: "destructive" });
-    } finally { setLoading(false); }
+    const errs: Partial<Record<LoadKey, string>> = {};
+    const read = async <T,>(k: LoadKey, path: string): Promise<T | null> => {
+      try { return await api<T>("GET", path); }
+      catch (e) { errs[k] = e instanceof Error ? e.message : String(e); return null; }
+    };
+    const [t, jr, cal, sum, rv, ins, co, pb, rst, rev] = await Promise.all([
+      read<{ trades: PaperTrade[] }>("trades", "/me/paper-trades"),
+      read<{ entries: Journal[] }>("journal", "/me/trade-journal"),
+      read<{ days: Day[] }>("calendar", "/me/performance-calendar"),
+      read<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean }>("summary", "/me/performance-summary"),
+      read<{ reviews: Review[] }>("reviews", "/me/ai-trade-reviews"),
+      read<Insights>("insights", "/me/performance-insights"),
+      read<Coaching>("coaching", "/me/coaching-plan"),
+      read<{ playbooks: Playbook[] }>("playbooks", "/me/playbooks"),
+      read<RiskStatus>("riskStatus", "/me/risk/status"),
+      read<{ events: RiskEvent[] }>("riskEvents", "/me/risk/events"),
+    ]);
+    setTrades(t?.trades ?? []); setJournal(jr?.entries ?? []); setDays(cal?.days ?? []); setSummary(sum);
+    const rmap: Record<number, Review> = {};
+    for (const r of rv?.reviews ?? []) rmap[r.paperTradeId] = r;
+    setReviews(rmap); setInsights(ins); setCoaching(co);
+    setRiskStatus(rst); setRiskDraft(rst ? rst.settings : null);
+    setRiskEvents(rev?.events ?? []);
+    setPlaybooks(pb?.playbooks ?? []);
+    if (pb?.playbooks[0]) setActivePbId((cur) => cur ?? pb.playbooks[0]!.id);
+    setLoadErrors(errs);
+    setLoading(false);
+    const failed = Object.keys(errs) as LoadKey[];
+    if (failed.length) {
+      toast({ title: "Some sections could not be loaded", description: failed.map((k) => `${LOAD_LABEL[k]}: ${errs[k]}`).join(" · "), variant: "destructive" });
+    }
   }
+  /** Tab count, or nothing while loading or when the read failed (never a fake 0). */
+  const countLabel = (k: LoadKey, n: number) => (loading || loadErrors[k] ? "" : ` (${n})`);
   useEffect(() => { load(); }, []);
 
   async function createTrade() {
@@ -302,12 +336,12 @@ export default function MyPaperTradesPage() {
 
       <Tabs defaultValue="trades">
         <TabsList>
-          <TabsTrigger value="trades">Trades ({trades.length})</TabsTrigger>
-          <TabsTrigger value="journal">Journal ({journal.length})</TabsTrigger>
+          <TabsTrigger value="trades">Trades{countLabel("trades", trades.length)}</TabsTrigger>
+          <TabsTrigger value="journal">Journal{countLabel("journal", journal.length)}</TabsTrigger>
           <TabsTrigger value="calendar">Performance</TabsTrigger>
           <TabsTrigger value="insights"><Sparkles className="h-3 w-3 mr-1"/>Insights</TabsTrigger>
           <TabsTrigger value="coaching"><GraduationCap className="h-3 w-3 mr-1"/>Coaching</TabsTrigger>
-          <TabsTrigger value="playbooks"><BookOpen className="h-3 w-3 mr-1"/>Playbooks ({playbooks.length})</TabsTrigger>
+          <TabsTrigger value="playbooks"><BookOpen className="h-3 w-3 mr-1"/>Playbooks{countLabel("playbooks", playbooks.length)}</TabsTrigger>
           <TabsTrigger value="precheck"><ListChecks className="h-3 w-3 mr-1"/>Pre-Trade Check</TabsTrigger>
           <TabsTrigger value="risk"><ShieldAlert className="h-3 w-3 mr-1"/>Risk Governor{riskStatus?.cooldown.active ? " · cooldown" : ""}</TabsTrigger>
         </TabsList>
@@ -323,6 +357,7 @@ export default function MyPaperTradesPage() {
               The today figures below count only the demo trades on this page, not your broker trades.
             </AlertDescription>
           </Alert>
+          {loadErrors.riskStatus && <LoadFailed k="riskStatus" error={loadErrors.riskStatus} extra="Your saved rules cannot be shown or edited until it loads."/>}
           {riskStatus && (
             <div className="grid gap-3 md:grid-cols-4">
               <Card><CardHeader className="pb-1"><CardDescription>Today P&amp;L</CardDescription><CardTitle className={riskStatus.today.pnl >= 0 ? "text-emerald-500" : "text-red-500"}>{riskStatus.today.pnl.toFixed(2)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
@@ -380,7 +415,8 @@ export default function MyPaperTradesPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Recent risk events</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              {riskEvents.length === 0 ? <p className="text-sm text-muted-foreground">No risk events yet — your governor is quiet.</p>
+              {loadErrors.riskEvents ? <LoadFailed k="riskEvents" error={loadErrors.riskEvents}/>
+                : riskEvents.length === 0 ? <p className="text-sm text-muted-foreground">No risk events yet — your governor is quiet.</p>
                 : riskEvents.slice(0, 25).map((e) => (
                 <div key={e.id} className="flex items-start gap-2 text-sm border-b pb-2">
                   {e.severity === "critical" ? <Ban className="h-4 w-4 text-red-500 mt-0.5"/>
@@ -402,8 +438,11 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="trades" className="space-y-3">
+          {!loading && loadErrors.reviews && <LoadFailed k="reviews" error={loadErrors.reviews} extra="Trades are shown without their reviews."/>}
           {loading ? (
             <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading…</CardContent></Card>
+          ) : loadErrors.trades ? (
+            <LoadFailed k="trades" error={loadErrors.trades}/>
           ) : trades.length === 0 ? (
             <Card><CardContent className="p-10 text-center space-y-2">
               <p className="text-lg font-semibold">No demo trades yet</p>
@@ -469,7 +508,7 @@ export default function MyPaperTradesPage() {
 
         <TabsContent value="journal" className="space-y-3">
           <div className="flex justify-end"><Button onClick={() => setShowJournal(true)}><Plus className="h-4 w-4 mr-1"/>Add note</Button></div>
-          {journal.length === 0 ? (
+          {loadErrors.journal ? <LoadFailed k="journal" error={loadErrors.journal}/> : journal.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">No journal entries yet</p>
               Start journaling a trade to capture lessons learned.
@@ -494,6 +533,7 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="calendar" className="space-y-3">
+          {loadErrors.summary && <LoadFailed k="summary" error={loadErrors.summary}/>}
           {summary && (
             <Card><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div><div className="text-muted-foreground">Trades</div><div className="text-xl font-semibold">{summary.totalTrades}</div></div>
@@ -503,7 +543,7 @@ export default function MyPaperTradesPage() {
               <div><div className="text-muted-foreground">Win rate</div><div className="text-xl font-semibold">{summary.winRate}%</div></div>
             </CardContent></Card>
           )}
-          {days.length === 0 ? (
+          {loadErrors.calendar ? <LoadFailed k="calendar" error={loadErrors.calendar}/> : days.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">Your performance calendar will populate after your first closed trade</p>
               No fake data. Close a demo trade to see your day appear here.
@@ -528,7 +568,7 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="insights" className="space-y-3">
-          {!insights || insights.isEmpty ? (
+          {loadErrors.insights ? <LoadFailed k="insights" error={loadErrors.insights}/> : !insights || insights.isEmpty ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">No AI insights yet</p>
               Close a demo trade to unlock performance insights — no fake data.
@@ -572,7 +612,7 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="coaching" className="space-y-3">
-          {!coaching || coaching.isEmpty ? (
+          {loadErrors.coaching ? <LoadFailed k="coaching" error={loadErrors.coaching}/> : !coaching || coaching.isEmpty ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">Your coaching plan will improve as you journal more trades</p>
               Complete and journal at least one demo trade to unlock personalized coaching.
@@ -602,7 +642,7 @@ export default function MyPaperTradesPage() {
             <h3 className="text-base font-semibold">Your trading playbooks</h3>
             <Button size="sm" onClick={generatePlaybook} disabled={generatingPb}><Sparkles className="h-3 w-3 mr-1"/>{generatingPb ? "Generating…" : "Generate from My History"}</Button>
           </div>
-          {playbooks.length === 0 ? (
+          {loadErrors.playbooks ? <LoadFailed k="playbooks" error={loadErrors.playbooks}/> : playbooks.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground space-y-1">
               <p className="text-lg font-semibold text-foreground">No playbooks yet</p>
               <p>Create your first trading playbook, or close more demo trades to let ARX AI generate better strategy rules.</p>
@@ -636,7 +676,7 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="precheck" className="space-y-3">
-          {playbooks.length === 0 ? (
+          {loadErrors.playbooks ? <LoadFailed k="playbooks" error={loadErrors.playbooks} extra="Pre-trade checks need a playbook."/> : playbooks.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">No playbooks yet</p>
               Create or generate a playbook first to run pre-trade checks.
