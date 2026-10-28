@@ -2855,7 +2855,7 @@ export function marketContextPriceEvidence(ctx: PriceEvidenceCtx, quoteSourceNam
     ageMs: obs.ageMs,
     freshness: obs.freshness,
     stale: obs.stale,
-    note: `No live quote — currentPrice is the last ${tf ?? "candle"} close, not a bid/ask. ${obs.plainEnglish}`,
+    note: `No live quote — currentPrice is the last ${tf ?? "candle"} close, not a bid/ask. ${obs.plainEnglish}${row?.asOf ? " (The time is the bar's start; its close may be newer.)" : ""}`,
   };
 }
 

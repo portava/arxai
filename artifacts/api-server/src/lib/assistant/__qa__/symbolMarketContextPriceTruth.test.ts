@@ -91,6 +91,7 @@ test("no quote: price is labelled a candle close, not a bid/ask", async () => {
   assert.equal(e.basis, "candle_close");
   assert.equal(e.source, "finnhub");
   assert.match(e.note, /last M5 close, not a bid\/ask/);
+  assert.match(e.note, /time is the bar's start; its close may be newer/);
 });
 
 test("no price at all: unavailable and stale", async () => {
