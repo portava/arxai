@@ -1,0 +1,199 @@
+{
+  "recordedAt": "2026-10-28T17:59:05.624380+00:00",
+  "functionalStatus": "PASS",
+  "visualStatus": "VISUALLY_INCOMPLETE",
+  "assertions": 142,
+  "applicationHead": "8e87e55d030547be4cb3cf1e3aab00b00dba792a",
+  "buildId": "eee7b37ce1e8f1f3",
+  "fixtureRole": "ADMIN",
+  "routes": [
+    {
+      "path": "/live-chart",
+      "functionalPass": true,
+      "mobileCanvasBounds": {
+        "x": 29,
+        "y": 460.28125,
+        "width": 334.640625,
+        "height": 380
+      },
+      "screenshots": [
+        {
+          "path": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-rerun4-live-chart-desktop.png",
+          "intersection": {
+            "width": 746,
+            "height": 679.71875
+          }
+        },
+        {
+          "path": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-rerun4-live-chart-mobile.png",
+          "intersection": {
+            "width": 334.640625,
+            "height": 380
+          }
+        }
+      ]
+    },
+    {
+      "path": "/live-manual",
+      "functionalPass": true,
+      "mobileCanvasBounds": {
+        "x": 29,
+        "y": 464.421875,
+        "width": 332,
+        "height": 380
+      },
+      "screenshots": [
+        {
+          "path": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-rerun4-live-manual-desktop.png",
+          "intersection": {
+            "width": 666,
+            "height": 620
+          }
+        },
+        {
+          "path": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-rerun4-live-manual-mobile.png",
+          "intersection": {
+            "width": 332,
+            "height": 379.578125
+          }
+        }
+      ]
+    },
+    {
+      "path": "/live-ai-assist",
+      "functionalPass": true,
+      "mobileCanvasBounds": {
+        "x": 25,
+        "y": 464.25,
+        "width": 378.609375,
+        "height": 380
+      },
+      "screenshots": [
+        {
+          "path": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-rerun4-live-ai-assist-desktop.png",
+          "intersection": {
+            "width": 646,
+            "height": 620
+          }
+        },
+        {
+          "path": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-rerun4-live-ai-assist-mobile.png",
+          "intersection": {
+            "width": 365,
+            "height": 379.75
+          }
+        }
+      ]
+    },
+    {
+      "path": "/live-ai-auto-test",
+      "functionalPass": true,
+      "mobileCanvasBounds": {
+        "x": 25,
+        "y": 464.28125,
+        "width": 340,
+        "height": 380
+      },
+      "screenshots": [
+        {
+          "path": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-rerun4-live-ai-auto-test-desktop.png",
+          "intersection": {
+            "width": 1102,
+            "height": 520
+          }
+        },
+        {
+          "path": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/final-pages-rerun4-live-ai-auto-test-mobile.png",
+          "intersection": {
+            "width": 340,
+            "height": 379.71875
+          }
+        }
+      ]
+    }
+  ],
+  "network": {
+    "pageExceptions": 0,
+    "tradeRequests": 0,
+    "unclassifiedWrites": 0,
+    "externalAttempts": 0,
+    "allMutationsBlocked": true,
+    "blockedWrites": 6,
+    "unknownReadsReturning503": 76,
+    "consoleErrors": 81
+  },
+  "visualReview": {
+    "screenshotsInspected": 8,
+    "finding": "AI Assist mobile chart extends13.609px beyond390px viewport: x25 + width378.609. Ancestor clipping keeps document scrollWidth<=viewport, so the existing no-horizontal-overflow check does not detect cropped right price/control edge. Other3 canvases fit horizontally.",
+    "status": "OPEN_REQUIRES_APP_COORDINATION"
+  },
+  "preservedAttempts": [
+    {
+      "log": "final-pages-open.log",
+      "result": "Restricted Chrome launch failed before page load; authorized retry succeeded."
+    },
+    {
+      "log": "final-pages.log",
+      "result": "Harness chose unrelated200-bar trade-card response; corrected exact request tuple limit300."
+    },
+    {
+      "log": "final-pages-rerun.log",
+      "result": "Exact getByLabel lookup failed; real ariaSnapshot proves exact combobox role name works. No app accessibility bug established."
+    },
+    {
+      "log": "final-pages-rerun2.log",
+      "result": "Stopped/unaccepted on parent direction; temporary prefix matcher reverted."
+    },
+    {
+      "log": "final-pages-rerun3.log",
+      "result": "USER main chart functional pass; manual tester route redirected to cockpit by existing containment. Not four-page failure of native rendering."
+    }
+  ],
+  "toolingChecks": {
+    "passed": 30,
+    "failed": 0,
+    "scope": "12 pages/role/request controls plus18 existing setup/tooling checks; syntax pass"
+  },
+  "limitations": [
+    "Synthetic historical data, disabled trading, all APIs intercepted; no broker/provider/production acceptance.",
+    "ADMIN fixture only for full four-route suite. USER manual redirect observed separately, not a full authorization audit.",
+    "No order/review/approve/test-loop controls clicked; enabled review/start controls preserved, server gates not exercised.",
+    "No latency, hardware-paint, competitor parity or overall architecture percentage claim.",
+    "PositionMiniChart not mounted because fixture has no positions.",
+    "Functional142PASS does not override the mobile visual finding."
+  ],
+  "browserClosed": true,
+  "artifacts": {
+    "final-pages-rerun4.log": "ecf7787049482359055a3ce4e18808f73f76f4ba080c8908f3a3fc72dab71983",
+    "final-pages-rerun4.json": "e8162e488cae5bf8fa151f38bfc001c73c1af8393b4652f5f03cb8a7b95a1652",
+    "final-pages-rerun4-setup.log": "f2930c8f9326827ecc0715a230377b2664fd0885cfd9b376fbe0e4ba43aee15c",
+    "run-final-pages-admin-setup.js": "a3bf585c860fea765388eef95411e247c9fa2a869ad6950cf2aefd9d4a8f761d",
+    "run-final-pages-rerun4.js": "3011ad3b09273ce530b16a445dd6139fc66cbd63c86e83277bd21e591f80cc9f",
+    "final-pages-rerun4-live-chart-desktop.png": "97e2b42189cdc1aa259bc512aa6c73714c8ea3f847a4300387649b4925710952",
+    "final-pages-rerun4-live-chart-mobile.png": "b3bccbcca6b6ae9a101406e74d3cead596ec0262c95c95c43c11e2a90eb71ba0",
+    "final-pages-rerun4-live-manual-desktop.png": "4d1acbda149e03895e138a074d92eeb984a531c6dbe037f3b236b5d0adf66258",
+    "final-pages-rerun4-live-manual-mobile.png": "89216b820671f989333dfe726c44f875a76101ffe4436b9041fe590056ac5157",
+    "final-pages-rerun4-live-ai-assist-desktop.png": "c59c1b7ec8fa1b2c0eb1d77f67c13adbc0ed7313ef7dd8662c392d8c7387f1b9",
+    "final-pages-rerun4-live-ai-assist-mobile.png": "6803212bcd859e216036255d0def37e19ad07f171310918afbb5bc7702ea962d",
+    "final-pages-rerun4-live-ai-auto-test-desktop.png": "5b2b8baaf2e1b1b53f6df2f2c0ebe6536e7d98a66b7185568a30fc0d43df2a92",
+    "final-pages-rerun4-live-ai-auto-test-mobile.png": "fd5620317a70d875d72c860d769eae935eb8b7e7081a23d198c18c0d01b904f1"
+  },
+  "visualCorrectionPending": {
+    "status": "SOURCE_FIXED_AWAITING_FINAL_BUILD_AND_BROWSER",
+    "cause": "AI Assist implicit mobile grid track honors intrinsic minimum width; nowrap card title contributes width.",
+    "probe": "ai-assist-width-probe.log",
+    "before": {
+      "viewportWidth": 390,
+      "canvasLeft": 25,
+      "canvasRight": 403.609375
+    },
+    "probeAfter": {
+      "canvasLeft": 25,
+      "canvasRight": 365,
+      "selectorRight": 344
+    },
+    "originalRestored": true,
+    "applicationChange": "live-ai-assist.tsx only: explicit minmax grid columns, min-w-0 left column, wrapped title with gap",
+    "checks": "31 tooling helper tests pass; syntax and diff check pass; new build not yet tested"
+  }
+}

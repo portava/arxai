@@ -108,7 +108,7 @@ The full dashboard lane passes **164 files, 2,328 tests / 9 skipped**, typecheck
 production build, **87 guards** and **7 binding assertions**. Bundle warnings remain.
 The clean immutable browser fixture is `eee7b37ce1e8f1f3`. Scanner functional
 acceptance passes **43 assertions**, including full canonical/displayed data and
-logo absence after completed chart rendering. Four-page follow-up: pending report.
+logo absence after completed chart rendering. Final four-page acceptance and the subsequent mobile correction are recorded below.
 
 The owner explicitly requested no TradingView logos anywhere. An independent
 source audit found two runtime chart constructors. The shared native adapter
@@ -183,3 +183,50 @@ Original failures and all outliers remain. Active reader/owned-position acceptan
 streaming/heavy-history loads, style input latency, calendar intervals and equal-
 condition TradingView/MT5 comparisons remain open. No main merge, deployment,
 existing database change or broker operation occurred.
+
+
+### Final functional checkpoint after mobile correction
+
+Final application source is **`e011f25aca6dfd2913dda134ca59c86a5b124a95`**,
+immutable fixture **`c4d30f0544b392e4`**. The full dashboard lane again passes
+**164 files, 2,328 tests / 9 skipped**, typecheck, production build, **87 guards**
+and **7 binding assertions**; **54 tooling checks** pass. Bundle warnings remain.
+
+The actual Scanner passes **43 assertions under synthetic USER**. All four
+secondary pages pass **158 assertions under synthetic ADMIN**, the role required
+by the legacy manual/AI tester routes. Both fixtures remain frozen, unarmed and
+unallocated; manual/automatic trading permissions are false, and every write
+receives 503. These are offline UI fixtures, not server authorization tests.
+Exact candle/source/context checks, market and interval changes, unavailable
+reader truth, mobile disclosure, engine retention and absence of graphic logos
+pass. Eight secondary-page screenshots were inspected. Zero page exceptions,
+trade requests, unclassified writes or external requests were observed. Expected
+blocked/unmocked HTTP errors remain: Scanner 96 console errors / 89 unknown
+reads; secondary pages 83 / 77. These do not prove a connected app is error-free.
+
+The first four-page checks exposed two harness assumptions: the native chart
+requests 300 bars while the trade panel also requests 200, and `getByLabel`
+includes nested option text even though the exact accessible combobox name is
+correct. The harness now binds the expected response to its actual endpoint,
+symbol, interval and limit before inspecting any displayed array, and uses the
+exact accessible role/name. An ordinary USER was also correctly redirected away
+from the legacy manual route; this observation is retained, not bypassed in app
+code. The explicit ADMIN fixture is separately labelled and checks disabled
+account state on every page. An interrupted diagnostic retry is not acceptance.
+
+An earlier ADMIN run passed 142 functional assertions but screenshots showed
+13.6 px of horizontal AI Assist chart clipping; it is marked **VISUALLY_INCOMPLETE**.
+A reversible CSS probe reproduced the cause: the implicit mobile grid track's
+intrinsic minimum exceeded its container. Three page-class changes establish a
+shrinking grid column, allow the left column to shrink and wrap its title/selector.
+The shared selector and trading logic are unchanged. At a 390 px viewport the
+final chart spans x=25–365 and the selector x=49–344. All four final pages pass
+full horizontal chart/control bounds, in addition to the older document-width
+check. This does not certify every device or every possible chart workload.
+
+[Latest compact receipt](validation/scanner-smart-chart-20261028/followup/latest-summary.json)
+and [file hashes](validation/scanner-smart-chart-20261028/followup/manifest.json)
+identify the accepted source and retained failures. Timing remains tied to the
+older `cc7ad0e0` workload with its explicit FAIL/partial result; these functional
+checks do not upgrade missing style-input timing, sustained performance or
+TradingView/MT5 parity. Everything remains development-only and unmerged.

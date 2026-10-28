@@ -1,0 +1,32 @@
+### Result
+{"before":{"viewport":390,"documentWidth":390,"grid":{"left":24,"right":366,"width":342,"scrollWidth":381,"clientWidth":342},"gridTemplateColumns":"380.609px","left":{"left":24,"right":404.609375,"width":380.609375,"scrollWidth":381,"clientWidth":381},"title":{"left":49,"right":379.609375,"width":330.609375,"scrollWidth":331,"clientWidth":331},"label":{"left":84.609375,"right":379.609375,"width":295,"scrollWidth":295,"clientWidth":295},"select":{"left":84.609375,"right":379.609375,"width":295,"scrollWidth":293,"clientWidth":293},"canvas":{"left":25,"right":403.609375,"width":378.609375,"scrollWidth":379,"clientWidth":379}},"singleColumn":{"viewport":390,"documentWidth":390,"grid":{"left":24,"right":366,"width":342,"scrollWidth":356,"clientWidth":342},"gridTemplateColumns":"342px","left":{"left":24,"right":366,"width":342,"scrollWidth":356,"clientWidth":342},"title":{"left":49,"right":341,"width":292,"scrollWidth":331,"clientWidth":292},"label":{"left":84.609375,"right":379.609375,"width":295,"scrollWidth":295,"clientWidth":295},"select":{"left":84.609375,"right":379.609375,"width":295,"scrollWidth":293,"clientWidth":293},"canvas":{"left":25,"right":365,"width":340,"scrollWidth":340,"clientWidth":340}},"wrapped":{"viewport":390,"documentWidth":390,"grid":{"left":24,"right":366,"width":342,"scrollWidth":342,"clientWidth":342},"gridTemplateColumns":"342px","left":{"left":24,"right":366,"width":342,"scrollWidth":342,"clientWidth":342},"title":{"left":49,"right":341,"width":292,"scrollWidth":295,"clientWidth":292},"label":{"left":49,"right":344,"width":295,"scrollWidth":295,"clientWidth":295},"select":{"left":49,"right":344,"width":295,"scrollWidth":293,"clientWidth":293},"canvas":{"left":25,"right":365,"width":340,"scrollWidth":340,"clientWidth":340}},"restored":{"viewport":390,"documentWidth":390,"grid":{"left":24,"right":366,"width":342,"scrollWidth":381,"clientWidth":342},"gridTemplateColumns":"380.609px","left":{"left":24,"right":404.609375,"width":380.609375,"scrollWidth":381,"clientWidth":381},"title":{"left":49,"right":379.609375,"width":330.609375,"scrollWidth":331,"clientWidth":331},"label":{"left":84.609375,"right":379.609375,"width":295,"scrollWidth":295,"clientWidth":295},"select":{"left":84.609375,"right":379.609375,"width":295,"scrollWidth":293,"clientWidth":293},"canvas":{"left":25,"right":403.609375,"width":378.609375,"scrollWidth":379,"clientWidth":379}},"scope":"Reversible inline CSS probe in offline fixture only; no app source changed"}
+### Ran Playwright code
+```js
+await (async page => {
+ await page.goto('http://127.0.0.1:4199/live-ai-assist');await page.setViewportSize({width:390,height:844});
+ await page.getByTestId('arx-native-canvas').waitFor();await page.waitForFunction(()=>window.__arxChartQa?.snapshot()?.barCount===300);
+ const read=()=>page.evaluate(()=>{
+  const select=document.querySelector('[data-testid="ai-symbol-select"]'),title=select.closest('label').parentElement,card=title.parentElement.parentElement,left=card.parentElement,grid=left.parentElement;
+  const box=el=>{const b=el.getBoundingClientRect();return{left:b.left,right:b.right,width:b.width,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth};};
+  return{viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,grid:box(grid),gridTemplateColumns:getComputedStyle(grid).gridTemplateColumns,left:box(left),title:box(title),label:box(select.closest('label')),select:box(select),canvas:box(document.querySelector('[data-testid="arx-native-canvas"]'))};
+ });
+ const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ const before=await read();
+ await page.evaluate(()=>{const select=document.querySelector('[data-testid="ai-symbol-select"]'),title=select.closest('label').parentElement,left=title.parentElement.parentElement.parentElement,grid=left.parentElement;window.__widthProbe={title,left,grid,styles:[title.getAttribute('style'),left.getAttribute('style'),grid.getAttribute('style')]};grid.style.gridTemplateColumns='minmax(0,1fr)';});
+ await frames();const singleColumn=await read();
+ await page.evaluate(()=>{const{left,title}=window.__widthProbe;left.style.minWidth='0';title.style.flexWrap='wrap';title.style.gap='8px';});
+ await frames();const wrapped=await read();
+ await page.getByTestId('arx-native-canvas').scrollIntoViewIfNeeded();await page.screenshot({path:'/Users/areyouok/arx-tier1-release/scanner-performance-20261028/ai-assist-width-probe-chart.png'});
+ await page.getByTestId('ai-symbol-select').scrollIntoViewIfNeeded();await page.screenshot({path:'/Users/areyouok/arx-tier1-release/scanner-performance-20261028/ai-assist-width-probe-selector.png'});
+ await page.evaluate(()=>{const{title,left,grid,styles}=window.__widthProbe;[title,left,grid].forEach((el,i)=>{if(styles[i]===null)el.removeAttribute('style');else el.setAttribute('style',styles[i]);});delete window.__widthProbe;});
+ await frames();const restored=await read();
+ return{before,singleColumn,wrapped,restored,scope:'Reversible inline CSS probe in offline fixture only; no app source changed'};
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:4199/live-ai-assist
+- Page Title: ARX actual Scanner — offline acceptance
+- Console: 7 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-10-28T18-00-32-035Z.log#L26-L42

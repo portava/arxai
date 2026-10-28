@@ -207,3 +207,10 @@ do not establish faster clicks. Idle note/drawing work decreased in a separate
 above. All TradingView logos are disabled in the two runtime constructors at
 `8e87e55d`; required plain-text library credit remains. See the exact sources,
 controls, failures and limitations in the [follow-up receipt](SCANNER_SMART_CHART_INTEGRATION_2026_10_28.md#follow-up-no-chart-logos-and-measured-scanner-work).
+
+
+Final functional source `e011f25a`: 43 ordinary-user Scanner assertions and
+158 synthetic-admin assertions across the four former embed pages pass, including
+logo absence and full horizontal mobile chart/control bounds. This fixes a verified
+AI Assist mobile grid clipping defect; earlier failures remain in the receipt.
+Required library credit is plain text. The bounded timing source remains `cc7ad0e0`.
