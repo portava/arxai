@@ -17,6 +17,45 @@ type Settings = {
   sharedMasterNettingMode?: boolean;
 };
 
+// GET /api/admin/trading/settings. `settings` is null when the server could
+// not read the row. The platformStop* fields are both install-wide stops as
+// the pre-trade Risk Governor reads them: the platform emergency stop (this
+// page's switch) AND the safety-core kill switch (released on the Emergency
+// page). An unreadable source is reported engaged with platformStopReadable
+// false. An older server omits them, so they are optional.
+type StopSource = "platform_emergency_stop" | "safety_core_kill_switch";
+type SettingsResp = {
+  ok: boolean;
+  settings: Settings | null;
+  platformStopEngaged?: boolean;
+  platformStopSources?: StopSource[];
+  platformStopReason?: string | null;
+  platformStopReadable?: boolean;
+  platformStopDetail?: Partial<Record<StopSource, string | null>>;
+};
+
+// What the page may say about each stop. The client only downgrades: a stop
+// is "engaged" when either the stored row or the combined report says so, and
+// nothing reads "released" unless it was actually read as released.
+type StopView = "engaged" | "released" | "unreadable" | "unknown";
+function emergencyStopView(resp: SettingsResp | null): StopView {
+  const s = resp?.settings ?? null;
+  const reported = resp?.platformStopSources;
+  const fromReport = Array.isArray(reported) && reported.includes("platform_emergency_stop");
+  if (s?.emergencyKillSwitch) return "engaged";
+  if (fromReport) return resp?.platformStopDetail?.platform_emergency_stop === "state unreadable" ? "unreadable" : "engaged";
+  if (!s) return "unknown";
+  return "released";
+}
+function safetyCoreStopView(resp: SettingsResp | null): StopView {
+  const sources = resp?.platformStopSources;
+  if (!resp || !Array.isArray(sources) || typeof resp.platformStopEngaged !== "boolean") return "unknown";
+  if (sources.includes("safety_core_kill_switch")) {
+    return resp.platformStopDetail?.safety_core_kill_switch === "state unreadable" ? "unreadable" : "engaged";
+  }
+  return "released";
+}
+
 type SharedMasterCandidate = {
   connectionId: number; ownerUserId: number;
   connectionName: string | null; brokerName: string | null;
@@ -99,6 +138,10 @@ async function api<T>(path: string, init?: RequestInit): Promise<T | null> {
 
 export default function AdminTradingControlPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  // The last settings response (null: not loaded yet, or the request failed).
+  const [settingsResp, setSettingsResp] = useState<SettingsResp | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsReadAt, setSettingsReadAt] = useState<Date | null>(null);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [trades, setTrades] = useState<AuditEvent[]>([]);
   const [admins, setAdmins] = useState<AuditEvent[]>([]);
@@ -112,7 +155,7 @@ export default function AdminTradingControlPage() {
   const reload = useCallback(async () => {
     setError(null);
     const [s, u, t, a, sm, va, at, eh] = await Promise.all([
-      api<{ ok: boolean; settings: Settings }>("/api/admin/trading/settings"),
+      api<SettingsResp>("/api/admin/trading/settings"),
       api<{ ok: boolean; users: UserRow[] }>("/api/admin/users"),
       api<{ ok: boolean; events: AuditEvent[] }>("/api/admin/audit/trades?limit=50"),
       api<{ ok: boolean; events: AuditEvent[] }>("/api/admin/audit/admin-actions?limit=50"),
@@ -121,7 +164,11 @@ export default function AdminTradingControlPage() {
       api<{ ok: boolean; events: AuditEvent[] }>("/api/admin/audit/attribution?limit=50"),
       api<ExecutionHealthResp>("/api/admin/trading/execution-health"),
     ]);
-    if (s?.settings) setSettings(s.settings);
+    // A failed or empty read never leaves the previous state on screen as current.
+    setSettings(s?.settings ?? null);
+    setSettingsResp(s ?? null);
+    setSettingsLoaded(true);
+    setSettingsReadAt(s ? new Date() : null);
     if (u?.users) setUsers(u.users);
     if (t?.events) setTrades(t.events);
     if (a?.events) setAdmins(a.events);
@@ -129,7 +176,8 @@ export default function AdminTradingControlPage() {
     if (va?.accounts) setVirtuals(va.accounts);
     if (at?.events) setAttribution(at.events);
     if (eh?.ok) setExecutionHealth(eh);
-    if (!s) setError("Unable to load settings — admin role required.");
+    if (!s) setError("Trading settings could not be loaded: the request failed or was refused (this page needs an ADMIN or OWNER session). Platform mode, emergency stop and routing are unknown.");
+    else if (!s.settings) setError("Trading settings could not be read on the server. Platform mode, emergency stop and routing are unknown.");
   }, []);
 
   useEffect(() => { void reload(); }, [reload]);
@@ -199,6 +247,10 @@ export default function AdminTradingControlPage() {
     await reload(); setBusy(false);
   }
 
+  const emergencyView = settingsLoaded ? emergencyStopView(settingsResp) : "unknown";
+  const coreView = settingsLoaded ? safetyCoreStopView(settingsResp) : "unknown";
+  const notLoadedText = settingsLoaded ? "unknown — settings could not be loaded" : "loading…";
+
   const demoCount = users.filter((u) => u.permissions?.tradingMode === "DEMO").length;
   const liveCount = users.filter((u) => u.permissions?.tradingMode === "LIVE").length;
   const suspendedCount = users.filter((u) => u.permissions?.suspended).length;
@@ -232,12 +284,17 @@ export default function AdminTradingControlPage() {
         <h2 className="text-lg font-semibold mb-3">Platform mode</h2>
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-sm">Current:&nbsp;
-            <span className={`font-bold ${settings?.platformMode === "LIVE" ? "text-danger" :
+            <span data-testid="text-platform-mode" className={`font-bold ${settings?.platformMode === "LIVE" ? "text-danger" :
               settings?.platformMode === "DEMO" ? "text-success" :
               settings?.platformMode === "SIMULATED" ? "text-primary" : "text-txt-secondary"}`}>
-              {settings?.platformMode ?? "—"}
+              {settings ? settings.platformMode : notLoadedText}
             </span>
           </div>
+          {settingsReadAt ? (
+            <div className="text-xs text-txt-muted" data-testid="text-settings-read-at">
+              read {settingsReadAt.toLocaleTimeString()}
+            </div>
+          ) : null}
           {(["OFF", "SIMULATED", "DEMO", "LIVE"] as const).map((m) => (
             <button key={m} disabled={busy || settings?.platformMode === m}
               onClick={() => setMode(m)}
@@ -253,23 +310,48 @@ export default function AdminTradingControlPage() {
           ))}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <div className="text-sm flex items-center gap-2">
+          <div className="text-sm flex items-center gap-2" data-testid="row-emergency-stop">
             <ShieldAlert className="w-4 h-4" />
-            Emergency stop:
-            <span className={`font-bold ${settings?.emergencyKillSwitch ? "text-danger" : "text-success"}`}>
-              {settings?.emergencyKillSwitch ? "ENGAGED" : "Released"}
+            Platform emergency stop:
+            <span data-testid="text-emergency-stop" className={`font-bold ${
+              emergencyView === "released" ? "text-success" : emergencyView === "unknown" ? "text-warning" : "text-danger"}`}>
+              {emergencyView === "engaged" ? "ENGAGED" :
+               emergencyView === "unreadable" ? "COULD NOT BE READ — treated as engaged" :
+               emergencyView === "released" ? "Released" : notLoadedText}
             </span>
-            {settings?.killSwitchReason ? <span className="text-txt-secondary italic">— {settings.killSwitchReason}</span> : null}
+            {emergencyView === "engaged" && (settings?.killSwitchReason ?? settingsResp?.platformStopDetail?.platform_emergency_stop)
+              ? <span className="text-txt-secondary italic">— {settings?.killSwitchReason ?? settingsResp?.platformStopDetail?.platform_emergency_stop}</span> : null}
           </div>
           <button disabled={busy} onClick={() => killSwitch(true)}
             className="px-3 py-1.5 rounded text-sm border border-danger/50 bg-danger/10 text-danger hover:bg-danger/20 disabled:opacity-50">
             Engage emergency stop
           </button>
-          <button disabled={busy || !settings?.emergencyKillSwitch} onClick={() => killSwitch(false)}
+          <button disabled={busy || emergencyView !== "engaged"} onClick={() => killSwitch(false)}
             className="px-3 py-1.5 rounded text-sm border border-success/40 hover:bg-success/10 disabled:opacity-50">
             Release emergency stop
           </button>
         </div>
+        <div className="mt-2 text-sm flex flex-wrap items-center gap-2" data-testid="row-safety-core-stop">
+          <ShieldAlert className="w-4 h-4" />
+          Safety-core kill switch:
+          <span data-testid="text-safety-core-stop" className={`font-bold ${
+            coreView === "released" ? "text-success" : coreView === "unknown" ? "text-warning" : "text-danger"}`}>
+            {coreView === "engaged" ? "ENGAGED" :
+             coreView === "unreadable" ? "COULD NOT BE READ — treated as engaged" :
+             coreView === "released" ? "Released" :
+             settingsLoaded ? "not reported — could not be checked" : "loading…"}
+          </span>
+          {coreView === "engaged" && settingsResp?.platformStopDetail?.safety_core_kill_switch
+            ? <span className="text-txt-secondary italic">— {settingsResp.platformStopDetail.safety_core_kill_switch}</span> : null}
+        </div>
+        <p className="mt-2 text-xs text-txt-secondary" data-testid="text-stop-summary">
+          {emergencyView === "engaged" || emergencyView === "unreadable" || coreView === "engaged" || coreView === "unreadable"
+            ? "A stop is engaged: the pre-trade Risk Governor refuses new orders. "
+            : emergencyView === "released" && coreView === "released"
+              ? "Both install-wide stops read as released. "
+              : "Whether new orders are refused is unknown until both stops can be read. "}
+          The Release button above releases only the platform emergency stop; the safety-core kill switch is released on the Emergency page.
+        </p>
       </section>
 
       {/* Phase 3.5 — Account routing */}
@@ -284,8 +366,9 @@ export default function AdminTradingControlPage() {
         </p>
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="text-sm">Current:&nbsp;
-            <span className={`font-bold ${settings?.accountRoutingMode === "SHARED_MASTER_MT5" ? "text-warning" : "text-success"}`}>
-              {settings?.accountRoutingMode ?? "USER_OWNED_MT5"}
+            <span data-testid="text-routing-mode" className={`font-bold ${!settings?.accountRoutingMode ? "text-txt-secondary" :
+              settings.accountRoutingMode === "SHARED_MASTER_MT5" ? "text-warning" : "text-success"}`}>
+              {!settings ? notLoadedText : settings.accountRoutingMode ?? "not reported"}
             </span>
           </div>
           {(["USER_OWNED_MT5", "SHARED_MASTER_MT5"] as const).map((m) => (
@@ -300,8 +383,10 @@ export default function AdminTradingControlPage() {
           <div className="ml-4 text-sm flex items-center gap-2">
             <ShieldAlert className="w-4 h-4" />
             Shared LIVE trading:
-            <span className={`font-bold ${settings?.sharedLiveTradingEnabled ? "text-danger" : "text-txt-secondary"}`}>
-              {settings?.sharedLiveTradingEnabled ? "ENABLED (OWNER)" : "Disabled"}
+            <span data-testid="text-shared-live" className={`font-bold ${settings?.sharedLiveTradingEnabled ? "text-danger" : "text-txt-secondary"}`}>
+              {!settings ? notLoadedText :
+               settings.sharedLiveTradingEnabled === true ? "ENABLED (OWNER)" :
+               settings.sharedLiveTradingEnabled === false ? "Disabled" : "not reported"}
             </span>
             <button disabled={busy || !settings?.sharedLiveConnectionId}
               onClick={() => toggleSharedLive(!settings?.sharedLiveTradingEnabled)}
