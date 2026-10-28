@@ -8,6 +8,8 @@ import { describe, it, expect } from "vitest";
 import {
   resolveSelectedMarketView,
   WITHHELD_FALLBACK_REASON,
+  selectedMarketDataAsOfLabel,
+  NOT_LIVE_LEVELS_REASON,
   type SelectedMarketViewInput,
 } from "./selectedMarketView";
 
@@ -41,8 +43,10 @@ describe("resolveSelectedMarketView", () => {
   });
 
   it("withheld with no reason falls back to a clean sentence (never empty)", () => {
+    // The drift fallback applies to a live-confirmed feed whose levels the
+    // guard withheld; a STALE feed states the feed reason instead (below).
     const view = resolveSelectedMarketView(
-      input({ levelsWithheld: true, levelsWithheldReason: null, dataState: "STALE" }),
+      input({ levelsWithheld: true, levelsWithheldReason: null, dataState: "LIVE_CONFIRMED" }),
     );
     expect(view.kind).toBe("withheld");
     if (view.kind !== "withheld") throw new Error("expected withheld");
@@ -74,5 +78,41 @@ describe("resolveSelectedMarketView", () => {
     expect(view.levels.stop).toBe(1.149);
     expect(view.levels.target).toBe(1.152);
     expect(view.levels.riskReward).toBe(2);
+  });
+});
+
+describe("selectedMarketDataAsOfLabel", () => {
+  const NOW = Date.parse("2026-10-28T12:00:00.000Z");
+  it("a data time in the future is never shown as '0s ago'", () => {
+    const label = selectedMarketDataAsOfLabel("2026-10-28T15:00:00.000Z", NOW);
+    expect(label).not.toContain("0s ago");
+    expect(label).toContain("unconfirmed");
+  });
+  it("a past data time reads as its real age", () => {
+    expect(selectedMarketDataAsOfLabel("2026-10-28T11:56:00.000Z", NOW)).toBe("Data as of 4m ago");
+    expect(selectedMarketDataAsOfLabel("2026-10-28T11:59:30.000Z", NOW)).toBe("Data as of 30s ago");
+  });
+  it("no data time is awaiting data, an unparseable one is unknown", () => {
+    expect(selectedMarketDataAsOfLabel(null, NOW)).toBe("Awaiting live market data");
+    expect(selectedMarketDataAsOfLabel("not-a-time", NOW)).toBe("Data time unknown");
+  });
+});
+
+describe("resolveSelectedMarketView — a feed that is not live-confirmed never renders levels", () => {
+  for (const dataState of ["STALE", "SYNCING"] as const) {
+    it(`${dataState} with numbers present still renders no levels`, () => {
+      const view = resolveSelectedMarketView(input({ dataState }));
+      expect(view.kind).toBe("withheld");
+      if (view.kind !== "withheld") throw new Error("expected withheld");
+      expect(view.reason).toBe(NOT_LIVE_LEVELS_REASON);
+    });
+  }
+  it("a missing dataState is not a confirmation", () => {
+    expect(resolveSelectedMarketView(input({ dataState: undefined })).kind).toBe("withheld");
+  });
+  it("the server's withheld-read reason is shown as given", () => {
+    const reason = "The market data feed is stale: its newest bars are not current, so no direction, confidence or levels are shown.";
+    const view = resolveSelectedMarketView(input({ dataState: "STALE", readWithheldReason: reason }));
+    expect(view.kind === "withheld" && view.reason).toBe(reason);
   });
 });

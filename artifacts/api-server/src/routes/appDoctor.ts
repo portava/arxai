@@ -2,6 +2,8 @@
 // These endpoints DO NOT change MT5 behavior, broker state, or risk controls.
 // They never return tokens, secrets, credentials, or stack traces.
 import { Router, type IRouter } from "express";
+import { getUserActiveConnection } from "../lib/brokerHub/connections.js";
+import { isHeartbeatAgeMsFresh } from "../lib/brokerHub/freshness.js";
 
 const router: IRouter = Router();
 
@@ -65,13 +67,43 @@ router.get("/mt5/diagnostic-summary", async (req, res) => {
     heartbeatAgeSeconds?: number | null;
     bridgeTokenConfigured?: boolean;
   };
+  // Heartbeat scope. A signed-in caller gets THEIR OWN EA connection's
+  // heartbeat (mt5_connection, freshest non-revoked bridge). The platform
+  // probe /api/mt5/heartbeat/status reads the platform-wide mt5_state
+  // singleton — another user's EA — so it is used only for an anonymous
+  // caller and is labelled "platform".
   let hb: HbShape | null = null;
-  try {
-    const r = await fetch(new URL("/api/mt5/heartbeat/status", baseUrl).toString(), {
-      signal: AbortSignal.timeout(2_000),
-    });
-    if (r.ok) hb = (await r.json()) as HbShape;
-  } catch { /* ignore */ }
+  let heartbeatScope: "your_connection" | "no_connection" | "platform";
+  const userId = req.authUser?.id ?? null;
+  if (userId != null) {
+    let conn: Awaited<ReturnType<typeof getUserActiveConnection>> = null;
+    let readable = true;
+    try { conn = await getUserActiveConnection(userId); } catch { readable = false; }
+    if (!readable) {
+      heartbeatScope = "your_connection";
+      hb = null; // unreadable → bridgeMode "unknown", never "connected"
+    } else if (!conn) {
+      heartbeatScope = "no_connection";
+      hb = { eaConnected: false, lastHeartbeatAt: null, heartbeatAgeSeconds: null };
+    } else {
+      heartbeatScope = "your_connection";
+      const at = conn.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
+      const ageMs = at ? Math.max(0, Date.now() - at.getTime()) : null;
+      hb = {
+        eaConnected: isHeartbeatAgeMsFresh(ageMs),
+        lastHeartbeatAt: at ? at.toISOString() : null,
+        heartbeatAgeSeconds: ageMs != null ? Math.floor(ageMs / 1000) : null,
+      };
+    }
+  } else {
+    heartbeatScope = "platform";
+    try {
+      const r = await fetch(new URL("/api/mt5/heartbeat/status", baseUrl).toString(), {
+        signal: AbortSignal.timeout(2_000),
+      });
+      if (r.ok) hb = (await r.json()) as HbShape;
+    } catch { /* ignore */ }
+  }
 
   const tokenConfigured = !!process.env["MT5_BRIDGE_TOKEN"];
   const heartbeatPresent = !!hb?.eaConnected;
@@ -92,6 +124,8 @@ router.get("/mt5/diagnostic-summary", async (req, res) => {
   const reason =
     bridgeMode === "deferred"
       ? "MT5 bridge is intentionally deferred (no MT5_BRIDGE_TOKEN configured). ARX runs in simulator/paper mode."
+      : bridgeMode === "disconnected" && heartbeatScope === "no_connection"
+        ? "You have no MT5 EA connection of your own, so no heartbeat is checked for your account. ARX stays in simulator/paper mode for you."
       : bridgeMode === "disconnected"
         ? "Bridge token is configured, but no fresh EA heartbeat was received. ARX stays in simulator/paper mode until the EA reports in."
         : bridgeMode === "connected"
@@ -108,6 +142,7 @@ router.get("/mt5/diagnostic-summary", async (req, res) => {
   res.json({
     bridgeMode,
     heartbeatPresent,
+    heartbeatScope,
     lastHeartbeatAt: hb?.lastHeartbeatAt ?? null,
     heartbeatAgeSeconds: hb?.heartbeatAgeSeconds ?? null,
     brokerExecutionEnabled,

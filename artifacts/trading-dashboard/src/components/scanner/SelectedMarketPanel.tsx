@@ -14,10 +14,16 @@ import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
-import { resolveSelectedMarketView } from "@/components/scanner/selectedMarketView";
+import {
+  resolveSelectedMarketView,
+  selectedMarketDataAsOfLabel,
+  selectedMarketReadShown,
+  NOT_LIVE_LEVELS_REASON,
+} from "@/components/scanner/selectedMarketView";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
+import { eventCountdownFromIso } from "@/lib/eventCountdown";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -48,6 +54,13 @@ export function SelectedMarketPanel() {
   const { name } = useAssistantName();
   const activeSymbol = resolveSymbol(bareSymbol(chartSym || "EURUSD").toUpperCase())?.canonicalSymbol ?? "EURUSD";
   const [ticket, setTicket] = useState<{ selection: string; side: "BUY" | "SELL" } | null>(null);
+  // Event countdowns are computed from each event's time at render, never from
+  // the server's build-time minute offset; re-render every 15 s to keep them current.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Compact public Deriv status — drives the "Deriv feed not configured"
   // badge in SymbolExplorer. Synthetics stay selectable either way.
@@ -131,10 +144,25 @@ export function SelectedMarketPanel() {
   const fallbackMessage =
     fallback && fallback.ok === false ? fallback.message : undefined;
 
+  // Downgrade-only: a read the feed cannot support is never shown as direction.
+  const readShown = ok ? selectedMarketReadShown(ok) : false;
+  const readWithheldReason = ok && !readShown
+    ? ok.readWithheldReason ?? NOT_LIVE_LEVELS_REASON
+    : null;
+
+  // Downgrade-only: an empty event list reads as a quiet day only when the
+  // server says the calendar was actually checked.
+  const calendarChecked = ok?.newsRisk?.calendarChecked === true;
+  const calendarNote = ok
+    ? ok.newsRisk?.calendarNote
+      ?? (calendarChecked ? null : "The economic calendar could not be checked, so scheduled events are not shown.")
+    : null;
+
   const rubyNote = useMemo(() => {
     if (!ok) return null;
+    if (readWithheldReason) return `No directional read right now. ${readWithheldReason}`;
     return `${ok.explanation.hedge} ${ok.explanation.why}`;
-  }, [ok]);
+  }, [ok, readWithheldReason]);
 
   // ONE always-visible Ruby Reasoning Block for the selected/detail view.
   // Honesty: levelsWithheld / a degraded dataState collapse this to
@@ -142,6 +170,36 @@ export function SelectedMarketPanel() {
   // entry/stop/target. Display only; grants no execution permission.
   const oppReasoning = useMemo(() => {
     if (!ok) return null;
+    if (readWithheldReason) {
+      // Downgrade-only: no side, confidence, trend or level reaches the
+      // reasoning block when the feed cannot support a directional read.
+      return buildReasoningFromOppMap({
+        symbol: ok.symbol,
+        timeframe: ok.timeframe,
+        bias: "WAIT",
+        confidenceLabel: "",
+        trendState: "",
+        volatilityLabel: "",
+        entryZone: null,
+        suggestedStop: null,
+        suggestedTakeProfit: null,
+        riskRewardRatio: 0,
+        riskWarnings: ok.highlights.riskWarnings ?? [],
+        explanation: {
+          hedge: "No directional read right now.",
+          why: readWithheldReason,
+          whyItMatters: "Direction, confidence and levels return once the feed is confirmed live with enough closed bars.",
+          risk: "There is no actionable read until the feed is confirmed live.",
+          invalidation: "Not available without a current read.",
+          cautions: ok.explanation.cautions ?? [],
+        },
+        levelsWithheld: true,
+        levelsWithheldReason: readWithheldReason,
+        dataState: ok.dataState ?? null,
+        dataSourceLabel: ok.dataSourceLabel ?? null,
+        newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+      });
+    }
     return buildReasoningFromOppMap({
       symbol: ok.symbol,
       timeframe: ok.timeframe,
@@ -168,7 +226,7 @@ export function SelectedMarketPanel() {
       dataSourceLabel: ok.dataSourceLabel ?? null,
       newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
     });
-  }, [ok]);
+  }, [ok, readWithheldReason]);
 
   return (
     <Card className="rounded-2xl border-success/25 bg-card" data-testid="selected-market-panel">
@@ -248,17 +306,23 @@ export function SelectedMarketPanel() {
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="outline">{ok.symbol}</Badge>
               <Badge variant="outline">{ok.timeframe}</Badge>
-              <Badge className={biasBadgeClass(ok.highlights.bias)}>{ok.highlights.bias}</Badge>
-              <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
-              <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
-              <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>
+              {readShown ? (
+                <>
+                  <Badge className={biasBadgeClass(ok.highlights.bias)} data-testid="badge-selected-bias">{ok.highlights.bias}</Badge>
+                  <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
+                  <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
+                  <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>
+                </>
+              ) : (
+                <Badge variant="outline" data-testid="badge-read-withheld" title={readWithheldReason ?? undefined}>
+                  No directional read
+                </Badge>
+              )}
               {ok.dataSourceLabel && (
                 <Badge variant="outline" data-testid="badge-data-source">{ok.dataSourceLabel}</Badge>
               )}
               <span className="ml-auto" data-testid="text-selected-last-updated">
-                {ok.dataAsOf
-                  ? `Data as of ${timeAgo(ok.dataAsOf)}`
-                  : "Awaiting live market data"}
+                {selectedMarketDataAsOfLabel(ok.dataAsOf, Date.now())}
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-ruby-cache-note">
@@ -318,10 +382,17 @@ export function SelectedMarketPanel() {
             <div className="rounded-xl border border-border bg-background/40 p-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-foreground">Upcoming events that may move {ok.symbol}</div>
-                <Badge variant="outline" className="text-[10px]">News risk: {ok.newsRisk?.riskLevel ?? "—"}</Badge>
+                <Badge variant="outline" className="text-[10px]" data-testid="badge-selected-news-risk">
+                  News risk: {calendarChecked ? ok.newsRisk?.riskLevel ?? "—" : "unknown"}
+                </Badge>
               </div>
+              {calendarNote && (
+                <div className="text-xs text-muted-foreground mb-1" data-testid="text-selected-calendar-note">{calendarNote}</div>
+              )}
               {(ok.upcomingEvents ?? []).length === 0
-                ? <div className="text-xs text-muted-foreground">No medium/high impact events in the next 24h.</div>
+                ? (calendarChecked && !calendarNote
+                  ? <div className="text-xs text-muted-foreground">No medium/high impact events in the next 24h.</div>
+                  : null)
                 : (
                   <ul className="text-xs space-y-1">
                     {(ok.upcomingEvents ?? []).map((e) => (
@@ -329,12 +400,12 @@ export function SelectedMarketPanel() {
                         <Badge className={impactBadgeClass(e.impactLevel)}>{e.impactLevel}</Badge>
                         <span className="font-mono text-txt-muted">{e.currency}</span>
                         <span className="flex-1 truncate">{e.title}</span>
-                        <span className="text-txt-muted">{e.minutesUntil >= 0 ? `in ${e.minutesUntil}m` : `${-e.minutesUntil}m ago`}</span>
+                        <span className="text-txt-muted" data-testid="text-selected-event-countdown">{eventCountdownFromIso(e.eventTime, Math.max(nowMs, Date.now()))}</span>
                       </li>
                     ))}
                   </ul>
                 )}
-              {ok.newsRisk?.summary && (
+              {ok.newsRisk?.summary && ok.newsRisk.summary !== calendarNote && (
                 <div className="text-xs mt-2 text-warning">{ok.newsRisk.summary}</div>
               )}
             </div>

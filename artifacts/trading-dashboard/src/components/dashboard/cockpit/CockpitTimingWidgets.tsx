@@ -1,7 +1,8 @@
 // Cockpit Timing Widgets — Phase 3 Best Markets / Avoid Right Now.
 // Uses useGetTimingBrainMulti to pull timing reads for major pairs and
 // classifies them into "best now" (GO + grade A/B) and "avoid now"
-// (STAND_DOWN / NO_TRADE / grade D/F).
+// (STAND_DOWN / NO_TRADE / grade D/F). Only reads measured from current candles
+// are classified; unmeasured reads are named as such.
 // Honest empty when timing data is unavailable — never fabricated.
 
 import { cn } from "@/lib/utils";
@@ -25,13 +26,50 @@ const GRADE_BAD = new Set(["D", "F"]);
 const PERMISSION_PASS = new Set(["GO"]);
 const PERMISSION_BLOCK = new Set(["STAND_DOWN", "NO_TRADE"]);
 
-// Honest source/freshness footer (Task #611). Timing reads are real-or-empty —
-// this label never claims live data when the feed is stale or absent.
-function freshnessFooter(updatedAt: number | undefined, count: number): string {
-  if (!updatedAt || count === 0) return "Source: live market provider when connected";
-  const s = Math.max(0, Math.round((Date.now() - updatedAt) / 1000));
-  const age = s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
-  return `Source: live market provider · updated ${age}`;
+// Honest source/freshness footer (Task #611). A timing read is "measured" only
+// when the server says it was computed from current candles; a read built from
+// session constants alone (no candles, no quote) is never listed as a best or
+// avoid market and never counted as live. The age comes from the reads' own
+// generatedAt (when the server computed them), not from the browser fetch time.
+type TimingRow = Record<string, unknown>;
+
+export function isMeasuredTimingRead(row: TimingRow): boolean {
+  const dq = row["dataQuality"];
+  if (!dq || typeof dq !== "object") return false;
+  const d = dq as Record<string, unknown>;
+  return d["hasCandleData"] === true && (d["label"] === "real" || d["label"] === "partial");
+}
+
+function asRows(results: unknown[]): TimingRow[] {
+  return results.filter((r): r is TimingRow => !!r && typeof r === "object");
+}
+
+function formatAge(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
+}
+
+export function timingFooter(rows: TimingRow[], nowMs: number = Date.now()): string {
+  if (rows.length === 0) return "No timing reads returned yet.";
+  const measured = rows.filter(isMeasuredTimingRead);
+  if (measured.length === 0) {
+    return "No current candles for any scanned market — timing not measured.";
+  }
+  const times = measured
+    .map((r) => Date.parse(String(r["generatedAt"] ?? "")))
+    .filter((t) => Number.isFinite(t));
+  const age = times.length === measured.length ? ` · computed ${formatAge(nowMs - Math.min(...times))}` : " · computation time unknown";
+  return `Timing from current candles for ${measured.length} of ${rows.length} markets${age}`;
+}
+
+function UnmeasuredLine({ rows }: { rows: TimingRow[] }) {
+  const unmeasured = rows.filter((r) => !isMeasuredTimingRead(r)).map((r) => String(r["symbol"] ?? "")).filter(Boolean);
+  if (unmeasured.length === 0) return null;
+  return (
+    <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-unmeasured">
+      Not measured (no current candles): {unmeasured.join(", ")}
+    </p>
+  );
 }
 
 const HEAT_STATE_SHORT: Record<string, string> = {
@@ -58,14 +96,14 @@ export function BestMarketsCard() {
     },
   );
 
-  const results = (q.data as { results?: unknown[] })?.results ?? [];
+  const rows = asRows((q.data as { results?: unknown[] })?.results ?? []);
+  const measuredCount = rows.filter(isMeasuredTimingRead).length;
 
-  const best = results.filter((r: unknown) => {
-    if (!r || typeof r !== "object") return false;
-    const row = r as Record<string, unknown>;
+  const best = rows.filter((row) => {
+    if (!isMeasuredTimingRead(row)) return false;
     return PERMISSION_PASS.has(String(row["entryPermission"] ?? ""))
       && GRADE_GOOD.has(String(row["timingGrade"] ?? ""));
-  }).slice(0, 3) as Array<Record<string, unknown>>;
+  }).slice(0, 3);
 
   return (
     <CockpitCard
@@ -78,8 +116,14 @@ export function BestMarketsCard() {
       {!q.isLoading && best.length === 0 ? (
         <div className="py-4 text-center">
           <Flame className="mx-auto mb-1 h-5 w-5 text-txt-muted" />
-          <p className="text-sm text-txt-secondary">No A-grade setups right now.</p>
-          <p className="text-xs text-txt-muted">Check back when session conditions improve.</p>
+          {rows.length > 0 && measuredCount === 0 ? (
+            <p className="text-sm text-txt-secondary">Timing not measured — no current candles.</p>
+          ) : (
+            <>
+              <p className="text-sm text-txt-secondary">No A-grade setups right now.</p>
+              <p className="text-xs text-txt-muted">Check back when session conditions improve.</p>
+            </>
+          )}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -114,7 +158,8 @@ export function BestMarketsCard() {
           })}
         </ul>
       )}
-      <p className="mt-2 text-[10px] text-txt-muted">{freshnessFooter(q.dataUpdatedAt, results.length)}</p>
+      <UnmeasuredLine rows={rows} />
+      <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-footer">{timingFooter(rows)}</p>
       <div className="mt-3">
         <ActionButton href="/market-scanner" subtle icon={<Flame className="h-4 w-4" />} data-testid="best-markets-scanner">
           Open Scanner
@@ -136,15 +181,15 @@ export function AvoidMarketsCard() {
     },
   );
 
-  const results = (q.data as { results?: unknown[] })?.results ?? [];
+  const rows = asRows((q.data as { results?: unknown[] })?.results ?? []);
+  const measuredCount = rows.filter(isMeasuredTimingRead).length;
 
-  const avoid = results.filter((r: unknown) => {
-    if (!r || typeof r !== "object") return false;
-    const row = r as Record<string, unknown>;
+  const avoid = rows.filter((row) => {
+    if (!isMeasuredTimingRead(row)) return false;
     return PERMISSION_BLOCK.has(String(row["entryPermission"] ?? ""))
       || GRADE_BAD.has(String(row["timingGrade"] ?? ""))
       || Number(row["dangerScore"] ?? 0) >= 65;
-  }).slice(0, 3) as Array<Record<string, unknown>>;
+  }).slice(0, 3);
 
   return (
     <CockpitCard
@@ -157,8 +202,14 @@ export function AvoidMarketsCard() {
       {!q.isLoading && avoid.length === 0 ? (
         <div className="py-4 text-center">
           <ShieldAlert className="mx-auto mb-1 h-5 w-5 text-txt-muted" />
-          <p className="text-sm text-txt-secondary">No major red flags right now.</p>
-          <p className="text-xs text-txt-muted">Market conditions look manageable.</p>
+          {rows.length > 0 && measuredCount === 0 ? (
+            <p className="text-sm text-txt-secondary">Timing not measured — no current candles.</p>
+          ) : (
+            <>
+              <p className="text-sm text-txt-secondary">No major red flags right now.</p>
+              <p className="text-xs text-txt-muted">Market conditions look manageable.</p>
+            </>
+          )}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -199,7 +250,8 @@ export function AvoidMarketsCard() {
           })}
         </ul>
       )}
-      <p className="mt-2 text-[10px] text-txt-muted">{freshnessFooter(q.dataUpdatedAt, results.length)}</p>
+      <UnmeasuredLine rows={rows} />
+      <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-footer">{timingFooter(rows)}</p>
       <div className="mt-3">
         <ActionButton href="/market-heat-map" subtle icon={<TrendingDown className="h-4 w-4" />} data-testid="avoid-markets-heat">
           Heat Map

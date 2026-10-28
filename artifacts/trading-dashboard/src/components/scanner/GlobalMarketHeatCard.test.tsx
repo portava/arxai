@@ -488,3 +488,34 @@ describe("GlobalMarketHeatCard — price stamp names its basis and keeps time", 
     expect(priceStampLabel({ priceUpdatedAt: null, priceTimeBasis: null }, "M15", NOW)).toBe("Price never");
   });
 });
+
+describe("provider row chips (price)", () => {
+  function withPrice(price: Partial<MarketHeatSource>) {
+    const data = buildData();
+    data.providerStatus = {
+      ...data.providerStatus,
+      price: { kind: "price", name: "MT5 broker", status: "live", configured: true, connected: true, recordCount: 50, ...price } as MarketHeatSource,
+    };
+    mockUseGetMarketHeat.mockReturnValue({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
+  }
+
+  it("a stale price source is named stale and never styled as a healthy connection", () => {
+    withPrice({ status: "stale", connected: true });
+    render(<GlobalMarketHeatCard />);
+    const chip = screen.getByTestId("heat-provider-chip-price");
+    expect(chip.textContent).toBe("MT5 broker: stale");
+    expect(chip.className).not.toContain("text-success");
+  });
+
+  it("a stale source the server marked not connected still says stale, not 'not connected'", () => {
+    withPrice({ status: "stale", connected: false });
+    render(<GlobalMarketHeatCard />);
+    expect(screen.getByTestId("heat-provider-chip-price").textContent).toBe("MT5 broker: stale");
+  });
+
+  it("a live connected price source keeps the success tone", () => {
+    withPrice({ status: "live", connected: true });
+    render(<GlobalMarketHeatCard />);
+    expect(screen.getByTestId("heat-provider-chip-price").className).toContain("text-success");
+  });
+});

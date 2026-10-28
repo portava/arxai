@@ -23,14 +23,46 @@ import {
 } from "../selectedMarket.js";
 import type { SelectedMarketDeps } from "../selectedMarket.js";
 import type { ChartCandlesResponse, ChartFeedStatus } from "../../data/chart/chartDataService.js";
+import {
+  SELECTED_ANALYSIS_WINDOW,
+  filterEventRowsForSymbol,
+  CALENDAR_NOT_CONFIGURED_NOTE,
+} from "../selectedMarket.js";
+import { analyzeMarketFromCandles } from "../../aiBrain.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export {};
 
-type Bar = { open: number; high: number; low: number; close: number };
+type Bar = { open: number; high: number; low: number; close: number; isComplete?: boolean };
 
-// A minimal but shape-faithful chart response. The builder reads only
-// `candles` (OHLC) and `feedStatus`, so we cast the rest.
+const STEP_MS = 15 * 60_000;
+const DEFAULT_LAST_CLOSE = "2025-06-12T00:00:00.000Z";
+
+// A shape-faithful chart response. Candles carry the NormalizedChartCandle time
+// bounds and completion flags the builder reads: every bar is a CLOSED provider
+// bar unless it says `isComplete: false` (a forming bar). Closed bars end at
+// feedStatus.lastCandleTime (or a fixed default); a forming bar opens there.
 function makeChart(bars: Bar[], fs: Partial<ChartFeedStatus> = {}): ChartCandlesResponse {
+  const lastClosedCloseMs = Date.parse(fs.lastCandleTime ?? DEFAULT_LAST_CLOSE);
+  const closedCount = bars.filter((b) => b.isComplete !== false).length;
+  let closedIdx = 0;
+  const candles = bars.map((b) => {
+    const forming = b.isComplete === false;
+    const closeMs = forming
+      ? lastClosedCloseMs + STEP_MS
+      : lastClosedCloseMs - (closedCount - 1 - closedIdx++) * STEP_MS;
+    return {
+      ...b,
+      openTime: new Date(closeMs - STEP_MS).toISOString(),
+      closeTime: new Date(closeMs).toISOString(),
+      volume: 0,
+      tickVolume: null,
+      isComplete: !forming,
+      isFinal: !forming,
+      isForming: false,
+    };
+  });
   const feedStatus: ChartFeedStatus = {
     symbol: "EURUSD",
     displaySymbol: "EUR/USD",
@@ -54,7 +86,7 @@ function makeChart(bars: Bar[], fs: Partial<ChartFeedStatus> = {}): ChartCandles
     completenessReason: null,
     ...fs,
   } as ChartFeedStatus;
-  return { candles: bars, feedStatus } as unknown as ChartCandlesResponse;
+  return { candles, feedStatus } as unknown as ChartCandlesResponse;
 }
 
 // Build N bars with a constant per-bar range, drifting up (bullish) into the
@@ -362,4 +394,285 @@ test("controlled latency probe: one 75ms source read serves 32 readers; warm rea
   warmMs.sort((a, b) => a - b);
   assert.equal(sourceCalls, 1); assert.equal(newsCalls, 1);
   t.diagnostic(JSON.stringify({ kind: "offline-controlled-latency-not-production-SLA", syntheticSourceDelayMs: 75, concurrentReaders: 32, sourceCalls, newsCalls, coldBatchMs, warmReads: 500, warmP50Ms: warmMs[250], warmP95Ms: warmMs[475] }));
+});
+
+// ── Closed-bar window parity with the scanner row ─────────────────────────────
+// The scanner row (analyzeViaRouter) reads the newest 30 CLOSED bars; forming
+// bars are dropped by prepareScannerCandles. The selected-market panel used all
+// 200 chart bars including the forming one, so it could say BUY / bullish while
+// the Results card said SELL / bearish for the same symbol and timeframe.
+function risingThenFallingWithFormingTip(formingClose: number, formingRange: number): Bar[] {
+  const bars: Bar[] = [];
+  // 170 older bars drift up 1.10 → 1.15; the newest 30 closed bars drift down.
+  for (let i = 0; i < 170; i++) {
+    const close = 1.10 + (0.05 * i) / 169;
+    bars.push({ open: close, high: close + 0.00025, low: close - 0.00025, close });
+  }
+  for (let i = 0; i < 30; i++) {
+    const close = 1.15 - (0.005 * (i + 1)) / 30;
+    bars.push({ open: close, high: close + 0.00025, low: close - 0.00025, close });
+  }
+  bars.push({
+    open: formingClose, high: formingClose + formingRange / 2, low: formingClose - formingRange / 2,
+    close: formingClose, isComplete: false,
+  });
+  return bars;
+}
+
+test("the selected-market read uses the scanner's closed 30-bar window, never the forming bar", async () => {
+  const run = async (bars: Bar[]) => {
+    clearSelectedMarketCache();
+    const stub = (async () => makeChart(bars, FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+    const env = await getSelectedMarketSnapshot(
+      { symbolRaw: "EURUSD", timeframe: "M15", refresh: true },
+      { getChartCandlesFn: stub, loadEventsFn: noEvents },
+    );
+    assert.equal(env.ok, true);
+    if (!env.ok) throw new Error("expected an ok envelope");
+    return env;
+  };
+  const bars = risingThenFallingWithFormingTip(1.1451, 0.0004);
+  const env = await run(bars);
+  // What the scanner computes for the same series: newest 30 closed bars.
+  const scannerWindow = bars.filter((b) => b.isComplete !== false).slice(-30)
+    .map((b) => ({ o: b.open, h: b.high, l: b.low, c: b.close }));
+  const scannerRead = analyzeMarketFromCandles(
+    "EURUSD", "M15", scannerWindow, { mid: scannerWindow[scannerWindow.length - 1]!.c, spread: 0 }, "LIVE_FEED",
+  );
+  assert.equal(scannerRead.marketBias, "bearish");
+  assert.equal(env.highlights.trendState, scannerRead.marketBias,
+    "the panel must describe the same closed window the scanner row describes");
+
+  // Changing ONLY the forming bar's OHLC (a wide, partial range) leaves the read alone.
+  const moved = await run(risingThenFallingWithFormingTip(1.1453, 0.004));
+  assert.equal(moved.highlights.trendState, env.highlights.trendState);
+  assert.equal(moved.highlights.bias, env.highlights.bias);
+  assert.equal(moved.highlights.confidenceScore, env.highlights.confidenceScore);
+  assert.equal(moved.highlights.volatilityLabel, env.highlights.volatilityLabel);
+  assert.deepEqual(moved.highlights.entryZone, env.highlights.entryZone);
+  assert.equal(moved.highlights.suggestedStop, env.highlights.suggestedStop);
+});
+
+test("drift guard: the selected-market window equals the scanner's SCAN_ANALYSIS_WINDOW", () => {
+  const src = readFileSync(fileURLToPath(new URL("../../marketScanner.ts", import.meta.url)), "utf8");
+  const m = /const SCAN_ANALYSIS_WINDOW = (\d+);/.exec(src);
+  assert.ok(m, "marketScanner.ts must still declare SCAN_ANALYSIS_WINDOW");
+  assert.equal(Number(m[1]), SELECTED_ANALYSIS_WINDOW);
+});
+
+// ── dataAsOf is an observation time, never a forming bar's scheduled close ────
+// chartDataService sets feedStatus.lastCandleTime to the newest provider bar's
+// closeTime. On H4 with a forming bar opened 1h ago that is now + 3h; the panel
+// then said "Data as of 0s ago" (timeAgo clamps negative ages to zero).
+test("dataAsOf is the newest CLOSED bar's close time and never later than now", async () => {
+  clearSelectedMarketCache();
+  const now = Date.now();
+  const H4 = 4 * 3600_000;
+  const formingOpenMs = now - 3600_000;
+  const formingCloseMs = formingOpenMs + H4;
+  const bars: Bar[] = [...bullishBars(60, 1.15, 0.0005), { open: 1.15, high: 1.1502, low: 1.1498, close: 1.15, isComplete: false }];
+  const chart = makeChart(bars, { ...FRESH_FS, lastCandleTime: new Date(formingOpenMs).toISOString() });
+  // What chartDataService reports for this series: the forming bar's scheduled close.
+  chart.feedStatus = { ...chart.feedStatus!, lastCandleTime: new Date(formingCloseMs).toISOString() };
+  const stub = (async () => chart) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", timeframe: "H4", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: noEvents },
+  );
+  assert.equal(env.ok, true);
+  if (!env.ok) return;
+  assert.ok(env.dataAsOf !== null, "a closed bar exists, so the data time is known");
+  assert.ok(Date.parse(env.dataAsOf) <= Date.now(), `dataAsOf ${env.dataAsOf} must not be in the future`);
+  assert.equal(env.dataAsOf, new Date(formingOpenMs).toISOString());
+});
+
+// ── A stale or syncing feed never shows a directional read ──────────────────
+// Repro: EURUSD H1 on a stale mt5_broker feed, newest bar 6h old, window drifting
+// up. The price equals the last close, so the level guard does not fire. The
+// envelope said dataState STALE but bias BUY, High confidence, trend bullish,
+// an entry zone, stop and target, and "This looks like a possible buy setup".
+for (const [label, fs] of [
+  ["STALE", { source: "mt5_broker", stale: true, quality: "stale", isLive: false, trailingIntervals: 6 }],
+  ["SYNCING", { source: "mt5_broker", stale: false, quality: "delayed", isLive: false, trailingIntervals: 2 }],
+] as const) {
+  test(`a ${label} feed withholds bias, confidence, trend and levels`, async () => {
+    clearSelectedMarketCache();
+    const lastCandleTime = new Date(Date.now() - 6 * 3600_000).toISOString();
+    const stub = (async () => makeChart(bullishBars(200, 1.1033, 0.0002), {
+      ...(fs as Partial<ChartFeedStatus>), lastCandleTime,
+    })) as SelectedMarketDeps["getChartCandlesFn"];
+    const env = await getSelectedMarketSnapshot(
+      { symbolRaw: "EURUSD", timeframe: "H1", refresh: true },
+      { getChartCandlesFn: stub, loadEventsFn: noEvents },
+    );
+    assert.equal(env.ok, true);
+    if (!env.ok) return;
+    assert.equal(env.dataState, label);
+    assert.ok(env.highlights.bias === "WAIT" || env.highlights.bias === "NEUTRAL", `bias ${env.highlights.bias}`);
+    assert.notEqual(env.highlights.confidenceLabel, "High");
+    assert.equal(env.highlights.confidenceScore, 0);
+    assert.notEqual(env.highlights.trendState, "bullish");
+    assert.equal(env.highlights.entryZone, null);
+    assert.equal(env.highlights.suggestedStop, null);
+    assert.equal(env.highlights.suggestedTakeProfit, null);
+    assert.equal(env.levelsWithheld, true);
+    assert.ok(typeof env.readWithheldReason === "string" && env.readWithheldReason.length > 0);
+    assert.equal(env.levelsWithheldReason, env.readWithheldReason);
+    const copy = [env.explanation.hedge, env.explanation.why, env.explanation.risk, env.explanation.invalidation].join(" ");
+    assert.doesNotMatch(copy, /\b(buy|sell|bullish|bearish)\b/i, copy);
+  });
+}
+
+test("a LIVE_CONFIRMED feed with enough closed bars still shows its read", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: noEvents },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.equal(env.readWithheldReason, null);
+  assert.equal(env.highlights.trendState, "bullish");
+});
+
+test("too few closed bars withholds the read with the shared sufficiency reason", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () => makeChart(bullishBars(3, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: noEvents },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.match(env.readWithheldReason ?? "", /Not enough closed candles yet \(3\/5\)/);
+  assert.equal(env.highlights.bias, "WAIT");
+  assert.equal(env.highlights.entryZone, null);
+});
+
+// Finding: the source label must not claim liveness. Already fixed upstream
+// (sourceLabelFor names the provider only); locked here for stale data.
+test("a stale mt5_broker feed's source label makes no liveness claim", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), {
+    source: "mt5_broker", stale: true, quality: "stale", isLive: false,
+    lastCandleTime: new Date(Date.now() - 4 * 60_000).toISOString(),
+  })) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", timeframe: "M1", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: noEvents },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.equal(env.dataState, "STALE");
+  assert.doesNotMatch(env.dataSourceLabel ?? "", /live/i);
+});
+
+// ── Volatility is measured, and "spread ok" needs an observed spread ─────────
+// The label mapped riskScore (a constant 20 with no spread observed), so every
+// non-choppy market read "Calm"; the why text printed "spread ok" though this
+// builder never observes a spread.
+function barsWithRecentRange(baseRange: number, recentRange: number): Bar[] {
+  const bars = bullishBars(120, 1.15, baseRange);
+  return bars.map((b, i) => i < bars.length - 14 ? b
+    : { ...b, high: b.close + recentRange / 2, low: b.close - recentRange / 2 });
+}
+
+test("volatilityLabel measures recent bars against older bars; no 'spread ok' without a spread", async () => {
+  const run = async (bars: Bar[]) => {
+    clearSelectedMarketCache();
+    const stub = (async () => makeChart(bars, FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+    const env = await getSelectedMarketSnapshot(
+      { symbolRaw: "EURUSD", refresh: true },
+      { getChartCandlesFn: stub, loadEventsFn: noEvents },
+    );
+    assert.ok(env.ok);
+    if (!env.ok) throw new Error("expected ok");
+    return env;
+  };
+  const wide = await run(barsWithRecentRange(0.001, 0.0016));
+  const narrow = await run(barsWithRecentRange(0.001, 0.0002));
+  assert.equal(wide.highlights.volatilityLabel, "Elevated");
+  assert.equal(narrow.highlights.volatilityLabel, "Calm");
+  for (const env of [wide, narrow]) {
+    assert.doesNotMatch(env.explanation.why, /spread ok/, env.explanation.why);
+  }
+  // Too few closed bars to compare: never a confident "Calm".
+  const thin = await run(bullishBars(10, 1.15, 0.0005));
+  assert.equal(thin.highlights.volatilityLabel, "Unmeasured");
+});
+
+test("the no-data envelope does not claim a Calm market", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () =>
+    makeChart([], { source: null, quality: "empty", isLive: false, lastCandleTime: null })) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, { getChartCandlesFn: stub, loadEventsFn: noEvents });
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.equal(env.highlights.volatilityLabel, "Unmeasured");
+});
+
+// ── The event list names only events that may move THIS symbol ───────────────
+// With no currency hints (V75, GER30) loadEventRows kept EVERY stored row, so
+// V75 listed EUR CPI and a BoJ decision under "events that may move V75"; and
+// an empty table read as a confirmed quiet day.
+const EVENT_ROWS = [
+  { externalId: "eur-cpi", eventName: "EUR CPI", country: "Euro Area", currency: "EUR", impactLevel: "HIGH", affectedSymbols: [] as string[], source: "fred" },
+  { externalId: "jpy-boj", eventName: "BoJ Rate Decision", country: "Japan", currency: "JPY", impactLevel: "HIGH", affectedSymbols: [] as string[], source: "fred" },
+  { externalId: "mock-nfp", eventName: "Non-Farm Payrolls", country: "United States", currency: "USD", impactLevel: "CRITICAL", affectedSymbols: [] as string[], source: "mock" },
+];
+
+test("filterEventRowsForSymbol: synthetic and unmapped symbols never inherit every stored event", () => {
+  assert.deepEqual(filterEventRowsForSymbol(EVENT_ROWS, "V75", []), []);
+  assert.deepEqual(filterEventRowsForSymbol(EVENT_ROWS, "GER30", []), []);
+  assert.deepEqual(filterEventRowsForSymbol(EVENT_ROWS, "EURUSD", ["EUR", "USD"]).map((r) => r.externalId), ["eur-cpi"],
+    "mock-provider rows are never listed as real events");
+  const tagged = [{ ...EVENT_ROWS[0]!, affectedSymbols: ["GER30"] }];
+  assert.deepEqual(filterEventRowsForSymbol(tagged, "GER30", []).map((r) => r.externalId), ["eur-cpi"]);
+});
+
+function loaderFromRows(calendar?: { checked: boolean; note: string | null }): SelectedMarketDeps["loadEventsFn"] {
+  return async (symbol, hints) => {
+    // The pre-fix loader kept every row when hints were empty; the builder must
+    // still never list another market's events for a synthetic symbol.
+    const rows = hints.length === 0 ? EVENT_ROWS : filterEventRowsForSymbol(EVENT_ROWS, symbol, hints);
+    const eventTime = new Date(Date.now() + 3 * 3600_000).toISOString();
+    return {
+      events: rows.map((r) => ({
+        externalId: r.externalId, title: r.eventName, currency: r.currency,
+        impactLevel: r.impactLevel as "HIGH", eventTime, minutesUntil: 180,
+      })),
+      scorerInput: [],
+      ...(calendar ? { calendar } : {}),
+    };
+  };
+}
+
+test("a synthetic market lists no economic events and says why", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () => makeChart(bullishBars(60, 1000, 0.5), { ...FRESH_FS, source: "deriv" })) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "V75", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: loaderFromRows({ checked: true, note: null }) },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.deepEqual(env.upcomingEvents, []);
+  assert.match(env.newsRisk.calendarNote ?? "", /Synthetic market/);
+});
+
+test("an unchecked calendar is never reported as checked", async () => {
+  for (const calendar of [{ checked: false, note: CALENDAR_NOT_CONFIGURED_NOTE }, undefined]) {
+    clearSelectedMarketCache();
+    const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+    const env = await getSelectedMarketSnapshot(
+      { symbolRaw: "EURUSD", refresh: true },
+      { getChartCandlesFn: stub, loadEventsFn: async () => ({ events: [], scorerInput: [], ...(calendar ? { calendar } : {}) }) },
+    );
+    assert.ok(env.ok);
+    if (!env.ok) return;
+    assert.equal(env.newsRisk.calendarChecked, false);
+    assert.ok((env.newsRisk.calendarNote ?? "").length > 0);
+    assert.doesNotMatch(env.newsRisk.summary, /No relevant/);
+  }
 });

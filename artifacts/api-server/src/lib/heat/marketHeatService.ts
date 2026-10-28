@@ -208,7 +208,7 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
           freshness: price.freshness,
           updatedAt: price.updatedAt,
           priceTimeBasis: price.priceTimeBasis,
-          source: price.provider,
+          source: price.source.name,
           candleCount: price.candleCount,
         },
         news: { ...newsSignal, connected: false },
@@ -237,11 +237,15 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
 
   // Price probes are only meaningful when macro is active; dedupe across scopes.
   const priceCache = new Map<string, PriceSignal>();
+  // Per-symbol "a current feed answered" (readPriceProvider source.connected):
+  // a stale series or the stored mirror returned bars but is not connected.
+  const priceConnected = new Map<string, boolean>();
   async function priceFor(symbol: string): Promise<PriceSignal> {
     if (!macroActive) return UNAVAILABLE_PRICE;
     const cached = priceCache.get(symbol);
     if (cached) return cached;
     const read = await readPriceProvider(symbol, timeframe, nowMs);
+    priceConnected.set(symbol, read.source.connected);
     const sig: PriceSignal = {
       available: read.available,
       momentum: read.momentum,
@@ -249,7 +253,7 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
       freshness: read.freshness,
       updatedAt: read.updatedAt,
       priceTimeBasis: read.priceTimeBasis,
-      source: read.provider,
+      source: read.source.name,
       candleCount: read.candleCount,
     };
     priceCache.set(symbol, sig);
@@ -318,8 +322,15 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
     calendar: calendarSignal,
   });
 
+  // The provider chip claims a CONNECTED price feed only when a contributing
+  // symbol's feed is current: the aggregate verdict counts any returned bars
+  // as connected, which would paint a stale/stored series as a live provider.
+  const priceFeedConnected =
+    global.priceSource.connected &&
+    global.priceSource.status !== "stale" &&
+    allMacroSymbols.some((s) => priceConnected.get(s) === true);
   const providerStatus: ProviderStatusRow = {
-    price: global.priceSource,
+    price: { ...global.priceSource, connected: priceFeedConnected },
     news: newsRead.source,
     calendar: calendarRead.source,
   };
@@ -415,7 +426,7 @@ export async function buildSymbolHeat(
       freshness: price.freshness,
       updatedAt: price.updatedAt,
       priceTimeBasis: price.priceTimeBasis,
-      source: price.provider,
+      source: price.source.name,
       candleCount: price.candleCount,
     },
     news: isSynthetic ? { ...newsSignal, connected: false } : newsSignal,

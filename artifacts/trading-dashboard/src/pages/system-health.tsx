@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-type Subsys = { status: string; notes: string[]; metrics?: Record<string, unknown>; paperOnly?: boolean; liveTradingAllowed?: boolean };
+type Subsys = { status: string; checkScope?: "REACHABILITY_ONLY" | "IN_PROCESS"; notes: string[]; metrics?: Record<string, unknown>; paperOnly?: boolean; liveTradingAllowed?: boolean };
 type Report = {
   health_check_id: string; generated_at: string;
   overallStatus: "HEALTHY"|"DEGRADED"|"UNSAFE"|"FAILED";
@@ -12,10 +12,21 @@ type Report = {
   databaseStatus: { connected: boolean; missingTables: string[]; rowCounts: Record<string, number> };
   endpointStatus: { totalChecked: number; passed: number; failed: number; degraded: number; results: Array<{ path: string; status: number|null; ok: boolean; latencyMs: number }> };
   safetyStatus: { hardBlocks: Array<{ code: string; severity: string; message: string }>; warnings: string[] };
-  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean };
-  performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number };
+  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean; scanChecked?: boolean };
+  performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number | null };
   recommendedAdminActions: string[]; warnings: string[]; errors: string[];
 };
+
+/** "OK" from an HTTP probe only means the route answered — say exactly that. */
+export function subsystemBadgeLabel(v: Pick<Subsys, "status" | "checkScope">): string {
+  return v.status === "OK" && v.checkScope === "REACHABILITY_ONLY" ? "Reachable" : v.status;
+}
+
+/** A scan that did not run is "not checked", never "true". Downgrade-only. */
+export function redactionLabel(s: Report["secretSafetyStatus"]): string {
+  if (s.scanChecked !== true) return "not checked (scan could not run)";
+  return s.redactionWorking ? "no secret-shaped strings found" : "secret-shaped strings found";
+}
 
 const tone = (s: string): "default"|"secondary"|"destructive"|"outline" => {
   if (s === "HEALTHY" || s === "OK") return "default";
@@ -67,7 +78,7 @@ export default function SystemHealthPage() {
             <Card><CardHeader><CardTitle className="text-xs">Overall</CardTitle></CardHeader><CardContent><Badge variant={tone(report.overallStatus)}>{report.overallStatus}</Badge></CardContent></Card>
             <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent><Badge variant="outline">{report.liveTradingStatus}</Badge></CardContent></Card>
             <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent><Badge>{report.mode}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent>{report.performanceStatus.latestNotificationCriticalCount}</CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent>{report.performanceStatus.latestNotificationCriticalCount ?? "not checked"}</CardContent></Card>
           </div>
 
           <Card>
@@ -78,7 +89,7 @@ export default function SystemHealthPage() {
                   <div key={k} className="rounded border p-3" data-testid={`subsystem-${k}`}>
                     <div className="flex items-center justify-between mb-1">
                       <strong>{k}</strong>
-                      <Badge variant={tone(v.status)}>{v.status}</Badge>
+                      <Badge variant={tone(v.status)}>{subsystemBadgeLabel(v)}</Badge>
                     </div>
                     <div className="text-xs text-muted-foreground">{v.notes.join(" · ")}</div>
                   </div>
@@ -122,7 +133,7 @@ export default function SystemHealthPage() {
               <CardContent className="text-sm space-y-1">
                 <div>Frontend leaks: {report.secretSafetyStatus.secretsDetectedInFrontend}</div>
                 <div>Log leaks: {report.secretSafetyStatus.secretsDetectedInLogs}</div>
-                <div>Working: {String(report.secretSafetyStatus.redactionWorking)}</div>
+                <div data-testid="text-redaction-status">Scan: {redactionLabel(report.secretSafetyStatus)}</div>
               </CardContent>
             </Card>
           </div>

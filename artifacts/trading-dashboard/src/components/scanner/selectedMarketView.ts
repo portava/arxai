@@ -32,6 +32,7 @@ export interface SelectedMarketViewInput {
   levelsWithheld?: boolean;
   levelsWithheldReason?: string | null;
   dataState?: SelectedMarketDataState;
+  readWithheldReason?: string | null;
   highlights: {
     entryZone: { low: number; high: number } | null;
     suggestedStop: number | null;
@@ -45,11 +46,28 @@ export interface SelectedMarketViewInput {
 export const WITHHELD_FALLBACK_REASON =
   "Saved levels are too far from the current price to show. They'll return once the feed and analysis line up.";
 
+/** Shown when the feed is not live-confirmed and the server gave no reason. */
+export const NOT_LIVE_LEVELS_REASON =
+  "The market data feed is not confirmed live, so entry, stop and target are not shown.";
+
+/**
+ * Whether the snapshot may show a DIRECTIONAL read (bias, confidence, trend,
+ * levels). Downgrade-only: only a LIVE_CONFIRMED feed with no server-stated
+ * withheld reason qualifies; a missing dataState is not a confirmation.
+ */
+export function selectedMarketReadShown(ok: {
+  dataState?: SelectedMarketDataState;
+  readWithheldReason?: string | null;
+}): boolean {
+  return ok.dataState === "LIVE_CONFIRMED" && !ok.readWithheldReason;
+}
+
 export function resolveSelectedMarketView(
   ok: SelectedMarketViewInput,
 ): SelectedMarketView {
   const h = ok.highlights;
   const hasLevels =
+    selectedMarketReadShown(ok) &&
     !ok.levelsWithheld &&
     h.entryZone != null &&
     h.suggestedStop != null &&
@@ -71,6 +89,29 @@ export function resolveSelectedMarketView(
   // No confirmed feed → honest waiting state (never zeros styled as levels).
   if (ok.dataState === "UNAVAILABLE") return { kind: "waiting" };
 
+  // A feed that is not live-confirmed: state that, never the drift sentence.
+  if (!selectedMarketReadShown(ok)) {
+    return { kind: "withheld", reason: ok.readWithheldReason ?? ok.levelsWithheldReason ?? NOT_LIVE_LEVELS_REASON };
+  }
+
   // Otherwise the guard withheld drifted geometry — surface its own reason.
   return { kind: "withheld", reason: ok.levelsWithheldReason ?? WITHHELD_FALLBACK_REASON };
+}
+
+// Clock-skew allowance before a data time is treated as stamped in the future.
+const DATA_AS_OF_SKEW_MS = 5_000;
+
+/**
+ * The "Data as of …" label. A data time later than now is not an observation
+ * (e.g. a forming bar's scheduled close): it is never clamped to "0s ago".
+ * Downgrade-only: the client never invents a time the server did not send.
+ */
+export function selectedMarketDataAsOfLabel(dataAsOf: string | null | undefined, nowMs: number): string {
+  if (!dataAsOf) return "Awaiting live market data";
+  const t = Date.parse(dataAsOf);
+  if (!Number.isFinite(t)) return "Data time unknown";
+  if (t > nowMs + DATA_AS_OF_SKEW_MS) return "Data time unconfirmed (the feed stamped it in the future)";
+  const s = Math.round((nowMs - Math.min(t, nowMs)) / 1000);
+  if (s < 60) return `Data as of ${s}s ago`;
+  return `Data as of ${Math.round(s / 60)}m ago`;
 }

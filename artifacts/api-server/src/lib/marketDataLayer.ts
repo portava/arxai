@@ -9,6 +9,7 @@
 // - Risk governor adapter NEVER places orders; it only returns approve/block.
 
 import { marketSimulator } from "./marketSimulator.js";
+import { isFxWeekendClosed } from "../brain/timing/sessionKillZoneEngine.js";
 
 export type Provider = "SIMULATOR" | "MT5_BRIDGE" | "EXTERNAL" | "CHART_ONLY";
 export type Environment = "SIMULATOR" | "DEMO" | "LIVE" | "UNKNOWN";
@@ -105,32 +106,54 @@ function inSession(s: SessionWindow, hour: number): boolean {
   if (s.openUTC < s.closeUTC) return hour >= s.openUTC && hour < s.closeUTC;
   return hour >= s.openUTC || hour < s.closeUTC; // wraps midnight
 }
-function nextHourFor(target: number, fromHour: number): number {
-  return target > fromHour ? target - fromHour : 24 - fromHour + target;
+const HOUR_MS = 3_600_000;
+
+/** A session is open only inside its UTC window AND while the FX week is open. */
+function sessionOpenAt(s: SessionWindow, at: Date): boolean {
+  return inSession(s, at.getUTCHours()) && !isFxWeekendClosed(at);
 }
 
-export type SessionLabel = "QUIET" | "NORMAL" | "ACTIVE" | "HIGH_VOLATILITY" | "AVOID";
+/**
+ * Whole hours from the start of the current UTC hour to the session's next
+ * open (or close) transition, honouring the weekend close. Sessions open and
+ * close on UTC hour boundaries, and the FX week opens/closes on a New York
+ * hour boundary, so stepping hour by hour is exact.
+ */
+function hoursToNextTransition(s: SessionWindow, hourStartMs: number, opening: boolean): number {
+  for (let k = 1; k <= 8 * 24; k++) {
+    const before = sessionOpenAt(s, new Date(hourStartMs + (k - 1) * HOUR_MS));
+    const after = sessionOpenAt(s, new Date(hourStartMs + k * HOUR_MS));
+    if (opening ? (!before && after) : (before && !after)) return k;
+  }
+  return 8 * 24;
+}
+
+export type SessionLabel = "QUIET" | "NORMAL" | "ACTIVE" | "HIGH_VOLATILITY" | "AVOID" | "CLOSED";
 
 export function sessionClock() {
   const now = new Date();
-  const hour = now.getUTCHours();
-  const active = SESSIONS.filter((s) => inSession(s, hour));
+  const marketClosed = isFxWeekendClosed(now);
+  const hourStartMs = Math.floor(now.getTime() / HOUR_MS) * HOUR_MS;
+  const active = SESSIONS.filter((s) => sessionOpenAt(s, now));
   const overlap = active.length >= 2;
   const londonNY = active.some((s) => s.id === "London") && active.some((s) => s.id === "NewYork");
   let label: SessionLabel = "QUIET";
-  if (londonNY) label = "HIGH_VOLATILITY";
+  if (marketClosed) label = "CLOSED";
+  else if (londonNY) label = "HIGH_VOLATILITY";
   else if (overlap) label = "ACTIVE";
   else if (active.length === 1) label = "NORMAL";
 
   // next open/close for each session
   const upcoming = SESSIONS.map((s) => ({
     id: s.id,
-    isActive: inSession(s, hour),
-    nextOpenInHours: nextHourFor(s.openUTC, hour),
-    nextCloseInHours: nextHourFor(s.closeUTC, hour),
+    isActive: sessionOpenAt(s, now),
+    nextOpenInHours: hoursToNextTransition(s, hourStartMs, true),
+    nextCloseInHours: hoursToNextTransition(s, hourStartMs, false),
   }));
 
-  const recommendation = label === "HIGH_VOLATILITY"
+  const recommendation = label === "CLOSED"
+    ? "Interbank FX is closed for the weekend (Friday 17:00 to Sunday 17:00 New York time). No session is open."
+    : label === "HIGH_VOLATILITY"
     ? "Be cautious — heightened volatility around London/NY overlap. Tighten stops."
     : label === "ACTIVE" ? "Good window for trend strategies."
     : label === "NORMAL" ? "Normal liquidity for the active session."
@@ -138,6 +161,7 @@ export function sessionClock() {
 
   return {
     nowUTC: now.toISOString(),
+    marketClosed,
     activeSessions: active.map((a) => a.id),
     overlap,
     sessionLabel: label,

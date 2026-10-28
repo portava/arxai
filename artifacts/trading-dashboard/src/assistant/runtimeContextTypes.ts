@@ -40,6 +40,9 @@ export interface HealthSummary {
 export interface BridgeDiagnosticSummary {
   bridgeMode: BridgeMode;
   heartbeatPresent: boolean;
+  /** Whose heartbeat this is: the caller's own EA connection, none (the
+   * caller has no connection), or the platform bridge (anonymous caller). */
+  heartbeatScope?: "your_connection" | "no_connection" | "platform";
   lastHeartbeatAt: string | null;
   heartbeatAgeSeconds: number | null;
   brokerExecutionEnabled: boolean;

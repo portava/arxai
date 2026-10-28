@@ -224,9 +224,15 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <DataQualityBadge label={data.dataQuality.label} />
-              <Badge variant="outline" className={cn(gradeColor(data.timingGrade))}>
-                Grade {data.timingGrade}
-              </Badge>
+              {data.dataQuality.hasCandleData ? (
+                <Badge variant="outline" className={cn(gradeColor(data.timingGrade))}>
+                  Grade {data.timingGrade}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-zinc-400 border-zinc-500/30" data-testid="timing-grade-unmeasured">
+                  Not graded — no current candles
+                </Badge>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -244,7 +250,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
             <ScorePill label="Tradeability" value={Math.round(data.tradeabilityScore)} />
             <ScorePill label="Edge" value={Math.round(data.edgeScore)} />
             <ScorePill label="Danger" value={Math.round(data.dangerScore)} cls="border-rose-500/20" />
-            <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} />
+            <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability)}%`} />
             <ScorePill label="Room to move" value={Math.round(data.roomToMove)} />
             <ScorePill
               label="Pressure"
@@ -304,7 +310,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Primary confidence</span>
-            <span className="font-mono tabular-nums">{Math.round(data.heatSource.primaryConfidence * 100)}%</span>
+            <span className="font-mono tabular-nums">{Math.round(data.heatSource.primaryConfidence)}%</span>
           </div>
           {data.heatSource.backup && (
             <>
@@ -315,7 +321,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
               {data.heatSource.backupConfidence != null && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Backup confidence</span>
-                  <span className="font-mono tabular-nums">{Math.round(data.heatSource.backupConfidence * 100)}%</span>
+                  <span className="font-mono tabular-nums">{Math.round(data.heatSource.backupConfidence)}%</span>
                 </div>
               )}
             </>
@@ -329,11 +335,52 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
   );
 }
 
+// ── Viewer's local clock ────────────────────────────────────────────────────
+
+/**
+ * The viewer's current local time, from the browser clock in the browser's own
+ * locale and time zone, refreshed every 15s. The server's `userLocalTime` is
+ * the computation time of a (possibly cached) read, so it is never shown as
+ * "your local time".
+ */
+function useViewerLocalTime(): string {
+  const format = () => {
+    try {
+      return new Date().toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+    } catch {
+      return new Date().toLocaleString();
+    }
+  };
+  const [text, setText] = useState<string>(format);
+  useEffect(() => {
+    const id = setInterval(() => setText(format()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+  return text;
+}
+
 // ── Tab: Today ─────────────────────────────────────────────────────────────
+
+const SESSION_CARD_NAMES = ["Sydney", "Asia", "London", "New York"] as const;
+type SessionCardName = (typeof SESSION_CARD_NAMES)[number];
+
+/**
+ * Which session cards the server's session name lights. The overlap label
+ * ("London/NY Overlap") means BOTH London and New York are open; any name that
+ * matches no card (weekend, synthetic 24/7) lights none.
+ */
+function sessionCardsFor(sessionName: string): SessionCardName[] {
+  const n = sessionName.toLowerCase();
+  if (n.includes("overlap") && n.includes("london") && (n.includes("ny") || n.includes("new york"))) {
+    return ["London", "New York"];
+  }
+  return SESSION_CARD_NAMES.filter((name) => n === name.toLowerCase());
+}
 
 function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
   const session = data?.session;
-  const localTime = session?.userLocalTime;
+  const localTime = useViewerLocalTime();
+  const activeSessionCards = session ? sessionCardsFor(session.sessionName) : [];
 
   return (
     <div className="space-y-4">
@@ -344,19 +391,18 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
             <Clock className="h-4 w-4 text-muted-foreground" />
             Today's Market Sessions
           </CardTitle>
-          {localTime && (
-            <CardDescription className="text-xs">Your local time: {localTime}</CardDescription>
-          )}
+          <CardDescription className="text-xs" data-testid="viewer-local-time">Your local time: {localTime}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {session ? (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {["Asia", "London", "New York"].map((name) => {
-                  const isCurrent = session.sessionName.toLowerCase().includes(name.toLowerCase());
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                {SESSION_CARD_NAMES.map((name) => {
+                  const isCurrent = activeSessionCards.includes(name);
                   return (
                     <div
                       key={name}
+                      data-testid={`session-card-${name}`}
                       className={cn(
                         "rounded-lg border p-3 text-xs",
                         isCurrent
@@ -381,13 +427,18 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
                         <div className="space-y-0.5 text-muted-foreground">
                           <div>Kill zone: <span className="text-foreground">{session.killZone}</span></div>
                           <div>Heat bonus: <span className="text-foreground font-mono">+{session.sessionHeatBonus}</span></div>
-                          <div>Fakeout risk: <span className="text-foreground font-mono">{Math.round(session.fakeoutRisk * 100)}%</span></div>
+                          <div>Fakeout risk: <span className="text-foreground font-mono">{Math.round(session.fakeoutRisk)}%</span></div>
                         </div>
                       )}
                     </div>
                   );
                 })}
               </div>
+              {activeSessionCards.length === 0 && (
+                <p className="text-xs text-foreground" data-testid="session-no-card">
+                  Current session: {session.sessionName} — none of the session cards above is active.
+                </p>
+              )}
               <p className="text-xs text-muted-foreground leading-relaxed">{session.sessionDescription}</p>
             </>
           ) : (
@@ -417,6 +468,7 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
                     />
                   </div>
                   <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.heatScore)}</span>
+                  {r.dataQuality.label !== "real" && <DataQualityBadge label={r.dataQuality.label} />}
                   <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-5", actionColor(r.bestAction))}>
                     {humanizeAction(r.bestAction)}
                   </Badge>
@@ -500,6 +552,11 @@ function BySymbolTab({ results, isLoading, selectedSymbol }: { results: MarketTi
 
 // ── Shared session card ─────────────────────────────────────────────────────
 
+function SessionCardLocalTime() {
+  const localTime = useViewerLocalTime();
+  return <CardDescription className="text-xs" data-testid="session-card-local-time">Your local time: {localTime}</CardDescription>;
+}
+
 function SessionCard({
   session,
   compact = false,
@@ -527,9 +584,7 @@ function SessionCard({
             </Badge>
           </div>
         </div>
-        {session.userLocalTime && (
-          <CardDescription className="text-xs">Local: {session.userLocalTime}</CardDescription>
-        )}
+        <SessionCardLocalTime />
       </CardHeader>
       <CardContent className="space-y-3">
         {!compact && (
@@ -537,7 +592,7 @@ function SessionCard({
         )}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
           <ScorePill label="Heat bonus" value={`+${session.sessionHeatBonus}`} />
-          <ScorePill label="Fakeout risk" value={`${Math.round(session.fakeoutRisk * 100)}%`} />
+          <ScorePill label="Fakeout risk" value={`${Math.round(session.fakeoutRisk)}%`} />
           <ScorePill label="Trade bonus" value={`+${session.tradeabilityBonus}`} />
         </div>
         {session.bestSymbols.length > 0 && (
@@ -571,6 +626,14 @@ function SessionCard({
 
 // ── Tab: By Session ─────────────────────────────────────────────────────────
 
+/** "HH:MM" in UTC for an ISO timestamp; "unknown time" when it cannot be parsed. */
+function utcClockOf(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return "unknown time";
+  const d = new Date(ms);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+
 function BySessionTab({ data }: { data: MarketTimingRead | undefined }) {
   if (!data) return <HonestEmpty message="Session data requires a timing read for the selected symbol." />;
   return (
@@ -580,7 +643,7 @@ function BySessionTab({ data }: { data: MarketTimingRead | undefined }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Session Context</CardTitle>
           <CardDescription className="text-xs">
-            Session timing is derived from UTC hour {data.session.utcHour}:00. Kill zones mark the highest-probability windows.
+            Session timing is derived from the UTC clock when this read was computed ({utcClockOf(data.generatedAt)} UTC). Kill zones mark the highest-probability windows.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -712,7 +775,7 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <ScorePill label="Danger score" value={Math.round(data.dangerScore)} cls={data.dangerScore >= 60 ? "border-rose-500/20" : ""} />
-              <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} cls={data.trapProbability >= 0.5 ? "border-amber-500/20" : ""} />
+              <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability)}%`} cls={data.trapProbability >= 50 ? "border-amber-500/20" : ""} />
               <ScorePill label="Move stage" value={humanizeMoveStage(data.moveStage)} />
             </div>
             {data.newsOverlay.blocksTrade && (
@@ -759,7 +822,7 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
                     />
                   </div>
                   <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.dangerScore)}</span>
-                  {r.trapProbability >= 0.5 && (
+                  {r.trapProbability >= 50 && (
                     <Badge variant="outline" className="text-[9px] px-1 bg-amber-500/10 text-amber-400 border-amber-500/30">
                       Trap
                     </Badge>
@@ -808,10 +871,10 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
             </Badge>
           </div>
           {data.dataQuality.hasNewsData ? (
-            <CardDescription className="text-xs">Live news data</CardDescription>
+            <CardDescription className="text-xs">Economic calendar connected</CardDescription>
           ) : (
             <CardDescription className="text-xs text-amber-400/80">
-              No live news feed connected — showing basic timing estimate only
+              No economic calendar connected — news heat is a schedule-based estimate only
             </CardDescription>
           )}
         </CardHeader>
@@ -826,6 +889,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
                     Type: {news.eventType.replace(/_/g, " ")}
                     {news.minutesUntil != null && news.minutesUntil > 0 && ` · in ${Math.round(news.minutesUntil)} min`}
                     {news.minutesSince != null && news.minutesSince > 0 && ` · ${Math.round(news.minutesSince)} min ago`}
+                    {news.phase === "PRE_EVENT" && news.minutesUntil == null && " · release time not confirmed"}
                   </div>
                 </div>
               </div>
@@ -851,7 +915,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
               <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
               No active news events detected for {data.symbol}.
               {!data.dataQuality.hasNewsData && (
-                <span className="text-amber-400/80"> (No live news feed)</span>
+                <span className="text-amber-400/80"> (No economic calendar connected)</span>
               )}
             </div>
           )}
@@ -1345,6 +1409,7 @@ export default function MarketHeatMapPage() {
   const [chartSymbol] = useChartSymbol();
   const symbol = bareSymbol(chartSymbol);
   const { name } = useAssistantName();
+  const viewerLocalTime = useViewerLocalTime();
   const tz = useMemo(() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; }
   }, []);
@@ -1465,12 +1530,8 @@ export default function MarketHeatMapPage() {
           <span className="font-medium text-foreground">{symbol || "—"}</span>
           <span>·</span>
           <span>{GetTimingBrainTimeframe.M15}</span>
-          {data?.session?.userLocalTime && (
-            <>
-              <span>·</span>
-              <span>Local: {data.session.userLocalTime}</span>
-            </>
-          )}
+          <span>·</span>
+          <span>Your local time: {viewerLocalTime}</span>
           {data && (
             <>
               <span>·</span>
@@ -1489,3 +1550,6 @@ export default function MarketHeatMapPage() {
     </div>
   );
 }
+
+// Exported for render tests only (truth/label regression coverage).
+export { NowTab, TodayTab, BySessionTab, NewsHeatTab, SessionCard, DangerWindowsTab };

@@ -106,7 +106,8 @@ export default function EdgeDiscoveryPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-slate-200">All slices ({reports.data?.reports.length ?? 0})</h2>
+        <h2 className="mb-2 text-sm font-semibold text-slate-200">Latest slices ({reports.data?.reports.length ?? 0})</h2>
+        <p className="mb-2 text-[11px] text-slate-500">Each slice shows its most recent generated report only; older runs of the same slice are not counted.</p>
         <EdgeBreakdownTable reports={reports.data?.reports ?? []} onSelect={(r) => setSelectedId(r.id)} />
       </section>
 

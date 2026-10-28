@@ -235,16 +235,21 @@ function eventTime(iso: string): string {
 }
 
 function ProviderChip({ source }: { source: MarketHeatSource }) {
-  const ok = source.connected;
+  // Success tone ONLY for a connected source the server grades live — a
+  // stale/delayed read is never painted as a healthy connection. A stale
+  // series is named stale (it returned old data), not "not connected".
+  const ok = source.connected && source.status === "live";
+  const label = source.connected ? source.status : source.status === "stale" ? "stale" : "not connected";
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
         ok ? "border-success/40 text-success" : "border-txt-muted/30 text-txt-muted"
       }`}
       title={source.note ?? undefined}
+      data-testid={`heat-provider-chip-${source.kind}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-success" : "bg-txt-muted/50"}`} />
-      {source.name}: {ok ? source.status : "not connected"}
+      {source.name}: {label}
     </span>
   );
 }

@@ -344,7 +344,9 @@ export interface ScannerTruthInputs {
 function genericSourceLabel(tier: FeedProviderTier): string {
   switch (tier) {
     case "broker":
-      return "Your broker feed";
+      // Not "your": a broker-tier source names the MT5 market-data path, not
+      // the viewer's own account (the series may come from another bridge).
+      return "MT5 broker feed";
     case "synthetic":
       return "Synthetic feed";
     case "thirdParty":
@@ -655,7 +657,9 @@ export function resolveScannerTruth(
   // we say so plainly and data-driven (never hardcoded to "broker dormant").
   const sourceNote =
     provider.tier === "broker"
-      ? "Live bars are coming from your broker feed."
+      ? resolvedDisplayStatus === "LIVE"
+        ? "Bars are coming from an MT5 broker feed — not verified as your own account."
+        : "These are MT5 broker bars, but they are not confirmed live right now (they may be a stored copy or behind)."
       : provider.tier === "synthetic"
         ? "These are synthetic-market bars (algorithmic volatility index), not your broker's bars."
         : provider.tier === "thirdParty"

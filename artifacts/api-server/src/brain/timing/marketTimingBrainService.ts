@@ -99,11 +99,14 @@ export async function computeTimingRead(
     ? (closes[closes.length - 1]!.close >= closes[0]!.close ? "BULL" : "BEAR")
     : "FLAT";
 
-  const [newsOverlay, broadFlowRaw] = await Promise.all([
+  const [newsHeat, broadFlowRaw] = await Promise.all([
     computeNewsHeatFn(symbol),
     computeBroadFlowFn(symbol, selfDir),
   ]);
-  const hasNewsData = newsOverlay.phase !== "NONE" || newsOverlay.blocksTrade;
+  // News data = a real economic-calendar provider answered, whether or not an
+  // event is near. A schedule-based fallback event is not live news data.
+  const { calendarConnected, ...newsOverlay } = newsHeat;
+  const hasNewsData = calendarConnected === true;
   const hasBroadFlowData = broadFlowRaw.dataQuality !== "unavailable";
 
   // ─── 4. Heat Score Engine ────────────────────────────────────────────────
@@ -132,7 +135,7 @@ export async function computeTimingRead(
   });
 
   // ─── 7. Tradeability / Edge / Danger Engine ───────────────────────────────
-  const tradeOut = computeTradeability({
+  const tradeRaw = computeTradeability({
     heatScore: heatOut.heatScore,
     heatState: heatOut.heatState,
     isFalseHeat: heatOut.isFalseHeat,
@@ -150,17 +153,33 @@ export async function computeTimingRead(
     dangerFromBroadFlow: broadFlowRaw.verdict === "OPPOSING" ? 60 : broadFlowRaw.verdict === "CONFLICTED" ? 30 : 0,
     candles: candleData,
   });
+  // Fail closed: without current candles nothing about this market's timing
+  // was measured — the scores above come from session constants only. Such a
+  // read can never permit an entry or carry a grade better than F.
+  const tradeOut = hasCandleData
+    ? tradeRaw
+    : { ...tradeRaw, entryPermission: "STAND_DOWN" as const, timingGrade: "F" as const };
 
   // ─── 8. Best Action resolution ───────────────────────────────────────────
-  const { bestAction, actionReason } = resolveBestAction(
-    tradeOut.entryPermission,
-    tradeOut.moveStage,
-    trapRoom.trapProbability,
-    broadFlowRaw.verdict,
-    newsOverlay,
-    trapRoom.buyPressure,
-    trapRoom.sellPressure,
-  );
+  const { bestAction, actionReason } = hasCandleData
+    ? resolveBestAction(
+        tradeOut.entryPermission,
+        tradeOut.moveStage,
+        trapRoom.trapProbability,
+        broadFlowRaw.verdict,
+        newsOverlay,
+        trapRoom.buyPressure,
+        trapRoom.sellPressure,
+      )
+    : {
+        bestAction: "STAND_DOWN" as const,
+        actionReason:
+          `No current candles for ${symbol} (market data unavailable or market closed) — timing was not measured. ` +
+          "No entry until current market data returns." +
+          (newsOverlay.blocksTrade || newsOverlay.phase === "AT_EVENT"
+            ? ` A news window is also active${newsOverlay.eventName ? ` (${newsOverlay.eventName})` : ""}.`
+            : ""),
+      };
 
   // ─── 9. Data quality / honesty marker ────────────────────────────────────
   const dataQuality = resolveDataQuality(hasCandleData, hasQuoteData, hasNewsData, hasBroadFlowData);
@@ -319,7 +338,7 @@ function resolveDataQuality(
   const parts: string[] = [];
   if (!hasCandleData) parts.push("candles unavailable (session-only estimate)");
   if (!hasQuoteData) parts.push("live quote unavailable");
-  if (!hasNewsData) parts.push("no scheduled news events");
+  if (!hasNewsData) parts.push("economic calendar not connected");
   if (!hasBroadFlowData) parts.push("broad flow unavailable");
 
   const note = parts.length === 0
