@@ -14619,6 +14619,8 @@ export interface ScalpResult {
   estimatedRiskAmount: number | null;
   rewardToRisk: number | null;
   estimatedMargin: number | null;
+  /** Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency. */
+  moneyCurrency?: string | null;
   spreadRisk: ScalpResultSpreadRisk;
   slippageRisk: ScalpResultSlippageRisk;
   newsRisk: ScalpResultNewsRisk;

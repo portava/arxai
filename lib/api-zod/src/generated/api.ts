@@ -16434,6 +16434,12 @@ export const CreateMeScalpFocusResponse = zod.object({
   estimatedRiskAmount: zod.number().nullable(),
   rewardToRisk: zod.number().nullable(),
   estimatedMargin: zod.number().nullable(),
+  moneyCurrency: zod
+    .string()
+    .nullish()
+    .describe(
+      "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+    ),
   spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
@@ -16624,6 +16630,12 @@ export const CreateMeScalpRankResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
@@ -16805,6 +16817,12 @@ export const CreateMeScalpRankResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
@@ -16986,6 +17004,12 @@ export const CreateMeScalpRankResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
@@ -17167,6 +17191,12 @@ export const CreateMeScalpRankResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
@@ -17369,6 +17399,12 @@ export const CreateMeScalpBuildResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
@@ -17550,6 +17586,12 @@ export const CreateMeScalpBuildResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),

@@ -66,14 +66,50 @@ function roundTo(v: number, digits: number): number {
 }
 
 
-/** $ change per 1.0 price move per 1.0 lot — broker truth first, contract size fallback. */
-function moneyPerPricePerLot(spec: ScalpSpecInput): number | null {
-  if (num(spec.tickValue) && num(spec.tickSize) && spec.tickSize > 0) {
-    return spec.tickValue / spec.tickSize;
+/** Upper-cased currency code, or null when not reported. */
+function currencyCode(v: string | null | undefined): string | null {
+  return typeof v === "string" && v.trim() ? v.trim().toUpperCase() : null;
+}
+
+/** True only when BOTH currencies are reported and they are the same. */
+function sameCurrency(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = currencyCode(a);
+  const y = currencyCode(b);
+  return x !== null && y !== null && x === y;
+}
+
+function hasTickTruth(spec: ScalpSpecInput): boolean {
+  return num(spec.tickValue) && num(spec.tickSize) && spec.tickSize > 0;
+}
+
+/**
+ * Account-currency change per 1.0 price move per 1.0 lot.
+ *  - Broker tick value / tick size first (MT5 reports tick value in the
+ *    account's deposit currency).
+ *  - Contract size only when the symbol's profit currency is reported and is
+ *    the account currency. Otherwise contract size gives a figure in the
+ *    profit currency (e.g. yen for USDJPY), which is not account money.
+ */
+function moneyPerPricePerLot(spec: ScalpSpecInput, accountCurrency: string | null | undefined): number | null {
+  if (hasTickTruth(spec)) {
+    return spec.tickValue! / spec.tickSize!;
   }
-  if (num(spec.contractSize) && spec.contractSize > 0) {
+  if (num(spec.contractSize) && spec.contractSize > 0 && sameCurrency(spec.profitCurrency, accountCurrency)) {
     return spec.contractSize;
   }
+  return null;
+}
+
+/**
+ * Account-currency notional per 1.0 price per 1.0 lot, for the margin
+ * estimate. contractSize × price is in the profit currency; it is account
+ * money only when the currencies match, or after converting with the rate the
+ * broker's tick value implies (tickValue / tickSize / contractSize).
+ */
+function notionalPerPricePerLot(spec: ScalpSpecInput, accountCurrency: string | null | undefined): number | null {
+  if (!num(spec.contractSize) || !(spec.contractSize > 0)) return null;
+  if (sameCurrency(spec.profitCurrency, accountCurrency)) return spec.contractSize;
+  if (hasTickTruth(spec)) return spec.tickValue! / spec.tickSize!;
   return null;
 }
 
@@ -147,6 +183,7 @@ function rejectResult(
     estimatedRiskAmount: null,
     rewardToRisk: null,
     estimatedMargin: null,
+    moneyCurrency: currencyCode(input.account.currency),
     spreadRisk: "LOW",
     slippageRisk: "LOW",
     newsRisk: input.scanner?.newsRisk ?? "LOW",
@@ -257,15 +294,31 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const point = num(spec.point) && spec.point > 0 ? spec.point : Math.pow(10, -digits);
 
   // ── Specs needed for honest sizing.
-  const mpp = moneyPerPricePerLot(spec);
+  const accountCurrency = currencyCode(input.account.currency);
+  const mpp = moneyPerPricePerLot(spec, accountCurrency);
   if (!spec.hasBrokerTruth || !num(spec.minLot) || !num(spec.maxLot) || !num(spec.lotStep) || !num(mpp)) {
+    // Contract size is known but not in account money: say exactly which value
+    // is missing instead of sizing a lot in the wrong currency.
+    const profitCurrency = currencyCode(spec.profitCurrency);
+    const currencyGap = spec.hasBrokerTruth && num(spec.minLot) && num(spec.maxLot) && num(spec.lotStep)
+      && num(spec.contractSize) && spec.contractSize > 0 && !num(mpp);
+    const plain = currencyGap
+      ? `The broker has not reported a tick value for this market, and ${
+          profitCurrency && accountCurrency
+            ? `its profit currency (${profitCurrency}) is not the account currency (${accountCurrency})`
+            : profitCurrency
+              ? `the account currency is not known (profit is in ${profitCurrency})`
+              : "its profit currency is not known"
+        }, so ${DEFAULT_ASSISTANT_NAME} cannot work out a lot size or the money at risk.`
+      : `${DEFAULT_ASSISTANT_NAME} needs the broker's live symbol details (lot size, point value) for this market before building a scalp.`;
     return rejectResult(input, "AWAITING_DATA", `${DEFAULT_ASSISTANT_NAME} needs live symbol specs before building a scalp for this market.`, {
       canWatch: true,
-      plain: `${DEFAULT_ASSISTANT_NAME} needs the broker's live symbol details (lot size, point value) for this market before building a scalp.`,
+      plain,
       // Not a feed reason: price, live feed and sufficiency all passed above.
       rejectReason: "NO_SPECS",
     });
   }
+  const notionalPerLot = notionalPerPricePerLot(spec, accountCurrency);
   const minLot = spec.minLot;
   const maxLot = spec.maxLot;
   const lotStep = spec.lotStep;
@@ -542,6 +595,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     stopDist,
     mainTpDist,
     mpp,
+    notionalPerLot,
     minLot,
     maxLot,
     lotStep,
@@ -658,6 +712,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     estimatedRiskAmount,
     rewardToRisk,
     estimatedMargin,
+    moneyCurrency: accountCurrency,
     spreadRisk,
     slippageRisk,
     newsRisk,
@@ -688,6 +743,8 @@ interface SizeArgs {
   stopDist: number;
   mainTpDist: number;
   mpp: number;
+  /** Account-currency notional per 1.0 price per lot; null when not knowable. */
+  notionalPerLot: number | null;
   minLot: number;
   maxLot: number;
   lotStep: number;
@@ -708,8 +765,8 @@ interface SizeResult {
 }
 
 function sizeLot(a: SizeArgs): SizeResult {
-  const perLotRisk = a.stopDist * a.mpp; // $ risk per 1 lot
-  const perLotProfit = a.mainTpDist * a.mpp; // $ profit per 1 lot at main TP
+  const perLotRisk = a.stopDist * a.mpp; // account-currency risk per 1 lot
+  const perLotProfit = a.mainTpDist * a.mpp; // account-currency profit per 1 lot at main TP
   if (!(perLotRisk > 0)) {
     return { lot: null, estimatedRisk: null, estimatedProfit: null, estimatedMargin: null, belowMin: false, cappedByMax: false };
   }
@@ -733,11 +790,11 @@ function sizeLot(a: SizeArgs): SizeResult {
   const estimatedRisk = roundTo(lot * perLotRisk, 2);
   const estimatedProfit = roundTo(lot * perLotProfit, 2);
 
-  // Margin estimate (best-effort): notional / leverage.
+  // Margin estimate (best-effort): account-currency notional / leverage.
   let estimatedMargin: number | null = null;
-  if (num(a.spec.contractSize) && a.spec.contractSize > 0) {
+  if (num(a.notionalPerLot) && a.notionalPerLot > 0) {
     const leverage = num(a.account.leverage) && a.account.leverage! > 0 ? a.account.leverage! : DEFAULT_LEVERAGE;
-    estimatedMargin = roundTo((lot * a.spec.contractSize * a.price) / leverage, 2);
+    estimatedMargin = roundTo((lot * a.notionalPerLot * a.price) / leverage, 2);
   }
 
   return { lot, estimatedRisk, estimatedProfit, estimatedMargin, belowMin, cappedByMax: clampedToMax };

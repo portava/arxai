@@ -22809,6 +22809,14 @@ components:
         estimatedRiskAmount: { type: number, nullable: true }
         rewardToRisk: { type: number, nullable: true }
         estimatedMargin: { type: number, nullable: true }
+        moneyCurrency:
+          type: string
+          nullable: true
+          description: >-
+            Currency of estimatedProfitMainTP, estimatedRiskAmount,
+            estimatedMargin and targetProfitAmount: the trading account's
+            currency as the broker reported it. Null when not known; the UI
+            must then not name a currency.
         spreadRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }
         slippageRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }
         newsRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }
