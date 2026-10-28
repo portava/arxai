@@ -231,6 +231,10 @@ router.get("/economic-events", async (req, res): Promise<void> => {
 const UpcomingQuery = z.object({
   hours: z.coerce.number().int().min(1).max(168).default(24),
   minImpact: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).default("HIGH"),
+  // Optional look-back so a caller can keep showing an event that has JUST
+  // released (its post-release volatility window is still active). Default 0
+  // keeps the original "eventTime >= now" semantics for every other caller.
+  pastMinutes: z.coerce.number().int().min(0).max(120).default(0),
 });
 
 router.get("/economic-events/upcoming", async (req, res): Promise<void> => {
@@ -238,7 +242,7 @@ router.get("/economic-events/upcoming", async (req, res): Promise<void> => {
     const q = UpcomingQuery.parse(req.query);
     const ranks = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
     const allowed = ranks.slice(ranks.indexOf(q.minImpact));
-    const since = new Date();
+    const since = new Date(Date.now() - q.pastMinutes * 60 * 1000);
     const until = new Date(Date.now() + q.hours * 3600 * 1000);
     const rows = await db.select().from(economicEventsTable)
       .where(and(
@@ -247,7 +251,13 @@ router.get("/economic-events/upcoming", async (req, res): Promise<void> => {
       ))
       .orderBy(economicEventsTable.eventTime);
     const filtered = rows.filter((r) => allowed.includes(r.impactLevel));
-    res.json({ events: filtered.map(serializeEvent), windowHours: q.hours, minImpact: q.minImpact });
+    res.json({
+      events: filtered.map(serializeEvent),
+      windowHours: q.hours,
+      minImpact: q.minImpact,
+      pastMinutes: q.pastMinutes,
+      checkedAt: new Date().toISOString(),
+    });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /economic-events/upcoming failed");
     res.status(400).json({ error: "Invalid request" });
