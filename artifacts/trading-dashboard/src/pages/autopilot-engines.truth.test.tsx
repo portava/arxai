@@ -61,4 +61,23 @@ describe("Autopilot boards name their engine", () => {
     expect(screen.getByTestId("paper-autopilot-missing").textContent).toMatch(/unknown/i);
     expect(screen.queryByText("Cycles today")).toBeNull();
   });
+
+  it("today's counts that hit the server's read window are shown as lower bounds", () => {
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 50, paper_trades_opened_today: 7, paper_trades_closed_today: 2,
+      safety_blocks_today: 1, last_cycle: null, today_counts_capped: true, cycles_read_limit: 50,
+    }} />);
+    expect(screen.queryByText("50")).toBeNull();
+    expect(screen.getByText("50+")).toBeTruthy();
+    expect(screen.getByTestId("paper-autopilot-capped").textContent).toMatch(/latest 50 cycles only/);
+  });
+
+  it("uncapped counts are shown as totals", () => {
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 12, paper_trades_opened_today: 3, paper_trades_closed_today: 2,
+      safety_blocks_today: 0, last_cycle: null, today_counts_capped: false, cycles_read_limit: 50,
+    }} />);
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.queryByTestId("paper-autopilot-capped")).toBeNull();
+  });
 });

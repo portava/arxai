@@ -568,14 +568,28 @@ export async function computeRangeSummary(userId: number, range: RangeKey) {
   };
 }
 
+/** The summary reads only this many of the user's latest paper autopilot cycles. */
+export const AUTOPILOT_SUMMARY_READ_LIMIT = 50;
+
 /** Read-only Build FF autopilot summary (last cycle, today's cycles). */
 export async function computeAutopilotSummary(userId: number) {
   const recent = await db.select().from(autopilotCyclesTable)
     .where(eq(autopilotCyclesTable.userId, userId))
-    .orderBy(desc(autopilotCyclesTable.id)).limit(50);
-  const today = new Date().toISOString().slice(0, 10);
+    .orderBy(desc(autopilotCyclesTable.id)).limit(AUTOPILOT_SUMMARY_READ_LIMIT);
+  return summarizeAutopilotCycles(recent, new Date());
+}
+
+type AutopilotCycleRow = typeof autopilotCyclesTable.$inferSelect;
+
+export function summarizeAutopilotCycles(recent: AutopilotCycleRow[], now: Date) {
+  const today = now.toISOString().slice(0, 10);
   const todayCycles = recent.filter(c => ymd(c.startedAt) === today);
   const last = recent[0] ?? null;
+  // "Today" counts come from the latest AUTOPILOT_SUMMARY_READ_LIMIT cycles
+  // only. When every cycle read started today, more of today's cycles may lie
+  // beyond the window, so the counts are lower bounds, not totals.
+  const todayCountsCapped =
+    recent.length >= AUTOPILOT_SUMMARY_READ_LIMIT && todayCycles.length === recent.length;
   return {
     last_cycle: last ? {
       autopilot_cycle_id: last.autopilotCycleId,
@@ -592,6 +606,11 @@ export async function computeAutopilotSummary(userId: number) {
     paper_trades_opened_today: todayCycles.reduce((a, c) => a + c.paperTradesOpened, 0),
     paper_trades_closed_today: todayCycles.reduce((a, c) => a + c.paperTradesClosed, 0),
     safety_blocks_today: todayCycles.reduce((a, c) => a + c.paperTradesRejected, 0),
+    /** True when the today counts may be undercounted by the read window. */
+    today_counts_capped: todayCountsCapped,
+    cycles_read_limit: AUTOPILOT_SUMMARY_READ_LIMIT,
+    /** "Today" is the UTC calendar day. */
+    today_basis: "UTC" as const,
     mode: "PAPER_ONLY" as const,
     live_trading_allowed: false as const,
   };

@@ -752,6 +752,10 @@ function MemoryTab() {
  *  Center reports. Each surface names the engine it reports. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function PaperAutopilotSummaryCard({ a }: { a: any }) {
+  // The server counts "today" (UTC) from the latest cycles_read_limit cycles
+  // only; when they all started today the counts are lower bounds.
+  const capped = a?.today_counts_capped === true;
+  const n = (v: unknown) => `${v ?? 0}${capped ? "+" : ""}`;
   return (
     <Card className="rounded-2xl border-border bg-card">
       <CardHeader>
@@ -780,26 +784,36 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
       <CardContent className="text-sm grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
           <div className="text-txt-secondary text-xs">Cycles today</div>
-          <div className="font-bold">{a?.cycles_today ?? 0}</div>
+          <div className="font-bold">{n(a?.cycles_today)}</div>
         </div>
         <div>
           <div className="text-txt-secondary text-xs">Opened today</div>
           <div className="font-bold">
-            {a?.paper_trades_opened_today ?? 0}
+            {n(a?.paper_trades_opened_today)}
           </div>
         </div>
         <div>
           <div className="text-txt-secondary text-xs">Closed today</div>
           <div className="font-bold">
-            {a?.paper_trades_closed_today ?? 0}
+            {n(a?.paper_trades_closed_today)}
           </div>
         </div>
         <div>
           <div className="text-txt-secondary text-xs">
             Safety blocks today
           </div>
-          <div className="font-bold">{a?.safety_blocks_today ?? 0}</div>
+          <div className="font-bold">{n(a?.safety_blocks_today)}</div>
         </div>
+        {capped && (
+          <div
+            className="col-span-2 sm:col-span-4 text-xs text-warning"
+            data-testid="paper-autopilot-capped"
+          >
+            Counted from your latest {a?.cycles_read_limit ?? "few"} cycles
+            only, and all of them ran today (UTC), so today&apos;s totals are
+            at least these numbers.
+          </div>
+        )}
         {a?.last_cycle && (
           <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2">
             Last cycle: {a.last_cycle.autopilot_cycle_id} —{" "}
