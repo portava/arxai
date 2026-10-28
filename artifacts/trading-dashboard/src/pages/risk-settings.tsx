@@ -195,7 +195,23 @@ function AuditBanner({ symbol }: { symbol?: string }) {
   );
 
   if (isLoading) return <Skeleton className="h-16 w-full" />;
-  if (!audit) return null;
+  // No audit read is no verdict: say so where the verdict normally sits.
+  if (!audit) {
+    return (
+      <div
+        className="flex items-center gap-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-5 py-3"
+        data-testid="risk-audit-banner-unavailable"
+      >
+        <AlertTriangle className="h-6 w-6 shrink-0 text-yellow-400" />
+        <div className="min-w-0">
+          <p className="font-semibold text-sm text-yellow-300">Risk audit could not be loaded</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            No risk verdict is shown, because none was read. It is retried every 30 seconds.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1433,7 +1449,26 @@ function RiskAuditDetail() {
   const { data: audit, isLoading, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
-  if (!audit) return null;
+  if (!audit) {
+    return (
+      <Card className="border-yellow-500/30" data-testid="risk-audit-detail-unavailable">
+        <CardHeader className="bg-muted/20 border-b border-border/50 flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity size={16} /> Live Risk Audit
+            </CardTitle>
+            <CardDescription className="text-xs">The risk audit could not be loaded</CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Retry</Button>
+        </CardHeader>
+        <CardContent className="p-6">
+          <p className="text-sm text-yellow-300">
+            No metrics, blocked conditions or warnings are shown, because the audit could not be checked.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-border/50">

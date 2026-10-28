@@ -300,3 +300,13 @@ describe("the page re-reads what its own actions changed", () => {
     expect(opts?.query?.refetchInterval).toBeGreaterThan(0);
   });
 });
+
+describe("a failed risk audit read is stated where the verdict sits", () => {
+  it("the banner and the audit card say the audit could not be loaded", () => {
+    renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, audit: { data: undefined, isError: true } });
+    expect(screen.getByTestId("risk-audit-banner-unavailable").textContent).toMatch(/could not be loaded/i);
+    expect(screen.getByTestId("risk-audit-detail-unavailable").textContent).toMatch(/could not be (loaded|checked)/i);
+    expect(screen.queryByText(/all risk checks passed/i)).toBeNull();
+    expect(screen.queryByText("All clear")).toBeNull();
+  });
+});
