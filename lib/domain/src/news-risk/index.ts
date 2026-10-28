@@ -4,7 +4,10 @@
 // a risk report for a given symbol: label, time-until-event, warning text,
 // AI summary. Rules per spec:
 //   - HIGH-impact within 15 min       → NO_TRADE_WINDOW
-//   - CRITICAL impact (any time +/- window) → NO_TRADE_WINDOW
+//   - CRITICAL impact (any time +/- window) → NO_TRADE_WINDOW. This is a HOLD
+//     for the whole look-around (24h before → 2h after the release); the copy
+//     says so and says when the release is, and only calls the window "active"
+//     inside the ±15-minute release window.
 //   - HIGH-impact within 60 min       → HIGH_RISK
 //   - MEDIUM-impact within 30 min     → CAUTION
 //   - Volatility flag (actual vs forecast deviates heavily) → CAUTION min
@@ -111,6 +114,16 @@ export function detectVolatilitySpike(actual: string | null | undefined, forecas
   return Math.abs((a - f) / f) > 0.5;
 }
 
+/** Plain duration: "45m", "1h 5m", "20h 0m". */
+function formatMinutes(minutes: number): string {
+  const m = Math.round(Math.abs(minutes));
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+/** The release window itself (both HIGH and CRITICAL): ±15 minutes. */
+const RELEASE_WINDOW_MIN = 15;
+
 // ── Core scorer ─────────────────────────────────────────────────────────
 export function scoreNewsRisk(args: {
   symbol: string;
@@ -172,13 +185,22 @@ export function scoreNewsRisk(args: {
 
   const { event, deltaMin } = chosen;
   const minutesAbs = Math.abs(deltaMin);
-  const directionWord = deltaMin >= 0 ? `in ${Math.round(minutesAbs)}m` : `${Math.round(minutesAbs)}m ago`;
+  const directionWord = deltaMin >= 0 ? `in ${formatMinutes(minutesAbs)}` : `${formatMinutes(minutesAbs)} ago`;
+  const inReleaseWindow = deltaMin >= -RELEASE_WINDOW_MIN && deltaMin <= RELEASE_WINDOW_MIN;
+  // CRITICAL outside its release window: the block is ARX's critical-event
+  // hold, not an active release window.
+  let criticalHold = false;
   let label: NewsRiskLabel = "CLEAR";
 
   // Rule application order — first match wins.
   if (event.impactLevel === "CRITICAL") {
     label = "NO_TRADE_WINDOW";
-    reasons.push(`CRITICAL impact event ${event.eventName} — no-trade window enforced.`);
+    if (inReleaseWindow) {
+      reasons.push(`CRITICAL impact event ${event.eventName} ${directionWord} — within the 15-minute release window.`);
+    } else {
+      criticalHold = true;
+      reasons.push(`CRITICAL impact event ${event.eventName} ${directionWord} — ARX holds new trades from 24 hours before a critical event until 2 hours after it.`);
+    }
   } else if (event.impactLevel === "HIGH" && deltaMin >= -15 && deltaMin <= 15) {
     label = "NO_TRADE_WINDOW";
     reasons.push(`HIGH impact ${event.eventName} ${directionWord} — within 15-minute no-trade window.`);
@@ -205,7 +227,17 @@ export function scoreNewsRisk(args: {
   const blockTrading = label === "NO_TRADE_WINDOW";
   const tradeWarning = label === "CLEAR"
     ? null
-    : `${label.replace(/_/g, " ")}: ${event.impactLevel} impact ${event.eventName} (${event.currency}) ${directionWord}. ${blockTrading ? "Trading blocked for this symbol while the no-trade window is active." : "Proceed with elevated caution — consider reducing size or waiting."}`;
+    : `${label.replace(/_/g, " ")}: ${event.impactLevel} impact ${event.eventName} (${event.currency}) ${directionWord}. ${
+      criticalHold
+        ? `ARX holds new trades on ${symbol} from 24 hours before a critical event until 2 hours after it. ${
+            deltaMin >= 0
+              ? `The release itself is not due for ${formatMinutes(minutesAbs)}.`
+              : `It was released ${formatMinutes(minutesAbs)} ago; the hold ends 2 hours after the release.`
+          }`
+        : blockTrading
+          ? "Trading blocked for this symbol while the no-trade window is active."
+          : "Proceed with elevated caution — consider reducing size or waiting."
+    }`;
 
   // AI summary always carries the disclaimer.
   const aiSummary = `${symbol}: ${event.impactLevel} impact "${event.eventName}" (${event.currency}) ${directionWord}. Risk: ${label.replace(/_/g, " ")}.${tradeWarning ? ` ${tradeWarning}` : ""} This is not a guarantee, gated by live-execution safety layer.`;
