@@ -121,3 +121,12 @@ describe("Command Center Chat tab readiness", () => {
     expect(screen.queryByText(/is ready/i)).toBeNull();
   });
 });
+
+describe("Command Center Chat tab history heading", () => {
+  it("calls the generated mentor sessions what they are, not chat conversations", async () => {
+    render(<QueryClientProvider client={newClient()}><AICommandCenterPage /></QueryClientProvider>);
+    await flush();
+    expect(screen.queryByText(/Conversations/)).toBeNull();
+    expect(screen.getByTestId("chat-mentor-history-heading").textContent).toMatch(/Recent mentor sessions/);
+  });
+});

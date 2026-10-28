@@ -60,3 +60,20 @@ describe("MentorHistory View button", () => {
     expect(onSelect).toHaveBeenCalledWith(page20[12]);
   });
 });
+
+describe("MentorHistory wording and dates", () => {
+  it("dates each group's latest line so it is not read as current", () => {
+    render(<MentorHistory sessions={page20} pageLimit={20} />);
+    const briefing = screen.getByTestId("conversation-group-briefing");
+    const line = within(briefing).getByTestId("conversation-latest-briefing").textContent ?? "";
+    expect(line).toContain("Focus 1");
+    const expected = new Date(page20[0].createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    expect(line).toContain(expected);
+  });
+
+  it("an empty history says there are no mentor sessions, not chat conversations", () => {
+    render(<MentorHistory sessions={[]} pageLimit={20} />);
+    expect(screen.queryByText(/conversations/i)).toBeNull();
+    expect(screen.getByText(/No mentor sessions yet/)).toBeTruthy();
+  });
+});

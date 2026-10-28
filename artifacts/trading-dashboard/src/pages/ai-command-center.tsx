@@ -51,9 +51,9 @@ import { MENTOR_LATEST_QUERY_KEY, mentorHistoryQueryKey, readMentorJson } from "
 // Ruby Command Center — 4-tab, user-facing surface.
 //
 // Tabs:
-//   • Chat       — opens Ruby's floating live chat (voice + typing-indicator
-//                  ready) and shows the user's recent mentor briefings as
-//                  saved conversations.
+//   • Chat       — opens Ruby's floating live chat and shows the user's
+//                  latest generated mentor briefing and recent mentor
+//                  sessions (not their chat history).
 //   • Market Read — plain-language read of the currently-selected market,
 //                  reusing the same SelectedMarketPanel as the scanner.
 //   • Commands   — user-safe trading command examples Ruby will accept,
@@ -256,7 +256,7 @@ function ChatTab() {
         </CardContent>
       </Card>
 
-      {/* Latest mentor briefing — treated as Ruby's most recent saved chat */}
+      {/* Latest generated mentor briefing */}
       {latest.isLoading ? (
         <Skeleton className="h-40 w-full" />
       ) : latest.isError ? (
@@ -298,12 +298,16 @@ function ChatTab() {
         </Card>
       )}
 
-      {/* Saved conversations / history — grouped */}
+      {/* Generated mentor sessions, grouped. These are mentor briefings and
+          notes, not the user's chat history. */}
       <section>
-        <h3 className="mb-2 flex items-center gap-2 text-base font-semibold">
+        <h3 className="mb-2 flex items-center gap-2 text-base font-semibold" data-testid="chat-mentor-history-heading">
           <MessageCircle className="h-4 w-4 text-ruby" />
-          Recent {name} Conversations
+          Recent mentor sessions
         </h3>
+        <p className="mb-2 text-xs text-txt-secondary">
+          Briefings and notes {name}'s mentor generated for you. Your chat messages are not listed here.
+        </p>
         {history.isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : history.isError ? (
