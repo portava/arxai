@@ -40,6 +40,27 @@ function stateBadgeClass(state: TradeHealthAssessmentState): string {
   }
 }
 
+/**
+ * Downgrade-only: the health state is computed from the position's synced
+ * price, which can be stale or of unknown age (the server's own handshake says
+ * so, but the state is not changed by it). When the handshake is missing,
+ * UNKNOWN or BLOCK, or the sync / live-price checks are not PASS, the state is
+ * shown as a read on data that is not current — never a green "Healthy".
+ */
+export function tradeHealthDataNotCurrent(a: Pick<TradeHealthAssessment, "handshake">): string[] | null {
+  const hs = a.handshake ?? null;
+  if (!hs || typeof hs.overallStatus !== "string") return ["Data freshness for this position was not reported."];
+  const checks = Array.isArray(hs.checks) ? hs.checks : [];
+  const stale = checks.filter(
+    (c) => c != null && (c.key === "freshness" || c.key === "currentPriceFresh" || c.key === "positionInSync") && c.status !== "PASS",
+  );
+  if (hs.overallStatus === "BLOCK" || hs.overallStatus === "UNKNOWN" || stale.length > 0) {
+    const details = stale.map((c) => c.detail).filter((d): d is string => typeof d === "string" && d !== "");
+    return details.length > 0 ? details : [hs.userFacingMessage || "Data freshness for this position could not be confirmed."];
+  }
+  return null;
+}
+
 function AssessmentCard({ a }: { a: TradeHealthAssessment }) {
   // Defensive complete-payload gate (Task #609): a truthy-but-partial assessment
   // row — any nested block (tpProgress / slDistance / breakEven / partialClose /
@@ -54,6 +75,8 @@ function AssessmentCard({ a }: { a: TradeHealthAssessment }) {
   const styleMatch = a.styleMatch ?? null;
   const reasons = Array.isArray(a.reasons) ? a.reasons : [];
   const alternatives = Array.isArray(a.alternatives) ? a.alternatives : [];
+
+  const notCurrent = tradeHealthDataNotCurrent(a);
 
   const tpPct =
     tpProgress?.known && tpProgress.progressPct != null
@@ -77,11 +100,21 @@ function AssessmentCard({ a }: { a: TradeHealthAssessment }) {
         </div>
         <Badge
           variant="outline"
-          className={`text-[10px] shrink-0 ${stateBadgeClass(a.state)}`}
+          className={`text-[10px] shrink-0 ${notCurrent && a.state === "healthy" ? "bg-zinc-500/15 text-zinc-300 border-zinc-500/30" : stateBadgeClass(a.state)}`}
+          data-testid={`trade-health-state-${a.ticket}`}
         >
-          {STATE_LABEL[a.state]}
+          {STATE_LABEL[a.state] ?? "Unknown"}{notCurrent ? " (data not current)" : ""}
         </Badge>
       </div>
+
+      {notCurrent && (
+        <div className="text-[11px] text-amber-300" data-testid={`trade-health-not-current-${a.ticket}`}>
+          This read may not match the live position:
+          <ul>
+            {notCurrent.map((d, i) => <li key={i}>• {d}</li>)}
+          </ul>
+        </div>
+      )}
 
       <p className="text-xs text-zinc-300">{a.headline}</p>
 
@@ -235,6 +268,16 @@ export function TradeHealthPanel({
                 {data.summary}
               </p>
             )}
+            {(() => {
+              const ms = typeof data?.evaluatedAt === "string" ? Date.parse(data.evaluatedAt) : NaN;
+              return (
+                <p className="text-[10px] text-zinc-500" data-testid="trade-health-evaluated-at">
+                  {Number.isFinite(ms)
+                    ? `Checked ${new Date(ms).toISOString().slice(11, 19)} UTC from your synced positions.`
+                    : "Check time not reported."}
+                </p>
+              );
+            })()}
 
             {selectedSymbolLabel ? (
               <>
