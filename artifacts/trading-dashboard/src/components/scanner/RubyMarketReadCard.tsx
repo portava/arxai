@@ -245,13 +245,17 @@ export function RubyMarketReadCard({
   // timestamp (newest of lastTickAt / lastCandleAt), never the signal build time.
   const {
     news,
-    newsState,
+    newsState: hookNewsState,
     data: truthData,
     evidence: truthEvidence,
     scannerTruth,
     isLoading: truthLoading,
   } = useSymbolTruth(symbol, chartTimeframe);
   // ONE event-risk sentence for the News block AND the Risk row (eventRiskCopy).
+  // A hook without `newsState` (older callers) falls back to its own loading
+  // flag, so a first fetch in flight still reads "Checking", never "unavailable".
+  const newsState =
+    hookNewsState ?? (news != null ? "available" : truthLoading ? "loading" : "unavailable");
   const eventRisk = eventRiskLine(news, newsState);
   const pricePrecision = scannerTruth?.candles.pricePrecision ?? null;
   const dataUpdatedIso = useMemo(() => {

@@ -111,8 +111,9 @@ test("owner state: the minimum-evidence reason names the sub-rules that failed",
   assert.match(reason, /^There isn't enough confirming evidence yet/);
   assert.match(reason, /only 1 supporting signal \(at least 2 needed\)/);
   assert.match(reason, /net supporting evidence 20\/100 \(at least 25 needed\)/);
-  // The "still needs" list on the same card agrees with the reason.
-  assert.ok(exp.missingContext.includes("enough confirming evidence"));
+  // The "still needs" list on the same card names the same failing sub-rules.
+  assert.ok(exp.missingContext.includes("one more independent confirming signal (1 of 2 found)"));
+  assert.ok(exp.missingContext.includes("stronger net evidence (20/100 so far, 25 needed)"));
 });
 
 test("a reason never cites a sub-rule that passed", () => {

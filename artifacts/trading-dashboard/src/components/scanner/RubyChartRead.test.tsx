@@ -959,6 +959,9 @@ describe("RubyChartRead — read data time and expiry", () => {
     expect(asOf).toContain("Read time unknown");
     expect(asOf).toContain("expired");
     expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+  });
+});
+
 // ── Owner screenshot 2026-10-27 — the HTF was never read ──────────────────────
 //
 // The chart read printed "Higher-timeframe bias No clear edge; Mixed on 1m." and
@@ -988,7 +991,7 @@ describe("owner screenshot 2026-10-27 — HTF bias is stated only when it was re
     mockStoredRead = fullRead({ htfBias: null, htfTimeframe: "M15" });
     render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
     expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent).toBe(
-      "Higher-timeframe (15m) bias not read; Mixed on 1m.",
+      "Higher-timeframe (15m) bias not read; Mixed on 1m. Structure-read confidence: Low (structure scale: Low / Medium / High).",
     );
     const tile = screen.getByTestId("ruby-chart-read-htf-bias");
     expect(tile.textContent).toBe("—");
@@ -1000,7 +1003,7 @@ describe("owner screenshot 2026-10-27 — HTF bias is stated only when it was re
     mockStoredRead = fullRead({ htfBias: "No clear edge" });
     render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
     const structure = screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent ?? "";
-    expect(structure).toBe("Higher-timeframe bias not read; Mixed on 1m.");
+    expect(structure).toBe("Higher-timeframe bias not read; Mixed on 1m. Structure-read confidence: Low (structure scale: Low / Medium / High).");
     expect(structure).not.toContain("No clear edge");
     expect(screen.getByTestId("ruby-chart-read-htf-bias").textContent).toBe("—");
   });
@@ -1010,7 +1013,7 @@ describe("owner screenshot 2026-10-27 — HTF bias is stated only when it was re
     mockStoredRead = fullRead({ htfBias: "Bullish", htfTimeframe: "M15" });
     render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
     expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent).toBe(
-      "Higher timeframe (15m) leans bullish; Mixed on 1m.",
+      "Higher timeframe (15m) leans bullish; Mixed on 1m. Structure-read confidence: Low (structure scale: Low / Medium / High).",
     );
     expect(screen.getByTestId("ruby-chart-read-htf-bias").textContent).toBe("Bullish");
   });
@@ -1119,7 +1122,11 @@ describe("feed-limited action verdict caps the Eleanor read (header + panel agre
 
   it("render: a FULL read under WAIT_FOR_CONFIRMATION keeps the confirmed chip (no over-downgrade)", () => {
     mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
-    mockStoredRead = { gated: false, dataQuality: "ok", readLayer: "FULL", bias: "Bullish" } as RubyReadServerState;
+    mockStoredRead = {
+      gated: false, dataQuality: "ok", readLayer: "FULL", bias: "Bullish",
+      // Fresh data time: a read with none is treated as expired (fail-closed).
+      observedAt: new Date(Date.now() - 10_000).toISOString(),
+    } as RubyReadServerState;
     render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="WAIT_FOR_CONFIRMATION" />);
     expect(mockFeedBadgeProps.aiUsableResolved).toBe(true);
     expect(screen.queryByTestId("ruby-chart-read-feed-warning")).toBeNull();

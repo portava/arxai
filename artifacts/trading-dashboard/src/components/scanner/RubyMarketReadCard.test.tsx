@@ -411,8 +411,9 @@ describe("RubyMarketReadCard — 'still needs' includes the news gap, in the tru
     const text = renderWithNews({ news: null, data: null, isLoading: false });
     expect(text).toContain("1 of 2 found");
     expect(text).toContain("a scheduled-news check (event-risk read unavailable)");
+    // The Risk row prints the same event-risk sentence as the News tile.
     expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain(
-      "News/calendar unavailable — event risk not assessed.",
+      "Event risk not checked — the truth read is unavailable right now.",
     );
   });
 
@@ -429,8 +430,8 @@ describe("RubyMarketReadCard — 'still needs' includes the news gap, in the tru
       isLoading: false,
     });
     expect(text).toContain("the calendar could not be checked");
-    // The Risk row treats an unchecked label as news missing, too.
-    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain("event risk not assessed");
+    // The Risk row mirrors the server's unchecked-calendar label verbatim.
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain("Event risk is unavailable right now.");
   });
 
   it("calendar connected and checked → no news item", () => {
@@ -473,7 +474,7 @@ describe("RubyMarketReadCard — the feed row never says 'Live feed' without a c
     expect(row.className).not.toContain("text-success");
     const tile = screen.getByTestId("ruby-market-read-news").textContent ?? "";
     expect(tile).not.toMatch(/loading/i);
-    expect(tile).toContain("event risk not assessed");
+    expect(tile).toContain("Event risk not checked — the truth read is unavailable right now.");
     const reasoning = screen.getByTestId("ruby-market-read-reasoning").textContent ?? "";
     expect(reasoning).not.toContain("Live feed confirmed.");
     expect(reasoning).toContain("Feed time unconfirmed");

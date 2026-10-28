@@ -57,13 +57,14 @@ afterEach(() => {
 });
 
 describe("ScannerHeaderSummary — a lean is not shown as a confirmed direction", () => {
-  it("owner state: LEAN verdict reads 'Bullish lean · Developing' without the bullish emphasis", () => {
+  it("owner state: LEAN verdict reads 'Bullish lean' without the bullish emphasis", () => {
     verdict = { bias: "BULLISH", stage: "DEVELOPING", biasQualifier: "LEAN" };
     render(<ScannerHeaderSummary running={false} />);
     const bias = screen.getByTestId("scanner-header-bias");
     expect(bias.textContent).toBe("Bullish lean");
     expect(bias.className).not.toContain("text-success");
-    expect(document.body.textContent).toContain("Developing");
+    // The verdict stage is an engine-agreement count; it is never printed bare.
+    expect(document.body.textContent).not.toMatch(/·\s*Developing/);
   });
 
   it("bearish mirror", () => {

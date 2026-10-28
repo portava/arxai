@@ -75,13 +75,13 @@ describe("Chart read Structure row — names its moving-average read and window"
   it("with the server's structureWindow the row says which read and how many bars", () => {
     const d = buildReasoningFromChartRead({ read: read({ structureWindow: 200 }), symbol: "V75", timeframe: "1m" });
     expect(d.evidence.structure).toBe(
-      "Higher-timeframe (15m) bias not read; Mixed on 1m (moving-average trend read over the last 200 1m bars).",
+      "Higher-timeframe (15m) bias not read; Mixed on 1m (moving-average trend read over the last 200 1m bars). Structure-read confidence: Low (structure scale: Low / Medium / High).",
     );
   });
 
   it("without it (older payload) no window is invented", () => {
     const d = buildReasoningFromChartRead({ read: read(), symbol: "V75", timeframe: "1m" });
-    expect(d.evidence.structure).toBe("Higher-timeframe (15m) bias not read; Mixed on 1m.");
+    expect(d.evidence.structure).toBe("Higher-timeframe (15m) bias not read; Mixed on 1m. Structure-read confidence: Low (structure scale: Low / Medium / High).");
     const z = buildReasoningFromChartRead({ read: read({ structureWindow: 0 }), symbol: "V75", timeframe: "1m" });
     expect(z.evidence.structure).not.toMatch(/over the last/);
   });
