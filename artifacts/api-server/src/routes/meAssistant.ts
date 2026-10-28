@@ -44,7 +44,7 @@ import { submitInstantTrade } from "../lib/tradeEngine/pipeline.js";
 import { runHandshake } from "../lib/handshake/coordinator.js";
 import { classifyTradeHealth, computeSlDistance, type OpenPositionInput } from "@workspace/domain/trade-health";
 import { getMarketData } from "../lib/data/dataManager.js";
-import { analyzeChartStructure, quickTrend, type StructureBias } from "../lib/assistant/chartStructure.js";
+import { analyzeChartStructure, readHigherTimeframeBias, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { isUniqueViolation } from "../lib/pgError.js";
@@ -727,9 +727,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   }
 
   const candles = rubyCtx?.candles ?? [];
-  let htfBias: StructureBias = "No clear edge";
-  if ((rubyCtx?.htfCandles.length ?? 0) >= 10) htfBias = quickTrend(rubyCtx!.htfCandles);
-  const read = analyzeChartStructure(candles, { htfBias, draft: draft ?? null });
+  const htfTimeframe = rubyCtx?.htfTimeframe ?? null;
+  const htfBias: StructureBias | null = readHigherTimeframeBias(rubyCtx?.htfCandles, htfTimeframe);
+  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null });
   if (clientFeedUnconfirmed) {
     read.dataQuality = "insufficient";
     if (!read.cautions.includes("Feed not confirmed at draw-time — limited visibility.")) {

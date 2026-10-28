@@ -239,5 +239,6 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
     expiresAt: new Date(firstSeenMs + fresh.validForSeconds * 1000).toISOString(),
     firstSeenAt: new Date(firstSeenMs).toISOString(),
     lateReason,
+    structureWindow: hasSufficientData && candles ? candles.length : null,
   } satisfies RubyMarketEdgeSignal;
 }

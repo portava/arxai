@@ -959,5 +959,85 @@ describe("RubyChartRead — read data time and expiry", () => {
     expect(asOf).toContain("Read time unknown");
     expect(asOf).toContain("expired");
     expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+// ── Owner screenshot 2026-10-27 — the HTF was never read ──────────────────────
+//
+// The chart read printed "Higher-timeframe bias No clear edge; Mixed on 1m." and
+// an "HTF Bias: No clear edge" tile, but the server had never fetched HTF candles
+// (higherTimeframeOf("M1") → null). The server now sends htfBias null +
+// htfTimeframe; the client renders "not read" (and treats the legacy sentinel the
+// same way), and names the HTF timeframe only from the server's field.
+describe("owner screenshot 2026-10-27 — HTF bias is stated only when it was read", () => {
+  function fullRead(extra: Record<string, unknown>): RubyReadServerState {
+    return {
+      gated: false,
+      dataQuality: "ok",
+      readLayer: "FULL",
+      liveSetupWithheld: false,
+      canShowLiveTradeSetup: true,
+      bias: "Mixed",
+      confidence: "Low",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: [],
+      ...extra,
+    } as unknown as RubyReadServerState;
+  }
+
+  it("htfBias null + htfTimeframe M15 → 'Higher-timeframe (15m) bias not read' and an em-dash tile", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead({ htfBias: null, htfTimeframe: "M15" });
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent).toBe(
+      "Higher-timeframe (15m) bias not read; Mixed on 1m.",
+    );
+    const tile = screen.getByTestId("ruby-chart-read-htf-bias");
+    expect(tile.textContent).toBe("—");
+    expect(screen.getByText("HTF (15m) bias")).toBeTruthy();
+  });
+
+  it("legacy sentinel 'No clear edge' with no htfTimeframe is 'not read', never a bias", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead({ htfBias: "No clear edge" });
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const structure = screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent ?? "";
+    expect(structure).toBe("Higher-timeframe bias not read; Mixed on 1m.");
+    expect(structure).not.toContain("No clear edge");
+    expect(screen.getByTestId("ruby-chart-read-htf-bias").textContent).toBe("—");
+  });
+
+  it("a read 15m bias is named with its timeframe", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead({ htfBias: "Bullish", htfTimeframe: "M15" });
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-structure").textContent).toBe(
+      "Higher timeframe (15m) leans bullish; Mixed on 1m.",
+    );
+    expect(screen.getByTestId("ruby-chart-read-htf-bias").textContent).toBe("Bullish");
+  });
+});
+
+// ── Owner screenshot 2026-10-27 — trendline drawn on the chart, "none named" in the read ──
+describe("owner screenshot 2026-10-27 — the chart read's Trendline row is the server's detector note", () => {
+  it("a STRUCTURAL_ONLY payload with trendlineRead renders the note, not 'No specific trendline named.'", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    const note =
+      "Rising support trendline (bullish) has broken on a decisive close. Feed is not live-confirmed, so treat this trendline as context only.";
+    mockStoredRead = {
+      gated: false,
+      dataQuality: "ok",
+      readLayer: "STRUCTURAL_ONLY",
+      liveSetupWithheld: true,
+      canShowLiveTradeSetup: false,
+      bias: "Mixed",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: ["Exact entry, stop, and target levels withheld — Live feed is delayed."],
+      trendlineRead: { trendlineNote: note, trendlineStatus: "broken", trendlineContextOnly: true, trendlineDetection: "detected" },
+    } as unknown as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const row = screen.getByTestId("ruby-chart-read-reasoning-evidence-trendline").textContent ?? "";
+    expect(row).toBe(note);
+    expect(row).not.toContain("No specific trendline named.");
+    expect(row).not.toContain("Trendline read withheld");
   });
 });

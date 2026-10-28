@@ -22,7 +22,7 @@ import type {
   ScalpResult,
 } from "@workspace/api-client-react";
 import type { SetupReason } from "@/components/scanner/RubySetupReason";
-import { isStructuralOnlyRead, type ChartRead } from "@/lib/rubyReadPanelState";
+import { isStructuralOnlyRead, resolveHtfRead, type ChartRead } from "@/lib/rubyReadPanelState";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import {
   isScalpAwaitingBrokerSpecs,
@@ -160,17 +160,25 @@ export function buildReasoningFromMarketRead(
   );
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(chosen?.whatIsHappening, NOT_ENOUGH);
+  // The direction evidence (e.g. "Higher highs / higher lows") is swing
+  // STRUCTURE, not a chart pattern — it belongs in the Structure row.
+  const directionEvidence = downgraded ? "" : clean(chosen?.whyThisDirection);
+  const structureBase = clean(chosen?.whatIsHappening);
+  const structure = structureBase
+    ? directionEvidence
+      ? `${structureBase} ${directionEvidence}`
+      : structureBase
+    : NOT_ENOUGH;
   const momentum = orElse(
     chosen?.whyNow,
     orElse(chosen?.timingState, NOT_ENOUGH),
   );
-  const pattern = downgraded
-    ? "Pattern read withheld until the live feed confirms."
-    : orElse(chosen?.whyThisDirection, "No confirmed chart pattern called out.");
-  const trendline = downgraded
-    ? "Trendline read withheld until the live feed confirms."
-    : "No specific trendline called out.";
+  // The market-read engine has no chart-pattern or trendline producer, so these
+  // rows say so in every state (a "withheld until the feed confirms" variant
+  // would promise an assessment that never comes; "none called out" would imply
+  // one was made). Trendlines/patterns come from the chart read and overlay.
+  const pattern = "Chart patterns are not assessed by this read.";
+  const trendline = "Trendlines are not assessed by this read.";
 
   const ds = String(signal.dataSource ?? "").toUpperCase();
   let supportResistance: string;
@@ -533,6 +541,14 @@ export interface ChartReadReasoningInput {
   asOf?: string | null;
 }
 
+function describeHtfBias(bias: string): string {
+  const b = bias.toLowerCase();
+  if (b.includes("bull")) return "leans bullish";
+  if (b.includes("bear")) return "leans bearish";
+  if (b.includes("range")) return "is range-bound";
+  return `is ${b}`;
+}
+
 function biasDir(bias: string | null | undefined): "BUY" | "SELL" | null {
   const b = clean(bias).toLowerCase();
   if (b.includes("bull")) return "BUY";
@@ -580,15 +596,33 @@ export function buildReasoningFromChartRead(
   }
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(
-    clean(read.htfBias)
-      ? `Higher-timeframe bias ${read.htfBias}${clean(read.bias) ? `; ${read.bias} on ${timeframe}` : ""}.`
-      : read.bias,
-    NOT_ENOUGH,
-  );
+  // The HTF clause says only what was read: a bias named with the timeframe it
+  // came from, or "not read" — never a bias word for an HTF nobody fetched.
+  const htf = resolveHtfRead(read);
+  const htfName = htf.label ? `Higher timeframe (${htf.label})` : "Higher timeframe";
+  const htfClause = htf.bias
+    ? `${htfName} ${describeHtfBias(htf.bias)}`
+    : `${htf.label ? `Higher-timeframe (${htf.label})` : "Higher-timeframe"} bias not read`;
+  // Name the classifier and window this bias came from (server-supplied count),
+  // so "Mixed" here is not read as contradicting the scanner's swing-structure
+  // "bullish" on the same market — they are different reads over different bars.
+  const windowBars = typeof read.structureWindow === "number" && Number.isFinite(read.structureWindow) && read.structureWindow > 0
+    ? Math.round(read.structureWindow)
+    : null;
+  const chartReadSource = windowBars != null
+    ? ` (moving-average trend read over the last ${windowBars} ${timeframe} bars)`
+    : "";
+  const structure = clean(read.bias)
+    ? `${htfClause}; ${read.bias} on ${timeframe}${chartReadSource}.`
+    : NOT_ENOUGH;
   const momentum = clean(read.confidence)
     ? `Read confidence ${read.confidence}.`
     : NOT_ENOUGH;
+  // Pattern / Trendline rows say what the server's detectors reported on this
+  // read's closed-candle window (a structural read carries them too — the server
+  // already flags them context-only). Withheld only when there is no readable
+  // structure (gated / feed not confirmed). A missing key means the read did not
+  // assess it: "unavailable" — never "none named", which would claim a look.
   const feedBlocked = gated || feedNotConfirmed;
   // The server's own withheld-setup reason (blockedReason, surfaced by the panel
   // resolver as `reason`) — a structural read must cite the gate that actually
@@ -596,14 +630,10 @@ export function buildReasoningFromChartRead(
   const structuralWhy = reason || clean(read.blockedReason);
   const pattern = feedBlocked
     ? "Pattern read withheld until the live feed confirms."
-    : structuralOnly
-      ? "Pattern call withheld — structural read only."
-      : "No specific chart pattern named.";
+    : orElse(read.patternRead?.patternNote, "Pattern read unavailable for this read.");
   const trendline = feedBlocked
     ? "Trendline read withheld until the live feed confirms."
-    : structuralOnly
-      ? "Trendline call withheld — structural read only."
-      : "No specific trendline named.";
+    : orElse(read.trendlineRead?.trendlineNote, "Trendline read unavailable for this read.");
 
   let supportResistance: string;
   if (feedBlocked) {

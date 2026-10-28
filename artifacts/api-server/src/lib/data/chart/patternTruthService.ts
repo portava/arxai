@@ -123,6 +123,37 @@ export function buildPatternTruthVerdict(
   }
 }
 
+/**
+ * What the chart-pattern DETECTOR saw over this window: "insufficient" (too few
+ * closed bars), "none" (it looked and found no pattern), "detected", or null when
+ * the timeframe is unsupported or the detector failed. Lets a reader state
+ * absence as an observation only when the detector actually looked. Display-only.
+ */
+export function classifyPatternDetection(input: {
+  symbol: string;
+  displaySymbol?: string;
+  timeframe: string;
+  rawCandles: Candle[];
+  source?: string | null;
+}): "insufficient" | "none" | "detected" | null {
+  try {
+    if (!isChartTimeframe(input.timeframe)) return null;
+    if (!Array.isArray(input.rawCandles)) return null;
+    if (input.rawCandles.length === 0) return "insufficient";
+    const { candles } = normalizeCandles(input.rawCandles, {
+      symbol: input.symbol,
+      displaySymbol: input.displaySymbol ?? input.symbol,
+      timeframe: input.timeframe as ChartTimeframe,
+      source: input.source ?? null,
+    });
+    const detection = detectChartPatterns(candles);
+    if (detection.insufficient) return "insufficient";
+    return detection.patterns.length === 0 ? "none" : "detected";
+  } catch {
+    return null;
+  }
+}
+
 // ── PATTERN LIBRARY READ (Task #654) — additive, display-only child input ─────
 //
 // A SECOND, fully ADDITIVE composition over the same raw candles + the caller's

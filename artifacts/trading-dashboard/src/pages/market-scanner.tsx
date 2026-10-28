@@ -878,6 +878,15 @@ export default function MarketScanner() {
               <RefreshCw className="h-4 w-4 mr-1" />
               {scanCoolingDown ? `Scan again in ${cooldownSecs}s` : "Scan"}
             </Button>
+            {/* Operator auto-scan engine state — a fact about the scan engine,
+                not about the selected market, so it lives beside its controls.
+                Shown only once /api/market-scanner/status has answered and the
+                last poll did not fail; never inferred from a missing status. */}
+            {status != null && typeof status.running === "boolean" && !err && (
+              <span className="text-xs text-muted-foreground" data-testid="scanner-autoscan-state">
+                {status.running ? "Auto-scan on" : "Auto-scan off"}
+              </span>
+            )}
             {realIsAdmin ? (
               status?.running
                 ? <Button size="sm" variant="outline" onClick={stop} disabled={busy} data-testid="scanner-btn-stop"><Square className="h-4 w-4 mr-1" />Stop</Button>
@@ -952,7 +961,7 @@ export default function MarketScanner() {
         the floating Ruby orb (bottom-20 right-4 on mobile); add the device
         safe-area inset so content is not hidden behind a home indicator. */}
     <div className="mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
-      <ScannerHeaderSummary running={Boolean(status?.running)} />
+      <ScannerHeaderSummary />
 
       {err && (
         <CompactAlert

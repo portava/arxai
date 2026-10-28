@@ -183,6 +183,45 @@ function buildHeadline(
 }
 
 /**
+ * Agreement tally over the four component reads — the ONE rule composeVerdict
+ * uses for its stage, exported so a surface that labels the stage ("1 of 2
+ * engines bullish") counts exactly what the composer counted. A component votes
+ * only when it is present AND has a known alignment; everything else is "no
+ * read" (an absent engine is not a disagreeing engine).
+ */
+export interface AgreementSummary {
+  /** Present components with a known alignment (the voting set). */
+  voting: number;
+  bullish: number;
+  bearish: number;
+  neutral: number;
+  /** Absent components or components with an UNKNOWN alignment. */
+  noRead: number;
+}
+
+export function summarizeAgreement(
+  components: ReadonlyArray<{ present: boolean; alignment: TruthAlignment | string }>,
+): AgreementSummary {
+  let bullish = 0, bearish = 0, neutral = 0, noRead = 0;
+  for (const c of components) {
+    if (!c.present || c.alignment === "UNKNOWN") noRead++;
+    else if (c.alignment === "BULLISH") bullish++;
+    else if (c.alignment === "BEARISH") bearish++;
+    else if (c.alignment === "NEUTRAL") neutral++;
+    else noRead++;
+  }
+  return { voting: bullish + bearish + neutral, bullish, bearish, neutral, noRead };
+}
+
+/** Stage from an agreement tally — the composer's own rule. */
+export function stageFromAgreement(s: AgreementSummary): TruthStage {
+  if (s.voting === 0) return "UNKNOWN";
+  if (s.bullish > 0 && s.bearish > 0) return "CONFLICT";
+  if ((s.bullish >= 2 && s.bearish === 0) || (s.bearish >= 2 && s.bullish === 0)) return "ALIGNED";
+  return "DEVELOPING";
+}
+
+/**
  * Compose the one verdict. Pure: same inputs → same output, no clock/I/O.
  */
 export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
@@ -208,20 +247,8 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
     bias = "NEUTRAL";
   }
 
-  // ── Stage from agreement structure ────────────────────────────────────────
-  let stage: TruthStage;
-  if (present.length === 0) {
-    stage = "UNKNOWN";
-  } else if (conflict) {
-    stage = "CONFLICT";
-  } else if (
-    (bullish.length >= 2 && bearish.length === 0) ||
-    (bearish.length >= 2 && bullish.length === 0)
-  ) {
-    stage = "ALIGNED";
-  } else {
-    stage = "DEVELOPING";
-  }
+  // ── Stage from agreement structure (shared rule, see summarizeAgreement) ──
+  const stage: TruthStage = stageFromAgreement(summarizeAgreement(input.components));
 
   // ── Reference direction for evidence framing ──────────────────────────────
   const refDir: "BULLISH" | "BEARISH" | null =

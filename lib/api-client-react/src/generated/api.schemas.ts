@@ -14158,6 +14158,8 @@ export interface RubyMarketEdgeSignal {
   lateReason: string | null;
   /** Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers. */
   scannerBinding?: RubyMarketEdgeSignalScannerBinding;
+  /** Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind. */
+  structureWindow?: number | null;
 }
 
 export type RubyMarketReadExplanationDefaultMode =

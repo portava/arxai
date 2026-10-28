@@ -22437,6 +22437,10 @@ components:
               nullable: true
               enum: [no_scanner_read, quote_last_only, no_bound_quote, different_candles, scanner_not_live, setup_withheld, null]
             reason: { type: string, nullable: true }
+        structureWindow:
+          type: integer
+          nullable: true
+          description: Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind.
 
     MeMarketEdgeResp:
       type: object

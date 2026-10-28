@@ -335,6 +335,10 @@ export interface RubyMarketEdgeSignal {
   /** When the setup first formed (ISO) — carried across reads. */
   firstSeenAt: string;
   lateReason: string | null;
+  /** Closed bars the structure/regime reads actually ran over (the engine's
+   * input length), or null when the read was blind. Optional so persisted
+   * snapshots and fixtures without it still type-check; never a constant. */
+  structureWindow?: number | null;
 }
 
 // ── Engine inputs (normalized from real subsystems by the service) ───────────
