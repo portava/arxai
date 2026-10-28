@@ -317,7 +317,7 @@ export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | u
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Primary confidence</span>
-            <span className="font-mono tabular-nums">{Math.round(data.heatSource.primaryConfidence * 100)}%</span>
+            <span className="font-mono tabular-nums">{formatScorePct(data.heatSource.primaryConfidence)}</span>
           </div>
           {data.heatSource.backup && (
             <>
@@ -328,7 +328,7 @@ export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | u
               {data.heatSource.backupConfidence != null && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Backup confidence</span>
-                  <span className="font-mono tabular-nums">{Math.round(data.heatSource.backupConfidence * 100)}%</span>
+                  <span className="font-mono tabular-nums">{formatScorePct(data.heatSource.backupConfidence)}</span>
                 </div>
               )}
             </>
@@ -394,7 +394,7 @@ export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefin
                         <div className="space-y-0.5 text-muted-foreground">
                           <div>Kill zone: <span className="text-foreground">{session.killZone}</span></div>
                           <div>Heat bonus: <span className="text-foreground font-mono">+{session.sessionHeatBonus}</span></div>
-                          <div>Fakeout risk: <span className="text-foreground font-mono">{Math.round(session.fakeoutRisk * 100)}%</span></div>
+                          <div>Fakeout risk: <span className="text-foreground font-mono">{formatScorePct(session.fakeoutRisk)}</span></div>
                         </div>
                       )}
                     </div>
@@ -550,7 +550,7 @@ export function SessionCard({
         )}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
           <ScorePill label="Heat bonus" value={`+${session.sessionHeatBonus}`} />
-          <ScorePill label="Fakeout risk" value={`${Math.round(session.fakeoutRisk * 100)}%`} />
+          <ScorePill label="Fakeout risk" value={formatScorePct(session.fakeoutRisk)} />
           <ScorePill label="Trade bonus" value={`+${session.tradeabilityBonus}`} />
         </div>
         {session.bestSymbols.length > 0 && (
