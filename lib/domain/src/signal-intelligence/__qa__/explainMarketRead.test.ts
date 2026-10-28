@@ -98,3 +98,54 @@ test("explainMarketRead: forex at the same epoch names the session hours, not 'o
   assert.doesNotMatch(ex.simple.whyNow, UNMEASURED);
   assert.doesNotMatch(ex.advanced.whyNow, UNMEASURED);
 });
+
+// Owner screenshot 2026-10-27 [H]: "BEFORE ACTING, ELEANOR STILL NEEDS • enough
+// confirming evidence" — vague, while the card had exactly one supporting item
+// ("Higher highs / higher lows") and no published stop.
+function withEvidence(
+  over: { for: number; net: number; meetsMinimum: boolean; stopLoss?: number | null; bias?: string },
+) {
+  const signal = buildRubyMarketEdge(engineInput());
+  const item = { key: "structure_hh_hl", label: "Higher highs / higher lows", weight: 20 };
+  return {
+    ...signal,
+    bias: (over.bias ?? (signal.bias === "UNCLEAR" ? "BULLISH" : signal.bias)) as typeof signal.bias,
+    direction: signal.direction === "NEUTRAL" ? ("BUY" as const) : signal.direction,
+    stopLoss: over.stopLoss === undefined ? signal.stopLoss : over.stopLoss,
+    evidence: {
+      ...signal.evidence,
+      for: Array.from({ length: over.for }, (_, i) => ({ ...item, key: `${item.key}_${i}` })),
+      against: [],
+      conflicts: [],
+      meetsMinimum: over.meetsMinimum,
+      netScore: over.net,
+    },
+  };
+}
+
+test("missingContext names the failing rule: 1 of 2 signals, the net score, and the missing stop", () => {
+  const ex = explainMarketRead(withEvidence({ for: 1, net: 20, meetsMinimum: false, stopLoss: null }));
+  assert.ok(ex.missingContext.includes("one more independent confirming signal (1 of 2 found)"), ex.missingContext.join(" | "));
+  assert.ok(ex.missingContext.includes("stronger net evidence (20/100 so far, 25 needed)"));
+  assert.ok(ex.missingContext.includes("a defined stop level"));
+  assert.ok(!ex.missingContext.includes("enough confirming evidence"));
+});
+
+test("missingContext: 3 supporting items but net 10 → never claims 'of 2', names the net gap", () => {
+  const ex = explainMarketRead(withEvidence({ for: 3, net: 10, meetsMinimum: false, stopLoss: 33100 }));
+  const text = ex.missingContext.join(" | ");
+  assert.doesNotMatch(text, /of 2/);
+  assert.match(text, /25 needed/);
+  assert.doesNotMatch(text, /defined stop/);
+});
+
+test("missingContext: 2 items, net 40, bias resolved, still not met → the opposing trap is named", () => {
+  const ex = explainMarketRead(withEvidence({ for: 2, net: 40, meetsMinimum: false, stopLoss: 33100 }));
+  assert.ok(ex.missingContext.includes("the opposing fakeout/trap risk to clear"), ex.missingContext.join(" | "));
+});
+
+test("missingContext: minimum met and a stop published → no evidence or stop item", () => {
+  const ex = explainMarketRead(withEvidence({ for: 3, net: 60, meetsMinimum: true, stopLoss: 33100 }));
+  const text = ex.missingContext.join(" | ");
+  assert.doesNotMatch(text, /confirming|net evidence|trap|defined stop/);
+});

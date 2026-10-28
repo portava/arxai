@@ -95,6 +95,24 @@ function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
   const rem = s % 60;
   return `updated ${m}m ${rem}s ago`;
 }
+// The per-symbol Truth Snapshot's news state, as the card states it.
+type NewsCheck = "loading" | "unavailable" | "unchecked" | "no_calendar" | "ok";
+function newsCheckState(
+  news: { providerConnected?: boolean; riskUnchecked?: boolean } | null | undefined,
+  loading: boolean,
+): NewsCheck {
+  if (news == null) return loading ? "loading" : "unavailable";
+  if (news.riskUnchecked === true) return "unchecked";
+  if (news.providerConnected === false) return "no_calendar";
+  return "ok";
+}
+const NEWS_GAP_TEXT: Record<Exclude<NewsCheck, "ok">, string> = {
+  loading: "a scheduled-news check (event-risk read still loading)",
+  unavailable: "a scheduled-news check (event-risk read unavailable)",
+  unchecked: "a scheduled-news check (the calendar could not be checked)",
+  no_calendar: "a scheduled-news check (no event calendar connected)",
+};
+
 const FRESHNESS_TONE: Record<string, string> = {
   FRESH: "text-success",
   ACTIVE: "text-success",
@@ -177,7 +195,12 @@ export function RubyMarketReadCard({
   // the ONE per-symbol Truth Snapshot, so this card can never disagree with the
   // chart / scanner rows on the same page. The age is anchored to the DATA
   // timestamp (newest of lastTickAt / lastCandleAt), never the signal build time.
-  const { news, data: truthData, evidence: truthEvidence } = useSymbolTruth(symbol, chartTimeframe);
+  const {
+    news,
+    data: truthData,
+    evidence: truthEvidence,
+    isLoading: truthLoading,
+  } = useSymbolTruth(symbol, chartTimeframe);
   const dataUpdatedIso = useMemo(() => {
     const stamps = [truthData?.lastTickAt, truthData?.lastCandleAt]
       .map((s) => (s ? Date.parse(s) : NaN))
@@ -187,6 +210,18 @@ export function RubyMarketReadCard({
 
   const explanation: RubyMarketReadExplanation | null = data?.explanation ?? null;
   const signal = data?.signal ?? null;
+
+  // ONE news-check state for the needs list and the Risk row, so the card can
+  // never say "unavailable" in one place and "loading" in another. A 24/7
+  // synthetic index is price-driven (the heat list says so on the same page):
+  // a scheduled-news check is not something the read still NEEDS — the Risk
+  // row still states plainly that event risk wasn't assessed.
+  const isSynthetic = String(signal?.assetClass ?? "").toLowerCase() === "synthetic";
+  const newsCheck = newsCheckState(news, !!truthLoading);
+  const newsGap = isSynthetic || newsCheck === "ok" ? null : NEWS_GAP_TEXT[newsCheck];
+  const displayNeeds = explanation
+    ? [...explanation.missingContext, ...(newsGap ? [newsGap] : [])]
+    : [];
 
   // The read is fetched once (no polling). A live chart cannot keep an expired
   // read current: past/missing/malformed expiresAt, or an expired/invalid
@@ -222,10 +257,13 @@ export function RubyMarketReadCard({
             downgraded,
             level,
             reason,
-            newsRiskLabel: news?.riskLabel ?? null,
+            // Only a CHECKED event-risk label counts as "news present"; an
+            // unavailable / unchecked / no-calendar label prints the shared
+            // NEWS_UNAVAILABLE_NOTE in the Risk row instead.
+            newsRiskLabel: newsCheck === "ok" ? news?.riskLabel ?? null : null,
           }, name)
         : null,
-    [explanation, signal, downgraded, level, reason, news?.riskLabel, name],
+    [explanation, signal, downgraded, level, reason, news?.riskLabel, newsCheck, name],
   );
 
   return (
@@ -483,11 +521,11 @@ export function RubyMarketReadCard({
               )}
 
               {/* Missing context (honest gating) */}
-              {explanation.missingContext.length > 0 && (
+              {displayNeeds.length > 0 && (
                 <div className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2" data-testid="ruby-market-read-missing">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-warning">Before acting, {name} still needs</div>
                   <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-txt-secondary">
-                    {explanation.missingContext.map((m, i) => <li key={i}>{m}</li>)}
+                    {displayNeeds.map((m, i) => <li key={i}>{m}</li>)}
                   </ul>
                 </div>
               )}

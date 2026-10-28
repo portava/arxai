@@ -180,6 +180,12 @@ interface Derived {
   tps: string[];
   newsL: NewsRiskLevel;
   meetsMin: boolean;
+  /** Independent supporting items found (the minimum needs 2). */
+  forCount: number;
+  /** Net evidence score 0–100 (the minimum needs 25). */
+  net: number;
+  /** Structural bias unresolved (bias UNCLEAR). */
+  biasUnclear: boolean;
   hasData: boolean;
   liveFeed: boolean;
   late: boolean;
@@ -216,6 +222,9 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
     tps: signal.takeProfitZones.map((z) => zoneText(z)).filter((s): s is string => !!s),
     newsL,
     meetsMin: signal.evidence.meetsMinimum,
+    forCount: signal.evidence.for.length,
+    net: Math.round(Number.isFinite(signal.evidence.netScore) ? signal.evidence.netScore : 0),
+    biasUnclear: signal.bias === "UNCLEAR",
     hasData: signal.hasSufficientData,
     liveFeed: signal.dataSource === "LIVE_FEED",
     late: signal.late.isLate,
@@ -250,12 +259,41 @@ function computeActionable(d: Derived): boolean {
   );
 }
 
+// Mirrors `meetsMinimum` (freshnessEvidence.ts): direction not NEUTRAL, bias
+// not UNCLEAR, >= 2 independent supporting items, net score >= 25, and no
+// high-confidence opposing trap. Each failing sub-rule is NAMED with the count
+// the read actually found, instead of a vague "enough confirming evidence".
+const MIN_FOR_ITEMS = 2;
+const MIN_NET_SCORE = 25;
+
+function evidenceGaps(d: Derived): string[] {
+  const out: string[] = [];
+  if (d.forCount < MIN_FOR_ITEMS) {
+    const need = MIN_FOR_ITEMS - d.forCount;
+    out.push(
+      `${need === 1 ? "one more independent confirming signal" : `${need} independent confirming signals`} (${d.forCount} of ${MIN_FOR_ITEMS} found)`,
+    );
+  }
+  if (d.net < MIN_NET_SCORE) {
+    out.push(`stronger net evidence (${d.net}/100 so far, ${MIN_NET_SCORE} needed)`);
+  }
+  if (d.biasUnclear) out.push("a clear structural bias");
+  // By elimination the only remaining failing rule is the opposing trap.
+  if (out.length === 0) out.push("the opposing fakeout/trap risk to clear");
+  return out;
+}
+
 function computeMissingContext(d: Derived): string[] {
   const out: string[] = [];
   if (!d.hasData) out.push("live candles");
   if (!d.liveFeed) out.push("a live data feed");
-  if (!d.meetsMin) out.push("enough confirming evidence");
+  if (!d.meetsMin) {
+    if (d.hasData && !d.neutral) out.push(...evidenceGaps(d));
+    else out.push("enough confirming evidence");
+  }
   if (d.neutral) out.push("a clear direction");
+  // The server published no stop — say so here too, matching the Risk row.
+  if (d.hasData && !d.sl) out.push("a defined stop level");
   return out;
 }
 

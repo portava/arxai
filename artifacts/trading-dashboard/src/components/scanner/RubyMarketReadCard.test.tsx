@@ -308,3 +308,68 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.queryByText("Levels")).toBeNull();
   });
 });
+
+// Owner screenshot 2026-10-27 [H]: "Before acting, Eleanor still needs • enough
+// confirming evidence" while the same card's Risk row said "News/calendar
+// unavailable — event risk not assessed". The needs list now carries the news
+// gap in the SAME state the Risk row states — and never "unavailable" while the
+// read is still loading.
+describe("RubyMarketReadCard — 'still needs' includes the news gap, in the truthful state", () => {
+  function renderWithNews(truth: Record<string, unknown>, sig: Record<string, unknown> = {}) {
+    mockUseSymbolTruth.mockReturnValue(truth);
+    mockUseGetMeMarketEdge.mockReturnValue(
+      hookState({
+        data: resp({
+          signal: sig,
+          explanation: explanation({ actionable: false, missingContext: ["one more independent confirming signal (1 of 2 found)"] }),
+        }),
+      }),
+    );
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+    return screen.getByTestId("ruby-market-read-missing").textContent ?? "";
+  }
+  const recent = () => new Date(Date.now() - 4000).toISOString();
+
+  it("snapshot withdrawn (news null, not loading) → 'event-risk read unavailable'; Risk row agrees", () => {
+    const text = renderWithNews({ news: null, data: null, isLoading: false });
+    expect(text).toContain("1 of 2 found");
+    expect(text).toContain("a scheduled-news check (event-risk read unavailable)");
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain(
+      "News/calendar unavailable — event risk not assessed.",
+    );
+  });
+
+  it("still loading → says loading, never 'unavailable'", () => {
+    const text = renderWithNews({ news: null, data: null, isLoading: true });
+    expect(text).toContain("still loading");
+    expect(text).not.toContain("unavailable");
+  });
+
+  it("calendar check failed → 'could not be checked'", () => {
+    const text = renderWithNews({
+      news: { providerConnected: true, riskUnchecked: true, events: [], riskLabel: "Event risk is unavailable right now.", highImpactWindowActive: false, disclaimer: null },
+      data: { state: "LIVE_CONFIRMED", lastTickAt: recent(), lastCandleAt: recent() },
+      isLoading: false,
+    });
+    expect(text).toContain("the calendar could not be checked");
+    // The Risk row treats an unchecked label as news missing, too.
+    expect(screen.getByTestId("ruby-market-read-reasoning").textContent).toContain("event risk not assessed");
+  });
+
+  it("calendar connected and checked → no news item", () => {
+    const text = renderWithNews({
+      news: { providerConnected: true, riskUnchecked: false, events: [], riskLabel: "No scheduled high-impact events affect this market.", highImpactWindowActive: false, disclaimer: null },
+      data: { state: "LIVE_CONFIRMED", lastTickAt: recent(), lastCandleAt: recent() },
+      isLoading: false,
+    });
+    expect(text).not.toContain("scheduled-news check");
+  });
+
+  it("synthetic index (price-driven, no calendar) → no news requirement invented", () => {
+    const text = renderWithNews(
+      { news: null, data: null, isLoading: false },
+      { symbol: "V75", displayName: "V75", assetClass: "synthetic" },
+    );
+    expect(text).not.toContain("scheduled-news check");
+  });
+});
