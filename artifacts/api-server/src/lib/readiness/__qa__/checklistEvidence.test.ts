@@ -97,3 +97,61 @@ test("canProceedToLiveTrading evidence reflects the report value", async () => {
   assert.equal(it.status, "FAIL");
   assert.match(it.evidence, /true/);
 });
+
+// ── One document, one verdict ────────────────────────────────────────────────
+// The checklist's own FAIL/WARN items (unmeasured probes, the unprobed route
+// auth item) must reach its final recommendation and its "Known warnings"
+// section; they were derived only from the report's overallStatus/warnings.
+
+function fullReport(over: Partial<{ safety: T[] }> = {}): ReadinessReport {
+  const r = report(over) as unknown as Record<string, unknown>;
+  const pass = (name: string): T => ({ name, status: "PASS" });
+  r.endpointResults = { tests: [pass("GET /api/a")] };
+  r.frontendResults = { tests: [pass("/admin")] };
+  r.workflowResults = { full_paper_loop: { tests: [pass("AA")] } };
+  r.subsystemResults = Object.fromEntries(
+    ["jj_replay", "kk_data_import_broker_readonly", "ll_notifications", "mm_system_health_admin"]
+      .map((k) => [k, { passed: 1, warned: 0, failed: 0, tests: [] }]),
+  );
+  return r as unknown as ReadinessReport;
+}
+
+test("a FAIL item (no safety probes ran) does not leave the verdict at 'PASS — Safe to continue'", async () => {
+  const c = await buildChecklist(fullReport({ safety: [] }));
+  const items = c.sections.flatMap((s) => s.items);
+  assert.equal(find(items, "MM admin rejects ENABLE_LIVE_TRADING").status, "FAIL");
+  assert.doesNotMatch(c.finalRecommendation, /^PASS/);
+  assert.doesNotMatch(c.finalRecommendation, /Safe to continue/);
+  assert.match(c.finalRecommendation, /^FAIL/);
+  assert.match(c.finalRecommendation, /MM admin rejects ENABLE_LIVE_TRADING/);
+  assert.match(c.finalRecommendation, /Live trading remains DISABLED/);
+});
+
+test("the permanent WARN item is a known warning, not 'No warnings · 0 warnings'", async () => {
+  const c = await buildChecklist(fullReport());
+  const known = c.sections.find((s) => s.name === "Known warnings")!;
+  assert.ok(!known.items.some((i) => i.item === "No warnings"), JSON.stringify(known.items));
+  assert.ok(known.items.some((i) => i.status === "WARN" && /NN protects readiness routes/.test(i.item)));
+  // Report said PASS; the checklist's own WARN makes it PASS_WITH_WARNINGS.
+  assert.match(c.finalRecommendation, /^PASS_WITH_WARNINGS/);
+});
+
+test("the report's own verdict is never upgraded by the checklist", async () => {
+  const r = fullReport() as unknown as { overallStatus: string };
+  r.overallStatus = "BLOCKED";
+  const c = await buildChecklist(r as unknown as ReadinessReport);
+  assert.match(c.finalRecommendation, /^BLOCKED/);
+});
+
+test("endpoint and frontend items with no probes are not PASS on '0/0'", async () => {
+  const r = fullReport() as unknown as Record<string, unknown>;
+  r.endpointResults = { tests: [] };
+  r.frontendResults = { tests: [] };
+  const items = (await buildChecklist(r as unknown as ReadinessReport)).sections.flatMap((s) => s.items);
+  const ep = find(items, "Major AA-NN endpoints reachable");
+  const fe = find(items, "Security + admin pages reachable");
+  assert.notEqual(ep.status, "PASS");
+  assert.notEqual(fe.status, "PASS");
+  assert.match(ep.evidence, /no endpoint probes ran/);
+  assert.match(fe.evidence, /no frontend probes ran/);
+});
