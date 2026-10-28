@@ -579,7 +579,15 @@ export function LiveSharedTradeTicket({
                   {suggestLoading
                     ? "Reading the market to suggest SL/TP…"
                     : suggestion
-                      ? <span>Suggested SL <span className="font-mono text-foreground">{suggestion.suggestedStopLoss}</span> · TP <span className="font-mono text-foreground">{suggestion.suggestedTakeProfit}</span> · {suggestion.method}</span>
+                      ? <span>Suggested SL <span className="font-mono text-foreground">{suggestion.suggestedStopLoss}</span> · TP <span className="font-mono text-foreground">{suggestion.suggestedTakeProfit}</span> · {suggestion.method}
+                          {/* The levels are measured from the newest candle close the
+                              market-data router returned, not from a live quote. */}
+                          <span data-testid="ls-suggest-anchor">
+                            {suggestion.entrySource === "provided"
+                              ? ` · measured from the entry price you gave (${suggestion.entry})`
+                              : ` · measured from the last M15 candle close (${suggestion.entry}), not a live quote; the fill price will differ`}
+                          </span>
+                        </span>
                       : (suggestNote ?? "SL/TP can be suggested from current market volatility.")}
                 </div>
                 <Button

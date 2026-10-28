@@ -37,3 +37,19 @@ describe("LiveSharedTradeTicket R:R", () => {
     expect(screen.getByTestId("ls-summary-rr").textContent).toMatch(/needs the live entry price/);
   });
 });
+
+describe("LiveSharedTradeTicket SL/TP suggestion anchor", () => {
+  it("says the suggestion is measured from the last candle close, not a live quote", async () => {
+    const api = await import("@/lib/api/liveShared");
+    (api.suggestLiveSharedSltp as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true, symbol: "EURUSD", side: "BUY", entry: 1.085, entrySource: "last_close", atr: 0.001, atrPct: 0.09,
+      volatilityState: "NORMAL", riskReward: 2, suggestedStopLoss: 1.0835, suggestedTakeProfit: 1.088,
+      method: "ATR(14) · M15 · SL 1.5×ATR · TP 2R", note: "Editable — advisory only.",
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ armed: false }))));
+    render(<LiveSharedTradeTicket open onOpenChange={() => undefined} defaultSymbol="EURUSD" defaultSide="BUY" />);
+    fireEvent.click(screen.getByTestId("ls-suggest-sltp"));
+    const anchor = await screen.findByTestId("ls-suggest-anchor");
+    expect(anchor.textContent).toMatch(/last M15 candle close \(1\.085\), not a live quote/);
+  });
+});
