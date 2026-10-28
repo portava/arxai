@@ -814,3 +814,77 @@ describe("feed-limited action verdict caps the Eleanor read (header + panel agre
     expect(screen.queryByTestId("ruby-chart-read-feed-warning")).toBeNull();
   });
 });
+
+// Owner screenshot 2026-10-27: TRADING "Blocked — Trading is restricted on your
+// account" and the chart footer "Manual trading is currently blocked for your
+// account." while the Eleanor read panel offered "Prepare Trade" (dimmed, with a
+// FEED tooltip) — and would have offered an enabled link on READY_NOW.
+describe("Prepare Trade CTA honours the account's trading block (separate authority)", () => {
+  function truthWithTrading(
+    tradingStatus: "ENABLED" | "BLOCKED" | "DISABLED" | "REVIEW_REQUIRED",
+    detail: string,
+  ): ScannerTruth {
+    return {
+      analysis: { level: "full", reason: "Live data — valid for a live read" },
+      consolidated: { tradingStatus },
+      strip: { trading: { detail } },
+    } as unknown as ScannerTruth;
+  }
+  const FULL = { gated: false, dataQuality: "ok", readLayer: "FULL", bias: "Bullish" } as RubyReadServerState;
+  const RESTRICTED = "Trading is restricted on your account. Contact support.";
+
+  it("(a) BLOCKED + READY_NOW BUY: disabled button (no link), tooltip names the restriction, inline note, neutral label", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthWithTrading("BLOCKED", RESTRICTED) }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="READY_NOW" canonicalDirection="BUY" />);
+    const cta = screen.getByTestId("ruby-chart-prepare-trade");
+    expect(cta.tagName).toBe("BUTTON");
+    expect(cta.getAttribute("href")).toBeNull();
+    expect((cta as HTMLButtonElement).disabled).toBe(true);
+    expect(cta.getAttribute("title")).toBe(RESTRICTED);
+    expect(cta.textContent).toContain("Prepare Trade");
+    expect(cta.textContent).not.toContain("Prepare Buy");
+    expect(screen.getByTestId("ruby-chart-trading-blocked").textContent).toBe(
+      "Trading is blocked on your account — this read is for information only.",
+    );
+  });
+
+  it("(b) ENABLED + READY_NOW: the link to the trade room renders (existing behaviour)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthWithTrading("ENABLED", "You can place demo trades.") }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="READY_NOW" canonicalDirection="BUY" />);
+    const cta = screen.getByTestId("ruby-chart-prepare-trade");
+    expect(cta.tagName).toBe("A");
+    expect(cta.getAttribute("href")).toContain("/trade-command-room");
+    expect(cta.textContent).toContain("Prepare Buy");
+    expect(screen.queryByTestId("ruby-chart-trading-blocked")).toBeNull();
+  });
+
+  it("(c) BLOCKED + FEED_LIMITED (the screenshot state): tooltip names the trading block, not the feed", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthWithTrading("BLOCKED", RESTRICTED) }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="FEED_LIMITED" />);
+    const title = screen.getByTestId("ruby-chart-prepare-trade").getAttribute("title") ?? "";
+    expect(title).toBe(RESTRICTED);
+    expect(title).not.toContain("live feed");
+  });
+
+  it("(d) truth unresolved + READY_NOW: disabled with the pending copy, never a 'blocked' claim", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: null }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="READY_NOW" canonicalDirection="BUY" />);
+    const cta = screen.getByTestId("ruby-chart-prepare-trade");
+    expect(cta.tagName).toBe("BUTTON");
+    expect(cta.getAttribute("title") ?? "").not.toMatch(/blocked|restricted/i);
+    expect(screen.queryByTestId("ruby-chart-trading-blocked")).toBeNull();
+  });
+
+  it("(e) DISABLED (read-only mode): the tile's own detail, verbatim — not 'blocked'", () => {
+    const RO = "Read-only — trading isn't available from the scanner in this mode.";
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthWithTrading("DISABLED", RO) }));
+    mockStoredRead = FULL;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="READY_NOW" />);
+    expect(screen.getByTestId("ruby-chart-prepare-trade").tagName).toBe("BUTTON");
+    expect(screen.getByTestId("ruby-chart-trading-blocked").textContent).toBe(RO);
+  });
+});

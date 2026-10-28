@@ -13,7 +13,9 @@ import {
 } from "@/lib/rubyReadPanelState";
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
 import { useAssistantName } from "@/lib/assistant-name";
+import { resolveRubyCtaState } from "@/lib/rubyCtaState";
 import {
+  ACTIONABILITY_PENDING_UI,
   actionabilityDisplayUi,
   resolveVisibleActionButtonLabel,
   type ScannerActionabilityDisplay,
@@ -137,10 +139,22 @@ export function RubyChartRead({
   // verdict permits. When no canonical is provided (e.g. standalone use), fall back
   // to PENDING which resolves to canAct: false (safe default).
   const canonicalUi = actionabilityDisplayUi(canonicalAction ?? "PENDING");
-  const buttonLabel = resolveVisibleActionButtonLabel(
-    canonicalAction ?? "PENDING",
-    canonicalDirection ?? null,
-  );
+  // The account's trading status is a SEPARATE authority from the data/setup
+  // verdict: read from the SAME shared truth the TRADING tile uses, so a blocked
+  // account is never offered "Prepare Trade" and the disabled button names the
+  // account-level reason (not the feed) — identical wording to the tile.
+  const cta = resolveRubyCtaState({
+    canAct: canonicalUi.canAct,
+    verdictCopy: canonicalUi.copy,
+    pendingCopy: ACTIONABILITY_PENDING_UI.copy,
+    verdictLabel: resolveVisibleActionButtonLabel(
+      canonicalAction ?? "PENDING",
+      canonicalDirection ?? null,
+    ),
+    tradingStatus: truth?.consolidated?.tradingStatus,
+    tradingDetail: truth?.strip?.trading?.detail,
+  });
+  const buttonLabel = cta.label;
 
   const ask = async () => {
     setLoading(true);
@@ -268,6 +282,12 @@ export function RubyChartRead({
 
           {read.disclaimer && <p className="text-[10px] italic text-txt-muted">{read.disclaimer}</p>}
 
+          {cta.tradingNote && (
+            <p className="text-xs text-txt-secondary" data-testid="ruby-chart-trading-blocked">
+              {cta.tradingNote}
+            </p>
+          )}
+
           {/* Actions — "Prepare Trade" CTA is display-gated on the canonical verdict
               so the Eleanor panel can never show an actionable CTA while the
               header/chart surface shows a degraded or wait state. Downward-only. */}
@@ -275,7 +295,7 @@ export function RubyChartRead({
             className="grid grid-cols-2 gap-2 pt-1"
             {...(import.meta.env.DEV && canonicalReadId ? { "data-canonical-read-id": canonicalReadId } : {})}
           >
-            {canonicalUi.canAct ? (
+            {cta.showLink ? (
               <Link
                 href="/trade-command-room"
                 className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary text-sm font-semibold text-white hover:bg-primary/90"
@@ -289,7 +309,7 @@ export function RubyChartRead({
                 className="flex h-10 cursor-not-allowed items-center justify-center gap-1.5 rounded-xl bg-primary/30 text-sm font-semibold text-white/50"
                 disabled
                 data-testid="ruby-chart-prepare-trade"
-                title={canonicalUi.copy}
+                title={cta.disabledTitle ?? undefined}
               >
                 <Crosshair className="h-4 w-4" /> {buttonLabel}
               </button>
