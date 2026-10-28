@@ -101,3 +101,34 @@ describe("PositionSideCard status / order type / freshness", () => {
     expect(screen.getByText("Floating P/L")).toBeTruthy();
   });
 });
+
+describe("PositionSideCard does not keep a cached FRESH verdict forever", () => {
+  it("a FRESH row whose report is now 2 minutes old is no longer confirmed", async () => {
+    const { positionReportState, POSITION_REPORT_FRESH_MS } = await import("./PositionSideCard");
+    expect(POSITION_REPORT_FRESH_MS).toBe(30_000);
+    const now = Date.now();
+    const r = positionReportState({ observedAt: new Date(now - 120_000).toISOString(), freshness: "FRESH" }, now);
+    expect(r.confirmed).toBe(false);
+    expect(r.status).toBe("Unconfirmed — last reported 2m ago");
+    // Still inside the server's 30s window: the FRESH verdict stands.
+    const ok = positionReportState({ observedAt: new Date(now - 10_000).toISOString(), freshness: "FRESH" }, now);
+    expect(ok.confirmed).toBe(true);
+  });
+
+  it("the card re-checks the age as time passes with no new data", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    try {
+      const observedAt = new Date(Date.now() - 3_000).toISOString();
+      mount(pos({ observedAt, freshness: "FRESH" }));
+      expect(screen.getByTestId("text-position-status").textContent).toBe("Open — reported by bridge");
+      expect(screen.getByTestId("text-position-last-reported").textContent).toMatch(/\(3s ago\)$/);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(screen.getByTestId("text-position-status").textContent).toBe("Unconfirmed — last reported 1m ago");
+      expect(screen.getByTestId("text-position-last-reported").textContent).toMatch(/\(1m ago\)$/);
+      expect(screen.getByText("Last reported P/L")).toBeTruthy();
+      expect(screen.queryByText("Floating P/L")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

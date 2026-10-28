@@ -30,6 +30,7 @@ type ConfirmState =
 export function PositionPickerPanel() {
   const [data, setData] = useState<Resp | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>({ kind: "none" });
   const [busy, setBusy] = useState(false);
@@ -49,7 +50,7 @@ export function PositionPickerPanel() {
         const r = await fetch(u("/api/me/positions/all"), { credentials: "include" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as Resp;
-        if (!cancelled) { setData(j); setErr(null); }
+        if (!cancelled) { setData(j); setErr(null); setLoadedAt(Date.now()); }
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
       } finally {
@@ -124,7 +125,13 @@ export function PositionPickerPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {err && <div className="rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">Couldn't load positions: {err}</div>}
+          {err && (
+            <div data-testid="positions-load-error" className="rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">
+              {data && loadedAt != null
+                ? `Could not refresh positions (${err}). The list below is from the last successful load at ${new Date(loadedAt).toLocaleTimeString()}.`
+                : `Positions could not be loaded: ${err}`}
+            </div>
+          )}
           {!err && notLiveMode && !hasLive && (
             <div data-testid="positions-not-live" className="rounded border border-zinc-700 bg-zinc-900/40 p-2 text-xs text-zinc-400">
               <div>You are not currently in live trading mode.</div>
