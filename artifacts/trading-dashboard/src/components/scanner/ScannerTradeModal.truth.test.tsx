@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, act, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Render proof that the scanner trade modal describes what it actually knows:
@@ -57,9 +57,13 @@ function installFetch() {
       if (reply.kind === "status") return { ok: false, status: reply.status, json: async () => ({}) } as Response;
       return { ok: true, status: 200, json: async () => ({ bridge: reply.bridge }) } as Response;
     }
+    if (u.includes("/api/me/pending-order-draft")) {
+      return { ok: true, status: 200, json: async () => draftReply } as Response;
+    }
     return { ok: true, status: 200, json: async () => ({}) } as Response;
   }));
 }
+let draftReply: Record<string, unknown> = {};
 
 const READY_BRIDGE = {
   connectionId: 41, accountLoginMasked: "***1234", accountType: "demo", eaVersionReported: "1.27",
@@ -185,5 +189,28 @@ describe("ScannerTradeModal — derived prices use the instrument's precision", 
     await waitFor(() => expect((screen.getByTestId("scanner-trade-current-price") as HTMLInputElement).value).toBe("2370.5"));
     expect(risk()).toBe("5.50");
     expect(reward()).toBe("9.50");
+  });
+});
+
+describe("ScannerTradeModal — pending-order disclosure comes from the server", () => {
+  const LIMIT_SIGNAL = { symbol: "EURUSD", timeframe: "5m", recommendedAction: "BUY", bias: "BUY", entry: 1.1, stopLoss: 1.09, takeProfit: 1.13 };
+
+  it("does not assert the EA cannot execute pending orders; shows the reason the server measured", async () => {
+    draftReply = {
+      ok: true, draftId: 5, executable: false, pendingStatus: "BLOCKED_BY_PAPER_LOCK",
+      reason: "Pending order saved as a validated draft; it has not been sent to your broker. Your connected EA (EA v1.50) reports pending-order support, but ARX is paper-only: the queue does not deliver pending orders to the broker.",
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(ui(true, client, LIMIT_SIGNAL));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "BUY_LIMIT" } });
+    const disclosure = screen.getByTestId("scanner-trade-pending-disclosure").textContent ?? "";
+    expect(disclosure).not.toMatch(/does not yet execute pending orders/);
+    expect(disclosure).toMatch(/never sends a pending order to your broker/);
+
+    fireEvent.click(screen.getByTestId("scanner-trade-submit")); // Review
+    fireEvent.click(screen.getByTestId("scanner-trade-submit")); // Save Draft
+    const reason = await screen.findByTestId("scanner-trade-draft-reason");
+    expect(reason.textContent).toContain("reports pending-order support");
+    expect(screen.getByTestId("scanner-trade-result").textContent).toContain("BLOCKED_BY_PAPER_LOCK");
   });
 });

@@ -163,8 +163,8 @@ const TERMINAL = new Set(["FILLED_DEMO", "REJECTED", "FAILED", "BLOCKED"]);
 // MARKET orders through the demo-command queue (POST /api/me/demo-commands
 // → /confirm → /dispatch) so they appear in Recent Demo Commands, Open
 // Demo Positions, and Latest Demo Trade Result on the MT5 Bridge page.
-// Pending order types are saved as drafts (EA does not yet execute pending
-// orders). Live mode is structurally blocked unless the user's live envelope
+// Pending order types are saved as drafts only (never sent to the broker); the
+// saved draft carries the server's reading of the bridge's pending support. Live mode is structurally blocked unless the user's live envelope
 // allows it AND they go through a separate protected confirm step.
 export function ScannerTradeModal({
   open, onClose, signal, defaultSide,
@@ -518,7 +518,7 @@ export function ScannerTradeModal({
       if (j.blocked) { setErr(`${j.reason ?? "Blocked"} (${j.checkId ?? "guard"})`); return; }
       if (j.ok) {
         setCmd({ commandId: `draft-${j.draftId}`, status: "DRAFT_SAVED", reason: j.reason ?? null });
-        setStatusLog((s) => [...s, `DRAFT_SAVED ${j.draftId}`]);
+        setStatusLog((s) => [...s, `DRAFT_SAVED ${j.draftId}${typeof j.pendingStatus === "string" ? ` (${j.pendingStatus})` : ""}`]);
       } else {
         setErr(String(j.error ?? "draft_failed"));
       }
@@ -801,9 +801,12 @@ export function ScannerTradeModal({
               </div>
 
               {!market && (
-                <div className="rounded bg-indigo-500/10 p-2 text-[11px] text-indigo-200 flex items-start gap-1.5">
+                <div
+                  className="rounded bg-indigo-500/10 p-2 text-[11px] text-indigo-200 flex items-start gap-1.5"
+                  data-testid="scanner-trade-pending-disclosure"
+                >
                   <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                  Pending orders save as validated drafts. The MT5 EA does not yet execute pending orders — nothing will be sent to your broker until that EA upgrade ships.
+                  Pending orders save as validated drafts only — this ticket never sends a pending order to your broker. After saving, the draft shows what your MT5 bridge reports about pending-order support.
                 </div>
               )}
 
@@ -872,6 +875,11 @@ export function ScannerTradeModal({
               {(cmd.status === "REJECTED" || cmd.status === "FAILED" || cmd.status === "BLOCKED") && (
                 <div className="rounded bg-danger/10 p-1.5 text-danger">
                   <span className="font-semibold">Reason:</span> <span className="font-mono">{cmd.reason ?? "unknown"}</span>
+                </div>
+              )}
+              {cmd.status === "DRAFT_SAVED" && (
+                <div className="rounded bg-indigo-500/10 p-1.5 text-indigo-200" data-testid="scanner-trade-draft-reason">
+                  {cmd.reason ?? "Draft saved. It has not been sent to your broker."}
                 </div>
               )}
               {!terminal && cmd.status !== "DRAFT_SAVED" && (
