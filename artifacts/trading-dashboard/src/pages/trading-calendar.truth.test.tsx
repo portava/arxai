@@ -149,3 +149,42 @@ describe("Trading Calendar failed loads", () => {
     expect(err.textContent).toContain(`${month}-02`);
   });
 });
+
+// GET /api/performance/calendar recomputes every day from paper_orders
+// (performanceCC/aggregator.ts computeCalendarMonth); POST
+// /api/performance/rebuild only rewrites the saved snapshot tables, which the
+// calendar never reads. The button must not imply the calendar was rebuilt.
+describe("Trading Calendar rebuild button", () => {
+  const paperCal = { calendar: { month, days: [], total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0, no_trade_days: 0 } };
+  const calendarCalls = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith("/api/performance/calendar")).length;
+
+  it("says it rebuilds saved snapshots the calendar does not read, and reports what it wrote", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("DEMO") },
+      "/api/performance/calendar": { body: paperCal },
+      "/api/performance/rebuild": { body: { rebuild: { started_at: "2026-10-28T11:00:00.000Z", finished_at: "2026-10-28T11:00:02.000Z", daily_snapshots_written: 12, symbol_snapshots_written: 3, ai_snapshots_written: 4, warnings: [] } } },
+    });
+    renderPage();
+    const btn = await screen.findByTestId("btn-rebuild");
+    expect(btn.textContent).toMatch(/snapshots/i);
+    expect(screen.getByTestId("calendar-source-note").textContent).toMatch(/demo orders each time this page loads/);
+    await waitFor(() => expect(calendarCalls()).toBe(1));
+    btn.click();
+    const result = await screen.findByTestId("rebuild-result");
+    expect(result.textContent).toMatch(/12 daily snapshots/);
+    expect(result.textContent).toMatch(/does not read/);
+    // Nothing on the calendar changed, so it is not reloaded as if rebuilt.
+    expect(calendarCalls()).toBe(1);
+  });
+
+  it("a failed rebuild says the snapshots could not be rebuilt", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("DEMO") },
+      "/api/performance/calendar": { body: paperCal },
+      "/api/performance/rebuild": { status: 500, body: { error: "boom" } },
+    });
+    renderPage();
+    (await screen.findByTestId("btn-rebuild")).click();
+    expect((await screen.findByTestId("rebuild-result")).textContent).toMatch(/could not be rebuilt/);
+  });
+});

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -100,7 +100,6 @@ async function readJson(url: string, init?: RequestInit): Promise<any> {
 }
 
 export default function TradingCalendarPage() {
-  const qc = useQueryClient();
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -180,9 +179,17 @@ export default function TradingCalendarPage() {
     },
   });
 
+  // POST /api/performance/rebuild rewrites the saved snapshot tables
+  // (performance_daily_snapshots and friends, read by the Trader Coach). This
+  // calendar never reads them: GET /api/performance/calendar recomputes every
+  // day from paper_orders on each load. So a rebuild changes nothing here and
+  // the calendar is not reloaded as if it had been rebuilt.
   const rebuild = useMutation({
-    mutationFn: async () => (await fetch("/api/performance/rebuild", { method: "POST" })).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trading-calendar"] }),
+    mutationFn: async () => {
+      const j = await readJson("/api/performance/rebuild", { method: "POST" });
+      if (!j?.rebuild || typeof j.rebuild !== "object") throw new Error("/api/performance/rebuild returned no summary");
+      return j.rebuild as { finished_at?: string; daily_snapshots_written?: number };
+    },
   });
 
   const days = calData?.calendar.days ?? [];
@@ -217,11 +224,28 @@ export default function TradingCalendarPage() {
           {mode.isSuccess && !isLive && (
             <Button onClick={() => rebuild.mutate()} disabled={rebuild.isPending} data-testid="btn-rebuild">
               <RefreshCcw className={`mr-2 h-4 w-4 ${rebuild.isPending ? "animate-spin" : ""}`} />
-              Rebuild
+              Rebuild saved snapshots
             </Button>
           )}
         </div>
       </div>
+
+      {mode.isSuccess && !isLive && !notShownHere && (
+        <div className="text-xs text-muted-foreground -mt-4" data-testid="calendar-source-note">
+          Calculated from your demo orders each time this page loads. &ldquo;Rebuild saved snapshots&rdquo; refreshes the
+          saved daily snapshots the Trader Coach reads; it does not change this calendar.
+        </div>
+      )}
+
+      {(rebuild.isSuccess || rebuild.isError) && (
+        <div className={`text-xs ${rebuild.isError ? "text-rose-300" : "text-muted-foreground"}`} data-testid="rebuild-result">
+          {rebuild.isError
+            ? "Saved snapshots could not be rebuilt."
+            : `Saved snapshots rebuilt${rebuild.data?.finished_at ? ` at ${new Date(rebuild.data.finished_at).toLocaleTimeString()}` : ""}: ${
+                typeof rebuild.data?.daily_snapshots_written === "number" ? rebuild.data.daily_snapshots_written : "an unknown number of"
+              } daily snapshots written. This calendar does not read them, so nothing above changed.`}
+        </div>
+      )}
 
       {mode.isError && (
         <Card className="border-border" data-testid="calendar-mode-error">
