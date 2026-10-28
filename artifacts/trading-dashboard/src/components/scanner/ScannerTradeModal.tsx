@@ -14,7 +14,7 @@ import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
 import { useMasterLiveAccess } from "@/components/live/MasterLiveAccessGuard";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
-import { seedInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { formatInstrumentPrice, seedInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { HistoricalCheckPanel } from "@/components/trading/HistoricalCheckPanel";
@@ -93,6 +93,59 @@ function seedPriceStr(n: number, precision: number | null | undefined): string {
   return seedInstrumentPrice(n, precision);
 }
 
+// Where the editable "Current price" value came from. The field is filled once
+// per open and never follows the market, so the ticket says what it holds: the
+// feed's last candle close (with its candle time, source and feed state), the
+// signal's entry level when no feed price exists, or the user's own edit.
+type CurrentPriceBasis =
+  | { kind: "signal" }
+  | { kind: "user" }
+  | {
+      kind: "feed";
+      value: number;
+      candleAt: string | null;
+      sourceLabel: string | null;
+      displayStatus: string;
+      isLive: boolean;
+    };
+
+const FEED_STATE_WORD: Record<string, string> = {
+  LIVE: "live",
+  STALE: "stale",
+  ANALYSIS_ONLY: "historical only",
+  FALLBACK_COMPOSITE: "on a fallback composite source",
+  UNAVAILABLE: "unavailable",
+};
+
+function utcClock(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(11, 19)} UTC` : null;
+}
+
+function currentPriceBasisText(
+  basis: CurrentPriceBasis,
+  hasValue: boolean,
+  latestClose: number | null,
+  precision: number | null | undefined,
+): string {
+  if (basis.kind === "user") return "Entered by you.";
+  if (basis.kind === "signal") {
+    return hasValue
+      ? "No feed price is available yet — this is the signal's entry level, not a current price."
+      : "No feed price is available yet.";
+  }
+  const at = utcClock(basis.candleAt);
+  const from = `from ${basis.sourceLabel ?? "the chart feed"}${at ? `, candle at ${at}` : ""}`;
+  const head = basis.isLive
+    ? `Last candle close ${from}.`
+    : `Not a live price — last candle close ${from}, while the feed is ${FEED_STATE_WORD[basis.displayStatus] ?? "not live"}.`;
+  const moved = latestClose != null && latestClose !== basis.value
+    ? ` Latest close is now ${formatInstrumentPrice(latestClose, precision)}.`
+    : "";
+  return `${head} Filled once when this ticket opened; it does not update while the ticket stays open.${moved}`;
+}
+
 type DemoCommand = {
   commandId: string;
   status: string;
@@ -154,6 +207,7 @@ export function ScannerTradeModal({
   // truth price for the current open. Lets us snap to the live price exactly
   // once when it resolves (cold open) without clobbering subsequent user edits.
   const currentPriceSeededRef = useRef(false);
+  const [priceBasis, setPriceBasis] = useState<CurrentPriceBasis>({ kind: "signal" });
   const { toast } = useToast();
   const [liveTicketOpen, setLiveTicketOpen] = useState(false);
   // Client-side hide of the LIVE SHARED button for unapproved users. Server
@@ -283,6 +337,7 @@ export function ScannerTradeModal({
     setCmd(null);
     setStatusLog([]);
     currentPriceSeededRef.current = false;
+    setPriceBasis({ kind: "signal" });
     idempotencyKeyRef.current = `sc-${signal.symbol}-${signal.timeframe ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   }, [open, signal.symbol, signal.timeframe, signal.entry, signal.stopLoss, signal.takeProfit, defaultSide]);
 
@@ -294,6 +349,14 @@ export function ScannerTradeModal({
   useEffect(() => {
     if (!open || sharedLastClose == null || currentPriceSeededRef.current) return;
     setCurrentPrice(seedPriceStr(sharedLastClose, feedTruth?.candles.pricePrecision));
+    setPriceBasis({
+      kind: "feed",
+      value: sharedLastClose,
+      candleAt: feedTruth?.candles.lastTime ?? null,
+      sourceLabel: feedTruth?.candles.sourceLabel ?? null,
+      displayStatus: feedTruth?.displayStatus ?? "UNAVAILABLE",
+      isLive: feedTruth?.isLivePrice === true,
+    });
     currentPriceSeededRef.current = true;
   }, [open, sharedLastClose]);
 
@@ -665,7 +728,19 @@ export function ScannerTradeModal({
                 </div>
                 <div>
                   <Label className="text-xs">Current price</Label>
-                  <Input value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} placeholder="e.g. 1.0850" />
+                  <Input
+                    value={currentPrice}
+                    onChange={(e) => { setCurrentPrice(e.target.value); setPriceBasis({ kind: "user" }); }}
+                    placeholder="e.g. 1.0850"
+                    data-testid="scanner-trade-current-price"
+                  />
+                </div>
+                <div
+                  className={`col-span-2 -mt-1 text-[10px] ${priceBasis.kind === "feed" && priceBasis.isLive ? "text-muted-foreground" : "text-warning"}`}
+                  data-testid="scanner-trade-current-price-basis"
+                  data-basis={priceBasis.kind}
+                >
+                  {currentPriceBasisText(priceBasis, currentPrice.trim() !== "", sharedLastClose, feedTruth?.candles.pricePrecision)}
                 </div>
                 {!market && !stopLimit && (
                   <div className="col-span-2">

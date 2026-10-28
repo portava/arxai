@@ -121,3 +121,42 @@ describe("ScannerTradeModal — demo bridge readiness line", () => {
     expect(readiness()).not.toContain("Active demo bridge ready");
   });
 });
+
+describe("ScannerTradeModal — 'Current price' states its basis", () => {
+  const USDJPY = { symbol: "USDJPY", timeframe: "5m", recommendedAction: "BUY", bias: "BUY", entry: 156.2 };
+  const staleTruth = (lastClose: number): TruthStub => ({
+    candles: { lastClose, pricePrecision: 3, lastTime: "2026-10-27T10:00:00.000Z", sourceLabel: "ARX market data" },
+    displayStatus: "STALE", isLivePrice: false, actionable: false,
+  });
+  const priceInput = () => screen.getByTestId("scanner-trade-current-price") as HTMLInputElement;
+  const basis = () => screen.getByTestId("scanner-trade-current-price-basis").textContent ?? "";
+
+  it("labels a stale last close as not a live price, with its candle time and source", async () => {
+    truth = staleTruth(156.305);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(ui(true, client, USDJPY));
+    await waitFor(() => expect(priceInput().value).toBe("156.305"));
+    expect(basis()).toMatch(/not a live price/i);
+    expect(basis()).toContain("10:00:00 UTC");
+    expect(basis()).toContain("ARX market data");
+    expect(basis()).toMatch(/does not update/i);
+  });
+
+  it("flags the field as a snapshot once the feed's close moves on", async () => {
+    truth = staleTruth(156.305);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(ui(true, client, USDJPY));
+    await waitFor(() => expect(priceInput().value).toBe("156.305"));
+    truth = staleTruth(156.41);
+    rerender(ui(true, client, USDJPY));
+    expect(basis()).toContain("Latest close is now 156.410");
+  });
+
+  it("says the value is the signal's entry level when no feed price exists", () => {
+    truth = null;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(ui(true, client, USDJPY));
+    expect(priceInput().value).toBe("156.2");
+    expect(basis()).toMatch(/signal's entry level, not a current price/);
+  });
+});
