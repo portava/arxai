@@ -140,3 +140,37 @@ describe("mode cards: the saved label is not proof of the limits in force", () =
     expect(screen.getByText(/^Balanced Mode$/)).toBeTruthy();
   });
 });
+
+describe("special rules say what reads them", () => {
+  it("V75 reduced lot and spike protection are not listed as active green rules", () => {
+    renderPage({ tab: "rules", settings: { data: BALANCED_APPLIED } });
+    const summary = screen.getByTestId("rule-summary");
+    expect(summary.textContent).not.toMatch(/capped at 50%/i);
+    const saved = Array.from(summary.querySelectorAll("[data-rule-kind]"))
+      .filter((el) => /reduced lot|spike protection/i.test(el.textContent ?? ""));
+    expect(saved).toHaveLength(2);
+    for (const el of saved) {
+      expect(el.getAttribute("data-rule-kind")).toBe("saved");
+      expect(el.textContent).toMatch(/not applied/i);
+      expect(el.querySelector(".bg-success")).toBeNull();
+    }
+  });
+
+  it("the news toggles are reminders, not blocks, and no copy promises an automatic halving", () => {
+    renderPage({ tab: "rules", settings: { data: BALANCED_APPLIED } });
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/Automatically halves/i);
+    expect(text).not.toMatch(/Block During|Block Around|News proximity warnings active/);
+    for (const el of screen.getByTestId("rule-summary").querySelectorAll("[data-rule-kind='reminder']")) {
+      expect(el.textContent).toMatch(/does not block/i);
+      expect(el.querySelector(".bg-success")).toBeNull();
+    }
+  });
+
+  it("Spike Protection does not promise to pause", () => {
+    renderPage({ tab: "limits", settings: { data: BALANCED_APPLIED } });
+    const desc = screen.getByTestId("spike-protection-desc").textContent ?? "";
+    expect(desc).not.toMatch(/^Pause during/);
+    expect(desc).toMatch(/nothing pauses/i);
+  });
+});

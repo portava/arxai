@@ -852,7 +852,9 @@ export default function RiskSettings() {
                       <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/50 p-4 bg-muted/10">
                         <div>
                           <FormLabel className="text-sm font-medium">Spike Protection</FormLabel>
-                          <FormDescription className="text-xs">Pause during abnormal tick volatility to avoid slippage</FormDescription>
+                          <FormDescription className="text-xs" data-testid="spike-protection-desc">
+                            Saved preference only. No risk check or trading loop reads it yet, so nothing pauses on abnormal tick volatility.
+                          </FormDescription>
                         </div>
                         <FormControl>
                           <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -885,13 +887,13 @@ export default function RiskSettings() {
                 {
                   key: "vol75ExtraConfidence" as const,
                   label: "Volatility 75 (1s) — Extra Confidence",
-                  desc: "Adds +10% to the minimum confidence threshold when trading V75 1s. Extreme tick speed requires higher certainty.",
+                  desc: "Adds 10 points to the minimum confidence when a symbol named \"(1s)\" is risk-checked with a confidence score (MT5 order requests and the risk audit).",
                   accent: "text-orange-400",
                 },
                 {
                   key: "vol75SmallLot" as const,
                   label: "Volatility 75 — Reduced Lot Size",
-                  desc: "Automatically halves the calculated lot size for V75 instruments to account for higher pip volatility.",
+                  desc: "Saved preference only. The position sizer and risk checks do not read it yet, so it changes no lot size. Separately, the sizer always halves the lot for symbols whose name contains \"1s\", whether this is on or off.",
                   accent: "text-orange-400",
                 },
               ].map(({ key, label, desc, accent }) => (
@@ -913,27 +915,29 @@ export default function RiskSettings() {
 
           <Card className="border-border/50">
             <CardHeader className="bg-muted/20 border-b border-border/50">
-              <CardTitle className="text-base">News & Event Blocks</CardTitle>
-              <CardDescription className="text-xs">Prevent trading around high-impact economic events</CardDescription>
+              <CardTitle className="text-base">News & Event Reminders</CardTitle>
+              <CardDescription className="text-xs">
+                Reminder warnings added to the risk check for matching symbols. They do not read an economic or earnings calendar and never block a trade.
+              </CardDescription>
             </CardHeader>
             <CardContent className="divide-y divide-border/30 px-0">
               {[
                 {
                   key: "us30BlockNews" as const,
-                  label: "US30 — Block During Major U.S. News",
-                  desc: "Warns when US30 trades are detected near NFP, FOMC, CPI and other tier-1 U.S. economic releases.",
+                  label: "US30 — Major U.S. News Reminder",
+                  desc: "Adds a reminder to check NFP, FOMC, CPI and other major U.S. releases when a US30 or DJ30 symbol is risk-checked. It does not check whether news is near.",
                   accent: "text-blue-400",
                 },
                 {
                   key: "stocksBlockEarnings" as const,
-                  label: "Stocks — Block Around Earnings",
-                  desc: "Flags stock trades during earnings season. Can be overridden manually if you have a directional view.",
+                  label: "Stocks — Earnings Reminder",
+                  desc: "Adds a reminder to check for an earnings release when a stock ticker is risk-checked. It does not read an earnings calendar.",
                   accent: "text-blue-400",
                 },
                 {
                   key: "forexBlockEvents" as const,
-                  label: "Forex — Block Around Central Bank Events",
-                  desc: "Generates warnings for forex pairs during ECB, Fed, BoE, BoJ decisions and high-impact news.",
+                  label: "Forex — Central Bank Reminder",
+                  desc: "Adds a reminder to check central bank decisions and high-impact news when a major forex pair is risk-checked. It does not check whether an event is near.",
                   accent: "text-blue-400",
                 },
               ].map(({ key, label, desc, accent }) => (
@@ -960,20 +964,35 @@ export default function RiskSettings() {
                 <Activity size={14} /> Current Rule Summary
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-1">
-              {settings && [
-                settings.vol75ExtraConfidence && "V75 (1s): +10 confidence required above global minimum",
-                settings.vol75SmallLot && "V75: Position size capped at 50% of calculated lot",
-                settings.us30BlockNews && "US30: News proximity warnings active",
-                settings.stocksBlockEarnings && "Stocks: Earnings block warnings active",
-                settings.forexBlockEvents && "Forex: Central bank event warnings active",
-                !settings.vol75ExtraConfidence && !settings.vol75SmallLot && !settings.us30BlockNews && !settings.stocksBlockEarnings && !settings.forexBlockEvents && "No special rules active",
-              ].filter(Boolean).map((rule, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <div className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
-                  {rule}
-                </div>
-              ))}
+            <CardContent className="space-y-1" data-testid="rule-summary">
+              {settings && (() => {
+                // "applied": a risk check reads it. "reminder": adds warning text
+                // only. "saved": stored, but nothing reads it yet.
+                const rules: { text: string; kind: "applied" | "reminder" | "saved" }[] = [
+                  ...(settings.vol75ExtraConfidence ? [{ kind: "applied" as const,
+                    text: "V75 (1s): +10 confidence required when a \"(1s)\" symbol is risk-checked with a confidence score" }] : []),
+                  ...(settings.vol75SmallLot ? [{ kind: "saved" as const,
+                    text: "V75 reduced lot: saved, not applied. No lot is reduced by this setting" }] : []),
+                  ...(settings.disableDuringAbnormalVolatility ? [{ kind: "saved" as const,
+                    text: "Spike protection: saved, not applied. Nothing pauses on abnormal volatility" }] : []),
+                  ...(settings.us30BlockNews ? [{ kind: "reminder" as const,
+                    text: "US30: news reminder added to its risk check. Does not block" }] : []),
+                  ...(settings.stocksBlockEarnings ? [{ kind: "reminder" as const,
+                    text: "Stocks: earnings reminder added to their risk check. Does not block" }] : []),
+                  ...(settings.forexBlockEvents ? [{ kind: "reminder" as const,
+                    text: "Forex: central bank reminder added to its risk check. Does not block" }] : []),
+                ];
+                if (rules.length === 0) {
+                  return <p className="text-xs text-muted-foreground">No special rules switched on</p>;
+                }
+                return rules.map((rule) => (
+                  <div key={rule.text} className="flex items-center gap-2 text-xs text-muted-foreground" data-rule-kind={rule.kind}>
+                    <div className={cn("w-1.5 h-1.5 rounded-full shrink-0",
+                      rule.kind === "applied" ? "bg-success" : rule.kind === "reminder" ? "bg-yellow-400" : "bg-muted-foreground/50")} />
+                    {rule.text}
+                  </div>
+                ));
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
