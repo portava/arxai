@@ -754,3 +754,51 @@ test("4- and 5-candle trend windows are exactly the five bars before the first f
   if(downId!==null)assert.ok(has(mirror(b),downId),`${downId}: trend in the five bars just before the formation`);
  }
 });
+/** Round-4 pins for the 3-candle v4/v5 shapes. A 3-candle formation ends at bar 14, so its first
+ * candle is bar 12: its prior-10 window is bars 2-11 and its prior trend is read from bars 7-11. */
+const THREE_CANDLE_LONG_FIRST=[["two_crows",4],["upside_gap_two_crows",4],["unique_three_river_bottom",3.5],["three_stars_in_the_south",2.5]] as const;
+/** Every prefix body is 1, so a body B at one bar of a window moves that window's mean body to (B+9)/10. */
+const widenBody=(b:CatalogueCandle[],at:number,size:number)=>{const x=b[at]!;x.open=x.close-size;x.low=Math.min(x.low,x.open-.75);};
+for(const [id,first] of THREE_CANDLE_LONG_FIRST){
+ test(`${id}: the first body is long against the ten bars before it, not a window that includes it or starts earlier`,()=>{
+  const a=fixture(id).at(-3)!;assert.equal(Math.abs(a.close-a.open),first);
+  oneSide(id,b=>widenBody(b,2,10*first-10),true,`control: first body ${first} exceeds its prior-10 mean body ${first-.1}`);
+  // A window that counts the first candle instead of bar 2 would have mean (9+first)/10 and call the body long.
+  oneSide(id,b=>widenBody(b,2,10*first-8),false,`first body ${first} is below its prior-10 mean body ${first+.1}`);
+  // Bar 1 is in no window the rule reads. The window one bar earlier (bars 1-10) would have mean first+.1.
+  oneSide(id,b=>widenBody(b,1,10*first-8),true,"control: a wide bar 1 is outside the first candle's prior-10 window");
+ });
+}
+/** 3-candle v4/v5 ids with the prior trend each needs. Downside Gap Three Methods mirrors the upside fixture. */
+const THREE_CANDLE_TREND=[["upside_gap_three_methods","up"],["downside_gap_three_methods","down"],["upside_gap_side_by_side_white_lines","up"],["downside_gap_side_by_side_white_lines","down"],["identical_three_crows","up"],["two_crows","up"],["upside_gap_two_crows","up"],["stick_sandwich","down"],["unique_three_river_bottom","down"],["three_stars_in_the_south","down"]] as const;
+/** Replace the 12 prefix closes. Prefix bars keep body 1 and range 2.5, so every prior mean is unchanged. */
+const withPrefixCloses=(id:string,closes:readonly number[])=>{
+ const mirrored=id==="downside_gap_three_methods",b=fixture(mirrored?"upside_gap_three_methods":id),start=12-closes.length;
+ for(let k=0;k<12;k++){const close=k<start?102:closes[k-start]!;Object.assign(b[k]!,{open:close-1,high:close+.75,low:close-1.75,close});}
+ return mirrored?mirror(b):b;
+};
+for(const [id,trend] of THREE_CANDLE_TREND){
+ test(`${id}: the prior trend is read from exactly the five bars before the first formation candle`,()=>{
+  // Mirrored fixtures take the up-trend closes; mirror() turns them into a decline.
+  const side=id==="downside_gap_three_methods"?"up":trend;
+  // Bars 7-11 trend; bars 6-10, the window one bar earlier, do not.
+  const exact={up:[104,102,102.5,103,103.5,104],down:[100,102,101.5,101,100.5,100]}[side];
+  assert.ok(has(withPrefixCloses(id,exact),id),`${id}: trend in the five bars just before the formation`);
+  // Bars 7-11 show no trend; bars 8-12, which add the first formation candle, would.
+  const later={up:[104,101,101.5,102,102.5],down:[94,102,101.5,101,100.5]}[side];
+  assert.ok(!has(withPrefixCloses(id,later),id),`${id}: the first formation candle is not trend context`);
+ });
+}
+test("Three-Line Strike: the strike is measured against the first open and the third close, not their shadows",()=>{
+ const pair=["bullish_three_line_strike","bearish_three_line_strike"] as const;
+ // First candle: open 102, low 101.8. Third candle: close 108, high 108.2.
+ bothSides(...pair,b=>set(b,-1,{close:101.9}),true,"control: strike close below the first open but above the first low");
+ bothSides(...pair,b=>set(b,-1,{open:108.1}),true,"control: strike open above the third close but below the third high");
+});
+test("Identical Three Crows: the first lower shadow is below .1 of the first candle's prior-10 mean range",()=>{
+ const id="identical_three_crows";
+ // That bound is .25. A .26 shadow is below .11 or .12 of the same mean (.275, .3) and below .1 of
+ // the second and third candles' means (.2696, .2886), so each of those bounds would accept it.
+ oneSide(id,b=>set(b,-3,{low:144.76}),true,"control: first lower shadow .24 is below .25 (.09 of the mean, .225, would reject it)");
+ oneSide(id,b=>set(b,-3,{low:144.74}),false,"first lower shadow .26 exceeds .25");
+});

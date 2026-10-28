@@ -68,7 +68,15 @@ The same tie-break can still push a strike into details. If the strike candle is
 
 Each new name has a positive fixture, a flat negative control, tiny/large price-scale checks, incomplete-candle and future-prefix controls, a trend-context control, and an internal-gap control. Near misses check reaction containment, strict final closes, strike engulfment, the near-open tolerance, gap fill and colour, the side-by-side open and length tolerances, and Mat Hold versus Rising Three Methods in both directions. Every near-miss fixture is asserted to be valid closed evidence, so a rejection never comes from an unavailable scan. A bookkeeping test computes every coverage count from the JSON and the code.
 
-The v5 document's review follow-up lists the one-predicate near misses and window tests later added for these nine shapes, and the corrected Three Methods wording. Its correction paragraph records that the first follow-up did not pin every criterion, and it lists the results of the mechanical deletion pass. For these nine shapes, every operand deletion fails the suite except the equivalent ones it names: the Gap Three Methods colours, the Three-Line Strike strike colour, the `n2` null check, the window `i>=3`/`i>=4` guards and the rising-shape check inside Rising Three Methods. The Side-by-Side "both later candles white" rule (TA-Lib column) is now pinned on the third line as well as the middle line.
+The v5 document's review follow-up lists the one-predicate near misses and window tests later added for these nine shapes, and the corrected Three Methods wording. Its correction paragraph records that the first follow-up did not pin every criterion. Its section "What the mutation runs cover" states which mutation classes were run, what each enumerated, the counts and the mutants known to pass; nothing beyond that is claimed here. For the nine v4 shapes, these operand deletions still pass `test:candlestick-catalogue`, one at a time:
+- the `isShortAt` mean null check, which feeds the Three Methods and Mat Hold short-reaction rule;
+- the six Gap Three Methods colour checks;
+- the Three-Line Strike strike colour, on each side;
+- the window guards `i>=3` and `i>=4`;
+- the rising-shape check inside Rising Three Methods;
+- the Three-Line Strike `n2` null check.
+
+All but the last are equivalent, for the reasons v5 gives. The `n2` deletion is not: v5 records a subnormal-price input on which it emits a strike that the shipped rule does not. Operand deletion is only one mutation class. Comparison flips at exact ties, constant changes and window shifts are covered only where v5 says so. Of those, all four Three-Line Strike open-tolerance comparisons can be made strict without a test failing, and the .25 × prior-10 mean range on the second open can be raised by 10% on both bounds. "(inclusive)" in the table above is the shipped rule, but no test holds it at an exact tie. The Side-by-Side "both later candles white" rule (TA-Lib column) is now pinned on the third line as well as the middle line.
 
 The CI-wired `test:candlestick-catalogue`, `test:smart-chart-analysis` and `test:smart-chart-reader` scripts and the workspace typecheck pass for this commit (results in the commit message).
 
