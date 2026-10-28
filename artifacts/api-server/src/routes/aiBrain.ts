@@ -110,6 +110,18 @@ router.get("/market-replay/:id", (req, res) => {
 import { db, tradeJournalTable, liveIntentsTable, learningInsightsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
+type JournalRow = typeof tradeJournalTable.$inferSelect;
+/** A journal row whose trade has a known result: BUY/SELL with a finite P&L. */
+function hasRecordedOutcome(j: JournalRow): j is JournalRow & { pnl: number } {
+  return j.direction !== "WAIT" && typeof j.pnl === "number" && Number.isFinite(j.pnl);
+}
+
+/** A mistake tag that names a mistake ("None" / blank are not mistakes). */
+function realMistakeTag(tag: string | null | undefined): string | null {
+  const t = (tag ?? "").trim();
+  return t && t.toLowerCase() !== "none" ? t : null;
+}
+
 // Phase 25 — Per-user scope. Was previously reading ALL users' journal rows
 // and returning them to any authed caller (cross-user leak). Now filtered by
 // req.authUser.id and gated by requireUser. liveIntentsTable has no ownership
@@ -128,16 +140,21 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
     const winRate = total ? Math.round((wins / total) * 100) : 0;
     const pnl = journal.reduce((a, j) => a + (j.pnl ?? 0), 0);
 
+    // Best/worst symbol rank recorded results only (a missing P&L is
+    // unknown, not 0). "Best" must be net profitable and "worst" net losing,
+    // so one symbol is never both and a losing symbol is never "strongest".
     const bySymbol = new Map<string, { count: number; pnl: number }>();
-    for (const j of journal) {
+    for (const j of journal.filter(hasRecordedOutcome)) {
       const k = j.symbol;
       const cur = bySymbol.get(k) ?? { count: 0, pnl: 0 };
-      cur.count++; cur.pnl += j.pnl ?? 0;
+      cur.count++; cur.pnl += j.pnl;
       bySymbol.set(k, cur);
     }
     const symRows = Array.from(bySymbol.entries()).map(([symbol, v]) => ({ symbol, ...v }));
-    const bestSymbol = symRows.sort((a, b) => b.pnl - a.pnl)[0]?.symbol ?? null;
-    const worstSymbol = symRows.sort((a, b) => a.pnl - b.pnl)[0]?.symbol ?? null;
+    const topSym = [...symRows].sort((a, b) => b.pnl - a.pnl)[0];
+    const lowSym = [...symRows].sort((a, b) => a.pnl - b.pnl)[0];
+    const bestSymbol = topSym && topSym.pnl > 0 ? topSym.symbol : null;
+    const worstSymbol = lowSym && lowSym.pnl < 0 ? lowSym.symbol : null;
 
     const byStrategy = new Map<string, { count: number; pnl: number }>();
     for (const j of journal) {
@@ -151,9 +168,10 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
       .sort((a, b) => b.pnl - a.pnl);
 
     const mistakeDist = new Map<string, number>();
+    // Untagged rows and the explicit "None" tag are not a mistake pattern.
     for (const j of journal) {
-      const tag = j.mistakeTag ?? "none";
-      mistakeDist.set(tag, (mistakeDist.get(tag) ?? 0) + 1);
+      const tag = realMistakeTag(j.mistakeTag);
+      if (tag) mistakeDist.set(tag, (mistakeDist.get(tag) ?? 0) + 1);
     }
 
     return res.json({
@@ -225,12 +243,6 @@ router.get("/learning/recommendations", requireUser, async (req, res) => {
   } catch (e) { return res.status(500).json({ error: String(e) }); }
 });
 
-type JournalRow = typeof tradeJournalTable.$inferSelect;
-/** A journal row whose trade has a known result: BUY/SELL with a finite P&L. */
-function hasRecordedOutcome(j: JournalRow): j is JournalRow & { pnl: number } {
-  return j.direction !== "WAIT" && typeof j.pnl === "number" && Number.isFinite(j.pnl);
-}
-
 // Phase 25 — Per-user scope. Was leaking the entire journal table across
 // all users (the coach was literally summarising other users' mistakes back
 // to the caller). Now filtered to req.authUser.id with an honest empty state.
@@ -279,7 +291,8 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       byStrategy.set(j.strategy, (byStrategy.get(j.strategy) ?? 0) + j.pnl);
     }
     for (const j of journal) {
-      if (j.mistakeTag) byMistake.set(j.mistakeTag, (byMistake.get(j.mistakeTag) ?? 0) + 1);
+      const tag = realMistakeTag(j.mistakeTag);
+      if (tag) byMistake.set(tag, (byMistake.get(tag) ?? 0) + 1);
     }
     const sorted = (m: Map<string, number>, asc = false) =>
       Array.from(m.entries()).sort((a, b) => asc ? a[1] - b[1] : b[1] - a[1]);
