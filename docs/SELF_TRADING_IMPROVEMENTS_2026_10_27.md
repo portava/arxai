@@ -43,7 +43,7 @@ The one management failure in the table above, "actual concurrent cold-map manua
 
 ### Final combined run (28 October 2026)
 
-Branch head `98be093`: PR #99 head `11cb10a` (re-fetched; still the latest) plus every slice, the broker-quote-supply fixes and the protective-action path after two independent review rounds. Disposable PostgreSQL 16 with the drizzle schema pushed, run as an unprivileged user; Node 24.22.1; offline (`ARX_LIVE_BROKER_EXECUTION_ENABLED=false`, network stubbed).
+Branch head `98be093`, then re-merged with PR #99 heads `f2c14d6` (mission and chart-QA only) and `49f73dc`: root CI 336/336, typecheck, guards, builds and the backend plan re-run green after `f2c14d6` (backend 35/36, only the live-server suite failing). Base for the table: PR #99 head `11cb10a` plus every slice, the broker-quote-supply fixes and the protective-action path after two independent review rounds. Disposable PostgreSQL 16 with the drizzle schema pushed, run as an unprivileged user; Node 24.22.1; offline (`ARX_LIVE_BROKER_EXECUTION_ENABLED=false`, network stubbed).
 
 | Plan | Result |
 | --- | --- |
@@ -58,8 +58,8 @@ Branch head `98be093`: PR #99 head `11cb10a` (re-fetched; still the latest) plus
 Failures, each reproduced on PR #99 head `11cb10a` itself with the same harness:
 
 - `api-server test` (`tests/*.test.mjs`) calls a running server at `http://localhost:80/api`; offline it cannot connect (536 of 538 fail). Not runnable here.
-- `api-server test:fast-unit` fails 2 of 456, order-dependent: run in one process (`--test-isolation=none`), `security/__qa__/handshakeEnforcement.test.ts` and `data/providers/__qa__/derivSymbolFeedStatus.test.ts` interfere, and which pair of tests fails changes between runs (the earlier run on `57ba110` passed 456/456; on `11cb10a` the two handshake tests failed instead). Each file passes on its own. Neither file nor the suite list is changed by this branch.
-- Browser `scanner-qa/responsiveness`: click-feedback p95 above its 100 ms target under CPU throttling on this shared host. No dashboard or QA-script file differs from PR #99 head, which fails the same way here.
+- `api-server test:fast-unit` failed 2 of 456 in one run: `derivSymbolFeedStatus.test.ts` captured its clock at module load, and under `--test-isolation=none` every file loads before any test runs, so a slow load aged its seeded ticks past the window. Root-caused and fixed on PR #99 (`49f73dc`), merged here; 456/456 afterwards with a real database. (The two `handshakeEnforcement` failures seen only with an unreachable `DATABASE_URL` are that file's documented reachable-database prerequisite.)
+- Browser `scanner-qa/responsiveness`: click-feedback p95 above its 100 ms target at 4x CPU throttling in this 4-CPU container, also when the machine is otherwise idle; the PR #99 thread measures 78–83 ms in its container. Environment-bound, not green. No dashboard or QA-script file differs from PR #99 head, which fails the same way here.
 
 One fixture needed updating for PR #99's latest transport change: `test:self-trade-duplicate-recovery-postgres` now signs its commands and creates the `symbols` table, because `99f2a18` serves a bridged entry mirror only for an intact signed authority and resolves its broker symbol (`cf46374`; 15/15).
 
