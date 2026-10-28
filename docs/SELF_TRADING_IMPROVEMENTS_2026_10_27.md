@@ -39,7 +39,29 @@ Node 24.22.1, pnpm 10.28.0, `DATABASE_URL=postgres://nobody@127.0.0.1:1/none` fo
 | ci:guards | 87/87 | 88/88 |
 | pnpm run typecheck | — | pass with `NODE_OPTIONS=--max-old-space-size=8192` (the scripts package exhausts the default 4 GB heap in this container) |
 
-The one management failure, "actual concurrent cold-map manual polls complete with a one-connection pool", is an 8 s child-process timeout that also fails at the base commit on this shared, loaded host. The full root `ci` aggregate, `ci:integration`, browser checks and builds were not run on this branch.
+The one management failure in the table above, "actual concurrent cold-map manual polls complete with a one-connection pool", was investigated rather than waived: cold `tsx` bootstrap of the child process (356 ESM modules, about 6.5–7.5 s on this host) used about 93% of the old 8 s budget, so the test timed process start-up, not the polls. The probe now bounds only the two polls (5 s deadline, reported as `pollsMs`) and keeps a 45 s liveness limit (`d2007b5`). It passes in every run below.
+
+### Final combined run (28 October 2026)
+
+Branch head `98be093`: PR #99 head `11cb10a` (re-fetched; still the latest) plus every slice, the broker-quote-supply fixes and the protective-action path after two independent review rounds. Disposable PostgreSQL 16 with the drizzle schema pushed, run as an unprivileged user; Node 24.22.1; offline (`ARX_LIVE_BROKER_EXECUTION_ENABLED=false`, network stubbed).
+
+| Plan | Result |
+| --- | --- |
+| Root `pnpm run ci` (every step, 336 commands) | 336 / 336 pass |
+| `pnpm run ci:integration` | pass (all integration-lane safety suites) |
+| Backend plan (36 commands) | 34 pass; 2 fail, both pre-existing (below) |
+| Dashboard `vitest run` | 155 files, 1764 pass, 9 skipped |
+| `pnpm run typecheck`, `pnpm run ci:guards` (89/89), api-server build, dashboard build | all pass |
+| Offline browser scenarios (chart-qa ×4, scanner-qa ×3) | 6 / 7 pass; 1 fails identically on PR #99 head (below) |
+| Protective-path suites | protective-domain 544, fresh-facts 90, lifecycle 92, management PostgreSQL 170 (166 pass, 4 skipped), protective-action-path guard 68 assertions |
+
+Failures, each reproduced on PR #99 head `11cb10a` itself with the same harness:
+
+- `api-server test` (`tests/*.test.mjs`) calls a running server at `http://localhost:80/api`; offline it cannot connect (536 of 538 fail). Not runnable here.
+- `api-server test:fast-unit` fails 2 of 456, order-dependent: run in one process (`--test-isolation=none`), `security/__qa__/handshakeEnforcement.test.ts` and `data/providers/__qa__/derivSymbolFeedStatus.test.ts` interfere, and which pair of tests fails changes between runs (the earlier run on `57ba110` passed 456/456; on `11cb10a` the two handshake tests failed instead). Each file passes on its own. Neither file nor the suite list is changed by this branch.
+- Browser `scanner-qa/responsiveness`: click-feedback p95 above its 100 ms target under CPU throttling on this shared host. No dashboard or QA-script file differs from PR #99 head, which fails the same way here.
+
+One fixture needed updating for PR #99's latest transport change: `test:self-trade-duplicate-recovery-postgres` now signs its commands and creates the `symbols` table, because `99f2a18` serves a bridged entry mirror only for an intact signed authority and resolves its broker symbol (`cf46374`; 15/15).
 
 ## Behaviour changes to know about
 
