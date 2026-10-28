@@ -94,7 +94,14 @@ function renderHeader(seed: { read?: ChartRead | null; readTf?: string; action?:
   );
 }
 
+// A read's newest closed candle time. The header expires a read past the
+// timeframe's candle budget (or with no valid time), like the panel does, so
+// these fixtures carry a fresh observedAt — see
+// ScannerHeaderSummary.read-expiry.test.tsx for the expiry itself.
+const FRESH = new Date().toISOString();
+
 const FULL_READ: ChartRead = {
+  observedAt: FRESH,
   gated: false,
   dataQuality: "ok",
   readLayer: "FULL",
@@ -145,7 +152,7 @@ describe("ScannerHeaderSummary — Eleanor cell never claims a read nobody produ
 
   it("(c) a STRUCTURAL_ONLY read caps it to 'Limited read' with the server's reason", () => {
     renderHeader({
-      read: { gated: false, dataQuality: "ok", readLayer: "STRUCTURAL_ONLY", blockedReason: DELAYED_REASON },
+      read: { observedAt: FRESH, gated: false, dataQuality: "ok", readLayer: "STRUCTURAL_ONLY", blockedReason: DELAYED_REASON },
     });
     const text = eleanorCell();
     expect(text).toContain("Limited read");
@@ -172,7 +179,7 @@ describe("ScannerHeaderSummary — Eleanor cell never claims a read nobody produ
 
   it("(g) a read stored under the engine form 'M1' (scalp card 'Ask Eleanor') caps the 1m header", () => {
     renderHeader({
-      read: { gated: false, dataQuality: "ok", readLayer: "STRUCTURAL_ONLY", blockedReason: DELAYED_REASON },
+      read: { observedAt: FRESH, gated: false, dataQuality: "ok", readLayer: "STRUCTURAL_ONLY", blockedReason: DELAYED_REASON },
       readTf: "M1",
     });
     const text = eleanorCell();
