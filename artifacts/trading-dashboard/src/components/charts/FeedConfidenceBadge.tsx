@@ -205,7 +205,9 @@ export function FeedConfidenceBadge({
         <div className="space-y-1 rounded-md border border-zinc-800 p-2">
           <Row label="Source" value={fs?.source || "—"} />
           <Row label="State" value={fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—"} />
-          <Row label="Latency" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
+          {/* Server-side time to read the winning provider — NOT tick or bar age
+              (see "Last tick" / "Last candle"). Unknown when nothing served. */}
+          <Row label="Server read time" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
           <Row label="Last candle" value={relativeTime(fs?.lastCandleTime)} />
           <Row
             label="Last tick"

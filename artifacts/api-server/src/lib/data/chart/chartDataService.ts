@@ -199,13 +199,11 @@ async function buildChartFeed(
   const result = await routeCandles(symbol, timeframe, limit);
   const source = result.primaryProvider;
 
-  // Latency: the winning provider's measured ms, else total probe cost.
+  // Latency: the winning provider's server-side read time (ms). When nothing
+  // was served there is no read to time — the cost of failed probes is not a
+  // feed latency, so it reports unknown (null) rather than their sum.
   const okAttempt = result.attempts.find((a) => a.ok);
-  const latencyMs = okAttempt
-    ? okAttempt.ms
-    : result.attempts.length > 0
-      ? result.attempts.reduce((s, a) => s + a.ms, 0)
-      : null;
+  const latencyMs = okAttempt ? okAttempt.ms : null;
 
   // ── Phase 1: run truth engine over raw candles ─────────────────────────
   let candles: NormalizedChartCandle[];

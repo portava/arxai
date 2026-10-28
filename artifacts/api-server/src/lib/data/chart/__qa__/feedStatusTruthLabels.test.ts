@@ -3,6 +3,7 @@
 // Real chartDataService over a controllable router stand-in (pattern of
 // formingTipSourceIsolation.test.ts). Each block pins one board claim:
 //   - "Last tick" carries the MT5 broker tick time the server observed.
+//   - "Latency" is the winning provider read time; nothing served → unknown.
 //
 // Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
 //   src/lib/data/chart/__qa__/feedStatusTruthLabels.test.ts
@@ -87,4 +88,29 @@ test("Last tick: a replayed frozen quote is not reported as a fresh tick", async
   for (let i = 5; i >= 0; i--) foldFormingTick("EURUSD", 1.1, brokerTime, WEEKDAY_NOW - i * 10_000, "mt5_broker");
   const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
   assert.equal(out.feedStatus.lastTickTime, null);
+});
+
+test("Latency: a feed that served nothing has no latency (not the sum of failed probes)", async () => {
+  route.ok = false;
+  route.primaryProvider = null;
+  route.candles = [];
+  route.provenance = null;
+  route.attempts = [
+    { provider: "mt5_broker", ok: false, reason: "MT5_BROKER_FEED_NOT_ACTIVE", candleCount: 0, ms: 700 },
+    { provider: "assistant_real", ok: false, reason: "timeout", candleCount: 0, ms: 800 },
+  ];
+  const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
+  assert.equal(out.feedStatus.quality, "unavailable");
+  assert.equal(out.feedStatus.latencyMs, null);
+  assert.equal(out.latencyMs, null);
+});
+
+test("Latency: a served feed reports the winning provider's read time only", async () => {
+  liveMt5(WEEKDAY_NOW);
+  route.attempts = [
+    { provider: "mt5_broker", ok: false, reason: "MT5_TIMEFRAME_MISSING", candleCount: 0, ms: 900 },
+    { provider: "assistant_real", ok: true, reason: null, candleCount: 60, ms: 120 },
+  ];
+  const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
+  assert.equal(out.feedStatus.latencyMs, 120);
 });
