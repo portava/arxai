@@ -12,6 +12,7 @@
 // The hold is independent of the trader's discipline settings: it is raised as
 // a trading_halt, which a trader override can never clear.
 import type { TradeIntent } from "../riskGovernor/preTrade.js";
+import type { SafetyCorePosture } from "./platformSwitches.js";
 
 export const AI_ENTRY_HOLD_ENV = "ARX_AI_ENTRY_HOLD_ENABLED";
 export const AI_ENTRY_POLICY_PENDING =
@@ -36,4 +37,27 @@ export function aiEntryPolicyReason(
   if (!aiEntryHoldEnabled(opts.env)) return null;
   if (intent.action !== "OPEN") return null;
   return GENERATED_ORIGINS.has(intent.origin) || opts.generatedEntry === true ? AI_ENTRY_POLICY_PENDING : null;
+}
+
+// ── Paper entries need an executable Safety Core (PR #102) ──────────────────
+// Independent of the AI-entry hold and always on: a new paper entry requires
+// exactly one readable Safety Core row, a released kill switch, an executable
+// mode and a trading state the Safety Core tradeGate accepts. Missing or
+// ambiguous state never grants permission. Protective actions are not gated.
+export type PaperPosture = SafetyCorePosture & { engaged: boolean };
+
+const PAPER_EXECUTABLE_MODES = ["PAPER_TRADING", "LIVE_TRADING"];
+const PAPER_ENTRY_STATES = [
+  "NORMAL", "HIGH_VOLATILITY", "TREND_EXPANSION", "CHOP_DANGER", "NEWS_RISK",
+  "LOW_LIQUIDITY", "EXECUTION_RISK", "COGNITIVE_FATIGUE", "DEFENSIVE_MODE",
+];
+
+export function paperEntryPolicyReason(posture: PaperPosture): string | null {
+  if (!posture.readable || !posture.present) return "PAPER_SAFETY_STATE_UNAVAILABLE: one readable Safety Core state is required before a paper entry.";
+  if (posture.engaged) return "PAPER_SAFETY_STOP: the Safety Core kill switch is engaged.";
+  if (!PAPER_EXECUTABLE_MODES.includes(posture.operationalMode ?? ""))
+    return `PAPER_MODE_BLOCK: Safety Core mode ${posture.operationalMode ?? "unknown"} does not permit booking paper orders.`;
+  // Recovery, degraded and shutdown states do not prove permission for new risk.
+  return PAPER_ENTRY_STATES.includes(posture.globalState ?? "") ? null
+    : `PAPER_STATE_BLOCK: Safety Core state ${posture.globalState ?? "unknown"} does not permit new paper orders.`;
 }

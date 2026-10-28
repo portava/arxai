@@ -534,3 +534,17 @@ test("drawdown: at or past the cap from the recorded peak blocks new risk; closi
   const unknown = baseCtx({ limits, account: { equity: null, freeMargin: 9_000, leverage: 100, currency: "USD", source: "test" } });
   assert.ok(evaluatePreTradeRisk(baseIntent(), unknown).rules.find((x) => x.rule === "daily_loss_limit")!.reason!.includes("drawdown"));
 });
+
+// Paper entries need an executable Safety Core (PR #102); fail closed.
+import { paperEntryPolicyReason } from '../../safety/entryPolicy.js';
+
+test('paper Safety Core policy fails closed on unknown states and only permits executable modes', () => {
+  const healthy = { readable: true, present: true, engaged: false, operationalMode: 'PAPER_TRADING', globalState: 'NORMAL' };
+  assert.equal(paperEntryPolicyReason(healthy), null);
+  assert.equal(paperEntryPolicyReason({ ...healthy, operationalMode: 'LIVE_TRADING' }), null);
+  for (const operationalMode of ['OBSERVE_ONLY', 'SUGGEST_ONLY', '', 'paper_trading', 'UNKNOWN'])
+    assert.match(paperEntryPolicyReason({ ...healthy, operationalMode })!, /PAPER_MODE_BLOCK/);
+  for (const globalState of ['SAFE_SHUTDOWN', 'RECOVERY_MODE', 'DEGRADED_MODE', 'UNKNOWN'])
+    assert.match(paperEntryPolicyReason({ ...healthy, globalState })!, /PAPER_STATE_BLOCK/);
+  for (const changed of [{ readable: false }, { present: false }, { engaged: true }]) assert.ok(paperEntryPolicyReason({ ...healthy, ...changed }));
+});

@@ -204,7 +204,30 @@ export function checkBookShape(read: (key: string) => string | null): string[] {
     if (!ts.isFunctionDeclaration(st) || !st.name || !st.body) continue;
     const fn = st.name.text;
     const writes = findWrites(file, st.body).filter((w) => w.table === "paperOrdersTable");
+    // The private atomic booking helper may only be reached by the two OPEN
+    // producers. Treat its call as a write, preserving the governor-before-
+    // write checks rather than exempting the delegates from them.
+    const delegated: ts.CallExpression[] = [];
+    const calls = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "bookPaperOrder") delegated.push(n);
+      ts.forEachChild(n, calls);
+    };
+    calls(st.body);
+    for (const call of delegated) {
+      if (!["openPaperOrder", "openPaperFill"].includes(fn) || call.arguments[1]?.getText(file) !== "risk")
+        v.push(`${PAPER_VENUE}: ${fn} may not delegate an ungoverned booking`);
+      writes.push({ table: "paperOrdersTable", op: "insert", node: call });
+    }
     if (!writes.length) continue;
+    if (fn === "bookPaperOrder") {
+      const body = st.body.getText(file);
+      if (st.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)
+        || !/if \(!risk.allowed \|\| risk.auditEventId == null\) return/.test(body)
+        || !body.includes("db.transaction(async tx") || !body.includes("readPaperEntryPosture(tx)")
+        || !body.includes("appendAuditInTransaction(tx"))
+        v.push(`${PAPER_VENUE}: atomic booking must remain private, require an audited governor allowance, recheck Safety Core and audit transactionally`);
+      continue;
+    }
     seen.add(fn);
     const action = own(GOVERNED_VENUE_FUNCTIONS, fn);
     if (action) {
