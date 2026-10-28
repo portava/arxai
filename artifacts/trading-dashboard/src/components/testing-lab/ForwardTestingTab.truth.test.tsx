@@ -115,3 +115,20 @@ describe("ForwardTestingTab — results availability", () => {
     expect(screen.getByText(/Forward-test results could not be loaded/i)).toBeTruthy();
   });
 });
+
+describe("ForwardTestingTab — strategy scope copy", () => {
+  it("never claims a strategy-bound test when the start request carries no strategy", async () => {
+    route = async (url) => jsonResponse(200, url.includes("/results") ? RESULTS : { ...STATUS_RUNNING, running: false });
+    render(<ForwardTestingTab strategyId="meanReversion" />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /Start/ }));
+    await flush();
+    const startCall = fetchMock.mock.calls.find(([u]) => String(u).includes("/api/forward-testing/start"));
+    expect(startCall).toBeTruthy();
+    const body = JSON.parse(String((startCall![1] as RequestInit).body));
+    expect(body).not.toHaveProperty("strategy");
+    expect(screen.queryByText(/selected strategy: meanReversion/)).toBeNull();
+    expect(screen.getByText(/every shadow strategy/i)).toBeTruthy();
+    expect(screen.getByText(/meanReversion.*is not applied/i)).toBeTruthy();
+  });
+});

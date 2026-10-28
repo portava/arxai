@@ -152,8 +152,9 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
         <CardHeader>
           <CardTitle className="text-base">Start a forward test</CardTitle>
           <CardDescription>
-            Observes all approved symbols on M15 with the conservative profile
-            {strategyId ? ` · selected strategy: ${strategyId}` : ""}.
+            Observes all approved symbols on M15 with the conservative profile,
+            across every shadow strategy.
+            {strategyId ? ` The strategy selected above (${strategyId}) is not applied to forward tests; results mix all strategies.` : ""}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
