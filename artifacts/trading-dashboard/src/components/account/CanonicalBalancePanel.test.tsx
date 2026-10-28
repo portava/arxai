@@ -59,3 +59,53 @@ describe("CanonicalBalancePanel reserved risk label", () => {
     expect(within(tile("Reserved risk")).getByText("$12.00")).toBeTruthy();
   });
 });
+
+// Round 3: composeInvestorBalance builds liveEquity as allocated + realized +
+// (floatingPnL ?? 0), so an unavailable floating P/L is silently counted as 0.
+// The figures built from it must say they leave it out.
+describe("CanonicalBalancePanel unavailable floating P/L", () => {
+  const floatingMissing: InvestorLiveBalance = {
+    ...base,
+    realizedPnL: 0,
+    floatingPnL: null,
+    liveEquity: 1000,
+    marginUsed: 0,
+    freeMargin: 1000,
+    availableBalance: 1000,
+    openTradeCount: 2,
+    realizedPnLPendingCount: 0,
+  };
+
+  it("marks Live equity and Equity after reserve incomplete when floating P/L is unavailable", () => {
+    render(<CanonicalBalancePanel live={floatingMissing} />);
+    expect(within(tile("Floating P/L")).getByText(/unavailable/i)).toBeTruthy();
+    expect(within(tile("Live equity")).getByText(/incomplete.*floating P\/L not included/i)).toBeTruthy();
+    expect(within(tile("Equity after reserve")).getByText(/incomplete.*floating P\/L not included/i)).toBeTruthy();
+    expect(within(tile("Available")).getByText(/open-trade losses not included/i)).toBeTruthy();
+    const note = screen.getByTestId("canonical-balance-floating-missing-note");
+    expect(note.textContent).toMatch(/2 open trades/);
+    expect(note.textContent).toMatch(/not included/);
+  });
+
+  it("does not show 0 open trades when no balance was read", () => {
+    render(<CanonicalBalancePanel live={null} />);
+    expect(within(tile("Open trades")).queryByText("0")).toBeNull();
+    expect(within(tile("Open trades")).getByText("—")).toBeTruthy();
+  });
+
+  it("does not show 0 open trades when the server had no live snapshot to count them from", () => {
+    render(
+      <CanonicalBalancePanel
+        live={{ ...floatingMissing, source: "demo", openTradeCount: 0, freshness: { status: "unavailable", lastUpdatedAt: null, ageMs: null } }}
+      />,
+    );
+    expect(within(tile("Open trades")).queryByText("0")).toBeNull();
+    expect(within(tile("Open trades")).getByText(/not read/i)).toBeTruthy();
+  });
+
+  it("still shows a counted 0 when a live snapshot reports no open trades", () => {
+    render(<CanonicalBalancePanel live={{ ...base, floatingPnL: 0, openTradeCount: 0 }} />);
+    expect(within(tile("Open trades")).getByText("0")).toBeTruthy();
+    expect(screen.queryByText(/not included/i)).toBeNull();
+  });
+});
