@@ -141,8 +141,24 @@ export default function MT5BridgePage() {
     return { label: "Unavailable", tone: "warning" };
   }, [checking, frozen, connected]);
 
-  const approvalTone: Tone = frozen ? "danger" : ((mode as any).approvalStatus === "APPROVED" || (mode as any).isLiveShared) ? "success" : "warning";
-  const approvalLabel = frozen ? "Frozen" : ((mode as any).approvalStatus === "APPROVED" || (mode as any).isLiveShared) ? "Approved" : ((mode as any).approvalStatus ? "Pending" : "Checking");
+  // Approval / arming come from the account-mode envelope. Being in
+  // LIVE_SHARED mode is not approval, and a fresh heartbeat is not permission
+  // to execute: the envelope's blocked reason and liveExecutionArmed decide.
+  const env = (mode.envelope ?? null) as { userApprovalStatus?: string | null; liveExecutionArmed?: boolean } | null;
+  const approvalStatus = env?.userApprovalStatus ?? null;
+  const blockedReason = mode.cleanBlockedReason ?? null;
+  const liveArmed = mode.isLiveArmed === true;
+  const approved = approvalStatus === "APPROVED";
+  const approvalTone: Tone = frozen ? "danger" : blockedReason ? "warning" : approved ? "success" : "warning";
+  const approvalLabel = frozen ? "Frozen"
+    : !env ? "Unknown"
+    : blockedReason ? "Blocked"
+    : approved ? "Approved"
+    : approvalStatus === "NOT_REQUIRED" ? "Not required"
+    : "Not approved";
+  const executionAvailable = connected && !frozen && liveArmed && !blockedReason;
+  const executionLabel = !connected ? "Paused" : frozen ? "Paused" : blockedReason ? "Blocked" : !liveArmed ? "Not armed" : "Available";
+  const liveAccessLabel = liveArmed ? "Enabled" : mode.isLiveShared ? "Live Shared · not armed" : "Not enabled";
 
   const routeLabel = (mode as any).cleanModeLabel ?? ((mode as any).isLiveShared ? "Live Shared MT5" : (mode as any).isDemo ? "Demo" : "Analysis Only");
   const bridgeHealthy = connected && !frozen;
@@ -170,7 +186,9 @@ export default function MT5BridgePage() {
   const rubyRead = frozen
     ? "Your account is currently risk-locked, so live execution is paused. Market analysis and the scanner stay available. Clear the lock from Risk Settings, then your route will reopen."
     : connected
-      ? "Your trading route is healthy. The shared MT5 bridge is connected, market data is active, and your account is approved. You can prepare trades normally. If the bridge disconnects, ARX will pause live execution until the connection returns."
+      ? (executionAvailable
+          ? "The shared MT5 bridge heartbeat is fresh and your account mode has live execution armed with no block reported. Server safety gates still check every order. If the bridge disconnects, ARX pauses live execution until the connection returns."
+          : `The shared MT5 bridge heartbeat is fresh, but live execution is not available on your account: ${blockedReason ? `blocked (${blockedReason})` : !liveArmed ? "live execution is not armed" : "not confirmed"}. You can still analyze the market and prepare ideas.`)
       : "The shared MT5 bridge is not connected right now, so live execution is paused. You can still analyze the market and prepare ideas. Live routing resumes automatically when the bridge reconnects.";
 
   const activity: { time: string; event: string; tone: Tone; chip: string }[] = [];
@@ -220,7 +238,9 @@ export default function MT5BridgePage() {
               <div className={cn("text-xl font-bold", TONE_TEXT[bridgeState.tone])}>{bridgeState.label}</div>
               <p className="mt-1 text-sm text-txt-secondary">
                 {frozen ? ((mode as any).freezeMessage ?? "Your account is currently frozen. Contact support or wait for review.")
-                  : connected ? "Your account is approved to trade through the ARX shared MT5 route."
+                  : connected ? (executionAvailable
+                      ? "Your account mode has live execution armed on the ARX shared MT5 route."
+                      : `The bridge is connected, but live execution on your account is ${executionLabel.toLowerCase()}.`)
                   : "The shared MT5 bridge is unavailable right now. Live execution will resume when the bridge reconnects."}
               </p>
             </div>
@@ -255,8 +275,8 @@ export default function MT5BridgePage() {
             <StatusTile icon={ShieldCheck} label="Bridge" value={bridgeHealthy ? "Healthy" : "Unavailable"} tone={bridgeHealthy ? "success" : "warning"} />
             <StatusTile icon={UserCheck} label="Access" value={approvalLabel} tone={approvalTone} />
             <StatusTile icon={Activity} label="Risk" value={riskLabel} tone={riskTone} />
-            <StatusTile icon={RouteIcon} label="Execution" value={bridgeHealthy ? "Available" : "Paused"} tone={bridgeHealthy ? "success" : "warning"} />
-            <StatusTile icon={Wifi} label="Market Data" value={connected ? "Connected" : "Unavailable"} tone={connected ? "success" : "warning"} />
+            <StatusTile icon={RouteIcon} label="Execution" value={executionLabel} tone={executionAvailable ? "success" : "warning"} />
+            <StatusTile icon={Wifi} label="Market Data" value={connected ? "Not checked here" : "Unavailable"} tone={connected ? "muted" : "warning"} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/20">
@@ -299,7 +319,7 @@ export default function MT5BridgePage() {
         <SectionCard title="My Bridge Access" icon={UserCheck}>
           <div className="divide-y divide-border/60">
             <Row label="Approval" value={approvalLabel} tone={approvalTone} />
-            <Row label="Live Access" value={(mode as any).liveExecutionArmed ? "Enabled" : (mode as any).isLiveShared ? "Enabled" : "Not enabled"} tone={(mode as any).isLiveShared ? "success" : "muted"} />
+            <Row label="Live Access" value={liveAccessLabel} tone={liveArmed ? "success" : mode.isLiveShared ? "warning" : "muted"} />
             <Row label="Allocation" value={fmtMoney(allocation)} />
             <Row label="Allowed Markets" value={Array.isArray((mode as any).allowedSymbols) && (mode as any).allowedSymbols.length ? `${(mode as any).allowedSymbols.length} approved` : "All approved symbols"} />
             <Row label="Max Lot Size" value={(mode as any).maxLotSize != null ? String((mode as any).maxLotSize) : "Not available"} />
@@ -316,11 +336,13 @@ export default function MT5BridgePage() {
         <SectionCard title="Bridge Health" icon={Activity}>
           <div className="divide-y divide-border/60">
             <Row label="Connection" value={connected ? "Healthy" : "Unavailable"} tone={connected ? "success" : "warning"} />
-            <Row label="Market Data" value={connected ? "Connected" : "Unavailable"} tone={connected ? "success" : "warning"} />
-            <Row label="Order Routing" value={bridgeHealthy ? "Available" : "Paused"} tone={bridgeHealthy ? "success" : "warning"} />
-            <Row label="Result Reporting" value={connected ? "Active" : "Paused"} tone={connected ? "success" : "warning"} />
-            <Row label="Position Refresh" value={connected ? "Active" : "Paused"} tone={connected ? "success" : "warning"} />
-            <Row label="Account Refresh" value={connected ? "Active" : "Paused"} tone={connected ? "success" : "warning"} />
+            {/* /mt5/status reports the heartbeat only; market data, order
+                routing, result reporting and refresh paths are not probed. */}
+            <Row label="Market Data" value={connected ? "Not checked here" : "Unavailable"} tone={connected ? "muted" : "warning"} />
+            <Row label="Order Routing" value={executionLabel} tone={executionAvailable ? "success" : "warning"} />
+            <Row label="Result Reporting" value={connected ? "Not probed" : "Paused"} tone={connected ? "muted" : "warning"} />
+            <Row label="Position Refresh" value={connected ? "Not probed" : "Paused"} tone={connected ? "muted" : "warning"} />
+            <Row label="Account Refresh" value={connected ? "Not probed" : "Paused"} tone={connected ? "muted" : "warning"} />
             <Row label="Last Sync" value={lastSync} />
           </div>
           <button onClick={refresh} className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/20">
