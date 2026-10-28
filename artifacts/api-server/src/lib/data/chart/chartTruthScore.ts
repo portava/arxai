@@ -100,6 +100,15 @@ function aggregate(subMetrics: ChartTruthSubMetric[]): ChartTruthScore {
       (primaryConcern ?? "All measured checks healthy.") };
 }
 
+/** True only when a closed-to-forming bar pair let the merge seam be observed. */
+export function isMergeSeamMeasured(truthResult: TimeframeTruthResult | null | undefined): boolean {
+  if (!truthResult || !Number.isFinite(truthResult.candleCount) || truthResult.candleCount <= 0) return false;
+  const seam = truthResult.mergeSeam;
+  return !!seam && seam.formingBarDetected && Number.isSafeInteger(seam.formingBarCount) &&
+    seam.formingBarCount > 0 && truthResult.candleCount > seam.formingBarCount &&
+    Number.isSafeInteger(seam.seamGapIntervals) && seam.seamGapIntervals >= 0;
+}
+
 /**
  * Compute the Chart Truth Score from Phase 1 truth result + feed status.
  *
@@ -226,8 +235,7 @@ export function computeChartTruthScore(
   // When real broker bid/ask is available, a wide or failed deviation means the
   // chart price and broker price have diverged — a real mirror sync issue.
   const seam = truthResult.mergeSeam;
-  const seamMeasured = seam.formingBarDetected && Number.isSafeInteger(seam.formingBarCount) &&
-    seam.formingBarCount > 0 && n > seam.formingBarCount && Number.isSafeInteger(seam.seamGapIntervals) && seam.seamGapIntervals >= 0;
+  const seamMeasured = isMergeSeamMeasured(truthResult);
   let mirrorRaw: number;
   let mirrorDetail: string;
   if (!seamMeasured) {

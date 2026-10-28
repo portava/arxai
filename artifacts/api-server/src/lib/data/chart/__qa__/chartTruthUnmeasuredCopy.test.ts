@@ -6,9 +6,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runCandleTruth, type TimeframeTruthResult } from "../candleTruthEngine.js";
 import { computeChartTruthScore } from "../chartTruthScore.js";
-import { computeChartGateOutput } from "../chartGateOutput.js";
+import { computeChartGateOutput, gateMirrorBlockCause, MIRROR_NOT_CHECKED_REASON } from "../chartGateOutput.js";
 import { buildChartHandshake } from "../chartHandshake.js";
-import { computeBrokerPriceAlignment } from "../brokerPriceAlignment.js";
+import { computeBrokerPriceAlignment, mirrorTrustSegment, noBrokerAlignment } from "../brokerPriceAlignment.js";
 import { bindBrokerQuote } from "../brokerQuoteBinding.js";
 import type { ChartFeedStatus } from "../chartDataService.js";
 
@@ -89,4 +89,32 @@ test("a score under 75 only because checks could not run is not called Degraded"
   const mockReason = computeChartGateOutput(mockScore, read, quoteAlignment(1.09999, 1.10001), mock, false).blockedReasons[0];
   assert.match(mockReason, /^Chart Truth Score 72 < 75 \(Degraded\) — chart-based confirmation blocked\. Measured concerns: Source Authenticity 0\/100\./);
   assert.match(mockReason, /Could not be checked \(earn no points\): Render Accuracy, Scale Quality, Interaction Stability\.$/);
+});
+
+test("no candles, or no seam and no bound broker comparison, never allows trade confirmation by absence", () => {
+  const empty = computeChartTruthScore(null, feed);
+  const none = computeChartGateOutput(empty, read, noBrokerAlignment(null, "LAST"), null, false);
+  assert.equal(none.tradeConfirmationAllowed, false);
+  assert.ok(none.blockedReasons.includes(MIRROR_NOT_CHECKED_REASON));
+  assert.doesNotMatch(none.blockedReasons.join(" "), /alignment failed|integrity failed/);
+  // Not a failure: the handshake field stays unknown and the trust line says "not checked".
+  assert.equal(buildChartHandshake(none, empty).MirrorSync, "WARN");
+  assert.equal(mirrorTrustSegment(none.tradeConfirmationAllowed, noBrokerAlignment(null, "LAST"), gateMirrorBlockCause(none)), "Mirror not checked");
+  const truth = noSeam(), score = computeChartTruthScore(truth, feed);
+  const unchecked = computeChartGateOutput(score, read, noBrokerAlignment(1.1, "MID"), truth, false);
+  assert.equal(unchecked.tradeConfirmationAllowed, false);
+  assert.ok(unchecked.blockedReasons.includes(MIRROR_NOT_CHECKED_REASON));
+  // Either observation alone keeps the previous decision.
+  const seamOnly = computeChartGateOutput(computeChartTruthScore(fixture(), feed), read, noBrokerAlignment(1.1, "MID"), fixture(), false);
+  assert.equal(seamOnly.tradeConfirmationAllowed, true);
+  const tight = quoteAlignment(1.09999, 1.10001);
+  const brokerOnly = computeChartGateOutput(computeChartTruthScore(truth, feed, tight), read, tight, truth, false);
+  assert.equal(brokerOnly.tradeConfirmationAllowed, true);
+  assert.ok(!brokerOnly.blockedReasons.includes(MIRROR_NOT_CHECKED_REASON));
+  // An observed seam failure is still "degraded" and FAIL.
+  const overlap = fixture({ mergeSeam: { formingBarDetected: true, formingBarCount: 1, gapAtSeam: false, overlapAtSeam: true, seamGapIntervals: 0 } });
+  const overlapGate = computeChartGateOutput(computeChartTruthScore(overlap, feed), read, noBrokerAlignment(1.1, "MID"), overlap, false);
+  assert.equal(overlapGate.tradeConfirmationAllowed, false);
+  assert.equal(mirrorTrustSegment(false, noBrokerAlignment(1.1, "MID"), gateMirrorBlockCause(overlapGate)), "Mirror degraded");
+  assert.equal(buildChartHandshake(overlapGate, computeChartTruthScore(overlap, feed)).MirrorSync, "FAIL");
 });

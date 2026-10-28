@@ -12,7 +12,7 @@
 // execution gate. Never weakens the 16-gate live pipeline.
 
 import { buildChartIntelligenceState, type ChartIntelligenceState } from "./chartIntelligence.js";
-import type { ChartGateOutput } from "./chartGateOutput.js";
+import { gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
 import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
 import type { ChartTimeframe } from "./timeframes.js";
 import { buildChartHandshake, type ChartHandshakeVerdict } from "./chartHandshake.js";
@@ -139,7 +139,7 @@ export function buildTrustLine(
   // → synced, wide → drifting, unknown → no claim, seam/alignment-failed →
   // degraded) instead of the binary tradeConfirmationAllowed gate, so the line
   // never claims "Mirror synced" while the price is drifting or unverifiable.
-  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, alignment);
+  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, alignment, gateMirrorBlockCause(gate));
   if (mirror) {
     parts.push(mirror);
   }

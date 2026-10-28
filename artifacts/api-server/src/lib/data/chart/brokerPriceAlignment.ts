@@ -221,6 +221,9 @@ export function hasMeasuredBrokerAlignment(alignment: BrokerPriceAlignment | und
  * `tradeConfirmationAllowed` gate alone, so a read-chart surface never claims
  * the chart price is synced with the broker when it is only drifting or cannot
  * be verified at all:
+ *   - `tradeConfirmationAllowed === false` because neither the seam nor a
+ *       bound broker comparison could be checked (`cause.notChecked`)
+ *       → "Mirror not checked"  (absence is never called a failure)
  *   - `tradeConfirmationAllowed === false` (merge-seam OR alignment "failed")
  *       → "Mirror degraded"  (composes seam AND alignment state)
  *   - aligned (tight/normal) with broker data → "Mirror synced"
@@ -234,7 +237,10 @@ export function hasMeasuredBrokerAlignment(alignment: BrokerPriceAlignment | und
 export function mirrorTrustSegment(
   tradeConfirmationAllowed: boolean,
   alignment: Pick<BrokerPriceAlignment, "aligned" | "tolerance" | "brokerDataAvailable" | "quoteBinding">,
+  cause?: { seamFailed: boolean; notChecked: boolean },
 ): string | null {
+  // Nothing observed: the gate is closed for lack of evidence, not a failure.
+  if (!tradeConfirmationAllowed && cause?.notChecked) return "Mirror not checked";
   // Seam failure or alignment failure already collapsed tradeConfirmationAllowed
   // to false — surface that as degraded regardless of the raw tolerance band.
   if (!tradeConfirmationAllowed) return "Mirror degraded";

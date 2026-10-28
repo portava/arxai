@@ -20,6 +20,7 @@ import type { ChartEvidenceDirection } from "../data/chart/engines/marketUnderst
 import type { ChartConsensusStance } from "../data/chart/chartAgentConsensus.js";
 import { buildChartHandshake } from "../data/chart/chartHandshake.js";
 import { mirrorTrustSegment } from "../data/chart/brokerPriceAlignment.js";
+import { gateMirrorBlockCause } from "../data/chart/chartGateOutput.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 
 export type RubyDraftIntent =
@@ -160,7 +161,7 @@ function buildTrustLine(state: ChartIntelligenceState, hasForming: boolean): str
   }
   // Honest mirror copy from the real broker-alignment granularity — never claims
   // sync while the price is only drifting (wide) or unverifiable (unknown).
-  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, state.brokerAlignment);
+  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, state.brokerAlignment, gateMirrorBlockCause(gate));
   if (mirror) {
     parts.push(mirror);
   }

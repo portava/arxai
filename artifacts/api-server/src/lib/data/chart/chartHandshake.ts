@@ -7,7 +7,7 @@
 // SAFETY: READ-ONLY, advisory only. Never an execution gate, never modifies the
 // 16-gate live pipeline, never fabricates a PASS when evidence is absent.
 
-import type { ChartGateOutput } from "./chartGateOutput.js";
+import { gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
 import type { ChartTruthScore } from "./chartTruthScore.js";
 
 export type ChartHandshakeVerdict = "PASS" | "WARN" | "FAIL";
@@ -117,7 +117,8 @@ export function buildChartHandshake(
     ? scoreToVerdict(subMetricScore(truthScore, "symbol_mirror_accuracy"))
     : "WARN";
 
-  const MirrorSync = gate.tradeConfirmationAllowed
+  // A mirror that could not be checked at all is unknown (WARN), not FAIL.
+  const MirrorSync = gate.tradeConfirmationAllowed || gateMirrorBlockCause(gate).notChecked
     ? rollup([HistoricalLiveMerge, BrokerPriceAlignment]) : "FAIL";
 
   const RenderHealth = truthScore

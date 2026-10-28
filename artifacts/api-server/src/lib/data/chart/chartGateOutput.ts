@@ -10,15 +10,16 @@
 //                              selfTradeChartAllowed = false
 //   providerDeliversRealOhlc = false ⇒ candlestickModeAllowed = false
 //   mirror fail (seam overlap OR deviation failed) ⇒ tradeConfirmationAllowed = false
+//   mirror not checked (no seam AND no bound broker comparison) ⇒ tradeConfirmationAllowed = false
 //   feed stale               ⇒ autonomousChartActionAllowed = false
 //
 // SAFETY: this gate NEVER blocks candle rendering or the live 16-gate pipeline.
 // It is an advisory chokepoint for chart-BASED confirmations only. Phase 4
 // consumers enforce the hard rules; they may add stricter local checks on top.
 
-import type { ChartTruthScore } from "./chartTruthScore.js";
+import { isMergeSeamMeasured, type ChartTruthScore } from "./chartTruthScore.js";
 import type { ChartReadScore } from "./chartReadScore.js";
-import type { BrokerPriceAlignment } from "./brokerPriceAlignment.js";
+import { hasMeasuredBrokerAlignment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
 import type { TimeframeTruthResult } from "./candleTruthEngine.js";
 
 export interface ChartGateOutput {
@@ -59,8 +60,12 @@ export interface ChartGateOutput {
   autonomousChartActionAllowed: boolean;
   /**
    * True when the broker-price mirror has NOT failed (seam clean AND broker
-   * alignment within wide tolerance). When false, chart-based trade confirmation
-   * (entry/stop reference from the chart) is blocked.
+   * alignment within wide tolerance) AND at least one of the two was actually
+   * observed. When neither the seam nor a bound broker comparison could be
+   * checked, "allowed" would rest on absent evidence, so it is false and the
+   * reason says the mirror could not be checked (not that it failed).
+   * When false, chart-based trade confirmation (entry/stop reference from the
+   * chart) is blocked.
    */
   tradeConfirmationAllowed: boolean;
 
@@ -75,6 +80,21 @@ export interface ChartGateOutput {
 }
 
 const TRUTH_THRESHOLD = 75;
+
+export const MERGE_SEAM_FAILED_REASON = "Merge-seam integrity failed — chart-based trade confirmation blocked.";
+export const MIRROR_NOT_CHECKED_REASON =
+  "Neither the merge seam nor a broker price comparison could be checked — chart-based trade confirmation is not allowed without evidence.";
+
+/** The gate's mirror reasons, read back from its own blocked reasons (also for cached gates). */
+export function gateMirrorBlockCause(gate: Pick<ChartGateOutput, "tradeConfirmationAllowed" | "blockedReasons">): {
+  seamFailed: boolean; notChecked: boolean;
+} {
+  const reasons = Array.isArray(gate.blockedReasons) ? gate.blockedReasons : [];
+  return {
+    seamFailed: reasons.includes(MERGE_SEAM_FAILED_REASON),
+    notChecked: !gate.tradeConfirmationAllowed && reasons.includes(MIRROR_NOT_CHECKED_REASON),
+  };
+}
 
 /**
  * Plain-English reason for a Chart Truth Score under the threshold. The score
@@ -135,12 +155,19 @@ export function computeChartGateOutput(
     ? (truthResult.mergeSeam.overlapAtSeam || (truthResult.mergeSeam.gapAtSeam && truthResult.mergeSeam.seamGapIntervals > 2))
     : false;
   const alignmentFailed = alignment.brokerDataAvailable && alignment.tolerance === "failed";
-  const tradeConfirmationAllowed = !seamFailed && !alignmentFailed;
+  // "Not failed" is not evidence: with no observed seam and no bound broker
+  // comparison there is nothing to confirm the chart's prices against.
+  const mirrorNotChecked = !seamFailed && !alignmentFailed &&
+    !isMergeSeamMeasured(truthResult) && !hasMeasuredBrokerAlignment(alignment);
+  const tradeConfirmationAllowed = !seamFailed && !alignmentFailed && !mirrorNotChecked;
   if (seamFailed) {
-    blockedReasons.push("Merge-seam integrity failed — chart-based trade confirmation blocked.");
+    blockedReasons.push(MERGE_SEAM_FAILED_REASON);
   }
   if (alignmentFailed) {
     blockedReasons.push("Broker price alignment failed — chart-based trade confirmation blocked.");
+  }
+  if (mirrorNotChecked) {
+    blockedReasons.push(MIRROR_NOT_CHECKED_REASON);
   }
 
   const primaryBlockReason = blockedReasons[0] ?? null;
