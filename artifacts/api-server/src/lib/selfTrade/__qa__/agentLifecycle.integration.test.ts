@@ -886,6 +886,9 @@ describe("protective-action path from an observation hold", () => {
     assert.deepEqual(result.protective.held, {});
     assert.equal(result.protective.considered, 1);
     assert.equal(result.protective.waitedMs, 3000);
+    // Sent to the EA is not a broker-confirmed close or stop move.
+    assert.equal(result.closed, 0);
+    assert.equal(result.modified, 0);
     assert.equal(sleeps.length, 3);
     const memory = execution.managementState as {
       pendingManagement: { action: string; commandId?: string; protective: { trigger: string; heldReason: string; evidence: { lastSyncedAt: string } } };

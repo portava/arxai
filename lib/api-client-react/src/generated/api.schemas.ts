@@ -15110,6 +15110,40 @@ export type RunAutonomousCycleRespReconciled = {
   expired: number;
 };
 
+/**
+ * Management holds by structured reason code -> count (ordinary observation holds MANAGEMENT_OBSERVATION_*, protective-path holds PROTECTIVE_*, and the per-agent MANAGEMENT_PAUSED_AACI_REVIEW).
+ */
+export type RunAutonomousCycleRespManagementHeld = { [key: string]: number };
+
+export type RunAutonomousCycleHoldDetailKind =
+  (typeof RunAutonomousCycleHoldDetailKind)[keyof typeof RunAutonomousCycleHoldDetailKind];
+
+export const RunAutonomousCycleHoldDetailKind = {
+  PROTECTIVE: "PROTECTIVE",
+  OBSERVATION: "OBSERVATION",
+  PAUSE: "PAUSE",
+  OTHER: "OTHER",
+} as const;
+
+export interface RunAutonomousCycleHoldDetail {
+  reason: string;
+  count: number;
+  kind: RunAutonomousCycleHoldDetailKind;
+  text: string;
+}
+
+/**
+ * Protective-action drain for this cycle. "acted" counts actions sent to the EA through the gated pipeline (awaiting broker confirmation); it is never a confirmed close or stop move and is not part of positionsClosed / positionsModified.
+ */
+export interface RunAutonomousCycleProtective {
+  considered: number;
+  acted: number;
+  held: number;
+  bridges: number;
+  elapsedMs: number;
+  waitBudgetMs: number;
+}
+
 export interface RunAutonomousCycleResp {
   ok: boolean;
   cycleId: string;
@@ -15120,6 +15154,11 @@ export interface RunAutonomousCycleResp {
   positionsClosed: number;
   reconciled: RunAutonomousCycleRespReconciled;
   realizedPosted: number;
+  /** Management holds by structured reason code -> count (ordinary observation holds MANAGEMENT_OBSERVATION_*, protective-path holds PROTECTIVE_*, and the per-agent MANAGEMENT_PAUSED_AACI_REVIEW). */
+  managementHeld?: RunAutonomousCycleRespManagementHeld;
+  /** One entry per hold reason with standalone plain-English text. Per-position detail stays in the self-trade audit log. */
+  managementHeldDetails?: RunAutonomousCycleHoldDetail[];
+  protective?: RunAutonomousCycleProtective;
 }
 
 export type CockpitOverviewRespTraders = {

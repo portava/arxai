@@ -23711,6 +23711,38 @@ export const AdminRunSelfTradeAutonomousCycleResponse = zod.object({
     expired: zod.number(),
   }),
   realizedPosted: zod.number(),
+  managementHeld: zod
+    .record(zod.string(), zod.number())
+    .optional()
+    .describe(
+      "Management holds by structured reason code -> count (ordinary observation holds MANAGEMENT_OBSERVATION_\*, protective-path holds PROTECTIVE_\*, and the per-agent MANAGEMENT_PAUSED_AACI_REVIEW).",
+    ),
+  managementHeldDetails: zod
+    .array(
+      zod.object({
+        reason: zod.string(),
+        count: zod.number(),
+        kind: zod.enum(["PROTECTIVE", "OBSERVATION", "PAUSE", "OTHER"]),
+        text: zod.string(),
+      }),
+    )
+    .optional()
+    .describe(
+      "One entry per hold reason with standalone plain-English text. Per-position detail stays in the self-trade audit log.",
+    ),
+  protective: zod
+    .object({
+      considered: zod.number(),
+      acted: zod.number(),
+      held: zod.number(),
+      bridges: zod.number(),
+      elapsedMs: zod.number(),
+      waitBudgetMs: zod.number(),
+    })
+    .optional()
+    .describe(
+      'Protective-action drain for this cycle. \"acted\" counts actions sent to the EA through the gated pipeline (awaiting broker confirmation); it is never a confirmed close or stop move and is not part of positionsClosed \/ positionsModified.',
+    ),
 });
 
 /**

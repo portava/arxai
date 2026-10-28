@@ -23406,6 +23406,46 @@ components:
             closed: { type: integer }
             expired: { type: integer }
         realizedPosted: { type: integer }
+        managementHeld:
+          type: object
+          description: >-
+            Management holds by structured reason code -> count (ordinary
+            observation holds MANAGEMENT_OBSERVATION_*, protective-path holds
+            PROTECTIVE_*, and the per-agent MANAGEMENT_PAUSED_AACI_REVIEW).
+          additionalProperties: { type: integer }
+        managementHeldDetails:
+          type: array
+          description: >-
+            One entry per hold reason with standalone plain-English text.
+            Per-position detail stays in the self-trade audit log.
+          items: { $ref: "#/components/schemas/RunAutonomousCycleHoldDetail" }
+        protective:
+          $ref: "#/components/schemas/RunAutonomousCycleProtective"
+
+    RunAutonomousCycleHoldDetail:
+      type: object
+      required: [reason, count, kind, text]
+      properties:
+        reason: { type: string }
+        count: { type: integer }
+        kind: { type: string, enum: [PROTECTIVE, OBSERVATION, PAUSE, OTHER] }
+        text: { type: string }
+
+    RunAutonomousCycleProtective:
+      type: object
+      description: >-
+        Protective-action drain for this cycle. "acted" counts actions sent to
+        the EA through the gated pipeline (awaiting broker confirmation); it is
+        never a confirmed close or stop move and is not part of
+        positionsClosed / positionsModified.
+      required: [considered, acted, held, bridges, elapsedMs, waitBudgetMs]
+      properties:
+        considered: { type: integer }
+        acted: { type: integer }
+        held: { type: integer }
+        bridges: { type: integer }
+        elapsedMs: { type: integer }
+        waitBudgetMs: { type: integer }
 
     # ── Admin Cockpit (Task #752) schemas ──────────────────────────────────────
     CockpitOverviewResp:

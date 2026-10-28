@@ -25,6 +25,7 @@ import {
 import { runDecisionCycle } from "../lib/selfTrade/decisionEngine.js";
 import { getVolatilityMatrix } from "../lib/selfTrade/volatilityMatrixService.js";
 import { runAutonomousCycle } from "../lib/selfTrade/autonomousCycle.js";
+import { buildRunCycleResponse } from "../lib/selfTrade/cycleReport.js";
 import { managementNote } from "../lib/selfTrade/executionLifecycle.js";
 
 const router = Router();
@@ -178,7 +179,7 @@ router.post("/self-trade-ai/run-autonomous-cycle", requireUser, async (req, res)
     actorRole: req.authUser?.role ?? null,
     reason: p.data.reason,
   });
-  res.json({ ok: true, ...result });
+  res.json(buildRunCycleResponse(result));
 });
 
 export default router;

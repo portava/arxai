@@ -78,6 +78,7 @@ export {
   verifyProtectivePosition,
   explainProtectiveHold,
   redactProtectiveDetail,
+  summarizeManagementHold,
 } from "./protectiveAction.js";
 export type {
   ProtectiveTrigger,
