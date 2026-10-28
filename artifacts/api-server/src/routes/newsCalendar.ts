@@ -252,18 +252,23 @@ router.post("/economic-events/sync", async (req, res): Promise<void> => {
   }
 });
 
-// ── GET /economic-events?currency=&impact=&days= ──────────────────────────
+// ── GET /economic-events?currency=&impact=&days=&pastHours= ───────────────
+// Window: eventTime in [now - pastHours, now + days*24h]. The window is rolling
+// hours from now, not calendar days. `pastHours` (additive, default 0) lets a
+// caller include events already released earlier today.
 const ListQuery = z.object({
   currency: z.string().optional(),
   impact: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
   days: z.coerce.number().int().min(1).max(30).default(7),
+  pastHours: z.coerce.number().int().min(0).max(48).default(0),
 });
 
 router.get("/economic-events", async (req, res): Promise<void> => {
   try {
     const q = ListQuery.parse(req.query);
-    const since = new Date();
-    const until = new Date(Date.now() + q.days * 86400000);
+    const nowMs = Date.now();
+    const since = new Date(nowMs - q.pastHours * 3600_000);
+    const until = new Date(nowMs + q.days * 86400000);
     const conds = [
       gte(economicEventsTable.eventTime, since),
       lte(economicEventsTable.eventTime, until),

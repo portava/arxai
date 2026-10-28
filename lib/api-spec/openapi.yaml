@@ -3259,6 +3259,13 @@ paths:
         - name: days
           in: query
           schema: { type: integer, default: 7 }
+        - name: pastHours
+          in: query
+          description: |
+            Hours before now to include (0-48, default 0). The window is
+            eventTime in [now - pastHours, now + days*24h] — rolling hours, not
+            calendar days. Lets a caller list events already released today.
+          schema: { type: integer, default: 0, minimum: 0, maximum: 48 }
       responses:
         "200":
           description: Events

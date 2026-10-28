@@ -277,7 +277,12 @@ export default function EconomicCalendarPage() {
     // way we fall through to the DB so the page never ends up blank.
     enabled: (providerStatus.data !== undefined || providerStatus.isError) && !isConnected,
     queryFn: async () => {
-      const params = new URLSearchParams({ days: String(days) });
+      // The stored-calendar window is rolling hours from now, not calendar days:
+      // [now - pastHours, now + days*24h]. Reach back to local midnight so events
+      // already released today (and their actuals) are listed and counted.
+      const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+      const pastHours = Math.min(48, Math.max(0, Math.ceil((Date.now() - midnight.getTime()) / 3_600_000)));
+      const params = new URLSearchParams({ days: String(days), pastHours: String(pastHours) });
       if (currency) params.set("currency", currency);
       if (impact)   params.set("impact", impact);
       const r = await fetch(`/api/economic-events?${params}`);
@@ -409,12 +414,13 @@ export default function EconomicCalendarPage() {
       {!providerStatus.isLoading && providerStatus.data && (
         providerStatus.data.configured ? (
           providerStatus.data.connected ? (
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-2.5 text-xs text-emerald-400">
+            <div data-testid="eco-provider-banner" className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-2.5 text-xs text-emerald-400">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_1px_rgba(52,211,153,0.4)]" />
               <span className="font-semibold">{providerLabel(providerStatus.data.provider)} connected</span>
               <span className="text-emerald-600">·</span>
               <span className="text-emerald-600">
-                {providerStatus.data.eventCount} event{providerStatus.data.eventCount !== 1 ? "s" : ""} in window
+                {allEvents.length} event{allEvents.length !== 1 ? "s" : ""} returned for the {days}-day window
+                {(currency || impact) && ` · filtered to ${[currency, impact === "CRITICAL" ? "Critical only" : impact === "HIGH" ? "High+" : ""].filter(Boolean).join(", ")}`}
                 {providerStatus.data.lastFetchAt && ` · fetched ${new Date(providerStatus.data.lastFetchAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
               </span>
             </div>
@@ -511,7 +517,9 @@ export default function EconomicCalendarPage() {
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-1.5">
           {([["today","Today"],["tomorrow","Tomorrow"],["week","This Week"]] as const).map(([k, label]) => (
-            <button key={k} onClick={() => { setDateRange(k); setDays(k === "week" ? 7 : 1); }}
+            // "Tomorrow" needs 2 days: the server window is rolling hours from now,
+            // so days=1 would stop at this time tomorrow.
+            <button key={k} onClick={() => { setDateRange(k); setDays(k === "week" ? 7 : k === "tomorrow" ? 2 : 1); }}
               className={cn("rounded-lg border px-3 py-1.5 text-sm", dateRange === k ? "border-primary bg-primary text-white" : "border-border bg-card text-txt-secondary hover:text-foreground")}>
               {label}
             </button>

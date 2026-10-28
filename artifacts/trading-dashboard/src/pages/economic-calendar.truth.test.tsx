@@ -171,3 +171,39 @@ describe("released rows report the print, never an invented surprise or directio
     }
   });
 });
+
+describe("DB fallback window and the 'events in window' count", () => {
+  it("'Tomorrow' lists an event at tomorrow 13:30 when it is 09:00 today", async () => {
+    stubServer({ db: [dbEvt({ id: 1, eventName: "Non Farm Payrolls", eventTime: at(1, 13, 30) })] });
+    renderPage();
+    await screen.findByText(/No live calendar provider configured/);
+    fireEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+    await waitFor(() => expect(row("Non Farm Payrolls")).toBeTruthy());
+  });
+
+  it("'Today' includes events already released earlier today, with their actuals", async () => {
+    stubServer({ db: [
+      dbEvt({ id: 1, eventName: "Retail Sales", eventTime: at(0, 7, 0), actual: "0.4%", forecast: "0.3%" }),
+      dbEvt({ id: 2, eventName: "ISM Services", eventTime: at(0, 15, 0) }),
+    ] });
+    renderPage();
+    await waitFor(() => expect(screen.getAllByTestId("eco-event-row")).toHaveLength(2));
+    expect(screen.getByTestId("eco-total-count").textContent).toBe("2");
+    expect(screen.getByText("A 0.4% vs F 0.3%")).toBeTruthy();
+  });
+
+  it("with a currency chip on, the live banner says the count is filtered", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "a", title: "CPI YoY", when: at(0, 13, 30) }),
+      liveEvt({ id: "b", title: "ECB Speech", when: at(0, 14, 0), currency: "EUR", country: "Euro Area" }),
+    ] });
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    fireEvent.click(screen.getByRole("button", { name: "USD" }));
+    await waitFor(() => expect(screen.getAllByTestId("eco-event-row")).toHaveLength(1));
+    const banner = screen.getByTestId("eco-provider-banner");
+    expect(banner.textContent).not.toMatch(/\bin window\b/);
+    expect(banner.textContent).toMatch(/filtered to USD/);
+    expect(banner.textContent).toMatch(/1 event\b/);
+  });
+});
