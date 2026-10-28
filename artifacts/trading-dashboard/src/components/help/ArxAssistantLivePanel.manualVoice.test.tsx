@@ -75,6 +75,13 @@ vi.mock("@/lib/use-chart-symbol", () => ({
   useChartSymbol: () => ["EURUSD", vi.fn()],
 }));
 
+// The header timing chip reads the chart's scanner-truth feed gate (the same
+// rules as the chart chip). The gate is not under test here: report it as
+// not confirmed, which hides the chip.
+vi.mock("@/hooks/useScannerReadGate", () => ({
+  useScannerReadGate: () => ({ truth: null, level: null, isFull: false, downgraded: true, reason: null }),
+}));
+
 vi.mock("@/lib/perf", () => ({
   markActionStart: vi.fn(),
   markActionEnd: vi.fn(),

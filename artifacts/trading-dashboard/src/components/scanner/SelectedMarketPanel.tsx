@@ -21,6 +21,7 @@ import {
   NOT_LIVE_LEVELS_REASON,
 } from "@/components/scanner/selectedMarketView";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
+import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventCountdownFromIso } from "@/lib/eventCountdown";
@@ -124,8 +125,10 @@ export function SelectedMarketPanel() {
   // Shared scanner feed-truth for the focused symbol/timeframe — same source the
   // header strip and chart read. Drives an honest, NON-BLOCKING feed warning on
   // this panel and inside the live ticket it opens. Never gates the trade.
-  const { truth: feedTruth } = useScannerTruth(activeSymbol, scannerTf);
-  const liveAffordance = resolveTradeAffordance(feedTruth, "live");
+  // A FAILED feed read (truth null + isError) is stated as "couldn't be
+  // checked", exactly as in the Scanner trade modal — never silence.
+  const { truth: feedTruth, isError: feedReadFailed } = useScannerTruth(activeSymbol, scannerTf);
+  const liveAffordance = resolveTradeAffordance(feedTruth, "live", { isError: feedReadFailed });
   const liveFeedWarning = liveAffordance.warningTitle
     ? { warningTitle: liveAffordance.warningTitle, warningDetail: liveAffordance.warningDetail }
     : null;
@@ -170,6 +173,19 @@ export function SelectedMarketPanel() {
   const readWithheldReason = ok && !readShown
     ? ok.readWithheldReason ?? NOT_LIVE_LEVELS_REASON
     : null;
+
+  // ONE display precision for this snapshot's levels, shared by the
+  // Highlights box and the reasoning block's S/R row (the scanner truth's
+  // instrument precision, never rounding away digits the levels carry).
+  const levelPrecision = resolveDisplayPricePrecision(
+    feedTruth?.candles?.pricePrecision ?? null,
+    ok
+      ? [
+          ok.highlights.entryZone?.low, ok.highlights.entryZone?.high,
+          ok.highlights.suggestedStop, ok.highlights.suggestedTakeProfit,
+        ]
+      : [],
+  );
 
   // Downgrade-only: an empty event list reads as a quiet day only when the
   // server says the calendar was actually checked.
@@ -246,8 +262,9 @@ export function SelectedMarketPanel() {
       dataState: ok.dataState ?? null,
       dataSourceLabel: ok.dataSourceLabel ?? null,
       newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+      pricePrecision: levelPrecision,
     });
-  }, [ok, readWithheldReason]);
+  }, [ok, readWithheldReason, levelPrecision]);
 
   return (
     <Card className="rounded-2xl border-success/25 bg-card" data-testid="selected-market-panel">
@@ -363,11 +380,11 @@ export function SelectedMarketPanel() {
                     return (
                       <dl className="text-xs space-y-1" data-testid="selected-market-levels">
                         <div className="flex justify-between"><dt className="text-txt-muted">Entry zone</dt>
-                          <dd className="font-mono">{l.entryLow} – {l.entryHigh}</dd></div>
+                          <dd className="font-mono">{formatInstrumentPrice(l.entryLow, levelPrecision)} – {formatInstrumentPrice(l.entryHigh, levelPrecision)}</dd></div>
                         <div className="flex justify-between"><dt className="text-txt-muted">Suggested stop</dt>
-                          <dd className="font-mono">{l.stop}</dd></div>
+                          <dd className="font-mono">{formatInstrumentPrice(l.stop, levelPrecision)}</dd></div>
                         <div className="flex justify-between"><dt className="text-txt-muted">Possible target</dt>
-                          <dd className="font-mono">{l.target}</dd></div>
+                          <dd className="font-mono">{formatInstrumentPrice(l.target, levelPrecision)}</dd></div>
                         <div className="flex justify-between"><dt className="text-txt-muted">Risk : reward</dt>
                           <dd className="font-mono">1 : {l.riskReward}</dd></div>
                       </dl>

@@ -18,6 +18,29 @@ export function TradabilityBadge({
   const q = useTradability(symbol);
   const t = q.data;
 
+  // useTradability settles a failed lookup (non-2xx, ok:false body, 8s abort,
+  // network error) to `null`. A settled null is a FINISHED, failed check —
+  // never "Checking…", which would read as still in flight forever.
+  if ((t === null && q.isSuccess && !q.isFetching) || (!t && q.isError && !q.isFetching)) {
+    return (
+      <div className={`flex flex-col gap-1 ${className ?? ""}`}>
+        <Badge
+          variant="outline"
+          className="text-[10px] w-fit bg-zinc-500/15 text-zinc-300 border-zinc-500/40"
+          data-testid="badge-tradability-unavailable"
+        >
+          Tradability not verified
+        </Badge>
+        {showHelper && (
+          <div className="flex items-start gap-1 text-[11px] text-muted-foreground" data-testid="text-tradability-helper">
+            <Info className="h-3 w-3 mt-[2px] shrink-0" />
+            <span>The tradability check could not be loaded, so whether this market can be traded through MT5 is not known.</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (!t) {
     // No verdict yet — quiet placeholder, never leak provider/route names.
     return (

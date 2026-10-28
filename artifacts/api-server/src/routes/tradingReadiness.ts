@@ -18,7 +18,7 @@ import {
   economicEventsTable, tradingRuleContractsTable,
   weeklyPerformanceReviewsTable, vaultEventsTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod/v4";
 import { platformStop, readSafetyCorePosture, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -67,10 +67,56 @@ function formatAge(ms: number): string {
 }
 
 // ── Evaluator ──────────────────────────────────────────────────────────────
+// What a broker_health_logs status says about the broker for readiness. The
+// statuses come from lib/domain/src/broker-health/evaluator.ts. `detail` is
+// the checklist sentence, `short` the warning / blocker phrase after "Broker".
+interface BrokerStatusMeaning { kind: "connected" | "warn" | "block"; detail: string; short: string }
+const BROKER_STATUS_MEANING: Record<string, BrokerStatusMeaning> = {
+  CONNECTED: { kind: "connected", detail: "Connected", short: "connected" },
+  OK: { kind: "connected", detail: "Connected", short: "connected" },
+  HEALTHY: { kind: "connected", detail: "Connected", short: "connected" },
+  DEGRADED: {
+    kind: "warn",
+    detail: "Connected but slow: the MT5 heartbeat was 15–60 s old",
+    short: "link was slow (MT5 heartbeat 15–60 s old)",
+  },
+  EXECUTION_DISABLED: {
+    kind: "warn",
+    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was turned off by the operator: no new DEMO or LIVE positions can be opened while it stays off; paper trading is not affected",
+    short: "execution was turned off by the operator; the link was up",
+  },
+  PRICE_FEED_DELAYED: {
+    kind: "block",
+    detail: "Connected, but the price feed was delayed past the safe live-execution threshold",
+    short: "price feed delayed",
+  },
+  DISCONNECTED: { kind: "block", detail: "Not connected: no MT5 heartbeat in the last 60 s", short: "not connected" },
+  AUTH_ERROR: { kind: "block", detail: "Broker login failed", short: "login failed" },
+  MAINTENANCE_MODE: {
+    kind: "block",
+    detail: "Broker in maintenance mode: live execution paused by the operator",
+    short: "in maintenance mode",
+  },
+};
+function brokerStatusMeaning(status: string): BrokerStatusMeaning {
+  // An unrecognised status fails closed, but is named as what it is.
+  return BROKER_STATUS_MEANING[status]
+    ?? { kind: "block", detail: `Status ${status}, which readiness does not recognise`, short: `status ${status} not recognised` };
+}
+
 interface ChecklistItem {
   id: string; label: string;
   status: "PASS"|"WARN"|"FAIL"|"INFO";
   detail: string;
+}
+
+function riskLocksThatApply<T extends { userId: number | null; isActive: boolean; endTime: Date | string | null }>(
+  rows: T[], userId: number, now: Date,
+): T[] {
+  const nowMs = now.getTime();
+  return rows.filter((l) => l.isActive
+    && (l.userId === userId || l.userId == null)
+    && (l.endTime == null || new Date(l.endTime).getTime() > nowMs));
 }
 
 async function gatherSignals(userId: number) {
@@ -86,9 +132,18 @@ async function gatherSignals(userId: number) {
     }
     : null;
   const emergencyStopEngaged = stopSourceEngaged(stop, "platform_emergency_stop");
-  const activeLocks = await db.select().from(riskLocksTable).where(eq(riskLocksTable.isActive, true)).limit(10);
-  const brokerLog = await readLatestBrokerHealthLog();
   const now = new Date();
+  // Only the locks that would block THIS trader at the live gate: their own
+  // rows plus legacy ownerless rows, active and not yet past end_time — the
+  // scope and expiry of liveCommandPipeline's risk-lock pre-gate
+  // (activeRiskLockBlockReason). Another trader's lock is never counted or
+  // shown here. The same rule is re-applied to the rows read.
+  const activeLocks = riskLocksThatApply(await db.select().from(riskLocksTable).where(and(
+    eq(riskLocksTable.isActive, true),
+    or(eq(riskLocksTable.userId, userId), isNull(riskLocksTable.userId)),
+    or(isNull(riskLocksTable.endTime), gt(riskLocksTable.endTime, now)),
+  )).limit(10), userId, now);
+  const brokerLog = await readLatestBrokerHealthLog();
   const in2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
   const upcomingNews = await db.select().from(economicEventsTable)
     .where(and(gte(economicEventsTable.eventTime, now), lte(economicEventsTable.eventTime, in2h)))
@@ -130,21 +185,32 @@ export function evaluateReadiness(
   const warnings: string[] = [];
   const blockers: string[] = [];
   let lockedByHard = false;
+  // Items whose WARN means "could not be checked": they earn no score points.
+  const notChecked = new Set<string>();
 
-  // 1. Broker connected
+  // 1. Broker health check
   // Source: the newest broker_health_logs row — a PLATFORM-wide snapshot that
   // is written only when an operator runs POST /broker/health-check. It is a
   // past observation, so a connected verdict older than the broker-health
   // stale window cannot PASS (it degrades to WARN / UNKNOWN). A stale
-  // not-connected verdict still blocks: age never weakens a failure.
+  // blocking verdict still blocks: age never weakens a failure, but the
+  // blocker says how old it is.
+  //
+  // Only DISCONNECTED means the link was observed down. The broker health
+  // evaluator writes EXECUTION_DISABLED and DEGRADED only while the MT5
+  // heartbeat is under 60 s old, so those say the link was up: a warning
+  // (execution switched off by the operator / a slow link), never "not
+  // connected" and never a readiness lock on their own.
   const log = signals.brokerLog;
   const loggedStatus = log?.status ?? "UNKNOWN";
   const checkedAtMs = log?.createdAt ? new Date(log.createdAt).getTime() : NaN;
   const ageMs = Number.isFinite(checkedAtMs) ? Math.max(0, Date.now() - checkedAtMs) : NaN;
   const logFresh = Number.isFinite(ageMs) && ageMs <= BROKER_HEALTH_VERDICT_STALE_MS;
-  const loggedOk = loggedStatus === "OK" || loggedStatus === "CONNECTED" || loggedStatus === "HEALTHY";
+  const meaning = brokerStatusMeaning(loggedStatus);
+  const loggedOk = meaning.kind === "connected";
   const brokerOk = loggedOk && logFresh;
-  const bs = log == null ? "UNKNOWN" : (loggedOk && !logFresh ? "UNKNOWN" : loggedStatus);
+  const brokerWarn = meaning.kind === "warn" && logFresh;
+  const bs = log == null ? "UNKNOWN" : (meaning.kind !== "block" && !logFresh ? "UNKNOWN" : loggedStatus);
   const checkedAtText = Number.isFinite(checkedAtMs)
     ? `${new Date(checkedAtMs).toISOString().slice(0, 16).replace("T", " ")} UTC, ${formatAge(ageMs)} ago`
     : "time not recorded";
@@ -152,28 +218,40 @@ export function evaluateReadiness(
     ? "No broker health check on record — the broker connection has not been checked"
     : brokerOk
       ? `${loggedStatus} per the last platform broker health check (${checkedAtText})`
-      : loggedOk
+      : meaning.kind !== "block" && !logFresh
         ? `Last platform broker health check said ${loggedStatus} (${checkedAtText}) — too old to count as connected now`
-        : `${loggedStatus} per the last platform broker health check (${checkedAtText})`;
-  checklist.push({ id: "broker", label: "Broker connected",
-    status: brokerOk ? "PASS" : (bs === "UNKNOWN" ? "WARN" : "FAIL"),
+        : `${meaning.detail} — ${loggedStatus} per the last platform broker health check (${checkedAtText})`;
+  // Labelled for what it reads (the broker health check), so a FAIL for a
+  // delayed feed or a login error does not read as "Broker connected: FAIL".
+  checklist.push({ id: "broker", label: "Broker health check",
+    status: brokerOk ? "PASS" : (bs === "UNKNOWN" || brokerWarn ? "WARN" : "FAIL"),
     detail: brokerDetail });
-  if (!brokerOk && bs !== "UNKNOWN") { blockers.push(`Broker not connected (${bs})`); lockedByHard = true; }
+  if (meaning.kind === "block" && log != null) {
+    blockers.push(`Broker ${meaning.short} (${loggedStatus}, checked ${checkedAtText}${logFresh ? "" : " — no newer check on record"})`);
+    lockedByHard = true;
+  }
+  else if (brokerWarn) warnings.push(`Broker ${meaning.short} (${loggedStatus}, checked ${checkedAtText})`);
   else if (log == null) warnings.push("Broker connection not checked — no broker health check on record");
   else if (bs === "UNKNOWN") warnings.push("Broker connection unknown — the last broker health check is too old");
+  if (!brokerOk && bs === "UNKNOWN") notChecked.add("broker");
 
-  // 2. Market conditions acceptable (proxy: any CRITICAL upcoming news ⇒ poor)
+  // 2. Economic calendar clear for the next 2h. Only the stored economic
+  // calendar is read here — no volatility, spread or price data — so the item
+  // is named for the calendar and never states a market condition. The
+  // marketCondition field keeps its stored values (NORMAL / ELEVATED /
+  // VOLATILE / UNKNOWN), which mean "by the calendar" only.
   const criticalSoon = signals.upcomingNews.filter((e) => e.impactLevel === "CRITICAL").length;
   const highSoon = signals.upcomingNews.filter((e) => e.impactLevel === "HIGH").length;
   // Calendar not covering the next 2h: what was found is real, but the
   // absence of events is not — those checks read "not checked", never PASS.
   const calendarCovered = signals.calendarCoverage.windowCovered;
   const marketCondition = criticalSoon > 0 ? "VOLATILE" : highSoon > 0 ? "ELEVATED" : calendarCovered ? "NORMAL" : "UNKNOWN";
-  checklist.push({ id: "market", label: "Market conditions acceptable",
+  checklist.push({ id: "market", label: "No major economic events in the next 2h",
     status: criticalSoon > 0 ? "FAIL" : highSoon > 0 ? "WARN" : calendarCovered ? "PASS" : "WARN",
     detail: criticalSoon > 0 || highSoon > 0 || calendarCovered
-      ? `${marketCondition} (${highSoon} HIGH, ${criticalSoon} CRITICAL upcoming)`
+      ? `Stored economic calendar: ${highSoon} HIGH and ${criticalSoon} CRITICAL event(s) in the next 2h. Volatility, spreads and prices are not checked here.`
       : `Not checked: ${signals.calendarCoverage.note ?? "the stored economic calendar does not cover the next 2h."}` });
+  if (!(criticalSoon > 0 || highSoon > 0 || calendarCovered)) notChecked.add("market");
   if (criticalSoon > 0) reasons.push(`${criticalSoon} CRITICAL economic event(s) within 2h`);
   else if (highSoon > 0) warnings.push(`${highSoon} HIGH-impact event(s) within 2h`);
   if (!calendarCovered) warnings.push("Economic calendar not checked for the next 2h — the stored calendar does not reach that far");
@@ -191,6 +269,7 @@ export function evaluateReadiness(
     detail: newsRiskLevel === "UNKNOWN"
       ? "Not checked: the stored economic calendar does not cover the next 30 min"
       : `${within30.length} HIGH/CRITICAL within 30 min` });
+  if (newsRiskLevel === "UNKNOWN") notChecked.add("news");
   if (newsRiskLevel === "CRITICAL") { blockers.push("CRITICAL news within 30 min"); lockedByHard = true; }
   else if (newsRiskLevel === "HIGH") warnings.push("HIGH-impact news within 30 min — consider waiting");
 
@@ -264,8 +343,11 @@ export function evaluateReadiness(
   const passes = checklist.filter((c) => c.status === "PASS").length;
   const warns  = checklist.filter((c) => c.status === "WARN").length;
   const fails  = checklist.filter((c) => c.status === "FAIL").length;
-  // 9 items max. Pass=full, Warn=half, Fail=zero.
-  const raw = passes + warns * 0.5;
+  // 9 items max. Pass=full, Warn=half, Fail=zero. A check that could not be
+  // run (WARN "not checked") earns nothing but stays in the denominator, so
+  // an unverified item never adds to the score.
+  const checkedWarns = checklist.filter((c) => c.status === "WARN" && !notChecked.has(c.id)).length;
+  const raw = passes + checkedWarns * 0.5;
   const score = Math.round((raw / checklist.length) * 100);
 
   let status: EvalOut["status"];
@@ -274,7 +356,7 @@ export function evaluateReadiness(
   else if (warns > 0) status = "CAUTION";
   else status = "READY";
 
-  const aiSummary = buildSummary(status, score, blockers, warnings, signals, inp);
+  const aiSummary = buildSummary(status, score, blockers, warnings, signals, inp, checklist);
 
   return {
     status, score, checklist, reasons, warnings, blockers,
@@ -287,12 +369,14 @@ function buildSummary(
   blockers: string[], warnings: string[],
   signals: Awaited<ReturnType<typeof gatherSignals>>,
   inp: EvalInput,
+  checklist: ChecklistItem[],
 ): string {
   if (status === "LOCKED") {
     return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged || signals.emergencyStopEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
   }
   if (status === "NOT_READY") {
-    return `NOT_READY — readiness score ${score}/100. Complete the failed checklist items (mental check-in, broker, news) before starting.`;
+    const failed = checklist.filter((c) => c.status === "FAIL").map((c) => c.label);
+    return `NOT_READY — readiness score ${score}/100. Complete the failed checklist items (${failed.join(", ")}) before starting.`;
   }
   if (status === "CAUTION") {
     const sleep = inp.sleepQuality ?? 0;

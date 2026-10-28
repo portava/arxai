@@ -1,7 +1,7 @@
 // Build JJ — Scenario generation (synthetic + recorded). REPLAY_ONLY.
 import { randomUUID } from "node:crypto";
 import { db, replayScenariosTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 export interface Candle {
   t: number;       // unix ms
@@ -12,9 +12,14 @@ export interface Candle {
   v: number;
 }
 
+// A scenario's market condition is a label, never a measurement: for a
+// synthetic scenario it is the generator setting, for an import it is what the
+// caller said. "UNSPECIFIED" is an import that gave none (it used to be
+// stored as a defaulted "RANGING").
 export type MarketCondition =
   | "TRENDING_UP" | "TRENDING_DOWN" | "RANGING"
-  | "VOLATILE"   | "CHOPPY"        | "BREAKOUT" | "REVERSAL";
+  | "VOLATILE"   | "CHOPPY"        | "BREAKOUT" | "REVERSAL"
+  | "UNSPECIFIED";
 
 export interface Scenario {
   scenarioId: string;
@@ -111,8 +116,10 @@ export async function persistScenario(s: Scenario) {
   });
 }
 
+// Newest first: without an order, a just-created scenario could fall outside
+// the limit and be missing from the list the Replay Simulator shows.
 export async function listScenarios(limit = 50) {
-  const rows = await db.select().from(replayScenariosTable).limit(limit);
+  const rows = await db.select().from(replayScenariosTable).orderBy(desc(replayScenariosTable.createdAt)).limit(limit);
   return rows.map(r => ({
     scenarioId: r.scenarioId,
     title: r.title,

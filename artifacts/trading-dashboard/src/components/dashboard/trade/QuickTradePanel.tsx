@@ -26,8 +26,21 @@ export type Quote = {
  */
 const MARKET_QUOTE_SOURCES: ReadonlySet<string> = new Set(["BROKER", "MT5"]);
 
-export function isMarketQuote(q: Quote): q is NonNullable<Quote> {
+/**
+ * True when the value is a priced quote (finite bid and ask). The page stores
+ * whatever JSON the quote route returned, so an error body such as
+ * {error:"Unknown symbol"} reaches the panel as a non-null object: it is not a
+ * quote of any kind.
+ */
+function isPricedQuote(q: Quote): q is NonNullable<Quote> {
   return q != null
+    && typeof q === "object"
+    && Number.isFinite(q.bid)
+    && Number.isFinite(q.ask);
+}
+
+export function isMarketQuote(q: Quote): q is NonNullable<Quote> {
+  return isPricedQuote(q)
     && typeof q.executionEnvironment === "string"
     && MARKET_QUOTE_SOURCES.has(q.executionEnvironment.toUpperCase());
 }
@@ -76,7 +89,12 @@ export function QuickTradePanel({
   // Only a market quote is shown as Sell / Buy. A simulator quote is withheld
   // (it is synthetic, not the market), and the strip says so.
   const marketQuote = isMarketQuote(quote) ? quote : null;
-  const simulatedOnly = quote != null && marketQuote == null;
+  // Withheld quotes are named by what actually came back: a simulator quote, a
+  // priced quote with no stated (or an unrecognised) source — or no quote at
+  // all (nothing, or an error body), which is never blamed on the simulator.
+  const withheld = marketQuote == null && isPricedQuote(quote) ? quote : null;
+  const withheldSource = typeof withheld?.executionEnvironment === "string" ? withheld.executionEnvironment.trim() : "";
+  const simulatedOnly = withheld != null && withheldSource.toUpperCase() === "SIMULATOR";
   const sell = marketQuote ? marketQuote.bid : null;
   const buy = marketQuote ? marketQuote.ask : null;
   const spread = marketQuote ? marketQuote.spread : null;
@@ -152,7 +170,11 @@ export function QuickTradePanel({
           ? `Quote source: ${marketQuote.executionEnvironment}.`
           : simulatedOnly
             ? "No market price on this panel. The only quote it can read comes from the ARX price simulator (synthetic, not the market or your broker), so it is not shown. Check the chart feed for the current price."
-            : "No quote available for this symbol."}
+            : withheld != null
+              ? withheldSource
+                ? `A quote came back from "${withheldSource}", which is not a broker or MT5 price, so it is not shown. Check the chart feed for the current price.`
+                : "A quote came back with no stated source, so it is not shown. Check the chart feed for the current price."
+              : "No quote available for this symbol."}
       </p>
 
       {/* Lot sizing */}

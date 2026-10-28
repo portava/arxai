@@ -111,3 +111,35 @@ describe("MT5 Bridge: heartbeat is not approval, feed or reporting", () => {
     expect(screen.queryByText("Shared MT5 Bridge", { selector: "h2" })).toBeNull();
   });
 });
+
+// After a good read, /mt5/status starts failing: React Query keeps the last
+// data and sets isError. The page checked the cached `connected` before the
+// "Status unknown" branch, so it kept saying Connected / Bridge Healthy /
+// Execution Available from a read that is no longer current.
+describe("MT5 Bridge when status polls start failing", () => {
+  beforeEach(() => {
+    tradingMode = { isLoading: false, isFrozen: false, isLiveShared: true, isLiveArmed: true, envelope: { userApprovalStatus: "APPROVED", liveExecutionArmed: true } };
+    statusResult = { isLoading: false, isError: true, data: {
+      ...BASE_STATUS, connected: true, mode: "LIVE", route: "OWN_CONNECTION", secondsSinceHeartbeat: 3,
+      sharedMasterBridge: null, userSafeMessage: null,
+    } };
+  });
+
+  it("says the status is unknown instead of Connected / Healthy", () => {
+    render(<MT5BridgePage />);
+    const body = document.body.textContent ?? "";
+    expect(screen.queryByText("Connected")).toBeNull();
+    expect(screen.queryByText("Bridge Healthy")).toBeNull();
+    expect(screen.queryByText("Healthy")).toBeNull();
+    expect(screen.getAllByText("Status unknown").length).toBeGreaterThan(0);
+    expect(body).not.toMatch(/connection is reporting/i);
+  });
+
+  it("does not offer execution as available or show the cached heartbeat as current", () => {
+    render(<MT5BridgePage />);
+    for (const el of screen.getAllByText("Execution")) expect(el.parentElement!.textContent).not.toContain("Available");
+    for (const el of screen.getAllByText("Order Routing")) expect(el.parentElement!.textContent).not.toContain("Available");
+    for (const row of screen.queryAllByTestId("bridge-activity-row")) expect(row.textContent).not.toMatch(/Bridge heartbeat.*Connected/);
+    expect(document.body.textContent).not.toContain("3 seconds ago");
+  });
+});

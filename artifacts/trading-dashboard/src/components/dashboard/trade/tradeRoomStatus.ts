@@ -19,6 +19,10 @@ export interface TradeRoomModeInput {
   canManualTrade: boolean;
   cleanBlockedReason: string | null;
   cleanModeLabel: string;
+  /** The account-mode envelope is still loading (nothing read yet). */
+  isLoading?: boolean;
+  /** The account-mode check failed: mode, approval, pause and blockers are unknown. */
+  isModeUnknown?: boolean;
 }
 
 export interface TradeRoomStatus {
@@ -31,9 +35,29 @@ export interface TradeRoomStatus {
   rgStatus: { label: string; tone: "warning" | "success" | "danger" };
   /** Bridge row value, from the bridge observation (never from the envelope). */
   bridge: string;
+  /** Risk Governor "Approval" row: the read permission, or that it was not read. */
+  approval: string;
 }
 
 export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeObservation): TradeRoomStatus {
+  // No envelope (still loading, or the check failed): the mode, approval,
+  // pause flag and blockers were not read. Say so, instead of falling through
+  // to "Sim" / "Risk lock active" / "Waiting for approval" / "Pending" — the
+  // user may be LIVE_SHARED. Trading stays closed (canManualTrade is false).
+  const modeUnknown = m.isModeUnknown === true;
+  if (modeUnknown || m.isLoading === true) {
+    return {
+      canTrade: false,
+      modeLabel: m.cleanModeLabel || (modeUnknown ? "Mode unknown" : "Loading…"),
+      gatesLabel: modeUnknown ? "Account mode could not be checked" : "Checking account mode…",
+      blockedLabel: modeUnknown ? "Account mode could not be checked" : "Checking account mode",
+      connStatus: modeUnknown ? "Mode unknown" : "Checking",
+      rgStatus: { label: modeUnknown ? "Could not be checked" : "Checking", tone: "warning" },
+      bridge: bridgeObs.label,
+      approval: modeUnknown ? "Could not be checked" : "Checking",
+    };
+  }
+
   const isLive = m.isLiveShared;
   const blocked = Boolean(m.cleanBlockedReason);
   const frozen = m.isFrozen;
@@ -59,11 +83,15 @@ export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeO
     : blocked ? { label: "Trading blocked", tone: "warning" as const }
     // canManualTrade is permission only (status + approval + no blocker).
     : canTrade ? { label: "Approved to trade", tone: "success" as const }
-    : { label: "Risk lock active", tone: "danger" as const };
+    // Not frozen, no blocker, not approved: no risk lock was read. Same words
+    // as the status bar (gatesLabel) for the same state.
+    : { label: "Waiting for approval", tone: "warning" as const };
 
   const bridge = bridgeObs.label;
 
-  return { canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge };
+  const approval = m.canManualTrade ? "Approved" : "Pending";
+
+  return { canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge, approval };
 }
 
 /**

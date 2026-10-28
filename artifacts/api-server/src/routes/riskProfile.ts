@@ -51,8 +51,12 @@ router.get("/risk/dashboard-cards", requireUser, async (req, res) => {
   res.json({
     venue: ov.venue,
     riskStatus: ov.budget.riskStatus,
+    riskStatusReason: ov.budget.riskStatusReason,
     dailyRiskRemaining: ov.budget.dailyRiskRemaining,
     weeklyRiskRemaining: ov.budget.weeklyRiskRemaining,
+    dailyRiskLimitUnvalued: ov.budget.dailyRiskLimitUnvalued,
+    weeklyRiskLimitUnvalued: ov.budget.weeklyRiskLimitUnvalued,
+    equityKnown: ov.budget.equityKnown,
     openRisk: ov.budget.openRisk,
     openPositions: ov.budget.openPositions,
     tradesToday: ov.activity?.tradesToday ?? null,

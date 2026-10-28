@@ -22,8 +22,11 @@ const COLOR: Record<string, string> = {
   CLOSED: "bg-zinc-500/20 text-zinc-400",
 };
 
-// The server's session clock (GET /market/session-clock) is derived from the
-// UTC hour only; it does not know the weekday. Spot FX is shut from the Friday
+// Older servers derived the session clock (GET /market/session-clock) from the
+// UTC hour only, without the weekday. The current server also sends
+// `marketClosed` and steps each session's next open/close through the weekend
+// close, so its next-open times are right at the weekend. For an older server
+// (no `marketClosed`) the client weekday check below still applies. Spot FX is shut from the Friday
 // New York close to the Sunday Sydney open. Those edges move an hour with US
 // daylight saving (21:00 or 22:00 UTC), so only the stretch that is closed in
 // both regimes is treated as the weekend: Friday from 22:00 UTC, all of
@@ -38,6 +41,24 @@ export function isFxWeekendClosed(nowUtcIso: string): boolean | null {
   if (day === 5 && hour >= 22) return true;
   if (day === 0 && hour < 21) return true;
   return false;
+}
+
+const HOUR_MS = 3_600_000;
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * When a session next opens, as "Sun 22:00 UTC (in 32h 30m)". The server
+ * counts whole hours from the start of the current UTC hour, so the absolute
+ * time is that hour start plus `hours`. Null when the inputs are unusable.
+ */
+export function nextOpenText(nowUtcIso: string, hours: number): string | null {
+  const now = Date.parse(nowUtcIso);
+  if (!Number.isFinite(now) || !Number.isFinite(hours) || hours <= 0) return null;
+  const at = new Date(Math.floor(now / HOUR_MS) * HOUR_MS + hours * HOUR_MS);
+  const mins = Math.max(0, Math.round((at.getTime() - now) / 60_000));
+  const hh = String(at.getUTCHours()).padStart(2, "0");
+  const mm = String(at.getUTCMinutes()).padStart(2, "0");
+  return `${WEEKDAY[at.getUTCDay()]} ${hh}:${mm} UTC (in ${Math.floor(mins / 60)}h ${mins % 60}m)`;
 }
 
 export default function MarketSessionsPage() {
@@ -113,6 +134,15 @@ export default function MarketSessionsPage() {
                     <>
                       <Badge className="bg-zinc-500/20 text-zinc-400">CLOSED</Badge>
                       <p className="text-xs text-muted-foreground">Closed for the weekend.</p>
+                      {/* Only the server that reported marketClosed computes
+                          weekend-aware next-open times; an older hour-only
+                          figure is not shown at the weekend. */}
+                      {c.marketClosed === true && (() => {
+                        const text = nextOpenText(c.nowUTC, s.nextOpenInHours);
+                        return text ? (
+                          <p className="text-xs text-muted-foreground" data-testid={`session-next-open-${s.id}`}>Next open {text}</p>
+                        ) : null;
+                      })()}
                     </>
                   ) : (
                     <>

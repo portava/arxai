@@ -58,7 +58,9 @@ router.post("/replay/scenarios", async (req, res) => {
         symbol: String(body.symbol ?? "V75"),
         timeframe: String(body.timeframe ?? "M5"),
         source: "IMPORTED" as const,
-        marketCondition: (body.marketCondition ?? "RANGING") as MarketCondition,
+        // Nothing measures the condition from the candles: keep the caller's
+        // label, or say none was given (never a defaulted "RANGING").
+        marketCondition: (body.marketCondition ?? "UNSPECIFIED") as MarketCondition,
         candles: v.candles!,
         notes: String(body.notes ?? "User-imported candles."),
       };
@@ -124,7 +126,9 @@ router.post("/replay/run", async (req, res) => {
       simulated_trades_opened: run.trades.length,
       simulated_trades_closed: run.trades.filter(t => t.status === "CLOSED").length,
       wins: run.wins, losses: run.losses, break_even: run.breakEven,
-      net_pnl: run.netPnl, max_drawdown: run.maxDrawdown,
+      // P&L and drawdown are candle price differences x position_size, not money.
+      net_pnl: run.netPnl, max_drawdown: run.maxDrawdown, position_size: run.positionSize,
+      // null when undefined: no closed trade (win rate) or no losing trade (profit factor).
       win_rate: run.winRate, profit_factor: run.profitFactor,
       best_trade: run.bestTrade, worst_trade: run.worstTrade,
       replay_summary: { setting_keys: Object.keys(body.settings ?? {}) },

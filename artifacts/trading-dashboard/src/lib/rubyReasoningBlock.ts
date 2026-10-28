@@ -111,6 +111,14 @@ export interface MarketReadReasoningInput {
   /** Human downgrade reason from the scanner-truth gate. */
   reason?: string | null;
   /**
+   * True when the read is withheld ONLY because its own lifetime ended (past
+   * expiresAt / expired lifecycle) while the shared scanner-truth gate is NOT
+   * downgraded — the feed is not the cause. Every row then names the expiry
+   * and none blames the feed or calls it a historical read. Ignored unless
+   * `downgraded` is true.
+   */
+  readExpired?: boolean;
+  /**
    * The event-risk sentence EXACTLY as the card's News & economic impact block
    * prints it (lib/eventRiskCopy eventRiskLine: the server's calendar label
    * verbatim, or the loading/unavailable wording). Appended verbatim to Risk so
@@ -151,6 +159,9 @@ export function buildReasoningFromMarketRead(
   const { explanation: exp, signal, downgraded } = input;
   const level = input.level ?? null;
   const reason = clean(input.reason);
+  // Withheld because the read expired on a feed the shared gate confirms —
+  // only the read is out of date, so no row may name the feed as the cause.
+  const expiredOnly = downgraded && input.readExpired === true;
   const eventRisk = orElse(input.newsRiskLabel, EVENT_RISK_NOT_ASSESSED_IN_READ);
 
   // The card chooses simple/advanced at render; for reasoning we read the simple
@@ -164,7 +175,9 @@ export function buildReasoningFromMarketRead(
 
   // ── Decision ──────────────────────────────────────────────────────────────
   let decision: string;
-  if (downgraded) {
+  if (expiredOnly) {
+    decision = "WAIT — this read has expired";
+  } else if (downgraded) {
     decision = "WAIT — live feed not confirmed";
   } else if (isNoTrade) {
     decision = "NO TRADE";
@@ -212,7 +225,10 @@ export function buildReasoningFromMarketRead(
 
   const ds = String(signal.dataSource ?? "").toUpperCase();
   let supportResistance: string;
-  if (downgraded) {
+  if (expiredOnly) {
+    supportResistance =
+      "Key support/resistance levels are withheld — this read has expired; refresh for a current read.";
+  } else if (downgraded) {
     supportResistance =
       "Key support/resistance levels are withheld until the live feed confirms.";
   } else if (!exp.hasSufficientData || ds !== "LIVE_FEED") {
@@ -240,7 +256,14 @@ export function buildReasoningFromMarketRead(
   }
 
   let feedData: string;
-  if (downgraded) {
+  if (expiredOnly) {
+    // The shared gate confirms the feed; any page-level caveat on the signal's
+    // feed word (feedUnconfirmedReason) is still stated, then the real cause.
+    const feedNote = clean(input.feedUnconfirmedReason);
+    feedData = feedNote
+      ? `${feedNote} This read has also expired — its facts are from when it was built; refresh for a current read.`
+      : "The chart's feed checks pass — the feed is not why this read is withheld. This read has expired; its facts are from when it was built. Refresh for a current read.";
+  } else if (downgraded) {
     const cat =
       level === "blocked" ? "blocked" : level === "limited" ? "delayed / limited" : "historical";
     feedData = `Feed not fully confirmed (${cat} read).${reason ? ` ${reason}` : ""}`;
@@ -266,7 +289,9 @@ export function buildReasoningFromMarketRead(
   const evidenceRisk = `${riskBase} ${eventRisk}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
-  const confirmation = downgraded
+  const confirmation = expiredOnly
+    ? "Refresh for a current read first, then re-check the setup before acting."
+    : downgraded
     ? "Confirm the live feed first, then re-check the setup before acting."
     : orElse(
         chosen?.whatConfirms,
@@ -275,7 +300,9 @@ export function buildReasoningFromMarketRead(
           : NOT_ENOUGH,
       );
 
-  const invalidation = downgraded
+  const invalidation = expiredOnly
+    ? "Treat this expired read's idea as invalid until a refreshed read confirms it, or if structure breaks against it."
+    : downgraded
     ? "Treat the idea as invalid while the feed is unconfirmed or structure breaks against it."
     : orElse(
         chosen?.whatInvalidates,
@@ -285,7 +312,9 @@ export function buildReasoningFromMarketRead(
       );
 
   let traderTest: string;
-  if (downgraded) {
+  if (expiredOnly) {
+    traderTest = "Refresh the read and check it is current before trusting any level or direction.";
+  } else if (downgraded) {
     traderTest = "Check the chart's feed-status badge before trusting any level or direction.";
   } else if (actionable && exp.levels?.invalidation != null) {
     traderTest = `Mark ${px(exp.levels.invalidation)} on the chart and watch whether the next candle breaks or rejects it. Don't chase if price stalls there.`;
@@ -297,14 +326,19 @@ export function buildReasoningFromMarketRead(
   }
 
   // ── Risk Note ───────────────────────────────────────────────────────────────
+  // A withheld read's own late note ("~80% of the move already done") is not
+  // current — the card withholds its late warning too — so the withholding
+  // cause leads, exactly as in Decision.
   let riskNote: string;
-  if (isLate) {
+  if (expiredOnly) {
+    riskNote = "This read has expired — it is not a current trade call.";
+  } else if (downgraded) {
+    riskNote = "This is a conditional read on an unconfirmed feed — not a full-confidence trade.";
+  } else if (isLate) {
     riskNote = orElse(
       signal.late?.reason,
       "This move may already be late — chasing it carries extra risk.",
     );
-  } else if (downgraded) {
-    riskNote = "This is a conditional read on an unconfirmed feed — not a full-confidence trade.";
   } else if (isNoTrade) {
     riskNote = orElse(
       exp.noTrade?.reason,
@@ -803,11 +837,20 @@ export interface OppMapReasoningInput {
   dataState?: string | null;
   dataSourceLabel?: string | null;
   newsRiskLevel?: string | null;
+  /**
+   * The display precision the panel's Highlights box prints these levels at
+   * (resolveDisplayPricePrecision over the scanner truth's precision and the
+   * levels themselves). Levels here use the same shared formatter, so one
+   * level reads as one string in the panel.
+   */
+  pricePrecision?: number | null;
 }
 
 export function buildReasoningFromOppMap(
   input: OppMapReasoningInput,
 ): RubyReasoningBlockData {
+  // Same formatter + precision as the panel's Highlights box (instrumentPriceFormat).
+  const px = (n: number | null | undefined): string => formatInstrumentPrice(n, input.pricePrecision ?? null);
   const exp = input.explanation;
   const bias = clean(input.bias).toUpperCase();
   const dir = bias === "BUY" || bias === "SELL" ? bias : null;
@@ -857,7 +900,7 @@ export function buildReasoningFromOppMap(
         : "Entry, stop, and target are withheld until a confirmed live feed.",
     );
   } else {
-    supportResistance = `Entry ${fmtNum(input.entryZone.low)} – ${fmtNum(input.entryZone.high)}, stop ${fmtNum(input.suggestedStop)}, target ${fmtNum(input.suggestedTakeProfit)} (R:R 1:${input.riskRewardRatio}). Mind room into nearby support/resistance.`;
+    supportResistance = `Entry ${px(input.entryZone.low)} – ${px(input.entryZone.high)}, stop ${px(input.suggestedStop)}, target ${px(input.suggestedTakeProfit)} (R:R 1:${input.riskRewardRatio}). Mind room into nearby support/resistance.`;
   }
 
   let feedData: string;
@@ -881,18 +924,18 @@ export function buildReasoningFromOppMap(
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   const confirmation = dir
     ? input.suggestedTakeProfit != null && !withheld
-      ? `Strengthens if price moves cleanly toward ${fmtNum(input.suggestedTakeProfit)}.`
+      ? `Strengthens if price moves cleanly toward ${px(input.suggestedTakeProfit)}.`
       : "Confirm the feed, then look for follow-through in your direction."
     : "Wait for a clear directional break before treating this as a setup.";
   const invalidation = orElse(
     exp.invalidation,
     input.suggestedStop != null && !withheld
-      ? `Cancel if price breaks the stop ${fmtNum(input.suggestedStop)}.`
+      ? `Cancel if price breaks the stop ${px(input.suggestedStop)}.`
       : NOT_ENOUGH,
   );
   const traderTest =
     input.suggestedStop != null && !withheld
-      ? `Mark ${fmtNum(input.suggestedStop)} on ${input.symbol} and watch whether price respects or breaks it.`
+      ? `Mark ${px(input.suggestedStop)} on ${input.symbol} and watch whether price respects or breaks it.`
       : "Mark the nearest visible level and watch whether the next candle breaks or rejects it.";
 
   const riskNote = orElse(

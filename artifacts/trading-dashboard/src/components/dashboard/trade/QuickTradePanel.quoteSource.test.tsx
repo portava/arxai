@@ -73,3 +73,35 @@ describe("Quick Trade quote source", () => {
       .toBe("No market price");
   });
 });
+
+// Review finding: /api/market/quote/:symbol answers 404 {error:"Unknown symbol"}
+// for an unknown symbol, and the page stored that JSON body as the quote. The
+// panel then took any non-null object for a simulator quote and said "The only
+// quote it can read comes from the ARX price simulator" — inventing a quote
+// that never came back.
+describe("Quick Trade — an error body is not a simulator quote", () => {
+  it("an error body says no quote is available, not 'ARX price simulator'", () => {
+    render(panel({ error: "Unknown symbol" } as unknown as Parameters<typeof QuickTradePanel>[0]["quote"]));
+    const src = screen.getByTestId("quick-trade-quote-source").textContent ?? "";
+    expect(src).not.toMatch(/simulator/i);
+    expect(src).toBe("No quote available for this symbol.");
+  });
+
+  it("a quote object without numeric bid/ask is not called a simulator quote", () => {
+    render(panel({ executionEnvironment: "SIMULATOR" } as unknown as Parameters<typeof QuickTradePanel>[0]["quote"]));
+    expect(screen.getByTestId("quick-trade-quote-source").textContent).toBe("No quote available for this symbol.");
+  });
+
+  it("a priced quote with no stated source is named as unsourced, not as the simulator", () => {
+    const { executionEnvironment: _e, ...unsourced } = SIM_QUOTE;
+    render(panel(unsourced));
+    const src = screen.getByTestId("quick-trade-quote-source").textContent ?? "";
+    expect(src).not.toMatch(/simulator/i);
+    expect(src).toMatch(/no stated source/i);
+  });
+
+  it("the page does not store a failed quote response as the quote", () => {
+    const page = readFileSync(resolve(__dirname, "../../../pages/trade-command-room.tsx"), "utf8");
+    expect(page).toMatch(/fetch\(`\/api\/market\/quote\/\$\{bare\}`\)\.then\(\(r\) => \(r\.ok \? r\.json\(\) : null\)\)/);
+  });
+});

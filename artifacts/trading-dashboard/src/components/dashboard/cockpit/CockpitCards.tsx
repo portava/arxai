@@ -60,7 +60,7 @@ import { calendarEventWhen, describeCalendarCoverage } from "@/lib/calendarCover
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
-import { describeRiskCaps } from "./riskCapsSummary";
+import { riskCapsStatus } from "@/lib/riskCapsStatus";
 
 const money = (n: number | null | undefined) =>
   n == null ? "—" : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -210,7 +210,18 @@ export function AccountSnapshotCard() {
   // Broker line — prefer the master snapshot, else the first allocation row.
   const broker = master?.brokerName ?? accounts[0]?.masterBrokerName ?? "—";
   const masked = master?.accountNumberMasked ?? accounts[0]?.masterAccountNumberMasked ?? null;
-  const liveLabel = mode.isLiveShared ? "LIVE" : mode.isDemo ? "DEMO" : "SIM";
+  // "SIM" only for a read paper/sim mode. With no envelope the mode is either
+  // still loading or could not be checked (the user may be live), so the
+  // footer says that instead of falling through to a simulator label.
+  const liveLabel = mode.isLiveShared
+    ? "LIVE"
+    : mode.isDemo
+      ? "DEMO"
+      : mode.isModeUnknown
+        ? "Mode unknown"
+        : mode.envelope == null
+          ? "Checking mode"
+          : "SIM";
   // "Active" needs an observation: the allocation row's own status, or (owner/
   // admin) a LIVE master sync. The LIVE_SHARED mode label is not one — the
   // server also sets it for display on an approved-but-unconfirmed account
@@ -339,7 +350,7 @@ export function AccountSnapshotCard() {
           <span className="truncate font-medium text-foreground/90">{broker}</span>
           {masked && <span className="text-txt-muted">· {masked}</span>}
           <span className="text-txt-muted">·</span>
-          <span className={cn("font-semibold", mode.isLiveShared ? "text-success" : "text-primary")}>{liveLabel}</span>
+          <span className={cn("font-semibold", mode.isLiveShared ? "text-success" : mode.isModeUnknown ? "text-warning" : "text-primary")} data-testid="cockpit-account-mode-label">{liveLabel}</span>
         </div>
         <div className="flex items-center gap-2">
           {mode.isLiveShared && (
@@ -370,9 +381,13 @@ export function TradingPermissionSummaryCard() {
   const mode = useTradingMode();
   const { active } = useActiveSymbol();
 
+  // The account-mode check failed: the approval state, the pause flag and any
+  // blocker were not read, so none of them is described (not "Not paused",
+  // not "Waiting for approval").
+  const modeUnknown = mode.isModeUnknown === true;
   const blocked = Boolean(mode.cleanBlockedReason);
   const frozen = mode.isFrozen;
-  const waitingApproval = !mode.canManualTrade && !blocked && !frozen;
+  const waitingApproval = !modeUnknown && !mode.canManualTrade && !blocked && !frozen;
 
   // Bridge connectivity comes from the shared master pool's heartbeat-derived
   // availability (same query the account snapshot card uses), never from the
@@ -392,7 +407,9 @@ export function TradingPermissionSummaryCard() {
   // permission statement ("Approved to trade"), never "All clear". On the
   // shared master route it is downgraded while the bridge is not online.
   const bridgeNotOnline = onSharedRoute && bridge.state !== "online";
-  const status = frozen
+  const status = modeUnknown
+    ? { label: "Could not be checked", tone: "warning" as const }
+    : frozen
     ? { label: "Paused", tone: "warning" as const }
     : blocked
       // An account/permission blocker from the server (never a heartbeat read).
@@ -405,13 +422,16 @@ export function TradingPermissionSummaryCard() {
             : { label: "Approved to trade", tone: "success" as const }
           : { label: "Locked", tone: "danger" as const };
 
-  const headline = blocked
+  const headline = modeUnknown
+    ? mode.cleanUserMessage || "Your account mode could not be checked just now."
+    : blocked
     ? mode.cleanBlockedReason
     : mode.canManualTrade && bridgeNotOnline
       ? bridge.detail
       : mode.cleanUserMessage || "Your account is approved for trading.";
 
-  const riskCaps = describeRiskCaps(mode.envelope?.userRiskCaps ?? null);
+  // The same verdict as the Trade Command Room's Risk Governor (one helper).
+  const riskCaps = riskCapsStatus(mode.envelope, { failed: mode.isModeUnknown });
 
   return (
     <CockpitCard
@@ -430,7 +450,7 @@ export function TradingPermissionSummaryCard() {
         <Row label="Risk caps" value={riskCaps.label} valueClass={BRIDGE_TEXT[riskCaps.tone]} title={riskCaps.detail} data-testid="permission-risk-caps" />
         <Row label="Bridge" value={bridge.label} valueClass={BRIDGE_TEXT[bridge.tone]} title={bridge.detail} data-testid="permission-bridge" />
         {/* Only the operator pause flag is known here; no session or system health is measured. */}
-        <Row label="Account pause" value={mode.isLoading ? "Checking" : frozen ? "Paused" : "Not paused"} valueClass={frozen ? "text-warning" : "text-txt-secondary"} data-testid="permission-pause" />
+        <Row label="Account pause" value={modeUnknown ? "Could not be checked" : mode.isLoading ? "Checking" : frozen ? "Paused" : "Not paused"} valueClass={frozen ? "text-warning" : "text-txt-secondary"} data-testid="permission-pause" />
         <Row label="Market" value={active} valueClass="text-foreground font-mono" />
       </dl>
 

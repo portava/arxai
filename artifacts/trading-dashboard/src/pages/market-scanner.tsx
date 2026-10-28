@@ -44,7 +44,7 @@ import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel"
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
 import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
-import { scannerResultActionChip } from "@/components/scanner/scannerResultAction";
+import { scannerResultActionChip, scannerResultCardClaims } from "@/components/scanner/scannerResultAction";
 import type { ScalpResult } from "@workspace/api-client-react";
 
 type Opp = {
@@ -114,6 +114,13 @@ const BADGE_LABELS: Record<string, string> = {
   LOW_OPPORTUNITY_SCORE: "Score too low",
 };
 
+const BORDER_TONE_COLORS: Record<"positive" | "negative" | "info" | "neutral", string> = {
+  positive: "#10b981",
+  negative: "#f43f5e",
+  info: "#3b82f6",
+  neutral: "#71717a",
+};
+
 const LABEL_COLORS: Record<string, string> = {
   ELITE: "bg-emerald-500 text-white",
   STRONG: "bg-emerald-600/80 text-white",
@@ -138,6 +145,22 @@ const COHESION_MAX_SYMBOLS = 12;
 // client-supplied role header is sent — role is resolved server-side from the
 // session cookie; a spoofed role header is dead, misleading code on a
 // user-facing page (rejected in production, superseded by the real session).
+// The Live Intent alert reports the server's own verdict for the submit — its
+// status and reason — never a hard-coded status. A risk rejection is said to
+// be rejected, not captured and pending.
+function liveIntentResultMessage(
+  symbol: string,
+  res: { status?: unknown; riskCheckPassed?: unknown; reason?: unknown } | null,
+): string {
+  const status = typeof res?.status === "string" ? res.status : null;
+  const reason = typeof res?.reason === "string" && res.reason.trim() ? ` ${res.reason.trim()}` : "";
+  if (!status) return `Live intent for ${symbol}: the server did not report a status, so whether it was captured could not be confirmed.${reason}`;
+  if (status === "REJECTED_BY_RISK" || res?.riskCheckPassed === false) {
+    return `Live intent for ${symbol} was rejected by the risk check (${status}).${reason}`;
+  }
+  return `Live intent captured for ${symbol} (${status}).${reason}`;
+}
+
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
@@ -555,17 +578,23 @@ export default function MarketScanner() {
 
   async function sendToIntent(o: Opp) {
     if (err || !canUseScannerOpportunity(o, Date.now())) return;
-    await api("/api/live-intent/submit", {
-      method: "POST",
-      body: JSON.stringify({
-        source: "AI_ASSIST", symbol: o.symbol,
-        direction: o.recommendedAction === "SELL" ? "SELL" : "BUY",
-        lotSize: 0.01, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
-        maxLossUsd: 5, confidenceScore: o.confidenceScore,
-        reasonForTrade: o.reasonForTrade,
-      }),
-    });
-    alert(`Live intent captured for ${o.symbol} (PENDING_MT5_CONNECTION).`);
+    let res: { status?: unknown; riskCheckPassed?: unknown; reason?: unknown } | null;
+    try {
+      res = (await api("/api/live-intent/submit", {
+        method: "POST",
+        body: JSON.stringify({
+          source: "AI_ASSIST", symbol: o.symbol,
+          direction: o.recommendedAction === "SELL" ? "SELL" : "BUY",
+          lotSize: 0.01, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
+          maxLossUsd: 5, confidenceScore: o.confidenceScore,
+          reasonForTrade: o.reasonForTrade,
+        }),
+      })) as typeof res;
+    } catch (e) {
+      alert(`Live intent for ${o.symbol} could not be submitted: ${(e as Error).message || "request failed"}. Nothing was recorded as captured.`);
+      return;
+    }
+    alert(liveIntentResultMessage(o.symbol, res));
   }
 
   const activeUniverse = universes.find((u) => u.id === universe);
@@ -693,29 +722,44 @@ export default function MarketScanner() {
                 This setup needs a fresh, tradeable market read. Scan again to restore its direction, scores and trade actions.
               </CardContent>
             </Card>
-          ) : (
+          ) : (() => {
+            // The server's fused final read may withhold the action; the
+            // grade, border and status badge are then downgraded with it.
+            const chip = scannerResultActionChip(o.recommendedAction, o.finalRead?.label);
+            const claims = scannerResultCardClaims(chip, o.opportunity.label, o.statusBadge);
+            return (
             <Card
               key={`${o.symbol}-${o.timeframe}-${i}`}
               className="border-l-4"
-              style={{ borderLeftColor: o.opportunity.label === "ELITE" || o.opportunity.label === "STRONG" ? "#10b981" : o.opportunity.label === "REJECT" ? "#f43f5e" : "#3b82f6" }}
+              style={{ borderLeftColor: BORDER_TONE_COLORS[claims.borderTone] }}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-base">{o.symbol} <span className="text-xs text-muted-foreground">{o.timeframe}</span></CardTitle>
-                  <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score}</Badge>
+                  {claims.showGrade ? (
+                    <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score}</Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-xs text-muted-foreground"
+                      data-testid={`scanner-grade-withheld-${o.symbol}`}
+                      title="The server's final read says not to take this setup now, so its grade is not shown."
+                    >
+                      Score {o.opportunity.score} · not graded
+                    </Badge>
+                  )}
                 </div>
                 <CardDescription className="flex flex-wrap items-center gap-1.5 mt-1">
-                  {(() => {
-                    const chip = scannerResultActionChip(o.recommendedAction, o.finalRead?.label);
-                    return <Badge variant={chip.variant} className="text-xs" data-testid={`scanner-action-${o.symbol}`}>{chip.text}</Badge>;
-                  })()}
+                  <Badge variant={chip.variant} className="text-xs" data-testid={`scanner-action-${o.symbol}`}>{chip.text}</Badge>
                   <Badge variant="outline" className="text-xs">{o.bias === "choppy" ? "volatile" : o.bias}</Badge>
-                  <Badge
-                    className={`text-xs ${BADGE_COLORS[o.statusBadge] ?? ""}`}
-                    data-status-badge={o.statusBadge}
-                  >
-                    {BADGE_LABELS[o.statusBadge] ?? "Working on it"}
-                  </Badge>
+                  {claims.showStatusBadge && (
+                    <Badge
+                      className={`text-xs ${BADGE_COLORS[o.statusBadge] ?? ""}`}
+                      data-status-badge={o.statusBadge}
+                    >
+                      {BADGE_LABELS[o.statusBadge] ?? "Working on it"}
+                    </Badge>
+                  )}
                   {(() => {
                     const c = cohesionMap.get(o.symbol);
                     if (!c) return null;
@@ -830,7 +874,8 @@ export default function MarketScanner() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })())}
         </div>
       )}
     </div>

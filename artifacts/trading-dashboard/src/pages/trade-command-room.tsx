@@ -97,7 +97,8 @@ export default function TradeCommandRoom() {
     const [o, d, q, ic, ac] = await Promise.all([
       fetch("/api/market-scanner/opportunities?limit=12").then((r) => r.json()),
       fetch("/api/decision-stream?limit=20").then((r) => r.json()),
-      fetch(`/api/market/quote/${bare}`).then((r) => r.json()).catch(() => null),
+      // An error answer (e.g. 404 {error:"Unknown symbol"}) is no quote, not a quote object.
+      fetch(`/api/market/quote/${bare}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
       fetch("/api/live-intent/queue").then((r) => r.json()).catch(() => ({ counts: { total: 0 } })),
       fetch("/api/alerts/scanner?unackedOnly=true").then((r) => r.json()).catch(() => ({ count: 0 })),
     ]);
@@ -124,7 +125,7 @@ export default function TradeCommandRoom() {
   // ── Mode / permission → plain English ───────────────────────────────
   const isLive = tradingMode.isLiveShared;
   const {
-    canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge,
+    canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge, approval,
   } = resolveTradeRoomStatus(tradingMode, bridgeObs);
 
   const heroDescription = `Place manual, ${name}-assisted, or advanced trades through your approved account route.`;
@@ -187,8 +188,8 @@ export default function TradeCommandRoom() {
     <div className="space-y-4">
       <RiskGovernorCard
         statusLabel={rgStatus.label} statusTone={rgStatus.tone}
-        riskCaps={riskCapsStatus(tradingMode.envelope)} bridge={bridge}
-        approval={tradingMode.canManualTrade ? "Approved" : "Pending"}
+        riskCaps={riskCapsStatus(tradingMode.envelope, { failed: tradingMode.isModeUnknown })} bridge={bridge}
+        approval={approval}
         isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
       />
       <DecisionStreamCard decisions={decisions} />

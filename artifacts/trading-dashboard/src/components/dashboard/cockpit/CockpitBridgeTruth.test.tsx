@@ -223,7 +223,8 @@ describe("permission-only envelope never reads as 'All clear' / 'All systems ope
     expect(card.textContent).not.toContain("Managed");
     expect(screen.getByTestId("permission-status").textContent).toBe("Approved · bridge unavailable");
     expect(card.textContent).toContain("Live bridge is offline.");
-    expect(screen.getByTestId("permission-risk-caps").querySelector("dd")!.textContent).toBe("None set");
+    // Same words as the trade room's Risk Governor (one riskCapsStatus verdict).
+    expect(screen.getByTestId("permission-risk-caps").querySelector("dd")!.textContent).toBe("No caps assigned");
     // No session / system health is measured here — only the pause flag.
     expect(card.textContent).not.toMatch(/Session/);
     expect(screen.getByTestId("permission-pause").querySelector("dd")!.textContent).toBe("Not paused");
@@ -235,7 +236,7 @@ describe("permission-only envelope never reads as 'All clear' / 'All systems ope
     render(<TradingPermissionSummaryCard />);
     expect(screen.getByTestId("permission-status").textContent).toBe("Approved to trade");
     const caps = screen.getByTestId("permission-risk-caps");
-    expect(caps.querySelector("dd")!.textContent).toBe("2 set");
+    expect(caps.querySelector("dd")!.textContent).toBe("Caps assigned");
     expect(caps.getAttribute("title")).toBe("Account caps: max lot 0.1, daily loss limit $50.");
   });
 

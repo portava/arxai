@@ -251,19 +251,26 @@ const providerLiveness = {
   lastAttemptedFetchAt: null as string | null,
   lastErrorMessage: null as string | null,
   lastErrorAt: null as string | null,
-  lastObservedDataFreshness: null as "REALTIME" | "DELAYED" | "UNAVAILABLE" | null,
+  lastObservedDataFreshness: null as ObservedDataFreshness | null,
   lastObservedDataSource: null as string | null,
   // When lastObservedDataFreshness was observed. markSuccess() is also called
   // by news / calendar / overview fetches that carry no quote quality, so the
   // quality alone cannot say whether a recent quote was real-time.
   lastObservedDataAt: null as string | null,
+  // Which payload the observation came from: a quote, or a candle fetch. A
+  // candle fetch is not a quote, so a consumer must not call it one.
+  lastObservedDataKind: null as ObservedDataKind | null,
 };
+// STALE: a quote was served but its own timestamp is past the stale cutoff
+// (for example Friday's close read at the weekend).
+type ObservedDataFreshness = "REALTIME" | "DELAYED" | "STALE" | "UNAVAILABLE";
+type ObservedDataKind = "quote" | "candles";
 function markChecked() {
   const n = new Date().toISOString();
   providerLiveness.lastCheckedAt = n;
   providerLiveness.lastAttemptedFetchAt = n;
 }
-function markSuccess(observed?: { freshness?: "REALTIME" | "DELAYED" | "UNAVAILABLE"; source?: string }) {
+function markSuccess(observed?: { freshness?: ObservedDataFreshness; source?: string; kind?: ObservedDataKind }) {
   const n = new Date().toISOString();
   providerLiveness.lastCheckedAt = n;
   providerLiveness.lastAttemptedFetchAt = n;
@@ -277,8 +284,21 @@ function markSuccess(observed?: { freshness?: "REALTIME" | "DELAYED" | "UNAVAILA
   if (observed?.freshness) {
     providerLiveness.lastObservedDataFreshness = observed.freshness;
     providerLiveness.lastObservedDataAt = n;
+    providerLiveness.lastObservedDataKind = observed.kind ?? null;
   }
   if (observed?.source) providerLiveness.lastObservedDataSource = observed.source;
+}
+// Records the quality of a quote that is actually being served, as classified
+// from the quote's own timestamp. It does not count as a fetch success (the
+// adapter already recorded that, or this is a cache hit); it only says what
+// the newest served quote was and when that was seen. Adapters that stamp no
+// quality (Finnhub, Polygon stocks) are covered, and an adapter's blanket
+// "REALTIME" is replaced by the age-checked verdict.
+function markQuoteObserved(freshness: ObservedDataFreshness, source: string | null | undefined) {
+  providerLiveness.lastObservedDataFreshness = freshness;
+  providerLiveness.lastObservedDataAt = new Date().toISOString();
+  providerLiveness.lastObservedDataKind = "quote";
+  if (source) providerLiveness.lastObservedDataSource = source;
 }
 function markError(msg: string) {
   const n = new Date().toISOString();
@@ -377,9 +397,12 @@ function withQuoteFreshness(provider: MarketProvider): MarketProvider {
       const observed = classifyQuoteFreshness(age);
       // Re-evaluate even cache hits; never mutate the cached source payload.
       if (quote.stale || quote.freshness === "STALE" || observed.stale) {
+        markQuoteObserved("STALE", quote.source);
         return { ...quote, freshness: "STALE", stale: true };
       }
-      return { ...quote, freshness: quote.freshness === "DELAYED" || !observed.fresh ? "DELAYED" : "REALTIME", stale: false };
+      const freshness = quote.freshness === "DELAYED" || !observed.fresh ? "DELAYED" : "REALTIME";
+      markQuoteObserved(freshness, quote.source);
+      return { ...quote, freshness, stale: false };
     },
   };
 }
@@ -461,7 +484,7 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
         markError(`candles ${tdSym}@${interval}: zero parsed numeric rows`);
         return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data returned values for ${tdSym} but none parsed as numeric.` };
       }
-      markSuccess({ freshness: "REALTIME", source: "twelve_data" });
+      markSuccess({ freshness: "REALTIME", source: "twelve_data", kind: "candles" });
       return { connected: true, source: "twelve_data", symbol: tdSym, timeframe: tf, candles, freshness: "REALTIME", asOf: candles[candles.length - 1]!.t };
     },
     async getLiveQuote(rawSymbol) {
@@ -490,7 +513,7 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
         asOf: quoteTimestamp(j.timestamp, 1000),
         freshness: "REALTIME", source: "twelve_data", stale: false,
       };
-      markSuccess({ freshness: "REALTIME", source: "twelve_data" });
+      markSuccess({ freshness: "REALTIME", source: "twelve_data", kind: "quote" });
       cacheSet(quoteCache, `td:${symbol}`, q);
       return q;
     },
@@ -563,7 +586,7 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
       // Polygon free tier D1 bars are the latest closed daily bar — current
       // for end-of-day analysis. Intraday timeframes are usually empty/1-bar
       // and surface upstream as insufficient (the consumer decides).
-      markSuccess({ freshness: "REALTIME", source: "polygon" });
+      markSuccess({ freshness: "REALTIME", source: "polygon", kind: "candles" });
       return { connected: true, source: "polygon", symbol: fx.ticker, timeframe: tf, candles, freshness: "REALTIME", asOf: candles[candles.length - 1]!.t };
     },
     async getLiveQuote(rawSymbol) {
@@ -605,7 +628,7 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
         // The Polygon /prev bar is yesterday's EOD close, never a live tick.
         // Recording DELAYED here is what stops the global status badge from
         // falsely claiming "FRESH" when only the Polygon fallback is alive.
-        markSuccess({ freshness: "DELAYED", source: "polygon" });
+        markSuccess({ freshness: "DELAYED", source: "polygon", kind: "quote" });
         cacheSet(quoteCache, `polygon:${symbol}`, q);
         return q;
       }
@@ -835,7 +858,7 @@ function alphaVantageProvider(apiKey: string, newsApiKey: string | null): Market
       const url = `${base}?function=FX_INTRADAY&from_symbol=${pair.from}&to_symbol=${pair.to}&interval=${interval.name}&outputsize=compact&apikey=${encodeURIComponent(apiKey)}`;
       const payload = await httpJson(url);
       const result = parseAlphaFxCandles(symbol, tf, limit, payload);
-      if (result.candles.length) markSuccess({ freshness: result.freshness, source: "alpha_vantage" });
+      if (result.candles.length) markSuccess({ freshness: result.freshness, source: "alpha_vantage", kind: "candles" });
       else markError(`alpha_vantage candles: ${providerFailureCode(payload) ?? "NO_DATA"}`);
       return result;
     },
@@ -849,7 +872,7 @@ function alphaVantageProvider(apiKey: string, newsApiKey: string | null): Market
       if (pair) {
         const payload = await httpJson(`${base}?function=CURRENCY_EXCHANGE_RATE&from_currency=${pair.from}&to_currency=${pair.to}&apikey=${encodeURIComponent(apiKey)}`);
         const q = parseAlphaFxQuote(symbol, payload) ?? emptyQuote(symbol, "alpha_vantage");
-        if (q.price !== null) markSuccess({ freshness: "REALTIME", source: "alpha_vantage" });
+        if (q.price !== null) markSuccess({ freshness: "REALTIME", source: "alpha_vantage", kind: "quote" });
         else markError(`alpha_vantage quote: ${providerFailureCode(payload) ?? "NO_DATA"}`);
         cacheSet(quoteCache, `av:${symbol}`, q);
         return q;
@@ -1210,6 +1233,7 @@ export function _resetMarketProviderForTests() {
   providerLiveness.lastObservedDataFreshness = null;
   providerLiveness.lastObservedDataSource = null;
   providerLiveness.lastObservedDataAt = null;
+  providerLiveness.lastObservedDataKind = null;
 }
 
 // For tests — inject a deterministic provider so the assistant marketContext
@@ -1227,7 +1251,7 @@ export function _setMarketProviderForTests(p: MarketProvider) {
 // NEVER_FETCHED and getMarketSnapshot's "feed confirmed" branch (which gates on
 // getMarketStatus().stale) is unreachable. Cleared by
 // `_resetMarketProviderForTests()`. Never used in production.
-export function _markMarketFetchSuccessForTests(observed?: { freshness?: "REALTIME" | "DELAYED" | "UNAVAILABLE"; source?: string }) {
+export function _markMarketFetchSuccessForTests(observed?: { freshness?: ObservedDataFreshness; source?: string; kind?: ObservedDataKind }) {
   markSuccess(observed);
 }
 
@@ -1349,6 +1373,9 @@ export function getMarketStatus() {
     dataSource: providerLiveness.lastObservedDataSource,
     // When `dataFreshness` was observed (null until a quote quality is seen).
     dataFreshnessAt: providerLiveness.lastObservedDataAt,
+    // "quote" or "candles": which payload `dataFreshness` describes (null
+    // when unknown). A candle fetch must never be presented as a quote.
+    dataKind: providerLiveness.lastObservedDataKind,
     // Cleanup phase E — discrete rate-limit field (derived from lastError).
     rateLimitStatus: deriveRateLimitStatus(),
     // ── Backward-compat fields (kept for existing UI / tools) ──────────

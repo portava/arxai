@@ -483,6 +483,8 @@ export function ScannerTradeModal({
         minStopDistance: specInputs.minStopDistance,
         freezeLevel: specInputs.freezeLevel,
         pipSize: specInputs.pipSize,
+        pipSizeNote: specInputs.pipSizeNote,
+        priceStep: specInputs.priceStep,
         slippageBufferPips: 3,
       });
       pipSize = assess.pipSize;
@@ -507,7 +509,9 @@ export function ScannerTradeModal({
       rr = computeValidatedRR(effEntry, assessedSl, tpv, pipSize);
       if (rr == null) {
         warnings.push(pipSize == null
-          ? `R:R not shown: without the broker's pip size for ${signal.symbol} a near-zero stop cannot be ruled out.`
+          ? specInputs.pipSizeNote
+            ? `R:R not shown: ${specInputs.pipSizeNote}, so a near-zero stop cannot be ruled out.`
+            : `R:R not shown: without the broker's pip size for ${signal.symbol} a near-zero stop cannot be ruled out.`
           : "R:R unavailable until a valid stop loss is set.");
         // The price distances are plain arithmetic on the ticket's prices and
         // stay shown when only the pip size (needed for the ratio) is missing.
@@ -524,7 +528,7 @@ export function ScannerTradeModal({
       riskPxText: px(riskPx), rewardPxText: px(rewardPx),
     };
   }, [orderType, direction, market, stopLimit, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp, signal, feedTruth?.candles.pricePrecision,
-    specInputs.pipSize, specInputs.minStopDistance, specInputs.freezeLevel, specInputs.spread]);
+    specInputs.pipSize, specInputs.pipSizeNote, specInputs.priceStep, specInputs.minStopDistance, specInputs.freezeLevel, specInputs.spread]);
 
   // Submit MARKET via demo-command queue (only flow EA actually executes
   // today). Sets source=MARKET_SCANNER + signalContext in payload so the

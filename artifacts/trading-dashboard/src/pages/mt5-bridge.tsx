@@ -112,6 +112,31 @@ function SectionCard({ title, icon: Icon, action, children, className }: { title
   );
 }
 
+// What each userApprovalStatus the server sends (meAccountShell) means here.
+// NOT_REQUIRED is the demo route: no live approval applies, so it is neither
+// "awaiting approval" nor a reason in itself. Suspended / risk-locked /
+// disabled accounts are named as such, not as merely "not approved".
+// Live execution is only ever shown as available for APPROVED.
+function approvalStatusInfo(status: string | null): { label: string; tone: Tone; execution: string; reason: string } {
+  switch (status) {
+    case "NOT_REQUIRED":
+      return { label: "Not required", tone: "muted", execution: "Demo route",
+        reason: "your account is on the demo route (your own MT5 account is not a live account, or the platform is not in live mode), so live approval does not apply" };
+    case "NOT_APPROVED":
+      return { label: "Not approved", tone: "warning", execution: "Awaiting approval", reason: "your account is not approved for live execution yet" };
+    case "PENDING":
+      return { label: "Pending", tone: "warning", execution: "Awaiting approval", reason: "approval is pending" };
+    case "SUSPENDED":
+      return { label: "Suspended", tone: "danger", execution: "Suspended", reason: "your live access is suspended" };
+    case "RISK_LOCKED":
+      return { label: "Risk locked", tone: "danger", execution: "Risk locked", reason: "your account is risk-locked" };
+    case "DISABLED":
+      return { label: "Disabled", tone: "danger", execution: "Disabled", reason: "your live access is disabled" };
+    default:
+      return { label: "Unknown", tone: "warning", execution: "Not confirmed", reason: "your approval status could not be confirmed" };
+  }
+}
+
 export default function MT5BridgePage() {
   const qc = useQueryClient();
   const mode = useTradingMode();
@@ -139,7 +164,10 @@ export default function MT5BridgePage() {
     availability: string; connected: boolean; message: string; snapshotAgeSeconds: number | null;
   } | null;
   const onShared = route === "SHARED_MASTER";
-  const bridgeUp = connected || (onShared && shared?.connected === true);
+  // A failing status poll keeps React Query's last data on screen. That data is
+  // no longer current, so nothing below is derived from it as if it were.
+  const statusUnreadable = status.isError === true || !s;
+  const bridgeUp = !statusUnreadable && (connected || (onShared && shared?.connected === true));
   const checking = status.isLoading || (mode as any).isLoading;
   const frozen = !!(mode as any).isFrozen;
 
@@ -147,15 +175,15 @@ export default function MT5BridgePage() {
     // "Checking" only while the status request is actually in flight.
     if (checking) return { label: "Checking", tone: "warning" };
     if (frozen) return { label: "Risk Lock Active", tone: "danger" };
+    if (statusUnreadable) return { label: "Status unknown", tone: "warning" };
     if (bridgeUp) return { label: "Connected", tone: "success" };
-    if (status.isError || !s) return { label: "Status unknown", tone: "warning" };
     if (onShared) {
       const a = shared?.availability;
       return { label: a === "STALE" ? "Stale" : a === "RECONCILING" ? "Reconciling" : a === "UNKNOWN" || !a ? "Status unknown" : "Unavailable", tone: "warning" };
     }
     if (s?.mode === "STALE") return { label: "Stale", tone: "warning" };
     return { label: "Not connected", tone: "warning" };
-  }, [checking, frozen, bridgeUp, onShared, shared?.availability, s, status.isError]);
+  }, [checking, frozen, bridgeUp, onShared, shared?.availability, s, statusUnreadable]);
 
   // Approval / arming come from the account-mode envelope. Being in
   // LIVE_SHARED mode is not approval, and a fresh heartbeat is not permission
@@ -165,14 +193,13 @@ export default function MT5BridgePage() {
   const blockedReason = mode.cleanBlockedReason ?? null;
   const liveArmed = mode.isLiveArmed === true;
   const approved = approvalStatus === "APPROVED";
-  const approvalTone: Tone = frozen ? "danger" : blockedReason ? "warning" : approved ? "success" : "warning";
+  const approvalInfo = approvalStatusInfo(approvalStatus);
+  const approvalTone: Tone = frozen ? "danger" : blockedReason ? "warning" : approved ? "success" : approvalInfo.tone;
   const approvalLabel = frozen ? "Frozen"
     : !env ? "Unknown"
     : blockedReason ? "Blocked"
     : approved ? "Approved"
-    : approvalStatus === "NOT_REQUIRED" ? "Not required"
-    : approvalStatus === "PENDING" ? "Pending"
-    : "Not approved";
+    : approvalInfo.label;
   const liveAccessLabel = liveArmed ? "Enabled" : mode.isLiveShared ? "Live Shared · not armed" : "Not enabled";
 
   const routeLabel = (mode as any).cleanModeLabel ?? ((mode as any).isLiveShared ? "Live Shared MT5" : (mode as any).isDemo ? "Demo" : "Analysis Only");
@@ -181,9 +208,9 @@ export default function MT5BridgePage() {
   // must be approved too. Approval is a separate field from the heartbeat.
   // Execution also needs live execution armed with no block reported.
   const executionAvailable = bridgeHealthy && approved && liveArmed && !blockedReason;
-  const executionLabel = !bridgeHealthy ? "Paused"
+  const executionLabel = !bridgeHealthy ? (statusUnreadable && !frozen ? "Not confirmed" : "Paused")
     : blockedReason ? "Blocked"
-    : !approved ? "Awaiting approval"
+    : !approved ? approvalInfo.execution
     : !liveArmed ? "Not armed"
     : "Available";
   // This page reads only the bridge heartbeat. It does not measure the price
@@ -191,6 +218,8 @@ export default function MT5BridgePage() {
   const NOT_CHECKED = "Not checked here";
   const bridgeCopy = frozen
     ? ((mode as any).freezeMessage ?? "Your account is currently frozen. Contact support or wait for review.")
+    : statusUnreadable
+      ? "MT5 bridge status could not be loaded, so whether your route is connected is not known right now. The last value read is not shown as current."
     : bridgeHealthy
       ? (onShared ? "Your account routes through the ARX shared MT5 bridge, which is reporting." : "Your own MT5 EA connection is reporting.")
       : (s?.userSafeMessage ?? (onShared ? shared?.message : null) ?? "MT5 bridge status could not be read.");
@@ -198,11 +227,13 @@ export default function MT5BridgePage() {
   const openPnl = acct?.pnl ?? null;
   // The status endpoint says whether it read the broker's positions at all
   // (openPositionsMeasured). An unread list is not "0 open trades".
-  const openTrades = s?.openPositionsMeasured === true && Array.isArray(s?.openPositions) ? s.openPositions.length : null;
+  const openTrades = !statusUnreadable && s?.openPositionsMeasured === true && Array.isArray(s?.openPositions) ? s.openPositions.length : null;
   // /mt5/status carries no account/position sync time. The only age it gives
   // is the EA heartbeat (own connection) or the shared bridge's last report,
   // so that is what this label says — never "Last Sync".
-  const lastSync = fmtAge(onShared ? (shared?.snapshotAgeSeconds ?? null) : (s?.secondsSinceHeartbeat ?? null));
+  const lastSync = statusUnreadable
+    ? "Could not be loaded"
+    : fmtAge(onShared ? (shared?.snapshotAgeSeconds ?? null) : (s?.secondsSinceHeartbeat ?? null));
   const lastSyncLabel = onShared ? "Last bridge report" : "Last heartbeat";
 
   // Only the risk lock is known here; no risk level is measured.
@@ -224,14 +255,16 @@ export default function MT5BridgePage() {
 
   const rubyRead = frozen
     ? "Your account is currently risk-locked, so live execution is paused. Market analysis and the scanner stay available. Clear the lock from Risk Settings, then your route will reopen."
+    : statusUnreadable
+      ? `${bridgeCopy} You can still analyze the market and prepare ideas.`
     : bridgeUp
       ? (executionAvailable
           ? `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected and your account mode has live execution armed with no block reported. Server safety gates still check every order. If it disconnects, ARX pauses live execution until the connection returns.`
-          : `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected, but live execution is not available on your account: ${blockedReason ? `blocked (${blockedReason})` : !approved ? `approval is ${approvalLabel.toLowerCase()}` : !liveArmed ? "live execution is not armed" : "not confirmed"}. You can still analyze the market and prepare ideas.`)
+          : `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected, but live execution is not available on your account: ${blockedReason ? `blocked (${blockedReason})` : !approved ? approvalInfo.reason : !liveArmed ? "live execution is not armed" : "not confirmed"}. You can still analyze the market and prepare ideas.`)
       : `${bridgeCopy} Live execution is paused until the bridge reports in. You can still analyze the market and prepare ideas.`;
 
   const activity: { time: string; event: string; tone: Tone; chip: string }[] = [];
-  if (onShared ? shared?.snapshotAgeSeconds != null : s?.secondsSinceHeartbeat != null) {
+  if (!statusUnreadable && (onShared ? shared?.snapshotAgeSeconds != null : s?.secondsSinceHeartbeat != null)) {
     activity.push({ time: lastSync, event: bridgeUp ? "Bridge heartbeat" : "Last heartbeat received", tone: bridgeUp ? "success" : "warning", chip: bridgeUp ? "Connected" : "Stale" });
   }
   // Sync rows are shown only from the sync's own timestamp, never from the
@@ -376,12 +409,12 @@ export default function MT5BridgePage() {
 
         <SectionCard title="Bridge Health" icon={Activity}>
           <div className="divide-y divide-border/60">
-            <Row label="Connection" value={bridgeUp ? "Healthy" : "Unavailable"} tone={bridgeUp ? "success" : "warning"} />
+            <Row label="Connection" value={bridgeUp ? "Healthy" : statusUnreadable ? "Status unknown" : "Unavailable"} tone={bridgeUp ? "success" : "warning"} />
             <Row label="Market Data" value={NOT_CHECKED} />
             <Row label="Order Routing" value={executionLabel} tone={executionAvailable ? "success" : "warning"} />
-            <Row label="Result Reporting" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
-            <Row label="Position Refresh" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
-            <Row label="Account Refresh" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
+            <Row label="Result Reporting" value={bridgeUp ? NOT_CHECKED : statusUnreadable ? "Status unknown" : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
+            <Row label="Position Refresh" value={bridgeUp ? NOT_CHECKED : statusUnreadable ? "Status unknown" : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
+            <Row label="Account Refresh" value={bridgeUp ? NOT_CHECKED : statusUnreadable ? "Status unknown" : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
             <Row label={lastSyncLabel} value={lastSync} />
           </div>
           <button onClick={refresh} className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/20">

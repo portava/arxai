@@ -7,9 +7,12 @@
 //   - volatility (ATR) when available
 //   - symbol pip/tick size — ONLY from the broker spec (digits/point via
 //     stopLossInputsFromBrokerSpec). The pip size is never guessed from the
-//     symbol name: when it is unknown, the pip-based floor, slippage buffer and
-//     structure nudge are not applied, and the result says the distance could
-//     not be checked (distanceChecked=false) instead of claiming it was.
+//     symbol name: when it is unknown, the pip-based floor and slippage buffer
+//     are not applied, and the result says the distance could not be checked
+//     (distanceChecked=false) instead of claiming it was. An MT5 spec defines a
+//     pip only for forex; for crypto, metals, indices and synthetics its point
+//     is a price step, not a pip, and an 8-"pip" floor built from it is 10–100x
+//     too small — those specs give no pip size.
 //
 // SL must never default to the same value as entry. If the proposed SL
 // is too tight, the assessment returns a safer adjusted SL plus a human
@@ -33,6 +36,10 @@ export interface AssessStopLossInput {
   // Symbol metadata — from the broker spec only (stopLossInputsFromBrokerSpec).
   // Omitted/invalid means unknown; it is never inferred from the symbol name.
   pipSize?: number | null;
+  /** Why the spec gives no pip size (stopLossInputsFromBrokerSpec.pipSizeNote). */
+  pipSizeNote?: string | null;
+  /** The broker's price step (point), used only for the one-step nudge beyond structure. */
+  priceStep?: number | null;
   // Buffers.
   slippageBufferPips?: number | null; // extra protection above min-distance
 }
@@ -74,6 +81,10 @@ export interface BrokerSymbolSpecForStops {
 
 export interface StopLossSpecInputs {
   pipSize: number | null;
+  /** The broker's price step (point); null when the spec has none. */
+  priceStep: number | null;
+  /** Why pipSize is null although the spec has a point; null otherwise. */
+  pipSizeNote: string | null;
   minStopDistance: number | null;
   freezeLevel: number | null;
   spread: number | null;
@@ -89,22 +100,35 @@ function roundPrice(n: number): number {
 
 /**
  * Turn the broker's reported symbol spec into assessor inputs (price units).
- * Pip = point, except 3/5-digit forex where a pip is 10 points (MT5 fractional
- * pricing). No point → no pip size. The spread is used only from a FRESH spec
+ * A pip exists only for forex: 10 points on 3/5-digit quotes (MT5 fractional
+ * pricing), else one point. Crypto, metals, indices, synthetics and a spec with
+ * no category get no pip size (their point is a price step; using it as a pip
+ * made the 8-pip floor 10–100x too small). No point → no pip size. The spread
+ * is used only from a FRESH spec
  * (a stale spread is not the current spread); stop/freeze levels are used from
  * any spec that is not MISSING.
  */
 export function stopLossInputsFromBrokerSpec(spec: BrokerSymbolSpecForStops | null | undefined): StopLossSpecInputs {
-  const none: StopLossSpecInputs = { pipSize: null, minStopDistance: null, freezeLevel: null, spread: null };
+  const none: StopLossSpecInputs = {
+    pipSize: null, priceStep: null, pipSizeNote: null, minStopDistance: null, freezeLevel: null, spread: null,
+  };
   if (!spec || !positive(spec.point)) return none;
   const point = spec.point;
-  const isForex = typeof spec.category === "string" && /^forex/i.test(spec.category.trim());
-  const pipSize = isForex && (spec.digits === 3 || spec.digits === 5) ? roundPrice(point * 10) : point;
+  const category = typeof spec.category === "string" ? spec.category.trim() : "";
+  const isForex = /^forex/i.test(category);
+  const pipSize = !isForex ? null : spec.digits === 3 || spec.digits === 5 ? roundPrice(point * 10) : point;
+  const pipSizeNote = isForex
+    ? null
+    : category
+      ? `the broker spec gives ${category} symbols a ${point} price step but no pip size`
+      : `the broker spec gives a ${point} price step but no market category, so no pip size`;
   const usable = spec.freshness !== "MISSING";
   const levels = (pts: number | null | undefined): number | null =>
     usable && positive(pts) ? roundPrice(pts * point) : null;
   return {
     pipSize,
+    priceStep: point,
+    pipSizeNote,
     minStopDistance: levels(spec.stopsLevel),
     freezeLevel: levels(spec.freezeLevel),
     spread: spec.freshness === "FRESH" && typeof spec.spreadPoints === "number"
@@ -149,7 +173,8 @@ function describeChecks(input: AssessStopLossInput, pip: number | null): string 
 const MIN_SAFE_LABEL = "the minimum safe distance";
 
 function notCheckedNote(input: AssessStopLossInput): string {
-  return `Its distance from entry could not be checked: the broker's pip size for ${input.symbol} is not available.`;
+  const why = (input.pipSizeNote ?? "").trim() || `the broker's pip size for ${input.symbol} is not available`;
+  return `Its distance from entry could not be checked: ${why}.`;
 }
 
 export function assessStopLoss(input: AssessStopLossInput): AssessStopLossResult {
@@ -178,14 +203,16 @@ export function assessStopLoss(input: AssessStopLossInput): AssessStopLossResult
   const tol = Number.EPSILON * 16 * Math.max(1, Math.abs(input.entry));
 
   // Structural target: swing low for BUY, swing high for SELL — plus one
-  // broker-spec pip so SL sits just *beyond* the level. Without a known pip
-  // size there is no honest "one pip beyond", so no structural candidate.
+  // broker-spec pip (or, where the spec defines no pip, one broker price step)
+  // so SL sits just *beyond* the level. With neither there is no honest
+  // "one step beyond", so no structural candidate.
+  const nudge = pip ?? (positive(input.priceStep) ? input.priceStep : null);
   let structuralSl: number | null = null;
-  if (pip != null && isBuy && input.recentSwingLow != null && input.recentSwingLow < input.entry) {
-    structuralSl = input.recentSwingLow - pip;
+  if (nudge != null && isBuy && input.recentSwingLow != null && input.recentSwingLow < input.entry) {
+    structuralSl = input.recentSwingLow - nudge;
   }
-  if (pip != null && !isBuy && input.recentSwingHigh != null && input.recentSwingHigh > input.entry) {
-    structuralSl = input.recentSwingHigh + pip;
+  if (nudge != null && !isBuy && input.recentSwingHigh != null && input.recentSwingHigh > input.entry) {
+    structuralSl = input.recentSwingHigh + nudge;
   }
 
   // ATR fallback: 1.5 ATR beyond entry.
@@ -239,7 +266,9 @@ export function assessStopLoss(input: AssessStopLossInput): AssessStopLossResult
     const directionOk = isBuy ? c.value < input.entry : c.value > input.entry;
     if (directionOk && dist > 0 && dist + tol >= minSafe) {
       const tooClose = input.proposedSl != null && proposedDistance != null && proposedDistance + tol < minSafe;
-      const where = c.label === MIN_SAFE_LABEL ? `${c.label} (${checks})` : `${c.label}, beyond ${checks}`;
+      const where = c.label === MIN_SAFE_LABEL
+        ? `${c.label} (${checks})`
+        : checks ? `${c.label}, beyond ${checks}` : c.label;
       const base = tooClose
         ? `Stop loss too close to entry. Adjusted to ${where}.`
         : `Suggested SL placed at ${where}.`;

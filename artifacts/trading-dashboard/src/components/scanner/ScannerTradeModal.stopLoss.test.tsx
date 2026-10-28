@@ -55,18 +55,34 @@ function rrText(): string {
 }
 
 describe("ScannerTradeModal — stop-loss check uses the broker spec", () => {
-  it("with the broker spec (pip 0.0001) a 0.5 stop on V75 is not 'too close' and R:R is shown", async () => {
+  // Round 3: a synthetics spec's point is a price step, not a pip — using it
+  // as the pip made the 8-pip floor 0.0008 on a 300000 price and let R:R
+  // 20.00 vouch for a 0.5 stop. The stop is still not blocked or moved.
+  it("with the broker spec (point 0.0001) a 0.5 stop on V75 is not 'too close', is not called checked, and no R:R is vouched for", async () => {
     specResolution = resolved({ digits: 4, point: 0.0001, category: "Synthetics", freshness: "FRESH", stopsLevel: null, spreadPoints: null });
     render(<ScannerTradeModal open onClose={() => {}} signal={v75Signal} defaultSide="BUY" />);
     await flush();
     const body = document.body.textContent ?? "";
     expect(body).not.toContain("too close to entry");
-    expect(body).not.toContain("distance from entry could not be checked");
     // The old guessed 0.1 pip (0.8 floor) plus a float miss on the min-safe
     // candidate blocked this stop outright while still showing R:R 20.00.
     expect(body).not.toContain("A valid stop loss is required");
     expect(body).not.toContain("Validation errors");
-    expect(rrText()).toContain("20.00");
+    expect(body).toContain("distance from entry could not be checked: the broker spec gives Synthetics symbols a 0.0001 price step but no pip size");
+    expect(body).toContain("R:R not shown: the broker spec gives Synthetics symbols a 0.0001 price step but no pip size");
+    expect(rrText()).not.toContain("20.00");
+  });
+
+  it("BTCUSD with a FRESH crypto spec: a 50-cent stop on 65000 gets no positive 'beyond an 8-pip floor' advice and no R:R 1000", async () => {
+    specResolution = { ok: true, brokerSymbol: "BTCUSD", matched: { digits: 2, point: 0.01, category: "Crypto", freshness: "FRESH", stopsLevel: null, spreadPoints: 10 } };
+    const btcSignal = { ...v75Signal, symbol: "BTCUSD", entry: 65000, stopLoss: 64999.5, takeProfit: 65500 } as typeof v75Signal;
+    render(<ScannerTradeModal open onClose={() => {}} signal={btcSignal} defaultSide="BUY" />);
+    await flush();
+    const body = document.body.textContent ?? "";
+    expect(body).not.toMatch(/8-pip floor|pip 0\.01 from the broker spec/);
+    expect(body).toContain("distance from entry could not be checked");
+    expect(rrText()).not.toMatch(/1000/);
+    expect(rrText()).toContain("—");
   });
 
   it("without a broker spec it says the distance could not be checked, invents no adjustment, and shows no R:R", async () => {

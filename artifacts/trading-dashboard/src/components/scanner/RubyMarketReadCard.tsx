@@ -119,7 +119,9 @@ function resolveDataUpdated(
 
 // The Market Read header's feed row, as one ordered downgrade (client can only
 // lower the server's word, never raise it):
-//   1. the shared gate is downgraded / the read expired → "Feed not confirmed";
+//   1. the shared gate is downgraded → "Feed not confirmed"; the read expired
+//      while the gate is full → "Read expired" (only the read is out of date —
+//      the feed is not blamed, and the signal's live word is still not shown);
 //   2. no data time from the market-truth snapshot → "Feed time unconfirmed";
 //   3. the snapshot's data state isn't LIVE_CONFIRMED → "Live (unconfirmed)";
 //   4. otherwise the signal's own word + "updated Xs ago".
@@ -128,6 +130,8 @@ function resolveDataUpdated(
 function resolveFeedRow(input: {
   signal: RubyMarketEdgeSignal | null;
   downgraded: boolean;
+  /** The read's own lifetime ended while the shared gate is NOT downgraded. */
+  readExpired?: boolean;
   dataUpdatedIso: string | null;
   /** True when the only data time is a forming bar's scheduled (future) close. */
   formingCloseOnly?: boolean;
@@ -143,6 +147,13 @@ function resolveFeedRow(input: {
       ? ` · ${ageLabel(dataUpdatedIso, nowTs)}`
       : scheduledOnly ? " · no tick time reported — newest bar still forming" : "";
     return { text: `Feed not confirmed${age}`, tone: "text-warning", feedDataNote: null };
+  }
+  if (input.readExpired) {
+    // Steps 2–4 still decide the Feed/Data caveat; the chip names the expiry
+    // and the data age only (never the signal's build-time live word).
+    const rest = resolveFeedRow({ ...input, readExpired: false });
+    const age = dataUpdatedIso ? ` · data ${ageLabel(dataUpdatedIso, nowTs)}` : "";
+    return { text: `Read expired${age}`, tone: "text-warning", feedDataNote: rest.feedDataNote };
   }
   if (dataUpdatedIso == null && input.formingCloseOnly) {
     return {
@@ -328,7 +339,8 @@ export function RubyMarketReadCard({
   // on this page confirms a current data time. Ordered, downgrade-only.
   const feedRow = resolveFeedRow({
     signal,
-    downgraded,
+    downgraded: gate.downgraded,
+    readExpired,
     dataUpdatedIso,
     formingCloseOnly,
     snapshotState: truthData?.state ?? null,
@@ -365,12 +377,13 @@ export function RubyMarketReadCard({
             downgraded,
             level,
             reason,
+            readExpired: readExpired && !gate.downgraded,
             newsRiskLabel: eventRisk,
             feedUnconfirmedReason: feedRow.feedDataNote,
             pricePrecision,
           }, name)
         : null,
-    [explanation, signal, downgraded, level, reason, eventRisk, feedRow.feedDataNote, name, pricePrecision],
+    [explanation, signal, downgraded, readExpired, gate.downgraded, level, reason, eventRisk, feedRow.feedDataNote, name, pricePrecision],
   );
 
   return (
