@@ -21,6 +21,7 @@ import type {
   ScalpEngineInput,
   ScalpEntryType,
   ScalpResult,
+  ScalpRejectReason,
   ScalpSpecInput,
   ScalpScannerInput,
   ScalpMode,
@@ -109,7 +110,12 @@ function rejectResult(
   input: ScalpEngineInput,
   status: ScalpResult["status"],
   noTradeReason: string,
-  opts: { canWatch?: boolean; userAction?: ScalpResult["userAction"]; plain?: string } = {},
+  opts: {
+    canWatch?: boolean;
+    userAction?: ScalpResult["userAction"];
+    plain?: string;
+    rejectReason?: ScalpRejectReason;
+  } = {},
 ): ScalpResult {
   const now = input.now ?? Date.now();
   const profile = MODE_PROFILES[input.mode];
@@ -122,6 +128,7 @@ function rejectResult(
     scalpType: profile.label,
     mode: input.mode,
     status,
+    ...(opts.rejectReason ? { rejectReason: opts.rejectReason } : {}),
     qualityScore: 0,
     confidenceLabel: "Weak",
     entryType: null,
@@ -182,11 +189,13 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   if (!scanner || !num(input.currentPrice)) {
     return rejectResult(input, "AWAITING_DATA", "Waiting for fresh price before recommending a scalp.", {
       plain: `${DEFAULT_ASSISTANT_NAME} is waiting for live price data on this market before reading a scalp.`,
+      rejectReason: "NO_SCANNER_READ",
     });
   }
   if (!isLiveData(scanner.dataSource)) {
     return rejectResult(input, "AWAITING_DATA", "Waiting for a live market price before recommending a scalp.", {
       plain: `${DEFAULT_ASSISTANT_NAME} only builds scalps from live market data. This market does not have a live price right now.`,
+      rejectReason: "NOT_LIVE",
     });
   }
 
@@ -207,6 +216,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
         plain:
           `${DEFAULT_ASSISTANT_NAME} needs enough verified live candles before reading a scalp here. `
           + (sufficiency?.humanReason ?? "The market data is not confirmed sufficient yet."),
+        rejectReason: "INSUFFICIENT_DATA",
       },
     );
   }
@@ -252,6 +262,8 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     return rejectResult(input, "AWAITING_DATA", `${DEFAULT_ASSISTANT_NAME} needs live symbol specs before building a scalp for this market.`, {
       canWatch: true,
       plain: `${DEFAULT_ASSISTANT_NAME} needs the broker's live symbol details (lot size, point value) for this market before building a scalp.`,
+      // Not a feed reason: price, live feed and sufficiency all passed above.
+      rejectReason: "NO_SPECS",
     });
   }
   const minLot = spec.minLot;

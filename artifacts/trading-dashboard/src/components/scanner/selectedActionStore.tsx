@@ -11,14 +11,14 @@ import type { PublishedScannerAction } from "@/lib/scannerActionability";
 // selectedActionStore — page-scoped store for the ONE selected-symbol action
 // verdict (Task #600). The Focus-tab scalp card computes the setup-aware
 // `ScannerActionability` for the symbol/timeframe it actually read (the scalp
-// engine reads M1 → bus "1m") and lifts it here; the header strip's Action cell
+// engine reads M5 → bus "5m") and lifts it here; the header strip's Action cell
 // reads it back via `resolveSelectedSymbolActionability` so the header can never
 // disagree with the selected-symbol card. Keyed by bare symbol (uppercased) AND
 // timeframe, mirroring the rubyReadStore convention exactly: publishers pass the
 // engine's bare symbol + the bus timeframe they read; readers pass
 // `bareSymbol(chartSym)` + `coerceVisibleTimeframe(selectedTimeframe)`. Keying by
 // timeframe is what stops a stale cross-timeframe verdict masquerading as the
-// selected timeframe's truth (e.g. an M1 scalp verdict showing in the header
+// selected timeframe's truth (e.g. an M5 scalp verdict showing in the header
 // while the user views the 15m chart). When no card has published for THIS
 // symbol+timeframe (other tabs, loading, mid-switch, or a non-matching
 // timeframe), `get` returns null and the header falls back to its own data-only

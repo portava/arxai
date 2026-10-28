@@ -16334,6 +16334,18 @@ export const CreateMeScalpFocusResponse = zod.object({
     "INSUFFICIENT_MARGIN",
     "AWAITING_DATA",
   ]),
+  rejectReason: zod
+    .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+    .nullish()
+    .describe(
+      "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+    ),
+  timeframe: zod
+    .string()
+    .nullish()
+    .describe(
+      'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+    ),
   qualityScore: zod.number(),
   confidenceLabel: zod.enum([
     "Weak",
@@ -16512,6 +16524,18 @@ export const CreateMeScalpRankResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -16681,6 +16705,18 @@ export const CreateMeScalpRankResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -16850,6 +16886,18 @@ export const CreateMeScalpRankResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -17019,6 +17067,18 @@ export const CreateMeScalpRankResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -17209,6 +17269,18 @@ export const CreateMeScalpBuildResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -17378,6 +17450,18 @@ export const CreateMeScalpBuildResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",

@@ -20,7 +20,7 @@ import {
   type RubyVerdict,
   type ScannerTruth,
 } from "@/lib/scannerTruth";
-import { resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
+import { capReadinessByServerRead, resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
 import {
   type RubyReadStatus,
   type ActionabilityTone,
@@ -265,7 +265,10 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
           more trade-ready than it is. Guarded on truth.readiness so a partial
           payload can never crash the header. */}
       {truth?.readiness && (() => {
-        const r = truth.readiness;
+        // Capped DOWN (never up) by the same-key Ruby read's server Trade-Health
+        // verdict, so this chip can't say "Live-confirmed" while that read's
+        // exact levels are withheld because the feed is delayed/closed-only.
+        const r = capReadinessByServerRead(truth.readiness, sharedRead);
         const tone = readinessTone(r);
         return (
           <div

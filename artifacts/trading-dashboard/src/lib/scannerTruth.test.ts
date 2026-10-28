@@ -528,6 +528,54 @@ describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE
     "mayOfferLiveExecutionRequest",
   ] as const;
 
+  // Account states whose trading permission is ALREADY RESOLVED as refused.
+  const GATE_MODES: Array<{ name: string; mode: ScannerTruthMode }> = [
+    { name: "frozen account", mode: mode({ isFrozen: true, frozenReason: "Trading is restricted on your account." }) },
+    { name: "manual trading blocked", mode: mode({ canManualTrade: false, cleanBlockedReason: "Manual trading isn't enabled." }) },
+    { name: "read-only (no demo/live mode)", mode: mode({ isDemo: false, isLiveShared: false }) },
+  ];
+
+  // Owner screenshot 2026-10-27: TRADING "Blocked" beside TRADE HEALTH
+  // "Live-confirmed — Live-confirmed 1m read with enough recent closed candles."
+  // The scanner knew execution was refused but never told the contract.
+  for (const g of GATE_MODES) {
+    it(`${g.name} + clean live read → "Live read · execution gated", no trade affordance, read stays live-confirmed`, () => {
+      const t = resolveScannerTruth(inputs({ mode: g.mode }));
+      const r = t.readiness;
+      expect(t.execution.allowed).toBe(false);
+      expect(r.dataFreshness).toBe("LIVE_CONFIRMED");
+      expect(r.readLayer).toBe("FULL");
+      expect(r.executionBlockedReason).toBe("LIVE_GATE_BLOCKED");
+      expect(r.displayLabel).toBe("Live read · execution gated");
+      expect(r.userFacingTrustLine).toBe(
+        "Live-confirmed 1m read — live execution is currently gated by your account checks.",
+      );
+      expect(r.mayDescribeSetup).toBe(true);
+      expect(r.mayShowTradeButton).toBe(false);
+      expect(r.mayShowOneClickButton).toBe(false);
+      expect(r.mayOfferLiveExecutionRequest).toBe(false);
+    });
+  }
+
+  it("unresolved account mode (loading) never claims the account refused execution", () => {
+    const r = resolveScannerTruth(
+      inputs({ mode: mode({ isLoading: true, isDemo: false, canManualTrade: false }) }),
+    ).readiness;
+    expect(r.executionBlockedReason).toBeNull();
+    expect(r.displayLabel).toBe("Live-confirmed");
+  });
+
+  it("a delayed feed on a frozen account still reports the FEED reason first", () => {
+    const r = resolveScannerTruth(
+      inputs({
+        feedStatus: feed({ quality: "delayed", isLive: false, aiUsable: false }),
+        mode: GATE_MODES[0]!.mode,
+      }),
+    ).readiness;
+    expect(r.executionBlockedReason).toBe("FEED_NOT_LIVE_CONFIRMED");
+    expect(r.displayLabel).not.toContain("execution gated");
+  });
+
   it("clean live read → every affordance ceiling open, LIVE_CONFIRMED, no block reason", () => {
     const t = resolveScannerTruth(inputs());
     const r = t.readiness;
@@ -579,14 +627,22 @@ describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE
     const cases: ScannerTruthInputs[] = [
       inputs(),
       ...NON_LIVE_SHAPES.map((s) => inputs(s.over)),
+      ...GATE_MODES.map((m) => inputs({ mode: m.mode })),
     ];
     for (const c of cases) {
-      const r = resolveScannerTruth(c).readiness;
+      const t = resolveScannerTruth(c);
+      const r = t.readiness;
       for (const flag of AFFORDANCES) {
-        if (r[flag]) {
+        if (r[flag] && flag !== "mayDescribeSetup") {
           expect(r.dataFreshness).toBe("LIVE_CONFIRMED");
           expect(r.readLayer).toBe("FULL");
           expect(r.executionBlockedReason).toBeNull();
+          // A trade affordance may never open while the account refuses execution.
+          expect(t.execution.allowed).toBe(true);
+        }
+        if (r[flag]) {
+          expect(r.dataFreshness).toBe("LIVE_CONFIRMED");
+          expect(r.readLayer).toBe("FULL");
         }
       }
     }
@@ -605,6 +661,9 @@ describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE
     const cases: ScannerTruthInputs[] = [
       inputs(),
       ...NON_LIVE_SHAPES.map((s) => inputs(s.over)),
+      ...GATE_MODES.map((m) => inputs({ mode: m.mode })),
+      ...GATE_MODES.map((m) => inputs({ ...NON_LIVE_SHAPES[1]!.over, mode: m.mode })),
+      inputs({ mode: mode({ isLoading: true, isDemo: false, canManualTrade: false }) }),
     ];
     for (const c of cases) {
       const t = resolveScannerTruth(c);
@@ -629,6 +688,10 @@ describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE
             : t.ruby.readLevel === "full" && t.analysis.level === "full"
               ? "FULL"
               : "STRUCTURAL_ONLY",
+        // The per-user execution fold: the account's ALREADY-RESOLVED refusal
+        // (never while the mode is still loading). Read-quality fields are
+        // unaffected; only the gate label/trust line/affordances fold it in.
+        executionGateBlocked: !c.mode.isLoading && !t.execution.allowed,
       });
       expect(recomputed).toEqual(t.readiness);
     }
@@ -674,6 +737,11 @@ describe("trade-health readiness — shared floor + direct Ruby↔Scanner parity
     }
   });
 
+  // Parity scope: read-quality fields (status, dataFreshness, readLayer,
+  // structureConfidence) are identical by construction. The scanner additionally
+  // folds the viewer's already-resolved execution refusal (executionGateBlocked),
+  // which Ruby's server read does not carry, so for a blocked account only the
+  // gate label / trust line / trade affordances differ — never the read quality.
   it("live 200-bar read: scanner(1m + thr floor) and ruby(M1 + shared floor) compose a byte-identical verdict", () => {
     const facts = {
       symbol: "EURUSD",

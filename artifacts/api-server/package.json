@@ -137,7 +137,7 @@
     "test:risk-governor-journal": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/journalGovernor.test.ts",
     "test:risk-governor-pipelines": "node --import tsx --test --test-force-exit src/routes/__qa__/riskGovernorPipelines.test.ts",
     "test:risk-governor-automation": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/routes/__qa__/riskGovernorAutomation.test.ts",
-    "test:read-chart-structure-tool": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/assistant/__qa__/readChartStructureTool.test.ts",
+    "test:read-chart-structure-tool": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/assistant/__qa__/readChartStructureTool.test.ts src/lib/assistant/__qa__/rubyStructuralReadWireEnums.test.ts ../../lib/domain/src/security/__qa__/userCopySafetyMachineKeys.test.ts",
     "test:chart-timeframe-normalization": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/timeframeNormalization.test.ts",
     "test:broker-synthetic-feed": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/brokerSyntheticFeed.test.ts",
     "test:pattern-truth": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/patternTruth.test.ts",
