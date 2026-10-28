@@ -11153,6 +11153,23 @@ export const RawCalendarEventImpact = {
 } as const;
 
 /**
+ * The provider's own impact tier, unfolded. `impact` folds `critical`
+into `high` for back-compat; display surfaces read this field so a
+central-bank decision shows as critical. Returned by the live
+calendar endpoint (`GET /economic-calendar/events`).
+
+ */
+export type RawCalendarEventImpactTier =
+  (typeof RawCalendarEventImpactTier)[keyof typeof RawCalendarEventImpactTier];
+
+export const RawCalendarEventImpactTier = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  critical: "critical",
+} as const;
+
+/**
  * A raw economic-calendar event from a connected real provider (Trading
 Economics). Never fabricated — the radar/Ruby surfaces these only when
 `connected:true` from the calendar seam. The live-calendar endpoint
@@ -11166,6 +11183,12 @@ export interface RawCalendarEvent {
   title: string;
   currency: string;
   impact: RawCalendarEventImpact;
+  /** The provider's own impact tier, unfolded. `impact` folds `critical`
+into `high` for back-compat; display surfaces read this field so a
+central-bank decision shows as critical. Returned by the live
+calendar endpoint (`GET /economic-calendar/events`).
+ */
+  impactTier?: RawCalendarEventImpactTier;
   eventTimeIso: string;
   affectedMarkets: string[];
   country?: string;

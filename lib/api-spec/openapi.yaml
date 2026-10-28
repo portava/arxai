@@ -19912,6 +19912,14 @@ components:
         title:          { type: string }
         currency:       { type: string }
         impact:         { type: string, enum: [low, medium, high] }
+        impactTier:
+          type: string
+          enum: [low, medium, high, critical]
+          description: |
+            The provider's own impact tier, unfolded. `impact` folds `critical`
+            into `high` for back-compat; display surfaces read this field so a
+            central-bank decision shows as critical. Returned by the live
+            calendar endpoint (`GET /economic-calendar/events`).
         eventTimeIso:   { type: string, format: date-time }
         affectedMarkets:
           type: array

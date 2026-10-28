@@ -41,7 +41,10 @@ interface LiveCalendarEvent {
   id: string;
   title: string;
   currency: string;
-  impact: "low" | "medium" | "high";
+  /** Back-compat bucket: the provider's "critical" is folded into "high". */
+  impact: string;
+  /** The provider's own tier, unfolded (critical stays critical). */
+  impactTier?: string;
   eventTimeIso: string;
   eventTimeUtc: string;
   affectedMarkets: string[];
@@ -55,7 +58,9 @@ interface LiveCalendarEvent {
 }
 
 // ── Unified display event (normalises both sources) ────────────────────────
-type ImpactLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+// UNKNOWN: the source sent an impact value this page does not recognise. It is
+// never shown as Low — an unread impact could be anything.
+type ImpactLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "UNKNOWN";
 interface DisplayEvent {
   key: string;
   eventName: string;
@@ -81,7 +86,9 @@ function fromLive(e: LiveCalendarEvent): DisplayEvent {
     eventName: e.title,
     country: e.country,
     currency: e.currency,
-    impactLevel: IMPACT_UP[e.impact] ?? "LOW",
+    // Prefer the unfolded tier so a provider-critical event (e.g. a rate
+    // decision) is Critical here exactly as it is on the DB path.
+    impactLevel: IMPACT_UP[(e.impactTier ?? e.impact ?? "").toLowerCase()] ?? "UNKNOWN",
     forecast: e.forecast,
     previous: e.previous,
     actual: e.actual,
@@ -93,7 +100,7 @@ function fromLive(e: LiveCalendarEvent): DisplayEvent {
 }
 
 function fromDb(e: EconomicEvent): DisplayEvent {
-  return { ...e, key: String(e.id) };
+  return { ...e, impactLevel: IMPACT_UP[String(e.impactLevel ?? "").toLowerCase()] ?? "UNKNOWN", key: String(e.id) };
 }
 
 // Open the existing Ruby live chat (same cross-tab mechanism the AI hub uses).
@@ -110,11 +117,13 @@ const IMPACT_TONE: Record<ImpactLevel, { text: string; dot: string; chip: string
   HIGH:     { text: "text-warning",   dot: "bg-warning",   chip: "border-warning/40 bg-warning/10 text-warning",       label: "High" },
   MEDIUM:   { text: "text-yellow-400",dot: "bg-yellow-400",chip: "border-yellow-400/40 bg-yellow-400/10 text-yellow-400", label: "Medium" },
   LOW:      { text: "text-primary",   dot: "bg-primary",   chip: "border-primary/40 bg-primary/10 text-primary",       label: "Low" },
+  UNKNOWN:  { text: "text-txt-muted", dot: "bg-slate-500", chip: "border-border bg-secondary/60 text-txt-muted",       label: "Impact not reported" },
 };
-const IMPACT_RANK: Record<ImpactLevel, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+// UNKNOWN ranks 0: it never counts toward a tier, and never lowers one.
+const IMPACT_RANK: Record<ImpactLevel, number> = { UNKNOWN: 0, LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
 
 function impactDots(level: ImpactLevel) {
-  const n = IMPACT_RANK[level] + 1; // 2..5 filled
+  const n = level === "UNKNOWN" ? 0 : IMPACT_RANK[level] + 1; // 2..5 filled; none when unknown
   const tone = IMPACT_TONE[level];
   return (
     <span className="inline-flex items-center gap-0.5">
@@ -245,8 +254,8 @@ export default function EconomicCalendarPage() {
     queryFn: async () => {
       const params = new URLSearchParams({ daysAhead: String(days) });
       if (currency) params.set("currencies", currency);
-      // CRITICAL is an internal DB-level tier; live endpoint only accepts low|medium|high.
-      // Map CRITICAL → high so users get the tightest real filter without a 400.
+      // The live endpoint only accepts a minimum of low|medium|high. CRITICAL asks
+      // for high and the event list is narrowed to the critical tier client-side.
       const liveImpact = impact === "CRITICAL" ? "high" : impact.toLowerCase() as "low" | "medium" | "high";
       if (liveImpact) params.set("impact", liveImpact);
       const r = await fetch(`/api/economic-calendar/events?${params}`);
@@ -296,14 +305,17 @@ export default function EconomicCalendarPage() {
   // Both branches return DisplayEvent — no shape drift between the two paths.
   const allEvents = useMemo((): DisplayEvent[] => {
     if (isConnected) {
-      const live = (providerStatus.data?.events ?? []).map(fromLive);
+      let live = (providerStatus.data?.events ?? []).map(fromLive);
+      // The live endpoint only takes a minimum impact of low|medium|high, so the
+      // "Critical" chip asks for high and narrows to the critical tier here.
+      if (impact === "CRITICAL") live = live.filter((e) => e.impactLevel === "CRITICAL");
       live.sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime());
       return live;
     }
     const db = (dbEvents.data?.events ?? []).map(fromDb);
     db.sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime());
     return db;
-  }, [isConnected, providerStatus.data?.events, dbEvents.data]);
+  }, [isConnected, providerStatus.data?.events, dbEvents.data, impact]);
 
   // Client-side date + search refinement on top of the server query.
   const now = new Date();
@@ -325,10 +337,13 @@ export default function EconomicCalendarPage() {
     const upcoming = dayEvents.filter((e) => new Date(e.eventTime).getTime() > Date.now());
     const next = upcoming[0] ?? null;
     const maxRank = dayEvents.reduce((m, e) => Math.max(m, IMPACT_RANK[e.impactLevel]), 0);
-    const overall = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low" : "Low";
-    const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400" : "text-primary";
+    const unknownImpact = dayEvents.filter((e) => e.impactLevel === "UNKNOWN").length;
+    const overall = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low"
+      : unknownImpact > 0 ? "Unknown" : "Low";
+    const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400"
+      : maxRank === 0 && unknownImpact > 0 ? "text-txt-muted" : "text-primary";
     const affected = next?.affectedSymbols ?? [];
-    return { count: dayEvents.length, critical, high, next, overall, overallTone, affected };
+    return { count: dayEvents.length, critical, high, next, overall, overallTone, affected, unknownImpact };
   }, [allEvents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Markets to watch — derived from the next/high-impact events' affected symbols.
@@ -454,12 +469,17 @@ export default function EconomicCalendarPage() {
                   <div>
                     <div className={cn("text-xl font-bold", summary.overallTone)}>{summary.overall}</div>
                     <div className="text-xs text-txt-muted">Overall Risk</div>
+                    {summary.unknownImpact > 0 && summary.overall !== "Unknown" && (
+                      <div className="text-[11px] text-txt-muted">
+                        {summary.unknownImpact} event{summary.unknownImpact !== 1 ? "s" : ""} with impact not reported
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-5">
-                  <div className="text-center"><div className="text-2xl font-bold text-[#E11D48]">{summary.critical}</div><div className="text-[11px] text-txt-muted">Critical<br/>Events</div></div>
-                  <div className="text-center"><div className="text-2xl font-bold text-warning">{summary.high}</div><div className="text-[11px] text-txt-muted">High<br/>Impact</div></div>
-                  <div className="text-center"><div className="text-2xl font-bold text-foreground">{summary.count}</div><div className="text-[11px] text-txt-muted">Total<br/>Events</div></div>
+                  <div className="text-center"><div data-testid="eco-critical-count" className="text-2xl font-bold text-[#E11D48]">{summary.critical}</div><div className="text-[11px] text-txt-muted">Critical<br/>Events</div></div>
+                  <div className="text-center"><div data-testid="eco-high-count" className="text-2xl font-bold text-warning">{summary.high}</div><div className="text-[11px] text-txt-muted">High<br/>Impact</div></div>
+                  <div className="text-center"><div data-testid="eco-total-count" className="text-2xl font-bold text-foreground">{summary.count}</div><div className="text-[11px] text-txt-muted">Total<br/>Events</div></div>
                 </div>
               </div>
             </div>
@@ -541,7 +561,7 @@ export default function EconomicCalendarPage() {
                 const released = e.actual != null && new Date(e.eventTime).getTime() <= Date.now();
                 const isOpen = expanded === e.key;
                 return (
-                  <div key={e.key} className={cn("rounded-xl border p-3 transition-colors",
+                  <div key={e.key} data-testid="eco-event-row" className={cn("rounded-xl border p-3 transition-colors",
                     isOpen ? "border-primary/40 bg-background/40" : "border-transparent hover:bg-background/30")}>
                     <button onClick={() => setExpanded(isOpen ? null : e.key)} className="flex w-full items-start gap-3 text-left">
                       <div className="w-24 shrink-0">

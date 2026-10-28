@@ -10232,6 +10232,12 @@ export const GetLiveCalendarEventsResponse = zod.object({
         title: zod.string(),
         currency: zod.string(),
         impact: zod.enum(["low", "medium", "high"]),
+        impactTier: zod
+          .enum(["low", "medium", "high", "critical"])
+          .optional()
+          .describe(
+            "The provider's own impact tier, unfolded. `impact` folds `critical`\ninto `high` for back-compat; display surfaces read this field so a\ncentral-bank decision shows as critical. Returned by the live\ncalendar endpoint (`GET \/economic-calendar\/events`).\n",
+          ),
         eventTimeIso: zod.coerce.date(),
         affectedMarkets: zod.array(zod.string()),
         country: zod.string().optional(),
