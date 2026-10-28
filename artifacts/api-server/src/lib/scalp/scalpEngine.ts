@@ -865,9 +865,12 @@ interface PlainReasonArgs {
 
 function buildPlainReason(a: PlainReasonArgs): string {
   const side = a.direction === "BUY" ? "buy" : "sell";
-  const dirWord = a.direction === "BUY" ? "support and upward pressure" : "resistance and fading upside momentum";
   if (a.status === "READY") {
-    return `This is a ${side} scalp because price is reacting to ${dirWord}, and the take-profit sits before the next ${a.direction === "BUY" ? "resistance" : "support"} area so the trade does not need a big move to work. The stop is on the other side of that level with a spread buffer, so the idea is clean while price holds the ${a.invalidationPrice} level.`;
+    // Say only what the engine used: the market read's direction, the entry
+    // zone, the stop distance (widened for spread / broker minimum) and the
+    // reward-to-risk. No support/resistance level is located here, so none is
+    // claimed.
+    return `This is a ${side} scalp: the market read points ${a.direction === "BUY" ? "up" : "down"} and price is inside the entry zone now. The stop at ${a.invalidationPrice} is the read's stop distance, widened where needed to clear the spread and the broker's minimum stop distance. The main take-profit at ${a.mainTp} gives about 1 : ${a.rewardToRisk} reward to risk. Nearby support and resistance levels were not checked for this scalp.`;
   }
   if (a.status === "WAIT_FOR_ENTRY") {
     return `A ${side} scalp is forming, but price is not yet in the entry zone. Wait for price to come back into the zone before entering — the idea stays valid while it holds the ${a.invalidationPrice} level.`;

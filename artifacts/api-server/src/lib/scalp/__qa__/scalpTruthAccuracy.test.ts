@@ -222,3 +222,51 @@ test("scalp type: a measured trend still drives the MOMENTUM label and tilt", ()
   assert.equal(strong.scalpType, "Momentum Scalp");
   assert.ok(strong.qualityScore > weak.qualityScore);
 });
+
+// ── Finding: READY text claimed a support/resistance reaction ──────────────
+
+/** Steady drift with no swing high/low near price: no level to react to. */
+function driftCandles(start: number, step: number, n = 40) {
+  const out: { open: number; high: number; low: number; close: number }[] = [];
+  let p = start;
+  for (let i = 0; i < n; i++) {
+    const o = p;
+    const c = p + step;
+    out.push({ open: o, high: Math.max(o, c) + Math.abs(step) * 0.2, low: Math.min(o, c) - Math.abs(step) * 0.2, close: c });
+    p = c;
+  }
+  return out;
+}
+
+for (const side of ["BUY", "SELL"] as const) {
+  test(`reason copy: a READY ${side} scalp does not claim a support/resistance reaction nobody measured`, () => {
+    const buy = side === "BUY";
+    const scanner = usdJpyScanner({
+      bias: buy ? "bullish" : "bearish",
+      recommendedAction: side,
+      entry: 1.085,
+      stopLoss: buy ? 1.083 : 1.087,
+      takeProfit: buy ? 1.089 : 1.081,
+      entryZone: { low: 1.0848, high: 1.0852 },
+    });
+    let ready = 0;
+    for (const candles of [null, driftCandles(1.084, buy ? 0.00002 : -0.00002)]) {
+      const r = evaluateScalp(usdJpyInput({
+        symbol: "EURUSD",
+        currentPrice: 1.085,
+        spec: eurUsdTickSpec(),
+        scanner,
+        candles: candles ?? undefined,
+      }));
+      if (r.status !== "READY") continue;
+      ready += 1;
+      assert.doesNotMatch(r.plainEnglishReason, /reacting to|before the next (resistance|support)|other side of that level/i);
+      assert.doesNotMatch(r.plainEnglishReason, /\b(support|resistance)\b(?! (and resistance |or resistance )?(levels? )?(were|was) not checked)/i);
+      // It says what was actually used: the stop and the reward-to-risk.
+      assert.match(r.plainEnglishReason, new RegExp(String(r.stopLoss)));
+      assert.match(r.plainEnglishReason, /reward to risk/i);
+      assert.match(r.plainEnglishReason, /not checked/i);
+    }
+    assert.ok(ready >= 1, "at least one fixture reaches READY");
+  });
+}
