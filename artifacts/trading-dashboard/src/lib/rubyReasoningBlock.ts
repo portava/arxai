@@ -837,11 +837,20 @@ export interface OppMapReasoningInput {
   dataState?: string | null;
   dataSourceLabel?: string | null;
   newsRiskLevel?: string | null;
+  /**
+   * The display precision the panel's Highlights box prints these levels at
+   * (resolveDisplayPricePrecision over the scanner truth's precision and the
+   * levels themselves). Levels here use the same shared formatter, so one
+   * level reads as one string in the panel.
+   */
+  pricePrecision?: number | null;
 }
 
 export function buildReasoningFromOppMap(
   input: OppMapReasoningInput,
 ): RubyReasoningBlockData {
+  // Same formatter + precision as the panel's Highlights box (instrumentPriceFormat).
+  const px = (n: number | null | undefined): string => formatInstrumentPrice(n, input.pricePrecision ?? null);
   const exp = input.explanation;
   const bias = clean(input.bias).toUpperCase();
   const dir = bias === "BUY" || bias === "SELL" ? bias : null;
@@ -891,7 +900,7 @@ export function buildReasoningFromOppMap(
         : "Entry, stop, and target are withheld until a confirmed live feed.",
     );
   } else {
-    supportResistance = `Entry ${fmtNum(input.entryZone.low)} – ${fmtNum(input.entryZone.high)}, stop ${fmtNum(input.suggestedStop)}, target ${fmtNum(input.suggestedTakeProfit)} (R:R 1:${input.riskRewardRatio}). Mind room into nearby support/resistance.`;
+    supportResistance = `Entry ${px(input.entryZone.low)} – ${px(input.entryZone.high)}, stop ${px(input.suggestedStop)}, target ${px(input.suggestedTakeProfit)} (R:R 1:${input.riskRewardRatio}). Mind room into nearby support/resistance.`;
   }
 
   let feedData: string;
@@ -915,18 +924,18 @@ export function buildReasoningFromOppMap(
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   const confirmation = dir
     ? input.suggestedTakeProfit != null && !withheld
-      ? `Strengthens if price moves cleanly toward ${fmtNum(input.suggestedTakeProfit)}.`
+      ? `Strengthens if price moves cleanly toward ${px(input.suggestedTakeProfit)}.`
       : "Confirm the feed, then look for follow-through in your direction."
     : "Wait for a clear directional break before treating this as a setup.";
   const invalidation = orElse(
     exp.invalidation,
     input.suggestedStop != null && !withheld
-      ? `Cancel if price breaks the stop ${fmtNum(input.suggestedStop)}.`
+      ? `Cancel if price breaks the stop ${px(input.suggestedStop)}.`
       : NOT_ENOUGH,
   );
   const traderTest =
     input.suggestedStop != null && !withheld
-      ? `Mark ${fmtNum(input.suggestedStop)} on ${input.symbol} and watch whether price respects or breaks it.`
+      ? `Mark ${px(input.suggestedStop)} on ${input.symbol} and watch whether price respects or breaks it.`
       : "Mark the nearest visible level and watch whether the next candle breaks or rejects it.";
 
   const riskNote = orElse(

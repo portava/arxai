@@ -193,3 +193,27 @@ describe("Opportunity Map detail — a syncing feed withholds levels like the Hi
     expect(d.traderTest).not.toMatch(/1\.05/);
   });
 });
+
+// Truth audit 2026-10-28 (round 3) — the opp-map S/R row used a fixed
+// magnitude rounding (4 dp under 100, 2 dp at 100+) while the Highlights box
+// beside it printed the level itself, so 1.08523 read as 1.0852 and
+// 33588.0069 as 33588.01. It now uses the shared instrument formatter at the
+// precision the panel passes.
+describe("opp-map levels print at the panel's instrument precision", () => {
+  const live = (over: Partial<OppMapReasoningInput>) =>
+    buildReasoningFromOppMap(oppInput({ bias: "BUY", confidenceLabel: "High", ...over }));
+
+  it("EURUSD 5-digit levels keep their 5 digits", () => {
+    const d = live({ entryZone: { low: 1.08523, high: 1.08561 }, suggestedStop: 1.08401, suggestedTakeProfit: 1.08811, pricePrecision: 5 });
+    expect(d.evidence.supportResistance).toContain("Entry 1.08523 – 1.08561, stop 1.08401, target 1.08811");
+    expect(d.evidence.supportResistance).not.toContain("1.0852 ");
+    expect(d.confirmation).toContain("1.08811");
+    expect(d.traderTest).toContain("1.08401");
+  });
+
+  it("V75 at 4 digits is not rounded to 2", () => {
+    const d = live({ entryZone: { low: 33588.0069, high: 33590.5 }, suggestedStop: 33570.25, suggestedTakeProfit: 33620.125, pricePrecision: 4 });
+    expect(d.evidence.supportResistance).toContain("Entry 33588.0069 – 33590.5000");
+    expect(d.evidence.supportResistance).not.toContain("33588.01");
+  });
+});

@@ -593,3 +593,53 @@ describe("SelectedMarketPanel — 'Data as of' is an observed, advancing age", (
     expect(label()).toBe("Data as of 1m ago");
   });
 });
+
+// Truth audit 2026-10-28 (round 3) — one level is one string in this panel.
+// The Highlights box printed the raw number (1.08523, 33588.0069) while the
+// Ruby Reasoning S/R row beside it rounded with a fixed magnitude rule
+// (1.0852, 33588.01), so one level read at two precisions and the reasoning
+// row dropped digits the venue quoted.
+describe("SelectedMarketPanel — Highlights and the reasoning block print one level as one string", () => {
+  function levels(entryZone: { low: number; high: number }, stop: number, target: number) {
+    const base = liveOkSnapshot({ readWithheldReason: null });
+    return {
+      ...base,
+      highlights: { ...base.highlights, entryZone, suggestedStop: stop, suggestedTakeProfit: target },
+    };
+  }
+  function highlightsText(): string {
+    return screen.getByTestId("selected-market-levels").textContent ?? "";
+  }
+  function srText(): string {
+    return screen.getByTestId("opp-map-reasoning-evidence-supportResistance").textContent ?? "";
+  }
+
+  it("EURUSD 5-digit levels read the same in both boxes", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: levels({ low: 1.08523, high: 1.08561 }, 1.08401, 1.08811) }));
+    render(<SelectedMarketPanel />);
+    expect(highlightsText()).toContain("1.08523 – 1.08561");
+    expect(srText()).toContain("Entry 1.08523 – 1.08561");
+    expect(srText()).toContain("stop 1.08401");
+    expect(srText()).toContain("target 1.08811");
+    expect(highlightsText()).toContain("1.08401");
+    expect(highlightsText()).toContain("1.08811");
+  });
+
+  it("V75 levels keep the venue's 4 decimals in the reasoning row", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: levels({ low: 33588.0069, high: 33590.5 }, 33570.25, 33620.125) }));
+    render(<SelectedMarketPanel />);
+    expect(srText()).toContain("Entry 33588.0069 – 33590.5000");
+    expect(highlightsText()).toContain("33588.0069 – 33590.5000");
+    expect(srText()).toContain("stop 33570.2500");
+    expect(highlightsText()).toContain("33570.2500");
+    expect(srText()).not.toContain("33588.01");
+  });
+
+  it("the shared scanner truth's precision applies to both boxes", () => {
+    mockUseScannerTruth.mockReturnValue({ truth: { ...degradedTruth(), candles: { reason: "", pricePrecision: 5 } } as unknown as ScannerTruth });
+    mockSnapshotQuery.mockReturnValue(hookState({ data: levels({ low: 1.103, high: 1.1036 }, 1.1, 1.11) }));
+    render(<SelectedMarketPanel />);
+    expect(highlightsText()).toContain("1.10300 – 1.10360");
+    expect(srText()).toContain("Entry 1.10300 – 1.10360, stop 1.10000, target 1.11000");
+  });
+});
