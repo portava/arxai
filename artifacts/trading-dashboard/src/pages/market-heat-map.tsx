@@ -224,9 +224,15 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <DataQualityBadge label={data.dataQuality.label} />
-              <Badge variant="outline" className={cn(gradeColor(data.timingGrade))}>
-                Grade {data.timingGrade}
-              </Badge>
+              {data.dataQuality.hasCandleData ? (
+                <Badge variant="outline" className={cn(gradeColor(data.timingGrade))}>
+                  Grade {data.timingGrade}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-zinc-400 border-zinc-500/30" data-testid="timing-grade-unmeasured">
+                  Not graded — no current candles
+                </Badge>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -440,6 +446,7 @@ function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; mul
                     />
                   </div>
                   <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.heatScore)}</span>
+                  {r.dataQuality.label !== "real" && <DataQualityBadge label={r.dataQuality.label} />}
                   <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-5", actionColor(r.bestAction))}>
                     {humanizeAction(r.bestAction)}
                   </Badge>

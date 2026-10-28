@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, within } from "@testing-library/react";
 import type { MarketTimingRead } from "@workspace/api-client-react";
-import { BySessionTab, TodayTab } from "./market-heat-map";
+import { BySessionTab, TodayTab, NowTab } from "./market-heat-map";
 
 afterEach(() => {
   cleanup();
@@ -95,5 +95,23 @@ describe("Today tab — session cards", () => {
     render(<TodayTab data={makeRead({}, { sessionName: "24/7 Synthetic" })} multiData={[]} />);
     for (const n of ["Sydney", "Asia", "London", "New York"]) expect(isActive(n)).toBe(false);
     expect(screen.getByTestId("session-no-card").textContent).toContain("24/7 Synthetic");
+  });
+});
+
+const UNMEASURED_DQ = {
+  label: "basic_timing_estimate", hasCandleData: false, hasQuoteData: false,
+  hasNewsData: false, hasBroadFlowData: false, note: "",
+} as MarketTimingRead["dataQuality"];
+
+describe("Unmeasured timing reads (no candles, no quote)", () => {
+  it("Now tab does not show a timing grade for a read built from session constants", () => {
+    render(<NowTab data={makeRead({ dataQuality: UNMEASURED_DQ, timingGrade: "F", entryPermission: "STAND_DOWN" })} isLoading={false} symbol="EURUSD" />);
+    expect(screen.queryByText(/^Grade /)).toBeNull();
+    expect(screen.getByTestId("timing-grade-unmeasured")).toBeTruthy();
+  });
+
+  it("Today's Symbol Heat marks an estimate row with its data-quality badge", () => {
+    render(<TodayTab data={undefined} multiData={[makeRead({ symbol: "GBPUSD", dataQuality: UNMEASURED_DQ })]} />);
+    expect(screen.getByText("Basic timing estimate")).toBeTruthy();
   });
 });

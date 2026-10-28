@@ -132,7 +132,7 @@ export async function computeTimingRead(
   });
 
   // ─── 7. Tradeability / Edge / Danger Engine ───────────────────────────────
-  const tradeOut = computeTradeability({
+  const tradeRaw = computeTradeability({
     heatScore: heatOut.heatScore,
     heatState: heatOut.heatState,
     isFalseHeat: heatOut.isFalseHeat,
@@ -150,17 +150,33 @@ export async function computeTimingRead(
     dangerFromBroadFlow: broadFlowRaw.verdict === "OPPOSING" ? 60 : broadFlowRaw.verdict === "CONFLICTED" ? 30 : 0,
     candles: candleData,
   });
+  // Fail closed: without current candles nothing about this market's timing
+  // was measured — the scores above come from session constants only. Such a
+  // read can never permit an entry or carry a grade better than F.
+  const tradeOut = hasCandleData
+    ? tradeRaw
+    : { ...tradeRaw, entryPermission: "STAND_DOWN" as const, timingGrade: "F" as const };
 
   // ─── 8. Best Action resolution ───────────────────────────────────────────
-  const { bestAction, actionReason } = resolveBestAction(
-    tradeOut.entryPermission,
-    tradeOut.moveStage,
-    trapRoom.trapProbability,
-    broadFlowRaw.verdict,
-    newsOverlay,
-    trapRoom.buyPressure,
-    trapRoom.sellPressure,
-  );
+  const { bestAction, actionReason } = hasCandleData
+    ? resolveBestAction(
+        tradeOut.entryPermission,
+        tradeOut.moveStage,
+        trapRoom.trapProbability,
+        broadFlowRaw.verdict,
+        newsOverlay,
+        trapRoom.buyPressure,
+        trapRoom.sellPressure,
+      )
+    : {
+        bestAction: "STAND_DOWN" as const,
+        actionReason:
+          `No current candles for ${symbol} (market data unavailable or market closed) — timing was not measured. ` +
+          "No entry until current market data returns." +
+          (newsOverlay.blocksTrade || newsOverlay.phase === "AT_EVENT"
+            ? ` A news window is also active${newsOverlay.eventName ? ` (${newsOverlay.eventName})` : ""}.`
+            : ""),
+      };
 
   // ─── 9. Data quality / honesty marker ────────────────────────────────────
   const dataQuality = resolveDataQuality(hasCandleData, hasQuoteData, hasNewsData, hasBroadFlowData);

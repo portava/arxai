@@ -7,7 +7,7 @@
 // feed, the wall clock, or the database.
 
 import { marketFixture } from "../../../lib/truth/__qa__/marketEvidenceFixtures.js";
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { computeTimingRead, type TimingBrainDeps } from "../marketTimingBrainService.js";
 
@@ -126,4 +126,44 @@ test("buy-pressure-dominant candles surface a BUY pressure bias", async () => {
     baseDeps({ routeCandlesFn: async () => candlesOk(80) }),
   );
   assert.equal(read.pressureBias, "BUY");
+});
+
+test("no candles and no quote during the overlap → no GO, no grade better than F, honest stand-down reason", async () => {
+  // Tue 2026-10-27 13:30 UTC: overlap kill zone (tradeability bonus 25) — the
+  // session constants alone used to yield entryPermission GO and grade D.
+  mock.timers.enable({ apis: ["Date"], now: Date.UTC(2026, 9, 27, 13, 30) });
+  try {
+    const read = await computeTimingRead(
+      { symbol: "EURUSD", persistSnapshot: false },
+      baseDeps({
+        routeCandlesFn: async () => candlesEmpty,
+        routeQuoteFn: async () => quoteEmpty,
+        computeBroadFlowFn: async () => broadUnavailable,
+      }),
+    );
+    assert.equal(read.dataQuality.label, "basic_timing_estimate");
+    assert.notEqual(read.entryPermission, "GO");
+    assert.equal(read.entryPermission, "STAND_DOWN");
+    assert.equal(read.timingGrade, "F");
+    assert.equal(read.bestAction, "STAND_DOWN");
+    assert.match(read.actionReason, /no current candles/i);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("quote but no current candles → still no GO (timing was not measured)", async () => {
+  mock.timers.enable({ apis: ["Date"], now: Date.UTC(2026, 9, 27, 13, 30) });
+  try {
+    const read = await computeTimingRead(
+      { symbol: "EURUSD", persistSnapshot: false },
+      baseDeps({ routeCandlesFn: async () => candlesEmpty }),
+    );
+    assert.equal(read.dataQuality.hasCandleData, false);
+    assert.notEqual(read.entryPermission, "GO");
+    assert.notEqual(read.bestAction, "BUY");
+    assert.notEqual(read.bestAction, "SELL");
+  } finally {
+    mock.timers.reset();
+  }
 });
