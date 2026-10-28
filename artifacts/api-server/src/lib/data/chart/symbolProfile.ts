@@ -568,6 +568,28 @@ export function knownPricePrecision(symbol: string): number | null {
   return known ? known.pricePrecision : null;
 }
 
+/**
+ * The instrument's pip size ONLY when the symbol is in the explicit profile
+ * table — null for an unknown symbol, so a pip count is never computed from an
+ * asset-class guess. Display only: never an order tick size or execution input.
+ */
+export function knownPipSize(symbol: string): number | null {
+  const known = BY_SYMBOL.get((symbol ?? "").trim().toUpperCase());
+  return known && Number.isFinite(known.pipSize) && known.pipSize > 0 ? known.pipSize : null;
+}
+
+/**
+ * Pip count for a price distance on `symbol`, using the symbol's own pip size
+ * (0.0001 EURUSD, 0.01 USDJPY, …), rounded to 0.1 pip. Null when the symbol's
+ * pip size is not in the table — never a forex-only ×10000 guess.
+ */
+export function knownPipDistance(symbol: string | null | undefined, priceDistance: number): number | null {
+  if (!symbol || !Number.isFinite(priceDistance)) return null;
+  const pip = knownPipSize(symbol);
+  if (pip == null) return null;
+  return Math.round((Math.abs(priceDistance) / pip) * 10) / 10;
+}
+
 /** Return the profile for a symbol, falling back to asset-class defaults. Pure — no I/O. */
 export function getSymbolProfile(symbol: string, assetClass?: AssetClass): SymbolProfile {
   const up = (symbol ?? "").trim().toUpperCase();
