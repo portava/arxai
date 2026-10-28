@@ -14,9 +14,37 @@ type Status = {
   running: boolean;
   startedAt: string | null;
   endsAt: string | null;
+  /** When the test ended (duration elapsed or Stop); null while running / never run. */
+  endedAt?: string | null;
+  endReason?: "duration_elapsed" | "stopped" | null;
   observedSinceStart: number;
   config: Record<string, unknown> | null;
 };
+
+const MAX_DURATION_MIN = 7 * 24 * 60;
+
+function validDuration(v: number): boolean {
+  return Number.isFinite(v) && v >= 1 && v <= MAX_DURATION_MIN;
+}
+
+/**
+ * The phase the tab may show. The client may only downgrade the server's
+ * claim: a "running" test whose endsAt has passed is shown as ended.
+ */
+export function forwardPhase(s: Status, nowMs: number = Date.now()): "RUNNING" | "ENDED" | "STOPPED" | "IDLE" {
+  const endsMs = s.endsAt ? Date.parse(s.endsAt) : Number.NaN;
+  if (s.running && !(Number.isFinite(endsMs) && endsMs <= nowMs)) return "RUNNING";
+  if (s.running) return "ENDED";
+  if (s.endReason === "stopped") return "STOPPED";
+  if (s.endReason === "duration_elapsed" || s.endedAt) return "ENDED";
+  return "IDLE";
+}
+
+function clock(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? new Date(ms).toLocaleTimeString() : "—";
+}
 
 async function api(path: string, init?: RequestInit) {
   return fetch(path, {
@@ -29,6 +57,7 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [results, setResults] = useState<ForwardResults | null>(null);
   const [duration, setDuration] = useState(60);
+  const [startError, setStartError] = useState<string | null>(null);
   // Forward testing is backed by admin/OWNER-only endpoints
   // (/api/forward-testing/*). A non-admin trader can still reach the Testing Lab
   // for backtesting, so instead of full-page gating this tab shows an explicit
@@ -98,7 +127,10 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
           </p>
         </div>
         <Badge variant="outline">SHADOW</Badge>
-        {status && <Badge className={status.running ? "bg-emerald-500/20 text-emerald-400" : ""}>{status.running ? "RUNNING" : "IDLE"}</Badge>}
+        {status && (() => {
+          const phase = forwardPhase(status);
+          return <Badge data-testid="forward-phase" className={phase === "RUNNING" ? "bg-emerald-500/20 text-emerald-400" : ""}>{phase}</Badge>;
+        })()}
       </div>
 
       <Card>
@@ -111,9 +143,33 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
           <Input type="number" className="w-32" value={duration} onChange={(e) => setDuration(Number(e.target.value))} placeholder="duration min" />
-          <Button onClick={() => api("/api/forward-testing/start", { method: "POST", body: JSON.stringify({ durationMin: duration }) }).then(load)}>Start ({duration} min)</Button>
+          <Button
+            disabled={!validDuration(duration)}
+            onClick={() =>
+              api("/api/forward-testing/start", { method: "POST", body: JSON.stringify({ durationMin: duration }) })
+                .then((r: { error?: string; message?: string }) => setStartError(r?.error ? (r.message ?? "Forward test not started.") : null))
+                .then(load)
+            }
+          >
+            {validDuration(duration) ? `Start (${duration} min)` : "Start"}
+          </Button>
           <Button variant="outline" onClick={() => api("/api/forward-testing/stop", { method: "POST" }).then(load)}>Stop</Button>
-          {status?.endsAt && <span className="text-xs text-muted-foreground">ends at {new Date(status.endsAt).toLocaleTimeString()} · observed {status.observedSinceStart}</span>}
+          {!validDuration(duration) && (
+            <span className="text-xs text-amber-400">Enter a duration from 1 to {MAX_DURATION_MIN} minutes.</span>
+          )}
+          {startError && <span className="text-xs text-amber-400">{startError}</span>}
+          {status?.endsAt && (() => {
+            const phase = forwardPhase(status);
+            if (phase === "RUNNING") {
+              return <span className="text-xs text-muted-foreground">ends at {clock(status.endsAt)} · observed {status.observedSinceStart}</span>;
+            }
+            const how = phase === "STOPPED" ? "stopped" : "duration elapsed";
+            return (
+              <span className="text-xs text-muted-foreground" data-testid="forward-ended">
+                ended at {clock(status.endedAt ?? status.endsAt)} ({how}) · observed {status.observedSinceStart} during the test
+              </span>
+            );
+          })()}
         </CardContent>
       </Card>
 

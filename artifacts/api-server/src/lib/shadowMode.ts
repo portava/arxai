@@ -240,9 +240,36 @@ export interface ForwardTestConfig {
 let forwardConfig: ForwardTestConfig | null = null;
 let forwardStartedAt: string | null = null;
 let forwardEndsAt: string | null = null;
+let forwardEndedAt: string | null = null;
+let forwardEndReason: "duration_elapsed" | "stopped" | null = null;
 let forwardCountAtStart = 0;
 
+/** Longest forward test accepted (7 days), in minutes. */
+export const FORWARD_MAX_DURATION_MIN = 7 * 24 * 60;
+
+/** A forward-test duration is a finite number of minutes in [1, FORWARD_MAX_DURATION_MIN]. */
+export function isValidForwardDurationMin(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= FORWARD_MAX_DURATION_MIN;
+}
+
+/**
+ * End a running forward test whose duration has elapsed. Read-time, so a
+ * missed timer can never leave a test reading RUNNING past its endsAt.
+ */
+function settleForwardTest(now = Date.now()): void {
+  if (forwardConfig && forwardEndsAt && now >= Date.parse(forwardEndsAt)) {
+    forwardConfig = null;
+    forwardEndedAt = forwardEndsAt;
+    forwardEndReason = "duration_elapsed";
+  }
+}
+
 export function startForwardTest(c: Partial<ForwardTestConfig> = {}): { running: boolean; endsAt: string } {
+  if (c.durationMin !== undefined && !isValidForwardDurationMin(c.durationMin)) {
+    // Refuse instead of starting a test that has already ended (0 min) or
+    // whose end time cannot be computed (NaN / non-numeric).
+    throw new RangeError(`durationMin must be a number of minutes from 1 to ${FORWARD_MAX_DURATION_MIN}.`);
+  }
   forwardConfig = {
     strategy: c.strategy, symbols: c.symbols ?? [...DEFAULT_SYMBOLS], timeframes: c.timeframes ?? ["M15"],
     durationMin: c.durationMin ?? 60, maxShadowTrades: c.maxShadowTrades ?? 100, maxTradesPerDay: c.maxTradesPerDay ?? 30,
@@ -252,15 +279,30 @@ export function startForwardTest(c: Partial<ForwardTestConfig> = {}): { running:
   };
   forwardStartedAt = new Date().toISOString();
   forwardEndsAt = new Date(Date.now() + forwardConfig.durationMin * 60_000).toISOString();
+  forwardEndedAt = null;
+  forwardEndReason = null;
   forwardCountAtStart = totalsObserved;
   if (!shadowEnabled) startShadowMode({ symbols: forwardConfig.symbols });
   return { running: true, endsAt: forwardEndsAt };
 }
-export function stopForwardTest() { const c = forwardConfig; forwardConfig = null; return { stopped: true, was: c }; }
+export function stopForwardTest() {
+  settleForwardTest();
+  const c = forwardConfig;
+  if (c) {
+    forwardConfig = null;
+    forwardEndedAt = new Date().toISOString();
+    forwardEndReason = "stopped";
+  }
+  return { stopped: true, was: c };
+}
 
 export function forwardStatus() {
+  settleForwardTest();
   return {
     running: !!forwardConfig, startedAt: forwardStartedAt, endsAt: forwardEndsAt,
+    // When the test ended (endsAt reached, or Stop) and why; null while running
+    // or before any test started.
+    endedAt: forwardEndedAt, endReason: forwardEndReason,
     config: forwardConfig, observedSinceStart: totalsObserved - forwardCountAtStart,
     dataSource: "SHADOW" as const,
   };
