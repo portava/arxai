@@ -203,6 +203,16 @@ function fmtDateTime(iso: string | null): string {
   return d.toISOString().replace("T", " ").slice(0, 16);
 }
 
+// "Last candle" for the asset-class activity table. The server's value is the
+// newest provider bar's CLOSE time, which for a still-forming bar is a
+// scheduled FUTURE instant — label it as such, and always with date + UTC.
+function activityLastCandleText(iso: string | null, nowMs: number): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  return t > nowMs ? `forming · closes ${fmtDateTime(iso)} UTC` : `closed ${fmtDateTime(iso)} UTC`;
+}
+
 type BackfillStatus = "NOT_STARTED" | "BUILDING" | "PARTIAL" | "COMPLETE" | "BROKER_LIMITED" | "ERROR";
 
 function backfillBadge(s: BackfillStatus) {
@@ -802,7 +812,7 @@ export default function ProviderHealthPage() {
                       <th className="text-left py-1 pr-3">Quote provider</th>
                       <th className="text-left py-1 pr-3">Quality</th>
                       <th className="text-left py-1 pr-3">AI usable</th>
-                      <th className="text-right py-1">Last candle</th>
+                      <th className="text-right py-1">Newest bar close</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -817,12 +827,18 @@ export default function ProviderHealthPage() {
                         <td className="py-1 pr-3 font-mono">{a.latestQuoteProvider ?? "—"}</td>
                         <td className="py-1 pr-3">
                           <Badge className={qualityCls(a.feedQuality)}>{a.feedQuality}</Badge>
+                          {/* "unknown" = the server could not read this class's feed status at all. */}
+                          {a.feedQuality === "unknown" && <div className="text-[10px] text-warning">Feed status could not be read</div>}
                           {a.staleReason && <div className="text-[10px] text-warning">{a.staleReason}</div>}
                         </td>
                         <td className="py-1 pr-3">
-                          <span className={a.aiUsable ? "text-success" : "text-txt-secondary"}>{a.aiUsable ? "yes" : "no"}</span>
+                          {a.feedQuality === "unknown" ? (
+                            <span className="text-txt-secondary">not checked</span>
+                          ) : (
+                            <span className={a.aiUsable ? "text-success" : "text-txt-secondary"}>{a.aiUsable ? "yes" : "no"}</span>
+                          )}
                         </td>
-                        <td className="py-1 text-right font-mono text-muted-foreground">{a.lastCandleTime ? fmtTime(a.lastCandleTime) : "—"}</td>
+                        <td className="py-1 text-right font-mono text-muted-foreground">{activityLastCandleText(a.lastCandleTime, Date.now())}</td>
                       </tr>
                     ))}
                   </tbody>
