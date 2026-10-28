@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Swords } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
-type Row = { strategy: string; sample: number; winRate: number; avgR: number; profitFactor: number | null; expectancy: number; riskAdjustedReturn: number; qualitySetups: number; confidenceAccuracy: number; riskDiscipline: number; tradeGradeAvg: number };
-type Result = { running: boolean; startedAt: string | null; ranked: Row[]; leaderboard: Record<string, string | null> };
+type Row = { strategy: string; sample: number; winRate: number; avgR: number; profitFactor: number | null; expectancy: number; riskAdjustedReturn: number; qualitySetups: number; confidenceAccuracy: number | null; riskDiscipline: number | null; tradeGradeAvg: number };
+type Result = { running: boolean; idleReason?: "NOT_STARTED" | "SHADOW_STOPPED" | null; startedAt: string | null; ranked: Row[]; unranked?: Array<{ strategy: string; decisions: number; reason: string }>; leaderboard: Record<string, string | null> };
 
 async function api(path: string, init?: RequestInit) {
   return fetch(path, { headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init }).then((r) => r.json());
@@ -57,7 +57,7 @@ export default function StrategyTournament() {
         <Swords className="h-6 w-6 text-primary" />
         <div className="flex-1"><h1 className="text-2xl font-bold">Strategy Tournament</h1></div>
         <Badge variant="outline">SHADOW</Badge>
-        {r && <Badge className={r.running ? "bg-emerald-500/20 text-emerald-400" : ""}>{r.running ? "RUNNING" : "IDLE"}</Badge>}
+        {r && <Badge className={r.running ? "bg-emerald-500/20 text-emerald-400" : ""}>{r.running ? "RUNNING" : r.idleReason === "SHADOW_STOPPED" ? "IDLE — shadow mode is stopped" : "IDLE"}</Badge>}
       </div>
       <Card>
         <CardHeader><CardTitle className="text-base">Controls</CardTitle></CardHeader>
@@ -92,15 +92,20 @@ export default function StrategyTournament() {
                       <td title={row.profitFactor == null ? "No R lost yet, so profit factor cannot be computed" : undefined}>{row.profitFactor ?? "n/a"}</td>
                       <td>{row.expectancy}</td>
                       <td>{row.riskAdjustedReturn}</td>
-                      <td>{row.confidenceAccuracy}</td>
-                      <td>{row.riskDiscipline}</td>
+                      <td>{row.confidenceAccuracy ?? "n/a"}</td>
+                      <td>{row.riskDiscipline ?? "n/a"}</td>
                       <td>{row.tradeGradeAvg}</td>
                     </tr>
                   ))}
-                  {r.ranked.length === 0 && <tr><td colSpan={10} className="text-muted-foreground py-2">No data yet — start shadow mode and tournament.</td></tr>}
+                  {r.ranked.length === 0 && <tr><td colSpan={10} className="text-muted-foreground py-2">{(r.unranked?.length ?? 0) > 0 ? "No strategy has a tracked win or loss yet, so none is ranked." : "No data yet — start shadow mode and tournament."}</td></tr>}
                 </tbody>
               </table>
             </div>
+            {(r.unranked?.length ?? 0) > 0 && (
+              <p className="text-xs text-muted-foreground mt-2" data-testid="tournament-unranked">
+                Not ranked (no tracked win or loss yet): {r.unranked!.map((u) => `${u.strategy} (${u.decisions} decision${u.decisions === 1 ? "" : "s"})`).join(", ")}
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

@@ -65,6 +65,18 @@ describe("Strategy Tournament", () => {
     const cell = screen.getByTitle(/No R lost yet/i);
     expect(cell.textContent).toBe("n/a");
   });
+
+  it("idle because shadow mode stopped says so, and unranked strategies are listed, not scored", async () => {
+    bodies["/api/strategy-tournament/results"] = {
+      running: false, idleReason: "SHADOW_STOPPED", startedAt: null, ranked: [],
+      unranked: [{ strategy: "Session Breakout", decisions: 3, reason: "No tracked win or loss yet" }],
+      leaderboard: { bestOverall: null, worst: null },
+    };
+    await show(<StrategyTournament />);
+    expect(screen.getByText("IDLE — shadow mode is stopped")).toBeTruthy();
+    expect(screen.getByText(/No strategy has a tracked win or loss yet/)).toBeTruthy();
+    expect(screen.getByTestId("tournament-unranked").textContent).toMatch(/Session Breakout \(3 decisions\)/);
+  });
 });
 
 const STATUS = {

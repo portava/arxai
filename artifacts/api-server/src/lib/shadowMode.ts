@@ -16,6 +16,7 @@ import { marketSimulator } from "./marketSimulator.js";
 import { previewSimulatorEntry } from "./oms.js";
 import { runStrategyScan, type Candle as EngineCandle } from "./strategyEngine.js";
 import { DEFAULT_SYMBOLS } from "./marketScanner.js";
+import { resolveArxMarket } from "@workspace/domain/market";
 import { buildForwardChartSeries, type ForwardChartSeries } from "./shadow/forwardChartSeries.js";
 // shadowPersistence imports this module type-only, so no runtime cycle.
 import {
@@ -477,12 +478,49 @@ export function startTournament(): { running: boolean } {
   if (!shadowEnabled) startShadowMode();
   return { running: true };
 }
+
+/**
+ * Names the strategy engine gives a scan that is NOT a strategy's call:
+ * "No Trade Filter" = no strategy had an actionable signal; "None" = too few
+ * candles to run any strategy. They are never ranked, gated or demoted.
+ */
+const SCAN_PLACEHOLDER_NAMES = new Set(["No Trade Filter", "None"]);
+export function isScanPlaceholder(strategy: string): boolean {
+  return SCAN_PLACEHOLDER_NAMES.has(strategy);
+}
+
+/** Market group of the symbol a decision was actually made on. */
+function marketGroupOf(symbol: string): "GOLD" | "FOREX" | "OTHER" {
+  const mk = resolveArxMarket(symbol);
+  if (!mk) return "OTHER";
+  if (mk.canonicalSymbol === "XAUUSD") return "GOLD";
+  return mk.category === "forex_major" || mk.category === "forex_minor" ? "FOREX" : "OTHER";
+}
+
+/** Strategy with the best average R on tracked outcomes in one market group; null if none was tracked there. */
+function bestInMarket(tracked: ShadowDecision[], group: "GOLD" | "FOREX"): string | null {
+  const by = new Map<string, { n: number; sumR: number }>();
+  for (const d of tracked) {
+    if (marketGroupOf(d.symbol) !== group) continue;
+    const s = by.get(d.strategy) ?? { n: 0, sumR: 0 };
+    s.n++; s.sumR += d.pnlR ?? 0; by.set(d.strategy, s);
+  }
+  let best: { k: string; avgR: number; n: number } | null = null;
+  for (const [k, v] of by) {
+    const avgR = v.sumR / v.n;
+    if (!best || avgR > best.avgR || (avgR === best.avgR && v.n > best.n)) best = { k, avgR, n: v.n };
+  }
+  return best?.k ?? null;
+}
+
 export function tournamentResults() {
   const since = tournamentStartedAt ? Date.parse(tournamentStartedAt) : 0;
-  const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since);
-  const byStrategy: Record<string, { n: number; wins: number; losses: number; sumR: number; grossWinR: number; grossLossR: number; rgBlocks: number; gradeSum: number; gradeN: number }> = {};
+  const arr = [...decisions.values()].filter((d) => Date.parse(d.ts) >= since && !isScanPlaceholder(d.strategy));
+  const byStrategy: Record<string, { decisions: number; ideas: number; n: number; wins: number; losses: number; sumR: number; grossWinR: number; grossLossR: number; rgBlocks: number; gradeSum: number; gradeN: number }> = {};
   for (const d of arr) {
-    const s = byStrategy[d.strategy] = byStrategy[d.strategy] ?? { n: 0, wins: 0, losses: 0, sumR: 0, grossWinR: 0, grossLossR: 0, rgBlocks: 0, gradeSum: 0, gradeN: 0 };
+    const s = byStrategy[d.strategy] = byStrategy[d.strategy] ?? { decisions: 0, ideas: 0, n: 0, wins: 0, losses: 0, sumR: 0, grossWinR: 0, grossLossR: 0, rgBlocks: 0, gradeSum: 0, gradeN: 0 };
+    s.decisions++;
+    if (d.action !== "WAIT") s.ideas++;
     s.gradeSum += d.grade; s.gradeN++;
     if (rgBlocked(d)) s.rgBlocks++;
     if (d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS") {
@@ -492,7 +530,11 @@ export function tournamentResults() {
       if (r > 0) s.grossWinR += r; else s.grossLossR += -r;
     }
   }
-  const rows = Object.entries(byStrategy).map(([strategy, s]) => {
+  // Only strategies with at least one tracked win or loss have a win rate or
+  // expectancy, so only they are ranked; the rest are listed as unranked.
+  const unranked = Object.entries(byStrategy).filter(([, s]) => s.n === 0)
+    .map(([strategy, s]) => ({ strategy, decisions: s.decisions, reason: "No tracked win or loss yet" }));
+  const rows = Object.entries(byStrategy).filter(([, s]) => s.n > 0).map(([strategy, s]) => {
     const winRate = s.n ? s.wins / s.n : 0;
     const avgR = s.n ? s.sumR / s.n : 0;
     // Profit factor = R won / R lost. With nothing lost it cannot be computed
@@ -508,21 +550,30 @@ export function tournamentResults() {
       expectancy: Number(expectancy.toFixed(2)),
       riskAdjustedReturn: Number(riskAdj.toFixed(2)),
       qualitySetups: s.n,
-      confidenceAccuracy: confidenceAccuracyFor(strategy),
-      riskDiscipline: Math.max(0, 100 - Math.round((s.rgBlocks / Math.max(1, s.n + s.rgBlocks)) * 100)),
+      confidenceAccuracy: confidenceAccuracyFor(strategy, arr),
+      // Share of this strategy's proposed trades (BUY/SELL) the risk governor allowed.
+      riskDiscipline: s.ideas ? Math.round(((s.ideas - s.rgBlocks) / s.ideas) * 100) : null,
       tradeGradeAvg: Number((s.gradeSum / Math.max(1, s.gradeN)).toFixed(2)),
     };
   }).sort((a, b) => b.expectancy - a.expectancy);
+  const tracked = arr.filter((d) => d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS");
   const leaderboard = {
     bestOverall: rows[0]?.strategy ?? null,
-    bestLowRisk: [...rows].sort((a, b) => b.riskDiscipline - a.riskDiscipline)[0]?.strategy ?? null,
-    bestScalping: rows.find((r) => /scalp/i.test(r.strategy))?.strategy ?? null,
-    bestGold: rows.find((r) => /gold/i.test(r.strategy))?.strategy ?? null,
-    bestForex: rows.find((r) => /pullback|trend|break/i.test(r.strategy))?.strategy ?? null,
-    worst: rows.at(-1)?.strategy ?? null,
+    bestLowRisk: [...rows].sort((a, b) => (b.riskDiscipline ?? -1) - (a.riskDiscipline ?? -1))[0]?.strategy ?? null,
+    // No shadow decision records a scalping style (every one is an M15 scan),
+    // so no strategy can be named best at scalping.
+    bestScalping: null as string | null,
+    // Best on the market actually traded, not a guess from the strategy's name.
+    bestGold: bestInMarket(tracked, "GOLD"),
+    bestForex: bestInMarket(tracked, "FOREX"),
+    // One ranked strategy is not both the best and the worst.
+    worst: rows.length >= 2 ? rows.at(-1)!.strategy : null,
     toRetire: rows.find((r) => r.expectancy < 0 && r.sample >= 10)?.strategy ?? null,
   };
-  return { running: tournamentEnabled, startedAt: tournamentStartedAt, ranked: rows, leaderboard, dataSource: "SHADOW" as const };
+  // A tournament only observes while shadow mode produces decisions.
+  const running = tournamentEnabled && shadowEnabled;
+  const idleReason = running ? null : !tournamentEnabled ? "NOT_STARTED" as const : "SHADOW_STOPPED" as const;
+  return { running, idleReason, startedAt: tournamentStartedAt, ranked: rows, unranked, leaderboard, dataSource: "SHADOW" as const };
 }
 
 // ── Confidence Calibration ────────────────────────────────────────────────
@@ -574,9 +625,10 @@ export function confidenceCalibration() {
   };
 }
 function avg(xs: number[]) { return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0; }
-function confidenceAccuracyFor(strategy: string): number {
-  const arr = [...decisions.values()].filter((d) => d.strategy === strategy && (d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS"));
-  if (!arr.length) return 0;
+/** 100 minus the gap between average confidence and observed win rate; null when nothing was tracked. */
+function confidenceAccuracyFor(strategy: string, pool: ShadowDecision[]): number | null {
+  const arr = pool.filter((d) => d.strategy === strategy && (d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS"));
+  if (!arr.length) return null;
   const expectedWR = avg(arr.map((d) => d.confidence));
   const actualWR = (arr.filter((d) => d.status === "SHADOW_WIN").length / arr.length) * 100;
   return Math.max(0, Math.round(100 - Math.abs(expectedWR - actualWR)));
