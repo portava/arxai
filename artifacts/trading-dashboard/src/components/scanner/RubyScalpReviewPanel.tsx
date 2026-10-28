@@ -175,8 +175,11 @@ export function RubyScalpReviewPanel() {
     },
   );
 
-  const reviewList = reviews.data?.reviews ?? [];
-  const personalityList = personality.data?.symbols ?? [];
+  // React Query keeps the last successful data after a failed refetch. Its age
+  // is unknown, so after a failed read the old reviews / win rates are not
+  // shown as current (same rule as the Position Manager).
+  const reviewList = reviews.isError ? [] : reviews.data?.reviews ?? [];
+  const personalityList = personality.isError ? [] : personality.data?.symbols ?? [];
   const isFetching = reviews.isFetching || personality.isFetching;
 
   return (
@@ -230,7 +233,7 @@ export function RubyScalpReviewPanel() {
                 {name} is gathering your recent closes…
               </p>
             )}
-            {reviews.data && reviewList.length === 0 && (
+            {reviews.data && !reviews.isError && reviewList.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 No closed scalps yet. Once you close a position, {name}'s review
                 will land here.
@@ -252,7 +255,7 @@ export function RubyScalpReviewPanel() {
                 {name} couldn't load what she's learned right now.
               </p>
             )}
-            {personality.data && personalityList.length === 0 && (
+            {personality.data && !personality.isError && personalityList.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 {name} learns a market's personality after a few closed trades on
                 it. Keep trading and patterns will show up here.
