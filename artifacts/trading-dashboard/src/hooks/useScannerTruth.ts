@@ -38,6 +38,14 @@ export interface UseScannerTruthResult {
    * without an independent feed-status poll that could diverge from the truth.
    */
   feedStatus: ChartFeedStatus | null;
+  /**
+   * Close time (ISO) of the newest CLOSED bar in the same shared candles — the
+   * observation the server's truth snapshot reports as data.lastCandleAt. Not
+   * feedStatus.lastCandleTime, which for a still-forming bar is its scheduled
+   * future close. Bars that do not state completeness (legacy shape) fall back
+   * to the feed's lastCandleTime. Null when no closed bar is known.
+   */
+  lastClosedCandleAt: string | null;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -117,6 +125,9 @@ export function useScannerTruth(
   const candleDeadline = lastTime != null && candleIvMs != null
     ? (Math.floor(renderNowMs / candleIvMs) + 1) * candleIvMs
     : null;
+  const lastClosedCandleAt = statesCompleteness
+    ? lastClosedBar != null && candleIvMs != null ? candleTimeIso(lastClosedBar.time + candleIvMs) : null
+    : feedStatus?.lastCandleTime ?? null;
   const closureBoundary = nextWeekendClosureBoundaryMs(feedStatus?.assetClass ?? null, renderNowMs);
   const futureDeadlines = [candleDeadline, closureBoundary == null ? null : closureBoundary + 1]
     .filter((d): d is number => d != null && Number.isFinite(d) && d > renderNowMs);
@@ -179,6 +190,7 @@ export function useScannerTruth(
   return {
     truth,
     feedStatus,
+    lastClosedCandleAt,
     isLoading: candlesQ.isLoading || mode.isLoading,
     isError: candlesQ.isError,
     refetch: () => void candlesQ.refetch(),

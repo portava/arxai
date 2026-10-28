@@ -117,9 +117,10 @@ export function resolveSymbolTruthEvidence(input: {
   // carries survive: they are not candle evidence. Expiry bypasses the
   // confirmed short-circuit, so an expired read can never render as confirmed.
   const expired = nowMs >= (symbolTruthDeadline(snapshot) ?? generatedAt);
-  // ChartDataService exposes closeTime here, which may be the scheduled end of
-  // a forming candle. Compare identity; do not mistake that boundary for an
-  // observation timestamp. The scanner validates the actual candle open time.
+  // Both sides are the newest CLOSED bar's close time (the snapshot's
+  // data.lastCandleAt and the chart's own newest closed bar), never a forming
+  // bar's scheduled close. Compare identity; do not mistake that boundary for
+  // an observation timestamp. The scanner validates the actual candle open time.
   const snapshotCandleAt = snapshot.data.lastCandleAt ? Date.parse(snapshot.data.lastCandleAt) : NaN;
   const chartCandleAt = input.scannerLastCandleAt ? Date.parse(input.scannerLastCandleAt) : NaN;
   const confirmed = !input.scannerError && scannerTruth?.actionable === true &&
