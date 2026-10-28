@@ -64,3 +64,30 @@ describe("Chart Brain Benchmark: load failure and coverage", () => {
     expect(screen.getByText(w)).toBeTruthy();
   });
 });
+
+describe("Chart Brain Benchmark: a null score shows why it has none", () => {
+  it("a not-measured dimension shows its reason, not a generic 'Insufficient data'", () => {
+    const note =
+      "Not measured: Ruby's explanations are not graded. Every read stores a headline and a what-would-change line, so their presence says nothing about quality.";
+    hook = {
+      data: {
+        benchmark: benchmark({
+          scores: [
+            { key: "ruby_explanation_quality", label: "Ruby Explanation Quality", score: null, sampleSize: 0, note },
+            { key: "reliability", label: "Reliability", score: null, sampleSize: 2, note: "Insufficient data (need ≥3, have 2)." },
+            { key: "timing", label: "Timing", score: 80, sampleSize: 5, note: "4/5 trade reads at a real trigger/entry stage." },
+          ],
+        }),
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      refetch: () => undefined,
+    };
+    render(<ChartBrainBenchmarkPage />);
+    expect(screen.getByText(note)).toBeTruthy();
+    expect(screen.getByText("Insufficient data (need ≥3, have 2).")).toBeTruthy();
+    expect(screen.getByText("4/5 trade reads at a real trigger/entry stage.")).toBeTruthy();
+    expect(screen.queryByText("Insufficient data")).toBeNull();
+  });
+});

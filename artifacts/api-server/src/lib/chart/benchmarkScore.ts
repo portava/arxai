@@ -166,7 +166,24 @@ function readSnapshot(raw: unknown): SnapshotView {
   };
 }
 
-const GOOD_QUALITY = new Set(["clean", "high", "strong", "good", "prime"]);
+// Receipts store the trade-readiness grade (ChartQualityLabel: A+ | A | B | C |
+// D | F | unrated). "unrated" means no grade was given, so it is not counted.
+const GOOD_QUALITY = new Set(["A+", "A"]);
+const UNRATED_QUALITY = "unrated";
+
+// The risk sentence (marketSentenceEngine sentenceRisk) is stored on EVERY
+// receipt, including its all-clear line "Risk looks normal for this read — …".
+// Only its warning forms ("Risk is high / too high / elevated / moderate …")
+// count as a flag; any other text earns no credit.
+const RISK_WARNING_SENTENCE = /^Risk is (?:high|too high|elevated|moderate)\b/;
+export function riskSentenceIsWarning(text: string | null | undefined): boolean {
+  return typeof text === "string" && RISK_WARNING_SENTENCE.test(text.trim());
+}
+
+/** A dimension the stored data cannot measure: null, with the reason. */
+function notMeasured(key: BenchmarkScoreKey, note: string): BenchmarkScore {
+  return { key, label: LABELS[key], score: null, sampleSize: 0, note };
+}
 const SCALP_INTENTS = new Set(["is-this-a-scalp"]);
 const HIGH_CONF = 65;
 
@@ -362,7 +379,7 @@ export async function computeChartBrainBenchmark(opts?: {
 
       if (verdict === "LOSS" || verdict === "NO_TRADE_MISSED") {
         badResults++;
-        if (r.vetoed || (r.riskWarning && r.riskWarning.trim().length > 0)) {
+        if (r.vetoed === true || riskSentenceIsWarning(r.riskWarning)) {
           badResultsFlagged++;
         }
       }
@@ -382,28 +399,36 @@ export async function computeChartBrainBenchmark(opts?: {
   }
   const tradeResolved = wins + losses + breakeven;
 
-  // ── 4. Structure read — share of reads with a good quality label ──────────
+  // ── 4. Structure read — share of graded reads rated A+ or A ───────────────
   let qualityKnown = 0;
   let qualityGood = 0;
   for (const r of receipts) {
-    if (r.qualityLabel) {
+    const q = r.qualityLabel?.trim();
+    if (q && q !== UNRATED_QUALITY) {
       qualityKnown++;
-      if (GOOD_QUALITY.has(r.qualityLabel.toLowerCase())) qualityGood++;
+      if (GOOD_QUALITY.has(q)) qualityGood++;
     }
   }
 
-  // ── 10. Agent agreement — receipts with no agent conflict ─────────────────
-  const agentAgree = receipts.filter((r) => !r.agentConflict).length;
+  // ── 10. Agent agreement — only reads where agents were consulted ──────────
+  // courtResult is null when no specialist agent influenced the read; such a
+  // read has agentConflict=false by default, which is not agreement.
+  const consulted = receipts.filter((r) => r.courtResult != null);
+  const agentAgree = consulted.filter((r) => r.agentConflict !== true).length;
+  const notConsulted = receipts.length - consulted.length;
+  const notConsultedNote =
+    notConsulted > 0 ? ` ${notConsulted} of ${receipts.length} reads had no agents consulted and are not counted.` : "";
+  const agentAgreement = ratioScore(
+    "agent_agreement",
+    agentAgree,
+    consulted.length,
+    `${agentAgree}/${consulted.length} reads where specialist agents were consulted had them in agreement.${notConsultedNote}`,
+  );
+  if (agentAgreement.score === null) agentAgreement.note += notConsultedNote;
 
-  // ── 11. Ruby explanation quality — complete explanations ──────────────────
-  let rubyComplete = 0;
-  for (const r of receipts) {
-    const hasRead = !!(r.rubyFinalRead && r.rubyFinalRead.trim().length > 0);
-    const hasContext =
-      !!(r.whatWouldChange && r.whatWouldChange.trim()) ||
-      !!(r.invalidation && r.invalidation.trim());
-    if (hasRead && hasContext) rubyComplete++;
-  }
+  // ── 11. Ruby explanation quality — not measured ───────────────────────────
+  // No explanation is graded. Every read stores a headline and a
+  // what-would-change line, so their presence says nothing about quality.
 
   // ── 14. Similar-setup usefulness — reads with prior matching history ───────
   // History availability proxy: a read is "supported" when at least one EARLIER
@@ -444,7 +469,7 @@ export async function computeChartBrainBenchmark(opts?: {
       "structure_read",
       qualityGood,
       qualityKnown,
-      `${qualityGood}/${qualityKnown} reads had a clean structure quality.`,
+      `${qualityGood}/${qualityKnown} graded reads were rated A+ or A by the trade-readiness grader.`,
     ),
     ratioScore(
       "timing",
@@ -456,7 +481,7 @@ export async function computeChartBrainBenchmark(opts?: {
       "risk_detection",
       badResultsFlagged,
       badResults,
-      `${badResultsFlagged}/${badResults} losing/missed reads were pre-flagged by risk.`,
+      `${badResultsFlagged}/${badResults} losing or missed reads were vetoed or carried a risk warning at decision time.`,
     ),
     ratioScore(
       "scalp_accuracy",
@@ -476,17 +501,10 @@ export async function computeChartBrainBenchmark(opts?: {
       plResolved,
       `${plKnown}/${plResolved} resolved trades had broker-known P/L.`,
     ),
-    ratioScore(
-      "agent_agreement",
-      agentAgree,
-      receipts.length,
-      `${agentAgree}/${receipts.length} reads had agents in agreement.`,
-    ),
-    ratioScore(
+    agentAgreement,
+    notMeasured(
       "ruby_explanation_quality",
-      rubyComplete,
-      receipts.length,
-      `${rubyComplete}/${receipts.length} reads had a complete Ruby explanation.`,
+      "Not measured: Ruby's explanations are not graded. Every read stores a headline and a what-would-change line, so their presence says nothing about quality.",
     ),
     ratioScore(
       "no_trade_discipline",
