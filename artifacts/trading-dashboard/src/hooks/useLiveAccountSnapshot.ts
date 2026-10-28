@@ -327,19 +327,28 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
           ? { ...baseLive, freshness: { ...baseLive.freshness, status: balanceStatus } }
           : baseLive;
 
+      // An explicit null is the server saying "unknown right now" (e.g. an
+      // open position the broker has not priced yet makes open P/L, equity and
+      // free margin unknown). Only a key the payload does not carry at all may
+      // fall back to the last stream value; a null is never upgraded to it.
+      const polledFigure = (key: string, carried: number | null | undefined): number | null => {
+        if (!Object.prototype.hasOwnProperty.call(data, key)) return carried ?? null;
+        const v = data[key];
+        return typeof v === "number" && Number.isFinite(v) ? v : null;
+      };
       const synthOpenPL: number | null = accountMode === "LIVE_SHARED"
-        ? ((data["openPnL"] as number | null | undefined) ?? prev?.openPL ?? null)
+        ? polledFigure("openPnL", prev?.openPL)
         : null;
       const synth: LiveAccountSnapshot = {
         userId: prev?.userId ?? "",
         accountMode,
         live: healedLive,
         source: "computed",
-        balance: (data["balance"] as number | null | undefined) ?? prev?.balance ?? null,
-        equity: (data["equity"] as number | null | undefined) ?? prev?.equity ?? null,
-        margin: (data["margin"] as number | null | undefined) ?? prev?.margin ?? null,
-        freeMargin: (data["freeMargin"] as number | null | undefined) ?? prev?.freeMargin ?? null,
-        marginLevel: (data["marginLevelPercent"] as number | null | undefined) ?? prev?.marginLevel ?? null,
+        balance: polledFigure("balance", prev?.balance),
+        equity: polledFigure("equity", prev?.equity),
+        margin: polledFigure("margin", prev?.margin),
+        freeMargin: polledFigure("freeMargin", prev?.freeMargin),
+        marginLevel: polledFigure("marginLevelPercent", prev?.marginLevel),
         // slot-summary doesn't carry the account-sync marker; keep the last
         // SSE-known value so the >60s stale note stays honest across fallback.
         accountSyncedAtMs: prev?.accountSyncedAtMs ?? null,
