@@ -28,6 +28,7 @@ export {
   resolveSession,
   sessionContext,
   playbookWeight,
+  SYNTHETIC_SESSION_NOTE,
 } from "./sessionIntelligence.js";
 export { buildRubyMarketEdge } from "./buildSignal.js";
 export { explainMarketRead } from "./explainMarketRead.js";

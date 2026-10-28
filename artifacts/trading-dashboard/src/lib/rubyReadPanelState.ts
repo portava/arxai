@@ -21,7 +21,7 @@
 // exhaustively without rendering.
 
 import type { ReadLevel } from "./scannerTruth";
-import type { RubyReadStatus } from "./scannerActionability";
+import type { RubyReadStatus, ScannerActionabilityDisplay } from "./scannerActionability";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import type {
   TradeDataFreshnessBand,
@@ -285,6 +285,26 @@ export function resolveHtfRead(read: Pick<ChartRead, "htfBias" | "htfTimeframe">
   return { bias, label };
 }
 
+/**
+ * True when the page's ONE action verdict for this symbol+timeframe is itself a
+ * FEED/DATA limitation ("Feed limited" / "Analysis only"). Only those two: a
+ * CHECK_FAILED is a setup-check error whose own copy says live data is
+ * unaffected, and PENDING / NO_CONFIRMATION only occur with no truth at all
+ * (where the read is already NO_READ). DISPLAY-ONLY — used to cap the Eleanor
+ * cell/panel DOWN so they can never say "Full read" / Clean·AI beside an Action
+ * cell that says the live feed isn't fully confirmed.
+ */
+export function isFeedLimitedAction(
+  action: ScannerActionabilityDisplay | null | undefined,
+): boolean {
+  return action === "FEED_LIMITED" || action === "ANALYSIS_ONLY";
+}
+
+/** Shared downgrade copy for a feed-limited Eleanor read (header + panel). */
+export function feedLimitedReadReason(assistantName: string = DEFAULT_ASSISTANT_NAME): string {
+  return `The live feed isn't fully confirmed — ${assistantName} reads with caution.`;
+}
+
 /** The Ruby read status capped against the server read + an optional override. */
 export interface CappedRubyRead {
   status: RubyReadStatus;
@@ -313,10 +333,16 @@ export function resolveCappedRubyReadStatus(
   read: RubyReadServerState | null,
   aiUsableOverride?: boolean,
   assistantName: string = DEFAULT_ASSISTANT_NAME,
+  /**
+   * The page's action verdict is a feed/data limitation (`isFeedLimitedAction`).
+   * Downgrade-only: caps FULL_READ to LIMITED_READ exactly like a blocking
+   * override; never raises anything.
+   */
+  actionFeedLimited = false,
 ): CappedRubyRead {
   if (base === "NO_READ") return { status: "NO_READ", reason: null };
 
-  const overrideBlocks = aiUsableOverride === false;
+  const overrideBlocks = aiUsableOverride === false || actionFeedLimited;
   // A STRUCTURAL_ONLY read is a DOWNGRADE (direction readable, exact setup
   // withheld) — it caps a FULL_READ to LIMITED_READ exactly like a gated /
   // insufficient read, even though `gated` is false and dataQuality is "ok".
@@ -333,9 +359,7 @@ export function resolveCappedRubyReadStatus(
     if (overrideBlocks || readDowngraded) {
       return {
         status: "LIMITED_READ",
-        reason:
-          serverReason ??
-          `The live feed isn't fully confirmed — ${assistantName} reads with caution.`,
+        reason: serverReason ?? feedLimitedReadReason(assistantName),
       };
     }
     return { status: "FULL_READ", reason: null };
@@ -369,6 +393,16 @@ export interface RubyReadPanelInputs {
    * unknown). Downgrade-only: the badge can no longer claim clean/AI.
    */
   readExpired?: boolean;
+  /**
+   * The page's canonical action verdict is a feed/data limitation
+   * (`isFeedLimitedAction`). Display-only downgrade: the badge can never claim
+   * Clean/AI and the panel says the feed isn't confirmed. It is NOT forwarded to
+   * the read-chart endpoint (`reportedAiUsable` is unchanged), so it never
+   * alters what the server reads.
+   */
+  actionFeedLimited?: boolean;
+  /** Assistant display name for the shared downgrade copy. */
+  assistantName?: string;
 }
 
 export interface RubyReadPanelState {
@@ -399,6 +433,7 @@ export function resolveRubyReadPanelState(
   input: RubyReadPanelInputs,
 ): RubyReadPanelState {
   const { truthLevel, truthReason, aiUsableProp, read } = input;
+  const actionFeedLimited = input.actionFeedLimited === true;
 
   const truthKnown = truthLevel != null;
   // The read is "usable" only when the shared truth is fully actionable. Any
@@ -423,7 +458,7 @@ export function resolveRubyReadPanelState(
   let verdict: RubyReadVerdict;
   if (structuralOnly) {
     verdict = "structural_only";
-  } else if (readInsufficient || effectiveAiUsable === false) {
+  } else if (readInsufficient || effectiveAiUsable === false || actionFeedLimited) {
     verdict = "not_confirmed";
   } else if (effectiveAiUsable === true) {
     verdict = "confirmed";
@@ -447,6 +482,8 @@ export function resolveRubyReadPanelState(
       reason = truthReason;
     } else if (readInsufficient) {
       reason = read?.blockedReason ?? read?.headline ?? null;
+    } else if (actionFeedLimited) {
+      reason = feedLimitedReadReason(input.assistantName);
     }
   }
 

@@ -37,7 +37,12 @@ import type { ChartStructureLine, ChartStructureMarker } from "@/lib/chart-engin
 import { sanitizeCandlestickData } from "@/lib/chart-engine/candleSanitize";
 import { snapSecToCandle } from "@/components/scanner/scannerChartFormat";
 import { useAssistantName } from "@/lib/assistant-name";
-import { overlayBadgeLabel, OVERLAY_DEGRADED_TITLE } from "@/lib/scannerResilience";
+import {
+  overlayBadgeLabel,
+  overlayPartialTitle,
+  unavailableOverlayChecks,
+  OVERLAY_DEGRADED_TITLE,
+} from "@/lib/scannerResilience";
 import { OneClickArmedBadge } from "@/components/mt5/OneClickArmedBadge";
 import { ChartCommandMenu, type ChartCommandAnchor, type RubyChartIntent } from "@/components/scanner/ChartCommandMenu";
 import { useLocation } from "wouter";
@@ -783,6 +788,10 @@ export function ScannerChartPanel() {
   // so without this gate a stale PASS handshake would keep reading "verified"
   // even though the layers feed is down. Display-only; no execution concern.
   const overlayDegraded = smartLayersQuery.isError;
+  // Checks the handshake could not run at all (no news mapping, unknown overlay
+  // age). A PASS with any of these is only partially checked — never "verified".
+  const overlayUnchecked = unavailableOverlayChecks(handshake?.checks);
+  const overlayPartial = handshake?.overallStatus === "PASS" && overlayUnchecked.length > 0;
 
   // ── Live Trade Health (Task #198) — active, per-user post-entry overlays for
   //    the symbol on the chart. READ-ONLY; the endpoint returns honest empty
@@ -2856,11 +2865,17 @@ export function ScannerChartPanel() {
                 {handshake && (
                   <Badge
                     variant="outline"
-                    className={`ml-auto text-[10px] ${overlayDegraded ? "border-amber-500/40 text-amber-300" : handshakeBadgeStyle(handshake.overallStatus)}`}
-                    title={overlayDegraded ? OVERLAY_DEGRADED_TITLE : handshake.userFacingMessage}
+                    className={`ml-auto text-[10px] ${overlayDegraded ? "border-amber-500/40 text-amber-300" : handshakeBadgeStyle(overlayPartial ? "PARTIAL" : handshake.overallStatus)}`}
+                    title={
+                      overlayDegraded
+                        ? OVERLAY_DEGRADED_TITLE
+                        : overlayPartial
+                          ? overlayPartialTitle(overlayUnchecked)
+                          : handshake.userFacingMessage
+                    }
                     data-testid="scanner-smart-handshake"
                   >
-                    Overlays: {overlayBadgeLabel(handshake.overallStatus, overlayDegraded, isLiveDisplay)}
+                    Overlays: {overlayBadgeLabel(handshake.overallStatus, overlayDegraded, isLiveDisplay, overlayUnchecked.length > 0)}
                   </Badge>
                 )}
               </div>

@@ -20,7 +20,11 @@ import {
   type RubyVerdict,
   type ScannerTruth,
 } from "@/lib/scannerTruth";
-import { capReadinessByServerRead, resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
+import {
+  capReadinessByServerRead,
+  isFeedLimitedAction,
+  resolveCappedRubyReadStatus,
+} from "@/lib/rubyReadPanelState";
 import {
   type RubyReadStatus,
   type ActionabilityTone,
@@ -84,7 +88,13 @@ function tradingTone(v: TradingVerdict): string {
     default: return "text-txt-muted";
   }
 }
-function rubyTone(v: RubyVerdict): string {
+// The Eleanor CELL's label. Header-local so the shared `strip.ruby.verdict`
+// contract keeps its three values: "Read not run" is a display substitution for
+// a FULL_READ capability that no chart read has actually produced yet.
+type RubyCellVerdict = RubyVerdict | "Read not run";
+const READ_NOT_RUN_DETAIL = "No chart read yet — tap Read this chart.";
+
+function rubyTone(v: RubyCellVerdict): string {
   switch (v) {
     case "Full read": return "text-success";
     case "Limited read": return "text-warning";
@@ -120,6 +130,16 @@ function readinessTone(r: ScannerTruth["readiness"]): { container: string; label
     default: // UNKNOWN
       return { container: "border-border bg-card", label: "text-txt-muted" };
   }
+}
+
+// Admin candle diagnostic — never a "200/150" ratio: bars LOADED (incl. a
+// forming tip) vs the CLOSED bars the readiness verdict actually counted vs the
+// minimum CLOSED bars required. `closedCount` falls back to `count` for a
+// partial truth payload.
+function candleDiagnostic(c: ScannerTruth["candles"]): string {
+  const closed = typeof c.closedCount === "number" ? c.closedCount : c.count;
+  const forming = c.hasFormingBar === true || closed < c.count;
+  return `candles ${c.count} loaded${forming ? " (incl. forming)" : ""} · ${closed} closed · min ${c.minRequired} closed`;
 }
 
 
@@ -177,9 +197,6 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   // store key exactly.
   const sharedRead = rubyStore.get(bare, coerceVisibleTimeframe(timeframe));
   const rubyBase: RubyReadStatus = truth?.consolidated.rubyReadStatus ?? "NO_READ";
-  const cappedRuby = resolveCappedRubyReadStatus(rubyBase, sharedRead, undefined, name);
-  const rubyV: RubyVerdict = RUBY_STATUS_LABEL[cappedRuby.status];
-  const rubyDetail = cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
 
   // Action cell + single "Why?" (Task #600): the Action cell shows the SELECTED
   // symbol+timeframe's verdict. The Focus scalp card lifts its setup-aware
@@ -242,6 +259,28 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   // PENDING, NO_CONFIRMATION, or CHECK_FAILED) — the cell never shows a bare
   // "Waiting" placeholder.
   const actionUi = actionabilityDisplayUi(finalActionWithEleanor);
+
+  // Eleanor cell, in order (display-only, downgrade-only):
+  //   1. cap by the lifted same-key server read (gated / insufficient /
+  //      STRUCTURAL_ONLY → "Limited read");
+  //   2. cap by this strip's OWN Action verdict when it is a feed/data
+  //      limitation ("Feed limited" / "Analysis only") — the cell can never say
+  //      "Full read" beside an Action cell saying the feed isn't confirmed;
+  //   3. a would-be "Full read" with NO chart read for this key is only a
+  //      client capability forecast, never a read anyone produced → "Read not
+  //      run". "No read" / "Limited read" are honest limitations and stay.
+  const cappedRuby = resolveCappedRubyReadStatus(
+    rubyBase,
+    sharedRead,
+    undefined,
+    name,
+    isFeedLimitedAction(finalActionWithEleanor),
+  );
+  const readNotRun = cappedRuby.status === "FULL_READ" && sharedRead == null;
+  const rubyV: RubyCellVerdict = readNotRun ? "Read not run" : RUBY_STATUS_LABEL[cappedRuby.status];
+  const rubyDetail = readNotRun
+    ? READ_NOT_RUN_DETAIL
+    : cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
   const actionDirection = eleanorFeedGated ? null : biasToActionDirection(verdict?.bias);
   const visibleActionLabel = resolveVisibleActionLabel(finalActionWithEleanor, actionDirection);
   const whyMessage = truth?.consolidated.userMessage ?? "";
@@ -371,8 +410,8 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
       )}
 
       {shouldShowAdminDiagnostics && truth && (
-        <p className="text-[11px] text-txt-muted">
-          source: {truth.candles.sourceTechnical} · candles {truth.candles.count}/{truth.candles.minRequired} · {truth.candles.status}
+        <p className="text-[11px] text-txt-muted" data-testid="scanner-header-candle-diag">
+          source: {truth.candles.sourceTechnical} · {candleDiagnostic(truth.candles)} · {truth.candles.status}
         </p>
       )}
       {shouldShowAdminDiagnostics && truth?.consolidated.readId && (

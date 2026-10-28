@@ -161,8 +161,17 @@ export interface ScannerTruth {
     sourceTechnical: string;
     tier: FeedProviderTier;
     timeframe: string;
+    /** Bars loaded, INCLUDING a still-forming tip. */
     count: number;
+    /**
+     * CLOSED bars (forming tip excluded) — the number every minimum-candle
+     * check and the Trade Health "closed candles" verdict use.
+     */
+    closedCount: number;
+    /** True when the loaded series ends in a still-forming bar. */
+    hasFormingBar: boolean;
     requestedCount: number;
+    /** Minimum CLOSED candles required on this timeframe. */
     minRequired: number;
     firstTime: string | null;
     lastTime: string | null;
@@ -306,6 +315,11 @@ export interface ScannerTruthInputs {
   timeframe: string;
   feedStatus: ChartFeedStatus | null;
   candleCount: number;
+  /**
+   * CLOSED candles (forming tip excluded) when the bars state completeness;
+   * omitted → `candleCount` (legacy shapes that never said).
+   */
+  closedCandleCount?: number;
   requestedCount: number;
   firstTime: string | null;
   lastTime: string | null;
@@ -360,6 +374,11 @@ export function resolveScannerTruth(
   const thr = thresholdsFor(tf);
   const fs = input.feedStatus;
   const count = input.candleCount;
+  const closedCount =
+    typeof input.closedCandleCount === "number" && Number.isFinite(input.closedCandleCount)
+      ? Math.max(0, Math.min(count, Math.floor(input.closedCandleCount)))
+      : count;
+  const hasFormingBar = closedCount < count;
 
   // Display status from the shared chart contract (single source of truth).
   const feedForDisplay: FeedStatus | null = fs
@@ -385,13 +404,15 @@ export function resolveScannerTruth(
   // ── Candle status (freshness + minimum-candle gating) ──────────────────────
   let candleStatus: CandleStatus;
   let candleReason: string;
-  const minMet = count >= thr.minCandles;
+  const minMet = closedCount >= thr.minCandles;
   if (count === 0 || displayStatus === "UNAVAILABLE") {
     candleStatus = "unavailable";
     candleReason = "No candles are available for this market right now.";
   } else if (!minMet) {
     candleStatus = "insufficient";
-    candleReason = `Only ${count} ${count === 1 ? "candle" : "candles"} loaded — need at least ${thr.minCandles} on ${input.timeframe} for a reliable read.`;
+    candleReason = hasFormingBar
+      ? `Only ${closedCount} closed ${closedCount === 1 ? "candle" : "candles"} (${count} loaded incl. the forming bar) — need at least ${thr.minCandles} closed on ${input.timeframe} for a reliable read.`
+      : `Only ${count} ${count === 1 ? "candle" : "candles"} loaded — need at least ${thr.minCandles} on ${input.timeframe} for a reliable read.`;
   } else if (!fs?.source || fs.symbol?.trim().toUpperCase() !== input.symbolInternal.trim().toUpperCase() || candleAgeMs == null || lastClose == null) {
     candleStatus = "historical_only";
     candleReason = "The latest candle's market, source, time or price is unconfirmed — historical context only.";
@@ -776,7 +797,7 @@ export function resolveScannerTruth(
   // is preserved as the floor, so scanner readiness can only be MORE conservative
   // than Ruby's shared floor (downgrade-only, per the HARD RULE).
   const readinessReadLayer: TradeReadLayer =
-    analysisLevel === "blocked" || candleStatus === "insufficient" || count < thr.minCandles
+    analysisLevel === "blocked" || candleStatus === "insufficient" || closedCount < thr.minCandles
       ? "INSUFFICIENT"
       : rubyLevel === "full" && analysisLevel === "full"
         ? "FULL"
@@ -790,7 +811,7 @@ export function resolveScannerTruth(
         : candleStatus === "delayed"
           ? "LIVE_DELAYED"
           : "AWAITING",
-    availableClosedCandles: count,
+    availableClosedCandles: closedCount,
     minimumRequiredCandles: thr.minCandles,
     readLayer: readinessReadLayer,
     // The account's ALREADY-RESOLVED execution refusal (frozen / manual trading
@@ -827,6 +848,8 @@ export function resolveScannerTruth(
       tier: provider.tier,
       timeframe: input.timeframe,
       count,
+      closedCount,
+      hasFormingBar,
       requestedCount: input.requestedCount,
       minRequired: thr.minCandles,
       firstTime: input.firstTime,

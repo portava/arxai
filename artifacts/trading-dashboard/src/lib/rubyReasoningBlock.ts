@@ -113,6 +113,12 @@ export interface MarketReadReasoningInput {
    * both rows always say the same thing. Absent → "not assessed in this read".
    */
   newsRiskLabel?: string | null;
+  /**
+   * Why the signal's "LIVE_FEED" word can't be confirmed on this page (the
+   * market-truth snapshot is unavailable / not LIVE_CONFIRMED), or null when it
+   * is confirmed. Downgrade-only: replaces "Live feed confirmed." in Feed/Data.
+   */
+  feedUnconfirmedReason?: string | null;
 }
 
 const BIAS_DIR: Record<string, "BUY" | "SELL" | null> = {
@@ -221,6 +227,8 @@ export function buildReasoningFromMarketRead(
     const cat =
       level === "blocked" ? "blocked" : level === "limited" ? "delayed / limited" : "historical";
     feedData = `Feed not fully confirmed (${cat} read).${reason ? ` ${reason}` : ""}`;
+  } else if (ds === "LIVE_FEED" && clean(input.feedUnconfirmedReason)) {
+    feedData = clean(input.feedUnconfirmedReason);
   } else if (ds === "LIVE_FEED") {
     // The server records when the live quote binds no bid/ask spread to these
     // candles — say so beside the live-feed claim so Feed/Data and S/R agree.
