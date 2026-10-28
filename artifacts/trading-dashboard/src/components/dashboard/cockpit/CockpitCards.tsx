@@ -209,8 +209,15 @@ export function AccountSnapshotCard() {
   const broker = master?.brokerName ?? accounts[0]?.masterBrokerName ?? "—";
   const masked = master?.accountNumberMasked ?? accounts[0]?.masterAccountNumberMasked ?? null;
   const liveLabel = mode.isLiveShared ? "LIVE" : mode.isDemo ? "DEMO" : "SIM";
-  const isActive = (accounts[0]?.status ?? master?.syncStatus ?? "").toString().toLowerCase() === "active"
-    || mode.isLiveShared || (master?.syncStatus === "LIVE");
+  // "Active" needs an observation: the allocation row's own status, or (owner/
+  // admin) a LIVE master sync. The LIVE_SHARED mode label is not one — the
+  // server also sets it for display on an approved-but-unconfirmed account
+  // whose execution is blocked — and a server blocker overrides both.
+  const executionBlocked = Boolean(mode.cleanBlockedReason);
+  const isActive = !executionBlocked && (
+    (accounts[0]?.status ?? "").toString().toLowerCase() === "active"
+    || master?.syncStatus === "LIVE"
+  );
 
   return (
     <CockpitCard
@@ -341,7 +348,9 @@ export function AccountSnapshotCard() {
               compact
             />
           )}
-          <Pill tone={isActive ? "success" : "muted"}>{isActive ? "Active" : "Inactive"}</Pill>
+          <span data-testid="cockpit-account-active-pill" title={executionBlocked ? mode.cleanBlockedReason ?? undefined : undefined}>
+            <Pill tone={isActive ? "success" : executionBlocked ? "warning" : "muted"}>{isActive ? "Active" : executionBlocked ? "Blocked" : "Inactive"}</Pill>
+          </span>
         </div>
       </div>
     </CockpitCard>

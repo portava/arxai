@@ -35,14 +35,14 @@ vi.mock("wouter", () => ({
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => h.mode }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
 vi.mock("@/lib/symbol-context", () => ({ useActiveSymbol: () => ({ active: "EURUSD" }) }));
-vi.mock("@/hooks/useLiveAccountSnapshotContext", () => ({ useLiveAccountSnapshotCtx: () => ({}) }));
+vi.mock("@/hooks/useLiveAccountSnapshotContext", () => ({ useLiveAccountSnapshotCtx: () => ({ snapshot: null, live: null, freshness: "unavailable", connectionStatus: "unavailable", lastUpdatedMs: null, notLiveReason: null, isEstimate: false, isStale: false, isUnavailable: true, warnings: [], reload: () => {} }) }));
 vi.mock("@workspace/api-client-react", () => ({
   useGetMeSharedAccountSummary: () => ({ data: h.summary, isLoading: h.summaryLoading }),
   getGetMeSharedAccountSummaryQueryKey: () => ["/api/me/shared-account/summary"],
 }));
 
 import { EnvironmentPill } from "./EnvironmentPill";
-import { TradingPermissionSummaryCard } from "./CockpitCards";
+import { TradingPermissionSummaryCard, AccountSnapshotCard } from "./CockpitCards";
 import { describeOnboardingTradingStatus } from "@/components/onboarding/OnboardingProvider";
 import { resolveTradeRoomStatus } from "@/components/dashboard/trade/tradeRoomStatus";
 import { TradeHero } from "@/components/dashboard/trade/TradePanels";
@@ -257,5 +257,30 @@ describe("permission-only envelope never reads as 'All clear' / 'All systems ope
     setMode();
     const s = resolveTradeRoomStatus(h.mode as never, describeBridgeObservation({ onSharedRoute: true, allocationView: allocationView() }));
     expect(s.rgStatus.label).toBe("Approved to trade");
+  });
+});
+
+describe("account snapshot 'Active' pill needs an observation, not the LIVE_SHARED mode label", () => {
+  it("approved-but-unconfirmed LIVE_SHARED (display-only), allocation pending → not 'Active'", () => {
+    setMode({ cleanBlockedReason: CONFIRM_LIVE });
+    h.summary = { ok: true, accounts: [{ status: "pending", masterBrokerName: "Broker", masterAccountNumberMasked: "****12" }], allocationView: allocationView(), masterMt5: null };
+    render(<AccountSnapshotCard />);
+    const pill = screen.getByTestId("cockpit-account-active-pill");
+    expect(pill.textContent).not.toBe("Active");
+    expect(pill.textContent).toBe("Blocked");
+  });
+
+  it("LIVE_SHARED with no blocker but an allocation row that is not active → 'Inactive'", () => {
+    setMode();
+    h.summary = { ok: true, accounts: [{ status: "pending" }], allocationView: allocationView(), masterMt5: null };
+    render(<AccountSnapshotCard />);
+    expect(screen.getByTestId("cockpit-account-active-pill").textContent).toBe("Inactive");
+  });
+
+  it("an active allocation row with no blocker → 'Active'", () => {
+    setMode();
+    h.summary = { ok: true, accounts: [{ status: "active" }], allocationView: allocationView(), masterMt5: null };
+    render(<AccountSnapshotCard />);
+    expect(screen.getByTestId("cockpit-account-active-pill").textContent).toBe("Active");
   });
 });
