@@ -12,8 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BotStatusUpdateMode, BotStatusUpdateRiskMode } from "@workspace/api-client-react";
-import { COMPLIANCE } from "@/lib/compliance";
-import { DisclaimerBanner } from "@/components/compliance/DisclaimerBanner";
+import { safeDate } from "@/lib/safeFormat";
 
 const SYMBOLS = [
   "Volatility 75 Index",
@@ -26,7 +25,7 @@ const SYMBOLS = [
 export default function BotControl() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data: botStatus, isLoading: isLoadingStatus } = useGetBotStatus();
+  const { data: botStatus, isLoading: isLoadingStatus, isError: statusError } = useGetBotStatus();
   const { data: strategies, isLoading: isLoadingStrats } = useGetStrategies();
   const updateBotStatus = useUpdateBotStatus();
 
@@ -76,11 +75,16 @@ export default function BotControl() {
 
     updateBotStatus.mutate({ data: payload }, {
       onSuccess: (data) => {
-        toast({ title: "Bot Updated", description: "Settings applied successfully." });
+        // bot_settings is read by no scanner, loop or execution path, so a
+        // save changes nothing that runs. Say exactly that.
+        toast({
+          title: "Preference saved",
+          description: "Saved to your bot settings. No engine reads them, so nothing was started, stopped or traded.",
+        });
         queryClient.setQueryData(getGetBotStatusQueryKey(), data);
       },
       onError: () => {
-        toast({ title: "Error", description: "Failed to update bot.", variant: "destructive" });
+        toast({ title: "Not saved", description: "Your bot preference could not be saved.", variant: "destructive" });
       }
     });
   };
@@ -104,32 +108,58 @@ export default function BotControl() {
           <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <BotIcon className="text-primary" /> Bot Control Panel
           </h2>
-          <p className="text-muted-foreground">Configure and control the main trading engine.</p>
+          <p className="text-muted-foreground">Saved bot preferences: mode, risk level, symbol, strategy and start / pause / stop.</p>
         </div>
       </div>
 
-      <Card className={`border-2 shadow-xl ${
-        localStatus.mode === 'LIVE' && localStatus.isRunning ? 'border-destructive shadow-destructive/20' : 
-        localStatus.isRunning ? 'border-primary shadow-primary/20' : 'border-border'
-      }`}>
+      {/* bot_settings (the store behind /bot/status) is written only by the
+          /bot routes. No scanner, trading loop or execution path reads it, and
+          nothing records a scan against it. So START is a saved request, not a
+          running engine, and LIVE arms nothing. */}
+      <p
+        data-testid="bot-control-scope"
+        className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200"
+      >
+        These controls only save preferences. No scanner, trading loop or execution path reads them:
+        START does not start a bot, STOP does not stop one, and LIVE does not arm live trading or place
+        trades. Live trading has its own arming steps and safety gates, which nothing here changes.
+      </p>
+
+      <Card className="border-2 shadow-xl border-border">
         <CardHeader className="bg-muted/20 border-b border-border">
           <div className="flex justify-between items-start">
             <div>
-              <CardTitle>Engine Configuration</CardTitle>
-              <CardDescription>Main parameters for the automated trader</CardDescription>
+              <CardTitle>Saved Bot Preferences</CardTitle>
+              <CardDescription>Stored on your account. Nothing that trades reads them.</CardDescription>
             </div>
             <div className="flex flex-col items-end gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">State:</span>
-                <div className={`px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider font-mono ${
-                  localStatus.isRunning ? (localStatus.isPaused ? "bg-yellow-500/20 text-yellow-500" : "bg-green-500/20 text-green-500") : "bg-muted text-muted-foreground"
-                }`}>
-                  {localStatus.isRunning ? (localStatus.isPaused ? "PAUSED" : "RUNNING") : "STOPPED"}
+                <span className="text-sm font-medium">Saved setting:</span>
+                <div
+                  data-testid="bot-control-saved-state"
+                  className="px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider font-mono bg-muted text-muted-foreground"
+                >
+                  {!botStatus
+                    ? "Not loaded"
+                    : localStatus.isRunning ? (localStatus.isPaused ? "Pause requested" : "Start requested") : "Stop requested"}
                 </div>
               </div>
+              <p data-testid="bot-control-last-scan" className="text-xs text-muted-foreground">
+                {!botStatus
+                  ? "Last scan: unknown (settings not loaded)"
+                  : botStatus.lastScanAt
+                    ? `Last scan recorded on this setting: ${safeDate(botStatus.lastScanAt, "datetime", "unreadable time")}`
+                    : "Last scan: none recorded — no engine scans for this setting"}
+              </p>
             </div>
           </div>
         </CardHeader>
+
+        {statusError && !botStatus && (
+          <p data-testid="bot-control-error" role="alert" className="px-6 pt-4 text-sm text-rose-400">
+            Your saved bot settings could not be loaded. The values below are not your saved settings.
+          </p>
+        )}
         
         <CardContent className="grid gap-6 p-6">
           <div className="grid sm:grid-cols-2 gap-6">
@@ -140,9 +170,9 @@ export default function BotControl() {
                   <SelectValue placeholder="Select mode" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="OFF">OFF (Disabled)</SelectItem>
-                  <SelectItem value="DEMO">DEMO (Demo Trading)</SelectItem>
-                  <SelectItem value="LIVE" className="text-destructive font-bold">LIVE (Real Money)</SelectItem>
+                  <SelectItem value="OFF">OFF</SelectItem>
+                  <SelectItem value="DEMO">DEMO (preference only)</SelectItem>
+                  <SelectItem value="LIVE" className="text-destructive font-bold">LIVE (preference only — arms nothing)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -239,22 +269,24 @@ export default function BotControl() {
         >
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
-              <ShieldAlert /> {COMPLIANCE.liveUnlock.title}
+              <ShieldAlert /> Save LIVE as your bot preference?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-foreground/90 text-sm leading-relaxed">
-              {COMPLIANCE.liveUnlock.body}
+              This only saves LIVE as a preference on this panel. No engine reads it: it does not arm
+              live trading, connect to MT5 or place any trade. Live trading has its own arming steps
+              and safety gates, and saving this does not change them.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-live-unlock-cancel">
-              {COMPLIANCE.liveUnlock.cancelLabel}
+              Keep current mode
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmLiveMode}
               className="bg-destructive hover:bg-destructive/90 text-white"
               data-testid="button-live-unlock-confirm"
             >
-              {COMPLIANCE.liveUnlock.confirmLabel}
+              Save LIVE preference
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
