@@ -9,6 +9,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import ForexCenter from "./forex-center";
 import SyntheticCenter from "./synthetic-center";
+import IndicesCenter from "./indices-center";
+import StocksCenter from "./stocks-center";
 
 afterEach(() => cleanup());
 
@@ -29,5 +31,30 @@ describe("Forex and Synthetic centers — Scanner data source", () => {
     expect(text).not.toMatch(/fully (wired|tradable)/i);
     expect(text).toMatch(/MT5 broker feed when your bridge is connected/);
     expect(text).toMatch(/Deriv's public price feed/);
+  });
+});
+
+// The Scanner has an indices universe and the router serves indices and stocks
+// (mt5_broker, then a vendor). These pages have no analytics provider; they
+// must not say no index/stock feed exists anywhere, and must not list only
+// forex and synthetics as wired.
+describe("Indices and Stocks centers — what is actually missing", () => {
+  it("Indices Center does not claim no index feed exists, and names where index prices are", () => {
+    render(<IndicesCenter />);
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/no live equity-index feed configured/i);
+    expect(text).not.toMatch(/Forex and synthetic markets remain/i);
+    expect(text).not.toMatch(/real broker data/i);
+    expect(text).toMatch(/Index prices and setups are on the Scanner/);
+    expect(text).toMatch(/MT5 broker feed when your bridge is connected/);
+  });
+
+  it("Stocks Center does not claim no stock feed is configured or that only forex and synthetics are wired", () => {
+    render(<StocksCenter />);
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/no live stock-market feed configured/i);
+    expect(text).not.toMatch(/Forex and synthetic markets remain fully wired/i);
+    expect(text).toMatch(/does not load stock prices or signals/);
+    expect(text).toMatch(/The Scanner does not scan stocks/);
   });
 });

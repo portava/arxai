@@ -57,23 +57,23 @@ export default function IndicesCenter() {
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-foreground">Indices Center</h1>
         <p className="text-txt-secondary text-sm">
-          Indices workspace — no index market-data provider is connected yet
+          Indices workspace — no index analytics provider is connected to this page
         </p>
       </div>
 
       <div
         role="note"
-        aria-label="No index data provider"
+        aria-label="No index analytics provider"
         data-testid="banner-indices-no-provider"
         className="flex gap-3 rounded-md border border-warning/50 bg-warning/30 p-3"
       >
         <AlertTriangle className="text-warning shrink-0 mt-0.5" size={18} />
         <div className="text-sm">
-          <div className="font-semibold text-warning">No index data provider connected</div>
+          <div className="font-semibold text-warning">No index analytics provider connected to this page</div>
           <div className="text-warning/80 text-xs mt-0.5">
-            ARX has no live equity-index feed configured, so index levels, VIX, bond yields, bias and
-            confidence are not shown. This page stays empty rather than display placeholder data. The
-            index notes below are static editorial context, not live analysis.
+            This page has no index macro or analytics provider, so VIX, bond yields, bias and confidence
+            are not shown, and it does not load index levels. It stays empty rather than display
+            placeholder data. The index notes below are static editorial context, not live analysis.
           </div>
         </div>
       </div>
@@ -84,9 +84,11 @@ export default function IndicesCenter() {
           <PlugZap className="mx-auto text-txt-muted" size="36" />
           <div className="text-foreground font-semibold">Index intelligence unavailable</div>
           <div className="text-txt-secondary text-sm max-w-md mx-auto">
-            No backend index market-data provider is connected. Index levels, macro readings,
-            direction and confidence cannot be shown honestly, so nothing is displayed. Forex and
-            synthetic markets remain fully wired on the Scanner, which uses real broker data.
+            No backend index analytics provider is connected. Macro readings, direction and
+            confidence cannot be shown honestly, so nothing is displayed here. Index prices and setups
+            are on the Scanner (its indices universe) and the chart: from your MT5 broker feed when your
+            bridge is connected, otherwise from a third-party market-data vendor when one is configured.
+            A row whose live feed is not current is shown as not tradeable.
           </div>
         </CardContent>
       </Card>
