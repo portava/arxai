@@ -299,7 +299,48 @@ type ChartPending = {
   takeProfit: number | null;
   pendingStatus: string | null;
   status: string;
+  expiration?: string | null;
 };
+
+/**
+ * Plain-English label for a pending-order DRAFT. The list endpoint returns
+ * drafts saved in ARX: EA_UPGRADE_REQUIRED drafts are never queued to MT5 (the
+ * bridge only executes market orders) and READY_TO_EXECUTE has no broker
+ * confirmation, so none of them is presented as a working order at the broker.
+ */
+export function pendingDraftLabel(
+  d: { pendingStatus: string | null; expiration?: string | null },
+  nowMs: number,
+): { chip: string; title: string; line: string } {
+  const expMs = d.expiration ? Date.parse(d.expiration) : NaN;
+  if (Number.isFinite(expMs) && expMs <= nowMs) {
+    const at = new Date(expMs).toISOString().slice(0, 16).replace("T", " ");
+    return {
+      chip: "Expired draft",
+      title: `This draft expired ${at} UTC. It was never placed at the broker.`,
+      line: "Expired draft",
+    };
+  }
+  if (d.pendingStatus === "EA_UPGRADE_REQUIRED") {
+    return {
+      chip: "Draft · not sent",
+      title: "Saved as a validated pending-order draft. The trading bridge cannot place pending orders yet, so this order is not at the broker and will not fill.",
+      line: "Draft (not sent)",
+    };
+  }
+  if (d.pendingStatus === "READY_TO_EXECUTE") {
+    return {
+      chip: "Draft · not confirmed",
+      title: "Marked ready to execute, but no broker confirmation has been received, so it is not shown as a working order.",
+      line: "Draft (not confirmed)",
+    };
+  }
+  return {
+    chip: "Draft",
+    title: "Pending-order draft in an unrecognised state; it is not confirmed at the broker.",
+    line: "Draft",
+  };
+}
 
 // Normalised symbol compare — strips exchange prefixes/suffixes so "EURUSD",
 // "FX:EURUSD" and "EURUSD.r" all match the same chart symbol.
@@ -1710,9 +1751,11 @@ export function ScannerChartPanel() {
 
     for (const o of symbolPending) {
       const entry = o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice;
-      addLine(entry, "#f59e0b", `Pending ${o.side} ${o.orderType ?? ""}`.trim(), true);
-      addLine(o.stopLoss, "#ef4444", "Pending SL", true);
-      addLine(o.takeProfit, "#10b981", "Pending TP", true);
+      // Drafts are not broker orders — the line says so (pendingDraftLabel).
+      const draftTag = pendingDraftLabel(o, Date.now()).line;
+      addLine(entry, "#f59e0b", `${draftTag} ${o.side} ${o.orderType ?? ""}`.trim(), true);
+      addLine(o.stopLoss, "#ef4444", `${draftTag} SL`, true);
+      addLine(o.takeProfit, "#10b981", `${draftTag} TP`, true);
     }
 
     // Chart Brain v2 Task 6 — the user's own marked levels / zones / price
@@ -2476,8 +2519,13 @@ export function ScannerChartPanel() {
               </Badge>
             )}
             {symbolPending.length > 0 && (
-              <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-300" data-testid="scanner-chart-pending-count">
-                {symbolPending.length} pending
+              <Badge
+                variant="outline"
+                className="border-amber-500/40 text-[10px] text-amber-300"
+                data-testid="scanner-chart-pending-count"
+                title="Pending-order drafts saved in ARX. They are not orders at the broker."
+              >
+                {symbolPending.length} pending draft{symbolPending.length > 1 ? "s" : ""}
               </Badge>
             )}
             {/* Phase 3 — timing overlay chip (advisory, fail-open) */}
@@ -3103,7 +3151,14 @@ export function ScannerChartPanel() {
                 ))}
                 {symbolPending.map((o) => (
                   <div key={`pen-${o.id}`} className="flex flex-wrap items-center gap-2 text-[11px]" data-testid={`scanner-chart-pending-${o.id}`}>
-                    <Badge variant="outline" className="border-amber-500/40 text-amber-300">PENDING</Badge>
+                    {(() => {
+                      const l = pendingDraftLabel(o, Date.now());
+                      return (
+                        <Badge variant="outline" className="border-amber-500/40 text-amber-300" title={l.title} data-testid={`scanner-chart-pending-label-${o.id}`}>
+                          {l.chip}
+                        </Badge>
+                      );
+                    })()}
                     <span className="font-semibold text-zinc-200">{o.side} {o.orderType ?? ""}</span>
                     <span className="font-mono text-zinc-400">{o.lotSize} @ {(o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice) != null ? fmt((o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice)!) : "—"}</span>
                     {canTrade && (
