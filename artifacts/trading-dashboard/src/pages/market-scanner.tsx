@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from "react";
+import { formatUtcClock } from "@/components/scanner/scannerChartFormat";
 import { markActionStart, markUiFeedback, markActionEnd } from "@/lib/perf";
 import { useGetAaciCohesion, getGetAaciCohesionQueryKey, type AaciCohesionItem } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -635,7 +636,7 @@ export default function MarketScanner() {
       </p>}
       {resultTimestamp && (
         <p className="text-xs text-muted-foreground">
-          Last scan {new Date(resultTimestamp).toLocaleTimeString()} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
+          Last scan {formatUtcClock(resultTimestamp) ?? "—"} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
         </p>
       )}
 

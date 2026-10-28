@@ -15,7 +15,12 @@ import { adaptChartCandles, type Candle } from "@/components/scanner/scannerCand
 import {
   PRIMARY_TIMEFRAMES,
   coerceVisibleTimeframe,
-  formatCandleCountdown,
+  candleCountdownLabel,
+  computeCandleRemainingMs,
+  CHART_TIME_AXIS_LABEL,
+  CHART_TIME_AXIS_TITLE,
+  formatUtcClock,
+  type ServerClockSample,
   NEWS_MARKER_LOOKAHEAD_BARS,
   isFeedConfirmedForEventMarkers,
   inferBarSeconds,
@@ -335,18 +340,32 @@ function ChartTimingChip({ symbol }: { symbol: string }) {
 function CandleCloseCountdown({
   closeTimeMs,
   timeframe,
+  clockRef,
 }: {
   closeTimeMs: number;
   timeframe: string;
+  /** Server clock + bar interval from the latest accepted tick-stream frame. */
+  clockRef: { current: (ServerClockSample & { intervalMs: number | null }) | null };
 }) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [, setTick] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    const id = window.setInterval(() => setTick((n) => n + 1), 1000);
     return () => window.clearInterval(id);
   }, []);
-  const remainingMs = closeTimeMs - nowMs;
+  // Measured against the SERVER clock (frame ts + monotonic elapsed), so a
+  // client clock that runs fast/slow cannot shrink, inflate or hide it.
+  const clock = clockRef.current;
+  const remainingMs = computeCandleRemainingMs({
+    closeTimeMs,
+    clock,
+    nowPerf: performance.now(),
+    fallbackNowMs: Date.now(),
+  });
   // Bar already closed; the next forming frame supplies the new close time.
   if (remainingMs <= 0) return null;
+  // More time left than one bar lasts is impossible without skew — hide
+  // rather than show an inflated number.
+  if (clock?.intervalMs != null && remainingMs > clock.intervalMs) return null;
   return (
     <Badge
       variant="outline"
@@ -355,7 +374,7 @@ function CandleCloseCountdown({
       title="Time until the current candle closes"
     >
       <Clock className="h-2.5 w-2.5" />
-      {formatCandleCountdown(remainingMs, timeframe)}
+      {candleCountdownLabel(remainingMs, timeframe)}
     </Badge>
   );
 }
@@ -637,6 +656,7 @@ export function ScannerChartPanel() {
   // closeTimeMs), not on every incoming tick.
   const [formingCloseMs, setFormingCloseMs] = useState<number | null>(null);
   const formingCloseRef = useRef<number | null>(null);
+  const serverClockRef = useRef<(ServerClockSample & { intervalMs: number | null }) | null>(null);
   // Market-frozen / closed-market indicator (display/telemetry only). Driven by
   // the tick-stream `feed_status` event, whose verdict is derived from the
   // latest tick's BROKER-time staleness (calendar-independent). null = not
@@ -1475,6 +1495,7 @@ export function ScannerChartPanel() {
     // Reset the countdown whenever the stream key changes — the previous
     // symbol/timeframe's forming bar is no longer relevant (Task #524).
     formingCloseRef.current = null;
+    serverClockRef.current = null;
     setFormingCloseMs(null);
     setMarketFrozen(null);
     // A tip never outlives its stream key (symbol / timeframe / source / context).
@@ -1498,6 +1519,8 @@ export function ScannerChartPanel() {
         timeframe?: string;
         frozen?: boolean;
         tickWallMs?: number;
+        /** Server wall clock when the frame was sent (epoch ms). */
+        ts?: number;
         marketFrozen?: boolean;
         lastBrokerTimeMs?: number | null;
         bar?: { openTimeMs?: number; closeTimeMs?: number; open?: number; high?: number; low?: number; close?: number };
@@ -1529,9 +1552,24 @@ export function ScannerChartPanel() {
           formingCloseRef.current = null;
           setFormingCloseMs(null);
         }
-      } else if (formingCloseRef.current !== msg.bar.closeTimeMs) {
-        formingCloseRef.current = msg.bar.closeTimeMs;
-        setFormingCloseMs(msg.bar.closeTimeMs);
+        serverClockRef.current = null;
+      } else {
+        // Re-captured per frame (frames arrive per tick) so the server-clock
+        // offset stays fresh; a frame without a finite ts (older server)
+        // leaves no sample and the countdown falls back to the client clock.
+        const openMs = msg.bar.openTimeMs;
+        serverClockRef.current = typeof msg.ts === "number" && Number.isFinite(msg.ts)
+          ? {
+              serverTs: msg.ts,
+              receivedPerf: performance.now(),
+              intervalMs: typeof openMs === "number" && Number.isFinite(openMs) && msg.bar.closeTimeMs > openMs
+                ? msg.bar.closeTimeMs - openMs : null,
+            }
+          : null;
+        if (formingCloseRef.current !== msg.bar.closeTimeMs) {
+          formingCloseRef.current = msg.bar.closeTimeMs;
+          setFormingCloseMs(msg.bar.closeTimeMs);
+        }
       }
       // Series tip update — only for a live (non-frozen) forming bar. A frozen
       // or barless frame also withdraws the published tip (no stale "current").
@@ -2399,7 +2437,7 @@ export function ScannerChartPanel() {
                 feed is genuinely LIVE and a live forming bar has reported its
                 broker-aligned close time. The child owns its own 1s ticker. */}
             {formingCloseMs != null && isLiveDisplay && (
-              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} />
+              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} clockRef={serverClockRef} />
             )}
             {hasCandles && (
               <ChartHistoryBadge
@@ -2426,6 +2464,15 @@ export function ScannerChartPanel() {
             <ChartTimingChip symbol={symbol} />
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
+            {hasCandles && (
+              <span
+                className="mr-1 text-[10px] text-zinc-500"
+                data-testid="scanner-chart-timezone"
+                title={CHART_TIME_AXIS_TITLE}
+              >
+                {CHART_TIME_AXIS_LABEL}
+              </span>
+            )}
             {PRIMARY_TIMEFRAMES.map((tf) => (
               <Button
                 key={tf.id}
@@ -2659,7 +2706,9 @@ export function ScannerChartPanel() {
               <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stale">
                 <span className="font-medium">Stale · last-known candles</span>
                 {feedStatus?.lastCandleTime && (
-                  <span className="text-orange-400/70">· last updated {new Date(feedStatus.lastCandleTime).toLocaleTimeString()}</span>
+                  formatUtcClock(feedStatus.lastCandleTime) && (
+                    <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle {formatUtcClock(feedStatus.lastCandleTime)}</span>
+                  )
                 )}
                 <span className="ml-auto text-orange-400/50 text-[10px]">No live price marker</span>
               </div>

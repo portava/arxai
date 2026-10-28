@@ -37,6 +37,7 @@ import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
 import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
+import { CHART_TIME_AXIS_LABEL, CHART_TIME_AXIS_TITLE } from "@/components/scanner/scannerChartFormat";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
@@ -1109,6 +1110,11 @@ export function ARXNativeChart({
           </div>
           {/* Phase 2 — TF controls + Reset Scale button. */}
           <div className="flex flex-wrap items-center gap-1" data-testid="arx-native-tf-controls">
+            {hasCandles && (
+              <span className="mr-1 text-[10px] text-zinc-500" data-testid="arx-native-timezone" title={CHART_TIME_AXIS_TITLE}>
+                {CHART_TIME_AXIS_LABEL}
+              </span>
+            )}
             {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>setReplayError(replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}))}>Replay loaded bars</Button>}
             {TIMEFRAMES.map((tf) => (
               <Button
