@@ -10506,6 +10506,18 @@ export const GenerateNewsRiskReportResponse = zod.object({
     .describe(
       'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
     ),
+  reportAge: zod
+    .object({
+      generatedAt: zod.string().nullable(),
+      ageMinutes: zod.number().nullable(),
+      current: zod.boolean(),
+      maxCurrentAgeMinutes: zod.number(),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.\n",
+    ),
   id: zod.number(),
   userId: zod.number().nullish(),
   symbol: zod.string(),
@@ -10578,6 +10590,18 @@ export const GetLatestNewsRiskReportResponse = zod.object({
     .optional()
     .describe(
       'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
+    ),
+  reportAge: zod
+    .object({
+      generatedAt: zod.string().nullable(),
+      ageMinutes: zod.number().nullable(),
+      current: zod.boolean(),
+      maxCurrentAgeMinutes: zod.number(),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.\n",
     ),
   id: zod.number(),
   userId: zod.number().nullish(),

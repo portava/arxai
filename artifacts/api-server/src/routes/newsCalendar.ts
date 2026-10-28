@@ -115,6 +115,53 @@ export async function readStoredCalendarCoverage(windowEnd: Date): Promise<Store
   };
 }
 
+// ── Report age ────────────────────────────────────────────────────────────
+// A persisted news-risk report is a scan from the past: its riskLevel and
+// timeUntilEventMinutes were computed when the scan ran. A report older than
+// this window is not the current risk (same window as the dashboard's
+// NewsRiskCard, NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS). Unknown or future-
+// stamped (beyond the clock-skew allowance) ages are never current.
+export const NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS = 5 * 60_000;
+const REPORT_AGE_SKEW_MS = 5_000;
+
+export interface NewsRiskReportAge {
+  /** When the scan ran (ISO), or null when its time is unusable. */
+  generatedAt: string | null;
+  /** Whole minutes since the scan; null when unknown or stamped in the future. */
+  ageMinutes: number | null;
+  /** True only when the scan is no older than maxCurrentAgeMinutes. */
+  current: boolean;
+  maxCurrentAgeMinutes: number;
+  /** Plain-English statement when the report is not current; null when it is. */
+  note: string | null;
+}
+
+export function newsRiskReportAge(createdAt: Date | string | null | undefined, nowMs: number): NewsRiskReportAge {
+  const ms = createdAt == null ? NaN : new Date(createdAt).getTime();
+  const maxCurrentAgeMinutes = NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS / 60_000;
+  if (!Number.isFinite(ms) || ms > nowMs + REPORT_AGE_SKEW_MS) {
+    return {
+      generatedAt: Number.isFinite(ms) ? new Date(ms).toISOString() : null,
+      ageMinutes: null, current: false, maxCurrentAgeMinutes,
+      note: "When this news-risk scan ran could not be confirmed, so it is not the current risk. Run a new scan for a current read.",
+    };
+  }
+  const ageMs = Math.max(0, nowMs - ms);
+  const ageMinutes = Math.floor(ageMs / 60_000);
+  const current = ageMs <= NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS;
+  const ago = ageMinutes < 120 ? `${ageMinutes} minute${ageMinutes === 1 ? "" : "s"} ago`
+    : ageMinutes < 2880 ? `${Math.floor(ageMinutes / 60)} hours ago` : `${Math.floor(ageMinutes / 1440)} days ago`;
+  return {
+    generatedAt: new Date(ms).toISOString(),
+    ageMinutes,
+    current,
+    maxCurrentAgeMinutes,
+    note: current
+      ? null
+      : `This news-risk scan ran ${ago} (at ${new Date(ms).toISOString()}), so it is not the current risk. Its risk level and minutes-to-event are from scan time. Run a new scan for a current read.`,
+  };
+}
+
 function rowToEventInput(r: typeof economicEventsTable.$inferSelect): EconomicEventInput {
   return {
     id: r.id, eventName: r.eventName, currency: r.currency,
@@ -381,7 +428,10 @@ router.post("/news-risk/generate", async (req, res): Promise<void> => {
     const { symbol } = GenerateBody.parse(req.body);
     const { row, result } = await generateNewsRiskForSymbol(symbol);
     const calendarCoverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
-    res.json({ ...serializeReport(row), reasons: result.reasons, blockTrading: result.blockTrading, calendarCoverage });
+    res.json({
+      ...serializeReport(row), reasons: result.reasons, blockTrading: result.blockTrading, calendarCoverage,
+      reportAge: newsRiskReportAge(row.createdAt, Date.now()),
+    });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /news-risk/generate failed");
     res.status(400).json({ error: "Failed to generate news risk report" });
@@ -436,7 +486,7 @@ router.get("/news-risk/latest", async (req, res): Promise<void> => {
     // calendar actually reaches that far, so a CLEAR from an empty or
     // out-of-date table is not read as an all-clear.
     const calendarCoverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
-    res.json({ ...serializeReport(rows[0]), news, calendarCoverage });
+    res.json({ ...serializeReport(rows[0]), news, calendarCoverage, reportAge: newsRiskReportAge(rows[0].createdAt, Date.now()) });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /news-risk/latest failed");
     res.status(400).json({ error: "Invalid request" });

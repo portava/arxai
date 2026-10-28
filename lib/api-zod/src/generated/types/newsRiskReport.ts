@@ -5,12 +5,14 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { NewsRiskReportAge } from "./newsRiskReportAge";
 import type { NewsRiskReportNews } from "./newsRiskReportNews";
 import type { NewsRiskReportRiskLevel } from "./newsRiskReportRiskLevel";
 import type { StoredCalendarCoverage } from "./storedCalendarCoverage";
 
 export interface NewsRiskReport {
   calendarCoverage?: StoredCalendarCoverage;
+  reportAge?: NewsRiskReportAge;
   id: number;
   /** @nullable */
   userId?: number | null;

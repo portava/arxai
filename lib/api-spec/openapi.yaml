@@ -19952,11 +19952,27 @@ components:
         windowCovered:     { type: boolean }
         note:              { type: ["string", "null"], description: "Plain statement when the window is not covered." }
 
+    NewsRiskReportAge:
+      type: object
+      description: >
+        How old a persisted news-risk scan is. Its riskLevel and
+        timeUntilEventMinutes were computed at scan time; a scan older than
+        maxCurrentAgeMinutes (or with an unconfirmable time) is not the
+        current risk.
+      required: [generatedAt, ageMinutes, current, maxCurrentAgeMinutes, note]
+      properties:
+        generatedAt: { type: ["string", "null"] }
+        ageMinutes: { type: ["integer", "null"] }
+        current: { type: boolean }
+        maxCurrentAgeMinutes: { type: number }
+        note: { type: ["string", "null"] }
+
     NewsRiskReport:
       type: object
       required: [id, symbol, riskLevel, aiSummary, createdAt]
       properties:
         calendarCoverage: { $ref: "#/components/schemas/StoredCalendarCoverage" }
+        reportAge: { $ref: "#/components/schemas/NewsRiskReportAge" }
         id:                       { type: integer }
         userId:                   { type: ["integer", "null"] }
         symbol:                   { type: string }

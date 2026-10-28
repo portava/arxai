@@ -11220,6 +11220,21 @@ export interface StoredCalendarCoverage {
   note: string | null;
 }
 
+/**
+ * How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.
+
+ */
+export interface NewsRiskReportAge {
+  /** @nullable */
+  generatedAt: string | null;
+  /** @nullable */
+  ageMinutes: number | null;
+  current: boolean;
+  maxCurrentAgeMinutes: number;
+  /** @nullable */
+  note: string | null;
+}
+
 export type NewsRiskReportRiskLevel =
   (typeof NewsRiskReportRiskLevel)[keyof typeof NewsRiskReportRiskLevel];
 
@@ -11247,6 +11262,7 @@ export type NewsRiskReportNews = {
 
 export interface NewsRiskReport {
   calendarCoverage?: StoredCalendarCoverage;
+  reportAge?: NewsRiskReportAge;
   id: number;
   /** @nullable */
   userId?: number | null;

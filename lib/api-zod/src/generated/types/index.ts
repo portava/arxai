@@ -1284,6 +1284,7 @@ export * from "./newsRadarEventState";
 export * from "./newsRadarProvider";
 export * from "./newsRisk";
 export * from "./newsRiskReport";
+export * from "./newsRiskReportAge";
 export * from "./newsRiskReportNews";
 export * from "./newsRiskReportRiskLevel";
 export * from "./newsRiskRiskLevel";
