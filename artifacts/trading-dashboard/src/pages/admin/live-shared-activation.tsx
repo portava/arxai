@@ -400,9 +400,11 @@ function useChecklist(r: ReadinessResp | null): Check[] {
     // The IDs in this array MUST stay aligned with the server-side preArm
     // list in adminLiveSharedReadiness.ts (POST /arm-live-execution). The
     // server re-validates the same checks; any drift is a UX bug.
+    // The readiness route sends detector.bridge = maskBridgeEvidenceForUser(),
+    // which carries the EA-reported inputs as flat fields (no `eaInputs`).
     type EaInputs = { terminalConnected?: boolean | null; algoTradingAllowed?: boolean | null; enableLiveExecution?: boolean | null };
-    const det = r.liveAccount.detector as { detected: boolean; bridge?: { eaInputs?: EaInputs | null } };
-    const ea: EaInputs = (det.detected && det.bridge?.eaInputs) ? det.bridge.eaInputs : {};
+    const det = r.liveAccount.detector as { detected: boolean; bridge?: EaInputs | null };
+    const ea: EaInputs = (det.detected && det.bridge) ? det.bridge : {};
     const stops = installWideStops(g);
     const engagedStops = [
       stops.emergencyStop ? "platform emergency stop engaged" : null,

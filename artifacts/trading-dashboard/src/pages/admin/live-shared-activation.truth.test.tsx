@@ -138,3 +138,30 @@ describe("live shared activation — install-wide stops", () => {
     expect(within(banner).getByText(/install-wide stop state not reported/)).toBeTruthy();
   });
 });
+
+describe("live shared activation — EA-reported inputs", () => {
+  it("reads the flat EA-input fields the readiness route sends (maskBridgeEvidenceForUser)", async () => {
+    await renderWith(readiness());
+    expect(checkRow("enable_live_execution").dataset.state).toBe("pass");
+    expect(checkRow("terminal_connected").dataset.state).toBe("pass");
+    expect(checkRow("algo_trading_allowed").dataset.state).toBe("pass");
+  });
+
+  it("an EA input reported false still fails", async () => {
+    const r = readiness();
+    const det = (r.liveAccount as Json).detector as { bridge: Json };
+    det.bridge.terminalConnected = false;
+    det.bridge.enableLiveExecution = null;
+    await renderWith(r);
+    expect(checkRow("terminal_connected").dataset.state).toBe("fail");
+    expect(checkRow("enable_live_execution").dataset.state).toBe("fail");
+    expect(checkRow("algo_trading_allowed").dataset.state).toBe("pass");
+  });
+
+  it("no detected bridge: the EA-input rows fail", async () => {
+    await renderWith(readiness({ liveAccount: { detector: { detected: false, primaryReason: "NO_LIVE_BRIDGE" } } }));
+    expect(checkRow("terminal_connected").dataset.state).toBe("fail");
+    expect(checkRow("algo_trading_allowed").dataset.state).toBe("fail");
+    expect(checkRow("enable_live_execution").dataset.state).toBe("fail");
+  });
+});
