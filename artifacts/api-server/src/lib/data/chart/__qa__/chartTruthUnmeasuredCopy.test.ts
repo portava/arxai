@@ -70,3 +70,23 @@ test("an unmeasured merge seam earns no placeholder points in the symbol-mirror 
   // A measured seam keeps the combined check exactly as before.
   assert.equal(metric(computeChartTruthScore(fixture(), feed, tight), "symbol_mirror_accuracy").rawScore, 100);
 });
+
+test("a score under 75 only because checks could not run is not called Degraded", () => {
+  const truth = noSeam();
+  const score = computeChartTruthScore(truth, feed);
+  assert.equal(score.score, 65); assert.equal(score.label, "Degraded");
+  for (const m of score.subMetrics.filter(m => m.evidenceStatus === "measured")) assert.equal(m.rawScore, 100, m.key);
+  const gate = computeChartGateOutput(score, read, quoteAlignment(NaN, NaN), truth, false);
+  const reason = gate.blockedReasons[0];
+  assert.doesNotMatch(reason, /Degraded/);
+  assert.match(reason, /^Chart Truth Score 65 < 75 — chart-based confirmation blocked\. No measured check found a problem\./);
+  assert.match(reason, /Could not be checked \(earn no points\): Symbol Mirror Accuracy, Historical\/Live Merge Quality, Render Accuracy, Scale Quality, Interaction Stability\.$/);
+  assert.equal(gate.primaryBlockReason, reason);
+  // A measured concern still names the band and the concern itself.
+  const mock = fixture({ mockDataDetected: true });
+  const mockScore = computeChartTruthScore(mock, feed, quoteAlignment(1.09999, 1.10001));
+  assert.equal(mockScore.label, "Degraded");
+  const mockReason = computeChartGateOutput(mockScore, read, quoteAlignment(1.09999, 1.10001), mock, false).blockedReasons[0];
+  assert.match(mockReason, /^Chart Truth Score 72 < 75 \(Degraded\) — chart-based confirmation blocked\. Measured concerns: Source Authenticity 0\/100\./);
+  assert.match(mockReason, /Could not be checked \(earn no points\): Render Accuracy, Scale Quality, Interaction Stability\.$/);
+});

@@ -76,6 +76,28 @@ export interface ChartGateOutput {
 
 const TRUTH_THRESHOLD = 75;
 
+/**
+ * Plain-English reason for a Chart Truth Score under the threshold. The score
+ * band (e.g. "Degraded") is named only when a MEASURED check found a concern;
+ * a score that is low only because checks could not run says exactly that and
+ * names them, because unmeasured checks earn no points.
+ */
+function truthShortfallReason(truthScore: ChartTruthScore): string {
+  const head = `Chart Truth Score ${truthScore.score} < ${TRUTH_THRESHOLD}`;
+  const metrics = Array.isArray(truthScore.subMetrics) ? truthScore.subMetrics : [];
+  if (!metrics.length) return `${head} (${truthScore.label}) — chart-based confirmation blocked.`;
+  const measured = (m: ChartTruthScore["subMetrics"][number]) =>
+    m.evidenceStatus === "measured" && m.rawScore != null && Number.isFinite(m.rawScore);
+  const concerns = metrics.filter(m => measured(m) && m.rawScore! < 90);
+  const unmeasured = metrics.filter(m => !measured(m));
+  return (concerns.length ? `${head} (${truthScore.label})` : head) + " — chart-based confirmation blocked. " +
+    (concerns.length
+      ? `Measured concerns: ${concerns.map(m => `${m.label} ${m.rawScore}/100`).join(", ")}.`
+      : "No measured check found a problem.") +
+    (unmeasured.length
+      ? ` Could not be checked (earn no points): ${unmeasured.map(m => m.label).join(", ")}.` : "");
+}
+
 export function computeChartGateOutput(
   truthScore: ChartTruthScore,
   readScore: ChartReadScore,
@@ -90,11 +112,7 @@ export function computeChartGateOutput(
   const confidentReadAllowed = trustworthy;
   const scannerConfirmAllowed = trustworthy;
   const selfTradeChartAllowed = trustworthy;
-  if (!trustworthy) {
-    blockedReasons.push(
-      `Chart Truth Score ${truthScore.score} < ${TRUTH_THRESHOLD} (${truthScore.label}) — chart-based confirmation blocked.`,
-    );
-  }
+  if (!trustworthy) blockedReasons.push(truthShortfallReason(truthScore));
 
   // ── 2. candlestick mode — real OHLC required ───────────────────────────────
   const hasRealOhlc = truthResult?.providerDeliversRealOhlc ?? false;
