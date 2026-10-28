@@ -36,6 +36,15 @@ const STATUS_LABEL: Record<string, string> = {
   OPEN: "Open", CLOSED: "Closed", STOPPED_OUT: "Stopped out",
   TAKE_PROFIT_HIT: "Take profit", MANUALLY_CLOSED: "Closed",
 };
+const PNL_NUMBER_FIELDS = ["dailyPnL", "weeklyPnL", "openUnrealizedPnL", "winRate", "averageR", "maxDrawdown"] as const;
+// Only a body that carries every figure the tiles print is a P&L summary; an
+// error body ({ error }) is not rendered as "$undefined".
+function asPnl(v: unknown): Pnl | null {
+  if (v == null || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  return PNL_NUMBER_FIELDS.every((k) => typeof o[k] === "number" && Number.isFinite(o[k] as number)) ? (v as Pnl) : null;
+}
+
 const timeOf = (iso: string | undefined): string | null => {
   if (!iso) return null;
   const t = Date.parse(iso);
@@ -65,14 +74,25 @@ export default function PositionsPage() {
   const [positions, setPositions] = useState<Pos[]>([]);
   const [pnl, setPnl] = useState<Pnl | null>(null);
   const [tab, setTab] = useState<"OPEN" | "CLOSED" | "INTENT" | "MT5">("OPEN");
+  // Why the latest poll failed (null when it succeeded), and when the book on
+  // screen was last loaded. After a failure the book is a cached copy.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
   async function load() {
-    const [r, s] = await Promise.all([
-      fetch("/api/oms/positions").then((x) => x.json()),
-      fetch("/api/pnl/summary").then((x) => x.json()),
-    ]);
-    setPositions(r.positions ?? []);
-    setPnl(s);
+    try {
+      const [pr, sr] = await Promise.all([fetch("/api/oms/positions"), fetch("/api/pnl/summary")]);
+      if (!pr.ok) throw new Error(`positions HTTP ${pr.status}`);
+      const r = (await pr.json()) as { positions?: unknown };
+      if (!Array.isArray(r?.positions)) throw new Error("positions response had no positions list");
+      const s: unknown = sr.ok ? await sr.json().catch(() => null) : null;
+      setPositions(r.positions as Pos[]);
+      setPnl(asPnl(s));
+      setLoadedAt(Date.now());
+      setLoadErr(null);
+    } catch (e) {
+      setLoadErr(e instanceof Error ? e.message : String(e));
+    }
   }
   useEffect(() => { void load(); const id = setInterval(load, 3000); return () => clearInterval(id); }, []);
 
@@ -103,6 +123,18 @@ export default function PositionsPage() {
         </div>
       </div>
 
+      {loadErr && (
+        <div data-testid="positions-load-error" className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {loadedAt == null
+            ? `Positions could not be loaded (${loadErr}).`
+            : `Could not refresh positions (${loadErr}). Showing the book as last loaded at ${new Date(loadedAt).toLocaleTimeString()}; it may have changed since.`}
+        </div>
+      )}
+
+      {loadedAt != null && !pnl && (
+        <p data-testid="positions-pnl-unavailable" className="text-xs text-txt-muted">P&amp;L summary unavailable — the server did not return a usable summary.</p>
+      )}
+
       {pnl && (
         <div className="grid gap-2 md:grid-cols-6">
           <Stat label="Daily" value={`$${pnl.dailyPnL}`} />
@@ -132,6 +164,8 @@ export default function PositionsPage() {
           {" "}MT5-confirmed positions are listed on{" "}
           <Link href="/my-trades" className="text-primary underline">Open Trades</Link>.
         </div>
+      ) : loadedAt == null ? (
+        loadErr ? null : <p className="p-6 text-center text-sm text-txt-muted">Loading positions…</p>
       ) : visible.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-2">
           <EmptyState
