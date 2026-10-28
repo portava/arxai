@@ -68,6 +68,8 @@ The same tie-break can still push a strike into details. If the strike candle is
 
 Each new name has a positive fixture, a flat negative control, tiny/large price-scale checks, incomplete-candle and future-prefix controls, a trend-context control, and an internal-gap control. Near misses check reaction containment, strict final closes, strike engulfment, the near-open tolerance, gap fill and colour, the side-by-side open and length tolerances, and Mat Hold versus Rising Three Methods in both directions. Every near-miss fixture is asserted to be valid closed evidence, so a rejection never comes from an unavailable scan. A bookkeeping test computes every coverage count from the JSON and the code.
 
+The v5 document's review follow-up lists the one-predicate near misses and window tests later added for these nine shapes, and the corrected Three Methods wording.
+
 The CI-wired `test:candlestick-catalogue`, `test:smart-chart-analysis` and `test:smart-chart-reader` scripts and the workspace typecheck pass for this commit (results in the commit message).
 
 The paired computation harness now snapshots the previous **model and 62-definition catalogue** from `e90081e`. Its `smartChartAnalysis.ts` predates `4d7d3b3`, so the old side also runs the older model; a second run with this commit's parent as `argv[2]` isolates the catalogue change. The budgets stay at model and bind-plus-model p95 ≤10 ms and p99 ≤20 ms. The fixture-batch operation is now `all_positive_fixtures_one_batch` and reports `fixtureCount`; at 71 fixtures its absolute time is not comparable to the 62-fixture row in `SMART_CHART_CANDLE_CATALOGUE_V3.md`.

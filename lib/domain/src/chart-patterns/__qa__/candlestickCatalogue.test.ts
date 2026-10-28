@@ -389,3 +389,186 @@ test("Ladder Bottom needs a visible fourth upper shadow and a fifth open above t
  const tail=observed(fixture(id).slice(-5).map(({open,high,low,close})=>({open,high,low,close})));
  assert.ok(!scanCandlestickCatalogue(tail,{asOf:tail.at(-1)!.closeTime,intervalSeconds:300}).observations.some(o=>o.definition.id===id),"no prior history");
 });
+/** One-predicate near misses for the v4/v5 shapes. Each miss breaks exactly one published
+ * criterion while the rest still hold; the passing control beside it shows that. */
+const set=(b:CatalogueCandle[],at:number,v:Partial<CatalogueCandle>)=>{Object.assign(b.at(at)!,v);};
+function oneSide(id:string,mutate:(b:CatalogueCandle[])=>void,expected:boolean,label:string){const b=fixture(id);mutate(b);assert.equal(has(b,id),expected,`${id}: ${label}`);}
+test("Rising/Falling Three Methods: one-predicate near misses",()=>{
+ const pair=["rising_three_methods","falling_three_methods"] as const;
+ bothSides(...pair,b=>set(b,-3,{open:105.6,high:105.8,close:105.1}),false,"second reaction close equals the first reaction close");
+ bothSides(...pair,b=>{set(b,-2,{open:105.1,high:105.3,close:104.55});set(b,-1,{open:104.8});},true,"control: third reaction close below the second");
+ bothSides(...pair,b=>{set(b,-2,{open:105.1,high:105.3,close:104.6});set(b,-1,{open:104.8});},false,"third reaction close equals the second reaction close");
+ bothSides(...pair,b=>set(b,-1,{open:104.3,high:106.7,low:104.1,close:106.5}),true,"control: a long fifth body closing above the first close");
+ bothSides(...pair,b=>set(b,-1,{open:105.9,high:106.7,low:105.8,close:106.5}),false,"fifth body .6 is not above its prior-10 mean body 1.15");
+ bothSides(...pair,b=>set(b,-1,{open:104.15}),true,"control: fifth open just beyond the third reaction close");
+ bothSides(...pair,b=>set(b,-1,{open:104.1}),false,"fifth open equals the third reaction close");
+ bothSides(...pair,b=>set(b,-2,{open:104.65}),true,"control: third reaction body .55 is short");
+ bothSides(...pair,b=>set(b,-2,{open:105,high:105.1}),false,"third reaction body .9 is not short");
+ bothSides(...pair,b=>set(b,-4,{open:106.15,high:106.2,low:105.9,close:105.95}),true,"control: first reaction close below the first close");
+ bothSides(...pair,b=>set(b,-4,{open:106.15,high:106.2,low:106,close:106.05}),false,"first reaction close beyond the first close");
+ const smallReactions=(b:CatalogueCandle[])=>{
+  set(b,-4,{open:105.6,high:105.8,low:105.2,close:105.3});set(b,-3,{open:105.3,high:105.5,low:104.9,close:105});
+  set(b,-2,{open:105,high:105.2,low:104.6,close:104.7});set(b,-1,{open:104.8});
+ };
+ bothSides(...pair,smallReactions,true,"control: .3 reaction bodies after a long first body");
+ bothSides(...pair,b=>{smallReactions(b);set(b,-5,{open:105});},false,"first body 1 equals its prior-10 mean body");
+});
+test("Mat Hold: one-predicate near misses",()=>{
+ const id="mat_hold";
+ oneSide(id,b=>{set(b,-4,{open:106.5});set(b,-3,{open:106.45,high:106.6,close:105.9});},true,"control: second reaction top below the first reaction open");
+ oneSide(id,b=>{set(b,-4,{open:106.5});set(b,-3,{open:106.5,high:106.6,close:105.9});},false,"second reaction top equals the first reaction open");
+ oneSide(id,b=>{set(b,-2,{open:106.15,high:106.3,close:105.7});set(b,-1,{open:105.8});},true,"control: third reaction top below the second");
+ oneSide(id,b=>{set(b,-2,{open:106.2,high:106.3,close:105.7});set(b,-1,{open:105.8});},false,"third reaction top equals the second reaction top");
+ oneSide(id,b=>set(b,-2,{open:104.6,high:104.7,low:104,close:104.05}),true,"control: reaction bottom just inside the upper half of the first body");
+ oneSide(id,b=>set(b,-2,{open:104.5,high:104.7,low:103.9,close:103.95}),false,"reaction bottom just below the first body's midpoint");
+ oneSide(id,b=>set(b,-3,{close:105.95}),true,"control: reaction bottom just below the first close");
+ oneSide(id,b=>set(b,-3,{close:106}),false,"reaction bottom equals the first close");
+ oneSide(id,b=>set(b,-1,{open:105.45,low:105.4}),true,"control: fifth open just above the last reaction close");
+ oneSide(id,b=>set(b,-1,{open:105.4,low:105.4}),false,"fifth open equals the last reaction close");
+ oneSide(id,b=>set(b,-4,{open:106.5,low:105.9,close:106.05}),true,"control: first reaction body just above the first close");
+ oneSide(id,b=>set(b,-4,{open:106.5,low:105.9,close:106}),false,"first reaction body touches the first close");
+ oneSide(id,b=>set(b,-2,{open:105.45}),true,"control: a .05 third reaction body is short");
+ oneSide(id,b=>set(b,-2,{open:105.4}),false,"a zero-body reaction is not a short body");
+ const smallReactions=(b:CatalogueCandle[])=>{
+  set(b,-4,{open:106.5,high:106.6,low:106.1,close:106.2});set(b,-3,{open:106.1,high:106.2,low:105.6,close:105.8});
+  set(b,-2,{open:106,high:106.05,low:105.6,close:105.7});set(b,-1,{open:105.8});
+ };
+ oneSide(id,smallReactions,true,"control: .3 reaction bodies after a long first body");
+ oneSide(id,b=>{smallReactions(b);set(b,-5,{open:105});},false,"first body 1 equals its prior-10 mean body");
+});
+test("Three-Line Strike: one-predicate near misses",()=>{
+ const pair=["bullish_three_line_strike","bearish_three_line_strike"] as const;
+ bothSides(...pair,b=>set(b,-2,{open:106.55}),true,"control: third open inside the second body plus .25 of its prior mean range");
+ bothSides(...pair,b=>set(b,-2,{open:106.7}),false,"third open beyond the second body plus .25 of its prior mean range");
+ bothSides(...pair,b=>set(b,-3,{open:104.624}),true,"control: second open just inside .25 of the first candle's prior mean range");
+ bothSides(...pair,b=>{set(b,-3,{high:104.2,close:104.05});set(b,-2,{open:104.5,low:104.4});},true,"control: second close just beyond the first close");
+ bothSides(...pair,b=>{set(b,-3,{high:104.2,close:104});set(b,-2,{open:104.5,low:104.4});},false,"second close equals the first close");
+});
+test("Gap Three Methods: one-predicate near misses",()=>{
+ const pair=["upside_gap_three_methods","downside_gap_three_methods"] as const;
+ bothSides(...pair,b=>set(b,-1,{open:106.05}),true,"control: third open just inside the second body");
+ bothSides(...pair,b=>set(b,-1,{open:106}),false,"third open equals the second open");
+ bothSides(...pair,b=>set(b,-1,{close:102.6,low:102.3}),true,"control: third close just inside the first body");
+ bothSides(...pair,b=>set(b,-1,{close:102.4,low:102.3}),false,"third close over-fills beyond the first open");
+ bothSides(...pair,b=>set(b,-1,{close:104.95}),true,"control: third close just inside the first close");
+ bothSides(...pair,b=>set(b,-1,{close:105}),false,"third close equals the first close");
+});
+test("Side-by-Side White Lines: one-predicate near misses and tolerance boundaries",()=>{
+ const upId="upside_gap_side_by_side_white_lines",downId="downside_gap_side_by_side_white_lines";
+ oneSide(upId,b=>set(b,-1,{open:105.62}),true,"control: opens .12 apart, inside .05 of the mean range (.127)");
+ oneSide(upId,b=>set(b,-1,{open:105.63}),false,"opens .13 apart exceed .127");
+ oneSide(upId,b=>set(b,-1,{close:106.42}),true,"control: body difference .63 is inside .25 of the mean range (.635)");
+ oneSide(upId,b=>set(b,-1,{close:106.41}),false,"body difference .64 exceeds .635");
+ oneSide(upId,b=>{set(b,-2,{open:104.55,low:104.4});set(b,-1,{open:104.52,low:104.4});},true,"control: both bodies just above the first body");
+ oneSide(upId,b=>{set(b,-2,{open:104.55,low:104.4});set(b,-1,{open:104.45,low:104.4});},false,"third body dips into the first body");
+ oneSide(upId,b=>{set(b,-2,{open:104.45,low:104.4});set(b,-1,{open:104.55,low:104.4});},false,"second body dips into the first body");
+ const pair={open:107.05,high:108.8,low:106.9,close:108.6};
+ oneSide(upId,b=>{set(b,-2,{open:107,high:108.7,low:106.8,close:108.5});set(b,-1,pair);},true,"control: white middle candle");
+ oneSide(upId,b=>{set(b,-2,{open:107,high:107.2,low:105.3,close:105.5});set(b,-1,pair);},false,"black middle candle with a matching open and length");
+ oneSide(downId,b=>{set(b,-2,{close:99.55,high:99.6});set(b,-1,{close:99.45,high:99.5});},false,"second body reaches into the first body");
+ oneSide(downId,b=>{set(b,-2,{close:99.45,high:99.5});set(b,-1,{close:99.55,high:99.6});},false,"third body reaches into the first body");
+});
+test("Identical Three Crows: one-predicate near misses and tolerance boundaries",()=>{
+ const id="identical_three_crows";
+ oneSide(id,b=>set(b,-1,{open:141.13}),true,"control: third open .13 from the second close, inside .05 of the mean range (.1345)");
+ oneSide(id,b=>set(b,-1,{open:141.14}),false,"third open .14 from the second close exceeds .1345");
+ oneSide(id,b=>set(b,-2,{low:140.75}),true,"control: second lower shadow .25 is below .269");
+ oneSide(id,b=>set(b,-2,{low:140.72}),false,"second lower shadow .28 exceeds .269");
+ oneSide(id,b=>set(b,-1,{low:136.73}),true,"control: third lower shadow .27 is below .288");
+ oneSide(id,b=>set(b,-1,{low:136.7}),false,"third lower shadow .3 exceeds .288");
+ oneSide(id,b=>set(b,-1,{open:141.12,high:141.2,low:140.9,close:140.95}),true,"control: third close just below the second close");
+ oneSide(id,b=>set(b,-1,{open:141.12,high:141.2,low:140.9,close:141}),false,"third close equals the second close");
+});
+test("Two Crows and Upside Gap Two Crows: one-predicate near misses",()=>{
+ oneSide("two_crows",b=>set(b,-1,{close:105.5}),true,"control: third close inside a long first body");
+ oneSide("two_crows",b=>{set(b,-1,{close:105.5});set(b,-3,{open:105});},false,"first body 1 equals its prior-10 mean body");
+ oneSide("two_crows",b=>set(b,-1,{open:106.55}),true,"control: third open just inside the second body");
+ oneSide("two_crows",b=>set(b,-1,{open:106.5}),false,"third open equals the second close");
+ oneSide("two_crows",b=>set(b,-1,{close:102.05,low:101.9}),true,"control: third close just above the first open");
+ oneSide("two_crows",b=>set(b,-1,{close:102,low:101.7}),false,"third close equals the first open");
+ oneSide("two_crows",b=>set(b,-1,{close:105.95}),true,"control: third close just below the first close");
+ oneSide("two_crows",b=>set(b,-1,{close:106}),false,"third close equals the first close");
+ const id="upside_gap_two_crows";
+ oneSide(id,b=>{set(b,-2,{open:107.2,high:107.5});set(b,-1,{open:107.5,high:107.6});},true,"control: second body .6 is short");
+ oneSide(id,b=>{set(b,-2,{open:107.4,high:107.5});set(b,-1,{open:107.5,high:107.6});},false,"second body .8 is not short");
+ oneSide(id,b=>set(b,-1,{open:107.05}),true,"control: third open just above the second open");
+ oneSide(id,b=>set(b,-1,{open:107}),false,"third open equals the second open");
+});
+test("Stick Sandwich: tolerance boundary, reference index and third colour",()=>{
+ const id="stick_sandwich";
+ oneSide(id,b=>set(b,-1,{close:99.62}),true,"control: closes .12 apart");
+ oneSide(id,b=>set(b,-1,{close:99.63}),false,"closes .13 apart exceed .05 of the first candle's prior mean range (.125)");
+ oneSide(id,b=>set(b,-1,{close:99.6248}),true,"control: .1248 is inside .125, so the tolerance uses the first candle's prior range");
+ oneSide(id,b=>set(b,-1,{open:99.4,low:99.3}),false,"white third candle");
+});
+test("Unique Three-River: one-predicate near misses",()=>{
+ const id="unique_three_river_bottom";
+ oneSide(id,b=>set(b,-2,{close:99.55}),true,"control: second close just above the first close");
+ oneSide(id,b=>set(b,-2,{close:99.5}),false,"second close equals the first close");
+ oneSide(id,b=>set(b,-2,{open:103,high:103.2}),true,"control: second open may equal the first open");
+ oneSide(id,b=>set(b,-2,{low:99.25}),true,"control: second low just below the first low");
+ oneSide(id,b=>set(b,-2,{low:99.3}),false,"second low equals the first low");
+ oneSide(id,b=>set(b,-2,{open:100.5}),true,"control: a smaller second body after a long first body");
+ oneSide(id,b=>{set(b,-2,{open:100.5});set(b,-3,{open:100.5});},false,"first body 1 equals its prior-10 mean body");
+});
+test("Three Stars in the South: one-predicate near misses",()=>{
+ const id="three_stars_in_the_south";
+ oneSide(id,b=>set(b,-3,{low:96.9}),true,"control: first lower shadow 2.6 exceeds its body 2.5");
+ oneSide(id,b=>set(b,-3,{low:97}),false,"first lower shadow equals its body");
+ oneSide(id,b=>set(b,-2,{open:100.9,high:101.2}),true,"control: second body 2.4 is smaller than the first");
+ oneSide(id,b=>set(b,-2,{open:101,high:101.2}),false,"second body equals the first body");
+ oneSide(id,b=>set(b,-2,{open:99.55}),true,"control: second open just above the first close");
+ oneSide(id,b=>set(b,-2,{open:99.5}),false,"second open equals the first close");
+ oneSide(id,b=>{set(b,-3,{high:102});set(b,-2,{open:102,high:102.1,close:99.6});},true,"control: second open at the first high");
+ oneSide(id,b=>{set(b,-3,{high:102});set(b,-2,{open:102.05,high:102.1,close:99.6});},false,"second open above the first high");
+ const heldLow=(low:number)=>(b:CatalogueCandle[])=>{set(b,-2,{open:101,high:101.2,low,close:99.85});set(b,-1,{open:99.8,high:99.82,low:99.58,close:99.6});};
+ oneSide(id,heldLow(99.45),true,"control: second low just below the first close");
+ oneSide(id,heldLow(99.5),false,"second low equals the first close");
+ oneSide(id,b=>set(b,-2,{low:95}),true,"control: second low may equal the first low");
+ oneSide(id,b=>set(b,-1,{high:98.89}),true,"control: third upper shadow .29 is below .1 of its prior mean range (.304)");
+ oneSide(id,b=>set(b,-1,{high:98.91}),false,"third upper shadow .31 exceeds .304");
+ oneSide(id,b=>set(b,-1,{low:97.81}),true,"control: third lower shadow .29 is below .304");
+ oneSide(id,b=>set(b,-1,{low:97.79}),false,"third lower shadow .31 exceeds .304");
+ oneSide(id,b=>set(b,-1,{open:98.7,high:98.75}),true,"control: third body .6 is short");
+ oneSide(id,b=>set(b,-1,{open:98.8,high:98.85}),false,"third body .7 is not short");
+ oneSide(id,b=>set(b,-1,{open:98,high:98.05,low:97.51,close:97.55}),true,"control: third low just above the second low");
+ oneSide(id,b=>set(b,-1,{open:98,high:98.05,low:97.5,close:97.55}),false,"third low equals the second low");
+ const small=(b:CatalogueCandle[])=>{set(b,-2,{open:100.2,close:99.3});set(b,-1,{open:98.5,high:98.55});};
+ oneSide(id,small,true,"control: a .9 second body after a long first body");
+ oneSide(id,b=>{small(b);set(b,-3,{open:100.5});},false,"first body 1 equals its prior-10 mean body");
+});
+test("Ladder Bottom: one-predicate near misses",()=>{
+ const id="ladder_bottom";
+ oneSide(id,b=>set(b,-3,{open:99.9,high:100.1}),true,"control: third open just below the second open");
+ oneSide(id,b=>set(b,-3,{open:100,high:100.2}),false,"third open equals the second open");
+ oneSide(id,b=>set(b,-4,{close:99.45}),true,"control: second close just below the first close");
+ oneSide(id,b=>set(b,-4,{close:99.5}),false,"second close equals the first close");
+ oneSide(id,b=>set(b,-3,{close:97.95}),true,"control: third close just below the second close");
+ oneSide(id,b=>set(b,-3,{close:98}),false,"third close equals the second close");
+ oneSide(id,b=>set(b,-2,{high:97.05}),true,"control: fourth upper shadow .25 exceeds .1 of its prior mean range (.247)");
+ oneSide(id,b=>set(b,-2,{high:97.045}),false,"fourth upper shadow .245 is below .247");
+ oneSide(id,b=>set(b,-2,{open:95.8,close:96.8}),false,"white fourth candle");
+});
+const WINDOW_IDS=[["bullish_three_line_strike","bearish_three_line_strike",4],["rising_three_methods","falling_three_methods",5],["mat_hold",null,5],["ladder_bottom",null,5]] as const;
+test("4- and 5-candle windows refuse a gap right after the first formation candle",()=>{
+ for(const [upId,downId,size] of WINDOW_IDS)for(const id of [upId,downId]){
+  if(id===null)continue;
+  const bars=fixture(id);for(const b of bars.slice(-size+1)){b.time+=300;b.closeTime+=300;}
+  assert.ok(!has(bars,id),`${id}: gap after the first formation candle`);
+ }
+});
+test("4- and 5-candle trend windows end before the first formation candle",()=>{
+ /** Closes chosen so the five bars before the formation show no trend, while the same window
+  * shifted one or two bars into the formation would. Body 1 and range 2.5 keep every prior mean. */
+ const withPrefix=(id:string,closes:readonly number[])=>{
+  const b=fixture(id),start=12-closes.length;
+  for(let k=0;k<12;k++){const close=k<start?102:closes[k-start]!;Object.assign(b[k]!,{open:close-1,high:close+.75,low:close-1.75,close});}
+  return b;
+ };
+ const rising=[104,101,101.5,102,102.5],falling=[94,102,101.5,101,100.5];
+ for(const [upId,downId] of WINDOW_IDS){
+  const closes=upId==="ladder_bottom"?falling:rising,b=withPrefix(upId,closes);
+  assert.ok(!has(b,upId),`${upId}: formation bars are not trend context`);
+  if(downId!==null)assert.ok(!has(mirror(b),downId),`${downId}: formation bars are not trend context`);
+ }
+});

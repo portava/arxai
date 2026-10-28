@@ -290,7 +290,7 @@ export function scanCandlestickCatalogue(bars:readonly CatalogueCandle[],options
       if(t==="down"&&down(a)&&firstLong&&down(mid)&&GT(mid.close,a.close)&&LE(mid.open,a.open)&&LT(mid.low,a.low)&&up(c)&&isShortAt(i)&&GT(c.open,mid.low))add(uniqueRiver,i-2,i,`The second down candle reached a lower low ${p(mid.low)} while closing above the first close ${p(a.close)}; a small up body then opened at ${p(c.open)}, above that low. No subsequent reversal is established.`,t,mid.low);
       if(nearRange!=null&&meanRange!=null&&t==="down"&&down(a)&&firstLong&&GT(lower(a),ab)&&down(mid)&&LT(mb,ab)&&GT(mid.open,a.close)&&LE(mid.open,a.high)&&LT(mid.low,a.close)&&GE(mid.low,a.low)&&GT(lower(mid),.1*nearRange)
         &&down(c)&&isShortAt(i)&&LT(u,.1*meanRange)&&LT(l,.1*meanRange)&&GT(c.low,mid.low)&&LT(c.high,mid.high))
-        add(threeStars,i-2,i,`Three down candles narrowed: lows ${p(a.low)}, ${p(mid.low)} and ${p(c.low)}, with the small third range inside the second. The narrowing is observed; a reversal is unproven.`,t,c.low);
+        add(threeStars,i-2,i,`After a long down candle with a long lower shadow (low ${p(a.low)}), a smaller down body held a low of ${p(mid.low)}; a short down candle then traded inside the second range, low ${p(c.low)}. The shape is observed; a reversal is unproven.`,t,c.low);
     }
     if(i>=3&&contiguous(closed,i-3,i,intervalSeconds)){
       const a=closed[i-3]!,m1=closed[i-2]!,m2=closed[i-1]!;
@@ -319,7 +319,7 @@ export function scanCandlestickCatalogue(bars:readonly CatalogueCandle[],options
         const contained=reactions.every(r=>GE(bot(r),a.low)&&LE(top(r),a.high));
         const rising=t==="up"&&risingShape&&down(r2)&&down(r3)&&firstLong&&shortReactions&&contained&&LE(r1.close,a.close)&&LT(r2.close,r1.close)&&LT(r3.close,r2.close)&&long&&GT(c.open,r3.close)&&GT(c.close,a.close);
         const falling=t==="down"&&fallingShape&&firstLong&&shortReactions&&contained&&GE(r1.close,a.close)&&GT(r2.close,r1.close)&&GT(r3.close,r2.close)&&long&&LT(c.open,r3.close)&&LT(c.close,a.close);
-        if(rising||falling)add(rising?risingMethods:fallingMethods,i-4,i,`Three short reaction bodies stayed within the first range ${p(a.low)}-${p(a.high)}; the fifth candle closed at ${p(c.close)}, ${rising?"above":"below"} the first close ${p(a.close)}. The resumed move is observed; continuation is unknown.`,t,a.close);
+        if(rising||falling)add(rising?risingMethods:fallingMethods,i-4,i,`Three short reaction bodies stayed within the first high-low range ${p(a.low)}-${p(a.high)}; the fifth candle closed at ${p(c.close)}, ${rising?"above":"below"} the first close ${p(a.close)}. The resumed move is observed; continuation is unknown.`,t,a.close);
         const highest=Math.max(r1.high,r2.high,r3.high),floor=a.close-.5*ab;
         const held=[r2,r3].every(r=>LT(bot(r),a.close)&&GT(bot(r),floor));
         if(t==="up"&&risingShape&&firstLong&&shortReactions&&GT(r1.close,a.close)&&held&&LT(top(r2),r1.open)&&LT(top(r3),top(r2))&&GT(c.open,r3.close)&&GT(c.close,highest))add(matHold,i-4,i,`A short down body gapped above the first body; later reaction bodies held above ${p(floor)}. The fifth candle closed at ${p(c.close)}, above the highest reaction high ${p(highest)}. Continuation is unknown.`,t,a.close);

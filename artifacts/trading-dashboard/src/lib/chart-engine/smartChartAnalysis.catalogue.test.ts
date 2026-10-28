@@ -114,7 +114,8 @@ describe("source-aware catalogue integration",()=>{
  it("keeps Gap Three Methods and Tasuki Gap in one tasuki_gap slot and Three Methods in one slot",()=>{
   for(const id of ["upside_gap_three_methods","downside_gap_three_methods","upside_tasuki_gap","downside_tasuki_gap"]){
    const bars=CANDLE_FIXTURES.find(f=>f.id===id)!.bars,result=analyzeSmartChart(input(bars));
-   expect(result.findings.filter(f=>f.family==="tasuki_gap").length).toBeLessThanOrEqual(1);
+   expect(result.findings.filter(f=>f.family==="tasuki_gap")).toHaveLength(1);
+   expect(result.findings.find(f=>f.family==="tasuki_gap")!.id).toBe(`${id}:${bars.at(-1)!.time}`);
   }
   for(const id of ["rising_three_methods","falling_three_methods","mat_hold"]){
    const bars=CANDLE_FIXTURES.find(f=>f.id===id)!.bars,result=analyzeSmartChart(input(bars));
