@@ -38,12 +38,18 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 describe("ticket wiring", () => {
   const strip = (s: string) => s.replace(/\/\/.*$/gm, "");
-  it("live-manual and the Command Room take their dollar figures from the estimator", () => {
+  it("live-manual takes its dollar figures from the estimator; the Command Room from quickTradeRiskApprox", () => {
     const manual = strip(readFileSync(resolve(HERE, "../pages/live-manual.tsx"), "utf8"));
     const room = strip(readFileSync(resolve(HERE, "../pages/trade-command-room.tsx"), "utf8"));
+    const quickRisk = strip(readFileSync(resolve(HERE, "../components/dashboard/trade/quickTradeRisk.ts"), "utf8"));
     expect(manual).toMatch(/estimateMoneyAtDistance\(/);
     expect(manual).not.toMatch(/\*\s*10000/);
-    expect(room).toMatch(/estimateMoneyAtDistance\(/);
+    // The Command Room's Quick Trade figure has the same contract-size and
+    // USD-conversion rules, plus a market-quote gate (no figure from the
+    // simulator quote).
+    expect(room).toMatch(/quickTradeRiskApprox\(/);
     expect(room).not.toMatch(/pipValuePerLot\s*=\s*10\b/);
+    expect(quickRisk).toMatch(/isMarketQuote\(quote\)/);
+    expect(quickRisk).not.toMatch(/pipValuePerLot\s*=\s*10\b/);
   });
 });

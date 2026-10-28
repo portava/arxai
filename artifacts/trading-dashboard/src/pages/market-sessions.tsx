@@ -88,13 +88,19 @@ export default function MarketSessionsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {weekend
-                ? <p className="text-sm text-muted-foreground" data-testid="sessions-weekend-closed">FX market closed for the weekend — no session is open.</p>
-                : c.activeSessions.length === 0
-                ? <p className="text-sm text-muted-foreground">No major session active.</p>
-                : c.activeSessions.map((s) => <Badge key={s} className="mr-1">{s}</Badge>)}
-              {c.overlap && <Badge className="ml-2 bg-amber-500/20 text-amber-400">OVERLAP</Badge>}
-              <p className="text-sm mt-3">{c.recommendation}</p>
+              {weekend ? (
+                // The server's overlap flag and recommendation come from the
+                // hour-only derivation, so they are not shown while FX is shut.
+                <p className="text-sm text-muted-foreground" data-testid="sessions-weekend-closed">FX market closed for the weekend — no session is open.</p>
+              ) : (
+                <>
+                  {c.activeSessions.length === 0
+                    ? <p className="text-sm text-muted-foreground">No major session active.</p>
+                    : c.activeSessions.map((s) => <Badge key={s} className="mr-1">{s}</Badge>)}
+                  {c.overlap && <Badge className="ml-2 bg-amber-500/20 text-amber-400">OVERLAP</Badge>}
+                  <p className="text-sm mt-3">{c.recommendation}</p>
+                </>
+              )}
             </CardContent>
           </Card>
 

@@ -47,7 +47,7 @@ describe("Orders page — labels", () => {
   it("a failed read says the list could not be loaded, not 'No pending orders yet.'", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ error: "nope" }, 500)));
     render(<OrdersPage />);
-    await screen.findByText(/could not load your simulator orders/i);
+    await screen.findByText(/orders could not be loaded/i);
     expect(screen.queryByText("No pending orders yet.")).toBeNull();
   });
 });

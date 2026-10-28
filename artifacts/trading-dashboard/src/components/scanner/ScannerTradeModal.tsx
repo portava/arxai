@@ -509,6 +509,10 @@ export function ScannerTradeModal({
         warnings.push(pipSize == null
           ? `R:R not shown: without the broker's pip size for ${signal.symbol} a near-zero stop cannot be ruled out.`
           : "R:R unavailable until a valid stop loss is set.");
+        // The price distances are plain arithmetic on the ticket's prices and
+        // stay shown when only the pip size (needed for the ratio) is missing.
+        const r = Math.abs(effEntry - assessedSl), w = Math.abs(tpv - effEntry);
+        if (pipSize == null && r > 0 && w > 0) { riskPx = r; rewardPx = w; }
       } else {
         riskPx = Math.abs(effEntry - assessedSl);
         rewardPx = Math.abs(tpv - effEntry);

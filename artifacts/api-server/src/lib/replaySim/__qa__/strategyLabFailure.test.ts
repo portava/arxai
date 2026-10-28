@@ -39,7 +39,7 @@ mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
 const { runExperiment } = await import("../strategyLab.js");
 
 test("a run that throws is recorded as FAILED, not left RUNNING", async () => {
-  await assert.rejects(() => runExperiment("exp_1"), /scenario store unavailable/);
+  await assert.rejects(() => runExperiment("exp_1", 7), /scenario store unavailable/);
   assert.equal(updates[0]?.status, "RUNNING");
   const last = updates.at(-1)!;
   assert.equal(last.status, "FAILED");

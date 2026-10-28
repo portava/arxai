@@ -230,8 +230,9 @@ describe("the assistant card never presents a template as the assistant's read",
     stubServer({ live: [liveEvt({ id: "nfp", title: "Non Farm Payrolls", when: at(2, 13, 30) })] });
     renderPage();
     await screen.findByText("Overall Risk");
-    expect(screen.getByTestId("eco-overall-risk").textContent).not.toBe("Low");
-    expect(screen.getByTestId("eco-overall-risk").textContent).toMatch(/No events today/);
+    // The provider read resolves after first paint ("Unknown" until then).
+    await vi.waitFor(() => expect(screen.getByTestId("overall-risk").textContent).toMatch(/No events today/));
+    expect(screen.getByTestId("overall-risk").textContent).not.toBe("Low");
   });
 });
 

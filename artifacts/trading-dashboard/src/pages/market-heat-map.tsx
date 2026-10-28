@@ -1565,4 +1565,4 @@ export default function MarketHeatMapPage() {
 }
 
 // Exported for render tests only (truth/label regression coverage).
-export { NowTab, TodayTab, BySessionTab, NewsHeatTab, SessionCard, DangerWindowsTab };
+export { BySessionTab, NewsHeatTab };

@@ -171,6 +171,7 @@ export default function MT5BridgePage() {
     : blockedReason ? "Blocked"
     : approved ? "Approved"
     : approvalStatus === "NOT_REQUIRED" ? "Not required"
+    : approvalStatus === "PENDING" ? "Pending"
     : "Not approved";
   const liveAccessLabel = liveArmed ? "Enabled" : mode.isLiveShared ? "Live Shared · not armed" : "Not enabled";
 

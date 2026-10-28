@@ -55,7 +55,7 @@ describe("Positions page — simulator source", () => {
   it("a failed read says it could not load, never 'No open positions'", async () => {
     stubFetch({ "/api/oms/positions": () => json({ error: "boom" }, 500), "/api/pnl/summary": () => json({ error: "boom" }, 500) });
     render(<PositionsPage />);
-    await screen.findByText(/could not load your simulator positions/i);
+    await screen.findByText(/positions could not be loaded/i);
     expect(screen.queryByText(/No open/i)).toBeNull();
     expect(document.body.textContent).not.toMatch(/\$undefined/);
   });

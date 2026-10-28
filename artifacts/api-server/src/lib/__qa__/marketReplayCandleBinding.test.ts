@@ -14,8 +14,8 @@ test("each replay decision is tied to the candle at its index", () => {
   assert.ok(s.candles.length >= 3, "simulator seeds candle history");
   const steps = [replayStep(s.replayId), replayStep(s.replayId), replayStep(s.replayId)];
   const decisions = steps.map((r, i) => {
-    assert.ok(r && "decision" in r, `step ${i} returns a decision`);
-    return r;
+    assert.ok(r?.decision, `step ${i} returns a decision`);
+    return { ...r, decision: r.decision };
   });
   for (const [i, r] of decisions.entries()) {
     const c = s.candles[i]!;

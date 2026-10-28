@@ -5,16 +5,27 @@
 // so a viewer saw a 20-hour-old snapshot as current, with no push time, a
 // missing profit printed as "0.00", and nothing saying the list is not
 // scoped to their account.
+//
+// The page no longer reads GET /mt5/state at all (your own positions come
+// from the per-user Open Trades panel), so in every bridge state none of the
+// platform-wide snapshot's positions may appear.
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 
 let mt5State: Record<string, unknown> | undefined;
+const mt5StateReads = vi.fn();
 
 vi.mock("@workspace/api-client-react", () => ({
   useGetOpenTrades: () => ({ data: [], isLoading: false }),
-  useGetMt5State: () => ({ data: mt5State }),
+  useGetMt5State: () => { mt5StateReads(); return { data: mt5State }; },
   getGetOpenTradesQueryKey: () => ["open"],
   getGetMt5StateQueryKey: () => ["mt5"],
+}));
+vi.mock("@/hooks/useTradingMode", () => ({
+  useTradingMode: () => ({
+    isLoading: false, isError: false, envelope: { currentAccountMode: "PAPER" },
+    isLiveShared: false, isDemo: false, isPaper: true, cleanModeLabel: "Paper",
+  }),
 }));
 vi.mock("@/components/LiveTradeCard", () => ({ LiveTradeCard: () => null }));
 vi.mock("@/components/live/LiveSlotSummaryCard", () => ({ LiveSlotSummaryCard: () => null }));
@@ -35,32 +46,31 @@ const positions = [
 
 afterEach(() => cleanup());
 
+function expectNoPlatformSnapshot() {
+  expect(screen.queryByText(/MT5 Positions/)).toBeNull();
+  for (const p of positions) expect(screen.queryByText(new RegExp(`#${p.ticket}`))).toBeNull();
+  expect(screen.queryByTestId("mt5-positions-card")).toBeNull();
+  expect(mt5StateReads).not.toHaveBeenCalled();
+}
+
 describe("live-trades MT5 positions card", () => {
   it("does not list an offline bridge's old snapshot as current positions", () => {
     mt5State = { connected: false, positions, lastHeartbeatAt: twentyHoursAgo, lastSyncAt: twentyHoursAgo };
     render(<LiveTrades />);
-    expect(screen.queryByText(/MT5 Positions \(4\)/)).toBeNull();
-    expect(screen.queryByText(/#1001/)).toBeNull();
-    const note = screen.getByTestId("mt5-positions-stale");
-    expect(note.textContent).toMatch(/offline/i);
-    expect(note.textContent).toMatch(/not current/i);
-    expect(note.textContent).toMatch(/4 positions/);
+    expectNoPlatformSnapshot();
   });
 
-  it("when online, states the push time and that the snapshot is platform-wide; missing profit is not 0.00", () => {
+  it("does not list the platform-wide snapshot as the viewer's positions even when the bridge is online", () => {
     mt5State = { connected: true, positions, lastHeartbeatAt: new Date().toISOString(), lastSyncAt: "2026-10-28T05:00:00.000Z" };
     render(<LiveTrades />);
-    const card = screen.getByTestId("mt5-positions-card");
-    expect(card.textContent).toMatch(/not filtered to your account/i);
-    expect(card.textContent).toMatch(/last pushed/i);
-    const row = screen.getByText(/#1001/).parentElement!;
-    expect(row.textContent).not.toContain("0.00");
-    expect(row.textContent).toContain("—");
+    expectNoPlatformSnapshot();
+    // A missing profit is never printed as a zero.
+    expect(document.body.textContent).not.toContain("0.00");
   });
 
-  it("says the push time is unknown when lastSyncAt is missing", () => {
+  it("does not list a snapshot with an unknown push time", () => {
     mt5State = { connected: true, positions, lastHeartbeatAt: new Date().toISOString(), lastSyncAt: null };
     render(<LiveTrades />);
-    expect(screen.getByTestId("mt5-positions-card").textContent).toMatch(/push time unknown/i);
+    expectNoPlatformSnapshot();
   });
 });

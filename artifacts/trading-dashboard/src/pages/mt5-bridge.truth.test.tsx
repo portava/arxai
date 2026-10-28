@@ -25,7 +25,7 @@ const BASE_STATUS = {
 };
 
 beforeEach(() => {
-  tradingMode = { isLoading: false, isFrozen: false, isLiveShared: true, approvalStatus: "APPROVED" };
+  tradingMode = { isLoading: false, isFrozen: false, isLiveShared: true, isLiveArmed: true, envelope: { userApprovalStatus: "APPROVED", liveExecutionArmed: true } };
 });
 afterEach(cleanup);
 
@@ -77,7 +77,7 @@ describe("MT5 Bridge: heartbeat is not approval, feed or reporting", () => {
   }
 
   beforeEach(() => {
-    tradingMode = { isLoading: false, isFrozen: false, isLiveShared: false, approvalStatus: "PENDING" };
+    tradingMode = { isLoading: false, isFrozen: false, isLiveShared: false, envelope: { userApprovalStatus: "PENDING", liveExecutionArmed: false } };
     statusResult = { isLoading: false, isError: false, data: {
       ...BASE_STATUS, connected: true, mode: "DEMO", secondsSinceHeartbeat: 2, route: "OWN_CONNECTION",
       sharedMasterBridge: null, userSafeMessage: null,

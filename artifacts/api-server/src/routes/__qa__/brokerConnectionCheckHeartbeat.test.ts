@@ -54,7 +54,7 @@ async function connectionCheck(): Promise<Record<string, unknown>> {
     } as unknown as Request;
     const res = {
       statusCode: 200,
-      status(code: number) { this.statusCode = code; return this; },
+      status(code: number) { (this as { statusCode: number }).statusCode = code; return this; },
       json(body: Record<string, unknown>) { resolve(body); return this; },
       setHeader() { return this; },
     } as unknown as Response;

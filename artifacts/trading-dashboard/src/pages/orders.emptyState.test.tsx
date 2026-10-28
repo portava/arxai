@@ -54,6 +54,6 @@ describe("Orders empty state truth", () => {
   it("a genuinely empty book says there are no orders", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ orders: [] }), { status: 200 })));
     render(<OrdersPage />);
-    await waitFor(() => expect(screen.getByText("No orders yet.")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("No simulator orders on your account.")).toBeTruthy());
   });
 });

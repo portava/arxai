@@ -43,7 +43,7 @@ test("win rate counts only trades with a recorded outcome (WAIT and no-P&L rows 
   const well = String(s["doingWell"]);
   assert.doesNotMatch(well, /50%/);
   assert.doesNotMatch(well, /across 8/);
-  assert.match(well, /Win rate 100% across 4 simulated trades with a recorded result/);
+  assert.match(well, /Win rate 100% across 4 journal trades with a recorded result/);
   assert.match(well, /4 journal entries/);
   assert.equal(s["winRate"], 100);
   assert.equal(s["tradesWithOutcome"], 4);

@@ -49,11 +49,11 @@ describe("Trade Journal truth", () => {
     expect((await screen.findByTestId("journal-empty")).textContent).toMatch(/No journal entries yet/);
   });
 
-  it("at the server's 100-entry page the count is labelled as the newest 100, not the total", async () => {
+  it("at the server's 100-entry page the count is labelled as the latest 100, not the total", async () => {
     serve(200, Array.from({ length: 100 }, (_, i) => entry(i + 1)));
     renderPage();
     await screen.findAllByText("EURUSD");
-    expect(screen.getByText("Entries (newest 100)")).toBeTruthy();
+    expect(screen.getByText("Entries (latest 100)")).toBeTruthy();
     expect(screen.queryByText("Total Entries")).toBeNull();
   });
 });

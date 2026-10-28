@@ -74,7 +74,7 @@ test("journal with no recorded P/L does not report a win rate", async () => {
   rows = [entry(1, "WAIT", null), entry(2, "BUY", null)];
   const c = await coach();
   assert.doesNotMatch(String(c["doingWell"]), /Win rate|winners/);
-  assert.match(String(c["doingWell"]), /none with a recorded P\/L.*no win rate/i);
+  assert.match(String(c["doingWell"]), /none of your 2 journal entries have a recorded win or loss.*no win rate/i);
 });
 
 test("many journalled trades never invent a confidence alignment", async () => {
