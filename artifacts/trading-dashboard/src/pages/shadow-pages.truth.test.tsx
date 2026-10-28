@@ -25,6 +25,7 @@ import StrategyTournament from "./strategy-tournament";
 import ShadowMode from "./shadow-mode";
 import ShadowJournal from "./shadow-journal";
 import ConfidenceCalibration from "./confidence-calibration";
+import StrategyPromotion from "./strategy-promotion";
 
 function jsonResponse(status: number, body: unknown): Response {
   return { status, ok: status >= 200 && status < 300, json: async () => body } as unknown as Response;
@@ -158,5 +159,28 @@ describe("Confidence Calibration", () => {
     expect(screen.queryByText("0%")).toBeNull();
     expect(screen.getByText("60%")).toBeTruthy();
     expect(screen.getByText(/0 high and 20 low/)).toBeTruthy();
+  });
+});
+
+describe("Strategy Promotion", () => {
+  const GATE = {
+    strategy: "Session Breakout", level: "TESTING", demotion: null, updatedAt: null, lastReason: null, eligibleFor: null,
+    stats: { sample: 4, tracked: 0, winRate: 0, avgR: 0, drawdownR: 0, rgViolations: 0, expectancy: 0 },
+  };
+
+  it("a strategy with no tracked outcome shows no win rate or R, and an untouched gate has no reason", async () => {
+    bodies["/api/strategy-promotion"] = { strategies: [GATE], demotionSuggestions: [{ strategy: "Session Breakout", suggested: null, reasons: [], tracked: 0 }] };
+    await show(<StrategyPromotion />);
+    expect(screen.getByText(/no tracked win or loss yet, so no win rate or R/)).toBeTruthy();
+    expect(screen.queryByText(/wr=0%/)).toBeNull();
+    expect(screen.getByText("No promotion or demotion recorded yet.")).toBeTruthy();
+    expect(screen.getByText(/No demotions suggested for the 1 strategy checked\. 0 of 1 had the 10\+ tracked outcomes/)).toBeTruthy();
+  });
+
+  it("with nothing checked it does not claim 'No demotions suggested'", async () => {
+    bodies["/api/strategy-promotion"] = { strategies: [], demotionSuggestions: [] };
+    await show(<StrategyPromotion />);
+    expect(screen.queryByText(/No demotions suggested/)).toBeNull();
+    expect(screen.getByText(/none was checked for demotion/)).toBeTruthy();
   });
 });

@@ -466,10 +466,6 @@ function maxDrawdownR(arr: ShadowDecision[]): number {
 }
 
 // ── Strategy Tournament ───────────────────────────────────────────────────
-export const TOURNAMENT_STRATEGIES = [
-  "Conservative Pullback", "Trend Continuation", "Breakout Confirmation",
-  "Liquidity Sweep Reversal", "Gold Scalping Test", "Custom Strategy",
-];
 let tournamentStartedAt: string | null = null;
 let tournamentEnabled = false;
 
@@ -639,11 +635,28 @@ export type PromotionLevel = "TESTING" | "WATCHLIST" | "PAPER_APPROVED" | "DEMO_
 export type DemotionLevel = "WATCHLIST" | "NEEDS_REVIEW" | "PAUSED" | "RETIRED";
 
 interface StrategyGate { strategy: string; level: PromotionLevel; demotion: DemotionLevel | null; updatedAt: string; lastReason: string }
+/** A gate as read: updatedAt/lastReason are null until a promotion or demotion happens. */
+type StrategyGateView = Omit<StrategyGate, "updatedAt" | "lastReason"> & { updatedAt: string | null; lastReason: string | null };
+// Gate records exist only once an admin promoted or demoted the strategy.
 const gates = new Map<string, StrategyGate>();
 function getGate(strategy: string): StrategyGate {
   let g = gates.get(strategy);
   if (!g) { g = { strategy, level: "TESTING", demotion: null, updatedAt: new Date().toISOString(), lastReason: "init" }; gates.set(strategy, g); }
   return g;
+}
+/** Read-only gate: never creates a record, so reading the page is not an event. */
+function viewGate(strategy: string): StrategyGateView {
+  return gates.get(strategy) ?? { strategy, level: "TESTING", demotion: null, updatedAt: null, lastReason: null };
+}
+/**
+ * Strategies the gates cover: every strategy that made a shadow decision
+ * (scan placeholders excluded) plus any an admin already promoted or demoted.
+ */
+function gatedStrategies(): string[] {
+  const names = new Set<string>();
+  for (const d of decisions.values()) if (!isScanPlaceholder(d.strategy)) names.add(d.strategy);
+  for (const k of gates.keys()) names.add(k);
+  return Array.from(names);
 }
 
 function strategyStats(strategy: string) {
@@ -660,12 +673,8 @@ function strategyStats(strategy: string) {
 }
 
 export function promotionStatus() {
-  const strategies = new Set<string>([
-    ...TOURNAMENT_STRATEGIES,
-    ...Array.from(decisions.values()).map((d) => d.strategy),
-  ]);
-  return Array.from(strategies).map((s) => {
-    const g = getGate(s); const st = strategyStats(s); const cal = confidenceCalibration();
+  return gatedStrategies().map((s) => {
+    const g = viewGate(s); const st = strategyStats(s); const cal = confidenceCalibration();
     const eligible = computeNextLevel(g.level, st, cal.label);
     return { ...g, stats: st, eligibleFor: eligible };
   });
@@ -689,9 +698,10 @@ function computeNextLevel(curr: PromotionLevel, st: ReturnType<typeof strategySt
   return null;
 }
 export function promote(strategy: string, by: string): { ok: boolean; gate?: StrategyGate; error?: string } {
-  const g = getGate(strategy); const st = strategyStats(strategy); const cal = confidenceCalibration();
-  const next = computeNextLevel(g.level, st, cal.label);
-  if (!next) return { ok: false, error: `Strategy ${strategy} not eligible from ${g.level}` };
+  const st = strategyStats(strategy); const cal = confidenceCalibration();
+  const next = computeNextLevel(viewGate(strategy).level, st, cal.label);
+  if (!next) return { ok: false, error: `Strategy ${strategy} not eligible from ${viewGate(strategy).level}` };
+  const g = getGate(strategy);
   g.level = next; g.demotion = null; g.updatedAt = new Date().toISOString();
   g.lastReason = `Promoted to ${next} by ${by}; sample=${st.tracked}, wr=${(st.winRate * 100).toFixed(1)}%, exp=${st.expectancy.toFixed(2)}`;
   return { ok: true, gate: g };
@@ -703,8 +713,10 @@ export function demote(strategy: string, level: DemotionLevel, reason: string, b
   return g;
 }
 export function demotionScan() {
-  const out: Array<{ strategy: string; suggested: DemotionLevel | null; reasons: string[] }> = [];
-  for (const s of TOURNAMENT_STRATEGIES) {
+  // Checks the same strategies the gates list (the ones that make decisions).
+  // WIN_RATE_LOW / NEGATIVE_R need 10+ tracked outcomes; `tracked` says how many there were.
+  const out: Array<{ strategy: string; suggested: DemotionLevel | null; reasons: string[]; tracked: number }> = [];
+  for (const s of gatedStrategies()) {
     const st = strategyStats(s);
     const reasons: string[] = [];
     if (st.tracked >= 10 && st.winRate < 0.3) reasons.push("WIN_RATE_LOW");
@@ -715,7 +727,7 @@ export function demotionScan() {
     if (reasons.length >= 3) suggested = "RETIRED";
     else if (reasons.length === 2) suggested = "PAUSED";
     else if (reasons.length === 1) suggested = "NEEDS_REVIEW";
-    out.push({ strategy: s, suggested, reasons });
+    out.push({ strategy: s, suggested, reasons, tracked: st.tracked });
   }
   return out;
 }
