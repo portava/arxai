@@ -10083,6 +10083,30 @@ export interface DataProviderStatus {
   active: boolean;
 }
 
+/**
+ * What observedAt means. server_receive is the time ARX received the quote (the market tick may be older) and can never read fresh.
+ */
+export type MarketQuoteTimeBasis =
+  (typeof MarketQuoteTimeBasis)[keyof typeof MarketQuoteTimeBasis];
+
+export const MarketQuoteTimeBasis = {
+  producer_tick: "producer_tick",
+  provider_as_of: "provider_as_of",
+  server_receive: "server_receive",
+  none: "none",
+} as const;
+
+export type MarketQuoteFreshness =
+  (typeof MarketQuoteFreshness)[keyof typeof MarketQuoteFreshness];
+
+export const MarketQuoteFreshness = {
+  fresh: "fresh",
+  delayed: "delayed",
+  stale: "stale",
+  unknown: "unknown",
+  unavailable: "unavailable",
+} as const;
+
 export interface MarketQuote {
   symbol: string;
   /** @nullable */
@@ -10093,7 +10117,32 @@ export interface MarketQuote {
   last?: number | null;
   /** @nullable */
   spread?: number | null;
+  /** For a served quote, the quote's own time (see timeBasis). When no quote was available (available=false) this is only the time the check ran — it is not an observation time. */
   timestamp: string;
+  /** True only when a price (last, bid or ask) was served. */
+  available?: boolean;
+  /**
+   * Router provider that served the quote; null when none did.
+   * @nullable
+   */
+  source?: string | null;
+  /**
+   * When the price was observed (ISO); null when unknown or unavailable.
+   * @nullable
+   */
+  observedAt?: string | null;
+  /** What observedAt means. server_receive is the time ARX received the quote (the market tick may be older) and can never read fresh. */
+  timeBasis?: MarketQuoteTimeBasis;
+  /** @nullable */
+  ageMs?: number | null;
+  freshness?: MarketQuoteFreshness;
+  /** True when stale, unknown or unavailable — the price must not be shown as current. */
+  stale?: boolean;
+  staleAfterMs?: number;
+  /** When this lookup ran (ISO). */
+  checkedAt?: string;
+  /** Plain English — what was observed, from which source, as of when, or that it could not be. */
+  observationNote?: string;
 }
 
 export type TradeHealthState =
@@ -13103,6 +13152,18 @@ export const MultiTimeframeTrendSnapshotTrend = {
   INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
+/**
+ * CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.
+ */
+export type MultiTimeframeTrendSnapshotFreshness =
+  (typeof MultiTimeframeTrendSnapshotFreshness)[keyof typeof MultiTimeframeTrendSnapshotFreshness];
+
+export const MultiTimeframeTrendSnapshotFreshness = {
+  CURRENT: "CURRENT",
+  STALE: "STALE",
+  UNKNOWN: "UNKNOWN",
+} as const;
+
 export interface MultiTimeframeTrendSnapshot {
   trend: MultiTimeframeTrendSnapshotTrend;
   strength: number;
@@ -13110,8 +13171,23 @@ export interface MultiTimeframeTrendSnapshot {
   fastSma: number;
   slowSma: number;
   candlesUsed: number;
+  /**
+   * Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.
+   * @nullable
+   */
+  newestBarTime?: string | null;
+  /** CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports. */
+  freshness?: MultiTimeframeTrendSnapshotFreshness;
+  /**
+   * Provider that served this timeframe's bars, or null when not reported. Absent on older reports.
+   * @nullable
+   */
+  source?: string | null;
 }
 
+/**
+ * DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).
+ */
 export type MultiTimeframeReportAlignmentLabel =
   (typeof MultiTimeframeReportAlignmentLabel)[keyof typeof MultiTimeframeReportAlignmentLabel];
 
@@ -13123,6 +13199,7 @@ export const MultiTimeframeReportAlignmentLabel = {
   HIGHER_TIMEFRAME_WARNING: "HIGHER_TIMEFRAME_WARNING",
   NO_CLEAR_BIAS: "NO_CLEAR_BIAS",
   INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
+  DATA_NOT_CURRENT: "DATA_NOT_CURRENT",
 } as const;
 
 export type MultiTimeframeReportBestBias =
@@ -13145,6 +13222,7 @@ export interface MultiTimeframeReport {
   middleTrend: MultiTimeframeTrendSnapshot;
   higherTrend: MultiTimeframeTrendSnapshot;
   alignmentScore: number;
+  /** DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning). */
   alignmentLabel: MultiTimeframeReportAlignmentLabel;
   conflictWarning?: string | null;
   bestBias: MultiTimeframeReportBestBias;

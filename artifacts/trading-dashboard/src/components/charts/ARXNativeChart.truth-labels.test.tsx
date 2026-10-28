@@ -51,6 +51,7 @@ const adapterSpies = {
   setScaleMode: vi.fn(),
   setReachStartHandler: vi.fn(),
   priceToCoordinate: vi.fn(() => null),
+  setDisplayPricePrecision: vi.fn(),
 };
 
 vi.mock("@/lib/chart-engine", () => ({
@@ -375,5 +376,92 @@ describe("the header chip and its cap describe the same candle window", () => {
   it("follows a custom chart limit", () => {
     renderChart({ limit: 500 });
     expect(scannerTruthCalls.at(-1)![2]).toEqual({ limit: 500, refetchInterval: 8000 });
+  });
+});
+
+describe("the frozen-quote chip follows the server's closed-market semantics", () => {
+  const CHIP = "arx-native-market-closed";
+  function emitFrozen() {
+    act(() => {
+      openedSources[0]!.onmessage?.({
+        data: JSON.stringify({
+          type: "feed_status", source: "mt5_broker", symbol: SYMBOL, timeframe: TF,
+          marketFrozen: true, lastBrokerTimeMs: Date.UTC(2026, 9, 28, 9, 30), ts: Date.now(),
+        }),
+      });
+    });
+  }
+
+  it("a frozen quote on a weekday reads 'Quote not moving', never 'Market closed'", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 28, 12, 0)); // Wednesday
+    renderChart();
+    emitFrozen();
+    const chip = screen.getByTestId(CHIP);
+    expect(chip.textContent).toMatch(/Quote not moving — last quote Wed 09:30 UTC/);
+    expect(chip.textContent).not.toMatch(/market closed/i);
+    expect(chip.getAttribute("title") ?? "").not.toMatch(/the market is closed/i);
+  });
+
+  it("inside the scheduled weekend close the same signal reads 'Market closed'", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 12, 0)); // Saturday
+    renderChart();
+    emitFrozen();
+    expect(screen.getByTestId(CHIP).textContent).toMatch(/Market closed — last quote/);
+  });
+
+  it("a 24/7 market is never called closed by a frozen quote", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 12, 0)); // Saturday
+    setResponse(makeResponse({ assetClass: "crypto" } as Partial<ChartFeedStatus>));
+    renderChart();
+    emitFrozen();
+    expect(screen.getByTestId(CHIP).textContent).toMatch(/Quote not moving/);
+  });
+});
+
+describe("one instrument precision on the native chart's axis, header and side panels", () => {
+  function withServerPrecision(p: number | null): ChartCandlesResponse {
+    return { ...makeResponse(), truthResult: { pricePrecision: p } } as unknown as ChartCandlesResponse;
+  }
+
+  it("resolves the shared precision (server-declared, widened by observed digits) for the header and the axis", () => {
+    setResponse(withServerPrecision(4));
+    renderChart();
+    expect(screen.getByTestId("arx-native-last").textContent).toMatch(/1\.1020$/);
+    expect(adapterSpies.setDisplayPricePrecision).toHaveBeenLastCalledWith(4);
+  });
+
+  it("with no server precision the quotes' own digits decide, not a fiat-pair guess", () => {
+    setResponse(withServerPrecision(null));
+    renderChart();
+    expect(screen.getByTestId("arx-native-last").textContent).toMatch(/1\.102$/);
+    expect(adapterSpies.setDisplayPricePrecision).toHaveBeenLastCalledWith(3);
+  });
+
+  it("publishes the precision for the side panels of the same symbol and withdraws it on unmount", async () => {
+    const { readChartPricePrecision } = await import("./chartPricePrecisionStore");
+    setResponse(withServerPrecision(4));
+    const view = renderChart();
+    expect(readChartPricePrecision(SYMBOL)).toBe(4);
+    view.unmount();
+    expect(readChartPricePrecision(SYMBOL)).toBeNull();
+  });
+});
+
+describe("the header price is last-known while the broker repeats a frozen quote", () => {
+  it("prefixes 'Last known' after a frozen-quote verdict on a live-graded feed", () => {
+    renderChart();
+    expect(screen.getByTestId("arx-native-last").textContent).not.toMatch(/last known/i);
+    act(() => {
+      openedSources[0]!.onmessage?.({
+        data: JSON.stringify({ type: "feed_status", source: "mt5_broker", symbol: SYMBOL, timeframe: TF,
+          marketFrozen: true, lastBrokerTimeMs: NEWEST_OPEN_MS, ts: Date.now() }),
+      });
+    });
+    const badge = screen.getByTestId("arx-native-last");
+    expect(badge.textContent).toMatch(/^Last known /);
+    expect(badge.getAttribute("title") ?? "").toMatch(/same quote/i);
   });
 });

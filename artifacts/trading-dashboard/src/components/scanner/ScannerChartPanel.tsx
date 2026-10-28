@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CandlestickChart, RefreshCw, Loader2, X, Flame, AlertTriangle, Clock } from "lucide-react";
-import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
+import { frozenQuoteChip } from "@/components/charts/marketFrozenFormat";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 // `Candle` + the pure `adaptChartCandles` mapping live in scannerCandleAdapter.ts
 // so the field-shape handling is unit-tested (Task #367 — see that test).
@@ -51,7 +51,7 @@ import { computeRiskReward, pipDistance, validateModifyLevels } from "@/lib/char
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
-import { resolveChartFeedStrip } from "@/lib/scannerTruth";
+import { resolveChartFeedStrip, scheduledWeekendClosureFor } from "@/lib/scannerTruth";
 import { candlestickPriceFormat, formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
 import { publishScannerTip, scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
@@ -299,7 +299,48 @@ type ChartPending = {
   takeProfit: number | null;
   pendingStatus: string | null;
   status: string;
+  expiration?: string | null;
 };
+
+/**
+ * Plain-English label for a pending-order DRAFT. The list endpoint returns
+ * drafts saved in ARX: EA_UPGRADE_REQUIRED drafts are never queued to MT5 (the
+ * bridge only executes market orders) and READY_TO_EXECUTE has no broker
+ * confirmation, so none of them is presented as a working order at the broker.
+ */
+export function pendingDraftLabel(
+  d: { pendingStatus: string | null; expiration?: string | null },
+  nowMs: number,
+): { chip: string; title: string; line: string } {
+  const expMs = d.expiration ? Date.parse(d.expiration) : NaN;
+  if (Number.isFinite(expMs) && expMs <= nowMs) {
+    const at = new Date(expMs).toISOString().slice(0, 16).replace("T", " ");
+    return {
+      chip: "Expired draft",
+      title: `This draft expired ${at} UTC. It was never placed at the broker.`,
+      line: "Expired draft",
+    };
+  }
+  if (d.pendingStatus === "EA_UPGRADE_REQUIRED") {
+    return {
+      chip: "Draft · not sent",
+      title: "Saved as a validated pending-order draft. The trading bridge cannot place pending orders yet, so this order is not at the broker and will not fill.",
+      line: "Draft (not sent)",
+    };
+  }
+  if (d.pendingStatus === "READY_TO_EXECUTE") {
+    return {
+      chip: "Draft · not confirmed",
+      title: "Marked ready to execute, but no broker confirmation has been received, so it is not shown as a working order.",
+      line: "Draft (not confirmed)",
+    };
+  }
+  return {
+    chip: "Draft",
+    title: "Pending-order draft in an unrecognised state; it is not confirmed at the broker.",
+    line: "Draft",
+  };
+}
 
 // Normalised symbol compare — strips exchange prefixes/suffixes so "EURUSD",
 // "FX:EURUSD" and "EURUSD.r" all match the same chart symbol.
@@ -596,6 +637,9 @@ export function ScannerChartPanel() {
   const trendlineOverlay = structureEvidenceMissing ? null : intelligenceQuery.data?.state?.trendlineOverlay ?? null;
 
   const [positions, setPositions] = useState<ChartPosition[]>([]);
+  // The last positions/drafts poll failed (HTTP error or network). An empty
+  // list then means "unknown", not "none" — the header says so.
+  const [ownedLoadFailed, setOwnedLoadFailed] = useState(false);
   const [pending, setPending] = useState<ChartPending[]>([]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -838,8 +882,16 @@ export function ScannerChartPanel() {
   // The notice strip under the canvas. A closed market (the truth's scheduled
   // closure or the stream's closed-market signal) reads "Market closed", never
   // "Stale" next to the "Market closed" chip.
+  // The stream's marketFrozen flag only says the broker keeps repeating one
+  // quote. It reads "Market closed" only inside the instrument's scheduled
+  // weekend close (the window the server's feed status uses); otherwise the
+  // chip says the quote is not moving and the strip keeps the feed verdict.
+  const feedAssetClass = (candlesQuery.data?.feedStatus as { assetClass?: string } | undefined)?.assetClass ?? null;
+  const scheduledClosure = marketFrozen != null
+    && (truth?.marketClosure != null || scheduledWeekendClosureFor(feedAssetClass, Date.now()) != null);
+  const frozenChip = marketFrozen ? frozenQuoteChip(marketFrozen.lastBrokerTimeMs, scheduledClosure) : null;
   const feedStrip = resolveChartFeedStrip(displayStatus, {
-    marketClosed: truth?.marketClosure != null || marketFrozen != null,
+    marketClosed: truth?.marketClosure != null || scheduledClosure,
     hasCandles: candles.length > 0,
   });
 
@@ -1218,6 +1270,7 @@ export function ScannerChartPanel() {
           fetch(u("/api/me/pending-order-drafts"), { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
         ]);
         if (cancelled) return;
+        setOwnedLoadFailed(posRes == null || penRes == null);
         const live = Array.isArray(posRes?.live) ? (posRes.live as ChartPosition[]) : [];
         const demo = Array.isArray(posRes?.demo) ? (posRes.demo as ChartPosition[]) : [];
         setPositions([...live, ...demo]);
@@ -1227,6 +1280,7 @@ export function ScannerChartPanel() {
         if (!cancelled) {
           setPositions([]);
           setPending([]);
+          setOwnedLoadFailed(true);
         }
       }
     };
@@ -1702,9 +1756,11 @@ export function ScannerChartPanel() {
 
     for (const o of symbolPending) {
       const entry = o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice;
-      addLine(entry, "#f59e0b", `Pending ${o.side} ${o.orderType ?? ""}`.trim(), true);
-      addLine(o.stopLoss, "#ef4444", "Pending SL", true);
-      addLine(o.takeProfit, "#10b981", "Pending TP", true);
+      // Drafts are not broker orders — the line says so (pendingDraftLabel).
+      const draftTag = pendingDraftLabel(o, Date.now()).line;
+      addLine(entry, "#f59e0b", `${draftTag} ${o.side} ${o.orderType ?? ""}`.trim(), true);
+      addLine(o.stopLoss, "#ef4444", `${draftTag} SL`, true);
+      addLine(o.takeProfit, "#10b981", `${draftTag} TP`, true);
     }
 
     // Chart Brain v2 Task 6 — the user's own marked levels / zones / price
@@ -2403,12 +2459,14 @@ export function ScannerChartPanel() {
             <span data-testid="scanner-chart-symbol" className="text-base font-semibold text-foreground">
               {symbol}
             </span>
-            {shownClose.value != null && isLiveDisplay && (
+            {/* A frozen broker quote (feed_status) is not a current price, even
+                on a live-graded feed: the header then shows the last-known close. */}
+            {shownClose.value != null && isLiveDisplay && marketFrozen == null && (
               <Badge variant="outline" className="font-mono text-xs" data-testid="scanner-chart-last">
                 {formatInstrumentPrice(shownClose.value, pricePrecision)}
               </Badge>
             )}
-            {lastClose != null && !isLiveDisplay && displayStatus !== "UNAVAILABLE" && (
+            {lastClose != null && (!isLiveDisplay || marketFrozen != null) && displayStatus !== "UNAVAILABLE" && (
               <Badge variant="outline" className="font-mono text-xs text-zinc-500" data-testid="scanner-chart-last-stale" title="Last-known candle close — not a live price">
                 {formatInstrumentPrice(lastClose, pricePrecision)} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
               </Badge>
@@ -2427,24 +2485,27 @@ export function ScannerChartPanel() {
               testIdPrefix="scanner-chart"
               trailingIntervals={candlesQuery.data?.feedStatus?.trailingIntervals}
             />
-            {/* Market-frozen / closed-market indicator (display/telemetry only).
-                Derived from the latest tick's BROKER-time staleness via the
-                tick-stream `feed_status` event, so a still-forming bar reads as
-                closed-market, not a broken feed. Calendar-independent. */}
-            {marketFrozen && (
+            {/* Frozen-quote indicator (display/telemetry only). The tick-stream
+                `feed_status` event reports the broker repeating one quote; the
+                chip says "Market closed" only inside the scheduled weekend
+                close, otherwise "Quote not moving" (see frozenQuoteChip). */}
+            {frozenChip && (
               <Badge
                 variant="outline"
                 className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
                 data-testid="scanner-chart-market-closed"
-                title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
+                data-scheduled-closure={scheduledClosure ? "true" : "false"}
+                title={frozenChip.title}
               >
-                <Clock className="h-3 w-3" /> {formatMarketClosedLabel(marketFrozen.lastBrokerTimeMs)}
+                <Clock className="h-3 w-3" /> {frozenChip.label}
               </Badge>
             )}
             {/* Candle-close countdown (Task #524). Honesty-gated: only when the
-                feed is genuinely LIVE and a live forming bar has reported its
-                broker-aligned close time. The child owns its own 1s ticker. */}
-            {formingCloseMs != null && isLiveDisplay && (
+                feed is genuinely LIVE, a live forming bar has reported its
+                broker-aligned close time, and the broker is not repeating a
+                frozen quote (a stopped market has no bar closing). The child
+                owns its own 1s ticker. */}
+            {formingCloseMs != null && isLiveDisplay && marketFrozen == null && (
               <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} clockRef={serverClockRef} />
             )}
             {hasCandles && (
@@ -2456,7 +2517,18 @@ export function ScannerChartPanel() {
                 coverageDays={deepHistory.coverageDays}
                 depthTargetDays={deepHistory.depthTargetDays}
                 loadedAny={deepHistory.loadedAny}
+                loadError={deepHistory.loadError}
               />
+            )}
+            {ownedLoadFailed && (
+              <Badge
+                variant="outline"
+                className="border-amber-500/40 text-[10px] text-amber-300"
+                data-testid="scanner-chart-owned-unavailable"
+                title="The last request for your open positions and pending-order drafts failed. Any not drawn here are unknown, not absent. Retrying every 10 s."
+              >
+                Positions not loaded
+              </Badge>
             )}
             {symbolPositions.length > 0 && (
               <Badge variant="outline" className="border-blue-500/40 text-[10px] text-blue-300" data-testid="scanner-chart-pos-count">
@@ -2464,8 +2536,13 @@ export function ScannerChartPanel() {
               </Badge>
             )}
             {symbolPending.length > 0 && (
-              <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-300" data-testid="scanner-chart-pending-count">
-                {symbolPending.length} pending
+              <Badge
+                variant="outline"
+                className="border-amber-500/40 text-[10px] text-amber-300"
+                data-testid="scanner-chart-pending-count"
+                title="Pending-order drafts saved in ARX. They are not orders at the broker."
+              >
+                {symbolPending.length} pending draft{symbolPending.length > 1 ? "s" : ""}
               </Badge>
             )}
             {/* Phase 3 — timing overlay chip (advisory, fail-open) */}
@@ -3091,7 +3168,14 @@ export function ScannerChartPanel() {
                 ))}
                 {symbolPending.map((o) => (
                   <div key={`pen-${o.id}`} className="flex flex-wrap items-center gap-2 text-[11px]" data-testid={`scanner-chart-pending-${o.id}`}>
-                    <Badge variant="outline" className="border-amber-500/40 text-amber-300">PENDING</Badge>
+                    {(() => {
+                      const l = pendingDraftLabel(o, Date.now());
+                      return (
+                        <Badge variant="outline" className="border-amber-500/40 text-amber-300" title={l.title} data-testid={`scanner-chart-pending-label-${o.id}`}>
+                          {l.chip}
+                        </Badge>
+                      );
+                    })()}
                     <span className="font-semibold text-zinc-200">{o.side} {o.orderType ?? ""}</span>
                     <span className="font-mono text-zinc-400">{o.lotSize} @ {(o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice) != null ? fmt((o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice)!) : "—"}</span>
                     {canTrade && (

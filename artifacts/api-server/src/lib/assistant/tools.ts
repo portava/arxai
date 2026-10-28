@@ -50,6 +50,12 @@ import {
 } from "../live/positionTruthAdapter.js";
 import type { PositionTruthVerdict } from "@workspace/domain/live-position";
 import { isApprovedArxMarket, ARX_FOCUS_BLOCKED_REASON } from "@workspace/domain/market";
+import { isSyntheticInstrument } from "@workspace/domain/smart-chart";
+import {
+  quoteObservationFreshness,
+  type QuoteObservation,
+  type QuoteTimeBasis,
+} from "../data/quoteObservationFreshness.js";
 import { deriveOpportunityLabel, projectOpportunitySetup } from "../data/opportunityAdapters.js";
 import { evaluatePaperTradePlan, getTradingStyleProfile } from "./coachTools.js";
 import { getVoiceModeStatus } from "./realtimeSession.js";
@@ -754,6 +760,15 @@ export async function getReconciliationStatus(userId: number) {
     .where(eq(unattributedMasterTradesTable.status, "pending_review"));
   const unattributedSystemPendingCount = unattributedPending.length;
 
+  // 3b. The user's REAL live-execution posture, from the same derived envelope
+  //     every other assistant surface reports (getMT5BridgeStatus, risk check).
+  //     Reporting only — it opens nothing. A failed read collapses fail-closed
+  //     inside deriveAssistantEnvelope, never to "live available".
+  const env = await deriveAssistantEnvelope(userId);
+  const assistantName = await getAssistantDisplayName(userId);
+  const liveNote = liveExecutionAvailabilityNote(env, assistantName);
+  const liveOpenForAccount = !env.liveLocked && env.allowOrderExecution;
+
   // 4. Status precedence
   let reconciliationStatus:
     | "BRIDGE_OFFLINE" | "RECONCILIATION_BLOCKED"
@@ -764,13 +779,13 @@ export async function getReconciliationStatus(userId: number) {
     note = "MT5 bridge is offline or has no recent heartbeat. Reconciliation cannot run until the EA reconnects. Broker balance/positions are unavailable — never inferred.";
   } else if (attrRows.length === 0) {
     reconciliationStatus = "NO_ROUTED_TRADES";
-    note = "No shared-routing attribution rows for this user. Shared MT5 routing is currently BLOCKED at the placement layer (paper-only by construction), so nothing is being executed against the broker.";
+    note = `No shared-routing attribution rows for this user, so there is nothing to reconcile yet. ${liveNote}`;
   } else if (missingTicketCount > 0 || missingAttributionMetadataCount > 0) {
     reconciliationStatus = "ATTRIBUTION_INCOMPLETE";
     note = `${missingTicketCount} attribution row(s) have no broker ticket yet; ${missingAttributionMetadataCount} row(s) are missing required metadata (commandId / auditId / virtualAccountId). Affected commands stay BLOCKED until attribution is complete.`;
   } else {
     reconciliationStatus = "MATCHED";
-    note = `All ${matchedCount} attribution row(s) reference a broker ticket. Real placement is still BLOCKED — this confirms only the observation-side mapping.`;
+    note = `All ${matchedCount} attribution row(s) reference a broker ticket. This confirms only the app-to-broker ticket mapping, not current broker positions or P/L. ${liveNote}`;
   }
 
   // Cleanup phase A + B — emit canonical bridge mode + canonical
@@ -790,6 +805,14 @@ export async function getReconciliationStatus(userId: number) {
       connected: bridgeConnected,
       mode: bridgeMode,
       canonicalMode: canonicalBridgeMode,
+      // mode/canonicalMode are connection labels from a 4-value contract that
+      // has no "live" value: a connected bridge reads READ_ONLY even when this
+      // account can place live orders. Say what the label does and doesn't mean.
+      modeNote: !bridgeConnected
+        ? "The MT5 bridge is offline (no heartbeat in the last minute), so nothing can be read from or sent to the broker through it."
+        : bridgeMode === "LIVE_LOCKED"
+          ? "The MT5 bridge is connected, and this connection is locked for live orders."
+          : `The MT5 bridge is connected. "${bridgeMode}" is the connection label only — it is not this account's live-trading permission; see placementLayerNote.`,
       lastHeartbeatAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
       heartbeatAgeSec,
       heartbeatStaleThresholdSec: MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
@@ -799,8 +822,12 @@ export async function getReconciliationStatus(userId: number) {
       allowOrderExecution: false as const,
       liveLocked: conn?.liveLocked ?? true,
     },
-    placementLayer: "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED" as const,
-    placementLayerNote: "All real MT5 commands resolve to BLOCKED — placeLiveOrderGuarded always returns REJECTED.",
+    // Derived from the user's real envelope, never a constant: an armed live
+    // account and a paper account must not read the same placement claim.
+    placementLayer: liveOpenForAccount
+      ? ("LIVE_DISPATCH_GATED" as const)
+      : ("LIVE_LOCKED_FOR_ACCOUNT" as const),
+    placementLayerNote: liveNote,
     userAttributions: {
       total: attrRows.length,
       matchedToBrokerTicket: matchedCount,
@@ -886,18 +913,42 @@ export async function getMarketSnapshot(symbol: string) {
     let quote: {
       bid: number | null; ask: number | null; spread: number | null;
       price: number | null; providerFreshness: string; source: string;
+      observedAt: string | null; timeBasis: QuoteTimeBasis; ageMs: number | null;
+      freshness: QuoteObservation["freshness"]; stale: boolean; staleAfterMs: number;
+      observationNote: string;
     } | null = null;
     if (p.connected && p.features.quotes) {
       try {
         const q = await p.getLiveQuote((symbol ?? "").toString().trim() || symbol);
         const bid = typeof q.bid === "number" ? q.bid : null;
         const ask = typeof q.ask === "number" ? q.ask : null;
+        const price = typeof q.price === "number" ? q.price : null;
+        // Observation evidence: when this quote was observed (the vendor's own
+        // as-of time) and whether it is past the shared quote budget. The
+        // vendor's own stale/error verdict can only make it staler.
+        const obs = quoteObservationFreshness({
+          hasPrice: price != null || bid != null || ask != null,
+          observedAt: q.asOf,
+          basis: "provider_as_of",
+          sourceLabel: q.source,
+        });
+        const providerSaysStale = q.stale === true || q.freshness === "STALE" || q.freshness === "ERROR" || q.freshness === "UNAVAILABLE";
+        const stale = obs.stale || providerSaysStale;
         quote = {
           bid, ask,
           spread: bid != null && ask != null ? ask - bid : null,
-          price: typeof q.price === "number" ? q.price : null,
+          price,
           providerFreshness: q.freshness,
           source: q.source,
+          observedAt: obs.observedAt,
+          timeBasis: obs.timeBasis,
+          ageMs: obs.ageMs,
+          freshness: stale && obs.freshness !== "unavailable" && obs.freshness !== "unknown" ? "stale" : obs.freshness,
+          stale,
+          staleAfterMs: obs.staleAfterMs,
+          observationNote: providerSaysStale && !obs.stale
+            ? `${obs.plainEnglish} The provider itself marks this quote ${String(q.freshness).toLowerCase()}, so it is not a current price.`
+            : obs.plainEnglish,
         };
       } catch {
         quote = null;
@@ -960,7 +1011,21 @@ export async function getEconomicCalendar() {
         region: sanitizeExternalText(e.region, { source: "economic_calendar", field: "region" }),
       }))
     : r.events;
-  return { ...r, events,};
+  // Evidence: an unconnected calendar was NOT checked — its empty list means
+  // "unknown", never "no events". Only a connected provider's empty list is a
+  // checked "nothing scheduled".
+  const checked = r.connected === true;
+  const count = Array.isArray(events) ? events.length : 0;
+  return {
+    ...r,
+    events,
+    calendarChecked: checked,
+    note: !checked
+      ? "No economic calendar answered through the market-data provider, so upcoming events are unknown — not none. Do not say there are no events."
+      : count === 0
+        ? `The ${r.provider} calendar was checked and lists no upcoming events.`
+        : `${count} event(s) from the ${r.provider} calendar.`,
+  };
 }
 export async function getRecentMarketNews(query: string, limit = 5) {
   const p = getMarketProvider();
@@ -1677,10 +1742,10 @@ export const TOOL_DEFINITIONS = [
   { name: "getRiskLimits", description: "Returns the user's risk governor limits.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getOpenExposure", description: "Phase 26 — Portfolio awareness. Returns the user's total open exposure broken down by symbol and side (long lots / short lots / net lots / positions count). Paper-trade lot totals only. Per-user-scoped — never returns another user's positions. Use for 'am I overexposed', 'what symbols do I have open', 'how much am I trading right now', 'what's my net exposure on EURUSD'. To convert lots → USD notional honestly, call getMarketSnapshot per symbol; never fabricate a notional number.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getRiskUtilization", description: "Phase 26 — Portfolio awareness. Reports how much of the user's configured risk envelope is currently used: open trades vs maxOpenTrades, today's realized loss, and which limits are at/over threshold. Returns hasRiskSettings:false when the user has none — never invents defaults. Per-user-scoped. Use for 'how much risk am I taking', 'am I close to my daily loss limit', 'should I reduce risk', 'how many open trades can I still take', 'am I at my limit'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. NEVER imply broker execution is enabled (placementLayer is always BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED today). Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED — a connection label only, NOT the account's live permission; repeat bridge.modeNote rather than calling the account read-only), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. For whether live orders can be placed, read placementLayer (LIVE_DISPATCH_GATED = live orders are possible for this account but every one still needs the user's confirmation and every live gate; LIVE_LOCKED_FOR_ACCOUNT = live orders are not available) and repeat placementLayerNote — never claim live execution is on or off beyond what it says. Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "runPreTradeRiskCheck", description: "Advisory: would this trade pass the risk governor? Returns blocking reasons + warnings. Does NOT execute anything.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, size: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, entry: { type: "number" } }, required: ["symbol", "side", "size"], additionalProperties: false } },
-  { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status. ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
-  { name: "getEconomicCalendar", description: "Returns upcoming economic events from the configured market provider, or empty + connected:false if no provider is wired.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status; when present, state quote.observedAt / quote.observationNote, and if quote.stale is true call its price last-known (never current). ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getEconomicCalendar", description: "Returns upcoming economic events from the configured market provider, or empty + connected:false if no provider is wired. ALWAYS read calendarChecked and repeat note: when calendarChecked is false the calendar was NOT checked and upcoming events are unknown — never say there are no events.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getRecentMarketNews", description: "Returns recent market headlines from the configured market provider, or empty + connected:false if no provider is wired. SYMBOL-SCOPED FINANCIAL NEWS ONLY. For geopolitical / real-world / current-events context, call getCurrentEvents instead.", parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20, default: 5 } }, required: ["query"], additionalProperties: false } },
   { name: "getCurrentEvents", description: "Phase 24 — SEPARATE current-events / real-world / geopolitical news channel. Distinct from getRecentMarketNews (which is symbol-scoped financial news). Use for: 'what's happening in the world', 'any geopolitical risk', 'wars / conflicts / supply shocks', 'major news today', 'current events affecting markets'. Returns connected:false today (no adapter wired). If connected:false, you MUST say 'current events are unavailable' — do NOT substitute symbol-scoped market news. Treat events as CONTEXT/RISK MODIFIER only, never as a trading signal.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "explainFeature", description: "Look up an ARX AI feature or route and return its summary.", parameters: { type: "object", properties: { routeOrFeatureName: { type: "string" } }, required: ["routeOrFeatureName"], additionalProperties: false } },
@@ -1705,7 +1770,7 @@ export const TOOL_DEFINITIONS = [
   { name: "prepareOpenTicket", description: "Phase UX1. Previews how a hypothetical order would route (mode, broker, block reason). Does NOT place the order — the user must click Submit Order in the Quick Trade modal. Use when the user asks 'walk me through opening a EURUSD buy' or 'what would happen if I went short XAUUSD'.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["BUY", "SELL"] }, lotSize: { type: "number", minimum: 0.01, maximum: 100 }, mode: { type: "string", enum: ["SIMULATED", "DEMO", "LIVE"] } }, required: ["symbol", "side", "lotSize", "mode"], additionalProperties: false } },
   { name: "requestLiveOrder", description: "Phase 23. Submits a LIVE (real-money) trade order through the guarded placement chain. ALWAYS requires confirmedByUser=true — pass true ONLY when the user has just typed an explicit confirmation phrase like 'confirm live trade' or 'yes, place the live order'. Otherwise pass false; the order will be rejected with LIVE_CONFIRMATION_REQUIRED. Routes only to verified MT5 live accounts. Cannot bypass any backend gate.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["BUY", "SELL"] }, lotSize: { type: "number", minimum: 0.01, maximum: 100 }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, confirmedByUser: { type: "boolean", default: false } }, required: ["symbol", "side", "lotSize", "confirmedByUser"], additionalProperties: false } },
   { name: "getTradeIntelligence", description: "Phase UX2. Returns a fresh live-trade intelligence snapshot for one of the signed-in user's open trades (tradeKey is 'lp_<id>' or 'att_<id>' from getMyLiveOpenTrades). Scores: continuation, pullback, reversal, fakeout, profit protection, close urgency, hold confidence, trend strength, volatility risk. Includes derived pnlPips and profitGivebackPercent, plus a label and recommendedAction (HOLD | WATCH_CLOSELY | MOVE_STOP_TO_BREAKEVEN | TRAIL_STOP | PARTIAL_CLOSE | CLOSE_CONSIDERATION | CLOSE_NOW_PROMPT | NO_ACTION_DATA_INSUFFICIENT). dataQuality lists missing inputs — when missing.length>0, you MUST tell the user which signals are unavailable instead of pretending you can judge confidently. Never guarantees profit. Never closes a trade.", parameters: { type: "object", properties: { tradeKey: { type: "string" } }, required: ["tradeKey"], additionalProperties: false } },
-  { name: "getSymbolMarketContext", description: "Phase UX6. Returns the LIVE multi-timeframe market context for a symbol (M1..D1): trend per TF, ATR, swing high/low, S/R, range, plus a classifier label (Strong continuation | Weak continuation | Healthy pullback | Deep retracement | Reversal risk rising | Possible fakeout | Liquidity sweep possible | Breakout holding | Failed breakout | Choppy / no clear edge | Data insufficient) with 11 scores and an evidence-cited explanation. context.source and context.freshness now come from the SAME shared chart-truth resolver the chart uses, so they match the chart exactly; context.sharedQuality / context.sharedAiUsable / context.sharedCause carry that shared verdict (sharedCause names the actual reason when data is not usable). ALWAYS read context.dataQuality.quality (and context.sharedQuality) — if data is insufficient/unavailable you MUST tell the user live candle data is unavailable, name the cause, and not invent a read. ALSO read context.feedConfirmed — when it is false you MUST open your answer with the context.feedCaveat line (feed not confirmed / low-confidence) before any read; never present an unconfirmed-feed read as a confident call. This caveat is advisory only and never blocks anything. Never fabricates candles. Use for a BROAD multi-timeframe live-quote/context overview — e.g. 'what is the market doing on X', 'is there a trend on GBPUSD H1', 'give me the broad picture on EURUSD'. For a SINGLE-SYMBOL structural/direction read ('read <symbol>', 'analyze <symbol>', 'what do you see on <symbol>') use readChartStructure instead — never this tool.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getSymbolMarketContext", description: "Phase UX6. Returns the LIVE multi-timeframe market context for a symbol (M1..D1): trend per TF, ATR, swing high/low, S/R, range, plus a classifier label (Strong continuation | Weak continuation | Healthy pullback | Deep retracement | Reversal risk rising | Possible fakeout | Liquidity sweep possible | Breakout holding | Failed breakout | Choppy / no clear edge | Data insufficient) with 11 scores and an evidence-cited explanation. context.source and context.freshness now come from the SAME shared chart-truth resolver the chart uses, so they match the chart exactly; context.sharedQuality / context.sharedAiUsable / context.sharedCause carry that shared verdict (sharedCause names the actual reason when data is not usable). ALWAYS read context.dataQuality.quality (and context.sharedQuality) — if data is insufficient/unavailable you MUST tell the user live candle data is unavailable, name the cause, and not invent a read. ALSO read context.feedConfirmed — when it is false you MUST open your answer with the context.feedCaveat line (feed not confirmed / low-confidence) before any read; never present an unconfirmed-feed read as a confident call. This caveat is advisory only and never blocks anything. ALSO read context.priceEvidence — it names where currentPrice/bid/ask came from (provider_quote | candle_close | none), from which source and as of when; say that, and when priceEvidence.stale is true call the price last-known, never current. Never fabricates candles. Use for a BROAD multi-timeframe live-quote/context overview — e.g. 'what is the market doing on X', 'is there a trend on GBPUSD H1', 'give me the broad picture on EURUSD'. For a SINGLE-SYMBOL structural/direction read ('read <symbol>', 'analyze <symbol>', 'what do you see on <symbol>') use readChartStructure instead — never this tool.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
   { name: "readChartStructure", description: "Phase Chart-Read (Task #602). THE primary tool for a STRUCTURAL chart read — use this FIRST whenever the user says 'read <symbol>', 'analyze <symbol>', 'what do you see on <symbol>', 'redo on V75', 'structure on GBPUSD', or asks for the direction/bias on a specific market (and optional timeframe). Returns the SAME directional read the Scanner 'Chart Read' panel shows, so chat and the panel never disagree: chartRead carries bias, confidence, summary, support/resistance levels, conditions, invalidation, risk notes — plus readLayer. ALWAYS branch on readLayer: 'FULL' = the exact entry/stopLoss/takeProfit/reward:risk in chartRead are valid and you MAY state them; 'STRUCTURAL_ONLY' = give the directional structure (bias, S/R, conditions, invalidation) but you MUST say the exact entry/stop/target are WITHHELD until the live feed confirms (cite chartRead.blockedReason) and NEVER invent levels; 'INSUFFICIENT' = there isn't enough verified candle data, so say exactly that (use chartRead.headline / chartRead.blockedReason) and do NOT invent a read. ALWAYS surface chartRead.trustLine and end with chartRead.disclaimer. symbol is OPTIONAL — when omitted it reads the symbol currently on the user's chart (page context). timeframe is OPTIONAL — omit to use the user's on-screen chart timeframe, otherwise it defaults to H1. Read-only; never places a trade; never fabricates candles. Prefer this over getSymbolMarketContext for a single-symbol structure/direction read (getSymbolMarketContext is for a broad multi-timeframe live quote/context overview).", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string" } }, additionalProperties: false } },
   { name: "getTradeMarketContext", description: "Phase UX6. Returns LIVE market context attached to one of the signed-in user's open trades (tradeKey is 'lp_<id>' or 'att_<id>' from getMyLiveOpenTrades). Includes trendAlignment (ALIGNED | FIGHTING | NEUTRAL | UNKNOWN), tradeLabel (Trade aligned with trend | Trade still valid | Trade weakening | Trade fighting trend | Trade invalidation near | Trade at decision level | Profit protection needed | Exit review recommended | Data insufficient), keyLevels (invalidationLevel, continuationLevel, nearestSupport/Resistance, swingHigh/Low, breakoutLevel, keyLevelToWatch), bullishScenario, bearishScenario, exitHoldReview. Use to answer 'how is my trade looking', 'is my trade still valid', 'where is my invalidation', 'what is the structure on my open trade'. Never closes a trade. If context.dataQuality.quality is 'insufficient', say so and recommend no price-action call. ALSO read context.feedConfirmed — when it is false you MUST open your answer with the context.feedCaveat line (feed not confirmed / low-confidence) before any read; never present an unconfirmed-feed read on an open trade as a confident call. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { tradeKey: { type: "string" } }, required: ["tradeKey"], additionalProperties: false } },
   { name: "getTradeDecision", description: "Phase UX7. Returns the SINGLE central trade decision for one of the signed-in user's open trades (tradeKey is 'lp_<id>' or 'att_<id>'). Fuses market context (UX6) + smart exit plan (UX5) + live trade intelligence (UX2) + the user's preferences into one decisionLabel from this fixed set: Hold | Hold but monitor | Healthy pullback | Continuation still valid | Protect profit | Review partial close | Review full close | Move stop review | Trail stop review | Exit risk rising | Trade invalidation near | Trade invalidated | No clear decision | Data insufficient. Also returns decisionAction (HOLD | WATCH_CLOSELY | SET_ALERT | REVIEW_MOVE_STOP | REVIEW_TRAIL_STOP | REVIEW_PARTIAL_CLOSE | REVIEW_FULL_CLOSE | WAIT_FOR_CONFIRMATION | NO_ACTION_DATA_INSUFFICIENT), confidenceScore/urgencyScore/riskScore (0..100 or null), mainReason, supportingReasons[], invalidation/protectProfit/continuation levels, suggestedButton (always opens a review modal — NEVER an instant order), and dataQuality with missing[]. If dataQuality.hasIntelligence=false and hasMarketContext=false the decision will be 'Data insufficient' — you MUST say live data is not connected and stop, never invent a call. Use to answer 'what should I do with my trade', 'is my trade still good', 'why are you saying review close', 'do I hold or close'.", parameters: { type: "object", properties: { tradeKey: { type: "string" } }, required: ["tradeKey"], additionalProperties: false } },
@@ -1740,7 +1805,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getMyPendingOrderDrafts", description: "Phase TT/TU/TV (Trade Ticket). Returns the signed-in user's saved pending-order drafts. Each draft has id, orderType, symbol, side, lotSize, entryPrice, stopTriggerPrice, stopLimitPrice, stopLoss, takeProfit, expiration, pendingStatus, status, tradeCommandId (link to the mt5_commands row if forward-submitted), mt5OrderTicket (only present after MT5 confirmed), createdAt. Per-user-scoped. pendingStatus VOCABULARY: EA_UPGRADE_REQUIRED|BRIDGE_DISCONNECTED|BRIDGE_UNSUPPORTED|READ_ONLY|LIVE_LOCKED|BLOCKED_BY_PAPER_LOCK = draft only, NOT at broker. QUEUED = command row inserted into mt5_commands. PLACED = MT5 returned a real order ticket (mt5OrderTicket populated). REJECTED = MT5 refused. CANCELLED = soft-cancelled OR broker-confirmed cancel. CANCEL_QUEUED/MODIFIED = transient post-bridge states. CRITICAL: NEVER claim a draft is 'live', 'at the broker', 'filling', or 'working' unless pendingStatus='PLACED' AND mt5OrderTicket is non-null. The system is paper-only today: nearly every submit returns BLOCKED_BY_PAPER_LOCK.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getProtectiveCloseStatus", description: "Phase 13 (Protective Auto-Close). READ-ONLY. Returns the signed-in user's Protective Auto-Close settings and the most recent decisions journal (one entry per evaluation, even ALERT_ONLY / NO_ACTION / BLOCKED). Each decision row has tradeKey, decision (NO_ACTION | ALERT_ONLY | RECOMMEND_CLOSE | RECOMMEND_PARTIAL_CLOSE | AUTO_CLOSE_ELIGIBLE | BLOCKED), reasonCode, signals[], confidenceScore, activityStatus (ACTIVE | INACTIVE | UNKNOWN), failedChecks[] (when BLOCKED), actionTakenActionId (only when the engine actually drafted a CLOSE action — null otherwise), createdAt. The settings object includes enabled (default false), inactivityThresholdMinutes, minConfidence, allowPartialCloseOnly, killSwitchActive, optInAt, lastUpdatedAt. CRITICAL: ARX may EXPLAIN these decisions but NEVER claims a close happened unless actionTakenActionId is non-null AND the linked action's execution result shows status='executed'. When decision='BLOCKED' say so honestly with the failedChecks reason. When settings.enabled=false say protective auto-close is OFF (default). When activityStatus='UNKNOWN' explain that the engine downgraded to alert-only. NEVER triggers the engine — only the worker does. Per-user-scoped (SQL-filtered on userId).", parameters: { type: "object", properties: { tradeKey: { type: "string", description: "Optional. Filter decisions for a single trade ('lp_<id>' or 'att_<id>')." }, limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "getFinalTradeRead", description: "Phase News-Decision. Returns the fused FINAL TRADE READ for a symbol/timeframe — combines current technical scanner score, same-time historical context, and news-risk context into one decision: TRADE_WATCH | WAIT_FOR_CONFIRMATION | AVOID_FOR_NOW | NO_TRADE. Also returns headline, reasons[], technicalScore, historicalScore, newsRiskLevel, conflict, confidence. CRITICAL: you are EXPLICITLY ALLOWED — and expected — to recommend WAIT / AVOID / NO_TRADE when this tool returns those. Do NOT force a buy/sell answer when the safer answer is no trade. If confidence=LOW because news/history are unavailable, say so honestly. Use for 'should I trade EURUSD now', 'what's the read on gold', 'is this a good entry', 'safe to buy', 'should I wait'.", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string", description: "Defaults to 'M15'." } }, required: ["symbol"], additionalProperties: false } },
-  { name: "getMarketNewsIntelligence", description: "Phase News. Returns a normalized MarketNewsDecisionPack for a symbol: riskLevel (none|low|medium|high|critical), bias (bullish|bearish|mixed|unclear) from recent headlines, timing (now|upcoming|recent|quiet), recommendation (watch|wait|avoid|proceed_with_caution), upcomingEvent {title,currency,impact,minutesUntil}, recentHeadlines (real provider only — empty if no provider wired), affectedCurrencies, and dataSources with connected flags for headlines/calendar/social. CRITICAL: if dataSources.headlines.connected=false the headlines array is empty — you MUST say 'news feed is unavailable' rather than inventing headlines. The economic calendar today is a built-in schedule (mock) — never claim it as a live live calendar feed. Social/X monitoring is not configured. Decision support only, never a buy/sell signal. Per-symbol cached 60s. Use for 'what news affects EURUSD', 'is there event risk', 'should I avoid this trade due to news', 'why is gold moving', 'what catalysts are active'.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getMarketNewsIntelligence", description: "Phase News. Returns a normalized MarketNewsDecisionPack for a symbol: riskLevel (none|low|medium|high|critical|unknown), bias (bullish|bearish|mixed|unclear) from recent headlines, timing (now|upcoming|recent|quiet|unknown), recommendation (watch|wait|avoid|proceed_with_caution), upcomingEvent {title,currency,impact,minutesUntil}, recentHeadlines (real provider only — empty if no provider wired), affectedCurrencies, and dataSources with connected flags for headlines/calendar/social. CRITICAL: if dataSources.headlines.connected=false the headlines array is empty — you MUST say 'news feed is unavailable' rather than inventing headlines. ALSO read scheduledEventRisk: 'not_checked' (riskLevel/timing read 'unknown') means no economic calendar answered, so upcoming events are UNKNOWN — you MUST say scheduled news was not checked and never say there are no events; 'not_applicable' = synthetic index (not moved by scheduled events); 'checked' = a live calendar answered. Social/X monitoring is not configured. Decision support only, never a buy/sell signal. Per-symbol cached 60s. Use for 'what news affects EURUSD', 'is there event risk', 'should I avoid this trade due to news', 'why is gold moving', 'what catalysts are active'.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
   { name: "getHistoricalContext", description: "Phase Historical. Returns same-time historical comparison for a symbol over yesterday / last week / last month / last year / 5 years ago, using REAL provider candles via the market data provider chain. Returns bias (BULLISH | BEARISH | MIXED | INSUFFICIENT_DATA), confidence (LOW | MEDIUM | HIGH), sampleSize (0-5), per-window directions and % moves, plus setupSummary {sampleSize, winRate, avgMovePct, worstDrawdownPct, bestMovePct, avgTimeToNextCandleMs}. CRITICAL: if bias = INSUFFICIENT_DATA OR setupSummary.sampleSize = 0, you MUST tell the user historical data is unavailable for this symbol/timeframe — never invent a number. Treat as decision support only, never as a buy/sell signal. Per-symbol cached for 60s. Use for 'what does history say about X', 'how did EURUSD behave this time last year', 'is this setup historically reliable', 'what's the same-time pattern'.", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string", description: "Defaults to '1d'." } }, required: ["symbol"], additionalProperties: false } },
   { name: "getBridgeCapabilities", description: "Phase TU (MT5 EA/Bridge upgrade). Returns the signed-in user's MT5 bridge capability disclosure as last reported by their EA on heartbeat. Fields: bridgeConnected (bool, true only if a heartbeat arrived within the last ~90s), eaVersion (string|null), capabilitiesReportedAt (ISO|null), capabilities (object with booleans: marketOrders, marketOrderSLTP, pendingOrders, stopLimitOrders, modifyPositionProtection, modifyPendingOrders, cancelPendingOrders, expiration, sharedMasterSafeRouting), pendingOrderExecutable (bool — always false today because of the system-wide paper-only lock), currentSubmitStatus (one of: BRIDGE_DISCONNECTED, BRIDGE_UNSUPPORTED, READ_ONLY, LIVE_LOCKED, BLOCKED_BY_PAPER_LOCK, QUEUED), currentSubmitExplanation (plain-language reason). Use when the user asks 'is my EA up to date', 'does my bridge support pending orders', 'why can't I submit a stop-limit', 'what version is my EA', 'is my bridge connected'. NEVER claims the bridge supports an action when the capability is false. NEVER says pendingOrderExecutable is true today.", parameters: { type: "object", properties: {}, additionalProperties: false } },
 ] as const;
@@ -2361,21 +2426,20 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
       const { getNewsIntelligence } = await import("../news/newsIntelligenceService.js");
       try {
         const pack = await getNewsIntelligence(String(args.symbol ?? ""));
-        return {
-          ...pack,
-          safetyNote:
-            !pack.dataSources.headlines.connected
-              ? "News feed is unavailable right now. Do not invent headlines. Rely on chart/history/scanner data and say the feed is unavailable."
-              : pack.safetyNote,
-        };
+        return newsPackForAssistant(pack);
       } catch {
+        const sym = String(args.symbol ?? "").trim().toUpperCase();
         return {
           symbol: String(args.symbol ?? ""),
           generatedAt: new Date().toISOString(),
-          riskLevel: "none",
+          // The read failed: nothing was checked, so risk and timing are
+          // unknown — never "none" / "quiet".
+          riskLevel: "unknown",
           bias: "unclear",
-          timing: "quiet",
-          warningSummary: "News intelligence is temporarily unavailable.",
+          timing: "unknown",
+          scheduledEventRisk: "not_checked",
+          headlinesChecked: false,
+          warningSummary: `News intelligence could not be read for ${sym || "this market"} — scheduled events and headlines were not checked, so news risk is unknown (not none).`,
           recommendation: "watch",
           upcomingEvent: null,
           recentHeadlines: [],
@@ -2710,6 +2774,91 @@ export async function getOnboardingProgressTool(userId: number) {
   }
 }
 
+// ── getMarketNewsIntelligence — evidence class of every claim ───────────
+// The news pack scores risk ONLY from a connected economic calendar. When no
+// calendar answered, its riskLevel "none" / timing "quiet" / "No major
+// scheduled news" mean "nothing was checked", not "nothing is scheduled". The
+// model restates whatever this returns, so a market that scheduled events can
+// move reads "unknown / not checked" instead. Synthetic indices are not moved
+// by scheduled events, so their "none" stays. Downgrade-only: a connected
+// calendar's real verdict passes through unchanged.
+type NewsPackLike = {
+  symbol: string;
+  riskLevel: string;
+  timing: string;
+  warningSummary: string;
+  safetyNote: string;
+  dataSources: {
+    headlines: { connected: boolean };
+    calendar: { connected: boolean; providerState?: string | null };
+  };
+};
+export function newsPackForAssistant<T extends NewsPackLike>(pack: T) {
+  const headlinesChecked = pack.dataSources.headlines.connected === true;
+  const calendarChecked = pack.dataSources.calendar.connected === true;
+  const eventsApply = !isSyntheticInstrument(pack.symbol);
+  const unchecked = eventsApply && !calendarChecked;
+  const why = pack.dataSources.calendar.providerState === "fetch_error"
+    ? "the economic calendar did not answer"
+    : "no economic-calendar provider is connected";
+  return {
+    ...pack,
+    riskLevel: unchecked ? "unknown" : pack.riskLevel,
+    timing: unchecked ? "unknown" : pack.timing,
+    scheduledEventRisk: !eventsApply ? "not_applicable" : calendarChecked ? "checked" : "not_checked",
+    headlinesChecked,
+    warningSummary: unchecked
+      ? `Scheduled news for ${pack.symbol} was not checked — ${why}, so upcoming events are unknown (not none).`
+      : pack.warningSummary,
+    safetyNote: !headlinesChecked
+      ? "News feed is unavailable right now. Do not invent headlines. Rely on chart/history/scanner data and say the feed is unavailable."
+        + (unchecked ? " Scheduled events were not checked either — never say there are no events." : "")
+      : unchecked
+        ? `${pack.safetyNote} Scheduled events were not checked — never say there are no events.`
+        : pack.safetyNote,
+  };
+}
+
+// ── getSymbolMarketContext — price evidence ─────────────────────────────
+// buildMarketContext takes currentPrice/bid/ask from the market-data adapter's
+// quote, or (no quote) from the latest M1/M5/M15 candle close, while
+// context.source is overlaid with the shared chart feed. So the model could say
+// "price X from <chart feed>" when X came from a different adapter, at an
+// unstated time. This names the price's real basis, source and observation
+// time, and marks it stale past the shared quote budget. Describes only.
+type PriceEvidenceCtx = {
+  currentPrice: number | null;
+  asOf: string | null;
+  dataQuality: { hasQuote: boolean };
+  timeframes: Partial<Record<string, { available: boolean; source: string; asOf: string | null; lastClose: number | null }>>;
+};
+export function marketContextPriceEvidence(ctx: PriceEvidenceCtx, quoteSourceName: string, nowMs: number = Date.now()) {
+  if (ctx.currentPrice == null) {
+    const obs = quoteObservationFreshness({ hasPrice: false, observedAt: null, basis: "provider_as_of", nowMs });
+    return { basis: "none" as const, source: null, observedAt: null, timeBasis: obs.timeBasis, ageMs: null, freshness: obs.freshness, stale: true, note: obs.plainEnglish };
+  }
+  if (ctx.dataQuality.hasQuote) {
+    // ctx.asOf is the quote's own as-of time whenever a quote is present.
+    const obs = quoteObservationFreshness({ hasPrice: true, observedAt: ctx.asOf, basis: "provider_as_of", sourceLabel: `the ${quoteSourceName} quote`, nowMs });
+    return { basis: "provider_quote" as const, source: quoteSourceName, observedAt: obs.observedAt, timeBasis: obs.timeBasis, ageMs: obs.ageMs, freshness: obs.freshness, stale: obs.stale, note: obs.plainEnglish };
+  }
+  const tf = (["M1", "M5", "M15"] as const).find((t) => ctx.timeframes[t]?.lastClose != null);
+  const row = tf ? ctx.timeframes[tf]! : null;
+  // A candle's stamp is its bar time, so the close may be up to one bar newer:
+  // the age is an upper bound, never an understatement.
+  const obs = quoteObservationFreshness({ hasPrice: true, observedAt: row?.asOf ?? null, basis: "provider_as_of", sourceLabel: row ? `the last ${tf} candle close (${row.source})` : null, nowMs });
+  return {
+    basis: "candle_close" as const,
+    source: row?.source ?? null,
+    observedAt: obs.observedAt,
+    timeBasis: obs.timeBasis,
+    ageMs: obs.ageMs,
+    freshness: obs.freshness,
+    stale: obs.stale,
+    note: `No live quote — currentPrice is the last ${tf ?? "candle"} close, not a bid/ask. ${obs.plainEnglish}${row?.asOf ? " (The time is the bar's start; its close may be newer.)" : ""}`,
+  };
+}
+
 // ── Phase UX6 — Market Context tools (read-only, provider-backed) ───────
 export async function getSymbolMarketContextTool(symbol: string) {
   const s = (symbol ?? "").toString().trim();
@@ -2736,6 +2885,9 @@ export async function getSymbolMarketContextTool(symbol: string) {
         source: ctx.source, asOf: ctx.asOf, freshness: ctx.freshness,
         session: ctx.session, currentPrice: ctx.currentPrice,
         bid: ctx.bid, ask: ctx.ask, spread: ctx.spread,
+        // Where currentPrice/bid/ask actually came from and when — `source`
+        // above is the chart feed, which is NOT necessarily the price's source.
+        priceEvidence: marketContextPriceEvidence(ctx, getMarketProvider().name),
         dataQuality: ctx.dataQuality,
         // Shared chart-truth verdict (identical to the chart) — honest source/
         // quality/cause for this symbol; null when the resolver errored.

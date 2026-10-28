@@ -61,7 +61,7 @@ export interface TickStreamWatchdog {
   noteFrame: () => void;
   /** Call from `es.onerror`. Records the state; the watchdog owns the retry. */
   noteError: () => void;
-  /** Call right after a new EventSource is constructed. */
+  /** Call right after a new EventSource is constructed. Restarts the silence clock; never clears a stall. */
   noteStreamOpened: () => void;
 }
 
@@ -96,10 +96,12 @@ export function useTickStreamWatchdog(
   }, []);
 
   const noteStreamOpened = useCallback(() => {
-    // A fresh stream starts its own silence clock; any prior stall verdict
-    // belonged to the connection it replaced.
+    // A fresh stream starts its own silence clock. It does NOT clear a stall:
+    // constructing a replacement EventSource proves nothing about delivery,
+    // so the chart keeps saying "Reconnecting" until a frame actually arrives
+    // (noteFrame) — otherwise the watchdog's own reconnect would hide the
+    // badge on a stream that is still silent.
     lastFrameAtRef.current = Date.now();
-    setStalled((prev) => (prev ? false : prev));
   }, []);
 
   useEffect(() => {

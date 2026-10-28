@@ -52,3 +52,43 @@ describe("ChartAiOverlayPanel scanner legend", () => {
     expect(chip.textContent).not.toMatch(/new internal state/i);
   });
 });
+
+describe("ChartAiOverlayPanel data-source chip", () => {
+  const cases: Array<[string, RegExp]> = [
+    ["LIVE_FEED", /^Scanned on live feed$/],
+    ["LIVE_DELAYED", /^Scanned on delayed feed$/],
+    ["STALE_FEED", /^Scanned on stale feed$/],
+    ["SIMULATOR", /^Simulated data$/],
+    ["AWAITING_FEED", /^No market data yet$/],
+    ["HISTORY_READY_AWAITING_LIVE_TICK", /^History only, no live tick yet$/],
+  ];
+  for (const [token, label] of cases) {
+    it(`reads ${token} in plain English, never the raw token`, () => {
+      render(<ChartAiOverlayPanel data={data({ dataSource: token })} />);
+      const chip = screen.getByTestId("chart-ai-overlay-datasource");
+      expect(chip.textContent).toMatch(label);
+      expect(chip.textContent).not.toContain(token);
+      expect(chip.getAttribute("data-source")).toBe(token);
+    });
+  }
+
+  it("says the source was not reported instead of printing UNKNOWN", () => {
+    render(<ChartAiOverlayPanel data={data({ dataSource: "" })} />);
+    const chip = screen.getByTestId("chart-ai-overlay-datasource");
+    expect(chip.textContent).toBe("Source not reported");
+  });
+
+  it("does not leak an unrecognised source token or present it as live", () => {
+    render(<ChartAiOverlayPanel data={data({ dataSource: "NEW_INTERNAL_FEED" })} />);
+    const chip = screen.getByTestId("chart-ai-overlay-datasource");
+    expect(chip.textContent).toBe("Unrecognised source");
+    expect(chip.textContent).not.toMatch(/live/i);
+  });
+
+  it("titles the chip as the scan-time source, not a current-feed verdict", () => {
+    render(<ChartAiOverlayPanel data={data({ dataSource: "LIVE_FEED" })} />);
+    const title = screen.getByTestId("chart-ai-overlay-datasource").getAttribute("title") ?? "";
+    expect(title).toMatch(/when it scanned/i);
+    expect(title).not.toMatch(/honest/i);
+  });
+});

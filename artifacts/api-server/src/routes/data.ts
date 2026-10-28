@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { GetMarketCandlesQueryParams, GetMarketQuoteQueryParams } from "@workspace/api-zod";
-import { getMarketData, getLatestQuote, getProviderStatus } from "../lib/data/dataManager.js";
+import { getMarketData, getProviderStatus } from "../lib/data/dataManager.js";
+import { routeQuote } from "../lib/data/marketDataRouter.js";
+import { quoteRouteResponse } from "../lib/data/quoteObservationFreshness.js";
 import { resolveArxMarket, ARX_FOCUS_BLOCKED_REASON } from "@workspace/domain/market";
 
 const router = Router();
@@ -50,7 +52,11 @@ router.get("/data/quote", async (req, res) => {
       res.status(200).json(arxFocusBlockedEnvelope(q.symbol));
       return;
     }
-    res.json(await getLatestQuote(q.symbol));
+    // Observation evidence travels with the quote: when it was observed, on
+    // what basis, and whether it is past the quote budget. A failed lookup
+    // carries no price and no observation time (see quoteRouteResponse).
+    const routed = await routeQuote(q.symbol).catch(() => null);
+    res.json(quoteRouteResponse(q.symbol, routed));
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: "Invalid quote request" });

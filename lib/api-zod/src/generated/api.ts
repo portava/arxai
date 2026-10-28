@@ -5241,7 +5241,49 @@ export const GetMarketQuoteResponse = zod.object({
   ask: zod.number().nullish(),
   last: zod.number().nullish(),
   spread: zod.number().nullish(),
-  timestamp: zod.string(),
+  timestamp: zod
+    .string()
+    .describe(
+      "For a served quote, the quote's own time (see timeBasis). When no quote was available (available=false) this is only the time the check ran — it is not an observation time.",
+    ),
+  available: zod
+    .boolean()
+    .optional()
+    .describe("True only when a price (last, bid or ask) was served."),
+  source: zod
+    .string()
+    .nullish()
+    .describe("Router provider that served the quote; null when none did."),
+  observedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "When the price was observed (ISO); null when unknown or unavailable.",
+    ),
+  timeBasis: zod
+    .enum(["producer_tick", "provider_as_of", "server_receive", "none"])
+    .optional()
+    .describe(
+      "What observedAt means. server_receive is the time ARX received the quote (the market tick may be older) and can never read fresh.",
+    ),
+  ageMs: zod.number().nullish(),
+  freshness: zod
+    .enum(["fresh", "delayed", "stale", "unknown", "unavailable"])
+    .optional(),
+  stale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when stale, unknown or unavailable — the price must not be shown as current.",
+    ),
+  staleAfterMs: zod.number().optional(),
+  checkedAt: zod.string().optional().describe("When this lookup ran (ISO)."),
+  observationNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Plain English — what was observed, from which source, as of when, or that it could not be.",
+    ),
 });
 
 /**
@@ -16144,6 +16186,24 @@ export const GenerateMultiTimeframeReportResponse = zod.object({
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   middleTrend: zod.object({
     trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
@@ -16152,6 +16212,24 @@ export const GenerateMultiTimeframeReportResponse = zod.object({
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   higherTrend: zod.object({
     trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
@@ -16160,17 +16238,40 @@ export const GenerateMultiTimeframeReportResponse = zod.object({
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   alignmentScore: zod.number(),
-  alignmentLabel: zod.enum([
-    "STRONG_BULLISH_ALIGNMENT",
-    "STRONG_BEARISH_ALIGNMENT",
-    "MIXED_ALIGNMENT",
-    "LOWER_TIMEFRAME_CONFLICT",
-    "HIGHER_TIMEFRAME_WARNING",
-    "NO_CLEAR_BIAS",
-    "INSUFFICIENT_DATA",
-  ]),
+  alignmentLabel: zod
+    .enum([
+      "STRONG_BULLISH_ALIGNMENT",
+      "STRONG_BEARISH_ALIGNMENT",
+      "MIXED_ALIGNMENT",
+      "LOWER_TIMEFRAME_CONFLICT",
+      "HIGHER_TIMEFRAME_WARNING",
+      "NO_CLEAR_BIAS",
+      "INSUFFICIENT_DATA",
+      "DATA_NOT_CURRENT",
+    ])
+    .describe(
+      "DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).",
+    ),
   conflictWarning: zod.string().nullish(),
   bestBias: zod.enum(["BUY", "SELL", "NEUTRAL"]),
   aiSummary: zod.string(),
@@ -16199,6 +16300,24 @@ export const GetLatestMultiTimeframeReportResponse = zod.object({
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   middleTrend: zod.object({
     trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
@@ -16207,6 +16326,24 @@ export const GetLatestMultiTimeframeReportResponse = zod.object({
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   higherTrend: zod.object({
     trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
@@ -16215,17 +16352,40 @@ export const GetLatestMultiTimeframeReportResponse = zod.object({
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   alignmentScore: zod.number(),
-  alignmentLabel: zod.enum([
-    "STRONG_BULLISH_ALIGNMENT",
-    "STRONG_BEARISH_ALIGNMENT",
-    "MIXED_ALIGNMENT",
-    "LOWER_TIMEFRAME_CONFLICT",
-    "HIGHER_TIMEFRAME_WARNING",
-    "NO_CLEAR_BIAS",
-    "INSUFFICIENT_DATA",
-  ]),
+  alignmentLabel: zod
+    .enum([
+      "STRONG_BULLISH_ALIGNMENT",
+      "STRONG_BEARISH_ALIGNMENT",
+      "MIXED_ALIGNMENT",
+      "LOWER_TIMEFRAME_CONFLICT",
+      "HIGHER_TIMEFRAME_WARNING",
+      "NO_CLEAR_BIAS",
+      "INSUFFICIENT_DATA",
+      "DATA_NOT_CURRENT",
+    ])
+    .describe(
+      "DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).",
+    ),
   conflictWarning: zod.string().nullish(),
   bestBias: zod.enum(["BUY", "SELL", "NEUTRAL"]),
   aiSummary: zod.string(),
@@ -16264,6 +16424,24 @@ export const GetMultiTimeframeHistoryResponse = zod.object({
         fastSma: zod.number(),
         slowSma: zod.number(),
         candlesUsed: zod.number(),
+        newestBarTime: zod
+          .string()
+          .nullish()
+          .describe(
+            "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+          ),
+        freshness: zod
+          .enum(["CURRENT", "STALE", "UNKNOWN"])
+          .optional()
+          .describe(
+            "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+          ),
+        source: zod
+          .string()
+          .nullish()
+          .describe(
+            "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+          ),
       }),
       middleTrend: zod.object({
         trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
@@ -16272,6 +16450,24 @@ export const GetMultiTimeframeHistoryResponse = zod.object({
         fastSma: zod.number(),
         slowSma: zod.number(),
         candlesUsed: zod.number(),
+        newestBarTime: zod
+          .string()
+          .nullish()
+          .describe(
+            "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+          ),
+        freshness: zod
+          .enum(["CURRENT", "STALE", "UNKNOWN"])
+          .optional()
+          .describe(
+            "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+          ),
+        source: zod
+          .string()
+          .nullish()
+          .describe(
+            "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+          ),
       }),
       higherTrend: zod.object({
         trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
@@ -16280,17 +16476,40 @@ export const GetMultiTimeframeHistoryResponse = zod.object({
         fastSma: zod.number(),
         slowSma: zod.number(),
         candlesUsed: zod.number(),
+        newestBarTime: zod
+          .string()
+          .nullish()
+          .describe(
+            "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+          ),
+        freshness: zod
+          .enum(["CURRENT", "STALE", "UNKNOWN"])
+          .optional()
+          .describe(
+            "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+          ),
+        source: zod
+          .string()
+          .nullish()
+          .describe(
+            "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+          ),
       }),
       alignmentScore: zod.number(),
-      alignmentLabel: zod.enum([
-        "STRONG_BULLISH_ALIGNMENT",
-        "STRONG_BEARISH_ALIGNMENT",
-        "MIXED_ALIGNMENT",
-        "LOWER_TIMEFRAME_CONFLICT",
-        "HIGHER_TIMEFRAME_WARNING",
-        "NO_CLEAR_BIAS",
-        "INSUFFICIENT_DATA",
-      ]),
+      alignmentLabel: zod
+        .enum([
+          "STRONG_BULLISH_ALIGNMENT",
+          "STRONG_BEARISH_ALIGNMENT",
+          "MIXED_ALIGNMENT",
+          "LOWER_TIMEFRAME_CONFLICT",
+          "HIGHER_TIMEFRAME_WARNING",
+          "NO_CLEAR_BIAS",
+          "INSUFFICIENT_DATA",
+          "DATA_NOT_CURRENT",
+        ])
+        .describe(
+          "DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).",
+        ),
       conflictWarning: zod.string().nullish(),
       bestBias: zod.enum(["BUY", "SELL", "NEUTRAL"]),
       aiSummary: zod.string(),

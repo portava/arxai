@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).
+ */
 export type MultiTimeframeReportAlignmentLabel =
   (typeof MultiTimeframeReportAlignmentLabel)[keyof typeof MultiTimeframeReportAlignmentLabel];
 
@@ -17,4 +20,5 @@ export const MultiTimeframeReportAlignmentLabel = {
   HIGHER_TIMEFRAME_WARNING: "HIGHER_TIMEFRAME_WARNING",
   NO_CLEAR_BIAS: "NO_CLEAR_BIAS",
   INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
+  DATA_NOT_CURRENT: "DATA_NOT_CURRENT",
 } as const;

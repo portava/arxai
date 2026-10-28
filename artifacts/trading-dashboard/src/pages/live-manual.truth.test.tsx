@@ -84,17 +84,27 @@ describe("Manual Trade Ticket — what the submit path checks", () => {
   });
 });
 
+// The only quote on this page is the ARX market simulator's
+// (/api/market/quote): a random walk from a fixed base price, not the market.
+// A stop set off the real chart, measured from the simulator mid, is a
+// meaningless distance, so no dollar figure or reward:risk is priced from it.
 describe("Manual Trade Ticket — estimated loss / gain", () => {
-  it("EURUSD 0.01 lot with a 20-pip stop reads ≈$2.00, not $0.20", async () => {
+  it("does not price a stop or target off the simulator mid (no ≈$ figure, no R:R)", async () => {
+    // Simulator EURUSD mid 1.0850; the trader's stop/target are set off a
+    // real market near 1.1600. Measured from the simulator, the 20-pip stop
+    // would read ≈$75.00 and the R:R 0.97 — both false.
     stubFetch(baseRoutes());
     await renderSettled();
     await act(async () => {
-      fireEvent.change(screen.getByTestId("ticket-sl"), { target: { value: "1.083" } });
-      fireEvent.change(screen.getByTestId("ticket-tp"), { target: { value: "1.089" } });
+      fireEvent.change(screen.getByTestId("ticket-sl"), { target: { value: "1.158" } });
+      fireEvent.change(screen.getByTestId("ticket-tp"), { target: { value: "1.164" } });
     });
-    expect(screen.getByTestId("ticket-est-loss").textContent).toBe("≈$2.00");
-    expect(screen.getByTestId("ticket-est-gain").textContent).toBe("≈$4.00");
-    expect(screen.getByTestId("ticket-rr").textContent).toBe("2.00");
+    expect(screen.getByTestId("ticket-est-loss").textContent).toBe("Not estimated");
+    expect(screen.getByTestId("ticket-est-gain").textContent).toBe("Not estimated");
+    expect(screen.getByTestId("ticket-est-loss").getAttribute("title")).toMatch(/simulator's, not the market/);
+    expect(screen.getByTestId("ticket-rr").textContent).toBe("—");
+    expect(document.body.textContent).not.toMatch(/vs simulator mid/);
+    expect(screen.getByTestId("ticket-quote-source").textContent).toBe("ARX simulator quote — not the market");
   });
 
   it("a market without a known contract size says 'Not estimated' instead of a dollar figure", async () => {

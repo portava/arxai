@@ -119,6 +119,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private streamTip: ChartEngineCandle | null = null;
   private symbol = "";
   private precision = -1;
+  /** Shell-resolved display precision (shared instrument rule); null = detect from bars. */
+  private displayPrecision: number | null = null;
   private intervalSeconds = 900;
   private viewLinkHandler: ((event: ChartViewEvent) => void) | null = null;
   private viewLinkStatusHandler: ((message: string) => void) | null = null;
@@ -932,9 +934,18 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     });
   }
 
+  setDisplayPricePrecision(precision: number | null): void {
+    const next = typeof precision === "number" && Number.isSafeInteger(precision) && precision >= 0 && precision <= 8
+      ? precision
+      : null;
+    if (next === this.displayPrecision) return;
+    this.displayPrecision = next;
+    this.applyPricePrecision();
+  }
+
   private applyPricePrecision(): void {
     if (!this.candles.length || !this.series) return;
-    const precision = candleDisplayPrecision(this.candles, this.symbol);
+    const precision = this.displayPrecision ?? candleDisplayPrecision(this.candles, this.symbol);
     if (precision === this.precision) return;
     this.precision = precision;
     this.series.applyOptions({ priceFormat: { type: "price", precision, minMove: 10 ** -precision } });

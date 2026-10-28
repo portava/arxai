@@ -82,7 +82,16 @@ export interface RubyContext {
     } | null;
     // Every user's own ARX allocation slice.
     allocation: { allocated: number; available: number; reserved: number } | null;
+    /** Broker-verified open positions (same truth source as getMyLiveOpenTrades). */
     openPositions: number;
+    /**
+     * False when the open-positions read failed — then openPositions is 0 only
+     * because nothing could be counted, and the briefing must not say "none are
+     * open". Absent = checked (older fixtures).
+     */
+    openPositionsChecked?: boolean;
+    /** Rows that exist but the broker has not verified (never counted as open). */
+    unverifiedPositions?: number;
     /** Open floating P/L from the shared buildLiveAccountSnapshot adapter. null = not available. */
     openPL: number | null;
     /** Freshness of the open P/L figure — same bands as the frontend badge. */
@@ -228,7 +237,11 @@ async function fetchCalendar(): Promise<CalCacheVal> {
     // share ONE provider path. The market-provider chain has no TE wiring and
     // returns connected:false for every calendar call regardless of key config.
     const res = await getEconomicCalendar(""); // empty = all symbols (briefing-level)
-    if (res.connected && res.events.length > 0) {
+    // A connected calendar that lists no events WAS checked: it stays
+    // connected (next = null), never reported as "not connected".
+    if (res.connected && res.events.length === 0) {
+      val = { connected: true, next: null };
+    } else if (res.connected) {
       const now = Date.now();
       // RawCalendarEvent uses `impact` and `eventTimeIso` (not `importance`/`whenIso`).
       const upcoming = res.events
@@ -281,7 +294,7 @@ export async function buildRubyContext(
     connected: false,
     message: "Live bridge is not currently available.",
   };
-  let account: RubyContext["account"] = { mt5: null, allocation: null, openPositions: 0, openPL: null, snapshotFreshness: null, live: null };
+  let account: RubyContext["account"] = { mt5: null, allocation: null, openPositions: 0, openPositionsChecked: false, unverifiedPositions: 0, openPL: null, snapshotFreshness: null, live: null };
   try {
     const view = await getUserAllocationView(userId);
     bridge = {
@@ -317,8 +330,12 @@ export async function buildRubyContext(
     const { getMyLiveOpenTrades } = await import("./tools.js");
     const open = await getMyLiveOpenTrades(userId);
     account.openPositions = open.count;
+    account.unverifiedPositions = open.unsyncedCount ?? 0;
+    account.openPositionsChecked = true;
   } catch {
+    // Not checked — 0 here is "could not count", never "none open".
     account.openPositions = 0;
+    account.openPositionsChecked = false;
   }
 
   // ── Open P/L via shared snapshot adapter (LIVE_SHARED users only) ────────
@@ -508,7 +525,16 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
   // Headline — greets by time + live readiness.
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   let readiness: string;
-  if (ctx.bridge.connected) readiness = "You're live-connected through Shared Master MT5.";
+  // bridge.connected is the SHARED master bridge's health, not this user's
+  // posture. "You're live-connected" needs the user's own canonical balance
+  // source (same live-mode gate as the Dashboard) to read live_shared.
+  const liveSource = ctx.account.live?.source ?? null;
+  if (ctx.bridge.connected && liveSource === "live_shared") readiness = "You're live-connected through Shared Master MT5.";
+  else if (ctx.bridge.connected && (liveSource === "paper" || liveSource === "demo")) {
+    readiness = `The Shared Master MT5 bridge is healthy, but your account is on the ${liveSource} path, not live.`;
+  } else if (ctx.bridge.connected) {
+    readiness = "The Shared Master MT5 bridge is healthy, but I couldn't confirm your account is on the live path.";
+  }
   else if (ctx.bridge.availability === "RECONCILING") readiness = "Your live bridge is reconciling right now.";
   else readiness = "Your live bridge is offline at the moment.";
   const headline = `Good ${ctx.timeOfDay}. ${readiness}`;
@@ -561,21 +587,38 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
     // Open P/L — same adapter as Dashboard/Open Trades; honest freshness qualifier.
     if (ctx.account.openPL != null) {
       const fresh = ctx.account.snapshotFreshness;
+      // Only a live/fresh snapshot reads bare; anything else (including an
+      // unavailable or unknown freshness) is qualified, never shown as current.
       const freshnessNote =
         fresh === "live" || fresh === "fresh" ? "" :
         fresh === "delayed" ? " (slightly delayed)" :
-        fresh === "stale" ? " (last known — may be stale)" : "";
+        fresh === "stale" ? " (last known — may be stale)" :
+        " (last known — freshness could not be confirmed)";
       lines.push(`Open floating P/L: ${fmtMoney(ctx.account.openPL, null)}${freshnessNote}.`);
     }
+  } else if (ctx.account.openPositionsChecked === false) {
+    lines.push("I couldn't check your open positions just now, so I can't say whether any are open — check the Trades page.");
+  } else if ((ctx.account.unverifiedPositions ?? 0) > 0) {
+    const n = ctx.account.unverifiedPositions!;
+    lines.push(
+      `No broker-verified positions are open; ${n} position${n === 1 ? " is" : "s are"} waiting for broker verification and not counted.`,
+    );
   } else {
     lines.push("No positions are currently open.");
   }
   if (ctx.isPrivileged && ctx.account.mt5) {
-    lines.push(
-      `Master MT5: balance ${fmtMoney(ctx.account.mt5.balance, ctx.account.mt5.currency)}, ` +
-        `equity ${fmtMoney(ctx.account.mt5.equity, ctx.account.mt5.currency)}, ` +
-        `open P/L ${fmtMoney(ctx.account.mt5.openPnl, ctx.account.mt5.currency)}.`,
-    );
+    const m = ctx.account.mt5;
+    if (m.snapshotStatus !== "FRESH" && m.snapshotStatus !== "STALE") {
+      // MISSING (or unrecognised): the pool reports 0s for a snapshot it never
+      // received — never show those as the account's balance.
+      lines.push("Master MT5: no account snapshot has been received, so balance, equity and open P/L are not available.");
+    } else {
+      lines.push(
+        `Master MT5${m.snapshotStatus === "STALE" ? " (last-known — the snapshot is stale)" : ""}: balance ${fmtMoney(m.balance, m.currency)}, ` +
+          `equity ${fmtMoney(m.equity, m.currency)}, ` +
+          `open P/L ${fmtMoney(m.openPnl, m.currency)}.`,
+      );
+    }
   } else if (ctx.account.allocation && ctx.account.allocation.allocated > 0) {
     lines.push(
       `Your ARX allocation: ${fmtMoney(ctx.account.allocation.available, null)} available of ` +

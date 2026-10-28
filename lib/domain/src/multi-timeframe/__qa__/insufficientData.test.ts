@@ -71,10 +71,15 @@ test("buildReport with ONE short timeframe does not classify alignment from the 
 
 test("a fully observed report is unchanged (all three timeframes trending up)", () => {
   const up = series(120, 1.1, 0.0005);
+  // Current bars: each series' newest bar opened at `now` (bars without a
+  // timestamp cannot be confirmed current — see freshness.test.ts).
+  const now = Date.UTC(2026, 9, 28, 12, 0);
+  const timed = (intervalMs: number) => up.map((c, i) => ({ ...c, time: now - (up.length - 1 - i) * intervalMs }));
   const r = buildReport({
     symbol: "EURUSD",
     lowerTimeframe: "M5", middleTimeframe: "H1", higherTimeframe: "H4",
-    lowerCandles: up, middleCandles: up, higherCandles: up,
+    lowerCandles: timed(5 * 60_000), middleCandles: timed(60 * 60_000), higherCandles: timed(4 * 60 * 60_000),
+    nowMs: now,
   });
   assert.equal(r.result.alignmentLabel, "STRONG_BULLISH_ALIGNMENT");
   assert.equal(r.result.bestBias, "BUY");

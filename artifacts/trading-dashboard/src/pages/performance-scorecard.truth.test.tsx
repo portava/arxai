@@ -36,3 +36,36 @@ describe("Win/Loss Report source truth", () => {
     expect(document.body.textContent).not.toMatch(/never mixed across environments/);
   });
 });
+
+// The server's win rate is over decided trades (a recorded win or loss) and
+// is null when there are none; the page shows that as unknown, never "null%"
+// or a measured 0%.
+describe("Win/Loss Report win rate", () => {
+  it("a null win rate (no decided trade) renders as —, not null% or 0%", async () => {
+    const body = {
+      ...SCORECARD,
+      environments: { ...SCORECARD.environments, JOURNAL: { ...SCORECARD.environments.JOURNAL, wins: 0, losses: 0, winRate: null, pnl: 0 } },
+      headline: { winRate: null, tradesDecided: 0, totalPnl: 0, totalTrades: 3, tradesWithRecordedPnl: 2 },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/api/performance/scorecard")
+        ? new Response(JSON.stringify(body), { status: 200 })
+        : new Response("null", { status: 404 })));
+    render(<PerformanceScorecard />);
+    const read = await screen.findByTestId("performance-read");
+    expect(read.textContent).not.toMatch(/Win rate is/);
+    expect(document.body.textContent).not.toMatch(/null%/);
+    const card = screen.getAllByText("Win Rate")[0]!.parentElement!.parentElement!;
+    expect(card.textContent).toBe("Win Rate—");
+  });
+
+  it("names how many decided trades the win rate covers", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/api/performance/scorecard")
+        ? new Response(JSON.stringify({ ...SCORECARD, headline: { ...SCORECARD.headline, tradesDecided: 3, tradesWithRecordedPnl: 3 } }), { status: 200 })
+        : new Response("null", { status: 404 })));
+    render(<PerformanceScorecard />);
+    const read = await screen.findByTestId("performance-read");
+    expect(read.textContent).toContain("Win rate is 67% across 3 decided trades.");
+  });
+});

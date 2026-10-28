@@ -291,3 +291,26 @@ describe("C3.5 — stalled-stream badge", () => {
     expect(screen.queryByTestId(BADGE)).not.toBeNull();
   });
 });
+
+// Truth upgrade 2026-10-28: the watchdog's own reconnect (silence → epoch bump →
+// new EventSource) used to clear the badge the moment the replacement socket
+// was constructed, before it had delivered anything. A reopened socket is not
+// a recovered stream; only a frame is.
+describe("C3.5 — a reopened stream is not a recovered stream", () => {
+  it("keeps 'Reconnecting' after the watchdog reopens a silent stream, until a frame arrives", () => {
+    vi.useFakeTimers();
+    try {
+      renderChart();
+      heartbeat();
+      expect(openedStreams).toHaveLength(1);
+      // Two missed heartbeats → the watchdog stalls and rebuilds the stream.
+      act(() => { vi.advanceTimersByTime(36_000); });
+      expect(openedStreams.length).toBeGreaterThanOrEqual(2);
+      expect(screen.queryByTestId(BADGE)).not.toBeNull();
+      heartbeat();
+      expect(screen.queryByTestId(BADGE)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

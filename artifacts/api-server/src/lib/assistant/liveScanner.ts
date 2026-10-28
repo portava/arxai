@@ -10,6 +10,7 @@ import { getMarketProvider, getMarketStatus, type Candle } from "./marketProvide
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 import type { Candle as RouterCandle } from "../data/types.js";
 import { knownPipDistance } from "../data/chart/symbolProfile.js";
+import { quoteObservationFreshness } from "../data/quoteObservationFreshness.js";
 
 const LIVE_TIMEFRAMES = ["M15", "H1"] as const;
 const MIN_CANDLES = 10;
@@ -75,6 +76,24 @@ export interface LiveCandidate {
   bestTargetLabel: "TP1" | "TP2" | "TP3" | null; // primary recommended target
   score: number;
   generatedAt: string;
+  /**
+   * Evidence for this candidate (additive; set by scoreLiveCandidates, absent
+   * on candidates adapted from other scanners). The candles come from the
+   * unified market-data router, NOT the assistant adapter, so these name the
+   * router provider that actually served them.
+   */
+  dataSource?: string | null;
+  /** Bar time of the newest candle scored (ISO), or null when unknown. */
+  lastCandleAt?: string | null;
+  /** What `entry` is: the router quote's price, or the last candle close (no quote). */
+  entryBasis?: "router_quote" | "last_candle_close";
+  /** Router provider that served the quote used for entry/spread; null when no quote. */
+  quoteSource?: string | null;
+  /** When the entry price was observed and whether it is past the quote budget. */
+  entryObservedAt?: string | null;
+  entryStale?: boolean;
+  /** Plain English: where the entry price came from and as of when. */
+  entryNote?: string;
 }
 
 /**
@@ -229,7 +248,15 @@ export type LiveScannerReason =
 
 export interface LiveScannerResult {
   connected: boolean;
+  /**
+   * The feed(s) the scored candles actually came from — the router provider
+   * ids, joined with "+" when several served this scan, or "none" when no
+   * candles were served. The early "not connected" returns name the assistant
+   * adapter, because that is the check that stopped the scan.
+   */
   source: string;
+  /** Additive: the assistant market-data adapter whose connection gates the scan. */
+  gateProvider?: string;
   candidates: LiveCandidate[];
   symbolsAttempted: number;
   symbolsWithData: number;
@@ -276,6 +303,7 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
 
   const out: LiveCandidate[] = [];
   const warnings: string[] = [];
+  const servedBy = new Set<string>();
   let attempted = 0;
   let withData = 0;
 
@@ -296,6 +324,8 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
         }
         const cr = { candles: routed.candles.map(toScannerCandle) };
         withData++;
+        const dataSource = routed.provenance?.providerId ?? routed.primaryProvider ?? null;
+        if (dataSource) servedBy.add(dataSource);
         const rq = await routeQuote(sym).catch(() => null);
         const q = rq?.ok && rq.quote
           ? { price: rq.quote.last ?? null, bid: rq.quote.bid ?? null, ask: rq.quote.ask ?? null }
@@ -305,7 +335,40 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
           ask: q?.ask ?? null,
           price: q?.price ?? null,
         });
-        if (scored) out.push(scored);
+        if (scored) {
+          const lastBar = routed.candles[routed.candles.length - 1];
+          const lastCandleMs = lastBar ? Date.parse(String(lastBar.time)) : NaN;
+          const lastCandleAt = Number.isFinite(lastCandleMs) ? new Date(lastCandleMs).toISOString() : null;
+          const quoteSource = q?.price != null ? (rq?.provenance?.providerId ?? rq?.primaryProvider ?? null) : null;
+          // Entry evidence: the quote's own time on its real basis (tick time
+          // only when the router says the producer observed it), else the
+          // last candle's bar time.
+          const obs = q?.price != null
+            ? quoteObservationFreshness({
+                hasPrice: true,
+                observedAt: rq?.quote?.timestamp ?? null,
+                basis: rq?.tickTimeObserved === true ? "producer_tick" : "server_receive",
+                sourceLabel: quoteSource ? `the ${quoteSource} quote` : "the router quote",
+              })
+            : quoteObservationFreshness({
+                hasPrice: true,
+                observedAt: lastCandleAt,
+                basis: "provider_as_of",
+                sourceLabel: `the last ${tf} candle close (${dataSource ?? "unknown feed"})`,
+              });
+          out.push({
+            ...scored,
+            dataSource,
+            lastCandleAt,
+            entryBasis: q?.price != null ? "router_quote" : "last_candle_close",
+            quoteSource,
+            entryObservedAt: obs.observedAt,
+            entryStale: obs.stale,
+            entryNote: q?.price != null
+              ? `Entry is the live quote price. ${obs.plainEnglish}`
+              : `No quote — entry is the last ${tf} candle close. ${obs.plainEnglish} (The time is the bar's start; its close may be newer.)`,
+          });
+        }
       } catch {
         if (warnings.length < 6) warnings.push(`${sym} ${tf}: candle fetch failed`);
       }
@@ -316,8 +379,9 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
 
   // Determine the honest reason code from the scan outcome.
   const statusAfter = getMarketStatus();
+  const source = servedBy.size > 0 ? [...servedBy].sort().join("+") : "none";
   let reason: LiveScannerReason = "SCANNER_OK";
-  let reasonDetail = `Scanner returned ${out.length} ranked candidate(s) from ${withData}/${attempted} (symbol × timeframe) attempts on provider '${p.name}'.`;
+  let reasonDetail = `Scanner returned ${out.length} ranked candidate(s) from ${withData}/${attempted} (symbol × timeframe) attempts; candles served by ${source}.`;
   if (withData === 0) {
     // No symbol produced enough candles. Differentiate stale vs unavailable.
     if (statusAfter.stale && wasAlreadyStale) {
@@ -334,7 +398,8 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
 
   return {
     connected: true,
-    source: p.name,
+    source,
+    gateProvider: p.name,
     candidates: out.slice(0, limit),
     symbolsAttempted: attempted,
     symbolsWithData: withData,

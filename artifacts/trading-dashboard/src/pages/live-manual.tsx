@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown } from "lucide-react";
 import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
-import { estimateMoneyAtDistance, formatMoneyEstimate } from "@/lib/fxRiskEstimate";
+import { formatMoneyEstimate, type MoneyEstimate } from "@/lib/fxRiskEstimate";
 
 // What POST /api/live-intent/submit checks: three static tester caps
 // (routes/liveIntent.ts TESTER_CAPS). It does not run the pre-trade Risk
@@ -83,16 +83,16 @@ export default function LiveManualPage() {
       : perm?.killSwitchEngaged === true ? "engaged"
       : perm?.killSwitchEngaged === false ? "off"
       : "unknown";
-  // Dollar estimates against the simulator quote's mid (/api/market/quote).
-  // Only spot FX with USD on one side is estimated (standard 100k contract);
-  // other markets say "Not estimated" rather than show a wrong figure.
-  const ref = typeof quote?.mid === "number" ? quote.mid : NaN;
-  const lossEst = estimateMoneyAtDistance(symbol, lotSize, ref, stopLoss === "" ? NaN : Number(stopLoss));
-  const gainEst = estimateMoneyAtDistance(symbol, lotSize, ref, takeProfit === "" ? NaN : Number(takeProfit));
-  // Reward:risk is a ratio of price distances; it needs no contract size.
-  const slDist = stopLoss === "" ? NaN : Math.abs(ref - Number(stopLoss));
-  const tpDist = takeProfit === "" ? NaN : Math.abs(Number(takeProfit) - ref);
-  const rr: number | null = Number.isFinite(slDist) && slDist > 0 && Number.isFinite(tpDist) ? tpDist / slDist : null;
+  // The only quote this page loads is the ARX market simulator's
+  // (/api/market/quote, executionEnvironment SIMULATOR): a random walk from a
+  // fixed base price, not the market. A stop or target set off the real chart
+  // measured from that price is a meaningless distance (EURUSD simulator mid
+  // 1.0850 vs a market at 1.1600 turns a 20-pip stop into ~770 pips), so no
+  // dollar estimate or reward:risk is priced from it. They need a real entry
+  // price, which this capture-only ticket does not have.
+  const noRealPrice = "Not estimated: the only price on this page is the ARX simulator's, not the market, so the distance to your stop or target cannot be measured.";
+  const lossEst: MoneyEstimate = { usd: null, reason: noRealPrice };
+  const gainEst: MoneyEstimate = { usd: null, reason: noRealPrice };
 
   async function submit() {
     setConfirmOpen(false);
@@ -141,6 +141,7 @@ export default function LiveManualPage() {
             </div>
             {quote && (
               <div className="rounded border border-border bg-background/40 p-2 text-xs grid grid-cols-4 gap-1 font-mono" data-testid="ticket-quote">
+                <div className="col-span-4 font-sans text-[10px] text-warning" data-testid="ticket-quote-source">ARX simulator quote — not the market</div>
                 <div><div className="text-txt-muted text-[10px]">BID</div>{quote.bid}</div>
                 <div><div className="text-txt-muted text-[10px]">ASK</div>{quote.ask}</div>
                 <div><div className="text-txt-muted text-[10px]">SPREAD</div>{quote.spread}</div>
@@ -172,9 +173,9 @@ export default function LiveManualPage() {
             </div>
 
             <div className="rounded border border-border p-2 text-xs space-y-1 bg-background/40">
-              <div className="flex justify-between"><span>Estimated max loss <span className="text-[10px] text-txt-muted">(vs simulator mid)</span></span><span className="font-mono text-danger" data-testid="ticket-est-loss" title={lossEst.usd == null ? lossEst.reason : lossEst.basis}>{formatMoneyEstimate(lossEst)}</span></div>
-              <div className="flex justify-between"><span>Estimated gain <span className="text-[10px] text-txt-muted">(vs simulator mid)</span></span><span className="font-mono text-success" data-testid="ticket-est-gain" title={gainEst.usd == null ? gainEst.reason : gainEst.basis}>{formatMoneyEstimate(gainEst)}</span></div>
-              <div className="flex justify-between"><span>Reward / Risk</span><span className="font-mono" data-testid="ticket-rr">{rr == null ? "—" : rr.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Estimated max loss <span className="text-[10px] text-txt-muted">(needs a market price)</span></span><span className="font-mono text-danger" data-testid="ticket-est-loss" title={lossEst.usd == null ? lossEst.reason : lossEst.basis}>{formatMoneyEstimate(lossEst)}</span></div>
+              <div className="flex justify-between"><span>Estimated gain <span className="text-[10px] text-txt-muted">(needs a market price)</span></span><span className="font-mono text-success" data-testid="ticket-est-gain" title={gainEst.usd == null ? gainEst.reason : gainEst.basis}>{formatMoneyEstimate(gainEst)}</span></div>
+              <div className="flex justify-between"><span>Reward / Risk <span className="text-[10px] text-txt-muted">(needs a market price)</span></span><span className="font-mono" data-testid="ticket-rr" title={noRealPrice}>—</span></div>
               <div className="flex justify-between"><span>Risk % <span className="text-[10px] text-txt-muted">(needs account equity)</span></span><span className="font-mono text-txt-muted">—</span></div>
               <div className="flex justify-between"><span>Account mode</span><Badge variant="outline" className="text-[10px]">TESTER</Badge></div>
               <div className="flex justify-between"><span>Execution environment</span><Badge className="bg-warning/20 text-warning text-[10px]">none — capture only</Badge></div>
@@ -224,7 +225,7 @@ export default function LiveManualPage() {
                     <div><div className="text-txt-muted text-[10px]">Lot</div>{lotSize}</div>
                     <div><div className="text-txt-muted text-[10px]">SL</div>{stopLoss === "" ? "—" : stopLoss}</div>
                     <div><div className="text-txt-muted text-[10px]">TP</div>{takeProfit === "" ? "—" : takeProfit}</div>
-                    <div className="col-span-2"><div className="text-txt-muted text-[10px]">Max loss</div>${maxLoss} · R:R {rr == null ? "—" : rr.toFixed(2)}</div>
+                    <div className="col-span-2"><div className="text-txt-muted text-[10px]">Max loss</div>${maxLoss} · R:R —</div>
                   </div>
                   {(stopLoss === "" || takeProfit === "") && (
                     <p className="mt-2 text-[11px] text-warning">Warning: missing {stopLoss === "" ? "SL" : ""}{stopLoss === "" && takeProfit === "" ? " + " : ""}{takeProfit === "" ? "TP" : ""}.{stopLoss === "" ? " The tester caps reject an intent without a stop-loss." : ""}</p>

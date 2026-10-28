@@ -33,13 +33,15 @@ import {
 import { ChartWorkbenchTools, chartExportFeedLabel } from "./ChartWorkbenchTools";
 import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
-import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
+import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
+import { publishChartPricePrecision } from "@/components/charts/chartPricePrecisionStore";
 import { CHART_TIME_AXIS_LABEL, CHART_TIME_AXIS_TITLE } from "@/components/scanner/scannerChartFormat";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
-import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
+import { frozenQuoteChip } from "@/components/charts/marketFrozenFormat";
+import { scheduledWeekendClosureFor } from "@/lib/scannerTruth";
 import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
 import { capConfidence, feedConfidence } from "@/lib/feed-confidence";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
@@ -251,13 +253,15 @@ export function ARXNativeChart({
   const studyInspectorRef = useRef<HTMLOutputElement | null>(null);
   const dataWindowRef = useRef<HTMLDetailsElement | null>(null);
   const inspectedCandleRef = useRef<ChartEngineCandle | null>(null);
+  const pricePrecisionRef = useRef<number | null>(null);
   const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
     const bar = candle;
     inspectedCandleRef.current = bar;
     if (!legendRef.current) return;
-    const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
+    // Same instrument precision as the axis and header (pricePrecisionRef).
+    const p = pricePrecisionRef.current;
     legendRef.current.textContent = bar
-      ? `${new Date(bar.time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}`
+      ? `${new Date(bar.time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC  ·  O ${formatInstrumentPrice(bar.open, p)}  H ${formatInstrumentPrice(bar.high, p)}  L ${formatInstrumentPrice(bar.low, p)}  C ${formatInstrumentPrice(bar.close, p)}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
@@ -594,6 +598,26 @@ export function ARXNativeChart({
       : null;
   }, [mergedEngineCandles]);
 
+  // ONE display precision for this instrument (lib/instrumentPriceFormat): the
+  // server-declared precision widened by the digits the loaded quotes carry —
+  // the same rule the Scanner chart, header and trade modal use. The axis
+  // (adapter.setDisplayPricePrecision), the header badge, the crosshair legend
+  // and the side panels (chartPricePrecisionStore) all print with it.
+  const serverPricePrecision = data?.truthResult?.pricePrecision ?? null;
+  const pricePrecision = useMemo(
+    () => resolveDisplayPricePrecision(
+      serverPricePrecision,
+      mergedEngineCandles.flatMap((c) => [c.open, c.high, c.low, c.close]),
+    ),
+    [serverPricePrecision, mergedEngineCandles],
+  );
+  pricePrecisionRef.current = pricePrecision;
+  const precisionOwner = useRef({}).current;
+  useEffect(
+    () => publishChartPricePrecision(resolvedSymbol, pricePrecision, precisionOwner),
+    [resolvedSymbol, pricePrecision, precisionOwner],
+  );
+
   const historySource = data?.feedStatus?.source ?? null;
 
   // ── Push data into the existing series on every poll WITHOUT recreating the
@@ -611,6 +635,7 @@ export function ARXNativeChart({
     // rule). chartEpoch re-runs this after a context reset so the retained engine
     // is populated immediately rather than waiting for the next poll.
     adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance, source: historySource });
+    adapter.setDisplayPricePrecision?.(pricePrecision);
     adapter.setCandles(mergedEngineCandles);
     // Keep the newest-bar watermark in sync with the authoritative closed
     // window. When the poll reconciles a new closed bar it advances here, so the
@@ -618,7 +643,7 @@ export function ARXNativeChart({
     // closed bar cleanly supersedes any prior synthesized tip with no orphan dup.
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
-  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext]);
+  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
 
   // ── Real-time forming-tip (Task #501). Subscribe to the SAME server SSE
   //    tick-stream the Scanner chart uses (Task #496) for the current
@@ -1004,12 +1029,16 @@ export function ARXNativeChart({
     showFeedStatus && hasCandles && !isSafeMode && conf.severity !== "clean";
   const showNotAiConfirmed = showFeedStatus && hasCandles && !aiUsable && !isSafeMode;
 
-  // Same digit count the price axis uses (adapter.applyPricePrecision), so the
-  // header and the axis never print the same bar with different precision.
-  const decimals = useMemo(
-    () => candleDisplayPrecision(mergedEngineCandles, resolvedSymbol),
-    [mergedEngineCandles, resolvedSymbol],
-  );
+
+  // The stream's marketFrozen flag means "the broker keeps repeating one
+  // quote"; only the instrument's scheduled weekend close (the same window the
+  // server's feed status uses) makes that a closed market.
+  const scheduledClosure = marketFrozen != null
+    && scheduledWeekendClosureFor(data?.feedStatus?.assetClass ?? null, Date.now()) != null;
+  const frozenChip = marketFrozen ? frozenQuoteChip(marketFrozen.lastBrokerTimeMs, scheduledClosure) : null;
+  // The header price reads as current only on a live-confirmed feed whose
+  // broker quote is still moving (downgrade-only).
+  const headerPriceLive = isLivePriceAffordance && marketFrozen == null;
 
   const isInitialLoading = query.isLoading && !hasCandles;
   const isError = query.isError && !hasCandles;
@@ -1036,14 +1065,16 @@ export function ARXNativeChart({
               // live-confirmed; the header must say the same thing in words.
               <Badge
                 variant="outline"
-                className={`font-mono text-xs ${isLivePriceAffordance ? "" : "text-zinc-400"}`}
+                className={`font-mono text-xs ${headerPriceLive ? "" : "text-zinc-400"}`}
                 data-testid="arx-native-last"
-                title={isLivePriceAffordance
+                title={headerPriceLive
                   ? undefined
-                  : "Close of the newest bar received. The feed is not live-confirmed, so this may not be the current price."}
+                  : marketFrozen
+                    ? "Close of the newest bar received. The broker keeps sending the same quote, so this is not a moving price."
+                    : "Close of the newest bar received. The feed is not live-confirmed, so this may not be the current price."}
               >
-                {isLivePriceAffordance ? "" : "Last known "}
-                {lastClose.toFixed(decimals)}
+                {headerPriceLive ? "" : "Last known "}
+                {formatInstrumentPrice(lastClose, pricePrecision)}
               </Badge>
             )}
             {positionCount > 0 && (
@@ -1085,14 +1116,15 @@ export function ARXNativeChart({
                 <ShieldAlert className="h-3 w-3" /> Not AI-confirmed
               </Badge>
             )}
-            {marketFrozen && (
+            {frozenChip && (
               <Badge
                 variant="outline"
                 className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
                 data-testid="arx-native-market-closed"
-                title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
+                data-scheduled-closure={scheduledClosure ? "true" : "false"}
+                title={frozenChip.title}
               >
-                <Clock className="h-3 w-3" /> {formatMarketClosedLabel(marketFrozen.lastBrokerTimeMs)}
+                <Clock className="h-3 w-3" /> {frozenChip.label}
               </Badge>
             )}
             {/* Theme C3.5 — an honestly-labelled stalled stream. A chart whose
@@ -1222,7 +1254,7 @@ export function ARXNativeChart({
           {expanded ? "Exit fullscreen" : "Fullscreen"}
         </Button>
       </div>
-      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={chartExportFeedLabel({ source: data?.feedStatus?.source, liveConfirmed: isLivePriceAffordance, warning: data?.feedStatus?.warning, newestBarOpenTime: hasCandles ? candles[candles.length - 1]!.openTime : null, streamReconnecting: streamWatchdog.stalled, marketClosed: marketFrozen != null })} />
+      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={chartExportFeedLabel({ source: data?.feedStatus?.source, liveConfirmed: isLivePriceAffordance, warning: data?.feedStatus?.warning, newestBarOpenTime: hasCandles ? candles[candles.length - 1]!.openTime : null, streamReconnecting: streamWatchdog.stalled, marketClosed: scheduledClosure, quoteFrozen: marketFrozen != null && !scheduledClosure })} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">

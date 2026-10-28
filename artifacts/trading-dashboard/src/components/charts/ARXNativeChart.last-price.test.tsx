@@ -128,6 +128,9 @@ function makeCandle(openMs: number, close: number): ChartCandle {
 function makeResponse(closes: number[] = [1.1, 1.101, 1.102], feed: Record<string, unknown> = {}): ChartCandlesResponse {
   return {
     symbol:SYMBOL,timeframe:TF,
+    // The server declares EURUSD at 5 dp and XAUUSD at 2 dp (symbol profile);
+    // the header follows the shared instrument rule, not a fiat-pair guess.
+    truthResult: { pricePrecision: SYMBOL === "XAUUSD" ? 2 : 5 },
     candles: [
       ...closes.map((close, i) => makeCandle(NEWEST_OPEN_MS - (closes.length - 1 - i) * M5_MS, close)),
     ],
@@ -198,7 +201,8 @@ describe("header last-price badge", () => {
     SYMBOL = "XAUUSD";
     currentCandleResponse = makeResponse([2345.6, 2346.12, 2347.125]);
     renderChart();
-    // candleDisplayPrecision → 3 digits (2347.125); the old magnitude guess gave 2.
+    // Shared rule: server 2 dp widened by the 3 digits the quotes carry →
+    // 2347.125 (the axis gets the same value via setDisplayPricePrecision).
     expect(screen.getByTestId(LAST).textContent).toBe("2347.125");
   });
 });
