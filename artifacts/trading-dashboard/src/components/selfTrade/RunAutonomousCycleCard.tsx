@@ -10,7 +10,15 @@
 //   - on success reports protective dispatches as "sent to EA — awaiting broker
 //     confirmation" (never closed / completed) and every hold reason with its
 //     plain-English explanation from the server.
+//
+// Running / result state is read from the shared TanStack MutationCache (by
+// mutation key), not from component state, because the admin page's tabs
+// unmount inactive panels: leaving the tab mid-run and coming back must still
+// show the running cycle (counted from the original click), keep Run disabled,
+// and then show that run's result. The server also refuses an overlapping run
+// (409 CYCLE_ALREADY_RUNNING).
 import { useEffect, useState } from "react";
+import { useMutationState, type MutationState } from "@tanstack/react-query";
 import { Rocket } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,6 +35,24 @@ import {
 export const PROTECTIVE_WAIT_BUDGET_SEC = 20;
 /** Past this, the card says the run is taking longer than expected. */
 export const RUN_CYCLE_LONG_WAIT_MS = 45_000;
+/** Same key the generated hook uses; shared so state survives a tab remount. */
+export const RUN_CYCLE_MUTATION_KEY = ["adminRunSelfTradeAutonomousCycle"];
+
+type RunState = MutationState<RunAutonomousCycleResp, unknown, unknown, unknown>;
+type ErrorKind = "conflict" | "outcome-open" | "failed";
+
+/**
+ * 409: the server refused because a cycle is already running. No HTTP status
+ * (dropped connection) or a gateway 502/503/504: the cycle may still be
+ * running on the server. Anything else: the server answered with a failure.
+ */
+function classifyError(error: unknown): ErrorKind {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (status === 409) return "conflict";
+  if (typeof status !== "number" || status === 0 || status === 502 || status === 503 || status === 504)
+    return "outcome-open";
+  return "failed";
+}
 
 function Tone({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return (
@@ -57,10 +83,11 @@ function holdDetails(data: RunAutonomousCycleResp): RunAutonomousCycleHoldDetail
   }));
 }
 
-function CycleResult({ data, durationMs }: { data: RunAutonomousCycleResp; durationMs: number | null }) {
+function CycleResult({ data }: { data: RunAutonomousCycleResp }) {
   const p = data.protective;
   const holds = holdDetails(data);
   const budgetSec = p ? Math.round(p.waitBudgetMs / 1000) : PROTECTIVE_WAIT_BUDGET_SEC;
+  const unresolved = p?.commandRecordedOrUnknown ?? 0;
   return (
     <div className="space-y-2 text-xs">
       <div className="flex flex-wrap items-center gap-1">
@@ -70,10 +97,7 @@ function CycleResult({ data, durationMs }: { data: RunAutonomousCycleResp; durat
         <Tone tone="neutral">broker-confirmed modifications {data.positionsModified}</Tone>
         <Tone tone="info">broker-confirmed closes {data.positionsClosed}</Tone>
         <Tone tone="danger">rejected {data.reconciled.rejected}</Tone>
-        <span className="text-muted-foreground">
-          cycle {data.cycleId}
-          {durationMs != null ? ` · server answered after ${seconds(durationMs)}` : ""}
-        </span>
+        <span className="text-muted-foreground">cycle {data.cycleId}</span>
       </div>
 
       {p ? (
@@ -83,11 +107,19 @@ function CycleResult({ data, durationMs }: { data: RunAutonomousCycleResp; durat
             <Tone tone="info">considered {p.considered}</Tone>
             <Tone tone="warning">sent to EA — awaiting broker confirmation {p.acted}</Tone>
             <Tone tone="neutral">held {p.held}</Tone>
+            {unresolved > 0 && <Tone tone="danger">command recorded / outcome unknown {unresolved}</Tone>}
             <span className="text-muted-foreground">
-              waited {seconds(p.elapsedMs)} of {budgetSec} s budget
+              protective step took {seconds(p.elapsedMs)} (sweep wait budget {budgetSec} s)
               {p.bridges > 0 ? ` · ${p.bridges} bridge${p.bridges === 1 ? "" : "s"}` : ""}
             </span>
           </div>
+          {unresolved > 0 && (
+            <p className="mt-1 text-muted-foreground">
+              Command recorded / outcome unknown: a request may have reached the terminal (refused after a command was
+              recorded, outcome not yet proven, or the protective step failed). Check the execution feed before acting;
+              the reasons are listed below. Held means nothing was sent.
+            </p>
+          )}
           {p.acted > 0 && (
             <p className="mt-1 text-muted-foreground">
               Sent to EA means the request passed the gated pipeline and was handed to the terminal. It is not a fill or a
@@ -119,54 +151,67 @@ function CycleResult({ data, durationMs }: { data: RunAutonomousCycleResp; durat
 }
 
 export function RunAutonomousCycleCard({ onRan }: { onRan?: () => void }) {
-  const runCycle = useAdminRunSelfTradeAutonomousCycle();
+  // Mutation-level onSuccess runs even if this card unmounted mid-run, so the
+  // feed / audit queries are still refreshed when a run finishes off-tab.
+  const runCycle = useAdminRunSelfTradeAutonomousCycle({
+    mutation: { mutationKey: RUN_CYCLE_MUTATION_KEY, onSuccess: () => onRan?.() },
+  });
+  const runs = useMutationState({
+    filters: { mutationKey: RUN_CYCLE_MUTATION_KEY },
+    select: (m) => m.state as RunState,
+  });
   const [reason, setReason] = useState("");
-  const [startedAt, setStartedAt] = useState<number | null>(null);
+  // Set on click so feedback renders in the same tick, before the cache notifies.
+  const [clickedAt, setClickedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [durationMs, setDurationMs] = useState<number | null>(null);
   const reasonOk = reason.trim().length >= 3;
-  const waiting = startedAt !== null;
+
+  const pendingRun = [...runs].reverse().find((r) => r.status === "pending");
+  const cacheSawClick = clickedAt !== null && runs.some((r) => r.submittedAt >= clickedAt);
+  const startedAt = pendingRun ? pendingRun.submittedAt : clickedAt !== null && !cacheSawClick ? clickedAt : null;
+  const waiting = startedAt !== null || runCycle.isPending;
+  const latest = runs[runs.length - 1];
+  const settled = !waiting && latest && (latest.status === "success" || latest.status === "error") ? latest : null;
+
+  // Once the cache has the run, it is the source of truth (and a later GC of
+  // the settled mutation can never leave a stale "running" behind).
+  useEffect(() => {
+    if (cacheSawClick) setClickedAt(null);
+  }, [cacheSawClick]);
 
   useEffect(() => {
     if (startedAt === null) return;
+    setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [startedAt]);
 
-  // Waiting ends only when THIS submission settles (success or error).
-  useEffect(() => {
-    if (startedAt === null) return;
-    if ((runCycle.isSuccess || runCycle.isError) && runCycle.submittedAt >= startedAt) {
-      setDurationMs(Date.now() - startedAt);
-      setStartedAt(null);
-    }
-  }, [startedAt, runCycle.isSuccess, runCycle.isError, runCycle.submittedAt]);
-
   function start() {
-    if (waiting || runCycle.isPending || !reasonOk) return;
+    if (waiting || !reasonOk) return;
     const t = Date.now();
-    setStartedAt(t);
+    setClickedAt(t);
     setNow(t);
-    setDurationMs(null);
-    runCycle.mutate(
-      { data: { reason: reason.trim() } },
-      { onSuccess: () => { setReason(""); onRan?.(); } },
-    );
+    runCycle.mutate({ data: { reason: reason.trim() } }, { onSuccess: () => setReason("") });
   }
 
-  const elapsedMs = waiting ? Math.max(0, now - startedAt) : 0;
+  const elapsedMs = startedAt !== null ? Math.max(0, now - startedAt) : 0;
   const elapsedSec = Math.floor(elapsedMs / 1000);
-  const longWait = waiting && elapsedMs > RUN_CYCLE_LONG_WAIT_MS;
-  const errorMessage =
-    (runCycle.error as { message?: string } | null | undefined)?.message ?? "The run-cycle endpoint refused.";
+  const longWait = startedAt !== null && elapsedMs > RUN_CYCLE_LONG_WAIT_MS;
+  const error = settled?.status === "error" ? settled.error : null;
+  const errorKind = error != null ? classifyError(error) : null;
+  const errorMessage = (error as { message?: string } | null)?.message ?? "The run-cycle endpoint refused.";
 
   let statusText = "";
   if (waiting) {
     statusText = `Cycle running — ${elapsedSec} s elapsed.`;
-  } else if (runCycle.isSuccess && runCycle.data) {
+  } else if (settled?.status === "success" && settled.data) {
     statusText = "Cycle finished; results below.";
-  } else if (runCycle.isError) {
-    statusText = "The run-cycle request failed; no result was returned.";
+  } else if (errorKind === "conflict") {
+    statusText = "Another cycle is still running on the server; this run was not started.";
+  } else if (errorKind === "outcome-open") {
+    statusText = "No answer from the server — the cycle may still be running.";
+  } else if (errorKind === "failed") {
+    statusText = "The run-cycle request failed.";
   }
 
   return (
@@ -185,9 +230,9 @@ export function RunAutonomousCycleCard({ onRan }: { onRan?: () => void }) {
             <Label className="text-xs">Reason</Label>
             <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="why this run (≥3 chars)" />
           </div>
-          <Button size="sm" disabled={waiting || runCycle.isPending || !reasonOk} onClick={start}>
+          <Button size="sm" disabled={waiting || !reasonOk} onClick={start}>
             <Rocket className="mr-1 h-4 w-4" />
-            {waiting || runCycle.isPending ? "Running cycle…" : "Run cycle"}
+            {waiting ? "Running cycle…" : "Run cycle"}
           </Button>
         </div>
 
@@ -199,7 +244,7 @@ export function RunAutonomousCycleCard({ onRan }: { onRan?: () => void }) {
             <p className="text-muted-foreground">
               No result yet. A cycle can wait up to {PROTECTIVE_WAIT_BUDGET_SEC} s for a fresh broker position snapshot
               from the EA before any protective action, so {PROTECTIVE_WAIT_BUDGET_SEC} s or more is normal. Nothing is
-              reported until the server answers; you can keep using this page.
+              reported until the server answers; you can keep using this page, including other tabs.
             </p>
           )}
           {longWait && (
@@ -211,15 +256,26 @@ export function RunAutonomousCycleCard({ onRan }: { onRan?: () => void }) {
           )}
         </div>
 
-        {!waiting && runCycle.isError && (
+        {errorKind === "outcome-open" && (
+          <p className="text-xs text-rose-300">
+            The connection dropped or a gateway timed out before the server answered ({errorMessage}). The cycle may
+            still be running on the server and may still send protective actions to the EA; its outcome will appear in
+            the execution feed and audit log. Check there before running again — the server refuses a new run while one
+            is still going.
+          </p>
+        )}
+        {errorKind === "conflict" && (
+          <p className="text-xs text-amber-300">
+            {errorMessage} The running cycle&apos;s outcome will appear in the execution feed and audit log.
+          </p>
+        )}
+        {errorKind === "failed" && (
           <p className="text-xs text-rose-300">
             Run-cycle request failed: {errorMessage} Anything the cycle did before failing is in the execution feed and
             audit log.
           </p>
         )}
-        {!waiting && runCycle.isSuccess && runCycle.data && (
-          <CycleResult data={runCycle.data} durationMs={durationMs} />
-        )}
+        {settled?.status === "success" && settled.data && <CycleResult data={settled.data} />}
       </CardContent>
     </Card>
   );

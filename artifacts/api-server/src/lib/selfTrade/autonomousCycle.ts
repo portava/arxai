@@ -371,6 +371,7 @@ export async function runAutonomousCycle(
   // 5. Protective-action candidates queued above (only from agents whose
   //    management was not paused). Each re-reads the platform stop, arming and
   //    kill switch at run time and dispatches through the same gated pipeline.
+  const protectiveQueued = protectiveCycle.candidates.length;
   try {
     const drained = await drainProtectiveCycle(protectiveCycle);
     result.protective = {
@@ -382,7 +383,16 @@ export async function runAutonomousCycle(
     for (const [reason, count] of Object.entries(drained.held))
       result.managementHeld[reason] = (result.managementHeld[reason] ?? 0) + count;
   } catch (err) {
-    logger.error({ err }, "self-trade: protective drain threw");
+    // The drain guards each candidate itself, so this is a setup/accounting
+    // failure. Report it instead of a silent 0/0/0: every queued candidate is
+    // counted under PROTECTIVE_DRAIN_FAILED, whose text claims neither
+    // "nothing was sent" nor a dispatch (the outcome is unknown here).
+    logger.error({ err, queued: protectiveQueued }, "self-trade: protective drain threw");
+    if (protectiveQueued > 0) {
+      result.protective = { considered: protectiveQueued, acted: 0, bridges: 0, elapsedMs: 0 };
+      result.managementHeld.PROTECTIVE_DRAIN_FAILED =
+        (result.managementHeld.PROTECTIVE_DRAIN_FAILED ?? 0) + protectiveQueued;
+    }
   }
 
   return result;

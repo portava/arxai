@@ -14,8 +14,9 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("@workspace/api-client-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  useAdminRunSelfTradeAutonomousCycle: () =>
-    useMutation({ mutationFn: (vars: { data: { reason: string } }) => h.runCycle(vars) }),
+  // Like the generated hook: caller options (mutationKey, onSuccess) are kept.
+  useAdminRunSelfTradeAutonomousCycle: (opts?: { mutation?: Record<string, unknown> }) =>
+    useMutation({ ...(opts?.mutation ?? {}), mutationFn: (vars: { data: { reason: string } }) => h.runCycle(vars) }),
   useGetSelfTradeExecutions: () => ({
     data: { executions: [] },
     isLoading: false,
@@ -69,11 +70,17 @@ function response(over: Partial<RunAutonomousCycleResp> = {}): RunAutonomousCycl
 
 function renderTab() {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <AutonomousExecutionTab />
-    </QueryClientProvider>,
+  const tree = (show: boolean) => (
+    <QueryClientProvider client={client}>{show ? <AutonomousExecutionTab /> : <div>another tab</div>}</QueryClientProvider>
   );
+  const view = render(tree(true));
+  return {
+    ...view,
+    client,
+    /** Radix TabsContent unmounts an inactive tab; this is the same unmount / remount. */
+    switchAway: () => view.rerender(tree(false)),
+    switchBack: () => view.rerender(tree(true)),
+  };
 }
 
 const runButton = () => screen.getByRole("button", { name: /run cycle|running cycle/i });
@@ -184,7 +191,8 @@ describe("run autonomous cycle: result", () => {
     expect(p.getByText(/considered 4/i)).toBeTruthy();
     expect(p.getByText(/sent to EA — awaiting broker confirmation 2/i)).toBeTruthy();
     expect(p.getByText(/held 2/i)).toBeTruthy();
-    expect(p.getByText(/waited 20(\.0)? s of 20 s/i)).toBeTruthy();
+    expect(p.getByText(/protective step took 20\.0 s \(sweep wait budget 20 s\)/i)).toBeTruthy();
+    expect(protective.textContent ?? "").not.toMatch(/waited/i);
     expect(protective.textContent ?? "").not.toMatch(/\bclosed\b|\bcompleted\b/i);
 
     const holds = within(screen.getByRole("list", { name: /hold reasons/i }));
@@ -199,8 +207,29 @@ describe("run autonomous cycle: result", () => {
     expect(document.body.textContent ?? "").not.toMatch(/completed/i);
   });
 
+  it("splits command-recorded / outcome-unknown protective results out of 'held'", async () => {
+    h.runCycle.mockReturnValue(
+      Promise.resolve(
+        response({
+          protective: {
+            considered: 3, acted: 0, held: 2, commandRecordedOrUnknown: 1, bridges: 1, elapsedMs: 900, waitBudgetMs: 20_000,
+          },
+        }),
+      ),
+    );
+    renderTab();
+    startRun();
+    await advance(0);
+    const p = within(screen.getByRole("region", { name: /protective path/i }));
+    expect(p.getByText(/^held 2$/i)).toBeTruthy();
+    expect(p.getByText(/command recorded \/ outcome unknown 1/i)).toBeTruthy();
+    expect(p.getByText(/may have reached the terminal/i)).toBeTruthy();
+  });
+
   it("shows the error and clears the waiting state when the request fails", async () => {
-    h.runCycle.mockImplementation(() => Promise.reject(new Error("HTTP 500 run-cycle failed")));
+    h.runCycle.mockImplementation(() =>
+      Promise.reject(Object.assign(new Error("HTTP 500 run-cycle failed"), { status: 500 })),
+    );
     renderTab();
     startRun();
     await advance(0);
@@ -219,5 +248,91 @@ describe("run autonomous cycle: result", () => {
     await advance(0);
     expect(txt(status())).toMatch(/cycle finished/i);
     expect(screen.getByText(/did not report protective-path results/i)).toBeTruthy();
+  });
+});
+
+describe("run autonomous cycle: errors that leave the outcome open", () => {
+  it.each([
+    ["a dropped connection", () => new TypeError("Failed to fetch")],
+    ["a gateway timeout", () => Object.assign(new Error("HTTP 504 Gateway Timeout"), { status: 504 })],
+  ])("after %s, says the cycle may still be running on the server", async (_label, makeError) => {
+    h.runCycle.mockImplementation(() => Promise.reject(makeError()));
+    renderTab();
+    startRun();
+    await advance(0);
+    const text = document.body.textContent ?? "";
+    expect(text).toMatch(/may still be running on the server/i);
+    expect(text).toMatch(/may still send protective actions to the EA/i);
+    expect(text).toMatch(/execution feed/i);
+    expect(text).not.toMatch(/no result was returned/i);
+    expect(screen.queryByText(/sent to EA — awaiting/i)).toBeNull();
+  });
+
+  it("a 409 says another cycle is still running and this one was not started", async () => {
+    h.runCycle.mockImplementation(() =>
+      Promise.reject(
+        Object.assign(new Error("HTTP 409 Conflict: An autonomous cycle started 12 s ago is still running on the server"), {
+          status: 409,
+        }),
+      ),
+    );
+    renderTab();
+    startRun();
+    await advance(0);
+    expect(txt(status())).toMatch(/another cycle is still running/i);
+    expect(txt(status())).toMatch(/not started/i);
+  });
+});
+
+describe("run autonomous cycle: survives leaving and returning to the tab", () => {
+  it("keeps the waiting state, the elapsed count and the disabled Run button across a remount, then shows that run's holds", async () => {
+    const d = deferred<RunAutonomousCycleResp>();
+    h.runCycle.mockReturnValue(d.promise);
+    const view = renderTab();
+    const invalidate = vi.spyOn(view.client, "invalidateQueries");
+    startRun();
+    await advance(8_000);
+    view.switchAway();
+    expect(screen.queryByTestId("run-cycle-status")).toBeNull();
+    await advance(4_000);
+    view.switchBack();
+    // Same render as the remount: still running, counted from the original click.
+    expect(txt(status())).toMatch(/cycle running — 12 s elapsed/i);
+    expect((runButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(txt(runButton())).toMatch(/running cycle/i);
+    fireEvent.change(cycleReason(), { target: { value: "second run attempt" } });
+    fireEvent.click(runButton());
+    expect(h.runCycle).toHaveBeenCalledTimes(1);
+    await advance(10_000);
+    expect(txt(status())).toMatch(/22 s elapsed/);
+
+    d.resolve(response());
+    await advance(0);
+    expect(txt(status())).toMatch(/cycle finished/i);
+    const holds = within(screen.getByRole("list", { name: /hold reasons/i }));
+    expect(holds.getByText(TIMEOUT_TEXT)).toBeTruthy();
+    expect(screen.getByText(/sent to EA — awaiting broker confirmation 2/i)).toBeTruthy();
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("shows the result of a run that finished while the tab was away", async () => {
+    const d = deferred<RunAutonomousCycleResp>();
+    h.runCycle.mockReturnValue(d.promise);
+    const view = renderTab();
+    const invalidate = vi.spyOn(view.client, "invalidateQueries");
+    startRun();
+    await advance(3_000);
+    view.switchAway();
+    d.resolve(response());
+    await advance(17_000);
+    expect(invalidate).toHaveBeenCalled();
+    view.switchBack();
+    expect(txt(status())).toMatch(/cycle finished/i);
+    expect(txt(status())).not.toMatch(/elapsed/);
+    const holds = within(screen.getByRole("list", { name: /hold reasons/i }));
+    expect(holds.getByText("PROTECTIVE_HOLD_NO_FRESH_SWEEP")).toBeTruthy();
+    expect(holds.getByText(TIMEOUT_TEXT)).toBeTruthy();
+    expect((runButton() as HTMLButtonElement).disabled).toBe(true); // reason is empty, not running
+    expect(txt(runButton())).toMatch(/^run cycle$/i);
   });
 });

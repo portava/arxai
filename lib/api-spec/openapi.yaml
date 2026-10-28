@@ -9389,6 +9389,13 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SelfTradeErrorResp" }
+        "409":
+          description: >-
+            CYCLE_ALREADY_RUNNING — another cycle is still running in this API
+            process; this run was not started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SelfTradeErrorResp" }
 
   # ── Self-Trade AI — admin control (ADMIN/OWNER, fail-closed audited) ──────
   /admin/self-trade-ai/agents:
@@ -23442,9 +23449,23 @@ components:
       properties:
         considered: { type: integer }
         acted: { type: integer }
-        held: { type: integer }
+        held:
+          type: integer
+          description: >-
+            Held with nothing sent: considered − acted − commandRecordedOrUnknown.
+        commandRecordedOrUnknown:
+          type: integer
+          description: >-
+            Neither sent nor plainly held: a command was recorded but refused,
+            the outcome is not yet proven, or the drain failed
+            (PROTECTIVE_HOLD_REFUSED_WITH_COMMAND, PROTECTIVE_HOLD_OUTCOME_UNCERTAIN,
+            PROTECTIVE_DRAIN_FAILED).
         bridges: { type: integer }
-        elapsedMs: { type: integer }
+        elapsedMs:
+          type: integer
+          description: >-
+            Wall time of the whole protective step (sweep wait plus dispatch
+            round-trips); not the sweep wait alone, so it can exceed waitBudgetMs.
         waitBudgetMs: { type: integer }
 
     # ── Admin Cockpit (Task #752) schemas ──────────────────────────────────────

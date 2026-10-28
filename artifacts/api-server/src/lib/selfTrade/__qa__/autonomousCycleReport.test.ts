@@ -42,6 +42,7 @@ let drained: {
   elapsedMs: number;
 };
 let pauseManagement = false;
+let drainThrows = false;
 const audits: string[] = [];
 const drainQueueSizes: number[] = [];
 
@@ -79,6 +80,10 @@ mock.module("../protectiveActionPath.js", {
     createProtectiveCycle: () => ({ candidates: [] }),
     drainProtectiveCycle: async (cycle: { candidates: unknown[] }) => {
       drainQueueSizes.push(cycle.candidates.length);
+      if (drainThrows) {
+        cycle.candidates.splice(0);
+        throw new Error("drain setup failed");
+      }
       return drained;
     },
   },
@@ -106,7 +111,7 @@ mock.module("../../security/operationalMode.js", {
 mock.module("../../security/anomalyService.js", { namedExports: { evaluateTradeAnomalyForUser: async () => ({}) } });
 
 const { runAutonomousCycle } = await import("../autonomousCycle.js");
-const { buildRunCycleResponse } = await import("../cycleReport.js");
+const { buildRunCycleResponse, createCycleSingleFlight } = await import("../cycleReport.js");
 
 const run = () => runAutonomousCycle({ actorUserId: 1, actorRole: "admin", reason: "qa protective accounting" });
 
@@ -114,6 +119,7 @@ beforeEach(() => {
   audits.length = 0;
   drainQueueSizes.length = 0;
   pauseManagement = false;
+  drainThrows = false;
   activeAgentIds = [5];
   tableRows.clear();
   tableRows.set(database.selfTradeAgentsTable, [{ id: 5, agentKey: "alpha", ownerType: "OPERATOR_FLEET", ownerId: null }]);
@@ -161,6 +167,27 @@ describe("autonomous cycle: protective dispatch accounting", () => {
   });
 });
 
+describe("autonomous cycle: protective drain failure is reported, not silent", () => {
+  it("a drain that throws records PROTECTIVE_DRAIN_FAILED per queued candidate and claims no dispatch", async () => {
+    drainThrows = true;
+    const result = await run();
+    assert.deepEqual(drainQueueSizes, [1]);
+    assert.equal(result.protective.considered, 1, "the queued candidate is accounted for");
+    assert.equal(result.protective.acted, 0);
+    assert.equal(result.managementHeld.PROTECTIVE_DRAIN_FAILED, 1);
+    assert.equal(result.positionsClosed, 0);
+    assert.equal(result.positionsModified, 0);
+    const body = buildRunCycleResponse(result);
+    assert.equal(body.protective.held, 0, "an unknown outcome is not a hold");
+    assert.equal(body.protective.commandRecordedOrUnknown, 1);
+    const d = body.managementHeldDetails.find((x) => x.reason === "PROTECTIVE_DRAIN_FAILED");
+    assert.ok(d, "the failure is listed with its text");
+    assert.equal(d.kind, "PROTECTIVE");
+    assert.doesNotMatch(d.text, /nothing was sent/i);
+    assert.match(d.text, /execution feed/i);
+  });
+});
+
 describe("run-autonomous-cycle response shape", () => {
   it("keeps every existing field and adds holds with text, protective tallies and the wait budget", async () => {
     const body = buildRunCycleResponse(await run());
@@ -175,6 +202,7 @@ describe("run-autonomous-cycle response shape", () => {
       considered: 3,
       acted: 2,
       held: 1,
+      commandRecordedOrUnknown: 0,
       bridges: 1,
       elapsedMs: 20_000,
       waitBudgetMs: 20_000,
@@ -217,5 +245,48 @@ describe("run-autonomous-cycle response shape", () => {
     assert.equal(body.protective.held, 0);
     assert.match(body.managementHeldDetails[1]!.text, /SOMETHING_NEW/);
     assert.ok(Object.keys(body.managementHeldDetails[0]!).sort().join() === "count,kind,reason,text");
+  });
+});
+
+describe("run-autonomous-cycle: outcome-unknown holds are split from plain holds", () => {
+  it("OUTCOME_UNCERTAIN and REFUSED_WITH_COMMAND count as command recorded / outcome unknown, not held", () => {
+    const body = buildRunCycleResponse({
+      cycleId: "c",
+      decisionsConsidered: 0,
+      executed: { DISPATCHED: 0, PREPARED: 0, BLOCKED: 0, LOG_ONLY: 0, SKIPPED_DUPLICATE: 0, AACI_DEFERRED: 0 },
+      agentsManaged: 1,
+      positionsModified: 0,
+      positionsClosed: 0,
+      reconciled: { filled: 0, rejected: 0, closed: 0, expired: 0 },
+      realizedPosted: 0,
+      managementHeld: {
+        PROTECTIVE_HOLD_OUTCOME_UNCERTAIN: 1,
+        PROTECTIVE_HOLD_REFUSED_WITH_COMMAND: 1,
+        PROTECTIVE_HOLD_NO_FRESH_SWEEP: 2,
+        MANAGEMENT_OBSERVATION_STALE: 5,
+      },
+      protective: { considered: 5, acted: 1, bridges: 1, elapsedMs: 20_400 },
+    });
+    assert.equal(body.protective.commandRecordedOrUnknown, 2);
+    assert.equal(body.protective.held, 2, "considered 5 = sent 1 + recorded/unknown 2 + held 2");
+  });
+});
+
+describe("run-autonomous-cycle: single flight per process", () => {
+  it("refuses a second cycle while one is running, and frees the slot when it settles or throws", async () => {
+    let t = 1_000;
+    const flight = createCycleSingleFlight(() => t);
+    let release!: () => void;
+    const first = flight.run(() => new Promise<string>((r) => { release = () => r("first"); }));
+    t = 6_000;
+    const second = await flight.run(async () => "second");
+    assert.deepEqual(second, { ran: false, startedAt: 1_000 });
+    assert.equal(flight.inFlightSince(), 1_000);
+    release();
+    assert.deepEqual(await first, { ran: true, value: "first" });
+    assert.equal(flight.inFlightSince(), null);
+    await assert.rejects(flight.run(async () => { throw new Error("boom"); }), /boom/);
+    assert.equal(flight.inFlightSince(), null, "a throw frees the slot");
+    assert.deepEqual(await flight.run(async () => 3), { ran: true, value: 3 });
   });
 });

@@ -25,7 +25,7 @@ import {
 import { runDecisionCycle } from "../lib/selfTrade/decisionEngine.js";
 import { getVolatilityMatrix } from "../lib/selfTrade/volatilityMatrixService.js";
 import { runAutonomousCycle } from "../lib/selfTrade/autonomousCycle.js";
-import { buildRunCycleResponse } from "../lib/selfTrade/cycleReport.js";
+import { buildRunCycleResponse, createCycleSingleFlight } from "../lib/selfTrade/cycleReport.js";
 import { managementNote } from "../lib/selfTrade/executionLifecycle.js";
 
 const router = Router();
@@ -160,6 +160,9 @@ const runCycleInput = z
     path: ["ownerId"],
   });
 
+// One admin-triggered cycle at a time in this process (see createCycleSingleFlight).
+const autonomousCycleFlight = createCycleSingleFlight();
+
 router.post("/self-trade-ai/run-autonomous-cycle", requireUser, async (req, res) => {
   // ADMIN/OWNER only, audited. Drives ONE controlled autonomous cycle through
   // the existing gated pipeline — no always-on loop, no gate bypass.
@@ -173,13 +176,25 @@ router.post("/self-trade-ai/run-autonomous-cycle", requireUser, async (req, res)
       ? { ownerType: p.data.ownerType, ownerId: p.data.ownerId ?? null }
       : undefined;
   req.log.warn({ actorUserId, scope, reason: p.data.reason }, "self-trade autonomous cycle invoked");
-  const result = await runAutonomousCycle({
-    scope,
-    actorUserId,
-    actorRole: req.authUser?.role ?? null,
-    reason: p.data.reason,
-  });
-  res.json(buildRunCycleResponse(result));
+  const flight = await autonomousCycleFlight.run(() =>
+    runAutonomousCycle({
+      scope,
+      actorUserId,
+      actorRole: req.authUser?.role ?? null,
+      reason: p.data.reason,
+    }),
+  );
+  if (!flight.ran) {
+    const sec = Math.max(0, Math.round((Date.now() - flight.startedAt) / 1000));
+    err(
+      res,
+      409,
+      "CYCLE_ALREADY_RUNNING",
+      `An autonomous cycle started ${sec} s ago is still running on the server, so this run was not started. Its result appears in the execution feed and audit log; try again once it finishes.`,
+    );
+    return;
+  }
+  res.json(buildRunCycleResponse(flight.value));
 });
 
 export default router;

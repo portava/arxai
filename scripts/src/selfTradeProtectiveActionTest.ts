@@ -306,7 +306,7 @@ const SELL: ProtectivePositionFacts = { side: "SELL", volume: 0.1, entryPrice: 1
     "MANAGEMENT_OBSERVATION_PRICE_INVALID",
     "MANAGEMENT_OBSERVATION_PREDATES_COMMAND",
   ];
-  for (const r of [...PROTECTIVE_HOLD_REASONS, ...observationReasons, "SOMETHING_ELSE"]) {
+  for (const r of [...PROTECTIVE_HOLD_REASONS, ...observationReasons, "PROTECTIVE_DRAIN_FAILED", "SOMETHING_ELSE"]) {
     const text = summarizeManagementHold(r, { waitBudgetSec: 20 });
     check(`${r} cycle summary is standalone text`, text.trim().length > 20 && !/\{[a-zA-Z]+\}|unknown/.test(text), text);
     check(`${r} cycle summary never claims a completed close`, !/\b(closed|completed)\b/i.test(text.replace(/already marked closed|may already be closed/gi, "")), text);
@@ -316,6 +316,8 @@ const SELL: ProtectivePositionFacts = { side: "SELL", volume: 0.1, entryPrice: 1
   check("WAIT_BUDGET_USED summary names the used wait budget", /wait budget/i.test(summarizeManagementHold("PROTECTIVE_HOLD_WAIT_BUDGET_USED", { waitBudgetSec: 20 })));
   check("stale observation summary says it was handed to the protective path", /protective/i.test(summarizeManagementHold("MANAGEMENT_OBSERVATION_STALE", { waitBudgetSec: 20 })));
   check("summary without a budget still reads cleanly", !/\{|unknown|undefined/.test(summarizeManagementHold("PROTECTIVE_HOLD_NO_FRESH_SWEEP")));
+  const drainFailed = summarizeManagementHold("PROTECTIVE_DRAIN_FAILED", { waitBudgetSec: 20 });
+  check("DRAIN_FAILED summary claims neither 'nothing was sent' nor a dispatch, and points to the feed", !/nothing was sent|sent to (the )?EA\b/i.test(drainFailed) && /execution feed/i.test(drainFailed), drainFailed);
   check("unknown reason summary names the code and the audit log", /SOMETHING_ELSE/.test(summarizeManagementHold("SOMETHING_ELSE")) && /audit/i.test(summarizeManagementHold("SOMETHING_ELSE")));
 }
 

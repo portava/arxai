@@ -23734,9 +23734,23 @@ export const AdminRunSelfTradeAutonomousCycleResponse = zod.object({
     .object({
       considered: zod.number(),
       acted: zod.number(),
-      held: zod.number(),
+      held: zod
+        .number()
+        .describe(
+          "Held with nothing sent: considered − acted − commandRecordedOrUnknown.",
+        ),
+      commandRecordedOrUnknown: zod
+        .number()
+        .optional()
+        .describe(
+          "Neither sent nor plainly held: a command was recorded but refused, the outcome is not yet proven, or the drain failed (PROTECTIVE_HOLD_REFUSED_WITH_COMMAND, PROTECTIVE_HOLD_OUTCOME_UNCERTAIN, PROTECTIVE_DRAIN_FAILED).",
+        ),
       bridges: zod.number(),
-      elapsedMs: zod.number(),
+      elapsedMs: zod
+        .number()
+        .describe(
+          "Wall time of the whole protective step (sweep wait plus dispatch round-trips); not the sweep wait alone, so it can exceed waitBudgetMs.",
+        ),
       waitBudgetMs: zod.number(),
     })
     .optional()

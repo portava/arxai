@@ -12,8 +12,12 @@
 export interface RunAutonomousCycleProtective {
   considered: number;
   acted: number;
+  /** Held with nothing sent: considered − acted − commandRecordedOrUnknown. */
   held: number;
+  /** Neither sent nor plainly held: a command was recorded but refused, the outcome is not yet proven, or the drain failed (PROTECTIVE_HOLD_REFUSED_WITH_COMMAND, PROTECTIVE_HOLD_OUTCOME_UNCERTAIN, PROTECTIVE_DRAIN_FAILED). */
+  commandRecordedOrUnknown?: number;
   bridges: number;
+  /** Wall time of the whole protective step (sweep wait plus dispatch round-trips); not the sweep wait alone, so it can exceed waitBudgetMs. */
   elapsedMs: number;
   waitBudgetMs: number;
 }

@@ -693,6 +693,10 @@ const CYCLE_SUMMARY: Record<string, string> = {
     "The request was handed to the live pipeline but its outcome is not yet proven; the claim is retained for review and no retry is made.",
   PROTECTIVE_HOLD_INTERNAL_ERROR:
     `The protective path failed safely; nothing was sent. ${NO_ACTION_TAIL}`,
+  // Cycle-level only: the drain itself threw, so per-position outcomes are not
+  // known here. Deliberately claims neither "nothing was sent" nor "sent".
+  PROTECTIVE_DRAIN_FAILED:
+    "The protective step failed before it reported results for the queued position(s), so this report cannot say whether any request reached the EA. Check the execution feed and the self-trade audit log before acting again; nothing is retried automatically. Manual controls and the stop held at the broker remain active.",
   MANAGEMENT_OBSERVATION_STALE:
     "The latest broker position snapshot was too old for ordinary management to act on. Where a protective trigger applied, the position was handed to the protective path, which waits for a fresh snapshot (see protective results).",
   MANAGEMENT_OBSERVATION_TIMESTAMP_INVALID:
