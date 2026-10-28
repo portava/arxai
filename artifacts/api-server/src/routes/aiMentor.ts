@@ -122,9 +122,11 @@ function compose(sessionType: SessionType, ctx: Ctx): {
   relatedTradeId: number | null; relatedStrategyId: number | null;
   actions: Array<{ title: string; description: string }>;
 } {
-  const level = ctx.skill?.skillLevel ?? "Beginner";
-  const totalScore = Math.round(ctx.skill?.totalScore ?? 0);
-  const weakestPillar = pickWeakestPillar(ctx.skill);
+  // No traderSkillProfiles row means no score was ever computed. Never
+  // substitute "Beginner" / 0 for it — say it has not been calculated.
+  const skill = ctx.skill;
+  const weakestPillar = pickWeakestPillar(skill);
+  const profileAge = skill ? ageText(skill.updatedAt) : null;
   const oneRule = pickOneRule(ctx);
   const oneStrength = ctx.strongestEdge?.edgeName ?? null;
   const oneMistake  = ctx.recentMistakes[0] ?? "drifting from your written plan";
@@ -205,7 +207,9 @@ function compose(sessionType: SessionType, ctx: Ctx): {
       return {
         mainFocus: "Rebuild from process — small, slow, repeatable.",
         mentorMessage:
-          `Your ${weakestPillar.label} score is at ${weakestPillar.score}. That's a process problem, not a skill problem — and process is the fastest thing you can fix. ` +
+          (weakestPillar
+            ? `Your ${weakestPillar.label} score is at ${weakestPillar.score}/100 (skill profile calculated ${profileAge}). That's a process problem, not a skill problem — and process is the fastest thing you can fix. `
+            : `${NO_PROFILE_TEXT} Rebuild from process either way — process is the fastest thing you can fix. `) +
           (oneStrength
             ? `Lean into ONE thing you've shown you can do: ${oneStrength}. Trade that, and only that, for the next 5 trades.`
             : `Reduce surface area. Pick one symbol, one strategy, smallest size, and trade only that for the next 5 entries.`),
@@ -225,7 +229,7 @@ function compose(sessionType: SessionType, ctx: Ctx): {
       return {
         mainFocus: "Capture what just happened — honestly.",
         mentorMessage:
-          `Open the debrief now while the trade is fresh. The single highest-leverage habit at the ${level} level is writing the debrief in the first 10 minutes. ` +
+          `Open the debrief now while the trade is fresh. The single highest-leverage habit${skill ? ` at the ${skill.skillLevel} level` : ""} is writing the debrief in the first 10 minutes. ` +
           `Be honest about whether you followed your plan; the data is more valuable than your ego.`,
         recommendedAction: "Write the post-trade debrief. Right now.",
         relatedTradeId: null, relatedStrategyId: null,
@@ -252,16 +256,20 @@ function compose(sessionType: SessionType, ctx: Ctx): {
       };
     }
     case "WEEKLY_RESET": {
-      const focus = ctx.weeklyReview?.nextWeekFocus ?? `improve your weakest pillar: ${weakestPillar.label}`;
+      const focus = ctx.weeklyReview?.nextWeekFocus
+        ?? (weakestPillar ? `improve your weakest pillar: ${weakestPillar.label}` : "calculate your skill profile, then pick one behavior to change");
       return {
         mainFocus: `This week's focus: ${focus}.`,
         mentorMessage:
-          `New week, fresh slate. Last week your weakest area was ${weakestPillar.label} (${weakestPillar.score}/100). ` +
+          `New week, fresh slate. ` +
+          (weakestPillar
+            ? `Your skill profile (calculated ${profileAge}) rates ${weakestPillar.label} lowest (${weakestPillar.score}/100). `
+            : `${NO_PROFILE_TEXT} `) +
           `Pick ONE concrete behavior to change — not three, not five. Behavior change compounds; ambition does not.`,
         recommendedAction: `Pick one process change. Track it daily. Review on Friday.`,
         relatedTradeId: null, relatedStrategyId: null,
         actions: [
-          { title: "Choose one weekly behavior change", description: `Tied to: ${weakestPillar.label}. One sentence, specific.` },
+          { title: "Choose one weekly behavior change", description: weakestPillar ? `Tied to: ${weakestPillar.label}. One sentence, specific.` : "One sentence, specific." },
           { title: "Schedule end-of-week review",       description: "Same time, every week. Non-negotiable." },
         ],
       };
@@ -273,7 +281,9 @@ function compose(sessionType: SessionType, ctx: Ctx): {
           ? `Lean into ${oneStrength}. Skip everything else.`
           : `Build the sample. Trade small, journal everything.`,
         mentorMessage:
-          `${level} (${totalScore}/100). ` +
+          (skill
+            ? `${skill.skillLevel} (${Math.round(skill.totalScore)}/100, skill profile calculated ${profileAge}). `
+            : `${NO_PROFILE_TEXT} `) +
           `Top warning: ${ctx.weakestEdge ? `your data shows NO measurable edge on ${ctx.weakestEdge.edgeName} — avoid it today.` : `watch for ${oneMistake}.`} ` +
           `One rule to respect: ${oneRule}. One strength to lean into: ${oneStrength ?? "patience — wait for your A+ setup"}. ` +
           `Recommended drill: write a one-line trade plan for the very next setup before you click anything.`,
@@ -310,8 +320,12 @@ function ageText(at: Date | string | null | undefined, nowMs = Date.now()): stri
   return plural(Math.floor(hrs / 24), "day");
 }
 
-function pickWeakestPillar(p: typeof traderSkillProfilesTable.$inferSelect | null) {
-  if (!p) return { label: "discipline", score: 0 };
+const NO_PROFILE_TEXT =
+  "No skill profile has been calculated yet, so there is no skill level or pillar score to report — run the skill calculation to get one.";
+const NOT_ASSESSED_LEVEL = "Not assessed";
+
+function pickWeakestPillar(p: typeof traderSkillProfilesTable.$inferSelect | null): { label: string; score: number } | null {
+  if (!p) return null;
   const opts: Array<{ label: string; score: number }> = [
     { label: "discipline",        score: p.disciplineScore },
     { label: "execution",         score: p.executionScore },
@@ -354,7 +368,7 @@ router.post("/mentor/sessions", requireUser, async (req, res): Promise<void> => 
     const ins = await db.insert(aiMentorSessionsTable).values({
       userId,
       sessionType,
-      skillLevel: ctx.skill?.skillLevel ?? "Beginner",
+      skillLevel: ctx.skill?.skillLevel ?? NOT_ASSESSED_LEVEL,
       mainFocus: composed.mainFocus,
       mentorMessage: composed.mentorMessage,
       recommendedAction: composed.recommendedAction,
