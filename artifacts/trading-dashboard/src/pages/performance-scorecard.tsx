@@ -202,15 +202,23 @@ export default function PerformanceScorecard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(s.environments).map(([envName, v]) => (
-                    <tr key={envName} className="border-b border-border/50 last:border-0">
-                      <td className="py-2.5 pr-3 font-mono text-xs">{envName}</td>
-                      <td className="py-2.5 pr-3" data-testid={`env-trades-${envName}`}>{v.trades ?? "—"}</td>
-                      <td className="py-2.5 pr-3">{v.winRate != null ? `${v.winRate}%` : "—"}</td>
-                      <td className={cn("py-2.5 pr-3 text-right font-mono", v.pnl != null && !(envName === "PAPER" && pnlUnknown) ? pnlTone(v.pnl) : "text-txt-muted")}>{v.pnl != null && !(envName === "PAPER" && pnlUnknown) ? money(v.pnl) : "—"}</td>
-                      <td className="py-2.5 pr-3 text-txt-muted">{v.status ?? v.note ?? ""}</td>
-                    </tr>
-                  ))}
+                  {Object.entries(s.environments).map(([envName, v]) => {
+                    // The journal bucket (JOURNAL; PAPER on older servers) is
+                    // what the headline describes: with no recorded P/L its
+                    // result is unknown, not $0.00 or a 0% win rate.
+                    const unknownResult = pnlUnknown && (envName === "JOURNAL" || envName === "PAPER");
+                    const showPnl = v.pnl != null && !unknownResult;
+                    const showWinRate = v.winRate != null && !unknownResult;
+                    return (
+                      <tr key={envName} className="border-b border-border/50 last:border-0">
+                        <td className="py-2.5 pr-3 font-mono text-xs">{envName}</td>
+                        <td className="py-2.5 pr-3" data-testid={`env-trades-${envName}`}>{v.trades ?? "—"}</td>
+                        <td className="py-2.5 pr-3" data-testid={`env-winrate-${envName}`}>{showWinRate ? `${v.winRate}%` : "—"}</td>
+                        <td className={cn("py-2.5 pr-3 text-right font-mono", showPnl ? pnlTone(v.pnl!) : "text-txt-muted")} data-testid={`env-pnl-${envName}`}>{showPnl ? money(v.pnl!) : "—"}</td>
+                        <td className="py-2.5 pr-3 text-txt-muted">{v.status ?? v.note ?? ""}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
