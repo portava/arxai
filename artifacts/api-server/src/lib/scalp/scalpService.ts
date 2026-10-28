@@ -116,7 +116,7 @@ function coerceAction(a: string): ScalpScannerInput["recommendedAction"] {
 }
 
 type DecoratedOpportunity = ScannerOpportunity & {
-  newsContext?: { riskLevel?: string | null; eventRiskUnchecked?: boolean };
+  newsContext?: { riskLevel?: string | null; eventRiskUnchecked?: boolean; eventRiskNotConfigured?: boolean };
 };
 
 /**
@@ -175,6 +175,10 @@ export function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput 
     newsRisk: mapNewsRisk(opp.newsContext?.riskLevel),
     // A failed news check is not LOW risk: carry it so the engine fails closed.
     ...(opp.newsContext?.eventRiskUnchecked === true ? { newsRiskUnchecked: true } : {}),
+    // No calendar configured: news was not checked. Technicals-only by design
+    // (the engine does not fail closed), but the card must not show LOW.
+    ...(opp.newsContext?.eventRiskUnchecked !== true && opp.newsContext?.eventRiskNotConfigured === true
+      ? { newsRiskNotConfigured: true } : {}),
     generatedAt: opp.generatedAt,
   };
 }

@@ -17205,6 +17205,12 @@ export const CreateMeScalpFocusResponse = zod.object({
     .describe(
       "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
     ),
+  newsRiskNotConfigured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+    ),
   timingStatus: zod.enum(["VALID_NOW", "WAIT_FOR_ENTRY", "LATE", "EXPIRED"]),
   validForSeconds: zod.number(),
   expiresAt: zod.string(),
@@ -17407,6 +17413,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17599,6 +17611,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .optional()
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -17793,6 +17811,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17985,6 +18009,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .optional()
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18200,6 +18230,12 @@ export const CreateMeScalpBuildResponse = zod.object({
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -18392,6 +18428,12 @@ export const CreateMeScalpBuildResponse = zod.object({
         .optional()
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",

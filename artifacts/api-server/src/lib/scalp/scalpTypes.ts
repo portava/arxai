@@ -278,6 +278,11 @@ export interface ScalpResult {
   newsRisk: RiskBand;
   /** True when news risk could not be checked: `newsRisk` is then not an observation. */
   newsRiskUnchecked?: boolean;
+  /**
+   * True when no economic calendar is configured, so scheduled news was not
+   * checked at all: `newsRisk` is then not an observation and must not read LOW.
+   */
+  newsRiskNotConfigured?: boolean;
   timingStatus: TimingStatus;
   validForSeconds: number;
   expiresAt: string;
@@ -474,6 +479,12 @@ export interface ScalpScannerInput {
    * not an observation; the engine fails closed and says so.
    */
   newsRiskUnchecked?: boolean;
+  /**
+   * True when no economic calendar is configured, so scheduled events were not
+   * checked at all. Technicals-only by design: the engine does not fail closed,
+   * but the result carries the flag so `newsRisk` is never shown as LOW.
+   */
+  newsRiskNotConfigured?: boolean;
   generatedAt?: string;
 }
 

@@ -410,6 +410,14 @@ export function ScalpSignalCard({
             News{" "}
             {r.newsRiskUnchecked ? (
               <span className="text-warning" data-testid="scalp-news-unchecked">Unchecked</span>
+            ) : r.newsRiskNotConfigured ? (
+              <span
+                className="text-warning"
+                data-testid="scalp-news-not-configured"
+                title="No economic calendar is configured, so scheduled news was not checked. This scalp is read from technicals only."
+              >
+                Not checked (no calendar)
+              </span>
             ) : (
               <span className={riskTone(r.newsRisk)}>{r.newsRisk}</span>
             )}

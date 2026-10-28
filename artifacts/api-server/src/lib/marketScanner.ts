@@ -539,7 +539,10 @@ export function computeFinalRead(
   const newsLevel = news?.riskLevel ?? "none";
   // A failed check is not news data: "none" there was never observed.
   const newsUnchecked = news?.eventRiskUnchecked === true;
-  const newsAvail = !!news && !newsUnchecked;
+  // No calendar configured: scheduled news was never looked at, so "none" is
+  // not an observation and cannot support confidence either.
+  const newsNotConfigured = !newsUnchecked && news?.eventRiskNotConfigured === true;
+  const newsAvail = !!news && !newsUnchecked && !newsNotConfigured;
   const histAvail = !!hist?.available;
 
   // Conflict = scanner direction opposes either news bias or historical bias.
@@ -603,6 +606,10 @@ export function computeFinalRead(
     confidence = "LOW";
     if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
     reasons.push(NEWS_RISK_UNCHECKED_REASON);
+  } else if (newsNotConfigured) {
+    // Label-only: technicals-only by design, so nothing is withheld; the read
+    // just says the news side was not checked (never "no major news").
+    reasons.push(NEWS_RISK_NOT_CONFIGURED_REASON);
   }
 
   // 5. DATA-SOURCE TRUTH CAP (ARX Scanner Truth Principle). A read can only be
@@ -925,11 +932,23 @@ export interface ScannerNewsContext {
    * not move them) or when no calendar is configured (technicals-only by design).
    */
   eventRiskUnchecked?: boolean;
+  /**
+   * True when no economic calendar is configured, so scheduled events were not
+   * checked at all. The read stays technicals-only by design (not a failed
+   * check, so nothing is withheld), but `riskLevel` "none" is then not an
+   * observation: news must not count toward confidence or read as "no major
+   * news". Never set for synthetic instruments.
+   */
+  eventRiskNotConfigured?: boolean;
 }
 
 /** Plain-English reason shown when scheduled event risk could not be checked. */
 export const NEWS_RISK_UNCHECKED_REASON =
   "Scheduled news risk could not be checked right now — the economic calendar did not answer.";
+
+/** Plain-English reason shown when no economic calendar is configured. */
+export const NEWS_RISK_NOT_CONFIGURED_REASON =
+  "No economic calendar is configured, so scheduled news was not checked — this read is technicals-only.";
 
 /** A configured calendar that did not answer (or failed outright) is a failed check, not "no news". */
 function scannerCalendarCheckFailed(
@@ -966,6 +985,8 @@ export async function decorateOpportunitiesWithNewsRisk(
           warning: pack.warningSummary,
           alignsWithScanner: null,
           eventRiskUnchecked: !isSyntheticInstrument(sym) && scannerCalendarCheckFailed(pack.dataSources?.calendar),
+          eventRiskNotConfigured: !isSyntheticInstrument(sym) &&
+            pack.dataSources?.calendar?.providerState === "not_configured",
         });
       } catch {
         // The lookup failed: nothing was observed. riskLevel "none" here means

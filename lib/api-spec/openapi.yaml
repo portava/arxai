@@ -23111,6 +23111,13 @@ components:
             True when scheduled news risk could not be checked (the news lookup
             failed or a configured economic calendar did not answer). newsRisk is
             then not an observation and must not be shown as LOW.
+        newsRiskNotConfigured:
+          type: boolean
+          description: >-
+            True when no economic calendar is configured, so scheduled news was
+            not checked at all. The read is technicals-only by design (no scalp
+            is withheld for it), but newsRisk is then not an observation and
+            must not be shown as LOW.
         timingStatus: { type: string, enum: [VALID_NOW, WAIT_FOR_ENTRY, LATE, EXPIRED] }
         validForSeconds: { type: integer }
         expiresAt: { type: string }

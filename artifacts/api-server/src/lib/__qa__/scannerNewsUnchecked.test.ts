@@ -145,6 +145,53 @@ test("control: a calendar that is not configured is not reported as a failed che
   assert.notEqual(row.newsContext?.eventRiskUnchecked, true);
 });
 
+// No calendar configured: scheduled events were not checked at all. The read
+// stays technicals-only by design (nothing is withheld, unlike a failed check),
+// but "none" is not an observation: it must not lift confidence to HIGH, the
+// read must not say "no major news catalyst", and the scalp card must not show
+// news LOW (the Selected Market panel already says the calendar was not checked).
+test("not configured: the final read says news was not checked, never 'no major news', and is not HIGH from it", async () => {
+  const row = await decorated("not_configured", "EURCHF");
+  assert.equal(row.newsContext?.eventRiskNotConfigured, true);
+  const fr = computeFinalRead({ ...row, confidenceScore: 90 } as ScannerOpportunity);
+  assert.equal(fr.label, "TRADE_WATCH", "technicals-only by design: nothing is withheld");
+  assert.notEqual(fr.confidence, "HIGH", "unobserved news lifted confidence to HIGH");
+  assert.ok(!fr.reasons.some((r) => /no major news catalyst/i.test(r)), fr.reasons.join(" | "));
+  assert.ok(fr.reasons.some((r) => /No economic calendar is configured/.test(r)), fr.reasons.join(" | "));
+});
+
+test("not configured: the scalp result carries 'news not checked', not a LOW observation", async () => {
+  const row = await decorated("not_configured", "AUDNZD");
+  const scanner = oppToScannerInput(row);
+  assert.equal(scanner.newsRiskNotConfigured, true);
+  assert.equal(scanner.newsRiskUnchecked, undefined, "not a failed check: the engine does not fail closed");
+  const r = evaluateScalp({
+    symbol: "AUDNZD",
+    currentPrice: 1.1,
+    spec: {
+      hasBrokerTruth: true, tradeMode: "FULL", tradeAllowed: true, visible: true, marketOpen: true,
+      digits: 5, point: 0.00001, minLot: 0.01, maxLot: 10, lotStep: 0.01, contractSize: 100000,
+      tickSize: 0.00001, tickValue: 1, stopsLevelPoints: 0, spreadPoints: 10, category: "forex",
+      displayName: "AUDNZD",
+    },
+    scanner: {
+      ...scanner,
+      sufficiency: evaluateMarketDataSufficiency({
+        symbol: "AUDNZD", timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 300,
+      }),
+    },
+    account: { balance: 1000, equity: 1000, freeMargin: 1000, leverage: 100 },
+    mode: "ANY",
+    riskAmount: 10,
+  });
+  assert.equal(r.newsRiskNotConfigured, true, `status ${r.status}`);
+});
+
+test("control: a connected calendar and a synthetic market are not flagged 'not configured'", async () => {
+  assert.notEqual((await decorated("connected_quiet", "USDCHF")).newsContext?.eventRiskNotConfigured, true);
+  assert.notEqual((await decorated("not_configured", "Volatility 75 Index")).newsContext?.eventRiskNotConfigured, true);
+});
+
 test("synthetic instruments are not held back by an unchecked calendar", async () => {
   const row = await decorated("fetch_error", "Volatility 75 Index");
   assert.notEqual(row.newsContext?.eventRiskUnchecked, true);

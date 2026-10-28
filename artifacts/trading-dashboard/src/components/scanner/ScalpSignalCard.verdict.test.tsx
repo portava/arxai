@@ -328,3 +328,22 @@ describe("ScalpSignalCard — unchecked news risk", () => {
     expect(textOf(container)).not.toMatch(/News\s*LOW/);
   });
 });
+
+// No economic calendar configured: scheduled news was never checked. The read
+// stays technicals-only (the scalp is still offered), but the chip must not
+// show "News LOW" as if the calendar had been read.
+describe("ScalpSignalCard — no calendar configured", () => {
+  it("renders 'Not checked (no calendar)' and never 'LOW' for news", () => {
+    const { container } = render(
+      <ScalpSignalCard
+        result={makeResult({
+          newsRisk: "LOW",
+          newsRiskNotConfigured: true,
+        })}
+      />,
+    );
+    expect(container.querySelector('[data-testid="scalp-news-not-configured"]')?.textContent)
+      .toBe("Not checked (no calendar)");
+    expect(textOf(container)).not.toMatch(/News\s*LOW/);
+  });
+});
