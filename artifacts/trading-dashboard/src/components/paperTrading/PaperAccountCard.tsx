@@ -5,6 +5,8 @@ interface PaperAccount {
   id: number; accountName: string;
   startingBalance: number; currentBalance: number; equity: number; marginUsed: number;
   isActive: number; createdAt: string;
+  /** When the server last valued (marked to market) this account. */
+  updatedAt?: string | null;
 }
 
 /**
@@ -36,7 +38,7 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
   const qc = useQueryClient();
   const [name, setName] = useState("Practice");
   const [bal, setBal] = useState(10000);
-  const { data, isLoading, isError, error } = useQuery<{ account: PaperAccount | null }>({
+  const { data, isLoading, isError, error, dataUpdatedAt } = useQuery<{ account: PaperAccount | null }>({
     queryKey: ["paper-active"],
     queryFn: async () => {
       const r = await fetch("/api/paper/accounts/active");
@@ -65,6 +67,12 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
     onSuccess: () => qc.invalidateQueries({ queryKey: ["paper-active"] }),
   });
   const acc = data?.account;
+  // A failed refresh keeps the last good account in `data`: it is shown only as
+  // the last successful valuation, with its time, never as current.
+  const refreshFailed = isError && acc != null;
+  const valuedAtMs = acc?.updatedAt ? Date.parse(acc.updatedAt) : dataUpdatedAt;
+  const valuedAt = Number.isFinite(valuedAtMs) && valuedAtMs > 0 ? new Date(valuedAtMs).toLocaleTimeString() : null;
+  const pnlVsStart = acc ? acc.equity - acc.startingBalance : 0;
   return (
     <div className="rounded-lg border border-amber-700 bg-amber-950/20 p-4">
       <header className="mb-2 flex items-center justify-between">
@@ -83,11 +91,25 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
             <div><span className="text-slate-500">Equity</span><div className="font-mono text-slate-100">{acc.equity.toFixed(2)}</div></div>
             <div><span className="text-slate-500">Margin</span><div className="font-mono text-slate-100">{acc.marginUsed.toFixed(2)}</div></div>
             <div><span className="text-slate-500">P&L vs start</span>
-              <div className={`font-mono ${acc.equity - acc.startingBalance >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {(acc.equity - acc.startingBalance).toFixed(2)}
+              <div
+                className={`font-mono ${refreshFailed ? "text-slate-400" : pnlVsStart >= 0 ? "text-green-400" : "text-red-400"}`}
+                data-testid="paper-account-pnl"
+              >
+                {pnlVsStart.toFixed(2)}
               </div>
             </div>
           </div>
+          {refreshFailed ? (
+            <p className="text-[11px] text-amber-300" role="alert" data-testid="paper-account-refresh-failed">
+              Could not refresh the demo account
+              {error instanceof PaperAccountReadError ? ` (${error.reason ?? `HTTP ${error.status}`})` : ""}.
+              {" "}Showing the last successful valuation{valuedAt ? ` from ${valuedAt}` : ""}; balance, equity and P&L may have changed since.
+            </p>
+          ) : (
+            <p className="text-[10px] text-slate-500" data-testid="paper-account-valued-at">
+              {valuedAt ? `Valued at ${valuedAt}` : "Valuation time not reported"}
+            </p>
+          )}
         </div>
       ) : data?.account === null ? (
         <div className="space-y-2">

@@ -12,7 +12,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "go
 }
 
 export function PaperPerformanceSummary({ accountId }: { accountId: number | null }) {
-  const { data } = useQuery<Hist>({
+  const { data, isError, dataUpdatedAt } = useQuery<Hist>({
     queryKey: ["paper-history", accountId],
     queryFn: async () => {
       const r = await fetch(`/api/paper/history?accountId=${accountId}`);
@@ -25,6 +25,12 @@ export function PaperPerformanceSummary({ accountId }: { accountId: number | nul
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
       <h3 className="mb-2 text-sm font-semibold text-slate-100">Demo performance</h3>
+      {isError && data ? (
+        <p className="mb-2 text-[11px] text-amber-300" role="alert" data-testid="paper-performance-refresh-failed">
+          Could not refresh demo performance. Showing the last successful read
+          {dataUpdatedAt > 0 ? ` from ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}; totals may have changed since.
+        </p>
+      ) : null}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Closed" value={`${data?.closedCount ?? 0}`} />
         <Stat label="Wins" value={`${data?.wins ?? 0}`} tone="good" />
