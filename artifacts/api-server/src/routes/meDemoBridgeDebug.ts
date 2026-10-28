@@ -47,6 +47,17 @@ function ageSeconds(t: Date | null | undefined): number | null {
   return Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 1000));
 }
 
+// This endpoint probes the dispatch gate with userConfirmed:false because no
+// order is being confirmed here, so the gate always adds USER_NOT_CONFIRMED.
+// That is an artifact of the probe, not a state of the user, and is dropped.
+// WRONG_EXECUTION_MODE from the gate means the account is not armed for demo
+// execution (MT5_DEMO_READ_ONLY); it is named for what it is.
+function userFacingGateBlockers(blockers: readonly string[]): string[] {
+  return blockers
+    .filter((b) => b !== "USER_NOT_CONFIRMED")
+    .map((b) => (b === "WRONG_EXECUTION_MODE" ? "DEMO_EXECUTION_NOT_ARMED" : b));
+}
+
 router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -88,7 +99,7 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
     });
     activeBridgeIdFromGate = gate.evidence.bridgeConnectionId;
     gateEvidence = gate.evidence;
-    gateBlockers = gate.eligibility.blockers;
+    gateBlockers = userFacingGateBlockers(gate.eligibility.blockers);
   } catch (err) {
     req.log?.warn({ err, userId }, "demo_bridge_debug_gate_eval_failed");
   }
@@ -380,6 +391,11 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
         : false,
       bridgeBlockers: gateEvidence?.bridgeBlockers ?? [],
       gateBlockers,
+      // Account-side gate inputs, reported on their own so the UI can tell
+      // the user where each is fixed (arming lives in MT5 Setup → Demo
+      // Execution Control, not in the EA inputs). null = gate not evaluated.
+      armed: gateEvidence ? gateEvidence.armed : null,
+      verifiedDemo: gateEvidence ? gateEvidence.verifiedDemo : null,
       // v1.26 EA clarity — actual EA input state from the heartbeat.
       eaInputs: {
         readOnlyMode: readOnlyModeReported,
