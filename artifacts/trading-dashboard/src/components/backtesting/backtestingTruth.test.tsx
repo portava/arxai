@@ -138,4 +138,13 @@ describe("form and summary copy", () => {
     expect(screen.getByText(/broker history whose source and account identity are not verified/)).toBeTruthy();
   });
 
+  it("summary card is not labelled an AI review and offers no refresh that cannot change it", () => {
+    render(<AIBacktestReviewCard runId={7} />);
+    expect(screen.queryByText("AI review")).toBeNull();
+    expect(screen.queryByText("Refresh review")).toBeNull();
+    expect(screen.getByText("Diagnostic summary")).toBeTruthy();
+    expect(screen.getByText(/no AI model is consulted/)).toBeTruthy();
+    expect(screen.getByText(/Diagnostic only — trend/)).toBeTruthy();
+    expect(mutate).not.toHaveBeenCalled();
+  });
 });

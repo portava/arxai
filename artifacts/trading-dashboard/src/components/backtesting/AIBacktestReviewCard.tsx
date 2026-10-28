@@ -1,10 +1,16 @@
-// (P) AI review card for a backtest run. Refresh button regenerates summary.
+// (P) Diagnostic summary card for a backtest run.
+//
+// The paragraph is backtestDiagnosticSummary(run), a deterministic template
+// computed from the run's recorded metrics. No AI model is consulted, and the
+// server's POST /ai-review only rewrites a stored aiSummary that the read
+// projection discards, so a "refresh" could never change what is shown here.
+// The card is therefore labelled as a diagnostic summary and offers no
+// refresh. (Export name kept for existing imports.)
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { backtestDiagnosticSummary, type BacktestSummaryInput } from "@workspace/domain/backtest";
 
 export function AIBacktestReviewCard({ runId }: { runId: number | null }) {
-  const qc = useQueryClient();
   const { data, isLoading, isError } = useQuery<BacktestSummaryInput>({
     queryKey: ["backtest-run", runId],
     queryFn: async () => {
@@ -14,28 +20,16 @@ export function AIBacktestReviewCard({ runId }: { runId: number | null }) {
     },
     enabled: runId != null,
   });
-  const review = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`/api/backtest-runs/${runId}/ai-review`, { method: "POST" });
-      if (!r.ok) throw new Error("failed");
-      return r.json();
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["backtest-run", runId] }),
-  });
   if (!runId) return null;
   return (
     <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-      <header className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-100">AI review</h3>
-        <button onClick={() => review.mutate()} disabled={review.isPending}
-          className="rounded bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
-          {review.isPending ? "Reviewing…" : "Refresh review"}
-        </button>
+      <header>
+        <h3 className="text-sm font-semibold text-slate-100">Diagnostic summary</h3>
+        <p className="text-[10px] text-slate-500">Generated from this run's recorded metrics by a fixed template; no AI model is consulted.</p>
       </header>
       <p className="rounded border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300">
         {isLoading ? "Loading diagnostic summary…" : isError || !data ? "Diagnostic summary unavailable." : backtestDiagnosticSummary(data)}
       </p>
-      {review.isError && <p className="text-xs text-amber-300">Review refresh failed. The saved summary has not been updated.</p>}
       <p className="text-[10px] text-slate-500">Past performance does not guarantee future results.</p>
     </div>
   );
