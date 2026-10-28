@@ -118,3 +118,55 @@ test("14:30 UTC (both London and New York open) → London/NY Overlap", () => {
     mock.timers.reset();
   }
 });
+
+function atUtcDate(y: number, mo: number, d: number, h: number, m = 0): void {
+  mock.timers.enable({ apis: ["Date"], now: Date.UTC(y, mo, d, h, m, 0) });
+}
+
+test("Saturday 13:30 UTC → FX closed: no session, no kill zone, no bonuses, no best symbols", () => {
+  atUtcDate(2026, 9, 31, 13, 30); // Sat 2026-10-31
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.isKillZoneActive, false);
+    assert.equal(out.killZone, "OFF_KILLZONE");
+    assert.doesNotMatch(out.sessionName, /London|New York|Overlap|Asia|Sydney/);
+    assert.match(out.sessionName, /weekend/i);
+    assert.equal(out.sessionHeatBonus, 0);
+    assert.equal(out.tradeabilityBonus, 0);
+    assert.deepEqual(out.bestSymbols, []);
+    assert.match(out.sessionDescription, /closed/i);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("FX week boundary follows New York 17:00 (Friday close, Sunday open)", () => {
+  const closed = (y: number, mo: number, d: number, h: number, m = 0) => {
+    atUtcDate(y, mo, d, h, m);
+    try {
+      return /weekend/i.test(computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false }).sessionName);
+    } finally {
+      mock.timers.reset();
+    }
+  };
+  // EDT (UTC-4): Friday 2026-10-30 close 21:00 UTC; Sunday 2026-10-25 open 21:00 UTC.
+  assert.equal(closed(2026, 9, 30, 20, 59), false);
+  assert.equal(closed(2026, 9, 30, 21, 0), true);
+  assert.equal(closed(2026, 9, 25, 20, 59), true);
+  assert.equal(closed(2026, 9, 25, 21, 0), false);
+  // EST (UTC-5): Friday 2026-11-06 close 22:00 UTC; Sunday 2026-11-08 open 22:00 UTC.
+  assert.equal(closed(2026, 10, 6, 21, 30), false);
+  assert.equal(closed(2026, 10, 6, 22, 0), true);
+  assert.equal(closed(2026, 10, 8, 21, 30), true);
+  assert.equal(closed(2026, 10, 8, 22, 0), false);
+});
+
+test("synthetic instruments still trade on the weekend", () => {
+  atUtcDate(2026, 9, 31, 13, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "Volatility 75 Index", isSynthetic: true });
+    assert.equal(out.sessionName, "24/7 Synthetic");
+  } finally {
+    mock.timers.reset();
+  }
+});

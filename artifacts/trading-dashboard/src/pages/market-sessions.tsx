@@ -5,6 +5,8 @@ import { Clock, Globe } from "lucide-react";
 
 type Clock = {
   nowUTC: string;
+  /** True while interbank FX is closed for the weekend (server clock). */
+  marketClosed?: boolean;
   activeSessions: string[];
   overlap: boolean;
   sessionLabel: string;
@@ -17,6 +19,7 @@ const COLOR: Record<string, string> = {
   ACTIVE: "bg-emerald-500/20 text-emerald-400",
   HIGH_VOLATILITY: "bg-amber-500/20 text-amber-400",
   AVOID: "bg-rose-500/20 text-rose-400",
+  CLOSED: "bg-zinc-500/20 text-zinc-400",
 };
 
 export default function MarketSessionsPage() {
@@ -43,7 +46,9 @@ export default function MarketSessionsPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Active right now</CardTitle><CardDescription>UTC {new Date(c.nowUTC).toUTCString()}</CardDescription></CardHeader>
             <CardContent>
-              {c.activeSessions.length === 0
+              {c.marketClosed
+                ? <p className="text-sm text-muted-foreground" data-testid="sessions-weekend-closed">FX market closed for the weekend — no session is open.</p>
+                : c.activeSessions.length === 0
                 ? <p className="text-sm text-muted-foreground">No major session active.</p>
                 : c.activeSessions.map((s) => <Badge key={s} className="mr-1">{s}</Badge>)}
               {c.overlap && <Badge className="ml-2 bg-amber-500/20 text-amber-400">OVERLAP</Badge>}
