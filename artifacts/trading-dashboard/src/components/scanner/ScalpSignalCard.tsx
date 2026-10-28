@@ -14,6 +14,7 @@ import { evaluateMarketDataSufficiency, MIN_SUFFICIENT_CLOSED_BARS } from "@work
 import {
   resolveScannerActionability,
   SCANNER_ACTIONABILITY_UI,
+  type ActionDirection,
   type ScannerActionability,
 } from "@/lib/scannerActionability";
 import { RubyChartRead } from "@/components/scanner/RubyChartRead";
@@ -117,7 +118,12 @@ export function ScalpSignalCard({
   compact?: boolean;
   highlightLabel?: string;
   /** Publish (or retract with null) this card's verdict for symbol+timeframe. */
-  onActionability?: (symbol: string, timeframe: string, a: ScannerActionability | null) => void;
+  onActionability?: (
+    symbol: string,
+    timeframe: string,
+    a: ScannerActionability | null,
+    side?: ActionDirection,
+  ) => void;
 }) {
   const r = result;
   const { name } = useAssistantName();
@@ -192,11 +198,41 @@ export function ScalpSignalCard({
   const busTf = scalpBusTimeframe(r);
   const liftable =
     r.status !== "AWAITING_DATA" || (isScalpAwaitingFeed(r) && hasKnownScalpRejectReason(r));
-  const published: ScannerActionability | null = liftable ? actionability : null;
+  // EXPIRY: the scalp result is only valid until its own `expiresAt` (the
+  // server refuses an expired scalp). The card mounts ONE read per symbol/mode
+  // with no poll, so without this a lifted "Ready now" would outlive the read
+  // and keep the header saying "Live data is confirmed … act now" indefinitely.
+  // Once the result expires (or its expiry is missing / unparseable — fail
+  // closed), a READY_NOW is retracted and the header falls back to the current
+  // chart truth for that key. Downgrade-only.
+  const expiresAtMs = Date.parse(r.expiresAt ?? "");
+  const [expired, setExpired] = useState<boolean>(
+    () => !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now(),
+  );
+  useEffect(() => {
+    if (!Number.isFinite(expiresAtMs)) {
+      setExpired(true);
+      return;
+    }
+    const remaining = expiresAtMs - Date.now();
+    if (remaining <= 0) {
+      setExpired(true);
+      return;
+    }
+    setExpired(false);
+    const t = setTimeout(() => setExpired(true), remaining);
+    return () => clearTimeout(t);
+  }, [expiresAtMs]);
+  const published: ScannerActionability | null =
+    !liftable || (expired && actionability === "READY_NOW") ? null : actionability;
+  // The scalp's OWN side, published alongside the verdict so the header can
+  // drop a contradicting side from its label (never add one).
+  const publishedSide: ActionDirection =
+    published != null && (r.direction === "BUY" || r.direction === "SELL") ? r.direction : null;
   useEffect(() => {
     if (!busTf) return;
-    onActionability?.(r.symbol, busTf, published);
-  }, [r.symbol, busTf, published, onActionability]);
+    onActionability?.(r.symbol, busTf, published, publishedSide);
+  }, [r.symbol, busTf, published, publishedSide, onActionability]);
 
   const borderColor =
     r.direction === "BUY" ? "#10b981" : r.direction === "SELL" ? "#f43f5e" : "#3f3f46";

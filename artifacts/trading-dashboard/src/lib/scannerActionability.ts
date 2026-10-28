@@ -220,11 +220,59 @@ export function resolveScannerActionability(
  * rule: the setup-aware lifted verdict wins; the data-only verdict is the
  * fallback — never an independent third opinion.
  */
+//
+// DATA-CAP FLOOR: the data-only verdict is computed from the CURRENT chart truth
+// for this symbol+timeframe, while the lifted verdict is a card's read from
+// some earlier moment. When the current data-only verdict is itself a data cap
+// (FEED_LIMITED / ANALYSIS_ONLY / MARKET_CLOSED) that is more restrictive than
+// the lifted verdict, the cap wins — a lifted "Ready now" may never sit over a
+// feed the chart now reports stale or limited. Downgrade-only: a clean data-only
+// WAIT_FOR_CONFIRMATION (setup unknown) never overrides a lifted setup verdict.
+const DATA_CAP_VERDICTS: ReadonlySet<ScannerActionability> = new Set<ScannerActionability>([
+  "FEED_LIMITED",
+  "ANALYSIS_ONLY",
+  "MARKET_CLOSED",
+]);
+
+const SELECTED_ACTION_SEVERITY: Record<ScannerActionability, number> = {
+  READY_NOW: 0,
+  WAIT_FOR_CONFIRMATION: 1,
+  TOO_LATE: 2,
+  NO_CLEAN_SETUP: 2,
+  ANALYSIS_ONLY: 3,
+  FEED_LIMITED: 4,
+  MARKET_CLOSED: 5,
+};
+
 export function resolveSelectedSymbolActionability(
   lifted: ScannerActionability | null,
   dataOnlyFallback: ScannerActionability | null,
 ): ScannerActionability | null {
-  return lifted ?? dataOnlyFallback;
+  if (lifted == null) return dataOnlyFallback;
+  if (
+    dataOnlyFallback != null &&
+    DATA_CAP_VERDICTS.has(dataOnlyFallback) &&
+    SELECTED_ACTION_SEVERITY[dataOnlyFallback] > SELECTED_ACTION_SEVERITY[lifted]
+  ) {
+    return dataOnlyFallback;
+  }
+  return lifted;
+}
+
+/**
+ * The side shown on the action label when a lifted card verdict may be in use.
+ * The label's side comes from the composed bias; when the card that lifted the
+ * verdict published its OWN side and that side disagrees with the bias, no side
+ * is shown (the neutral label) — "Buy now" may never sit over a SELL scalp.
+ * Downgrade-only: never invents a side the bias didn't already state.
+ */
+export function reconcileLiftedActionDirection(
+  biasDirection: ActionDirection,
+  liftedSide: ActionDirection | undefined,
+): ActionDirection {
+  if (biasDirection == null) return null;
+  if (liftedSide == null) return biasDirection;
+  return liftedSide === biasDirection ? biasDirection : null;
 }
 
 // ── One UI map: badge label + tone + copy + whether buttons may enable ───────

@@ -5,7 +5,7 @@ import { RefreshCw, ChevronDown, ChevronUp, Crosshair } from "lucide-react";
 import { useCreateMeScalpFocus } from "@workspace/api-client-react";
 import type { ScalpResult, ScalpMode } from "@workspace/api-client-react";
 import { ScalpSignalCard, SCALP_SIGNAL_BUS_TIMEFRAME } from "./ScalpSignalCard";
-import type { PublishedScannerAction } from "@/lib/scannerActionability";
+import type { ActionDirection, PublishedScannerAction } from "@/lib/scannerActionability";
 import { useSelectedActionStore } from "@/components/scanner/selectedActionStore";
 import { useAssistantName } from "@/lib/assistant-name";
 
@@ -51,13 +51,18 @@ export function RubyScalpFocusCard({
    *  identity-only effect re-runs retracting a published verdict. */
   const lastRunKeyRef = useRef<string | null>(null);
   const publishAction = useCallback(
-    (pubSymbol: string, pubTimeframe: string, action: PublishedScannerAction | null) => {
+    (
+      pubSymbol: string,
+      pubTimeframe: string,
+      action: PublishedScannerAction | null,
+      side: ActionDirection = null,
+    ) => {
       const prev = lastKeyRef.current;
       if (prev && (prev.symbol !== pubSymbol || prev.timeframe !== pubTimeframe)) {
         setAction(prev.symbol, prev.timeframe, null);
       }
       lastKeyRef.current = { symbol: pubSymbol, timeframe: pubTimeframe };
-      setAction(pubSymbol, pubTimeframe, action);
+      setAction(pubSymbol, pubTimeframe, action, side);
     },
     [setAction],
   );
