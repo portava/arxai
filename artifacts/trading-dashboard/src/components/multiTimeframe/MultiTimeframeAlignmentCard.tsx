@@ -8,7 +8,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TimeframeConflictWarning } from "./TimeframeConflictWarning";
 import { HigherTimeframeBiasCard } from "./HigherTimeframeBiasCard";
 
-type Trend = "UP" | "DOWN" | "SIDEWAYS";
+type Trend = "UP" | "DOWN" | "SIDEWAYS" | "INSUFFICIENT_DATA";
+
+/** Fewest candles a timeframe needs before the server reports a trend for it. */
+const MIN_CANDLES_FOR_TREND = 20;
 type Snap = { trend: Trend; strength: number; slope: number; fastSma: number; slowSma: number; candlesUsed: number };
 
 export interface MultiTimeframeReport {
@@ -19,7 +22,8 @@ export interface MultiTimeframeReport {
   alignmentScore: number;
   alignmentLabel:
     | "STRONG_BULLISH_ALIGNMENT" | "STRONG_BEARISH_ALIGNMENT" | "MIXED_ALIGNMENT"
-    | "LOWER_TIMEFRAME_CONFLICT" | "HIGHER_TIMEFRAME_WARNING" | "NO_CLEAR_BIAS";
+    | "LOWER_TIMEFRAME_CONFLICT" | "HIGHER_TIMEFRAME_WARNING" | "NO_CLEAR_BIAS"
+    | "INSUFFICIENT_DATA";
   conflictWarning: string | null;
   bestBias: "BUY" | "SELL" | "NEUTRAL";
   aiSummary: string;
@@ -33,10 +37,22 @@ const LABEL_STYLES: Record<MultiTimeframeReport["alignmentLabel"], string> = {
   LOWER_TIMEFRAME_CONFLICT: "bg-amber-800 text-amber-100",
   HIGHER_TIMEFRAME_WARNING: "bg-orange-800 text-orange-100",
   NO_CLEAR_BIAS: "bg-slate-700 text-slate-200",
+  INSUFFICIENT_DATA: "bg-slate-800 text-slate-300",
 };
 const TREND_STYLES: Record<Trend, string> = {
   UP: "text-green-400", DOWN: "text-red-400", SIDEWAYS: "text-slate-400",
+  INSUFFICIENT_DATA: "text-slate-500",
 };
+
+/**
+ * A timeframe the server read from fewer than MIN_CANDLES_FOR_TREND candles was
+ * not observed. Older reports stored such a timeframe as "SIDEWAYS (0)"; the
+ * client may only downgrade, so it re-labels them here.
+ */
+function snapObserved(s: Snap): boolean {
+  return s.trend !== "INSUFFICIENT_DATA" &&
+    Number.isFinite(s.candlesUsed) && s.candlesUsed >= MIN_CANDLES_FOR_TREND;
+}
 
 export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null }) {
   const qc = useQueryClient();
@@ -74,6 +90,15 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
   }
 
   const r = latest.data;
+  const tiles = r
+    ? [
+        { label: r.lowerTimeframe,  s: r.lowerTrend,  tag: "Lower" },
+        { label: r.middleTimeframe, s: r.middleTrend, tag: "Middle" },
+        { label: r.higherTimeframe, s: r.higherTrend, tag: "Higher" },
+      ]
+    : [];
+  const unobserved = tiles.filter((tf) => !snapObserved(tf.s));
+  const measured = r != null && unobserved.length === 0 && r.alignmentLabel !== "INSUFFICIENT_DATA";
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
@@ -97,7 +122,39 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
         <p className="text-sm text-slate-400">No report for this symbol yet. Click "Run scan" to generate one.</p>
       )}
 
-      {r && (
+      {r && !measured && (
+        <>
+          <div className="flex flex-wrap items-center gap-3" data-testid="mtf-insufficient">
+            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${LABEL_STYLES.INSUFFICIENT_DATA}`}>
+              NOT ENOUGH DATA
+            </span>
+            <span className="text-sm text-slate-300">Alignment not measured</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {tiles.map((tf) => (
+              <div key={tf.tag} className="rounded-md border border-slate-800 bg-slate-950/60 p-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">{tf.tag} · {tf.label}</div>
+                {snapObserved(tf.s) ? (
+                  <div className={`text-sm font-semibold ${TREND_STYLES[tf.s.trend]}`}>{tf.s.trend}</div>
+                ) : (
+                  <div className={`text-sm font-semibold ${TREND_STYLES.INSUFFICIENT_DATA}`}>No read</div>
+                )}
+                <div className="text-xs text-slate-400" data-testid="mtf-candles-used">
+                  {tf.s.candlesUsed} of {MIN_CANDLES_FOR_TREND}+ candles
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300">
+            Not enough candles were received for{" "}
+            {unobserved.map((tf) => `${tf.label} (${tf.s.candlesUsed})`).join(", ") || "one or more timeframes"}
+            {" "}when this report was generated, so no trend, alignment or bias is shown. Run the scan again once
+            market data is available.
+          </p>
+        </>
+      )}
+
+      {r && measured && (
         <>
           <div className="flex flex-wrap items-center gap-3">
             <span className={`rounded px-2 py-0.5 text-xs font-semibold ${LABEL_STYLES[r.alignmentLabel]}`}>
@@ -112,15 +169,14 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: r.lowerTimeframe,  s: r.lowerTrend,  tag: "Lower" },
-              { label: r.middleTimeframe, s: r.middleTrend, tag: "Middle" },
-              { label: r.higherTimeframe, s: r.higherTrend, tag: "Higher" },
-            ].map((tf) => (
+            {tiles.map((tf) => (
               <div key={tf.tag} className="rounded-md border border-slate-800 bg-slate-950/60 p-2">
                 <div className="text-[10px] uppercase tracking-wide text-slate-500">{tf.tag} · {tf.label}</div>
                 <div className={`text-sm font-semibold ${TREND_STYLES[tf.s.trend]}`}>{tf.s.trend}</div>
                 <div className="text-xs text-slate-400">strength {tf.s.strength}</div>
+                <div className="text-[10px] text-slate-500" data-testid="mtf-candles-used">
+                  from {tf.s.candlesUsed} candles
+                </div>
               </div>
             ))}
           </div>

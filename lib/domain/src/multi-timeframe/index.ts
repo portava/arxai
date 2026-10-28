@@ -15,8 +15,12 @@
 // - SAFETY: this module never claims certainty. The bestBias is "preferred
 //   directional bias", not a buy/sell signal. Mixed alignment yields NEUTRAL
 //   so the trade plan checklist treats it as a soft warning, not a blocker.
+// - TRUTH: a timeframe with fewer than MIN_CANDLES_FOR_TREND candles was not
+//   observed. It is reported as INSUFFICIENT_DATA — never as SIDEWAYS — and
+//   the report's alignment is INSUFFICIENT_DATA, so "sideways" is never shown
+//   for a market whose candles never arrived.
 
-export type Trend = "UP" | "DOWN" | "SIDEWAYS";
+export type Trend = "UP" | "DOWN" | "SIDEWAYS" | "INSUFFICIENT_DATA";
 export type Bias = "BUY" | "SELL" | "NEUTRAL";
 
 export const ALIGNMENT_LABELS = [
@@ -26,6 +30,7 @@ export const ALIGNMENT_LABELS = [
   "LOWER_TIMEFRAME_CONFLICT",
   "HIGHER_TIMEFRAME_WARNING",
   "NO_CLEAR_BIAS",
+  "INSUFFICIENT_DATA",
 ] as const;
 export type AlignmentLabel = typeof ALIGNMENT_LABELS[number];
 
@@ -69,10 +74,13 @@ function range(candles: CandleLike[]): number {
   return Math.max(0, hi - lo);
 }
 
+/** Fewest candles a timeframe needs before any trend is reported for it. */
+export const MIN_CANDLES_FOR_TREND = 20;
+
 export function detectTrend(candles: CandleLike[]): TrendSnapshot {
   const n = candles.length;
-  if (n < 20) {
-    return { trend: "SIDEWAYS", strength: 0, slope: 0, fastSma: 0, slowSma: 0, candlesUsed: n };
+  if (n < MIN_CANDLES_FOR_TREND) {
+    return { trend: "INSUFFICIENT_DATA", strength: 0, slope: 0, fastSma: 0, slowSma: 0, candlesUsed: n };
   }
   const closes = candles.map((c) => c.close);
   const fastWin = Math.min(20, Math.floor(n / 3));
@@ -129,6 +137,20 @@ export function classifyAlignment(
   middle: TimeframeReport,
   higher: TimeframeReport,
 ): AlignmentResult {
+  const unobserved = [lower, middle, higher].filter((tf) => tf.snapshot.trend === "INSUFFICIENT_DATA");
+  if (unobserved.length > 0) {
+    const list = unobserved
+      .map((tf) => `${tf.timeframe} (${tf.snapshot.candlesUsed} of ${MIN_CANDLES_FOR_TREND} candles)`)
+      .join(", ");
+    const warning = `Not enough candles to read ${list}. Alignment was not measured — no trend or bias is reported for this symbol.`;
+    return {
+      alignmentScore: 0,
+      alignmentLabel: "INSUFFICIENT_DATA",
+      bestBias: "NEUTRAL",
+      conflictWarning: warning,
+      reasons: [warning],
+    };
+  }
   const reasons: string[] = [];
   const wL = TIMEFRAME_WEIGHT[lower.timeframe] ?? 1;
   const wM = TIMEFRAME_WEIGHT[middle.timeframe] ?? 2;
@@ -207,6 +229,10 @@ export function summarizeAlignment(args: {
   result: AlignmentResult;
 }): string {
   const { symbol, lower, middle, higher, result } = args;
+  if (result.alignmentLabel === "INSUFFICIENT_DATA") {
+    const counts = [lower, middle, higher].map((tf) => `${tf.timeframe} ${tf.snapshot.candlesUsed}`).join(", ");
+    return `${symbol}: not enough candles to analyse (candles received: ${counts}; ${MIN_CANDLES_FOR_TREND} needed per timeframe). No trend, alignment or bias is reported — the market data source returned too little history for this symbol.`;
+  }
   const dirText = result.bestBias === "NEUTRAL" ? "no preferred direction" : `${result.bestBias} bias`;
   const tfLine = `${lower.timeframe} ${lower.snapshot.trend} (${lower.snapshot.strength}), ${middle.timeframe} ${middle.snapshot.trend} (${middle.snapshot.strength}), ${higher.timeframe} ${higher.snapshot.trend} (${higher.snapshot.strength})`;
   const labelText = result.alignmentLabel.replace(/_/g, " ").toLowerCase();

@@ -21242,7 +21242,7 @@ components:
       type: object
       required: [trend, strength, slope, fastSma, slowSma, candlesUsed]
       properties:
-        trend:        { type: string, enum: [UP, DOWN, SIDEWAYS] }
+        trend:        { type: string, enum: [UP, DOWN, SIDEWAYS, INSUFFICIENT_DATA] }
         strength:     { type: number }
         slope:        { type: number }
         fastSma:      { type: number }
@@ -21286,6 +21286,7 @@ components:
             - LOWER_TIMEFRAME_CONFLICT
             - HIGHER_TIMEFRAME_WARNING
             - NO_CLEAR_BIAS
+            - INSUFFICIENT_DATA
         conflictWarning: { type: string, nullable: true }
         bestBias: { type: string, enum: [BUY, SELL, NEUTRAL] }
         aiSummary: { type: string }

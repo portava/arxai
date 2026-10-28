@@ -12817,6 +12817,7 @@ export const MultiTimeframeTrendSnapshotTrend = {
   UP: "UP",
   DOWN: "DOWN",
   SIDEWAYS: "SIDEWAYS",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
 export interface MultiTimeframeTrendSnapshot {
@@ -12838,6 +12839,7 @@ export const MultiTimeframeReportAlignmentLabel = {
   LOWER_TIMEFRAME_CONFLICT: "LOWER_TIMEFRAME_CONFLICT",
   HIGHER_TIMEFRAME_WARNING: "HIGHER_TIMEFRAME_WARNING",
   NO_CLEAR_BIAS: "NO_CLEAR_BIAS",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
 export type MultiTimeframeReportBestBias =
