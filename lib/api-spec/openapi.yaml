@@ -15716,6 +15716,17 @@ components:
         hasSufficientData: { type: boolean }
         levelCount: { type: integer }
         newsMapped: { type: boolean }
+        sourceDataLive:
+          type: boolean
+          nullable: true
+          description: >-
+            Whether the candles the overlays were drawn from are live (true),
+            not live — delayed, awaiting feed or stale (false), or unknown
+            (null). The rebuild age alone does not make overlays fresh.
+        sourceDataNote:
+          type: string
+          nullable: true
+          description: Plain-English reason the source candles are not live.
     SmartChartLayersResponse:
       type: object
       required:

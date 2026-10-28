@@ -8365,6 +8365,16 @@ export const GetMeChartSmartLayersResponse = zod.object({
     hasSufficientData: zod.boolean(),
     levelCount: zod.number(),
     newsMapped: zod.boolean(),
+    sourceDataLive: zod
+      .boolean()
+      .nullish()
+      .describe(
+        "Whether the candles the overlays were drawn from are live (true), not live — delayed, awaiting feed or stale (false), or unknown (null). The rebuild age alone does not make overlays fresh.",
+      ),
+    sourceDataNote: zod
+      .string()
+      .nullish()
+      .describe("Plain-English reason the source candles are not live."),
   }),
   safetyMode: zod.enum(["paper_only"]),
   liveLocked: zod.boolean(),

@@ -829,6 +829,14 @@ export function ScannerChartPanel() {
   // requested symbol; this recompute catches a symbol mismatch (chart shows X
   // while the overlay was built for Y) and a not-yet-loaded chart, using the
   // same pure domain builder so the two can never disagree.
+  // The overlay age keeps counting between refetches (a 30 s tick), so a read
+  // that stops refreshing ages out of "fresh" instead of keeping the age it had
+  // when it arrived.
+  const [handshakeNowMs, setHandshakeNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setHandshakeNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const handshake: SmartChartOverlayHandshake | null = useMemo(() => {
     if (!smartData) return null;
     const hi = smartData.handshakeInputs;
@@ -836,7 +844,7 @@ export function ScannerChartPanel() {
       ? Date.parse(smartData.signal.generatedAt)
       : NaN;
     const overlayAgeMs = Number.isFinite(genMs)
-      ? Math.max(0, Date.now() - genMs)
+      ? Math.max(0, Math.max(handshakeNowMs, Date.now()) - genMs)
       : null;
     return buildOverlayHandshake({
       chartLoaded: candles.length > 0,
@@ -847,8 +855,12 @@ export function ScannerChartPanel() {
       levelCount: hi.levelCount,
       newsMapped: hi.newsMapped,
       overlayAgeMs,
+      // Whether the candles under the overlays are live. A server that does not
+      // report it leaves it unknown (never assumed live).
+      sourceDataLive: hi.sourceDataLive ?? null,
+      sourceDataNote: hi.sourceDataNote ?? null,
     });
-  }, [smartData, candles.length, symbol]);
+  }, [smartData, candles.length, symbol, handshakeNowMs]);
   const reservedLayers = useMemo(() => smartLayers.filter((l) => l.reserved), [smartLayers]);
   // The overlay handshake badge must defer to a neutral "unavailable" label
   // while the smart-layer query is degraded (errored / refetch-failed). React

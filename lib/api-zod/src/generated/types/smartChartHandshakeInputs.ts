@@ -12,4 +12,8 @@ export interface SmartChartHandshakeInputs {
   hasSufficientData: boolean;
   levelCount: number;
   newsMapped: boolean;
+  /** Whether the candles the overlays were drawn from are live (true), not live — delayed, awaiting feed or stale (false), or unknown (null). The rebuild age alone does not make overlays fresh. */
+  sourceDataLive?: boolean | null;
+  /** Plain-English reason the source candles are not live. */
+  sourceDataNote?: string | null;
 }
