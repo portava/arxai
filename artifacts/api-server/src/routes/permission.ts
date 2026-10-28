@@ -18,10 +18,12 @@ import { requireUser } from "../lib/auth/middleware.js";
 
 // Build TT — FULL TESTER ACCESS overlay.
 // canExecuteRealBrokerOrder STAYS FALSE until placement layer + MT5 are wired.
-async function buildTesterAccessOverlay() {
-  let mt5Connected = false;
+// mt5Connected is null when the broker status read failed: the connection
+// could not be checked, which is not the same as "not connected".
+export async function buildTesterAccessOverlay() {
+  let mt5Connected: boolean | null = false;
   if (selectBrokerKind() === "mt5") {
-    try { mt5Connected = !!(await getBrokerProvider().status()).connected; } catch { mt5Connected = false; }
+    try { mt5Connected = !!(await getBrokerProvider().status()).connected; } catch { mt5Connected = null; }
   }
   return {
     fullTesterAccess: true,
@@ -33,7 +35,9 @@ async function buildTesterAccessOverlay() {
     canExecuteRealBrokerOrder: false, // gated by placeLiveOrderGuarded() — never bypassed
     mt5Connected,
     brokerExecutionAvailable: false,
-    reason: mt5Connected
+    reason: mt5Connected === null
+      ? "Could not check the MT5 bridge: the broker status read failed, so whether it is connected is unknown."
+      : mt5Connected
       ? "Live broker execution requires the guarded order router (BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED)."
       : "MT5 bridge not connected yet",
   };

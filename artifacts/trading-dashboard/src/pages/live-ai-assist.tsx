@@ -71,10 +71,18 @@ async function jget(url: string, init?: RequestInit) {
 }
 
 // Admin diagnostics: a flag the permission route did not return is "unknown",
-// never a default that reads as a checked answer.
+// never a default that reads as a checked answer. null means the server tried
+// and could not check it (e.g. the broker status read failed).
 function permFlag(perm: any, key: string): string {
-  const v = perm?.testerAccess?.[key];
-  return typeof v === "boolean" ? String(v) : "unknown (permission status not loaded)";
+  const t = perm?.testerAccess;
+  const v = t?.[key];
+  if (typeof v === "boolean") return String(v);
+  if (!t || typeof t !== "object") return "unknown (permission status not loaded)";
+  if (v === null) {
+    const why = typeof t.reason === "string" && t.reason ? `: ${t.reason}` : "";
+    return `unknown (could not be checked${why})`;
+  }
+  return "unknown (not reported by the server)";
 }
 
 // Map the real selected-market snapshot → trade card. Returns a FeedState so

@@ -150,4 +150,24 @@ describe("Live AI Assist admin permission diagnostics", () => {
     expect(screen.getByTestId("perm-mt5").textContent).toMatch(/unknown/);
     vi.doUnmock("@/hooks/useViewMode");
   });
+
+  it("an MT5 check that failed on the server reads 'could not be checked', not 'not loaded' or false", async () => {
+    vi.resetModules();
+    vi.doMock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ effectiveIsAdmin: true }) }));
+    const { default: Page } = await import("./live-ai-assist");
+    const reason = "Could not check the MT5 bridge: the broker status read failed, so whether it is connected is unknown.";
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.includes("/permission/status")
+        ? { testerAccess: { canSubmitLiveIntent: true, canExecuteRealBrokerOrder: false, mt5Connected: null, reason } }
+        : {},
+    ))));
+    render(<Page />);
+    await new Promise((r) => setTimeout(r, 20));
+    const mt5 = screen.getByTestId("perm-mt5").textContent ?? "";
+    expect(mt5).toMatch(/could not be checked/);
+    expect(mt5).toContain("broker status read failed");
+    expect(mt5).not.toMatch(/not loaded|false/);
+    expect(screen.getByTestId("perm-can-execute").textContent).toMatch(/false/);
+    vi.doUnmock("@/hooks/useViewMode");
+  });
 });
