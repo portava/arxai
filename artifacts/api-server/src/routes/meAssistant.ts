@@ -77,6 +77,7 @@ import { classifySymbol } from "../lib/data/marketDataRouter.js";
 import { getUserAllocationView } from "../lib/live/masterBridgePool.js";
 import {
   buildSetupPreview,
+  setupPreviewProviderSource,
   type SetupSide,
   type SetupPreviewProviderSource,
 } from "../lib/assistant/setupPreview.js";
@@ -742,15 +743,14 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   const trustLine = rubyCtx?.trustLine ?? `${timeframe} candles syncing`;
   const blockReason = rubyCtx?.blockReason ?? null;
 
-  // Provider honesty: no broker-native quote feed is active yet
-  // (MT5_BROKER_FEED_NOT_ACTIVE), so every current feed is a composite /
-  // synthetic source — the producer must never use broker-native language.
+  // Provider honesty: name the source that actually served this series. Only
+  // the MetaTrader 5 broker bridge is broker-native; any other (or unreported)
+  // source is composite, and the producer then never uses broker-native language.
   const assetClass = classifySymbol(symbol);
-  const providerSource: SetupPreviewProviderSource = {
+  const providerSource: SetupPreviewProviderSource = setupPreviewProviderSource(
     assetClass,
-    composite: true,
-    label: assetClass === "synthetic" ? "synthetic index" : "composite market-data",
-  };
+    rubyCtx?.state.truthState.source ?? null,
+  );
 
   // Bridge + allocation truth (per-user). Allocation is used only to decide
   // whether account-currency risk can be shown — never to fabricate a number.

@@ -135,7 +135,9 @@ export function ChartSetupPreviewPanel({
 
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-zinc-500">
             <span>Data: {preview.dataFreshness.basis} · {preview.dataFreshness.trustLine}</span>
-            <span>Source: {preview.providerSource.label}{preview.providerSource.composite ? " (composite)" : ""}</span>
+            <span data-testid="chart-setup-source">
+              Source: {preview.providerSource.label}{preview.providerSource.composite ? " (not a broker quote)" : ""}
+            </span>
             {preview.bridgeStatus && <span>Bridge: {preview.bridgeStatus.availability}</span>}
           </div>
 

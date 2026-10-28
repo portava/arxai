@@ -68,6 +68,31 @@ export interface SetupPreviewProviderSource {
   label: string;
 }
 
+/**
+ * The provider source a preview names, from the source that actually served
+ * the chart series (ChartFeedStatus.source). Only the MetaTrader 5 broker
+ * bridge ("mt5_broker") is broker-native. A tradeable preview needs a VERIFIED
+ * read, which needs a broker quote BOUND to an mt5_broker series from the
+ * requesting user's own bridge (brokerQuoteBinding.ts), so a tradeable preview
+ * is never labelled composite. The label never says "your": on a gated read an
+ * mt5_broker series may come from another bridge. An unreported source is
+ * named as such, never guessed.
+ */
+export function setupPreviewProviderSource(
+  assetClass: string,
+  seriesSource: string | null | undefined,
+): SetupPreviewProviderSource {
+  if (seriesSource === "mt5_broker") {
+    return { assetClass, composite: false, label: "MetaTrader 5 broker bridge" };
+  }
+  if (!seriesSource) return { assetClass, composite: true, label: "unreported" };
+  return {
+    assetClass,
+    composite: true,
+    label: assetClass === "synthetic" ? "synthetic index" : "composite market-data",
+  };
+}
+
 export interface SetupPreviewBridge {
   availability: "HEALTHY" | "RECONCILING" | "UNAVAILABLE";
   message: string;
@@ -395,7 +420,7 @@ export function buildSetupPreview(input: BuildSetupPreviewInput): SetupPreview {
   );
   if (input.providerSource.composite) {
     explanation.push(
-      `Heads up: this instrument is priced from a ${input.providerSource.label} feed, not a broker-native quote — treat exact levels as indicative.`,
+      `Heads up: this price comes from the ${input.providerSource.label} feed, not a broker-native quote — treat exact levels as indicative.`,
     );
   }
   if (!allocationKnown) {
