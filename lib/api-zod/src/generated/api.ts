@@ -874,6 +874,12 @@ export const GetProfitMissionPulseResponse = zod
         totalOpenRisk: zod.number(),
         riskByAssetClass: zod.record(zod.string(), zod.number()),
         countByAssetClass: zod.record(zod.string(), zod.number()),
+        riskUnknownCount: zod
+          .number()
+          .optional()
+          .describe(
+            "Open positions whose money at risk to the stop is not known. totalOpenRisk and riskByAssetClass sum only current floating losses, so when this is > 0 they are a lower bound, not the open risk.\n",
+          ),
       })
       .describe(
         "Phase 7 aggregate of OPEN live exposure for a single user (per-user isolation). Display-only.\n",

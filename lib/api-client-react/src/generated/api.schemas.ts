@@ -872,6 +872,9 @@ export interface MissionExposureAggregates {
   totalOpenRisk: number;
   riskByAssetClass: MissionExposureAggregatesRiskByAssetClass;
   countByAssetClass: MissionExposureAggregatesCountByAssetClass;
+  /** Open positions whose money at risk to the stop is not known. totalOpenRisk and riskByAssetClass sum only current floating losses, so when this is > 0 they are a lower bound, not the open risk.
+   */
+  riskUnknownCount?: number;
 }
 
 /**

@@ -1291,8 +1291,12 @@ function ExecutionHealthBanner({ health }: { health: MissionExecutionHealth }) {
 }
 
 // Aggregate open-exposure panel driven by the pulse (per-user).
-function ExposureSummary({ exposure }: { exposure: MissionExposureAggregates }) {
+export function ExposureSummary({ exposure }: { exposure: MissionExposureAggregates }) {
   const classes = Object.keys(exposure.riskByAssetClass ?? {});
+  // Risk to the stop is not known for these open positions; the money figures
+  // are only their current floating losses (a lower bound), never "$0 risk".
+  const unknown = typeof exposure.riskUnknownCount === "number" ? exposure.riskUnknownCount : 0;
+  const riskUnknown = unknown > 0 && exposure.openCount > 0;
   return (
     <div className="rounded-md border border-border p-3" data-testid="exposure-summary">
       <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -1302,17 +1306,25 @@ function ExposureSummary({ exposure }: { exposure: MissionExposureAggregates }) 
         <Metric label="Open trades" value={String(exposure.openCount)} testId="metric-open-count" />
         <Metric
           label="Open risk"
-          value={money(exposure.totalOpenRisk)}
+          value={riskUnknown ? "Not known" : money(exposure.totalOpenRisk)}
           testId="metric-open-risk"
         />
       </div>
+      {riskUnknown && (
+        <p className="mt-2 text-[11px] text-warning" data-testid="exposure-risk-unknown">
+          Risk to the stop is not known for {unknown} of {exposure.openCount} open
+          {exposure.openCount === 1 ? " trade" : " trades"}. Current floating loss:{" "}
+          {money(exposure.totalOpenRisk)} (the least that is at risk, not the full risk).
+        </p>
+      )}
       {classes.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs text-muted-foreground" data-testid="list-exposure-classes">
           {classes.map((c) => (
             <li key={c} className="flex items-center justify-between">
               <span>{c}</span>
               <span>
-                {exposure.countByAssetClass?.[c] ?? 0} · {money(exposure.riskByAssetClass[c] ?? 0)}
+                {exposure.countByAssetClass?.[c] ?? 0} ·{" "}
+                {riskUnknown ? "risk not known" : money(exposure.riskByAssetClass[c] ?? 0)}
               </span>
             </li>
           ))}
