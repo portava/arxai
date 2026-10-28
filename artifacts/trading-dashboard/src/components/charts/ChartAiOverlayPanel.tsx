@@ -16,13 +16,26 @@ import { useAssistantName } from "@/lib/assistant-name";
 //   - when the chart feed is not AI-confirmed (Level 3), overlays are suppressed
 //     and we say so plainly instead of drawing a stale read.
 
-function pct(conf: number): string {
-  return `${Math.round(Math.max(0, Math.min(1, conf)) * 100)}%`;
-}
+// Plain-language scanner status copy. Mirrors BADGE_LABELS on the market
+// scanner page so the same enum reads the same everywhere; raw UPPER_SNAKE
+// values never reach the visible chip.
+const STATUS_BADGE_LABELS: Record<string, string> = {
+  HOT_SETUP: "Hot setup",
+  WATCHLIST: "Watchlist",
+  WAIT_FOR_CONFIRMATION: "Wait for confirmation",
+  REJECTED_BY_RISK: "Risk too high",
+  CHOPPY_MARKET: "Choppy market",
+  LOW_CONFIDENCE: "Low confidence",
+  SPREAD_TOO_HIGH: "Spread too wide",
+  PENDING_MT5_CONNECTION: "Waiting for connection",
+};
 
 function badgeLabel(badge: string): string {
-  return badge.replace(/_/g, " ").toLowerCase();
+  return STATUS_BADGE_LABELS[badge] ?? "Unrecognised status";
 }
+
+const SCORE_TITLE =
+  "Heuristic score, not a win probability: the scanner's average of setup quality, entry quality and inverted risk.";
 
 function biasTone(bias: string): string {
   const b = (bias || "").toLowerCase();
@@ -85,10 +98,18 @@ export function ChartAiOverlayPanel({
                 >
                   {signal.side}
                 </span>
-                <span className="text-zinc-500">conf</span>
-                <span className="font-semibold text-zinc-200">{pct(signal.confidence)}</span>
+                <span title={SCORE_TITLE} data-testid="chart-ai-overlay-score">
+                  <span className="text-zinc-500">score </span>
+                  <span className="font-semibold text-zinc-200">
+                    {signal.confidenceScore != null ? `${Math.round(signal.confidenceScore)}/100` : "unavailable"}
+                  </span>
+                </span>
                 {signal.statusBadge && (
-                  <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                  <span
+                    className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] text-zinc-300"
+                    data-testid="chart-ai-overlay-status"
+                    data-status={signal.statusBadge}
+                  >
                     {badgeLabel(signal.statusBadge)}
                   </span>
                 )}

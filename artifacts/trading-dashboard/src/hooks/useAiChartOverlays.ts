@@ -88,8 +88,14 @@ export interface AiSignalSummary {
   timeframeMatchesChart: boolean;
   side: ScannerSide;
   bias: string;
-  /** 0..1 (confidenceScore / 100). */
+  /** 0..1 (confidenceScore / 100). Overlay opacity hint only; 0 when the score is missing. */
   confidence: number;
+  /**
+   * The scanner's raw 0..100 heuristic score (mean of setup quality, entry
+   * quality and inverted risk; not a win probability). Null when the scanner
+   * sent no finite score, so the panel can say so instead of showing 0.
+   */
+  confidenceScore: number | null;
   statusBadge: string;
   dataSource: string;
   entry: number;
@@ -149,6 +155,9 @@ function toSignalSummary(
     side,
     bias: o.bias || "",
     confidence: conf,
+    confidenceScore: Number.isFinite(o.confidenceScore)
+      ? Math.max(0, Math.min(100, o.confidenceScore))
+      : null,
     statusBadge: o.statusBadge || "",
     dataSource: o.dataSource || "",
     entry: o.entry,
