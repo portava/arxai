@@ -9,6 +9,7 @@ import {
   StrategyBacktestForm, BacktestResultsDashboard,
   BacktestTradeList, AIBacktestReviewCard,
 } from "@/components/backtesting";
+import { backtestMetricsUnmeasured } from "@/components/backtesting/backtestRunMeasurement";
 import { BacktestChartPanel } from "./BacktestChartPanel";
 import type { BacktestRunRow } from "./types";
 
@@ -58,7 +59,9 @@ export function BacktestingTab({
                     </span>
                   </div>
                   <div className="mt-1 text-[10px] text-slate-500">
-                    {formatBacktestNumber(r.totalTrades)} trades · WR {formatBacktestPercent(r.winRate)} · PF {formatBacktestProfitFactor(r.profitFactor)} · gross {formatBacktestPriceUnits(r.netProfitLoss)} price units
+                    {backtestMetricsUnmeasured(r)
+                      ? "No completed simulated trades · metrics not measured"
+                      : <>{formatBacktestNumber(r.totalTrades)} trades · WR {formatBacktestPercent(r.winRate)} · PF {formatBacktestProfitFactor(r.profitFactor)} · gross {formatBacktestPriceUnits(r.netProfitLoss)} price units</>}
                   </div>
                 </button>
               ))}

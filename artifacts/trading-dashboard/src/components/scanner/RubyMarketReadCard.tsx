@@ -10,7 +10,7 @@ import { TruthEvidenceClasses } from "@/components/scanner/TruthEvidenceClasses"
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
-import { buildReasoningFromMarketRead } from "@/lib/rubyReasoningBlock";
+import { buildReasoningFromMarketRead, STALE_READ_PREFIX } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventRiskLine } from "@/lib/eventRiskCopy";
 import { useGetMeMarketEdge, getGetMeMarketEdgeQueryKey } from "@workspace/api-client-react";
@@ -85,8 +85,9 @@ function humanize(map: Record<string, string>, raw: string | null | undefined): 
   return map[String(raw).toUpperCase()] ?? "—";
 }
 
-// Live "updated Xs ago" timer from a DATA timestamp (newest of the snapshot's
-// lastTickAt / lastCandleAt — never the signal build-time) against a ticking now.
+// Live "updated Xs ago" timer from a DATA timestamp (newest observed of the
+// snapshot's lastTickAt / closed lastCandleAt — never the signal build-time and
+// never a forming bar's scheduled close) against a ticking now.
 function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
   if (!dataIso) return "—";
   const t = Date.parse(dataIso);
@@ -97,6 +98,25 @@ function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
   const rem = s % 60;
   return `updated ${m}m ${rem}s ago`;
 }
+// The newest OBSERVED data time from the market-truth snapshot. A tick time is
+// an observation (a small future skew is clamped by ageLabel). A candle time is
+// a closeTime, which for the forming bar is a scheduled future boundary — it
+// only counts once it is no longer in the future.
+function resolveDataUpdated(
+  lastTickAt: string | null | undefined,
+  lastCandleAt: string | null | undefined,
+  nowTs: number,
+): { dataUpdatedIso: string | null; formingCloseOnly: boolean } {
+  const tick = lastTickAt ? Date.parse(lastTickAt) : NaN;
+  const candle = lastCandleAt ? Date.parse(lastCandleAt) : NaN;
+  const stamps: number[] = [];
+  if (Number.isFinite(tick)) stamps.push(tick);
+  const candleIsScheduled = Number.isFinite(candle) && candle > nowTs;
+  if (Number.isFinite(candle) && !candleIsScheduled) stamps.push(candle);
+  if (stamps.length === 0) return { dataUpdatedIso: null, formingCloseOnly: candleIsScheduled };
+  return { dataUpdatedIso: new Date(Math.max(...stamps)).toISOString(), formingCloseOnly: false };
+}
+
 // The Market Read header's feed row, as one ordered downgrade (client can only
 // lower the server's word, never raise it):
 //   1. the shared gate is downgraded / the read expired → "Feed not confirmed";
@@ -109,6 +129,8 @@ function resolveFeedRow(input: {
   signal: RubyMarketEdgeSignal | null;
   downgraded: boolean;
   dataUpdatedIso: string | null;
+  /** True when the only data time is a forming bar's scheduled (future) close. */
+  formingCloseOnly?: boolean;
   snapshotState: string | null;
   nowTs: number;
 }): { text: string; tone: string; feedDataNote: string | null } {
@@ -118,6 +140,14 @@ function resolveFeedRow(input: {
   if (downgraded) {
     const age = dataUpdatedIso ? ` · ${ageLabel(dataUpdatedIso, nowTs)}` : "";
     return { text: `Feed not confirmed${age}`, tone: "text-warning", feedDataNote: null };
+  }
+  if (dataUpdatedIso == null && input.formingCloseOnly) {
+    return {
+      text: "Feed time unconfirmed — only the forming bar's scheduled close was reported, no tick time",
+      tone: "text-warning",
+      feedDataNote:
+        "Feed time unconfirmed — the market-truth snapshot reports only the forming bar's scheduled close and no tick time, so the live feed can't be confirmed here.",
+    };
   }
   if (dataUpdatedIso == null) {
     return {
@@ -258,12 +288,13 @@ export function RubyMarketReadCard({
     hookNewsState ?? (news != null ? "available" : truthLoading ? "loading" : "unavailable");
   const eventRisk = eventRiskLine(news, newsState);
   const pricePrecision = scannerTruth?.candles.pricePrecision ?? null;
-  const dataUpdatedIso = useMemo(() => {
-    const stamps = [truthData?.lastTickAt, truthData?.lastCandleAt]
-      .map((s) => (s ? Date.parse(s) : NaN))
-      .filter((n) => Number.isFinite(n)) as number[];
-    return stamps.length > 0 ? new Date(Math.max(...stamps)).toISOString() : null;
-  }, [truthData?.lastTickAt, truthData?.lastCandleAt]);
+  // lastCandleAt is a candle's closeTime: for the still-forming bar it is the
+  // SCHEDULED future close, not an observation, so it never anchors the age
+  // (it would otherwise win the max and read "updated 0s ago" all bar long).
+  const { dataUpdatedIso, formingCloseOnly } = useMemo(
+    () => resolveDataUpdated(truthData?.lastTickAt, truthData?.lastCandleAt, nowTs),
+    [truthData?.lastTickAt, truthData?.lastCandleAt, nowTs],
+  );
 
   const explanation: RubyMarketReadExplanation | null = data?.explanation ?? null;
   const signal = data?.signal ?? null;
@@ -296,6 +327,7 @@ export function RubyMarketReadCard({
     signal,
     downgraded,
     dataUpdatedIso,
+    formingCloseOnly,
     snapshotState: truthData?.state ?? null,
     nowTs,
   });
@@ -303,6 +335,12 @@ export function RubyMarketReadCard({
   const reason = readExpired && !gate.downgraded
     ? `This ${name} read has expired — refresh for a current read.`
     : gate.reason;
+  // Why the read's own content is withheld, in one plain clause shared by the
+  // headline and the evidence block.
+  const withheldWhy = readExpired && !gate.downgraded
+    ? "this read has expired"
+    : "the live feed isn't confirmed";
+  const stale = (text: string): string => (downgraded ? `${STALE_READ_PREFIX} ${text}` : text);
 
   const chosen: RubyExplanationMode | null = explanation
     ? mode === "ADVANCED"
@@ -407,7 +445,9 @@ export function RubyMarketReadCard({
               <div className="rounded-xl border border-border bg-background/40 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-foreground" data-testid="ruby-market-read-headline">
-                    {explanation.headline}
+                    {downgraded
+                      ? `${symbol}: direction and timing withheld — ${withheldWhy}.`
+                      : explanation.headline}
                   </span>
                   <span
                     className={`ml-auto flex items-center gap-1 text-xs ${feedRow.tone}`}
@@ -416,7 +456,7 @@ export function RubyMarketReadCard({
                     <Clock className="h-3 w-3" /> {feedRow.text}
                   </span>
                 </div>
-                {signal.late?.isLate && (
+                {!downgraded && signal.late?.isLate && (
                   <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-xs text-warning" data-testid="ruby-market-read-late">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>{signal.late.reason ?? "This move may be late — chasing it carries extra risk."}</span>
@@ -442,7 +482,17 @@ export function RubyMarketReadCard({
               </div>
 
               {/* Evidence breakdown */}
-              {signal.evidence && (
+              {/* A withheld read's for/against points describe the market when
+                  it was built, not now — say so rather than list them. */}
+              {signal.evidence && downgraded && (
+                <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-evidence">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">Evidence</div>
+                  <p className="mt-0.5 text-xs text-txt-muted">
+                    Evidence withheld — {withheldWhy}, so its for/against points are not current.
+                  </p>
+                </div>
+              )}
+              {signal.evidence && !downgraded && (
                 <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-evidence">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">Evidence</div>
                   <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
@@ -514,9 +564,14 @@ export function RubyMarketReadCard({
 
               {/* Reason chain */}
               <div className="space-y-2">
-                <ReasonRow label="What's happening" value={chosen.whatIsHappening} testid="ruby-market-read-what" />
-                <ReasonRow label="Why" value={chosen.why} />
-                <ReasonRow label="Why this market" value={chosen.whyThisMarket} />
+                {/* A withheld read keeps its context rows, labelled as the read's
+                    own (no longer current) description; its edge number and
+                    timing rows ("entry window is open now") are withheld. */}
+                <ReasonRow label="What's happening" value={stale(chosen.whatIsHappening)} testid="ruby-market-read-what" />
+                <ReasonRow label="Why" value={stale(chosen.why)} />
+                {!downgraded && (
+                  <ReasonRow label="Why this market" value={chosen.whyThisMarket} />
+                )}
                 {/* READABILITY CONTRACT (display-only): the directional rationale is
                     withheld when the shared scanner truth is downgraded
                     (insufficient / stale / delayed / blocked) — no "why this
@@ -524,15 +579,19 @@ export function RubyMarketReadCard({
                 {!downgraded && (
                   <ReasonRow label="Why this direction" value={chosen.whyThisDirection} />
                 )}
-                <ReasonRow label="Why now" value={chosen.whyNow} />
-                <ReasonRow label="Timing" value={chosen.timingState} />
+                {!downgraded && (
+                  <>
+                    <ReasonRow label="Why now" value={chosen.whyNow} />
+                    <ReasonRow label="Timing" value={chosen.timingState} />
+                  </>
+                )}
                 {/* READABILITY CONTRACT (display-only): the actionable trade idea
                     (entry / risk / what confirms / what invalidates / what to do
                     next) is withheld when the shared scanner truth is downgraded
                     (insufficient / stale / delayed / blocked) — no trade idea or
                     recommendation without a confirmed directional read. The
-                    read-only context rows above (what's happening / why / why this
-                    market / why now / timing) stay. */}
+                    read-only context rows above (what's happening / why) stay,
+                    labelled as not current. */}
                 {!downgraded && (
                   <>
                     <ReasonRow label="Entry" value={chosen.entryZone} />

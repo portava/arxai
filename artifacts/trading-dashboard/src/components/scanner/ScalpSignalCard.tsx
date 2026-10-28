@@ -52,6 +52,7 @@ import {
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromScalp } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 
 // ScalpSignalCard — one shared, mobile-clean card that renders a single
 // Ruby Scalp Signal (the `ScalpResult` the shared engine produced). Used by
@@ -172,6 +173,15 @@ export function ScalpSignalCard({
   );
   const actionUi = SCANNER_ACTIONABILITY_UI[actionability];
 
+  // The scalp read is one-shot (the Focus card does not poll). Past its
+  // server-declared expiresAt — or with no parseable expiresAt — it is not a
+  // current read: its verdict is retracted from the page (the header and chart
+  // fall back to the current data-only verdict), Build is disabled, and the
+  // card says the read expired instead of "Valid now".
+  const expiresAtMs = typeof r.expiresAt === "string" ? Date.parse(r.expiresAt) : NaN;
+  const expiryNowMs = useEvidenceDeadline(Number.isFinite(expiresAtMs) ? expiresAtMs : null);
+  const scalpExpired = !(Number.isFinite(expiresAtMs) && expiryNowMs < expiresAtMs);
+
   // Lift the ONE selected-symbol verdict to the page (Task #600): the Focus card
   // passes onActionability so the header's Action cell shows EXACTLY this card's
   // setup-aware verdict instead of its own data-only one. Keyed by r.symbol (the
@@ -192,7 +202,7 @@ export function ScalpSignalCard({
   const busTf = scalpBusTimeframe(r);
   const liftable =
     r.status !== "AWAITING_DATA" || (isScalpAwaitingFeed(r) && hasKnownScalpRejectReason(r));
-  const published: ScannerActionability | null = liftable ? actionability : null;
+  const published: ScannerActionability | null = liftable && !scalpExpired ? actionability : null;
   useEffect(() => {
     if (!busTf) return;
     onActionability?.(r.symbol, busTf, published);
@@ -249,7 +259,7 @@ export function ScalpSignalCard({
             help="Whether now is a good moment to act on this setup — it flags if the ideal entry window is open, still early, or already passing."
           >
             <Clock className="h-3 w-3" />
-            {SCALP_TIMING_LABEL[r.timingStatus]}
+            {scalpExpired ? "Expired" : SCALP_TIMING_LABEL[r.timingStatus]}
           </Tip>
         </div>
 
@@ -277,8 +287,8 @@ export function ScalpSignalCard({
               className="ml-auto text-[10px] text-muted-foreground"
               help="How recent the live candle read behind this signal is — a fresher read is more reliable, while a stale read means the signal may be out of date."
             >
-              {FLAME_FRESHNESS_LABEL[flame.freshness]}
-              {flame.flameAgeCandles > 0 ? ` · ${flame.flameAgeCandles} ${flame.flameAgeCandles === 1 ? "candle" : "candles"}` : ""}
+              {scalpExpired ? "Read expired" : FLAME_FRESHNESS_LABEL[flame.freshness]}
+              {!scalpExpired && flame.flameAgeCandles > 0 ? ` · ${flame.flameAgeCandles} ${flame.flameAgeCandles === 1 ? "candle" : "candles"}` : ""}
             </Tip>
           </div>
         )}
@@ -449,6 +459,19 @@ export function ScalpSignalCard({
             <span>{r.riskWarning}</span>
           </div>
         )}
+        {scalpExpired && (
+          <div
+            className="flex items-start gap-1.5 rounded border border-warning/30 bg-warning/5 p-2 text-warning"
+            data-testid={`scalp-expired-${r.symbol}`}
+          >
+            <Clock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>
+              {Number.isFinite(expiresAtMs)
+                ? "This scalp read has expired — its status, entry and targets describe the market when it was read, not now. Refresh for a current read."
+                : "This scalp read has no valid expiry time, so it can't be treated as current. Refresh for a current read."}
+            </span>
+          </div>
+        )}
         {r.noTradeReason && (
           <div className="rounded border border-border bg-background/40 p-2 text-txt-secondary">
             {r.noTradeReason}
@@ -459,7 +482,7 @@ export function ScalpSignalCard({
         <div className="grid grid-cols-2 gap-2 pt-1">
           <Button
             className="h-11 text-sm font-bold bg-success hover:bg-success/90 text-white disabled:opacity-50"
-            disabled={!r.canBuildTrade || !actionUi.canAct || !onBuild}
+            disabled={!r.canBuildTrade || !actionUi.canAct || scalpExpired || !onBuild}
             onClick={() => onBuild?.(r)}
             data-testid={`scalp-build-${r.symbol}`}
           >

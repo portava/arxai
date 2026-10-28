@@ -81,10 +81,16 @@ export default function AiCoach() {
             </CardHeader>
             <CardContent>
               <p className="text-sm font-medium mb-3">{coach.recommendedFocus}</p>
-              <h4 className="text-xs uppercase text-muted-foreground mb-1">Suggested rule changes</h4>
-              <ul className="text-sm space-y-1">
-                {coach.suggestedRuleChanges.map((r) => <li key={r}>· {r}</li>)}
-              </ul>
+              <h4 className="text-xs uppercase text-muted-foreground mb-1">Suggested rule changes (from your journal)</h4>
+              {coach.suggestedRuleChanges.length === 0 ? (
+                <p className="text-sm text-muted-foreground" data-testid="coach-rules-empty">
+                  No rule change suggested — your journal shows no repeated mistake tag and no strategy or symbol with a net loss.
+                </p>
+              ) : (
+                <ul className="text-sm space-y-1" data-testid="coach-rules">
+                  {coach.suggestedRuleChanges.map((r) => <li key={r}>· {r}</li>)}
+                </ul>
+              )}
             </CardContent>
           </Card>
 

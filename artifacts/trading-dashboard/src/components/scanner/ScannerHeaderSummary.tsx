@@ -22,9 +22,14 @@ import {
 } from "@/lib/scannerTruth";
 import {
   capReadinessByServerRead,
+  chartReadAsOfLabel,
+  chartReadExpiresAtMs,
   isFeedLimitedAction,
   resolveCappedRubyReadStatus,
 } from "@/lib/rubyReadPanelState";
+import { thresholdsFor } from "@/lib/scannerTruth";
+import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import {
   type RubyReadStatus,
   type ActionabilityTone,
@@ -71,7 +76,7 @@ const BIAS_LABEL: Record<string, string> = {
 // as the signal's "Setup forming"). describeEngineAgreement labels what was
 // counted, or nothing when it cannot reproduce the server's stage.
 
-function dataTone(v: DataVerdict): string {
+function dataTone(v: DataCellVerdict): string {
   switch (v) {
     case "Live": return "text-success";
     case "Delayed": return "text-warning";
@@ -91,13 +96,23 @@ function tradingTone(v: TradingVerdict): string {
 // The Eleanor CELL's label. Header-local so the shared `strip.ruby.verdict`
 // contract keeps its three values: "Read not run" is a display substitution for
 // a FULL_READ capability that no chart read has actually produced yet.
-type RubyCellVerdict = RubyVerdict | "Read not run";
+// "Read expired" substitutes for a FULL_READ whose only chart read is past this
+// timeframe's candle budget (the same expiry the Ruby Chart Read panel applies).
+type RubyCellVerdict = RubyVerdict | "Read not run" | "Read expired" | "Checking…";
+// The Data CELL's label: "Checking…" before the first candles response.
+type DataCellVerdict = DataVerdict | "Checking…";
 const READ_NOT_RUN_DETAIL = "No chart read yet — tap Read this chart.";
+function readExpiredDetail(asOf: string | null): string {
+  return asOf
+    ? `The last chart read (as of ${asOf}) no longer describes the current chart — tap Re-read.`
+    : "The last chart read has no valid time, so it can't be treated as current — tap Re-read.";
+}
 
 function rubyTone(v: RubyCellVerdict): string {
   switch (v) {
     case "Full read": return "text-success";
     case "Limited read": return "text-warning";
+    case "Read expired": return "text-warning";
     default: return "text-txt-muted";
   }
 }
@@ -151,7 +166,11 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   const [symbol] = useChartSymbol();
   const bare = bareSymbol(symbol);
   const [timeframe] = useScannerTimeframe();
-  const { scannerTruth: truth, verdict, components } = useSymbolTruth(bare, timeframe);
+  const { scannerTruth: truth, verdict, components, isError: truthError } = useSymbolTruth(bare, timeframe);
+  // No truth yet and no failed request: nothing has been measured, so the
+  // strip says it is still checking — never the red "Unavailable" a measured
+  // empty feed or a failed load earns.
+  const truthPending = truth == null && truthError !== true;
   const { shouldShowAdminDiagnostics } = useTradingMode();
   const { name } = useAssistantName();
   const rubyStore = useRubyReadStore();
@@ -186,7 +205,9 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   const shownClose = resolveDisplayClose({ tipClose: liveTip, lastClose: truth?.candles.lastClose ?? null, isLive: priceIsLive });
   const price = formatInstrumentPrice(shownClose.value, truth?.candles.pricePrecision ?? null);
   const priceIsLastKnown = shownClose.value != null && !priceIsLive;
-  const dataV = truth?.strip.data.verdict ?? "Unavailable";
+  const dataV: DataCellVerdict = truth?.strip.data.verdict ?? (truthPending ? "Checking…" : "Unavailable");
+  const dataDetail = truth?.strip.data.detail
+    ?? (truthPending ? "Waiting for market data…" : "Market data could not be loaded — retrying.");
   const tradingV = truth?.strip.trading.verdict ?? "Read-only";
 
   // Ruby cell reconciliation (Task #600): the base read CAPABILITY comes from the
@@ -269,18 +290,41 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   //   3. a would-be "Full read" with NO chart read for this key is only a
   //      client capability forecast, never a read anyone produced → "Read not
   //      run". "No read" / "Limited read" are honest limitations and stay.
+  //   4. a non-gated read past this timeframe's candle budget (or with no
+  //      valid time) is no longer a current read — the SAME expiry the Ruby
+  //      Chart Read panel applies (chartReadExpiresAtMs + useEvidenceDeadline).
+  //      It is dropped from the cap, and a would-be "Full read" says
+  //      "Read expired" instead.
+  const readExpiresAtMs = chartReadExpiresAtMs(
+    sharedRead,
+    thresholdsFor(normalizeChartTimeframe(coercedTf)).candleMaxAgeMs,
+  );
+  const readNowMs = useEvidenceDeadline(
+    readExpiresAtMs != null && Number.isFinite(readExpiresAtMs) ? readExpiresAtMs : null,
+  );
+  const sharedReadExpired =
+    readExpiresAtMs != null && !(Number.isFinite(readExpiresAtMs) && readNowMs < readExpiresAtMs);
+  const currentRead = sharedReadExpired ? null : sharedRead;
   const cappedRuby = resolveCappedRubyReadStatus(
     rubyBase,
-    sharedRead,
+    currentRead,
     undefined,
     name,
     isFeedLimitedAction(finalActionWithEleanor),
   );
-  const readNotRun = cappedRuby.status === "FULL_READ" && sharedRead == null;
-  const rubyV: RubyCellVerdict = readNotRun ? "Read not run" : RUBY_STATUS_LABEL[cappedRuby.status];
-  const rubyDetail = readNotRun
-    ? READ_NOT_RUN_DETAIL
-    : cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
+  const readNotRun = cappedRuby.status === "FULL_READ" && currentRead == null;
+  const readExpired = readNotRun && sharedReadExpired;
+  const rubyPending = truthPending && sharedRead == null;
+  const rubyV: RubyCellVerdict = rubyPending
+    ? "Checking…"
+    : readExpired ? "Read expired" : readNotRun ? "Read not run" : RUBY_STATUS_LABEL[cappedRuby.status];
+  const rubyDetail = rubyPending
+    ? "Waiting for market data…"
+    : readExpired
+      ? readExpiredDetail(chartReadAsOfLabel(sharedRead))
+      : readNotRun
+        ? READ_NOT_RUN_DETAIL
+        : cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
   const actionDirection = eleanorFeedGated ? null : biasToActionDirection(verdict?.bias);
   const visibleActionLabel = resolveVisibleActionLabel(finalActionWithEleanor, actionDirection);
   const whyMessage = truth?.consolidated.userMessage ?? "";
@@ -366,7 +410,7 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
           four cells derive from the SAME shared contract, so they can never
           disagree with each other or with a card's badge. */}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4" data-testid="scanner-header-strip">
-        <TruthPill label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
+        <TruthPill label="Data" verdict={dataV} tone={dataTone(dataV)} detail={dataDetail} testId="scanner-header-data" />
         <TruthPill label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
         <TruthPill label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
         <TruthPill

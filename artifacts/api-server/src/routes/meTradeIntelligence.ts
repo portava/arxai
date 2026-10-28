@@ -485,10 +485,23 @@ router.get("/me/sniper-watchlist", async (req, res) => {
     const env = await getEnvelope(userId);
     // Gather open trade keys depending on routing mode (user-scoped reads).
     const keys: string[] = [];
+    // What this scan covers. The trade-intelligence engine evaluates DEMO
+    // ledger rows (lp_) and shared-master attributions (att_) only; LIVE
+    // positions on a user-owned MT5 are NOT evaluated. Count them so the page
+    // can say so instead of claiming "none of your open trades are flagged".
+    let scannedVenues: Array<"DEMO" | "SHARED_MASTER">;
+    let notScanned: { venue: "LIVE"; openPositions: number | null } | null = null;
     if (env.accountRoutingMode === "USER_OWNED_MT5") {
+      scannedVenues = ["DEMO"];
       const rows = await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN" });
       for (const r of rows) keys.push(`lp_${r.id}`);
+      let liveOpen: number | null = null;
+      try {
+        liveOpen = (await readOpenPositions({ userId, venue: "LIVE", basis: "CONFIRMED_OPEN" })).length;
+      } catch { liveOpen = null; /* unknown, never reported as zero */ }
+      notScanned = { venue: "LIVE", openPositions: liveOpen };
     } else {
+      scannedVenues = ["SHARED_MASTER"];
       const rows = await db.select({ id: sharedTradeAttributionTable.id })
         .from(sharedTradeAttributionTable)
         .where(and(eq(sharedTradeAttributionTable.userId, userId), eq(sharedTradeAttributionTable.status, "open")));
@@ -557,6 +570,9 @@ router.get("/me/sniper-watchlist", async (req, res) => {
       items,
       accountType: env.accountType,
       routingMode: env.accountRoutingMode,
+      scannedVenues,
+      scannedCount: keys.length,
+      notScanned,
       lastUpdatedAt: new Date().toISOString(),
       dataFreshness: "fresh",
     });

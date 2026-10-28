@@ -64,21 +64,64 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
   // access-denied card on 403/401 rather than rendering "undefined" stats.
   const [accessDenied, setAccessDenied] = useState(false);
 
+  // Each read is tracked on its own. A read that is still in flight, failed, or
+  // could not reach the server is never shown as a confirmed result: the
+  // previous stats and RUNNING/IDLE badge are cleared on failure so nothing
+  // from an earlier poll is presented as current.
+  const [resultsState, setResultsState] = useState<ReadState>("loading");
+  const [statusState, setStatusState] = useState<ReadState>("loading");
+  const [resultsFailure, setResultsFailure] = useState<string | null>(null);
+
   // Returns true when access was denied, so the poller can stop hammering the
   // admin-gated endpoints for a non-admin session.
   async function load(): Promise<boolean> {
-    const [sRes, rRes] = await Promise.all([
-      fetch("/api/forward-testing/status"),
-      fetch("/api/forward-testing/results"),
-    ]);
+    let sRes: Response;
+    let rRes: Response;
+    try {
+      [sRes, rRes] = await Promise.all([
+        fetch("/api/forward-testing/status"),
+        fetch("/api/forward-testing/results"),
+      ]);
+    } catch {
+      setStatus(null);
+      setStatusState("error");
+      setResults(null);
+      setResultsState("error");
+      setResultsFailure("the server could not be reached");
+      return false;
+    }
     if (sRes.status === 403 || sRes.status === 401 || rRes.status === 403 || rRes.status === 401) {
       setAccessDenied(true);
       return true;
     }
-    if (!sRes.ok || !rRes.ok) return false;
     setAccessDenied(false);
-    setStatus(await sRes.json());
-    setResults(await rRes.json());
+    if (sRes.ok) {
+      try {
+        setStatus(await sRes.json());
+        setStatusState("ok");
+      } catch {
+        setStatus(null);
+        setStatusState("error");
+      }
+    } else {
+      setStatus(null);
+      setStatusState("error");
+    }
+    if (rRes.ok) {
+      try {
+        setResults(await rRes.json());
+        setResultsState("ok");
+        setResultsFailure(null);
+      } catch {
+        setResults(null);
+        setResultsState("error");
+        setResultsFailure("the response could not be read");
+      }
+    } else {
+      setResults(null);
+      setResultsState("error");
+      setResultsFailure(`HTTP ${rRes.status}`);
+    }
     return false;
   }
   useEffect(() => {
@@ -127,18 +170,21 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
           </p>
         </div>
         <Badge variant="outline">SHADOW</Badge>
-        {status && (() => {
+        {status ? (() => {
           const phase = forwardPhase(status);
           return <Badge data-testid="forward-phase" className={phase === "RUNNING" ? "bg-emerald-500/20 text-emerald-400" : ""}>{phase}</Badge>;
-        })()}
+        })() : statusState === "error" ? (
+          <Badge variant="outline" className="text-amber-300">Status unavailable</Badge>
+        ) : null}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Start a forward test</CardTitle>
           <CardDescription>
-            Observes all approved symbols on M15 with the conservative profile
-            {strategyId ? ` · selected strategy: ${strategyId}` : ""}.
+            Observes all approved symbols on M15 with the conservative profile,
+            across every shadow strategy.
+            {strategyId ? ` The strategy selected above (${strategyId}) is not applied to forward tests; results mix all strategies.` : ""}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
@@ -176,27 +222,72 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
       {status && !status.startedAt && (
         <p className="text-xs text-slate-500">No forward test has been started yet, so there are no forward-test results.</p>
       )}
-      {results ? (
-        <div className="grid gap-2 md:grid-cols-4">
-          <Stat label="Decisions" value={String(results.totalShadowDecisions)} />
-          <Stat label="Tracked" value={String(results.shadowTradesTracked)} />
-          <Stat label="Wins" value={String(results.wins)} />
-          <Stat label="Losses" value={String(results.losses)} />
-          <Stat label="Win rate" value={`${results.winRate}%`} />
-          <Stat label="Avg R" value={String(results.avgR)} />
-          <Stat label="Max DD R" value={String(results.maxDrawdownR)} />
-          <Stat label="Calibration" value={results.confidenceCalibration} />
-          {/* Named only from tracked outcomes: with nothing tracked there is no best or worst. */}
-          <Stat label="Best symbol" value={results.shadowTradesTracked > 0 ? results.bestSymbol ?? "—" : "No tracked outcomes"} />
-          <Stat label="Worst symbol" value={results.shadowTradesTracked > 0 ? results.worstSymbol ?? "—" : "No tracked outcomes"} />
-          <Stat label="Best strategy" value={results.shadowTradesTracked > 0 ? results.bestStrategy ?? "—" : "No tracked outcomes"} />
-          <Stat label="Weakest strategy" value={results.shadowTradesTracked > 0 ? results.weakestStrategy ?? "—" : "No tracked outcomes"} />
-        </div>
+      {results && resultsState === "ok" ? (
+        results.totalShadowDecisions > 0 ? (
+          <ForwardStats results={results} startedAt={status?.startedAt ?? null} />
+        ) : (
+          <p className="text-xs text-slate-500">No forward-test results yet.</p>
+        )
+      ) : resultsState === "error" ? (
+        <p className="text-xs text-amber-300">
+          Forward-test results could not be loaded ({resultsFailure ?? "unknown error"}). No stats are shown until a read succeeds.
+        </p>
       ) : (
-        <p className="text-xs text-slate-500">No forward-test results yet.</p>
+        <p className="text-xs text-slate-500">Loading forward-test results…</p>
       )}
 
       <ForwardChartPanel />
+    </div>
+  );
+}
+
+type ReadState = "loading" | "ok" | "error";
+
+const UNAVAILABLE_NO_TRACKED = "Unavailable — no tracked trades";
+
+// Plain-English names for the server's confidenceCalibration() tokens. An
+// unrecognised token is shown as unknown rather than passed through raw.
+const CALIBRATION_LABELS: Record<string, string> = {
+  WELL_CALIBRATED: "Well calibrated",
+  OVERCONFIDENT: "Overconfident",
+  UNDERCONFIDENT: "Underconfident",
+  RANDOM_CONFIDENCE: "Confidence not predictive",
+  NEEDS_MORE_DATA: "Not enough data",
+};
+
+function calibrationLabel(token: string | null | undefined): string {
+  return (token && CALIBRATION_LABELS[token]) ?? "Unknown";
+}
+
+function ForwardStats({ results, startedAt }: { results: ForwardResults; startedAt: string | null }) {
+  // Win rate, average R, drawdown and best/worst rankings are only measured
+  // once at least one shadow trade has a win/loss outcome. With zero tracked
+  // trades the server still returns 0s and an arbitrary symbol/strategy; the
+  // tab says they are unavailable instead of presenting them as measured.
+  const tracked = results.shadowTradesTracked > 0;
+  const measured = (v: string) => (tracked ? v : UNAVAILABLE_NO_TRACKED);
+  return (
+    <div className="space-y-1">
+      <p className="text-[10px] text-slate-500">
+        {startedAt
+          ? `Since the forward test started at ${new Date(startedAt).toLocaleString()}`
+          : "All recorded shadow decisions (start time unavailable)"}
+        {" · all shadow strategies and symbols"}
+      </p>
+      <div className="grid gap-2 md:grid-cols-4">
+        <Stat label="Decisions" value={String(results.totalShadowDecisions)} />
+        <Stat label="Tracked" value={String(results.shadowTradesTracked)} />
+        <Stat label="Wins" value={String(results.wins)} />
+        <Stat label="Losses" value={String(results.losses)} />
+        <Stat label="Win rate" value={measured(`${results.winRate}%`)} />
+        <Stat label="Avg R" value={measured(String(results.avgR))} />
+        <Stat label="Max DD R" value={measured(String(results.maxDrawdownR))} />
+        <Stat label="Calibration (all shadow history)" value={calibrationLabel(results.confidenceCalibration)} />
+        <Stat label="Best symbol" value={tracked ? results.bestSymbol ?? "—" : UNAVAILABLE_NO_TRACKED} />
+        <Stat label="Worst symbol" value={tracked ? results.worstSymbol ?? "—" : UNAVAILABLE_NO_TRACKED} />
+        <Stat label="Best strategy" value={tracked ? results.bestStrategy ?? "—" : UNAVAILABLE_NO_TRACKED} />
+        <Stat label="Weakest strategy" value={tracked ? results.weakestStrategy ?? "—" : UNAVAILABLE_NO_TRACKED} />
+      </div>
     </div>
   );
 }

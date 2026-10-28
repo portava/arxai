@@ -11,12 +11,14 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetMeMarketEdgeQueryKey: () => ["get-me-market-edge"],
 }));
 vi.mock("@/components/scanner/ScannerReadGate", () => ({ ScannerReadGate: () => null }));
+const FULL_GATE = { truth: null, level: "full", isFull: true, downgraded: false, reason: null };
+const mockUseScannerReadGate = vi.fn((..._args: unknown[]) => FULL_GATE as Record<string, unknown>);
 vi.mock("@/hooks/useScannerReadGate", () => ({
-  useScannerReadGate: () => ({ truth: null, level: "full", isFull: true, downgraded: false, reason: null }),
+  useScannerReadGate: (...args: unknown[]) => mockUseScannerReadGate(...args),
 }));
 vi.mock("@/hooks/useSymbolTruth", () => ({
   useSymbolTruth: () => ({ news: { providerConnected: true, events: [], riskLabel: "No scheduled events affect this symbol.", highImpactWindowActive: false, disclaimer: null },
-    data: { lastTickAt: new Date().toISOString(), lastCandleAt: new Date().toISOString() } }),
+    data: { state: "LIVE_CONFIRMED", lastTickAt: new Date().toISOString(), lastCandleAt: new Date().toISOString() } }),
 }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
 
@@ -49,7 +51,12 @@ function response(signalOver: Record<string, unknown>) {
 }
 const state = (data: unknown) => ({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
 
-beforeEach(() => { mockUseGetMeMarketEdge.mockReset(); window.localStorage.clear(); });
+beforeEach(() => {
+  mockUseGetMeMarketEdge.mockReset();
+  mockUseScannerReadGate.mockReset();
+  mockUseScannerReadGate.mockReturnValue(FULL_GATE);
+  window.localStorage.clear();
+});
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("truth audit: Ruby market read lifetime", () => {
@@ -81,5 +88,74 @@ describe("truth audit: Ruby market read lifetime", () => {
     expect(screen.getByTestId("ruby-market-read-best-action")).toBeTruthy();
     act(() => { vi.advanceTimersByTime(60_001); });
     expect(screen.queryByTestId("ruby-market-read-best-action")).toBeNull();
+  });
+});
+
+// Truth audit 2026-10-28 — an expired or gate-downgraded read withholds its
+// best action and levels; the headline, feed chip, late warning, evidence,
+// timing rows, edge number and reasoning Why/Structure/Momentum of that same
+// dead read must not keep describing it as current.
+const LIVE_OVER = {
+  lifecycleStage: "ENTRY_WINDOW_OPEN",
+  late: { isLate: true, doNotChase: true, reason: "~80% of the move already done" },
+  evidence: {
+    for: [{ label: "Higher highs / higher lows" }, { label: "Scanner agrees on direction" }],
+    against: [], conflicts: [], meetsMinimum: true, netScore: 2,
+  },
+};
+function directionalResponse(over: Record<string, unknown>) {
+  const r = response({ ...LIVE_OVER, ...over });
+  const live = {
+    ...mode,
+    whatIsHappening: "EURUSD is trending up with higher highs.",
+    whyThisMarket: "This market currently shows strong edge (72/100).",
+    whyNow: "Ready — the entry window is open now.",
+    timingState: "Ready — the entry window is open now.",
+  };
+  return { ...r, explanation: { ...r.explanation, headline: "EURUSD: ready — Buy bias, strong edge.", simple: live, advanced: live } };
+}
+const DEAD_STATES: Array<[string, Record<string, unknown>, Record<string, unknown> | null]> = [
+  ["an expired read", { expiresAt: new Date(Date.now() - 1000).toISOString() }, null],
+  ["a historical-only gate", {}, { truth: null, level: "historical_only", isFull: false, downgraded: true, reason: "Historical candles only." }],
+  ["a limited gate", {}, { truth: null, level: "limited", isFull: false, downgraded: true, reason: "Delayed market data." }],
+];
+
+describe("truth audit: a withheld read does not keep describing itself as current", () => {
+  it("a current read still shows its headline, timing rows, late warning and evidence", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse({})));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    expect(screen.getByTestId("ruby-market-read-headline").textContent).toContain("Buy bias");
+    expect(screen.getByTestId("ruby-market-read-late")).toBeTruthy();
+    expect(screen.getByTestId("ruby-market-read-evidence").textContent).toContain("Higher highs");
+    expect(screen.getByTestId("ruby-market-read-body").textContent).toContain("entry window is open now");
+  });
+
+  it.each(DEAD_STATES)("%s: chip, headline and reasoning Why carry no live or directional claim", (_n, over, gate) => {
+    if (gate) mockUseScannerReadGate.mockReturnValue(gate);
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(over)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    const chip = screen.getByTestId("ruby-market-read-freshness");
+    expect(chip.textContent).not.toContain("Live feed");
+    expect(chip.className).not.toContain("text-success");
+    const headline = screen.queryByTestId("ruby-market-read-headline")?.textContent ?? "";
+    expect(headline).not.toMatch(/Buy bias|ready —/);
+    expect(screen.getByTestId("ruby-market-read-reasoning-why").textContent).not.toContain("Buy bias");
+  });
+
+  it.each(DEAD_STATES)("%s: late warning, evidence, timing rows and edge number are withheld", (_n, over, gate) => {
+    if (gate) mockUseScannerReadGate.mockReturnValue(gate);
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(over)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    expect(screen.queryByTestId("ruby-market-read-late")).toBeNull();
+    const evidence = screen.queryByTestId("ruby-market-read-evidence")?.textContent ?? "";
+    expect(evidence).not.toContain("Higher highs");
+    expect(evidence).not.toContain("Nothing notable yet");
+    const body = screen.getByTestId("ruby-market-read-body").textContent ?? "";
+    expect(body).not.toMatch(/entry window is open now/);
+    expect(body).not.toMatch(/\(\d+\/100\)/);
+    expect(screen.getByTestId("ruby-market-read-reasoning-evidence-momentum").textContent).not.toContain("Ready —");
+    // The read's own description is kept for context, but labelled as not current.
+    expect(screen.getByTestId("ruby-market-read-reasoning-evidence-structure").textContent).toMatch(/^When this read was built \(not current\):/);
+    expect(screen.getByTestId("ruby-market-read-what").textContent).toMatch(/^When this read was built \(not current\):/);
   });
 });

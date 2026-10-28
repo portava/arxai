@@ -363,6 +363,26 @@ function ageMsOf(iso: string | null, nowMs: number): number | null {
   return nowMs - t;
 }
 
+/** Compact elapsed span for plain-English lag copy ("2m", "9h", "9h 30m", "3d 4h"). */
+function formatLag(ms: number): string {
+  const totalMin = Math.max(0, Math.floor(ms / MIN));
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h < 48) return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh === 0 ? `${d}d` : `${d}d ${rh}h`;
+}
+
+/**
+ * A delayed feed reads as "syncing" (catching up) only while its newest bar is
+ * at most this old. Beyond it — hours on H4, days on D1 — no bar has arrived for
+ * one to two full intervals and nothing is visibly catching up, so the public
+ * candle status is STALE (the action cap is FEED_LIMITED either way).
+ */
+export const DELAYED_SYNCING_MAX_AGE_MS = 10 * MIN;
+
 function positivePrice(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
@@ -426,7 +446,13 @@ export function resolveScannerTruth(
     candleReason = "Data is incomplete — historical context only, not valid for a live entry.";
   } else if (displayStatus === "FALLBACK_COMPOSITE") {
     candleStatus = "delayed";
-    candleReason = "Delayed market data — readable, but slightly behind live.";
+    // State the measured lag, never "slightly behind": on coarse timeframes a
+    // two-interval gap is hours (H4) or days (D1) with no new bar.
+    const behind =
+      typeof fs?.trailingIntervals === "number" && Number.isFinite(fs.trailingIntervals) && fs.trailingIntervals >= 2
+        ? `, ${fs.trailingIntervals} bars behind the current bar`
+        : "";
+    candleReason = `Delayed market data — the newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago${behind}. Not a live read.`;
   } else if (
     displayStatus === "LIVE" &&
     candleAgeMs <= thr.candleMaxAgeMs
@@ -441,6 +467,9 @@ export function resolveScannerTruth(
 
   // ── Quote status (no real quote source today → unavailable, honestly) ───────
   const q = input.quote ?? null;
+  // The quote's provenance is the QUOTE's own provider — never the candle
+  // provider's label. With no quote observed there is no quote source at all.
+  const quoteSourceLabel = genericSourceLabel(providerInfo(q?.source ?? null).tier);
   const quoteAgeMs = ageMsOf(q?.timestamp ?? null, nowMs);
   const quoteMid = positivePrice(q?.mid);
   let quoteStatus: QuoteStatus;
@@ -695,7 +724,9 @@ export function resolveScannerTruth(
         : candleStatus === "insufficient" || candleStatus === "historical_only"
           ? "LIMITED_HISTORY"
           : candleStatus === "delayed"
-            ? "SYNCING"
+            ? candleAgeMs != null && candleAgeMs <= DELAYED_SYNCING_MAX_AGE_MS
+              ? "SYNCING"
+              : "STALE"
             : candleStatus === "live" && analysisLevel === "full" && aiUsable
               ? "CONFIRMED"
               : "UNCONFIRMED";
@@ -839,7 +870,7 @@ export function resolveScannerTruth(
       ask: positivePrice(q?.ask),
       mid: priceMid,
       source: q?.source ?? null,
-      sourceLabel,
+      sourceLabel: quoteSourceLabel,
       timestamp: q?.timestamp ?? null,
       ageMs: quoteAgeMs,
       status: quoteStatus,

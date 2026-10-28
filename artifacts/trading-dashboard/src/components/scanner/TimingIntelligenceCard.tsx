@@ -7,8 +7,15 @@
 // backend returns; when data quality is "unavailable" it collapses to an
 // honest "not enough data" state and never fabricates scores or levels.
 
-import { timingTimeframeLabel } from "@/components/scanner/ChartTimingChip";
-import { useEffect, useMemo, useState } from "react";
+import {
+  isTimingReadCurrent,
+  timingBrainParams,
+  timingReadExpiresAtMs,
+  timingTimeframeLabel,
+  userTimingTimezone,
+} from "@/components/scanner/ChartTimingChip";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import {
   Gauge,
   Loader2,
@@ -72,8 +79,10 @@ const ACTION_LABELS: Record<string, string> = {
   WATCH_ONLY: "Watch only",
 };
 
+// Data quality AT COMPUTE TIME — paired with the compute age below, never a
+// claim that the data is live now.
 const QUALITY_NOTE: Record<string, { text: string; tone: string }> = {
-  real: { text: "Live data", tone: "text-success" },
+  real: { text: "Real data", tone: "text-success" },
   partial: { text: "Partial data", tone: "text-warning" },
   basic_timing_estimate: { text: "Timing estimate", tone: "text-warning" },
   unavailable: { text: "Unavailable", tone: "text-txt-muted" },
@@ -84,23 +93,15 @@ function humanize(map: Record<string, string>, raw: string | null | undefined): 
   return map[String(raw).toUpperCase()] ?? String(raw);
 }
 
-// Live "updated Xs ago" timer from generatedAt against a ticking now.
+// Live "computed Xs ago" timer from generatedAt against a ticking now.
 function ageLabel(generatedAt: string | null | undefined, nowTs: number): string {
-  if (!generatedAt) return "—";
+  if (!generatedAt) return "compute time unknown";
   const t = Date.parse(generatedAt);
-  if (!Number.isFinite(t)) return "—";
+  if (!Number.isFinite(t)) return "compute time unknown";
   const s = Math.max(0, Math.round((nowTs - t) / 1000));
-  if (s < 60) return `updated ${s}s ago`;
+  if (s < 60) return `computed ${s}s ago`;
   const m = Math.floor(s / 60);
-  return `updated ${m}m ${s % 60}s ago`;
-}
-
-function userTimezone(): string | undefined {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return undefined;
-  }
+  return `computed ${m}m ${s % 60}s ago`;
 }
 
 function ScorePill({
@@ -143,9 +144,12 @@ function ScorePill({
 export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
   const [open, setOpen] = useState(true);
   const { name } = useAssistantName();
-  const tz = useMemo(() => userTimezone(), []);
+  const tz = useMemo(() => userTimingTimezone(), []);
 
-  const params = useMemo(() => (tz ? { tz } : undefined), [tz]);
+  // The card reads M15 timing (the route's default), requested EXPLICITLY with
+  // the same shape the chart chip uses, so on a 15m chart both share one query
+  // and one server cache entry instead of two independently polled reads.
+  const params = useMemo(() => timingBrainParams("M15", tz), [tz]);
 
   const { data, isLoading, isFetching, isError, refetch } = useGetTimingBrain(
     symbol,
@@ -208,6 +212,22 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
   const newsEvent =
     news?.events.find((e) => e.affectsSymbol) ?? news?.events[0] ?? null;
   const newsBlocks = news?.highImpactWindowActive === true;
+
+  // Advice lifetime: a read past Truth's 30-second component lifetime (or with
+  // no valid compute time) is not current, whatever its data quality was when
+  // computed. Its grade / permission / scores are withheld and ONE new read is
+  // requested for that generatedAt (no loop if the server returns the same).
+  const readExpiresAt = timingReadExpiresAtMs(read?.generatedAt);
+  const deadlineNow = useEvidenceDeadline(Number.isFinite(readExpiresAt) ? readExpiresAt + 1 : null);
+  const readExpired = !!read && !isTimingReadCurrent(read.generatedAt, Math.max(nowTs, deadlineNow));
+  const refetchedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !readExpired || isFetching) return;
+    const key = `${symbol}|${read?.generatedAt ?? ""}`;
+    if (refetchedForRef.current === key) return;
+    refetchedForRef.current = key;
+    void refetch();
+  }, [open, readExpired, isFetching, refetch, symbol, read?.generatedAt]);
 
   const isUnavailable = !!read && read.dataQuality.label === "unavailable";
   const quality = read ? QUALITY_NOTE[read.dataQuality.label] ?? QUALITY_NOTE["unavailable"]! : null;
@@ -295,6 +315,23 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                   "Not enough live data to produce a meaningful timing read right now."}
               </p>
             </div>
+          ) : gate.downgraded && gate.truth == null ? (
+            // Shared truth not landed yet: nothing has been measured, so this is
+            // the same pending state the compact gate above calls "Confirming
+            // market data" — never a "historical" read.
+            <div
+              className="rounded-xl border border-border bg-background/40 px-3 py-3"
+              data-testid="timing-intelligence-downgraded"
+            >
+              <div className="flex items-center gap-2 text-sm font-medium text-txt-secondary">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                Confirming market data
+              </div>
+              <p className="mt-1 text-xs text-txt-secondary">
+                The live-feed check for {symbol} hasn't returned yet, so the timing
+                grade, entry permission, and scores are held back until it does.
+              </p>
+            </div>
           ) : gate.downgraded ? (
             <div
               className="rounded-xl border border-warning/30 bg-warning/5 px-3 py-3"
@@ -315,6 +352,22 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                 grade, entry permission, and scores are held back to avoid showing
                 a confident read over unstable data.
                 {gate.reason ? ` ${gate.reason}` : ""}
+              </p>
+            </div>
+          ) : readExpired ? (
+            <div
+              className="rounded-xl border border-warning/30 bg-warning/5 px-3 py-3"
+              data-testid="timing-intelligence-expired"
+            >
+              <div className="flex items-center gap-2 text-sm font-medium text-warning">
+                <Clock className="h-4 w-4 shrink-0" />
+                Timing read expired
+              </div>
+              <p className="mt-1 text-xs text-txt-secondary">
+                The last timing read for {symbol} was {ageLabel(read.generatedAt, nowTs)}, past
+                the 30-second advice lifetime, so its grade, entry permission, and
+                scores are held back.{" "}
+                {isFetching ? "Fetching a new read…" : "Tap refresh for a new read."}
               </p>
             </div>
           ) : (

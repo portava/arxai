@@ -33,7 +33,7 @@ import {
   Minimize2,
   ArrowRightToLine,
 } from "lucide-react";
-import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { ChartWorkbenchTools, chartExportFeedLabel } from "./ChartWorkbenchTools";
 import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
@@ -1015,10 +1015,12 @@ export function ARXNativeChart({
     showFeedStatus && hasCandles && !isSafeMode && conf.severity !== "clean";
   const showNotAiConfirmed = showFeedStatus && hasCandles && !conf.aiUsable && !isSafeMode;
 
-  const decimals = useMemo(() => {
-    const sample = lastClose ?? 1;
-    return sample < 10 ? 5 : sample < 1000 ? 3 : 2;
-  }, [lastClose]);
+  // Same digit count the price axis uses (adapter.applyPricePrecision), so the
+  // header and the axis never print the same bar with different precision.
+  const decimals = useMemo(
+    () => candleDisplayPrecision(mergedEngineCandles, resolvedSymbol),
+    [mergedEngineCandles, resolvedSymbol],
+  );
 
   const isInitialLoading = query.isLoading && !hasCandles;
   const isError = query.isError && !hasCandles;
@@ -1041,7 +1043,17 @@ export function ARXNativeChart({
               </Badge>
             )}
             {lastClose != null && (
-              <Badge variant="outline" className="font-mono text-xs" data-testid="arx-native-last">
+              // The canvas removes its live-price line/label when the feed is not
+              // live-confirmed; the header must say the same thing in words.
+              <Badge
+                variant="outline"
+                className={`font-mono text-xs ${isLivePriceAffordance ? "" : "text-zinc-400"}`}
+                data-testid="arx-native-last"
+                title={isLivePriceAffordance
+                  ? undefined
+                  : "Close of the newest bar received. The feed is not live-confirmed, so this may not be the current price."}
+              >
+                {isLivePriceAffordance ? "" : "Last known "}
                 {lastClose.toFixed(decimals)}
               </Badge>
             )}
@@ -1105,6 +1117,7 @@ export function ARXNativeChart({
                 coverageDays={deepHistory.coverageDays}
                 depthTargetDays={deepHistory.depthTargetDays}
                 loadedAny={deepHistory.loadedAny}
+                loadError={deepHistory.loadError}
               />
             )}
           </div>
@@ -1235,7 +1248,7 @@ export function ARXNativeChart({
           {expanded ? "Exit fullscreen" : "Fullscreen"}
         </Button>
       </div>
-      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={chartExportFeedLabel({ source: data?.feedStatus?.source, liveConfirmed: isLivePriceAffordance, warning: data?.feedStatus?.warning, newestBarOpenTime: hasCandles ? candles[candles.length - 1]!.openTime : null, streamReconnecting: streamWatchdog.stalled, marketClosed: marketFrozen != null })} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">

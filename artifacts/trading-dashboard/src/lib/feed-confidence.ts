@@ -252,19 +252,51 @@ export function formatTrailingGap(
   return `${trailingIntervals} missing`;
 }
 
-/** Compact "12s ago" style relative time; honest "—" when missing/invalid. */
+function compactSpan(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+/**
+ * Compact "12s ago" style relative time; honest "—" when missing/invalid.
+ * A timestamp in the future (e.g. a forming bar's scheduled close) reads
+ * "in 45m" — never "just now", which would assert a recent arrival.
+ */
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return "—";
   const diffMs = Date.now() - t;
-  if (diffMs < 0) return "just now";
-  const s = Math.floor(diffMs / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+  if (diffMs < 0) return `in ${compactSpan(-diffMs)}`;
+  return `${compactSpan(diffMs)} ago`;
+}
+
+/** True when the timestamp is valid and later than now. */
+export function isFutureTime(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) && t > Date.now();
+}
+
+const FEED_READINESS_LABELS: Record<string, string> = {
+  UNCONFIGURED: "Deriv market data not set up",
+  CONNECTING: "Connecting to Deriv",
+  AUTH_FAILED: "Deriv sign-in rejected; no live ticks",
+  CONNECTED_AWAITING_FEED: "Connected to Deriv, waiting for data",
+  HISTORY_READY_AWAITING_LIVE_TICK: "History ready, waiting for first live tick",
+  LIVE_FEED: "Deriv reports live ticks",
+};
+
+/**
+ * Plain-English copy for the server's Deriv warm-up readiness state. An
+ * unrecognised state is reported as such rather than leaking the raw token.
+ */
+export function feedReadinessLabel(state: string | null | undefined): string {
+  if (!state) return "—";
+  return FEED_READINESS_LABELS[state] ?? "Unrecognised readiness state";
 }

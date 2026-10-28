@@ -14,13 +14,13 @@ import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
 
 type Scorecard = {
-  environments: Record<string, { trades?: number; wins?: number; losses?: number; winRate?: number; pnl?: number; note?: string; status?: string }>;
+  environments: Record<string, { trades?: number | null; wins?: number; losses?: number; winRate?: number; pnl?: number; note?: string; status?: string }>;
   headline: { winRate: number; totalPnl: number; totalTrades: number };
   bestSymbol: string | null; worstSymbol: string | null;
   strategyRanking: Array<{ strategy: string; count: number; pnl: number }>;
   mistakeDistribution: Record<string, number>;
   gradeDistribution: Record<string, unknown>;
-  dataSource: string; generatedAt: string;
+  dataSource: string; dataSourceLabel?: string; generatedAt: string;
 };
 
 type HeatReport = {
@@ -169,7 +169,7 @@ export default function PerformanceScorecard() {
           {/* Environment separation (preserved — never mixed) */}
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center gap-2"><Layers className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Environment Separation</h3></div>
-            <p className="mt-0.5 text-xs text-txt-muted">Results are never mixed across environments.</p>
+            <p className="mt-0.5 text-xs text-txt-muted">Which sources this report read. A dash means the source was not read, not zero trades.</p>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -185,7 +185,7 @@ export default function PerformanceScorecard() {
                   {Object.entries(s.environments).map(([envName, v]) => (
                     <tr key={envName} className="border-b border-border/50 last:border-0">
                       <td className="py-2.5 pr-3 font-mono text-xs">{envName}</td>
-                      <td className="py-2.5 pr-3">{v.trades ?? 0}</td>
+                      <td className="py-2.5 pr-3" data-testid={`env-trades-${envName}`}>{v.trades ?? "—"}</td>
                       <td className="py-2.5 pr-3">{v.winRate != null ? `${v.winRate}%` : "—"}</td>
                       <td className={cn("py-2.5 pr-3 text-right font-mono", v.pnl != null ? pnlTone(v.pnl) : "text-txt-muted")}>{v.pnl != null ? money(v.pnl) : "—"}</td>
                       <td className="py-2.5 pr-3 text-txt-muted">{v.status ?? v.note ?? ""}</td>
@@ -297,8 +297,8 @@ export default function PerformanceScorecard() {
             </div>
           )}
 
-          <p className="text-xs text-txt-muted">
-            Data source: {s.dataSource} · generated {new Date(s.generatedAt).toLocaleString()}
+          <p className="text-xs text-txt-muted" data-testid="scorecard-source">
+            Data source: {s.dataSourceLabel ?? s.dataSource} · generated {new Date(s.generatedAt).toLocaleString()}
           </p>
         </>
       )}

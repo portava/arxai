@@ -13,7 +13,7 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetTimingBrainQueryKey: (symbol: string, params?: unknown) => ["/api/me/timing-brain", symbol, params],
 }));
 
-import { ChartTimingChip, timingTimeframeLabel } from "./ChartTimingChip";
+import { ChartTimingChip, timingTimeframeLabel, userTimingTimezone } from "./ChartTimingChip";
 
 function read(over: Record<string, unknown> = {}) {
   return {
@@ -24,6 +24,9 @@ function read(over: Record<string, unknown> = {}) {
       entryPermission: "WAIT_FOR_ENTRY",
       heatScore: 41,
       dataQuality: { hasCandleData: true },
+      // Inside the 30s advice lifetime (an expired read is hidden — see
+      // TimingIntelligenceCard.expiry.test.tsx).
+      generatedAt: new Date().toISOString(),
       ...over,
     },
   };
@@ -38,11 +41,14 @@ describe("ChartTimingChip", () => {
     render(<ChartTimingChip symbol="V75" apiTf="M1" timeframeLabel="1m" />);
     const [symbol, params, options] = mockUseGetTimingBrain.mock.calls[0]!;
     expect(symbol).toBe("V75");
-    expect(params).toEqual({ timeframe: "M1" });
+    // Same request shape as the Timing Intelligence card ({timeframe, tz}).
+    const tz = userTimingTimezone();
+    const expected = tz ? { timeframe: "M1", tz } : { timeframe: "M1" };
+    expect(params).toEqual(expected);
     expect((options as { query: { queryKey: unknown[] } }).query.queryKey).toEqual([
       "/api/me/timing-brain",
       "V75",
-      { timeframe: "M1" },
+      expected,
     ]);
     const chip = screen.getByTestId("scanner-chart-timing-chip");
     expect(chip.textContent).toBe("1m timing · D · Wait for entry");

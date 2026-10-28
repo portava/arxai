@@ -17,6 +17,8 @@ import {
   capConfidence,
   providerInfo,
   relativeTime,
+  isFutureTime,
+  feedReadinessLabel,
   formatTrailingGap,
   type FeedSeverity,
   type FeedProviderTier,
@@ -208,7 +210,16 @@ export function FeedConfidenceBadge({
           {/* Server-side time to read the winning provider — NOT tick or bar age
               (see "Last tick" / "Last candle"). Unknown when nothing served. */}
           <Row label="Server read time" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
-          <Row label="Last candle" value={relativeTime(fs?.lastCandleTime)} />
+          {/* A future candle time is the forming bar's scheduled close, not an
+              arrival — it says nothing about whether ticks are flowing. */}
+          <Row
+            label="Last candle"
+            value={
+              isFutureTime(fs?.lastCandleTime)
+                ? `Forming bar · closes ${relativeTime(fs?.lastCandleTime)}`
+                : relativeTime(fs?.lastCandleTime)
+            }
+          />
           <Row
             label="Last tick"
             value={
@@ -245,7 +256,7 @@ export function FeedConfidenceBadge({
             }
           />
           {fs?.feedReadinessState ? (
-            <Row label="Readiness" value={fs.feedReadinessState} />
+            <Row label="Readiness" value={feedReadinessLabel(fs.feedReadinessState)} />
           ) : null}
         </div>
 

@@ -22,6 +22,9 @@ const WITHHELD_REASON =
 
 function serverStructuralRead(readLayer: string, tradeHealthFreshness: string): ChartRead {
   return {
+    // Fresh newest-closed-candle time: a read with no valid time is expired
+    // (ScannerHeaderSummary.read-expiry.test.tsx), which is not this test's axis.
+    observedAt: new Date().toISOString(),
     bias: "Mixed",
     htfBias: "No clear edge",
     confidence: "Low",
