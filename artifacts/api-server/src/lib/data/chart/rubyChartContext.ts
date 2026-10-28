@@ -12,7 +12,7 @@
 // execution gate. Never weakens the 16-gate live pipeline.
 
 import { buildChartIntelligenceState, type ChartIntelligenceState } from "./chartIntelligence.js";
-import { gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
+import { candleTrustSegment, feedTrustSegment, gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
 import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
 import type { ChartTimeframe } from "./timeframes.js";
 import { buildChartHandshake, type ChartHandshakeVerdict } from "./chartHandshake.js";
@@ -69,8 +69,8 @@ export interface RubyChartContext {
 
   /**
    * Compact human trust line, always present.
-   * e.g. "Verified M5 candles · Live feed · Mirror synced"
-   * or   "Candles syncing · Feed stale · Mirror degraded"
+   * e.g. "M5 candles: Chart Truth 87 (Healthy) · Live feed · Mirror synced"
+   * or   "M5 candles syncing · Feed stale · Mirror degraded"
    */
   trustLine: string;
 
@@ -120,20 +120,20 @@ export function buildTrustLine(
   timeframe: string,
   hasForming: boolean,
   aaciOverall: ChartHandshakeVerdict,
+  opts: {
+    /** The served feed's status; "Live feed" needs a clean, confirmed-live feed. */
+    feed?: { quality?: string | null; isLive?: boolean | null } | null;
+    /** Candle-data rollup (every handshake check except renderer telemetry). */
+    aaciSourceOverall?: ChartHandshakeVerdict;
+  } = {},
 ): string {
   const parts: string[] = [];
 
-  if (gate.confidentReadAllowed) {
-    parts.push(`Verified ${timeframe} candles`);
-  } else {
-    parts.push(`${timeframe} candles syncing`);
-  }
+  // "Verified" only in the score's own Verified band (see candleTrustSegment).
+  parts.push(candleTrustSegment(gate, timeframe));
 
-  if (gate.autonomousChartActionAllowed) {
-    parts.push("Live feed");
-  } else {
-    parts.push("Feed stale");
-  }
+  // Not stale is not live: a delayed or not-live feed is named as such.
+  parts.push(feedTrustSegment(gate.autonomousChartActionAllowed, opts.feed));
 
   // Mirror segment reflects the REAL broker-alignment granularity (tight/normal
   // → synced, wide → drifting, unknown → no claim, seam/alignment-failed →
@@ -146,8 +146,11 @@ export function buildTrustLine(
 
   if (aaciOverall === "PASS") {
     parts.push("AACI verified");
+  } else if (aaciOverall === "WARN" && opts.aaciSourceOverall === "PASS") {
+    // Only the renderer check is open: it cannot be measured server-side.
+    parts.push("AACI candle checks pass · chart rendering not measured");
   } else if (aaciOverall === "WARN") {
-    parts.push("AACI warning");
+    parts.push("AACI warning: some checks not confirmed");
   } else {
     parts.push("AACI unverified");
   }
@@ -286,7 +289,8 @@ export async function buildRubyChartContext(
   // renderer, whose telemetry is unmeasured. The trust line keeps the full
   // overall so it never says "AACI verified" while a check is unmeasured.
   let basis = toBasis(gate, state, aaciHandshake.sourceOverall);
-  const trustLine = buildTrustLine(gate, state.brokerAlignment, timeframe, hasFormingCandle, aaciChartHandshakeOverall);
+  const trustLine = buildTrustLine(gate, state.brokerAlignment, timeframe, hasFormingCandle, aaciChartHandshakeOverall,
+    { feed: state.truthState, aaciSourceOverall: aaciHandshake.sourceOverall });
   let blockReason = gate.primaryBlockReason;
 
   // ── ONE DATA-SUFFICIENCY TRUTH ─────────────────────────────────────────────

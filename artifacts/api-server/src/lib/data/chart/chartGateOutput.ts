@@ -85,6 +85,35 @@ export const MERGE_SEAM_FAILED_REASON = "Merge-seam integrity failed — chart-b
 export const MIRROR_NOT_CHECKED_REASON =
   "Neither the merge seam nor a broker price comparison could be checked — chart-based trade confirmation is not allowed without evidence.";
 
+/**
+ * Trust-line candle segment. Passing the 75 gate is not "verified": the word
+ * is used only inside the score's own Verified band; otherwise the line
+ * states the score and its band.
+ */
+export function candleTrustSegment(
+  gate: Pick<ChartGateOutput, "confidentReadAllowed" | "chartTruthScore" | "truthLabel">,
+  timeframe: string,
+): string {
+  if (!gate.confidentReadAllowed) return `${timeframe} candles syncing`;
+  if (gate.truthLabel === "Verified") return `Verified ${timeframe} candles`;
+  return `${timeframe} candles: Chart Truth ${gate.chartTruthScore} (${gate.truthLabel})`;
+}
+
+/**
+ * Trust-line feed segment. "Not stale" is not "live": "Live feed" needs a
+ * clean feed that is confirmed live; a delayed or not-live feed says so.
+ */
+export function feedTrustSegment(
+  autonomousChartActionAllowed: boolean,
+  feed: { quality?: string | null; isLive?: boolean | null } | null | undefined,
+): string {
+  if (!autonomousChartActionAllowed || feed?.quality === "stale") return "Feed stale";
+  if (feed?.quality === "delayed") return "Feed delayed";
+  if (feed?.isLive === false) return "Feed not live";
+  if (feed?.quality === "clean" && feed.isLive === true) return "Live feed";
+  return "Feed not confirmed live";
+}
+
 /** The gate's mirror reasons, read back from its own blocked reasons (also for cached gates). */
 export function gateMirrorBlockCause(gate: Pick<ChartGateOutput, "tradeConfirmationAllowed" | "blockedReasons">): {
   seamFailed: boolean; notChecked: boolean;

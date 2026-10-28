@@ -20,7 +20,7 @@ import type { ChartEvidenceDirection } from "../data/chart/engines/marketUnderst
 import type { ChartConsensusStance } from "../data/chart/chartAgentConsensus.js";
 import { buildChartHandshake } from "../data/chart/chartHandshake.js";
 import { mirrorTrustSegment } from "../data/chart/brokerPriceAlignment.js";
-import { gateMirrorBlockCause } from "../data/chart/chartGateOutput.js";
+import { candleTrustSegment, feedTrustSegment, gateMirrorBlockCause } from "../data/chart/chartGateOutput.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 
 export type RubyDraftIntent =
@@ -81,7 +81,7 @@ export interface RubyDraftReadResult {
   limitedHistory: boolean;
   /**
    * Compact trust line — always present. Shows the data source status.
-   * e.g. "Verified M5 candles · Live feed · Mirror synced"
+   * e.g. "M5 candles: Chart Truth 87 (Healthy) · Live feed · Mirror synced"
    */
   trustLine: string;
   /** The bias the read is built around. */
@@ -149,16 +149,10 @@ function feedUsable(state: ChartIntelligenceState): boolean {
 function buildTrustLine(state: ChartIntelligenceState, hasForming: boolean): string {
   const gate = state.gateOutput;
   const parts: string[] = [];
-  if (gate.confidentReadAllowed) {
-    parts.push(`Verified ${state.timeframe} candles`);
-  } else {
-    parts.push(`${state.timeframe} candles syncing`);
-  }
-  if (gate.autonomousChartActionAllowed) {
-    parts.push("Live feed");
-  } else {
-    parts.push("Feed stale");
-  }
+  // "Verified" only in the score's own Verified band; "Live feed" only for a
+  // clean feed confirmed live (not merely "not stale").
+  parts.push(candleTrustSegment(gate, state.timeframe));
+  parts.push(feedTrustSegment(gate.autonomousChartActionAllowed, state.truthState));
   // Honest mirror copy from the real broker-alignment granularity — never claims
   // sync while the price is only drifting (wide) or unverifiable (unknown).
   const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, state.brokerAlignment, gateMirrorBlockCause(gate));

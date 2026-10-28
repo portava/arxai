@@ -11,6 +11,9 @@ import { buildChartHandshake } from "../chartHandshake.js";
 import { computeBrokerPriceAlignment, mirrorTrustSegment, noBrokerAlignment } from "../brokerPriceAlignment.js";
 import { bindBrokerQuote } from "../brokerQuoteBinding.js";
 import type { ChartFeedStatus } from "../chartDataService.js";
+import type { ChartIntelligenceState } from "../chartIntelligence.js";
+import { buildTrustLine } from "../rubyChartContext.js";
+import { buildRubyDraftRead } from "../../../assistant/rubyDraftRead.js";
 
 const epoch = 1_700_000_000_000;
 function fixture(overrides: Partial<TimeframeTruthResult> = {}): TimeframeTruthResult {
@@ -146,4 +149,41 @@ test("a failed deviation from another feed's quote or an old tick is named for w
   const other = quoteAlignment(2, 2.0001, { bridgeConnectionId: 8 });
   const both = computeChartGateOutput(computeChartTruthScore(overlap, feed, other), read, other, overlap, false);
   assert.equal(mirrorTrustSegment(false, other, gateMirrorBlockCause(both)), "Mirror degraded");
+});
+
+test("trust lines say Verified only in the Verified band, Live feed only for a confirmed-live feed, and what the AACI warning means", () => {
+  const truth = fixture(), tight = quoteAlignment(1.09999, 1.10001);
+  const score = computeChartTruthScore(truth, feed, tight);
+  assert.equal(score.label, "Healthy");
+  const gate = computeChartGateOutput(score, read, tight, truth, false);
+  assert.equal(gate.confidentReadAllowed, true);
+  const handshake = buildChartHandshake(gate, score);
+  assert.equal(handshake.overall, "WARN"); assert.equal(handshake.sourceOverall, "PASS");
+  assert.equal(buildTrustLine(gate, tight, "M5", false, handshake.overall, { feed, aaciSourceOverall: handshake.sourceOverall }),
+    `M5 candles: Chart Truth ${score.score} (Healthy) · Live feed · Mirror synced · AACI candle checks pass · chart rendering not measured`);
+  // Without feed evidence the line cannot claim "Live feed" or "Verified".
+  const bare = buildTrustLine(gate, tight, "M5", false, "WARN");
+  assert.doesNotMatch(bare, /Verified|Live feed|^AACI warning$/);
+  assert.match(bare, /Feed not confirmed live/); assert.match(bare, /AACI warning: some checks not confirmed/);
+  for (const [status, expected] of [
+    [{ ...feed, quality: "delayed", aiUsable: false }, "Feed delayed"],
+    [{ ...feed, isLive: false }, "Feed not live"],
+  ] as const) {
+    const s = computeChartTruthScore(truth, status, tight);
+    const g = computeChartGateOutput(s, read, tight, truth, status.stale);
+    assert.equal(g.autonomousChartActionAllowed, true);
+    const line = buildTrustLine(g, tight, "M5", false, buildChartHandshake(g, s).overall, { feed: status });
+    assert.doesNotMatch(line, /Live feed|Verified/, line); assert.match(line, new RegExp(expected), line);
+    // Ruby's draft-read footer is built from the same segments.
+    const state = {
+      symbol: "TESTFX_FIXTURE", displaySymbol: "Offline fixture", timeframe: "M5", assetClass: "forex",
+      aiUsable: false, stale: false, truthState: status, currentCandle: null, candleStats: { barsAnalyzed: 199 },
+      marketUnderstanding: { populated: false, note: "", readiness: { quality: "unrated", score: null }, levels: { levels: [] } },
+      decisionState: { populated: false, bias: "neutral" }, marketSentences: {},
+      agentConsensus: { populated: false, note: "", headline: "", stance: "neutral", conflict: false, protective: false, cautions: [] },
+      gateOutput: g, chartTruthScore: s, brokerAlignment: tight,
+    } as unknown as ChartIntelligenceState;
+    const draft = buildRubyDraftRead(state, "analyze").trustLine;
+    assert.doesNotMatch(draft, /Live feed|Verified/, draft); assert.match(draft, new RegExp(expected), draft);
+  }
 });
