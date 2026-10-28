@@ -170,11 +170,6 @@ export function fmtPrice(v: number | null | undefined, digits: number | null | u
   return v.toFixed(d);
 }
 
-export function fmtMoney(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  return `$${v.toFixed(2)}`;
-}
-
 /**
  * Scalp money tile formatter. The figures are in the trading account's
  * currency; name it only when the server reported it. "$" only for USD —
