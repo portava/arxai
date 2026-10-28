@@ -21,7 +21,8 @@ interface ProviderEntry {
   usedBy: string[];
   selectedForAssetClasses: AssetClass[];
   configuredButUnused: boolean;
-  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved";
+  // "unverified" = configured, but nothing in this snapshot checked it.
+  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved" | "unverified";
   statusReason: string;
   features: { liveQuote: boolean; historicalCandles: boolean; news: boolean; symbolSearch: boolean };
   rateLimitNote: string | null;
@@ -109,6 +110,8 @@ interface Snapshot {
     failing: number;
     notConfigured: number;
     reserved: number;
+    // Absent from servers older than the observed-status change.
+    unverified?: number;
     configuredButUnused: number;
   };
 }
@@ -144,6 +147,7 @@ function statusBadge(s: ProviderEntry["status"]) {
     case "failing":        return <Badge className="bg-danger/20 text-danger">failing</Badge>;
     case "not_configured": return <Badge className="bg-secondary/20 text-txt-secondary">not configured</Badge>;
     case "reserved":       return <Badge className="bg-primary/20 text-primary">reserved</Badge>;
+    case "unverified":     return <Badge className="bg-secondary/20 text-txt-secondary">not checked</Badge>;
   }
 }
 
@@ -641,12 +645,13 @@ export default function ProviderHealthPage() {
       {snap && (
         <>
           {/* Summary tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {[
               ["Total", snap.summary.totalProviders, "bg-secondary/20 text-foreground"],
               ["Healthy", snap.summary.healthy, "bg-success/20 text-success"],
               ["Degraded", snap.summary.degraded, "bg-warning/20 text-warning"],
               ["Failing", snap.summary.failing, "bg-danger/20 text-danger"],
+              ["Not checked", snap.summary.unverified ?? "—", "bg-secondary/20 text-txt-secondary"],
               ["Not configured", snap.summary.notConfigured, "bg-secondary/20 text-txt-secondary"],
               ["Reserved", snap.summary.reserved, "bg-primary/20 text-primary"],
               ["Configured but unused", snap.summary.configuredButUnused, "bg-fuchsia-500/20 text-fuchsia-300"],

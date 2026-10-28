@@ -56,7 +56,10 @@ export interface ProviderEntry {
   usedBy: Array<"scanner" | "chart" | "ruby" | "trade_ticket" | "watchlist" | "backtest" | "news" | "ai_assistant">;
   selectedForAssetClasses: AssetClass[];
   configuredButUnused: boolean;
-  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved";
+  // "healthy" / "failing" are only set from something observed (this
+  // snapshot's self-test, a live push, a feed's own health report).
+  // "unverified" = configured, but nothing in this snapshot checked it.
+  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved" | "unverified";
   statusReason: string;
   features: { liveQuote: boolean; historicalCandles: boolean; news: boolean; symbolSearch: boolean };
   rateLimitNote: string | null;
@@ -180,6 +183,7 @@ export interface ProviderHealthSnapshot {
     failing: number;
     notConfigured: number;
     reserved: number;
+    unverified: number;
     configuredButUnused: number;
   };
 }
@@ -212,6 +216,74 @@ function maskLastFour(envKey: string): { envKey: string; configured: boolean; la
 function truncate(s: string | null, n = 280): string | null {
   if (s == null) return null;
   return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+// Adapter ids the assistant market provider actually holds, read from the
+// provider selected at runtime — never inferred from which keys are set.
+// "composite(a,b)" → [a, b]; a single adapter → [name]; "none" → [].
+export function assistantAdapterChain(name: string): string[] {
+  const m = /^composite\((.*)\)$/.exec(name);
+  return (m ? m[1]!.split(",") : [name]).map((s) => s.trim()).filter((s) => s.length > 0 && s !== "none");
+}
+
+// What this snapshot's self-test observed on the assistant leg of the router:
+// how many probe requests reached it, which adapter answered each one (the
+// router names the serving adapter as `assistant_real:<id>` on success), and
+// the last failure reason.
+interface AssistantLegEvidence {
+  reached: number;
+  servedBy: Map<string, number>;
+  lastFailure: { reason: string | null; ms: number } | null;
+}
+
+function assistantLegEvidence(probes: SymbolProbe[]): AssistantLegEvidence {
+  const ev: AssistantLegEvidence = { reached: 0, servedBy: new Map(), lastFailure: null };
+  for (const probe of probes) {
+    for (const a of [...probe.candles.attempts, ...probe.quote.attempts]) {
+      if (!a.provider.startsWith("assistant_real:")) continue;
+      ev.reached += 1;
+      if (a.ok) {
+        const id = a.provider.slice("assistant_real:".length);
+        ev.servedBy.set(id, (ev.servedBy.get(id) ?? 0) + 1);
+      } else {
+        ev.lastFailure = { reason: a.reason, ms: a.ms };
+      }
+    }
+  }
+  return ev;
+}
+
+// Status of a keyed market-data adapter that sits in the assistant chain,
+// from the self-test evidence only. A set key is never a health check.
+function observedAdapterStatus(
+  id: string,
+  label: string,
+  ev: AssistantLegEvidence,
+): { status: "healthy" | "failing" | "unverified"; statusReason: string } {
+  const served = ev.servedBy.get(id) ?? 0;
+  if (served > 0) {
+    return {
+      status: "healthy",
+      statusReason: `${label} answered ${served} of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot.`,
+    };
+  }
+  if (ev.reached === 0) {
+    return {
+      status: "unverified",
+      statusReason: `Key is set, but no self-test request in this snapshot reached the assistant feed (an earlier provider in the router answered, or the probe could not run), so ${label} was not checked.`,
+    };
+  }
+  const others = Array.from(ev.servedBy.keys());
+  if (others.length === 0) {
+    return {
+      status: "failing",
+      statusReason: `All ${ev.reached} self-test requests that reached the assistant feed in this snapshot failed${ev.lastFailure?.reason ? ` — last reason: ${truncate(ev.lastFailure.reason, 200)}` : ""}.`,
+    };
+  }
+  return {
+    status: "unverified",
+    statusReason: `${label} did not answer any of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot (${others.join(", ")} did), so it was not confirmed working.`,
+  };
 }
 
 export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapshot> {
@@ -278,6 +350,18 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
   const avConfigured = !!process.env.ALPHA_VANTAGE_API_KEY;
   const newsConfigured = !!process.env.NEWSAPI_API_KEY;
   const assistantSelected = classesWhereSelected("assistant_real");
+  // Which adapters the selected assistant provider really holds. The TD +
+  // Finnhub hybrid keeps the "twelve_data" name but serves quotes/news from
+  // Finnhub, so Finnhub is in the chain whenever that hybrid is.
+  const assistantChain = assistantAdapterChain(assistant.name);
+  const inChain = (id: string): boolean =>
+    assistantChain.includes(id) ||
+    (id === "finnhub" && finnhubConfigured && tdConfigured && assistantChain.includes("twelve_data"));
+  // Keyed adapters start as "unverified"; their status is set from this
+  // snapshot's self-test evidence once the probes below have run.
+  const notSelectedReason = (label: string) =>
+    `Key is set, but ${label} is not in the selected assistant provider (${assistant.name}), so nothing calls it and it was not checked.`;
+  const pendingCheck = "Not checked yet.";
 
   providers.push({
     id: "twelve_data",
@@ -286,13 +370,13 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: ["TWELVEDATA_API_KEY"],
     configured: tdConfigured,
     secretMasks: [maskLastFour("TWELVEDATA_API_KEY")],
-    usedBy: tdConfigured && assistant.name.startsWith("twelve_data") ? ["scanner", "chart", "ruby", "trade_ticket", "watchlist"] : [],
-    selectedForAssetClasses: tdConfigured && assistant.name.startsWith("twelve_data") ? assistantSelected : [],
-    configuredButUnused: tdConfigured && !assistant.name.startsWith("twelve_data"),
-    status: !tdConfigured ? "not_configured" : (assistant.name.startsWith("twelve_data") ? "healthy" : "degraded"),
+    usedBy: tdConfigured && inChain("twelve_data") ? ["scanner", "chart", "ruby", "trade_ticket", "watchlist"] : [],
+    selectedForAssetClasses: tdConfigured && inChain("twelve_data") ? assistantSelected : [],
+    configuredButUnused: tdConfigured && !inChain("twelve_data"),
+    status: !tdConfigured ? "not_configured" : (inChain("twelve_data") ? "unverified" : "degraded"),
     statusReason: !tdConfigured
       ? "TWELVEDATA_API_KEY not set."
-      : assistant.name.startsWith("twelve_data") ? "Active market-data adapter." : "Configured but not selected — another provider is active.",
+      : inChain("twelve_data") ? pendingCheck : notSelectedReason("Twelve Data"),
     features: { liveQuote: true, historicalCandles: true, news: false, symbolSearch: true },
     rateLimitNote: "Free tier ≈ 8 req/min, 800/day. Per-call cache amortizes scanner load.",
     lastSelfTestAt: null, lastSelfTestMs: null, lastSelfTestOk: null,
@@ -305,13 +389,13 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: ["POLYGON_API_KEY"],
     configured: polygonConfigured,
     secretMasks: [maskLastFour("POLYGON_API_KEY")],
-    usedBy: polygonConfigured && assistant.name === "polygon" ? ["scanner", "chart", "ruby"] : [],
-    selectedForAssetClasses: polygonConfigured && assistant.name === "polygon" ? assistantSelected : [],
-    configuredButUnused: polygonConfigured && assistant.name !== "polygon",
-    status: !polygonConfigured ? "not_configured" : (assistant.name === "polygon" ? "healthy" : "degraded"),
+    usedBy: polygonConfigured && inChain("polygon") ? ["scanner", "chart", "ruby"] : [],
+    selectedForAssetClasses: polygonConfigured && inChain("polygon") ? assistantSelected : [],
+    configuredButUnused: polygonConfigured && !inChain("polygon"),
+    status: !polygonConfigured ? "not_configured" : (inChain("polygon") ? "unverified" : "degraded"),
     statusReason: !polygonConfigured
       ? "POLYGON_API_KEY not set."
-      : assistant.name === "polygon" ? "Active." : "Configured but not selected — TwelveData/Finnhub takes priority when both set.",
+      : inChain("polygon") ? pendingCheck : notSelectedReason("Polygon"),
     features: { liveQuote: true, historicalCandles: true, news: true, symbolSearch: true },
     rateLimitNote: "Free tier ≈ 5 req/min.",
     lastSelfTestAt: null, lastSelfTestMs: null, lastSelfTestOk: null,
@@ -325,13 +409,13 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     configured: finnhubConfigured,
     secretMasks: [maskLastFour("FINNHUB_API_KEY")],
     // hybridTwelveDataFinnhub keeps name="twelve_data" but uses Finnhub for quotes/news.
-    usedBy: finnhubConfigured && tdConfigured ? ["trade_ticket", "ruby", "news"] : (finnhubConfigured && assistant.name === "finnhub" ? ["scanner", "chart", "ruby", "news"] : []),
-    selectedForAssetClasses: finnhubConfigured && assistant.name === "finnhub" ? assistantSelected : [],
-    configuredButUnused: finnhubConfigured && !tdConfigured && assistant.name !== "finnhub",
-    status: !finnhubConfigured ? "not_configured" : "healthy",
+    usedBy: !finnhubConfigured || !inChain("finnhub") ? [] : tdConfigured ? ["trade_ticket", "ruby", "news"] : ["scanner", "chart", "ruby", "news"],
+    selectedForAssetClasses: finnhubConfigured && inChain("finnhub") ? assistantSelected : [],
+    configuredButUnused: finnhubConfigured && !inChain("finnhub"),
+    status: !finnhubConfigured ? "not_configured" : "unverified",
     statusReason: !finnhubConfigured
       ? "FINNHUB_API_KEY not set."
-      : tdConfigured ? "Active in hybrid mode (TwelveData candles + Finnhub quotes/news)." : assistant.name === "finnhub" ? "Active." : "Configured but not selected.",
+      : inChain("finnhub") ? pendingCheck : notSelectedReason("Finnhub"),
     features: { liveQuote: true, historicalCandles: true, news: true, symbolSearch: true },
     rateLimitNote: "Free tier ≈ 60 req/min, no historical news beyond 1 year.",
     lastSelfTestAt: null, lastSelfTestMs: null, lastSelfTestOk: null,
@@ -344,13 +428,13 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: ["ALPHA_VANTAGE_API_KEY"],
     configured: avConfigured,
     secretMasks: [maskLastFour("ALPHA_VANTAGE_API_KEY")],
-    usedBy: avConfigured && assistant.name === "alpha_vantage" ? ["scanner", "chart", "ruby"] : [],
-    selectedForAssetClasses: avConfigured && assistant.name === "alpha_vantage" ? assistantSelected : [],
-    configuredButUnused: avConfigured && assistant.name !== "alpha_vantage",
-    status: !avConfigured ? "not_configured" : (assistant.name === "alpha_vantage" ? "healthy" : "degraded"),
+    usedBy: avConfigured && inChain("alpha_vantage") ? ["scanner", "chart", "ruby"] : [],
+    selectedForAssetClasses: avConfigured && inChain("alpha_vantage") ? assistantSelected : [],
+    configuredButUnused: avConfigured && !inChain("alpha_vantage"),
+    status: !avConfigured ? "not_configured" : (inChain("alpha_vantage") ? "unverified" : "degraded"),
     statusReason: !avConfigured
       ? "ALPHA_VANTAGE_API_KEY not set."
-      : assistant.name === "alpha_vantage" ? "Active." : "Configured but not selected — Twelve Data / Polygon / Finnhub take priority when present.",
+      : inChain("alpha_vantage") ? pendingCheck : notSelectedReason("Alpha Vantage"),
     features: { liveQuote: true, historicalCandles: false, news: false, symbolSearch: true },
     rateLimitNote: "Free tier ≈ 5 req/min, 500/day.",
     lastSelfTestAt: null, lastSelfTestMs: null, lastSelfTestOk: null,
@@ -366,8 +450,11 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     usedBy: newsConfigured ? ["news", "ruby"] : [],
     selectedForAssetClasses: [],
     configuredButUnused: false,
-    status: !newsConfigured ? "not_configured" : "healthy",
-    statusReason: !newsConfigured ? "NEWSAPI_API_KEY not set." : "Active for news/ruby market explanations.",
+    // No request to NewsAPI is made or recorded by this self-test.
+    status: !newsConfigured ? "not_configured" : "unverified",
+    statusReason: !newsConfigured
+      ? "NEWSAPI_API_KEY not set."
+      : "Key is set. This self-test does not call NewsAPI, so whether it answers was not checked.",
     features: { liveQuote: false, historicalCandles: false, news: true, symbolSearch: false },
     rateLimitNote: "Free tier ≈ 100 req/day.",
     lastSelfTestAt: null, lastSelfTestMs: null, lastSelfTestOk: null,
@@ -385,8 +472,11 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     usedBy: openAiConfigured ? ["ai_assistant", "ruby"] : [],
     selectedForAssetClasses: [],
     configuredButUnused: false,
-    status: !openAiConfigured ? "not_configured" : "healthy",
-    statusReason: !openAiConfigured ? "OPENAI_API_KEY not set." : "Active.",
+    // No request to OpenAI is made or recorded by this self-test.
+    status: !openAiConfigured ? "not_configured" : "unverified",
+    statusReason: !openAiConfigured
+      ? "OPENAI_API_KEY not set."
+      : "Key is set. This self-test does not call OpenAI, so whether it answers was not checked.",
     features: { liveQuote: false, historicalCandles: false, news: false, symbolSearch: false },
     rateLimitNote: "Per-org rate limits apply.",
     lastSelfTestAt: null, lastSelfTestMs: null, lastSelfTestOk: null,
@@ -441,6 +531,24 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
         p.lastSelfTestMs = c.attempts[c.attempts.length - 1]?.ms ?? null;
         p.lastSelfTestOk = c.ok;
       }
+    }
+  }
+
+  // ── Keyed adapters: status from what the self-test observed ─────────────
+  const legEvidence = assistantLegEvidence(probes);
+  const ADAPTER_LABELS: Record<string, string> = {
+    twelve_data: "Twelve Data", polygon: "Polygon", finnhub: "Finnhub", alpha_vantage: "Alpha Vantage",
+  };
+  for (const p of providers) {
+    const label = ADAPTER_LABELS[p.id];
+    if (!label || !p.configured || !inChain(p.id)) continue;
+    const observed = observedAdapterStatus(p.id, label, legEvidence);
+    p.status = observed.status;
+    p.statusReason = observed.statusReason;
+    if (observed.status === "failing") {
+      p.lastSelfTestAt = new Date().toISOString();
+      p.lastSelfTestMs = legEvidence.lastFailure?.ms ?? null;
+      p.lastSelfTestOk = false;
     }
   }
 
@@ -599,6 +707,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     failing: providers.filter((p) => p.status === "failing").length,
     notConfigured: providers.filter((p) => p.status === "not_configured").length,
     reserved: providers.filter((p) => p.status === "reserved").length,
+    unverified: providers.filter((p) => p.status === "unverified").length,
     configuredButUnused: providers.filter((p) => p.configuredButUnused).length,
   };
 
