@@ -77,135 +77,153 @@ router.post("/admin/live-shared/activation-smoke-test", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
 
-  type Check = { id: string; label: string; pass: boolean; detail: string };
+  // A check is "pass" only when this call observed the thing it names, "fail"
+  // when it observed the opposite or its read failed, and "not_checked" when
+  // the smoke test does not exercise it. `pass` (kept for older clients) is
+  // true only for "pass"; summary.passed never counts a not-checked row.
+  type CheckStatus = "pass" | "fail" | "not_checked";
+  type Check = { id: string; label: string; pass: boolean; status: CheckStatus; detail: string };
   const checks: Check[] = [];
+  const push = (id: string, label: string, status: CheckStatus, detail: string): void => {
+    checks.push({ id, label, pass: status === "pass", status, detail });
+  };
+  const errText = (e: unknown): string => String((e as Error)?.message ?? e).slice(0, 160);
+  /** One COUNT(*) read. A failed query is an error, never a 0 stand-in. */
+  const countOf = async (q: () => PromiseLike<ReadonlyArray<{ n: number }>>): Promise<{ n: number } | { error: string }> => {
+    try {
+      const n = (await q())[0]?.n;
+      return n == null || !Number.isFinite(Number(n)) ? { error: "the count query returned no row" } : { n: Number(n) };
+    } catch (e) {
+      return { error: errText(e) };
+    }
+  };
 
   // C1 — readiness data path reachable
-  const settings = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
-  checks.push({
-    id: "C1_readiness", label: "Readiness data path reachable",
-    pass: settings != null,
-    detail: settings ? "global_trading_settings row present" : "MISSING global_trading_settings",
-  });
+  let settings: typeof globalTradingSettingsTable.$inferSelect | null = null;
+  let settingsError: string | null = null;
+  try {
+    settings = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
+  } catch (e) {
+    settingsError = errText(e);
+  }
+  push("C1_readiness", "Readiness data path reachable", settings != null ? "pass" : "fail",
+    settingsError ? `global_trading_settings could not be loaded: ${settingsError}`
+      : settings ? "global_trading_settings row present" : "MISSING global_trading_settings");
 
   // C2 — pinned bridge snapshot present
   const pinnedId = settings?.platformMasterBridgeConnectionId ?? null;
   let pinned: BrokerConnectionFacts | null = null;
+  let pinnedError: string | null = null;
   if (pinnedId != null) {
-    pinned = (await listConnections({ connectionIds: [pinnedId], limit: 1 }))[0] ?? null;
+    try {
+      pinned = (await listConnections({ connectionIds: [pinnedId], limit: 1 }))[0] ?? null;
+    } catch (e) {
+      pinnedError = errText(e);
+    }
   }
-  checks.push({
-    id: "C2_pinned_bridge", label: "Master bridge pinned",
-    pass: pinned != null,
-    detail: pinned ? `connectionId=${pinned.id}` : "no platformMasterBridgeConnectionId set",
-  });
+  push("C2_pinned_bridge", "Master bridge pinned", pinned != null ? "pass" : "fail",
+    pinned ? `connectionId=${pinned.id}`
+      : settingsError ? "unknown: the settings could not be loaded"
+      : pinnedError ? `connection #${pinnedId} could not be loaded: ${pinnedError}`
+      : pinnedId != null ? `pinned connection #${pinnedId} was not found`
+      : "no platformMasterBridgeConnectionId set");
 
   // C3 — heartbeat fresh (shared policy: < 15 s) on pinned bridge
   const hbAge = pinned?.lastHeartbeat
     ? Math.floor((Date.now() - new Date(pinned.lastHeartbeat).getTime()) / 1000) : null;
-  checks.push({
-    id: "C3_heartbeat", label: "Bridge heartbeat fresh (<15s)",
-    pass: isHeartbeatAgeSecondsFresh(hbAge),
-    detail: hbAge == null ? "no heartbeat recorded" : `${hbAge}s old`,
-  });
+  push("C3_heartbeat", "Bridge heartbeat fresh (<15s)", isHeartbeatAgeSecondsFresh(hbAge) ? "pass" : "fail",
+    hbAge == null ? "no heartbeat recorded"
+      : hbAge < 0 ? `heartbeat is dated ${-hbAge}s in the future, so its age cannot be verified`
+      : `${hbAge}s old`);
 
-  // C4 — approved user lookup works
-  const approvedCount = (await db.select({ n: sql<number>`COUNT(*)::int` })
+  // C4 — approved user lookup works: the lookup itself is the check.
+  const approved = await countOf(() => db.select({ n: sql<number>`COUNT(*)::int` })
     .from(userMasterLiveAccessTable)
-    .where(eq(userMasterLiveAccessTable.approvedForMasterLive, true)))[0]?.n ?? 0;
-  checks.push({
-    id: "C4_approved_user_lookup", label: "Approved user lookup works",
-    pass: Number(approvedCount) >= 0,
-    detail: `${approvedCount} approved user(s)`,
-  });
+    .where(eq(userMasterLiveAccessTable.approvedForMasterLive, true)));
+  push("C4_approved_user_lookup", "Approved user lookup works", "n" in approved ? "pass" : "fail",
+    "n" in approved ? `lookup returned: ${approved.n} approved user(s)` : `approved users could not be loaded: ${approved.error}`);
 
-  // C5 — validate endpoint mounted (introspect router stack indirectly via
-  // settings.sharedLiveConnectionId requirement — actual call would mutate
-  // nothing but we keep the smoke test fully side-effect free).
-  checks.push({
-    id: "C5_validate_endpoint", label: "Validate endpoint reachable",
-    pass: true,
-    detail: "POST /api/trades/live-shared/validate is mounted (dry-run, no insert)",
-  });
+  // C5 — the validate endpoint is not called (that would run the trade
+  // pipeline) and the router stack is not inspected, so it is not checked.
+  push("C5_validate_endpoint", "Validate endpoint reachable", "not_checked",
+    "Not checked: this smoke test does not call POST /api/trades/live-shared/validate.");
 
-  // C6 — execute is blocked when master switch is off
+  // C6 — execute is blocked when master switch is off. The smoke test does
+  // not run the dispatch gate, so this row records the switch state only.
   const masterSwitch = liveBrokerExecutionEnabled();
-  checks.push({
-    id: "C6_execute_blocked_when_master_off", label: "Execute blocked when master switch off/missing",
-    pass: masterSwitch === false ? true : true, // both states are valid; we record the state
-    detail: masterSwitch
+  push("C6_execute_blocked_when_master_off", "Execute blocked when master switch off/missing", "not_checked",
+    `Not checked: this smoke test does not run the dispatch gate. ${masterSwitch
       ? "ARX_LIVE_BROKER_EXECUTION_ENABLED=true — execution may PASS gate 1; gates 2-16 must also pass"
-      : "ARX_LIVE_BROKER_EXECUTION_ENABLED unset/false — every dispatch will return LIVE_BLOCKED:LIVE_BROKER_EXECUTION_DISABLED",
-  });
+      : "ARX_LIVE_BROKER_EXECUTION_ENABLED unset/false — every dispatch will return LIVE_BLOCKED:LIVE_BROKER_EXECUTION_DISABLED"}`);
 
   // C7 — command queue insert only happens through validate→confirm→dispatch
   // pipeline. We assert here that no row exists with a "raw" status missing
   // an idempotencyKey (which would indicate a bypass).
-  const orphan = (await db.select({ n: sql<number>`COUNT(*)::int` })
+  const orphan = await countOf(() => db.select({ n: sql<number>`COUNT(*)::int` })
     .from(arxLiveCommandsTable)
     .where(and(
       isNull(arxLiveCommandsTable.idempotencyKey),
       inArray(arxLiveCommandsTable.status, ["SENT_TO_MT5_LIVE", "LIVE_FILLED"]),
-    )))[0]?.n ?? 0;
-  checks.push({
-    id: "C7_no_pipeline_bypass", label: "No pipeline bypass (idempotencyKey present on dispatched rows)",
-    pass: Number(orphan) === 0,
-    detail: orphan === 0 ? "0 orphan dispatched rows" : `${orphan} row(s) missing idempotencyKey — INVESTIGATE`,
-  });
+    )));
+  push("C7_no_pipeline_bypass", "No pipeline bypass (idempotencyKey present on dispatched rows)",
+    "n" in orphan && orphan.n === 0 ? "pass" : "fail",
+    !("n" in orphan) ? `dispatched commands could not be loaded: ${orphan.error}`
+      : orphan.n === 0 ? "0 orphan dispatched rows" : `${orphan.n} row(s) missing idempotencyKey — INVESTIGATE`);
 
-  // C8 — shared_trade_attribution reachable
-  const attrN = (await db.select({ n: sql<number>`COUNT(*)::int` })
-    .from(sharedTradeAttributionTable))[0]?.n ?? 0;
-  checks.push({
-    id: "C8_attribution_reachable", label: "shared_trade_attribution reachable",
-    pass: attrN >= 0,
-    detail: `${attrN} attribution row(s) total`,
-  });
+  // C8 — shared_trade_attribution reachable: the read itself is the check.
+  const attr = await countOf(() => db.select({ n: sql<number>`COUNT(*)::int` })
+    .from(sharedTradeAttributionTable));
+  push("C8_attribution_reachable", "shared_trade_attribution reachable", "n" in attr ? "pass" : "fail",
+    "n" in attr ? `read returned: ${attr.n} attribution row(s) total` : `shared_trade_attribution could not be loaded: ${attr.error}`);
 
   // C9 — per-user isolation: confirm at least one approved user has a maxLot
   // set (cap exists) and no global "unlimited" row leaks across users.
-  const noCapCount = (await db.select({ n: sql<number>`COUNT(*)::int` })
+  const noCap = await countOf(() => db.select({ n: sql<number>`COUNT(*)::int` })
     .from(userMasterLiveAccessTable)
     .where(and(
       eq(userMasterLiveAccessTable.approvedForMasterLive, true),
       isNull(userMasterLiveAccessTable.maxLot),
-    )))[0]?.n ?? 0;
-  checks.push({
-    id: "C9_user_isolation_caps", label: "Approved users have maxLot caps",
-    pass: Number(noCapCount) === 0,
-    detail: noCapCount === 0 ? "every approved user has a maxLot" : `${noCapCount} approved user(s) MISSING maxLot — set limits before activation`,
-  });
+    )));
+  push("C9_user_isolation_caps", "Approved users have maxLot caps", "n" in noCap && noCap.n === 0 ? "pass" : "fail",
+    !("n" in noCap) ? `approved users' caps could not be loaded: ${noCap.error}`
+      : noCap.n === 0 ? "every approved user has a maxLot" : `${noCap.n} approved user(s) MISSING maxLot — set limits before activation`);
 
-  // C10 — admin all-records read works (we just did several queries above
-  // unscoped — that demonstrates admin visibility).
-  checks.push({
-    id: "C10_admin_all_records", label: "Admin all-records read works",
-    pass: true,
-    detail: "admin queries above ran unscoped across all users",
-  });
-
-  // C11 — audit log write works (this very call will write one)
-  checks.push({
-    id: "C11_audit_log_write", label: "Audit log write works",
-    pass: true,
-    detail: "this smoke-test call writes one admin_action_audit_log row",
-  });
+  // C10 — admin all-records read: the unscoped (all users) reads above.
+  const unscoped = [["C4", approved], ["C7", orphan], ["C8", attr], ["C9", noCap]] as const;
+  const unscopedFailed = unscoped.filter(([, r]) => !("n" in r)).map(([id]) => id);
+  push("C10_admin_all_records", "Admin all-records read works", unscopedFailed.length === 0 ? "pass" : "fail",
+    unscopedFailed.length === 0
+      ? "the unscoped (all users) reads C4, C7, C8 and C9 all returned"
+      : `unscoped read(s) ${unscopedFailed.join(", ")} could not be loaded`);
 
   // Bridge gate snapshot (informational; not a pass/fail row).
   const bridgeGate = await loadAndEvaluateMasterLiveBridgeGate();
   const detector = await detectCurrentConnectedBridge();
 
-  const summary = {
+  const summarize = () => ({
     total: checks.length,
-    passed: checks.filter((c) => c.pass).length,
-    failed: checks.filter((c) => !c.pass).length,
-  };
-
-  await writeAudit({
-    adminId: admin.id, adminRole: admin.role,
-    action: "ADMIN_RAN_LIVE_SHARED_ACTIVATION_SMOKE_TEST",
-    after: { summary, masterSwitch, bridgeGateDecision: bridgeGate.decision },
+    passed: checks.filter((c) => c.status === "pass").length,
+    failed: checks.filter((c) => c.status === "fail").length,
+    notChecked: checks.filter((c) => c.status === "not_checked").length,
   });
+
+  // C11 — audit log write works: this call's own audit row, written now, so
+  // the row passes only once the write has returned. The audited summary
+  // covers C1-C10 (C11 is the write itself).
+  try {
+    await writeAudit({
+      adminId: admin.id, adminRole: admin.role,
+      action: "ADMIN_RAN_LIVE_SHARED_ACTIVATION_SMOKE_TEST",
+      after: { summary: summarize(), summaryCovers: "C1-C10", masterSwitch, bridgeGateDecision: bridgeGate.decision },
+    });
+    push("C11_audit_log_write", "Audit log write works", "pass",
+      "this smoke-test call wrote one admin_action_audit_log row");
+  } catch (e) {
+    push("C11_audit_log_write", "Audit log write works", "fail",
+      `this smoke-test call could not write its admin_action_audit_log row: ${errText(e)}`);
+  }
+
+  const summary = summarize();
 
   res.json({
     ok: true,

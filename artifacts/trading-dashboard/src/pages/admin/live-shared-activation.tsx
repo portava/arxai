@@ -80,12 +80,40 @@ type ReadinessResp = {
   requiredConfirmationPhrases: { activate: string; killSwitch: string };
 };
 
+type SmokeStatus = "pass" | "fail" | "not_checked";
 type SmokeResp = {
   ok: boolean;
-  summary: { total: number; passed: number; failed: number };
-  checks: Array<{ id: string; label: string; pass: boolean; detail: string }>;
+  summary: { total: number; passed: number; failed: number; notChecked?: number };
+  checks: Array<{ id: string; label: string; pass: boolean; status?: SmokeStatus; detail: string }>;
   bridgeGate: { decision: string; primaryReason?: string };
 };
+
+// A row's status. An older server sends only `pass`; a newer one marks rows
+// the smoke test does not exercise as "not_checked", which is never a pass.
+function smokeStatus(c: SmokeResp["checks"][number]): SmokeStatus {
+  if (c.status === "pass" || c.status === "fail" || c.status === "not_checked") return c.status;
+  return c.pass === true ? "pass" : "fail";
+}
+
+/** "8/11 pass · 2 not checked · 1 fail", counted from the rows themselves. */
+function smokeResultText(r: SmokeResp): string {
+  const st = r.checks.map(smokeStatus);
+  const passed = st.filter((s) => s === "pass").length;
+  const notChecked = st.filter((s) => s === "not_checked").length;
+  const failed = st.filter((s) => s === "fail").length;
+  return `${passed}/${r.checks.length} pass${notChecked ? ` · ${notChecked} not checked` : ""}${failed ? ` · ${failed} fail` : ""}`;
+}
+
+/** The smoke report, or why it could not be loaded (never a half-read report). */
+async function runSmokeTest(): Promise<{ data: SmokeResp } | { error: string }> {
+  try {
+    const r = await apiJson<SmokeResp>("/api/admin/live-shared/activation-smoke-test", { method: "POST" });
+    if (!r.ok || !Array.isArray(r.checks) || !r.summary) return { error: r.error ?? "the server did not return a smoke-test report" };
+    return { data: r };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 type QueueResp = {
   ok: boolean;
@@ -620,8 +648,8 @@ function ActivationWizard({
   async function smoke() {
     setBusy("smoke"); setMsg(null);
     try {
-      const r = await apiJson<SmokeResp>("/api/admin/live-shared/activation-smoke-test", { method: "POST" });
-      setMsg(`smoke: ${r.summary.passed}/${r.summary.total} pass`);
+      const r = await runSmokeTest();
+      setMsg("data" in r ? `smoke: ${smokeResultText(r.data)}` : `smoke: could not be loaded — ${r.error}`);
     } finally { setBusy(null); }
   }
 
@@ -860,12 +888,14 @@ function CommandsTab() {
 // ── Smoke tests tab ──────────────────────────────────────────────────────────
 function SmokeTab() {
   const [data, setData] = useState<SmokeResp | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   async function run() {
     setBusy(true);
     try {
-      const r = await apiJson<SmokeResp>("/api/admin/live-shared/activation-smoke-test", { method: "POST" });
-      setData(r);
+      const r = await runSmokeTest();
+      if ("data" in r) { setData(r.data); setError(null); }
+      else { setData(null); setError(r.error); }
     } finally { setBusy(false); }
   }
   return (
@@ -873,15 +903,19 @@ function SmokeTab() {
       <CardTitle className="text-sm">Activation smoke test</CardTitle>
       <Button size="sm" disabled={busy} onClick={run} data-testid="smoke-run">{busy ? "Running…" : "Run smoke test"}</Button>
     </CardHeader><CardContent className="space-y-2">
-      {!data && <div className="text-xs text-muted-foreground italic">Read-only probe: 11 sub-checks. No EA contact, no DB writes (except audit row).</div>}
+      {!data && !error && <div className="text-xs text-muted-foreground italic">Read-only probe: 11 sub-checks, some of which it cannot exercise (shown as not checked). No EA contact, no DB writes (except audit row).</div>}
+      {error && <div className="text-xs text-rose-300" data-testid="smoke-error">Smoke test could not be loaded: {error}</div>}
       {data && (
         <>
-          <div className="text-xs">Result: <strong>{data.summary.passed}/{data.summary.total} pass</strong> · bridge gate: <code>{data.bridgeGate.decision}</code></div>
+          <div className="text-xs" data-testid="smoke-result">Result: <strong>{smokeResultText(data)}</strong> · bridge gate: <code>{data.bridgeGate.decision}</code></div>
           <ul className="space-y-1 text-xs">
             {data.checks.map(c => (
-              <li key={c.id} className="flex items-center gap-2">
-                {c.pass ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <XCircle className="h-3 w-3 text-rose-400" />}
+              <li key={c.id} className="flex items-center gap-2" data-testid={`smoke-check-${c.id}`} data-status={smokeStatus(c)}>
+                {smokeStatus(c) === "pass" ? <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  : smokeStatus(c) === "not_checked" ? <AlertCircle className="h-3 w-3 text-zinc-500" aria-label="not checked" />
+                  : <XCircle className="h-3 w-3 text-rose-400" />}
                 <span>{c.label}</span>
+                {smokeStatus(c) === "not_checked" && <span className="text-[10px] text-muted-foreground">(not checked)</span>}
                 <span className="ml-auto font-mono text-[10px] text-muted-foreground">{c.detail}</span>
               </li>
             ))}
