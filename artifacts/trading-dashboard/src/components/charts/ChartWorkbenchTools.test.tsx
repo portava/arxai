@@ -178,19 +178,12 @@ describe("display time zone controls",()=>{
     chooseZone("UTC");
     expect(screen.getByText("2026-10-28 05:46 UTC")).toBeTruthy();
   });
-  it("(f, g) never saves or applies a zone through the template",()=>{
-    show({timeZone:"Asia/Tokyo",style:"bars"});
-    fireEvent.click(screen.getByRole("button",{name:"Save template"}));
-    const saved=JSON.parse(localStorage.getItem(TEMPLATE_KEY)!);
-    expect(saved.style).toBe("bars");expect(Object.hasOwn(saved,"timeZone")).toBe(false);
-    cleanup();
+  it("(g) applies the legacy template without changing the current display zone",()=>{
     localStorage.setItem(TEMPLATE_KEY,JSON.stringify({style:"line",scale:"log",studies:[],timeZone:"Asia/Tokyo"}));
-    show();
-    fireEvent.click(screen.getByRole("button",{name:"Load template"}));
-    expect(latest.style).toBe("line");expect(Object.hasOwn(latest,"timeZone")).toBe(false);
-    cleanup();
     show({timeZone:"America/New_York"});
-    fireEvent.click(screen.getByRole("button",{name:"Load template"}));
+    fireEvent.click(screen.getByRole("button",{name:"Templates",exact:true}));
+    fireEvent.change(screen.getByRole("listbox"),{target:{value:"legacy"}});
+    fireEvent.click(screen.getByRole("button",{name:"Apply selected"}));
     expect(latest.style).toBe("line");expect(latest.timeZone).toBe("America/New_York");
   });
   it("(h) converts a typed go-to value on a zone switch and clears one that cannot convert",()=>{

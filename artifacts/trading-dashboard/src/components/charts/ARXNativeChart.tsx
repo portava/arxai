@@ -388,6 +388,8 @@ export function ARXNativeChart({
     const previousFocus = document.activeElement as HTMLElement | null;
     document.body.style.overflow = "hidden";
     const escape = (event: KeyboardEvent) => {
+      // Portalled dialogs consume Escape/Tab before the chart-level trap.
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") setExpanded(false);
       if (event.key === "Tab") {
         const items = [...(cardRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), summary, a[href], [tabindex="0"]') ?? [])].filter(item=>item.getClientRects().length > 0 && getComputedStyle(item).visibility !== "hidden");

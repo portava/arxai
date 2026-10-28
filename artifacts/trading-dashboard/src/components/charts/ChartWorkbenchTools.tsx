@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useId, useRef, useState, type Dispatch, typ
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 import { studyId, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
+import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { CHART_TIME_ZONES, captureLabel, convertWallClock, effectiveDisplayZone, formatChartTime, parseWallClockInZone, resolveTimeZone, zoneShortLabel, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
-import { CHART_STYLES, CHART_STYLE_NAMES, DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, TEMPLATE_KEY, validateDrawings, validatePreferences, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type ChartStyle, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
+import { CHART_STYLES, CHART_STYLE_NAMES, DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, validateDrawings, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type ChartStyle, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut } from "lucide-react";
 
@@ -210,8 +211,10 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "objects"} onClick={()=>setPanel(p=>p === "objects" ? null : "objects")}>Objects ({drawings.length})</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!history.past.length} onClick={()=>undo()}>Undo</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!history.future.length} onClick={()=>undo(true)}>Redo</Button>
-      <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{const {timeZone:_zone,...template}=preferences;const ok=writeChartStorage(TEMPLATE_KEY,template);setMessage(ok ? "Style, scale and studies saved as this browser’s template." : "Template could not be saved; browser storage is unavailable.");}}>Save template</Button>
-      <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{const saved=readChartStorage(TEMPLATE_KEY);if(saved){const {timeZone:_zone,...loaded}=validatePreferences(saved);onPreferences(p=>p.timeZone ? {...loaded,timeZone:p.timeZone} : loaded);setMessage("Template applied. Drawings remain with their instrument and timeframe.");}else setMessage("No template saved in this browser yet.");}}>Load template</Button>
+      <ChartTemplatesPanel preferences={preferences} onPreferences={onPreferences} onHiddenTriggerClose={()=>{
+        const fallback=[toggleRef.current,panRef.current].find(button=>button && !button.disabled && button.getClientRects().length);
+        if(!fallback)return false;fallback.focus();return true;
+      }}/>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles} onClick={exportImage}>Export PNG</Button>
     <div className="basis-full mt-2 flex flex-wrap items-center gap-2 text-zinc-400" aria-label="Chart date navigation">
       <span>Range</span>{[["1D",86400],["5D",432000],["1M",2592000],["3M",7776000],["1Y",31536000]].map(([label,seconds])=><button key={label} type="button" className="rounded px-2 py-1 text-[11px] hover:bg-zinc-800 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40" disabled={!hasCandles} onClick={()=>{const range=adapter?.showRecentRange?.(Number(seconds));setMessage(range ? range.complete ? "Range shown from loaded history." : "Showing available history; the requested range starts before the loaded candles." : "No history available.");}}>{label}</button>)}

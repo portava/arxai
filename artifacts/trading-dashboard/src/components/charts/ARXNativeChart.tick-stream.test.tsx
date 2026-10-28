@@ -25,7 +25,7 @@
 //   stubbed — everything CI cannot supply headlessly.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup, act, fireEvent } from "@testing-library/react";
+import { render, cleanup, act, fireEvent, waitFor } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { ChartViewLink } from "@/lib/chart-engine/chartViewLink";
 import { ChartLinkContext } from "./ChartLinkContext";
@@ -671,6 +671,18 @@ describe("Smart Chart view controls", () => {
     expect(view.getByRole("button", {name:"Fullscreen",exact:true})).toBeTruthy();
     expect(adapterSpies.init).toHaveBeenCalledTimes(1);
     expect(openedStreams).toHaveLength(1);
+  });
+  it("closes the templates dialog before exiting fullscreen on Escape", async () => {
+    const view = renderChart();
+    fireEvent.click(view.getByRole("button", {name:"Fullscreen",exact:true}));
+    fireEvent.click(view.getByRole("button", {name:"Templates",exact:true}));
+    const dialog = view.getByRole("dialog", {name:"Chart templates"});
+    fireEvent.keyDown(dialog, {key:"Escape"});
+    await waitFor(() => expect(view.queryByRole("dialog", {name:"Chart templates"})).toBeNull());
+    expect(view.getByRole("button", {name:"Exit fullscreen",exact:true})).toBeTruthy();
+    fireEvent.keyDown(window, {key:"Escape"});
+    expect(view.getByRole("button", {name:"Fullscreen",exact:true})).toBeTruthy();
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);
   });
   it("supports Home and End only inside the focused chart", () => {
     const view = renderChart();

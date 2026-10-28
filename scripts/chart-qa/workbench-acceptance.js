@@ -44,9 +44,16 @@ async page => {
  await page.getByRole('button',{name:'Hide drawings',exact:true}).click();
  await page.getByRole('button',{name:'Show drawings',exact:true}).click();
  await page.getByRole('button',{name:'Objects (3)',exact:true}).click();
- await page.getByRole('button',{name:'Save template',exact:true}).click();
+ await page.getByRole('button',{name:'Templates',exact:true}).click();
+ await page.getByLabel('Template name',{exact:true}).fill('Acceptance template');
+ await page.getByRole('button',{name:'Save new',exact:true}).click();
+ await page.getByText('Template saved in this browser.',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Close',exact:true}).click();
  await page.getByLabel('Chart style',{exact:true}).selectOption('line');
- await page.getByRole('button',{name:'Load template',exact:true}).click();
+ await page.getByRole('button',{name:'Templates',exact:true}).click();
+ await page.getByRole('listbox').selectOption({label:'Acceptance template'});
+ await page.getByRole('button',{name:'Apply selected',exact:true}).click();
+ await page.getByRole('button',{name:'Close',exact:true}).click();
  if(await page.getByLabel('Chart style',{exact:true}).inputValue()!=='candles') throw Error('Template did not restore style');
  const downloadPromise=page.waitForEvent('download');
  await page.getByRole('button',{name:'Export PNG',exact:true}).click();
