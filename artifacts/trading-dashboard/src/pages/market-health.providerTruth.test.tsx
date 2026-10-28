@@ -67,6 +67,31 @@ describe("Market Health provider card truth", () => {
     expect((await screen.findByTestId("badge-provider-freshness")).textContent).not.toBe("FRESH");
   });
 
+  it("a candle fetch is not presented as the last quote", async () => {
+    stubFetch({ ok: true, status: 200, body: { status: status({ dataKind: "candles" }) } });
+    render(<MarketHealthPage />);
+    const card = await screen.findByTestId("card-market-data-provider");
+    await screen.findByTestId("badge-provider-freshness");
+    expect(within(card).queryByText("Last quote")).toBeNull();
+    expect(within(card).getByText("Last candles")).toBeTruthy();
+  });
+
+  it("a real-time quote observation is labelled as a quote and names its source", async () => {
+    stubFetch({ ok: true, status: 200, body: { status: status({ dataKind: "quote", dataSource: "finnhub" }) } });
+    render(<MarketHealthPage />);
+    const card = await screen.findByTestId("card-market-data-provider");
+    expect((await screen.findByTestId("badge-provider-freshness")).textContent).toBe("FRESH");
+    expect(within(card).getByText("Last quote")).toBeTruthy();
+    expect(within(card).getByTestId("provider-last-quote").textContent).toMatch(/real-time.*finnhub/);
+  });
+
+  it("a served quote whose own timestamp is stale reads STALE, not FRESH or 'no price data'", async () => {
+    stubFetch({ ok: true, status: 200, body: { status: status({ dataFreshness: "STALE", dataKind: "quote", dataSource: "finnhub" }) } });
+    render(<MarketHealthPage />);
+    expect((await screen.findByTestId("badge-provider-freshness")).textContent).toBe("STALE");
+    expect(screen.getByTestId("provider-last-quote").textContent).toMatch(/stale/);
+  });
+
   it("does not present the adapter's constant connected flag as a measured connection", async () => {
     stubFetch({ ok: true, status: 200, body: { status: status({ freshnessState: "ERROR", lastSuccessfulFetchAt: null, lastError: "ECONNREFUSED", lastErrorAt: nowIso(), dataFreshness: null, dataFreshnessAt: null }) } });
     render(<MarketHealthPage />);

@@ -60,12 +60,17 @@ type MarketDataStatus = {
   unavailableReason: string | null;
   features: { quotes: boolean; news: boolean; snapshots: boolean; economicCalendar: boolean; candles: boolean; currentEvents?: boolean };
   setupHint: string | null;
-  // Quality of the most recent quote payload and when it was observed. The
+  // Quality of the most recent price payload and when it was observed. The
   // server's freshnessState only says a provider call succeeded recently —
   // news / calendar fetches count too — so it is not a quote-freshness verdict.
-  dataFreshness?: "REALTIME" | "DELAYED" | "UNAVAILABLE" | null;
+  // A served quote is classified from its own timestamp (STALE = the quote
+  // itself is old, e.g. Friday's close at the weekend).
+  dataFreshness?: "REALTIME" | "DELAYED" | "STALE" | "UNAVAILABLE" | null;
   dataSource?: string | null;
   dataFreshnessAt?: string | null;
+  // Which payload dataFreshness describes: a quote or a candle fetch. Null or
+  // absent when the server did not say.
+  dataKind?: "quote" | "candles" | null;
   rateLimitStatus?: {
     limited: boolean;
     retryAfterMs: number | null;
@@ -86,8 +91,9 @@ function freshnessBadgeColor(state: MarketDataStatus["freshnessState"]): string 
 }
 
 // The badge the page shows. The client may only downgrade the server's
-// freshnessState: FRESH is shown only when a REAL-TIME quote was observed
-// within staleAfterMs. A delayed quote reads DELAYED; a recent success with no
+// freshnessState: FRESH is shown only when a REAL-TIME price payload was
+// observed within staleAfterMs. A delayed one reads DELAYED, a served quote
+// whose own timestamp is old reads STALE; a recent success with no
 // recent quote observation (news / calendar / overview, or an old quote) reads
 // NO RECENT QUOTE.
 type ProviderDisplayState = MarketDataStatus["freshnessState"] | "DELAYED" | "NO RECENT QUOTE" | "NO PRICE DATA";
@@ -99,6 +105,7 @@ function providerDisplayState(mds: MarketDataStatus): ProviderDisplayState {
   if (!recent || mds.dataFreshness == null) return "NO RECENT QUOTE";
   if (mds.dataFreshness === "REALTIME") return "FRESH";
   if (mds.dataFreshness === "DELAYED") return "DELAYED";
+  if (mds.dataFreshness === "STALE") return "STALE";
   return "NO PRICE DATA";
 }
 function providerDisplayColor(state: ProviderDisplayState): string {
@@ -120,10 +127,23 @@ function respondingText(mds: MarketDataStatus): string {
     default: return "no — not configured";
   }
 }
+// The row names what was actually observed: a quote, or a candle fetch (which
+// is not a quote). An older server that does not say gets "price data".
+function lastObservationLabel(mds: MarketDataStatus): string {
+  if (mds.dataKind === "candles") return "Last candles";
+  if (mds.dataKind === "quote") return "Last quote";
+  return mds.dataFreshness && mds.dataFreshnessAt ? "Last price data" : "Last quote";
+}
+const QUALITY_WORD: Record<NonNullable<MarketDataStatus["dataFreshness"]>, string> = {
+  REALTIME: "real-time",
+  DELAYED: "delayed",
+  STALE: "stale",
+  UNAVAILABLE: "no usable price",
+};
 function quoteQualityText(mds: MarketDataStatus): string {
   if (!mds.dataFreshness || !mds.dataFreshnessAt) return "no quote observed";
-  const src = mds.dataSource ? ` (${mds.dataSource})` : "";
-  return `${mds.dataFreshness.toLowerCase()}${src}, ${ageString(mds.dataFreshnessAt)}`;
+  const src = mds.dataSource ? ` from ${mds.dataSource}` : "";
+  return `${QUALITY_WORD[mds.dataFreshness] ?? mds.dataFreshness.toLowerCase()}${src}, seen ${ageString(mds.dataFreshnessAt)}`;
 }
 
 /** Tone for a resolved data verdict. Only "Live" reads as good. */
@@ -291,7 +311,7 @@ export default function MarketHealthPage() {
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Responding</span><span data-testid="provider-responding">{respondingText(mds)}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Configured</span><span>{mds.configured ? "yes" : "no"}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Candle support</span><span>{mds.features?.candles ? "yes" : "no"}</span></div>
-                <div className="flex justify-between gap-2"><span className="text-muted-foreground">Last quote</span><span className="font-mono" data-testid="provider-last-quote">{quoteQualityText(mds)}</span></div>
+                <div className="flex justify-between gap-2"><span className="text-muted-foreground">{lastObservationLabel(mds)}</span><span className="font-mono" data-testid="provider-last-quote">{quoteQualityText(mds)}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Last success</span><span className="font-mono">{ageString(mds.lastSuccessfulFetchAt)}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Last attempt</span><span className="font-mono">{ageString(mds.lastAttemptedFetchAt)}</span></div>
                 <div className="flex justify-between gap-2"><span className="text-muted-foreground">Stale after</span><span className="font-mono">{Math.round(mds.staleAfterMs / 60000)}m</span></div>
