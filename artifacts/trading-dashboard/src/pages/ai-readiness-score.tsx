@@ -54,7 +54,7 @@ export default function AiReadinessScore() {
           <p className="text-sm text-muted-foreground">0–100 composite. Real-broker label is intentionally never shown until MT5 is connected.</p>
         </div>
         <Badge variant="outline">SHADOW</Badge>
-        {r && <Badge className={LABEL_COLOR[r.label]}>{r.label === "PAPER_READY" ? "DEMO_READY" : r.label}</Badge>}
+        {r && <Badge className={LABEL_COLOR[r.label]}>{r.label}</Badge>}
       </div>
       {r && (
         <Card>
