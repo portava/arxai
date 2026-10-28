@@ -109,6 +109,14 @@ export interface LastTickInfo {
   wallMs: number;
   /** Last tick BID. */
   bid: number;
+  /**
+   * Wall-clock ms of the most recent tick whose bid OR broker time differed
+   * from the tick before it (the quote observably moved), or null when no
+   * movement has been observed yet (a single tick, or only identical replays).
+   * A closed market replays one frozen quote; a quote that keeps changing is a
+   * trading market whatever its broker clock says.
+   */
+  quoteMovedWallMs: number | null;
 }
 
 // source + symbolKey → last tick seen (across all timeframes).
@@ -174,10 +182,15 @@ export function foldFormingTick(
   // Record the raw last tick (exact broker time, not interval-floored) so the
   // market-frozen / closed indicator can report the real last-quote time and
   // measure broker-time staleness. Display/telemetry only.
-  lastTickBySymbol.set(sourceSymbolKey(symbolKey, source), {
-    brokerTimeMs: brokerTimeMs != null && Number.isFinite(brokerTimeMs) ? brokerTimeMs : null,
+  const tickKey = sourceSymbolKey(symbolKey, source);
+  const prevTick = lastTickBySymbol.get(tickKey);
+  const tickBrokerTimeMs = brokerTimeMs != null && Number.isFinite(brokerTimeMs) ? brokerTimeMs : null;
+  const quoteMoved = prevTick != null && (prevTick.bid !== bid || prevTick.brokerTimeMs !== tickBrokerTimeMs);
+  lastTickBySymbol.set(tickKey, {
+    brokerTimeMs: tickBrokerTimeMs,
     wallMs: nowWallMs,
     bid,
+    quoteMovedWallMs: quoteMoved ? nowWallMs : prevTick?.quoteMovedWallMs ?? null,
   });
 
   for (const tf of CHART_TIMEFRAMES) {
@@ -293,11 +306,17 @@ export function getFeedFreshness(
     last.brokerTimeMs != null ? Math.max(0, nowWallMs - last.brokerTimeMs) : null;
   const wallStaleMs = Math.max(0, nowWallMs - last.wallMs);
   // Closed market, NOT broken feed: broker time stale AND ticks still arriving.
-  // A dead feed (no wall ticks) must NOT read as "market closed".
+  // A dead feed (no wall ticks) must NOT read as "market closed". A quote that
+  // observably moved (new bid or new broker time) within the frozen window is
+  // a trading market whose broker clock is simply behind server UTC (no zone
+  // conversion is attempted on ingest) — never "closed".
+  const quoteMovedRecently =
+    last.quoteMovedWallMs != null && nowWallMs - last.quoteMovedWallMs <= MARKET_FROZEN_BROKER_STALE_MS;
   const marketFrozen =
     brokerStaleMs != null &&
     brokerStaleMs > MARKET_FROZEN_BROKER_STALE_MS &&
-    wallStaleMs <= MARKET_FROZEN_WALL_FRESH_MS;
+    wallStaleMs <= MARKET_FROZEN_WALL_FRESH_MS &&
+    !quoteMovedRecently;
   return {
     lastBrokerTimeMs: last.brokerTimeMs,
     lastTickWallMs: last.wallMs,
