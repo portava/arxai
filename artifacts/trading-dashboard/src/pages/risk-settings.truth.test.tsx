@@ -174,3 +174,26 @@ describe("special rules say what reads them", () => {
     expect(desc).toMatch(/nothing pauses/i);
   });
 });
+
+describe("Lot Size Reference table matches the position sizer", () => {
+  // Same inputs the row labels name, $1,000 account, sized by the api-server's sizer.
+  const ROWS: Record<string, { symbol: string; entry: number; stopLoss: number }> = {
+    "V75 Index (30pt SL)": { symbol: "Volatility 75 Index", entry: 100, stopLoss: 70 },
+    "V75 1s (50pt SL)": { symbol: "Volatility 75 (1s) Index", entry: 100, stopLoss: 50 },
+    "V25 Index (20pt SL)": { symbol: "Volatility 25 Index", entry: 100, stopLoss: 80 },
+    "EURUSD (30pip SL)": { symbol: "EURUSD", entry: 1.1, stopLoss: 1.097 },
+    "US30 (50pt SL)": { symbol: "US30", entry: 40000, stopLoss: 39950 },
+  };
+
+  it("every row equals calculatePositionSize's finalLot at 0.25%, 0.5% and 1%", async () => {
+    const { calculatePositionSize } = await import("../../../api-server/src/lib/riskGovernor/positionSizer");
+    renderPage({ tab: "calculator", settings: { data: BALANCED_APPLIED } });
+    for (const [label, input] of Object.entries(ROWS)) {
+      const cells = Array.from(screen.getByTestId(`lot-ref-row-${label}`).querySelectorAll("td")).slice(1);
+      const shown = cells.map((c) => c.textContent);
+      const expected = [0.25, 0.5, 1].map((riskPercent) =>
+        calculatePositionSize({ ...input, accountBalance: 1000, riskPercent }).finalLot.toFixed(2));
+      expect({ label, shown }).toEqual({ label, shown: expected });
+    }
+  });
+});

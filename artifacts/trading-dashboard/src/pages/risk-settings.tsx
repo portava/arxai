@@ -1154,10 +1154,10 @@ export default function RiskSettings() {
                       { sym: "V75 Index (30pt SL)", v: [0.08, 0.17, 0.33] },
                       { sym: "V75 1s (50pt SL)", v: [0.03, 0.05, 0.10] },
                       { sym: "V25 Index (20pt SL)", v: [0.13, 0.25, 0.50] },
-                      { sym: "EURUSD (30pip SL)", v: [0.08, 0.17, 0.33] },
+                      { sym: "EURUSD (30pip SL)", v: [0.01, 0.02, 0.03] },
                       { sym: "US30 (50pt SL)", v: [0.05, 0.10, 0.20] },
                     ].map((row) => (
-                      <tr key={row.sym}>
+                      <tr key={row.sym} data-testid={`lot-ref-row-${row.sym}`}>
                         <td className="py-2 font-medium">{row.sym}</td>
                         {row.v.map((v, i) => (
                           <td key={i} className="py-2 text-right font-mono text-primary">{v.toFixed(2)}</td>
@@ -1167,6 +1167,10 @@ export default function RiskSettings() {
                   </tbody>
                 </table>
               </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Lots from the sizer above, rounded to the nearest 0.01, so the money at risk can differ from the
+                percentage (EURUSD at 0.25%: 0.01 lot risks $3.00, not $2.50).
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
