@@ -47,4 +47,8 @@ describe("every scanner surface prints the same event-risk sentence", () => {
     expect(panel).toMatch(/const eventRisk = eventRiskLine\(news, newsState\)/);
     expect(panel).toMatch(/\{layerToggles\.news && !news && \([\s\S]{0,600}data-testid="scanner-news-radar-status">\{eventRisk\}/);
   });
+  it("the chart read under the chart receives the same line from the same truth read", () => {
+    const panel = src("../components/scanner/ScannerChartPanel.tsx");
+    expect(panel).toMatch(/<RubyChartRead[\s\S]{0,600}newsRiskLabel=\{eventRisk\}/);
+  });
 });

@@ -528,6 +528,13 @@ export interface ChartReadReasoningInput {
   feedNotConfirmed?: boolean;
   /** Panel-resolved downgrade reason (same dimension that drove the downgrade). */
   reason?: string | null;
+  /**
+   * The page's event-risk sentence from the SAME per-symbol truth read the
+   * market-read card prints (lib/eventRiskCopy eventRiskLine). The chart-read
+   * server path consults no calendar, so absent → "not assessed in this read";
+   * never a claim about the calendar provider this read did not check.
+   */
+  newsRiskLabel?: string | null;
 }
 
 function biasDir(bias: string | null | undefined): "BUY" | "SELL" | null {
@@ -611,7 +618,7 @@ export function buildReasoningFromChartRead(
 
   const cautionLine = read.cautions?.length ? read.cautions.join("; ") : "";
   const riskBase = orElse(read.riskNote, "Manage risk to your plan.");
-  const evidenceRisk = `${cautionLine ? `${riskBase} — ${cautionLine}` : riskBase} ${NEWS_UNAVAILABLE_NOTE}`;
+  const evidenceRisk = `${cautionLine ? `${riskBase} — ${cautionLine}` : riskBase} ${orElse(input.newsRiskLabel, EVENT_RISK_NOT_ASSESSED_IN_READ)}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   let confirmation: string;
@@ -856,7 +863,8 @@ export function buildReasoningFromAIInsight(
     ? orElse(input.readinessTrustLine, "Read isn't live-confirmed yet.")
     : "Read presented as live-confirmed by the bot pipeline — verify the chart's feed-status badge.";
   const riskBase = orElse(input.warning, "Manage risk to your plan.");
-  const evidenceRisk = `${riskBase} ${NEWS_UNAVAILABLE_NOTE}`;
+  // The bot-review payload carries no calendar read: say exactly that.
+  const evidenceRisk = `${riskBase} ${EVENT_RISK_NOT_ASSESSED_IN_READ}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   const confirmation = withheld

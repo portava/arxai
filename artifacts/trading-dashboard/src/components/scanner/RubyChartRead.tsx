@@ -62,6 +62,7 @@ export function RubyChartRead({
   canonicalAction,
   canonicalDirection,
   canonicalReadId,
+  newsRiskLabel,
 }: {
   symbol: string;
   timeframe: string;
@@ -72,6 +73,13 @@ export function RubyChartRead({
    * panel resolves the verdict itself from the feed-status contract.
    */
   aiUsable?: boolean;
+  /**
+   * The page's event-risk sentence (lib/eventRiskCopy eventRiskLine) from the
+   * parent's per-symbol truth read — the SAME line the market-read card prints.
+   * The chart-read endpoint consults no calendar, so when omitted the Risk row
+   * says "Event risk not assessed in this read." and claims nothing else.
+   */
+  newsRiskLabel?: string | null;
   /**
    * Canonical verdict from the parent's shared scanner-truth cycle. When provided,
    * the "Prepare Trade" button is display-gated on this verdict (canAct) so the
@@ -257,6 +265,7 @@ export function RubyChartRead({
               structuralOnly,
               feedNotConfirmed,
               reason: panel.reason,
+              newsRiskLabel,
             }, name)}
             testid="ruby-chart-read-reasoning"
           />

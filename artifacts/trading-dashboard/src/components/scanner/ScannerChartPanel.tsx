@@ -739,8 +739,8 @@ export function ScannerChartPanel() {
   // same page. The smart-layers query above still drives the NON-news overlays
   // (structure, exec-cost, trade-health) and the overlay handshake below.
   const { news, newsState, verdict: symbolVerdict } = useSymbolTruth(symbol, timeframe);
-  // ONE event-risk sentence for the Impact radar strip — identical to the
-  // market-read card's (lib/eventRiskCopy).
+  // ONE event-risk sentence for the Impact radar strip and the chart read's Risk
+  // row — identical to the market-read card's (lib/eventRiskCopy).
   const eventRisk = eventRiskLine(news, newsState);
   // Directional CTA label for Plan Buy/Sell and the Eleanor button. Derived here
   // (after symbolVerdict is available) and forwarded to child surfaces so they all
@@ -2889,6 +2889,7 @@ export function ScannerChartPanel() {
               canonicalAction={canonicalChartActionFinal}
               canonicalDirection={canonicalChartDirection}
               canonicalReadId={truth?.consolidated.readId}
+              newsRiskLabel={eventRisk}
             />
 
             {/* Chart Brain v2 Task 6 — your marked levels / zones / price alerts.

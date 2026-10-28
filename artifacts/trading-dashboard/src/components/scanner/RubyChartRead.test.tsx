@@ -759,3 +759,32 @@ describe("owner screenshot 2026-10-27 — STRUCTURAL_ONLY read never renders as 
     expect(screen.queryByTestId("ruby-chart-read-structural-notice")).toBeNull();
   });
 });
+
+// Owner screenshot 2026-10-27 [F]: the chart read's Risk row said "News/calendar
+// unavailable — event risk not assessed." on every read, although the
+// read-chart endpoint consults no calendar and the market-read card on the same
+// page printed the truth read's own calendar label.
+describe("RubyChartRead — Risk row states event risk exactly as checked", () => {
+  function fullRead(): RubyReadServerState {
+    return {
+      gated: false, dataQuality: "ok", readLayer: "FULL", liveSetupWithheld: false, canShowLiveTradeSetup: true,
+      bias: "Bullish", supportZone: "1", resistanceZone: "2", cautions: [],
+    } as RubyReadServerState;
+  }
+  it("mirrors the page's truth-read event-risk line verbatim", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead();
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} newsRiskLabel="No event calendar is connected." />);
+    const risk = screen.getByTestId("ruby-chart-read-reasoning-evidence-risk").textContent ?? "";
+    expect(risk).toContain("No event calendar is connected.");
+    expect(risk).not.toContain("News/calendar unavailable");
+  });
+  it("with no page line, says only that this read did not assess event risk", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = fullRead();
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const risk = screen.getByTestId("ruby-chart-read-reasoning-evidence-risk").textContent ?? "";
+    expect(risk).toContain("Event risk not assessed in this read.");
+    expect(risk).not.toMatch(/unavailable/i);
+  });
+});
