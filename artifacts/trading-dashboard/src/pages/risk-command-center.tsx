@@ -45,10 +45,28 @@ const STATUS_COLOR: Record<string, string> = {
   UNKNOWN: "bg-muted text-muted-foreground",
 };
 
+// A non-2xx or unreadable response is an error, never data: an error body
+// stored as state used to crash the render or stand in for real figures.
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, { credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
-  return r.json();
+  const body = await r.json().catch(() => null) as Record<string, unknown> | null;
+  if (!r.ok) throw new Error(body && body.error != null ? String(body.error) : `HTTP ${r.status}`);
+  if (body == null || typeof body !== "object") throw new Error("the response was not readable");
+  return body;
 }
+
+type Source = "profile" | "budget" | "cards";
+const SOURCE_LABEL: Record<Source, string> = { profile: "Risk profile", budget: "Risk budget", cards: "Risk summary" };
+
+// The fields the page dereferences; anything else is not a usable read.
+const SHAPE_OK: Record<Source, (v: Record<string, unknown>) => boolean> = {
+  profile: (v) => typeof v.effectiveLimits === "object" && v.effectiveLimits != null,
+  budget: (v) => typeof v.riskStatus === "string",
+  cards: (v) => typeof v.riskStatus === "string" && typeof v.permissions === "object" && v.permissions != null && Array.isArray(v.activeHalts),
+};
+
+const clock = (ms: number) => new Date(ms).toLocaleTimeString();
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * Risk Command Center — simple-first 4-tab layout.
@@ -67,20 +85,48 @@ export default function RiskCommandCenter() {
   const [budget, setBudget] = useState<Budget | null>(null);
   const [cards, setCards] = useState<Cards | null>(null);
   const [pauseReason, setPauseReason] = useState("Manual pause");
+  // Per source: why the latest read failed, and when the last good read landed.
+  const [loadErrors, setLoadErrors] = useState<Partial<Record<Source, string>>>({});
+  const [lastRead, setLastRead] = useState<Partial<Record<Source, number>>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function load() {
-    const [p, b, c] = await Promise.all([
-      api("/api/risk-profile"),
-      api("/api/risk/budget"),
-      api("/api/risk/dashboard-cards"),
-    ]);
-    setProfile(p); setBudget(b); setCards(c);
+    const paths: Record<Source, string> = { profile: "/api/risk-profile", budget: "/api/risk/budget", cards: "/api/risk/dashboard-cards" };
+    const order: Source[] = ["profile", "budget", "cards"];
+    const results = await Promise.allSettled(order.map(async (src) => {
+      const body = await api(paths[src]);
+      if (!SHAPE_OK[src](body)) throw new Error("the response did not have the expected fields");
+      return body;
+    }));
+    const now = Date.now();
+    const errs: Partial<Record<Source, string>> = {};
+    const reads: Partial<Record<Source, number>> = {};
+    results.forEach((r, i) => {
+      const src = order[i]!;
+      if (r.status === "rejected") { errs[src] = errText(r.reason); return; }
+      reads[src] = now;
+      if (src === "profile") setProfile(r.value as unknown as Profile);
+      else if (src === "budget") setBudget(r.value as unknown as Budget);
+      else setCards(r.value as unknown as Cards);
+    });
+    setLoadErrors(errs);
+    setLastRead((prev) => ({ ...prev, ...reads }));
   }
-  useEffect(() => { void load(); const id = setInterval(load, 4000); return () => clearInterval(id); }, []);
+  useEffect(() => { void load(); const id = setInterval(() => { void load(); }, 4000); return () => clearInterval(id); }, []);
 
-  async function applyPreset(preset: string) { await api(`/api/risk-profile/preset/${preset}`, { method: "POST" }); load(); }
-  async function pause() { await api("/api/risk/pause", { method: "POST", body: JSON.stringify({ reason: pauseReason }) }); load(); }
-  async function resume() { await api("/api/risk/resume", { method: "POST" }); load(); }
+  // A control whose request fails says so; the server did not confirm it.
+  async function runAction(label: string, path: string, init: RequestInit) {
+    setActionError(null);
+    try { await api(path, init); }
+    catch (e) { setActionError(`${label} failed: ${errText(e)}. The server did not confirm the change.`); }
+    void load();
+  }
+  async function applyPreset(preset: string) { await runAction(`Applying ${preset}`, `/api/risk-profile/preset/${preset}`, { method: "POST" }); }
+  async function pause() { await runAction("Pause my trading", "/api/risk/pause", { method: "POST", body: JSON.stringify({ reason: pauseReason }) }); }
+  async function resume() { await runAction("Resume", "/api/risk/resume", { method: "POST" }); }
+
+  const failed = (Object.keys(loadErrors) as Source[]);
+  const stale = (src: Source) => loadErrors[src] != null && lastRead[src] != null;
 
   // ---- Tab contents -----------------------------------------------------
 
@@ -235,8 +281,17 @@ export default function RiskCommandCenter() {
           <p className="text-xs md:text-sm text-muted-foreground">Your limits and budget as the Risk Governor enforces them.</p>
         </div>
         {cards && <Badge variant="outline" className="text-[11px]">{cards.venue}</Badge>}
-        {cards && <Badge className={`text-[11px] ${STATUS_COLOR[cards.riskStatus] ?? ""}`} data-testid="risk-status-badge">{cards.riskStatus}</Badge>}
+        {cards && <Badge className={`text-[11px] ${STATUS_COLOR[cards.riskStatus] ?? ""}`} data-testid="risk-status-badge">{cards.riskStatus}{stale("cards") ? ` · as of ${clock(lastRead.cards!)}` : ""}</Badge>}
       </div>
+      {failed.length > 0 && (
+        <CompactAlert
+          tone={failed.some((s) => lastRead[s] == null) ? "danger" : "warning"}
+          title={failed.some((s) => lastRead[s] == null) ? "Some risk data could not be loaded" : "Some risk data could not be refreshed"}
+          description={failed.map((s) => `${SOURCE_LABEL[s]} could not be ${lastRead[s] == null ? "loaded" : "refreshed"} (${loadErrors[s]})${lastRead[s] != null ? `; figures shown are the last successful read, from ${clock(lastRead[s]!)}` : ""}.`).join(" ")}
+          testId="risk-load-error"
+        />
+      )}
+      {actionError && <CompactAlert tone="danger" title={actionError} testId="risk-action-error" />}
       {cards?.riskStatusReason && (
         <p className="text-xs text-muted-foreground" data-testid="risk-status-reason">{cards.riskStatusReason}</p>
       )}
