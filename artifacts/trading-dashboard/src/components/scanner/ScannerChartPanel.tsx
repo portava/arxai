@@ -1919,7 +1919,7 @@ export function ScannerChartPanel() {
           canvasEvents={{
               onContextMenu: (e) => { e.preventDefault(); openMenuAt(e.clientX, e.clientY); },
               onPointerDown: (e) => {
-                if (e.pointerType === "mouse") return;
+                if (e.defaultPrevented || e.pointerType === "mouse") return;
                 const { clientX, clientY } = e;
                 if (longPressRef.current) window.clearTimeout(longPressRef.current);
                 longPressRef.current = window.setTimeout(() => openMenuAt(clientX, clientY), 450);

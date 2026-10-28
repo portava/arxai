@@ -527,14 +527,14 @@ export function ARXNativeChart({
     {
       query: {
         queryKey: getGetMeChartIntelligenceQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
-        enabled: resolvedSymbol.length > 0 && supportedTimeframe && onIntelligenceChange != null,
+        enabled: externalFeed == null && resolvedSymbol.length > 0 && supportedTimeframe && onIntelligenceChange != null,
         refetchInterval: 8000,
         staleTime: 4000,
       },
     },
   );
   const intelligenceResponse = intelligenceQuery.data?.state;
-  const intelligenceState = supportedTimeframe && intelligenceResponse?.symbol === resolvedSymbol && intelligenceResponse.timeframe === timeframe
+  const intelligenceState = externalFeed == null && supportedTimeframe && intelligenceResponse?.symbol === resolvedSymbol && intelligenceResponse.timeframe === timeframe
     ? intelligenceResponse : undefined;
 
   useEffect(() => {

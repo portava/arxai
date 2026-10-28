@@ -41,6 +41,7 @@ import type {
 // the 8s reconciliation poll by updating it and re-rendering.
 let currentCandleResponse: ChartCandlesResponse | undefined;
 let standaloneEnabled: boolean | undefined;
+let cachedIntelligence: unknown;
 
 // ── Spy chart-engine adapter ────────────────────────────────────────────────
 // We assert against updateActiveCandle (the live tip) and setCandles (the full
@@ -55,6 +56,7 @@ const adapterSpies = {
   setCandles: vi.fn(),
   updateActiveCandle: vi.fn(),
   setOverlays: vi.fn(),
+  setStructureLines: vi.fn(),
   resetScale: vi.fn(),
   resize: vi.fn(),
   goToLatest: vi.fn(),
@@ -102,7 +104,7 @@ vi.mock("@workspace/api-client-react", () => ({
     isFetching: false,
   }),
   getGetChartCandlesQueryKey: () => ["chart-candles"],
-  useGetMeChartIntelligence: () => ({ data: undefined, error: null }),
+  useGetMeChartIntelligence: () => ({ data: cachedIntelligence, error: null }),
   getGetMeChartIntelligenceQueryKey: () => ["chart-intelligence"],
   GetChartCandlesTimeframe: { M1: "M1", M5: "M5", M15: "M15", M30: "M30", H1: "H1", H4: "H4", D1: "D1" },
 }));
@@ -280,6 +282,7 @@ function renderChart() {
 
 beforeEach(() => {
   localStorage.clear();
+  cachedIntelligence = undefined;
   openedStreams = [];
   for (const fn of Object.values(adapterSpies)) (fn as ReturnType<typeof vi.fn>).mockClear();
   adapterSpies.priceToCoordinate.mockReturnValue(null);
@@ -773,6 +776,15 @@ describe("Scanner shared Smart Chart ownership", () => {
     expect(adapterSpies.setCandles.mock.calls.at(-1)?.[0].at(-1).close).toBe(1.102);
     expect(adapterSpies.setFeedState.mock.calls.at(-1)?.[0].livePriceAffordance).toBe(false);
     expect(openedStreams).toHaveLength(1);
+  });
+  it("ignores cached standalone intelligence when Scanner owns server overlays", () => {
+    cachedIntelligence={state:{symbol:SYMBOL,timeframe:TF,truthState:{source:"mt5_broker"},trendlineOverlay:{visible:true,
+      lines:[{id:"cached",start:{time:1,price:1},end:{time:2,price:2},bias:"bullish",dominant:true}],markers:[]}}};
+    const report=vi.fn();
+    render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} onIntelligenceChange={report}
+      externalFeed={{data:currentCandleResponse,isLoading:false,isFetching:false,isError:false,refetch:vi.fn(),livePriceAllowed:true}} />);
+    expect(report).not.toHaveBeenCalled();
+    expect(adapterSpies.setStructureLines.mock.calls.every(call=>call[0].length===0)).toBe(true);
   });
   it("revokes overlay handles before replacing the price series, then publishes the selected style", () => {
     const operations: string[]=[];
