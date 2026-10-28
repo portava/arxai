@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { CockpitCard, Pill, ActionButton, SectionLink } from "@/components/dashboard/cockpit/primitives";
 import { cn } from "@/lib/utils";
+import type { RiskCapsStatus } from "@/lib/riskCapsStatus";
 
 /* ── 1 · Top status bar ─────────────────────────────────────────────── */
 export function TradeStatusBar({
@@ -211,17 +212,20 @@ export function AdvancedPanel({ isAdmin }: { isAdmin: boolean }) {
 
 /* ── 6 · Risk Governor card ─────────────────────────────────────────── */
 export function RiskGovernorCard({
-  statusLabel, statusTone, riskLevel, bridge, approval, isAdmin, rawCanPlace, rawMode,
+  statusLabel, statusTone, riskCaps, bridge, approval, isAdmin, rawCanPlace, rawMode,
 }: {
   statusLabel: string; statusTone: "success" | "warning" | "danger";
-  riskLevel: string; bridge: string; approval: string;
+  /** From riskCapsStatus(): freeze state + whether caps are assigned. Never a measured risk level. */
+  riskCaps: RiskCapsStatus; bridge: string; approval: string;
   isAdmin: boolean; rawCanPlace: boolean; rawMode: string;
 }) {
   return (
     <CockpitCard title="Risk Governor" subtitle="Account risk status and controls" icon={<ShieldCheck className="h-[18px] w-[18px]" />} accent={statusTone} data-testid="risk-governor-card">
       <div className="grid grid-cols-2 gap-y-2.5 text-sm sm:grid-cols-4">
         <Stat label="Status" value={statusLabel} tone={statusTone} />
-        <Stat label="Risk level" value={riskLevel} tone="success" />
+        <div title={riskCaps.detail}>
+          <Stat label="Risk caps" value={riskCaps.label} tone={riskCaps.tone === "muted" ? undefined : riskCaps.tone} />
+        </div>
         <Stat label="Bridge" value={bridge} />
         <Stat label="Approval" value={approval} />
       </div>

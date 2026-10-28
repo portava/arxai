@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { GraduationCap, Sparkles, ExternalLink, Bell, Search, Shield, Zap, Wifi, UserCheck, ShieldCheck, Flag, Pause } from "lucide-react";
 import { ARXLogoMark, ARXWordmark } from "@/components/brand/ARXLogo";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { riskCapsStatus } from "@/lib/riskCapsStatus";
 import { cn } from "@/lib/utils";
 
 type ChipTone = "success" | "warning" | "danger" | "primary" | "muted";
@@ -217,9 +218,12 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       : tradingMode.isLiveShared
         ? { label: "Connected", tone: "success" as const }
         : { label: "Checking", tone: "muted" as const };
-  const riskChip = tradingMode.isFrozen
-    ? { label: "Lock active", tone: "danger" as const }
-    : { label: "Active", tone: "success" as const };
+  // Freeze state + whether per-account caps are assigned; "Checking" until the
+  // envelope loads. Not-frozen alone is not "Active" risk controls.
+  const riskChip = (() => {
+    const r = riskCapsStatus(env);
+    return { label: r.label, tone: r.tone };
+  })();
   const tourStatusLabel = (() => {
     const s = (status?.status ?? "").toUpperCase();
     if (s === "COMPLETED") return { label: "Completed", tone: "success" as const };

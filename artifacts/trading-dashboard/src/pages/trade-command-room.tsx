@@ -17,6 +17,7 @@ import { useEffect, useState, useMemo } from "react";
 import { PageTabs } from "@/components/ui/PageTabs";
 import { Zap, Layers, ListChecks, Wrench } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { riskCapsStatus } from "@/lib/riskCapsStatus";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useAssistantName } from "@/lib/assistant-name";
 import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
@@ -190,7 +191,7 @@ export default function TradeCommandRoom() {
     <div className="space-y-4">
       <RiskGovernorCard
         statusLabel={rgStatus.label} statusTone={rgStatus.tone}
-        riskLevel="Low" bridge={blocked ? "Disconnected" : "Connected"}
+        riskCaps={riskCapsStatus(tradingMode.envelope)} bridge={blocked ? "Disconnected" : "Connected"}
         approval={tradingMode.canManualTrade ? "Approved" : "Pending"}
         isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
       />
