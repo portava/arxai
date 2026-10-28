@@ -49,9 +49,12 @@ type BridgeReadiness = {
   // Server-authoritative dispatch-gate fields (added by debug endpoint).
   // UI must use bridgeReady (not local heuristics) to gate submit so the
   // UI verdict matches what createDraftCommand will actually accept.
-  heartbeatFreshStrict?: boolean;
-  eaVersionAtLeast?: boolean;
-  bridgeReady?: boolean;
+  /** false = the server could not evaluate the dispatch gate for this read. */
+  gateEvaluated?: boolean;
+  // null = not measured (gate not evaluated); only true counts as a pass.
+  heartbeatFreshStrict?: boolean | null;
+  eaVersionAtLeast?: boolean | null;
+  bridgeReady?: boolean | null;
   bridgeBlockers?: string[];
   gateBlockers?: string[];
   /** Demo execution armed for this account (MT5 Setup → Demo Execution Control); null/absent = not reported. */

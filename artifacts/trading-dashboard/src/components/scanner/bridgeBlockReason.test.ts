@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { EA_MIN_DEMO_VERSION } from "@workspace/domain/safety-contracts/executionMode";
 import { bridgeBlockReason, type BridgeBlockInput } from "./bridgeBlockReason";
 
 const base: BridgeBlockInput = {
@@ -28,5 +29,27 @@ describe("bridgeBlockReason", () => {
 
   it("returns null when the server says the bridge is ready", () => {
     expect(bridgeBlockReason(base, true)).toBeNull();
+  });
+});
+
+describe("bridgeBlockReason — EA minimum and unevaluated gate", () => {
+  it("quotes the dispatch gate's EA minimum (EA_MIN_DEMO_VERSION), not a hardcoded one", () => {
+    const r = bridgeBlockReason({
+      ...base, heartbeatFreshStrict: true, eaVersionAtLeast: false, eaVersionReported: "1.25",
+      bridgeBlockers: [], gateBlockers: [],
+    }, false)!;
+    expect(r).toContain(`below the required ${EA_MIN_DEMO_VERSION}`);
+    expect(r).not.toContain("1.27");
+  });
+
+  it("does not narrate unmeasured gate defaults as a stale heartbeat or an old EA", () => {
+    const r = bridgeBlockReason({
+      ...base, heartbeatAgeSeconds: 3, eaVersionReported: "1.26",
+      gateEvaluated: false, bridgeReady: null, heartbeatFreshStrict: null, eaVersionAtLeast: null,
+      bridgeBlockers: [], gateBlockers: [],
+    }, false)!;
+    expect(r).not.toMatch(/stale/i);
+    expect(r).not.toMatch(/below the required/);
+    expect(r).toMatch(/could not be evaluated/);
   });
 });

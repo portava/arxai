@@ -369,14 +369,21 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
       heartbeatAgeSeconds,
       // legacy 60s "presence" window — keep for backwards-compat consumers
       heartbeatFresh: bridgeHeartbeatFresh,
+      // Whether the dispatch gate was evaluated for this read. When it was
+      // not (evaluation threw), the strict verdicts below were never
+      // measured and are reported as null (unknown) — never as false, which
+      // a client would narrate as a measured stale heartbeat / old EA.
+      gateEvaluated: gateEvidence != null,
       // STRICT 15s dispatch-eligibility window — same threshold the
       // dispatch gate uses. UI must use this (not heartbeatFresh) to
-      // decide whether to allow submit.
-      heartbeatFreshStrict: gateEvidence?.heartbeatFresh ?? false,
-      // EA version comparison vs EA_MIN_DEMO_VERSION (1.26+). Authoritative.
-      eaVersionAtLeast: gateEvidence?.eaVersionAtLeast ?? false,
+      // decide whether to allow submit. null = gate not evaluated.
+      heartbeatFreshStrict: gateEvidence ? gateEvidence.heartbeatFresh : null,
+      // EA version comparison vs EA_MIN_DEMO_VERSION. Authoritative.
+      // null = gate not evaluated.
+      eaVersionAtLeast: gateEvidence ? gateEvidence.eaVersionAtLeast : null,
       // Final server verdict — true iff this bridge would be accepted by
-      // the dispatch gate right now. UI submit-gate MUST use this.
+      // the dispatch gate right now. UI submit-gate MUST use this; only
+      // true permits submit. null = gate not evaluated (unknown).
       bridgeReady: gateEvidence
         ? (
             gateEvidence.bridgeConnectionId === (conn?.id ?? null) &&
@@ -388,7 +395,7 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
             gateEvidence.enableDemoExecutionReported !== false &&
             (gateEvidence.bridgeBlockers?.length ?? 0) === 0
           )
-        : false,
+        : null,
       bridgeBlockers: gateEvidence?.bridgeBlockers ?? [],
       gateBlockers,
       // Account-side gate inputs, reported on their own so the UI can tell
