@@ -6,7 +6,7 @@
 //
 //   Account snapshot ...... useGetMeSharedAccountSummary + useTradingMode
 //   Ruby market view ...... useGetBrainSymbols + useGetCoachExplanation + useActiveSymbol
-//   Critical events ....... useGetEconomicCalendar({ impact: "high" }) + useGetLiveCalendarEvents (provider read state)
+//   Critical events ....... useGetEconomicCalendarEnvelope({ impact: "high" }) (events + read state in one read)
 //   Open positions ........ useGetMeSharedAccountPositions  (MT5-confirmed only)
 //   Today performance ..... useGetPerformanceSummary
 //   Alerts summary ........ useGetCriticalAlerts            (grouped, de-duped)
@@ -28,8 +28,7 @@ import {
   getGetChartFeedStatusQueryKey,
   useGetPerformanceSummary,
   useGetCriticalAlerts,
-  useGetEconomicCalendar,
-  useGetLiveCalendarEvents,
+  useGetEconomicCalendarEnvelope,
 } from "@workspace/api-client-react";
 import { useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
 import type { SnapshotReconciliation } from "@/hooks/useLiveAccountSnapshot";
@@ -56,7 +55,7 @@ import { useActiveSymbol } from "@/lib/symbol-context";
 import { useAssistantName } from "@/lib/assistant-name";
 import { formatPnl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { calendarEventWhen, describeCalendarCoverage } from "@/lib/calendarCoverage";
+import { calendarEventWhen, describeCalendarEnvelope } from "@/lib/calendarCoverage";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
@@ -598,16 +597,12 @@ export function RubyMarketViewCard() {
    4 · CRITICAL MARKET EVENTS  (high-impact only, grouped)
    ──────────────────────────────────────────────────────────────────────── */
 export function CriticalEventsCard() {
-  const eventsQ = useGetEconomicCalendar({ impact: "high", days: 3 });
-  const events = (eventsQ.data ?? []).slice(0, 4);
-  // /news/calendar returns [] when the provider could not be read too; only a
-  // connected provider makes an empty list mean "no high-impact events".
-  const providerQ = useGetLiveCalendarEvents({ daysAhead: 3, impact: "high" });
-  const coverage = describeCalendarCoverage({
-    status: providerQ.data,
-    statusError: providerQ.isError,
-    listError: eventsQ.isError,
-  });
+  // ONE read: events and whether the calendar was read come from the same
+  // response; only a read that reached a connected provider makes an empty list
+  // mean "no high-impact events". A failed refresh shows no stale list.
+  const eventsQ = useGetEconomicCalendarEnvelope({ impact: "high", days: 3 });
+  const coverage = describeCalendarEnvelope({ envelope: eventsQ.data, isError: eventsQ.isError });
+  const events = coverage.read ? (eventsQ.data?.events ?? []).slice(0, 4) : [];
   const nowMs = Date.now();
 
   return (

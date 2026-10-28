@@ -41,11 +41,14 @@ export function calendarReadState(result: EconomicCalendarResult, nowMs: number)
     ? new Date(nowMs - cacheAgeMs).toISOString()
     : null;
   const notAllClear = "This is not an all-clear.";
+  // The service's recorded error is already redacted (never a key/secret).
+  const lastError = typeof result.diagnostics?.lastError === "string" ? result.diagnostics.lastError.trim() : "";
+  const why = lastError ? ` (${lastError.slice(0, 200)})` : "";
   const note = read
     ? null
     : !result.configured || result.status === "missing"
       ? `No economic calendar provider is configured, so scheduled events were not checked. ${notAllClear}`
-      : `${providerLabel(result.provider)} could not be read, so scheduled events were not checked. ${notAllClear}`;
+      : `${providerLabel(result.provider)} could not be read${why}, so scheduled events were not checked. ${notAllClear}`;
   return {
     read,
     status: result.status,
