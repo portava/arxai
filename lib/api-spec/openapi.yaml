@@ -21356,6 +21356,16 @@ components:
         fastSma:      { type: number }
         slowSma:      { type: number }
         candlesUsed:  { type: integer }
+        newestBarTime:
+          type: ["string", "null"]
+          description: Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.
+        freshness:
+          type: string
+          enum: [CURRENT, STALE, UNKNOWN]
+          description: CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.
+        source:
+          type: ["string", "null"]
+          description: Provider that served this timeframe's bars, or null when not reported. Absent on older reports.
 
     MultiTimeframeReport:
       type: object
@@ -21395,6 +21405,8 @@ components:
             - HIGHER_TIMEFRAME_WARNING
             - NO_CLEAR_BIAS
             - INSUFFICIENT_DATA
+            - DATA_NOT_CURRENT
+          description: DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).
         conflictWarning: { type: string, nullable: true }
         bestBias: { type: string, enum: [BUY, SELL, NEUTRAL] }
         aiSummary: { type: string }

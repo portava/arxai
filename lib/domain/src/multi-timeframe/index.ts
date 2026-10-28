@@ -19,6 +19,11 @@
 //   observed. It is reported as INSUFFICIENT_DATA — never as SIDEWAYS — and
 //   the report's alignment is INSUFFICIENT_DATA, so "sideways" is never shown
 //   for a market whose candles never arrived.
+// - TRUTH: an alignment is only a current read when every timeframe's newest
+//   bar is current (opened within the last two bars of that timeframe). Each
+//   snapshot carries its newest bar time, freshness and serving source; when
+//   any timeframe is stale or has no timestamp the report is DATA_NOT_CURRENT
+//   with no bias — a weekend series never yields a confident alignment.
 
 export type Trend = "UP" | "DOWN" | "SIDEWAYS" | "INSUFFICIENT_DATA";
 export type Bias = "BUY" | "SELL" | "NEUTRAL";
@@ -31,6 +36,7 @@ export const ALIGNMENT_LABELS = [
   "HIGHER_TIMEFRAME_WARNING",
   "NO_CLEAR_BIAS",
   "INSUFFICIENT_DATA",
+  "DATA_NOT_CURRENT",
 ] as const;
 export type AlignmentLabel = typeof ALIGNMENT_LABELS[number];
 
@@ -45,7 +51,12 @@ export interface CandleLike {
   high: number;
   low: number;
   close: number;
+  /** Bar open time (ISO string or epoch ms). Needed to say whether a read is current. */
+  time?: string | number;
 }
+
+/** CURRENT: newest bar opened within two bars; STALE: older; UNKNOWN: no usable time. */
+export type TimeframeFreshness = "CURRENT" | "STALE" | "UNKNOWN";
 
 export interface TrendSnapshot {
   trend: Trend;
@@ -54,6 +65,62 @@ export interface TrendSnapshot {
   fastSma: number;
   slowSma: number;
   candlesUsed: number;
+  /** Newest bar's open time (ISO), or null when the bars carried none. Absent on legacy rows. */
+  newestBarTime?: string | null;
+  /** Whether the newest bar is current. Absent on legacy rows. */
+  freshness?: TimeframeFreshness;
+  /** Provider that served the bars ("mt5_broker", "deriv:…"), or null when not reported. */
+  source?: string | null;
+}
+
+// ── Freshness ────────────────────────────────────────────────────────────
+
+/** Bar interval per timeframe label. */
+export const TIMEFRAME_INTERVAL_MS: Record<string, number> = {
+  M1: 60_000, M5: 300_000, M15: 900_000, M30: 1_800_000,
+  H1: 3_600_000, H4: 14_400_000, D1: 86_400_000, W1: 604_800_000,
+};
+
+/** A newest bar older than this many intervals is not a current read. */
+export const CURRENT_WITHIN_BARS = 2;
+
+function barTimeMs(t: string | number | undefined): number | null {
+  if (t == null) return null;
+  const ms = typeof t === "number" ? t : Date.parse(t);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Freshness of a timeframe from its newest bar. CURRENT only when the bar has
+ * a time, the timeframe is known, the time is not in the future (beyond one
+ * bar of clock skew) and it opened within CURRENT_WITHIN_BARS intervals.
+ */
+export function assessTimeframeFreshness(
+  timeframe: string,
+  newest: CandleLike | null | undefined,
+  nowMs: number,
+): { freshness: TimeframeFreshness; newestBarTime: string | null; ageMs: number | null } {
+  const openMs = barTimeMs(newest?.time);
+  const interval = TIMEFRAME_INTERVAL_MS[timeframe];
+  const newestBarTime = openMs == null ? null : new Date(openMs).toISOString();
+  if (openMs == null || interval == null || !Number.isFinite(nowMs)) {
+    return { freshness: "UNKNOWN", newestBarTime, ageMs: null };
+  }
+  const ageMs = nowMs - openMs;
+  if (ageMs < -interval) return { freshness: "UNKNOWN", newestBarTime, ageMs };
+  return { freshness: ageMs < CURRENT_WITHIN_BARS * interval ? "CURRENT" : "STALE", newestBarTime, ageMs };
+}
+
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+function utcStamp(iso: string): string {
+  const d = new Date(iso);
+  return `${WEEKDAY[d.getUTCDay()]} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+}
+function ageText(ms: number): string {
+  const h = ms / 3_600_000;
+  if (h >= 48) return `${Math.round(h / 24)}d ago`;
+  if (h >= 1) return `${Math.round(h)}h ago`;
+  return `${Math.max(1, Math.round(ms / 60_000))}m ago`;
 }
 
 // ── Trend detection ──────────────────────────────────────────────────────
@@ -219,6 +286,40 @@ export function classifyAlignment(
   return { alignmentScore, alignmentLabel: label, bestBias, conflictWarning, reasons };
 }
 
+/**
+ * Downgrade an alignment built from bars that are not current. INSUFFICIENT_DATA
+ * keeps precedence (nothing was read). Otherwise any STALE or UNKNOWN timeframe
+ * makes the report DATA_NOT_CURRENT with no bias; the measured score and the
+ * label the old bars would have earned are kept in the warning, never shown as
+ * a current read.
+ */
+export function applyFreshness(
+  lower: TimeframeReport,
+  middle: TimeframeReport,
+  higher: TimeframeReport,
+  result: AlignmentResult,
+  nowMs: number,
+): AlignmentResult {
+  if (result.alignmentLabel === "INSUFFICIENT_DATA") return result;
+  const notCurrent = [lower, middle, higher].filter((tf) => tf.snapshot.freshness !== "CURRENT");
+  if (notCurrent.length === 0) return result;
+  const parts = notCurrent.map((tf) => {
+    const t = tf.snapshot.newestBarTime;
+    if (!t) return `${tf.timeframe} bars carry no timestamp, so their age could not be checked`;
+    if (tf.snapshot.freshness === "UNKNOWN") return `${tf.timeframe} newest bar time (${t}) could not be checked against the clock`;
+    return `${tf.timeframe} newest bar opened ${utcStamp(t)} (${ageText(nowMs - Date.parse(t))})`;
+  });
+  const was = result.alignmentLabel.replace(/_/g, " ").toLowerCase();
+  const warning = `Not a current read: ${parts.join("; ")}. On these bars the timeframes showed ${was} (score ${result.alignmentScore}/100), but the market may be closed or the feed stalled, so no bias is given.`;
+  return {
+    alignmentScore: result.alignmentScore,
+    alignmentLabel: "DATA_NOT_CURRENT",
+    bestBias: "NEUTRAL",
+    conflictWarning: warning,
+    reasons: [...result.reasons, warning],
+  };
+}
+
 // ── AI summary ───────────────────────────────────────────────────────────
 
 export function summarizeAlignment(args: {
@@ -232,6 +333,12 @@ export function summarizeAlignment(args: {
   if (result.alignmentLabel === "INSUFFICIENT_DATA") {
     const counts = [lower, middle, higher].map((tf) => `${tf.timeframe} ${tf.snapshot.candlesUsed}`).join(", ");
     return `${symbol}: not enough candles to analyse (candles received: ${counts}; ${MIN_CANDLES_FOR_TREND} needed per timeframe). No trend, alignment or bias is reported — the market data source returned too little history for this symbol.`;
+  }
+  if (result.alignmentLabel === "DATA_NOT_CURRENT") {
+    const tfLine = [lower, middle, higher]
+      .map((tf) => `${tf.timeframe} ${tf.snapshot.trend} (${tf.snapshot.strength}) as of ${tf.snapshot.newestBarTime ? utcStamp(tf.snapshot.newestBarTime) : "an unknown time"}`)
+      .join(", ");
+    return `${symbol}: data is not current — ${tfLine}. ${result.conflictWarning ?? ""} No trend, alignment or bias is reported as current. Final execution remains gated by the live-execution safety layer.`;
   }
   const dirText = result.bestBias === "NEUTRAL" ? "no preferred direction" : `${result.bestBias} bias`;
   const tfLine = `${lower.timeframe} ${lower.snapshot.trend} (${lower.snapshot.strength}), ${middle.timeframe} ${middle.snapshot.trend} (${middle.snapshot.strength}), ${higher.timeframe} ${higher.snapshot.trend} (${higher.snapshot.strength})`;
@@ -250,11 +357,23 @@ export function buildReport(args: {
   lowerCandles: CandleLike[];
   middleCandles: CandleLike[];
   higherCandles: CandleLike[];
+  /** Clock the bars are judged against (defaults to now). */
+  nowMs?: number;
+  /** Provider that served each series, carried onto its snapshot. */
+  sources?: { lower?: string | null; middle?: string | null; higher?: string | null };
 }) {
-  const lower:  TimeframeReport = { timeframe: args.lowerTimeframe,  snapshot: detectTrend(args.lowerCandles) };
-  const middle: TimeframeReport = { timeframe: args.middleTimeframe, snapshot: detectTrend(args.middleCandles) };
-  const higher: TimeframeReport = { timeframe: args.higherTimeframe, snapshot: detectTrend(args.higherCandles) };
-  const result = classifyAlignment(lower, middle, higher);
+  const nowMs = args.nowMs ?? Date.now();
+  const snap = (tf: string, candles: CandleLike[], source: string | null | undefined): TimeframeReport => {
+    const f = assessTimeframeFreshness(tf, candles[candles.length - 1], nowMs);
+    return {
+      timeframe: tf,
+      snapshot: { ...detectTrend(candles), newestBarTime: f.newestBarTime, freshness: f.freshness, source: source ?? null },
+    };
+  };
+  const lower  = snap(args.lowerTimeframe,  args.lowerCandles,  args.sources?.lower);
+  const middle = snap(args.middleTimeframe, args.middleCandles, args.sources?.middle);
+  const higher = snap(args.higherTimeframe, args.higherCandles, args.sources?.higher);
+  const result = applyFreshness(lower, middle, higher, classifyAlignment(lower, middle, higher), nowMs);
   const aiSummary = summarizeAlignment({ symbol: args.symbol, lower, middle, higher, result });
   return { lower, middle, higher, result, aiSummary };
 }

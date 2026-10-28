@@ -1253,6 +1253,7 @@ export * from "./multiTimeframeReport";
 export * from "./multiTimeframeReportAlignmentLabel";
 export * from "./multiTimeframeReportBestBias";
 export * from "./multiTimeframeTrendSnapshot";
+export * from "./multiTimeframeTrendSnapshotFreshness";
 export * from "./multiTimeframeTrendSnapshotTrend";
 export * from "./multiTimingBrainResp";
 export * from "./myRubyOutcome";
