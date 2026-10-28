@@ -45,6 +45,15 @@ function fail(res: Response, status: number, error: string) {
   return res.status(status).json({ ...SAFETY, error });
 }
 
+// LIVE_SHARED copy: the calendar only totals the paper book, so for a live
+// account it shows nothing and says the live figures are unknown, not zero.
+const LIVE_CALENDAR_NOTE =
+  "This is a live account. The ARX calendar only totals paper trades and does not total live trades yet, " +
+  "so live P&L, trade counts and winning or losing days are not shown here. They are not zero.";
+const LIVE_DAY_NOTE =
+  "This is a live account. ARX does not total live trades by day yet, so this day's live P&L, " +
+  "win rate, profit factor and rating are not shown. They are not zero.";
+
 function parseRange(q: unknown): RangeKey {
   const v = String(q ?? "30d").toLowerCase();
   if (v === "7d" || v === "30d" || v === "90d" || v === "all") return v;
@@ -57,18 +66,19 @@ router.get("/performance/calendar", async (req: Request, res: Response) => {
     const month = String(req.query.month ?? new Date().toISOString().slice(0, 7));
     if (!/^\d{4}-\d{2}$/.test(month)) return fail(res, 400, "month must be YYYY-MM");
 
-    // T006 — LIVE_SHARED never shows paper P&L on the calendar. Until
-    // live trade aggregation is wired into performanceCC, return an
-    // empty live calendar with a clean note.
+    // T006 — LIVE_SHARED never shows paper P&L on the calendar. Live
+    // trade aggregation is not wired into performanceCC, so the live
+    // month is unknown: totals are null (not 0) and the note says so.
     if (await isLiveSharedSession(req)) {
       return ok(res, {
         calendar: {
-          month, days: [], total_pnl: 0, total_trades: 0,
-          winning_days: 0, losing_days: 0, no_trade_days: 0,
+          month, days: [], total_pnl: null, total_trades: null,
+          winning_days: null, losing_days: null, no_trade_days: null,
         },
         currentAccountMode: "LIVE_SHARED",
         modeScopeApplied: true,
-        modeNote: "Live calendar — no live trades recorded yet.",
+        liveAggregation: "NOT_AVAILABLE",
+        modeNote: LIVE_CALENDAR_NOTE,
       });
     }
     const data = await computeCalendarMonth(req.authUser!.id, month);
@@ -85,15 +95,18 @@ router.get("/performance/day", async (req: Request, res: Response) => {
     const date = String(req.query.date ?? new Date().toISOString().slice(0, 10));
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail(res, 400, "date must be YYYY-MM-DD");
     if (await isLiveSharedSession(req)) {
+      // Live day stats are not computed here: every figure is null and the
+      // day is not rated, rather than a measured 0 / "F".
       return ok(res, {
         day: {
           date,
-          stats: { net_pnl: 0, total_trades: 0, win_rate: 0, profit_factor: 0, day_rating: "F", top_lesson: null },
+          stats: { net_pnl: null, total_trades: null, win_rate: null, profit_factor: null, day_rating: null, top_lesson: null },
           trades: [],
         },
         currentAccountMode: "LIVE_SHARED",
         modeScopeApplied: true,
-        modeNote: "Live day detail — no live trades recorded yet.",
+        liveAggregation: "NOT_AVAILABLE",
+        modeNote: LIVE_DAY_NOTE,
       });
     }
     const data = await computeDayDetail(req.authUser!.id, date);
