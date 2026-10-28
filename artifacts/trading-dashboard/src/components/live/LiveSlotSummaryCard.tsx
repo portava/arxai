@@ -9,13 +9,16 @@ const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 type SlotSummary = {
   accountCurrency: string;
   balance: number;
-  equity: number;
+  /** Null when open P/L is unknown (a position's P/L not yet reported). */
+  equity: number | null;
   margin: number;
-  freeMargin: number;
+  freeMargin: number | null;
   marginLevelPercent: number | null;
   marginSource?: string;
   marginEstimateIncomplete?: boolean;
-  openPnL: number;
+  /** Null when any open position's P/L has not been reported (see unpricedPositionCount). */
+  openPnL: number | null;
+  unpricedPositionCount?: number;
   positions: unknown[];
   positionSyncIncomplete?: boolean;
   snapshotWarning?: string | null;
@@ -27,8 +30,8 @@ type SlotSummary = {
   lastUpdated: string | null;
 };
 
-function fmtMoney(v: number, ccy: string): string {
-  if (!Number.isFinite(v)) return "—";
+function fmtMoney(v: number | null, ccy: string): string {
+  if (v == null || !Number.isFinite(v)) return "—";
   const sign = v < 0 ? "-" : "";
   const abs = Math.abs(v);
   const body = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -83,10 +86,11 @@ export function LiveSlotSummaryCard() {
     );
   }
 
-  const pnlTone = s.openPnL > 0 ? "text-emerald-400" : s.openPnL < 0 ? "text-rose-400" : "text-zinc-300";
-  const pnlIcon = s.openPnL > 0
+  const pnl = s.openPnL;
+  const pnlTone = pnl == null ? "text-zinc-400" : pnl > 0 ? "text-emerald-400" : pnl < 0 ? "text-rose-400" : "text-zinc-300";
+  const pnlIcon = pnl != null && pnl > 0
     ? <TrendingUp className="h-3 w-3 text-emerald-400" />
-    : s.openPnL < 0
+    : pnl != null && pnl < 0
     ? <TrendingDown className="h-3 w-3 text-rose-400" />
     : null;
 
@@ -122,6 +126,15 @@ export function LiveSlotSummaryCard() {
           <Stat label="Free Margin" value={fmtMoney(s.freeMargin, s.accountCurrency)} />
           <Stat label="Margin Level" value={fmtPct(s.marginLevelPercent)} />
         </div>
+        {s.openPnL == null && (s.unpricedPositionCount ?? 0) > 0 ? (
+          <div className="mt-2 text-[11px] text-amber-300/90 flex items-start gap-1" data-testid="slot-pnl-unreported">
+            <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+            <span>
+              The broker has not reported P/L for {s.unpricedPositionCount} open position{s.unpricedPositionCount === 1 ? "" : "s"} yet,
+              so open P/L, equity and free margin are not shown.
+            </span>
+          </div>
+        ) : null}
         {s.positionSyncIncomplete ? (
           <div className="mt-2 text-[11px] text-sky-300/90 flex items-start gap-1" data-testid="slot-sync-incomplete">
             <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
