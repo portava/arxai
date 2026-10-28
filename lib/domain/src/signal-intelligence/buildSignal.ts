@@ -62,7 +62,7 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
   const early = readEarlyTrend(candles);
   const regime = classifyRegime(candles);
   const fakeout = detectFakeout(candles, early);
-  const session = sessionContext(now);
+  const session = sessionContext(now, input.assetClass);
   const pbWeight = playbookWeight(input.assetClass, regime, session);
 
   const bias = deriveBias(early.structure, early.blind);

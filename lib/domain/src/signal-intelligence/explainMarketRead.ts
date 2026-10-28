@@ -187,6 +187,8 @@ interface Derived {
   neutral: boolean;
   sessionNote: string;
   isHighLiquidity: boolean;
+  /** 24/7 synthetic index — no FX session statement applies. */
+  isSynthetic: boolean;
   invalSide: "above" | "below";
 }
 
@@ -221,6 +223,7 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
     neutral: signal.direction === "NEUTRAL",
     sessionNote: signal.session.note,
     isHighLiquidity: signal.session.isHighLiquidity,
+    isSynthetic: (signal.assetClass ?? "").toLowerCase() === "synthetic",
     invalSide: signal.direction === "SELL" ? "above" : "below",
   };
 }
@@ -361,10 +364,14 @@ function buildMode(
   }
 
   // why now
-  const liq = d.isHighLiquidity ? " Liquidity is strong this session." : "";
+  // No liquidity is MEASURED anywhere, so no liquidity claim is made: Simple
+  // mode names the main session hours (FX/metals/crypto only — never for a 24/7
+  // synthetic index); Advanced appends the session note, which for a synthetic
+  // says plainly that session liquidity does not apply.
+  const sessionHours = d.isHighLiquidity && !d.isSynthetic ? ` ${d.sessionNote}` : "";
   const whyNow = advanced
-    ? `${TIMING_TEXT[d.timing]}${liq} ${d.sessionNote}`.trim()
-    : `${TIMING_TEXT[d.timing]}${liq}`;
+    ? `${TIMING_TEXT[d.timing]} ${d.sessionNote}`.trim()
+    : `${TIMING_TEXT[d.timing]}${sessionHours}`;
 
   // timing
   const timingState = TIMING_TEXT[d.timing];
