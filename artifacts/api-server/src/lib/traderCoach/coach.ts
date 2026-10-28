@@ -32,13 +32,19 @@ export interface CoachReport {
   mode: "PAPER_ONLY";
   liveTradingStatus: "DISABLED";
   reportType: CoachReportType;
+  // Truth rule: readiness fields come only from a Risk Governor evaluation.
+  // When it could not run they are null (with readinessUnavailableReason) —
+  // never 0 / "F" / "NOT_READY", which read as a measured verdict — and the
+  // paper/autopilot permissions are unknown (null), not false.
   traderStatus: {
-    readinessScore: number;
-    readinessGrade: string;
-    readinessLevel: string;
+    readinessEvaluated: boolean;
+    readinessUnavailableReason: string | null;
+    readinessScore: number | null;
+    readinessGrade: string | null;
+    readinessLevel: string | null;
     governorStatus: string;
-    paperTradingAllowed: boolean;
-    autopilotAllowed: boolean;
+    paperTradingAllowed: boolean | null;
+    autopilotAllowed: boolean | null;
     liveTradingAllowed: false;
   };
   performanceSummary: {
@@ -390,12 +396,14 @@ export async function generateCoachReport(opts: GenerateCoachOptions): Promise<C
     liveTradingStatus: "DISABLED",
     reportType,
     traderStatus: {
-      readinessScore: governor?.readinessScore ?? 0,
-      readinessGrade: governor?.readinessGrade ?? "F",
-      readinessLevel: governor?.readinessLevel ?? "NOT_READY",
+      readinessEvaluated: governor != null,
+      readinessUnavailableReason: governor ? null : "Readiness could not be evaluated: the Risk Governor did not respond for this report.",
+      readinessScore: governor?.readinessScore ?? null,
+      readinessGrade: governor?.readinessGrade ?? null,
+      readinessLevel: governor?.readinessLevel ?? null,
       governorStatus: govStatus,
-      paperTradingAllowed: governor?.paperTradingAllowed ?? false,
-      autopilotAllowed: governor?.autopilotAllowed ?? false,
+      paperTradingAllowed: governor?.paperTradingAllowed ?? null,
+      autopilotAllowed: governor?.autopilotAllowed ?? null,
       liveTradingAllowed: false,
     },
     performanceSummary: {
@@ -433,9 +441,13 @@ export async function generateCoachReport(opts: GenerateCoachOptions): Promise<C
         userId,
         coachReportId,
         reportType,
-        readinessScore: report.traderStatus.readinessScore,
-        readinessGrade: report.traderStatus.readinessGrade,
-        readinessLevel: report.traderStatus.readinessLevel,
+        // The columns are NOT NULL (no migration here). An unevaluated
+        // report is stored with level "UNAVAILABLE" / grade "N/A" so the row
+        // never reads as a measured NOT_READY / F verdict; the score column
+        // must hold a number and is 0 only alongside that marker.
+        readinessScore: report.traderStatus.readinessScore ?? 0,
+        readinessGrade: report.traderStatus.readinessGrade ?? "N/A",
+        readinessLevel: report.traderStatus.readinessLevel ?? "UNAVAILABLE",
         governorStatus: govStatus,
         performanceSummary: report.performanceSummary as unknown as Record<string, unknown>,
         topStrengths,
