@@ -262,6 +262,8 @@ export function withRouteReadLayer<T extends RubyReadServerState>(
   const own = asReadLayer(read.readLayer);
   if (own == null) return route === "FULL" ? read : { ...read, readLayer: route };
   return READ_LAYER_RANK[route] < READ_LAYER_RANK[own] ? { ...read, readLayer: route } : read;
+}
+
 /**
  * The server's higher-timeframe read, resolved for display. `bias` is null when
  * the HTF was not read — including the legacy "No clear edge" sentinel older
