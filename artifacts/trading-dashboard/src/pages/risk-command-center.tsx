@@ -12,10 +12,27 @@ type Settings = { maxRiskPerTradeAmount: number | null; maxDailyLossAmount: numb
 type Limits = { maxLotSize: number; maxDailyLossPercent: number | null; maxDailyLossAmount: number | null; maxRiskPerTradePercent: number; maxRiskPerTradeAmount: number | null; discipline: { maxTradesPerDay: number | null; maxOpenTrades: number | null } };
 type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };
 type Money = number | null;
-type Budget = { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
-type Cards = { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
+// The *Unvalued flags: a percent cap is configured but equity is unknown, so
+// the cap cannot be valued in money. Absent on an older server.
+type ValuationFlags = { equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean; weeklyRiskLimitUnvalued?: boolean; riskStatusReason?: string | null };
+type Budget = ValuationFlags & { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
+type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
 
-const usd = (v: Money) => (v == null ? "none set" : `$${v}`);
+// A null money value is "no cap set" only when the server says no cap is
+// configured (flag false). A percent cap with unknown equity cannot be
+// valued; an amount next to one is only an upper bound. Without the flag the
+// page cannot tell, so it says "not reported" rather than "none set".
+function capText(v: Money, unvalued: boolean | undefined, kind: "limit" | "left", pct?: number | null): string {
+  const pctLabel = pct != null ? `${pct}% cap` : "% cap";
+  if (unvalued === true) {
+    if (v != null) return `$${v} or less (${pctLabel} not valued, equity unknown)`;
+    return kind === "left" ? `unknown (${pctLabel}, equity unknown)` : `${pctLabel}, not valued (equity unknown)`;
+  }
+  if (v != null) return `$${v}`;
+  return unvalued === false ? "no cap set" : "not reported";
+}
+
+const equityText = (v: Money) => (v == null ? "unknown (no account equity read)" : `$${v}`);
 
 const STATUS_COLOR: Record<string, string> = {
   OK: "bg-success/20 text-success",
@@ -25,6 +42,7 @@ const STATUS_COLOR: Record<string, string> = {
   OVERTRADING_RISK: "bg-warning/20 text-warning",
   REVENGE_TRADING_RISK: "bg-danger/20 text-danger",
   HARD_BLOCK: "bg-danger/20 text-danger",
+  UNKNOWN: "bg-muted text-muted-foreground",
 };
 
 async function api(path: string, init?: RequestInit) {
@@ -80,8 +98,8 @@ export default function RiskCommandCenter() {
 
       {cards && (
         <div className="grid gap-2 grid-cols-2 md:grid-cols-4">
-          <Stat label="Daily risk left" value={usd(cards.dailyRiskRemaining)} />
-          <Stat label="Weekly risk left" value={usd(cards.weeklyRiskRemaining)} />
+          <Stat label="Daily risk left" value={capText(cards.dailyRiskRemaining, cards.dailyRiskLimitUnvalued, "left", profile?.effectiveLimits.maxDailyLossPercent)} />
+          <Stat label="Weekly risk left" value={capText(cards.weeklyRiskRemaining, cards.weeklyRiskLimitUnvalued, "left")} />
           <Stat label="Open risk" value={`$${cards.openRisk}`} />
           <Stat label="Open positions" value={String(cards.openPositions)} />
           <Stat label="Trades today" value={cards.tradesToday == null ? "—" : String(cards.tradesToday)} />
@@ -128,12 +146,12 @@ export default function RiskCommandCenter() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-base">Risk Budget</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-            <Stat label="Daily limit" value={usd(budget.dailyRiskLimit)} />
+            <Stat label="Daily limit" value={capText(budget.dailyRiskLimit, budget.dailyRiskLimitUnvalued, "limit", profile?.effectiveLimits.maxDailyLossPercent)} />
             <Stat label="Daily used" value={`$${budget.dailyRiskUsed}`} />
-            <Stat label="Weekly limit" value={usd(budget.weeklyRiskLimit)} />
+            <Stat label="Weekly limit" value={capText(budget.weeklyRiskLimit, budget.weeklyRiskLimitUnvalued, "limit")} />
             <Stat label="Weekly used" value={`$${budget.weeklyRiskUsed}`} />
             <Stat label="Open risk" value={`$${budget.openRisk}`} />
-            <Stat label="Equity" value={usd(budget.equity)} />
+            <Stat label="Equity" value={equityText(budget.equity)} />
             <Stat label="Venue" value={budget.venue} />
             <Stat label="Status" value={budget.riskStatus} />
           </CardContent>
@@ -219,6 +237,9 @@ export default function RiskCommandCenter() {
         {cards && <Badge variant="outline" className="text-[11px]">{cards.venue}</Badge>}
         {cards && <Badge className={`text-[11px] ${STATUS_COLOR[cards.riskStatus] ?? ""}`} data-testid="risk-status-badge">{cards.riskStatus}</Badge>}
       </div>
+      {cards?.riskStatusReason && (
+        <p className="text-xs text-muted-foreground" data-testid="risk-status-reason">{cards.riskStatusReason}</p>
+      )}
 
       <PageTabs
         storageKey="risk-command-center"

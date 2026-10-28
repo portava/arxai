@@ -121,8 +121,21 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     return s + Math.abs(p.entryPrice - p.stopLoss) * p.lots * inst.contractSize * (inst.quoteToAccountFx ?? 1);
   }, 0);
   const halt = ctx.halt ?? { engaged: false, sources: [], reason: null };
+  // What this view cannot value. A percent cap needs equity; "used" needs the
+  // day's realized P/L (daily) or the activity facts (weekly). Unknown facts
+  // are never read as 0 / "none set" / OK.
+  const dailyCapSet = L.maxDailyLossAmount != null || L.maxDailyLossPercent != null;
+  const weeklyCapSet = L.discipline.maxWeeklyLossAmount != null || L.discipline.maxWeeklyLossPercent != null;
+  const dailyRiskLimitUnvalued = L.maxDailyLossPercent != null && equity == null;
+  const weeklyRiskLimitUnvalued = L.discipline.maxWeeklyLossPercent != null && equity == null;
+  const unknowns: string[] = [];
+  if (dailyRiskLimitUnvalued) unknowns.push(`your ${L.maxDailyLossPercent}% daily loss cap cannot be valued because account equity is unknown`);
+  if (weeklyRiskLimitUnvalued) unknowns.push(`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap cannot be valued because account equity is unknown`);
+  if (dailyCapSet && ctx.daily.realizedPnl == null) unknowns.push("today's realized P/L could not be computed, so daily risk used is unknown");
+  if (weeklyCapSet && ctx.activity == null) unknowns.push("this week's trading activity could not be read, so weekly risk used is unknown");
+  const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   const status = halt.engaged || (dailyLimit != null && dailyUsed >= dailyLimit) || (weeklyLimit != null && weekUsed >= weeklyLimit)
-    ? "BLOCK" : dailyLimit != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : "OK";
+    ? "BLOCK" : dailyLimit != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
   return {
     venue,
     preset: settings.riskPreset ?? null,
@@ -133,6 +146,10 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
       weeklyRiskLimit: weeklyLimit != null ? r2(weeklyLimit) : null, weeklyRiskUsed: r2(weekUsed),
       weeklyRiskRemaining: weeklyLimit != null ? r2(weeklyLimit - weekUsed) : null,
       openRisk: r2(openRisk), openPositions: ctx.positions.length, equity, riskStatus: status,
+      // Additive: null equity is unknown (no account read), not "none set";
+      // an *Unvalued cap is configured as a percent but cannot be valued, so
+      // a null (or amount-only) limit is not "no cap".
+      equityKnown: equity != null, dailyRiskLimitUnvalued, weeklyRiskLimitUnvalued, riskStatusReason,
     },
     activity: ctx.activity ?? null,
     halt,
