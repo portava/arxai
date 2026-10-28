@@ -78,15 +78,22 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
   });
 
   // 4) Bridge deferred / disconnected
+  // When the summary did not read the execution posture, the caller's own
+  // bridge state says nothing about the account mode (a Live Shared account
+  // trades through the shared master), so no "simulator mode" claim.
   pushIf(out, ctx.mt5Deferred || ctx.bridge?.bridgeMode === "disconnected", {
     category: "mt5-bridge",
     id: "doc-bridge-deferred",
-    explanation: "The MT5 bridge is deferred or disconnected. ARX is in simulator mode.",
+    explanation: ctx.executionPostureUnmeasured
+      ? "Your own MT5 bridge is deferred or disconnected. This does not show which mode your account trades in."
+      : "The MT5 bridge is deferred or disconnected. ARX is in simulator mode.",
     evidence: [`bridgeMode=${ctx.bridge?.bridgeMode ?? "unknown"}`],
     likelyCause: "Bridge intentionally off, or EA never connected.",
     safeNextStep: "If you intend to connect MT5, open the MT5 Bridge page. Otherwise, simulator mode is the safe default.",
     relatedRoute: safeRoute("/mt5-bridge"),
-    doNotDo: "Do not attempt to send live orders — they will be rejected by the safety layer.",
+    doNotDo: ctx.executionPostureUnmeasured
+      ? "Do not assume your own bridge is connected — the EA heartbeat is the source of truth."
+      : "Do not attempt to send live orders — they will be rejected by the safety layer.",
     liveTradingStillUnavailable: true,
     priority: 4,
   });
@@ -224,6 +231,8 @@ export function explainAppStatus(ctx: RuntimeContext): {
     ? "Emergency Stop is engaged."
     : ctx.bridge === null
       ? "The server's bridge and safety posture could not be read, so ARX cannot say which lock applies."
+    : ctx.executionPostureUnmeasured
+      ? "This view does not read the live-trading lock, live arming or your account mode, so it cannot say whether live trading is available. Your account mode is the authority, and execution stays server-gated."
     : !ctx.heartbeatPresent
       ? "No confirmed MT5 EA heartbeat yet."
       : ctx.mt5Deferred

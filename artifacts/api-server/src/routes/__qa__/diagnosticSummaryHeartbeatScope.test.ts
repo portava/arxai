@@ -93,3 +93,21 @@ test("a user whose own EA is stale is not shown as present even when the platfor
   assert.equal(body["heartbeatPresent"], false);
   assert.ok((body["heartbeatAgeSeconds"] as number) >= 600);
 });
+
+// The live-trading / broker-execution / read-only flags in this summary are
+// fixed values (the route never reads the live master switch, live arming or
+// the account mode), and paperOnly only reflects the caller's own EA bridge.
+// The Status Command Center showed them as a timestamped server reading
+// ("Live trading disabled: true") next to an armed LIVE account mode. The
+// summary must say these flags are not measured, so no client presents them
+// as the account's live posture.
+test("the summary says its live / execution / read-only / demo-only flags are not measured", async () => {
+  caller = 2;
+  const body = await summary();
+  assert.equal(body["executionPostureMeasured"], false);
+  assert.match(String(body["executionPostureNote"]), /not read/i);
+  assert.match(String(body["executionPostureNote"]), /account mode/i);
+  // Existing fields keep their shape (additive change only).
+  assert.equal(typeof body["liveTradingEnabled"], "boolean");
+  assert.equal(typeof body["brokerReadOnly"], "boolean");
+});

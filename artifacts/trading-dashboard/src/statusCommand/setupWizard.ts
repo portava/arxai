@@ -43,7 +43,9 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       title: "Understand the current ARX mode",
       shortExplanation: "ARX runs in demo, simulator, broker-readonly, or live mode. The current mode is shown on every page.",
       currentStatus: known ? "complete" : "attention",
-      statusText: `Current mode: ${mode.toUpperCase()}`,
+      statusText: !known && ctx.executionPostureUnmeasured
+        ? "Current mode: not read by this step. Read your account mode from the page header."
+        : `Current mode: ${mode.toUpperCase()}`,
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain my current ARX mode",
       completionCondition: "You can read the current mode from the page header.",
@@ -57,8 +59,10 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       id: "wz-locks",
       title: "Review active safety locks",
       shortExplanation: "Safety locks are protective. They keep ARX from sending real orders until every gate is verified server-side.",
-      currentStatus: locks.length > 0 ? "info" : "attention",
-      statusText: locks.length > 0
+      currentStatus: ctx.executionPostureUnmeasured ? "attention" : locks.length > 0 ? "info" : "attention",
+      statusText: ctx.executionPostureUnmeasured
+        ? `The live-trading, broker-execution and read-only locks are not read by this page (the diagnostic summary reports fixed values).${locks.length > 0 ? ` Bridge state: ${locks.join(", ")}.` : ""}`
+        : locks.length > 0
         ? `Active locks: ${locks.join(", ")}`
         : ctx.liveTradingDisabled === null
           ? "Safety locks could not be read from the server."
@@ -78,7 +82,9 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       title: "Check simulator / demo mode",
       shortExplanation: "Simulator/demo is the safe practice surface. Nothing reaches a real broker.",
       currentStatus: ok ? "complete" : "attention",
-      statusText: ok ? "Demo/simulator mode is active." : unread ? "Demo/simulator mode could not be read from the server." : "Demo/simulator not detected.",
+      statusText: ok ? "Demo/simulator mode is active."
+        : unread && ctx.executionPostureUnmeasured ? "Not read: the diagnostic summary only describes your own MT5 bridge. Your account mode in the page header is the authority."
+        : unread ? "Demo/simulator mode could not be read from the server." : "Demo/simulator not detected.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Where do I practice in demo?",
       completionCondition: "Demo Trading is open and you've reviewed the execution controls.",
@@ -128,7 +134,9 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       shortExplanation: "Broker is read-only by default. You can see balance/positions, but ARX cannot send orders.",
       currentStatus: ctx.brokerReadOnly === true ? "info" : "attention",
       statusText: ctx.brokerReadOnly === null
-        ? "Broker mode could not be read from the server."
+        ? ctx.executionPostureUnmeasured
+          ? "Broker mode is not read by this page (the diagnostic summary reports a fixed read-only value)."
+          : "Broker mode could not be read from the server."
         : ctx.brokerReadOnly ? "Broker is read-only." : "Broker is NOT read-only — investigate.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain broker read-only mode",
