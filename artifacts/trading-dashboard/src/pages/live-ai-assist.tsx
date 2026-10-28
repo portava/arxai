@@ -306,16 +306,27 @@ export default function LiveAiAssistPage() {
             </Card>
           )}
 
-          {resp && (
-            <Card className={resp.accepted ? "border-emerald-500/40 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"}>
+          {resp && (typeof resp.status === "string" && resp.status ? (
+            <Card className={resp.riskCheckPassed === true ? "border-amber-500/40 bg-amber-500/5" : "border-red-500/40 bg-red-500/5"}>
               <CardContent className="pt-4 text-xs space-y-1" data-testid="ai-assist-response">
-                <p className="font-semibold flex items-center gap-2"><ShieldAlert className="w-4 h-4" />status: {resp.status}</p>
+                <p className="font-semibold flex items-center gap-2"><ShieldAlert className="w-4 h-4" />Intent recorded: {resp.status}</p>
                 <p className="text-muted-foreground">{resp.reason}</p>
-                <p className="font-mono text-[10px]">intentId: {resp.intentId}</p>
-                {effectiveIsAdmin && <p className="text-[11px]">MT5 connected at submit: {String(resp.mt5Connected)} · broker execution: {String(resp.brokerExecution)}</p>}
+                {/* The live-intent route never places a broker order; say so unless it states otherwise. */}
+                <p data-testid="ai-assist-no-broker-order">{resp.brokerExecution === true ? "The server reports broker execution." : "No broker order was placed."}</p>
+                {resp.intentId && <p className="font-mono text-[10px]">intentId: {resp.intentId}</p>}
+                {effectiveIsAdmin && <p className="text-[11px]">MT5 connected at submit: {typeof resp.mt5Connected === "boolean" ? String(resp.mt5Connected) : "not reported"} · broker execution: {typeof resp.brokerExecution === "boolean" ? String(resp.brokerExecution) : "not reported"}</p>}
               </CardContent>
             </Card>
-          )}
+          ) : (
+            <Card className="border-red-500/40 bg-red-500/5">
+              <CardContent className="pt-4 text-xs space-y-1" data-testid="ai-assist-response">
+                <p className="font-semibold flex items-center gap-2"><ShieldAlert className="w-4 h-4" />Not recorded</p>
+                <p className="text-muted-foreground">
+                  The server did not record this intent{typeof resp.error === "string" && resp.error ? `: ${resp.error}` : "."} No broker order was placed.
+                </p>
+              </CardContent>
+            </Card>
+          ))}
 
           {effectiveIsAdmin && (
             <Card className="border border-border">

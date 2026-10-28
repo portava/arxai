@@ -99,3 +99,38 @@ describe("Live AI Assist card truth", () => {
     expect(submit.confidenceScore).toBe(61);
   });
 });
+
+describe("Live AI Assist submit result truth", () => {
+  function serveSubmit(status: number, body: unknown) {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.includes("/market-scanner/selected-market")) {
+        return new Response(JSON.stringify({ ...WITHHELD, levelsWithheld: false, levelsWithheldReason: null,
+          highlights: { ...WITHHELD.highlights, entryZone: { low: 1.081, high: 1.082 }, suggestedStop: 1.079, suggestedTakeProfit: 1.086, riskRewardRatio: 2 } }));
+      }
+      if (url.includes("/live-intent/submit")) return new Response(JSON.stringify(body), { status });
+      return new Response(JSON.stringify({}));
+    }));
+  }
+  async function submit() {
+    render(<LiveAiAssistPage />);
+    fireEvent.click(screen.getByTestId("generate-card"));
+    fireEvent.click(await screen.findByTestId("approve-card"));
+    return (await screen.findByTestId("ai-assist-response")).textContent ?? "";
+  }
+
+  it("a refused submit is not shown as 'status: undefined' with an undefined intent id", async () => {
+    serveSubmit(400, { error: "Invalid body", details: [] });
+    const text = await submit();
+    expect(text).not.toContain("undefined");
+    expect(text).toMatch(/did not record this intent: Invalid body/);
+    expect(text).toMatch(/No broker order was placed/);
+  });
+
+  it("a recorded intent says no broker order was placed", async () => {
+    serveSubmit(200, { accepted: false, riskCheckPassed: true, brokerExecution: false, status: "PENDING_MT5_CONNECTION",
+      intentId: "intent_9", mt5Connected: false, reason: "MT5 bridge is not connected yet." });
+    const text = await submit();
+    expect(text).toContain("PENDING_MT5_CONNECTION");
+    expect(screen.getByTestId("ai-assist-no-broker-order").textContent).toBe("No broker order was placed.");
+  });
+});
