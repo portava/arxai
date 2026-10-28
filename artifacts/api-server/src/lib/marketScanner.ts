@@ -13,6 +13,8 @@ import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timef
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
 import { buildTrendlineTruthVerdict } from "./data/chart/trendlineTruthService.js";
 import { resolveSymbolFeedVerdict } from "./data/symbolFeedVerdict.js";
+import { classifyCandleFreshness } from "./data/freshness.js";
+import type { Candle } from "./data/types.js";
 import { computeTimingRead } from "../brain/timing/marketTimingBrainService.js";
 import {
   computeScannerAdvisory,
@@ -386,6 +388,14 @@ export interface ScannerOpportunity {
 // User-safe projection only (no raw candles, no internal gate keys).
 export interface FvgScannerContext {
   strategy: "HTF_TREND_FVG_PULLBACK";
+  /**
+   * The read is computed on these bars whatever row/chart timeframe it is
+   * attached to: M5 for the FVG/entry zone, H4 + H1 for the trend filter.
+   */
+  entryTimeframe: "M5";
+  trendTimeframes: ["H4", "H1"];
+  /** Close time of the newest CLOSED M5 bar the read used; null when none. */
+  asOf: string | null;
   direction: "BUY" | "SELL" | "WAIT";
   stage: string;
   htfAligned: boolean;
@@ -1034,28 +1044,61 @@ export async function decorateOpportunitiesWithFvgRead(
         p != null && (p === "assistant_real:mock" || p.endsWith(":mock") || p === "mock");
       const isSimulator = [h4r, h1r, m5r].some((r) => r.ok && isMockProvider(r.primaryProvider));
 
-      // Stale: any provider attempt reported a STALE reason — flag the TF.
+      // Same input integrity as the scanner rows: symbol/source validation and
+      // forming/future bars excluded, so a still-forming M5 bar can never
+      // complete a gap. An invalid series reads as missing (no bars).
+      const now = Date.now();
+      const tfs = [["H4", h4r], ["H1", h1r], ["M5", m5r]] as const;
+      const prepared = tfs.map(([tf, r]) => prepareScannerCandles(r, sym, tf, now));
+
+      // Not current: a router attempt reported STALE, OR the newest CLOSED bar
+      // trails by the shared delayed/stale threshold. A cached series served
+      // after its writer stopped pushing still carries no STALE attempt, so
+      // the bars' own age is the authority here.
       const hasStaleAttempt = (r: typeof h4r) =>
         r.attempts.some((a) => a.reason?.includes("STALE"));
       const staleTimeframes: string[] = [];
-      if (hasStaleAttempt(h4r)) staleTimeframes.push("H4");
-      if (hasStaleAttempt(h1r)) staleTimeframes.push("H1");
-      if (hasStaleAttempt(m5r)) staleTimeframes.push("M5");
+      tfs.forEach(([tf, r], i) => {
+        const p = prepared[i];
+        const fresh = p && p.rawClosed.length > 0 ? classifyCandleFreshness(p.trailingIntervals) : null;
+        if (hasStaleAttempt(r) || (fresh != null && fresh.freshness !== "clean")) staleTimeframes.push(tf);
+      });
 
-      const adapt = (cs: typeof h4r.candles) =>
+      // One source across all three timeframes: provider plus the attributed
+      // feed (bridge/account/environment). Mixed feeds are not one market read.
+      const sourceKey = (r: typeof h4r) => JSON.stringify([
+        r.primaryProvider, r.provenance?.providerId ?? null, r.provenance?.subProviderId ?? null,
+        r.provenance?.bridgeConnectionId ?? null, r.provenance?.userId ?? null,
+        r.provenance?.environment ?? null, r.provenance?.brokerSymbol ?? null,
+      ]);
+      const mixedSources =
+        h4r.ok && h1r.ok && m5r.ok && new Set([h4r, h1r, m5r].map(sourceKey)).size > 1;
+
+      const adapt = (cs: Candle[]) =>
         cs.map((c) => ({ open: c.open, high: c.high, low: c.low, close: c.close }));
+      const [h4p, h1p, m5p] = prepared;
 
       const result = analyzeFvgTrendPullback({
         symbol: sym,
-        h4Candles: adapt(h4r.ok ? h4r.candles : []),
-        h1Candles: adapt(h1r.ok ? h1r.candles : []),
-        m5Candles: adapt(m5r.ok ? m5r.candles : []),
+        h4Candles: adapt(h4p?.openClosed ?? []),
+        h1Candles: adapt(h1p?.openClosed ?? []),
+        m5Candles: adapt(m5p?.openClosed ?? []),
         isSimulator,
         staleTimeframes,
+        mixedSources,
       });
+
+      const m5Newest = m5p?.openClosed[m5p.openClosed.length - 1];
+      const m5NewestOpenMs = m5Newest ? Date.parse(m5Newest.time) : NaN;
+      const asOf = Number.isFinite(m5NewestOpenMs)
+        ? new Date(m5NewestOpenMs + 5 * 60_000).toISOString()
+        : null;
 
       ctxBySymbol.set(sym, {
         strategy: "HTF_TREND_FVG_PULLBACK",
+        entryTimeframe: "M5",
+        trendTimeframes: ["H4", "H1"],
+        asOf,
         direction: result.direction,
         stage: result.stage,
         htfAligned: result.htfAligned,
