@@ -225,10 +225,16 @@ router.get("/paper/history", requireUser, async (req, res): Promise<void> => {
     if (!(await ownAccount(accountId, req.authUser!.id))) { fail(res, 404, "Paper account not found"); return; }
     // Refresh state before computing history (architect fix #3).
     await markToMarket(accountId);
+    const mine = and(eq(paperOrdersTable.paperAccountId, accountId), eq(paperOrdersTable.userId, req.authUser!.id));
     const orders = await db.select().from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.paperAccountId, accountId), eq(paperOrdersTable.userId, req.authUser!.id)))
+      .where(mine)
       .orderBy(desc(paperOrdersTable.openedAt)).limit(500);
-    const closed = orders.filter((o) => o.status !== "OPEN");
+    // Totals cover EVERY order of the account. The listed orders are capped at
+    // the latest 500; totals computed from that list would silently drop older
+    // closed orders while reading as complete.
+    const outcomes = await db.select({ status: paperOrdersTable.status, profitLoss: paperOrdersTable.profitLoss })
+      .from(paperOrdersTable).where(mine);
+    const closed = outcomes.filter((o) => o.status !== "OPEN");
     const wins = closed.filter((o) => o.profitLoss > 0).length;
     const losses = closed.filter((o) => o.profitLoss < 0).length;
     const netPnl = closed.reduce((s, o) => s + o.profitLoss, 0);
