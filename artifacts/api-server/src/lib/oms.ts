@@ -59,6 +59,8 @@ export interface Order {
   auditLogId?: string;
   idempotencyKey?: string;
   positionId?: string;
+  /** The user (operator, or agent owner) the order was placed for; null when unknown. */
+  ownerUserId: number | null;
   dataSource: "SIMULATOR";
 }
 
@@ -86,8 +88,15 @@ export interface Position {
   closedAt?: string;
   closeReason?: string;
   trailingDistance?: number;
+  /** The user the position belongs to (from its order); null when unknown. */
+  ownerUserId: number | null;
   dataSource: "SIMULATOR";
 }
+
+/** Restricts a book read to one owner. Omitted = the whole simulator book (internal callers only). */
+export interface OmsOwnerScope { ownerUserId?: number }
+const inScope = (scope: OmsOwnerScope | undefined, row: { ownerUserId: number | null }) =>
+  scope?.ownerUserId == null || row.ownerUserId === scope.ownerUserId;
 
 const orders = new Map<string, Order>();
 const positions = new Map<string, Position>();
@@ -138,9 +147,9 @@ export interface CreateOrderInput {
   idempotencyKey?: string;
 }
 
-function createOrder(input: CreateOrderInput): Order {
+function createOrder(input: CreateOrderInput, ownerUserId: number | null): Order {
   if (input.idempotencyKey) {
-    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey);
+    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey && o.ownerUserId === ownerUserId);
     if (existing) return existing;
   }
   const o: Order = {
@@ -163,6 +172,7 @@ function createOrder(input: CreateOrderInput): Order {
     status: "RISK_CHECK_PENDING",
     createdAt: nowIso(), updatedAt: nowIso(),
     idempotencyKey: input.idempotencyKey,
+    ownerUserId,
     dataSource: "SIMULATOR",
   };
 
@@ -187,8 +197,8 @@ function createOrder(input: CreateOrderInput): Order {
   return o;
 }
 
-export function listOrders(filter?: { environment?: Environment; status?: OrderStatus; source?: OrderSource; limit?: number }) {
-  let arr = Array.from(orders.values());
+export function listOrders(filter?: { environment?: Environment; status?: OrderStatus; source?: OrderSource; limit?: number } & OmsOwnerScope) {
+  let arr = Array.from(orders.values()).filter((o) => inScope(filter, o));
   if (filter?.environment) arr = arr.filter((o) => o.environment === filter.environment);
   if (filter?.status) arr = arr.filter((o) => o.status === filter.status);
   if (filter?.source) arr = arr.filter((o) => o.source === filter.source);
@@ -239,7 +249,7 @@ function submitToSimulator(orderId: string): { order: Order; position?: Position
     stopLoss: o.stopLoss, takeProfit: o.takeProfit,
     unrealizedPnL: 0, realizedPnL: 0, rMultiple: 0,
     riskAmount: risk, status: "OPEN",
-    openedAt: nowIso(), dataSource: "SIMULATOR",
+    openedAt: nowIso(), ownerUserId: o.ownerUserId, dataSource: "SIMULATOR",
   };
   positions.set(p.positionId, p);
   o.positionId = p.positionId;
@@ -293,8 +303,8 @@ const TICK_MS = 2000;
 setInterval(() => { try { tickAll(); } catch { /* swallow */ } }, TICK_MS).unref?.();
 
 // ── Position management actions ────────────────────────────────────────────
-export function listPositions(filter?: { environment?: Environment; status?: PositionStatus; limit?: number }) {
-  let arr = Array.from(positions.values());
+export function listPositions(filter?: { environment?: Environment; status?: PositionStatus; limit?: number } & OmsOwnerScope) {
+  let arr = Array.from(positions.values()).filter((p) => inScope(filter, p));
   if (filter?.environment) arr = arr.filter((p) => p.environment === filter.environment);
   if (filter?.status) arr = arr.filter((p) => p.status === filter.status);
   arr.sort((a, b) => Date.parse(b.openedAt) - Date.parse(a.openedAt));
@@ -359,8 +369,8 @@ function applyTrailingStop(id: string, distance: number) {
 // ── P/L engine ─────────────────────────────────────────────────────────────
 function bucketByDay(p: Position): string { return (p.closedAt ?? p.openedAt).slice(0, 10); }
 
-export function pnlSummary(env?: Environment) {
-  const all = Array.from(positions.values()).filter((p) => !env || p.environment === env);
+export function pnlSummary(env?: Environment, scope?: OmsOwnerScope) {
+  const all = Array.from(positions.values()).filter((p) => (!env || p.environment === env) && inScope(scope, p));
   const closed = all.filter((p) => p.status !== "OPEN");
   const open = all.filter((p) => p.status === "OPEN");
   const today = new Date().toISOString().slice(0, 10);
@@ -397,8 +407,8 @@ export function pnlSummary(env?: Environment) {
   };
 }
 
-export function pnlBy(group: "symbol" | "strategy" | "source" | "environment") {
-  const all = Array.from(positions.values()).filter((p) => p.status !== "OPEN");
+export function pnlBy(group: "symbol" | "strategy" | "source" | "environment", scope?: OmsOwnerScope) {
+  const all = Array.from(positions.values()).filter((p) => p.status !== "OPEN" && inScope(scope, p));
   const map = new Map<string, { count: number; pnl: number; wins: number; losses: number }>();
   for (const p of all) {
     let key: string;
@@ -416,8 +426,8 @@ export function pnlBy(group: "symbol" | "strategy" | "source" | "environment") {
   return Array.from(map.entries()).map(([key, v]) => ({ key, ...v })).sort((a, b) => b.pnl - a.pnl);
 }
 
-export function pnlDaily(env?: Environment) {
-  const all = Array.from(positions.values()).filter((p) => p.status !== "OPEN" && (!env || p.environment === env));
+export function pnlDaily(env?: Environment, scope?: OmsOwnerScope) {
+  const all = Array.from(positions.values()).filter((p) => p.status !== "OPEN" && (!env || p.environment === env) && inScope(scope, p));
   const map = new Map<string, { day: string; pnl: number; trades: number; wins: number; losses: number }>();
   for (const p of all) {
     const day = bucketByDay(p);
@@ -622,7 +632,7 @@ function blocked<T>(g: OmsGovernance): OmsActionResult<T> {
 /** Create an order. A governor refusal is recorded on the order as RISK_REJECTED. */
 export async function placeOrder(input: CreateOrderInput, actor: OmsActor): Promise<{ order: Order; governance: OmsGovernance }> {
   if (input.idempotencyKey) {
-    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey);
+    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey && o.ownerUserId === actor.userId);
     if (existing) return { order: existing, governance: { allowed: existing.status !== "RISK_REJECTED", blockedBy: [], reason: null, auditEventId: null } };
   }
   const pendingId = newId("ord");
@@ -633,7 +643,7 @@ export async function placeOrder(input: CreateOrderInput, actor: OmsActor): Prom
     stopLoss: input.stopLoss ?? null, takeProfit: input.takeProfit ?? null, ref: `oms:${pendingId}`,
     aiConfidence: input.confidenceScore ?? null,
   });
-  const order = createOrder(input);
+  const order = createOrder(input, actor.userId);
   if (!g.allowed && order.status !== "RISK_REJECTED") {
     order.status = "RISK_REJECTED";
     order.rejectionReason = `RISK_GOVERNOR_BLOCK[${g.blockedBy.join(",")}]: ${g.reason ?? ""}`.trim();

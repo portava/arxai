@@ -32,6 +32,10 @@ const STATUS_LABEL: Record<string, string> = {
   OPEN: "Open", CLOSED: "Closed", STOPPED_OUT: "Stopped out",
   TAKE_PROFIT_HIT: "Take profit", MANUALLY_CLOSED: "Closed",
 };
+/** Signed dollars to the cent: "-$12.50", "$0.00". Not a number → "—". */
+const usd = (n: unknown): string =>
+  typeof n === "number" && Number.isFinite(n) ? `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}` : "—";
+
 const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 async function api(path: string, init?: RequestInit) {
@@ -44,15 +48,32 @@ async function api(path: string, init?: RequestInit) {
 export default function PositionsPage() {
   const [positions, setPositions] = useState<Pos[]>([]);
   const [pnl, setPnl] = useState<Pnl | null>(null);
+  // null until the first read answers; false when it failed. A failed read is
+  // never shown as an empty book.
+  const [loaded, setLoaded] = useState<boolean | null>(null);
+  const [dataSource, setDataSource] = useState<string | null>(null);
   const [tab, setTab] = useState<"OPEN" | "CLOSED" | "INTENT" | "MT5">("OPEN");
 
+  async function readJson(path: string): Promise<Record<string, unknown> | null> {
+    try {
+      const x = await fetch(path);
+      if (!x.ok) return null;
+      const body: unknown = await x.json();
+      return body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+    } catch { return null; }
+  }
+
   async function load() {
-    const [r, s] = await Promise.all([
-      fetch("/api/oms/positions").then((x) => x.json()),
-      fetch("/api/pnl/summary").then((x) => x.json()),
-    ]);
-    setPositions(r.positions ?? []);
-    setPnl(s);
+    const [r, s] = await Promise.all([readJson("/api/oms/positions"), readJson("/api/pnl/summary")]);
+    if (r && Array.isArray(r.positions)) {
+      setPositions(r.positions as Pos[]);
+      setDataSource(typeof r.dataSource === "string" ? r.dataSource : null);
+      setLoaded(true);
+    } else {
+      setPositions([]);
+      setLoaded(false);
+    }
+    setPnl(s && typeof s.dailyPnL === "number" ? (s as unknown as Pnl) : null);
   }
   useEffect(() => { void load(); const id = setInterval(load, 3000); return () => clearInterval(id); }, []);
 
@@ -79,18 +100,21 @@ export default function PositionsPage() {
         </span>
         <div className="flex-1">
           <h1 className="text-2xl font-bold leading-tight">Positions</h1>
-          <p className="text-sm text-txt-secondary">Simulated positions tracked live. Real broker positions route through the MT5 bridge.</p>
+          <p className="text-sm text-txt-secondary">Your own simulator book: fills and P/L at ARX simulator prices, not a broker account. Real broker positions route through the MT5 bridge.</p>
         </div>
+        <span data-testid="positions-data-source" className="rounded-md border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning">
+          {loaded === false ? "Data source: not read" : `Data source: ${dataSource ?? "SIMULATOR"} (not a broker)`}
+        </span>
       </div>
 
       {pnl && (
         <div className="grid gap-2 md:grid-cols-6">
-          <Stat label="Daily" value={`$${pnl.dailyPnL}`} />
-          <Stat label="Weekly" value={`$${pnl.weeklyPnL}`} />
-          <Stat label="Open" value={`$${pnl.openUnrealizedPnL}`} />
-          <Stat label="Win rate" value={`${pnl.winRate}%`} />
-          <Stat label="Avg R" value={String(pnl.averageR)} />
-          <Stat label="Max DD" value={`$${pnl.maxDrawdown}`} />
+          <Stat label="Sim realized today" value={usd(pnl.dailyPnL)} />
+          <Stat label="Sim realized 7d" value={usd(pnl.weeklyPnL)} />
+          <Stat label="Sim open (unrealized)" value={usd(pnl.openUnrealizedPnL)} />
+          <Stat label="Win rate (closed)" value={`${pnl.winRate}%`} />
+          <Stat label="Avg R (closed)" value={String(pnl.averageR)} />
+          <Stat label="Max DD (closed)" value={usd(pnl.maxDrawdown)} />
         </div>
       )}
 
@@ -110,12 +134,18 @@ export default function PositionsPage() {
           <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby">MT5 deferred</span>
           Real broker positions route through the MT5 bridge. This panel activates once the bridge is connected.
         </div>
+      ) : loaded === false ? (
+        <div className="rounded-2xl border border-danger/30 bg-danger/5 p-6 text-sm text-danger" role="alert">
+          Could not load your simulator positions. The list is unknown, not empty — try again shortly.
+        </div>
+      ) : loaded === null ? (
+        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-txt-muted">Loading your simulator positions…</div>
       ) : visible.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-2">
           <EmptyState
             icon={Briefcase}
-            title="No open positions yet."
-            description="Your positions will appear here once you place a trade. Use Demo mode to practice risk-free, or finish account setup to unlock live trading."
+            title={tab === "CLOSED" ? "No closed simulator positions." : "No open simulator positions."}
+            description="This list shows only simulator positions placed for your account. It does not show broker positions."
           />
         </div>
       ) : (
