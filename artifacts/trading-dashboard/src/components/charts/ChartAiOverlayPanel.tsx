@@ -8,9 +8,9 @@ import { useAssistantName } from "@/lib/assistant-name";
 // places, modifies, or closes a trade.
 //
 // HONESTY: every figure shown here is a REAL output —
-//   - the scanner signal carries its own confidence, status badge, and honest
-//     `dataSource` tag (SIMULATOR / LIVE_FEED / …) so a simulated read is never
-//     presented as a live one;
+//   - the scanner signal carries its own confidence, status badge, and its
+//     `dataSource` tag (shown in plain English, e.g. "Simulated data") so a
+//     simulated read is never presented as a live one;
 //   - the Ruby read is the read-only assistant's structured output, surfaced
 //     only when it has enough data;
 //   - when the chart feed is not AI-confirmed (Level 3), overlays are suppressed
@@ -32,6 +32,23 @@ const STATUS_BADGE_LABELS: Record<string, string> = {
 
 function badgeLabel(badge: string): string {
   return STATUS_BADGE_LABELS[badge] ?? "Unrecognised status";
+}
+
+// Plain-English copy for the scanner's data-source tag. It names the source the
+// scanner read WHEN IT SCANNED, not the chart's current feed, so "live" is
+// always qualified as "scanned on". Unknown tokens never leak.
+const DATA_SOURCE_LABELS: Record<string, string> = {
+  LIVE_FEED: "Scanned on live feed",
+  LIVE_DELAYED: "Scanned on delayed feed",
+  STALE_FEED: "Scanned on stale feed",
+  SIMULATOR: "Simulated data",
+  AWAITING_FEED: "No market data yet",
+  HISTORY_READY_AWAITING_LIVE_TICK: "History only, no live tick yet",
+};
+
+function dataSourceLabel(source: string | null | undefined): string {
+  if (!source) return "Source not reported";
+  return DATA_SOURCE_LABELS[source] ?? "Unrecognised source";
 }
 
 const SCORE_TITLE =
@@ -115,10 +132,11 @@ export function ChartAiOverlayPanel({
                 )}
                 <span
                   className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                  title="Honest data source for this signal"
+                  title="Data source the scanner reported when it scanned this signal. It is not a check of the chart's current feed."
                   data-testid="chart-ai-overlay-datasource"
+                  data-source={signal.dataSource || undefined}
                 >
-                  {signal.dataSource || "UNKNOWN"}
+                  {dataSourceLabel(signal.dataSource)}
                 </span>
                 {signal.timeframe && (
                   <span
