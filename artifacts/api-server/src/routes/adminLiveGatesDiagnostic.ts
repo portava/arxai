@@ -310,8 +310,10 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
       label: "EA heartbeat age",
       status: isHeartbeatAgeSecondsFresh(ev.heartbeatAgeSec) ? "pass" : "fail",
       detail: ev.heartbeatAgeSec == null
-        ? "No heartbeat received yet."
-        : `Last heartbeat ${ev.heartbeatAgeSec}s ago (must be ≤15s for live).`,
+        ? (ev.lastHeartbeat
+          ? `Last heartbeat is dated ${ev.lastHeartbeat.toISOString()}, after the server's clock, so its age cannot be verified (counts as stale).`
+          : "No heartbeat received yet.")
+        : `Last heartbeat ${ev.heartbeatAgeSec}s ago (must be <15s for live).`,
       rawCode: isHeartbeatAgeSecondsFresh(ev.heartbeatAgeSec) ? "EA_HEARTBEAT_FRESH" : "MASTER_BRIDGE_HEARTBEAT_STALE",
     });
     const readOnlyRead = readEaBool(ev.eaInputs.readOnlyMode, {

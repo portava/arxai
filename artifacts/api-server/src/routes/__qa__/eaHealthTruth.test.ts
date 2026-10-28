@@ -12,6 +12,10 @@
 // the version is missing, with updateAvailableBasis, and capabilitiesReported
 // / featuresNotReported / selfUpdateReported say what the EA never reported.
 //
+// Future-dated timestamps: ageSeconds clamped (now - ts) to 0, so a heartbeat
+// dated after the server's clock read "Heartbeat age 0s" on an OFFLINE row.
+// It is now null (unknown), as the shared heartbeat policy says.
+//
 // Only the DB handle, the connection list, the reconciliation feed and the
 // update-gate safety preview are stubbed; the real router runs. No network.
 //
@@ -158,4 +162,12 @@ test("a reported capability false is a report; a missing key is not", async () =
   assert.ok(!row.featuresNotReported.includes("supportsSelfUpdate"));
   assert.ok(!row.featuresNotReported.includes("supportsWatchdog"));
   assert.ok(row.featuresNotReported.includes("supportsRemoteConfig"));
+});
+
+test("a heartbeat dated in the future has no age (never 0s) and the row is not fresh", async () => {
+  connections = [connection({ lastHeartbeat: new Date(Date.now() + 30_000) })];
+  const row = (await health()).rows[0];
+  assert.equal(row.heartbeatAgeSeconds, null);
+  assert.equal(row.connection.heartbeatAgeSeconds, null);
+  assert.notEqual(row.liveness, "fresh");
 });

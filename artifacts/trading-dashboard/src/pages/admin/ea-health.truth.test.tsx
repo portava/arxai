@@ -8,6 +8,10 @@
 // Nothing reported is not "no": with no EA version, "Update available" is
 // unknown; with no capabilities report, features and self-update read "not
 // reported", never "unsupported" / "no".
+//
+// A heartbeat dated after the server's evaluation time has no verifiable age:
+// it reads "unknown — dated in the future", never "0s" (older servers clamped
+// it to 0).
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -155,5 +159,44 @@ describe("EA Health with nothing reported", () => {
     render(<AdminEaHealthPage />);
     await settle();
     expect(screen.getByTestId("ea-cap-9-supportsSelfUpdate").textContent).toMatch(/unsupported/);
+  });
+});
+
+describe("EA Health heartbeat dated in the future", () => {
+  const future = "2026-10-28T11:00:30.000Z"; // 30 s after evaluatedAt (NOW)
+  it("a newer server's null age reads unknown, not a dash or 0s", async () => {
+    stub([healthRow({
+      liveness: "offline", heartbeatAgeSeconds: null,
+      connection: { ...healthRow().connection, lastHeartbeatAt: future, heartbeatAgeSeconds: null },
+    })]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    const cell = screen.getByTestId("ea-heartbeat-age-9");
+    expect(cell.textContent).toMatch(/unknown — dated in the future/);
+    expect(cell.textContent).not.toMatch(/\b0s\b/);
+  });
+
+  it("an older server's clamped 0s is downgraded to unknown", async () => {
+    stub([healthRow({
+      liveness: "offline", heartbeatAgeSeconds: 0,
+      connection: { ...healthRow().connection, lastHeartbeatAt: future, heartbeatAgeSeconds: 0 },
+    })]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    expect(screen.getByTestId("ea-heartbeat-age-9").textContent).toMatch(/unknown — dated in the future/);
+  });
+
+  it("a past heartbeat still shows its age", async () => {
+    stub([healthRow()]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    expect(screen.getByTestId("ea-heartbeat-age-9").textContent).toMatch(/1s/);
+  });
+
+  it("a future-dated pick time reads 'picked, age unknown', not 'not picked yet'", async () => {
+    stub([healthRow({ lastCommand: pickedCommand({ pickedByEaAt: future }), lastCommandPickedAgeSeconds: null })]);
+    render(<AdminEaHealthPage />);
+    await settle();
+    expect(screen.getByTestId("ea-last-command-picked-9").textContent).toMatch(/picked, age unknown/);
   });
 });

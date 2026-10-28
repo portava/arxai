@@ -139,7 +139,8 @@ function lastCommandPickedText(row: HealthRow): { value: string; note: string } 
     : lc.bridgeConnectionId === row.connection.id
       ? "This user's latest command, bound to this bridge."
       : `This user's latest command, bound to bridge #${lc.bridgeConnectionId}.`;
-  if (lc.pickedByEaAt == null || age == null) return { value: "not picked yet", note: `${by} Not an EA poll time.` };
+  if (lc.pickedByEaAt == null) return { value: "not picked yet", note: `${by} Not an EA poll time.` };
+  if (age == null) return { value: "picked, age unknown", note: `${by} The pick time is dated after the server's clock, so its age cannot be verified.` };
   return { value: `${age}s ago`, note: `${by} Not an EA poll time — the server does not record polls.` };
 }
 
@@ -157,6 +158,17 @@ function UpdateAvailable({ u }: { u: HealthRow["update"] }) {
 
 function NotReported() {
   return <span className="inline-flex items-center gap-1 text-txt-muted"><HelpCircle className="w-3.5 h-3.5" /> not reported</span>;
+}
+
+// A heartbeat dated after the server's evaluation time has no verifiable age
+// (shared heartbeat policy: unknown, never fresh). An older server clamped it
+// to 0s; the page downgrades that too.
+function heartbeatAgeText(row: HealthRow, evaluatedAt: string): string {
+  const hb = row.connection.lastHeartbeatAt ? Date.parse(row.connection.lastHeartbeatAt) : NaN;
+  const at = Date.parse(evaluatedAt);
+  if (Number.isFinite(hb) && Number.isFinite(at) && hb > at) return "unknown — dated in the future";
+  if (row.heartbeatAgeSeconds === null) return row.connection.lastHeartbeatAt ? "unknown" : "—";
+  return `${row.heartbeatAgeSeconds}s`;
 }
 
 function livenessBadge(l: HealthRow["liveness"]) {
@@ -256,7 +268,7 @@ function EaHealthInner() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <div className="text-xs uppercase tracking-wider text-txt-secondary">Heartbeat & connection</div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Heartbeat age</span><span className={!isHeartbeatAgeSecondsFresh(row.heartbeatAgeSeconds) ? "text-warning" : ""}>{row.heartbeatAgeSeconds === null ? "—" : `${row.heartbeatAgeSeconds}s`}</span></div>
+                <div className="flex justify-between" data-testid={`ea-heartbeat-age-${row.connection.id}`}><span className="text-txt-secondary">Heartbeat age</span><span className={!isHeartbeatAgeSecondsFresh(row.heartbeatAgeSeconds) || heartbeatAgeText(row, data?.evaluatedAt ?? "").startsWith("unknown") ? "text-warning" : ""}>{heartbeatAgeText(row, data?.evaluatedAt ?? "")}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Last heartbeat</span><span>{row.connection.lastHeartbeatAt ? new Date(row.connection.lastHeartbeatAt).toLocaleString() : "never"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Terminal connected</span><Tri v={row.eaInputs.terminalConnected} /></div>
                 <div className="flex justify-between" data-testid={`ea-last-command-picked-${row.connection.id}`} title={lastCommandPickedText(row).note}><span className="text-txt-secondary">Last command picked</span><span>{lastCommandPickedText(row).value}</span></div>

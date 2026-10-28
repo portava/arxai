@@ -61,6 +61,7 @@ export interface DetectedBridgeEvidence {
   serverName: string | null;
   accountNumber: string | null;
   lastHeartbeat: Date | null;
+  /** Null when there is no heartbeat or it is dated in the future (age unknown). */
   heartbeatAgeSec: number | null;
   eaInputs: {
     terminalConnected: boolean | null;
@@ -143,7 +144,11 @@ function extractEaInputs(capabilities: unknown): DetectedBridgeEvidence["eaInput
 
 function toEvidence(row: BrokerConnection, nowMs: number): DetectedBridgeEvidence {
   const hb = row.lastHeartbeat ? new Date(row.lastHeartbeat) : null;
-  const ageSec = hb ? Math.max(0, Math.floor((nowMs - hb.getTime()) / 1000)) : null;
+  // Shared heartbeat policy: a future-dated (or unparseable) heartbeat's age
+  // cannot be verified — unknown, never fresh. Null, not clamped to 0 (which
+  // read as a live heartbeat and passed the master-live freshness check).
+  const ageMs = hb ? nowMs - hb.getTime() : null;
+  const ageSec = ageMs == null || !Number.isFinite(ageMs) || ageMs < 0 ? null : Math.floor(ageMs / 1000);
   return {
     bridgeId: row.id,
     userId: row.userId ?? null,

@@ -57,9 +57,12 @@ function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   return role as "ADMIN" | "OWNER";
 }
 
+// Null when there is no timestamp or it is dated in the future: its age cannot
+// be verified (shared heartbeat policy), so it is never clamped to 0.
 function ageSeconds(ts: Date | null | undefined, now: Date): number | null {
   if (!ts) return null;
-  return Math.max(0, Math.floor((now.getTime() - new Date(ts).getTime()) / 1000));
+  const ms = now.getTime() - new Date(ts).getTime();
+  return !Number.isFinite(ms) || ms < 0 ? null : Math.floor(ms / 1000);
 }
 
 // ─── GET /api/admin/ea/health ───────────────────────────────────────────────

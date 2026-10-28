@@ -7,6 +7,9 @@
 // operator arms; when off it named BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED while
 // the gate's refusal is LIVE_BROKER_EXECUTION_DISABLED.
 //
+// A heartbeat dated in the future (age unknown) read "No heartbeat received
+// yet."; it now says its age cannot be verified.
+//
 // Only the DB handle, the settings read and the bridge readers are stubbed;
 // the real router runs. No network.
 //
@@ -38,9 +41,10 @@ mock.module("../../lib/safety/platformSwitches.js", {
     }),
   },
 });
+let detected: Record<string, unknown> = { ok: false, primaryReason: "NO_BRIDGE", latestHint: null };
 const detectorMod = await import("../../lib/mt5/currentConnectedBridgeDetector.js");
 mock.module("../../lib/mt5/currentConnectedBridgeDetector.js", {
-  namedExports: { ...detectorMod, detectCurrentConnectedBridge: async () => ({ ok: false, primaryReason: "NO_BRIDGE", latestHint: null }) },
+  namedExports: { ...detectorMod, detectCurrentConnectedBridge: async () => detected },
 });
 const gateMod = await import("../../lib/mt5/masterLiveBridgeGate.js");
 mock.module("../../lib/mt5/masterLiveBridgeGate.js", {
@@ -65,7 +69,7 @@ const gate = (d: { gates: Gate[] }, id: string): Gate => {
   return g;
 };
 
-beforeEach(() => { armed = false; });
+beforeEach(() => { armed = false; detected = { ok: false, primaryReason: "NO_BRIDGE", latestHint: null }; });
 
 test("env on, operator not armed: master switch and placement layer are not 'pass' and name the gate's refusal", async () => {
   const d = await diagnostic();
@@ -86,4 +90,20 @@ test("env on and operator armed: the master switch passes", async () => {
   assert.equal(gate(d, "server_master_switch").status, "pass");
   assert.equal(gate(d, "server_master_switch").rawCode, "LIVE_BROKER_EXECUTION_ENABLED");
   assert.equal(gate(d, "broker_placement_layer").status, "pass");
+});
+
+test("a heartbeat dated in the future reads 'cannot be verified', not 'no heartbeat received yet'", async () => {
+  const future = new Date(Date.now() + 30_000);
+  detected = {
+    ok: false, primaryReason: "MASTER_BRIDGE_HEARTBEAT_STALE",
+    latestHint: {
+      bridgeId: 21, userId: 2, mode: "LIVE", accountType: "live", eaVersion: "1.50", brokerName: "B", serverName: "S",
+      accountNumber: "77001234", lastHeartbeat: future, heartbeatAgeSec: null, tokenRevokedAt: null,
+      eaInputs: { terminalConnected: true, algoTradingAllowed: true, readOnlyMode: false, enableLiveExecution: true, enableDemoExecution: null, maxLiveLot: null },
+    },
+  };
+  const g = gate(await diagnostic(), "ea_heartbeat");
+  assert.equal(g.status, "fail");
+  assert.doesNotMatch(g.detail, /No heartbeat received yet/);
+  assert.match(g.detail, /cannot be verified/);
 });
