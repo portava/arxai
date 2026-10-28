@@ -107,9 +107,10 @@ test("chart-read support/resistance zones use the instrument precision (V75 → 
     assert.match(zone, /\d/);
     for (const dp of decimalsOf(zone)) assert.equal(dp, 4, `zone "${zone}" must carry 4 dp`);
   }
-  // Without a known precision the magnitude fallback still applies (unchanged).
+  // Without a known precision the read uses the precision the bars are quoted
+  // in (4 dp here), never the 1 dp magnitude guess for prices >= 1000.
   const fallback = analyzeChartStructure(v75Bars());
-  for (const dp of decimalsOf(fallback.supportZone)) assert.equal(dp, 1);
+  for (const dp of decimalsOf(fallback.supportZone)) assert.equal(dp, 4);
 });
 
 test("the placeholder broker catalogue no longer claims 4 dp for V100 / V25", async () => {

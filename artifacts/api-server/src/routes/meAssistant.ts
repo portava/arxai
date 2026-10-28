@@ -67,6 +67,7 @@ import { buildRubyContext, composeRubyBriefing, type RubyRole } from "../lib/ass
 import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { knownPricePrecision } from "../lib/data/chart/symbolProfile.js";
 import { buildRubyChartContext, buildGatedTrustLine } from "../lib/data/chart/rubyChartContext.js";
 import { buildRubyStructuralRead } from "../lib/assistant/rubyStructuralReadService.js";
 import { buildDecisionSnapshot, recordDecisionSnapshot } from "../lib/data/chart/chartDecisionSnapshot.js";
@@ -729,7 +730,7 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   const candles = rubyCtx?.candles ?? [];
   const htfTimeframe = rubyCtx?.htfTimeframe ?? null;
   const htfBias: StructureBias | null = readHigherTimeframeBias(rubyCtx?.htfCandles, htfTimeframe);
-  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null });
+  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null, pricePrecision: knownPricePrecision(symbol) });
   if (clientFeedUnconfirmed) {
     read.dataQuality = "insufficient";
     if (!read.cautions.includes("Feed not confirmed at draw-time — limited visibility.")) {
