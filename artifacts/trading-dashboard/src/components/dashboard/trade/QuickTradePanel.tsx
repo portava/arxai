@@ -13,7 +13,45 @@ import { CockpitCard } from "@/components/dashboard/cockpit/primitives";
 import { ChartFeedConfidence } from "@/components/charts/ChartFeedConfidence";
 import { cn } from "@/lib/utils";
 
-export type Quote = { bid: number; ask: number; spread: number; mid: number } | null;
+// executionEnvironment: /api/market/quote/:symbol is served by the ARX market
+// simulator and always tags "SIMULATOR" (routes/market.ts). No broker quote
+// feed reaches this card, so no tag is treated as a broker quote.
+export type Quote = { bid: number; ask: number; spread: number; mid: number; executionEnvironment?: string | null } | null;
+
+/** Plain-English source of the quote on this card. Never claims a broker quote. */
+export function describeQuoteSource(q: Quote): string {
+  if (q?.executionEnvironment === "SIMULATOR") return "Simulated price from the ARX market simulator — not a broker quote.";
+  return "Price source unknown — not a broker quote.";
+}
+
+/**
+ * Risk-at-stop estimate. Only shows a dollar figure when a stop-loss is set,
+ * since risk is undefined without one — we never fabricate a number.
+ *   risk ≈ lots × stop-distance(in pips) × pip-value-per-lot
+ * Pip value uses the standard 100k contract (~$10/pip per 1.0 lot). The
+ * reference price is the card's quote, which is never a broker quote: in live
+ * mode no dollar figure is computed from it; elsewhere it is labelled as a
+ * simulated-price estimate. The server's risk governor remains the source of
+ * truth on submit.
+ */
+export function computeRiskApprox({ lot, stopLoss, quote, symbol, isLive }: {
+  lot: string; stopLoss: string; quote: Quote; symbol: string; isLive: boolean;
+}): string {
+  const l = Number(lot) || 0;
+  const sl = Number(stopLoss);
+  const ref = quote ? (quote.mid ?? quote.bid ?? quote.ask) : NaN;
+  if (!l) return "—";
+  if (!stopLoss || !Number.isFinite(sl) || sl <= 0) return "Set SL";
+  if (isLive) return "Needs broker quote";
+  if (!Number.isFinite(ref)) return "Set SL";
+  const isJpy = /JPY$/i.test(symbol);
+  const pipSize = isJpy ? 0.01 : 0.0001;
+  const pips = Math.abs(ref - sl) / pipSize;
+  const pipValuePerLot = 10; // ~$10 per pip per 1.0 standard lot
+  const risk = l * pips * pipValuePerLot;
+  if (!Number.isFinite(risk) || risk <= 0) return "—";
+  return `$${risk.toFixed(2)} (sim. price)`;
+}
 
 const ORDER_TYPES = [
   "Market", "Buy Limit", "Sell Limit", "Buy Stop", "Sell Stop", "Buy Stop Limit", "Sell Stop Limit",
@@ -35,6 +73,7 @@ export function QuickTradePanel({
   riskApprox,
   canTrade,
   blockedLabel,
+  hideNonBrokerQuote = false,
 }: {
   symbol: string; setSymbol: (v: string) => void;
   timeframe: string; setTimeframe: (v: string) => void;
@@ -49,12 +88,16 @@ export function QuickTradePanel({
   riskApprox: string;
   canTrade: boolean;
   blockedLabel: string;
+  /** Live mode: the card's quote is not the broker's, so its prices are withheld. */
+  hideNonBrokerQuote?: boolean;
 }) {
   const [, navigate] = useLocation();
 
-  const sell = quote ? quote.bid : null;
-  const buy = quote ? quote.ask : null;
-  const spread = quote ? quote.spread : null;
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const showPrices = quote != null && !hideNonBrokerQuote;
+  const sell = showPrices && quote ? num(quote.bid) : null;
+  const buy = showPrices && quote ? num(quote.ask) : null;
+  const spread = showPrices && quote ? num(quote.spread) : null;
 
   // Buy/Sell → existing manual ticket. Symbol is already synced globally
   // (useChartSymbol) by the page, so the ticket opens prefilled. No new path.
@@ -122,6 +165,13 @@ export function QuickTradePanel({
           <div className="font-mono text-lg font-bold text-success">{buy ?? "—"}</div>
         </div>
       </div>
+      {quote != null && (
+        <p className="mt-1 text-[11px] text-warning" data-testid="quick-trade-quote-source">
+          {hideNonBrokerQuote
+            ? "No broker quote on this card: the only price here comes from the ARX market simulator, which is not the master broker's quote, so it is not shown in live mode."
+            : describeQuoteSource(quote)}
+        </p>
+      )}
 
       {/* Lot sizing */}
       <div className="mt-3 flex items-end gap-3">

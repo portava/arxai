@@ -25,7 +25,7 @@ import { useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey, use
 import { CockpitHeader } from "@/components/dashboard/cockpit/CockpitHeader";
 import { MobileMenuTrigger } from "@/components/layout/Topbar";
 import { SidebarContent } from "@/components/layout/AppLayout";
-import { QuickTradePanel, type Quote } from "@/components/dashboard/trade/QuickTradePanel";
+import { QuickTradePanel, computeRiskApprox, type Quote } from "@/components/dashboard/trade/QuickTradePanel";
 import { PreTradeHeatChecklist } from "@/components/dashboard/trade/PreTradeHeatChecklist";
 import {
   TradeStatusBar, TradeHero, PositionsPanel, OrdersPanel,
@@ -101,30 +101,13 @@ export default function TradeCommandRoom() {
     setPicked(o); setSymbol(o.symbol); setTimeframe(o.timeframe);
   }
 
-  // Risk approximation — simple display of lot × notional placeholder, using
-  // the existing quote. (Mirrors the mockup's "Risk approx." readout.)
-  // Real risk-at-stop estimate. Only shows a dollar figure when a stop-loss
-  // is set, since risk is undefined without one — we never fabricate a number.
-  //   risk ≈ lots × stop-distance(in pips) × pip-value-per-lot
-  // Pip value uses the standard 100k contract (~$10/pip per 1.0 lot for
-  // 4-digit FX pairs, ~$1000/pip per 1.0 lot for 2-digit JPY pairs). The
-  // server's risk governor remains the source of truth on submit.
-  const riskApprox = useMemo(() => {
-    const l = Number(lot) || 0;
-    const sl = Number(stopLoss);
-    const ref = quote ? (quote.mid ?? quote.bid ?? quote.ask) : NaN;
-    if (!l) return "—";
-    if (!stopLoss || !Number.isFinite(sl) || !Number.isFinite(ref) || sl <= 0) {
-      return "Set SL";
-    }
-    const isJpy = /JPY$/i.test(symbol);
-    const pipSize = isJpy ? 0.01 : 0.0001;
-    const pips = Math.abs(ref - sl) / pipSize;
-    const pipValuePerLot = 10; // ~$10 per pip per 1.0 standard lot
-    const risk = l * pips * pipValuePerLot;
-    if (!Number.isFinite(risk) || risk <= 0) return "—";
-    return `$${risk.toFixed(2)}`;
-  }, [lot, stopLoss, quote, symbol]);
+  // Risk-at-stop estimate (see computeRiskApprox). The quote polled above is
+  // the ARX market simulator's, never the broker's, so live mode gets no
+  // dollar figure from it.
+  const riskApprox = useMemo(
+    () => computeRiskApprox({ lot, stopLoss, quote, symbol, isLive: tradingMode.isLiveShared }),
+    [lot, stopLoss, quote, symbol, tradingMode.isLiveShared],
+  );
 
   // ── Mode / permission → plain English ───────────────────────────────
   const isLive = tradingMode.isLiveShared;
@@ -166,6 +149,7 @@ export default function TradeCommandRoom() {
         riskApprox={riskApprox}
         canTrade={canTrade}
         blockedLabel={blockedLabel}
+        hideNonBrokerQuote={isLive}
       />
       {/* Phase 3 — advisory timing checklist. Display only; never blocks trade submission. */}
       <PreTradeHeatChecklist symbol={symbol} />
