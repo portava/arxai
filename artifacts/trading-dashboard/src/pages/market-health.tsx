@@ -86,6 +86,8 @@ function verdictColor(verdict: string): string {
     case "Delayed": return "bg-amber-500/20 text-amber-400";
     case "Stale": return "bg-rose-500/20 text-rose-400";
     case "Historical only": return "bg-zinc-500/20 text-zinc-300";
+    // A closed market is not a feed fault — neutral, not red.
+    case "Market closed": return "bg-zinc-500/20 text-zinc-300";
     default: return "bg-rose-500/20 text-rose-400";
   }
 }

@@ -11,6 +11,7 @@ import { Router, type IRouter, type Request } from "express";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { z } from "zod/v4";
 import { getBrokerProvider } from "../lib/broker/registry.js";
+import { classifyHeartbeatAgeSeconds, type HeartbeatFreshness } from "../lib/brokerHub/freshness.js";
 import type { BrokerOwner } from "../lib/broker/types.js";
 import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
 import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets, anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
@@ -146,9 +147,23 @@ router.get("/broker/connection-check", async (req, res) => {
     try { const o = await provider.orders(brokerOwnerOf(req), 10); ordersReadable = true; orderCount = o.length; }
     catch (e) { errors.push(`orders: ${String((e as Error).message)}`); }
 
+    // The EA's own heartbeat time, as the provider read it, and its band under
+    // the shared heartbeat policy (fresh < 15 s, degraded < 60 s, offline).
+    // `connected` is the provider's online flag (fresh OR degraded); the band
+    // lets a surface say "delayed" instead of "Connected" for a degraded EA.
+    // `lastCheckedAt` below is the time of this request, not a heartbeat.
+    const lastHeartbeatAt: string | null = status.health?.lastHeartbeatAt ?? null;
+    const heartbeatAgeSeconds: number | null = lastHeartbeatAt ? (status.health?.staleSeconds ?? null) : null;
+    const heartbeatFreshness: HeartbeatFreshness = lastHeartbeatAt
+      ? classifyHeartbeatAgeSeconds(heartbeatAgeSeconds)
+      : "unknown";
+
     res.json(envelope({
       provider: status.kind,
       connected: status.connected,
+      lastHeartbeatAt,
+      heartbeatAgeSeconds,
+      heartbeatFreshness,
       environment: status.environment,
       accountIdPresent: !!process.env.MT5_ACCOUNT_ID,
       bridgeUrlPresent: !!process.env.MT5_BRIDGE_URL,

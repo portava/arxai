@@ -11,6 +11,7 @@ interface Experiment {
   resultSummary: {
     scenariosRun?: number; totalTrades?: number; totalNet?: number; aggregateWinRate?: number;
     ranking?: { scenarioId: string; netPnl: number; winRate: number }[];
+    perScenario?: { scenarioId: string; replayRunId: string; trades: number }[];
     recommendations?: { type: string; message: string }[];
   };
 }
@@ -24,9 +25,17 @@ export default function StrategyLab() {
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch("/api/strategy-lab/experiments?limit=20").then(x => x.json());
-      setExperiments(r.experiments ?? []);
-    } catch (e) { setErr(String(e)); } finally { setLoading(false); }
+      setErr("");
+      const res = await fetch("/api/strategy-lab/experiments?limit=20");
+      let r: { experiments?: unknown; error?: unknown } = {};
+      try { r = await res.json(); } catch { r = {}; }
+      if (!res.ok) throw new Error(typeof r.error === "string" ? r.error : `HTTP ${res.status}`);
+      if (!Array.isArray(r.experiments)) throw new Error("Response did not include an experiments list.");
+      setExperiments(r.experiments as Experiment[]);
+    } catch (e) {
+      setExperiments([]);
+      setErr(`Could not load experiments: ${e instanceof Error ? e.message : String(e)}`);
+    } finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
 
@@ -50,7 +59,7 @@ export default function StrategyLab() {
       {err && <ErrorState description={err} onRetry={load} />}
       {loading && <LoadingState label="Loading experiments…" />}
 
-      {!loading && experiments.length === 0 && (
+      {!loading && !err && experiments.length === 0 && (
         <EmptyState
           title="No experiments yet"
           description="Strategy Lab compares playbook setups across replay scenarios. All results are simulation only and do not guarantee future performance."
@@ -64,15 +73,12 @@ export default function StrategyLab() {
             <CardContent className="pt-4">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="font-semibold text-sm">{e.title}</div>
-                <StatusPill status={e.status === "completed" ? "ACTIVE" : "PENDING"} label={e.status.toUpperCase()} size="xs" />
+                <StatusPill status={e.status.toUpperCase() === "COMPLETED" ? "ACTIVE" : "PENDING"} label={e.status.toUpperCase()} size="xs" />
               </div>
               <div className="text-xs text-muted-foreground font-mono mt-1">{e.experimentId}</div>
               {e.resultSummary?.scenariosRun != null && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-sm">
-                  <Stat label="Scenarios" value={e.resultSummary.scenariosRun} />
-                  <Stat label="Total trades" value={e.resultSummary.totalTrades ?? 0} />
-                  <Stat label="Net" value={e.resultSummary.totalNet ?? 0} />
-                  <Stat label="Win rate" value={`${e.resultSummary.aggregateWinRate ?? 0}%`} />
+                  <ExperimentStats summary={e.resultSummary} />
                 </div>
               )}
               {(e.resultSummary?.ranking ?? []).length > 0 && (
@@ -95,11 +101,37 @@ export default function StrategyLab() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
+const DASH = "—";
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+// Missing fields render "—", never a measured 0. Scenarios that were not
+// found on the server (replayRunId "") are not counted as replayed. A win
+// rate over zero trades does not exist. Replay net is the sum of
+// (price move × position size) across trades — not account currency.
+function ExperimentStats({ summary }: { summary: Experiment["resultSummary"] }) {
+  const listed = summary.scenariosRun;
+  const per = Array.isArray(summary.perScenario) ? summary.perScenario : null;
+  const replayed = per ? per.filter((p) => typeof p.replayRunId === "string" && p.replayRunId.length > 0).length : null;
+  const trades = isNum(summary.totalTrades) ? summary.totalTrades : null;
+  const scenariosLabel = replayed != null ? "Scenarios replayed" : "Scenarios listed";
+  const scenariosValue = replayed != null && per ? `${replayed} of ${per.length}` : isNum(listed) ? String(listed) : DASH;
+  const winRate = trades != null && trades > 0 && isNum(summary.aggregateWinRate) ? `${summary.aggregateWinRate}%` : DASH;
   return (
-    <div className="border border-border rounded-md p-2">
+    <>
+      <Stat id="scenarios" label={scenariosLabel} value={scenariosValue} />
+      <Stat id="trades" label="Total trades" value={trades != null ? String(trades) : DASH} />
+      <Stat id="net" label="Replay net" value={isNum(summary.totalNet) ? String(summary.totalNet) : DASH} hint="price units × size, not account currency" />
+      <Stat id="winrate" label="Win rate" value={winRate} hint={trades === 0 ? "no trades" : undefined} />
+    </>
+  );
+}
+
+function Stat({ id, label, value, hint }: { id: string; label: string; value: string; hint?: string }) {
+  return (
+    <div className="border border-border rounded-md p-2" data-testid={`strategy-lab-stat-${id}`}>
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="text-base font-semibold tabular-nums">{value}</div>
+      <div className="text-base font-semibold tabular-nums" data-stat-value>{value}</div>
+      {hint && <div className="text-[10px] text-muted-foreground">{hint}</div>}
     </div>
   );
 }

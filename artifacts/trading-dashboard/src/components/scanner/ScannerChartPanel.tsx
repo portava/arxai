@@ -51,6 +51,7 @@ import { computeRiskReward, pipDistance, validateModifyLevels } from "@/lib/char
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { resolveChartFeedStrip } from "@/lib/scannerTruth";
 import { candlestickPriceFormat, formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
 import { publishScannerTip, scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
@@ -834,6 +835,13 @@ export function ScannerChartPanel() {
   // through the shared helper so every chart surface decides "may I look live?"
   // identically (Task #351).
   const isLiveDisplay = isLivePriceDisplay(displayStatus);
+  // The notice strip under the canvas. A closed market (the truth's scheduled
+  // closure or the stream's closed-market signal) reads "Market closed", never
+  // "Stale" next to the "Market closed" chip.
+  const feedStrip = resolveChartFeedStrip(displayStatus, {
+    marketClosed: truth?.marketClosure != null || marketFrozen != null,
+    hasCandles: candles.length > 0,
+  });
 
   // The user's own alert preferences govern whether a high-impact news event is
   // allowed to interrupt with a toast. Market-condition news routes through the
@@ -2696,13 +2704,24 @@ export function ScannerChartPanel() {
                 never surfaced here (they can carry live wording or an internal
                 source token). Only the lastCandleTime timestamp — safe — is
                 shown, on the STALE strip (Task #347). */}
-            {displayStatus === "FALLBACK_COMPOSITE" && (
+            {feedStrip === "market_closed" && (
+              <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-status-market-closed">
+                <span className="font-medium">Market closed · last session's candles</span>
+                {feedStatus?.lastCandleTime && (
+                  formatUtcClock(feedStatus.lastCandleTime) && (
+                    <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle {formatUtcClock(feedStatus.lastCandleTime)}</span>
+                  )
+                )}
+                <span className="ml-auto text-amber-400/50 text-[10px]">No live price until the market reopens</span>
+              </div>
+            )}
+            {feedStrip === "delayed" && (
               <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-status-composite">
                 <span className="font-medium">Delayed market data</span>
                 <span className="ml-auto text-amber-400/50 text-[10px]">Historical context only — no live price marker</span>
               </div>
             )}
-            {displayStatus === "STALE" && (
+            {feedStrip === "stale" && (
               <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stale">
                 <span className="font-medium">Stale · last-known candles</span>
                 {feedStatus?.lastCandleTime && (
@@ -2713,7 +2732,7 @@ export function ScannerChartPanel() {
                 <span className="ml-auto text-orange-400/50 text-[10px]">No live price marker</span>
               </div>
             )}
-            {displayStatus === "ANALYSIS_ONLY" && candles.length > 0 && (
+            {feedStrip === "analysis_only" && (
               <div className="flex items-center gap-2 rounded-md border border-zinc-700/50 bg-zinc-900/40 px-3 py-1.5 text-[11px] text-zinc-400" data-testid="scanner-chart-status-analysis">
                 <span className="font-medium">Live feed unavailable · Analysis only</span>
                 <span className="ml-auto text-zinc-600 text-[10px]">Historical context — no live price marker</span>

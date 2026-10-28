@@ -25,6 +25,7 @@ import {
   resolveScannerTruth,
   thresholdsFor,
   type ScannerHeaderCapReason,
+  nextWeekendClosureBoundaryMs,
   type ScannerTruth,
   type ScannerTruthMode,
 } from "@/lib/scannerTruth";
@@ -99,9 +100,23 @@ export function useScannerTruth(
     () => resolveDisplayPricePrecision(serverPrecision, candles.flatMap((c) => [c.open, c.high, c.low, c.close])),
     [serverPrecision, candles],
   );
-  const nowMs = useEvidenceDeadline(lastTime != null
+  // Newest CLOSED bar (forming tip excluded) when the bars state completeness;
+  // undefined for legacy shapes (the truth then uses lastTime).
+  const statesCompleteness = candles.some((c) => typeof c.isComplete === "boolean");
+  const lastClosedBar = statesCompleteness
+    ? [...candles].reverse().find((c) => c.isComplete !== false)
+    : undefined;
+  const lastClosedTime = statesCompleteness ? candleTimeIso(lastClosedBar?.time) : undefined;
+  // Re-resolve at the earliest future evidence deadline: the candle freshness
+  // budget, or the start/end of a scheduled weekend closure.
+  const renderNowMs = Date.now();
+  const candleDeadline = lastTime != null
     ? Date.parse(lastTime) + thresholdsFor(chartTimeframe).candleMaxAgeMs + 1
-    : null);
+    : null;
+  const closureBoundary = nextWeekendClosureBoundaryMs(feedStatus?.assetClass ?? null, renderNowMs);
+  const futureDeadlines = [candleDeadline, closureBoundary == null ? null : closureBoundary + 1]
+    .filter((d): d is number => d != null && Number.isFinite(d) && d > renderNowMs);
+  const nowMs = useEvidenceDeadline(futureDeadlines.length > 0 ? Math.min(...futureDeadlines) : null);
 
   const env = mode.envelope;
   const truthMode: ScannerTruthMode = {
@@ -133,9 +148,10 @@ export function useScannerTruth(
         // CLOSED bars only — the server marks the forming tip isComplete=false.
         // Legacy shapes that never state completeness leave this undefined
         // (the truth then falls back to candleCount).
-        closedCandleCount: candles.some((c) => typeof c.isComplete === "boolean")
+        closedCandleCount: statesCompleteness
           ? candles.filter((c) => c.isComplete !== false).length
           : undefined,
+        lastClosedTime,
         requestedCount: limit,
         firstTime: candleTimeIso(first?.time),
         lastTime,

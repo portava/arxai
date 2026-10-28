@@ -190,12 +190,22 @@ export default function TraderCoachPage() {
 
       <section className="bg-gray-900 p-4 rounded">
         <h3 className="font-semibold mb-2">Daily Prep — pre-session checklist</h3>
-        <ul className="text-sm space-y-1">
+        <p className="text-xs text-gray-400 mb-2">
+          This report does not evaluate the system checks below (daily loss, cooldowns, data quality and so on).
+          Tick each row yourself once you have confirmed it on the relevant page.
+        </p>
+        <ul className="text-sm space-y-1" data-testid="pre-session-checklist">
           {coach.preSessionChecklist.map(item => (
-            <li key={item.id} className="flex gap-2">
-              <input type="checkbox" disabled={item.auto} />
+            <li key={item.id} className="flex gap-2" data-testid={`checklist-${item.id}`}>
+              <input type="checkbox" aria-label={item.label} />
               <span>{item.label}</span>
-              {item.auto && <span className="text-xs text-blue-400">(auto-checked)</span>}
+              {item.id === "system_locked" ? (
+                // The server only adds this row when the Risk Governor status it
+                // read for this report is LOCKED, so it is a measured finding.
+                <span className="text-xs text-red-400">(Risk Governor reports LOCKED)</span>
+              ) : item.auto ? (
+                <span className="text-xs text-amber-400">(system check — not checked by this report; verify before trading)</span>
+              ) : null}
             </li>
           ))}
         </ul>

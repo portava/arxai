@@ -577,7 +577,21 @@ export interface OpportunityInput {
   hasLiveData: boolean;
   isLate: boolean;
   reason: string | null;
+  /**
+   * The row's own fused final read (scanner computeFinalRead label). Only
+   * TRADE_WATCH may be filed as READY_NOW: NO_TRADE / AVOID_FOR_NOW → AVOID,
+   * WAIT_FOR_CONFIRMATION → at most FORMING_SOON. `null` = the read is unknown,
+   * which also withholds READY_NOW. Omitted (legacy callers) = not consulted.
+   */
+  finalReadLabel?: OpportunityFinalReadLabel | null;
 }
+
+/** The scanner's fused final-read verdict for a row. */
+export type OpportunityFinalReadLabel =
+  | "TRADE_WATCH"
+  | "WAIT_FOR_CONFIRMATION"
+  | "AVOID_FOR_NOW"
+  | "NO_TRADE";
 
 export interface OpportunityMapRow extends OpportunityInput {
   category: OpportunityCategory;

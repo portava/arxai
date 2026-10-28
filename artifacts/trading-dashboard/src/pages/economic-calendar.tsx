@@ -69,6 +69,18 @@ interface DisplayEvent {
   affectedSymbols: string[] | null;
   volatilityFlag: number;
   riskNote?: string | null;
+  /**
+   * False when the source publishes a release DATE only (FRED): eventTime is
+   * then a midnight-UTC date sentinel, not a release time, and must never be
+   * shown as a clock time, a countdown or "already happened".
+   */
+  timeKnown: boolean;
+}
+
+// FRED's releases/dates feed is date-granularity only (api-server
+// fredCalendarProvider.ts emits `${date}T00:00:00.000Z` and eventTimeLocal=null).
+function isDateOnlySource(source: string | null | undefined): boolean {
+  return typeof source === "string" && source.trim().toLowerCase() === "fred";
 }
 
 const IMPACT_UP: Record<string, ImpactLevel> = {
@@ -89,11 +101,12 @@ function fromLive(e: LiveCalendarEvent): DisplayEvent {
     affectedSymbols: e.affectedSymbols.length > 0 ? e.affectedSymbols : (e.affectedMarkets.length > 0 ? e.affectedMarkets : null),
     volatilityFlag: 0,
     riskNote: e.riskNote,
+    timeKnown: !isDateOnlySource(e.source),
   };
 }
 
 function fromDb(e: EconomicEvent): DisplayEvent {
-  return { ...e, key: String(e.id) };
+  return { ...e, key: String(e.id), timeKnown: !isDateOnlySource(e.source) };
 }
 
 // Open the existing Ruby live chat (same cross-tab mechanism the AI hub uses).
@@ -151,6 +164,46 @@ function utcTime(iso: string): string {
 function isSameDay(iso: string, ref: Date): boolean {
   const d = new Date(iso);
   return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
+}
+
+// ── Date-only aware helpers ────────────────────────────────────────────────
+function localYmd(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+/** The release's calendar date for a date-only event (the provider's date). */
+function eventYmd(e: DisplayEvent): string {
+  return e.eventTime.slice(0, 10);
+}
+function eventOnDay(e: DisplayEvent, ref: Date): boolean {
+  return e.timeKnown ? isSameDay(e.eventTime, ref) : eventYmd(e) === localYmd(ref);
+}
+/**
+ * True while the release is still ahead — or, for a date-only release dated
+ * today, while its time is unknown (it cannot be confirmed past).
+ */
+function eventPending(e: DisplayEvent, nowMs: number): boolean {
+  if (e.timeKnown) return new Date(e.eventTime).getTime() > nowMs;
+  return eventYmd(e) >= localYmd(new Date(nowMs));
+}
+function eventReleased(e: DisplayEvent, nowMs: number): boolean {
+  return !eventPending(e, nowMs);
+}
+/** Countdown text; for a date-only release it never invents an hour. */
+function whenLabel(e: DisplayEvent): string {
+  if (e.timeKnown) return timeUntil(e.eventTime);
+  const today = localYmd(new Date());
+  const ymd = eventYmd(e);
+  if (ymd === today) return "today · time not published";
+  const days = Math.round((Date.parse(`${ymd}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+  if (days === 1) return "tomorrow · time not published";
+  return days > 0 ? `in ${days}d · time not published` : `${-days}d ago`;
+}
+/** Clock lines for a row: local + UTC, or the release date when only a date is published. */
+function timeLines(e: DisplayEvent): { primary: string; secondary: string } {
+  if (e.timeKnown) return { primary: `${clockTime(e.eventTime)} local`, secondary: utcTime(e.eventTime) };
+  return { primary: `${eventYmd(e)}`, secondary: "Date only — release time not published" };
 }
 
 // Phase 3 — timing heat strip for an expanded event row.
@@ -277,6 +330,26 @@ export default function EconomicCalendarPage() {
     },
   });
 
+  // What the page actually read. Only a connected provider has checked the
+  // calendar; otherwise the list is stored events at best, and an empty list
+  // or a "Low" rating would be an unmeasured value shown as a pass.
+  const coverage: "loading" | "connected" | "not_configured" | "provider_error" | "status_unknown" =
+    providerStatus.isLoading ? "loading"
+    : providerStatus.isError ? "status_unknown"
+    : isConnected ? "connected"
+    : providerStatus.data?.configured ? "provider_error"
+    : "not_configured";
+  const coverageNote: string = (
+    coverage === "not_configured"
+      ? "No live calendar provider is configured, so scheduled releases were not checked. Only manually synced events are shown."
+      : coverage === "provider_error"
+        ? `${providerLabel(providerStatus.data?.provider)} is configured but the last fetch failed, so scheduled releases were not checked. Only stored events are shown.`
+        : coverage === "status_unknown"
+          ? "Could not read the calendar provider status, so scheduled releases were not checked. Only stored events are shown."
+          : ""
+  ) + (coverage !== "connected" && dbEvents.isError ? " Stored events could not be loaded either." : "")
+    + (coverage !== "connected" && coverage !== "loading" ? " The absence of an event is not an all-clear." : "");
+
   const sync = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/economic-events/sync", {
@@ -310,8 +383,8 @@ export default function EconomicCalendarPage() {
   const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
   const filtered = useMemo(() => {
     return allEvents.filter((e) => {
-      if (dateRange === "today" && !isSameDay(e.eventTime, now)) return false;
-      if (dateRange === "tomorrow" && !isSameDay(e.eventTime, tomorrow)) return false;
+      if (dateRange === "today" && !eventOnDay(e, now)) return false;
+      if (dateRange === "tomorrow" && !eventOnDay(e, tomorrow)) return false;
       if (query && !`${e.eventName} ${e.currency} ${e.country}`.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
     });
@@ -319,22 +392,28 @@ export default function EconomicCalendarPage() {
 
   // ── Derived summary (from real loaded events only) ────────────────────────
   const summary = useMemo(() => {
-    const dayEvents = allEvents.filter((e) => isSameDay(e.eventTime, now));
+    const dayEvents = allEvents.filter((e) => eventOnDay(e, now));
     const critical = dayEvents.filter((e) => e.impactLevel === "CRITICAL").length;
     const high = dayEvents.filter((e) => e.impactLevel === "HIGH").length;
-    const upcoming = dayEvents.filter((e) => new Date(e.eventTime).getTime() > Date.now());
+    const upcoming = dayEvents.filter((e) => eventPending(e, Date.now()));
     const next = upcoming[0] ?? null;
     const maxRank = dayEvents.reduce((m, e) => Math.max(m, IMPACT_RANK[e.impactLevel]), 0);
-    const overall = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low" : "Low";
-    const overallTone = maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400" : "text-primary";
+    // "Low" / "None listed" are claims about the whole calendar, so they need a
+    // connected provider. Without one, a listed Medium+ event is still a real
+    // floor ("at least"), but anything lower is Unknown.
+    const level = maxRank >= 4 ? "Critical" : maxRank === 3 ? "High" : maxRank === 2 ? "Medium" : maxRank === 1 ? "Low" : "None listed";
+    const overall = isConnected ? level : maxRank >= 2 ? level : "Unknown";
+    const overallQualifier = !isConnected && maxRank >= 2 ? "At least — calendar provider not read" : null;
+    const overallTone = overall === "Unknown" ? "text-txt-muted"
+      : maxRank >= 4 ? "text-[#E11D48]" : maxRank === 3 ? "text-warning" : maxRank === 2 ? "text-yellow-400" : "text-primary";
     const affected = next?.affectedSymbols ?? [];
-    return { count: dayEvents.length, critical, high, next, overall, overallTone, affected };
-  }, [allEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { count: dayEvents.length, critical, high, next, overall, overallQualifier, overallTone, affected };
+  }, [allEvents, isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Markets to watch — derived from the next/high-impact events' affected symbols.
   const marketsToWatch = useMemo(() => {
     const seen = new Map<string, { symbol: string; reason: string; risk: ImpactLevel }>();
-    for (const e of allEvents.filter((x) => isSameDay(x.eventTime, now) && IMPACT_RANK[x.impactLevel] >= 2)) {
+    for (const e of allEvents.filter((x) => eventOnDay(x, now) && IMPACT_RANK[x.impactLevel] >= 2)) {
       for (const sym of e.affectedSymbols ?? []) {
         if (!seen.has(sym) || IMPACT_RANK[e.impactLevel] > IMPACT_RANK[seen.get(sym)!.risk]) {
           seen.set(sym, { symbol: sym, reason: `${e.currency} event impact`, risk: e.impactLevel });
@@ -346,13 +425,13 @@ export default function EconomicCalendarPage() {
 
   // Upcoming high-impact beyond today.
   const upcomingHigh = useMemo(
-    () => allEvents.filter((e) => !isSameDay(e.eventTime, now) && IMPACT_RANK[e.impactLevel] >= 3).slice(0, 6),
+    () => allEvents.filter((e) => !eventOnDay(e, now) && IMPACT_RANK[e.impactLevel] >= 3).slice(0, 6),
     [allEvents], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Recent released events with actuals.
   const recentReactions = useMemo(
-    () => allEvents.filter((e) => e.actual != null && new Date(e.eventTime).getTime() <= Date.now()).slice(-5).reverse(),
+    () => allEvents.filter((e) => e.actual != null && eventReleased(e, Date.now())).slice(-5).reverse(),
     [allEvents],
   );
 
@@ -422,6 +501,15 @@ export default function EconomicCalendarPage() {
         )
       )}
 
+      {providerStatus.isError && (
+        <div data-testid="calendar-status-unknown" className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-300">
+          <span className="font-semibold">Could not read the calendar provider status</span>
+          {providerStatus.error instanceof Error ? ` (${providerStatus.error.message})` : ""}.{" "}
+          Events below, if any, are from the local database. The absence of an event is{" "}
+          <span className="font-semibold">not an all-clear</span>.
+        </div>
+      )}
+
       {settingsOpen && (
         <div className="rounded-2xl border border-border bg-card p-4 text-sm text-txt-secondary">
           <div className="flex items-center justify-between">
@@ -437,7 +525,11 @@ export default function EconomicCalendarPage() {
       {/* Today's Market Risk */}
       <div className="rounded-2xl border border-border bg-card p-5">
         {allEvents.length === 0 && !providerStatus.isLoading && !dbEvents.isLoading ? (
-          <div className="text-sm text-txt-secondary">No major events found for today.</div>
+          <div data-testid="market-risk-empty" className="text-sm text-txt-secondary">
+            {coverage === "connected"
+              ? `${providerLabel(providerStatus.data?.provider)} lists no events in this window.`
+              : coverageNote}
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div>
@@ -452,8 +544,9 @@ export default function EconomicCalendarPage() {
                     <ShieldAlert className="h-6 w-6" />
                   </span>
                   <div>
-                    <div className={cn("text-xl font-bold", summary.overallTone)}>{summary.overall}</div>
+                    <div data-testid="overall-risk" className={cn("text-xl font-bold", summary.overallTone)}>{summary.overall}</div>
                     <div className="text-xs text-txt-muted">Overall Risk</div>
+                    {summary.overallQualifier && <div className="text-[10px] text-txt-muted">{summary.overallQualifier}</div>}
                   </div>
                 </div>
                 <div className="flex gap-5">
@@ -465,11 +558,16 @@ export default function EconomicCalendarPage() {
             </div>
             <div className="lg:border-l lg:border-border lg:pl-5">
               <div className="text-[11px] text-txt-muted">Next Event</div>
+              <div data-testid="next-event">
               {summary.next ? (
                 <>
                   <div className="mt-0.5 text-lg font-bold">{summary.next.eventName}</div>
-                  <div className="text-sm text-warning">{timeUntil(summary.next.eventTime)}</div>
-                  <div className="text-[11px] text-txt-muted">{utcTime(summary.next.eventTime)} · {clockTime(summary.next.eventTime)} local</div>
+                  <div className="text-sm text-warning">{whenLabel(summary.next)}</div>
+                  <div className="text-[11px] text-txt-muted">
+                    {summary.next.timeKnown
+                      ? `${utcTime(summary.next.eventTime)} · ${clockTime(summary.next.eventTime)} local`
+                      : `${eventYmd(summary.next)} · date only, release time not published by the source`}
+                  </div>
                   <div className="mt-3 text-[11px] text-txt-muted">Affected Markets</div>
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {(summary.affected.slice(0, 4)).map((s) => (
@@ -480,8 +578,11 @@ export default function EconomicCalendarPage() {
                   </div>
                 </>
               ) : (
-                <div className="mt-1 text-sm text-txt-secondary">No more events scheduled today.</div>
+                <div className="mt-1 text-sm text-txt-secondary">
+                  {isConnected ? "No more events scheduled today." : "Not confirmed — the calendar provider was not read."}
+                </div>
               )}
+              </div>
             </div>
           </div>
         )}
@@ -534,20 +635,27 @@ export default function EconomicCalendarPage() {
             <div className="mt-3 space-y-1">
               {(providerStatus.isLoading || dbEvents.isLoading) && <p className="py-6 text-center text-sm text-txt-muted">Loading events…</p>}
               {!providerStatus.isLoading && !dbEvents.isLoading && filtered.length === 0 && (
-                <p className="py-6 text-center text-sm text-txt-muted">No events match these filters.</p>
+                <p className="py-6 text-center text-sm text-txt-muted">
+                  {isConnected ? "No events match these filters." : `No stored events match these filters. ${coverageNote}`}
+                </p>
               )}
               {filtered.map((e) => {
                 const tone = IMPACT_TONE[e.impactLevel];
-                const released = e.actual != null && new Date(e.eventTime).getTime() <= Date.now();
+                const released = e.actual != null && eventReleased(e, Date.now());
+                const lines = timeLines(e);
                 const isOpen = expanded === e.key;
                 return (
                   <div key={e.key} className={cn("rounded-xl border p-3 transition-colors",
                     isOpen ? "border-primary/40 bg-background/40" : "border-transparent hover:bg-background/30")}>
                     <button onClick={() => setExpanded(isOpen ? null : e.key)} className="flex w-full items-start gap-3 text-left">
-                      <div className="w-24 shrink-0">
-                        <div className="text-sm font-semibold">{clockTime(e.eventTime)} <span className="text-[10px] font-normal text-txt-muted">local</span></div>
-                        <div className="text-[11px] text-txt-muted">{utcTime(e.eventTime)}</div>
-                        <div className="text-[11px] text-txt-muted">{timeUntil(e.eventTime)}</div>
+                      <div className="w-24 shrink-0" data-testid={`event-time-${e.key}`}>
+                        {e.timeKnown ? (
+                          <div className="text-sm font-semibold">{clockTime(e.eventTime)} <span className="text-[10px] font-normal text-txt-muted">local</span></div>
+                        ) : (
+                          <div className="text-sm font-semibold">{lines.primary}</div>
+                        )}
+                        <div className="text-[11px] text-txt-muted">{lines.secondary}</div>
+                        <div className="text-[11px] text-txt-muted">{whenLabel(e)}</div>
                       </div>
                       <span className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", tone.dot)} />
                       <div className="min-w-0 flex-1">
@@ -583,8 +691,9 @@ export default function EconomicCalendarPage() {
                           const minsBefore = -msSince / 60000;
                           const minsAfter = msSince / 60000;
                           const hasActual = e.actual != null;
-                          const phase: string | null =
-                            minsAfter >= 60 && hasActual ? "SETTLED"
+                          // A date-only release has no known time, so no phase can be derived.
+                          const phase: string | null = !e.timeKnown ? null
+                            : minsAfter >= 60 && hasActual ? "SETTLED"
                             : minsAfter >= 0 && hasActual ? "POST_EVENT"
                             : minsBefore <= 5 && minsBefore >= -5 ? "AT_EVENT"
                             : minsBefore > 0 && minsBefore <= 30 ? "PRE_EVENT"
@@ -673,11 +782,12 @@ export default function EconomicCalendarPage() {
           {/* Ruby's News Read */}
           <div className="rounded-2xl border border-ruby/25 bg-card p-4">
             <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-ruby" /><h3 className="text-sm font-semibold text-ruby">{name}’s News Read</h3></div>
+            <div data-testid="ruby-news-read">
             {summary.next ? (
               <>
                 <div className="mt-2 flex gap-2 text-sm text-txt-secondary">
                   <Quote className="h-4 w-4 shrink-0 text-ruby/70" />
-                  <p>{summary.next.eventName} {timeUntil(summary.next.eventTime)}. Risk is {summary.overall.toLowerCase()} — major releases can move {summary.next.currency} pairs quickly. Best action: wait for the first reaction, then let Scanner confirm direction.</p>
+                  <p>{summary.next.eventName} {whenLabel(summary.next)}. Risk is {summary.overall.toLowerCase()} — major releases can move {summary.next.currency} pairs quickly. Best action: wait for the first reaction, then let Scanner confirm direction.</p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {["Wait","Reduce Size","Avoid Scalp","Watch Spread","Confirm After"].map((g) => (
@@ -686,8 +796,11 @@ export default function EconomicCalendarPage() {
                 </div>
               </>
             ) : (
-              <p className="mt-2 text-sm text-txt-muted">{name} is waiting for calendar data.</p>
+              <p className="mt-2 text-sm text-txt-muted">
+                {isConnected ? `${name} has no more releases listed for today.` : `${name} cannot read today's calendar. ${coverageNote}`}
+              </p>
             )}
+            </div>
             <button onClick={openRubyLiveChat} className="mt-3 flex w-full items-center justify-between rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby">
               <span className="inline-flex items-center gap-1.5"><MessageCircle className="h-4 w-4" /> Ask {name}</span>
               <ChevronRight className="h-4 w-4" />
@@ -721,18 +834,20 @@ export default function EconomicCalendarPage() {
           {/* Upcoming High Impact */}
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-warning" /><h3 className="text-sm font-semibold">Upcoming High Impact</h3></div>
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2" data-testid="upcoming-high-impact">
               {upcomingHigh.length === 0 ? (
-                <p className="text-xs text-txt-muted">No high-impact events ahead in this window.</p>
+                <p className="text-xs text-txt-muted">
+                  {isConnected ? "No high-impact events ahead in this window." : "Not confirmed — the calendar provider was not read; only stored events are shown."}
+                </p>
               ) : upcomingHigh.map((e) => (
                 <div key={e.key} className="flex items-center gap-2 text-xs">
-                  <span className="w-24 shrink-0 text-txt-muted">{clockTime(e.eventTime)} local<br />{utcTime(e.eventTime)}</span>
+                  <span className="w-24 shrink-0 text-txt-muted">{timeLines(e).primary}<br />{timeLines(e).secondary}</span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium text-foreground">{e.eventName}</div>
                     <div className="text-txt-muted">{e.currency}</div>
                   </div>
                   <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-semibold", IMPACT_TONE[e.impactLevel].chip)}>{IMPACT_TONE[e.impactLevel].label}</span>
-                  <span className="w-12 shrink-0 text-right text-txt-muted">{timeUntil(e.eventTime)}</span>
+                  <span className="w-12 shrink-0 text-right text-txt-muted">{whenLabel(e)}</span>
                 </div>
               ))}
             </div>

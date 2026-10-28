@@ -17,6 +17,7 @@ import { useEffect, useState, useMemo } from "react";
 import { PageTabs } from "@/components/ui/PageTabs";
 import { Zap, Layers, ListChecks, Wrench } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { riskCapsStatus } from "@/lib/riskCapsStatus";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useAssistantName } from "@/lib/assistant-name";
 import { useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey, useGetMeSharedAccountPositions, getGetMeSharedAccountPositionsQueryKey } from "@workspace/api-client-react";
@@ -25,6 +26,7 @@ import { CockpitHeader } from "@/components/dashboard/cockpit/CockpitHeader";
 import { MobileMenuTrigger } from "@/components/layout/Topbar";
 import { SidebarContent } from "@/components/layout/AppLayout";
 import { QuickTradePanel, type Quote } from "@/components/dashboard/trade/QuickTradePanel";
+import { quickTradeRiskApprox } from "@/components/dashboard/trade/quickTradeRisk";
 import { PreTradeHeatChecklist } from "@/components/dashboard/trade/PreTradeHeatChecklist";
 import {
   TradeStatusBar, TradeHero, PositionsPanel, OrdersPanel,
@@ -32,7 +34,6 @@ import {
 } from "@/components/dashboard/trade/TradePanels";
 import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "@/components/dashboard/cockpit/bridgeObservation";
-import { describeRiskCaps } from "@/components/dashboard/cockpit/riskCapsSummary";
 
 type Opp = {
   symbol: string; timeframe: string; bias: string; recommendedAction: string;
@@ -113,30 +114,12 @@ export default function TradeCommandRoom() {
     setPicked(o); setSymbol(o.symbol); setTimeframe(o.timeframe);
   }
 
-  // Risk approximation — simple display of lot × notional placeholder, using
-  // the existing quote. (Mirrors the mockup's "Risk approx." readout.)
-  // Real risk-at-stop estimate. Only shows a dollar figure when a stop-loss
-  // is set, since risk is undefined without one — we never fabricate a number.
-  //   risk ≈ lots × stop-distance(in pips) × pip-value-per-lot
-  // Pip value uses the standard 100k contract (~$10/pip per 1.0 lot for
-  // 4-digit FX pairs, ~$1000/pip per 1.0 lot for 2-digit JPY pairs). The
-  // server's risk governor remains the source of truth on submit.
-  const riskApprox = useMemo(() => {
-    const l = Number(lot) || 0;
-    const sl = Number(stopLoss);
-    const ref = quote ? (quote.mid ?? quote.bid ?? quote.ask) : NaN;
-    if (!l) return "—";
-    if (!stopLoss || !Number.isFinite(sl) || !Number.isFinite(ref) || sl <= 0) {
-      return "Set SL";
-    }
-    const isJpy = /JPY$/i.test(symbol);
-    const pipSize = isJpy ? 0.01 : 0.0001;
-    const pips = Math.abs(ref - sl) / pipSize;
-    const pipValuePerLot = 10; // ~$10 per pip per 1.0 standard lot
-    const risk = l * pips * pipValuePerLot;
-    if (!Number.isFinite(risk) || risk <= 0) return "—";
-    return `$${risk.toFixed(2)}`;
-  }, [lot, stopLoss, quote, symbol]);
+  // Risk-at-stop readout (display only; the server risk governor decides on
+  // submit). See quickTradeRiskApprox for when a figure is withheld.
+  const riskApprox = useMemo(
+    () => quickTradeRiskApprox({ symbol, lot, stopLoss, quote }),
+    [lot, stopLoss, quote, symbol],
+  );
 
   // ── Mode / permission → plain English ───────────────────────────────
   const isLive = tradingMode.isLiveShared;
@@ -204,7 +187,7 @@ export default function TradeCommandRoom() {
     <div className="space-y-4">
       <RiskGovernorCard
         statusLabel={rgStatus.label} statusTone={rgStatus.tone}
-        riskLevel={describeRiskCaps(tradingMode.envelope?.userRiskCaps ?? null).label} bridge={bridge}
+        riskCaps={riskCapsStatus(tradingMode.envelope)} bridge={bridge}
         approval={tradingMode.canManualTrade ? "Approved" : "Pending"}
         isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
       />

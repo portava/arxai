@@ -8,9 +8,16 @@
 // Money model: where the broker has not reported a tick value (always, for now,
 // since the EA reports `point` but not tickValue), money is derived from ARX's
 // standard per-symbol contract model — the SAME assumptions the live position
-// sizer already uses (forex $10 per pip per lot; synthetics / indices $1 per
+// sizer already uses (forex $10 per pip per lot; synthetic indices $1 per
 // price unit per lot). This is spec-derived + a documented model, never a
 // fabricated broker number; `dataQuality` says so honestly.
+//
+// "Forex" means BOTH halves of the symbol are ISO-4217 fiat codes (the same
+// strict rule as the server's contractSize.ts). Metals (XAUUSD = 100 oz,
+// XAGUSD = 5,000 oz), crypto and stock indices have broker-specific contract
+// sizes that the EA does not report yet, so their money figures are WITHHELD
+// (null + a plain note) rather than priced with the FX lot — the loose
+// "six letters / contains USD" test overstated a gold spread ~1,000x.
 
 import type {
   AccountImpact,
@@ -49,12 +56,21 @@ function isSynthetic(symbol: string): boolean {
   return s.includes("volatility") || s.includes("boom") || s.includes("crash") ||
     s.includes("jump") || s.includes("step") || s.includes("(1s)");
 }
+/**
+ * ISO-4217 fiat codes. Mirrors FIAT_CODES in the server's contractSize.ts:
+ * metals (XAU/XAG/XPT/XPD), crypto and index tickers are deliberately absent so
+ * they never inherit the 100,000-unit FX lot.
+ */
+const FIAT_CODES: ReadonlySet<string> = new Set([
+  "USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "SEK", "NOK", "DKK",
+  "SGD", "HKD", "ZAR", "MXN", "PLN", "TRY", "CZK", "HUF", "CNH", "CNY", "RUB",
+  "INR", "THB", "ILS", "KRW",
+]);
+/** Strict forex: both halves are fiat codes (a broker suffix like `.raw` is ok). */
 function isForex(symbol: string): boolean {
-  const s = symbol.replace(/\s/g, "").toUpperCase();
-  if (/^[A-Z]{6}$/.test(s)) return true;
-  return s.includes("USD") || s.includes("EUR") || s.includes("GBP") ||
-    s.includes("JPY") || s.includes("CHF") || s.includes("AUD") ||
-    s.includes("CAD") || s.includes("NZD");
+  const m = /^([A-Z]{3})([A-Z]{3})([._-][A-Z0-9]+)?$/.exec(symbol.replace(/\s/g, "").toUpperCase());
+  if (!m) return false;
+  return FIAT_CODES.has(m[1]!) && FIAT_CODES.has(m[2]!);
 }
 function isJpy(symbol: string): boolean {
   return symbol.toUpperCase().includes("JPY");
@@ -72,23 +88,36 @@ function inferPointSize(price: number, symbol: string): number {
 }
 
 /**
+ * True when ARX has a documented contract model for this symbol: a strict fiat
+ * forex pair, or a synthetic index. Metals, crypto, stock indices and anything
+ * unrecognised have no trustworthy default contract size.
+ */
+function hasContractModel(symbol: string): boolean {
+  return isSynthetic(symbol) || isForex(symbol);
+}
+
+/**
  * Money value of ONE point of price movement, per `lots` lots. Mirrors the live
  * position sizer's contract model so previews and sizing agree.
- *   forex:        $10 per pip per lot; pip = 10 points (5/3-digit) → per-point
- *                 derived from pip size & point size.
- *   synthetic/    $1 per 1.0 of price per lot → per-point = pointSize.
- *   indices/other treated synthetic-style ($1 per price unit per lot).
+ *   forex:      $10 per pip per lot; pip = 10 points (5/3-digit) → per-point
+ *               derived from pip size & point size.
+ *   synthetic:  $1 per 1.0 of price per lot → per-point = pointSize.
+ *   otherwise:  null — metals / crypto / indices need a broker-reported
+ *               contract size, which we do not have, so we never guess.
  */
 function moneyPerPoint(symbol: string, pointSize: number, lots: number): number | null {
   if (!isPos(pointSize) || !isPos(lots)) return null;
-  if (isForex(symbol) && !isSynthetic(symbol)) {
+  if (isSynthetic(symbol)) {
+    // synthetic indices: $1 per 1.0 price unit per lot
+    return 1 * pointSize * lots;
+  }
+  if (isForex(symbol)) {
     const pipSize = isJpy(symbol) ? 0.01 : 0.0001;
     const pipValuePerLot = 10; // $10 per pip per standard lot (model)
     const valuePerPricePerLot = pipValuePerLot / pipSize; // money per 1.0 price per lot
     return valuePerPricePerLot * pointSize * lots;
   }
-  // synthetics / indices / stocks: $1 per 1.0 price unit per lot
-  return 1 * pointSize * lots;
+  return null;
 }
 
 export function estimateExecutionPreview(input: ExecutionPreviewInput): ExecutionPreview {
@@ -127,9 +156,18 @@ export function estimateExecutionPreview(input: ExecutionPreviewInput): Executio
 
   const mpp = moneyPerPoint(symbol, pointSize, lots);
   if (mpp == null) {
-    notes.push("Lot size or price increment unavailable — money values can't be computed.");
+    if (isPos(pointSize) && isPos(lots) && !hasContractModel(symbol)) {
+      notes.push(
+        `Money values withheld — your broker has not reported a contract size for ${symbol}, ` +
+        "and metals, crypto and indices differ by broker, so costs are shown in points only.",
+      );
+    } else {
+      notes.push("Lot size or price increment unavailable — money values can't be computed.");
+    }
     degraded = true;
-  } else if (!hasBrokerTruth || pointInferred) {
+  } else {
+    // The EA reports `point` but never a tick value, so every money figure is
+    // model-derived — say so even when the point size is broker truth.
     notes.push("Money values use ARX's standard contract model for this symbol, not broker-reported tick value.");
   }
 
@@ -464,10 +502,11 @@ function computeAccountImpact(a: {
 
   // Margin: contract notional / leverage. Notional uses the contract model.
   let marginRequired: number | null = null;
-  if (isPos(referencePrice) && isPos(lots) && isPos(leverage)) {
-    const contractSize = isForex(symbol) && !isSynthetic(symbol) ? 100_000 : 1;
+  const modelled = hasContractModel(symbol);
+  if (modelled && isPos(referencePrice) && isPos(lots) && isPos(leverage)) {
+    const contractSize = isSynthetic(symbol) ? 1 : 100_000;
     const notional = referencePrice * contractSize * lots;
-    // For synthetics/indices the "$1 per price unit per lot" model implies a
+    // For synthetics the "$1 per price unit per lot" model implies a
     // notional ≈ price * lots; either way notional/leverage is the margin.
     marginRequired = round(notional / leverage, 2);
   }
@@ -488,7 +527,9 @@ function computeAccountImpact(a: {
       : null;
 
   let note: string;
-  if (marginRequired == null && riskMoney == null) {
+  if (!modelled) {
+    note = "Margin and risk in money need your broker's contract size for this symbol, which hasn't been reported yet.";
+  } else if (marginRequired == null && riskMoney == null) {
     note = "Add your balance and a stop loss to see margin and risk in money.";
   } else if (riskMoney != null) {
     note = "Risk includes the stop distance plus expected entry cost.";

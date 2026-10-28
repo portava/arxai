@@ -302,7 +302,7 @@ function ChecklistCard({ items, progress }: { items: ReturnType<typeof buildSetu
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${tone.chip}`}>{tone.icon} {tone.label}</span>
               </div>
               <div className="mt-1 text-xs text-zinc-400">{item.explanation}</div>
-              <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Why:</span> {item.safeNextAction}</div>
+              <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Next step:</span> {item.safeNextAction}</div>
               {item.blockerReason && <div className="text-xs text-rose-300">Blocker: {item.blockerReason}</div>}
               {item.related && (
                 <Link href={item.related.route}>
@@ -392,7 +392,9 @@ function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: Retu
         <dt className="text-zinc-500">Bridge mode</dt><dd>{ctx.bridge?.bridgeMode ?? "unknown"}</dd>
         <dt className="text-zinc-500">Heartbeat</dt><dd>{heartbeatLine(ctx.bridge)}</dd>
         <dt className="text-zinc-500">Broker read-only</dt><dd>{tri(ctx.brokerReadOnly)}</dd>
-        <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness}</dd>
+        {/* The runtime context does not read a readiness verdict from the
+            server, so "unknown" is not a measurement. */}
+        <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness === "unknown" ? "not checked by this page" : ctx.readiness}</dd>
         <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive === true ? "ENGAGED" : ctx.emergencyStopActive === false ? "off" : "not checked here (open Emergency page)"}</dd>
         <dt className="text-zinc-500">Selected symbol</dt><dd>{ctx.selectedSymbol ?? "—"}</dd>
         <dt className="text-zinc-500">Route</dt><dd className="truncate">{ctx.route}</dd>

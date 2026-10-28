@@ -5,6 +5,9 @@ import { describe, it, expect } from "vitest";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import {
   resolveScannerTruth,
+  resolveChartFeedStrip,
+  scheduledWeekendClosureFor,
+  nextWeekendClosureBoundaryMs,
   type ScannerTruthInputs,
   type ScannerTruthMode,
 } from "./scannerTruth";
@@ -136,5 +139,126 @@ describe("delayed feed copy states the real lag", () => {
     expect(t.candles.reason).not.toMatch(/slightly behind/i);
     expect(t.candles.reason).toMatch(/2m ago/);
     expect(t.consolidated.candleStatus).toBe("SYNCING");
+  });
+});
+
+describe("closed market is described as closed, not as a feed fault", () => {
+  // 2026-10-30 is a Friday; 2026-10-31 a Saturday; 2026-11-01 a Sunday.
+  const FRI_LAST_M1 = "2026-10-30T21:59:00.000Z";
+  const SAT_NOON = Date.parse("2026-10-31T12:00:00.000Z");
+
+  function weekendStale(over: Partial<ScannerTruthInputs> = {}, feedOver: Partial<ChartFeedStatus> = {}) {
+    return resolveScannerTruth(inputs({
+      nowMs: SAT_NOON,
+      lastTime: FRI_LAST_M1,
+      feedStatus: feed({
+        quality: "stale", stale: true, isLive: false, aiUsable: false, trailingIntervals: 841,
+        warning: "Feed is stale — newest bar trails the current bar by 841 intervals.",
+        ...feedOver,
+      }),
+      ...over,
+    }));
+  }
+
+  it("weekend forex M1: the Data pill, reason, health and action say market closed", () => {
+    const t = weekendStale();
+    expect(t.strip.data.verdict).toBe("Market closed");
+    expect(t.candles.reason).toMatch(/^Market closed/);
+    expect(t.candles.reason).toContain("Fri 22:00 UTC");
+    expect(t.candles.reason).toContain("Fri 21:59 UTC");
+    expect(t.candles.reason).not.toMatch(/frozen|older than expected/i);
+    expect(t.dataHealth.headline).not.toMatch(/stale/i);
+    expect(t.dataHealth.lines.join(" ")).not.toMatch(/frozen/i);
+    expect(t.consolidated.quoteStatus).toBe("MARKET_CLOSED");
+    expect(t.consolidated.scannerActionability).toBe("MARKET_CLOSED");
+    expect(t.consolidated.internalReasonCode).toBe("MARKET_CLOSED");
+    expect(t.marketClosure?.closedAt).toBe("2026-10-30T22:00:00.000Z");
+    // Never more live than before.
+    expect(t.isLivePrice).toBe(false);
+    expect(t.actionable).toBe(false);
+    expect(resolveChartFeedStrip(t.displayStatus, { marketClosed: t.marketClosure != null, hasCandles: true }))
+      .toBe("market_closed");
+  });
+
+  it("a 24/7 market on the same weekend keeps the stale-feed wording", () => {
+    const t = weekendStale({}, { assetClass: "crypto" });
+    expect(t.strip.data.verdict).toBe("Stale");
+    expect(t.consolidated.quoteStatus).not.toBe("MARKET_CLOSED");
+    expect(t.marketClosure ?? null).toBeNull();
+  });
+
+  it("a bar that opened after the scheduled close is observed trading, not a closed market", () => {
+    const t = weekendStale({ lastTime: "2026-10-31T11:00:00.000Z" });
+    expect(t.strip.data.verdict).toBe("Stale");
+    expect(t.marketClosure ?? null).toBeNull();
+  });
+
+  it("a weekend display tip does not hide a closed market when the newest closed bar predates the close", () => {
+    const t = weekendStale({ lastTime: "2026-10-31T11:59:00.000Z", lastClosedTime: FRI_LAST_M1 });
+    expect(t.strip.data.verdict).toBe("Market closed");
+  });
+
+  it("after the window ends (Sunday 21:00 UTC) nothing claims closed", () => {
+    const t = weekendStale({ nowMs: Date.parse("2026-11-01T21:30:00.000Z") });
+    expect(t.strip.data.verdict).toBe("Stale");
+    expect(t.marketClosure ?? null).toBeNull();
+  });
+
+  it("a failed header read keeps its own reason instead of a closed-market claim", () => {
+    const t = weekendStale({ headerOk: false });
+    expect(t.strip.data.verdict).not.toBe("Market closed");
+  });
+
+  it("the chart strip follows the server's closed-market stream signal too", () => {
+    expect(resolveChartFeedStrip("STALE", { marketClosed: true, hasCandles: true })).toBe("market_closed");
+    expect(resolveChartFeedStrip("STALE", { marketClosed: false, hasCandles: true })).toBe("stale");
+    expect(resolveChartFeedStrip("FALLBACK_COMPOSITE", { marketClosed: false, hasCandles: true })).toBe("delayed");
+    expect(resolveChartFeedStrip("LIVE", { marketClosed: false, hasCandles: true })).toBeNull();
+  });
+});
+
+describe("no live-entry promise inside the freshness budget after the close", () => {
+  it("1h feed, bar opened Fri 21:00, now Fri 22:05, server still live/clean", () => {
+    const now = Date.parse("2026-10-30T22:05:00.000Z");
+    const t = resolveScannerTruth(inputs({
+      timeframe: "1h",
+      nowMs: now,
+      candleCount: 150,
+      requestedCount: 150,
+      lastTime: "2026-10-30T21:00:00.000Z",
+      feedStatus: feed({ quality: "clean", isLive: true, aiUsable: true, trailingIntervals: 1 }),
+    }));
+    expect(t.strip.data.verdict).not.toBe("Live");
+    expect(t.dataHealth.lines.join(" ")).not.toMatch(/fresh enough for a live entry/i);
+    expect(t.candles.reason).not.toMatch(/confirmed/i);
+    expect(t.consolidated.candleStatus).not.toBe("CONFIRMED");
+    expect(t.consolidated.scannerActionability).toBe("MARKET_CLOSED");
+    expect(actionabilityDisplayUi(t.consolidated.scannerActionability).copy).not.toMatch(/live data is confirmed/i);
+    expect(t.isLivePrice).toBe(false);
+  });
+
+  it("the same feed an hour earlier (market open) is still live", () => {
+    const now = Date.parse("2026-10-30T21:05:00.000Z");
+    const t = resolveScannerTruth(inputs({
+      timeframe: "1h",
+      nowMs: now,
+      candleCount: 150,
+      requestedCount: 150,
+      lastTime: "2026-10-30T20:00:00.000Z",
+      feedStatus: feed({ quality: "clean", isLive: true, aiUsable: true, trailingIntervals: 1 }),
+    }));
+    expect(t.strip.data.verdict).toBe("Live");
+    expect(t.marketClosure ?? null).toBeNull();
+  });
+});
+
+describe("weekend closure boundaries", () => {
+  it("re-resolves exactly when the closure starts and ends", () => {
+    expect(nextWeekendClosureBoundaryMs("forex", Date.parse("2026-10-28T12:00:00.000Z")))
+      .toBe(Date.parse("2026-10-30T22:00:00.000Z"));
+    expect(nextWeekendClosureBoundaryMs("forex", Date.parse("2026-10-31T12:00:00.000Z")))
+      .toBe(Date.parse("2026-11-01T21:00:00.000Z"));
+    expect(nextWeekendClosureBoundaryMs("crypto", Date.parse("2026-10-31T12:00:00.000Z"))).toBeNull();
+    expect(scheduledWeekendClosureFor("forex", Date.parse("2026-10-30T21:59:59.000Z"))).toBeNull();
   });
 });

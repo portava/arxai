@@ -361,11 +361,11 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
         ? `Stop trading "${worstStrat}" until you can show 5 paper wins on it in replay.`
         : "No strategy shows a net loss in your recorded results. Pick one strategy and run 10 replays before taking any live intent.",
       suggestedRuleChanges,
-      // Journal rows carry no confidence score, so calibration cannot be
-      // measured here; never compare the win rate to a fixed constant.
-      confidenceCalibration: decided < 10
-        ? "Sample size too small — confidence numbers are not yet calibrated."
-        : "Confidence calibration is not measured — journal entries do not record a confidence score to compare against outcomes.",
+      // trade_journal records no confidence score, so calibration (confidence
+      // vs. outcome) is never measured here. Say so instead of comparing the
+      // win rate with a constant.
+      confidenceCalibration:
+        "Confidence calibration not measured — your journal entries do not record a confidence score to compare with your win rate.",
       dataSource: "SIMULATOR",
       generatedAt: new Date().toISOString(),
     });

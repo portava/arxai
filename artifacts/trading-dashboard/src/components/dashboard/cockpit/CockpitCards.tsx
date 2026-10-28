@@ -6,7 +6,7 @@
 //
 //   Account snapshot ...... useGetMeSharedAccountSummary + useTradingMode
 //   Ruby market view ...... useGetBrainSymbols + useGetCoachExplanation + useActiveSymbol
-//   Critical events ....... useGetEconomicCalendar({ impact: "high" })
+//   Critical events ....... useGetEconomicCalendar({ impact: "high" }) + useGetLiveCalendarEvents (provider read state)
 //   Open positions ........ useGetMeSharedAccountPositions  (MT5-confirmed only)
 //   Today performance ..... useGetPerformanceSummary
 //   Alerts summary ........ useGetCriticalAlerts            (grouped, de-duped)
@@ -29,6 +29,7 @@ import {
   useGetPerformanceSummary,
   useGetCriticalAlerts,
   useGetEconomicCalendar,
+  useGetLiveCalendarEvents,
 } from "@workspace/api-client-react";
 import { useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
 import type { SnapshotReconciliation } from "@/hooks/useLiveAccountSnapshot";
@@ -55,6 +56,7 @@ import { useActiveSymbol } from "@/lib/symbol-context";
 import { useAssistantName } from "@/lib/assistant-name";
 import { formatPnl } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { calendarEventWhen, describeCalendarCoverage } from "@/lib/calendarCoverage";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
@@ -598,15 +600,15 @@ export function RubyMarketViewCard() {
 export function CriticalEventsCard() {
   const eventsQ = useGetEconomicCalendar({ impact: "high", days: 3 });
   const events = (eventsQ.data ?? []).slice(0, 4);
-
-  const minsUntil = (iso: string) => {
-    const d = (new Date(iso).getTime() - Date.now()) / 60000;
-    if (Number.isNaN(d)) return "";
-    if (d < 0) return "now";
-    if (d < 60) return `${Math.round(d)}m`;
-    if (d < 1440) return `${Math.round(d / 60)}h`;
-    return `${Math.round(d / 1440)}d`;
-  };
+  // /news/calendar returns [] when the provider could not be read too; only a
+  // connected provider makes an empty list mean "no high-impact events".
+  const providerQ = useGetLiveCalendarEvents({ daysAhead: 3, impact: "high" });
+  const coverage = describeCalendarCoverage({
+    status: providerQ.data,
+    statusError: providerQ.isError,
+    listError: eventsQ.isError,
+  });
+  const nowMs = Date.now();
 
   return (
     <CockpitCard
@@ -618,7 +620,9 @@ export function CriticalEventsCard() {
       data-testid="cockpit-critical-events"
     >
       {events.length === 0 ? (
-        <p className="py-4 text-center text-sm text-txt-secondary">No high-impact events in the next 3 days.</p>
+        <p data-testid="critical-events-empty" className="py-4 text-center text-sm text-txt-secondary">
+          {coverage.read ? "No high-impact events in the next 3 days." : coverage.note}
+        </p>
       ) : (
         <ul className="space-y-2">
           {events.map((e) => (
@@ -633,11 +637,13 @@ export function CriticalEventsCard() {
                   <Pill tone="danger">High</Pill>
                 </div>
                 <div className="mt-0.5 text-[11px] text-txt-muted">
-                  {new Date(e.eventTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  {calendarEventWhen(e, nowMs).display}
                   {e.currency ? ` · ${e.currency}` : ""}
                 </div>
               </div>
-              <span className="shrink-0 text-sm font-semibold text-danger">{minsUntil(e.eventTime)}</span>
+              <span className={`shrink-0 text-sm font-semibold ${calendarEventWhen(e, nowMs).past ? "text-txt-muted" : "text-danger"}`}>
+                {calendarEventWhen(e, nowMs).label}
+              </span>
             </li>
           ))}
         </ul>

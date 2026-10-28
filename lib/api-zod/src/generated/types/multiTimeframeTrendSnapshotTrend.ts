@@ -13,4 +13,5 @@ export const MultiTimeframeTrendSnapshotTrend = {
   UP: "UP",
   DOWN: "DOWN",
   SIDEWAYS: "SIDEWAYS",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;

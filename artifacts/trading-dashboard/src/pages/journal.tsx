@@ -11,8 +11,13 @@ import { cn } from "@/lib/utils";
 // GET /api/journal returns the latest 100 entries (artifacts/api-server/src/routes/journal.ts).
 const JOURNAL_PAGE_CAP = 100;
 
-function fetchJournal() {
-  return fetch("/api/journal").then((r) => r.json());
+/** Throws on a non-2xx or a non-array body so a failed read never looks like an empty journal. */
+async function fetchJournal(): Promise<any[]> {
+  const r = await fetch("/api/journal");
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const body: unknown = await r.json();
+  if (!Array.isArray(body)) throw new Error("unexpected response");
+  return body;
 }
 
 const EMOTION_TAGS = ["Calm", "FOMO", "Fear", "Greed", "Revenge", "Disciplined", "Uncertain"] as const;
@@ -45,7 +50,7 @@ export default function JournalPage() {
   const [form, setForm] = useState<JournalForm>(DEFAULT_FORM);
   const [filterEmotion, setFilterEmotion] = useState<string>("All");
 
-  const { data: entries = [], isLoading } = useQuery({
+  const { data: entries = [], isLoading, isError, error } = useQuery({
     queryKey: getGetJournalEntriesQueryKey(),
     queryFn: fetchJournal,
   });
@@ -106,7 +111,9 @@ export default function JournalPage() {
           },
           { label: pageFull ? `P&L (latest ${JOURNAL_PAGE_CAP} entries)` : "Total P&L", value: `$${totalPnl.toFixed(2)}`, cls: totalPnl >= 0 ? "text-success" : "text-danger" },
           { label: "Top Emotion", value: topEmotion, cls: topEmotion === "Disciplined" ? "text-success" : topEmotion === "FOMO" || topEmotion === "Revenge" ? "text-danger" : "text-warning" },
-        ].map((s) => (
+        ].map((s) => isError || isLoading
+          ? { ...s, value: isError ? "unavailable" : "…", cls: "text-txt-muted" }
+          : s).map((s) => (
           <div key={s.label} className="rounded-2xl border border-border bg-card p-4">
             <div className="mb-1 text-xs text-txt-muted">{s.label}</div>
             <div className={cn("text-xl font-bold", s.cls)}>{s.value}</div>
@@ -201,11 +208,28 @@ export default function JournalPage() {
       {/* Entries */}
       {isLoading && <div className="text-txt-secondary text-sm py-8 text-center">Loading journal...</div>}
 
-      {!isLoading && filtered.length === 0 && (
-        <div className="text-center py-16 text-txt-muted">
+      {isError && (
+        <div className="rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-danger" data-testid="journal-load-error">
+          Your journal could not be loaded ({error instanceof Error ? error.message : "unknown error"}). Whether you have any entries is unknown; the stats above are not shown.
+        </div>
+      )}
+
+      {!isLoading && !isError && filtered.length === 0 && (
+        <div className="text-center py-16 text-txt-muted" data-testid="journal-empty">
           <div className="text-4xl mb-3">📓</div>
-          <div className="font-semibold">No journal entries yet</div>
-          <div className="text-sm mt-1">Start logging your trades to track your psychology and improve performance</div>
+          {entries.length === 0 ? (
+            <>
+              <div className="font-semibold">No journal entries yet</div>
+              <div className="text-sm mt-1">Start logging your trades to track your psychology and improve performance</div>
+            </>
+          ) : (
+            <>
+              <div className="font-semibold">No entries match the "{filterEmotion}" filter</div>
+              <div className="text-sm mt-1">
+                {entries.length} entr{entries.length === 1 ? "y is" : "ies are"} loaded but none is tagged {filterEmotion}. Choose "All" to see them.
+              </div>
+            </>
+          )}
         </div>
       )}
 

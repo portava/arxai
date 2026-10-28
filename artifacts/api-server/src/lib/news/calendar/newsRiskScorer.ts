@@ -1,4 +1,5 @@
 import type { EconomicEvent } from "./economicEvents.js";
+import { currenciesForSymbol } from "./calendarSymbolMap.js";
 
 export interface NewsRisk {
   symbol: string;
@@ -21,21 +22,6 @@ export interface NewsRisk {
   calendarAvailable: boolean;
 }
 
-const SYMBOL_CURRENCIES: Record<string, string[]> = {
-  EURUSD: ["EUR", "USD"],
-  GBPUSD: ["GBP", "USD"],
-  USDJPY: ["USD", "JPY"],
-  AUDUSD: ["AUD", "USD"],
-  USDCAD: ["USD", "CAD"],
-  EURJPY: ["EUR", "JPY"],
-  GBPJPY: ["GBP", "JPY"],
-  US30: ["USD"],
-  NAS100: ["USD"],
-  SPX500: ["USD"],
-  AAPL: ["USD"],
-  TSLA: ["USD"],
-  MSFT: ["USD"],
-};
 
 const SYNTHETIC = new Set([
   "Volatility 75 Index",
@@ -92,7 +78,10 @@ export function scoreNewsRisk(symbol: string, events: EconomicEvent[]): NewsRisk
     };
   }
 
-  const currencies = SYMBOL_CURRENCIES[symbol] ?? [];
+  // Same symbol → currency rule as the radar / Truth path. A private 13-symbol
+  // table here left CADJPY, EURAUD, GER30, BTCUSD … with no currencies, so a
+  // HIGH CAD event 10m away read "No relevant high-impact news" for CADJPY.
+  const currencies = currenciesForSymbol(symbol);
   const now = Date.now();
 
   const relevant = events.filter((e) =>

@@ -146,7 +146,7 @@ export type OverlayStatus = "verified" | "limited" | "check" | "blocked";
 export type EffectiveMode = "demo" | "live" | "read_only";
 
 // Single plain-English data verdict for the consolidated truth strip.
-export type DataVerdict = "Live" | "Delayed" | "Stale" | "Historical only" | "Unavailable";
+export type DataVerdict = "Live" | "Delayed" | "Stale" | "Market closed" | "Historical only" | "Unavailable";
 export type TradingVerdict =
   | "Enabled"
   | "Read-only"
@@ -275,6 +275,13 @@ export interface ScannerTruth {
   actionable: boolean;
 
   /**
+   * The scheduled weekend closure this read falls in, when no bar has opened
+   * since the close (ISO times). Null/absent otherwise. Display-only: it explains
+   * a non-live read as a closed market rather than a feed fault.
+   */
+  marketClosure?: { closedAt: string; windowEndsAt: string } | null;
+
+  /**
    * True only when the active candle source is the user's own broker feed
    * (tier === "broker"). A connected MT5 execution bridge does NOT make this
    * true — market data and the execution bridge are independent. When this is
@@ -356,6 +363,12 @@ export interface ScannerTruthInputs {
   requestedCount: number;
   firstTime: string | null;
   lastTime: string | null;
+  /**
+   * Open time of the newest CLOSED bar (forming tip excluded) when the bars
+   * state completeness; omitted → `lastTime`. Used only to tell a closed
+   * market from one that has traded since its scheduled close.
+   */
+  lastClosedTime?: string | null;
   lastClose: number | null;
   /** Resolved display precision for the instrument (see ScannerTruth.candles). */
   pricePrecision?: number | null;
@@ -422,6 +435,102 @@ function positivePrice(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+// ── Scheduled weekend closure (display truth only) ────────────────────────────
+//
+// Forex, metals, index and stock markets close for the weekend. Without this
+// the scanner described a closed market as a feed fault ("Stale", "frozen",
+// "older than expected") or, inside the freshness budget right after the
+// close, as "Live … fresh enough for a live entry".
+//
+// The window is the span in which EVERY weekend-closing class is closed in
+// both DST seasons: Friday 22:00 UTC (after the latest Friday close) to Sunday
+// 21:00 UTC (before the earliest Sunday reopen). Outside it nothing is claimed,
+// so a session close that falls outside the window keeps the existing wording
+// rather than an invented "closed". Within it, closure is reported ONLY when no
+// bar opened at/after the close — a bar after the close is observed trading and
+// always beats the schedule. This can only downgrade (MARKET_CLOSED is the most
+// severe action cap); it never promotes data, and it is not an execution gate.
+const WEEKEND_CLOSING_ASSET_CLASSES: ReadonlySet<string> = new Set([
+  "forex",
+  "metals",
+  "indices",
+  "stocks",
+]);
+const DAY_MS = 24 * 60 * MIN;
+const HOUR_MS = 60 * MIN;
+const WEEKEND_CLOSE_FRIDAY_UTC_HOUR = 22;
+const WEEKEND_REOPEN_SUNDAY_UTC_HOUR = 21;
+
+export interface ScheduledMarketClosure {
+  /** Friday close (UTC, epoch ms) the window started at. */
+  closedAtMs: number;
+  /** Sunday time (UTC, epoch ms) by which the window ends; the market may reopen later. */
+  windowEndsMs: number;
+}
+
+/** The weekend closure window containing `nowMs` for this asset class, or null. */
+export function scheduledWeekendClosureFor(
+  assetClass: string | null | undefined,
+  nowMs: number,
+): ScheduledMarketClosure | null {
+  if (!assetClass || !WEEKEND_CLOSING_ASSET_CLASSES.has(assetClass) || !Number.isFinite(nowMs)) return null;
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  const daysSinceFriday = (new Date(dayStart).getUTCDay() - 5 + 7) % 7;
+  let fridayStart = dayStart - daysSinceFriday * DAY_MS;
+  if (fridayStart + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS > nowMs) fridayStart -= 7 * DAY_MS;
+  const closedAtMs = fridayStart + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS;
+  const windowEndsMs = fridayStart + 2 * DAY_MS + WEEKEND_REOPEN_SUNDAY_UTC_HOUR * HOUR_MS;
+  return nowMs < windowEndsMs ? { closedAtMs, windowEndsMs } : null;
+}
+
+/**
+ * The next instant at which `scheduledWeekendClosureFor` changes its answer for
+ * this asset class (window start or end), or null for a market that never
+ * closes. Lets a caller re-resolve the truth exactly when the closure begins or
+ * ends instead of waiting for the next candle deadline.
+ */
+export function nextWeekendClosureBoundaryMs(
+  assetClass: string | null | undefined,
+  nowMs: number,
+): number | null {
+  if (!assetClass || !WEEKEND_CLOSING_ASSET_CLASSES.has(assetClass) || !Number.isFinite(nowMs)) return null;
+  const open = scheduledWeekendClosureFor(assetClass, nowMs);
+  if (open) return open.windowEndsMs;
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  const daysUntilFriday = (5 - new Date(dayStart).getUTCDay() + 7) % 7;
+  let next = dayStart + daysUntilFriday * DAY_MS + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS;
+  if (next <= nowMs) next += 7 * DAY_MS;
+  return next;
+}
+
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+function utcDayClock(ms: number): string {
+  const d = new Date(ms);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${WEEKDAY_SHORT[d.getUTCDay()]} ${hh}:${mm} UTC`;
+}
+
+/** Which feed-status notice strip the scanner chart shows under its canvas. */
+export type ChartFeedStripKind = "market_closed" | "delayed" | "stale" | "analysis_only" | null;
+
+/**
+ * The chart's feed notice strip. A closed market — from the truth's scheduled
+ * closure or the server's closed-market stream signal — is labelled as closed,
+ * never as "Stale" or "Delayed", so the strip cannot contradict the chart's
+ * "Market closed" chip. A LIVE display shows no strip.
+ */
+export function resolveChartFeedStrip(
+  displayStatus: ChartDisplayStatus,
+  opts: { marketClosed: boolean; hasCandles: boolean },
+): ChartFeedStripKind {
+  if (displayStatus === "LIVE" || displayStatus === "UNAVAILABLE") return null;
+  if (opts.marketClosed && opts.hasCandles) return "market_closed";
+  if (displayStatus === "FALLBACK_COMPOSITE") return "delayed";
+  if (displayStatus === "STALE") return "stale";
+  return opts.hasCandles ? "analysis_only" : null;
+}
+
 export function resolveScannerTruth(
   input: ScannerTruthInputs,
   assistantName: string = DEFAULT_ASSISTANT_NAME,
@@ -462,6 +571,23 @@ export function resolveScannerTruth(
   const candleAgeMs = ageMsOf(input.lastTime, nowMs);
   const lastClose = positivePrice(input.lastClose);
 
+  // Scheduled weekend closure with no bar since the close (see
+  // scheduledWeekendClosureFor). The newest CLOSED bar is used when known, so a
+  // display tip built from a replayed weekend quote is not taken as trading.
+  // Only for an integrity-clean series (clean / delayed / stale) whose header
+  // read did not fail — a failed refresh or broken OHLC keeps its own reason.
+  const closure = fs ? scheduledWeekendClosureFor(fs.assetClass, nowMs) : null;
+  const newestBarIso = input.lastClosedTime !== undefined ? input.lastClosedTime : input.lastTime;
+  const newestBarMs = newestBarIso ? Date.parse(newestBarIso) : Number.NaN;
+  const marketClosure: ScheduledMarketClosure | null =
+    closure &&
+    input.headerOk !== false &&
+    (fs?.quality === "clean" || fs?.quality === "delayed" || fs?.quality === "stale") &&
+    Number.isFinite(newestBarMs) &&
+    newestBarMs < closure.closedAtMs
+      ? closure
+      : null;
+
   // ── Candle status (freshness + minimum-candle gating) ──────────────────────
   let candleStatus: CandleStatus;
   let candleReason: string;
@@ -478,6 +604,10 @@ export function resolveScannerTruth(
   } else if (!fs?.source || fs.symbol?.trim().toUpperCase() !== input.symbolInternal.trim().toUpperCase() || candleAgeMs == null || lastClose == null) {
     candleStatus = "historical_only";
     candleReason = "The latest candle's market, source, time or price is unconfirmed — historical context only.";
+  } else if (marketClosure) {
+    // Closed market: the data is not live, but it is not a feed fault either.
+    candleStatus = "stale";
+    candleReason = `Market closed — ${input.symbolDisplay} is in its scheduled weekend close (since ${utcDayClock(marketClosure.closedAtMs)}); the newest bar opened ${utcDayClock(newestBarMs)}. This is the last session's data, not a live read.`;
   } else if (displayStatus === "STALE") {
     candleStatus = "stale";
     candleReason = "The latest candle is frozen — this is historical context, not a live read.";
@@ -684,8 +814,9 @@ export function resolveScannerTruth(
       : manualBlocked ?? "Trading is blocked on your account.";
 
   // ── Consolidated truth strip ───────────────────────────────────────────────
-  const dataVerdict: DataVerdict =
-    candleStatus === "live"
+  const dataVerdict: DataVerdict = marketClosure && candleStatus === "stale"
+    ? "Market closed"
+    : candleStatus === "live"
       ? "Live"
       : candleStatus === "delayed"
         ? "Delayed"
@@ -741,8 +872,10 @@ export function resolveScannerTruth(
   // when the data is actually ARX market data or a synthetic feed.
   const brokerFeedActive = provider.tier === "broker";
 
-  const healthHeadline =
-    resolvedDisplayStatus === "LIVE"
+  const marketClosedRead = marketClosure != null && candleStatus === "stale";
+  const healthHeadline = marketClosedRead
+    ? "Market closed — last session's data"
+    : resolvedDisplayStatus === "LIVE"
       ? "Live market data"
       : resolvedDisplayStatus === "FALLBACK_COMPOSITE"
         ? "Delayed market data"
@@ -776,7 +909,9 @@ export function resolveScannerTruth(
 
   const actionabilityLine = actionable
     ? "This read is fresh enough for a live entry."
-    : resolvedDisplayStatus === "UNAVAILABLE"
+    : marketClosedRead
+      ? "The market is closed — no live entry until it reopens."
+      : resolvedDisplayStatus === "UNAVAILABLE"
       ? "There's nothing to analyse until a feed comes back."
       : "Not fresh enough for a live entry — treat it as context only.";
 
@@ -808,11 +943,13 @@ export function resolveScannerTruth(
               ? "CONFIRMED"
               : "UNCONFIRMED";
 
-  // No separate quote feed today → UNAVAILABLE honestly. MARKET_CLOSED / FROZEN
-  // are reserved for an explicit feed session-closed / feed-freeze signal (none
-  // exists yet) — never inferred from an account freeze.
-  const publicQuoteStatus: PublicQuoteStatus =
-    quoteStatus === "live"
+  // No separate quote feed today → UNAVAILABLE honestly. MARKET_CLOSED comes
+  // only from the scheduled weekend closure with no bar since the close (see
+  // marketClosure) — never inferred from an account freeze. FROZEN stays
+  // reserved for an explicit feed-freeze signal (none exists yet).
+  const publicQuoteStatus: PublicQuoteStatus = marketClosedRead
+    ? "MARKET_CLOSED"
+    : quoteStatus === "live"
       ? "LIVE"
       : quoteStatus === "stale" || quoteStatus === "delayed"
         ? "STALE"
@@ -870,6 +1007,9 @@ export function resolveScannerTruth(
   } else if (publicCandleStatus === "LIMITED_HISTORY") {
     internalReasonCode =
       candleStatus === "insufficient" ? "CANDLES_INSUFFICIENT" : "CANDLES_HISTORICAL";
+    userMessage = candleReason;
+  } else if (marketClosedRead) {
+    internalReasonCode = "MARKET_CLOSED";
     userMessage = candleReason;
   } else if (publicCandleStatus === "STALE") {
     internalReasonCode = "CANDLES_STALE";
@@ -1006,6 +1146,12 @@ export function resolveScannerTruth(
     displayStatus: resolvedDisplayStatus,
     isLivePrice: resolvedDisplayStatus === "LIVE",
     actionable,
+    marketClosure: marketClosedRead && marketClosure
+      ? {
+          closedAt: new Date(marketClosure.closedAtMs).toISOString(),
+          windowEndsAt: new Date(marketClosure.windowEndsMs).toISOString(),
+        }
+      : null,
     brokerFeedActive,
     dataHealth,
     consolidated,

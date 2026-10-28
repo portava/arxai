@@ -12957,6 +12957,7 @@ export const MultiTimeframeTrendSnapshotTrend = {
   UP: "UP",
   DOWN: "DOWN",
   SIDEWAYS: "SIDEWAYS",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
 export interface MultiTimeframeTrendSnapshot {
@@ -12978,6 +12979,7 @@ export const MultiTimeframeReportAlignmentLabel = {
   LOWER_TIMEFRAME_CONFLICT: "LOWER_TIMEFRAME_CONFLICT",
   HIGHER_TIMEFRAME_WARNING: "HIGHER_TIMEFRAME_WARNING",
   NO_CLEAR_BIAS: "NO_CLEAR_BIAS",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
 } as const;
 
 export type MultiTimeframeReportBestBias =
@@ -14486,6 +14488,20 @@ export const OpportunityMapRowNewsRisk = {
   critical: "critical",
 } as const;
 
+/**
+ * The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.
+ */
+export type OpportunityMapRowFinalReadLabel =
+  | (typeof OpportunityMapRowFinalReadLabel)[keyof typeof OpportunityMapRowFinalReadLabel]
+  | null;
+
+export const OpportunityMapRowFinalReadLabel = {
+  TRADE_WATCH: "TRADE_WATCH",
+  WAIT_FOR_CONFIRMATION: "WAIT_FOR_CONFIRMATION",
+  AVOID_FOR_NOW: "AVOID_FOR_NOW",
+  NO_TRADE: "NO_TRADE",
+} as const;
+
 export type OpportunityMapRowCategory =
   (typeof OpportunityMapRowCategory)[keyof typeof OpportunityMapRowCategory];
 
@@ -14521,6 +14537,8 @@ export interface OpportunityMapRow {
   hasLiveData: boolean;
   isLate: boolean;
   reason: string | null;
+  /** The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown. */
+  finalReadLabel?: OpportunityMapRowFinalReadLabel;
   category: OpportunityMapRowCategory;
   kind: OpportunityMapRowKind;
   bestAction: string;

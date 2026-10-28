@@ -7,6 +7,7 @@
  */
 import type { OpportunityMapRowCategory } from "./opportunityMapRowCategory";
 import type { OpportunityMapRowDirection } from "./opportunityMapRowDirection";
+import type { OpportunityMapRowFinalReadLabel } from "./opportunityMapRowFinalReadLabel";
 import type { OpportunityMapRowKind } from "./opportunityMapRowKind";
 import type { OpportunityMapRowNewsRisk } from "./opportunityMapRowNewsRisk";
 import type { OpportunityMapRowRecommendedAction } from "./opportunityMapRowRecommendedAction";
@@ -24,6 +25,8 @@ export interface OpportunityMapRow {
   hasLiveData: boolean;
   isLate: boolean;
   reason: string | null;
+  /** The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown. */
+  finalReadLabel?: OpportunityMapRowFinalReadLabel;
   category: OpportunityMapRowCategory;
   kind: OpportunityMapRowKind;
   bestAction: string;
