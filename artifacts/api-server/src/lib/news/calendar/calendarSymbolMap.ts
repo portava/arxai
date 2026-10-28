@@ -6,6 +6,7 @@
 // map to a real-world economic event ("macro not applicable").
 
 import type { CalendarEvent, EconomicCalendarImpact } from "./calendarTypes.js";
+import { ARX_FOCUS_MARKETS } from "@workspace/domain/market";
 
 /** ARX symbol → currencies whose macro events drive it. */
 const SYMBOL_CURRENCIES: Record<string, string[]> = {
@@ -111,13 +112,27 @@ export function eventMatchesSymbol(
 }
 
 /**
+ * Symbols an event may list as affected: this file's table plus every
+ * approved real-world ARX market. The scorers (eventMatchesSymbol, the news
+ * risk scorers) flag any approved market by currency — e.g. CADJPY / EURCAD
+ * for a CAD release, DXY / BTCUSD for a USD one — so the listed symbols must
+ * not omit them. Synthetics are filtered out by eventMatchesSymbol anyway.
+ */
+const AFFECTED_SYMBOL_UNIVERSE: readonly string[] = Array.from(
+  new Set([
+    ...Object.keys(SYMBOL_CURRENCIES),
+    ...ARX_FOCUS_MARKETS.filter((m) => m.category !== "synthetic").map((m) => m.canonicalSymbol.toUpperCase()),
+  ]),
+);
+
+/**
  * The ARX symbols a raw event (currency + country) affects. Derived from the
- * static universe above — never fabricated. Used to populate
+ * static universe above (table + approved ARX markets) — never fabricated. Used to populate
  * `CalendarEvent.affectedSymbols` at normalization time.
  */
 export function affectedSymbolsFor(currency: string, country: string): string[] {
   const out: string[] = [];
-  for (const symbol of Object.keys(SYMBOL_CURRENCIES)) {
+  for (const symbol of AFFECTED_SYMBOL_UNIVERSE) {
     if (
       eventMatchesSymbol(
         { currency, country, affectedSymbols: [] },
