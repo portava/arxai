@@ -52,12 +52,23 @@ n++;
 // Removing the continue that ends the hold branch (the refused observation
 // would fall through to the ordinary decision); a later continue elsewhere in
 // the loop no longer satisfies the guard.
-mutate(PROTECTIVE_FILES.manager, "      result.protective.queued++;\n      continue;\n    }", "      result.protective.queued++;\n    }", /hold block must end with continue/);
+mutate(PROTECTIVE_FILES.manager, "      result.protective.queued++;\n      continue;\n    }", "      result.protective.queued++;\n    }", /hold block must end with an unconditional continue/);
+// A conditional continue is not an end: for an L3+ agent the refused stale
+// observation would fall through to the ordinary claim and dispatch.
+mutate(PROTECTIVE_FILES.manager, "      result.protective.queued++;\n      continue;\n    }", "      result.protective.queued++;\n      if (agent.autonomyLevel < 3) continue;\n    }", /hold block must end with an unconditional continue/);
+mutate(PROTECTIVE_FILES.manager, "      result.protective.queued++;\n      continue;\n    }", "      result.protective.queued++;\n      if (false) continue;\n    }", /hold block must end with an unconditional continue/);
+mutate(PROTECTIVE_FILES.manager, "      result.protective.queued++;\n      continue;\n    }", "      result.protective.queued++;\n      if (agent.autonomyLevel < 3) { continue; }\n    }", /hold block must end with an unconditional continue/);
 // Calling the path inline again (a stuck position delays later exits).
 mutate(PROTECTIVE_FILES.manager, "      result.protective.queued++;\n      continue;", "      result.protective.queued++;\n      await runProtectiveActionPath(null as never);\n      continue;", /must not call runProtectiveActionPath\( inline/);
 // The standalone drain moved inside the loop, or dropped.
-mutate(PROTECTIVE_FILES.manager, "    const drained = await drainProtectiveCycle(protectiveCycle);", "    const drained = { considered: 0, acted: 0, waitedMs: 0, held: {} };", /drainProtectiveCycle\( after the per-execution loop/);
-mutate(PROTECTIVE_FILES.manager, "      result.protective.queued++;\n      continue;", "      result.protective.queued++;\n      await drainProtectiveCycle(protectiveCycle);\n      continue;", /drainProtectiveCycle\( after the per-execution loop/);
+mutate(PROTECTIVE_FILES.manager, "    const drained = await drainProtectiveCycle(protectiveCycle);", "    const drained = { considered: 0, acted: 0, waitedMs: 0, held: {} };", /drainProtectiveCycle\(protectiveCycle\) once, inside if \(!options\.protectiveCycle\)/);
+mutate(PROTECTIVE_FILES.manager, "      result.protective.queued++;\n      continue;", "      result.protective.queued++;\n      await drainProtectiveCycle(protectiveCycle);\n      continue;", /drainProtectiveCycle\(protectiveCycle\) once, inside if \(!options\.protectiveCycle\)/);
+
+// The standalone drain no longer gated on "no caller cycle": every agent's
+// manager would drain the shared cycle inline (N x 20 s, F1).
+mutate(PROTECTIVE_FILES.manager, "  if (!options.protectiveCycle) {\n    const drained", "  if (true) {\n    const drained", /drainProtectiveCycle\(protectiveCycle\) once, inside if \(!options\.protectiveCycle\)/);
+// The manager ignores the caller's cycle (candidates queued where nobody drains).
+mutate(PROTECTIVE_FILES.manager, "const protectiveCycle = options.protectiveCycle ?? createProtectiveCycle();", "const protectiveCycle = createProtectiveCycle();", /must queue into the caller's cycle/);
 
 // 2. Path: import discipline, rule id and source order.
 mutate(PROTECTIVE_FILES.path, 'import { livePositionLedger, type LivePositionRow } from "../positions/ledger.js";', 'import { livePositionLedger, livePositionWriter, type LivePositionRow } from "../positions/ledger.js";', /livePositionWriter/);
@@ -93,6 +104,20 @@ mutate(PROTECTIVE_FILES.path, "if (!identity.ok) return hold(", "if (!identity.o
 mutate(PROTECTIVE_FILES.path, "if (!geometry.ok) return hold(", "if (!geometry.ok || geometry.reason === undefined) return hold(", /geometry \(evaluateProtectiveGeometry\) result "geometry" must be refused/);
 mutate(PROTECTIVE_FILES.path, "    if (!v.ok) return hold(noEvidence(v.reason), noEvidenceDetail(v.detail));\n", "", /evidence \(evaluateProtectiveObservation\) result "v" must be refused/);
 mutate(PROTECTIVE_FILES.path, "if (!v.ok) return hold(noEvidence", "if (!v.ok && v.ok) return hold(noEvidence", /evidence \(evaluateProtectiveObservation\) result "v" must be refused/);
+// The evidence refusal moved after the claim, or to just before the outcome
+// switch: identity, geometry, claim and dispatch would run on a non-fresh row.
+for (const [label, anchor] of [
+  ["after the claim", "    const claimMs = performance.now() - claimStart;\n"],
+  ["before the outcome switch", "    switch (outcome.outcome) {\n"],
+] as const) {
+  n++;
+  const src = real[PROTECTIVE_FILES.path]!;
+  const line = "    if (!v.ok) return hold(noEvidence(v.reason), noEvidenceDetail(v.detail));\n";
+  assert.ok(src.includes(line) && src.includes(anchor), label);
+  const moved = src.replace(line, "").replace(anchor, `${anchor}${line}`);
+  const v = scanProtectiveSources({ ...real, [PROTECTIVE_FILES.path]: moved });
+  assert.ok(v.some((x) => /evidence refusal if \(!v\.ok\) return hold\( must come before verifyProtectivePosition/.test(x)), `${label}: ${JSON.stringify(v)}`);
+}
 // `if (v.ok || true) break;` in the wait loop only ends the wait early: the
 // evidence refusal after the loop (pinned above) still holds a non-ok verdict,
 // so that mutation cannot reach the claim and is not a guard violation.
@@ -106,6 +131,10 @@ n++;
 }
 mutate(PROTECTIVE_FILES.path, "    if (!bridgeCheck.ok)\n", "    if (!bridgeCheck.ok || true)\n", /bridge \(verifyProtectiveBridge\) result "bridgeCheck" must be refused/);
 mutate(PROTECTIVE_FILES.path, "    if (!bridgeFinal.ok)\n      return hold(", "    if (!bridgeFinal.ok)\n      logger.warn(", /bridge \(verifyProtectiveBridge\) result "bridgeFinal" must be refused/);
+mutate(PROTECTIVE_FILES.path, "      if (!bridgeWait.ok)\n        return hold(", "      if (!bridgeWait.ok)\n        logger.warn(", /bridge \(verifyProtectiveBridge\) result "bridgeWait" must be refused/);
+// The per-poll bridge re-verification removed (a revocation mid-wait would
+// burn the whole budget and read as "no fresh sweep").
+mutate(PROTECTIVE_FILES.path, /      const bridgeWait = verifyProtectiveBridge\([^\n]*\n      if \(!bridgeWait\.ok\)\n        return hold\([^\n]*\n/, "", /must re-verify the bridge on every poll/);
 // The final bridge re-verification removed (only the pre-wait check left).
 mutate(PROTECTIVE_FILES.path, /    const bridgeFinal = verifyProtectiveBridge\(entry, e, conn, finalHeartbeat\);\n    if \(!bridgeFinal\.ok\)\n      return hold\([^\n]*\n/, "", /verified before the wait and again on the final connection record/);
 // The drain stops running candidates through the path.
@@ -147,8 +176,14 @@ mutate(PROTECTIVE_FILES.cycle, "if (!chain.shouldPauseManagement) {\n        con
 mutate(PROTECTIVE_FILES.cycle, "if (!chain.shouldPauseManagement) {", "if (chain.shouldPauseManagement === false) {", /block is missing/);
 // Each agent's manager drains (and waits) on its own again.
 mutate(PROTECTIVE_FILES.cycle, "await manageAgentPositions(bundle.agent, actorUserId, actorRole, {\n          protectiveCycle,\n        });", "await manageAgentPositions(bundle.agent, actorUserId, actorRole);", /must receive the cycle's protectiveCycle/);
-mutate(PROTECTIVE_FILES.cycle, "    const drained = await drainProtectiveCycle(protectiveCycle);", "    const drained = { considered: 0, acted: 0, bridges: 0, elapsedMs: 0, held: {} };", /drainProtectiveCycle\( must run exactly once, after the per-agent loop/);
-mutate(PROTECTIVE_FILES.cycle, "      // 4. Post realized P/L", "      await drainProtectiveCycle(protectiveCycle);\n      // 4. Post realized P/L", /drainProtectiveCycle\( must run exactly once, after the per-agent loop/);
+mutate(PROTECTIVE_FILES.cycle, "    const drained = await drainProtectiveCycle(protectiveCycle);", "    const drained = { considered: 0, acted: 0, bridges: 0, elapsedMs: 0, held: {} };", /drainProtectiveCycle\(protectiveCycle\) must run exactly once, after the per-agent loop/);
+mutate(PROTECTIVE_FILES.cycle, "      // 4. Post realized P/L", "      await drainProtectiveCycle(protectiveCycle);\n      // 4. Post realized P/L", /drainProtectiveCycle\(protectiveCycle\) must run exactly once, after the per-agent loop/);
+
+// A throwaway queue per agent: candidates are queued where nobody drains them.
+mutate(PROTECTIVE_FILES.cycle, "await manageAgentPositions(bundle.agent, actorUserId, actorRole, {\n          protectiveCycle,\n        });", "await manageAgentPositions(bundle.agent, actorUserId, actorRole, {\n          protectiveCycle: createProtectiveCycle(),\n        });", /must receive the cycle's protectiveCycle binding/);
+mutate(PROTECTIVE_FILES.cycle, "await manageAgentPositions(bundle.agent, actorUserId, actorRole, {\n          protectiveCycle,\n        });", "const fresh = createProtectiveCycle();\n        await manageAgentPositions(bundle.agent, actorUserId, actorRole, {\n          protectiveCycle: fresh,\n        });", /must receive the cycle's protectiveCycle binding|exactly one queue/);
+// The drain receives a different (empty) queue.
+mutate(PROTECTIVE_FILES.cycle, "    const drained = await drainProtectiveCycle(protectiveCycle);", "    const drained = await drainProtectiveCycle(createProtectiveCycle());", /drainProtectiveCycle\(protectiveCycle\) must run exactly once|exactly one queue/);
 
 // 8. Registration parity: dropping either registration is a violation.
 mutate(PROTECTIVE_FILES.rules, '      "lib/selfTrade/livePositionManager.ts",\n      "lib/selfTrade/protectiveActionPath.ts",\n', '      "lib/selfTrade/livePositionManager.ts",\n', /"self-trade-manage"\.modules must list/);
