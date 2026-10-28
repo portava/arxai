@@ -45,6 +45,12 @@ export interface MarketAnalysis {
   invalidationReason: string;
   rulesPassed: string[];
   rulesFailed: string[];
+  /**
+   * Rules that could not be checked and are in neither list. Today only
+   * "spread_acceptable" when no spread was observed (spread 0 / missing is
+   * the callers' "no quote spread" substitute, not a measured cost).
+   */
+  rulesUnchecked?: string[];
   dataSource: AnalysisDataSource;
   executionEnvironment: AnalysisExecutionEnvironment;
   feedProvider?: string;
@@ -138,10 +144,15 @@ function analyzeCore(
   const takeProfit = round(dir === "BUY" ? entry + stopDistance * 2 : entry - stopDistance * 2, 5);
   const riskRewardRatio = 2.0;
 
-  const rulesPassed: string[] = []; const rulesFailed: string[] = [];
+  const rulesPassed: string[] = []; const rulesFailed: string[] = []; const rulesUnchecked: string[] = [];
   (trendStrength >= 40 ? rulesPassed : rulesFailed).push("trend_strength_>=_40");
   (volatilityRatio < 1.8 ? rulesPassed : rulesFailed).push("volatility_in_range");
-  (spreadPenalty < 30 ? rulesPassed : rulesFailed).push("spread_acceptable");
+  // An unobserved spread (0 / missing) has penalty 0 and would "pass" without
+  // being checked: it is listed as unchecked instead. It could never fail, so
+  // rulesFailed and the recommended action are exactly as before.
+  const spreadObserved = Number.isFinite(spread) && spread > 0;
+  if (!spreadObserved) rulesUnchecked.push("spread_acceptable");
+  else (spreadPenalty < 30 ? rulesPassed : rulesFailed).push("spread_acceptable");
   // No reward-to-risk rule: the target is placed at exactly 2× the stop
   // distance, so a ">= 1.5" check could never fail and would only claim a
   // check that was not made.
@@ -182,7 +193,7 @@ function analyzeCore(
       ? `Not passing: ${avoidParts.join("; ")}.`
       : "",
     invalidationReason: dir === "BUY" ? `Close below ${stopLoss}` : `Close above ${stopLoss}`,
-    rulesPassed, rulesFailed,
+    rulesPassed, rulesFailed, rulesUnchecked,
     dataSource: source, executionEnvironment: source,
     feedProvider,
     generatedAt: new Date().toISOString(),
