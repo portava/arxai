@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  DailyMentorBriefingCard, MentorActionItems, MentorWarningCard, MentorHistory,
+  DailyMentorBriefingCard, MentorActionItems, MentorWarningCard, MentorHistory, isMentorWarningSession,
 } from "@/components/aiMentor";
 import type { MentorSession, MentorActionItem, SessionType } from "@/components/aiMentor";
 
@@ -87,7 +87,7 @@ export default function AiMentorPage() {
       ) : (
         <>
           <MentorWarningCard session={session} />
-          <DailyMentorBriefingCard session={session} />
+          <DailyMentorBriefingCard session={session} summaryShownElsewhere={isMentorWarningSession(session)} />
           <section>
             <h3 className="mb-2 text-sm font-semibold text-slate-200">Action items</h3>
             <MentorActionItems items={items}

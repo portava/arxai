@@ -42,6 +42,7 @@ import {
   MentorActionItems,
   MentorHistory,
   MentorWarningCard,
+  isMentorWarningSession,
   type MentorActionItem,
   type MentorSession,
 } from "@/components/aiMentor";
@@ -256,7 +257,7 @@ function ChatTab() {
       ) : session ? (
         <>
           <MentorWarningCard session={session} />
-          <DailyMentorBriefingCard session={session} />
+          <DailyMentorBriefingCard session={session} summaryShownElsewhere={isMentorWarningSession(session)} />
           <Card className="rounded-2xl border-border bg-card">
             <CardContent className="p-4">
               <div className="flex items-center justify-between gap-2">
