@@ -1734,6 +1734,7 @@ export * from "./truthNewsEventState";
 export * from "./truthVerdict";
 export * from "./truthVerdictBestAction";
 export * from "./truthVerdictBias";
+export * from "./truthVerdictBiasQualifier";
 export * from "./truthVerdictInvalidation";
 export * from "./truthVerdictInvalidationSide";
 export * from "./truthVerdictStage";

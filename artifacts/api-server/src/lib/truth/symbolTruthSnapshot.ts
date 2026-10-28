@@ -74,6 +74,12 @@ export interface TruthComponent {
   asOf: string | null;
   /** Build time is separate from the confirmed bar observation above. */
   generatedAt?: string | null;
+  /**
+   * The component's own minimum-evidence rule failed: its direction is a lean,
+   * not an edge. Set only by components that have such a rule (the market-edge
+   * scanner read); fail-closed when the evidence ledger is missing.
+   */
+  belowEvidenceFloor?: boolean;
 }
 
 export interface TruthNewsEvent {
@@ -125,6 +131,8 @@ export interface TruthData {
 export interface TruthVerdict {
   stage: TruthStage;
   bias: TruthBias;
+  /** "LEAN" when the bias rests only on voters below their evidence rule. */
+  biasQualifier?: "LEAN" | null;
   headline: string;
   evidenceFor: string[];
   evidenceAgainst: string[];
@@ -278,12 +286,25 @@ function scannerComponent(signal: RubyMarketEdgeSignal | null): TruthComponent {
   else alignment = "NEUTRAL";
   const biasWord = SIGNAL_BIAS_WORD[signal.bias] ?? humanize(signal.bias);
   const stageWord = humanize(signal.lifecycleStage);
+  // A direction that failed the minimum-evidence rule is a lean, not an edge.
+  // Fail closed: a missing evidence ledger is never treated as met.
+  const belowEvidenceFloor = signal.evidence?.meetsMinimum !== true;
+  const directional = alignment === "BULLISH" || alignment === "BEARISH";
+  let lead = biasWord;
+  if (belowEvidenceFloor && directional) {
+    lead =
+      (signal.bias === "BULLISH" && alignment === "BULLISH") ||
+      (signal.bias === "BEARISH" && alignment === "BEARISH")
+        ? `${biasWord} lean`
+        : `${biasWord}, ${alignment === "BULLISH" ? "bullish" : "bearish"} lean`;
+  }
   return {
     present: true,
     alignment,
-    label: `${biasWord} · ${stageWord}`,
+    label: `${lead} · ${stageWord}`,
     asOf: signal.marketEvidence?.lastClosedCandleAt ?? null,
     generatedAt: signal.generatedAt,
+    belowEvidenceFloor,
   };
 }
 
@@ -567,6 +588,7 @@ export async function buildSymbolTruthSnapshot(
         alignment: c.alignment,
         label: c.label,
         asOf: c.asOf,
+        ...(c.belowEvidenceFloor !== undefined ? { belowEvidenceFloor: c.belowEvidenceFloor } : {}),
       };
       return input;
     }),
@@ -613,6 +635,7 @@ export async function buildSymbolTruthSnapshot(
     verdict: {
       stage: composed.stage,
       bias: composed.bias,
+      biasQualifier: composed.biasQualifier,
       headline: composed.headline,
       evidenceFor: composed.evidenceFor,
       evidenceAgainst: composed.evidenceAgainst,
@@ -638,7 +661,7 @@ export function capExpiredTruthSnapshot(snapshot: SymbolTruthSnapshot, now = Dat
     components: { scanner: expired(snapshot.components.scanner), flame: expired(snapshot.components.flame),
     timing: expired(snapshot.components.timing), scalp: expired(snapshot.components.scalp) },
     levels: { ...composed.levels, withheldReason: "The component evidence expired; waiting for a new read." },
-    verdict: { stage: composed.stage, bias: composed.bias, headline: composed.headline, bestAction: composed.bestAction,
+    verdict: { stage: composed.stage, bias: composed.bias, biasQualifier: null, headline: composed.headline, bestAction: composed.bestAction,
       bestActionText: composed.bestActionText, evidenceFor: [], evidenceAgainst: [], invalidation: null } };
 }
 

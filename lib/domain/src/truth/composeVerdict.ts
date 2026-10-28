@@ -20,6 +20,7 @@ import type {
   ComposeVerdictInput,
   ComposedLevels,
   ComposedVerdict,
+  TruthBiasQualifier,
   LevelStalenessInput,
   LevelStalenessResult,
   TruthAlignment,
@@ -331,9 +332,17 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
     bestActionText = EVENT_RISK_UNCHECKED_TEXT;
   }
 
+  // ── Lean qualifier (label-only; the vote is unchanged) ─────────────────────
+  // A directional bias whose every voter failed its own minimum-evidence rule
+  // is a lean, not an edge. One voter without a floor failure clears it.
+  const voters = bias === "BULLISH" ? bullish : bias === "BEARISH" ? bearish : [];
+  const biasQualifier: TruthBiasQualifier | null =
+    voters.length > 0 && voters.every((c) => c.belowEvidenceFloor === true) ? "LEAN" : null;
+
   return {
     stage,
     bias,
+    biasQualifier,
     headline,
     evidenceFor,
     evidenceAgainst,

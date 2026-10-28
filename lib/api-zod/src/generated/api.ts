@@ -7683,24 +7683,48 @@ export const GetMeMarketTruthResponse = zod.object({
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     flame: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     timing: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     scalp: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
   }),
   levels: zod.object({
@@ -7715,6 +7739,12 @@ export const GetMeMarketTruthResponse = zod.object({
   verdict: zod.object({
     stage: zod.enum(["ALIGNED", "DEVELOPING", "CONFLICT", "UNKNOWN"]),
     bias: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "CONFLICT", "UNKNOWN"]),
+    biasQualifier: zod
+      .union([zod.literal("LEAN"), zod.literal(null)])
+      .nullish()
+      .describe(
+        "LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers.",
+      ),
     headline: zod.string(),
     evidenceFor: zod.array(zod.string()),
     evidenceAgainst: zod.array(zod.string()),

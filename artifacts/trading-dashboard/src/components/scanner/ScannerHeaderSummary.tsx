@@ -138,10 +138,17 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   // ONE directional read: bias + stage come from the composed snapshot verdict
   // so the header can never disagree with the chart / Ruby surfaces about which
   // way the market is leaning (closes the header-vs-pill self-contradiction).
-  const biasLabel = verdict ? BIAS_LABEL[verdict.bias] ?? "" : "";
+  // A server-marked LEAN (every voter below its own evidence rule) is said as a
+  // lean and not emphasised as a confirmed direction. Absent on older servers →
+  // unqualified label, which is what the server claimed (never a promotion).
+  const isLean =
+    verdict?.biasQualifier === "LEAN" && (verdict.bias === "BULLISH" || verdict.bias === "BEARISH");
+  const biasBase = verdict ? BIAS_LABEL[verdict.bias] ?? "" : "";
+  const biasLabel = isLean && biasBase ? `${biasBase} lean` : biasBase;
   const stageLabel = verdict ? STAGE_LABEL[verdict.stage] ?? "" : "";
-  const biasTone =
-    verdict?.bias === "BULLISH"
+  const biasTone = isLean
+    ? "text-txt-secondary"
+    : verdict?.bias === "BULLISH"
       ? "text-success"
       : verdict?.bias === "BEARISH"
         ? "text-danger"
@@ -251,7 +258,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
         <span className="font-mono">{price}</span>
         <Dot />
         <span className={cn("font-medium", running ? "text-primary" : "text-txt-muted")}>{running ? "Scanning" : "Idle"}</span>
-        {biasLabel && (<><Dot /><span className={cn("font-semibold", biasTone)}>{biasLabel}</span></>)}
+        {biasLabel && (<><Dot /><span className={cn("font-semibold", biasTone)} data-testid="scanner-header-bias">{biasLabel}</span></>)}
         {stageLabel && (<><Dot /><span className="text-txt-secondary">{stageLabel}</span></>)}
       </div>
 

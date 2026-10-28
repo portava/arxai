@@ -15352,6 +15352,12 @@ components:
         alignment: { type: string, enum: [BULLISH, BEARISH, NEUTRAL, UNKNOWN] }
         label: { type: string }
         asOf: { type: string, nullable: true }
+        belowEvidenceFloor:
+          type: boolean
+          description: >-
+            The component's own minimum-evidence rule failed, so its direction is
+            a lean, not an edge. Set only by components that have such a rule;
+            absent on older servers and on components without one.
     TruthNewsEvent:
       type: object
       required:
@@ -15429,6 +15435,14 @@ components:
         bias:
           type: string
           enum: [BULLISH, BEARISH, NEUTRAL, CONFLICT, UNKNOWN]
+        biasQualifier:
+          type: string
+          nullable: true
+          enum: [LEAN, null]
+          description: >-
+            LEAN when every component voting for the bias is below its own
+            minimum-evidence rule (a structural lean with no qualifying edge).
+            Label-only; the vote is unchanged. Absent on older servers.
         headline: { type: string }
         evidenceFor:
           type: array

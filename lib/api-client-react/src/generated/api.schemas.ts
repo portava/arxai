@@ -6293,6 +6293,8 @@ export interface TruthComponent {
   alignment: TruthComponentAlignment;
   label: string;
   asOf: string | null;
+  /** The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one. */
+  belowEvidenceFloor?: boolean;
 }
 
 export type TruthNewsEventSeverity =
@@ -6393,6 +6395,17 @@ export const TruthVerdictBias = {
   UNKNOWN: "UNKNOWN",
 } as const;
 
+/**
+ * LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers.
+ */
+export type TruthVerdictBiasQualifier =
+  | (typeof TruthVerdictBiasQualifier)[keyof typeof TruthVerdictBiasQualifier]
+  | null;
+
+export const TruthVerdictBiasQualifier = {
+  LEAN: "LEAN",
+} as const;
+
 export type TruthVerdictBestAction =
   (typeof TruthVerdictBestAction)[keyof typeof TruthVerdictBestAction];
 
@@ -6421,6 +6434,8 @@ export type TruthVerdictInvalidation = {
 export interface TruthVerdict {
   stage: TruthVerdictStage;
   bias: TruthVerdictBias;
+  /** LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers. */
+  biasQualifier?: TruthVerdictBiasQualifier;
   headline: string;
   evidenceFor: string[];
   evidenceAgainst: string[];
