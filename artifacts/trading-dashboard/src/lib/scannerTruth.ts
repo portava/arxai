@@ -655,7 +655,12 @@ export function resolveScannerTruth(
   // we say so plainly and data-driven (never hardcoded to "broker dormant").
   const sourceNote =
     provider.tier === "broker"
-      ? "Live bars are coming from your broker feed."
+      ? // "Live" is only asserted when the resolved display is LIVE — a stale,
+        // old, thin or mismatched broker feed is still the broker feed, but not
+        // a live one.
+        resolvedDisplayStatus === "LIVE"
+        ? "Live bars are coming from your broker feed."
+        : "Bars are coming from your broker feed, but they aren't confirmed current right now."
       : provider.tier === "synthetic"
         ? "These are synthetic-market bars (algorithmic volatility index), not your broker's bars."
         : provider.tier === "thirdParty"
