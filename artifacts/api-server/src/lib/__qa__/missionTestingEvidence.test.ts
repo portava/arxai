@@ -121,6 +121,8 @@ test("drawdown uses the peak at each loss, never starting balance or a later hig
 
 const RX_INTERVAL = /R to .*R around/;
 const RX_UNCERTAINTY = /R sample interval|R uncertainty unavailable/;
+// The exact invalid-record note; several unavailable notes share the "R uncertainty unavailable" prefix.
+const R_INVALID = "R uncertainty unavailable: no valid sample statistics are stored for this record; no interval is reported.";
 const allNotes: string[] = [];
 function uncertaintyNote(result: { notes: string[] }): string {
   const hits = result.notes.filter((n) => RX_UNCERTAINTY.test(n));
@@ -171,6 +173,67 @@ test("float-noise ties never produce a zero-width interval", () => {
   assert.doesNotMatch(note, RX_INTERVAL);
   // A standard deviation below the stored precision is also not reported as an interval.
   assert.deepEqual(summarizeRObservations([1e-8, -2e-8, 1e-8]), { status: "unavailable", n: 3, reason: "interval_below_precision" });
+  // [0, 4.9e-7] isolates the "SD rounds to 0" rule: its rounded bounds differ
+  // (-0.000003 / 0.000003), so only the stored SD of 0 makes it unavailable.
+  const se = 4.9e-7 / Math.SQRT2 / Math.SQRT2;
+  assert.notEqual(Math.round((2.45e-7 - 12.706205 * se) * 1e6), Math.round((2.45e-7 + 12.706205 * se) * 1e6));
+  assert.equal(Math.round(4.9e-7 / Math.SQRT2 * 1e6), 0);
+  assert.deepEqual(summarizeRObservations([0, 4.9e-7]), { status: "unavailable", n: 2, reason: "interval_below_precision" });
+});
+
+test("identical values whose float mean is off by an ulp still read as all equal", () => {
+  // Precondition: the float mean differs from the common value, so ss is not exactly 0.
+  assert.notEqual((.1 + .1 + .1) / 3, .1);
+  assert.deepEqual(summarizeRObservations([.1, .1, .1]), { status: "unavailable", n: 3, reason: "no_variation", value: .1 });
+  const metrics = { ...fiveTrades, totalTrades: 3, winningTrades: 3, losingTrades: 0, winRate: 1, expectancyR: .1 };
+  const note = uncertaintyNote(projectMissionTestResult(backtestRow(buildRStatisticsRecord([.1, .1, .1], 0), metrics)));
+  assert.equal(note, "R uncertainty unavailable: all 3 observed R values equal 0.10R; no interval is reported.");
+});
+
+test("boundary pins: equal rounded bounds, rounded no_variation value, a bound exactly at 0R", () => {
+  // SD rounds to 1e-6 (> 0) but n = 400 makes q·SE ≈ 1e-7, so both bounds round to 0.000001.
+  const narrow = Array.from({ length: 400 }, (_, i) => (i % 2 ? 2e-6 : 0));
+  assert.equal(Math.round(Math.sqrt(400e-12 / 399) * 1e6), 1);
+  assert.deepEqual(summarizeRObservations(narrow), { status: "unavailable", n: 400, reason: "interval_below_precision" });
+  // The common value is stored at 6 decimals.
+  assert.deepEqual(summarizeRObservations([.1234567, .1234567]), { status: "unavailable", n: 2, reason: "no_variation", value: .123457 });
+  // mean 12.706205 and SE 1 with t(1) 12.706205: the low bound is exactly 0 and counts as including 0R.
+  const touching = buildRStatisticsRecord([13.706205, 11.706205], 0);
+  assert.equal(touching.status, "available"); if (touching.status !== "available") return;
+  assert.equal(touching.interval95.low, 0);
+  assert.equal(touching.includesZero, true);
+  const metrics = { ...fiveTrades, totalTrades: 2, winningTrades: 2, losingTrades: 0, winRate: 1, expectancyR: 12.7062 };
+  const note = uncertaintyNote(projectMissionTestResult(backtestRow(touching, metrics)));
+  assert.match(note, /: 0\.00R to 25\.41R around/);
+  assert.match(note, /The interval includes 0R, so this sample does not distinguish the sample mean from 0R \(gross, before costs\)\./);
+});
+
+test("the (2+q)e-6 bound tolerance admits real producer records with rounding error above 2e-6", () => {
+  // Deterministic LCG; n = 2..5 observed R values at 7-decimal precision.
+  let seed = 20261028;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  let aboveFlat = 0;
+  for (let i = 0; i < 400; i += 1) {
+    const n = 2 + (i % 4);
+    const values = Array.from({ length: n }, () => Math.round((rnd() * 6 - 2) * 1e7) / 1e7);
+    const rec = buildRStatisticsRecord(values, 0);
+    assert.equal(rec.status, "available", JSON.stringify(values)); if (rec.status !== "available") return;
+    const { mean, standardError: se, quantile: q, interval95: { low, high } } = rec;
+    const deviation = Math.max(Math.abs(low - (mean - q * se)), Math.abs(high - (mean + q * se)));
+    assert.ok(deviation <= (2 + q) * 1e-6, `deviation ${deviation}`);
+    if (deviation <= 2e-6) continue;
+    aboveFlat += 1;
+    const wins = values.filter((v) => v > 0).length;
+    const losses = values.filter((v) => v < 0).length;
+    const expectancyR = Math.round(values.reduce((a, b) => a + b, 0) / n * 1e4) / 1e4;
+    const metrics = { ...fiveTrades, totalTrades: n, winningTrades: wins, losingTrades: losses, winRate: Math.round(wins / n * 1e4) / 1e4, expectancyR };
+    const stored = JSON.parse(JSON.stringify(rec));
+    for (const r of [backtestRow(stored, metrics), forwardRow(stored, metrics, { rObservedCount: n, closedDraftCount: n })]) {
+      assert.match(uncertaintyNote(projectMissionTestResult(r)), /^R sample interval/, JSON.stringify(values));
+    }
+  }
+  // Anti-vacuity: a flat 2e-6 tolerance would reject these valid rows.
+  assert.ok(aboveFlat >= 50, `only ${aboveFlat} records exceed a flat 2e-6`);
 });
 
 test("identical R values are unavailable with the common value, never an interval", () => {
@@ -329,11 +392,25 @@ test("forward uncertainty note only appears when it agrees with the coverage not
   assert.match(note, /over 2 observed R values/);
   assert.match(note, /1 degree of freedom/);
   assert.match(note, /\(costs unverified\)/);
-  // The (2+q)e-6 bound tolerance admits valid df=1 rows (q 12.706205).
   assert.match(note, /^R sample interval/);
   // A forward count that disagrees with rStatistics.n is unavailable.
   const off = projectMissionTestResult(forwardRow(buildRStatisticsRecord([1, -.5], 1), three, { rObservedCount: 1, closedDraftCount: 3 }));
-  assert.match(uncertaintyNote(off), /uncertainty unavailable/);
+  assert.equal(uncertaintyNote(off), R_INVALID);
+});
+
+test("forward n === coverage and excludedCount === total - coverage are each enforced", () => {
+  const three = { ...fiveTrades, totalTrades: 3, winningTrades: 2, losingTrades: 1, expectancyR: .25 };
+  // excludedCount (1) === 3 - coverage (2), mean agrees with the headline, but n is 3, not 2.
+  const nOff = buildRStatisticsRecord([1, -.5, .25], 1);
+  assert.equal(nOff.status === "available" && nOff.mean, .25);
+  const a = projectMissionTestResult(forwardRow(nOff, three, { rObservedCount: 2, closedDraftCount: 3 }));
+  assert.match(a.notes.join(" "), /2 of 3 closed trades/);
+  assert.equal(uncertaintyNote(a), R_INVALID);
+  // n === coverage (2), but excludedCount 0 is not 3 - 2.
+  const exclOff = projectMissionTestResult(forwardRow(buildRStatisticsRecord([1, -.5], 0), three, { rObservedCount: 2, closedDraftCount: 3 }));
+  assert.equal(uncertaintyNote(exclOff), R_INVALID);
+  // Control: the same values with the right counts are available.
+  assert.match(uncertaintyNote(projectMissionTestResult(forwardRow(buildRStatisticsRecord([1, -.5], 1), three, { rObservedCount: 2, closedDraftCount: 3 }))), /^R sample interval/);
 });
 
 test("incoherent or edited records read as unavailable", () => {
@@ -357,11 +434,26 @@ test("incoherent or edited records read as unavailable", () => {
     ["unknown reason", () => backtestRow({ version: 1, excludedCount: 0, status: "unavailable", n: 5, reason: "other" })],
     ["insufficient with n 5", () => backtestRow({ version: 1, excludedCount: 0, status: "unavailable", n: 5, reason: "insufficient_observations" })],
     ["degrees of freedom", () => backtestRow({ ...clone(), degreesOfFreedom: 5 })],
+    ["interval_below_precision with n 1", () => backtestRow({ version: 1, excludedCount: 4, status: "unavailable", n: 1, reason: "interval_below_precision" })],
+    ["non_finite_result with n 1", () => backtestRow({ version: 1, excludedCount: 4, status: "unavailable", n: 1, reason: "non_finite_result" })],
+    // Each stored statistic must already be 6-decimal rounded; each edit is otherwise coherent.
+    ["unrounded mean", () => backtestRow({ ...clone(), mean: .4000001 })],
+    ["unrounded sampleSd", () => backtestRow({ ...clone(), sampleSd: 1.3416408 })],
+    ["unrounded standardError", () => backtestRow({ ...clone(), standardError: .6000001 })],
+    ["unrounded low", () => { const r = clone(); r.interval95.low = -1.2658671; return backtestRow(r); }],
+    ["unrounded high", () => { const r = clone(); r.interval95.high = 2.0658671; return backtestRow(r); }],
+    // SE and bounds agree with each other, but SE is not sampleSd/sqrt(n) (1.5/sqrt(5) = 0.67).
+    ["SE vs sampleSd/sqrt(n)", () => backtestRow({ ...clone(), sampleSd: 1.5 })],
+    // Bounds within the (2+q)e-6 tolerance of mean ± q·SE, but the mean lies below the low bound.
+    ["mean outside bounds", () => backtestRow({
+      version: 1, excludedCount: 0, status: "available", n: 2, mean: 0, sampleSd: 1e-6, standardError: 1e-6,
+      degreesOfFreedom: 1, quantile: 12.706205, interval95: { low: 1e-6, high: 2e-6, method: "student_t" }, includesZero: false,
+    }, { ...fiveTrades, totalTrades: 2, winningTrades: 1, losingTrades: 1, winRate: .5, expectancyR: 0 })],
   ];
   for (const [label, make] of edits) {
     const note = uncertaintyNote(projectMissionTestResult(make()));
-    assert.match(note, /uncertainty unavailable/, label);
-    assert.doesNotMatch(note, RX_INTERVAL, label);
+    // The exact invalid note: the no_variation and insufficient notes share its prefix.
+    assert.equal(note, R_INVALID, label);
   }
 });
 

@@ -14,6 +14,7 @@ const { db, pool, profitMissionsTable: missions, missionTradeDraftsTable: drafts
 const { runMissionBacktest, aggregateMissionForward, listMissionTestResults, latestMissionTestResults } = await import("../missionTestingLabService.js");
 const { buildMissionCertificate, acceptMissionCertificate } = await import("../missionCertificateService.js");
 const { resolveMissionPromotionStatus } = await import("../missionPromotionService.js");
+const { STRATEGY_REGISTRY } = await import("../backtestStrategyRegistry.js");
 const { MISSION_CERTIFICATE_PHRASE, selectCertificateObservedDrawdown } = await import("@workspace/domain/profit-mission");
 const dialect = new PgDialect();
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
@@ -88,6 +89,43 @@ test("actual generated-price runner persists reproducible diagnostic provenance 
   assert.ok(a.result.notes.some((n) => /^R sample interval \(95%, Student t, \d+ degrees of freedom\)/.test(n)), JSON.stringify(a.result.notes));
   assert.deepEqual(await latestMissionTestResults(10, 1), { backtest: null, forward: null });
   assert.deepEqual(await runMissionBacktest({ ...input, userId: 11 }), { ok: false, kind: "not_found" });
+});
+
+test("generated-price runner records and discloses trades excluded from the R sample", async () => {
+  // The simulator accepts an infinite stop on the correct side (BUY -Infinity, SELL
+  // +Infinity), so the trade runs but has no finite initial risk and no observed R.
+  // Every second opened signal of the real strategy gets such a stop.
+  const original = STRATEGY_REGISTRY.trendContinuation;
+  let opened = 0;
+  STRATEGY_REGISTRY.trendContinuation = (candles, symbol) => {
+    const sig = original(candles, symbol);
+    if (sig.direction === "WAIT") return sig;
+    opened += 1;
+    return opened % 2 === 0 ? { ...sig, stopLoss: sig.direction === "BUY" ? -Infinity : Infinity } : sig;
+  };
+  try {
+    const input = { userId: 10, missionId: 1, strategyId: "trendContinuation", symbol: "EURUSD", timeframe: "M15", candleCount: 500, minConfidence: 0, seed: "fixed-regression" };
+    const r = await runMissionBacktest(input);
+    assert.equal(r.ok, true); if (!r.ok) return;
+    const [stored] = await db.select().from(results).where(eq(results.id, r.result.id));
+    const rs = (stored!.metricsJson as { experiment: { rStatistics: { status: string; n: number; excludedCount: number; mean: number } } }).experiment.rStatistics;
+    const total = r.result.metrics.totalTrades;
+    assert.ok(rs.excludedCount > 0, JSON.stringify(rs));
+    assert.ok(rs.n >= 2, JSON.stringify(rs));
+    assert.equal(rs.status, "available", JSON.stringify(rs));
+    assert.equal(rs.n + rs.excludedCount, total);
+    // Headline counts the excluded trades as 0R; the sample mean covers observed trades only.
+    assert.ok(Math.abs(rs.mean * rs.n / total - r.result.metrics.expectancyR) <= 1e-4);
+    const plural = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+    const note = r.result.notes.find((n) => /^R sample interval/.test(n));
+    assert.ok(note, JSON.stringify(r.result.notes));
+    assert.ok(note.includes(`over ${rs.n} observed R values`), note);
+    assert.ok(note.includes(`Mean over ${plural(rs.n, "observed trade", "observed trades")}; ${plural(rs.excludedCount, "trade", "trades")} without positive stop distance excluded`), note);
+    const [history] = await listMissionTestResults(10, 1);
+    assert.deepEqual(history!.notes, r.result.notes, "read-back projection matches the write-time projection");
+  } finally {
+    STRATEGY_REGISTRY.trendContinuation = original;
+  }
 });
 
 async function closed(id: number, patch: Partial<typeof drafts.$inferInsert> = {}) {

@@ -232,7 +232,10 @@ export function summarizeRObservations(values: readonly number[]): RObservationS
   let ss = 0;
   for (const v of values) ss += (v - mean) * (v - mean);
   if (!Number.isFinite(mean) || !Number.isFinite(ss)) return { status: "unavailable", n, reason: "non_finite_result" };
-  if (ss === 0) return { status: "unavailable", n, reason: "no_variation", value: roundRStat(values[0]!) };
+  // Identical values are "no_variation" even when the float mean is off by an ulp
+  // (three 0.1 values sum to 0.30000000000000004), which leaves ss tiny but non-zero.
+  // Distinct values whose ss underflows to 0 reach interval_below_precision below.
+  if (values.every((v) => v === values[0])) return { status: "unavailable", n, reason: "no_variation", value: roundRStat(values[0]!) };
   const sd = Math.sqrt(ss / (n - 1));
   const se = sd / Math.sqrt(n);
   const degreesOfFreedom = n - 1;
