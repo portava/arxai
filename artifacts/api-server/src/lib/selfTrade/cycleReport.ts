@@ -94,6 +94,13 @@ export type SingleFlightResult<T> = { ran: true; value: T } | { ran: false; star
  * running (another tab, a re-click after a gateway timeout) is refused rather
  * than overlapped. Per process only: it does not coordinate several API
  * instances; the protective claim race remains the cross-process backstop.
+ *
+ * No ceiling: a cycle whose await never settles (for example a pg pool
+ * checkout with no connection timeout, or a hung guardian call) keeps the slot
+ * until the process restarts, and every later POST gets 409. The slot is never
+ * released early, because the first cycle may still be dispatching; instead
+ * describeCycleConflict says so past CYCLE_STUCK_AFTER_MS and the route logs
+ * the refusal at error level.
  */
 export function createCycleSingleFlight(now: () => number = Date.now) {
   let startedAt: number | null = null;
@@ -109,4 +116,25 @@ export function createCycleSingleFlight(now: () => number = Date.now) {
       }
     },
   };
+}
+
+/** Past this, a still-running cycle is reported as probably stuck. */
+export const CYCLE_STUCK_AFTER_MS = 10 * 60_000;
+
+export interface CycleConflict {
+  runningForSec: number;
+  stuck: boolean;
+  message: string;
+}
+
+/** Operator text for 409 CYCLE_ALREADY_RUNNING. */
+export function describeCycleConflict(startedAt: number, now: number): CycleConflict {
+  const runningMs = Math.max(0, now - startedAt);
+  const runningForSec = Math.round(runningMs / 1000);
+  const stuck = runningMs > CYCLE_STUCK_AFTER_MS;
+  const base = `An autonomous cycle started ${runningForSec} s ago is still running on the server, so this run was not started.`;
+  const message = stuck
+    ? `${base} It has been running unusually long (over ${Math.round(CYCLE_STUCK_AFTER_MS / 60_000)} min) and may be stuck; until it finishes or the API server is restarted, every run is refused. Check the server logs, the execution feed and the audit log; a server restart may be required.`
+    : `${base} Its result appears in the execution feed and audit log; try again once it finishes.`;
+  return { runningForSec, stuck, message };
 }

@@ -5,7 +5,7 @@
 // dispatch ("sent to EA") as a close or a completed action.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, onlineManager, useMutation } from "@tanstack/react-query";
 import type { RunAutonomousCycleResp } from "@workspace/api-client-react";
 
 const h = vi.hoisted(() => ({
@@ -86,6 +86,12 @@ function renderTab() {
 const runButton = () => screen.getByRole("button", { name: /run cycle|running cycle/i });
 const cycleReason = () => screen.getByPlaceholderText("why this run (≥3 chars)");
 const status = () => screen.getByTestId("run-cycle-status");
+const announce = () => screen.getByTestId("run-cycle-announce");
+/** Run is blocked with aria-disabled; it is never natively disabled (that drops keyboard focus). */
+const blocked = (el: HTMLElement) => {
+  expect((el as HTMLButtonElement).disabled).toBe(false);
+  return el.getAttribute("aria-disabled") === "true";
+};
 const txt = (el: Element) => el.textContent ?? "";
 
 async function advance(ms: number) {
@@ -107,6 +113,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  onlineManager.setOnline(true);
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -115,7 +123,8 @@ describe("run autonomous cycle: waiting feedback", () => {
     const d = deferred<RunAutonomousCycleResp>();
     h.runCycle.mockReturnValue(d.promise);
     renderTab();
-    const region = status();
+    const region = announce();
+    expect(region.getAttribute("role")).toBe("status");
     expect(region.getAttribute("aria-live")).toBe("polite");
     expect(region.textContent).toBe("");
     startRun();
@@ -123,7 +132,8 @@ describe("run autonomous cycle: waiting feedback", () => {
     expect(txt(status())).toMatch(/cycle running/i);
     expect(txt(status())).toMatch(/0 s elapsed/);
     expect(txt(status())).toMatch(/up to 20 s for a fresh broker position snapshot/i);
-    expect((runButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(txt(announce())).toMatch(/cycle started; waiting for the server/i);
+    expect(blocked(runButton())).toBe(true);
     expect(txt(runButton())).toMatch(/running cycle/i);
   });
 
@@ -192,6 +202,9 @@ describe("run autonomous cycle: result", () => {
     expect(p.getByText(/sent to EA — awaiting broker confirmation 2/i)).toBeTruthy();
     expect(p.getByText(/held 2/i)).toBeTruthy();
     expect(p.getByText(/protective step took 20\.0 s \(sweep wait budget 20 s\)/i)).toBeTruthy();
+    expect(p.getByText(/queued in the EA mailbox/i)).toBeTruthy();
+    expect(p.getByText(/can still expire or be rejected/i)).toBeTruthy();
+    expect(protective.textContent ?? "").not.toMatch(/handed to the terminal/i);
     expect(protective.textContent ?? "").not.toMatch(/waited/i);
     expect(protective.textContent ?? "").not.toMatch(/\bclosed\b|\bcompleted\b/i);
 
@@ -236,7 +249,7 @@ describe("run autonomous cycle: result", () => {
     expect(screen.getByText(/HTTP 500 run-cycle failed/)).toBeTruthy();
     expect(txt(status())).not.toMatch(/elapsed/);
     expect(txt(status())).toMatch(/request failed/i);
-    expect((runButton() as HTMLButtonElement).disabled).toBe(false);
+    expect(blocked(runButton())).toBe(false);
     expect(screen.queryByText(/sent to EA/i)).toBeNull();
   });
 
@@ -298,7 +311,7 @@ describe("run autonomous cycle: survives leaving and returning to the tab", () =
     view.switchBack();
     // Same render as the remount: still running, counted from the original click.
     expect(txt(status())).toMatch(/cycle running — 12 s elapsed/i);
-    expect((runButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(blocked(runButton())).toBe(true);
     expect(txt(runButton())).toMatch(/running cycle/i);
     fireEvent.change(cycleReason(), { target: { value: "second run attempt" } });
     fireEvent.click(runButton());
@@ -332,7 +345,184 @@ describe("run autonomous cycle: survives leaving and returning to the tab", () =
     const holds = within(screen.getByRole("list", { name: /hold reasons/i }));
     expect(holds.getByText("PROTECTIVE_HOLD_NO_FRESH_SWEEP")).toBeTruthy();
     expect(holds.getByText(TIMEOUT_TEXT)).toBeTruthy();
-    expect((runButton() as HTMLButtonElement).disabled).toBe(true); // reason is empty, not running
+    expect(blocked(runButton())).toBe(true); // reason is empty, not running
     expect(txt(runButton())).toMatch(/^run cycle$/i);
+  });
+});
+
+describe("run autonomous cycle: offline browser", () => {
+  it.each([
+    ["TanStack's onlineManager is offline", () => onlineManager.setOnline(false)],
+    ["navigator.onLine is false", () => vi.spyOn(navigator, "onLine", "get").mockReturnValue(false)],
+  ])("when %s, the click sends nothing, says so, and nothing is sent later", async (_label, goOffline) => {
+    h.runCycle.mockReturnValue(Promise.resolve(response()));
+    renderTab();
+    goOffline();
+    startRun();
+    expect(h.runCycle).not.toHaveBeenCalled();
+    expect(txt(announce())).toMatch(/not sent: this browser is offline/i);
+    expect(txt(announce())).toMatch(/no cycle was started on the server/i);
+    expect(txt(status())).not.toMatch(/cycle running|elapsed/i);
+    expect(blocked(runButton())).toBe(false);
+    await advance(60_000);
+    expect(txt(status())).not.toMatch(/cycle running|elapsed|has not answered/i);
+    // Coming back online must not replay the click.
+    onlineManager.setOnline(true);
+    vi.restoreAllMocks();
+    await advance(5_000);
+    expect(h.runCycle).not.toHaveBeenCalled();
+    // A fresh click once online does send.
+    fireEvent.click(runButton());
+    await advance(0);
+    expect(h.runCycle).toHaveBeenCalledTimes(1);
+    expect(txt(announce())).toMatch(/cycle finished/i);
+    expect(txt(announce())).not.toMatch(/offline/i);
+  });
+
+  it("a run that started online is never paused if the browser goes offline mid-run", async () => {
+    const d = deferred<RunAutonomousCycleResp>();
+    h.runCycle.mockReturnValue(d.promise);
+    renderTab();
+    startRun();
+    await advance(0);
+    expect(h.runCycle).toHaveBeenCalledTimes(1);
+    onlineManager.setOnline(false);
+    await advance(1_000);
+    expect(txt(status())).toMatch(/cycle running — 1 s elapsed/i);
+    d.reject(new TypeError("Failed to fetch"));
+    await advance(0);
+    expect(txt(announce())).toMatch(/may still be running/i);
+    expect(txt(status())).not.toMatch(/elapsed/);
+  });
+});
+
+describe("run autonomous cycle: screen-reader announcements and focus", () => {
+  it("announces state changes only, never the per-second counter", async () => {
+    const d = deferred<RunAutonomousCycleResp>();
+    h.runCycle.mockReturnValue(d.promise);
+    renderTab();
+    startRun();
+    const counter = screen.getByTestId("run-cycle-elapsed");
+    expect(announce().contains(counter)).toBe(false);
+    await advance(1_000);
+    const early = announce().innerHTML;
+    await advance(18_000);
+    expect(txt(counter)).toMatch(/19 s elapsed/);
+    expect(announce().innerHTML).toBe(early);
+    await advance(1_000);
+    expect(txt(announce())).toMatch(/still running after 20 s/i);
+    const mid = announce().innerHTML;
+    await advance(25_000);
+    expect(announce().innerHTML).toBe(mid);
+    await advance(1_000);
+    expect(txt(announce())).toMatch(/taking longer than expected/i);
+    const late = announce().innerHTML;
+    await advance(10_000);
+    expect(announce().innerHTML).toBe(late);
+    d.resolve(response());
+    await advance(0);
+    expect(txt(announce())).toMatch(/cycle finished/i);
+  });
+
+  it("puts the server's error detail inside the live region", async () => {
+    h.runCycle.mockImplementation(() =>
+      Promise.reject(Object.assign(new Error("HTTP 409 Conflict: started 12 s ago, still running"), { status: 409 })),
+    );
+    renderTab();
+    startRun();
+    await advance(0);
+    expect(txt(announce())).toMatch(/started 12 s ago, still running/);
+  });
+
+  it("keeps keyboard focus on Run through the run and after it settles", async () => {
+    const d = deferred<RunAutonomousCycleResp>();
+    h.runCycle.mockReturnValue(d.promise);
+    renderTab();
+    fireEvent.change(cycleReason(), { target: { value: "qa focus" } });
+    runButton().focus();
+    fireEvent.click(runButton());
+    expect(document.activeElement).toBe(runButton());
+    expect(runButton().hasAttribute("disabled")).toBe(false);
+    // Enter / click while blocked does nothing.
+    fireEvent.click(runButton());
+    await advance(0);
+    expect(h.runCycle).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(runButton());
+    d.resolve(response());
+    await advance(0);
+    expect(document.activeElement).toBe(runButton());
+    expect(runButton().hasAttribute("disabled")).toBe(false);
+    expect(blocked(runButton())).toBe(true); // reason cleared
+  });
+});
+
+describe("run autonomous cycle: settled result age and lifetime", () => {
+  it("shows when the run finished, and keeps the result past the default 5 min mutation GC", async () => {
+    const d = deferred<RunAutonomousCycleResp>();
+    h.runCycle.mockReturnValue(d.promise);
+    const view = renderTab();
+    startRun();
+    await advance(20_000);
+    d.resolve(response());
+    await advance(0);
+    const finishedAt = new Date("2026-10-28T04:00:20Z");
+    const hhmmss = [finishedAt.getHours(), finishedAt.getMinutes(), finishedAt.getSeconds()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join(":");
+    expect(txt(announce())).toContain(`Cycle finished at ${hhmmss}; results below.`);
+    expect(txt(screen.getByTestId("run-cycle-age"))).toMatch(/result from under a minute ago/i);
+
+    view.switchAway();
+    await advance(4 * 60_000);
+    view.switchBack();
+    expect(txt(announce())).toContain(`Cycle finished at ${hhmmss}`);
+    expect(txt(screen.getByTestId("run-cycle-age"))).toMatch(/result from 4 min ago/i);
+    // The age ticks outside the live region.
+    expect(announce().contains(screen.getByTestId("run-cycle-age"))).toBe(false);
+
+    await advance(10 * 60_000);
+    expect(txt(screen.getByTestId("run-cycle-age"))).toMatch(/result from 14 min ago/i);
+    expect(screen.getByRole("list", { name: /hold reasons/i })).toBeTruthy();
+  });
+});
+
+describe("run autonomous cycle: unreadable success body", () => {
+  it("a 2xx whose body could not be parsed says the cycle ran, not that the request failed", async () => {
+    h.runCycle.mockImplementation(() =>
+      Promise.reject(
+        Object.assign(new Error("Failed to parse response from POST /api/... (200 OK) as JSON"), {
+          name: "ResponseParseError",
+          status: 200,
+        }),
+      ),
+    );
+    renderTab();
+    startRun();
+    await advance(0);
+    const text = txt(announce());
+    expect(text).toMatch(/answered .*could not be read/i);
+    expect(text).toMatch(/the cycle ran/i);
+    expect(text).toMatch(/execution feed/i);
+    expect(text).not.toMatch(/request failed/i);
+  });
+});
+
+describe("run autonomous cycle: elapsed counter is aligned to the click", () => {
+  it("after a remount the counter turns over on the original click's whole seconds", async () => {
+    const d = deferred<RunAutonomousCycleResp>();
+    h.runCycle.mockReturnValue(d.promise);
+    const view = renderTab();
+    startRun();
+    await advance(5_300);
+    view.switchAway();
+    await advance(7_000); // 12.3 s since the click
+    view.switchBack();
+    expect(txt(screen.getByTestId("run-cycle-elapsed"))).toMatch(/12 s elapsed/);
+    await advance(700); // 13.0 s
+    expect(txt(screen.getByTestId("run-cycle-elapsed"))).toMatch(/13 s elapsed/);
+    await advance(1_000); // 14.0 s
+    expect(txt(screen.getByTestId("run-cycle-elapsed"))).toMatch(/14 s elapsed/);
+    d.resolve(response());
+    await advance(0);
   });
 });
