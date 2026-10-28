@@ -43,7 +43,7 @@ export default function LiveManualPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [resp, setResp] = useState<SubmitResp | null>(null);
   // undefined while loading; null when the read failed or did not answer.
-  const [perm, setPerm] = useState<{ killSwitchEngaged?: unknown } | null | undefined>(undefined);
+  const [perm, setPerm] = useState<{ reasons?: unknown } | null | undefined>(undefined);
   const [masterBridge, setMasterBridge] = useState<any>(null);
   const [quote, setQuote] = useState<any>(null);
 
@@ -78,13 +78,18 @@ export default function LiveManualPage() {
   const bridgeLoaded = masterBridge != null;
   const bridgeConnected = masterBridge?.detected === true;
   // Kill switch state comes only from the permission status (the safety-core
-  // kill switch). /api/system/mt5-deferred-status `simulator.enforcesKillSwitch`
-  // is a constant capability description, never the engaged state.
+  // kill switch). GET /api/permission/status returns the PermissionVerdict,
+  // which has no killSwitchEngaged field: an engaged switch is a reason with
+  // code KILL_SWITCH. A verdict without a reasons list was not read.
+  // /api/system/mt5-deferred-status `simulator.enforcesKillSwitch` is a
+  // constant capability description, never the engaged state.
+  const permReasons: Array<{ code?: unknown }> | null =
+    perm && Array.isArray(perm.reasons) ? (perm.reasons as Array<{ code?: unknown }>) : null;
   const killSwitch: "checking" | "engaged" | "off" | "unknown" =
     perm === undefined ? "checking"
-      : perm?.killSwitchEngaged === true ? "engaged"
-      : perm?.killSwitchEngaged === false ? "off"
-      : "unknown";
+      : permReasons === null ? "unknown"
+      : permReasons.some((r) => r?.code === "KILL_SWITCH") ? "engaged"
+      : "off";
   // The only quote this page loads is the ARX market simulator's
   // (/api/market/quote, executionEnvironment SIMULATOR): a random walk from a
   // fixed base price, not the market. A stop or target set off the real chart

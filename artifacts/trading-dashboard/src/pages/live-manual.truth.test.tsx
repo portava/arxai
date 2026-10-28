@@ -19,6 +19,26 @@ const deferredStatus = {
   simulator: { mutatesLivePositions: false, sendsRealOrders: false, enforcesRiskGovernor: true, enforcesKillSwitch: true },
 };
 
+// The real GET /api/permission/status shape: the PermissionVerdict
+// (lib/domain safety-permission evaluate.ts) plus explanation and
+// testerAccess. It has no killSwitchEngaged field; an engaged safety-core
+// kill switch is a reason with code KILL_SWITCH (and a blocker).
+const KILL_SWITCH_MSG = "Kill switch is engaged — all trading is paused.";
+const permissionVerdict = (killSwitch: boolean) => ({
+  status: killSwitch ? "LOCKED" : "LIVE_TRADING_DISABLED",
+  riskLevel: killSwitch ? "HIGH" : "LOW",
+  canPlaceTrades: false,
+  liveTradingDisabled: true,
+  activeLockType: null,
+  reasons: killSwitch ? [{ code: "KILL_SWITCH", severity: "BLOCK", message: KILL_SWITCH_MSG }] : [],
+  blockers: killSwitch ? [KILL_SWITCH_MSG] : [],
+  warnings: [],
+  activeLocks: [],
+  evaluatedAtIso: "2026-10-28T11:00:00.000Z",
+  explanation: { headline: "", details: [] },
+  testerAccess: {},
+});
+
 type Route = { status?: number; body: unknown };
 function stubFetch(routes: Record<string, Route>) {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
@@ -28,7 +48,7 @@ function stubFetch(routes: Record<string, Route>) {
   }));
 }
 const baseRoutes = (over: Record<string, Route> = {}): Record<string, Route> => ({
-  "/api/permission/status": { body: { killSwitchEngaged: false } },
+  "/api/permission/status": { body: permissionVerdict(false) },
   "/api/system/mt5-deferred-status": { body: deferredStatus },
   "/api/me/master-bridge/status": { body: { detected: false } },
   "/api/market/quote/": { body: { symbol: "EURUSD", bid: 1.0849, ask: 1.0851, mid: 1.085, spread: 0.0002, volatility: "MEDIUM" } },
@@ -51,9 +71,16 @@ describe("Manual Trade Ticket — kill switch row", () => {
   });
 
   it("reads ENGAGED only when the permission status says so", async () => {
-    stubFetch(baseRoutes({ "/api/permission/status": { body: { killSwitchEngaged: true } } }));
+    stubFetch(baseRoutes({ "/api/permission/status": { body: permissionVerdict(true) } }));
     await renderSettled();
     expect(killSwitchBadge().textContent).toBe("ENGAGED");
+  });
+
+  it("a 200 answer without the verdict's reasons list is 'not checked', never 'off'", async () => {
+    // A top-level killSwitchEngaged is not part of the verdict; it must not be read.
+    stubFetch(baseRoutes({ "/api/permission/status": { body: { killSwitchEngaged: false } } }));
+    await renderSettled();
+    expect(killSwitchBadge().textContent).toBe("not checked");
   });
 
   it("says it could not be checked when the permission status fails, never 'off'", async () => {
