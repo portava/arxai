@@ -239,3 +239,28 @@ describe("a failed GET /risk/settings is not shown as Balanced defaults", () => 
     }
   });
 });
+
+describe("System Status never colours an unread bot status green", () => {
+  it("with no bot status read, the bot rows say so in grey instead of a green '—' / 'NO'", () => {
+    renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: undefined, isError: true } });
+    for (const label of ["Bot Mode", "Is Running", "Is Paused"]) {
+      const row = screen.getByTestId(`system-status-${label}`);
+      expect(row.textContent).toMatch(/could not be loaded/i);
+      expect(row.textContent).not.toMatch(/\bNO\b|—/);
+      expect(row.querySelector(".text-success")).toBeNull();
+    }
+  });
+
+  it("'Is Paused' is not hard-coded green", () => {
+    renderPage({
+      tab: "emergency", settings: { data: BALANCED_APPLIED },
+      bot: { data: { mode: "AUTO", symbol: "EURUSD", strategy: "x", riskMode: "Balanced", isRunning: true, isPaused: false, lastScanAt: null } },
+    });
+    const paused = screen.getByTestId("system-status-Is Paused");
+    expect(paused.textContent).toMatch(/NO/);
+    expect(paused.querySelector(".text-success")).toBeNull();
+    const running = screen.getByTestId("system-status-Is Running");
+    expect(running.querySelector(".text-success")).toBeNull();
+    expect(screen.getByTestId("system-status-bot-scope").textContent).toMatch(/saved Bot Control settings/);
+  });
+});

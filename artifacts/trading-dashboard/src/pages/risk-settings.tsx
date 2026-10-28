@@ -280,7 +280,7 @@ export default function RiskSettings() {
   };
 
   const { data: settings, isLoading } = useGetRiskSettings();
-  const { data: botStatus } = useGetBotStatus();
+  const { data: botStatus, isError: botStatusFailed } = useGetBotStatus();
   const updateSettings = useUpdateRiskSettings();
   const applyMode = useApplyRiskMode();
   const setLiveLock = useSetLiveLock();
@@ -1358,43 +1358,46 @@ export default function RiskSettings() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {[
-                  {
-                    label: "Bot Mode",
-                    value: botStatus?.mode ?? "—",
-                    ok: botStatus?.mode === "OFF" || !botStatus?.isRunning,
-                  },
-                  {
-                    label: "Is Running",
-                    value: botStatus?.isRunning ? "YES" : "NO",
-                    ok: !botStatus?.isRunning,
-                  },
-                  {
-                    label: "Is Paused",
-                    value: botStatus?.isPaused ? "YES" : "NO",
-                    ok: true,
-                  },
-                  {
-                    label: "Live Locked",
-                    value: !settings ? SETTINGS_UNREAD : settings.liveLocked ? "LOCKED" : "OPEN",
-                    ok: settings?.liveLocked,
-                    unread: !settings,
-                  },
-                  {
-                    label: "Risk Mode",
-                    value: !settings ? SETTINGS_UNREAD : labelMismatch ? `${currentMode} label · limits differ` : currentMode,
-                    ok: currentMode !== "Aggressive" && !labelMismatch,
-                    unread: !settings,
-                  },
-                ].map((row: { label: string; value: React.ReactNode; ok?: boolean; unread?: boolean }) => (
-                  <div key={row.label} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.label}`}>
-                    <span className="text-muted-foreground">{row.label}</span>
-                    <span className={cn("font-mono font-semibold",
-                      row.unread ? "text-muted-foreground" : row.ok ? "text-success" : "text-yellow-400")}>
-                      {row.value}
-                    </span>
-                  </div>
-                ))}
+                {(() => {
+                  // A row nobody read is grey "could not be loaded", never a green "NO".
+                  const botUnread = botStatusFailed ? "could not be loaded" : "not loaded yet";
+                  const rows: { label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread" }[] = [
+                    botStatus
+                      ? { label: "Bot Mode", value: botStatus.mode, tone: botStatus.mode === "OFF" || !botStatus.isRunning ? "ok" : "warn" }
+                      : { label: "Bot Mode", value: botUnread, tone: "unread" },
+                    botStatus
+                      ? { label: "Is Running", value: botStatus.isRunning ? "YES" : "NO", tone: botStatus.isRunning ? "warn" : "ok" }
+                      : { label: "Is Running", value: botUnread, tone: "unread" },
+                    botStatus
+                      ? { label: "Is Paused", value: botStatus.isPaused ? "YES" : "NO", tone: botStatus.isPaused ? "warn" : "neutral" }
+                      : { label: "Is Paused", value: botUnread, tone: "unread" },
+                    !settings
+                      ? { label: "Live Locked", value: SETTINGS_UNREAD, tone: "unread" }
+                      : { label: "Live Locked", value: settings.liveLocked ? "LOCKED" : "OPEN", tone: settings.liveLocked ? "ok" : "warn" },
+                    !settings
+                      ? { label: "Risk Mode", value: SETTINGS_UNREAD, tone: "unread" }
+                      : {
+                          label: "Risk Mode",
+                          value: labelMismatch ? `${currentMode} label · limits differ` : currentMode,
+                          tone: currentMode !== "Aggressive" && !labelMismatch ? "ok" : "warn",
+                        },
+                  ];
+                  return rows.map((row) => (
+                    <div key={row.label} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.label}`}>
+                      <span className="text-muted-foreground">{row.label}</span>
+                      <span className={cn("font-mono font-semibold",
+                        row.tone === "ok" ? "text-success"
+                          : row.tone === "warn" ? "text-yellow-400"
+                          : row.tone === "neutral" ? "text-foreground"
+                          : "text-muted-foreground")}>
+                        {row.value}
+                      </span>
+                    </div>
+                  ));
+                })()}
+                <p className="pt-1 text-[11px] text-muted-foreground" data-testid="system-status-bot-scope">
+                  Bot rows are the saved Bot Control settings; no scanner or trading loop reads them.
+                </p>
               </CardContent>
             </Card>
           </div>
