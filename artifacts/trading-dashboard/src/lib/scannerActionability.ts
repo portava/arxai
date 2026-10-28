@@ -218,12 +218,32 @@ export function resolveScannerActionability(
  * has published a verdict for the symbol (other tabs, loading), the header falls
  * back to its own data-only consolidated verdict. This is the ONE precedence
  * rule: the setup-aware lifted verdict wins; the data-only verdict is the
- * fallback — never an independent third opinion.
+ * fallback — never an independent third opinion. Exception (downgrade-only):
+ * a current data-only CAP (MARKET_CLOSED / FEED_LIMITED / ANALYSIS_ONLY)
+ * dominates the lifted verdict unless the lifted verdict is a more severe cap.
  */
+// Data-cap verdicts, most severe first (mirrors resolveDataActionabilityCap).
+const DATA_CAP_RANK: Partial<Record<ScannerActionability, number>> = {
+  MARKET_CLOSED: 3,
+  FEED_LIMITED: 2,
+  ANALYSIS_ONLY: 1,
+};
+
 export function resolveSelectedSymbolActionability(
   lifted: ScannerActionability | null,
   dataOnlyFallback: ScannerActionability | null,
 ): ScannerActionability | null {
+  // DOWNGRADE-ONLY data floor: the lifted verdict is a one-shot setup read;
+  // the data-only verdict is the CURRENT feed state for this symbol+timeframe.
+  // When the current data caps the market (closed / feed limited / analysis
+  // only), that cap dominates any lifted setup verdict — the same rule
+  // resolveScannerActionability applies (data cap first, setup second) — so a
+  // lifted "Ready now" can never outlive a feed that has since stalled.
+  const dataCap = dataOnlyFallback != null ? DATA_CAP_RANK[dataOnlyFallback] : undefined;
+  if (lifted != null && dataCap != null) {
+    const liftedCap = DATA_CAP_RANK[lifted];
+    return liftedCap != null && liftedCap > dataCap ? lifted : dataOnlyFallback;
+  }
   return lifted ?? dataOnlyFallback;
 }
 
