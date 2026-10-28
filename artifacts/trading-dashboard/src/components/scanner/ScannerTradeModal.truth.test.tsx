@@ -160,3 +160,30 @@ describe("ScannerTradeModal — 'Current price' states its basis", () => {
     expect(basis()).toMatch(/signal's entry level, not a current price/);
   });
 });
+
+describe("ScannerTradeModal — derived prices use the instrument's precision", () => {
+  const liveTruth = (lastClose: number, pricePrecision: number): TruthStub => ({
+    candles: { lastClose, pricePrecision, lastTime: "2026-10-27T10:00:00.000Z", sourceLabel: "MT5 broker" },
+    displayStatus: "LIVE", isLivePrice: true, actionable: true,
+  });
+  const risk = () => screen.getByTestId("scanner-trade-risk-px").textContent;
+  const reward = () => screen.getByTestId("scanner-trade-reward-px").textContent;
+
+  it("USDJPY (3 dp): seeds 150.123 and prints risk/reward at 3 dp, not 5", async () => {
+    truth = liveTruth(150.123, 3);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(ui(true, client, { symbol: "USDJPY", timeframe: "5m", recommendedAction: "BUY", bias: "BUY", stopLoss: 149.95, takeProfit: 150.5 }));
+    await waitFor(() => expect((screen.getByTestId("scanner-trade-current-price") as HTMLInputElement).value).toBe("150.123"));
+    expect(risk()).toBe("0.173");
+    expect(reward()).toBe("0.377");
+  });
+
+  it("XAUUSD (2 dp): risk/reward print 2 decimals", async () => {
+    truth = liveTruth(2370.5, 2);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(ui(true, client, { symbol: "XAUUSD", timeframe: "5m", recommendedAction: "BUY", bias: "BUY", stopLoss: 2365, takeProfit: 2380 }));
+    await waitFor(() => expect((screen.getByTestId("scanner-trade-current-price") as HTMLInputElement).value).toBe("2370.5"));
+    expect(risk()).toBe("5.50");
+    expect(reward()).toBe("9.50");
+  });
+});

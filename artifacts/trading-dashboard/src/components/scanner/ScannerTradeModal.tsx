@@ -14,7 +14,7 @@ import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
 import { useMasterLiveAccess } from "@/components/live/MasterLiveAccessGuard";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
-import { formatInstrumentPrice, seedInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { formatInstrumentPrice, resolveDisplayPricePrecision, seedInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { HistoricalCheckPanel } from "@/components/trading/HistoricalCheckPanel";
@@ -373,6 +373,13 @@ export function ScannerTradeModal({
     const cp = num(currentPrice), ep = num(entryPrice), st = num(stopTriggerPrice), sli = num(stopLimitPrice);
     const slv = num(sl), tpv = num(tp);
     let effEntry: number | null = market ? cp : stopLimit ? sli : ep;
+    // Derived prices and distances print at the instrument's display precision
+    // (the same one the header and chart use); with none known, at the digits
+    // of the prices on this ticket — never an invented fixed 5 dp.
+    const pricePrecision: number | null =
+      feedTruth?.candles.pricePrecision ?? resolveDisplayPricePrecision(null, [cp, ep, st, sli, slv, tpv]);
+    const px = (v: number | null | undefined): string =>
+      v == null || !Number.isFinite(v) ? "—" : pricePrecision != null ? v.toFixed(pricePrecision) : String(v);
     if (!market && !stopLimit && ep == null) errors.push("Entry price required for limit/stop orders.");
     if (stopLimit && (st == null || sli == null)) errors.push("Stop trigger + stop limit prices required.");
 
@@ -400,7 +407,7 @@ export function ScannerTradeModal({
         assessedSl = assess.sl;
         if (assess.adjusted) {
           warnings.push(assess.reason);
-          slAdvice.push(`Suggested SL ${assess.sl?.toFixed(5) ?? "—"} (stop distance ${assess.stopDistance?.toFixed(5) ?? "—"}).`);
+          slAdvice.push(`Suggested SL ${px(assess.sl)} (stop distance ${px(assess.stopDistance)}).`);
         } else {
           slAdvice.push(assess.reason);
         }
@@ -418,8 +425,11 @@ export function ScannerTradeModal({
         if (rr < 1) warnings.push(`Risk/Reward ${rr.toFixed(2)} is below 1:1.`);
       }
     }
-    return { ok: errors.length === 0, errors, warnings, rr, riskPx, rewardPx, assessedSl, slAdvice };
-  }, [orderType, direction, market, stopLimit, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp, signal]);
+    return {
+      ok: errors.length === 0, errors, warnings, rr, riskPx, rewardPx, assessedSl, slAdvice,
+      riskPxText: px(riskPx), rewardPxText: px(rewardPx),
+    };
+  }, [orderType, direction, market, stopLimit, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp, signal, feedTruth?.candles.pricePrecision]);
 
   // Submit MARKET via demo-command queue (only flow EA actually executes
   // today). Sets source=MARKET_SCANNER + signalContext in payload so the
@@ -772,8 +782,8 @@ export function ScannerTradeModal({
 
               <SectionLabel>Risk / Reward</SectionLabel>
               <div className="rounded border border-border bg-card p-2 text-xs space-y-0.5">
-                <div className="flex justify-between"><span className="text-txt-secondary">Estimated risk (price units)</span><span className="font-mono">{validation.riskPx != null ? validation.riskPx.toFixed(5) : "—"}</span></div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Estimated reward (price units)</span><span className="font-mono">{validation.rewardPx != null ? validation.rewardPx.toFixed(5) : "—"}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Estimated risk (price units)</span><span className="font-mono" data-testid="scanner-trade-risk-px">{validation.riskPxText}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Estimated reward (price units)</span><span className="font-mono" data-testid="scanner-trade-reward-px">{validation.rewardPxText}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Risk / Reward</span><span className="font-mono">{validation.rr != null ? validation.rr.toFixed(2) : "—"}</span></div>
                 {/* Theme B — this is a hand-weighted heuristic sum, not a
                     calibrated probability. It is NOT rendered with a "%": an
