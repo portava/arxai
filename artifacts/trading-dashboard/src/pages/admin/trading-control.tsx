@@ -143,6 +143,7 @@ export default function AdminTradingControlPage() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [settingsReadAt, setSettingsReadAt] = useState<Date | null>(null);
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [usersLoad, setUsersLoad] = useState<"loading" | "loaded" | "failed">("loading");
   const [trades, setTrades] = useState<AuditEvent[]>([]);
   const [admins, setAdmins] = useState<AuditEvent[]>([]);
   const [busy, setBusy] = useState(false);
@@ -169,7 +170,9 @@ export default function AdminTradingControlPage() {
     setSettingsResp(s ?? null);
     setSettingsLoaded(true);
     setSettingsReadAt(s ? new Date() : null);
-    if (u?.users) setUsers(u.users);
+    // A failed users read is "could not be loaded", never zero users.
+    if (u?.users) { setUsers(u.users); setUsersLoad("loaded"); }
+    else { setUsers([]); setUsersLoad("failed"); }
     if (t?.events) setTrades(t.events);
     if (a?.events) setAdmins(a.events);
     if (sm) setShared(sm);
@@ -251,9 +254,13 @@ export default function AdminTradingControlPage() {
   const coreView = settingsLoaded ? safetyCoreStopView(settingsResp) : "unknown";
   const notLoadedText = settingsLoaded ? "unknown — settings could not be loaded" : "loading…";
 
-  const demoCount = users.filter((u) => u.permissions?.tradingMode === "DEMO").length;
-  const liveCount = users.filter((u) => u.permissions?.tradingMode === "LIVE").length;
+  // The tiles count the same flags as the table's "Demo" and "Live approved"
+  // columns (demoEnabled / liveApproved), not the user's current trading mode.
+  const demoEnabledCount = users.filter((u) => u.permissions?.demoEnabled === true).length;
+  const liveApprovedCount = users.filter((u) => u.permissions?.liveApproved === true).length;
   const suspendedCount = users.filter((u) => u.permissions?.suspended).length;
+  const userCount = (n: number): number | string => (usersLoad === "loaded" ? n : usersLoad === "loading" ? "…" : "—");
+  const usersNote = usersLoad === "failed" ? "could not be loaded" : undefined;
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-5 p-4 md:p-6 pb-32 md:pb-6">
@@ -452,10 +459,10 @@ export default function AdminTradingControlPage() {
 
       {/* Counts */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Total users" value={users.length} icon={<ShieldCheck className="w-4 h-4" />} />
-        <Stat label="Demo enabled" value={demoCount} icon={<ShieldCheck className="w-4 h-4 text-success" />} />
-        <Stat label="Live approved" value={liveCount} icon={<ShieldAlert className="w-4 h-4 text-danger" />} />
-        <Stat label="Suspended" value={suspendedCount} icon={<ShieldOff className="w-4 h-4 text-warning" />} />
+        <Stat label="Total users" value={userCount(users.length)} note={usersNote} testId="stat-total-users" icon={<ShieldCheck className="w-4 h-4" />} />
+        <Stat label="Demo enabled" value={userCount(demoEnabledCount)} note={usersNote} testId="stat-demo-enabled" icon={<ShieldCheck className="w-4 h-4 text-success" />} />
+        <Stat label="Live approved" value={userCount(liveApprovedCount)} note={usersNote} testId="stat-live-approved" icon={<ShieldAlert className="w-4 h-4 text-danger" />} />
+        <Stat label="Suspended" value={userCount(suspendedCount)} note={usersNote} testId="stat-suspended" icon={<ShieldOff className="w-4 h-4 text-warning" />} />
       </section>
 
       {/* User table */}
@@ -471,6 +478,9 @@ export default function AdminTradingControlPage() {
                 <th className="py-2 pr-3">Actions</th></tr>
             </thead>
             <tbody>
+              {usersLoad === "failed" ? (
+                <tr><td colSpan={8} className="py-2 text-warning" data-testid="text-users-unavailable">Users could not be loaded.</td></tr>
+              ) : null}
               {users.map((u) => {
                 const p = u.permissions;
                 return (
@@ -605,11 +615,14 @@ export default function AdminTradingControlPage() {
   );
 }
 
-function Stat({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
+function Stat({ label, value, icon, note, testId }: {
+  label: string; value: number | string; icon: React.ReactNode; note?: string; testId?: string;
+}) {
   return (
-    <div className="rounded-lg border border-border bg-background p-3">
+    <div className="rounded-lg border border-border bg-background p-3" data-testid={testId}>
       <div className="flex items-center gap-2 text-xs text-txt-secondary">{icon}{label}</div>
-      <div className="text-2xl font-bold mt-1">{value}</div>
+      <div className="text-2xl font-bold mt-1" data-testid={testId ? `${testId}-value` : undefined}>{value}</div>
+      {note ? <div className="text-xs text-warning">{note}</div> : null}
     </div>
   );
 }

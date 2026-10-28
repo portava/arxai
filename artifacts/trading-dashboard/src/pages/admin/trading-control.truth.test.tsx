@@ -114,3 +114,47 @@ describe("Admin Trading Control: install-wide stops", () => {
     expect(screen.getByTestId("row-emergency-stop").textContent).toMatch(/drill on row 2/);
   });
 });
+
+describe("Admin Trading Control: user count tiles", () => {
+  const user = (id: number, permissions: Json | null) => ({ id, email: `u${id}@example.com`, name: null, role: "USER", permissions });
+  const perms = (over: Json): Json => ({
+    tradingMode: "DISABLED", demoEnabled: false, liveApproved: false, liveEnabled: false,
+    suspended: false, suspensionReason: null, ...over,
+  });
+
+  it("'Live approved' counts liveApproved, not tradingMode LIVE (matches the table's ✓)", async () => {
+    await renderWith({
+      "/api/admin/trading/settings": { status: 200, body: { ok: true, settings: releasedSettings, ...bothReleased } },
+      "/api/admin/users": { status: 200, body: { ok: true, users: [user(1, perms({ tradingMode: "DEMO", liveApproved: true, demoEnabled: true }))] } },
+    });
+    expect(screen.getByTestId("stat-live-approved-value").textContent).toBe("1");
+    expect(screen.getByTestId("stat-demo-enabled-value").textContent).toBe("1");
+    expect(screen.getByTestId("stat-total-users-value").textContent).toBe("1");
+  });
+
+  it("'Demo enabled' counts a LIVE user who has demoEnabled; a DEMO-mode user without the flag is not counted", async () => {
+    await renderWith({
+      "/api/admin/trading/settings": { status: 200, body: { ok: true, settings: releasedSettings, ...bothReleased } },
+      "/api/admin/users": { status: 200, body: { ok: true, users: [
+        user(1, perms({ tradingMode: "LIVE", demoEnabled: true, liveApproved: true, liveEnabled: true })),
+        user(2, perms({ tradingMode: "DEMO", demoEnabled: false })),
+        user(3, null),
+      ] } },
+    });
+    expect(screen.getByTestId("stat-demo-enabled-value").textContent).toBe("1");
+    expect(screen.getByTestId("stat-live-approved-value").textContent).toBe("1");
+    expect(screen.getByTestId("stat-total-users-value").textContent).toBe("3");
+  });
+
+  it("a failed users request reads 'could not be loaded', never zero users", async () => {
+    await renderWith({
+      "/api/admin/trading/settings": { status: 200, body: { ok: true, settings: releasedSettings, ...bothReleased } },
+      "/api/admin/users": { status: 500, body: { ok: false } },
+    });
+    for (const id of ["stat-total-users", "stat-demo-enabled", "stat-live-approved", "stat-suspended"]) {
+      expect(screen.getByTestId(`${id}-value`).textContent).toBe("—");
+      expect(screen.getByTestId(id).textContent).toMatch(/could not be loaded/);
+    }
+    expect(screen.getByTestId("text-users-unavailable").textContent).toBe("Users could not be loaded.");
+  });
+});
