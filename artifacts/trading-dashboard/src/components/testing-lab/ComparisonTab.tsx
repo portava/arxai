@@ -17,7 +17,7 @@ const OVERLAY_COLORS = ["#6366f1", "#f59e0b"];
 
 
 export function ComparisonTab({ strategyId }: { strategyId?: string }) {
-  const { data: btData } = useQuery<{ runs: BacktestRunRow[] }>({
+  const { data: btData, isError: backtestError } = useQuery<{ runs: BacktestRunRow[] }>({
     queryKey: ["backtest-runs"],
     queryFn: async () => {
       const r = await fetch("/api/backtest-runs?limit=50");
@@ -91,8 +91,49 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
   const fwdTrades = fwd?.shadowTradesTracked ?? 0;
   const hasData = runs.length > 0 || fwdTrades > 0;
   const recommendation = "Comparison is unavailable: these backtests have no source-bound experiment or recorded costs and holdout. The forward summary covers all strategies, symbols and timeframes. Similar win rates do not establish out-of-sample performance.";
+  // A read that is still in flight or failed is not a confirmed empty list:
+  // runs falls back to [] and fwdTrades to 0 in those cases, so the empty
+  // state is only shown once the backtest list was actually read and the
+  // forward read has settled.
+  const backtestLoaded = btData !== undefined;
+  const forwardSettled = fwd !== undefined || forwardError;
+  const forwardUnavailableLine = "Forward results are unavailable for this account.";
 
   if (!hasData) {
+    if (!backtestLoaded && !backtestError) {
+      return (
+        <div className="pt-2">
+          <p className="text-sm text-slate-400">Loading comparison data…</p>
+        </div>
+      );
+    }
+    if (backtestError) {
+      return (
+        <div className="pt-2 space-y-1">
+          <p className="text-sm text-amber-300">
+            Backtest runs could not be loaded, so comparison data cannot be checked right now.
+          </p>
+          {forwardError && <p className="text-xs text-slate-400">{forwardUnavailableLine}</p>}
+        </div>
+      );
+    }
+    if (!forwardSettled) {
+      return (
+        <div className="pt-2">
+          <p className="text-sm text-slate-400">Loading comparison data…</p>
+        </div>
+      );
+    }
+    if (forwardError) {
+      return (
+        <div className="pt-2 space-y-1">
+          <p className="text-sm text-slate-400">
+            No backtest runs yet{strategyId ? ` for ${strategyId}` : ""}. Run a backtest to inspect diagnostic records.
+          </p>
+          <p className="text-xs text-slate-400">{forwardUnavailableLine}</p>
+        </div>
+      );
+    }
     return (
       <div className="pt-2">
         <p className="text-sm text-slate-400">
@@ -117,17 +158,19 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
         <Card>
           <CardHeader><CardTitle className="text-base">Backtest diagnostics</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
+            {!backtestLoaded ? <p className="text-xs text-slate-400">{backtestError ? "Backtest runs could not be loaded." : "Backtest runs have not loaded."}</p> : <>
             <Row label="Runs" value={String(runs.length)} />
             <Row label="Sample (trades)" value={String(btTrades)} />
             <Row label="Cross-run performance" value="Not aggregated across experiments" muted />
             <Row label="Verification" value="Unavailable" muted />
             <Row label="Drawdown" value="open a run for detail" muted />
+            </>}
           </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">Forward test · all strategies</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            {!fwd ? <p className="text-xs text-slate-400">{forwardError ? "Forward results are unavailable for this account." : "Forward results have not loaded."}</p> : <>
+            {!fwd ? <p className="text-xs text-slate-400">{forwardError ? forwardUnavailableLine : "Forward results have not loaded."}</p> : <>
             <Row label="Decisions" value={String(fwd?.totalShadowDecisions ?? 0)} />
             <Row label="Sample (trades)" value={String(fwdTrades)} />
             <Row label="Win rate" value={fwd && fwdTrades > 0 ? `${formatBacktestNumber(fwd.winRate)}%` : "—"} />
