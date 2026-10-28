@@ -116,6 +116,8 @@ const TIMEFRAMES: { id: ArxTimeframe; label: string }[] = [
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
 const EMPTY_OVERLAYS: ChartOverlay[] = [];
+/** Candle poll cadence; the header chip's truth cap polls at the same rate. */
+const CANDLE_POLL_MS = 8000;
 
 
 function loadTimeframe(): ArxTimeframe {
@@ -334,7 +336,7 @@ export function ARXNativeChart({
       query: {
         queryKey: getGetChartCandlesQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
         enabled: resolvedSymbol.length > 0,
-        refetchInterval: 8000,
+        refetchInterval: CANDLE_POLL_MS,
         staleTime: 4000,
       },
     },
@@ -373,8 +375,8 @@ export function ARXNativeChart({
   // the feed" rule the Scanner and position mini-charts use, so the verdict is
   // resolved through the shared chart-display-status module — not this chart's
   // own feed-confidence badge system (which stays as the header). The header
-  // here derives from the same feedStatus, so chart and header can never
-  // disagree and no separate header cap is needed.
+  // chip's text derives from the same feedStatus; the chip is additionally
+  // capped (downgrade only) by the shared scanner truth further below.
   const isLivePriceAffordance = !refreshFailed && isLivePriceDisplay(
     resolveDisplayStatus(data?.feedStatus ?? null, hasCandles),
   );
@@ -857,9 +859,16 @@ export function ARXNativeChart({
   // Normalize first: `timeframe` is contract-style ("M15") but useScannerTruth's
   // toApiTimeframe only understands chart ids, so a raw label would resolve the
   // wrong (M5) feed.
+  //
+  // The truth hook runs its own request to the same /api/chart/candles endpoint
+  // (a different cache key from the generated hook above), so it is NOT the same
+  // response object as the chip text. It is asked for the SAME candle window and
+  // poll cadence as this chart so the chip and its cap describe the same bars at
+  // nearly the same moment. The cap can only downgrade the chip.
   const { truth: badgeTruth } = useScannerTruth(
     resolvedSymbol,
     normalizeChartTimeframe(timeframe),
+    { limit, refetchInterval: CANDLE_POLL_MS },
   );
   // A failed refresh of THIS chart's candles caps the chip too: the response it
   // describes is no longer current.

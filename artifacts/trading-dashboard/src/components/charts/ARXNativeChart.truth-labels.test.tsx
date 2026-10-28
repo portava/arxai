@@ -15,6 +15,8 @@
 //     after the chart's own candle refresh failed (frozen cached response).
 //   - "Chart data is syncing — waiting for a live feed to connect" when the
 //     router had exhausted every provider (the server's own message dropped).
+//   - a header chip whose cap came from a different candle window and poll
+//     cadence (200 bars / 15 s) than the chip text (300 bars / 8 s).
 //
 // The harness renders the REAL ARXNativeChart with the candle query, the
 // chart engine and the scanner-truth hook replaced by controllable stubs.
@@ -358,5 +360,20 @@ describe("an unavailable feed's empty state repeats what the server said", () =>
     const empty = screen.getByTestId("arx-native-empty").textContent ?? "";
     expect(empty).not.toMatch(/syncing|waiting for a live feed/i);
     expect(empty).toContain(`${SYMBOL} on ${TF}`);
+  });
+});
+
+describe("the header chip and its cap describe the same candle window", () => {
+  it("resolves the cap over the chart's own limit and poll cadence", () => {
+    renderChart();
+    const last = scannerTruthCalls.at(-1)!;
+    expect(last[0]).toBe(SYMBOL);
+    expect(last[1]).toBe("5m");
+    expect(last[2]).toEqual({ limit: 300, refetchInterval: 8000 });
+  });
+
+  it("follows a custom chart limit", () => {
+    renderChart({ limit: 500 });
+    expect(scannerTruthCalls.at(-1)![2]).toEqual({ limit: 500, refetchInterval: 8000 });
   });
 });
