@@ -16,10 +16,16 @@ test("database errors return unavailable without leaking connection/error detail
   assert.deepEqual(Object.keys(response), ["status", "checkedAt"]);
   assert.doesNotMatch(JSON.stringify(response), /password|postgres|host/);
 });
-test("a hanging database times out and concurrent probes cannot accumulate", async () => {
+// setTimeout is mocked so the 5 ms probe timeout fires only when ticked: the
+// recovery leg cannot lose to a GC pause or a sibling file holding the event loop.
+test("a hanging database times out and concurrent probes cannot accumulate", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   let calls = 0; let finish!: () => void;
   const check = createDependencyReadiness(() => { calls++; return new Promise<void>(r => { finish = r; }); }, { timeoutMs: 5, cacheMs: 0 });
-  const responses = await Promise.all(Array.from({ length: 20 }, () => check()));
+  const probes = Promise.all(Array.from({ length: 20 }, () => check()));
+  await new Promise(r => setImmediate(r));
+  t.mock.timers.tick(5);
+  const responses = await probes;
   assert.ok(responses.every(r => r.status === "unavailable"));
   await check(); assert.equal(calls, 1);
   finish(); await new Promise(r => setImmediate(r));
