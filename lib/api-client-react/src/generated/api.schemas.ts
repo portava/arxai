@@ -10760,10 +10760,11 @@ export interface PropChallengeViolation {
 }
 
 /**
- * A paper close whose P&L could not be sized for its instrument (no contract size or currency conversion) stores profit_loss 0 as a placeholder. The balance counts it at the paper risk model (price move x lots x 100), not a measured amount; this says how many closes that covers, with a plain-English note (null when every close was sized).
+ * A paper close whose P&L could not be sized for its instrument (no contract size or currency conversion) stores profit_loss 0 as a placeholder, and an open position in such an instrument has no sized unrealized P&L. The balance and equity count them at the paper risk model (price move x lots x 100), not a measured amount; this says how many closes and open positions that covers, with a plain-English note (null when everything was sized).
  */
 export interface PaperPnlSizing {
   unsizedClosedOrders: number;
+  unsizedOpenPositions: number;
   /** @nullable */
   note: string | null;
 }
@@ -10780,7 +10781,7 @@ export interface PaperAccount {
   isActive: number;
   createdAt: string;
   updatedAt: string;
-  /** Present when the account was just valued (GET /paper/accounts/active). Says how many closes the balance counts without a sized P&L. */
+  /** Present when the account was just valued (GET /paper/accounts/active). Says how many closes and open positions the balance and equity count without a sized P&L. */
   pnlSizing?: PaperPnlSizing;
 }
 

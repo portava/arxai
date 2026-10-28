@@ -1,4 +1,6 @@
-// Contract-size-aware paper P&L (Build EE monitor).
+// Contract-size-aware paper P&L: the one sizing rule for every paper order,
+// used by the Build EE monitor and by every PAPER venue path (mark-to-market,
+// the trader's close, the EE manual close, stop/target settlement).
 //
 // The monitor used `direction × move × lots × 100` for every symbol, so a
 // 1.00-lot, 100-pip EURUSD winner read 1.00 instead of 1,000 and a V75 or gold
@@ -14,6 +16,7 @@
 import {
   computeRealizedAmount,
   decideContractSize,
+  resolveContractSize,
   resolveQuoteToAccountFx,
   type ResolvedContractSize,
 } from "../mt5/contractSize.js";
@@ -104,4 +107,31 @@ export function paperPnl(a: {
     quoteToAccountFx: fx.factor,
   });
   return { amount: Number(amount.toFixed(2)), unavailableReason: null };
+}
+
+/**
+ * Contract size for a paper order: the owner's broker-reported spec when one
+ * exists, else the FX standard lot for a fiat pair, else unknown. An ownerless
+ * order, or a spec read that fails, falls back to the no-spec decision.
+ */
+export async function resolvePaperContract(userId: number | null, symbol: string): Promise<ResolvedContractSize> {
+  const noSpec = decideContractSize({ symbol, brokerContractSize: null, brokerProfitCurrency: null });
+  if (userId == null) return noSpec;
+  try {
+    return await resolveContractSize(userId, symbol);
+  } catch {
+    return noSpec;
+  }
+}
+
+/** P&L of a paper order at `price`, sized at its contract size (null amount + reason when it cannot be). */
+export async function sizePaperOrderPnl(
+  o: { userId: number | null; symbol: string; direction: string; lotSize: number; entryPrice: number },
+  price: number,
+  contract?: ResolvedContractSize,
+): Promise<PaperPnlResult> {
+  return paperPnl({
+    symbol: o.symbol, direction: o.direction, lots: o.lotSize, entry: o.entryPrice, price,
+    contract: contract ?? await resolvePaperContract(o.userId, o.symbol),
+  });
 }

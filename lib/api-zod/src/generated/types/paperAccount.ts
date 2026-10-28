@@ -19,6 +19,6 @@ export interface PaperAccount {
   isActive: number;
   createdAt: string;
   updatedAt: string;
-  /** Present when the account was just valued (GET /paper/accounts/active). Says how many closes the balance counts without a sized P&L. */
+  /** Present when the account was just valued (GET /paper/accounts/active). Says how many closes and open positions the balance and equity count without a sized P&L. */
   pnlSizing?: PaperPnlSizing;
 }

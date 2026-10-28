@@ -7,10 +7,11 @@
  */
 
 /**
- * A paper close whose P&L could not be sized for its instrument (no contract size or currency conversion) stores profit_loss 0 as a placeholder. The balance counts it at the paper risk model (price move x lots x 100), not a measured amount; this says how many closes that covers, with a plain-English note (null when every close was sized).
+ * A paper close whose P&L could not be sized for its instrument (no contract size or currency conversion) stores profit_loss 0 as a placeholder, and an open position in such an instrument has no sized unrealized P&L. The balance and equity count them at the paper risk model (price move x lots x 100), not a measured amount; this says how many closes and open positions that covers, with a plain-English note (null when everything was sized).
  */
 export interface PaperPnlSizing {
   unsizedClosedOrders: number;
+  unsizedOpenPositions: number;
   /** @nullable */
   note: string | null;
 }

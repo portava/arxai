@@ -25,22 +25,13 @@ import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { fillPaperTrade, settlePaperTrade } from "../tradeEngine/pipeline.js";
-import { decideContractSize, resolveContractSize, type ResolvedContractSize } from "../mt5/contractSize.js";
-import { paperMoveSign, paperPnl } from "./paperPnl.js";
+import { paperMoveSign, paperPnl, resolvePaperContract } from "./paperPnl.js";
 
 const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
-// P&L sizing lives in ./paperPnl.ts (contract-size aware). The old
-// `move × lots × 100` here mis-sized every instrument (EURUSD 1,000×).
-async function contractFor(userId: number | null, symbol: string): Promise<ResolvedContractSize> {
-  const noSpec = decideContractSize({ symbol, brokerContractSize: null, brokerProfitCurrency: null });
-  if (userId == null) return noSpec;
-  try {
-    return await resolveContractSize(userId, symbol);
-  } catch {
-    return noSpec;
-  }
-}
+// P&L sizing lives in ./paperPnl.ts (contract-size aware), shared with the
+// PAPER venue so an order is valued in one unit whichever path closes it. The
+// old `move × lots × 100` here mis-sized every instrument (EURUSD 1,000×).
 
 function detectHit(direction: string, current: number, sl: number, tp: number): "TP" | "SL" | null {
   if (direction === "BUY") {
@@ -125,7 +116,7 @@ export async function runPaperMonitor(opts?: {
     }
 
     const hit = detectHit(order.direction, currentPrice, order.stopLoss, order.takeProfit);
-    const contract = await contractFor(order.userId, order.symbol);
+    const contract = await resolvePaperContract(order.userId, order.symbol);
     const sizing = { symbol: order.symbol, direction: order.direction, lots: order.lotSize, entry: order.entryPrice, contract };
     const u = paperPnl({ ...sizing, price: currentPrice });
     summary.updates.push({
@@ -220,6 +211,7 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
       ? { ok: false, error: `Order not open (status=${order.status})` }
       : { ok: false, error: "Paper order not found" };
   }
+  // null = the amount could not be sized (the venue stored the 0 placeholder).
   const pnl = closed.pnl;
 
   if (order.decisionId != null) {
@@ -235,5 +227,8 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
   } catch (err) {
     log.warn({ err: String(err) }, "Build EE manual close: BB trigger failed");
   }
-  return { ok: true, orderId, exitPrice: Number(exitPrice.toFixed(5)), pnl: Number(pnl.toFixed(2)), bb };
+  return {
+    ok: true, orderId, exitPrice: Number(exitPrice.toFixed(5)),
+    pnl: pnl != null ? Number(pnl.toFixed(2)) : null, pnlUnavailableReason: closed.pnlUnavailableReason, bb,
+  };
 }

@@ -3,7 +3,7 @@
 // reading as a measured zero change. The server now counts such a close at
 // the paper risk model and says so in account.pnlSizing; the card must show
 // that note next to the balance, and show nothing extra when every close was
-// sized.
+// sized. The same note covers open positions the equity cannot size.
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -25,13 +25,13 @@ function renderWith(body: unknown) {
 describe("PaperAccountCard balance sizing note", () => {
   it("says when the balance counts closes whose P&L could not be sized", async () => {
     const note = "Balance includes 1 closed trade whose P&L could not be sized for the instrument (no contract size or currency conversion). It is counted at the paper risk model (price move × lots × 100), not a measured amount.";
-    renderWith({ account: { ...account, pnlSizing: { unsizedClosedOrders: 1, note } } });
+    renderWith({ account: { ...account, pnlSizing: { unsizedClosedOrders: 1, unsizedOpenPositions: 0, note } } });
     await waitFor(() => expect(screen.getByText("Practice")).toBeTruthy());
     expect(screen.getByTestId("paper-account-sizing-note").textContent).toBe(note);
   });
 
   it("shows no note when every close was sized", async () => {
-    renderWith({ account: { ...account, pnlSizing: { unsizedClosedOrders: 0, note: null } } });
+    renderWith({ account: { ...account, pnlSizing: { unsizedClosedOrders: 0, unsizedOpenPositions: 0, note: null } } });
     await waitFor(() => expect(screen.getByText("Practice")).toBeTruthy());
     expect(screen.queryByTestId("paper-account-sizing-note")).toBeNull();
   });
