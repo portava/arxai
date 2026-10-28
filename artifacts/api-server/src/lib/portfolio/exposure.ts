@@ -21,6 +21,14 @@ export interface PortfolioExposure {
   exposureByMarket: Record<string, number>;
   exposureByStrategy: Record<string, number>;
   exposureByCurrency: CurrencyExposure[];
+  /**
+   * Open rows whose symbol is not one of the pairs the code can split into
+   * currencies (EURGBP, XAUUSD, a broker-suffixed name, a synthetic …). Their
+   * currency exposure is NOT in exposureByCurrency, so an empty list with
+   * unmapped rows is "not decomposed", never "no currency exposure".
+   */
+  currencyExposureUnmappedRows: number;
+  currencyExposureUnmappedSymbols: string[];
   dailyDrawdown: number;
   weeklyDrawdown: number;
 }
@@ -65,6 +73,8 @@ export function computeExposure(trades: Trade[]): PortfolioExposure {
   const currencyMap = new Map<string, number>();
   let floating = 0;
   let unmarkedOpen = 0;
+  let unmappedCurrencyRows = 0;
+  const unmappedCurrencySymbols = new Set<string>();
 
   for (const t of open) {
     const mt = marketTypeOf(t.symbol);
@@ -79,6 +89,9 @@ export function computeExposure(trades: Trade[]): PortfolioExposure {
       const sign = t.direction === "BUY" ? 1 : -1;
       currencyMap.set(pair[0], (currencyMap.get(pair[0]) ?? 0) + sign * t.lot);
       currencyMap.set(pair[1], (currencyMap.get(pair[1]) ?? 0) - sign * t.lot);
+    } else {
+      unmappedCurrencyRows++;
+      unmappedCurrencySymbols.add(t.symbol);
     }
   }
 
@@ -107,6 +120,8 @@ export function computeExposure(trades: Trade[]): PortfolioExposure {
     exposureByMarket,
     exposureByStrategy,
     exposureByCurrency: [...currencyMap.entries()].map(([currency, netLots]) => ({ currency, netLots })),
+    currencyExposureUnmappedRows: unmappedCurrencyRows,
+    currencyExposureUnmappedSymbols: [...unmappedCurrencySymbols],
     dailyDrawdown,
     weeklyDrawdown,
   };

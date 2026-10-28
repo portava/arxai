@@ -20343,6 +20343,13 @@ components:
             properties:
               currency: { type: string }
               netLots: { type: number }
+        currencyExposureUnmappedRows:
+          type: integer
+          description: Open rows whose symbol could not be split into currencies (not one of the mapped pairs, e.g. EURGBP, XAUUSD, a broker-suffixed name or a synthetic). Their exposure is not in exposureByCurrency, so an empty list with unmapped rows is not "no currency exposure".
+        currencyExposureUnmappedSymbols:
+          type: array
+          items: { type: string }
+          description: The distinct symbols counted in currencyExposureUnmappedRows.
         dailyDrawdown:
           type: number
           description: Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown.

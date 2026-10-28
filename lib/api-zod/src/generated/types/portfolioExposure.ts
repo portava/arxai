@@ -31,6 +31,10 @@ export interface PortfolioExposure {
   exposureByMarket: PortfolioExposureExposureByMarket;
   exposureByStrategy: PortfolioExposureExposureByStrategy;
   exposureByCurrency: PortfolioExposureExposureByCurrencyItem[];
+  /** Open rows whose symbol could not be split into currencies (not one of the mapped pairs, e.g. EURGBP, XAUUSD, a broker-suffixed name or a synthetic). Their exposure is not in exposureByCurrency, so an empty list with unmapped rows is not "no currency exposure". */
+  currencyExposureUnmappedRows?: number;
+  /** The distinct symbols counted in currencyExposureUnmappedRows. */
+  currencyExposureUnmappedSymbols?: string[];
   /** Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown. */
   dailyDrawdown: number;
   /** Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown. */

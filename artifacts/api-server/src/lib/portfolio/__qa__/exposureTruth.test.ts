@@ -48,3 +48,21 @@ test("the response names its source and says broker positions are not included",
   assert.equal(e.source, "LEGACY_TRADES_TABLE");
   assert.match(e.sourceNote, /broker positions are not included/i);
 });
+
+test("an open row on a pair the code cannot split into currencies is reported as unmapped, not as no exposure", () => {
+  const e = computeExposure([
+    trade({ id: 4, status: "OPEN", symbol: "EURGBP", direction: "BUY", lot: 1 }),
+    trade({ id: 5, status: "OPEN", symbol: "frxEURUSD", direction: "SELL", lot: 1 }),
+  ]);
+  assert.equal(e.totalOpen, 2);
+  assert.equal(e.exposureByCurrency.length, 0);
+  assert.equal(e.currencyExposureUnmappedRows, 2);
+  assert.deepEqual(e.currencyExposureUnmappedSymbols, ["EURGBP", "frxEURUSD"]);
+});
+
+test("mapped pairs are decomposed and not counted as unmapped", () => {
+  const e = computeExposure([trade({ id: 6, status: "OPEN", symbol: "EURUSD", direction: "BUY", lot: 1 })]);
+  assert.equal(e.currencyExposureUnmappedRows, 0);
+  assert.deepEqual(e.currencyExposureUnmappedSymbols, []);
+  assert.deepEqual(e.exposureByCurrency, [{ currency: "EUR", netLots: 1 }, { currency: "USD", netLots: -1 }]);
+});

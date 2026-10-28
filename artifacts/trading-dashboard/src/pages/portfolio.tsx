@@ -33,6 +33,19 @@ export default function Portfolio() {
     );
   };
 
+  // Open rows whose symbol the server could not split into currencies
+  // (EURGBP, XAUUSD, a broker-suffixed name, a synthetic …). Their exposure is
+  // not in exposureByCurrency, so an empty list is never "no exposure" while
+  // such rows are open. An older server sends no count: with open rows and an
+  // empty list, every open row was unmapped.
+  const unmappedRows = typeof exp.currencyExposureUnmappedRows === "number"
+    ? exp.currencyExposureUnmappedRows
+    : exp.exposureByCurrency.length === 0 ? exp.totalOpen : 0;
+  const unmappedSymbols = Array.isArray(exp.currencyExposureUnmappedSymbols) ? exp.currencyExposureUnmappedSymbols : [];
+  const unmappedNote = unmappedRows > 0
+    ? `${unmappedRows} open row${unmappedRows === 1 ? "" : "s"}${unmappedSymbols.length ? ` (${unmappedSymbols.join(", ")})` : ""} could not be split into currencies, so ${unmappedRows === 1 ? "its" : "their"} currency exposure is not shown here.`
+    : null;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
@@ -89,13 +102,18 @@ export default function Portfolio() {
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Net Currency Exposure</CardTitle></CardHeader>
         <CardContent>
-          {exp.exposureByCurrency.length === 0 ? <p className="text-sm text-muted-foreground">No currency exposure.</p> :
+          {exp.exposureByCurrency.length === 0 ? (
+            exp.totalOpen === 0 ? <p className="text-sm text-muted-foreground">No open rows in this source.</p> : null
+          ) :
             <div className="grid gap-2 sm:grid-cols-3">
               {exp.exposureByCurrency.map((c) => (
                 <div key={c.currency} className="p-2 rounded border border-border/50 flex justify-between"><span className="font-mono font-bold">{c.currency}</span><span className={`font-mono ${c.netLots >= 0 ? "text-success" : "text-destructive"}`}>{c.netLots > 0 ? "+" : ""}{c.netLots.toFixed(2)}</span></div>
               ))}
             </div>
           }
+          {unmappedNote ? (
+            <p className="mt-2 text-xs text-yellow-600" data-testid="currency-exposure-unmapped">{unmappedNote}</p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

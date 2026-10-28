@@ -13561,6 +13561,16 @@ export const GetPortfolioExposureResponse = zod.object({
       netLots: zod.number(),
     }),
   ),
+  currencyExposureUnmappedRows: zod
+    .number()
+    .optional()
+    .describe(
+      'Open rows whose symbol could not be split into currencies (not one of the mapped pairs, e.g. EURGBP, XAUUSD, a broker-suffixed name or a synthetic). Their exposure is not in exposureByCurrency, so an empty list with unmapped rows is not \"no currency exposure\".',
+    ),
+  currencyExposureUnmappedSymbols: zod
+    .array(zod.string())
+    .optional()
+    .describe("The distinct symbols counted in currencyExposureUnmappedRows."),
   dailyDrawdown: zod
     .number()
     .describe(
