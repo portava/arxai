@@ -50,6 +50,7 @@ import {
 } from "../live/positionTruthAdapter.js";
 import type { PositionTruthVerdict } from "@workspace/domain/live-position";
 import { isApprovedArxMarket, ARX_FOCUS_BLOCKED_REASON } from "@workspace/domain/market";
+import { isSyntheticInstrument } from "@workspace/domain/smart-chart";
 import { deriveOpportunityLabel, projectOpportunitySetup } from "../data/opportunityAdapters.js";
 import { evaluatePaperTradePlan, getTradingStyleProfile } from "./coachTools.js";
 import { getVoiceModeStatus } from "./realtimeSession.js";
@@ -1753,7 +1754,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getMyPendingOrderDrafts", description: "Phase TT/TU/TV (Trade Ticket). Returns the signed-in user's saved pending-order drafts. Each draft has id, orderType, symbol, side, lotSize, entryPrice, stopTriggerPrice, stopLimitPrice, stopLoss, takeProfit, expiration, pendingStatus, status, tradeCommandId (link to the mt5_commands row if forward-submitted), mt5OrderTicket (only present after MT5 confirmed), createdAt. Per-user-scoped. pendingStatus VOCABULARY: EA_UPGRADE_REQUIRED|BRIDGE_DISCONNECTED|BRIDGE_UNSUPPORTED|READ_ONLY|LIVE_LOCKED|BLOCKED_BY_PAPER_LOCK = draft only, NOT at broker. QUEUED = command row inserted into mt5_commands. PLACED = MT5 returned a real order ticket (mt5OrderTicket populated). REJECTED = MT5 refused. CANCELLED = soft-cancelled OR broker-confirmed cancel. CANCEL_QUEUED/MODIFIED = transient post-bridge states. CRITICAL: NEVER claim a draft is 'live', 'at the broker', 'filling', or 'working' unless pendingStatus='PLACED' AND mt5OrderTicket is non-null. The system is paper-only today: nearly every submit returns BLOCKED_BY_PAPER_LOCK.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getProtectiveCloseStatus", description: "Phase 13 (Protective Auto-Close). READ-ONLY. Returns the signed-in user's Protective Auto-Close settings and the most recent decisions journal (one entry per evaluation, even ALERT_ONLY / NO_ACTION / BLOCKED). Each decision row has tradeKey, decision (NO_ACTION | ALERT_ONLY | RECOMMEND_CLOSE | RECOMMEND_PARTIAL_CLOSE | AUTO_CLOSE_ELIGIBLE | BLOCKED), reasonCode, signals[], confidenceScore, activityStatus (ACTIVE | INACTIVE | UNKNOWN), failedChecks[] (when BLOCKED), actionTakenActionId (only when the engine actually drafted a CLOSE action — null otherwise), createdAt. The settings object includes enabled (default false), inactivityThresholdMinutes, minConfidence, allowPartialCloseOnly, killSwitchActive, optInAt, lastUpdatedAt. CRITICAL: ARX may EXPLAIN these decisions but NEVER claims a close happened unless actionTakenActionId is non-null AND the linked action's execution result shows status='executed'. When decision='BLOCKED' say so honestly with the failedChecks reason. When settings.enabled=false say protective auto-close is OFF (default). When activityStatus='UNKNOWN' explain that the engine downgraded to alert-only. NEVER triggers the engine — only the worker does. Per-user-scoped (SQL-filtered on userId).", parameters: { type: "object", properties: { tradeKey: { type: "string", description: "Optional. Filter decisions for a single trade ('lp_<id>' or 'att_<id>')." }, limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "getFinalTradeRead", description: "Phase News-Decision. Returns the fused FINAL TRADE READ for a symbol/timeframe — combines current technical scanner score, same-time historical context, and news-risk context into one decision: TRADE_WATCH | WAIT_FOR_CONFIRMATION | AVOID_FOR_NOW | NO_TRADE. Also returns headline, reasons[], technicalScore, historicalScore, newsRiskLevel, conflict, confidence. CRITICAL: you are EXPLICITLY ALLOWED — and expected — to recommend WAIT / AVOID / NO_TRADE when this tool returns those. Do NOT force a buy/sell answer when the safer answer is no trade. If confidence=LOW because news/history are unavailable, say so honestly. Use for 'should I trade EURUSD now', 'what's the read on gold', 'is this a good entry', 'safe to buy', 'should I wait'.", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string", description: "Defaults to 'M15'." } }, required: ["symbol"], additionalProperties: false } },
-  { name: "getMarketNewsIntelligence", description: "Phase News. Returns a normalized MarketNewsDecisionPack for a symbol: riskLevel (none|low|medium|high|critical), bias (bullish|bearish|mixed|unclear) from recent headlines, timing (now|upcoming|recent|quiet), recommendation (watch|wait|avoid|proceed_with_caution), upcomingEvent {title,currency,impact,minutesUntil}, recentHeadlines (real provider only — empty if no provider wired), affectedCurrencies, and dataSources with connected flags for headlines/calendar/social. CRITICAL: if dataSources.headlines.connected=false the headlines array is empty — you MUST say 'news feed is unavailable' rather than inventing headlines. The economic calendar today is a built-in schedule (mock) — never claim it as a live live calendar feed. Social/X monitoring is not configured. Decision support only, never a buy/sell signal. Per-symbol cached 60s. Use for 'what news affects EURUSD', 'is there event risk', 'should I avoid this trade due to news', 'why is gold moving', 'what catalysts are active'.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getMarketNewsIntelligence", description: "Phase News. Returns a normalized MarketNewsDecisionPack for a symbol: riskLevel (none|low|medium|high|critical|unknown), bias (bullish|bearish|mixed|unclear) from recent headlines, timing (now|upcoming|recent|quiet|unknown), recommendation (watch|wait|avoid|proceed_with_caution), upcomingEvent {title,currency,impact,minutesUntil}, recentHeadlines (real provider only — empty if no provider wired), affectedCurrencies, and dataSources with connected flags for headlines/calendar/social. CRITICAL: if dataSources.headlines.connected=false the headlines array is empty — you MUST say 'news feed is unavailable' rather than inventing headlines. ALSO read scheduledEventRisk: 'not_checked' (riskLevel/timing read 'unknown') means no economic calendar answered, so upcoming events are UNKNOWN — you MUST say scheduled news was not checked and never say there are no events; 'not_applicable' = synthetic index (not moved by scheduled events); 'checked' = a live calendar answered. Social/X monitoring is not configured. Decision support only, never a buy/sell signal. Per-symbol cached 60s. Use for 'what news affects EURUSD', 'is there event risk', 'should I avoid this trade due to news', 'why is gold moving', 'what catalysts are active'.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
   { name: "getHistoricalContext", description: "Phase Historical. Returns same-time historical comparison for a symbol over yesterday / last week / last month / last year / 5 years ago, using REAL provider candles via the market data provider chain. Returns bias (BULLISH | BEARISH | MIXED | INSUFFICIENT_DATA), confidence (LOW | MEDIUM | HIGH), sampleSize (0-5), per-window directions and % moves, plus setupSummary {sampleSize, winRate, avgMovePct, worstDrawdownPct, bestMovePct, avgTimeToNextCandleMs}. CRITICAL: if bias = INSUFFICIENT_DATA OR setupSummary.sampleSize = 0, you MUST tell the user historical data is unavailable for this symbol/timeframe — never invent a number. Treat as decision support only, never as a buy/sell signal. Per-symbol cached for 60s. Use for 'what does history say about X', 'how did EURUSD behave this time last year', 'is this setup historically reliable', 'what's the same-time pattern'.", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string", description: "Defaults to '1d'." } }, required: ["symbol"], additionalProperties: false } },
   { name: "getBridgeCapabilities", description: "Phase TU (MT5 EA/Bridge upgrade). Returns the signed-in user's MT5 bridge capability disclosure as last reported by their EA on heartbeat. Fields: bridgeConnected (bool, true only if a heartbeat arrived within the last ~90s), eaVersion (string|null), capabilitiesReportedAt (ISO|null), capabilities (object with booleans: marketOrders, marketOrderSLTP, pendingOrders, stopLimitOrders, modifyPositionProtection, modifyPendingOrders, cancelPendingOrders, expiration, sharedMasterSafeRouting), pendingOrderExecutable (bool — always false today because of the system-wide paper-only lock), currentSubmitStatus (one of: BRIDGE_DISCONNECTED, BRIDGE_UNSUPPORTED, READ_ONLY, LIVE_LOCKED, BLOCKED_BY_PAPER_LOCK, QUEUED), currentSubmitExplanation (plain-language reason). Use when the user asks 'is my EA up to date', 'does my bridge support pending orders', 'why can't I submit a stop-limit', 'what version is my EA', 'is my bridge connected'. NEVER claims the bridge supports an action when the capability is false. NEVER says pendingOrderExecutable is true today.", parameters: { type: "object", properties: {}, additionalProperties: false } },
 ] as const;
@@ -2374,21 +2375,20 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
       const { getNewsIntelligence } = await import("../news/newsIntelligenceService.js");
       try {
         const pack = await getNewsIntelligence(String(args.symbol ?? ""));
-        return {
-          ...pack,
-          safetyNote:
-            !pack.dataSources.headlines.connected
-              ? "News feed is unavailable right now. Do not invent headlines. Rely on chart/history/scanner data and say the feed is unavailable."
-              : pack.safetyNote,
-        };
+        return newsPackForAssistant(pack);
       } catch {
+        const sym = String(args.symbol ?? "").trim().toUpperCase();
         return {
           symbol: String(args.symbol ?? ""),
           generatedAt: new Date().toISOString(),
-          riskLevel: "none",
+          // The read failed: nothing was checked, so risk and timing are
+          // unknown — never "none" / "quiet".
+          riskLevel: "unknown",
           bias: "unclear",
-          timing: "quiet",
-          warningSummary: "News intelligence is temporarily unavailable.",
+          timing: "unknown",
+          scheduledEventRisk: "not_checked",
+          headlinesChecked: false,
+          warningSummary: `News intelligence could not be read for ${sym || "this market"} — scheduled events and headlines were not checked, so news risk is unknown (not none).`,
           recommendation: "watch",
           upcomingEvent: null,
           recentHeadlines: [],
@@ -2721,6 +2721,51 @@ export async function getOnboardingProgressTool(userId: number) {
   } catch (e) {
     return { ok: false, error: "progress_failed", reason: (e as Error).message.slice(0, 200),};
   }
+}
+
+// ── getMarketNewsIntelligence — evidence class of every claim ───────────
+// The news pack scores risk ONLY from a connected economic calendar. When no
+// calendar answered, its riskLevel "none" / timing "quiet" / "No major
+// scheduled news" mean "nothing was checked", not "nothing is scheduled". The
+// model restates whatever this returns, so a market that scheduled events can
+// move reads "unknown / not checked" instead. Synthetic indices are not moved
+// by scheduled events, so their "none" stays. Downgrade-only: a connected
+// calendar's real verdict passes through unchanged.
+type NewsPackLike = {
+  symbol: string;
+  riskLevel: string;
+  timing: string;
+  warningSummary: string;
+  safetyNote: string;
+  dataSources: {
+    headlines: { connected: boolean };
+    calendar: { connected: boolean; providerState?: string | null };
+  };
+};
+export function newsPackForAssistant<T extends NewsPackLike>(pack: T) {
+  const headlinesChecked = pack.dataSources.headlines.connected === true;
+  const calendarChecked = pack.dataSources.calendar.connected === true;
+  const eventsApply = !isSyntheticInstrument(pack.symbol);
+  const unchecked = eventsApply && !calendarChecked;
+  const why = pack.dataSources.calendar.providerState === "fetch_error"
+    ? "the economic calendar did not answer"
+    : "no economic-calendar provider is connected";
+  return {
+    ...pack,
+    riskLevel: unchecked ? "unknown" : pack.riskLevel,
+    timing: unchecked ? "unknown" : pack.timing,
+    scheduledEventRisk: !eventsApply ? "not_applicable" : calendarChecked ? "checked" : "not_checked",
+    headlinesChecked,
+    warningSummary: unchecked
+      ? `Scheduled news for ${pack.symbol} was not checked — ${why}, so upcoming events are unknown (not none).`
+      : pack.warningSummary,
+    safetyNote: !headlinesChecked
+      ? "News feed is unavailable right now. Do not invent headlines. Rely on chart/history/scanner data and say the feed is unavailable."
+        + (unchecked ? " Scheduled events were not checked either — never say there are no events." : "")
+      : unchecked
+        ? `${pack.safetyNote} Scheduled events were not checked — never say there are no events.`
+        : pack.safetyNote,
+  };
 }
 
 // ── Phase UX6 — Market Context tools (read-only, provider-backed) ───────
