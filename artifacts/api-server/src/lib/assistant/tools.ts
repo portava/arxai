@@ -2271,7 +2271,12 @@ async function getReconciliationCenterSummaryTool(userId: number): Promise<unkno
     brokerTicket: i.brokerTicket, symbol: i.symbol, status: i.status,
     reason: i.reason, recommendedAction: i.recommendedAction,
   }));
-  return { ok: true, total: agg.total, countsByType: agg.countsByType, countsBySeverity: agg.countsBySeverity, issues,};
+  // complete=false: a detector did not run, so its types are unknown, not 0.
+  return {
+    ok: true, total: agg.total, countsByType: agg.countsByType, countsBySeverity: agg.countsBySeverity, issues,
+    complete: agg.complete, uncheckedTypes: agg.uncheckedTypes,
+    note: agg.complete ? undefined : `Not every reconciliation check ran. Could not be checked: ${agg.uncheckedTypes.join(", ")}. Counts cover only the checks that ran.`,
+  };
 }
 
 async function explainMyReconciliationIssueTool(issueType: string | null): Promise<unknown> {
@@ -2632,10 +2637,19 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
     if (!det.ok) blockers.push(`NO_CURRENT_LIVE_BRIDGE:${det.primaryReason}`);
     if ((openLiveRows[0]?.n ?? 0) > 0) blockers.push(`OPEN_LIVE_COMMANDS_NONTERMINAL=${openLiveRows[0]?.n}`);
     if ((recon.countsBySeverity?.critical ?? 0) > 0) blockers.push(`RECONCILIATION_CRITICAL=${recon.countsBySeverity?.critical}`);
+    // A detector that could not run is unknown, not "0 issues": an unchecked
+    // critical-severity check blocks the "safe to test" verdict like a found one.
+    const uncheckedOf = (sev: (s: string) => boolean) =>
+      [...new Set((recon.failedChecks ?? []).filter((f) => sev(f.severity)).map((f) => f.type))];
+    const uncheckedCritical = uncheckedOf((sv) => sv === "critical");
+    if (uncheckedCritical.length > 0) blockers.push(`RECONCILIATION_UNCHECKED=${uncheckedCritical.join(",")}`);
+    if (recon.complete !== true && (recon.failedChecks ?? []).length === 0) blockers.push("RECONCILIATION_UNCHECKED=unknown");
 
     const needsAction: string[] = [];
     if (!sharedLive && masterSwitch) needsAction.push("SHARED_LIVE_TRADING_DISABLED");
     if ((recon.countsBySeverity?.high ?? 0) > 0) needsAction.push(`RECONCILIATION_HIGH=${recon.countsBySeverity?.high}`);
+    const uncheckedOther = uncheckedOf((sv) => sv !== "critical");
+    if (uncheckedOther.length > 0) needsAction.push(`RECONCILIATION_UNCHECKED=${uncheckedOther.join(",")}`);
     if (userApprovals.pendingReview > 0) needsAction.push(`PENDING_USER_REVIEWS=${userApprovals.pendingReview}`);
 
     const safeToManuallyTest = blockers.length === 0 && det.ok;
@@ -2654,6 +2668,8 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
         reconciliationTotal: recon.total,
         reconciliationCritical: recon.countsBySeverity?.critical ?? 0,
         reconciliationHigh: recon.countsBySeverity?.high ?? 0,
+        reconciliationChecksComplete: recon.complete === true,
+        reconciliationUncheckedTypes: recon.uncheckedTypes ?? [],
       },
       userApprovals,
       doNotTouch: [

@@ -1,8 +1,11 @@
 // Reconciliation Center — pure detectors for 10 issue categories.
 //
-// READ-ONLY. Every detector is wrapped so a missing column or empty table
-// returns [] (never throws). Issue IDs are deterministic SHA-256(type|naturalKey)
-// so admin actions can target them without persisting issues to a new table.
+// READ-ONLY. Every detector is wrapped so a missing column, missing table or
+// DB error never throws out of the aggregate (the pages that show it still
+// render), but the failure is RECORDED: a check that could not run makes its
+// issue type "unchecked" for that run, never "0 issues". Issue IDs are
+// deterministic SHA-256(type|naturalKey) so admin actions can target them
+// without persisting issues to a new table.
 
 import { classifyHeartbeatAt, heartbeatIsOnline } from "../brokerHub/freshness.js";
 import { readOrphanLivePositions } from "../positions/ledger.js";
@@ -58,11 +61,36 @@ export function issueId(type: ReconciliationIssueType, naturalKey: string): stri
   return createHash("sha256").update(`${type}|${naturalKey}`).digest("hex").slice(0, 32);
 }
 
-async function safe<T>(label: string, fn: () => Promise<T[]>): Promise<T[]> {
+/** A detector that threw: its issue type is unknown for that run, not zero. */
+export interface ReconciliationCheckFailure {
+  /** Detector label, e.g. "orphan_broker". */
+  check: string;
+  type: ReconciliationIssueType;
+  /** Severity the detector would have reported its issues at. */
+  severity: IssueSeverity;
+  /** The error message, cut to 200 characters. */
+  error: string;
+}
+
+/** Per-aggregate record of what did not run. */
+interface DetectorRun {
+  failures: ReconciliationCheckFailure[];
+}
+
+async function safe<T>(
+  run: DetectorRun,
+  check: string,
+  type: ReconciliationIssueType,
+  severity: IssueSeverity,
+  fn: () => Promise<T[]>,
+): Promise<T[]> {
   try {
     return await fn();
-  } catch {
-    // Defensive: missing column / table / type → empty.
+  } catch (e) {
+    // Never throws (missing column / table / DB down), but the failure is
+    // recorded so the result says this check did not run instead of "none".
+    const message = e instanceof Error ? e.message : String(e);
+    run.failures.push({ check, type, severity, error: message.slice(0, 200) });
     return [];
   }
 }
@@ -74,8 +102,8 @@ function n(v: unknown): number | null { return v == null ? null : Number(v); }
 function iso(v: unknown): string | null { return v instanceof Date ? v.toISOString() : (v == null ? null : String(v)); }
 
 // 1. BRIDGE_MISMATCH — mt5_connection where reported mode/account_type disagrees.
-async function detectBridgeMismatch(): Promise<ReconciliationIssue[]> {
-  return safe("bridge_mismatch", async () => {
+async function detectBridgeMismatch(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "bridge_mismatch", "BRIDGE_MISMATCH", "high", async () => {
     const rows = (await listConnections({ statuses: ["ACTIVE"], modes: ["LIVE", "REAL"], order: "oldest" }))
       .filter((c) => !c.accountNumber).slice(0, 50);
     return rows.map((c) => ({
@@ -95,8 +123,8 @@ async function detectBridgeMismatch(): Promise<ReconciliationIssue[]> {
 }
 
 // 2. ORPHAN_BROKER_POSITION — arx_live_positions open with no matching command.
-async function detectOrphanBrokerPositions(): Promise<ReconciliationIssue[]> {
-  return safe("orphan_broker", async () => {
+async function detectOrphanBrokerPositions(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "orphan_broker", "ORPHAN_BROKER_POSITION", "critical", async () => {
     const r = await readOrphanLivePositions();
     return r.rows.map((row) => ({
       id: issueId("ORPHAN_BROKER_POSITION", `pos:${n(row.id)}`),
@@ -125,8 +153,8 @@ async function detectOrphanBrokerPositions(): Promise<ReconciliationIssue[]> {
 }
 
 // 3. MISSING_ATTRIBUTION — shared_trade_attribution open without mt5_position_ticket.
-async function detectMissingAttribution(): Promise<ReconciliationIssue[]> {
-  return safe("missing_attribution", async () => {
+async function detectMissingAttribution(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "missing_attribution", "MISSING_ATTRIBUTION", "high", async () => {
     const r = await pool.query<RawRow>(
       `SELECT id, user_id, symbol, side, lot_size, mt5_position_ticket, close_price
          FROM shared_trade_attribution
@@ -152,8 +180,8 @@ async function detectMissingAttribution(): Promise<ReconciliationIssue[]> {
 }
 
 // 4. COMMAND_RESULT_MISMATCH — live commands sent to broker without a result.
-async function detectCommandResultMismatch(): Promise<ReconciliationIssue[]> {
-  return safe("cmd_result_mismatch", async () => {
+async function detectCommandResultMismatch(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "cmd_result_mismatch", "COMMAND_RESULT_MISMATCH", "critical", async () => {
     const r = await pool.query<RawRow>(
       `SELECT id, command_id, user_id, bridge_connection_id, symbol, status,
               broker_ticket, sent_to_mt5_at
@@ -183,8 +211,8 @@ async function detectCommandResultMismatch(): Promise<ReconciliationIssue[]> {
 }
 
 // 5. USER_ALLOCATION_MISMATCH — virtual_trading_accounts shared-master but unlinked.
-async function detectUserAllocationMismatch(): Promise<ReconciliationIssue[]> {
-  return safe("alloc_mismatch", async () => {
+async function detectUserAllocationMismatch(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "alloc_mismatch", "USER_ALLOCATION_MISMATCH", "high", async () => {
     const r = await pool.query<RawRow>(
       `SELECT id, user_id, routing_mode, shared_master_account_id, account_type, status
          FROM virtual_trading_accounts
@@ -209,8 +237,8 @@ async function detectUserAllocationMismatch(): Promise<ReconciliationIssue[]> {
 }
 
 // 6. STALE_HEARTBEAT — active connections without a recent heartbeat.
-async function detectStaleHeartbeat(): Promise<ReconciliationIssue[]> {
-  return safe("stale_heartbeat", async () => {
+async function detectStaleHeartbeat(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "stale_heartbeat", "STALE_HEARTBEAT", "medium", async () => {
     // Shared heartbeat policy: stale = not online (offline >= 60 s, missing
     // or future-dated). Was a 90 s cutoff.
     const nowMs = Date.now();
@@ -233,9 +261,9 @@ async function detectStaleHeartbeat(): Promise<ReconciliationIssue[]> {
 }
 
 // 7. BLOCKED_REJECTED_COMMAND — recent BLOCKED/REJECTED across live + demo queues.
-async function detectBlockedRejected(): Promise<ReconciliationIssue[]> {
+async function detectBlockedRejected(run: DetectorRun): Promise<ReconciliationIssue[]> {
   const out: ReconciliationIssue[] = [];
-  const live = await safe<RawRow>("blocked_live", async () => {
+  const live = await safe<RawRow>(run, "blocked_live", "BLOCKED_REJECTED_COMMAND", "medium", async () => {
     const r = await pool.query<RawRow>(
       `SELECT id, command_id, user_id, bridge_connection_id, symbol, status,
               rejected_at, created_at
@@ -264,7 +292,7 @@ async function detectBlockedRejected(): Promise<ReconciliationIssue[]> {
       metadata: { queue: "live" },
     });
   }
-  const demo = await safe<RawRow>("blocked_demo", async () => {
+  const demo = await safe<RawRow>(run, "blocked_demo", "BLOCKED_REJECTED_COMMAND", "low", async () => {
     const r = await pool.query<RawRow>(
       `SELECT id, command_id, user_id, bridge_connection_id, status, reason, created_at, updated_at
          FROM mt5_demo_commands
@@ -295,8 +323,8 @@ async function detectBlockedRejected(): Promise<ReconciliationIssue[]> {
 }
 
 // 8. MASTER_BRIDGE_EXPOSURE_WARNING — shared_master_accounts marked active but status != active.
-async function detectMasterBridgeExposure(): Promise<ReconciliationIssue[]> {
-  return safe("master_exposure", async () => {
+async function detectMasterBridgeExposure(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "master_exposure", "MASTER_BRIDGE_EXPOSURE_WARNING", "high", async () => {
     const r = await pool.query<RawRow>(
       `SELECT id, status, is_active, broker_name, account_number_masked, account_type
          FROM shared_master_accounts
@@ -319,8 +347,8 @@ async function detectMasterBridgeExposure(): Promise<ReconciliationIssue[]> {
 }
 
 // 9. LIVE_DEMO_MODE_MISMATCH — live command bound to a non-live bridge.
-async function detectLiveDemoModeMismatch(): Promise<ReconciliationIssue[]> {
-  return safe("mode_mismatch", async () => {
+async function detectLiveDemoModeMismatch(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "mode_mismatch", "LIVE_DEMO_MODE_MISMATCH", "critical", async () => {
     const r = await pool.query<RawRow>(
       `SELECT c.id, c.command_id, c.user_id, c.bridge_connection_id, c.symbol, c.status, c.created_at
          FROM arx_live_commands c
@@ -353,8 +381,8 @@ async function detectLiveDemoModeMismatch(): Promise<ReconciliationIssue[]> {
 }
 
 // 10. USER_APPROVAL_RISK_LOCK_CONFLICT — approval+disable inconsistencies.
-async function detectApprovalRiskLockConflict(): Promise<ReconciliationIssue[]> {
-  return safe("approval_conflict", async () => {
+async function detectApprovalRiskLockConflict(run: DetectorRun): Promise<ReconciliationIssue[]> {
+  return safe(run, "approval_conflict", "USER_APPROVAL_RISK_LOCK_CONFLICT", "critical", async () => {
     const r = await pool.query<RawRow>(
       `SELECT id, user_id, master_live_status, master_live_trading_enabled,
               master_live_disabled_at, master_live_approved_at
@@ -388,20 +416,30 @@ export interface ReconciliationAggregateResult {
   countsBySeverity: Record<IssueSeverity, number>;
   total: number;
   computedAt: string;
+  /**
+   * True only when every detector ran. When false, the counts cover only the
+   * checks that ran: an unchecked type is unknown, never "0 issues".
+   */
+  complete: boolean;
+  /** Detectors that threw this run, with the error. */
+  failedChecks: ReconciliationCheckFailure[];
+  /** Issue types with at least one detector that could not run. */
+  uncheckedTypes: ReconciliationIssueType[];
 }
 
 export async function aggregateReconciliationIssues(): Promise<ReconciliationAggregateResult> {
+  const run: DetectorRun = { failures: [] };
   const all = (await Promise.all([
-    detectBridgeMismatch(),
-    detectOrphanBrokerPositions(),
-    detectMissingAttribution(),
-    detectCommandResultMismatch(),
-    detectUserAllocationMismatch(),
-    detectStaleHeartbeat(),
-    detectBlockedRejected(),
-    detectMasterBridgeExposure(),
-    detectLiveDemoModeMismatch(),
-    detectApprovalRiskLockConflict(),
+    detectBridgeMismatch(run),
+    detectOrphanBrokerPositions(run),
+    detectMissingAttribution(run),
+    detectCommandResultMismatch(run),
+    detectUserAllocationMismatch(run),
+    detectStaleHeartbeat(run),
+    detectBlockedRejected(run),
+    detectMasterBridgeExposure(run),
+    detectLiveDemoModeMismatch(run),
+    detectApprovalRiskLockConflict(run),
   ])).flat();
 
   const countsByType: Record<ReconciliationIssueType, number> = {
@@ -421,5 +459,11 @@ export async function aggregateReconciliationIssues(): Promise<ReconciliationAgg
     countsByType[i.type] += 1;
     countsBySeverity[i.severity] += 1;
   }
-  return { issues: all, countsByType, countsBySeverity, total: all.length, computedAt: new Date().toISOString() };
+  const uncheckedTypes = RECONCILIATION_ISSUE_TYPES.filter((t) => run.failures.some((f) => f.type === t));
+  return {
+    issues: all, countsByType, countsBySeverity, total: all.length, computedAt: new Date().toISOString(),
+    complete: run.failures.length === 0,
+    failedChecks: run.failures,
+    uncheckedTypes,
+  };
 }

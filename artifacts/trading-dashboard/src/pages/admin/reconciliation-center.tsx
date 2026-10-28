@@ -21,6 +21,12 @@ interface Resp {
   countsBySeverity?: Record<Sev, number>;
   total?: number; computedAt?: string;
   categories?: string[];
+  reason?: string;
+  /** True only when every detector ran; otherwise counts cover only the checks that ran. */
+  complete?: boolean;
+  /** Issue types whose detector could not run (unknown, not zero). */
+  uncheckedTypes?: string[];
+  failedChecks?: Array<{ check: string; type: string; severity: Sev; error: string }>;
 }
 
 const ACTIONS = [
@@ -37,11 +43,22 @@ export default function AdminReconciliationCenter() {
 
   async function load() {
     setErr(null);
-    const r = await fetch("/api/admin/reconciliation-center/issues", { credentials: "include" });
-    if (r.status === 403) { setErr("Admin-only page."); return; }
-    if (r.status === 401) { setErr("Sign in as admin to view this page."); return; }
-    const j = (await r.json()) as Resp;
-    setData(j);
+    try {
+      const r = await fetch("/api/admin/reconciliation-center/issues", { credentials: "include" });
+      if (r.status === 403) { setErr("Admin-only page."); return; }
+      if (r.status === 401) { setErr("Sign in as admin to view this page."); return; }
+      const j = (await r.json()) as Resp;
+      // A failed request is a load failure, never "total 0 / no open issues".
+      if (!r.ok || !j.ok) {
+        setData(null);
+        setErr(`Reconciliation issues could not be loaded${j.reason || j.error ? `: ${j.reason ?? j.error}` : ""}. This is a load failure, not an all-clear.`);
+        return;
+      }
+      setData(j);
+    } catch (e) {
+      setData(null);
+      setErr(`Reconciliation issues could not be loaded${e instanceof Error ? `: ${e.message}` : ""}. This is a load failure, not an all-clear.`);
+    }
   }
   useEffect(() => { void load(); }, []);
 
@@ -71,6 +88,8 @@ export default function AdminReconciliationCenter() {
 
   const sev = data.countsBySeverity ?? { critical: 0, high: 0, medium: 0, low: 0 };
   const byType = data.countsByType ?? {};
+  const complete = data.complete === true;
+  const unchecked = data.uncheckedTypes ?? [];
 
   return (
     <div className="space-y-4 p-4">
@@ -81,7 +100,26 @@ export default function AdminReconciliationCenter() {
           <p className="text-sm text-muted-foreground">Admin-only. Read + audited actions only — never places trades.</p>
         </div>
         <Badge variant="outline">total {data.total ?? 0}</Badge>
+        {!complete && <Badge variant="outline" className="border-warning/40 text-warning">incomplete check</Badge>}
       </div>
+
+      {!complete && (
+        <Card className="border-warning/40" data-testid="recon-unchecked">
+          <CardContent className="pt-4 text-sm space-y-1">
+            <p className="text-warning">
+              Not every reconciliation check ran{data.computedAt ? ` (checked ${new Date(data.computedAt).toLocaleString()})` : ""}. Counts on this page cover only the checks that ran.
+            </p>
+            {unchecked.length > 0 ? (
+              <p className="text-muted-foreground">Could not be checked: {unchecked.join(", ")}. Issues of these types may exist.</p>
+            ) : (
+              <p className="text-muted-foreground">The server did not confirm which checks ran.</p>
+            )}
+            {(data.failedChecks ?? []).map((f) => (
+              <p key={f.check} className="text-xs text-muted-foreground">{f.check} ({f.type}): {f.error}</p>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle className="text-base">Counts by severity</CardTitle></CardHeader>
@@ -97,8 +135,9 @@ export default function AdminReconciliationCenter() {
         <CardHeader><CardTitle className="text-base">Counts by type</CardTitle></CardHeader>
         <CardContent className="grid gap-1 md:grid-cols-2 text-sm">
           {Object.entries(byType).map(([k, v]) => (
-            <div key={k} className="flex justify-between border-b border-border/40 py-1">
-              <span className="text-muted-foreground">{k}</span><span>{v}</span>
+            <div key={k} className="flex justify-between border-b border-border/40 py-1" data-testid={`recon-type-${k}`}>
+              <span className="text-muted-foreground">{k}</span>
+              <span>{unchecked.includes(k) ? <span className="text-warning">not checked</span> : v}</span>
             </div>
           ))}
         </CardContent>
@@ -108,7 +147,9 @@ export default function AdminReconciliationCenter() {
         <CardHeader><CardTitle className="text-base">Open issues</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {(data.issues ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No open reconciliation issues.</p>
+            <p className="text-sm text-muted-foreground">
+              {complete ? "No open reconciliation issues." : "No issues found by the checks that ran. Not every check ran, so this is not an all-clear."}
+            </p>
           ) : (data.issues ?? []).map((i) => (
             <div key={i.id} className="rounded-md border border-border/60 p-3 text-sm space-y-2">
               <div className="flex flex-wrap items-center gap-2">

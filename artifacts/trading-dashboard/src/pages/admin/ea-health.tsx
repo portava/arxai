@@ -61,6 +61,10 @@ type HealthRow = {
     types: string[];
     latest: { type: string; severity: string; reason: string; recommendedAction: string } | null;
     computedAt: string;
+    /** True only when every reconciliation detector ran this pass. */
+    checksComplete?: boolean;
+    /** Issue types whose detector could not run (unknown, not zero). */
+    uncheckedTypes?: string[];
   };
   selfUpdateSupported: boolean;
   update: {
@@ -85,6 +89,17 @@ function Tri({ v }: { v: boolean | null }) {
   return v
     ? <span className="inline-flex items-center gap-1 text-success"><CheckCircle2 className="w-3.5 h-3.5" /> yes</span>
     : <span className="inline-flex items-center gap-1 text-txt-secondary"><XCircle className="w-3.5 h-3.5" /> no</span>;
+}
+
+// A pass where a detector failed (or the server did not say every detector
+// ran) is not a clean check: 0 issues then means "none found by the checks
+// that ran", never "no open issues".
+function uncheckedReconText(r: HealthRow["lastReconciliationResult"]): string | null {
+  if (r.checksComplete === true) return null;
+  const types = r.uncheckedTypes ?? [];
+  return types.length > 0
+    ? `These checks did not run: ${types.join(", ")}. Issues of these types may exist.`
+    : "The server did not confirm that every reconciliation check ran.";
 }
 
 function livenessBadge(l: HealthRow["liveness"]) {
@@ -258,10 +273,16 @@ function EaHealthInner() {
 
             <div className="mt-4 space-y-1.5">
               <div className="text-xs uppercase tracking-wider text-txt-secondary">Last reconciliation result</div>
-              {row.lastReconciliationResult.issueCount === 0 ? (
+              {row.lastReconciliationResult.issueCount === 0 && uncheckedReconText(row.lastReconciliationResult) === null ? (
                 <div className="rounded-md border border-success/30 bg-success/5 p-2 text-xs text-success" data-testid={`recon-clean-${row.connection.id}`}>
                   No open reconciliation issues for this bridge.
                   <span className="text-txt-muted"> · checked {new Date(row.lastReconciliationResult.computedAt).toLocaleString()}</span>
+                </div>
+              ) : row.lastReconciliationResult.issueCount === 0 ? (
+                <div className="rounded-md border border-warning/40 bg-warning/5 p-2 space-y-1 text-xs text-warning" data-testid={`recon-unchecked-${row.connection.id}`}>
+                  <div>Reconciliation could not be fully checked. No issues for this bridge were found by the checks that ran.</div>
+                  <div className="text-txt-secondary">{uncheckedReconText(row.lastReconciliationResult)}</div>
+                  <div className="text-txt-muted">checked {new Date(row.lastReconciliationResult.computedAt).toLocaleString()}</div>
                 </div>
               ) : (
                 <div className="rounded-md border border-warning/40 bg-warning/5 p-2 space-y-1 text-xs" data-testid={`recon-issues-${row.connection.id}`}>
@@ -281,6 +302,11 @@ function EaHealthInner() {
                       <div className="text-txt-secondary">{row.lastReconciliationResult.latest.reason}</div>
                       <div className="text-txt-muted">{row.lastReconciliationResult.latest.recommendedAction}</div>
                     </>
+                  )}
+                  {uncheckedReconText(row.lastReconciliationResult) && (
+                    <div className="text-warning" data-testid={`recon-partial-${row.connection.id}`}>
+                      Not every check ran, so there may be more. {uncheckedReconText(row.lastReconciliationResult)}
+                    </div>
                   )}
                   <div className="text-txt-muted">checked {new Date(row.lastReconciliationResult.computedAt).toLocaleString()}</div>
                 </div>

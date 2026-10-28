@@ -48,6 +48,20 @@ type ReconIssue = {
   brokerTicket: string | null; symbol: string | null; status: string;
   reason: string; recommendedAction: string; createdAt: string | null; updatedAt: string | null;
 };
+type ReconFeed = {
+  issues?: ReconIssue[];
+  /** True only when every reconciliation detector ran this pass. */
+  complete?: boolean;
+  /** Issue types whose detector could not run (unknown, not zero). */
+  uncheckedTypes?: string[];
+  reason?: string;
+};
+// "loading" before the first answer, "failed" when the feed could not be
+// loaded: neither may render as "No orphan positions detected".
+type ReconLoad =
+  | { state: "loading" }
+  | { state: "failed"; reason: string | null }
+  | { state: "loaded"; complete: boolean; uncheckedTypes: string[] };
 type SymbolCap = {
   userId: number; symbol: string; brokerSymbol: string | null; accountType: string | null;
   visible: boolean | null; tradeAllowed: boolean | null; tradeMode: string | null;
@@ -71,6 +85,7 @@ function BridgeDiagnosticsInner() {
   const [verdicts, setVerdicts] = useState<Verdict[]>([]);
   const [retcodes, setRetcodes] = useState<Retcode[]>([]);
   const [issues, setIssues] = useState<ReconIssue[]>([]);
+  const [recon, setRecon] = useState<ReconLoad>({ state: "loading" });
   const [symbols, setSymbols] = useState<SymbolCap[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -86,17 +101,25 @@ function BridgeDiagnosticsInner() {
         apiJson<{ connections: Conn[] }>("/api/admin/bridge/connections"),
         apiJson<{ verdicts: Verdict[] }>("/api/admin/bridge/watchdog"),
         apiJson<{ retcodes: Retcode[] }>("/api/admin/ea/retcodes"),
-        apiJson<{ issues: ReconIssue[] }>("/api/admin/ea/reconciliation-issues"),
+        apiJson<ReconFeed>("/api/admin/ea/reconciliation-issues"),
         apiJson<{ symbols: SymbolCap[] }>("/api/admin/ea/symbol-capabilities"),
       ]);
       if (c.ok) setConns(c.connections ?? []);
       if (w.ok) setVerdicts(w.verdicts ?? []);
       if (rc.ok) setRetcodes(rc.retcodes ?? []);
-      if (ri.ok) setIssues(ri.issues ?? []);
+      if (ri.ok) {
+        setIssues(ri.issues ?? []);
+        setRecon({ state: "loaded", complete: ri.complete === true, uncheckedTypes: ri.uncheckedTypes ?? [] });
+      } else {
+        setIssues([]);
+        setRecon({ state: "failed", reason: ri.reason ?? ri.error ?? null });
+      }
       if (sc.ok) setSymbols(sc.symbols ?? []);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load bridge diagnostics");
+      setIssues([]);
+      setRecon({ state: "failed", reason: e instanceof Error ? e.message : null });
     } finally {
       setLoading(false);
     }
@@ -125,8 +148,17 @@ function BridgeDiagnosticsInner() {
         i.type !== "COMMAND_RESULT_MISMATCH" &&
         i.type !== "STALE_HEARTBEAT",
     );
-    return { orphans, stale, duplicates, other };
-  }, [issues, verdicts]);
+    // A group is "unchecked" when a detector behind it did not run. When the
+    // server did not say which ones failed, every group is unchecked.
+    const unchecked = (types: string[]): boolean =>
+      recon.state === "loaded" && !recon.complete &&
+      (recon.uncheckedTypes.length === 0 || types.some((t) => recon.uncheckedTypes.includes(t)));
+    return {
+      orphans, stale, duplicates, other,
+      orphansUnchecked: unchecked(["ORPHAN_BROKER_POSITION"]),
+      staleUnchecked: unchecked(["COMMAND_RESULT_MISMATCH", "STALE_HEARTBEAT"]),
+    };
+  }, [issues, verdicts, recon]);
 
   const filteredRetcodes = useMemo(() => {
     const q = retcodeFilter.trim().toLowerCase();
@@ -235,10 +267,24 @@ function BridgeDiagnosticsInner() {
           <CardDescription>Read-only detectors. Resolve from the Reconciliation Center — this view never auto-assigns ownership or closes anything.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {recon.state === "failed" && (
+            <div className="rounded-md border border-danger/40 bg-danger/5 p-2 text-xs text-danger" data-testid="recon-load-failed">
+              Reconciliation issues could not be loaded{recon.reason ? `: ${recon.reason}` : ""}. This is a load failure, not an all-clear — orphan positions and stale commands were not checked.
+            </div>
+          )}
+          {recon.state === "loaded" && !recon.complete && (
+            <div className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs text-warning" data-testid="recon-partial">
+              Not every reconciliation check ran this pass{recon.uncheckedTypes.length > 0 ? `: ${recon.uncheckedTypes.join(", ")} could not be checked` : ""}. Issues of those types may exist.
+            </div>
+          )}
           {/* Orphan broker positions */}
           <div>
             <div className="text-xs uppercase tracking-wider text-txt-secondary mb-1">Orphan broker positions</div>
-            {reconGroups.orphans.length === 0 ? (
+            {recon.state !== "loaded" ? (
+              <div className="text-xs text-txt-muted" data-testid="orphans-unknown">{recon.state === "loading" ? "Loading…" : "Not checked — the reconciliation feed could not be loaded."}</div>
+            ) : reconGroups.orphans.length === 0 && reconGroups.orphansUnchecked ? (
+              <div className="text-xs text-warning" data-testid="orphans-unchecked">Orphan positions could not be checked — the detector did not run this pass.</div>
+            ) : reconGroups.orphans.length === 0 ? (
               <div className="text-xs text-txt-muted" data-testid="orphans-none">No orphan positions detected.</div>
             ) : (
               <div className="space-y-1">
@@ -260,7 +306,11 @@ function BridgeDiagnosticsInner() {
           {/* Stale commands / heartbeats */}
           <div>
             <div className="text-xs uppercase tracking-wider text-txt-secondary mb-1">Stale commands & heartbeats</div>
-            {reconGroups.stale.length === 0 ? (
+            {recon.state !== "loaded" ? (
+              <div className="text-xs text-txt-muted" data-testid="stale-unknown">{recon.state === "loading" ? "Loading…" : "Not checked — the reconciliation feed could not be loaded."}</div>
+            ) : reconGroups.stale.length === 0 && reconGroups.staleUnchecked ? (
+              <div className="text-xs text-warning" data-testid="stale-unchecked">Stale commands and heartbeats could not be fully checked — a detector did not run this pass.</div>
+            ) : reconGroups.stale.length === 0 ? (
               <div className="text-xs text-txt-muted" data-testid="stale-none">No stale commands or heartbeats.</div>
             ) : (
               <div className="space-y-1">

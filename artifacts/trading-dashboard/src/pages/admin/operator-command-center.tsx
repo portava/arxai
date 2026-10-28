@@ -46,6 +46,9 @@ type OperatorPayload = {
   reconciliationSummary: {
     total: number; critical: number; high: number; medium: number; low: number;
     byType: Record<string, number>;
+    /** True only when every reconciliation detector ran. */
+    complete?: boolean;
+    uncheckedTypes?: string[];
   };
 };
 
@@ -233,6 +236,15 @@ export default function OperatorCommandCenter() {
       {/* G. Reconciliation Summary */}
       <Panel title="Reconciliation Summary" testid="panel-reconciliation">
         <div className="space-y-2 text-sm">
+          {d.reconciliationSummary.complete !== true && (
+            <p className="text-warning" data-testid="reconciliation-unchecked">
+              Reconciliation could not be fully checked —{" "}
+              {(d.reconciliationSummary.uncheckedTypes ?? []).length > 0
+                ? `${(d.reconciliationSummary.uncheckedTypes ?? []).join(", ")} did not run`
+                : "the server did not confirm every check ran"}
+              . The counts below cover only the checks that ran.
+            </p>
+          )}
           <div className="grid grid-cols-5 gap-2">
             <div>Total: <strong>{d.reconciliationSummary.total}</strong></div>
             <div>Critical: <strong className="text-danger">{d.reconciliationSummary.critical}</strong></div>

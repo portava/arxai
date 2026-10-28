@@ -109,6 +109,9 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
     types: string[];
     latest: { type: string; severity: string; reason: string; recommendedAction: string } | null;
     computedAt: string;
+    /** False when any detector could not run: 0 issues is then "not fully checked". */
+    checksComplete: boolean;
+    uncheckedTypes: string[];
   } {
     const seen = new Map<string, ReconciliationIssue>();
     for (const i of issuesByConnection.get(connectionId) ?? []) seen.set(i.id, i);
@@ -125,6 +128,8 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
         ? { type: top.type, severity: top.severity, reason: top.reason, recommendedAction: top.recommendedAction }
         : null,
       computedAt: reconciliation.computedAt,
+      checksComplete: reconciliation.complete,
+      uncheckedTypes: reconciliation.uncheckedTypes,
     };
   }
 

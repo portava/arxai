@@ -162,6 +162,10 @@ router.get("/admin/operator-command-center", async (req, res) => {
       medium: recon.countsBySeverity?.medium ?? 0,
       low: recon.countsBySeverity?.low ?? 0,
       byType: recon.countsByType ?? {},
+      // False when a detector could not run: the counts above then cover
+      // only the checks that ran, and the unchecked types are unknown.
+      complete: recon.complete,
+      uncheckedTypes: recon.uncheckedTypes,
     };
 
     // Audit (one row per panel view).
