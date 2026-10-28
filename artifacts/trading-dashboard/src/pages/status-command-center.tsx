@@ -51,7 +51,8 @@ function toAskContext(ctx: RuntimeContext): AskContext {
     route: ctx.route,
     selectedSymbol: ctx.selectedSymbol ?? undefined,
     safetyStatuses: ctx.activeSafetyLocks,
-    mt5Hint: ctx.mt5BridgeConnected ? "connected" : ctx.mt5Deferred ? "deferred" : "disconnected",
+    // An unread bridge summary is "unknown", never "disconnected".
+    mt5Hint: ctx.bridge === null ? "unknown" : ctx.mt5BridgeConnected ? "connected" : ctx.mt5Deferred ? "deferred" : "disconnected",
     tradingModeHint: ctx.paperOnly ? "paper" : ctx.simulatorMode ? "simulator" : ctx.tradingMode === "broker-readonly" ? "broker-readonly" : "unknown",
   } as AskContext;
 }
@@ -360,19 +361,36 @@ function BlockersCard({ cards }: { cards: BlockerCard[] }) {
   );
 }
 
+/** A server-read flag; null (not read) renders as "unknown", never a default. */
+function tri(v: boolean | null): string {
+  return v === null ? "unknown" : String(v);
+}
+
+function postureSource(ctx: RuntimeContext): string {
+  if (ctx.bridge) {
+    const at = new Date(ctx.bridge.fetchedAt);
+    const when = Number.isFinite(at.getTime()) ? at.toLocaleTimeString() : "unknown time";
+    return `read from /api/mt5/diagnostic-summary at ${when}`;
+  }
+  return ctx.bridgeStatus === "loading"
+    ? "loading /api/mt5/diagnostic-summary…"
+    : "could not be read — /api/mt5/diagnostic-summary failed or returned no data";
+}
+
 function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: ReturnType<typeof explainAppStatus> }) {
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-4" data-testid="scc-runtime-card">
       <h2 className="font-semibold text-zinc-100">Runtime Status</h2>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-zinc-300">
         <dt className="text-zinc-500">Mode</dt><dd>{status.mode}</dd>
-        <dt className="text-zinc-500">Demo-only</dt><dd>{String(ctx.paperOnly)}</dd>
-        <dt className="text-zinc-500">Simulator</dt><dd>{String(ctx.simulatorMode)}</dd>
-        <dt className="text-zinc-500">Live trading disabled</dt><dd>{String(ctx.liveTradingDisabled)}</dd>
-        <dt className="text-zinc-500">Broker exec disabled</dt><dd>{String(ctx.brokerExecutionDisabled)}</dd>
+        <dt className="text-zinc-500">Server posture</dt><dd data-testid="scc-posture-source">{postureSource(ctx)}</dd>
+        <dt className="text-zinc-500">Demo-only</dt><dd>{tri(ctx.paperOnly)}</dd>
+        <dt className="text-zinc-500">Simulator</dt><dd>{tri(ctx.simulatorMode)}</dd>
+        <dt className="text-zinc-500">Live trading disabled</dt><dd>{tri(ctx.liveTradingDisabled)}</dd>
+        <dt className="text-zinc-500">Broker exec disabled</dt><dd>{tri(ctx.brokerExecutionDisabled)}</dd>
         <dt className="text-zinc-500">Bridge mode</dt><dd>{ctx.bridge?.bridgeMode ?? "unknown"}</dd>
-        <dt className="text-zinc-500">Heartbeat</dt><dd>{ctx.heartbeatPresent ? `present (${ctx.heartbeatAgeSeconds ?? "?"}s)` : "absent"}</dd>
-        <dt className="text-zinc-500">Broker read-only</dt><dd>{String(ctx.brokerReadOnly)}</dd>
+        <dt className="text-zinc-500">Heartbeat</dt><dd>{ctx.heartbeatPresent === null ? "unknown" : ctx.heartbeatPresent ? `present (${ctx.heartbeatAgeSeconds ?? "?"}s)` : "absent"}</dd>
+        <dt className="text-zinc-500">Broker read-only</dt><dd>{tri(ctx.brokerReadOnly)}</dd>
         <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness}</dd>
         <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive === true ? "ENGAGED" : ctx.emergencyStopActive === false ? "off" : "not checked here (open Emergency page)"}</dd>
         <dt className="text-zinc-500">Selected symbol</dt><dd>{ctx.selectedSymbol ?? "—"}</dd>

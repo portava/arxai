@@ -64,7 +64,9 @@ export function computeReadinessScore(
     sections.push({
       id: "app-health", title: "App Health", score: clamp(s), max: 10,
       level: !h ? "unavailable" : s >= 8 ? "ready" : s >= 4 ? "attention" : "blocked",
-      summary: !h ? "Health probe has not finished yet." : `${ev.length}/3 backend services reachable.`,
+      summary: !h
+        ? ctx.healthStatus === "unavailable" ? "Health summary could not be read (/api/app/health-summary failed)." : "Health probe has not finished yet."
+        : `${ev.length}/3 backend services reachable.`,
       evidence: ev,
     });
   }
@@ -89,23 +91,29 @@ export function computeReadinessScore(
     sections.push({
       id: "safety-locks", title: "Safety Locks",
       // Locks are protective — full score whenever LIVE TRADING DISABLED is in place.
-      score: liveLock ? 10 : 5, max: 10,
-      level: liveLock ? "info" : "attention",
-      summary: liveLock
-        ? "Server-enforced safety locks are active and working as intended."
-        : "Safety locks not detected from the client view; server still gates execution.",
-      evidence: locks,
+      // Unread posture (null) earns nothing: it is not evidence of a lock.
+      score: liveLock === null ? 0 : liveLock ? 10 : 5, max: 10,
+      level: liveLock === null ? "unavailable" : liveLock ? "info" : "attention",
+      summary: liveLock === null
+        ? "Server safety posture could not be read, so the locks are unknown; server still gates execution."
+        : liveLock
+          ? "Server-enforced safety locks are active and working as intended."
+          : "Safety locks not detected from the client view; server still gates execution.",
+      evidence: liveLock === null ? [`bridgeStatus=${ctx.bridgeStatus ?? "unknown"}`] : locks,
     });
   }
 
   // 4. Demo / Simulator readiness
   {
-    const ok = ctx.paperOnly || ctx.simulatorMode;
+    const unread = ctx.paperOnly === null && ctx.simulatorMode === null;
+    const ok = ctx.paperOnly === true || ctx.simulatorMode === true;
     sections.push({
       id: "paper-simulator", title: "Demo / Simulator Readiness",
-      score: ok ? 10 : 4, max: 10,
-      level: ok ? "ready" : "attention",
-      summary: ok ? "Simulator/demo mode is the active execution surface." : "Simulator/demo mode not detected.",
+      score: unread ? 0 : ok ? 10 : 4, max: 10,
+      level: unread ? "unavailable" : ok ? "ready" : "attention",
+      summary: unread
+        ? "Demo/simulator mode could not be read from the server."
+        : ok ? "Simulator/demo mode is the active execution surface." : "Simulator/demo mode not detected.",
       evidence: [`tradingMode=${ctx.tradingMode}`, `paperOnly=${ctx.paperOnly}`, `simulatorMode=${ctx.simulatorMode}`],
     });
   }
@@ -135,12 +143,14 @@ export function computeReadinessScore(
     const present = ctx.heartbeatPresent;
     const age = ctx.heartbeatAgeSeconds;
     // Shared heartbeat policy: only the fresh band (< 15 s) is "ready".
-    const fresh = present && isHeartbeatAgeSecondsFresh(age);
+    const fresh = present === true && isHeartbeatAgeSecondsFresh(age);
     sections.push({
       id: "heartbeat", title: "Heartbeat",
-      score: fresh ? 10 : present ? 6 : ctx.mt5Deferred ? 7 : 2, max: 10,
-      level: fresh ? "ready" : present ? "attention" : ctx.mt5Deferred ? "info" : "blocked",
-      summary: fresh
+      score: present === null ? 0 : fresh ? 10 : present ? 6 : ctx.mt5Deferred ? 7 : 2, max: 10,
+      level: present === null ? "unavailable" : fresh ? "ready" : present ? "attention" : ctx.mt5Deferred ? "info" : "blocked",
+      summary: present === null
+        ? "Heartbeat status could not be read from the server."
+        : fresh
         ? `Fresh heartbeat (${age}s ago).`
         : present ? "Heartbeat seen, but stale."
         : ctx.mt5Deferred ? "No heartbeat expected — bridge is deferred."
@@ -154,9 +164,11 @@ export function computeReadinessScore(
     const ro = ctx.brokerReadOnly;
     sections.push({
       id: "broker-mode", title: "Broker Mode",
-      score: ro ? 10 : 5, max: 10,
-      level: ro ? "info" : "attention",
-      summary: ro ? "Broker is read-only (safe default)." : "Broker is NOT read-only — investigate before any execution.",
+      score: ro === null ? 0 : ro ? 10 : 5, max: 10,
+      level: ro === null ? "unavailable" : ro ? "info" : "attention",
+      summary: ro === null
+        ? "Broker mode could not be read from the server."
+        : ro ? "Broker is read-only (safe default)." : "Broker is NOT read-only — investigate before any execution.",
       evidence: [`brokerReadOnly=${ro}`, `brokerExecutionDisabled=${ctx.brokerExecutionDisabled}`],
     });
   }
@@ -207,10 +219,11 @@ export function computeReadinessScore(
   const total = sections.reduce((acc, s) => acc + s.score, 0);
   const liveUnavailableReason =
     ctx.emergencyStopActive === true ? "Emergency Stop is engaged."
+    : ctx.bridge === null ? "The server's bridge and safety posture could not be read, so the active lock is unknown."
     : !ctx.heartbeatPresent ? "No confirmed MT5 heartbeat."
     : ctx.mt5Deferred ? "MT5 bridge is deferred."
-    : ctx.brokerReadOnly ? "Broker is in read-only mode."
-    : ctx.liveTradingDisabled ? "Server-enforced LIVE TRADING DISABLED lock."
+    : ctx.brokerReadOnly === true ? "Broker is in read-only mode."
+    : ctx.liveTradingDisabled === true ? "Server-enforced LIVE TRADING DISABLED lock."
     : "Execution remains server-gated regardless of UI score.";
 
   return {

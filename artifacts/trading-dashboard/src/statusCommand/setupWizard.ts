@@ -58,7 +58,11 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       title: "Review active safety locks",
       shortExplanation: "Safety locks are protective. They keep ARX from sending real orders until every gate is verified server-side.",
       currentStatus: locks.length > 0 ? "info" : "attention",
-      statusText: locks.length > 0 ? `Active locks: ${locks.join(", ")}` : "No safety locks detected from the client view.",
+      statusText: locks.length > 0
+        ? `Active locks: ${locks.join(", ")}`
+        : ctx.liveTradingDisabled === null
+          ? "Safety locks could not be read from the server."
+          : "No safety locks detected from the client view.",
       assistantQuestion: "Explain my active safety locks",
       completionCondition: "You can name the locks and why each is on.",
     });
@@ -66,14 +70,15 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 3. Check simulator/demo mode
   {
-    const ok = ctx.paperOnly || ctx.simulatorMode;
+    const unread = ctx.paperOnly === null && ctx.simulatorMode === null;
+    const ok = ctx.paperOnly === true || ctx.simulatorMode === true;
     const x = r("/demo-trading", "Demo Trading");
     steps.push({
       id: "wz-demo-sim",
       title: "Check simulator / demo mode",
       shortExplanation: "Simulator/demo is the safe practice surface. Nothing reaches a real broker.",
       currentStatus: ok ? "complete" : "attention",
-      statusText: ok ? "Demo/simulator mode is active." : "Demo/simulator not detected.",
+      statusText: ok ? "Demo/simulator mode is active." : unread ? "Demo/simulator mode could not be read from the server." : "Demo/simulator not detected.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Where do I practice in demo?",
       completionCondition: "Demo Trading is open and you've reviewed the execution controls.",
@@ -104,8 +109,10 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       id: "wz-heartbeat",
       title: "Check heartbeat",
       shortExplanation: "A recent EA heartbeat is the only proof the bridge is alive.",
-      currentStatus: present ? "complete" : ctx.mt5Deferred ? "info" : "blocked",
-      statusText: present ? `Heartbeat present (${ctx.heartbeatAgeSeconds ?? "?"}s ago)` : ctx.mt5Deferred ? "Heartbeat not expected — bridge deferred." : "No recent heartbeat.",
+      currentStatus: present === null ? "attention" : present ? "complete" : ctx.mt5Deferred ? "info" : "blocked",
+      statusText: present === null
+        ? "Heartbeat status could not be read from the server."
+        : present ? `Heartbeat present (${ctx.heartbeatAgeSeconds ?? "?"}s ago)` : ctx.mt5Deferred ? "Heartbeat not expected — bridge deferred." : "No recent heartbeat.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Where do I check the heartbeat?",
       completionCondition: "You've opened MT5 Status and confirmed the heartbeat timestamp.",
@@ -119,8 +126,10 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       id: "wz-broker-mode",
       title: "Review broker mode",
       shortExplanation: "Broker is read-only by default. You can see balance/positions, but ARX cannot send orders.",
-      currentStatus: ctx.brokerReadOnly ? "info" : "attention",
-      statusText: ctx.brokerReadOnly ? "Broker is read-only." : "Broker is NOT read-only — investigate.",
+      currentStatus: ctx.brokerReadOnly === true ? "info" : "attention",
+      statusText: ctx.brokerReadOnly === null
+        ? "Broker mode could not be read from the server."
+        : ctx.brokerReadOnly ? "Broker is read-only." : "Broker is NOT read-only — investigate.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain broker read-only mode",
       completionCondition: "You understand what read-only allows and prevents.",

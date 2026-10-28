@@ -199,13 +199,13 @@ function RuntimeDiagnosticsPanel() {
         <div className="rounded border border-border/60 p-2">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Health summary</div>
           <pre className="mt-1 max-h-40 overflow-auto text-[10px]" data-testid="kc-rd-health">
-            {ctx.health ? JSON.stringify(ctx.health, null, 2) : "loading…"}
+            {ctx.health ? JSON.stringify(ctx.health, null, 2) : ctx.healthStatus === "unavailable" ? "could not be read (request failed)" : "loading…"}
           </pre>
         </div>
         <div className="rounded border border-border/60 p-2">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Bridge diagnostic</div>
           <pre className="mt-1 max-h-40 overflow-auto text-[10px]" data-testid="kc-rd-bridge">
-            {ctx.bridge ? JSON.stringify(ctx.bridge, null, 2) : "loading…"}
+            {ctx.bridge ? JSON.stringify(ctx.bridge, null, 2) : ctx.bridgeStatus === "unavailable" ? "could not be read (request failed)" : "loading…"}
           </pre>
         </div>
         <div className="rounded border border-border/60 p-2 sm:col-span-2">

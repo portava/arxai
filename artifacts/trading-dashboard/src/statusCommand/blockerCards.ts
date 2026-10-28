@@ -12,6 +12,7 @@ import type { ChecklistItem } from "@/knowledge/setupChecklist";
 
 export type BlockerKind =
   | "emergency-stop"
+  | "posture-unknown"
   | "live-trading-disabled"
   | "broker-execution-disabled"
   | "mt5-deferred"
@@ -67,7 +68,26 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
     });
   }
 
-  if (ctx.liveTradingDisabled) {
+  if (ctx.bridge === null) {
+    const loading = ctx.bridgeStatus === "loading";
+    out.push({
+      kind: "posture-unknown",
+      title: loading ? "Server safety posture loading" : "Server safety posture not read",
+      severity: loading ? "info" : "attention",
+      nature: loading ? "protective" : "error",
+      blocks: "Showing whether the live-trading, broker-execution, read-only and demo locks are in force.",
+      why: loading
+        ? "The diagnostic summary (/api/mt5/diagnostic-summary) has not answered yet."
+        : "The diagnostic summary (/api/mt5/diagnostic-summary) request failed or returned no data, so those rows read unknown.",
+      howToCheck: "Open System Health and confirm the API server is up.",
+      safeNextStep: "Refresh the page. Execution stays server-gated whatever this page can read.",
+      doNotDo: "Do not assume live trading is off (or on) while the posture is unread.",
+      relatedRoute: withRoute("Open System Health", "/system-health"),
+      evidence: [`bridgeStatus=${ctx.bridgeStatus ?? "unknown"}`],
+    });
+  }
+
+  if (ctx.liveTradingDisabled === true) {
     out.push({
       kind: "live-trading-disabled",
       title: "Live Trading Disabled",
@@ -82,7 +102,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
     });
   }
 
-  if (ctx.brokerExecutionDisabled) {
+  if (ctx.brokerExecutionDisabled === true) {
     out.push({
       kind: "broker-execution-disabled",
       title: "Broker Execution Disabled",
@@ -112,7 +132,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
     });
   }
 
-  if (ctx.simulatorMode) {
+  if (ctx.simulatorMode === true) {
     out.push({
       kind: "simulator-mode",
       title: "Simulator Mode",
@@ -127,7 +147,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
     });
   }
 
-  if (ctx.brokerReadOnly && ctx.mt5BridgeConnected) {
+  if (ctx.brokerReadOnly === true && ctx.mt5BridgeConnected) {
     out.push({
       kind: "broker-readonly",
       title: "Broker Read-Only",
@@ -142,7 +162,7 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
     });
   }
 
-  if (!ctx.heartbeatPresent && !ctx.mt5Deferred) {
+  if (ctx.heartbeatPresent === false && !ctx.mt5Deferred) {
     out.push({
       kind: "missing-heartbeat",
       title: "Missing Heartbeat",

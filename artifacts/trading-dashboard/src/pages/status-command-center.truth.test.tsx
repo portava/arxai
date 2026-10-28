@@ -3,12 +3,15 @@
  *
  * - Emergency Stop: no source on this page reports the platform emergency
  *   stop / kill switch, so the row must not read a measured "off".
+ * - A failed /api/mt5/diagnostic-summary read is "unknown", never the
+ *   default safe posture (live disabled, demo-only, read-only) with full marks.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup, within } from "@testing-library/react";
+import { render, screen, cleanup, within, renderHook, waitFor, act } from "@testing-library/react";
 import { collectRuntimeContext } from "@/assistant/runtimeContext";
 import type { BridgeDiagnosticSummary, RuntimeContext } from "@/assistant/runtimeContextTypes";
 import { buildSetupWizard } from "@/statusCommand/setupWizard";
+import { computeReadinessScore } from "@/statusCommand/readinessScore";
 
 const holder: { ctx: RuntimeContext | null } = { ctx: null };
 
@@ -70,5 +73,69 @@ describe("Emergency Stop is not a measured 'off'", () => {
     render(<StatusCommandCenter />);
     expect(runtimeRow("Emergency Stop")).toBe("ENGAGED");
     expect(screen.getByTestId("scc-blocker-emergency-stop")).toBeTruthy();
+  });
+});
+
+describe("failed diagnostic fetch is unknown, not a default safe posture", () => {
+  it("runtime context reports unknown posture fields when no bridge summary was read", () => {
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: undefined });
+    expect(ctx.liveTradingDisabled).toBeNull();
+    expect(ctx.brokerExecutionDisabled).toBeNull();
+    expect(ctx.brokerReadOnly).toBeNull();
+    expect(ctx.paperOnly).toBeNull();
+    expect(ctx.simulatorMode).toBeNull();
+    expect(ctx.heartbeatPresent).toBeNull();
+    expect(ctx.tradingMode).toBe("unknown");
+    expect(ctx.activeSafetyLocks).not.toContain("LIVE TRADING DISABLED");
+    expect(ctx.bridgeStatus).toBe("unavailable");
+  });
+
+  it("readiness score awards no points for unread safety locks, demo mode, heartbeat or broker mode", () => {
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: null, bridgeStatus: "unavailable" });
+    const score = computeReadinessScore(ctx, []);
+    for (const id of ["safety-locks", "paper-simulator", "heartbeat", "broker-mode"] as const) {
+      const s = score.sections.find((x) => x.id === id)!;
+      expect(s.score, id).toBe(0);
+      expect(s.level, id).toBe("unavailable");
+    }
+    expect(score.liveUnavailableReason).toMatch(/could not be read/i);
+  });
+
+  it("Status Command Center shows unknown rows and a fetch-failure disclosure", () => {
+    holder.ctx = collectRuntimeContext({ route: "/status-command-center", bridge: null, bridgeStatus: "unavailable" });
+    render(<StatusCommandCenter />);
+    expect(runtimeRow("Live trading disabled")).toBe("unknown");
+    expect(runtimeRow("Demo-only")).toBe("unknown");
+    expect(runtimeRow("Broker read-only")).toBe("unknown");
+    expect(runtimeRow("Heartbeat")).toBe("unknown");
+    expect(runtimeRow("Server posture")).toMatch(/could not be read/i);
+    expect(screen.getByTestId("scc-blocker-posture-unknown")).toBeTruthy();
+    expect(screen.queryByTestId("scc-blocker-live-trading-disabled")).toBeNull();
+    // The bridge was never read, so the checklist must not say it is offline.
+    expect(screen.queryByText(/Bridge is offline/i)).toBeNull();
+  });
+
+  it("useRuntimeContext drops the previous bridge summary when a later fetch fails", async () => {
+    vi.doUnmock("@/assistant/useRuntimeContext");
+    const { useRuntimeContext } = await vi.importActual<typeof import("@/assistant/useRuntimeContext")>("@/assistant/useRuntimeContext");
+    let fail = false;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (fail) throw new Error("network down");
+      const body = String(url).includes("diagnostic-summary") ? connectedBridge : null;
+      return new Response(JSON.stringify(body), { status: body ? 200 : 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const { result } = renderHook(() => useRuntimeContext());
+      await waitFor(() => expect(result.current.bridgeStatus).toBe("loaded"));
+      expect(result.current.liveTradingDisabled).toBe(true);
+      fail = true;
+      await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+      await waitFor(() => expect(result.current.bridgeStatus).toBe("unavailable"));
+      expect(result.current.bridge).toBeNull();
+      expect(result.current.liveTradingDisabled).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
