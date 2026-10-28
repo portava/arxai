@@ -1,4 +1,7 @@
+import { planRewardToRisk } from "@workspace/domain/trade-plan";
+
 interface Plan {
+  directionBias?: string | null;
   entryPrice?: number | null;
   stopLoss?: number | null;
   takeProfit?: number | null;
@@ -8,15 +11,12 @@ interface Plan {
   rewardToRiskTarget?: number | null;
 }
 
-function rr(entry?: number | null, sl?: number | null, tp?: number | null): number | null {
-  if (entry == null || sl == null || tp == null) return null;
-  const risk = Math.abs(entry - sl);
-  if (risk <= 0) return null;
-  return Math.abs(tp - entry) / risk;
-}
-
 export function RiskPreviewCard({ plan }: { plan: Plan }) {
-  const computedRr = rr(plan.entryPrice, plan.stopLoss, plan.takeProfit);
+  // Directional, the same rule as the server checklist: a stop or target on
+  // the wrong side of entry has no reward-to-risk.
+  const geo = planRewardToRisk(plan.directionBias, plan.entryPrice, plan.stopLoss, plan.takeProfit);
+  const computedRr = geo.rr;
+  const wrongSide = geo.stopSide === "WRONG" || geo.targetSide === "WRONG";
   const target = plan.rewardToRiskTarget ?? 1.5;
   const overLimit = plan.riskAmount != null && plan.maxLossAllowed != null && plan.riskAmount > plan.maxLossAllowed;
   return (
@@ -36,8 +36,14 @@ export function RiskPreviewCard({ plan }: { plan: Plan }) {
           {plan.riskAmount ?? "—"} {plan.maxLossAllowed != null && <span className="text-slate-500">/ max {plan.maxLossAllowed}</span>}
         </dd>
         <dt className="text-slate-400">Reward-to-risk</dt>
-        <dd className={computedRr != null && computedRr < target ? "text-amber-400" : "text-slate-100"}>
-          {computedRr != null ? computedRr.toFixed(2) : "—"} <span className="text-slate-500">/ target {target.toFixed(2)}</span>
+        <dd
+          className={wrongSide ? "text-red-400" : computedRr != null && computedRr < target ? "text-amber-400" : "text-slate-100"}
+          data-testid="risk-preview-rr"
+        >
+          {wrongSide
+            ? "Stop or target on the wrong side of entry"
+            : computedRr != null ? computedRr.toFixed(2) : "—"}{" "}
+          <span className="text-slate-500">/ target {target.toFixed(2)}</span>
         </dd>
       </dl>
     </div>

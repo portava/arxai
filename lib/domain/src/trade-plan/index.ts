@@ -48,17 +48,81 @@ export interface ChecklistResult {
 const MIN_RR_DEFAULT = 1.5;
 const MIN_CONFIDENCE = 60;
 
-function rewardToRisk(entry: number | null, sl: number | null, tp: number | null): number | null {
-  if (entry == null || sl == null || tp == null) return null;
-  const risk = Math.abs(entry - sl);
-  if (risk <= 0) return null;
-  const reward = Math.abs(tp - entry);
-  return reward / risk;
+export type LevelSide = "OK" | "WRONG" | "MISSING";
+
+export interface PlanGeometry {
+  /** Reward ÷ risk, or null when a level is missing or on the wrong side. */
+  rr: number | null;
+  stopSide: LevelSide;
+  targetSide: LevelSide;
+  /** Normalised direction the sides were judged against, or null. */
+  direction: "BUY" | "SELL" | null;
+}
+
+function normDirection(d: string | null | undefined): "BUY" | "SELL" | null {
+  const v = (d ?? "").trim().toUpperCase();
+  if (v === "BUY" || v === "LONG") return "BUY";
+  if (v === "SELL" || v === "SHORT") return "SELL";
+  return null;
+}
+
+/**
+ * Directional reward-to-risk. A BUY's stop must be below entry and its target
+ * above; a SELL is the mirror. With no BUY/SELL direction the stop and target
+ * must at least sit on opposite sides of entry. A level on the wrong side makes
+ * the plan geometrically impossible, so no R:R is returned for it.
+ */
+export function planRewardToRisk(
+  direction: string | null | undefined,
+  entry: number | null | undefined,
+  sl: number | null | undefined,
+  tp: number | null | undefined,
+): PlanGeometry {
+  const dir = normDirection(direction);
+  const has = (x: number | null | undefined): x is number => typeof x === "number" && Number.isFinite(x);
+  if (!has(entry)) {
+    return { rr: null, stopSide: has(sl) ? "OK" : "MISSING", targetSide: has(tp) ? "OK" : "MISSING", direction: dir };
+  }
+  let stopSide: LevelSide = "MISSING";
+  let targetSide: LevelSide = "MISSING";
+  if (dir === "BUY") {
+    if (has(sl)) stopSide = sl < entry ? "OK" : "WRONG";
+    if (has(tp)) targetSide = tp > entry ? "OK" : "WRONG";
+  } else if (dir === "SELL") {
+    if (has(sl)) stopSide = sl > entry ? "OK" : "WRONG";
+    if (has(tp)) targetSide = tp < entry ? "OK" : "WRONG";
+  } else {
+    if (has(sl)) stopSide = sl !== entry ? "OK" : "WRONG";
+    if (has(tp)) targetSide = tp !== entry ? "OK" : "WRONG";
+    if (has(sl) && has(tp) && stopSide === "OK" && targetSide === "OK" && (sl - entry) * (tp - entry) > 0) {
+      // Same side of entry: one of them must be wrong, but without a
+      // direction we cannot say which — both fail.
+      stopSide = "WRONG";
+      targetSide = "WRONG";
+    }
+  }
+  if (stopSide !== "OK" || targetSide !== "OK") return { rr: null, stopSide, targetSide, direction: dir };
+  const risk = Math.abs(entry - (sl as number));
+  if (risk <= 0) return { rr: null, stopSide, targetSide, direction: dir };
+  return { rr: Math.abs((tp as number) - entry) / risk, stopSide, targetSide, direction: dir };
+}
+
+function wrongSideDetail(kind: "stop" | "target", level: number, entry: number, dir: "BUY" | "SELL" | null): string {
+  const where = level > entry ? "above" : level < entry ? "below" : "at";
+  const name = kind === "stop" ? "Stop loss" : "Take profit";
+  if (dir == null) {
+    return `${name} ${level} is ${where} the ${entry} entry, on the same side as the ${kind === "stop" ? "take profit" : "stop loss"} — the plan has no direction to tell which is wrong.`;
+  }
+  const should = kind === "stop"
+    ? (dir === "BUY" ? "below" : "above")
+    : (dir === "BUY" ? "above" : "below");
+  return `${name} ${level} is ${where} the ${entry} entry — for a ${dir.toLowerCase()} it must be ${should} entry.`;
 }
 
 export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   const items: ChecklistItem[] = [];
-  const rr = rewardToRisk(input.entryPrice, input.stopLoss, input.takeProfit);
+  const geo = planRewardToRisk(input.directionBias, input.entryPrice, input.stopLoss, input.takeProfit);
+  const rr = geo.rr;
   const minRr = (input.rewardToRiskTarget && input.rewardToRiskTarget > 0) ? input.rewardToRiskTarget : MIN_RR_DEFAULT;
 
   // 1. Market condition supports setup
@@ -79,8 +143,16 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
     items.push({ key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "FAIL", detail: `Confidence ${input.confidenceLevel}% (< ${MIN_CONFIDENCE}%).` });
   }
 
-  // 3. Reward-to-risk acceptable
-  if (rr == null) {
+  // 3. Reward-to-risk acceptable (directional: levels on the wrong side of
+  // entry make the plan impossible, so they never yield an R:R).
+  if (geo.stopSide === "WRONG" || geo.targetSide === "WRONG") {
+    items.push({
+      key: "RR_OK", label: "Reward-to-risk is acceptable", status: "FAIL",
+      detail: geo.direction
+        ? `Stop loss or take profit is on the wrong side of entry for a ${geo.direction.toLowerCase()} — R:R can't be measured.`
+        : "Stop loss and take profit are on the same side of entry (wrong side) — R:R can't be measured.",
+    });
+  } else if (rr == null) {
     items.push({ key: "RR_OK", label: "Reward-to-risk is acceptable", status: "FAIL", detail: "Entry / SL / TP missing." });
   } else if (rr >= minRr) {
     items.push({ key: "RR_OK", label: "Reward-to-risk is acceptable", status: "PASS", detail: `R:R ${rr.toFixed(2)} (≥ ${minRr.toFixed(2)}).` });
@@ -88,15 +160,19 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
     items.push({ key: "RR_OK", label: "Reward-to-risk is acceptable", status: "FAIL", detail: `R:R ${rr.toFixed(2)} (< ${minRr.toFixed(2)}).` });
   }
 
-  // 4. Stop loss defined
-  items.push(input.stopLoss != null
-    ? { key: "SL_DEFINED", label: "Stop loss is defined", status: "PASS", detail: String(input.stopLoss) }
-    : { key: "SL_DEFINED", label: "Stop loss is defined", status: "FAIL", detail: "Missing." });
+  // 4. Stop loss defined (and on the correct side of entry)
+  items.push(input.stopLoss == null
+    ? { key: "SL_DEFINED", label: "Stop loss is defined", status: "FAIL", detail: "Missing." }
+    : geo.stopSide === "WRONG" && input.entryPrice != null
+      ? { key: "SL_DEFINED", label: "Stop loss is defined", status: "FAIL", detail: wrongSideDetail("stop", input.stopLoss, input.entryPrice, geo.direction) }
+      : { key: "SL_DEFINED", label: "Stop loss is defined", status: "PASS", detail: String(input.stopLoss) });
 
-  // 5. Take profit defined
-  items.push(input.takeProfit != null
-    ? { key: "TP_DEFINED", label: "Take profit is defined", status: "PASS", detail: String(input.takeProfit) }
-    : { key: "TP_DEFINED", label: "Take profit is defined", status: "FAIL", detail: "Missing." });
+  // 5. Take profit defined (and on the correct side of entry)
+  items.push(input.takeProfit == null
+    ? { key: "TP_DEFINED", label: "Take profit is defined", status: "FAIL", detail: "Missing." }
+    : geo.targetSide === "WRONG" && input.entryPrice != null
+      ? { key: "TP_DEFINED", label: "Take profit is defined", status: "FAIL", detail: wrongSideDetail("target", input.takeProfit, input.entryPrice, geo.direction) }
+      : { key: "TP_DEFINED", label: "Take profit is defined", status: "PASS", detail: String(input.takeProfit) });
 
   // 6. Risk amount within limit
   if (input.riskAmount == null || input.maxLossAllowed == null) {
@@ -159,6 +235,9 @@ export function summarizePlan(plan: PlanForReview, checklist: ChecklistResult, _
     parts.push(plan.rewardToRisk >= target
       ? `Reward-to-risk ${plan.rewardToRisk.toFixed(2)} meets your ${target.toFixed(2)} target.`
       : `Reward-to-risk ${plan.rewardToRisk.toFixed(2)} is below your ${target.toFixed(2)} target — consider tighter stop or wider target.`);
+  } else if (checklist.items.some((i) =>
+    (i.key === "SL_DEFINED" || i.key === "TP_DEFINED") && i.status === "FAIL" && i.detail !== "Missing.")) {
+    parts.push("Reward-to-risk cannot be measured — the stop loss or take profit is on the wrong side of entry.");
   } else {
     parts.push("Reward-to-risk cannot be computed — entry, stop, and take-profit are required.");
   }
