@@ -71,24 +71,58 @@ function linkHealthClass(h: string): string {
   return "bg-destructive/20 text-destructive border border-destructive/40";
 }
 
+// The stops GET /system/status reports in activeHalts (the pre-trade Risk
+// Governor's own reader). killSwitchEngaged is only the safety-core switch.
+const HALT_NAMES: Record<string, string> = {
+  platform_emergency_stop: "the platform emergency stop",
+  safety_core_kill_switch: "the safety-core kill switch",
+  trader_kill_switch: "your kill switch",
+};
+const haltName = (s: string) => HALT_NAMES[s] ?? s;
+
+/** Stops other than the safety-core switch that halt trading; null when they were not checked. */
+function otherHaltsOf(status: SystemStatus): { sources: string[]; reasons: string[] } | null {
+  if (!Array.isArray(status.activeHalts)) return null;
+  const sources: string[] = [];
+  const reasons: string[] = [];
+  status.activeHalts.forEach((s, i) => {
+    if (s === "safety_core_kill_switch") return;
+    sources.push(s);
+    reasons.push(status.activeHaltReasons?.[i] ?? `${haltName(s)} is engaged.`);
+  });
+  return { sources, reasons };
+}
+
 function StatusBanner({ status }: { status: SystemStatus }) {
   const ks = status.killSwitchEngaged;
+  const others = otherHaltsOf(status);
+  const otherHalted = (others?.sources.length ?? 0) > 0;
   const profile = status.effectiveProfile as { description?: string; executionPermission?: string };
   const reasons = status.reasons ?? [];
   const blockers = status.blockers ?? [];
+  const checkedAt = status.activeHaltsCheckedAt ? new Date(status.activeHaltsCheckedAt).toLocaleTimeString() : null;
+  const title = ks
+    ? "KILL SWITCH ENGAGED"
+    : otherHalted
+      ? "Trading halted by another stop"
+      : others === null
+        ? "Safety-core kill switch released"
+        : "Safety Core Online";
   return (
-    <Card className={ks ? "border-destructive bg-destructive/5" : "border-border"}>
+    <Card className={ks || otherHalted ? "border-destructive bg-destructive/5" : "border-border"}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            {ks ? (
+            {ks || otherHalted ? (
               <AlertOctagon className="text-destructive" size={28} />
+            ) : others === null ? (
+              <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={28} />
             ) : (
               <ShieldCheck className="text-primary" size={28} />
             )}
             <div>
-              <CardTitle className="text-xl tracking-wide">
-                {ks ? "KILL SWITCH ENGAGED" : "Safety Core Online"}
+              <CardTitle className="text-xl tracking-wide" data-testid="safety-core-headline">
+                {title}
               </CardTitle>
               <CardDescription className="mt-1">
                 Operational Mode <Badge variant="outline" className="ml-1 font-mono">{status.operationalMode}</Badge>
@@ -108,6 +142,35 @@ function StatusBanner({ status }: { status: SystemStatus }) {
           </div>
         </div>
       </CardHeader>
+      <CardContent className="pt-0 space-y-2">
+        <div className="text-sm" data-testid="safety-core-halts">
+          {others === null ? (
+            <p className="text-yellow-700 dark:text-yellow-400">
+              The other stops (the platform emergency stop and your kill switch) could not be checked, so this page
+              cannot say whether they halt trading. Only the safety-core kill switch is shown here.
+            </p>
+          ) : otherHalted ? (
+            <div className="flex items-start gap-2">
+              <XCircle size={16} className="text-destructive shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-destructive">
+                  Demo and live broker orders are halted by {others.sources.map(haltName).join(" and ")}
+                  {ks ? " as well" : ""}:
+                </span>{" "}
+                {others.reasons.join(" ")}
+                {checkedAt && <span className="text-muted-foreground"> Checked at {checkedAt}.</span>}
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">
+              {ks
+                ? "No other stop is engaged (the platform emergency stop and your kill switch are released)."
+                : "No stop is engaged: the platform emergency stop, the safety-core kill switch and your kill switch are released."}
+              {checkedAt && ` Checked at ${checkedAt}.`}
+            </p>
+          )}
+        </div>
+      </CardContent>
       {(reasons.length > 0 || blockers.length > 0 || profile.description) && (
         <CardContent className="pt-0 space-y-2">
           {profile.description && (
@@ -307,6 +370,8 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
   };
 
   const ks = status.killSwitchEngaged;
+  const others = otherHaltsOf(status);
+  const otherHalted = (others?.sources.length ?? 0) > 0;
 
   return (
     <Card className={ks ? "border-destructive/60" : ""}>
@@ -321,6 +386,12 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {!ks && otherHalted && (
+          <p className="mb-4 text-sm text-muted-foreground" data-testid="kill-switch-other-halts">
+            Trading is already halted by {others!.sources.map(haltName).join(" and ")}. This switch is separate:
+            engaging it adds the safety-core stop, and resetting it later does not release the others.
+          </p>
+        )}
         {ks && status.killSwitchReason && (
           <div className="mb-4 p-3 rounded-md bg-destructive/10 border border-destructive/40 text-sm">
             <span className="font-semibold">Reason:</span> {status.killSwitchReason}

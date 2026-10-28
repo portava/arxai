@@ -12090,6 +12090,15 @@ export interface SystemStatus {
   reasons?: string[];
   blockers?: string[];
   allowedModes: SystemStatusAllowedModesItem[];
+  /**
+   * Every stop that halts the viewer's demo and live broker orders right now, read by the pre-trade Risk Governor's own reader (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). killSwitchEngaged is the safety-core switch only. An empty list means none is engaged; null means the stops could not be checked. GET /system/status only.
+   * @nullable
+   */
+  activeHalts?: string[] | null;
+  /** One plain-English sentence per entry of activeHalts, in the same order. */
+  activeHaltReasons?: string[];
+  /** When activeHalts was read (ISO 8601). */
+  activeHaltsCheckedAt?: string;
 }
 
 export type SetSystemModeBodyMode =
