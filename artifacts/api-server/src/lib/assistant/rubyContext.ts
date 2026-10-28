@@ -521,7 +521,16 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
   // Headline — greets by time + live readiness.
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   let readiness: string;
-  if (ctx.bridge.connected) readiness = "You're live-connected through Shared Master MT5.";
+  // bridge.connected is the SHARED master bridge's health, not this user's
+  // posture. "You're live-connected" needs the user's own canonical balance
+  // source (same live-mode gate as the Dashboard) to read live_shared.
+  const liveSource = ctx.account.live?.source ?? null;
+  if (ctx.bridge.connected && liveSource === "live_shared") readiness = "You're live-connected through Shared Master MT5.";
+  else if (ctx.bridge.connected && (liveSource === "paper" || liveSource === "demo")) {
+    readiness = `The Shared Master MT5 bridge is healthy, but your account is on the ${liveSource} path, not live.`;
+  } else if (ctx.bridge.connected) {
+    readiness = "The Shared Master MT5 bridge is healthy, but I couldn't confirm your account is on the live path.";
+  }
   else if (ctx.bridge.availability === "RECONCILING") readiness = "Your live bridge is reconciling right now.";
   else readiness = "Your live bridge is offline at the moment.";
   const headline = `Good ${ctx.timeOfDay}. ${readiness}`;
