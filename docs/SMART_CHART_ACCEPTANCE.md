@@ -289,3 +289,5 @@ The rendering approach follows the library's
 and [multi-pane API](https://tradingview.github.io/lightweight-charts/tutorials/how_to/panes).
 
 History requests now cancel on symbol/timeframe changes and cannot publish late results, failures or loading state into the new chart. Linked follower ranges do not autonomously page provider history; a new local navigation gesture restores normal older-history loading.
+
+Integrated Scanner replacement and exact-source browser evidence: [28 October integration receipt](SCANNER_SMART_CHART_INTEGRATION_2026_10_28.md).
