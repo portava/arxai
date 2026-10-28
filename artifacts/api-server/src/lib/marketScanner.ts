@@ -2030,6 +2030,13 @@ type Alert = {
 };
 const alerts: Alert[] = [];
 const MAX_ALERTS = 200;
+/** Alerts older than this are dropped from the shared list: they describe a market read long gone. */
+export const SCANNER_ALERT_EXPIRE_MS = 24 * 60 * 60_000;
+/** Minutes in one bar of each scanner timeframe; one bar after it was raised an alert is superseded. */
+const ALERT_TF_MINUTES: Record<string, number> = { M1: 1, M5: 5, M15: 15, M30: 30, H1: 60, H4: 240, D1: 1440 };
+const ALERT_DEFAULT_STALE_MIN = 15;
+/** Open alerts pushed out of the full store since this process started (count is then incomplete). */
+let alertsEvictedOpen = 0;
 
 export function pushAlert(a: Omit<Alert, "alertId" | "createdAt" | "acknowledgedAt" | "dismissedAt" | "snoozedUntil">) {
   // Lightweight dedupe within last minute on same source+symbol+message.
@@ -2043,19 +2050,51 @@ export function pushAlert(a: Omit<Alert, "alertId" | "createdAt" | "acknowledged
     acknowledgedAt: null, dismissedAt: null, snoozedUntil: null,
   };
   alerts.unshift(item);
-  if (alerts.length > MAX_ALERTS) alerts.length = MAX_ALERTS;
+  if (alerts.length > MAX_ALERTS) {
+    for (const dropped of alerts.slice(MAX_ALERTS)) {
+      if (!dropped.dismissedAt && !dropped.acknowledgedAt) alertsEvictedOpen += 1;
+    }
+    alerts.length = MAX_ALERTS;
+  }
   return item;
 }
 
-export function listAlerts(opts?: { unackedOnly?: boolean; limit?: number }) {
-  const now = Date.now();
-  const visible = alerts.filter((a) => {
+/** Drop alerts past SCANNER_ALERT_EXPIRE_MS (or with an unreadable time). */
+function pruneExpiredAlerts(now: number): void {
+  for (let i = alerts.length - 1; i >= 0; i -= 1) {
+    const t = Date.parse(alerts[i]!.createdAt);
+    if (!Number.isFinite(t) || now - t >= SCANNER_ALERT_EXPIRE_MS) alerts.splice(i, 1);
+  }
+}
+
+function visibleAlerts(now: number, unackedOnly: boolean): Alert[] {
+  pruneExpiredAlerts(now);
+  return alerts.filter((a) => {
     if (a.dismissedAt) return false;
     if (a.snoozedUntil && Date.parse(a.snoozedUntil) > now) return false;
-    if (opts?.unackedOnly && a.acknowledgedAt) return false;
+    if (unackedOnly && a.acknowledgedAt) return false;
     return true;
   });
-  return visible.slice(0, opts?.limit ?? 100);
+}
+
+/**
+ * Listed alerts carry their own age and whether one bar of their timeframe has
+ * passed since they were raised (stale): nothing re-checks an alert after it
+ * is raised, so a stale one may no longer hold.
+ */
+export function listAlerts(opts?: { unackedOnly?: boolean; limit?: number }) {
+  const now = Date.now();
+  return visibleAlerts(now, opts?.unackedOnly === true).slice(0, opts?.limit ?? 100).map((a) => {
+    const t = Date.parse(a.createdAt);
+    const barMin = (a.timeframe && ALERT_TF_MINUTES[a.timeframe.toUpperCase()]) || ALERT_DEFAULT_STALE_MIN;
+    const staleAt = t + barMin * 60_000;
+    return {
+      ...a,
+      ageSeconds: Math.max(0, Math.floor((now - t) / 1000)),
+      staleAfter: new Date(staleAt).toISOString(),
+      stale: now >= staleAt,
+    };
+  });
 }
 
 export function alertAction(alertId: string, action: "acknowledge" | "dismiss" | "snooze", snoozeMs = 10 * 60 * 1000) {
@@ -2068,6 +2107,24 @@ export function alertAction(alertId: string, action: "acknowledge" | "dismiss" |
   return a;
 }
 
+/** Every open (not acknowledged, dismissed, snoozed or expired) alert in the store; not capped by a list limit. */
 export function alertCount() {
-  return listAlerts({ unackedOnly: true }).length;
+  return visibleAlerts(Date.now(), true).length;
+}
+
+/**
+ * How complete alertCount() is. The store holds at most MAX_ALERTS; once it
+ * has pushed out open alerts the count is a lower bound, and it is always
+ * empty after a server restart.
+ */
+export function alertCountCoverage(): { complete: boolean; storeCapacity: number; evictedOpenAlerts: number; note: string } {
+  const complete = alertsEvictedOpen === 0;
+  return {
+    complete,
+    storeCapacity: MAX_ALERTS,
+    evictedOpenAlerts: alertsEvictedOpen,
+    note: complete
+      ? `Every open alert still held in server memory (up to ${MAX_ALERTS}, kept for ${SCANNER_ALERT_EXPIRE_MS / 3_600_000} hours). The list is cleared when the API server restarts.`
+      : `At least this many: ${alertsEvictedOpen} older open alert${alertsEvictedOpen === 1 ? " was" : "s were"} pushed out because the server keeps only the newest ${MAX_ALERTS}. The list is cleared when the API server restarts.`,
+  };
 }
