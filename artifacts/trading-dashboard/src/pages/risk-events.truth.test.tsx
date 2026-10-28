@@ -74,3 +74,29 @@ describe("Risk Event Log — failed read", () => {
     }
   });
 });
+
+describe("Risk Event Log — when and how many", () => {
+  it("each row shows the date as well as the time", async () => {
+    const ts = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    serve({ events: [ev({ ts, explanation: "Blocked two days ago." })] });
+    render(<RiskEvents />);
+    await screen.findByText("Blocked two days ago.");
+    const day = new Date(ts).toLocaleDateString();
+    expect(screen.getAllByText((_, el) => el?.tagName === "SPAN" && (el.textContent ?? "").includes(day)).length).toBeGreaterThan(0);
+  });
+
+  it("a full page of 200 is disclosed as the latest 200, not as the total", async () => {
+    serve({ events: Array.from({ length: 200 }, (_, i) => ev({ eventId: `ure_${i}`, explanation: `event ${i}` })) });
+    render(<RiskEvents />);
+    await screen.findByText("event 0");
+    expect(screen.queryByText("200 events")).toBeNull();
+    expect(screen.getAllByText(/latest 200/i).length).toBeGreaterThan(0);
+  });
+
+  it("fewer than 200 is the whole trail and is counted as such", async () => {
+    serve({ events: [ev({ eventId: "a" }), ev({ eventId: "b" }), ev({ eventId: "c" })] });
+    render(<RiskEvents />);
+    await screen.findByText("3 events");
+    expect(screen.queryByText(/latest 200/i)).toBeNull();
+  });
+});

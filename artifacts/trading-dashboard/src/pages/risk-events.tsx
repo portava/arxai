@@ -5,6 +5,9 @@ import { ScrollText } from "lucide-react";
 
 type Ev = { eventId: string; ts: string; environment?: string; symbol?: string; source?: string; orderId?: string; rule: string; severity: "INFO" | "WARN" | "BLOCK"; decision: string; explanation: string; auditLogId?: string };
 
+// The page asks for this many rows; a full page means older events exist that are not loaded.
+const PAGE_LIMIT = 200;
+
 const SEV_COLOR: Record<string, string> = { INFO: "bg-emerald-500/20 text-emerald-400", WARN: "bg-amber-500/20 text-amber-400", BLOCK: "bg-rose-500/20 text-rose-400" };
 
 export default function RiskEvents() {
@@ -17,7 +20,7 @@ export default function RiskEvents() {
     let alive = true;
     const load = async () => {
       try {
-        const r = await fetch("/api/risk/events?limit=200");
+        const r = await fetch(`/api/risk/events?limit=${PAGE_LIMIT}`);
         const d = await r.json().catch(() => null);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         if (!d || !Array.isArray(d.events)) throw new Error("the server's answer had no event list");
@@ -31,6 +34,8 @@ export default function RiskEvents() {
     return () => { alive = false; clearInterval(id); };
   }, []);
   const filtered = events == null ? [] : filter === "ALL" ? events : events.filter((e) => e.severity === filter);
+  const capped = events != null && events.length >= PAGE_LIMIT;
+  const noun = `${filter === "ALL" ? "" : `${filter} `}events`;
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -53,7 +58,16 @@ export default function RiskEvents() {
         </Card>
       ) : (
         <Card>
-          <CardHeader><CardTitle className="text-base">{filtered.length} events</CardTitle><CardDescription>Most recent first</CardDescription></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {capped ? `${filtered.length} ${noun} in the latest ${PAGE_LIMIT} loaded` : `${filtered.length} ${noun}`}
+            </CardTitle>
+            <CardDescription>
+              {capped
+                ? `Most recent first. Only the latest ${PAGE_LIMIT} events are loaded; older events are not listed or counted.`
+                : "Most recent first"}
+            </CardDescription>
+          </CardHeader>
           <CardContent className="space-y-1">
             {loadError && loadedAt && (
               <p className="text-xs text-amber-400">
@@ -71,7 +85,7 @@ export default function RiskEvents() {
                     ? <Badge variant="outline">{e.environment}</Badge>
                     : <Badge variant="outline" className="text-muted-foreground">venue not recorded</Badge>}
                   {e.source && <Badge variant="outline">{e.source}</Badge>}
-                  <span className="ml-auto text-muted-foreground">{new Date(e.ts).toLocaleTimeString()}</span>
+                  <span className="ml-auto text-muted-foreground">{new Date(e.ts).toLocaleString()}</span>
                 </div>
                 <div className="text-muted-foreground mt-1">{e.explanation}</div>
                 {e.orderId && <div className="text-muted-foreground">order={e.orderId}</div>}
