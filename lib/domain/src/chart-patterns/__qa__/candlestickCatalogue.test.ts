@@ -572,3 +572,185 @@ test("4- and 5-candle trend windows end before the first formation candle",()=>{
   if(downId!==null)assert.ok(!has(mirror(b),downId),`${downId}: formation bars are not trend context`);
  }
 });
+/** Round-3 pins. Each near miss below changes one published criterion of a passing control.
+ * Colour misses swap a candle's open and close where every other rule is symmetric in that swap,
+ * so colour is the only criterion that changes. */
+const flip=(b:CatalogueCandle[],at:number)=>{const x=b.at(at)!;[x.open,x.close]=[x.close,x.open];};
+/** The same formation with fewer prefix bars: the prior-5 trend survives, chosen prior-10 means do not. */
+const shortHistory=(id:string,keep:number,mutate:(b:CatalogueCandle[])=>void=()=>{})=>{const b=fixture(id);mutate(b);return observed(b.slice(12-keep).map(({open,high,low,close})=>({open,high,low,close})));};
+test("Three Stars in the South: colour, third-high and shadow-basis near misses",()=>{
+ const id="three_stars_in_the_south";
+ const lowSecond=(b:CatalogueCandle[])=>set(b,-2,{open:102.1,high:102.2,low:97.5,close:99.7});
+ oneSide(id,lowSecond,true,"control: second body sits above both first-body edges");
+ oneSide(id,b=>{lowSecond(b);flip(b,-3);},false,"white first candle");
+ const smallSecond=(b:CatalogueCandle[])=>set(b,-2,{open:100.5,close:99.6});
+ oneSide(id,smallSecond,true,"control: second body .9 above the first close");
+ oneSide(id,b=>{smallSecond(b);flip(b,-2);},false,"white second candle");
+ oneSide(id,b=>flip(b,-1),false,"white third candle");
+ oneSide(id,b=>set(b,-1,{open:100.65,high:100.69,low:100.25,close:100.3}),true,"control: third high just below the second high");
+ oneSide(id,b=>set(b,-1,{open:100.65,high:100.7,low:100.25,close:100.3}),false,"third high equals the second high");
+ // Second lower shadow uses the second candle's prior-10 mean range (.297), not the third's (.32).
+ const deepSecond=(lower:number)=>(b:CatalogueCandle[])=>{set(b,-2,{open:100.5,high:103,low:98.5-lower,close:98.5});set(b,-1,{open:98.9,high:98.95,low:98.35,close:98.4});};
+ oneSide(id,deepSecond(.3),true,"control: second lower shadow .3 exceeds .297 although it is below .32");
+ oneSide(id,deepSecond(.29),false,"second lower shadow .29 is below .297");
+ // Third shadows use the third candle's prior-10 mean range (.304), not the second's (.297).
+ oneSide(id,b=>set(b,-1,{high:98.9}),true,"control: third upper shadow .3 is below .304 although it exceeds .297");
+ oneSide(id,b=>set(b,-1,{low:97.8}),true,"control: third lower shadow .3 is below .304 although it exceeds .297");
+});
+test("Rising/Falling Three Methods: every candle colour, r1 and r2 containment, exact half-mean boundary",()=>{
+ const pair=["rising_three_methods","falling_three_methods"] as const;
+ /** Reactions near the first low, so each candle's open and close both satisfy every price relation. */
+ const low=(b:CatalogueCandle[])=>{
+  set(b,-5,{open:102,high:106.2,low:100,close:106});set(b,-4,{open:102.3,high:102.4,low:101.6,close:101.8});
+  set(b,-3,{open:101.7,high:101.8,low:101.1,close:101.3});set(b,-2,{open:101.2,high:101.4,low:100.6,close:100.8});
+  set(b,-1,{open:106.1,high:108.2,low:106,close:108});
+ };
+ bothSides(...pair,low,true,"control: reactions near the first low");
+ for(const [at,label] of [[-5,"first"],[-4,"first reaction"],[-3,"second reaction"],[-2,"third reaction"],[-1,"fifth"]] as const)
+  bothSides(...pair,b=>{low(b);flip(b,at);},false,`${label} candle has the other colour`);
+ bothSides(...pair,b=>set(b,-4,{open:106.2,high:106.4,low:105.9,close:106}),true,"control: first reaction top equals the first high");
+ bothSides(...pair,b=>set(b,-4,{open:106.25,high:106.4,low:105.9,close:106}),false,"first reaction body above the first high");
+ const tightHigh=(open:number)=>(b:CatalogueCandle[])=>{
+  set(b,-5,{high:106.05});set(b,-4,{open:105.9,high:106,low:105.5,close:105.6});set(b,-3,{open,high:106.2,low:105.3,close:105.55});
+  set(b,-2,{open:105.4,high:105.5,low:104.9,close:105.1});set(b,-1,{open:105.2,low:105.1});
+ };
+ bothSides(...pair,tightHigh(106.05),true,"control: second reaction top equals the first high");
+ bothSides(...pair,tightHigh(106.1),false,"second reaction body above the first high");
+ bothSides(...pair,b=>set(b,-4,{close:104.96}),true,"control: first reaction body .64 is below half its prior mean body (.65)");
+ bothSides(...pair,b=>set(b,-4,{close:104.95}),false,"first reaction body .65 equals half its prior mean body");
+ // Mirror image of a rising shape after a rise: white first, black first reaction, white reactions, white fifth.
+ const mixed=(b:CatalogueCandle[])=>{
+  set(b,-5,{open:106,high:106.2,low:101.8,close:102});set(b,-4,{open:101.85,high:102.05,low:101.8,close:102});
+  set(b,-3,{open:102,high:102.05,low:101.85,close:101.95});set(b,-2,{open:101.95,high:102,low:101.8,close:101.9});
+  set(b,-1,{open:104.5,high:104.7,low:102.9,close:103});
+ };
+ const m=fixture(pair[0]);mixed(m);
+ assert.equal(has(mirror(m),pair[1]),false,"falling_three_methods (mirror): a rising-shape colour sequence after a decline");
+});
+test("Three Methods first body is long against the ten candles before it, not a window that includes it",()=>{
+ const pair=["rising_three_methods","falling_three_methods"] as const;
+ const small=(b:CatalogueCandle[])=>{
+  set(b,-4,{open:105.6,high:105.8,low:105.2,close:105.3});set(b,-3,{open:105.3,high:105.5,low:104.9,close:105});
+  set(b,-2,{open:105,high:105.2,low:104.6,close:104.7});set(b,-1,{open:104.8});set(b,-5,{open:104.8});
+ };
+ bothSides(...pair,small,true,"control: first body 1.2 exceeds its prior-10 mean body 1");
+ // Bar 2 is the oldest bar of the first candle's window and of no later candle's window.
+ bothSides(...pair,b=>{small(b);set(b,2,{open:79,low:78.25});},false,"first body 1.2 is below its prior-10 mean body 1.4");
+});
+test("Mat Hold: reaction highs, rising shape and short histories",()=>{
+ const id="mat_hold";
+ for(const at of [-3,-2]){
+  oneSide(id,b=>{set(b,at,{high:108.5});set(b,-1,{high:108.7,close:108.6});},true,`control: fifth close above a raised reaction high at ${at}`);
+  oneSide(id,b=>{set(b,at,{high:108.5});set(b,-1,{high:108.6,close:108.4});},false,`fifth close below the raised reaction high at ${at}`);
+ }
+ const falling=(b:CatalogueCandle[])=>{
+  set(b,-5,{open:106,high:106.2,low:101.8,close:102});set(b,-4,{open:102.3,high:102.7,low:102.2,close:102.6});
+  set(b,-3,{open:101.5,high:102,low:101.4,close:101.9});set(b,-2,{open:101.2,high:101.7,low:101.1,close:101.6});
+  set(b,-1,{open:104.5,high:104.6,low:102.9,close:103});
+ };
+ oneSide(id,falling,false,"black first, white reactions and black fifth after a rise");
+ assert.equal(has(shortHistory(id,9),id),false,"mat_hold: first candle without a prior-10 mean body");
+ assert.equal(has(shortHistory(id,12),id),true,"mat_hold: control, full history");
+});
+test("Three Methods: a first candle without a prior-10 mean body is never long",()=>{
+ for(const id of ["rising_three_methods","falling_three_methods"]){
+  assert.equal(has(shortHistory(id,12),id),true,`${id}: control, full history`);
+  assert.equal(has(shortHistory(id,9),id),false,`${id}: nine prior bars`);
+ }
+});
+test("Side-by-Side White Lines: black third, open-tolerance basis and boundary, short history",()=>{
+ const upId="upside_gap_side_by_side_white_lines";
+ oneSide(upId,b=>set(b,-1,{open:105.55,high:106.6,low:105.4,close:106.5}),true,"control: white third, body .95");
+ oneSide(upId,b=>set(b,-1,{open:105.55,high:105.7,low:104.55,close:104.6}),false,"black third with the same open and body length");
+ // .05 of the middle candle's prior-10 mean range is .127; the third candle's would be .124 and the first's .125.
+ oneSide(upId,b=>set(b,-1,{open:105.626}),true,"control: opens .126 apart");
+ oneSide(upId,b=>set(b,-1,{open:105.627}),true,"control: opens exactly .127 apart");
+ const equal=(b:CatalogueCandle[])=>set(b,-1,{open:105.5,high:107.3,low:105.4,close:107});
+ assert.equal(has(shortHistory(upId,12,equal),upId),true,"control: identical opens and bodies, full history");
+ assert.equal(has(shortHistory(upId,8,equal),upId),false,"identical opens and bodies without a prior-10 mean range");
+});
+test("Identical Three Crows: candle colours, falling second close and the second-open basis",()=>{
+ const id="identical_three_crows";
+ const thinFirst=(b:CatalogueCandle[])=>set(b,-3,{open:145.05,high:145.2,low:144.85,close:145});
+ oneSide(id,thinFirst,true,"control: a thin black first candle");
+ oneSide(id,b=>{thinFirst(b);flip(b,-3);},false,"white first candle");
+ const thinSecond=(b:CatalogueCandle[])=>{set(b,-2,{open:144.95,high:145,low:144.7,close:144.9});set(b,-1,{open:144.95,high:145,low:140.8,close:141});};
+ oneSide(id,thinSecond,true,"control: a thin black second candle");
+ oneSide(id,b=>{thinSecond(b);flip(b,-2);},false,"white second candle");
+ const thinThird=(b:CatalogueCandle[])=>set(b,-1,{open:140.95,high:141,low:140.7,close:140.9});
+ oneSide(id,thinThird,true,"control: a thin black third candle");
+ oneSide(id,b=>{thinThird(b);flip(b,-1);},false,"white third candle");
+ const second=(close:number)=>(b:CatalogueCandle[])=>{set(b,-2,{open:145.1,high:145.2,low:144.9,close});set(b,-1,{open:145,high:145.1,low:140.8,close:141});};
+ oneSide(id,second(144.98),true,"control: second close just below the first close");
+ oneSide(id,second(145),false,"second close equals the first close");
+ // The second open uses the first candle's prior-10 mean range (.125), not the second's (.1345).
+ oneSide(id,b=>set(b,-2,{open:145.12}),true,"control: second open .12 from the first close");
+ oneSide(id,b=>set(b,-2,{open:145.13}),false,"second open .13 from the first close exceeds .125");
+});
+test("Upside Gap Two Crows: first and middle colours",()=>{
+ const id="upside_gap_two_crows";
+ oneSide(id,b=>flip(b,-3),false,"black first candle");
+ oneSide(id,b=>flip(b,-2),false,"white middle candle");
+});
+test("Stick Sandwich: first colour and short history",()=>{
+ const id="stick_sandwich";
+ oneSide(id,b=>set(b,-3,{open:100,high:100.1,low:98.9,close:99.5}),true,"control: black first candle");
+ oneSide(id,b=>set(b,-3,{open:99,high:100.1,low:98.9,close:99.5}),false,"white first candle with the same close");
+ const equal=(b:CatalogueCandle[])=>set(b,-1,{close:99.5});
+ assert.equal(has(shortHistory(id,12,equal),id),true,"control: identical closes, full history");
+ assert.equal(has(shortHistory(id,9,equal),id),false,"identical closes without the first candle's prior-10 mean range");
+});
+test("Unique Three-River: middle and third colours",()=>{
+ const id="unique_three_river_bottom";
+ oneSide(id,b=>flip(b,-2),false,"white middle candle");
+ oneSide(id,b=>flip(b,-1),false,"black third candle");
+});
+test("Ladder Bottom: every candle colour and short history",()=>{
+ const id="ladder_bottom";
+ const clear=(b:CatalogueCandle[])=>{
+  set(b,-5,{open:101.5,high:101.7,low:100.2,close:100.5});set(b,-4,{open:99.2,high:99.4,low:98.6,close:98.8});
+  set(b,-3,{open:97.8,high:98,low:96.3,close:96.5});set(b,-1,{open:98,high:99.2,low:97.9,close:99});
+ };
+ oneSide(id,clear,true,"control: each candle's open and close both satisfy every price relation");
+ for(const [at,label] of [[-5,"first"],[-4,"second"],[-3,"third"],[-2,"fourth"],[-1,"fifth"]] as const)
+  oneSide(id,b=>{clear(b);flip(b,at);},false,`${label} candle has the other colour`);
+ assert.equal(has(shortHistory(id,12),id),true,"control: full history");
+ assert.equal(has(shortHistory(id,6),id),false,"fourth candle without a prior-10 mean range");
+});
+test("Three-Line Strike: every candle colour, the third-open basis and short history",()=>{
+ const pair=["bullish_three_line_strike","bearish_three_line_strike"] as const;
+ bothSides(...pair,b=>flip(b,-4),false,"first candle has the other colour");
+ const thinSecond=(b:CatalogueCandle[])=>set(b,-3,{open:104.1,high:104.7,low:103.9,close:104.6});
+ bothSides(...pair,thinSecond,true,"control: a thin second candle inside the open tolerance");
+ bothSides(...pair,b=>{thinSecond(b);flip(b,-3);},false,"second candle has the other colour");
+ const thinThird=(b:CatalogueCandle[])=>set(b,-2,{open:106.1,high:106.7,low:105.9,close:106.5});
+ bothSides(...pair,thinThird,true,"control: a thin third candle inside the open tolerance");
+ bothSides(...pair,b=>{thinThird(b);flip(b,-2);},false,"third candle has the other colour");
+ const reversed=(b:CatalogueCandle[])=>{
+  set(b,-4,{open:108,high:108.2,low:101.8,close:102});set(b,-3,{open:104,high:104.2,low:102.8,close:103});
+  set(b,-2,{open:104.5,high:104.7,low:103.4,close:103.5});set(b,-1,{open:104,high:107.5,low:103.9,close:107.4});
+ };
+ bothSides(...pair,reversed,false,"three opposite-colour candles with progressing closes, then a strike of the other colour");
+ // The third open uses the second candle's prior-10 mean range (.6225), not the third's (.645).
+ bothSides(...pair,b=>set(b,-2,{open:106.62}),true,"control: third open .62 above the second body");
+ bothSides(...pair,b=>set(b,-2,{open:106.63}),false,"third open .63 above the second body exceeds .6225");
+ for(const id of pair){
+  const flipSide=(b:CatalogueCandle[])=>id===pair[1]?mirror(b):b;
+  assert.equal(has(flipSide(shortHistory(pair[0],12)),id),true,`${id}: control, full history`);
+  assert.equal(has(flipSide(shortHistory(pair[0],9)),id),false,`${id}: first candle without a prior-10 mean range`);
+ }
+});
+test("4- and 5-candle trend windows are exactly the five bars before the first formation candle",()=>{
+ const withPrefix=(id:string,closes:readonly number[])=>{
+  const b=fixture(id),start=12-closes.length;
+  for(let k=0;k<12;k++){const close=k<start?102:closes[k-start]!;Object.assign(b[k]!,{open:close-1,high:close+.75,low:close-1.75,close});}
+  return b;
+ };
+ // The last five prefix closes trend; the window one bar earlier (104 then four of them) does not.
+ const rising=[104,102,102.5,103,103.5,104],falling=[96,102,101.5,101,100.5,100];
+ for(const [upId,downId] of WINDOW_IDS){
+  const b=withPrefix(upId,upId==="ladder_bottom"?falling:rising);
+  assert.ok(has(b,upId),`${upId}: trend in the five bars just before the formation`);
+  if(downId!==null)assert.ok(has(mirror(b),downId),`${downId}: trend in the five bars just before the formation`);
+ }
+});

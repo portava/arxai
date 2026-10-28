@@ -68,7 +68,7 @@ The same tie-break can still push a strike into details. If the strike candle is
 
 Each new name has a positive fixture, a flat negative control, tiny/large price-scale checks, incomplete-candle and future-prefix controls, a trend-context control, and an internal-gap control. Near misses check reaction containment, strict final closes, strike engulfment, the near-open tolerance, gap fill and colour, the side-by-side open and length tolerances, and Mat Hold versus Rising Three Methods in both directions. Every near-miss fixture is asserted to be valid closed evidence, so a rejection never comes from an unavailable scan. A bookkeeping test computes every coverage count from the JSON and the code.
 
-The v5 document's review follow-up lists the one-predicate near misses and window tests later added for these nine shapes, and the corrected Three Methods wording.
+The v5 document's review follow-up lists the one-predicate near misses and window tests later added for these nine shapes, and the corrected Three Methods wording. Its correction paragraph records that the first follow-up did not pin every criterion, and it lists the results of the mechanical deletion pass. For these nine shapes, every operand deletion fails the suite except the equivalent ones it names: the Gap Three Methods colours, the Three-Line Strike strike colour, the `n2` null check, the window `i>=3`/`i>=4` guards and the rising-shape check inside Rising Three Methods. The Side-by-Side "both later candles white" rule (TA-Lib column) is now pinned on the third line as well as the middle line.
 
 The CI-wired `test:candlestick-catalogue`, `test:smart-chart-analysis` and `test:smart-chart-reader` scripts and the workspace typecheck pass for this commit (results in the commit message).
 
