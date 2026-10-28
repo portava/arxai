@@ -4,6 +4,9 @@ import {
   DailyMentorBriefingCard, MentorActionItems, MentorWarningCard, MentorHistory, isMentorWarningSession,
 } from "@/components/aiMentor";
 import type { MentorSession, MentorActionItem, SessionType } from "@/components/aiMentor";
+// readMentorJson throws on a non-2xx status, so a 401/403/500 is an error state
+// on the page rather than an empty "no session yet" result.
+import { MENTOR_LATEST_QUERY_KEY, mentorHistoryQueryKey, readMentorJson } from "@/lib/mentorApi";
 
 const TYPES: SessionType[] = [
   "DAILY_BRIEFING", "PRE_MARKET_GUIDANCE", "POST_TRADE_GUIDANCE",
@@ -11,19 +14,6 @@ const TYPES: SessionType[] = [
 ];
 
 const MENTOR_HISTORY_LIMIT = 20;
-// Reads a mentor API response and throws on a non-2xx status, so a 401/403/500
-// is an error state on the page rather than an empty "no session yet" result.
-async function readMentorJson<T>(r: Response, action: string): Promise<T> {
-  let body: unknown = null;
-  try { body = await r.json(); } catch { body = null; }
-  if (!r.ok) {
-    const err = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
-      ? (body as { error: string }).error
-      : null;
-    throw new Error(`${action} failed (HTTP ${r.status}${err ? `: ${err}` : ""})`);
-  }
-  return body as T;
-}
 
 export default function AiMentorPage() {
   const qc = useQueryClient();
@@ -31,11 +21,11 @@ export default function AiMentorPage() {
   type LatestResponse = { session: MentorSession | null; actionItems: MentorActionItem[] };
   type HistoryResponse = { sessions: MentorSession[] };
   const latest = useQuery<LatestResponse>({
-    queryKey: ["mentor-latest"],
+    queryKey: MENTOR_LATEST_QUERY_KEY,
     queryFn: async () => readMentorJson<LatestResponse>(await fetch("/api/mentor/sessions/latest"), "Loading the latest mentor session"),
   });
   const history = useQuery<HistoryResponse>({
-    queryKey: ["mentor-history"],
+    queryKey: mentorHistoryQueryKey(MENTOR_HISTORY_LIMIT),
     queryFn: async () => readMentorJson<HistoryResponse>(await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`), "Loading mentor history"),
   });
 
@@ -65,11 +55,13 @@ export default function AiMentorPage() {
 
   // Auto-generate a briefing on first visit if none exists. This runs at most
   // once per page visit: a failed or empty generation is shown as such, and
-  // further attempts are the user's choice (the buttons above).
+  // further attempts are the user's choice (the buttons above). Only an
+  // explicit `session: null` from the server means "none exists"; a body
+  // without a session field is not that answer.
   const autoGenerateTried = useRef(false);
   useEffect(() => {
     if (autoGenerateTried.current) return;
-    if (latest.isSuccess && latest.data?.session == null && !generate.isPending) {
+    if (latest.isSuccess && latest.data?.session === null && !generate.isPending) {
       autoGenerateTried.current = true;
       generate.mutate(undefined);
     }

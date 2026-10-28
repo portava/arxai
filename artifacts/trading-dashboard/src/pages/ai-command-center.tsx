@@ -46,6 +46,7 @@ import {
   type MentorActionItem,
   type MentorSession,
 } from "@/components/aiMentor";
+import { MENTOR_LATEST_QUERY_KEY, mentorHistoryQueryKey, readMentorJson } from "@/lib/mentorApi";
 
 // Ruby Command Center — 4-tab, user-facing surface.
 //
@@ -181,17 +182,19 @@ function ChatTab() {
   const { name } = useAssistantName();
   const qc = useQueryClient();
 
-  const latest = useQuery<{
-    session: MentorSession | null;
-    actionItems: MentorActionItem[];
-  }>({
-    queryKey: ["mentor-latest"],
-    queryFn: async () => (await fetch("/api/mentor/sessions/latest")).json(),
+  // Same cache entries as /ai-mentor: a non-2xx read throws, so a failed read
+  // is an error here and there, never an empty "no session yet" answer.
+  type LatestResponse = { session: MentorSession | null; actionItems: MentorActionItem[] };
+  type HistoryResponse = { sessions: MentorSession[] };
+  const latest = useQuery<LatestResponse>({
+    queryKey: MENTOR_LATEST_QUERY_KEY,
+    queryFn: async () => readMentorJson<LatestResponse>(await fetch("/api/mentor/sessions/latest"), "Loading the latest mentor session"),
   });
-  const history = useQuery<{ sessions: MentorSession[] }>({
-    queryKey: ["mentor-history"],
-    queryFn: async () => (await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`)).json(),
+  const history = useQuery<HistoryResponse>({
+    queryKey: mentorHistoryQueryKey(MENTOR_HISTORY_LIMIT),
+    queryFn: async () => readMentorJson<HistoryResponse>(await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`), "Loading mentor history"),
   });
+  const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
 
   const updateStatus = useMutation({
     mutationFn: async ({
@@ -257,6 +260,12 @@ function ChatTab() {
       {/* Latest mentor briefing — treated as Ruby's most recent saved chat */}
       {latest.isLoading ? (
         <Skeleton className="h-40 w-full" />
+      ) : latest.isError ? (
+        <Card className="rounded-2xl border-destructive/40 bg-card">
+          <CardContent className="p-5 text-sm text-destructive" role="alert" data-testid="chat-mentor-latest-error">
+            Could not load your latest mentor briefing, so whether one exists is unknown. {errorMessage(latest.error)}
+          </CardContent>
+        </Card>
       ) : session ? (
         <>
           <MentorWarningCard session={session} />
@@ -298,6 +307,10 @@ function ChatTab() {
         </h3>
         {history.isLoading ? (
           <Skeleton className="h-32 w-full" />
+        ) : history.isError ? (
+          <p className="text-xs text-destructive" role="alert" data-testid="chat-mentor-history-error">
+            Could not load your recent mentor sessions. {errorMessage(history.error)}
+          </p>
         ) : (
           <MentorHistory sessions={history.data?.sessions ?? []} pageLimit={MENTOR_HISTORY_LIMIT} />
         )}
