@@ -152,11 +152,11 @@ export default function LiveAiAssistPage() {
         <p className="text-sm text-muted-foreground">{name} analyzes the selected market on the live feed. Review the setup, then approve to submit a live-intent. Your risk caps apply.</p>
       </div>
 
-      <div className="grid lg:grid-cols-[440px_1fr] gap-4">
-        <div className="space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-[440px_minmax(0,1fr)] gap-4">
+        <div className="min-w-0 space-y-3">
           <Card>
             <CardHeader>
-              <CardTitle className="flex justify-between items-center text-sm">
+              <CardTitle className="flex flex-wrap justify-between items-center gap-2 text-sm">
                 <span>AI Trade Card · M15</span>
                 <SmartChartSymbolSelect symbol={symbol} onSymbolChange={setChartSymbol} label="Market" testId="ai-symbol-select" />
               </CardTitle>

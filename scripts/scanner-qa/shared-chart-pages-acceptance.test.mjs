@@ -11,12 +11,22 @@ function helper(name) {
 }
 const completed=vm.runInNewContext('('+helper('completedSeries')+')');
 const classify=vm.runInNewContext('('+helper('classifyWrite')+')');
-const expected={symbol:'GBPUSD',timeframe:'M5',source:'offline_fixture',canonical:[
+const matchesRequest=vm.runInNewContext('('+helper('matchesRequest')+')',{URLSearchParams});
+const fitsViewport=vm.runInNewContext('('+helper('fitsViewportWidth')+')');
+const expected={symbol:'GBPUSD',timeframe:'M5',source:'offline_fixture',requestPath:'/api/chart/candles',requestQuery:'?symbol=GBPUSD&timeframe=M5&limit=300',canonical:[
   {time:100,open:1,high:3,low:.5,close:2},{time:400,open:2,high:4,low:1,close:3},
 ]};
 const context={symbol:'GBPUSD',intervalSeconds:300};
 const current=()=>({state:{symbol:'GBPUSD',intervalSeconds:300,style:'candles',feed:{source:'offline_fixture'},barCount:2},
   data:{canonical:structuredClone(expected.canonical),display:structuredClone(expected.canonical)}});
+
+test('visible intersection and clipped document cannot hide an overflowing canvas or control',()=>{
+  assert.equal(fitsViewport({left:25,right:403.609375},390),false); // Actual AI Assist mobile failure.
+  assert.equal(fitsViewport({left:25,right:365},390),true);
+  assert.equal(fitsViewport({left:-1,right:391},390),true);
+  for(const bounds of [{left:-1.01,right:365},{left:25,right:391.01},{left:25,right:25},{left:NaN,right:365},{left:25,right:Infinity},null])assert.equal(fitsViewport(bounds,390),false);
+  for(const width of [0,-1,NaN,Infinity])assert.equal(fitsViewport({left:25,right:365},width),false);
+});
 
 test('static server admits exactly the four extra chart routes, not API, nested or arbitrary pages',()=>{
   assert.deepEqual(SHARED_CHART_PAGE_PATHS,['/live-chart','/live-manual','/live-ai-assist','/live-ai-auto-test']);
@@ -44,15 +54,15 @@ test('context changes and an empty canvas never pass with matching arrays',()=>{
   assert.equal(completed(actual,{...expected,canonical:[]},context),false);
 });
 test('new-page response acquisition rejects a matching response from the preceding route',async()=>{
-  let now=0,reads=0;const wait=vm.runInNewContext('('+helper('expectedResponse')+')',{Date:{now:()=>now}});
+  let now=0,reads=0;const wait=vm.runInNewContext('('+helper('expectedResponse')+')',{Date:{now:()=>now},matchesRequest});
   const fresh={...expected,source:'fresh'};
   const page={evaluate:async()=>({candleResponses:++reads===3?[expected,fresh]:[expected]}),waitForTimeout:async ms=>{now+=ms;}};
-  assert.equal(await wait(page,'GBPUSD','M5',1,100),fresh);assert.equal(reads,3);
+  assert.equal(await wait(page,'GBPUSD','M5',300,1,100),fresh);assert.equal(reads,3);
 });
 test('a previous-page response or wrong interval times out instead of reusing cached authority',async()=>{
-  let now=0;const wait=vm.runInNewContext('('+helper('expectedResponse')+')',{Date:{now:()=>now}});
+  let now=0;const wait=vm.runInNewContext('('+helper('expectedResponse')+')',{Date:{now:()=>now},matchesRequest});
   const page={evaluate:async()=>({candleResponses:[expected,{...expected,timeframe:'H1'}]}),waitForTimeout:async ms=>{now+=ms;}};
-  await assert.rejects(wait(page,'GBPUSD','M5',1,50),/No current-page candle response/);assert.equal(now,50);
+  await assert.rejects(wait(page,'GBPUSD','M5',300,1,50),/No current-page candle response/);assert.equal(now,50);
 });
 test('actual browser predicate is synchronous and cannot pass on Promise truthiness',()=>{
   const body=source.match(/await page\.waitForFunction\((\(\{symbol,intervalSeconds,expected\}\)=>\{[^]*?)\n    \},\{symbol,intervalSeconds,expected\}/)?.[1]+'\n}';
@@ -77,4 +87,32 @@ test('only exact established nontrading background POSTs get that reporting cate
   assert.equal(classify({method:'POST',path:'/api/me/scalp/focus'}),'analysis');
   assert.equal(classify({method:'POST',path:'/api/me/scalp/focus/execute'}),'unclassified');
   assert.equal(classify({method:'GET',path:'/api/market-scanner/selected-market'}),'read');
+});
+
+test('chart response authority binds the requested limit before matching any displayed bars',async()=>{
+  const sidebar={...expected,requestQuery:'?symbol=GBPUSD&timeframe=M5&limit=200'};
+  assert.equal(matchesRequest(sidebar,'GBPUSD','M5',300),false);
+  assert.equal(matchesRequest(expected,'GBPUSD','M5',300),true);
+  for(const patch of [{requestPath:'/api/other'},{requestQuery:'?symbol=EURUSD&timeframe=M5&limit=300'},{requestQuery:'?symbol=GBPUSD&timeframe=M15&limit=300'},{requestQuery:undefined}])assert.equal(matchesRequest({...expected,...patch},'GBPUSD','M5',300),false);
+  let now=0;const wait=vm.runInNewContext('('+helper('expectedResponse')+')',{Date:{now:()=>now},matchesRequest});
+  const page={evaluate:async()=>({candleResponses:[expected,sidebar]}),waitForTimeout:async ms=>{now+=ms;}};
+  // Same source/symbol/interval, even identical arrays, cannot make the newer
+  // unrelated200 request replace the Native300 authority.
+  assert.equal(await wait(page,'GBPUSD','M5',300,0,50),expected);
+  page.evaluate=async()=>({candleResponses:[sidebar]});
+  await assert.rejects(wait(page,'GBPUSD','M5',300,0,50),/No current-page candle response/);
+});
+
+test('fixture roles default to USER and reject anything beyond explicit USER or ADMIN',()=>{
+  const setup=readFileSync(new URL('./shared-chart-setup.js',import.meta.url),'utf8');
+  const body=setup.match(/ function resolveFixtureRole\(value\) \{[^]*?\n \}/)?.[0];assert.ok(body);
+  const resolve=vm.runInNewContext('('+body+')');
+  assert.equal(resolve(undefined),'USER');assert.equal(resolve('USER'),'USER');assert.equal(resolve('ADMIN'),'ADMIN');
+  for(const role of [null,'OWNER','admin','',true,{},['ADMIN']])assert.throws(()=>resolve(role),/must be USER or ADMIN/);
+});
+test('secondary-page role binding refuses mismatched identity or enabled trading permissions',()=>{
+  const read=vm.runInNewContext('('+helper('readOnlyAdminFixture')+')');
+  const identity={user:{role:'ADMIN'}},mode={role:'ADMIN',isAdmin:true,liveExecutionArmed:false,userCanManualTrade:false,userCanAutoTrade:false,userSharedMasterAssignment:{attached:false},userAllocation:{hasAllocation:false,currentBalance:0},userFrozenStatus:{isFrozen:true},aiSleeveStatus:{enabled:false,autoEnabled:false}};
+  assert.equal(read(identity,mode),true);assert.equal(read({user:{role:'USER'}},mode),false);
+  for(const patch of [{role:'USER'},{isAdmin:false},{liveExecutionArmed:true},{userCanManualTrade:true},{userCanAutoTrade:true},{userSharedMasterAssignment:{attached:true}},{userAllocation:{hasAllocation:true,currentBalance:1}},{userFrozenStatus:{isFrozen:false}},{aiSleeveStatus:{enabled:true,autoEnabled:true}}])assert.equal(read(identity,{...mode,...patch}),false);
 });

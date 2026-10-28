@@ -4,6 +4,7 @@ async page => {
   const report={passed:false,checks:[],pages:[],screenshots:[],failure:null,limitations:[
     'Actual routes/providers in an isolated production fixture; not the deployable bundle.',
     'Synthetic historical candles and unavailable truth; no active analysis or broker acceptance.',
+    'Synthetic ADMIN identity opens the restricted tester routes; trading is frozen/unarmed/unallocated. USER route containment is a separate observation.',
     'No order, confirmation, approval or test-loop control is clicked. Server gates are not exercised.',
     'Enabled review/test controls are not claimed to be disabled trading gates.',
     'Unknown API reads and their console errors remain recorded; no latency or hardware paint claim.',
@@ -23,10 +24,27 @@ async page => {
     return JSON.stringify(data.canonical)===JSON.stringify(expected.canonical)
       &&JSON.stringify(data.display.map(bar))===JSON.stringify(expected.canonical);
   }
-  async function expectedResponse(page,symbol,timeframe,offset,deadline) {
+  function readOnlyAdminFixture(identity,mode) {
+    return identity?.user?.role==='ADMIN'&&mode?.role==='ADMIN'&&mode.isAdmin===true
+      &&mode.liveExecutionArmed===false&&mode.userCanManualTrade===false&&mode.userCanAutoTrade===false
+      &&mode.userSharedMasterAssignment?.attached===false&&mode.userAllocation?.hasAllocation===false
+      &&mode.userAllocation.currentBalance===0&&mode.userFrozenStatus?.isFrozen===true
+      &&mode.aiSleeveStatus?.enabled===false&&mode.aiSleeveStatus?.autoEnabled===false;
+  }
+  function fitsViewportWidth(bounds,viewportWidth) {
+    return Number.isFinite(viewportWidth)&&viewportWidth>0
+      &&Number.isFinite(bounds?.left)&&Number.isFinite(bounds?.right)
+      &&bounds.right>bounds.left&&bounds.left>=-1&&bounds.right<=viewportWidth+1;
+  }
+  function matchesRequest(response,symbol,timeframe,limit) {
+    if(response?.requestPath!=='/api/chart/candles'||typeof response.requestQuery!=='string'||response.symbol!==symbol||response.timeframe!==timeframe)return false;
+    const query=new URLSearchParams(response.requestQuery);
+    return query.get('symbol')===symbol&&query.get('timeframe')===timeframe&&query.get('limit')===String(limit);
+  }
+  async function expectedResponse(page,symbol,timeframe,limit,offset,deadline) {
     while(Date.now()<deadline) {
       const value=await page.evaluate(()=>window.__readFixtureLog());
-      const expected=value.candleResponses.slice(offset).filter(x=>x.symbol===symbol&&x.timeframe===timeframe).at(-1);
+      const expected=value.candleResponses.slice(offset).filter(x=>matchesRequest(x,symbol,timeframe,limit)).at(-1);
       if(expected)return expected;
       const remaining=deadline-Date.now();
       if(remaining>0)await page.waitForTimeout(Math.min(25,remaining));
@@ -44,7 +62,10 @@ async page => {
   }
   async function waitSeries(symbol,timeframe,intervalSeconds,offset,entry) {
     const deadline=Date.now()+15000;
-    const expected=await expectedResponse(page,symbol,timeframe,offset,deadline);
+    // These four routes use ARXNativeChart's explicit default request limit300.
+    // Trade-card truth separately requests200; it cannot supply chart authority.
+    const requestLimit=300;
+    const expected=await expectedResponse(page,symbol,timeframe,requestLimit,offset,deadline);
     // Primitive synchronous result only. The installed runner can treat a
     // Promise returned by an async predicate as an immediate truthy success.
     await page.waitForFunction(({symbol,intervalSeconds,expected})=>{
@@ -58,7 +79,7 @@ async page => {
     },{symbol,intervalSeconds,expected},{timeout:Math.max(1,deadline-Date.now())});
     await frames();
     const current=await snapshot();
-    const latest=(await log()).candleResponses.slice(offset).filter(x=>x.symbol===symbol&&x.timeframe===timeframe).at(-1);
+    const latest=(await log()).candleResponses.slice(offset).filter(x=>matchesRequest(x,symbol,timeframe,requestLimit)).at(-1);
     check(completedSeries(current,latest,{symbol,intervalSeconds}),entry.route+': exact context, canonical and displayed bars after two frames: '+symbol+' '+timeframe);
     check(current.state.canvasIds.length>0&&current.state.bounds.width>0&&current.state.bounds.height>0,entry.route+': native canvas is mounted with dimensions');
     check(await page.locator('#tv-attr-logo').count()===0,entry.route+': completed chart has no TradingView logo');
@@ -67,21 +88,26 @@ async page => {
   }
   async function screenshot(entry,label) {
     const canvas=page.getByTestId('arx-native-canvas');await canvas.scrollIntoViewIfNeeded();await frames();
-    const intersection=await canvas.evaluate(element=>{const b=element.getBoundingClientRect();return{width:Math.max(0,Math.min(b.right,innerWidth)-Math.max(b.left,0)),height:Math.max(0,Math.min(b.bottom,innerHeight)-Math.max(b.top,0))};});
+    const geometry=await canvas.evaluate(element=>{const b=element.getBoundingClientRect();return{left:b.left,right:b.right,viewportWidth:innerWidth,intersection:{width:Math.max(0,Math.min(b.right,innerWidth)-Math.max(b.left,0)),height:Math.max(0,Math.min(b.bottom,innerHeight)-Math.max(b.top,0))}};});
+    const intersection=geometry.intersection;
     check(intersection.width>=100&&intersection.height>=100,entry.route+': '+label+' screenshot includes at least 100 by 100 pixels of the chart');
+    check(fitsViewportWidth(geometry,geometry.viewportWidth),entry.route+': '+label+' canvas left and right edges fit the viewport within one pixel');
     const path=prefix+'-'+entry.route.slice(1)+'-'+label+'.png';await page.screenshot({path,fullPage:false});
-    entry.screenshots.push({path,intersection});report.screenshots.push(path);
+    entry.screenshots.push({path,intersection,geometry});report.screenshots.push(path);
   }
   try {
     const origin=new URL(page.url()).origin;
     check(new URL(origin).hostname==='127.0.0.1','Page acceptance is loopback only');
     const initialLog=await log();check(Array.isArray(initialLog.candleResponses),'Offline interception and response log are installed');
+    report.fixtureRole=initialLog.fixtureRole;check(report.fixtureRole==='ADMIN','Secondary-page suite explicitly uses the offline ADMIN fixture');
     for(const route of routes) {
       const entry={route,snapshots:[],screenshots:[],passed:false};report.pages.push(entry);
       const before=await log(),offset=before.candleResponses.length;entry.requestOffset=before.requests.length;entry.responseOffset=offset;
       await page.setViewportSize({width:1440,height:1100});await page.goto(origin+route);
       await page.getByTestId('arx-native-chart').waitFor({timeout:15000});
       check(new URL(page.url()).pathname===route,route+': real dashboard route loaded');
+      const [identity,mode]=await page.evaluate(()=>Promise.all(['/api/me','/api/me/account-mode'].map(async path=>{const response=await fetch(path);if(!response.ok)throw Error('Missing role fixture');return response.json();})));
+      check(readOnlyAdminFixture(identity,mode),route+': ADMIN role is consistent while trading remains frozen, unarmed and unallocated');
       const build=await page.evaluate(async()=>{const r=await fetch('/arx-scanner-qa-build-info.json');if(!r.ok)throw Error('Missing build metadata');return r.json();});
       const runtimeId=await page.evaluate(()=>window.__arxScannerQaBuildId);
       check(typeof runtimeId==='string'&&runtimeId===build.buildId,route+': executing bundle matches metadata');
@@ -94,7 +120,7 @@ async page => {
       const chart=page.getByTestId('arx-native-chart');
       await chart.getByTestId('arx-native-tf-M15').click();
       const initial=await waitSeries('EURUSD','M15',900,offset,entry);
-      const selector=route==='/live-ai-assist'?page.getByTestId('ai-symbol-select'):page.getByLabel('Chart market',{exact:true});
+      const selector=route==='/live-ai-assist'?page.getByTestId('ai-symbol-select'):page.getByRole('combobox',{name:'Chart market',exact:true});
       await selector.selectOption('GBPUSD');
       const selected=await waitSeries('GBPUSD','M15',900,offset,entry);
       check(initial.state.adapterId===selected.state.adapterId&&JSON.stringify(initial.state.canvasIds)===JSON.stringify(selected.state.canvasIds),route+': market selection retains engine and canvas');
@@ -140,6 +166,11 @@ async page => {
       check(postDisclosure.state.adapterId===preDisclosure.state.adapterId&&postDisclosure.state.candlesId===preDisclosure.state.candlesId&&JSON.stringify(postDisclosure.data)===JSON.stringify(preDisclosure.data),route+': mobile disclosure preserves engine and all series data');
       check(!await chart.getByLabel('Chart style',{exact:true}).isVisible()&&await chart.getByRole('button',{name:'Zoom in chart',exact:true}).isVisible()&&await chart.getByRole('button',{name:'Pan to earlier candles',exact:true}).isVisible(),route+': mobile navigation stays visible with advanced controls closed');
       check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),route+': mobile has no horizontal overflow');
+      const controls=await chart.evaluate(element=>({viewportWidth:innerWidth,bounds:[...element.querySelectorAll('button,select,input')].filter(control=>control.getClientRects().length>0).map(control=>{const b=control.getBoundingClientRect();return{left:b.left,right:b.right,label:control.getAttribute('aria-label')??control.textContent};})}));
+      check(controls.bounds.length>0&&controls.bounds.every(bounds=>fitsViewportWidth(bounds,controls.viewportWidth)),route+': mobile visible chart controls fit the viewport');
+      const selectorBounds=await selector.evaluate(element=>{const b=element.getBoundingClientRect();return{left:b.left,right:b.right,viewportWidth:innerWidth};});
+      check(fitsViewportWidth(selectorBounds,selectorBounds.viewportWidth),route+': mobile market selector fits the viewport');
+      entry.mobileGeometry={controls,selector:selectorBounds};
       await screenshot(entry,'mobile');await waitSeries('GBPUSD','M5',300,offset,entry);
       entry.requests=(await log()).requests.slice(entry.requestOffset);entry.passed=true;
     }
