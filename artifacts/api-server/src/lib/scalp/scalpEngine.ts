@@ -32,6 +32,7 @@ import type {
   TargetRealityCheck,
 } from "./scalpTypes.js";
 import { blindFlameRead, finalizeScalpVerdict, readFlame } from "./flameRead.js";
+import { resolveScalpPricePrecision } from "./scalpPrecision.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { clampLotToStep, lotForRisk } from "@workspace/domain/risk";
 
@@ -182,7 +183,7 @@ function rejectResult(
     minLot: num(input.spec.minLot) ? input.spec.minLot : null,
     maxLot: num(input.spec.maxLot) ? input.spec.maxLot : null,
     lotStep: num(input.spec.lotStep) ? input.spec.lotStep : null,
-    digits: num(input.spec.digits) ? input.spec.digits : null,
+    digits: resolveScalpPricePrecision(input.spec)?.digits ?? null,
     targetProfitAmount: num(input.targetProfitAmount) ? input.targetProfitAmount : null,
     estimatedProfitMainTP: null,
     estimatedRiskAmount: null,
@@ -295,8 +296,6 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   }
 
   const price = input.currentPrice;
-  const digits = num(spec.digits) ? spec.digits : 2;
-  const point = num(spec.point) && spec.point > 0 ? spec.point : Math.pow(10, -digits);
 
   // ── Specs needed for honest sizing.
   const accountCurrency = currencyCode(input.account.currency);
@@ -324,6 +323,18 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     });
   }
   const notionalPerLot = notionalPerPricePerLot(spec, accountCurrency);
+  // Broker price precision (digits / point size). Unknown → no levels: never
+  // round entry/stop/target to an invented number of decimals.
+  const precision = resolveScalpPricePrecision(spec);
+  if (!precision) {
+    return rejectResult(input, "AWAITING_DATA", `${DEFAULT_ASSISTANT_NAME} needs live symbol specs before building a scalp for this market.`, {
+      canWatch: true,
+      plain: `The broker has not reported this market's price precision (digits or point size), so ${DEFAULT_ASSISTANT_NAME} cannot place the entry, stop and take-profit yet.`,
+      rejectReason: "NO_SPECS",
+    });
+  }
+  const digits = precision.digits;
+  const point = precision.point;
   const minLot = spec.minLot;
   const maxLot = spec.maxLot;
   const lotStep = spec.lotStep;

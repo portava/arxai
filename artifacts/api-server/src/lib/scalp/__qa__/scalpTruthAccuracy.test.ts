@@ -270,3 +270,69 @@ for (const side of ["BUY", "SELL"] as const) {
     assert.ok(ready >= 1, "at least one fixture reaches READY");
   });
 }
+
+// ── Finding: engine fell back to 2 digits, manage side to 5 ────────────────
+
+function eurUsdNoDigitsInput(spec: Partial<ScalpSpecInput>): ScalpEngineInput {
+  return usdJpyInput({
+    symbol: "EURUSD",
+    currentPrice: 1.08523,
+    spec: usdJpySpec({ tickSize: 0.00001, tickValue: 1, profitCurrency: "USD", displayName: "EURUSD", ...spec }),
+    scanner: usdJpyScanner({ entry: 1.08523, stopLoss: 1.08323, takeProfit: 1.08923, entryZone: { low: 1.08503, high: 1.08543 } }),
+  });
+}
+
+function decimals(v: number): number {
+  const s = String(v);
+  return s.includes(".") ? s.split(".")[1]!.length : 0;
+}
+
+test("precision: no digits and no point → no levels are invented", () => {
+  const r = evaluateScalp(eurUsdNoDigitsInput({ digits: null, point: null }));
+  // Before the fix: digits fell back to 2, so the card read "SL 1.08, TP 1.09"
+  // and the min-stop floor became 0.10 (1,000 pips).
+  assert.equal(r.digits, null);
+  assert.equal(r.stopLoss, null);
+  assert.equal(r.takeProfit.main, null);
+  assert.equal(r.entryZone, null);
+  assert.equal(r.canBuildTrade, false);
+  assert.equal(r.status, "AWAITING_DATA");
+  assert.equal(r.rejectReason, "NO_SPECS");
+  assert.match(r.plainEnglishReason, /precision/i);
+});
+
+test("precision: digits missing but point reported → digits come from the point size", () => {
+  const r = evaluateScalp(eurUsdNoDigitsInput({ digits: null, point: 0.00001 }));
+  assert.equal(r.digits, 5);
+  assert.equal(r.status, "READY");
+  assert.ok(r.stopLoss != null && Math.abs(r.stopLoss - 1.08323) < 1e-9, `stop at 5 dp, got ${r.stopLoss}`);
+  assert.ok(decimals(r.stopLoss!) > 2);
+});
+
+test("precision: entry and manage sides resolve the same precision from one spec", async () => {
+  const { resolveScalpPricePrecision } = await import("../scalpPrecision.js");
+  const { readManageFlame } = await import("../scalpManageService.js");
+  for (const spec of [
+    { digits: null, point: 0.00001 },
+    { digits: 3, point: null },
+    { digits: null, point: 0.25 },
+    { digits: null, point: null },
+  ]) {
+    const full = usdJpySpec({ tickSize: 0.00001, tickValue: 1, ...spec });
+    const p = resolveScalpPricePrecision(full);
+    const flame = readManageFlame("BUY", null, full, null, {
+      averageEntry: 1.08523, currentPrice: 1.08523, stopLoss: 1.08323, takeProfit: 1.08923,
+    }, "BALANCED");
+    const quoted = /through ([0-9.]+)/.exec(flame.invalidationIdea ?? "")?.[1];
+    assert.ok(quoted, `manage read quotes the invalidation price (${JSON.stringify(spec)})`);
+    if (p) {
+      assert.equal(decimals(Number(quoted)) <= p.digits, true);
+      assert.equal(quoted!.split(".")[1]?.length ?? 0, p.digits, `manage uses the engine's ${p.digits} digits for ${JSON.stringify(spec)}`);
+    } else {
+      // Unknown precision: the broker's price as reported, not padded to an invented 5 dp.
+      assert.equal(quoted, "1.08323");
+    }
+  }
+  assert.deepEqual(resolveScalpPricePrecision({ digits: null, point: 0.25 }), { digits: 2, point: 0.25 });
+  assert.equal(resolveScalpPricePrecision({ digits: null, point: null }), null);
+});

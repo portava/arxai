@@ -21,6 +21,7 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { db, scalpFlameLockoutsTable } from "@workspace/db";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { readFlame, finalizeScalpVerdict } from "./flameRead.js";
+import { resolveScalpPricePrecision } from "./scalpPrecision.js";
 import { getSymbolInfo } from "../instruments/index.js";
 import {
   assembleBasket,
@@ -156,11 +157,13 @@ async function loadOpenPositions(
   return { positions, accountMode };
 }
 
-/** Point size from broker spec digits when the spec doesn't carry `point`. */
+/**
+ * Point size for the flame read's internal floors: the shared broker
+ * precision (same authority as the entry engine), else a small internal floor.
+ * The floor is never used to format a price.
+ */
 function pointFor(spec: ScalpSpecInput): number {
-  if (num(spec.point) && spec.point > 0) return spec.point;
-  if (num(spec.digits) && spec.digits >= 0) return Math.pow(10, -spec.digits);
-  return 0.0001;
+  return resolveScalpPricePrecision(spec)?.point ?? 0.0001;
 }
 
 interface BasketGeometry {
@@ -171,12 +174,13 @@ interface BasketGeometry {
 }
 
 /**
+ * (Exported for the truth-accuracy regression test.)
  * Build a direction-aligned flame read for an OPEN position. Unlike the entry
  * engine (which derives direction from the scanner), the manage side always
  * reads the flame in the basket's OWN direction so exit/add-on guidance reflects
  * the side the user is actually holding. Real candles or an honest blind read.
  */
-function readManageFlame(
+export function readManageFlame(
   direction: ScalpDirection,
   candles: ScalpCandle[] | null,
   spec: ScalpSpecInput,
@@ -185,7 +189,8 @@ function readManageFlame(
   personality: RiskPersonality,
 ): ScalpFlameRead {
   const point = pointFor(spec);
-  const digits = num(spec.digits) ? spec.digits : 5;
+  // Same precision as the entry engine; null (unknown) → prices as reported.
+  const digits = resolveScalpPricePrecision(spec)?.digits ?? null;
   const spreadPrice = num(spec.spreadPoints) ? spec.spreadPoints * point : 0;
   const sign = direction === "BUY" ? 1 : -1;
 
