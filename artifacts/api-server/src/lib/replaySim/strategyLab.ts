@@ -107,17 +107,27 @@ async function runExperimentBody(
     totalNet += report.net_pnl; totalTrades += report.total_trades; totalWins += report.wins;
   }
   const aggregateWinRate = totalTrades > 0 ? +((totalWins / totalTrades) * 100).toFixed(2) : 0;
-  const ranking = [...perScenario].sort((a, b) => b.netPnl - a.netPnl);
+  // A scenario that was not found was never replayed: its placeholder row
+  // (replayRunId "", net 0) stays in perScenario, marked as such, but has no
+  // result to rank, so it is never ranked or named best/worst.
+  const notReplayed = perScenario.filter(p => p.replayRunId === "").map(p => p.scenarioId);
+  const ranking = perScenario.filter(p => p.replayRunId !== "").sort((a, b) => b.netPnl - a.netPnl);
   const recommendations: { type: string; message: string }[] = [];
   if (perScenario.every(p => p.promote)) recommendations.push({ type: "PROMOTE_ALL", message: "Setup promoted across every scenario in this experiment (REPLAY-only evidence)." });
   if (perScenario.every(p => p.review))  recommendations.push({ type: "REVIEW_ALL",  message: "Setup flagged for REVIEW across every scenario." });
   if (ranking[0])                        recommendations.push({ type: "BEST_SCENARIO", message: `Best scenario: ${ranking[0].scenarioId} with net ${ranking[0].netPnl}` });
   if (ranking[ranking.length - 1])       recommendations.push({ type: "WORST_SCENARIO", message: `Worst scenario: ${ranking[ranking.length - 1].scenarioId} with net ${ranking[ranking.length - 1].netPnl}` });
+  if (notReplayed.length > 0) {
+    recommendations.push({
+      type: "NOT_REPLAYED",
+      message: `${notReplayed.length} scenario${notReplayed.length === 1 ? " was" : "s were"} not found and ${notReplayed.length === 1 ? "was" : "were"} not replayed: ${notReplayed.join(", ")}. ${notReplayed.length === 1 ? "It has" : "They have"} no result and ${notReplayed.length === 1 ? "is" : "are"} not ranked.`,
+    });
+  }
 
   const summary = {
     scenariosRun: perScenario.length,
     totalTrades, totalNet: +totalNet.toFixed(4), aggregateWinRate,
-    perScenario, ranking, recommendations,
+    perScenario, ranking, notReplayed, recommendations,
     safetyNotes: [
       "REPLAY_ONLY: experiment never placed live trades.",
       "Strategy Lab does not modify Build II playbook entries automatically.",

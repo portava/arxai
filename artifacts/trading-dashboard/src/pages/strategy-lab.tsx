@@ -10,10 +10,53 @@ interface Experiment {
   experimentId: string; title: string; status: string; symbol: string;
   resultSummary: {
     scenariosRun?: number; totalTrades?: number; totalNet?: number; aggregateWinRate?: number;
-    ranking?: { scenarioId: string; netPnl: number; winRate: number }[];
+    ranking?: { scenarioId: string; netPnl: number; winRate: number; trades?: number; replayRunId?: string }[];
     perScenario?: { scenarioId: string; replayRunId: string; trades: number }[];
+    /** Scenarios that were not found and not replayed (newer servers). */
+    notReplayed?: string[];
     recommendations?: { type: string; message: string }[];
   };
+}
+
+type RankingRow = { scenarioId: string; netPnl: number; winRateText: string };
+
+/**
+ * Ranking and recommendations as the card shows them. A scenario that was
+ * never replayed (replayRunId "") has no result: older stored summaries
+ * ranked its placeholder (net 0, wr 0%) and could name it best/worst, so it
+ * is listed separately and best/worst are re-read over replayed scenarios
+ * only. A scenario with zero trades has no win rate.
+ */
+export function strategyLabResults(summary: Experiment["resultSummary"]): {
+  rows: RankingRow[]; notReplayed: string[]; recommendations: { type: string; message: string }[];
+} {
+  const per = Array.isArray(summary?.perScenario) ? summary.perScenario : [];
+  const perById = new Map(per.map((p) => [p.scenarioId, p]));
+  const notReplayed = new Set<string>(Array.isArray(summary?.notReplayed) ? summary.notReplayed : []);
+  for (const p of per) if (p.replayRunId === "") notReplayed.add(p.scenarioId);
+  for (const r of summary?.ranking ?? []) if (r.replayRunId === "") notReplayed.add(r.scenarioId);
+  const replayedRanking = (summary?.ranking ?? []).filter((r) => !notReplayed.has(r.scenarioId));
+  const rows = replayedRanking.map((r) => {
+    const trades = isNum(r.trades) ? r.trades : perById.get(r.scenarioId)?.trades;
+    const winRateText = trades === 0 ? "no trades" : isNum(r.winRate) ? `wr ${r.winRate}%` : `wr ${DASH}`;
+    return { scenarioId: r.scenarioId, netPnl: r.netPnl, winRateText };
+  });
+  const stored = summary?.recommendations ?? [];
+  // A summary that ranked a never-replayed scenario (no notReplayed field)
+  // has best/worst lines that may name it; re-read them from the replayed rows.
+  const rerank = notReplayed.size > 0 && !Array.isArray(summary?.notReplayed);
+  const recommendations = stored.map((r) => {
+    if (!rerank || (r.type !== "BEST_SCENARIO" && r.type !== "WORST_SCENARIO")) return r;
+    const pick = r.type === "BEST_SCENARIO" ? replayedRanking[0] : replayedRanking[replayedRanking.length - 1];
+    const word = r.type === "BEST_SCENARIO" ? "Best" : "Worst";
+    return {
+      type: r.type,
+      message: pick
+        ? `${word} scenario: ${pick.scenarioId} with net ${pick.netPnl} (over replayed scenarios only)`
+        : `${word} scenario: none — no scenario in this experiment was replayed`,
+    };
+  });
+  return { rows, notReplayed: [...notReplayed], recommendations };
 }
 
 // The service stores PENDING → RUNNING → COMPLETED | FAILED (upper case).
@@ -101,18 +144,28 @@ export default function StrategyLab() {
                   <ExperimentStats summary={e.resultSummary} />
                 </div>
               )}
-              {(e.resultSummary?.ranking ?? []).length > 0 && (
-                <div className="mt-3 text-xs">
-                  <div className="font-semibold mb-1">Setup ranking</div>
-                  <ul className="space-y-0.5">{e.resultSummary.ranking!.map((r, i) => <li key={i}>#{i + 1} <span className="font-mono">{r.scenarioId.slice(0, 22)}…</span> — net {r.netPnl}, wr {r.winRate}%</li>)}</ul>
-                </div>
-              )}
-              {(e.resultSummary?.recommendations ?? []).length > 0 && (
-                <div className="mt-3 text-xs">
-                  <div className="font-semibold mb-1">Recommendations <span className="font-normal text-muted-foreground">(replay-based, sample size limited)</span></div>
-                  {e.resultSummary.recommendations!.map((r, i) => <div key={i}><span className="font-mono bg-muted px-1 mr-1 rounded">{r.type}</span>{r.message}</div>)}
-                </div>
-              )}
+              {(() => {
+                const res = strategyLabResults(e.resultSummary);
+                return (
+                  <>
+                    {(res.rows.length > 0 || res.notReplayed.length > 0) && (
+                      <div className="mt-3 text-xs" data-testid="strategy-lab-ranking">
+                        <div className="font-semibold mb-1">Setup ranking</div>
+                        <ul className="space-y-0.5">{res.rows.map((r, i) => <li key={i}>#{i + 1} <span className="font-mono">{r.scenarioId.slice(0, 22)}…</span> — net {r.netPnl}, {r.winRateText}</li>)}</ul>
+                        {res.notReplayed.length > 0 && (
+                          <div className="text-muted-foreground mt-1">Not replayed (scenario not found): <span className="font-mono">{res.notReplayed.join(", ")}</span> — no result, not ranked.</div>
+                        )}
+                      </div>
+                    )}
+                    {res.recommendations.length > 0 && (
+                      <div className="mt-3 text-xs" data-testid="strategy-lab-recommendations">
+                        <div className="font-semibold mb-1">Recommendations <span className="font-normal text-muted-foreground">(replay-based, sample size limited)</span></div>
+                        {res.recommendations.map((r, i) => <div key={i}><span className="font-mono bg-muted px-1 mr-1 rounded">{r.type}</span>{r.message}</div>)}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         ))}
