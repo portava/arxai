@@ -614,14 +614,25 @@ export async function computeRangeSummary(userId: number, range: RangeKey) {
   };
 }
 
-/** Read-only Build FF autopilot summary (last cycle, today's cycles). */
+/**
+ * Read-only Build FF autopilot summary (last cycle, today's cycles).
+ *
+ * "Today" is the UTC calendar day. Every cycle started today is counted: the
+ * counts used to be taken from the newest 50 cycles only, so at the default
+ * 60-second interval they stopped at about the last 50 minutes.
+ */
 export async function computeAutopilotSummary(userId: number) {
-  const recent = await db.select().from(autopilotCyclesTable)
+  const lastRows = await db.select().from(autopilotCyclesTable)
     .where(eq(autopilotCyclesTable.userId, userId))
-    .orderBy(desc(autopilotCyclesTable.id)).limit(50);
+    .orderBy(desc(autopilotCyclesTable.id)).limit(1);
   const today = new Date().toISOString().slice(0, 10);
-  const todayCycles = recent.filter(c => ymd(c.startedAt) === today);
-  const last = recent[0] ?? null;
+  const todayStart = new Date(`${today}T00:00:00.000Z`);
+  const todayCycles = await db.select().from(autopilotCyclesTable)
+    .where(and(
+      eq(autopilotCyclesTable.userId, userId),
+      gte(autopilotCyclesTable.startedAt, todayStart),
+    ));
+  const last = lastRows[0] ?? null;
   return {
     last_cycle: last ? {
       autopilot_cycle_id: last.autopilotCycleId,
@@ -634,6 +645,10 @@ export async function computeAutopilotSummary(userId: number) {
       debriefs_triggered: last.debriefsTriggered,
       learning_events_triggered: last.learningEventsTriggered,
     } : null,
+    today_utc: today,
+    today_basis: "UTC" as const,
+    /** false: no autopilot cycle started today, so every "today" count is 0 because nothing ran. */
+    ran_today: todayCycles.length > 0,
     cycles_today: todayCycles.length,
     paper_trades_opened_today: todayCycles.reduce((a, c) => a + c.paperTradesOpened, 0),
     paper_trades_closed_today: todayCycles.reduce((a, c) => a + c.paperTradesClosed, 0),

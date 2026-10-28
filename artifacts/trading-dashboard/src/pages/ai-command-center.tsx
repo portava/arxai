@@ -508,6 +508,7 @@ function MemoryTab() {
   if (cc.isLoading) return <Skeleton className="h-96 w-full" />;
   const c = cc.data?.commandCenter;
   const a = cc.data?.autopilot;
+  const autopilotLoaded = a != null && typeof a.cycles_today === "number";
   if (!c) {
     return (
       <Card className="rounded-2xl border-border bg-card">
@@ -750,28 +751,39 @@ function MemoryTab() {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* "Today" is the UTC day. A missing summary is "could not be
+              loaded", never a row of zeros. */}
           <div>
-            <div className="text-txt-secondary text-xs">Cycles today</div>
-            <div className="font-bold">{a?.cycles_today ?? 0}</div>
+            <div className="text-txt-secondary text-xs">Cycles today (UTC)</div>
+            <div className="font-bold" data-testid="autopilot-cycles-today">{autopilotLoaded ? a.cycles_today : "—"}</div>
           </div>
           <div>
-            <div className="text-txt-secondary text-xs">Opened today</div>
+            <div className="text-txt-secondary text-xs">Opened today (UTC)</div>
             <div className="font-bold">
-              {a?.paper_trades_opened_today ?? 0}
+              {autopilotLoaded ? a.paper_trades_opened_today : "—"}
             </div>
           </div>
           <div>
-            <div className="text-txt-secondary text-xs">Closed today</div>
+            <div className="text-txt-secondary text-xs">Closed today (UTC)</div>
             <div className="font-bold">
-              {a?.paper_trades_closed_today ?? 0}
+              {autopilotLoaded ? a.paper_trades_closed_today : "—"}
             </div>
           </div>
           <div>
             <div className="text-txt-secondary text-xs">
-              Safety blocks today
+              Safety blocks today (UTC)
             </div>
-            <div className="font-bold">{a?.safety_blocks_today ?? 0}</div>
+            <div className="font-bold">{autopilotLoaded ? a.safety_blocks_today : "—"}</div>
           </div>
+          {!autopilotLoaded ? (
+            <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary" data-testid="autopilot-today-note">
+              The autopilot summary could not be loaded.
+            </div>
+          ) : a.cycles_today === 0 ? (
+            <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary" data-testid="autopilot-today-note">
+              No autopilot cycle has run today (UTC), so it has opened, closed and blocked nothing today.
+            </div>
+          ) : null}
           {a?.last_cycle && (
             <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2">
               Last cycle: {a.last_cycle.autopilot_cycle_id} —{" "}

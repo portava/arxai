@@ -33,7 +33,7 @@ mock.module("../../learning/scopedMemory.js", {
   namedExports: { listOwnEdges: async () => [], listOwnMistakes: async () => [] },
 });
 
-const { computeCalendarMonth, computeDailyStats, computeDayDetail } = await import("../aggregator.js");
+const { computeAutopilotSummary, computeCalendarMonth, computeDailyStats, computeDayDetail } = await import("../aggregator.js");
 
 function order(over: Record<string, unknown>) {
   return {
@@ -98,4 +98,29 @@ test("the Trading Calendar names its ledger (simulated orders) and says hand-log
   assert.match(String(cal.source_note), /simulated orders/i);
   assert.match(String(cal.source_note), /My Performance/);
   assert.match(String(cal.source_note), /not included/i);
+});
+
+test("autopilot 'today' counts every cycle started today (UTC), not only the last 50", async () => {
+  const now = Date.now();
+  rows.set(database.autopilotCyclesTable, Array.from({ length: 120 }, (_, i) => ({
+    id: 120 - i, autopilotCycleId: `cyc-${120 - i}`, userId: 7, status: "COMPLETED",
+    startedAt: new Date(now - i * 1000), finishedAt: new Date(now - i * 1000 + 500),
+    paperTradesOpened: 1, paperTradesRejected: 1, paperTradesClosed: 1,
+    debriefsTriggered: 0, learningEventsTriggered: 0,
+  })));
+  const s = await computeAutopilotSummary(7) as Record<string, unknown>;
+  assert.equal(s.cycles_today, 120);
+  assert.equal(s.paper_trades_opened_today, 120);
+  assert.equal(s.paper_trades_closed_today, 120);
+  assert.equal(s.safety_blocks_today, 120);
+  assert.equal((s.last_cycle as { autopilot_cycle_id: string }).autopilot_cycle_id, "cyc-120");
+  assert.equal(s.today_basis, "UTC");
+  assert.equal(s.today_utc, new Date().toISOString().slice(0, 10));
+});
+
+test("autopilot with no cycles today: zero counts are labelled as no run today", async () => {
+  const s = await computeAutopilotSummary(7) as Record<string, unknown>;
+  assert.equal(s.cycles_today, 0);
+  assert.equal(s.ran_today, false);
+  assert.equal(s.last_cycle, null);
 });
