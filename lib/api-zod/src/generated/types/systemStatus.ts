@@ -7,6 +7,7 @@
  */
 import type { SystemStatusAllowedModesItem } from "./systemStatusAllowedModesItem";
 import type { SystemStatusEffectiveProfile } from "./systemStatusEffectiveProfile";
+import type { SystemStatusModeBlockers } from "./systemStatusModeBlockers";
 import type { SystemStatusMt5LinkHealth } from "./systemStatusMt5LinkHealth";
 import type { SystemStatusOperationalMode } from "./systemStatusOperationalMode";
 
@@ -31,4 +32,6 @@ export interface SystemStatus {
   reasons?: string[];
   blockers?: string[];
   allowedModes: SystemStatusAllowedModesItem[];
+  /** For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST /system/mode, whose refusal carries its own blockers. */
+  modeBlockers?: SystemStatusModeBlockers;
 }

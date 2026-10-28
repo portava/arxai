@@ -127,9 +127,16 @@ export interface SafetyCoreStatus {
   secondsSinceMt5Heartbeat: number | null;
   lastModeChangeAt: string | null;
   lastModeChangedBy: string | null;
+  /** Always empty today: nothing fills them. A refused change's blockers are in its own response. */
   reasons: string[];
   blockers: string[];
   allowedModes: ReadonlyArray<OperationalMode>;
+  /**
+   * For each mode, why the dashboard does not offer it now (empty when it is
+   * offered). Display only: same conditions as computeAllowedModes; the
+   * authority for a change is still setOperationalMode.
+   */
+  modeBlockers: Record<OperationalMode, string[]>;
 }
 
 // Compute which modes are currently selectable given live conditions.
@@ -150,6 +157,40 @@ function computeAllowedModes(
   }
   return allowed;
 }
+
+/**
+ * Why each mode is not in computeAllowedModes(), in the words
+ * setOperationalMode uses when it refuses. A mode with no blocker is allowed.
+ */
+export function computeModeBlockers(
+  killSwitchEngaged: boolean,
+  globalState: gs.GlobalState,
+  mt5LinkHealth: "OK" | "DEGRADED" | "DOWN",
+): Record<OperationalMode, string[]> {
+  const out: Record<OperationalMode, string[]> = {
+    OBSERVE_ONLY: [], SUGGEST_ONLY: [], PAPER_TRADING: [], LIVE_TRADING: [],
+  };
+  if (killSwitchEngaged) {
+    for (const m of ["SUGGEST_ONLY", "PAPER_TRADING", "LIVE_TRADING"] as const) {
+      out[m].push("kill switch engaged — only OBSERVE_ONLY allowed until reset");
+    }
+    return out;
+  }
+  if (globalState === "SAFE_SHUTDOWN") {
+    out.PAPER_TRADING.push("PAPER_TRADING is not offered while global state is SAFE_SHUTDOWN");
+  }
+  const liveStates: ReadonlyArray<gs.GlobalState> = ["NORMAL", "HIGH_VOLATILITY", "TREND_EXPANSION"];
+  if (!liveStates.includes(globalState)) {
+    out.LIVE_TRADING.push(`LIVE_TRADING requires global state in {NORMAL, HIGH_VOLATILITY, TREND_EXPANSION}; current=${globalState}`);
+  }
+  if (mt5LinkHealth !== "OK") {
+    out.LIVE_TRADING.push(`LIVE_TRADING requires MT5 link OK; current=${mt5LinkHealth}`);
+  }
+  return out;
+}
+
+/** Exported for the consistency test with computeModeBlockers; unchanged policy. */
+export { computeAllowedModes };
 
 export async function getStatus(): Promise<SafetyCoreStatus> {
   const sc = await loadOrCreate();
@@ -178,6 +219,7 @@ export async function getStatus(): Promise<SafetyCoreStatus> {
     reasons: [],
     blockers: [],
     allowedModes: computeAllowedModes(sc.killSwitchEngaged, globalState, link),
+    modeBlockers: computeModeBlockers(sc.killSwitchEngaged, globalState, link),
   };
 }
 

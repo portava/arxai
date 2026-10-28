@@ -1662,6 +1662,7 @@ export * from "./syntheticSymbolItem";
 export * from "./systemStatus";
 export * from "./systemStatusAllowedModesItem";
 export * from "./systemStatusEffectiveProfile";
+export * from "./systemStatusModeBlockers";
 export * from "./systemStatusMt5LinkHealth";
 export * from "./systemStatusOperationalMode";
 export * from "./testDemoExecutionOrder200";

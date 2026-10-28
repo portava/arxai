@@ -20655,6 +20655,12 @@ components:
         allowedModes:
           type: array
           items: { type: string, enum: [OBSERVE_ONLY, SUGGEST_ONLY, PAPER_TRADING, LIVE_TRADING] }
+        modeBlockers:
+          type: object
+          description: For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST /system/mode, whose refusal carries its own blockers.
+          additionalProperties:
+            type: array
+            items: { type: string }
 
     SetSystemModeBody:
       type: object

@@ -71,6 +71,45 @@ function linkHealthClass(h: string): string {
   return "bg-destructive/20 text-destructive border border-destructive/40";
 }
 
+/**
+ * Why the server refused a Control Tower request, from the error body it
+ * sent (a 409 carries blockers; a 403 / 401 carries a message). Never a bare
+ * "failed".
+ */
+function refusalDetail(err: unknown): { status: number | null; text: string } {
+  const e = (err ?? {}) as { status?: unknown; data?: unknown; message?: unknown };
+  const status = typeof e.status === "number" ? e.status : null;
+  const data = (e.data ?? null) as { blockers?: unknown; message?: unknown; error?: unknown } | null;
+  const rawBlockers = data?.blockers;
+  const blockers = Array.isArray(rawBlockers)
+    ? rawBlockers.filter((b): b is string => typeof b === "string" && b.length > 0)
+    : [];
+  const message = data?.message;
+  const code = data?.error;
+  if (blockers.length > 0) return { status, text: blockers.join("; ") };
+  if (typeof message === "string" && message) return { status, text: message };
+  if (status === 403) return { status, text: "Operator access required." };
+  if (status === 401) return { status, text: "Sign in required." };
+  if (typeof code === "string" && code) return { status, text: code };
+  if (status === null) return { status, text: "The request did not reach the server." };
+  return { status, text: `The server answered ${status} without saying why.` };
+}
+
+type Refusal = { action: string; text: string; at: string };
+
+function RefusalNote({ refusal, testId }: { refusal: Refusal | null; testId: string }) {
+  if (!refusal) return null;
+  return (
+    <div className="mt-3 flex items-start gap-2 text-sm rounded-md border border-destructive/40 bg-destructive/5 p-2" data-testid={testId}>
+      <XCircle size={16} className="text-destructive shrink-0 mt-0.5" />
+      <div>
+        <span className="font-semibold text-destructive">{refusal.action} refused</span>{" "}
+        <span className="text-xs text-muted-foreground">({new Date(refusal.at).toLocaleTimeString()})</span>: {refusal.text}
+      </div>
+    </div>
+  );
+}
+
 function StatusBanner({ status }: { status: SystemStatus }) {
   const ks = status.killSwitchEngaged;
   const profile = status.effectiveProfile as { description?: string; executionPermission?: string };
@@ -140,6 +179,7 @@ function ModeSwitcher({ status }: { status: SystemStatus }) {
   const setMode = useSetSystemMode();
   const [pendingMode, setPendingMode] = useState<SetSystemModeBodyMode | null>(null);
   const [confirmLive, setConfirmLive] = useState<{ step: number } | null>(null);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
 
   const apply = (mode: SetSystemModeBodyMode) => {
     setMode.mutate(
@@ -147,14 +187,23 @@ function ModeSwitcher({ status }: { status: SystemStatus }) {
       {
         onSuccess: (res) => {
           if (res.ok) {
+            setRefusal(null);
             toast({ title: `Mode → ${res.mode}`, description: (res.reasons ?? []).join("; ") || "Mode changed." });
           } else {
-            toast({ title: "Mode change blocked", description: (res.blockers ?? []).join("; "), variant: "destructive" });
+            const text = (res.blockers ?? []).join("; ") || "The server refused the change without saying why.";
+            setRefusal({ action: `Mode change to ${mode}`, text, at: new Date().toISOString() });
+            toast({ title: "Mode change blocked", description: text, variant: "destructive" });
           }
           void queryClient.invalidateQueries({ queryKey: getGetSystemStatusQueryKey() });
           void queryClient.invalidateQueries({ queryKey: getGetSystemVaultQueryKey() });
         },
-        onError: () => toast({ title: "Mode change failed", variant: "destructive" }),
+        onError: (err) => {
+          // A refused change arrives as an error (409 with blockers, 403 for a non-operator).
+          const d = refusalDetail(err);
+          setRefusal({ action: `Mode change to ${mode}`, text: d.text, at: new Date().toISOString() });
+          toast({ title: d.status === 409 ? "Mode change blocked" : "Mode change failed", description: d.text, variant: "destructive" });
+          void queryClient.invalidateQueries({ queryKey: getGetSystemStatusQueryKey() });
+        },
         onSettled: () => {
           setPendingMode(null);
           setConfirmLive(null);
@@ -212,11 +261,18 @@ function ModeSwitcher({ status }: { status: SystemStatus }) {
                 </div>
                 <p className="text-xs text-muted-foreground">{sub}</p>
                 {isPending && <p className="text-xs text-primary mt-1">Switching…</p>}
-                {!isAllowed && !isCurrent && <p className="text-xs text-destructive mt-1">Blocked by gate</p>}
+                {!isAllowed && !isCurrent && (
+                  <p className="text-xs text-destructive mt-1" data-testid={`mode-blockers-${mode}`}>
+                    {(status.modeBlockers?.[mode] ?? []).length > 0
+                      ? `Not offered: ${(status.modeBlockers?.[mode] ?? []).join("; ")}`
+                      : "Not offered (the server did not say why)"}
+                  </p>
+                )}
               </button>
             );
           })}
         </div>
+        <RefusalNote refusal={refusal} testId="mode-refusal" />
       </CardContent>
 
       <AlertDialog open={confirmLive !== null} onOpenChange={(o) => !o && setConfirmLive(null)}>
@@ -264,6 +320,7 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
   const [reason, setReason] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
   const [ack, setAck] = useState("");
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getGetSystemStatusQueryKey() });
@@ -277,12 +334,18 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
       { data: { reason: r, triggeredBy: "operator" } },
       {
         onSuccess: () => {
+          setRefusal(null);
           toast({ title: "KILL SWITCH ENGAGED", description: r, variant: "destructive" });
           setEngageOpen(false);
           setReason("");
           invalidate();
         },
-        onError: () => toast({ title: "Engage failed", variant: "destructive" }),
+        onError: (err) => {
+          const d = refusalDetail(err);
+          setRefusal({ action: "Engage", text: d.text, at: new Date().toISOString() });
+          toast({ title: "Engage failed", description: d.text, variant: "destructive" });
+          invalidate();
+        },
       },
     );
   };
@@ -293,15 +356,24 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
       {
         onSuccess: (res) => {
           if (res.ok) {
+            setRefusal(null);
             toast({ title: "Kill switch reset", description: "Entered RECOVERY_MODE." });
             setResetOpen(false);
             setAck("");
             invalidate();
           } else {
-            toast({ title: "Reset rejected", description: (res.blockers ?? []).join("; "), variant: "destructive" });
+            const text = (res.blockers ?? []).join("; ") || "The server refused the reset without saying why.";
+            setRefusal({ action: "Reset", text, at: new Date().toISOString() });
+            toast({ title: "Reset rejected", description: text, variant: "destructive" });
           }
         },
-        onError: () => toast({ title: "Reset failed", variant: "destructive" }),
+        onError: (err) => {
+          // A refused reset arrives as an error (409 with blockers, 403 for a non-operator).
+          const d = refusalDetail(err);
+          setRefusal({ action: "Reset", text: d.text, at: new Date().toISOString() });
+          toast({ title: d.status === 409 ? "Reset rejected" : "Reset failed", description: d.text, variant: "destructive" });
+          invalidate();
+        },
       },
     );
   };
@@ -326,6 +398,7 @@ function KillSwitchPanel({ status }: { status: SystemStatus }) {
             <span className="font-semibold">Reason:</span> {status.killSwitchReason}
           </div>
         )}
+        <RefusalNote refusal={refusal} testId="kill-switch-refusal" />
       </CardContent>
       <CardFooter className="gap-3 flex-wrap">
         <Button
@@ -481,6 +554,14 @@ export default function Emergency() {
   const statusQ = useGetSystemStatus({ query: { queryKey: getGetSystemStatusQueryKey(), refetchInterval: 5000 } });
   const vaultQ = useGetSystemVault({ limit: 50 }, { query: { queryKey: getGetSystemVaultQueryKey({ limit: 50 }), refetchInterval: 5000 } });
   const transitionsQ = useGetSystemStateTransitions({ limit: 50 }, { query: { queryKey: getGetSystemStateTransitionsQueryKey({ limit: 50 }), refetchInterval: 10000 } });
+
+  if (statusQ.isError && !statusQ.data) {
+    return (
+      <div className="p-4 text-sm text-destructive" data-testid="safety-status-error">
+        Safety core status could not be loaded. Mode and kill-switch state are unknown until it loads.
+      </div>
+    );
+  }
 
   if (statusQ.isLoading || !statusQ.data) {
     return (

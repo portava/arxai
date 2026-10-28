@@ -13850,6 +13850,12 @@ export const GetSystemStatusResponse = zod.object({
   allowedModes: zod.array(
     zod.enum(["OBSERVE_ONLY", "SUGGEST_ONLY", "PAPER_TRADING", "LIVE_TRADING"]),
   ),
+  modeBlockers: zod
+    .record(zod.string(), zod.array(zod.string()))
+    .optional()
+    .describe(
+      "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+    ),
 });
 
 /**
@@ -13922,6 +13928,12 @@ export const EngageKillSwitchResponse = zod.object({
         "LIVE_TRADING",
       ]),
     ),
+    modeBlockers: zod
+      .record(zod.string(), zod.array(zod.string()))
+      .optional()
+      .describe(
+        "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+      ),
   }),
 });
 
@@ -13964,6 +13976,12 @@ export const ResetKillSwitchResponse = zod.object({
         "LIVE_TRADING",
       ]),
     ),
+    modeBlockers: zod
+      .record(zod.string(), zod.array(zod.string()))
+      .optional()
+      .describe(
+        "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+      ),
   }),
 });
 
