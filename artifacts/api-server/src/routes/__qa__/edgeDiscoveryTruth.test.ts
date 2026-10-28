@@ -140,3 +140,30 @@ test("a legacy stored row with the 999 marker is presented with a measured-PF do
     assert.ok(rep.confidenceScore < 90, `${path}: confidence recomputed without the marker`);
   }
 });
+
+test("a slice regenerated twice is shown once, with the newer numbers", async () => {
+  journal("EURUSD", [10, 10, 10, 10, 10, 10, 10, 10, -5, -5, -5, -5]);
+  await call("POST", "/edge/reports", { groupBy: "symbol" });
+  journal("EURUSD", [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, -5, -5]);
+  const second = await call("POST", "/edge/reports", { groupBy: "symbol" });
+  const newest = (second["reports"] as Report[])[0]!;
+  for (const path of ["/edge/strongest", "/edge/reports"]) {
+    const out = await call("GET", path);
+    const reps = (out["reports"] as Report[]).filter((r) => r.edgeName === "symbol=EURUSD");
+    assert.equal(reps.length, 1, `${path}: one row per slice (got ${reps.length})`);
+    assert.equal(reps[0]!.id, newest.id, `${path}: the latest generation is the one shown`);
+    assert.equal(reps[0]!.sampleSize, 26);
+  }
+  const history = await call("GET", "/edge/reports?history=1");
+  assert.equal((history["reports"] as Report[]).filter((r) => r.edgeName === "symbol=EURUSD").length, 2,
+    "?history=1 still returns every past generation");
+});
+
+test("weakest shows only the latest generation of each slice", async () => {
+  journal("USDJPY", [-10, -10, -10, -10, -10, -10, -10, -10, 1, 1, 1]);
+  await call("POST", "/edge/reports", { groupBy: "symbol" });
+  await call("POST", "/edge/reports", { groupBy: "symbol" });
+  const out = await call("GET", "/edge/weakest");
+  const reps = (out["reports"] as Report[]).filter((r) => r.edgeName === "symbol=USDJPY");
+  assert.equal(reps.length, 1, `one weakest row per slice (got ${reps.length})`);
+});

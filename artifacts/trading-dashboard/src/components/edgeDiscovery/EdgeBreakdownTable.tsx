@@ -1,4 +1,4 @@
-import { formatProfitFactor, type EdgeReport } from "./types";
+import { formatProfitFactor, formatGeneratedAt, type EdgeReport } from "./types";
 
 const TONE: Record<string, string> = {
   STRONG_EDGE: "text-emerald-300", DEVELOPING_EDGE: "text-sky-300",
@@ -23,6 +23,7 @@ export function EdgeBreakdownTable({ reports, onSelect }:
             <th className="px-2 py-1.5 text-right">PF</th>
             <th className="px-2 py-1.5 text-right">Exp</th>
             <th className="px-2 py-1.5 text-right">Conf</th>
+            <th className="px-2 py-1.5 text-right">As of</th>
           </tr>
         </thead>
         <tbody>
@@ -35,6 +36,7 @@ export function EdgeBreakdownTable({ reports, onSelect }:
               <td className="px-2 py-1.5 text-right font-mono">{formatProfitFactor(r.profitFactor, true)}</td>
               <td className="px-2 py-1.5 text-right font-mono">{r.expectancy.toFixed(2)}</td>
               <td className="px-2 py-1.5 text-right font-mono">{Math.round(r.confidenceScore)}</td>
+              <td className="px-2 py-1.5 text-right font-mono text-slate-400">{formatGeneratedAt(r.createdAt).replace(/^Generated:? /, "")}</td>
             </tr>
           ))}
         </tbody>

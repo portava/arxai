@@ -38,3 +38,23 @@ describe("profit factor marker", () => {
     expect(container.textContent).toContain("1.73");
   });
 });
+
+describe("as-of time", () => {
+  it("StrongestEdgeCard says when the slice was generated", () => {
+    const { container } = render(<StrongestEdgeCard report={report({ profitFactor: 2 })} />);
+    expect(container.textContent).toContain("Generated 2026-10-27 14:05 UTC");
+  });
+  it("WeakestAreaCard says when the slice was generated", () => {
+    const { container } = render(<WeakestAreaCard report={report({ status: "WEAK_EDGE", profitFactor: 0.8 })} />);
+    expect(container.textContent).toContain("Generated 2026-10-27 14:05 UTC");
+  });
+  it("EdgeBreakdownTable has an As of column", () => {
+    const { container } = render(<EdgeBreakdownTable reports={[report()]} />);
+    expect(container.textContent).toContain("As of");
+    expect(container.textContent).toContain("2026-10-27 14:05 UTC");
+  });
+  it("a missing createdAt is said plainly, not invented", () => {
+    const { container } = render(<StrongestEdgeCard report={report({ createdAt: "" })} />);
+    expect(container.textContent).toContain("time not recorded");
+  });
+});

@@ -45,3 +45,12 @@ export function formatProfitFactor(pf: number, short = false): string {
   if (pf >= PF_NO_LOSSES_MARKER) return short ? "n/a (no losses)" : "Not measurable — no losing trade recorded";
   return pf.toFixed(2);
 }
+
+// Edge reports are historical snapshots, not live reads: every card says when
+// its slice was generated (UTC, so it reads the same for every viewer).
+export function formatGeneratedAt(createdAt: string | null | undefined): string {
+  const t = createdAt ? Date.parse(createdAt) : NaN;
+  if (!Number.isFinite(t)) return "Generated: time not recorded";
+  const iso = new Date(t).toISOString();
+  return `Generated ${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+}

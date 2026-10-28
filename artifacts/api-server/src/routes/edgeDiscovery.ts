@@ -200,6 +200,34 @@ function presentReport(r: ReportRow): ReportRow {
   return { ...r, status, confidenceScore: confidence(s, status), aiSummary: summarize(name, status, s) };
 }
 
+// Every POST inserts a fresh row per slice and never supersedes the old ones.
+// The boards describe the CURRENT edge picture, so they show only the newest
+// generation of each slice (by createdAt, then id). Ordering is done here, not
+// trusted to SQL, so a past run can never be presented as current.
+// Cap on rows scanned when building the latest-per-slice view.
+const SLICE_SCAN_LIMIT = 1000;
+function createdMs(r: ReportRow): number {
+  const t = r.createdAt instanceof Date ? r.createdAt.getTime() : Date.parse(String(r.createdAt));
+  return Number.isFinite(t) ? t : 0;
+}
+function latestPerSlice(rows: ReportRow[]): ReportRow[] {
+  const sorted = [...rows].sort((a, b) => (createdMs(b) - createdMs(a)) || (b.id - a.id));
+  const seen = new Set<string>();
+  const out: ReportRow[] = [];
+  for (const r of sorted) {
+    if (seen.has(r.edgeName)) continue;
+    seen.add(r.edgeName);
+    out.push(r);
+  }
+  return out;
+}
+async function loadLatestSlices(userId: number): Promise<ReportRow[]> {
+  const rows = await db.select().from(edgeDiscoveryReportsTable)
+    .where(eq(edgeDiscoveryReportsTable.userId, userId))
+    .orderBy(desc(edgeDiscoveryReportsTable.createdAt)).limit(SLICE_SCAN_LIMIT);
+  return latestPerSlice(rows).map(presentReport);
+}
+
 // ── Source loader (READ-ONLY) ──────────────────────────────────────────────
 async function loadTrades(userId: number): Promise<TradeLike[]> {
   const [journals, papers, debriefs] = await Promise.all([
@@ -318,10 +346,17 @@ router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
 router.get("/edge/reports", requireUser, async (req, res): Promise<void> => {
   const raw = Number(req.query["limit"]);
   const limit = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 200)) : 100;
-  const rows = await db.select().from(edgeDiscoveryReportsTable)
-    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
-    .orderBy(desc(edgeDiscoveryReportsTable.createdAt)).limit(limit);
-  ok(res, { reports: rows.map(presentReport) });
+  // ?history=1 → every past generation (newest first). Default → the latest
+  // generation of each slice only, so "All slices" counts current slices.
+  if (req.query["history"] === "1") {
+    const rows = await db.select().from(edgeDiscoveryReportsTable)
+      .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
+      .orderBy(desc(edgeDiscoveryReportsTable.createdAt)).limit(limit);
+    ok(res, { reports: rows.map(presentReport), view: "history" });
+    return;
+  }
+  const latest = await loadLatestSlices(req.authUser!.id);
+  ok(res, { reports: latest.slice(0, limit), view: "latest_per_slice" });
 });
 
 // ── GET /edge/reports/:id ──────────────────────────────────────────────────
@@ -340,24 +375,22 @@ router.get("/edge/reports/:id", requireUser, async (req, res): Promise<void> => 
 
 // ── GET /edge/strongest ────────────────────────────────────────────────────
 router.get("/edge/strongest", requireUser, async (req, res): Promise<void> => {
-  const rows = await db.select().from(edgeDiscoveryReportsTable)
-    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
-    .orderBy(desc(edgeDiscoveryReportsTable.confidenceScore)).limit(50);
-  const strong = rows.map(presentReport)
+  const latest = await loadLatestSlices(req.authUser!.id);
+  const strong = latest
     .filter((r) => r.status === "STRONG_EDGE" || r.status === "DEVELOPING_EDGE")
+    .sort((a, b) => b.confidenceScore - a.confidenceScore)
     .slice(0, 10);
-  ok(res, { reports: strong });
+  ok(res, { reports: strong, view: "latest_per_slice" });
 });
 
 // ── GET /edge/weakest ──────────────────────────────────────────────────────
 router.get("/edge/weakest", requireUser, async (req, res): Promise<void> => {
-  const rows = await db.select().from(edgeDiscoveryReportsTable)
-    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
-    .orderBy(edgeDiscoveryReportsTable.expectancy).limit(50);
-  const weak = rows.map(presentReport)
+  const latest = await loadLatestSlices(req.authUser!.id);
+  const weak = latest
     .filter((r) => r.status === "WEAK_EDGE" || r.status === "NO_EDGE")
+    .sort((a, b) => a.expectancy - b.expectancy)
     .slice(0, 10);
-  ok(res, { reports: weak });
+  ok(res, { reports: weak, view: "latest_per_slice" });
 });
 
 // ── GET /edge/warnings ─────────────────────────────────────────────────────

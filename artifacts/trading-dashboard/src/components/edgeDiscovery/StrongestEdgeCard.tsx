@@ -1,5 +1,5 @@
 import { EdgeConfidenceMeter } from "./EdgeConfidenceMeter";
-import { STATUS_TONE, formatProfitFactor, type EdgeReport } from "./types";
+import { STATUS_TONE, formatProfitFactor, formatGeneratedAt, type EdgeReport } from "./types";
 
 export function StrongestEdgeCard({ report }: { report: EdgeReport }) {
   return (
@@ -15,6 +15,7 @@ export function StrongestEdgeCard({ report }: { report: EdgeReport }) {
         <div><dt className="text-slate-400">Expectancy</dt><dd className="font-mono">{report.expectancy.toFixed(2)}</dd></div>
       </dl>
       <EdgeConfidenceMeter score={report.confidenceScore} sampleSize={report.sampleSize} />
+      <p className="mt-1 text-[9px] text-slate-400">{formatGeneratedAt(report.createdAt)}</p>
     </div>
   );
 }
