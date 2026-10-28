@@ -114,3 +114,17 @@ describe("Prop Firm Mode — scope of the saved limits", () => {
     expect(screen.getByText("Limits: ALL VENUES")).toBeTruthy();
   });
 });
+
+// Regression: /prop-firm-mode and /prop-challenge were both titled "Prop Firm
+// Challenge Mode" while running different stores, engines, defaults and
+// statuses (ACTIVE on one, FAILED on the other at the same time).
+describe("Prop Firm Mode — not confused with Prop Challenge", () => {
+  it("has its own title and says it is separate from Prop Challenge Practice", async () => {
+    stubFetch(() => json(status()));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Configure")).toBeTruthy());
+    expect(screen.queryByText("Prop Firm Challenge Mode")).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Prop Firm Risk Mode");
+    expect(screen.getByTestId("prop-firm-separate").textContent).toMatch(/separate from Prop Challenge Practice/);
+  });
+});

@@ -90,3 +90,14 @@ describe("Prop Challenge page — finished challenges", () => {
     expect(screen.getByText("Re-evaluate")).toBeTruthy();
   });
 });
+
+// Regression: both prop pages were titled "Prop Firm Challenge Mode".
+describe("Prop Challenge page — not confused with Prop Firm Risk Mode", () => {
+  it("has its own title and says it is separate from Prop Firm Risk Mode", async () => {
+    stubFetch([challenge({ status: "ACTIVE" })]);
+    renderPage();
+    expect(screen.queryByText("Prop Firm Challenge Mode")).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Prop Challenge Practice");
+    expect(screen.getByTestId("prop-challenge-separate").textContent).toMatch(/separate from Prop Firm Risk Mode/);
+  });
+});
