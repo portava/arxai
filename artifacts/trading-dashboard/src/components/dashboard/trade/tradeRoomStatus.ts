@@ -62,3 +62,19 @@ export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeO
 
   return { canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge };
 }
+
+/**
+ * Connection-card heading for the account route the user actually trades
+ * through (envelope accountShellStatus.accountMode), and whether the shared
+ * master summary's broker / account lines describe that route.
+ */
+export function resolveTradeRoomRoute(m: {
+  isLiveShared: boolean;
+  envelope: { accountShellStatus?: { accountMode?: string } | null } | null;
+}): { heading: string; onSharedRoute: boolean } {
+  const routing = m.envelope?.accountShellStatus?.accountMode ?? null;
+  if (m.isLiveShared || routing === "SHARED_MASTER_MT5") return { heading: "Shared Master MT5", onSharedRoute: true };
+  if (routing === "PERSONAL_MT5") return { heading: "Your MT5 account", onSharedRoute: false };
+  if (routing === "DEMO") return { heading: "Demo account", onSharedRoute: false };
+  return { heading: "Account route not loaded", onSharedRoute: false };
+}

@@ -30,7 +30,7 @@ import {
   TradeStatusBar, TradeHero, PositionsPanel, OrdersPanel,
   AdvancedPanel, RiskGovernorCard, DecisionStreamCard,
 } from "@/components/dashboard/trade/TradePanels";
-import { resolveTradeRoomStatus } from "@/components/dashboard/trade/tradeRoomStatus";
+import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "@/components/dashboard/cockpit/bridgeObservation";
 import { describeRiskCaps } from "@/components/dashboard/cockpit/riskCapsSummary";
 
@@ -78,8 +78,11 @@ export default function TradeCommandRoom() {
   // Connection card data — existing shared master summary (no fake data).
   const summaryQ = useGetMeSharedAccountSummary({ query: { queryKey: getGetMeSharedAccountSummaryQueryKey() } });
   const master = summaryQ.data?.masterMt5 ?? null;
-  const broker = master?.brokerName ?? summaryQ.data?.accounts?.[0]?.masterBrokerName ?? "—";
-  const account = master?.accountNumberMasked ?? summaryQ.data?.accounts?.[0]?.masterAccountNumberMasked ?? "—";
+  // The shared master summary only describes the user's route when they trade
+  // through the shared master; otherwise its broker/account are not theirs.
+  const route = resolveTradeRoomRoute(tradingMode);
+  const broker = !route.onSharedRoute ? "Not shown here" : master?.brokerName ?? summaryQ.data?.accounts?.[0]?.masterBrokerName ?? "—";
+  const account = !route.onSharedRoute ? "Not shown here" : master?.accountNumberMasked ?? summaryQ.data?.accounts?.[0]?.masterAccountNumberMasked ?? "—";
   // Bridge connectivity from the shared master pool's heartbeat-derived
   // availability — never inferred from the account-mode blocker.
   const bridgeObs = describeBridgeObservation({
@@ -220,7 +223,7 @@ export default function TradeCommandRoom() {
         }
       />
       <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} />
-      <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} bridge={bridgeObs} broker={broker} account={account} />
+      <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} bridge={bridgeObs} routeHeading={route.heading} broker={broker} account={account} />
 
       <PageTabs
         storageKey="trade-command-room"

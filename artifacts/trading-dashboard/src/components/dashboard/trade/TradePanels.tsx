@@ -35,8 +35,8 @@ export function TradeStatusBar({
 
 /* ── 2 · Hero + connection card ─────────────────────────────────────── */
 export function TradeHero({
-  description, connStatus, isLive, bridge, broker, account,
-}: { description: string; connStatus: string; isLive: boolean; bridge: BridgeObservation; broker: string; account: string }) {
+  description, connStatus, isLive, bridge, routeHeading, broker, account,
+}: { description: string; connStatus: string; isLive: boolean; bridge: BridgeObservation; routeHeading: string; broker: string; account: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
       <div className="flex items-start gap-3">
@@ -57,7 +57,7 @@ export function TradeHero({
               bridge observation is also online. */}
           <Pill tone={connStatus === "Blocked" ? "danger" : isLive && bridge.state === "online" ? "success" : isLive ? "warning" : "info"}>{connStatus}</Pill>
         </div>
-        <div className="mt-1 text-lg font-semibold">Shared Master MT5</div>
+        <div className="mt-1 text-lg font-semibold" data-testid="trade-connection-route">{routeHeading}</div>
         <div className="mt-1 text-sm text-txt-secondary" title={bridge.detail} data-testid="trade-connection-bridge">Bridge: {bridge.label}</div>
         <div className="text-sm text-txt-secondary">Broker: {broker}</div>
         <div className="text-sm text-txt-secondary">Acc: {account}</div>

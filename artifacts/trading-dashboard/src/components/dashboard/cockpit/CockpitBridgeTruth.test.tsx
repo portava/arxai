@@ -44,7 +44,7 @@ vi.mock("@workspace/api-client-react", () => ({
 import { EnvironmentPill } from "./EnvironmentPill";
 import { TradingPermissionSummaryCard, AccountSnapshotCard } from "./CockpitCards";
 import { describeOnboardingTradingStatus } from "@/components/onboarding/OnboardingProvider";
-import { resolveTradeRoomStatus } from "@/components/dashboard/trade/tradeRoomStatus";
+import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
 import { TradeHero } from "@/components/dashboard/trade/TradePanels";
 import { describeBridgeObservation } from "./bridgeObservation";
 
@@ -208,7 +208,7 @@ describe("bridge connectivity comes from a heartbeat-derived observation, not th
 
   it("trade room connection card shows the bridge observation and does not paint LIVE green when the bridge is offline", () => {
     const offline = describeBridgeObservation({ onSharedRoute: true, allocationView: allocationView({ bridgeAvailability: "UNAVAILABLE", bridgeMessage: "Live bridge is offline." }) });
-    render(<TradeHero description="d" connStatus="LIVE" isLive bridge={offline} broker="—" account="—" />);
+    render(<TradeHero description="d" connStatus="LIVE" isLive bridge={offline} routeHeading="Shared Master MT5" broker="—" account="—" />);
     expect(screen.getByTestId("trade-connection-bridge").textContent).toBe("Bridge: Unavailable");
   });
 });
@@ -282,5 +282,28 @@ describe("account snapshot 'Active' pill needs an observation, not the LIVE_SHAR
     h.summary = { ok: true, accounts: [{ status: "active" }], allocationView: allocationView(), masterMt5: null };
     render(<AccountSnapshotCard />);
     expect(screen.getByTestId("cockpit-account-active-pill").textContent).toBe("Active");
+  });
+});
+
+describe("trade room connection card names the user's own account route", () => {
+  it("DEMO user on PERSONAL_MT5 routing → heading is not 'Shared Master MT5' and master broker lines are not shown as theirs", () => {
+    setMode({ isLiveShared: false, isDemo: true, envelope: envelope({ currentAccountMode: "DEMO", accountShellStatus: { accountMode: "PERSONAL_MT5", tradingMode: "DEMO", tradingModeLabel: "Demo", approvalStatus: "APPROVED", tradingStatus: "ACTIVE" } }) });
+    const route = resolveTradeRoomRoute(h.mode as never);
+    expect(route.heading).toBe("Your MT5 account");
+    expect(route.onSharedRoute).toBe(false);
+    const obs = describeBridgeObservation({ onSharedRoute: route.onSharedRoute, allocationView: allocationView() });
+    render(<TradeHero description="d" connStatus="Demo" isLive={false} bridge={obs} routeHeading={route.heading} broker="Not shown here" account="Not shown here" />);
+    expect(screen.getByTestId("trade-connection-route").textContent).not.toBe("Shared Master MT5");
+  });
+
+  it("demo routing → 'Demo account'; unknown envelope → says the route is not loaded", () => {
+    setMode({ isLiveShared: false, isDemo: true, envelope: envelope({ currentAccountMode: "DEMO", accountShellStatus: { accountMode: "DEMO", tradingMode: "DEMO", tradingModeLabel: "Demo", approvalStatus: "APPROVED", tradingStatus: "ACTIVE" } }) });
+    expect(resolveTradeRoomRoute(h.mode as never).heading).toBe("Demo account");
+    expect(resolveTradeRoomRoute({ isLiveShared: false, envelope: null }).heading).toBe("Account route not loaded");
+  });
+
+  it("LIVE_SHARED → 'Shared Master MT5'", () => {
+    setMode();
+    expect(resolveTradeRoomRoute(h.mode as never)).toEqual({ heading: "Shared Master MT5", onSharedRoute: true });
   });
 });
