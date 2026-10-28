@@ -8,7 +8,7 @@
 
 import type { ReactNode } from "react";
 import { useLocation } from "wouter";
-import { Zap, TrendingUp, TrendingDown, ShieldCheck, Bot, ShieldQuestion } from "lucide-react";
+import { Zap, TrendingUp, TrendingDown, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { CockpitCard } from "@/components/dashboard/cockpit/primitives";
 import { ChartFeedConfidence } from "@/components/charts/ChartFeedConfidence";
 import { cn } from "@/lib/utils";
@@ -47,8 +47,6 @@ export function QuickTradePanel({
   slTpOn, setSlTpOn,
   stopLoss, setStopLoss,
   takeProfit, setTakeProfit,
-  riskCheckOn, setRiskCheckOn,
-  safetyGatesOn, setSafetyGatesOn,
   riskApprox,
   canTrade,
   blockedLabel,
@@ -61,8 +59,14 @@ export function QuickTradePanel({
   slTpOn: boolean; setSlTpOn: (v: boolean) => void;
   stopLoss: string; setStopLoss: (v: string) => void;
   takeProfit: string; setTakeProfit: (v: string) => void;
-  riskCheckOn: boolean; setRiskCheckOn: (v: boolean) => void;
-  safetyGatesOn: boolean; setSafetyGatesOn: (v: boolean) => void;
+  /**
+   * Ignored. These switches never reached the server: the risk governor and
+   * every safety gate run on submit regardless, so the panel no longer shows
+   * them as protections the trader can turn on or off. Kept optional so
+   * existing callers compile.
+   */
+  riskCheckOn?: boolean; setRiskCheckOn?: (v: boolean) => void;
+  safetyGatesOn?: boolean; setSafetyGatesOn?: (v: boolean) => void;
   riskApprox: string;
   canTrade: boolean;
   blockedLabel: string;
@@ -195,9 +199,13 @@ export function QuickTradePanel({
       {/* Toggles */}
       <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-border/60 pt-3 text-sm">
         <Toggle icon={<ShieldQuestion className="h-4 w-4" />} label="SL / TP" on={slTpOn} set={setSlTpOn} testid="trade-sltp-toggle" />
-        <Toggle icon={<Bot className="h-4 w-4" />} label="Risk check" on={riskCheckOn} set={setRiskCheckOn} testid="trade-riskcheck-toggle" />
-        <Toggle icon={<ShieldCheck className="h-4 w-4" />} label="Safety gates" on={safetyGatesOn} set={setSafetyGatesOn} testid="trade-safety-toggle" />
       </div>
+      {/* Not a switch: the server's risk check and safety gates run on every
+          submit and cannot be turned off from this panel. */}
+      <p className="mt-2 flex items-start gap-2 text-xs text-txt-muted" data-testid="trade-server-checks-note">
+        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>Risk check and safety gates are not set here. The server runs them on every order you submit from the ticket, and they cannot be turned off from this panel.</span>
+      </p>
 
       {/* SL/TP expandable */}
       {slTpOn && (
