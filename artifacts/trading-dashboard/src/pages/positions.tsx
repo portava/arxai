@@ -22,6 +22,10 @@ type Pnl = {
   environment: string; dailyPnL: number; weeklyPnL: number; monthlyPnL: number;
   openUnrealizedPnL: number; closedRealizedPnL: number;
   wins: number; losses: number; winRate: number; averageR: number; maxDrawdown: number;
+  /** Closed positions in the summary; older servers omit it. */
+  closedCount?: number;
+  /** The day dailyPnL covers; the OMS sums the UTC calendar day. */
+  dayBoundary?: "UTC";
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -146,16 +150,25 @@ export default function PositionsPage() {
         <p data-testid="positions-pnl-unavailable" className="text-xs text-txt-muted">P&amp;L summary unavailable — the server did not return a usable summary.</p>
       )}
 
-      {pnl && (
-        <div className="grid gap-2 md:grid-cols-6">
-          <Stat label="Sim realized today" value={usd(pnl.dailyPnL)} />
-          <Stat label="Sim realized 7d" value={usd(pnl.weeklyPnL)} />
-          <Stat label="Sim open (unrealized)" value={usd(pnl.openUnrealizedPnL)} />
-          <Stat label="Win rate (closed)" value={`${pnl.winRate}%`} />
-          <Stat label="Avg R (closed)" value={String(pnl.averageR)} />
-          <Stat label="Max DD (closed)" value={usd(pnl.maxDrawdown)} />
-        </div>
-      )}
+      {pnl && (() => {
+        // With no closed positions the closed-trade figures were not measured
+        // (the server reports 0); a win rate needs at least one win or loss.
+        // An older server without closedCount: wins + losses is the only signal.
+        const closedN = pnl.closedCount ?? (pnl.wins + pnl.losses);
+        const noClosed = closedN === 0;
+        const winRateMeasured = pnl.wins + pnl.losses > 0;
+        return (
+          <div className="grid gap-2 md:grid-cols-6" data-testid="positions-pnl-tiles">
+            {/* The OMS sums realized P/L from 00:00 UTC, not the viewer's local midnight. */}
+            <Stat label="Sim realized today (UTC)" value={usd(pnl.dailyPnL)} sub="since 00:00 UTC" />
+            <Stat label="Sim realized 7d" value={usd(pnl.weeklyPnL)} />
+            <Stat label="Sim open (unrealized)" value={usd(pnl.openUnrealizedPnL)} />
+            <Stat label="Win rate (closed)" value={winRateMeasured ? `${pnl.winRate}%` : "Not measured"} sub={winRateMeasured ? undefined : noClosed ? "no closed positions yet" : "no closed wins or losses yet"} />
+            <Stat label="Avg R (closed)" value={noClosed ? "Not measured" : String(pnl.averageR)} sub={noClosed ? "no closed positions yet" : undefined} />
+            <Stat label="Max DD (closed)" value={noClosed ? "Not measured" : usd(pnl.maxDrawdown)} sub={noClosed ? "no closed positions yet" : undefined} />
+          </div>
+        );
+      })()}
 
       <div className="flex gap-1">
         {(["OPEN", "CLOSED", "INTENT", "MT5"] as const).map((t) => (
