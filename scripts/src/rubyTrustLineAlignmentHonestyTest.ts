@@ -6,6 +6,7 @@
 //   tolerance wide                                 → "Mirror drifting"
 //   tolerance unknown / no broker quote            → NO alignment claim
 //   tolerance failed OR merge-seam failed          → "Mirror degraded"
+//   failed deviation from an UNBOUND quote only    → "Mirror not confirmed (…)"
 //
 // Hard invariant under test: NO trust line may claim sync when the tolerance is
 // one of {wide, unknown, failed}. This locks the success-path builder
@@ -13,7 +14,7 @@
 // by every read-chart trust line.
 
 import { buildTrustLine } from "../../artifacts/api-server/src/lib/data/chart/rubyChartContext.js";
-import type { ChartGateOutput } from "../../artifacts/api-server/src/lib/data/chart/chartGateOutput.js";
+import { MERGE_SEAM_FAILED_REASON, type ChartGateOutput } from "../../artifacts/api-server/src/lib/data/chart/chartGateOutput.js";
 import {
   mirrorTrustSegment,
   type BrokerPriceAlignment,
@@ -158,9 +159,17 @@ for (const binding of [
   }
 }
 {
+  // An unbound quote's failed deviation still closes the gate, but it says
+  // nothing about this chart's alignment: the line names the quote for what it
+  // is ("not confirmed"), never "synced" and never "degraded".
   const line = buildTrustLine(makeGate({ tradeConfirmationAllowed: false }),
     makeAlignment("failed", { quoteBinding: null }), "M5", false, "PASS");
-  check("unbound failed comparison still reads Mirror degraded", line.includes("Mirror degraded"), line);
+  check("unbound failed comparison reads Mirror not confirmed (never synced or degraded)",
+    line.includes("Mirror not confirmed (broker quote unverified)") && !/Mirror sync|Mirror degraded/i.test(line), line);
+  // An observed merge-seam failure alongside it is still "Mirror degraded".
+  const seam = buildTrustLine(makeGate({ tradeConfirmationAllowed: false, blockedReasons: [MERGE_SEAM_FAILED_REASON] }),
+    makeAlignment("failed", { quoteBinding: null }), "M5", false, "PASS");
+  check("unbound failed comparison with a seam failure still reads Mirror degraded", seam.includes("Mirror degraded"), seam);
 }
 
 if (failures > 0) {
