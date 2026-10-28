@@ -109,6 +109,11 @@ export function LiveSlotSummaryCard() {
     );
   }
 
+  // Same rule as LiveOpenTradesPanel (same response): "Live" needs a fresh
+  // heartbeat AND a reliable positions sweep. The client only downgrades isLive.
+  const syncIncomplete = s.positionSyncIncomplete === true;
+  const bookLive = s.isLive === true && !syncIncomplete;
+
   const pnl = s.openPnL;
   // A value from a failed refresh is not coloured as a live move.
   const pnlTone = pnl == null || readFailed ? "text-zinc-400" : pnl > 0 ? "text-emerald-400" : pnl < 0 ? "text-rose-400" : "text-zinc-300";
@@ -131,7 +136,9 @@ export function LiveSlotSummaryCard() {
             {s.isAllocated
               ? readFailed
                 ? "Your slotted funds and floating P/L from the last successful read."
-                : "Your slotted funds and live floating P/L."
+                : bookLive
+                ? "Your slotted funds and live floating P/L."
+                : "Your slotted funds and floating P/L as last reported by the broker."
               : (s.allocationNote ?? "No allocation assigned.")}
           </CardDescription>
         </div>
@@ -145,8 +152,17 @@ export function LiveSlotSummaryCard() {
             >
               <AlertTriangle className="h-3 w-3" /> Not updating
             </Badge>
-          ) : s.isLive ? (
+          ) : bookLive ? (
             <Badge className="bg-emerald-500/20 text-emerald-300 gap-1" data-testid="badge-live"><Wifi className="h-3 w-3" /> Live</Badge>
+          ) : s.isLive && syncIncomplete ? (
+            <Badge
+              variant="outline"
+              className="text-sky-300 border-sky-500/40 gap-1"
+              data-testid="badge-sync-pending"
+              title="Bridge heartbeat is fresh, but no recent complete positions snapshot has arrived."
+            >
+              <AlertTriangle className="h-3 w-3" /> Sync pending
+            </Badge>
           ) : s.isStale ? (
             <Badge variant="outline" className="text-amber-300 border-amber-500/40 gap-1" data-testid="badge-stale"><AlertTriangle className="h-3 w-3" /> Stale</Badge>
           ) : (
