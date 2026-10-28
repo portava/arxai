@@ -207,3 +207,58 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
     expect(screen.getByText("ELITE 87")).toBeTruthy();
   });
 });
+
+describe("legacy scanner result card — Live Intent reports the server's verdict", () => {
+  function submitWith(resp: { ok: boolean; status: number; body: unknown } | Error) {
+    const alerts: string[] = [];
+    vi.stubGlobal("alert", (m: string) => { alerts.push(String(m)); });
+    fetchMock.mockImplementation(async (url) => {
+      if (!String(url).includes("/api/live-intent/submit")) throw new Error(`unexpected ${String(url)}`);
+      if (resp instanceof Error) throw resp;
+      return { ok: resp.ok, status: resp.status, json: async () => resp.body } as Response;
+    });
+    return alerts;
+  }
+
+  it("a risk rejection is not reported as captured and pending", async () => {
+    rowOverrides = { finalRead: { label: "TRADE_WATCH" } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    const alerts = submitWith({ ok: true, status: 200, body: {
+      status: "REJECTED_BY_RISK", riskCheckPassed: false, accepted: false,
+      reason: "Risk check failed: stopLoss is required for live-intent capture",
+    } });
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByText("Live Intent")); await settle();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).not.toMatch(/PENDING_MT5_CONNECTION/);
+    expect(alerts[0]).not.toMatch(/captured/i);
+    expect(alerts[0]).toMatch(/rejected/i);
+    expect(alerts[0]).toMatch(/stopLoss is required/);
+  });
+
+  it("names the status the server returned, not a hard-coded one", async () => {
+    rowOverrides = { finalRead: { label: "TRADE_WATCH" } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    const alerts = submitWith({ ok: true, status: 200, body: {
+      status: "READY_FOR_BROKER_WHEN_CONNECTED", riskCheckPassed: true, accepted: false, mt5Connected: true,
+      reason: "Risk checks passed. No broker order was placed.",
+    } });
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByText("Live Intent")); await settle();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).not.toMatch(/PENDING_MT5_CONNECTION/);
+    expect(alerts[0]).toMatch(/READY_FOR_BROKER_WHEN_CONNECTED/);
+    expect(alerts[0]).toMatch(/No broker order was placed/);
+  });
+
+  it("a failed request says the intent could not be submitted", async () => {
+    rowOverrides = { finalRead: { label: "TRADE_WATCH" } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    const alerts = submitWith({ ok: false, status: 500, body: { error: "Failed to capture live intent" } });
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByText("Live Intent")); await settle();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatch(/could not be submitted/i);
+    expect(alerts[0]).toMatch(/Failed to capture live intent/);
+  });
+});

@@ -145,6 +145,22 @@ const COHESION_MAX_SYMBOLS = 12;
 // client-supplied role header is sent — role is resolved server-side from the
 // session cookie; a spoofed role header is dead, misleading code on a
 // user-facing page (rejected in production, superseded by the real session).
+// The Live Intent alert reports the server's own verdict for the submit — its
+// status and reason — never a hard-coded status. A risk rejection is said to
+// be rejected, not captured and pending.
+function liveIntentResultMessage(
+  symbol: string,
+  res: { status?: unknown; riskCheckPassed?: unknown; reason?: unknown } | null,
+): string {
+  const status = typeof res?.status === "string" ? res.status : null;
+  const reason = typeof res?.reason === "string" && res.reason.trim() ? ` ${res.reason.trim()}` : "";
+  if (!status) return `Live intent for ${symbol}: the server did not report a status, so whether it was captured could not be confirmed.${reason}`;
+  if (status === "REJECTED_BY_RISK" || res?.riskCheckPassed === false) {
+    return `Live intent for ${symbol} was rejected by the risk check (${status}).${reason}`;
+  }
+  return `Live intent captured for ${symbol} (${status}).${reason}`;
+}
+
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
@@ -562,17 +578,23 @@ export default function MarketScanner() {
 
   async function sendToIntent(o: Opp) {
     if (err || !canUseScannerOpportunity(o, Date.now())) return;
-    await api("/api/live-intent/submit", {
-      method: "POST",
-      body: JSON.stringify({
-        source: "AI_ASSIST", symbol: o.symbol,
-        direction: o.recommendedAction === "SELL" ? "SELL" : "BUY",
-        lotSize: 0.01, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
-        maxLossUsd: 5, confidenceScore: o.confidenceScore,
-        reasonForTrade: o.reasonForTrade,
-      }),
-    });
-    alert(`Live intent captured for ${o.symbol} (PENDING_MT5_CONNECTION).`);
+    let res: { status?: unknown; riskCheckPassed?: unknown; reason?: unknown } | null;
+    try {
+      res = (await api("/api/live-intent/submit", {
+        method: "POST",
+        body: JSON.stringify({
+          source: "AI_ASSIST", symbol: o.symbol,
+          direction: o.recommendedAction === "SELL" ? "SELL" : "BUY",
+          lotSize: 0.01, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
+          maxLossUsd: 5, confidenceScore: o.confidenceScore,
+          reasonForTrade: o.reasonForTrade,
+        }),
+      })) as typeof res;
+    } catch (e) {
+      alert(`Live intent for ${o.symbol} could not be submitted: ${(e as Error).message || "request failed"}. Nothing was recorded as captured.`);
+      return;
+    }
+    alert(liveIntentResultMessage(o.symbol, res));
   }
 
   const activeUniverse = universes.find((u) => u.id === universe);
