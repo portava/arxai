@@ -18,15 +18,15 @@ function setRows(next: FakeRows) { rows = next; fake = createFakeDb(rows); }
 beforeEach(() => setRows({}));
 
 async function generate(body: Record<string, unknown>) {
-  let out: { session: Record<string, unknown> } | null = null;
+  let session: Record<string, unknown> = {};
   await withRouter(router, { id: 7 }, async (base) => {
     const r = await fetch(`${base}/mentor/sessions`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     });
     assert.equal(r.status, 200);
-    out = await r.json() as { session: Record<string, unknown> };
+    session = (await r.json() as { session: Record<string, unknown> }).session;
   });
-  return out!.session;
+  return session;
 }
 
 test("a 90-day-old HARD violation does not auto-detect a RISK_WARNING session", async () => {
