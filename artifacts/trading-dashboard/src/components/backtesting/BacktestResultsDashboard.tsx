@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { backtestSourceLabel, backtestEvidence, formatBacktestPriceUnits, formatBacktestNumber, formatBacktestPercent, formatBacktestProfitFactor } from "@workspace/domain/backtest";
+import { BACKTEST_NOT_MEASURED, backtestMetricsUnmeasured } from "./backtestRunMeasurement";
 
 interface DataReliability {
   status: "sufficient" | "partial" | "insufficient" | "blocked";
@@ -27,7 +28,7 @@ interface Run {
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
-  if (value.startsWith("Unavailable")) tone = undefined;
+  if (value.startsWith("Unavailable") || value === BACKTEST_NOT_MEASURED) tone = undefined;
   return (
     <div className="rounded-md border border-slate-800 bg-slate-950/40 p-2">
       <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
@@ -51,6 +52,9 @@ export function BacktestResultsDashboard({ runId }: { runId: number | null }) {
   if (isError || !run) return <p className="text-xs text-amber-300">Results unavailable for this run.</p>;
 
   const evidence = backtestEvidence(run.dataSource);
+  // No completed simulated trades → the stored metric zeros are schema
+  // defaults, not observations. Never colour or print them as a result.
+  const unmeasured = backtestMetricsUnmeasured(run);
   const verdictPill = <span className="rounded bg-amber-900/50 px-2 py-0.5 text-[10px] font-semibold text-amber-200">{run.status === "INSUFFICIENT_DATA" ? "INSUFFICIENT DATA" : "DIAGNOSTIC ONLY"}</span>;
   const dataSourcePill = <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">{backtestSourceLabel(run.dataSource)}</span>;
 
@@ -81,6 +85,18 @@ export function BacktestResultsDashboard({ runId }: { runId: number | null }) {
         </div>
       </header>
 
+      {unmeasured ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Trades" value="None completed" />
+          <Stat label="Win rate" value={BACKTEST_NOT_MEASURED} />
+          <Stat label="Gross P&L (price units)" value={BACKTEST_NOT_MEASURED} />
+          <Stat label="Max DD (price units)" value={BACKTEST_NOT_MEASURED} />
+          <Stat label="Avg R:R" value={BACKTEST_NOT_MEASURED} />
+          <Stat label="Expectancy (price units)" value={BACKTEST_NOT_MEASURED} />
+          <Stat label="Profit factor" value={BACKTEST_NOT_MEASURED} />
+          <Stat label="Wins / losses" value={BACKTEST_NOT_MEASURED} />
+        </div>
+      ) : (
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Trades" value={formatBacktestNumber(run.totalTrades)} />
         <Stat label="Win rate" value={formatBacktestPercent(run.winRate)} tone={run.winRate >= 0.5 ? "good" : "bad"} />
@@ -91,6 +107,12 @@ export function BacktestResultsDashboard({ runId }: { runId: number | null }) {
         <Stat label="Profit factor" value={formatBacktestProfitFactor(run.profitFactor)} tone={run.profitFactor > 1 ? "good" : "bad"} />
         <Stat label="Wins / losses" value={`${formatBacktestNumber(run.winningTrades)} / ${formatBacktestNumber(run.losingTrades)}`} />
       </div>
+      )}
+      {unmeasured && (
+        <p className="text-[11px] text-slate-400">
+          No completed simulated trades in this run, so win rate, P&amp;L, drawdown, expectancy and profit factor were not measured. The stored zeros are placeholders, not results.
+        </p>
+      )}
 
       <p className="rounded-md border border-amber-700 bg-amber-950/30 p-2 text-[11px] text-amber-200">
         {evidence.limitations.join(" ")} Past performance does not guarantee future results.
