@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { RunAutonomousCycleCompletion } from "./runAutonomousCycleCompletion";
 import type { RunAutonomousCycleHoldDetail } from "./runAutonomousCycleHoldDetail";
 import type { RunAutonomousCycleProtective } from "./runAutonomousCycleProtective";
 import type { RunAutonomousCycleRespExecuted } from "./runAutonomousCycleRespExecuted";
@@ -26,4 +27,5 @@ export interface RunAutonomousCycleResp {
   /** One entry per hold reason with standalone plain-English text. Per-position detail stays in the self-trade audit log. */
   managementHeldDetails?: RunAutonomousCycleHoldDetail[];
   protective?: RunAutonomousCycleProtective;
+  completion?: RunAutonomousCycleCompletion;
 }

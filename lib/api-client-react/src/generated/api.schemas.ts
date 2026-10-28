@@ -15148,6 +15148,39 @@ export interface RunAutonomousCycleProtective {
   waitBudgetMs: number;
 }
 
+export type RunAutonomousCycleCompletionStatus =
+  (typeof RunAutonomousCycleCompletionStatus)[keyof typeof RunAutonomousCycleCompletionStatus];
+
+export const RunAutonomousCycleCompletionStatus = {
+  COMPLETED: "COMPLETED",
+  INCOMPLETE: "INCOMPLETE",
+  STOPPED: "STOPPED",
+} as const;
+
+export type RunAutonomousCycleCompletionStopReason =
+  | (typeof RunAutonomousCycleCompletionStopReason)[keyof typeof RunAutonomousCycleCompletionStopReason]
+  | null;
+
+export const RunAutonomousCycleCompletionStopReason = {
+  LEASE_LOST: "LEASE_LOST",
+} as const;
+
+/**
+ * Whether the cycle finished. COMPLETED only when every step ran and none threw, hit a bounded database wait, lost its database connection or left a protective outcome unproven. INCOMPLETE: a step failed, a connection/statement/lock/read wait timed out, a database connection was lost, or a protective action's outcome is uncertain; the outcome is not proven by the cycle (check the execution feed). STOPPED: the cross-process cycle lock was lost, so the cycle stopped at a safe point before its next dispatch.
+ */
+export interface RunAutonomousCycleCompletion {
+  status: RunAutonomousCycleCompletionStatus;
+  stopReason: RunAutonomousCycleCompletionStopReason;
+  decisionsFailed: number;
+  decisionsNotStarted: number;
+  agentsFailed: number;
+  agentsNotStarted: number;
+  managementStepFailed: boolean;
+  protectiveNotRun: number;
+  dbWaitTimeouts: number;
+  dbConnectionFailures: number;
+}
+
 export interface RunAutonomousCycleResp {
   ok: boolean;
   cycleId: string;
@@ -15163,6 +15196,7 @@ export interface RunAutonomousCycleResp {
   /** One entry per hold reason with standalone plain-English text. Per-position detail stays in the self-trade audit log. */
   managementHeldDetails?: RunAutonomousCycleHoldDetail[];
   protective?: RunAutonomousCycleProtective;
+  completion?: RunAutonomousCycleCompletion;
 }
 
 export type CockpitOverviewRespTraders = {

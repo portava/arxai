@@ -43,6 +43,11 @@ let drained: {
 };
 let pauseManagement = false;
 let drainThrows = false;
+let executeImpl: () => Promise<unknown> = async () => {
+  throw new Error("no decision is executed in this suite");
+};
+let reconcileImpl: () => Promise<unknown> = async () => reconciled;
+let manageCalls = 0;
 const audits: string[] = [];
 const drainQueueSizes: number[] = [];
 
@@ -54,10 +59,8 @@ mock.module("../decisionEngine.js", {
 });
 mock.module("../agentExecutor.js", {
   namedExports: {
-    executeAgentDecision: async () => {
-      throw new Error("no decision is executed in this suite");
-    },
-    reconcileAgentExecutions: async () => reconciled,
+    executeAgentDecision: () => executeImpl(),
+    reconcileAgentExecutions: () => reconcileImpl(),
   },
 });
 mock.module("../livePositionManager.js", {
@@ -69,6 +72,7 @@ mock.module("../livePositionManager.js", {
       options: { protectiveCycle?: { candidates: unknown[] } },
     ) => {
       // The manager only queues; the cycle drains once (step 5).
+      manageCalls++;
       options.protectiveCycle?.candidates.push({ queued: true });
       return { ...managed, evaluated: 0, alerted: 0, held: 1, protective: { queued: 1, considered: 0, waitedMs: 0, acted: 0, held: {} } };
     },
@@ -112,14 +116,33 @@ mock.module("../../security/anomalyService.js", { namedExports: { evaluateTradeA
 
 const { runAutonomousCycle } = await import("../autonomousCycle.js");
 const { buildRunCycleResponse, createCycleSingleFlight } = await import("../cycleReport.js");
+const { isDbConnectionLost, isDbWaitTimeout } = await import("../cycleCoordinator.js");
 
-const run = () => runAutonomousCycle({ actorUserId: 1, actorRole: "admin", reason: "qa protective accounting" });
+const run = (guard?: Parameters<typeof runAutonomousCycle>[0]["guard"]) =>
+  runAutonomousCycle({ actorUserId: 1, actorRole: "admin", reason: "qa protective accounting", guard });
+const COMPLETED = {
+  status: "COMPLETED" as const,
+  stopReason: null,
+  decisionsFailed: 0,
+  decisionsNotStarted: 0,
+  agentsFailed: 0,
+  agentsNotStarted: 0,
+  managementStepFailed: false,
+  protectiveNotRun: 0,
+  dbWaitTimeouts: 0,
+  dbConnectionFailures: 0,
+};
 
 beforeEach(() => {
   audits.length = 0;
   drainQueueSizes.length = 0;
   pauseManagement = false;
   drainThrows = false;
+  manageCalls = 0;
+  executeImpl = async () => {
+    throw new Error("no decision is executed in this suite");
+  };
+  reconcileImpl = async () => reconciled;
   activeAgentIds = [5];
   tableRows.clear();
   tableRows.set(database.selfTradeAgentsTable, [{ id: 5, agentKey: "alpha", ownerType: "OPERATOR_FLEET", ownerId: null }]);
@@ -175,6 +198,7 @@ describe("autonomous cycle: protective drain failure is reported, not silent", (
     assert.equal(result.protective.considered, 1, "the queued candidate is accounted for");
     assert.equal(result.protective.acted, 0);
     assert.equal(result.managementHeld.PROTECTIVE_DRAIN_FAILED, 1);
+    assert.equal(result.completion.status, "INCOMPLETE", "a failed drain is not a completed cycle");
     assert.equal(result.positionsClosed, 0);
     assert.equal(result.positionsModified, 0);
     const body = buildRunCycleResponse(result);
@@ -237,6 +261,7 @@ describe("run-autonomous-cycle response shape", () => {
       realizedPosted: 0,
       managementHeld: { MANAGEMENT_PAUSED_AACI_REVIEW: 1, SOMETHING_NEW: 2 },
       protective: { considered: 0, acted: 0, bridges: 0, elapsedMs: 0 },
+      completion: COMPLETED,
     });
     assert.deepEqual(
       body.managementHeldDetails.map((d) => [d.reason, d.kind]),
@@ -266,6 +291,7 @@ describe("run-autonomous-cycle: outcome-unknown holds are split from plain holds
         MANAGEMENT_OBSERVATION_STALE: 5,
       },
       protective: { considered: 5, acted: 1, bridges: 1, elapsedMs: 20_400 },
+      completion: COMPLETED,
     });
     assert.equal(body.protective.commandRecordedOrUnknown, 2);
     assert.equal(body.protective.held, 2, "considered 5 = sent 1 + recorded/unknown 2 + held 2");
@@ -288,5 +314,152 @@ describe("run-autonomous-cycle: single flight per process", () => {
     await assert.rejects(flight.run(async () => { throw new Error("boom"); }), /boom/);
     assert.equal(flight.inFlightSince(), null, "a throw frees the slot");
     assert.deepEqual(await flight.run(async () => 3), { ran: true, value: 3 });
+  });
+});
+
+describe("autonomous cycle: completion is never claimed after a failure, a bounded wait or a lost lock", () => {
+  const decisionRows = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: 100 + i, agentId: 5, symbol: "EURUSD", cycleId: "cycle-qa-1" }));
+  const withDecisions = (n: number) => {
+    tableRows.set(database.selfTradeDecisionsTable, decisionRows(n));
+    tableRows.set(database.selfTradeAgentSettingsTable, [{ agentId: 5, maxLotPerTrade: 1, dailyMinTrades: 0 }]);
+  };
+  const timeoutError = () => Object.assign(new Error("canceling statement due to lock timeout"), { code: "55P03" });
+  const guardFrom = (answers: boolean[], dbWaitTimeouts = 0, dbConnectionFailures = 0) => {
+    let calls = 0;
+    return {
+      calls: () => calls,
+      stillHeld: async () => answers[Math.min(calls++, answers.length - 1)]!,
+      stats: () => ({ dbWaitTimeouts, dbConnectionFailures, leaseLost: null }),
+    };
+  };
+
+  it("an ordinary cycle reports COMPLETED", async () => {
+    const result = await run();
+    assert.deepEqual(result.completion, COMPLETED);
+    assert.equal(buildRunCycleResponse(result).completion.status, "COMPLETED");
+  });
+
+  it("an executor that throws (outcome not proven) makes the cycle INCOMPLETE; a lock timeout is counted", async () => {
+    withDecisions(2);
+    let n = 0;
+    executeImpl = async () => {
+      n++;
+      if (n === 1) throw timeoutError();
+      return { status: "DISPATCHED", action: "BUY" };
+    };
+    const result = await run();
+    assert.equal(result.executed.DISPATCHED, 1, "the other decision still ran");
+    assert.equal(result.completion.decisionsFailed, 1);
+    assert.equal(result.completion.dbWaitTimeouts, 1);
+    assert.equal(result.completion.status, "INCOMPLETE");
+  });
+
+  it("a manage/reconcile step that throws is counted per agent", async () => {
+    reconcileImpl = async () => {
+      throw new Error("timeout exceeded when trying to connect");
+    };
+    const result = await run();
+    assert.equal(result.completion.agentsFailed, 1);
+    assert.equal(result.completion.dbWaitTimeouts, 1, "connection-acquisition timeout counted");
+    assert.equal(result.completion.status, "INCOMPLETE");
+  });
+
+  it("a timeout absorbed below the cycle (counted by the guard) still makes it INCOMPLETE", async () => {
+    const result = await run(guardFrom([true], 2));
+    assert.equal(result.completion.dbWaitTimeouts, 2);
+    assert.equal(result.completion.status, "INCOMPLETE");
+  });
+
+  it("a database connection lost below the cycle (counted by the guard) makes it INCOMPLETE, not a timeout", async () => {
+    const result = await run(guardFrom([true], 0, 1));
+    assert.equal(result.completion.dbConnectionFailures, 1);
+    assert.equal(result.completion.dbWaitTimeouts, 0);
+    assert.equal(result.completion.status, "INCOMPLETE");
+  });
+
+  it("a step that throws on a terminated connection is counted as a connection failure", async () => {
+    reconcileImpl = async () => {
+      throw Object.assign(new Error("terminating connection due to administrator command"), { code: "57P01" });
+    };
+    const result = await run();
+    assert.equal(result.completion.dbConnectionFailures, 1);
+    assert.equal(result.completion.status, "INCOMPLETE");
+  });
+
+  for (const reason of ["PROTECTIVE_HOLD_OUTCOME_UNCERTAIN", "PROTECTIVE_HOLD_INTERNAL_ERROR"]) {
+    it(`a protective ${reason} hold (outcome not established) is never COMPLETED`, async () => {
+      drained = { considered: 1, acted: 0, waitedMs: 0, held: { [reason]: 1 }, bridges: 1, elapsedMs: 5 };
+      const result = await run();
+      assert.equal(result.completion.agentsFailed, 0, "no step threw");
+      assert.equal(result.completion.status, "INCOMPLETE");
+    });
+  }
+
+  it("classifies lost connections apart from bounded-wait timeouts", () => {
+    for (const lost of [
+      { code: "57P01" },
+      { code: "57P02" },
+      { code: "08006" },
+      { code: "ECONNRESET" },
+      new Error("Connection terminated unexpectedly"),
+      new Error("Client has encountered a connection error and is not queryable"),
+      Object.assign(new Error("wrapped"), { cause: { code: "57P01" } }),
+    ])
+      assert.equal(isDbConnectionLost(lost), true, JSON.stringify(lost) + String(lost));
+    for (const timeout of [
+      new Error("Query read timeout"),
+      new Error("Connection terminated due to connection timeout"),
+      { code: "57014" },
+      { code: "55P03" },
+    ]) {
+      assert.equal(isDbWaitTimeout(timeout), true, String(timeout));
+      assert.equal(isDbConnectionLost(timeout), false, String(timeout));
+    }
+    assert.equal(isDbConnectionLost(new Error("duplicate key value")), false);
+  });
+
+  it("a lock lost before the first decision stops everything after it: nothing executed, managed or drained", async () => {
+    withDecisions(3);
+    let executed = 0;
+    executeImpl = async () => {
+      executed++;
+      return { status: "DISPATCHED", action: "BUY" };
+    };
+    const guard = guardFrom([false]);
+    const result = await run(guard);
+    assert.equal(executed, 0);
+    assert.equal(manageCalls, 0);
+    assert.deepEqual(drainQueueSizes, [], "no drain");
+    assert.equal(result.agentsManaged, 0);
+    assert.equal(result.completion.status, "STOPPED");
+    assert.equal(result.completion.stopReason, "LEASE_LOST");
+    assert.equal(result.completion.decisionsNotStarted, 3);
+    assert.equal(guard.calls(), 1, "no further checks once stopped");
+  });
+
+  it("a lock lost between decisions stops at the next one and skips management and the drain", async () => {
+    withDecisions(3);
+    let executed = 0;
+    executeImpl = async () => {
+      executed++;
+      return { status: "DISPATCHED", action: "BUY" };
+    };
+    const result = await run(guardFrom([true, false]));
+    assert.equal(executed, 1);
+    assert.equal(result.completion.decisionsNotStarted, 2);
+    assert.equal(manageCalls, 0);
+    assert.deepEqual(drainQueueSizes, []);
+    assert.equal(result.completion.status, "STOPPED");
+  });
+
+  it("a lock lost after management leaves queued protective candidates undrained (nothing claimed)", async () => {
+    // Checks: agent 5 (held), then the drain (lost).
+    const result = await run(guardFrom([true, false]));
+    assert.equal(manageCalls, 1);
+    assert.deepEqual(drainQueueSizes, [], "drain not run");
+    assert.equal(result.completion.protectiveNotRun, 1);
+    assert.equal(result.protective.acted, 0);
+    assert.equal(result.completion.status, "STOPPED");
   });
 });
