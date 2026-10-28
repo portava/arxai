@@ -518,11 +518,25 @@ router.get("/me/sniper-watchlist", async (req, res) => {
       reasons: string[]; urgencyTier: "info" | "watch" | "warning" | "urgent";
     }> = [];
 
+    // What the scan actually evaluated. The flag checks below treat a missing
+    // score or P&L as "did not fire" (`?? 0`), so an unscored trade is never
+    // flagged; count those gaps so the page does not call them "not flagged".
+    let unresolvedCount = 0;
+    const signalGaps = {
+      closeUrgency: 0, profitGiveback: 0, stopTargetProximity: 0,
+      reversalRisk: 0, fakeoutRisk: 0, volatilityRisk: 0,
+    };
     for (const k of keys) {
       const trade = await resolveTrade(userId, k);
-      if (!trade) continue;
+      if (!trade) { unresolvedCount++; continue; }
       const r = await computeAndPersist(userId, trade, env.accountType);
       const s = r.snap;
+      if (s.closeUrgencyScore == null) signalGaps.closeUrgency++;
+      if (trade.unrealizedPnl == null) signalGaps.profitGiveback++;
+      if (trade.currentPrice == null || trade.entryPrice == null) signalGaps.stopTargetProximity++;
+      if (s.reversalRiskScore == null) signalGaps.reversalRisk++;
+      if (s.fakeoutRiskScore == null) signalGaps.fakeoutRisk++;
+      if (s.volatilityRiskScore == null) signalGaps.volatilityRisk++;
       const reasons: string[] = [];
       const urg = s.closeUrgencyScore ?? 0;
       const giveback = s.profitGivebackPercent ?? 0;
@@ -572,6 +586,12 @@ router.get("/me/sniper-watchlist", async (req, res) => {
       routingMode: env.accountRoutingMode,
       scannedVenues,
       scannedCount: keys.length,
+      // Of scannedCount: trades that could not be read (not evaluated at all),
+      // trades evaluated, and per signal how many evaluated trades had no
+      // score / input for it (that check could not fire for them).
+      unresolvedCount,
+      evaluatedCount: keys.length - unresolvedCount,
+      signalGaps,
       notScanned,
       lastUpdatedAt: new Date().toISOString(),
       dataFreshness: "fresh",
