@@ -1241,6 +1241,7 @@ export * from "./mt5ModifyInput";
 export * from "./mt5Position";
 export * from "./mt5PositionsSync";
 export * from "./mt5State";
+export * from "./mt5StateScope";
 export * from "./mt5Status";
 export * from "./mt5StatusAccountSnapshot";
 export * from "./mt5StatusAccountType";

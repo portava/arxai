@@ -1903,28 +1903,113 @@ router.post("/mt5/execution-result", bridgeAuthPerUserOnly, async (req, res): Pr
   }
 });
 
-router.get("/mt5/state", async (_req, res) => {
-  const state = await loadOrCreateState();
-  // "connected" = heartbeat online under the shared policy (fresh or
-  // degraded, age < 60 s); heartbeatFreshness carries the full band.
-  const heartbeatFreshness = classifyHeartbeatAt(state.lastHeartbeatAt ?? null, Date.now());
-  const connected = heartbeatIsOnline(heartbeatFreshness);
+// GET /mt5/state used to return the platform mt5_state row (account number,
+// balances, liveAllowed, positions) to anyone, signed in or not. That row is
+// whichever EA terminal heartbeated last; it has no owner column, so it is
+// never "your account". Now: sign-in required; operators (ADMIN/OWNER) get
+// the platform row marked scope "platform"; everyone else gets only their own
+// bridge connection (or the shared-master bridge they route through), with no
+// positions claimed, marked by scope. The bridge's own write paths are
+// untouched.
+const MT5_STATE_POSITIONS_NOT_READ =
+  "Open positions are not read here. See Live Trades or My Trades for your broker-reported positions.";
+const MT5_STATE_LIVE_NOTE =
+  "Live order placement is locked on this platform; this field is not a per-account permission.";
+
+router.get("/mt5/state", requireUser, async (req, res) => {
+  const user = req.authUser!;
+  const now = Date.now();
+
+  if (operatorRoleFromSession(user.role)) {
+    const state = await readPlatformMt5State();
+    // "connected" = heartbeat online under the shared policy (fresh or
+    // degraded, age < 60 s); heartbeatFreshness carries the full band.
+    const heartbeatFreshness = classifyHeartbeatAt(state?.lastHeartbeatAt ?? null, now);
+    const connected = heartbeatIsOnline(heartbeatFreshness);
+    res.json({
+      scope: "platform",
+      scopeNote: "Install-wide EA feed: the terminal that heartbeated last. It is not tied to any one user's account.",
+      connected,
+      heartbeatFreshness,
+      account: state?.account ?? null,
+      broker: state?.broker ?? null,
+      server: state?.server ?? null,
+      balance: state?.balance ?? null,
+      equity: state?.equity ?? null,
+      margin: state?.margin ?? null,
+      freeMargin: state?.freeMargin ?? null,
+      marginLevel: state?.marginLevel ?? null,
+      currency: state?.currency ?? null,
+      liveAllowed: !!state?.liveAllowed,
+      positions: Array.isArray(state?.positions) ? state!.positions : [],
+      positionsMeasured: state != null,
+      lastHeartbeatAt: state?.lastHeartbeatAt?.toISOString() ?? null,
+      lastSyncAt: state?.lastSyncAt?.toISOString() ?? null,
+    });
+    return;
+  }
+
+  // Non-operator: only what the caller owns. Never the platform row.
+  const ownerFields = {
+    liveAllowed: false,
+    liveAllowedNote: MT5_STATE_LIVE_NOTE,
+    positions: [] as unknown[],
+    positionsMeasured: false,
+    positionsNote: MT5_STATE_POSITIONS_NOT_READ,
+  };
+  const conn = await getUserActiveConnection(user.id);
+  if (conn) {
+    const lastHb = conn.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
+    const heartbeatFreshness = classifyHeartbeatAt(lastHb, now);
+    res.json({
+      scope: "own_connection",
+      scopeNote: "Your own MT5 bridge connection, as its EA last reported it.",
+      connected: heartbeatIsOnline(heartbeatFreshness),
+      heartbeatFreshness,
+      account: conn.accountNumber ?? null,
+      broker: conn.brokerName ?? null,
+      server: conn.serverName ?? null,
+      balance: conn.accountBalance ?? null,
+      equity: conn.accountEquity ?? null,
+      margin: conn.margin ?? null,
+      freeMargin: conn.freeMargin ?? null,
+      marginLevel: null,
+      currency: conn.accountCurrency ?? null,
+      ...ownerFields,
+      lastHeartbeatAt: lastHb?.toISOString() ?? null,
+      lastSyncAt: conn.accountSyncedAt ? new Date(conn.accountSyncedAt).toISOString() : null,
+    });
+    return;
+  }
+
+  const shared = await readSharedMasterBridgeForUser(user.id);
+  const bridge = shared.sharedMasterBridge;
+  const emptyAccount = {
+    account: null, broker: null, server: null, balance: null, equity: null,
+    margin: null, freeMargin: null, marginLevel: null, currency: null,
+  };
+  if (bridge) {
+    res.json({
+      scope: "shared_master_bridge",
+      scopeNote: `You trade through the shared MT5 bridge; its account is not shown here. ${bridge.message ?? ""}`.trim(),
+      connected: bridge.connected === true,
+      heartbeatFreshness: classifyHeartbeatAt(bridge.lastSnapshotAt ? new Date(bridge.lastSnapshotAt) : null, now),
+      ...emptyAccount,
+      ...ownerFields,
+      lastHeartbeatAt: bridge.lastSnapshotAt ?? null,
+      lastSyncAt: null,
+    });
+    return;
+  }
   res.json({
-    connected,
-    heartbeatFreshness,
-    account: state.account,
-    broker: state.broker,
-    server: state.server,
-    balance: state.balance,
-    equity: state.equity,
-    margin: state.margin,
-    freeMargin: state.freeMargin,
-    marginLevel: state.marginLevel,
-    currency: state.currency,
-    liveAllowed: !!state.liveAllowed,
-    positions: Array.isArray(state.positions) ? state.positions : [],
-    lastHeartbeatAt: state.lastHeartbeatAt?.toISOString() ?? null,
-    lastSyncAt: state.lastSyncAt?.toISOString() ?? null,
+    scope: "none",
+    scopeNote: "You have no MT5 bridge connection. Set one up in MT5 Bridge settings.",
+    connected: false,
+    heartbeatFreshness: classifyHeartbeatAt(null, now),
+    ...emptyAccount,
+    ...ownerFields,
+    lastHeartbeatAt: null,
+    lastSyncAt: null,
   });
 });
 

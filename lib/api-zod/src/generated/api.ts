@@ -4825,7 +4825,8 @@ export const Mt5SyncPositionsResponse = zod.object({
 });
 
 /**
- * @summary Latest known MT5 connection state
+ * Requires sign-in (401 otherwise). Operators (ADMIN/OWNER) receive the install-wide EA feed (scope platform). Everyone else receives only their own bridge connection, or the shared-master bridge they route through, with no positions claimed (scope own_connection, shared_master_bridge or none).
+ * @summary MT5 connection state, scoped to the caller
  */
 export const GetMt5StateResponse = zod.object({
   connected: zod.boolean(),
@@ -4855,6 +4856,29 @@ export const GetMt5StateResponse = zod.object({
     .optional(),
   lastHeartbeatAt: zod.string().nullish(),
   lastSyncAt: zod.string().nullish(),
+  scope: zod
+    .enum(["platform", "own_connection", "shared_master_bridge", "none"])
+    .optional()
+    .describe(
+      "Whose state this is. platform is the install-wide EA feed (operators only) and is not any one user's account.",
+    ),
+  scopeNote: zod
+    .string()
+    .optional()
+    .describe("Plain statement of whose state this is."),
+  positionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "False when positions were not read for this caller. An empty list is then not a count of open trades.",
+    ),
+  positionsNote: zod.string().optional(),
+  liveAllowedNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Present when liveAllowed is the platform-wide lock rather than a value reported by the caller's terminal.",
+    ),
 });
 
 /**

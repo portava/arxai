@@ -1906,7 +1906,8 @@ paths:
     get:
       operationId: getMt5State
       tags: [mt5]
-      summary: Latest known MT5 connection state
+      summary: MT5 connection state, scoped to the caller
+      description: Requires sign-in (401 otherwise). Operators (ADMIN/OWNER) receive the install-wide EA feed (scope platform). Everyone else receives only their own bridge connection, or the shared-master bridge they route through, with no positions claimed (scope own_connection, shared_master_bridge or none).
       responses:
         "200":
           description: MT5 state
@@ -18983,6 +18984,21 @@ components:
             $ref: "#/components/schemas/Mt5Position"
         lastHeartbeatAt: { type: ["string", "null"] }
         lastSyncAt: { type: ["string", "null"] }
+        scope:
+          type: string
+          enum: [platform, own_connection, shared_master_bridge, none]
+          description: Whose state this is. platform is the install-wide EA feed (operators only) and is not any one user's account.
+        scopeNote:
+          type: string
+          description: Plain statement of whose state this is.
+        positionsMeasured:
+          type: boolean
+          description: False when positions were not read for this caller. An empty list is then not a count of open trades.
+        positionsNote:
+          type: string
+        liveAllowedNote:
+          type: string
+          description: Present when liveAllowed is the platform-wide lock rather than a value reported by the caller's terminal.
 
     Mt5Status:
       type: object
