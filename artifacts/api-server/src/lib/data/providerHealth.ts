@@ -24,7 +24,13 @@
 //   - NEVER fabricates candles. Empty results stay empty.
 //   - NEVER touches MT5 dispatch, live order pipeline, or any safety state.
 
-import { classifyHeartbeatAgeSeconds, type HeartbeatFreshness } from "../brokerHub/freshness.js";
+import {
+  classifyHeartbeatAgeSeconds,
+  classifyHeartbeatAt,
+  heartbeatAgeMsFrom,
+  type HeartbeatFreshness,
+} from "../brokerHub/freshness.js";
+import { listConnections } from "../brokerHub/connections.js";
 import { MT5_FEED_FRESH_MS } from "./freshness.js";
 import {
   classifySymbol,
@@ -104,6 +110,23 @@ export interface FeedsHealth {
       accountType: string | null;
       masterLiveCapable: boolean;
       blockReason: string | null;
+      // Whose heartbeat this is: the bridge the master-live detector
+      // evaluated (LIVE-mode bridges first whenever any exist) — not
+      // necessarily the freshest bridge. See freshestBridge for that.
+      subject: "master_live_candidate";
+      // false = the detector read failed; status "none" then means
+      // "could not be read", not "no bridge".
+      readOk: boolean;
+    };
+    // The freshest heartbeat of any non-revoked bridge, whatever its mode.
+    freshestBridge: {
+      readOk: boolean;
+      present: boolean;
+      status: "live" | "stale" | "offline" | "none";
+      ageSec: number | null;
+      mode: string | null;
+      accountType: string | null;
+      eaVersion: string | null;
     };
     quotePush: {
       active: boolean;
@@ -561,11 +584,32 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
   // MT5 heartbeat — read the freshest connected bridge (read-only detector).
   // Shared heartbeat policy: fresh → live, degraded → stale, offline /
   // missing / invalid → offline.
-  const bridge = await detectCurrentConnectedBridge().catch(() => null);
+  let bridgeReadOk = true;
+  const bridge = await detectCurrentConnectedBridge().catch(() => {
+    bridgeReadOk = false;
+    return null;
+  });
   const bridgeEv = bridge ? (bridge.ok ? bridge.bridge : bridge.latestHint) : null;
   const hbAgeSec = bridgeEv?.heartbeatAgeSec ?? null;
   const hbStatus: FeedsHealth["mt5"]["heartbeat"]["status"] =
     !bridgeEv ? "none" : HB_FEED_STATUS[classifyHeartbeatAgeSeconds(hbAgeSec)];
+
+  // Freshest heartbeat of ANY non-revoked bridge (DEMO included), read on
+  // its own so a stale LIVE candidate can't hide a bridge that is heartbeating.
+  const hbNowMs = Date.now();
+  const freshestRow = await listConnections({ activeTokenOnly: true, order: "heartbeat", limit: 1 })
+    .then((rows) => ({ ok: true as const, row: rows[0] ?? null }))
+    .catch(() => ({ ok: false as const, row: null }));
+  const freshestAgeMs = freshestRow.row ? heartbeatAgeMsFrom(freshestRow.row.lastHeartbeat, hbNowMs) : null;
+  const freshestBridge: FeedsHealth["mt5"]["freshestBridge"] = {
+    readOk: freshestRow.ok,
+    present: freshestRow.row != null,
+    status: !freshestRow.row ? "none" : HB_FEED_STATUS[classifyHeartbeatAt(freshestRow.row.lastHeartbeat, hbNowMs)],
+    ageSec: freshestAgeMs == null ? null : Math.floor(freshestAgeMs / 1000),
+    mode: freshestRow.row?.mode ?? null,
+    accountType: freshestRow.row?.accountType ?? null,
+    eaVersion: freshestRow.row?.eaVersion ?? null,
+  };
 
   // MT5 quote push — honest count of probe symbols with a fresh usable quote.
   // We never fabricate a quote to make this look active.
@@ -606,7 +650,10 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
         accountType: bridgeEv?.accountType ?? null,
         masterLiveCapable: bridge?.ok === true,
         blockReason: bridge && !bridge.ok ? bridge.primaryReason : null,
+        subject: "master_live_candidate",
+        readOk: bridgeReadOk,
       },
+      freshestBridge,
       quotePush: {
         active: symbolsWithFreshQuote > 0,
         symbolsWithFreshQuote,

@@ -57,6 +57,20 @@ interface FeedsHealth {
       accountType: string | null;
       masterLiveCapable: boolean;
       blockReason: string | null;
+      // The bridge the master-live detector evaluated (LIVE-mode first) —
+      // not necessarily the freshest bridge. Absent on older servers.
+      subject?: "master_live_candidate";
+      readOk?: boolean;
+    };
+    // Freshest heartbeat of any non-revoked bridge (absent on older servers).
+    freshestBridge?: {
+      readOk: boolean;
+      present: boolean;
+      status: "live" | "stale" | "offline" | "none";
+      ageSec: number | null;
+      mode: string | null;
+      accountType: string | null;
+      eaVersion: string | null;
     };
     quotePush: { active: boolean; symbolsWithFreshQuote: number; symbolsProbed: number; note: string };
     candlePush: { active: boolean; totalSeries: number; contributing: number; stale: number; nonContributing: number };
@@ -687,11 +701,43 @@ export default function ProviderHealthPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-              {/* MT5 heartbeat */}
+              {/* Freshest MT5 bridge heartbeat (any mode) */}
+              {snap.feeds.mt5.freshestBridge && (
+                <div className="border border-border/40 rounded p-3 space-y-1" data-testid="feed-mt5-freshest-bridge">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">Freshest MT5 bridge heartbeat</span>
+                    {snap.feeds.mt5.freshestBridge.readOk ? (
+                      <Badge className={feedStatusCls(snap.feeds.mt5.freshestBridge.status)}>
+                        {snap.feeds.mt5.freshestBridge.present ? snap.feeds.mt5.freshestBridge.status : "no bridge registered"}
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-warning/20 text-warning">could not be loaded</Badge>
+                    )}
+                  </div>
+                  {snap.feeds.mt5.freshestBridge.readOk && snap.feeds.mt5.freshestBridge.present && (
+                    <div className="text-muted-foreground font-mono">
+                      age {snap.feeds.mt5.freshestBridge.ageSec == null ? "—" : `${snap.feeds.mt5.freshestBridge.ageSec}s`}
+                      {" · "}mode {snap.feeds.mt5.freshestBridge.mode ?? "—"}
+                      {" · "}EA {snap.feeds.mt5.freshestBridge.eaVersion ?? "—"}
+                      {" · "}{snap.feeds.mt5.freshestBridge.accountType ?? "—"}
+                    </div>
+                  )}
+                  <div className="text-muted-foreground">Any non-revoked bridge, demo included.</div>
+                </div>
+              )}
+
+              {/* Master-live candidate heartbeat */}
               <div className="border border-border/40 rounded p-3 space-y-1" data-testid="feed-mt5-heartbeat">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold">MT5 heartbeat</span>
-                  <Badge className={feedStatusCls(snap.feeds.mt5.heartbeat.status)}>{snap.feeds.mt5.heartbeat.status}</Badge>
+                  <span className="font-semibold">MT5 master-live candidate heartbeat</span>
+                  {snap.feeds.mt5.heartbeat.readOk === false ? (
+                    <Badge className="bg-warning/20 text-warning">could not be loaded</Badge>
+                  ) : (
+                    <Badge className={feedStatusCls(snap.feeds.mt5.heartbeat.status)}>{snap.feeds.mt5.heartbeat.status}</Badge>
+                  )}
+                </div>
+                <div className="text-muted-foreground">
+                  The bridge the master-live check evaluated (LIVE-mode bridges first) — not necessarily the freshest bridge.
                 </div>
                 <div className="text-muted-foreground font-mono">
                   age {snap.feeds.mt5.heartbeat.ageSec == null ? "—" : `${snap.feeds.mt5.heartbeat.ageSec}s`}

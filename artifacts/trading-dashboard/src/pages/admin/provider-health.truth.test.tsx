@@ -102,4 +102,48 @@ describe("Provider Health status truth", () => {
     expect(card.textContent).not.toMatch(/on a fallback/i);
     expect(card.textContent).toMatch(/No provider answered/i);
   });
+
+  it("the MT5 heartbeat row names the master-live candidate and the freshest bridge is shown separately", async () => {
+    const base = snapshot();
+    await renderPage({
+      ...base,
+      feeds: {
+        ...base.feeds,
+        mt5: {
+          ...base.feeds.mt5,
+          heartbeat: {
+            present: true, status: "offline", ageSec: 3600, eaVersion: "1.50", accountType: "live",
+            masterLiveCapable: false, blockReason: "MASTER_BRIDGE_HEARTBEAT_STALE",
+            subject: "master_live_candidate", readOk: true,
+          },
+          freshestBridge: { readOk: true, present: true, status: "live", ageSec: 2, mode: "DEMO", accountType: "demo", eaVersion: "1.50" },
+        },
+      },
+    });
+    const candidate = await screen.findByTestId("feed-mt5-heartbeat");
+    expect(candidate.textContent).toMatch(/master-live candidate/i);
+    expect(candidate.textContent).toMatch(/not necessarily the freshest bridge/i);
+    const freshest = screen.getByTestId("feed-mt5-freshest-bridge");
+    expect(within(freshest).getByText("live")).toBeTruthy();
+    expect(freshest.textContent).toContain("mode DEMO");
+  });
+
+  it("a failed bridge read says 'could not be loaded', not 'none'", async () => {
+    const base = snapshot();
+    await renderPage({
+      ...base,
+      feeds: {
+        ...base.feeds,
+        mt5: {
+          ...base.feeds.mt5,
+          heartbeat: { ...base.feeds.mt5.heartbeat, subject: "master_live_candidate", readOk: false },
+          freshestBridge: { readOk: false, present: false, status: "none", ageSec: null, mode: null, accountType: null, eaVersion: null },
+        },
+      },
+    });
+    const candidate = await screen.findByTestId("feed-mt5-heartbeat");
+    expect(within(candidate).getByText("could not be loaded")).toBeTruthy();
+    expect(within(candidate).queryByText("none")).toBeNull();
+    expect(within(screen.getByTestId("feed-mt5-freshest-bridge")).getByText("could not be loaded")).toBeTruthy();
+  });
 });
