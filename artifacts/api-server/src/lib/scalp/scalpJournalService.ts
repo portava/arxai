@@ -29,7 +29,9 @@ import {
   computeQualityBias,
   deriveResult,
   deriveReview,
+  findContinuedEntry,
   higherUrgency,
+  unionLegTickets,
   EMPTY_PERSONALITY_COUNTS,
   type JournalEntrySnapshot,
   type PersonalityClosedTrade,
@@ -74,21 +76,30 @@ export async function recordScalpBasketsObservation(
 ): Promise<void> {
   try {
     const now = new Date();
-    const openKeys = new Set(snapshots.map((s) => s.basketKey));
-
-    // 1) Upsert each currently-open basket.
-    for (const s of snapshots) {
-      await upsertOpenEntry(userId, accountMode, s, now);
-    }
-
-    // 2) Finalize entries that are OPEN in the DB but no longer present live.
     const dbOpen = await db.select().from(scalpJournalEntriesTable).where(and(
       eq(scalpJournalEntriesTable.userId, userId),
       eq(scalpJournalEntriesTable.accountMode, accountMode),
       eq(scalpJournalEntriesTable.status, "OPEN"),
     ));
+    const openKeys = new Set(snapshots.map((s) => s.basketKey));
+    const stillOpenIds = new Set<number>();
+
+    // 1) Upsert each currently-open basket. A basket whose oldest leg closed
+    //    has a new first-leg key but is the same scalp: it continues its OPEN
+    //    entry (matched by a shared ticket) instead of starting a new one.
+    for (const s of snapshots) {
+      const continued = findContinuedEntry(dbOpen, s);
+      if (continued) {
+        await updateOpenEntry(userId, continued, s, now);
+        stillOpenIds.add(continued.id);
+      } else {
+        await upsertOpenEntry(userId, accountMode, s, now);
+      }
+    }
+
+    // 2) Finalize entries that are OPEN in the DB but no longer present live.
     for (const row of dbOpen) {
-      if (openKeys.has(row.basketKey)) continue;
+      if (stillOpenIds.has(row.id) || openKeys.has(row.basketKey)) continue;
       await finalizeClosedEntry(userId, accountMode, row, now);
     }
   } catch {
@@ -151,13 +162,25 @@ async function upsertOpenEntry(
     return;
   }
 
-  // Update the evolving fields only — keep the at-entry snapshot frozen.
-  const prev = existing[0]!;
+  await updateOpenEntry(userId, existing[0]!, s, now);
+}
+
+async function updateOpenEntry(
+  userId: number,
+  prev: ScalpJournalEntry,
+  s: ObservationSnapshot,
+  now: Date,
+): Promise<void> {
+  // Update the evolving fields only — keep the at-entry snapshot frozen. The
+  // leg tickets and the add-on count only grow: a leg closed early is still
+  // part of this scalp, and its result is read from its ticket when the scalp
+  // closes. entryCount stays the legs open at this observation, the legs the
+  // last floating reading covers.
   const maxUrg = higherUrgency(prev.maxExitUrgency as ScalpExitUrgency, s.maxExitUrgency);
   await db.update(scalpJournalEntriesTable).set({
-    legTickets: s.legTickets,
+    legTickets: unionLegTickets(prev.legTickets, s.legTickets),
     entryCount: s.entryCount,
-    addOnCount: s.addOnCount,
+    addOnCount: Math.max(prev.addOnCount, s.addOnCount),
     averageEntry: s.averageEntry,
     breakEvenPrice: s.breakEvenPrice,
     maxExitUrgency: maxUrg,
