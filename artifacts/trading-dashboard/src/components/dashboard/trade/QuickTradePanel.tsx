@@ -88,7 +88,7 @@ export function QuickTradePanel({
   return (
     <CockpitCard
       title="Quick Trade"
-      subtitle="Execute a trade in seconds."
+      subtitle="Pick a market, then open the manual ticket to place the order."
       icon={<Zap className="h-[18px] w-[18px]" />}
       accent="blue"
       data-testid="quick-trade-tab"
@@ -223,20 +223,23 @@ export function QuickTradePanel({
 
       {/* Actions */}
       {canTrade ? (
-        <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-2">
+        <>
+        <div className="mt-4 grid grid-cols-2 gap-2">
           <button onClick={goTicket} data-testid="trade-action-sell"
             className="flex h-12 items-center justify-center gap-2 rounded-xl bg-danger font-semibold text-white hover:bg-danger/90">
             <TrendingDown className="h-4 w-4" /> SELL {sell ?? ""}
-          </button>
-          <button onClick={goTicket} data-testid="trade-action-cancel"
-            className="flex h-12 items-center justify-center rounded-xl border border-border px-5 font-medium text-txt-secondary hover:bg-secondary/50">
-            Cancel
           </button>
           <button onClick={goTicket} data-testid="trade-action-buy"
             className="flex h-12 items-center justify-center gap-2 rounded-xl bg-success font-semibold text-white hover:bg-success/90">
             <TrendingUp className="h-4 w-4" /> BUY {buy ?? ""}
           </button>
         </div>
+        {/* The ticket only picks up the shared chart symbol; nothing else on
+            this panel reaches it, and no order is sent from here. */}
+        <p className="mt-2 text-xs text-txt-muted" data-testid="trade-ticket-handoff-note">
+          SELL and BUY open the manual ticket with {symbol} selected; no order is sent from this panel. The side, lot size, order type, stop loss and take profit set here are not carried over, so set them again on the ticket before you submit.
+        </p>
+        </>
       ) : (
         <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-3 text-center text-sm font-medium text-warning" data-testid="trade-action-blocked">
           {blockedLabel}
