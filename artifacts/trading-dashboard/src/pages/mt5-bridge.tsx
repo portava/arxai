@@ -157,11 +157,19 @@ export default function MT5BridgePage() {
     return { label: "Not connected", tone: "warning" };
   }, [checking, frozen, bridgeUp, onShared, shared?.availability, s, status.isError]);
 
-  const approvalTone: Tone = frozen ? "danger" : ((mode as any).approvalStatus === "APPROVED" || (mode as any).isLiveShared) ? "success" : "warning";
-  const approvalLabel = frozen ? "Frozen" : ((mode as any).approvalStatus === "APPROVED" || (mode as any).isLiveShared) ? "Approved" : ((mode as any).approvalStatus ? "Pending" : "Checking");
+  const approved = (mode as any).approvalStatus === "APPROVED" || (mode as any).isLiveShared === true;
+  const approvalTone: Tone = frozen ? "danger" : approved ? "success" : "warning";
+  const approvalLabel = frozen ? "Frozen" : approved ? "Approved" : ((mode as any).approvalStatus ? "Pending" : "Checking");
 
   const routeLabel = (mode as any).cleanModeLabel ?? ((mode as any).isLiveShared ? "Live Shared MT5" : (mode as any).isDemo ? "Demo" : "Analysis Only");
   const bridgeHealthy = bridgeUp && !frozen;
+  // A reporting bridge alone does not make execution available: the account
+  // must be approved too. Approval is a separate field from the heartbeat.
+  const executionAvailable = bridgeHealthy && approved;
+  const executionLabel = executionAvailable ? "Available" : bridgeHealthy ? "Awaiting approval" : "Paused";
+  // This page reads only the bridge heartbeat. It does not measure the price
+  // feed, result reporting or position/account refresh, so it does not claim them.
+  const NOT_CHECKED = "Not checked here";
   const bridgeCopy = frozen
     ? ((mode as any).freezeMessage ?? "Your account is currently frozen. Contact support or wait for review.")
     : bridgeHealthy
@@ -172,8 +180,9 @@ export default function MT5BridgePage() {
   const openTrades = Array.isArray(s?.openPositions) ? s.openPositions.length : null;
   const lastSync = fmtAge(onShared ? (shared?.snapshotAgeSeconds ?? null) : (s?.secondsSinceHeartbeat ?? null));
 
-  const riskTone: Tone = frozen ? "danger" : "success";
-  const riskLabel = frozen ? "High" : "Low";
+  // Only the risk lock is known here; no risk level is measured.
+  const riskTone: Tone = frozen ? "danger" : "muted";
+  const riskLabel = frozen ? "Locked" : "Not locked";
 
   if (checking) {
     return (
@@ -191,12 +200,12 @@ export default function MT5BridgePage() {
   const rubyRead = frozen
     ? "Your account is currently risk-locked, so live execution is paused. Market analysis and the scanner stay available. Clear the lock from Risk Settings, then your route will reopen."
     : bridgeUp
-      ? `Your trading route is reporting. ${onShared ? "The shared MT5 bridge" : "Your own MT5 EA"} is connected. If it disconnects, ARX will pause live execution until the connection returns.`
+      ? `Your trading route is reporting. ${onShared ? "The shared MT5 bridge" : "Your own MT5 EA"} is connected. ${approved ? "" : `Your account approval is ${approvalLabel.toLowerCase()}, so live execution is not available yet. `}If it disconnects, ARX will pause live execution until the connection returns.`
       : `${bridgeCopy} Live execution is paused until the bridge reports in. You can still analyze the market and prepare ideas.`;
 
   const activity: { time: string; event: string; tone: Tone; chip: string }[] = [];
   if (onShared ? shared?.snapshotAgeSeconds != null : s?.secondsSinceHeartbeat != null) {
-    activity.push({ time: lastSync, event: bridgeUp ? "Market data heartbeat" : "Last heartbeat received", tone: bridgeUp ? "success" : "warning", chip: bridgeUp ? "Connected" : "Stale" });
+    activity.push({ time: lastSync, event: bridgeUp ? "Bridge heartbeat" : "Last heartbeat received", tone: bridgeUp ? "success" : "warning", chip: bridgeUp ? "Connected" : "Stale" });
   }
   if (snapshot?.account) activity.push({ time: lastSync, event: "Account snapshot synced", tone: "success", chip: "Success" });
   if (openTrades != null) activity.push({ time: lastSync, event: "Position sync completed", tone: "success", chip: "Success" });
@@ -229,7 +238,7 @@ export default function MT5BridgePage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard title="Shared MT5 Bridge" icon={RadioTower}>
+        <SectionCard title={onShared ? "Shared MT5 Bridge" : "Your MT5 Connection"} icon={RadioTower}>
           <div className="flex items-start gap-4">
             <span className={cn("grid h-16 w-16 shrink-0 place-items-center rounded-full ring-2",
               bridgeState.tone === "success" ? "bg-success/10 ring-success/40 text-success"
@@ -271,9 +280,9 @@ export default function MT5BridgePage() {
           <div className="mt-3 grid grid-cols-3 gap-2">
             <StatusTile icon={ShieldCheck} label="Bridge" value={bridgeHealthy ? "Healthy" : bridgeState.label} tone={bridgeHealthy ? "success" : "warning"} />
             <StatusTile icon={UserCheck} label="Access" value={approvalLabel} tone={approvalTone} />
-            <StatusTile icon={Activity} label="Risk" value={riskLabel} tone={riskTone} />
-            <StatusTile icon={RouteIcon} label="Execution" value={bridgeHealthy ? "Available" : "Paused"} tone={bridgeHealthy ? "success" : "warning"} />
-            <StatusTile icon={Wifi} label="Market Data" value={bridgeUp ? "Connected" : "Unavailable"} tone={bridgeUp ? "success" : "warning"} />
+            <StatusTile icon={Activity} label="Risk Lock" value={riskLabel} tone={riskTone} />
+            <StatusTile icon={RouteIcon} label="Execution" value={executionLabel} tone={executionAvailable ? "success" : "warning"} />
+            <StatusTile icon={Wifi} label="Market Data" value={NOT_CHECKED} tone="muted" />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/20">
@@ -333,11 +342,11 @@ export default function MT5BridgePage() {
         <SectionCard title="Bridge Health" icon={Activity}>
           <div className="divide-y divide-border/60">
             <Row label="Connection" value={bridgeUp ? "Healthy" : "Unavailable"} tone={bridgeUp ? "success" : "warning"} />
-            <Row label="Market Data" value={bridgeUp ? "Connected" : "Unavailable"} tone={bridgeUp ? "success" : "warning"} />
-            <Row label="Order Routing" value={bridgeHealthy ? "Available" : "Paused"} tone={bridgeHealthy ? "success" : "warning"} />
-            <Row label="Result Reporting" value={bridgeUp ? "Active" : "Paused"} tone={bridgeUp ? "success" : "warning"} />
-            <Row label="Position Refresh" value={bridgeUp ? "Active" : "Paused"} tone={bridgeUp ? "success" : "warning"} />
-            <Row label="Account Refresh" value={bridgeUp ? "Active" : "Paused"} tone={bridgeUp ? "success" : "warning"} />
+            <Row label="Market Data" value={NOT_CHECKED} />
+            <Row label="Order Routing" value={executionLabel} tone={executionAvailable ? "success" : "warning"} />
+            <Row label="Result Reporting" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
+            <Row label="Position Refresh" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
+            <Row label="Account Refresh" value={bridgeUp ? NOT_CHECKED : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
             <Row label="Last Sync" value={lastSync} />
           </div>
           <button onClick={refresh} className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/20">

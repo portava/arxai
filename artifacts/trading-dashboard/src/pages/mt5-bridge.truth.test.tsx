@@ -64,3 +64,50 @@ describe("MT5 Bridge truth labels", () => {
     expect(screen.getByTestId("bridge-state-copy").textContent).toContain("600s ago");
   });
 });
+
+// A fresh heartbeat on the user's own EA says the connection reports. It does
+// not approve the account, and it does not measure the price feed, result
+// reporting or position/account refresh.
+describe("MT5 Bridge: heartbeat is not approval, feed or reporting", () => {
+  function valuesFor(label: string): string[] {
+    return screen.getAllByText(label).map((el) => {
+      const row = el.closest("div")!;
+      return (row.nextElementSibling?.textContent ?? row.parentElement?.textContent ?? "").replace(label, "").trim();
+    });
+  }
+
+  beforeEach(() => {
+    tradingMode = { isLoading: false, isFrozen: false, isLiveShared: false, approvalStatus: "PENDING" };
+    statusResult = { isLoading: false, isError: false, data: {
+      ...BASE_STATUS, connected: true, mode: "DEMO", secondsSinceHeartbeat: 2, route: "OWN_CONNECTION",
+      sharedMasterBridge: null, userSafeMessage: null,
+    } };
+  });
+
+  it("a pending account is not shown with execution available", () => {
+    render(<MT5BridgePage />);
+    expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
+    for (const v of valuesFor("Execution")) expect(v).not.toBe("Available");
+    for (const el of screen.getAllByText("Order Routing")) expect(el.parentElement!.textContent).not.toContain("Available");
+    expect(document.body.textContent).toContain("approval is pending");
+    expect(document.body.textContent).not.toMatch(/account is approved/i);
+  });
+
+  it("market data, reporting and refresh are not asserted from the heartbeat", () => {
+    render(<MT5BridgePage />);
+    for (const label of ["Result Reporting", "Position Refresh", "Account Refresh", "Market Data"]) {
+      for (const el of screen.getAllByText(label)) {
+        const text = el.parentElement!.textContent ?? "";
+        expect(text, label).not.toMatch(/Active|Connected/);
+        expect(text, label).toContain("Not checked here");
+      }
+    }
+    expect(screen.queryByText("Low")).toBeNull();
+  });
+
+  it("the user's own connection is not titled as the shared bridge", () => {
+    render(<MT5BridgePage />);
+    expect(screen.getByText("Your MT5 Connection")).toBeTruthy();
+    expect(screen.queryByText("Shared MT5 Bridge", { selector: "h2" })).toBeNull();
+  });
+});
