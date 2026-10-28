@@ -168,6 +168,9 @@ export default function MarketHealthPage() {
   const [mds, setMds] = useState<MarketDataStatus | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  // A failed status read is shown as a failure — never as "Loading…" and
+  // never by keeping the last status on screen as if it were current.
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // The ONE honest feed source — the same hook the scanner and chart consume.
   const { truth, feedStatus, isLoading, isError, refetch } = useScannerTruth(symbol, tf);
@@ -175,10 +178,18 @@ export default function MarketHealthPage() {
   const loadStatus = useCallback(async () => {
     try {
       const r = await fetch(`/api/me/market-data/status`, { credentials: "include" });
-      if (!r.ok) { setMds(null); return; }
+      if (!r.ok) {
+        setMds(null);
+        setStatusError(`Provider status could not be read (HTTP ${r.status}) at ${new Date().toLocaleTimeString()}.`);
+        return;
+      }
       const j = await r.json();
       setMds(j.status as MarketDataStatus);
-    } catch { /* keep last */ }
+      setStatusError(null);
+    } catch (e) {
+      setMds(null);
+      setStatusError(`Provider status could not be read (${(e as Error).message || "network error"}) at ${new Date().toLocaleTimeString()}.`);
+    }
   }, []);
 
   useEffect(() => {
@@ -199,10 +210,17 @@ export default function MarketHealthPage() {
       } else if (!j.ok) {
         setRefreshMessage(`Refresh failed: ${j.reason ?? "unknown"}.`);
       } else {
-        const okCount = (j.attempts as Array<{ ok: boolean }> ?? []).filter((a) => a.ok).length;
-        setRefreshMessage(`Refreshed — ${okCount} live probe(s) succeeded.`);
+        // ok:true only means a positive, non-stale price came back; a DELAYED
+        // quote is ok but not live. Count each quality separately.
+        const attempts = (j.attempts as Array<{ ok: boolean; freshness?: string }> | undefined) ?? [];
+        const realtime = attempts.filter((a) => a.ok && a.freshness === "REALTIME").length;
+        const delayed = attempts.filter((a) => a.ok && a.freshness === "DELAYED").length;
+        const other = attempts.length - realtime - delayed;
+        setRefreshMessage(
+          `Refreshed — ${attempts.length} probe(s): ${realtime} real-time, ${delayed} delayed, ${other} failed or unclassified.`,
+        );
       }
-      if (j.status) setMds(j.status as MarketDataStatus);
+      if (j.status) { setMds(j.status as MarketDataStatus); setStatusError(null); }
       refetch();
     } catch (e) {
       setRefreshMessage(`Refresh error: ${(e as Error).message}`);
@@ -254,7 +272,9 @@ export default function MarketHealthPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-xs space-y-1.5">
-          {!mds ? (
+          {!mds && statusError ? (
+            <p className="text-rose-300" data-testid="provider-status-error">{statusError}</p>
+          ) : !mds ? (
             <p className="text-muted-foreground">Loading provider status…</p>
           ) : (
             <>
@@ -281,7 +301,7 @@ export default function MarketHealthPage() {
                 </div>
               )}
               {mds.setupHint && <p className="text-muted-foreground">{mds.setupHint}</p>}
-              {refreshMessage && <p className="text-muted-foreground italic">{refreshMessage}</p>}
+              {refreshMessage && <p className="text-muted-foreground italic" data-testid="provider-refresh-message">{refreshMessage}</p>}
             </>
           )}
         </CardContent>
