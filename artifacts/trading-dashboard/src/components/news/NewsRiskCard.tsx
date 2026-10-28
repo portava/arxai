@@ -5,6 +5,7 @@
 // stop the user from saving the plan (only the validate flow blocks).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { eventCountdownLabel } from "@/lib/eventCountdown";
 
 type Risk = "CLEAR" | "CAUTION" | "HIGH_RISK" | "NO_TRADE_WINDOW";
 
@@ -186,10 +187,10 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
               {r.riskLevel.replace(/_/g, " ")}
             </span>
             {r.timeUntilEventMinutes !== null && (
-              <span className="text-sm text-slate-300">
-                Event {r.timeUntilEventMinutes >= 0
-                  ? `in ${r.timeUntilEventMinutes}m`
-                  : `${Math.abs(r.timeUntilEventMinutes)}m ago`}
+              // The minute offset is true only at report time (createdAt); count
+              // from the event time it implies, against the clock now.
+              <span className="text-sm text-slate-300" data-testid="text-news-risk-event-countdown">
+                Event {eventCountdownLabel(Date.parse(r.createdAt) + r.timeUntilEventMinutes * 60_000, Date.now())}
               </span>
             )}
             {r.relatedCurrency && (

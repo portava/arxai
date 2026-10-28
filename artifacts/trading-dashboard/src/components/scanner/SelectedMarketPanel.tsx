@@ -23,6 +23,7 @@ import {
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
+import { eventCountdownFromIso } from "@/lib/eventCountdown";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -53,6 +54,13 @@ export function SelectedMarketPanel() {
   const { name } = useAssistantName();
   const activeSymbol = resolveSymbol(bareSymbol(chartSym || "EURUSD").toUpperCase())?.canonicalSymbol ?? "EURUSD";
   const [ticket, setTicket] = useState<{ selection: string; side: "BUY" | "SELL" } | null>(null);
+  // Event countdowns are computed from each event's time at render, never from
+  // the server's build-time minute offset; re-render every 15 s to keep them current.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Compact public Deriv status — drives the "Deriv feed not configured"
   // badge in SymbolExplorer. Synthetics stay selectable either way.
@@ -392,7 +400,7 @@ export function SelectedMarketPanel() {
                         <Badge className={impactBadgeClass(e.impactLevel)}>{e.impactLevel}</Badge>
                         <span className="font-mono text-txt-muted">{e.currency}</span>
                         <span className="flex-1 truncate">{e.title}</span>
-                        <span className="text-txt-muted">{e.minutesUntil >= 0 ? `in ${e.minutesUntil}m` : `${-e.minutesUntil}m ago`}</span>
+                        <span className="text-txt-muted" data-testid="text-selected-event-countdown">{eventCountdownFromIso(e.eventTime, Math.max(nowMs, Date.now()))}</span>
                       </li>
                     ))}
                   </ul>

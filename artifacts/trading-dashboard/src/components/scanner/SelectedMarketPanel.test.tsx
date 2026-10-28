@@ -504,4 +504,19 @@ describe("SelectedMarketPanel — labels describe what was observed", () => {
     render(<SelectedMarketPanel />);
     expect(screen.getByTestId("selected-market-panel").textContent).toContain("No medium/high impact events in the next 24h.");
   });
+
+  it("an event countdown is computed from the event time, not a cached minute offset", () => {
+    // A cached envelope built ~45 s ago still says minutesUntil 1, but the
+    // release started 20 s ago.
+    const eventTime = new Date(Date.now() - 20_000).toISOString();
+    mockSnapshotQuery.mockReturnValue(hookState({
+      data: liveOkSnapshot({
+        upcomingEvents: [{ externalId: "e1", title: "US CPI", currency: "USD", impactLevel: "HIGH", eventTime, minutesUntil: 1 }],
+      }),
+    }));
+    render(<SelectedMarketPanel />);
+    const countdown = screen.getByTestId("text-selected-event-countdown").textContent ?? "";
+    expect(countdown).not.toBe("in 1m");
+    expect(countdown).toBe("just now");
+  });
 });
