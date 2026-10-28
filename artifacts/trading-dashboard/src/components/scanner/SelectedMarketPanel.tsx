@@ -24,6 +24,7 @@ import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventCountdownFromIso } from "@/lib/eventCountdown";
+import { derivFeedStateFromStatus, type DerivStatusPayload } from "@/lib/derivFeedState";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -89,9 +90,7 @@ export function SelectedMarketPanel() {
   // failure means the status is UNKNOWN — it must NEVER be rendered as
   // "Deriv feed not configured" (that false badge made a healthy feed look
   // broken). Only an explicit `configured:false` payload means unconfigured.
-  const derivStatus = useQuery<{
-    configured?: boolean; connected?: boolean; status?: string; statusKnown?: boolean;
-  }>({
+  const derivStatus = useQuery<DerivStatusPayload>({
     queryKey: ["deriv-status"],
     queryFn: async () => {
       try {
@@ -104,12 +103,12 @@ export function SelectedMarketPanel() {
     refetchInterval: 15_000,
     staleTime: 10_000,
   });
-  const derivStatusKnown = derivStatus.data?.statusKnown === true;
   const derivConfigured = derivStatus.data?.configured !== false;
-  const derivConnected = derivStatusKnown && derivStatus.data?.connected === true;
-  // Only claim "connecting" when we actually KNOW the status; unknown status
-  // renders no feed note at all (synthetics stay selectable either way).
-  const derivConnecting = derivStatusKnown && derivConfigured && !derivConnected;
+  // The Synthetic chip's feed note follows the server's readiness fields
+  // (hasRecentTick / healthSummary), never the socket flag alone: an open
+  // socket with no recent tick is not live, and a failing connection is not
+  // "connecting". A failed status request says so.
+  const derivFeedState = derivFeedStateFromStatus(derivStatus.data);
 
   // Active scanner timeframe (e.g. "15m"), normalized to the backend candles
   // enum (e.g. "M15"). The analysis must match the timeframe the user's chart
@@ -278,8 +277,7 @@ export function SelectedMarketPanel() {
           <SymbolExplorer
             activeSymbol={activeSymbol}
             derivFeedConfigured={derivConfigured}
-            derivFeedConnected={derivConnected}
-            derivFeedConnecting={derivConnecting}
+            derivFeedState={derivFeedState}
             onSelect={(canonical) => selectSymbol(canonical)}
           />
         </div>

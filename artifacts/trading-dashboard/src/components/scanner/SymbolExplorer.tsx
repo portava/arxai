@@ -13,6 +13,7 @@ import {
   type SymbolEntry,
   type ResolvedSymbol,
 } from "@/lib/symbolRegistry";
+import { derivFeedNoteText, type DerivFeedState } from "@/lib/derivFeedState";
 
 /**
  * Unified Symbol Explorer — search + horizontal category chips +
@@ -113,8 +114,8 @@ export interface SymbolExplorerProps {
   onSelect: (canonicalSymbol: string, entry: ResolvedSymbol) => void;
   /** When false, synthetic symbols stay selectable but are flagged. */
   derivFeedConfigured?: boolean;
-  derivFeedConnected?: boolean;
-  derivFeedConnecting?: boolean;
+  /** The synthetic feed's state from the server's status (null/absent = no note). */
+  derivFeedState?: DerivFeedState | null;
   /** Show dev-only diagnostics row (typed/resolved/source). */
   showDiagnostics?: boolean;
   /** When set, a line above the search states what the search covers (from
@@ -123,7 +124,7 @@ export interface SymbolExplorerProps {
 }
 
 export function SymbolExplorer(props: SymbolExplorerProps) {
-  const { activeSymbol, onSelect, derivFeedConfigured = true, derivFeedConnected = false, derivFeedConnecting = false } = props;
+  const { activeSymbol, onSelect, derivFeedConfigured = true, derivFeedState = null } = props;
   const showDiagnostics = props.showDiagnostics ?? import.meta.env.DEV;
 
   const [query, setQuery] = useState("");
@@ -205,9 +206,9 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
   }, [categories, activeCat]);
 
   const active = activeCat === null ? null : categories.find((c) => c.id === activeCat) ?? null;
-  // Show the synthetic-feed note when (a) it's not configured, or (b) it's
-  // configured but still connecting / connected — so users see live status.
-  const showDerivNote = active?.id === "synthetic" && (!derivFeedConfigured || derivFeedConnecting || derivFeedConnected);
+  // The synthetic-feed note shows whatever the server's status says (live,
+  // connected without ticks, connecting, failing, off, or could not be loaded).
+  const showDerivNote = active?.id === "synthetic" && derivFeedState != null;
 
   function submitTyped() {
     const q = query.trim();
@@ -331,13 +332,13 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
           aria-label={`${active.label} symbols`}
           data-testid={`category-panel-${active.id}`}
         >
-          {showDerivNote && (
-            <div className="mb-2 text-[11px] text-warning/90" data-testid="deriv-feed-note">
-              {derivFeedConnecting
-                ? "Connecting to live feed for synthetic indices…"
-                : derivFeedConnected
-                  ? "Live feed connected for synthetic indices."
-                  : "Synthetic-index live feed isn't active yet — these markets are visible for selection but won't show live prices until the feed is set up."}
+          {showDerivNote && derivFeedState && (
+            <div
+              className={`mb-2 text-[11px] ${derivFeedState.kind === "live" ? "text-txt-secondary" : "text-warning/90"}`}
+              data-testid="deriv-feed-note"
+              data-feed-state={derivFeedState.kind}
+            >
+              {derivFeedNoteText(derivFeedState)}
             </div>
           )}
           <ChipRow
