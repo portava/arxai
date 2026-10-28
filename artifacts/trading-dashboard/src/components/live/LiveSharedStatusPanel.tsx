@@ -59,6 +59,18 @@ export function rejectionPrimaryReason(c: LiveSharedCommandRow): string | null {
   return c.status ?? null;
 }
 
+/** Plain-English switch state; a flag the server did not send is "not reported", never a guess. */
+function switchWord(v: boolean | null): string {
+  return v === true ? "on" : v === false ? "off" : "not reported";
+}
+
+/** HH:MM UTC of an ISO stamp, or null when missing/unparseable. */
+function utcClock(iso: unknown): string | null {
+  if (typeof iso !== "string") return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(5, 16).replace("T", " ")} UTC` : null;
+}
+
 type EnvelopeProbe = {
   liveBrokerExecutionEnabled: boolean | null;
   defaultDeny: boolean | null;
@@ -81,6 +93,8 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
   const [env, setEnv] = useState<EnvelopeProbe>({ liveBrokerExecutionEnabled: null, defaultDeny: null });
   const [commandsLoading, setCommandsLoading] = useState(true);
   const [commandsError, setCommandsError] = useState<string | null>(null);
+  // The command list is read once on mount; say when, so it is not taken as live.
+  const [commandsReadAt, setCommandsReadAt] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +103,7 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
         const c = await getMyLiveSharedCommands(10);
         if (cancelled) return;
         setCommands(c.commands ?? []);
+        setCommandsReadAt(new Date().toISOString());
         setEnv({
           liveBrokerExecutionEnabled: typeof c.liveBrokerExecutionEnabled === "boolean"
             ? c.liveBrokerExecutionEnabled : null,
@@ -135,9 +150,10 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
           <div className="grid grid-cols-2 gap-1.5">
             <Field label="Approved" value={canTrade ? "yes" : "no"} good={canTrade} />
             <Field label="Access status" value={access.status ?? "—"} />
-            <Field label="Master switch" value={String(env.liveBrokerExecutionEnabled ?? "?")}
-              good={env.liveBrokerExecutionEnabled === true} />
-            <Field label="Default-deny" value={String(env.defaultDeny ?? "?")} good={env.defaultDeny === true} />
+            <Field label="Master switch" value={switchWord(env.liveBrokerExecutionEnabled)}
+              good={env.liveBrokerExecutionEnabled === true ? true : env.liveBrokerExecutionEnabled === false ? false : undefined} />
+            <Field label="Default-deny" value={switchWord(env.defaultDeny)}
+              good={env.defaultDeny === true ? true : env.defaultDeny === false ? false : undefined} />
             {access.blockReason && (
               <div className="col-span-2 text-amber-300">blockReason <span className="font-mono">{access.blockReason}</span></div>
             )}
@@ -178,7 +194,9 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
         )}
         {!commandsLoading && commands && (
           <div>
-            <div className="text-muted-foreground mt-2">Recent commands ({commands.length})</div>
+            <div className="text-muted-foreground mt-2" data-testid="live-shared-commands-heading">
+              Your last {commands.length} command{commands.length === 1 ? "" : "s"}{utcClock(commandsReadAt) ? `, read ${utcClock(commandsReadAt)} (not refreshed on this panel)` : ""}
+            </div>
             {commands.length === 0 && <div className="text-muted-foreground italic">none</div>}
             <ul className="space-y-1 mt-1">
               {commands.slice(0, compact ? 3 : 8).map((c) => {
@@ -190,6 +208,9 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
                         {c.status}
                       </Badge>
                       <span className="font-mono text-[10px]">{c.symbol ?? "—"} {c.side ?? ""} {String(c.requestedVolume ?? "")}</span>
+                      <span className="text-[10px] text-muted-foreground" data-testid={`live-shared-command-time-${c.commandId}`}>
+                        {utcClock((c as { createdAt?: unknown }).createdAt) ?? "time not reported"}
+                      </span>
                     </div>
                     {/* Real broker/gate refusal — show the categorized rejection
                         (clean message for everyone; raw retcode + reject layer
@@ -218,7 +239,7 @@ export function LiveSharedStatusPanel({ compact = false }: { compact?: boolean }
               })}
             </ul>
             {blocked.length > 0 && (
-              <div className="mt-1 text-rose-300">{blocked.length} blocked attempt(s) on record.</div>
+              <div className="mt-1 text-rose-300" data-testid="live-shared-blocked-count">{blocked.length} of these {commands.length} command{commands.length === 1 ? "" : "s"} {blocked.length === 1 ? "was" : "were"} blocked.</div>
             )}
           </div>
         )}
