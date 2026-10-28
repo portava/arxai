@@ -151,3 +151,23 @@ describe("impact tiers agree across sources", () => {
     expect(screen.queryByText("Non Farm Payrolls", { selector: "[data-testid=eco-event-row] *" })).toBeNull();
   });
 });
+
+describe("released rows report the print, never an invented surprise or direction", () => {
+  it("a miss (3.2% vs 3.4%) gets no green up-arrow and no parseFloat 'Surprise' chip", async () => {
+    stubServer({ live: [
+      liveEvt({ id: "cpi", title: "CPI YoY", when: at(0, 8, 30), actual: "3.2%", forecast: "3.4%", previous: "3.3%" }),
+      liveEvt({ id: "nfp", title: "Non Farm Payrolls", when: at(0, 8, 0), actual: "1.5M", forecast: "1,400K" }),
+    ] });
+    renderPage();
+    await screen.findAllByTestId("eco-event-row");
+    for (const name of ["CPI YoY", "Non Farm Payrolls"]) {
+      const r = row(name);
+      expect(r.textContent).not.toContain("↑");
+      fireEvent.click(within(r).getByText(name));
+      expect(within(row(name)).queryByText(/Surprise/)).toBeNull();
+      // The actual print itself is still shown, in a neutral (not success) tone.
+      const actual = within(row(name)).getAllByText(name === "CPI YoY" ? "3.2%" : "1.5M")[0]!;
+      expect(actual.className).not.toMatch(/text-success/);
+    }
+  });
+});

@@ -585,8 +585,11 @@ export default function EconomicCalendarPage() {
                       <div className="hidden shrink-0 items-center gap-4 text-right text-xs sm:flex">
                         <div><div className="text-txt-muted">Prev</div><div className="text-foreground">{e.previous ?? "—"}</div></div>
                         <div><div className="text-txt-muted">Forecast</div><div className="text-foreground">{e.forecast ?? "—"}</div></div>
-                        <div><div className="text-txt-muted">Actual</div><div className={cn(released ? "text-success" : "text-txt-muted")}>{released ? e.actual : "—"}</div></div>
-                        <div className="w-12">{released ? <span className="text-success">↑</span> : impactDots(e.impactLevel)}</div>
+                        {/* The actual print is shown as the source reported it. No beat/miss
+                            colour or arrow: the server computes no surprise score (newsHeatEngine
+                            surpriseScore is null) and the values are free-text with units. */}
+                        <div><div className="text-txt-muted">Actual</div><div className={cn(released ? "text-foreground" : "text-txt-muted")}>{released ? e.actual : "—"}</div></div>
+                        <div className="w-12">{released ? <span className="text-[10px] text-txt-muted">Released</span> : impactDots(e.impactLevel)}</div>
                       </div>
                       <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-txt-muted transition-transform", isOpen && "rotate-180")} />
                     </button>
@@ -609,36 +612,27 @@ export default function EconomicCalendarPage() {
                             : minsBefore <= 5 && minsBefore >= -5 ? "AT_EVENT"
                             : minsBefore > 0 && minsBefore <= 30 ? "PRE_EVENT"
                             : null;
-                          const surpNumer = e.actual && e.forecast ? parseFloat(e.actual) - parseFloat(e.forecast) : null;
-                          const hasSurprise = surpNumer != null && !Number.isNaN(surpNumer);
+                          // Time-only phases: derived from the schedule and whether an actual
+                          // was reported. They say nothing measured about the market itself.
                           const phaseLabel: Record<string, string> = {
                             PRE_EVENT: "Pre-event window",
-                            AT_EVENT: "Live now",
-                            POST_EVENT: "Post-event settling",
-                            SETTLED: "Market settled",
+                            AT_EVENT: "Release window (±5m)",
+                            POST_EVENT: "Released under 1h ago",
+                            SETTLED: "Released over 1h ago",
                           };
                           const phaseColor: Record<string, string> = {
                             PRE_EVENT: "border-amber-500/40 bg-amber-500/10 text-amber-400",
                             AT_EVENT: "border-rose-500/40 bg-rose-500/10 text-rose-400",
                             POST_EVENT: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-                            SETTLED: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+                            SETTLED: "border-border bg-secondary/60 text-txt-secondary",
                           };
-                          if (!phase && !hasSurprise) return null;
+                          if (!phase) return null;
                           return (
                             <div className="mt-2 flex flex-wrap items-center gap-2">
                               {phase && (
                                 <span className={cn("inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold", phaseColor[phase] ?? "")}>
                                   <Clock className="h-3 w-3" />
                                   {phaseLabel[phase]}
-                                </span>
-                              )}
-                              {hasSurprise && (
-                                <span className={cn(
-                                  "inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold",
-                                  surpNumer! > 0 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                                    : "border-rose-500/40 bg-rose-500/10 text-rose-400",
-                                )}>
-                                  Surprise: {surpNumer! > 0 ? "+" : ""}{surpNumer!.toFixed(2)}
                                 </span>
                               )}
                             </div>
