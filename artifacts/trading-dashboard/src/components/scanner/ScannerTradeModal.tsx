@@ -197,6 +197,10 @@ function gateBlockerWords(code: string): string {
 type DemoExecutionState =
   | { kind: "checking" }
   | { kind: "unchecked" }
+  // The request answered but the server could not evaluate its dispatch gate
+  // for this read (gateEvaluated:false / bridgeReady:null): its empty blocker
+  // list was never measured and is not a pass.
+  | { kind: "gateNotEvaluated" }
   | { kind: "unreported" }
   | { kind: "blocked"; reasons: string[] }
   | { kind: "enabled" };
@@ -388,6 +392,7 @@ export function ScannerTradeModal({
   const demoExecution: DemoExecutionState = (() => {
     if (bridgeCheck === "checking") return { kind: "checking" };
     if (bridgeCheck === "failed" || !bridge) return { kind: "unchecked" };
+    if (bridge.gateEvaluated === false || bridge.bridgeReady === null) return { kind: "gateNotEvaluated" };
     if (!Array.isArray(bridge.gateBlockers)) return { kind: "unreported" };
     const blocking = bridge.gateBlockers.filter((b) => b !== CONFIRM_STEP_BLOCKER);
     if (blocking.length > 0) return { kind: "blocked", reasons: blocking.map(gateBlockerWords) };
@@ -789,6 +794,7 @@ export function ScannerTradeModal({
               {demoExecution.kind === "enabled" && "Demo execution enabled for this account (server dispatch gate)."}
               {demoExecution.kind === "checking" && "Checking demo execution for this account…"}
               {demoExecution.kind === "unchecked" && "Demo execution for this account could not be checked — the server's dispatch gate did not respond."}
+              {demoExecution.kind === "gateNotEvaluated" && "Demo execution for this account could not be checked — the server could not evaluate its dispatch gate just now, so arming, verification, heartbeat and EA version are unknown. Demo orders stay blocked until it can be checked."}
               {demoExecution.kind === "unreported" && "The server did not report whether demo execution is allowed for this account."}
               {demoExecution.kind === "blocked" &&
                 `Demo execution is not available for this account: ${demoExecution.reasons.join("; ")}. The server will refuse orders from this form until that is fixed.`}

@@ -86,4 +86,29 @@ describe("ScannerTradeModal — demo execution banner reflects the server's disp
     expect(banner.textContent).not.toContain("enabled");
     expect(banner.textContent).toContain("could not be checked");
   });
+
+  it("does not show a green 'enabled' banner when the server could not evaluate the dispatch gate", async () => {
+    // The route answered 200 but evaluatePerUserDispatchGate threw: the server
+    // sends gateEvaluated:false, bridgeReady:null and the initial empty
+    // gateBlockers. An empty list from a gate that never ran is not a pass.
+    const unevaluated = {
+      ok: true, safetyMode: "demo_only", liveExecutionBlocked: true,
+      bridge: {
+        connectionId: 1, accountLoginMasked: "***123", accountType: "demo", eaVersionReported: "1.27",
+        heartbeatAgeSeconds: 3, heartbeatFresh: true,
+        gateEvaluated: false, bridgeReady: null, heartbeatFreshStrict: null, eaVersionAtLeast: null,
+        bridgeBlockers: [], gateBlockers: [], armed: null, verifiedDemo: null,
+        eaInputs: { readOnlyMode: null, enableDemoExecution: null, reportedAt: null },
+      },
+    };
+    routes.push((u) => (u.endsWith("/api/me/demo-bridge-debug") ? json(unevaluated) : undefined));
+    render(<ScannerTradeModal open onClose={() => {}} signal={signal} defaultSide="BUY" />);
+    await flush();
+    const banner = screen.getByTestId("scanner-demo-execution-banner");
+    expect(banner.textContent).not.toContain("enabled");
+    expect(banner.textContent).toContain("could not be checked");
+    expect(banner.textContent).toContain("could not evaluate");
+    expect(banner.className).not.toContain("text-success");
+    expect((screen.getByTestId("scanner-trade-submit") as HTMLButtonElement).disabled).toBe(true);
+  });
 });
