@@ -178,6 +178,8 @@ export interface ProviderHealthSnapshot {
   feeds: FeedsHealth;
   assetClassActivity: AssetClassActivity[];
   activeConsumers: ActiveConsumer[];
+  // Plain-English statement of what activeConsumers is built from.
+  activeConsumersBasis: string;
   summary: {
     totalProviders: number;
     healthy: number;
@@ -687,9 +689,11 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     });
   }
 
-  // ── Active consumers (inverse of provider.usedBy over live providers) ─────
-  // Only providers that are actually healthy/active contribute, so this answers
-  // "what is each app surface reading from RIGHT NOW", not the static wiring.
+  // ── Active consumers (inverse of provider.usedBy over observed providers) ─
+  // Only providers whose status is "healthy" contribute, and "healthy" is only
+  // set from something observed (a self-test answer, an MT5 push, Deriv's own
+  // feed health). This is the static usedBy wiring of those providers — not a
+  // trace of what each surface read; the router still picks per request.
   const consumerMap = new Map<string, Set<string>>();
   for (const p of providers) {
     if (p.status !== "healthy") continue;
@@ -723,6 +727,8 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     feeds,
     assetClassActivity,
     activeConsumers,
+    activeConsumersBasis:
+      "Providers that answered this snapshot's self-test (or, for MT5 and Deriv, reported live data), mapped to the surfaces wired to them. Not a trace of each surface's reads — the router still picks a provider per request.",
     summary,
   };
 }

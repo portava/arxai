@@ -105,6 +105,8 @@ interface Snapshot {
   feeds: FeedsHealth;
   assetClassActivity: AssetClassActivity[];
   activeConsumers: ActiveConsumer[];
+  // What activeConsumers is built from (absent on older servers).
+  activeConsumersBasis?: string;
   summary: {
     totalProviders: number;
     healthy: number;
@@ -841,17 +843,24 @@ export default function ProviderHealthPage() {
             </CardContent>
           </Card>
 
-          {/* Active consumers — inverse of provider.usedBy over live providers */}
+          {/* Surfaces wired to providers something observed answering — the
+              usedBy wiring of "healthy" providers, not a trace of live reads. */}
           <Card data-testid="card-active-consumers">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Database className="h-4 w-4" />
-                Active consumers (what each surface reads right now)
+                Surfaces wired to providers that answered
               </CardTitle>
+              <p className="text-[11px] text-muted-foreground">
+                {snap.activeConsumersBasis ??
+                  "Providers that answered this snapshot's self-test (or, for MT5 and Deriv, reported live data), mapped to the surfaces wired to them. Not a trace of what each surface read."}
+              </p>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
               {snap.activeConsumers.length === 0 ? (
-                <div className="text-muted-foreground italic">No live providers — every surface is on a fallback or awaiting feed.</div>
+                <div className="text-muted-foreground italic">
+                  No provider answered this snapshot's self-test or reported live data, so no surface can be shown as reading one.
+                </div>
               ) : (
                 snap.activeConsumers.map((c) => (
                   <div key={c.consumer} className="font-mono flex gap-2 items-baseline" data-testid={`consumer-${c.consumer}`}>

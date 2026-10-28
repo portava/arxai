@@ -84,4 +84,22 @@ describe("Provider Health status truth", () => {
     expect(screen.queryByText("Reserved")).toBeNull();
     expect(screen.getByText("Offline").parentElement!.textContent).toContain("1");
   });
+
+  it("the consumer card says what it is built from, not that it traces live reads", async () => {
+    await renderPage(snapshot({
+      activeConsumers: [{ consumer: "scanner", providers: ["finnhub"] }],
+      activeConsumersBasis: "Providers that answered this snapshot's self-test (or, for MT5 and Deriv, reported live data), mapped to the surfaces wired to them. Not a trace of each surface's reads — the router still picks a provider per request.",
+    }));
+    const card = await screen.findByTestId("card-active-consumers");
+    expect(card.textContent).not.toMatch(/reads right now/i);
+    expect(card.textContent).toMatch(/answered this snapshot's self-test/i);
+    expect(card.textContent).toMatch(/not a trace/i);
+  });
+
+  it("an empty consumer list does not claim surfaces are on a fallback", async () => {
+    await renderPage(snapshot());
+    const card = await screen.findByTestId("card-active-consumers");
+    expect(card.textContent).not.toMatch(/on a fallback/i);
+    expect(card.textContent).toMatch(/No provider answered/i);
+  });
 });

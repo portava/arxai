@@ -199,3 +199,31 @@ test("a configured adapter the selected provider does not hold is idle, not 'deg
   }
   assert.equal(snap.summary.degraded, 0);
 });
+
+// ── Active consumers: only providers something observed answering ──────────
+
+test("active consumers never list a provider only because its key is set", async () => {
+  process.env.FINNHUB_API_KEY = "fh-key-1234";
+  process.env.NEWSAPI_API_KEY = "news-key-5678";
+  process.env.OPENAI_API_KEY = "sk-test-9012";
+  assistantName = "twelve_data_missing"; // Finnhub is not in the running provider
+  const snap = await getProviderHealthSnapshot();
+  const listed = new Set(snap.activeConsumers.flatMap((c) => c.providers));
+  for (const id of ["finnhub", "newsapi", "openai"]) assert.equal(listed.has(id), false, id);
+  for (const consumer of ["scanner", "chart", "trade_ticket", "ruby", "news"]) {
+    const row = snap.activeConsumers.find((c) => c.consumer === consumer);
+    assert.ok(!row || !row.providers.includes("finnhub"), consumer);
+  }
+});
+
+test("active consumers list an adapter once it answered this snapshot's self-test", async () => {
+  process.env.FINNHUB_API_KEY = "fh-key-1234";
+  assistantName = "finnhub";
+  routerPlan = () => ({
+    ok: true, primaryProvider: "assistant_real:finnhub",
+    attempts: [mt5Miss, { provider: "assistant_real:finnhub", ok: true, reason: null, ms: 30 }],
+  });
+  const snap = await getProviderHealthSnapshot();
+  assert.deepEqual(snap.activeConsumers.find((c) => c.consumer === "scanner")?.providers, ["finnhub"]);
+  assert.match(snap.activeConsumersBasis, /answered this snapshot's self-test/i);
+});
