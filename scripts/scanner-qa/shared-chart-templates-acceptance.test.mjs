@@ -8,7 +8,7 @@ const series=helper('matchesSeries'),sma=helper('matchesSma');
 const candles=Array.from({length:40},(_,i)=>({time:100+i*900,open:i+1,high:i+3,low:i+.5,close:i+2}));
 const expected={source:'offline_fixture',canonical:candles};
 const current=()=>({state:{symbol:'EURUSD',intervalSeconds:900,style:'bars',feed:{source:'offline_fixture'},barCount:40},data:{canonical:structuredClone(candles),display:structuredClone(candles)}});
-const config=(period=10,mode=1)=>({scale:{mode},studies:[{config:{kind:'sma',period},lines:[candles.map((c,i)=>i<period-1?{time:c.time}:{time:c.time,value:candles.slice(i-period+1,i+1).reduce((s,b)=>s+b.close,0)/period})]}]});
+const config=(period=10,mode=1)=>({scale:{mode},studies:[{config:{kind:'sma',period},lines:[candles.slice(period-1).map((c,index)=>{const i=index+period-1;return {time:c.time,value:candles.slice(i-period+1,i+1).reduce((s,b)=>s+b.close,0)/period};})]}]});
 test('template completion requires source/context plus full cached AND displayed data',()=>{
   assert.equal(series(current(),expected,'bars'),true);
   for(const collection of ['canonical','display'])for(const key of ['time','open','high','low','close']){const bad=current();bad.data[collection][10][key]+=1;assert.equal(series(bad,expected,'bars'),false);}

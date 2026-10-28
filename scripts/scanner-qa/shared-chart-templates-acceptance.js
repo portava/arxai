@@ -13,10 +13,12 @@ async page => {
   function matchesSma(configuration,candles,period,scaleMode) {
     if(configuration?.scale?.mode!==scaleMode||configuration.studies?.length!==1)return false;
     const study=configuration.studies[0],line=study.lines?.[0];
-    if(study.config.kind!=='sma'||study.config.period!==period||study.lines.length!==1||line?.length!==candles.length||line.at(-1).time!==candles.at(-1).time)return false;
-    return line.every((point,i)=>{
+    if(study.config.kind!=='sma'||study.config.period!==period||study.lines.length!==1||line?.length!==candles.length-period+1||line.at(-1).time!==candles.at(-1).time)return false;
+    // LWC series.data() omits whitespace warm-up rows. Require every mature
+    // timestamp in order, not a partial set of points or cached calculator data.
+    return line.every((point,index)=>{
+      const i=index+period-1;
       if(point.time!==candles[i].time)return false;
-      if(i<period-1)return point.value===undefined;
       const mean=candles.slice(i-period+1,i+1).reduce((sum,c)=>sum+c.close,0)/period;
       return Number.isFinite(point.value)&&Math.abs(point.value-mean)<1e-10;
     });
