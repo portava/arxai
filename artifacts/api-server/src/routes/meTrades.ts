@@ -175,9 +175,6 @@ router.get("/me/trades/open", async (req, res) => {
           labels.set(r.sharedMasterAccountId, label);
         }
         const upnl = r.pnl ?? null;
-        const pnlPct = (upnl !== null && r.entryPrice && r.lotSize)
-          ? Math.round((upnl / Math.max(1, r.entryPrice * r.lotSize * 100)) * 10000) / 100
-          : null;
         cards.push({
           id: `att_${r.id}`,
           source: "shared_master_attribution",
@@ -193,7 +190,11 @@ router.get("/me/trades/open", async (req, res) => {
           unrealizedPnl: upnl,
           // Shared master is netting — per-user P&L is an allocation estimate.
           pnlIsEstimate: true,
-          pnlPercent: pnlPct,
+          // No notional (contract size) or allocated-equity basis is held for
+          // an attribution row; P/L ÷ (entry × lots × 100) assumed a 100-unit
+          // contract (EURUSD 1 lot +1000 read 921.66%). Withheld, as on the
+          // user-owned card.
+          pnlPercent: null,
           pips: null,
           status: r.status,
           openedAt: r.openedAt?.toISOString() ?? r.createdAt?.toISOString() ?? null,
