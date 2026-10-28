@@ -171,3 +171,31 @@ test("MT5 answered first so the assistant feed was never reached → keyed adapt
     assert.match(p.statusReason, /no self-test request in this snapshot reached the assistant feed/i);
   }
 });
+
+// ── Status vocabulary: say what the state is ────────────────────────────────
+
+test("MT5 bridge with no push in the freshness window is 'offline', not 'reserved'", async () => {
+  const snap = await getProviderHealthSnapshot();
+  const mt5 = byId(snap, "mt5_broker");
+  assert.notEqual(mt5.status, "reserved");
+  assert.equal(mt5.status, "offline");
+  assert.match(mt5.statusReason, /no MT5 candle or quote push/i);
+  assert.equal(snap.summary.offline, 1);
+  assert.equal(snap.summary.reserved, 0);
+});
+
+test("a configured adapter the selected provider does not hold is idle, not 'degraded'", async () => {
+  process.env.TWELVEDATA_API_KEY = "td-key-0000";
+  process.env.POLYGON_API_KEY = "pg-key-1111";
+  process.env.ALPHA_VANTAGE_API_KEY = "av-key-2222";
+  assistantName = "twelve_data"; // the running provider holds Twelve Data only
+  const snap = await getProviderHealthSnapshot();
+  for (const id of ["polygon", "alpha_vantage"]) {
+    const p = byId(snap, id);
+    assert.notEqual(p.status, "degraded", id);
+    assert.equal(p.status, "unverified", id);
+    assert.equal(p.configuredButUnused, true, id);
+    assert.match(p.statusReason, /not in the selected assistant provider/i);
+  }
+  assert.equal(snap.summary.degraded, 0);
+});

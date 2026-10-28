@@ -69,4 +69,19 @@ describe("Provider Health status truth", () => {
     const tile = screen.getByText("Not checked").parentElement!;
     expect(tile.textContent).toContain("1");
   });
+
+  it("a disconnected MT5 bridge reads 'offline' and is counted as offline, not 'reserved'", async () => {
+    await renderPage(snapshot({
+      providers: [provider({
+        id: "mt5_broker", name: "MetaTrader 5 broker bridge", category: "broker", secretEnvKeys: [], secretMasks: [],
+        status: "offline", statusReason: "No MT5 candle or quote push in the last 60 seconds.",
+      })],
+      summary: { totalProviders: 1, healthy: 0, degraded: 0, failing: 0, notConfigured: 0, reserved: 0, unverified: 0, offline: 1, configuredButUnused: 0 },
+    }));
+    const row = await screen.findByTestId("provider-mt5_broker");
+    expect(within(row).getByText("offline")).toBeTruthy();
+    expect(within(row).queryByText("reserved")).toBeNull();
+    expect(screen.queryByText("Reserved")).toBeNull();
+    expect(screen.getByText("Offline").parentElement!.textContent).toContain("1");
+  });
 });

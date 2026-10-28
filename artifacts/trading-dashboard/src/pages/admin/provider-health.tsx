@@ -22,7 +22,9 @@ interface ProviderEntry {
   selectedForAssetClasses: AssetClass[];
   configuredButUnused: boolean;
   // "unverified" = configured, but nothing in this snapshot checked it.
-  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved" | "unverified";
+  // "offline" = the MT5 bridge pushed nothing within the freshness window
+  // (older servers sent "reserved" for the same state).
+  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved" | "unverified" | "offline";
   statusReason: string;
   features: { liveQuote: boolean; historicalCandles: boolean; news: boolean; symbolSearch: boolean };
   rateLimitNote: string | null;
@@ -112,6 +114,7 @@ interface Snapshot {
     reserved: number;
     // Absent from servers older than the observed-status change.
     unverified?: number;
+    offline?: number;
     configuredButUnused: number;
   };
 }
@@ -146,7 +149,9 @@ function statusBadge(s: ProviderEntry["status"]) {
     case "degraded":       return <Badge className="bg-warning/20 text-warning">degraded</Badge>;
     case "failing":        return <Badge className="bg-danger/20 text-danger">failing</Badge>;
     case "not_configured": return <Badge className="bg-secondary/20 text-txt-secondary">not configured</Badge>;
-    case "reserved":       return <Badge className="bg-primary/20 text-primary">reserved</Badge>;
+    // Older servers' "reserved" meant the same thing: no MT5 push in the window.
+    case "reserved":
+    case "offline":        return <Badge className="bg-danger/20 text-danger">offline</Badge>;
     case "unverified":     return <Badge className="bg-secondary/20 text-txt-secondary">not checked</Badge>;
   }
 }
@@ -653,7 +658,7 @@ export default function ProviderHealthPage() {
               ["Failing", snap.summary.failing, "bg-danger/20 text-danger"],
               ["Not checked", snap.summary.unverified ?? "—", "bg-secondary/20 text-txt-secondary"],
               ["Not configured", snap.summary.notConfigured, "bg-secondary/20 text-txt-secondary"],
-              ["Reserved", snap.summary.reserved, "bg-primary/20 text-primary"],
+              ["Offline", snap.summary.offline ?? snap.summary.reserved, "bg-danger/20 text-danger"],
               ["Configured but unused", snap.summary.configuredButUnused, "bg-fuchsia-500/20 text-fuchsia-300"],
             ].map(([label, val, cls]) => (
               <Card key={label as string} className="border-border/40">

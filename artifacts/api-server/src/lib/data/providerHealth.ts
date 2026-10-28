@@ -59,7 +59,9 @@ export interface ProviderEntry {
   // "healthy" / "failing" are only set from something observed (this
   // snapshot's self-test, a live push, a feed's own health report).
   // "unverified" = configured, but nothing in this snapshot checked it.
-  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved" | "unverified";
+  // "offline" = the MT5 bridge pushed nothing within the freshness window.
+  // "reserved" is no longer produced (kept so older clients still parse).
+  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved" | "unverified" | "offline";
   statusReason: string;
   features: { liveQuote: boolean; historicalCandles: boolean; news: boolean; symbolSearch: boolean };
   rateLimitNote: string | null;
@@ -184,6 +186,7 @@ export interface ProviderHealthSnapshot {
     notConfigured: number;
     reserved: number;
     unverified: number;
+    offline: number;
     configuredButUnused: number;
   };
 }
@@ -303,7 +306,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
 
   const providers: ProviderEntry[] = [];
 
-  // MT5 broker (reserved for entire chain top slot)
+  // MT5 broker (top slot of every router chain)
   providers.push({
     id: "mt5_broker",
     name: "MetaTrader 5 broker bridge",
@@ -314,7 +317,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     usedBy: ["trade_ticket", "chart", "watchlist"],
     selectedForAssetClasses: classesWhereSelected("mt5_broker"),
     configuredButUnused: false,
-    status: mt5Connected ? "healthy" : "reserved",
+    status: mt5Connected ? "healthy" : "offline",
     // Describe what was observed (mt5Provider.isConnected(): any candle or
     // quote push within MT5_FEED_FRESH_MS), never an EA-version assumption.
     statusReason: mt5Connected
@@ -373,7 +376,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     usedBy: tdConfigured && inChain("twelve_data") ? ["scanner", "chart", "ruby", "trade_ticket", "watchlist"] : [],
     selectedForAssetClasses: tdConfigured && inChain("twelve_data") ? assistantSelected : [],
     configuredButUnused: tdConfigured && !inChain("twelve_data"),
-    status: !tdConfigured ? "not_configured" : (inChain("twelve_data") ? "unverified" : "degraded"),
+    status: !tdConfigured ? "not_configured" : "unverified",
     statusReason: !tdConfigured
       ? "TWELVEDATA_API_KEY not set."
       : inChain("twelve_data") ? pendingCheck : notSelectedReason("Twelve Data"),
@@ -392,7 +395,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     usedBy: polygonConfigured && inChain("polygon") ? ["scanner", "chart", "ruby"] : [],
     selectedForAssetClasses: polygonConfigured && inChain("polygon") ? assistantSelected : [],
     configuredButUnused: polygonConfigured && !inChain("polygon"),
-    status: !polygonConfigured ? "not_configured" : (inChain("polygon") ? "unverified" : "degraded"),
+    status: !polygonConfigured ? "not_configured" : "unverified",
     statusReason: !polygonConfigured
       ? "POLYGON_API_KEY not set."
       : inChain("polygon") ? pendingCheck : notSelectedReason("Polygon"),
@@ -431,7 +434,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     usedBy: avConfigured && inChain("alpha_vantage") ? ["scanner", "chart", "ruby"] : [],
     selectedForAssetClasses: avConfigured && inChain("alpha_vantage") ? assistantSelected : [],
     configuredButUnused: avConfigured && !inChain("alpha_vantage"),
-    status: !avConfigured ? "not_configured" : (inChain("alpha_vantage") ? "unverified" : "degraded"),
+    status: !avConfigured ? "not_configured" : "unverified",
     statusReason: !avConfigured
       ? "ALPHA_VANTAGE_API_KEY not set."
       : inChain("alpha_vantage") ? pendingCheck : notSelectedReason("Alpha Vantage"),
@@ -708,6 +711,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     notConfigured: providers.filter((p) => p.status === "not_configured").length,
     reserved: providers.filter((p) => p.status === "reserved").length,
     unverified: providers.filter((p) => p.status === "unverified").length,
+    offline: providers.filter((p) => p.status === "offline").length,
     configuredButUnused: providers.filter((p) => p.configuredButUnused).length,
   };
 
