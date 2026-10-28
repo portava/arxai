@@ -10,6 +10,7 @@ import {
 import { toneClasses } from "@/lib/chart-sentence-tone";
 import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import { useStatePricePrecision } from "./chartPricePrecisionStore";
+import { chartReadVerification } from "./chartReadVerification";
 
 // ChartReadPanels — Chart Brain v2 (Task 4) decision panels.
 //
@@ -306,6 +307,26 @@ export function ChartAgentConsensusPanel({
         testid="chart-consensus-panel"
       >
         <Line tone="text-zinc-400">{c.note}</Line>
+      </PanelShell>
+    );
+  }
+  // An unverified chart read withholds the consensus stance — the same answer
+  // Ruby gives on this board ("agent consensus withheld"); never a stance and
+  // agent votes on unverified data.
+  const verification = chartReadVerification(state);
+  if (!verification.verified) {
+    return (
+      <PanelShell
+        icon={Users}
+        title="Agent consensus"
+        accent="text-violet-400"
+        badge="withheld"
+        testid="chart-consensus-panel"
+      >
+        <Line tone="text-zinc-400">Chart data not verified — agent consensus withheld.</Line>
+        <Line tone="text-zinc-500" label="Why">
+          {verification.reasons.join("; ")}
+        </Line>
       </PanelShell>
     );
   }

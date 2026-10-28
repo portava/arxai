@@ -8,13 +8,14 @@ import { toneClasses } from "@/lib/chart-sentence-tone";
 import { useAssistantName } from "@/lib/assistant-name";
 import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import { useStatePricePrecision } from "./chartPricePrecisionStore";
+import { chartReadVerification } from "./chartReadVerification";
 
 // ChartPulse — Chart Brain v2 (Task 3) compact at-a-glance state panel.
 //
 // A small, mobile-friendly grid that summarises the live Chart Intelligence
 // State: feed status, regime, bias, active level, momentum, risk, readiness,
-// best action, setup age — plus honest standby chips for the agent court and
-// Ruby (those consumers land in a later task). EVERYTHING is generated from the
+// best action, setup age — plus the agent-court chip (from the state's agent
+// consensus, withheld on an unverified read) and the Ruby chip. EVERYTHING is generated from the
 // state object; nothing is hardcoded and no verdict is invented. PURE DISPLAY —
 // it never places, modifies, or closes a trade.
 //
@@ -43,24 +44,6 @@ function biasTone(b: string): ChartMarketSentenceTone {
   if (b === "bullish") return "bullish";
   if (b === "bearish") return "bearish";
   return "neutral";
-}
-
-// Whether the chart-truth gate has verified this read (same conditions the
-// server uses to cap the decision summary and Ruby uses for a directional
-// read: Chart Truth ≥ 75, feed not stale, broker mirror not failed, feed
-// live). The Pulse may only DOWNGRADE what the server sent — never upgrade.
-function readVerification(state: ChartState): { verified: boolean; reasons: string[] } {
-  const gate = (state as { gateOutput?: ChartState["gateOutput"] | null }).gateOutput ?? null;
-  const reasons: string[] = [];
-  if (!gate) {
-    reasons.push("the chart truth check could not be loaded");
-  } else {
-    if (!gate.confidentReadAllowed) reasons.push(`Chart Truth ${gate.chartTruthScore}/100 (needs 75)`);
-    if (!gate.autonomousChartActionAllowed) reasons.push("the feed is stale");
-    if (!gate.tradeConfirmationAllowed) reasons.push("the broker-mirror check failed");
-  }
-  if (state.truthState?.isLive !== true) reasons.push("the feed is not live right now");
-  return { verified: reasons.length === 0, reasons };
 }
 
 // Prices print at the precision the chart resolved for this symbol (shared
@@ -195,6 +178,22 @@ function buildItems(
   return items;
 }
 
+function agentCourtChip(state: ChartState, verified: boolean): { text: string; title: string } {
+  const c = (state as { agentConsensus?: ChartState["agentConsensus"] | null }).agentConsensus ?? null;
+  if (!c) return { text: "Agent court: could not be loaded", title: "The agent consensus was not returned with this read." };
+  if (!c.populated) return { text: "Agent court: no read", title: c.note };
+  if (!verified) {
+    return {
+      text: "Agent court: withheld (read not verified)",
+      title: "Chart data not verified — agent consensus withheld.",
+    };
+  }
+  return {
+    text: `Agent court: ${c.stance}${c.conflict ? " · conflict" : ""} (advisory)`,
+    title: c.note,
+  };
+}
+
 export function ChartPulse({ state }: { state: ChartState | null }) {
   const pricePrecision = useStatePricePrecision(state);
   const { name } = useAssistantName();
@@ -211,8 +210,9 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
 
   const conf = feedConfidence(state.truthState);
   const dirty = state.stale || !state.aiUsable || conf.severity === "danger";
-  const verification = readVerification(state);
+  const verification = chartReadVerification(state);
   const items = buildItems(state, pricePrecision, verification.verified);
+  const court = agentCourtChip(state, verification.verified);
   const bestAction = state.marketSentences.bestNextAction;
   const baTone = toneClasses(bestAction.tone);
 
@@ -299,14 +299,16 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
         <div className={`text-[11px] ${baTone.text}`}>{bestAction.text}</div>
       </div>
 
-      {/* Honest standby chips: the agent court + Ruby consumers land in a later
-          task, so we never fake a verdict here. */}
+      {/* Agent court chip — read from state.agentConsensus, never hard-coded.
+          An unverified read withholds the stance, exactly as Ruby and the
+          consensus panel do. */}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
         <span
           className="rounded border border-zinc-800 px-1.5 py-0.5"
           data-testid="pulse-agent-court"
+          title={court.title}
         >
-          Agent court: standby
+          {court.text}
         </span>
         <span
           className="rounded border border-zinc-800 px-1.5 py-0.5"
