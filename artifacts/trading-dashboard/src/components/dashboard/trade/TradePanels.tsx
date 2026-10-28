@@ -11,6 +11,8 @@ import { CockpitCard, Pill, ActionButton, SectionLink } from "@/components/dashb
 import { cn } from "@/lib/utils";
 import type { BridgeObservation } from "@/components/dashboard/cockpit/bridgeObservation";
 import type { RiskCapsStatus } from "@/lib/riskCapsStatus";
+import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
+import { scannerResultActionChip } from "@/components/scanner/scannerResultAction";
 
 /* ── 1 · Top status bar ─────────────────────────────────────────────── */
 export function TradeStatusBar({
@@ -154,7 +156,34 @@ export function PositionsPanel({ positions, isLoading = false, isError = false, 
 }
 
 /* ── 4 · Orders tab (scanner opps + intent queue) ───────────────────── */
-export type Opp = { symbol: string; timeframe: string; recommendedAction: string; confidenceScore: number; opportunity: { score: number; label: string } };
+export type Opp = {
+  symbol: string; timeframe: string; recommendedAction: string; confidenceScore: number; opportunity: { score: number; label: string };
+  // Row truth from /api/market-scanner/opportunities. Optional so older
+  // callers compile; a row without them is treated as having no current read.
+  generatedAt?: string | null; scanGeneratedAt?: string | null;
+  dataStatus?: string; tradeable?: boolean; disabledReason?: string | null;
+  finalRead?: { label?: string | null } | null;
+};
+
+/**
+ * Same downgrade the Market Scanner board applies: a row's direction and score
+ * are shown only while it is a live, tradeable read from a scan at most 30 s
+ * old, and a NO_TRADE / AVOID_FOR_NOW final read replaces the raw BUY / SELL.
+ * The row's own analysis time stands in when the envelope time is not passed.
+ */
+function ordersPanelRowRead(o: Opp, now: number): { usable: true; chip: ReturnType<typeof scannerResultActionChip> } | { usable: false; reason: string } {
+  const usable = canUseScannerOpportunity(
+    { ...o, generatedAt: o.generatedAt ?? null, scanGeneratedAt: o.scanGeneratedAt ?? o.generatedAt ?? null },
+    now,
+  );
+  if (!usable) {
+    const reason = o.dataStatus === "live" && o.tradeable === true
+      ? "This read is more than 30 s old. Scan again for a current direction and score."
+      : o.disabledReason || "No live, tradeable read for this market right now.";
+    return { usable: false, reason };
+  }
+  return { usable: true, chip: scannerResultActionChip(o.recommendedAction, o.finalRead?.label) };
+}
 
 export function OrdersPanel({
   opps, intentCount, picked, onPick,
@@ -166,18 +195,25 @@ export function OrdersPanel({
           <p className="py-4 text-center text-sm text-txt-secondary">No scan results yet — start the scanner from the Market Scanner page.</p>
         ) : (
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-            {opps.map((o, i) => (
+            {opps.map((o, i) => {
+              const read = ordersPanelRowRead(o, Date.now());
+              return (
               <button key={i} onClick={() => onPick(o)}
                 className={cn("rounded-lg border p-2 text-left text-xs transition-colors hover:bg-secondary/40",
                   picked?.symbol === o.symbol && picked.timeframe === o.timeframe ? "border-primary ring-1 ring-primary" : "border-border")}
                 data-testid={`order-opp-${o.symbol}-${o.timeframe}`}>
                 <div className="flex justify-between"><span className="font-bold">{o.symbol}</span><span className="text-txt-muted">{o.timeframe}</span></div>
-                <div className="mt-1 flex items-center gap-1">
-                  <Pill tone={o.recommendedAction === "BUY" ? "success" : o.recommendedAction === "SELL" ? "danger" : "muted"}>{o.recommendedAction}</Pill>
-                  <span className="ml-auto font-bold">{o.opportunity.score}</span>
-                </div>
+                {read.usable ? (
+                  <div className="mt-1 flex items-center gap-1">
+                    <Pill tone={read.chip.withheld ? "muted" : o.recommendedAction === "BUY" ? "success" : o.recommendedAction === "SELL" ? "danger" : "muted"}>{read.chip.text}</Pill>
+                    <span className="ml-auto font-bold" data-testid={`order-opp-score-${o.symbol}-${o.timeframe}`}>{o.opportunity.score}</span>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[11px] text-txt-muted" data-testid={`order-opp-noread-${o.symbol}-${o.timeframe}`}>{read.reason}</div>
+                )}
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
         <SectionLink href="/market-scanner">Full Scanner</SectionLink>
