@@ -20,7 +20,20 @@ async outer => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const cdp = await page.context().newCDPSession(page);
   const viewport = { width: 1600, height: 1100 };
-  const LABEL = rate => `offline synthetic fixture, Chromium, ${rate === 1 ? 'no CPU throttle (1x)' : `${rate}x CPU throttle`}, rAF opportunity not paint, Vite dev server / React development build, shared container, not reference hardware`;
+  // Optional target, default unchanged: a CHART_QA_BASE_URL global in the evaluating context
+  // or, where the runner exposes process, the CHART_QA_BASE_URL environment variable.
+  // prod-server.mjs serves the production build on 4179 and labels it in a meta tag.
+  const DEFAULT_BASE_URL = 'http://127.0.0.1:4178';
+  const BASE_URL = (typeof CHART_QA_BASE_URL === 'string' && CHART_QA_BASE_URL) || (typeof process === 'object' && process?.env?.CHART_QA_BASE_URL) || DEFAULT_BASE_URL;
+  // Another spelling of the dev server (trailing slash, localhost, letter case of scheme and
+  // host) is still the dev server. String-only: a vm context may have no URL global.
+  const normalise = url => String(url).trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i, origin => origin.toLowerCase().replace(/^(https?:\/\/)(localhost|\[::1\])(?=:|$)/, (_, scheme) => `${scheme}127.0.0.1`))
+    .replace(/\/+(?=[?#]|$)/, '');
+  const DEFAULT_TARGET = normalise(BASE_URL) === normalise(DEFAULT_BASE_URL);
+  const DEV_BUILD = 'Vite dev server / React development build';
+  let BUILD = DEV_BUILD;
+  const LABEL = rate => `offline synthetic fixture, Chromium, ${rate === 1 ? 'no CPU throttle (1x)' : `${rate}x CPU throttle`}, rAF opportunity not paint, ${BUILD}, shared container, not reference hardware`;
 
   await page.addInitScript(() => {
     if (window.__latency) return;
@@ -207,7 +220,13 @@ async outer => {
   for (const cpuRate of [1, 4]) {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpuRate });
     await page.setViewportSize(viewport);
-    await page.goto('http://127.0.0.1:4178');
+    await page.goto(BASE_URL);
+    if (!DEFAULT_TARGET) {
+      // The build label comes from the page. The dev server (under any spelling) carries
+      // none and keeps the dev label without a read; any other unlabelled target says so.
+      const meta = await page.evaluate(() => document.querySelector('meta[name="arx-chart-qa-build"]')?.content);
+      BUILD = meta ? `${meta} at ${BASE_URL}` : `unlabelled build at ${BASE_URL}`;
+    }
     await page.evaluate(() => localStorage.clear());
     // Preload heavy state through storage, not UI clicks: 11 studies (the 12-study stress
     // set minus the stochastic oscillator, so Add study stays enabled) with 1000-period
@@ -286,5 +305,8 @@ async outer => {
   return { fixture: 'Actual SmartChartLayout + ARXNativeChart / synthetic 5,000-bar EURUSD M15 / 11 studies incl. 1000-period Bollinger and CCI / 40 drawings',
     method: 'Trusted input capture to second requestAnimationFrame after DOM commit; completion witness checked from that frame onwards. A render opportunity proxy, not a hardware presentation timestamp',
     replay: runs.every(run => !run.replayMounted) ? 'Not measured: the chart-qa fixture does not mount ChartReplayBoundary' : 'Replay entry present but not sampled by this scenario',
-    gate: { targetP95Ms: TARGET_P95_MS, enforced: ENFORCE_P95_GATE }, repetitions: { warmup: WARMUP, perPass: REPS, passes: PASSES }, runs, errors };
+    gate: { targetP95Ms: TARGET_P95_MS, enforced: ENFORCE_P95_GATE }, repetitions: { warmup: WARMUP, perPass: REPS, passes: PASSES },
+    // The target is recorded only when it is not the dev server (under any spelling), so
+    // dev output is unchanged.
+    ...(!DEFAULT_TARGET && { baseUrl: BASE_URL }), runs, errors };
 }
