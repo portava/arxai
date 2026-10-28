@@ -297,8 +297,10 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
         <AlertTitle className="text-sm text-amber-200">EA READY / SERVER DISPATCH OFF — READY TO ARM</AlertTitle>
         <AlertDescription className="text-xs text-amber-200/80">
           The live EA is connected, fresh, and healthy. Server live broker execution
-          is OFF — this is the safe default. Confirm bridge identity (account /
-          broker / server), type the activation phrase, then click Arm Live Execution.
+          is OFF — this is the safe default. Arm live execution below sends the
+          detected account / broker / server and the activation phrase for you
+          (nothing is typed); the server compares them with the bridge it detects
+          at that moment and re-validates the pre-arm checks.
         </AlertDescription>
       </Alert>
     );
@@ -473,16 +475,15 @@ function ChecklistCard({ items }: { items: Check[] }) {
 
 // ── Arm / Disarm Live Execution card ─────────────────────────────────────────
 // Surfaced on the Readiness tab. This is the operator's one-click arm/disarm
-// for the DB-backed `liveBrokerExecutionArmed` flag. Pre-arm checks must
-// already pass (LOCKED state disables Arm) and the kill switch must be off.
-// Disarm is always allowed (fail-closed). All actions are audited server-side.
+// for the DB-backed `liveBrokerExecutionArmed` flag. The Arm button is not
+// disabled by this page: it sends the activation phrase and the detected
+// account / broker / server from readiness (nothing is typed), and the server
+// refuses on an engaged platform emergency stop, an identity mismatch or a
+// failing pre-arm check. The copy below says exactly that. Disarm is always
+// allowed (fail-closed). All actions are audited server-side.
 function ArmExecutionCard({
   readiness, onAfter,
 }: { readiness: ReadinessResp | null; onAfter: () => void }) {
-  const [phrase, setPhrase] = useState("");
-  const [acct, setAcct] = useState("");
-  const [broker, setBroker] = useState("");
-  const [server, setServer] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -493,12 +494,6 @@ function ArmExecutionCard({
   const detectedAccount = readiness.liveAccount.detectedAccountNumber;
   const detectedBroker = readiness.liveAccount.detectedBrokerName;
   const detectedServer = readiness.liveAccount.detectedServerName;
-  const phraseOk = phrase === required;
-  const acctOk = detectedAccount != null && acct.trim() === detectedAccount.trim();
-  const brokerOk = detectedBroker != null && broker.trim() === detectedBroker.trim();
-  const serverOk = detectedServer != null && server.trim() === detectedServer.trim();
-  const armable =
-    state === "READY_TO_ARM" && phraseOk && acctOk && brokerOk && serverOk && busy == null;
   async function arm() {
     setBusy("arm"); setMsg(null);
     try {
@@ -513,7 +508,6 @@ function ArmExecutionCard({
       setMsg(r.ok
         ? "ARMED — server live broker execution enabled."
         : `${r.error}${r.mismatches ? ` :: ${r.mismatches.join("; ")}` : ""}${r.failedChecks ? ` :: ${r.failedChecks.join(",")}` : ""}`);
-      setPhrase(""); setAcct(""); setBroker(""); setServer("");
       onAfter();
     } finally { setBusy(null); }
   }
@@ -546,7 +540,7 @@ function ArmExecutionCard({
         </div>
         {state === "LOCKED" && (
           <Alert className="py-2 border-rose-500/40 bg-rose-500/10">
-            <AlertTitle className="text-xs text-rose-200">Pre-arm checks failing — Arm disabled.</AlertTitle>
+            <AlertTitle className="text-xs text-rose-200">Pre-arm checks failing — the server refuses Arm.</AlertTitle>
             <AlertDescription className="text-[11px] text-rose-200/80">Resolve the failing checks in the checklist above, then return here.</AlertDescription>
           </Alert>
         )}
@@ -575,7 +569,9 @@ function ArmExecutionCard({
           <Alert className="py-2 border-amber-500/60 bg-amber-500/10">
             <AlertTitle className="text-xs text-amber-200">Ready to arm.</AlertTitle>
             <AlertDescription className="text-[11px] text-amber-200/80">
-              Type the phrase and the detected account / broker / server exactly (trim-matched) to enable.
+              Arm is one click and nothing is typed: it sends the activation phrase and the detected
+              account / broker / server for you. The server compares them with the bridge it detects at
+              that moment, re-validates the pre-arm checks, and refuses on any mismatch or failure.
             </AlertDescription>
           </Alert>
         )}
@@ -621,9 +617,6 @@ function ActivationWizard({
   readiness, checklist, onAfterStep,
 }: { readiness: ReadinessResp | null; checklist: Check[]; onAfterStep: () => void }) {
   const [phrase, setPhrase] = useState("");
-  const [acctConfirm, setAcctConfirm] = useState("");
-  const [brokerConfirm, setBrokerConfirm] = useState("");
-  const [serverConfirm, setServerConfirm] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
@@ -633,13 +626,11 @@ function ActivationWizard({
   const detectedAccount = readiness.liveAccount.detectedAccountNumber;
   const detectedBroker = readiness.liveAccount.detectedBrokerName;
   const detectedServer = readiness.liveAccount.detectedServerName;
-  // Confirmation inputs are matched after trim() on both sides, mirroring the
-  // server-side check #12 logic. Without trim, an accidental trailing space
-  // pasted in from the broker UI would cause a confusing identity mismatch.
-  const acctOk = true;
-  const brokerOk = true;
-  const serverOk = true;
-  const allConfirmOk = phraseOk && acctOk && brokerOk && serverOk;
+  // The setting steps ask only for the typed phrase (the /activate-step
+  // endpoint checks nothing else). The detected identity below is shown for
+  // reference; this wizard does not collect or compare an identity
+  // confirmation.
+  const allConfirmOk = phraseOk;
   const checkOk = (id: string) => checklist.find(c => c.id === id)?.ok === true;
   async function copy(text: string | null, label: string) {
     if (!text) return;
@@ -699,7 +690,7 @@ function ActivationWizard({
         <AlertDescription className="text-[11px]">
           Each step writes to <code>global_trading_settings</code> through the audited
           <code> /activate-step</code> endpoint, which requires the typed phrase
-          <strong> {required}</strong> on every call. Steps 11–13 are read-only dry-runs.
+          <strong> {required}</strong> on every call. Steps 10–11 are read-only dry-runs.
         </AlertDescription>
       </Alert>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
@@ -711,8 +702,8 @@ function ActivationWizard({
             Must exactly equal <code className="font-mono">{required}</code>.
           </div>
         </div>
-        <div>
-          <Label className="text-xs">Detected master bridge — confirm to proceed</Label>
+        <div data-testid="wizard-detected-identity">
+          <Label className="text-xs">Detected master bridge (for reference — not confirmed by this wizard)</Label>
           <div className="border border-zinc-800/60 rounded p-2 space-y-1 text-[11px]">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground w-16">Account</span>
@@ -738,6 +729,10 @@ function ActivationWizard({
                 onClick={() => copy(detectedServer, "Server")}
                 data-testid="copy-server">Copy</Button>
             </div>
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-1">
+            The setting steps need only the typed phrase. Bridge identity is compared by the server
+            only when you Arm (Readiness tab).
           </div>
           {!detectedAccount && (
             <div className="text-[10px] text-amber-300 mt-1">

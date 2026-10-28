@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AdminLiveSharedActivationPage from "./live-shared-activation";
 
@@ -224,5 +224,43 @@ describe("live shared activation — master switch labels", () => {
     const eff = screen.getByTestId("safety-master-switch-effective");
     expect(eff.textContent).toMatch(/effective: env AND operator arm/);
     expect(eff.textContent).toContain("false");
+  });
+});
+
+describe("live shared activation — identity confirmation copy", () => {
+  async function openWizard() {
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByTestId("tab-wizard"), { button: 0, ctrlKey: false });
+    });
+  }
+
+  it("the wizard does not claim an identity confirmation it never collects", async () => {
+    await renderWith(readiness());
+    await openWizard();
+    fireEvent.change(screen.getByTestId("wizard-phrase"), { target: { value: "ENABLE LIVE TRADING" } });
+    expect(screen.queryByText(/confirm to proceed/i)).toBeNull();
+    const ref = screen.getByTestId("wizard-detected-identity");
+    expect(ref.textContent).toMatch(/not confirmed by this wizard/i);
+    expect(screen.getByTestId("detected-account").textContent).toBe("12341234");
+    // Only the typed phrase enables the setting steps; nothing else is asked.
+    expect((screen.getByTestId("wiz-routing") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("the READY TO ARM banner and Arm card do not ask the operator to type what Arm sends for them", async () => {
+    await renderWith(readiness());
+    const banner = screen.getByTestId("banner-ready-to-arm");
+    expect(banner.textContent).not.toMatch(/Confirm bridge identity/);
+    expect(banner.textContent).not.toMatch(/type the activation phrase/);
+    expect(banner.textContent).toMatch(/sends the detected account \/ broker \/ server/);
+    const card = screen.getByTestId("arm-execution-card");
+    expect(card.textContent).not.toMatch(/Type the phrase/);
+    expect(card.textContent).toMatch(/nothing is typed/i);
+  });
+
+  it("LOCKED does not claim Arm is disabled (the server refuses it instead)", async () => {
+    await renderWith(readiness({ liveAccount: { pinnedBridge: null } }));
+    const card = screen.getByTestId("arm-execution-card");
+    expect(card.textContent).not.toMatch(/Arm disabled/);
+    expect(card.textContent).toMatch(/server refuses Arm/);
   });
 });
