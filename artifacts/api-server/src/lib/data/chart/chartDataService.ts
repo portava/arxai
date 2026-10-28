@@ -399,8 +399,8 @@ async function buildChartFeed(
     : tickSource
       ? getFeedFreshness(symbol, now, tickSource)
       : null;
-  const tradingObserved =
-    tickFreshness?.quoteMovedWallMs != null && now - tickFreshness.quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
+  const quoteMovedWallMs: number | null = tickFreshness ? tickFreshness.quoteMovedWallMs : null;
+  const tradingObserved = quoteMovedWallMs != null && now - quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
   const closure = lastCandle && !tradingObserved
     ? scheduledWeekendClosure(getSymbolProfile(symbol, assetClass).session, now)
     : null;
