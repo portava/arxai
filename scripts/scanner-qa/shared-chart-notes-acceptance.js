@@ -39,6 +39,14 @@ async page => {
       &&Number.isFinite(note.anchor?.x)&&Number.isFinite(note.anchor?.y)&&note.anchor.x>=0&&note.anchor.x<=pane.width
       &&note.anchor.y>=0&&note.anchor.y<=pane.height;
   }
+  function noticesClearOfPlot(observation) {
+    const {banners,canvas,note,header}=observation??{};
+    const valid=box=>!!box&&['left','right','top','bottom'].every(key=>Number.isFinite(box[key]))&&box.left<box.right&&box.top<box.bottom;
+    const separate=(a,b)=>a.right<=b.left||b.right<=a.left||a.bottom<=b.top||b.bottom<=a.top;
+    return Array.isArray(banners)&&banners.length>0&&[canvas,note,header].every(valid)
+      &&banners.every(banner=>valid(banner.box)&&!['absolute','fixed','sticky'].includes(banner.position)
+        &&banner.box.bottom<=canvas.top+.01&&[canvas,note,header].every(box=>separate(banner.box,box)));
+  }
   function savedNoteMatches(drawings,note) {
     return Array.isArray(drawings)&&drawings.length===1&&drawings[0].id===note.id&&drawings[0].kind==='text'
       &&drawings[0].text===note.text&&JSON.stringify(drawings[0].start)===JSON.stringify(note.start)
@@ -166,6 +174,16 @@ async page => {
     const box=await canvas.boundingBox(),surface=await noteSurface(),viewport=page.viewportSize(),note=surface.notes[0];
     check(boundedNote(note,surface.pane)&&box&&viewport&&box.x+note.x>=0&&box.x+note.x+note.width<=viewport.width
       &&box.y+note.y>=0&&box.y+note.y+note.height<=viewport.height,label+': complete actual note card is in the screenshot viewport');
+    const observation=await canvas.evaluate((element,note)=>{
+      const chart=element.closest('[data-testid="arx-native-chart"]'),bounds=element.getBoundingClientRect();
+      const rectangle=box=>({left:box.left,top:box.top,right:box.right,bottom:box.bottom});
+      const card={left:bounds.left+note.x,top:bounds.top+note.y,right:bounds.left+note.x+note.width,bottom:bounds.top+note.y+note.height};
+      const banners=[...chart.querySelectorAll('[data-testid="arx-native-safe-mode"],[data-testid="arx-native-line-mode"],[data-testid="arx-native-feed-banner"]')]
+        .filter(element=>element.getClientRects().length>0).map(element=>({id:element.getAttribute('data-testid'),position:getComputedStyle(element).position,box:rectangle(element.getBoundingClientRect())}));
+      return {canvas:rectangle(bounds),note:card,header:{...card,bottom:Math.min(card.bottom,card.top+26)},banners};
+    },note);
+    report.noticeClearance??=[];report.noticeClearance.push({label,...observation});
+    check(noticesClearOfPlot(observation),label+': actual persistent notices are in normal flow above the canvas and do not overlap its note or heading');
     await saveScreenshot(label);
   }
   try {

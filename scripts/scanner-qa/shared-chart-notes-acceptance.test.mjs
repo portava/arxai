@@ -42,6 +42,19 @@ test('card bounds include the complete card and real anchor, not document scroll
   assert.equal(bounded(note,pane),true);
   for(const patch of [{x:-1},{y:-1},{width:100},{height:200},{width:0},{height:NaN},{anchor:{x:101,y:100}},{anchor:{x:50,y:NaN}}])assert.equal(bounded({...note,...patch},pane),false);
 });
+test('visible status notices must stay above the actual canvas and cannot occlude a note heading',()=>{
+  const clear=helper('noticesClearOfPlot');
+  const value={banners:[{position:'static',box:{left:0,top:0,right:390,bottom:90}},{position:'static',box:{left:0,top:90,right:390,bottom:120}}],
+    canvas:{left:0,top:120,right:390,bottom:480},note:{left:10,top:124,right:230,bottom:450},header:{left:10,top:124,right:230,bottom:150}};
+  assert.equal(clear(value),true);
+  const old=structuredClone(value);old.banners=[{position:'absolute',box:{left:0,top:120,right:390,bottom:210}}];
+  assert.equal(clear(old),false,'old safe-mode banner covers title and initial lines despite card fitting the pane');
+  old.banners[0].position='static';assert.equal(clear(old),false,'overlapping geometry remains invalid even if position label says static');
+  for(const position of ['absolute','fixed','sticky']){const bad=structuredClone(value);bad.banners[0].position=position;assert.equal(clear(bad),false);}
+  for(const field of ['canvas','note','header']){const bad=structuredClone(value);bad[field].top=NaN;assert.equal(clear(bad),false);}
+  assert.equal(clear({...value,banners:[]}),false,'fixture must actually exercise a visible persistent notice');
+  const hidden=structuredClone(value);hidden.banners[0].box.bottom=hidden.banners[0].box.top;assert.equal(clear(hidden),false);
+});
 test('saved restoration requires same ID, text, locked state and precise time/price',()=>{
   const note={id:'n',kind:'text',text:'literal <b>note</b>',start:{time:100,price:1.2},locked:true};
   assert.equal(saved([structuredClone(note)],note),true);

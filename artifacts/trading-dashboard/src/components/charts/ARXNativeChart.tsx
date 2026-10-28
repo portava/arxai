@@ -1176,7 +1176,7 @@ export function ARXNativeChart({
 
   // Phase 2 — Chart Safe Mode: active when candles exist but the integrity
   // check failed (quality="invalid"). We still show the candles (they are
-  // real, just flagged) but overlay a clear warning so no AI/analysis relies
+  // real, just flagged) but show a clear warning so no AI/analysis relies
   // on them. The open-positions overlays remain visible because execution state
   // is independent from feed quality.
   const isSafeMode = hasCandles && feedStatus?.quality === "invalid";
@@ -1442,6 +1442,73 @@ export function ARXNativeChart({
       </output>
       <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
 
+      {/* Persistent notices stay in normal flow so they cannot obscure candles,
+          user notes or projected position controls. The relative canvas/overlay
+          container below retains one unchanged coordinate origin. */}
+      {/* Phase 2 — Chart Safe Mode notice.
+          When quality="invalid" (integrity check failed) we show a clear
+          user-safe message above the chart. Candles are still drawn below
+          because they are real data (just flagged). Open position overlays
+          remain visible. AI reads are paused (conf.aiUsable will be false).
+          This is NOT an error state — it is a "read with extreme caution"
+          state. We never invent a safe state or pretend the data is clean. */}
+      {isSafeMode && (
+        <div
+          className="flex flex-wrap items-start gap-3 bg-red-950/80 px-3 py-3 text-xs backdrop-blur-sm"
+          data-testid="arx-native-safe-mode"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-red-100">Chart Safe Mode — data validation failed</div>
+            <div className="mt-0.5 text-[11px] text-red-300/90">
+              {warning || "Candle integrity checks failed. This chart is not confirmed for AI analysis or live decisions."}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 2 — OHLC mode indicator.
+          When candles are present but the spread check fails (flat bars), the
+          candlestick label is misleading. We add a labeled banner so the user
+          knows what they are looking at. This is NOT an error — the feed is
+          returning data, it just lacks meaningful OHLC spread. */}
+      {hasCandles && !ohlcAvailable && !isSafeMode && (
+        <div
+          className="flex items-center gap-2 bg-amber-950/70 px-3 py-2 text-xs backdrop-blur-sm"
+          data-testid="arx-native-line-mode"
+        >
+          <LineChart className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+          <span className="text-amber-200">
+            Line mode — OHLC candles are flat on this feed. Price action shown, no spread.
+          </span>
+        </div>
+      )}
+
+      {/* Prominent feed banner — only when candles are drawn but the feed is
+          degraded/stale (and NOT in safe mode, which has its own notice). */}
+      {showPoorBanner && (
+        <div
+          data-testid="arx-native-feed-banner"
+          data-severity={conf.severity}
+          className={`flex flex-wrap items-center gap-2 px-3 py-2 text-xs backdrop-blur-sm ${
+            conf.severity === "danger"
+              ? "bg-red-950/70 text-red-100"
+              : conf.severity === "caution"
+                ? "bg-amber-950/60 text-amber-100"
+                : "bg-zinc-900/70 text-zinc-100"
+          }`}
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span className="font-semibold">{conf.statusLabel} feed</span>
+          <span className="min-w-0 flex-1 truncate text-[11px] opacity-90">
+            {conf.message}
+          </span>
+          {query.isFetching && !query.isLoading && (
+            <RefreshCw className="h-3 w-3 animate-spin opacity-60" />
+          )}
+        </div>
+      )}
+
       <CardContent className="relative p-0">
         {/* The chart canvas is always mounted so the v5 series handle is stable;
             overlays cover it for loading / empty / error. */}
@@ -1489,70 +1556,6 @@ export function ARXNativeChart({
                 {b.mode ? ` · ${b.mode}` : ""}
               </div>
             ))}
-          </div>
-        )}
-
-        {/* Phase 2 — Chart Safe Mode overlay.
-            When quality="invalid" (integrity check failed) we show a clear
-            user-safe message over the chart. Candles are still drawn beneath
-            because they are real data (just flagged). Open position overlays
-            remain visible. AI reads are paused (conf.aiUsable will be false).
-            This is NOT an error state — it is a "read with extreme caution"
-            state. We never invent a safe state or pretend the data is clean. */}
-        {isSafeMode && (
-          <div
-            className="absolute inset-x-0 top-0 z-20 flex flex-wrap items-start gap-3 bg-red-950/80 px-3 py-3 text-xs backdrop-blur-sm"
-            data-testid="arx-native-safe-mode"
-          >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-red-100">Chart Safe Mode — data validation failed</div>
-              <div className="mt-0.5 text-[11px] text-red-300/90">
-                {warning || "Candle integrity checks failed. This chart is not confirmed for AI analysis or live decisions."}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Phase 2 — OHLC mode indicator.
-            When candles are present but the spread check fails (flat bars), the
-            candlestick label is misleading. We add a labeled banner so the user
-            knows what they are looking at. This is NOT an error — the feed is
-            returning data, it just lacks meaningful OHLC spread. */}
-        {hasCandles && !ohlcAvailable && !isSafeMode && (
-          <div
-            className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 bg-amber-950/70 px-3 py-2 text-xs backdrop-blur-sm"
-            data-testid="arx-native-line-mode"
-          >
-            <LineChart className="h-3.5 w-3.5 shrink-0 text-amber-300" />
-            <span className="text-amber-200">
-              Line mode — OHLC candles are flat on this feed. Price action shown, no spread.
-            </span>
-          </div>
-        )}
-
-        {/* Prominent feed banner — only when candles are drawn but the feed is
-            degraded/stale (and NOT in safe mode, which has its own overlay). */}
-        {showPoorBanner && (
-          <div
-            data-testid="arx-native-feed-banner"
-            data-severity={conf.severity}
-            className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 px-3 py-2 text-xs backdrop-blur-sm ${
-              conf.severity === "danger"
-                ? "bg-red-950/70 text-red-100"
-                : conf.severity === "caution"
-                  ? "bg-amber-950/60 text-amber-100"
-                  : "bg-zinc-900/70 text-zinc-100"
-            }`}
-          >
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            <span className="font-semibold">{conf.statusLabel} feed</span>
-            <span className="min-w-0 flex-1 truncate text-[11px] opacity-90">
-              {conf.message}
-            </span>
-            {query.isFetching && !query.isLoading && (
-              <RefreshCw className="h-3 w-3 animate-spin opacity-60" />
-            )}
           </div>
         )}
 
