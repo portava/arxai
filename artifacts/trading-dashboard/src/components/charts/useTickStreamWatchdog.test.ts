@@ -155,7 +155,7 @@ describe("C3.4 — stream lifecycle signals", () => {
     expect(result.current.epoch).toBe(0);
   });
 
-  it("noteStreamOpened clears a stall and restarts the clock", async () => {
+  it("noteStreamOpened restarts the clock but keeps the stall until the new stream delivers", async () => {
     const { result } = renderHook(() => useTickStreamWatchdog(OPTS));
     await act(async () => { await wait(SILENCE_MS * 2 / 3); });
     act(() => {
@@ -163,10 +163,12 @@ describe("C3.4 — stream lifecycle signals", () => {
     });
     expect(result.current.stalled).toBe(true);
 
+    // Reopening a socket proves nothing: a stream that has delivered no frame
+    // yet is still "reconnecting", not live (truth upgrade, 2026-10-28).
     act(() => {
       result.current.noteStreamOpened();
     });
-    expect(result.current.stalled).toBe(false);
+    expect(result.current.stalled).toBe(true);
 
     // Pass the original deadline, but remain inside the restarted window.
     await act(async () => { await wait(SILENCE_MS - 1); });
@@ -174,6 +176,22 @@ describe("C3.4 — stream lifecycle signals", () => {
     await act(async () => { await wait(1); });
     expect(result.current.epoch).toBe(1);
     expect(result.current.stalled).toBe(true);
+  });
+
+  it("a silent stream reopened by the watchdog still reads stalled until a frame arrives", async () => {
+    const { result } = renderHook(() => useTickStreamWatchdog(OPTS));
+    await act(async () => { await wait(SILENCE_MS + TICK_MS * 3); });
+    expect(result.current.epoch).toBeGreaterThanOrEqual(1);
+    expect(result.current.stalled).toBe(true);
+    // The subscribe effect re-runs on the epoch bump and opens a new stream.
+    act(() => {
+      result.current.noteStreamOpened();
+    });
+    expect(result.current.stalled).toBe(true);
+    act(() => {
+      result.current.noteFrame();
+    });
+    expect(result.current.stalled).toBe(false);
   });
 
   it("stops watching after unmount", async () => {
