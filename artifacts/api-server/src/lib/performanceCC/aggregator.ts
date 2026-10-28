@@ -368,6 +368,15 @@ export async function computeDecisionQuality(userId: number, range: RangeKey) {
   };
 }
 
+/**
+ * The ledger the Trading Calendar reads. It is not the demo-trade journal
+ * behind My Performance (paper_trades): the two record different trades and
+ * compute P&L differently, so their figures for the same date differ.
+ */
+export const CALENDAR_SOURCE = "PAPER_ORDERS" as const;
+export const CALENDAR_SOURCE_NOTE =
+  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Performance are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
+
 /** Build calendar grid for a month YYYY-MM. */
 export async function computeCalendarMonth(userId: number, month: string) {
   // month = "2026-05"
@@ -375,7 +384,10 @@ export async function computeCalendarMonth(userId: number, month: string) {
   const year = parseInt(yearStr ?? "0", 10);
   const m = parseInt(monthStr ?? "0", 10);
   if (!year || !m || m < 1 || m > 12) {
-    return { month, days: [], total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0 };
+    return {
+      month, days: [], total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0,
+      source: CALENDAR_SOURCE, source_note: CALENDAR_SOURCE_NOTE,
+    };
   }
   const daysInMonth = new Date(Date.UTC(year, m, 0)).getUTCDate();
   // Days after today (UTC) have not happened: they are flagged, and are not
@@ -422,6 +434,8 @@ export async function computeCalendarMonth(userId: number, month: string) {
     losing_days: losingDays,
     break_even_days: breakEvenDays,
     no_trade_days: noTradeDays,
+    source: CALENDAR_SOURCE,
+    source_note: CALENDAR_SOURCE_NOTE,
   };
 }
 

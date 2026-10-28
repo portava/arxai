@@ -91,3 +91,11 @@ test("day detail: an OPEN or CANCELLED order has no P&L (null), not a measured 0
   assert.equal(byId.get(14)!.pnl, 2);
   assert.equal(byId.get(14)!.pnl_note, null);
 });
+
+test("the Trading Calendar names its ledger (simulated orders) and says hand-logged demo trades are not in it", async () => {
+  const cal = await computeCalendarMonth(7, "2020-02") as Record<string, unknown>;
+  assert.equal(cal.source, "PAPER_ORDERS");
+  assert.match(String(cal.source_note), /simulated orders/i);
+  assert.match(String(cal.source_note), /My Performance/);
+  assert.match(String(cal.source_note), /not included/i);
+});

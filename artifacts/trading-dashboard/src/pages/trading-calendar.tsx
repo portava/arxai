@@ -22,7 +22,14 @@ interface CalendarDay {
   /** The day is after today (UTC): it has not happened yet. */
   is_future?: boolean;
 }
-interface CalendarResp { calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number } }
+interface CalendarResp { calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number; source_note?: string } }
+
+// Which ledger this page reads, for a server that does not send its note.
+// The demo calendar reads simulated orders, not the demo trades a trader
+// logs by hand on My Performance, so the two pages differ for a date.
+const DEMO_SOURCE_NOTE =
+  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Performance are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
+const LIVE_SOURCE_NOTE = "From your closed live trades recorded against your account.";
 interface DayDetailResp { day: { date: string; stats: any; trades: any[] } }
 
 /**
@@ -53,7 +60,7 @@ function dayColor(d: CalendarDay) {
 
 // Map the LIVE mode-aware route ({ days:[{date,totalPnl,tradesCount,winRate,...}] })
 // into the CalendarResp shape the existing UI renders. No paper data in LIVE mode.
-function mapLiveToCalendarResp(month: string, live: { days?: any[]; isEmpty?: boolean } | undefined): CalendarResp {
+function mapLiveToCalendarResp(month: string, live: { days?: any[]; isEmpty?: boolean; sourceNote?: string } | undefined): CalendarResp {
   const src = Array.isArray(live?.days) ? live!.days : [];
   const inMonth = src.filter((d) => typeof d.date === "string" && d.date.startsWith(month));
   const days: CalendarDay[] = inMonth.map((d) => {
@@ -85,6 +92,7 @@ function mapLiveToCalendarResp(month: string, live: { days?: any[]; isEmpty?: bo
       winning_days: days.filter((d) => d.day_status === "WINNING_DAY").length,
       losing_days: days.filter((d) => d.day_status === "LOSING_DAY").length,
       no_trade_days: days.filter((d) => d.day_status === "NO_TRADE_DAY").length,
+      source_note: typeof live?.sourceNote === "string" && live.sourceNote ? live.sourceNote : undefined,
     },
   };
 }
@@ -168,8 +176,13 @@ export default function TradingCalendarPage() {
             <CalendarDays className="text-primary" /> Trading Calendar
           </h2>
           <div className="text-muted-foreground flex items-center gap-2 flex-wrap">
-            {isLive ? "Daily P&L and win rate from your live trades." : "Daily P&L, win rate, and AI activity from your demo trades."}
+            {isLive ? "Daily P&L and win rate from your closed live trades." : "Daily P&L, win rate, and AI activity from your simulated orders."}
           </div>
+          {mode.isSuccess && (
+            <div className="text-xs text-muted-foreground mt-1" data-testid="calendar-source-note">
+              {cal.data?.calendar?.source_note ?? (isLive ? LIVE_SOURCE_NOTE : DEMO_SOURCE_NOTE)}
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <input
