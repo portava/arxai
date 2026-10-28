@@ -21,8 +21,18 @@ import type {
   SignalDirection,
   SignalEvidenceItem,
   SignalLifecycleStage,
+  SignalScoreDimension,
   NoTradeIntelligence,
+  NoTradeRuleKey,
 } from "./signalIntelligence.types.js";
+import { SIGNAL_SCORE_DIMENSION_COUNT } from "./signalIntelligence.types.js";
+import { confidenceBandFor } from "./scoring.js";
+import {
+  MIN_EVIDENCE_NET_SCORE,
+  MIN_EVIDENCE_SUPPORTING_ITEMS,
+  isHighConfidenceOpposingTrap,
+  minimumEvidenceShortfall,
+} from "./freshnessEvidence.js";
 
 const DISCLAIMER =
   "Decision support only — confirm live readiness and risk before trading.";
@@ -210,14 +220,37 @@ function joinAnd(parts: string[]): string {
   return `${clean.slice(0, -1).join(", ")}, and ${clean[clean.length - 1]}`;
 }
 
+// Plain names for score dimensions that fell back to a fixed default.
+const DIMENSION_PLAIN: Record<SignalScoreDimension, string> = {
+  direction: "direction",
+  entry: "entry",
+  execution: "execution",
+  risk: "reward-to-risk",
+  newsSafety: "news",
+  timing: "timing",
+  survivability: "room to target",
+};
+
 // ── Shared derived context ────────────────────────────────────────────────────
 
 interface Derived {
   name: string;
   dirL: string;
   structureL: string;
-  bandLong: string;
+  /** Band of the OVERALL quality number — only ever said next to `overall`. */
   bandShort: string;
+  /** Band of the EDGE number actually shown (`edge`) — the only adjective ever
+   * written before the word "edge". Overall quality bands never describe edge. */
+  edgeBandLong: string;
+  edgeBandShort: string;
+  /**
+   * True only when every dimension folded into overall/edge was observed
+   * (confidenceBandBasis FULL). Otherwise no band adjective is written for
+   * either number — they are partly fixed defaults.
+   */
+  banded: boolean;
+  /** Plain names of the score inputs that were defaults (empty when unknown). */
+  unmeasured: string[];
   stagePlain: string;
   timing: TimingClass;
   edge: number;
@@ -233,6 +266,8 @@ interface Derived {
   tps: string[];
   newsL: NewsRiskLevel;
   meetsMin: boolean;
+  /** Plain-English names of the minimum-evidence sub-rules that failed. */
+  evidenceShortfall: string[];
   hasData: boolean;
   liveFeed: boolean;
   late: boolean;
@@ -247,15 +282,23 @@ interface Derived {
 
 function derive(signal: RubyMarketEdgeSignal): Derived {
   const newsL: NewsRiskLevel = "none"; // overwritten below if carried
+  const edge = Math.round(signal.edgeScore);
+  // Banded from the rounded number the copy prints, so "(30/100)" and its
+  // adjective can never straddle a band boundary.
+  const edgeBand = confidenceBandFor(edge);
   return {
     name: signal.displayName || signal.symbol,
     dirL: DIRECTION_LABEL[signal.direction],
     structureL: structureSentence(signal),
-    bandLong: BAND_LONG[signal.confidenceBand],
     bandShort: BAND_SHORT[signal.confidenceBand],
+    edgeBandLong: BAND_LONG[edgeBand],
+    edgeBandShort: BAND_SHORT[edgeBand],
+    // Fail closed: an absent basis (older producer) is not a FULL basis.
+    banded: signal.confidenceBandBasis === "FULL",
+    unmeasured: (signal.scores.unmeasured ?? []).map((k) => DIMENSION_PLAIN[k] ?? k),
     stagePlain: STAGE_PLAIN[signal.lifecycleStage],
     timing: timingOf(signal.lifecycleStage),
-    edge: Math.round(signal.edgeScore),
+    edge,
     overall: Math.round(signal.scores.overall),
     forTop: topLabels(signal.evidence.for, 3),
     againstTop: topLabels(signal.evidence.against, 2),
@@ -268,6 +311,7 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
     tps: signal.takeProfitZones.map((z) => zoneText(z)).filter((s): s is string => !!s),
     newsL,
     meetsMin: signal.evidence.meetsMinimum,
+    evidenceShortfall: evidenceShortfallText(signal),
     hasData: signal.hasSufficientData,
     liveFeed: signal.dataSource === "LIVE_FEED",
     late: signal.late.isLate,
@@ -300,6 +344,57 @@ function levelsWithheldReasonFor(d: Derived, signal: RubyMarketEdgeSignal): stri
 
 function capitalize(s: string): string {
   return s.length ? s[0]!.toUpperCase() + s.slice(1) : s;
+}
+
+// Names the minimum-evidence sub-rules that failed, from the same rule inputs
+// and thresholds the producer applied (freshnessEvidence.minimumEvidenceShortfall).
+// No direction is reported by its own no-trade branch, so it is not repeated.
+function evidenceShortfallText(signal: RubyMarketEdgeSignal): string[] {
+  if (signal.evidence.meetsMinimum) return [];
+  const supporting = signal.evidence.for.length;
+  const net = Math.round(signal.evidence.netScore);
+  const highConfOpposingTrap =
+    !!signal.fakeout && isHighConfidenceOpposingTrap(signal.fakeout, signal.direction);
+  const failed = minimumEvidenceShortfall({
+    direction: signal.direction,
+    bias: signal.bias,
+    supportingCount: supporting,
+    netScore: net,
+    highConfOpposingTrap,
+  });
+  const out: string[] = [];
+  for (const f of failed) {
+    switch (f) {
+      case "TOO_FEW_SUPPORTING":
+        out.push(
+          supporting === 0
+            ? `no supporting signals yet (at least ${MIN_EVIDENCE_SUPPORTING_ITEMS} needed)`
+            : `only ${supporting} supporting signal${supporting === 1 ? "" : "s"} (at least ${MIN_EVIDENCE_SUPPORTING_ITEMS} needed)`,
+        );
+        break;
+      case "NET_TOO_LOW":
+        out.push(`net supporting evidence ${net}/100 (at least ${MIN_EVIDENCE_NET_SCORE} needed)`);
+        break;
+      case "UNCLEAR_STRUCTURE":
+        out.push("the price structure is unclear");
+        break;
+      case "OPPOSING_TRAP":
+        out.push("a likely trap works against this side");
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+}
+
+// "6 of 7 score inputs are unmeasured (entry, execution, …)" — or, when the
+// producer did not report which (older signal), a plain "the score basis is not
+// reported".
+function unmeasuredText(d: Derived): string {
+  if (d.unmeasured.length === 0) return "the score basis is not reported";
+  const n = d.unmeasured.length;
+  return `${n} of ${SIGNAL_SCORE_DIMENSION_COUNT} score inputs ${n === 1 ? "is" : "are"} unmeasured (${joinAnd(d.unmeasured)})`;
 }
 
 // News risk is not a typed field on the signal; it is folded into evidence
@@ -365,34 +460,49 @@ function computeNoTrade(
     return {
       isNoTrade: false,
       confidence: Math.max(0, 35 - Math.round(d.edge / 4)),
+      basis: "EDGE_DERIVED",
+      ruleKey: null,
       reason: null,
     };
   }
+  // `confidence` below is a FIXED weight per rule (basis RULE_TIER), not a
+  // measured probability — the surfaces render the rule's reason, never "% sure".
   let confidence: number;
+  let ruleKey: NoTradeRuleKey;
   let reason: string;
   if (!d.hasData || !d.liveFeed) {
     confidence = 90;
+    ruleKey = "NO_LIVE_DATA";
     reason = "Not enough live data to read this market — acting blind isn't worth it.";
   } else if (stage === "INVALID" || stage === "EXPIRED") {
     confidence = 92;
+    ruleKey = "INVALID_OR_EXPIRED";
     reason = "The setup is no longer valid, so there's nothing clean to trade.";
   } else if (d.neutral) {
     confidence = 78;
+    ruleKey = "NO_DIRECTION";
     reason = "No side has the edge right now — better to wait for direction.";
   } else if (d.late || d.doNotChase) {
     confidence = 74;
+    ruleKey = "LATE";
     reason = "The clean entry has passed — chasing here pays a poor reward-to-risk.";
   } else if (!d.meetsMin) {
     confidence = 66;
-    reason = "There isn't enough confirming evidence yet to justify the risk.";
+    ruleKey = "BELOW_MIN_EVIDENCE";
+    reason =
+      d.evidenceShortfall.length > 0
+        ? `There isn't enough confirming evidence yet to justify the risk: ${joinAnd(d.evidenceShortfall)}.`
+        : "There isn't enough confirming evidence yet to justify the risk.";
   } else if (d.timing === "early") {
     confidence = 60;
+    ruleKey = "EARLY";
     reason = "The setup is still forming — it's early to commit.";
   } else {
     confidence = 45;
+    ruleKey = "NOT_AT_ENTRY";
     reason = "Price hasn't reached the entry yet — wait for it to come to you.";
   }
-  return { isNoTrade: true, confidence, reason };
+  return { isNoTrade: true, confidence, basis: "RULE_TIER", ruleKey, reason };
 }
 
 // ── Per-mode composer ─────────────────────────────────────────────────────────
@@ -421,10 +531,32 @@ function buildMode(
     why = `${joinAnd(d.forTop.slice(0, 2))} support the read.`;
   }
 
-  // why this market
-  const whyThisMarket = advanced
-    ? `This market shows ${d.bandLong} edge (${d.edge}/100) with overall quality ${d.overall}/100 on this timeframe.`
-    : `This market currently shows ${d.bandLong} edge (${d.edge}/100).`;
+  // why this market — the adjective before "edge" is the band of the edge
+  // number; the overall-quality band is only ever said next to the overall
+  // number. A read below the minimum-evidence rule says so in the same words as
+  // the best-action line, never as a sized edge.
+  // When any score input was a fixed default (basis not FULL) neither number
+  // gets a band adjective: the number is shown with what was not measured.
+  const edgeClause = d.banded
+    ? `${d.edgeBandLong} edge (${d.edge}/100)`
+    : `an edge score of ${d.edge}/100`;
+  const qualityClause = d.banded
+    ? `overall setup quality is ${d.bandShort} (${d.overall}/100) on this timeframe`
+    : `overall setup quality is ${d.overall}/100 on this timeframe, not graded because ${unmeasuredText(d)}`;
+  let whyThisMarket: string;
+  if (!d.meetsMin) {
+    whyThisMarket = advanced
+      ? `This market shows ${edgeClause} — not enough confirming evidence yet; ${qualityClause}.`
+      : `This market shows ${edgeClause} — not enough confirming evidence yet.`;
+  } else if (!d.banded) {
+    whyThisMarket = advanced
+      ? `This market shows ${edgeClause}; ${qualityClause}.`
+      : `This market currently shows ${edgeClause}, not graded because ${unmeasuredText(d)}.`;
+  } else {
+    whyThisMarket = advanced
+      ? `This market shows ${edgeClause}; ${qualityClause}.`
+      : `This market currently shows ${edgeClause}.`;
+  }
 
   // why this direction
   let whyThisDirection: string;
@@ -531,7 +663,11 @@ export function explainMarketRead(
   } else if (d.neutral) {
     headline = `${d.name}: ${TIMING_SHORT[d.timing]} — no clear side yet.`;
   } else {
-    headline = `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, ${d.bandShort} edge.`;
+    headline = !d.meetsMin
+      ? `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, no tradeable edge yet (${d.edge}/100).`
+      : d.banded
+        ? `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, ${d.edgeBandShort} edge (${d.edge}/100).`
+        : `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, edge ${d.edge}/100 (partly unmeasured inputs).`;
   }
 
   return {

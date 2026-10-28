@@ -142,9 +142,17 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   // so the header can never disagree with the chart / Ruby surfaces about which
   // way the market is leaning (closes the header-vs-pill self-contradiction).
   const agreement = describeEngineAgreement(verdict, components);
-  const biasLabel = agreement?.biasLabel ?? (verdict ? BIAS_LABEL[verdict.bias] ?? "" : "");
-  const biasTone =
-    verdict?.bias === "BULLISH"
+  // A server-marked LEAN (every voter below its own evidence rule) is said as a
+  // lean and not emphasised as a confirmed direction. Absent on older servers →
+  // the agreement/unqualified label, which is what the server claimed (never a
+  // promotion). LEAN only ever downgrades the agreement label.
+  const isLean =
+    verdict?.biasQualifier === "LEAN" && (verdict.bias === "BULLISH" || verdict.bias === "BEARISH");
+  const biasBase = verdict ? BIAS_LABEL[verdict.bias] ?? "" : "";
+  const biasLabel = isLean && biasBase ? `${biasBase} lean` : agreement?.biasLabel ?? biasBase;
+  const biasTone = isLean
+    ? "text-txt-secondary"
+    : verdict?.bias === "BULLISH"
       ? "text-success"
       : verdict?.bias === "BEARISH"
         ? "text-danger"

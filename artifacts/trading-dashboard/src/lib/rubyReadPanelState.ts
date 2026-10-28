@@ -232,6 +232,8 @@ export interface ChartRead extends RubyReadServerState {
   } | null;
   cautions?: string[];
   disclaimer?: string;
+  /** Server-measured momentum sentence (separate from the structure `confidence`). */
+  momentumNote?: string;
 }
 
 const READ_LAYER_RANK: Record<RubyReadLayer, number> = {

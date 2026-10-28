@@ -22,6 +22,8 @@ Entry advice requires finite positive, complete entry/stop/target geometry. Stop
 
 `validUntil` is the earliest accepted component expiry, build-time horizon or next expected closed-bar boundary. A post-cache cap withdraws expired evidence without refetch fan-out or timestamp refresh. The frontend uses the earlier of this validated deadline and its existing 30-second horizon; malformed supplied deadlines withdraw advice. Older servers without the optional field retain the existing client cap. The existing deadline timer handles expiry and focus/visibility resumption; no interval polling loop was added.
 
+A direction is not an edge (2026-10-27): the Ruby market-edge component sets `belowEvidenceFloor` when its own minimum-evidence rule failed (fail closed when the evidence ledger is missing) and its label says "Bullish lean · Setup forming". `composeVerdict` sets `verdict.biasQualifier: "LEAN"` when every present voter for the bias is below its rule; flame/timing/scalp have no such rule, so a second independent voter clears it. The vote and stage are unchanged. The scanner header renders "Bullish lean" in a secondary tone; an older server without the field renders unqualified. Follow-up not changed here: `biasToActionDirection(verdict.bias)` in `ScannerHeaderSummary.tsx` and `ScannerChartPanel.tsx` still names a plan direction for a LEAN read when actionability is wait-for-confirmation.
+
 A provider's current bar can have a scheduled future `closeTime`. That is not rejected as a future observation or counted as final. `feedStatus.lastCandleTime` keeps its existing wire meaning, while `marketEvidence.lastClosedCandleAt` explicitly describes the preceding accepted closed bar.
 
 ## Review corrections: patterns and durable continuity

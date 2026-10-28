@@ -60,6 +60,13 @@ export type ChartReadResult = {
   structureWindow: number;
   dataQuality: "ok" | "insufficient";
   cautions: string[];
+  /**
+   * What the momentum measurement saw on this read's candles (direction and
+   * size of the last few bars' move against the average bar range). The
+   * structure `confidence` above is a separate three-level structural scale and
+   * is not a momentum fact.
+   */
+  momentumNote?: string;
 };
 
 export type DraftPlan = {
@@ -187,6 +194,7 @@ export function analyzeChartStructure(
       structureWindow: rawCandles?.length ?? 0,
       dataQuality: "insufficient",
       cautions: ["Insufficient candle history for a structural read."],
+      momentumNote: "Momentum not read — not enough candle history on this timeframe.",
     };
   }
 
@@ -279,6 +287,11 @@ export function analyzeChartStructure(
     : rangePos >= 0.5
     ? "holding the upper half of its range"
     : "holding the lower half of its range";
+  // The measured move behind momWord below: last `momLen` bars vs the average range.
+  const momentumNote =
+    `${strongMomentum ? (momStrength > 0 ? "Upside momentum" : "Downside momentum") : "Momentum cooling"}: ` +
+    `the last ${momLen} bars moved ${momStrength >= 0 ? "+" : "−"}${Math.abs(momStrength).toFixed(1)}× ` +
+    `the average bar range (${Math.min(14, n - 1)}-bar); price is ${stateWord}.`;
   const trendWord = stackUp
     ? "the trend structure leans up"
     : stackDown
@@ -361,6 +374,7 @@ export function analyzeChartStructure(
     structureWindow: candles.length,
     dataQuality: "ok",
     cautions,
+    momentumNote,
   };
 }
 

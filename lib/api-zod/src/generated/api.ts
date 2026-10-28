@@ -7683,24 +7683,48 @@ export const GetMeMarketTruthResponse = zod.object({
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     flame: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     timing: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     scalp: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
   }),
   levels: zod.object({
@@ -7715,6 +7739,12 @@ export const GetMeMarketTruthResponse = zod.object({
   verdict: zod.object({
     stage: zod.enum(["ALIGNED", "DEVELOPING", "CONFLICT", "UNKNOWN"]),
     bias: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "CONFLICT", "UNKNOWN"]),
+    biasQualifier: zod
+      .union([zod.literal("LEAN"), zod.literal(null)])
+      .nullish()
+      .describe(
+        "LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers.",
+      ),
     headline: zod.string(),
     evidenceFor: zod.array(zod.string()),
     evidenceAgainst: zod.array(zod.string()),
@@ -18225,6 +18255,22 @@ export const GetMeMarketEdgeResponse = zod.object({
           survivability: zod.number(),
           overall: zod.number(),
           edge: zod.number(),
+          unmeasured: zod
+            .array(
+              zod.enum([
+                "direction",
+                "entry",
+                "execution",
+                "risk",
+                "newsSafety",
+                "timing",
+                "survivability",
+              ]),
+            )
+            .optional()
+            .describe(
+              "Dimensions whose score is a fixed default because no input was observed (e.g. execution with no bridge telemetry, news safety with no news provider answer, timing with no live scalp read). They still fold into overall\/edge, so any grade built on them is partial. Optional for older servers (absent = not reported).",
+            ),
         })
         .describe(
           "Independent 0–100 quality dimensions, always separate. Direction is never folded in, so it can never inflate a score.",
@@ -18237,6 +18283,12 @@ export const GetMeMarketEdgeResponse = zod.object({
         "STRONG",
         "VERY_STRONG",
       ]),
+      confidenceBandBasis: zod
+        .enum(["FULL", "PARTIAL"])
+        .optional()
+        .describe(
+          "FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL.",
+        ),
       edgeScore: zod.number(),
       earlyTrend: zod
         .object({
@@ -18428,7 +18480,32 @@ export const GetMeMarketEdgeResponse = zod.object({
       bestAction: zod.string(),
       noTrade: zod.object({
         isNoTrade: zod.boolean(),
-        confidence: zod.number(),
+        confidence: zod
+          .number()
+          .describe(
+            '0-100. With basis RULE_TIER this is a fixed weight for the no-trade rule that fired (one constant per rule), with basis EDGE_DERIVED it is computed from the edge score. It is NOT a measured probability and must never be rendered as \"% sure\". Kept for back-compat.',
+          ),
+        basis: zod
+          .enum(["RULE_TIER", "EDGE_DERIVED"])
+          .optional()
+          .describe(
+            "What the confidence number is (optional for older servers).",
+          ),
+        ruleKey: zod
+          .union([
+            zod.literal("NO_LIVE_DATA"),
+            zod.literal("INVALID_OR_EXPIRED"),
+            zod.literal("NO_DIRECTION"),
+            zod.literal("LATE"),
+            zod.literal("BELOW_MIN_EVIDENCE"),
+            zod.literal("EARLY"),
+            zod.literal("NOT_AT_ENTRY"),
+            zod.literal(null),
+          ])
+          .nullish()
+          .describe(
+            "The no-trade rule that fired; null when the read is actionable.",
+          ),
         reason: zod.string().nullable(),
       }),
       hasSufficientData: zod.boolean(),

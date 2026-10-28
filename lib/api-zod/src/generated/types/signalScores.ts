@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { SignalScoresUnmeasuredItem } from "./signalScoresUnmeasuredItem";
 
 /**
  * Independent 0–100 quality dimensions, always separate. Direction is never folded in, so it can never inflate a score.
@@ -19,4 +20,6 @@ export interface SignalScores {
   survivability: number;
   overall: number;
   edge: number;
+  /** Dimensions whose score is a fixed default because no input was observed (e.g. execution with no bridge telemetry, news safety with no news provider answer, timing with no live scalp read). They still fold into overall/edge, so any grade built on them is partial. Optional for older servers (absent = not reported). */
+  unmeasured?: SignalScoresUnmeasuredItem[];
 }

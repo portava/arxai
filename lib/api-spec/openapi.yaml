@@ -15352,6 +15352,12 @@ components:
         alignment: { type: string, enum: [BULLISH, BEARISH, NEUTRAL, UNKNOWN] }
         label: { type: string }
         asOf: { type: string, nullable: true }
+        belowEvidenceFloor:
+          type: boolean
+          description: >-
+            The component's own minimum-evidence rule failed, so its direction is
+            a lean, not an edge. Set only by components that have such a rule;
+            absent on older servers and on components without one.
     TruthNewsEvent:
       type: object
       required:
@@ -15429,6 +15435,14 @@ components:
         bias:
           type: string
           enum: [BULLISH, BEARISH, NEUTRAL, CONFLICT, UNKNOWN]
+        biasQualifier:
+          type: string
+          nullable: true
+          enum: [LEAN, null]
+          description: >-
+            LEAN when every component voting for the bias is below its own
+            minimum-evidence rule (a structural lean with no qualifying edge).
+            Label-only; the vote is unchanged. Absent on older servers.
         headline: { type: string }
         evidenceFor:
           type: array
@@ -22235,6 +22249,17 @@ components:
         survivability: { type: number }
         overall: { type: number }
         edge: { type: number }
+        unmeasured:
+          type: array
+          description: >-
+            Dimensions whose score is a fixed default because no input was
+            observed (e.g. execution with no bridge telemetry, news safety with
+            no news provider answer, timing with no live scalp read). They still
+            fold into overall/edge, so any grade built on them is partial.
+            Optional for older servers (absent = not reported).
+          items:
+            type: string
+            enum: [direction, entry, execution, risk, newsSafety, timing, survivability]
 
     SignalEvidenceItem:
       type: object
@@ -22411,6 +22436,14 @@ components:
         stopLoss: { type: number, nullable: true }
         scores: { $ref: "#/components/schemas/SignalScores" }
         confidenceBand: { type: string, enum: [NONE, LOW, MODEST, FAIR, STRONG, VERY_STRONG] }
+        confidenceBandBasis:
+          type: string
+          enum: [FULL, PARTIAL]
+          description: >-
+            FULL when every dimension folded into scores.overall was observed;
+            PARTIAL when any is a fixed default (scores.unmeasured). Surfaces
+            show confidenceBand as a quality grade only on FULL. Optional for
+            older servers; absent is treated like PARTIAL.
         edgeScore: { type: number }
         earlyTrend: { $ref: "#/components/schemas/EarlyTrendReading" }
         fakeout: { $ref: "#/components/schemas/FakeoutReading" }
@@ -22496,7 +22529,22 @@ components:
       required: [isNoTrade, confidence, reason]
       properties:
         isNoTrade: { type: boolean }
-        confidence: { type: number }
+        confidence:
+          type: number
+          description: >-
+            0-100. With basis RULE_TIER this is a fixed weight for the no-trade
+            rule that fired (one constant per rule), with basis EDGE_DERIVED it
+            is computed from the edge score. It is NOT a measured probability
+            and must never be rendered as "% sure". Kept for back-compat.
+        basis:
+          type: string
+          enum: [RULE_TIER, EDGE_DERIVED]
+          description: What the confidence number is (optional for older servers).
+        ruleKey:
+          type: string
+          nullable: true
+          enum: [NO_LIVE_DATA, INVALID_OR_EXPIRED, NO_DIRECTION, LATE, BELOW_MIN_EVIDENCE, EARLY, NOT_AT_ENTRY, null]
+          description: The no-trade rule that fired; null when the read is actionable.
         reason: { type: string, nullable: true }
 
     RubyMarketReadExplanation:

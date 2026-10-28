@@ -121,6 +121,7 @@ function signal(over: Record<string, unknown> = {}) {
     lifecycleStage: "ENTRY_WINDOW_OPEN",
     lifecycleReasons: [],
     confidenceBand: "STRONG",
+    confidenceBandBasis: "FULL",
     edgeScore: 72,
     scores: {
       direction: 80,

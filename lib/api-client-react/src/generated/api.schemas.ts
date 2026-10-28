@@ -6293,6 +6293,8 @@ export interface TruthComponent {
   alignment: TruthComponentAlignment;
   label: string;
   asOf: string | null;
+  /** The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one. */
+  belowEvidenceFloor?: boolean;
 }
 
 export type TruthNewsEventSeverity =
@@ -6393,6 +6395,17 @@ export const TruthVerdictBias = {
   UNKNOWN: "UNKNOWN",
 } as const;
 
+/**
+ * LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers.
+ */
+export type TruthVerdictBiasQualifier =
+  | (typeof TruthVerdictBiasQualifier)[keyof typeof TruthVerdictBiasQualifier]
+  | null;
+
+export const TruthVerdictBiasQualifier = {
+  LEAN: "LEAN",
+} as const;
+
 export type TruthVerdictBestAction =
   (typeof TruthVerdictBestAction)[keyof typeof TruthVerdictBestAction];
 
@@ -6421,6 +6434,8 @@ export type TruthVerdictInvalidation = {
 export interface TruthVerdict {
   stage: TruthVerdictStage;
   bias: TruthVerdictBias;
+  /** LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers. */
+  biasQualifier?: TruthVerdictBiasQualifier;
   headline: string;
   evidenceFor: string[];
   evidenceAgainst: string[];
@@ -13879,6 +13894,19 @@ export interface SignalPriceZone {
   to: number;
 }
 
+export type SignalScoresUnmeasuredItem =
+  (typeof SignalScoresUnmeasuredItem)[keyof typeof SignalScoresUnmeasuredItem];
+
+export const SignalScoresUnmeasuredItem = {
+  direction: "direction",
+  entry: "entry",
+  execution: "execution",
+  risk: "risk",
+  newsSafety: "newsSafety",
+  timing: "timing",
+  survivability: "survivability",
+} as const;
+
 /**
  * Independent 0–100 quality dimensions, always separate. Direction is never folded in, so it can never inflate a score.
  */
@@ -13892,6 +13920,8 @@ export interface SignalScores {
   survivability: number;
   overall: number;
   edge: number;
+  /** Dimensions whose score is a fixed default because no input was observed (e.g. execution with no bridge telemetry, news safety with no news provider answer, timing with no live scalp read). They still fold into overall/edge, so any grade built on them is partial. Optional for older servers (absent = not reported). */
+  unmeasured?: SignalScoresUnmeasuredItem[];
 }
 
 export interface SignalEvidenceItem {
@@ -14085,6 +14115,17 @@ export const RubyMarketEdgeSignalConfidenceBand = {
   VERY_STRONG: "VERY_STRONG",
 } as const;
 
+/**
+ * FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL.
+ */
+export type RubyMarketEdgeSignalConfidenceBandBasis =
+  (typeof RubyMarketEdgeSignalConfidenceBandBasis)[keyof typeof RubyMarketEdgeSignalConfidenceBandBasis];
+
+export const RubyMarketEdgeSignalConfidenceBandBasis = {
+  FULL: "FULL",
+  PARTIAL: "PARTIAL",
+} as const;
+
 export type RubyMarketEdgeSignalFreshness =
   (typeof RubyMarketEdgeSignalFreshness)[keyof typeof RubyMarketEdgeSignalFreshness];
 
@@ -14143,6 +14184,8 @@ export interface RubyMarketEdgeSignal {
   stopLoss: number | null;
   scores: SignalScores;
   confidenceBand: RubyMarketEdgeSignalConfidenceBand;
+  /** FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL. */
+  confidenceBandBasis?: RubyMarketEdgeSignalConfidenceBandBasis;
   edgeScore: number;
   earlyTrend: EarlyTrendReading;
   fakeout: FakeoutReading;
@@ -14193,9 +14236,42 @@ export interface RubyExplanationLevels {
   stopLoss: number | null;
 }
 
+/**
+ * What the confidence number is (optional for older servers).
+ */
+export type RubyNoTradeIntelligenceBasis =
+  (typeof RubyNoTradeIntelligenceBasis)[keyof typeof RubyNoTradeIntelligenceBasis];
+
+export const RubyNoTradeIntelligenceBasis = {
+  RULE_TIER: "RULE_TIER",
+  EDGE_DERIVED: "EDGE_DERIVED",
+} as const;
+
+/**
+ * The no-trade rule that fired; null when the read is actionable.
+ */
+export type RubyNoTradeIntelligenceRuleKey =
+  | (typeof RubyNoTradeIntelligenceRuleKey)[keyof typeof RubyNoTradeIntelligenceRuleKey]
+  | null;
+
+export const RubyNoTradeIntelligenceRuleKey = {
+  NO_LIVE_DATA: "NO_LIVE_DATA",
+  INVALID_OR_EXPIRED: "INVALID_OR_EXPIRED",
+  NO_DIRECTION: "NO_DIRECTION",
+  LATE: "LATE",
+  BELOW_MIN_EVIDENCE: "BELOW_MIN_EVIDENCE",
+  EARLY: "EARLY",
+  NOT_AT_ENTRY: "NOT_AT_ENTRY",
+} as const;
+
 export interface RubyNoTradeIntelligence {
   isNoTrade: boolean;
+  /** 0-100. With basis RULE_TIER this is a fixed weight for the no-trade rule that fired (one constant per rule), with basis EDGE_DERIVED it is computed from the edge score. It is NOT a measured probability and must never be rendered as "% sure". Kept for back-compat. */
   confidence: number;
+  /** What the confidence number is (optional for older servers). */
+  basis?: RubyNoTradeIntelligenceBasis;
+  /** The no-trade rule that fired; null when the read is actionable. */
+  ruleKey?: RubyNoTradeIntelligenceRuleKey;
   reason: string | null;
 }
 
