@@ -9,7 +9,8 @@ import type {
   MarketHeatNewsRiskLevel,
   MarketHeatNewsHeadline,
 } from "@workspace/api-client-react";
-import { GlobalMarketHeatCard } from "./GlobalMarketHeatCard";
+import { act } from "@testing-library/react";
+import { GlobalMarketHeatCard, freshness, priceStampLabel } from "./GlobalMarketHeatCard";
 
 // Render proof for the Global Market Heat card's world-map view (Task #626).
 // The card reads ONLY the read-only GET /api/market-heat hook, which we mock so
@@ -407,7 +408,8 @@ describe("GlobalMarketHeatCard — what each row was actually built from", () =>
     render(<GlobalMarketHeatCard />);
     fireEvent.click(screen.getByText("Volatility 75 Index").closest("button")!);
     const checked = screen.getByTestId("heat-verdict-checked").textContent ?? "";
-    expect(checked).toContain("Price 4m ago");
+    // Missing price time basis reads as a bar-open stamp (downgrade-only).
+    expect(checked).toContain("M15 bar opened 4m ago");
     expect(checked).toContain("news/calendar not used (synthetic market)");
     expect(checked).not.toMatch(/News \d|Calendar/);
   });
@@ -422,5 +424,67 @@ describe("GlobalMarketHeatCard — what each row was actually built from", () =>
     for (const el of [...screen.getAllByTestId("heat-verdict-checked"), ...screen.getAllByTestId("heat-verdict-source-status")]) {
       expect(el.textContent ?? "").not.toMatch(/\bnever\b/i);
     }
+  });
+});
+
+// Heat price stamp (owner screenshot [G], 2026-10-27 16:04Z): the V75 row said
+// "Price 4m ago" — the OPEN time of the forming M15 bar, not when the price
+// was observed. The row now names its basis, and the label ticks.
+describe("GlobalMarketHeatCard — price stamp names its basis and keeps time", () => {
+  const NOW = Date.parse("2026-10-27T16:04:00Z");
+
+  function renderSynthetic(partial: Partial<MarketHeatVerdict>) {
+    const data = buildData();
+    data.synthetics = [
+      verdict({
+        id: "synthetic:V75", scope: "synthetic", key: "V75", displayName: "Volatility 75 Index",
+        intensity: "moderate", sourceStatus: "price_only", affectedSymbols: ["V75"],
+        reason: "Synthetic market — driven by price action only (immune to real-world news/economic events).",
+        newsUpdatedAt: null, calendarUpdatedAt: null,
+        ...partial,
+      }),
+    ];
+    mockUseGetMarketHeat.mockReturnValue({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
+    render(<GlobalMarketHeatCard />);
+    fireEvent.click(screen.getByRole("button", { name: /Volatility 75 Index/ }));
+    return screen.getByTestId("heat-price-stamp");
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it("a bar-open stamp (or a missing basis) reads 'M15 bar opened 4m ago', never 'Price 4m ago'", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    const stamp = renderSynthetic({ priceUpdatedAt: "2026-10-27T16:00:00.000Z" });
+    expect(stamp.textContent).toBe("M15 bar opened 4m ago");
+    expect(stamp.textContent).not.toContain("Price 4m ago");
+    cleanup();
+    const explicit = renderSynthetic({ priceUpdatedAt: "2026-10-27T16:00:00.000Z", priceTimeBasis: "bar_open" });
+    expect(explicit.textContent).toBe("M15 bar opened 4m ago");
+  });
+
+  it("a tick stamp reads 'Price Ns ago'", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    const stamp = renderSynthetic({ priceUpdatedAt: "2026-10-27T16:03:57.000Z", priceTimeBasis: "tick" });
+    expect(stamp.textContent).toBe("Price 3s ago");
+  });
+
+  it("the label advances with the wall clock without a refetch", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const stamp = renderSynthetic({ priceUpdatedAt: "2026-10-27T16:00:00.000Z" });
+    expect(stamp.textContent).toBe("M15 bar opened 4m ago");
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(screen.getByTestId("heat-price-stamp").textContent).toBe("M15 bar opened 5m ago");
+    expect(mockUseGetMarketHeat.mock.results.every((r) => (r.value as { refetch: ReturnType<typeof vi.fn> }).refetch.mock.calls.length === 0)).toBe(true);
+  });
+
+  it("ages floor (3m31s is 3m, not 4m) and tolerate small clock skew", () => {
+    expect(freshness("2026-10-27T16:00:29.000Z", NOW)).toBe("3m ago");
+    expect(freshness("2026-10-27T16:04:03.000Z", NOW)).toBe("0s ago");
+    expect(freshness("2026-10-27T16:04:30.000Z", NOW)).toBe("—");
+    expect(freshness(null, NOW)).toBe("never");
+    expect(priceStampLabel({ priceUpdatedAt: null, priceTimeBasis: null }, "M15", NOW)).toBe("Price never");
   });
 });

@@ -36,6 +36,7 @@ import {
   buildStructuralReadTrustLine,
 } from "../data/chart/rubyChartContext.js";
 import { getChartFeedStatus } from "../data/chart/chartDataService.js";
+import { knownPricePrecision } from "../data/chart/symbolProfile.js";
 import { deriveRubyReadLayers, resolveFeedUnconfirmed, type RubyReadLayer } from "./rubyReadLayers.js";
 import { scrubUserCopyDeep } from "@workspace/domain/security";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
@@ -718,7 +719,7 @@ export async function buildRubyStructuralRead(
   // ── Layer FULL — verified feed AND the shared sufficiency verdict allows the
   // exact live trade setup (entry/SL/TP echoed from the user's draft when present).
   if (rubyCtx.basis === "VERIFIED" && layers.canShowLiveTradeSetup) {
-    const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null, assistantName });
+    const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null, assistantName, pricePrecision: knownPricePrecision(symbol) });
     const trustLine = rubyCtx.trustLine;
     const patternNote = await buildRubyPatternNote({
       symbol,
@@ -793,7 +794,7 @@ export async function buildRubyStructuralRead(
   // read and EXPLICITLY WITHHOLD exact entry/stop/target/reward:risk. The
   // structure analyzer never emits numeric levels, and we force `draft: null` so
   // no level echo can leak.
-  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: null, assistantName });
+  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: null, assistantName, pricePrecision: knownPricePrecision(symbol) });
   const observedAt = observedAtOf(rubyCtx);
   // ── WHICH GATE withheld the exact setup — in the precedence the layers apply:
   //   1. sufficiency  — the shared verdict won't allow the setup (closed-bar

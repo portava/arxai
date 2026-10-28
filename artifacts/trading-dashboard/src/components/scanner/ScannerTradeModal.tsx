@@ -14,6 +14,7 @@ import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
 import { useMasterLiveAccess } from "@/components/live/MasterLiveAccessGuard";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { seedInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { HistoricalCheckPanel } from "@/components/trading/HistoricalCheckPanel";
@@ -78,13 +79,12 @@ function dirOf(t: OrderType): "BUY" | "SELL" { return t.startsWith("BUY") ? "BUY
 function num(s: string): number | null { const v = Number(s); return Number.isFinite(v) ? v : null; }
 
 // Format a raw price number into a clean, parseable string for the editable
-// price inputs (mirrors the header/chart precision: 2 dp ≥ 100, else 5 dp).
-// Used to seed the "Current price" field from the ONE shared truth price so the
-// modal can never show a different live price than the rest of the page.
-function seedPriceStr(n: number): string {
-  if (!Number.isFinite(n)) return "";
-  const digits = Math.abs(n) >= 100 ? 2 : 5;
-  return String(Number(n.toFixed(digits)));
+// price inputs at the instrument's display precision (the SAME precision the
+// header, chart badge and price axis use — lib/instrumentPriceFormat). Used to
+// seed the "Current price" field from the ONE shared truth price so the modal
+// can never show a different price, or fewer digits, than the rest of the page.
+function seedPriceStr(n: number, precision: number | null | undefined): string {
+  return seedInstrumentPrice(n, precision);
 }
 
 type DemoCommand = {
@@ -287,7 +287,7 @@ export function ScannerTradeModal({
   // edit. Risk #4: the modal's current price now matches the header/chart.
   useEffect(() => {
     if (!open || sharedLastClose == null || currentPriceSeededRef.current) return;
-    setCurrentPrice(seedPriceStr(sharedLastClose));
+    setCurrentPrice(seedPriceStr(sharedLastClose, feedTruth?.candles.pricePrecision));
     currentPriceSeededRef.current = true;
   }, [open, sharedLastClose]);
 

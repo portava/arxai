@@ -174,7 +174,8 @@ function CompactStatusRow(p: CompactStatusRowProps) {
 
   const drawer = (
     <div className="space-y-3 text-xs">
-      <DetailRow label="Trading session" value={p.sessionLabel} />
+      {/* A session NAME bucketed by UTC hours — not the page's display time zone. */}
+      <DetailRow label="Trading session (by UTC hours)" value={p.sessionLabel} />
       <DetailRow label="MT5 mode" value={p.modeLabel} />
       <DetailRow label="MT5 connected" value={p.mt5?.connected ? "yes" : "no"} />
       {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (

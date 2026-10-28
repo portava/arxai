@@ -8,6 +8,10 @@
 import { getMarketStatus, getMarketProvider, providerResultFetchedAt } from "../assistant/marketProvider.js";
 import { getEconomicCalendar } from "../news/economicCalendarProvider.js";
 import { routeCandles } from "../data/marketDataRouter.js";
+import { rawTrailingIntervalGap } from "../data/chart/candleNormalization.js";
+import { normalizeChartTimeframe } from "../data/chart/timeframes.js";
+import { classifyCandleFreshness } from "../data/freshness.js";
+import { getDerivSymbolFeedStatus } from "../data/providers/derivProvider.js";
 import {
   resolveNewsHonesty,
   deriveNewsRiskScore,
@@ -218,16 +222,6 @@ export async function readCalendarProvider(
   };
 }
 
-const TF_MS: Record<string, number> = {
-  M1: 60_000,
-  M5: 5 * 60_000,
-  M15: 15 * 60_000,
-  M30: 30 * 60_000,
-  H1: 3_600_000,
-  H4: 4 * 3_600_000,
-  D1: 86_400_000,
-};
-
 export interface PriceProviderRead {
   source: MarketHeatSource;
   available: boolean;
@@ -235,8 +229,29 @@ export interface PriceProviderRead {
   volatility: number;
   freshness: "LIVE" | "DELAYED" | "STALE" | "UNAVAILABLE";
   updatedAt: string | null;
+  /**
+   * What `updatedAt` measures: "tick" = this symbol's own last venue tick (the
+   * price observation time); "bar_open" = the OPEN time of the newest bar
+   * (a forming bar's open is NOT when its price was observed). Null when no
+   * price is available.
+   */
+  priceTimeBasis: "tick" | "bar_open" | null;
   provider: string;
   candleCount: number;
+}
+
+/** Per-symbol last-tick reader (injectable for tests; no I/O in tests). */
+export type PriceTickReader = (symbol: string) => { lastTickAt: string | null } | null;
+
+const defaultTickReader: PriceTickReader = (symbol) => getDerivSymbolFeedStatus(symbol);
+
+// A tick stamped further than this into the future is clock-skew, not evidence.
+const TICK_FUTURE_TOLERANCE_MS = 5_000;
+// Same per-symbol "recent tick" window the Deriv feed verdict uses.
+const RECENT_TICK_MS = 30_000;
+
+function isDerivBacked(provider: string | null | undefined): boolean {
+  return provider === "deriv" || provider === "deriv_public";
 }
 
 /**
@@ -247,11 +262,11 @@ export async function readPriceProvider(
   symbol: string,
   timeframe: string,
   nowMs: number = Date.now(),
+  deps: { tickReader?: PriceTickReader; candleRouter?: typeof routeCandles } = {},
 ): Promise<PriceProviderRead> {
-  const tfMs = TF_MS[timeframe.toUpperCase()] ?? TF_MS["M15"]!;
   let result;
   try {
-    result = await routeCandles(symbol, timeframe, 120);
+    result = await (deps.candleRouter ?? routeCandles)(symbol, timeframe, 120);
   } catch {
     result = null;
   }
@@ -274,6 +289,7 @@ export async function readPriceProvider(
       volatility: 0,
       freshness: "UNAVAILABLE",
       updatedAt: null,
+      priceTimeBasis: null,
       provider,
       candleCount: result?.candles.length ?? 0,
     };
@@ -296,15 +312,50 @@ export async function readPriceProvider(
   }
   const volatility = Math.max(0, Math.min(1, (n ? sum / n : 0) * 200));
 
-  const lastMs = Date.parse(c[c.length - 1]!.time);
-  let freshness: PriceProviderRead["freshness"];
-  if (!Number.isFinite(lastMs)) freshness = "DELAYED";
-  else {
-    const age = nowMs - lastMs;
-    freshness = age <= tfMs * 2 ? "LIVE" : age <= tfMs * 6 ? "DELAYED" : "STALE";
+  const provider = result.primaryProvider ?? "none";
+  const barTime = c[c.length - 1]!.time;
+  const lastMs = Date.parse(barTime);
+
+  // Freshness uses the SAME trailing-interval rule as the chart feed status
+  // (rawTrailingIntervalGap + classifyCandleFreshness: gap ≥ 2 delayed, ≥ 3
+  // stale) instead of the old 2×/6× timeframe ladder that kept an M15 price
+  // "LIVE" for 30 minutes. An unparseable bar time is never LIVE.
+  const chartTf = normalizeChartTimeframe(timeframe) ?? "M15";
+  const gapCls = classifyCandleFreshness(rawTrailingIntervalGap(c, provider, chartTf, nowMs));
+  let freshness: PriceProviderRead["freshness"] =
+    !Number.isFinite(lastMs) || gapCls == null ? "DELAYED"
+      : gapCls.freshness === "stale" ? "STALE"
+        : gapCls.freshness === "delayed" ? "DELAYED"
+          : "LIVE";
+
+  // Observation time. A Deriv bar's time is its OPEN (the forming M15 bar
+  // opened up to 15 min ago while its close is seconds old), so for a
+  // Deriv-backed series prefer THIS symbol's own last tick — but only when it
+  // belongs to the newest bar (tick ≥ bar open) and is not from the future;
+  // a stale cached tick from an old subscription can never make a row look
+  // fresher than its bars. The tick may only DOWNGRADE freshness: no recent
+  // tick for a Deriv-backed symbol → never LIVE (same rule as the per-symbol
+  // Deriv feed verdict).
+  let updatedAt = barTime;
+  let priceTimeBasis: "tick" | "bar_open" = "bar_open";
+  if (isDerivBacked(result.primaryProvider)) {
+    let tickMs = Number.NaN;
+    try {
+      const tick = (deps.tickReader ?? defaultTickReader)(symbol);
+      tickMs = tick?.lastTickAt ? Date.parse(tick.lastTickAt) : Number.NaN;
+    } catch {
+      tickMs = Number.NaN;
+    }
+    const tickUsable = Number.isFinite(tickMs) && Number.isFinite(lastMs)
+      && tickMs >= lastMs && tickMs <= nowMs + TICK_FUTURE_TOLERANCE_MS;
+    if (tickUsable) {
+      updatedAt = new Date(tickMs).toISOString();
+      priceTimeBasis = "tick";
+    }
+    const recentTick = tickUsable && nowMs - tickMs <= RECENT_TICK_MS;
+    if (freshness === "LIVE" && !recentTick) freshness = "DELAYED";
   }
 
-  const provider = result.primaryProvider ?? "none";
   const status =
     freshness === "STALE" ? "stale" : freshness === "DELAYED" ? "delayed" : "live";
 
@@ -315,7 +366,7 @@ export async function readPriceProvider(
       status,
       configured: true,
       connected: true,
-      updatedAt: c[c.length - 1]!.time,
+      updatedAt,
       recordCount: c.length,
       note:
         status === "stale"
@@ -328,7 +379,8 @@ export async function readPriceProvider(
     momentum,
     volatility,
     freshness,
-    updatedAt: c[c.length - 1]!.time,
+    updatedAt,
+    priceTimeBasis,
     provider,
     candleCount: c.length,
   };

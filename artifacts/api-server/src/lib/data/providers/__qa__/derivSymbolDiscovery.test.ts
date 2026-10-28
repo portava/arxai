@@ -70,6 +70,7 @@ test("parseActiveSymbols retains id, display name, market, submarket, exchange_i
     market: "synthetic_index",
     submarket: "random_index",
     exchangeIsOpen: true,
+    pip: null, // venue sent no pip in this fixture — never guessed
   });
   assert.equal(parsed[1].exchangeIsOpen, true); // boolean form tolerated
   assert.equal(parsed[2].exchangeIsOpen, false); // 0 → closed
@@ -91,6 +92,7 @@ test("parseActiveSymbols skips malformed entries and never fabricates", () => {
     market: "",
     submarket: "",
     exchangeIsOpen: false, // absent open-flag reads closed, never assumed open
+    pip: null,
   });
   // Non-array payloads yield empty — an empty result, never an invented one.
   assert.deepEqual(parseActiveSymbols(undefined), []);

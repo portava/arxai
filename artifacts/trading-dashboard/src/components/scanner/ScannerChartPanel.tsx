@@ -15,7 +15,12 @@ import { adaptChartCandles, type Candle } from "@/components/scanner/scannerCand
 import {
   PRIMARY_TIMEFRAMES,
   coerceVisibleTimeframe,
-  formatCandleCountdown,
+  candleCountdownLabel,
+  computeCandleRemainingMs,
+  CHART_TIME_AXIS_LABEL,
+  CHART_TIME_AXIS_TITLE,
+  formatUtcClock,
+  type ServerClockSample,
   NEWS_MARKER_LOOKAHEAD_BARS,
   isFeedConfirmedForEventMarkers,
   inferBarSeconds,
@@ -41,6 +46,8 @@ import { computeRiskReward, pipDistance, validateModifyLevels } from "@/lib/char
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { candlestickPriceFormat, formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
+import { publishScannerTip, scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
@@ -305,18 +312,32 @@ function normSym(s: string | null | undefined): string {
 function CandleCloseCountdown({
   closeTimeMs,
   timeframe,
+  clockRef,
 }: {
   closeTimeMs: number;
   timeframe: string;
+  /** Server clock + bar interval from the latest accepted tick-stream frame. */
+  clockRef: { current: (ServerClockSample & { intervalMs: number | null }) | null };
 }) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [, setTick] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    const id = window.setInterval(() => setTick((n) => n + 1), 1000);
     return () => window.clearInterval(id);
   }, []);
-  const remainingMs = closeTimeMs - nowMs;
+  // Measured against the SERVER clock (frame ts + monotonic elapsed), so a
+  // client clock that runs fast/slow cannot shrink, inflate or hide it.
+  const clock = clockRef.current;
+  const remainingMs = computeCandleRemainingMs({
+    closeTimeMs,
+    clock,
+    nowPerf: performance.now(),
+    fallbackNowMs: Date.now(),
+  });
   // Bar already closed; the next forming frame supplies the new close time.
   if (remainingMs <= 0) return null;
+  // More time left than one bar lasts is impossible without skew — hide
+  // rather than show an inflated number.
+  if (clock?.intervalMs != null && remainingMs > clock.intervalMs) return null;
   return (
     <Badge
       variant="outline"
@@ -325,7 +346,7 @@ function CandleCloseCountdown({
       title="Time until the current candle closes"
     >
       <Clock className="h-2.5 w-2.5" />
-      {formatCandleCountdown(remainingMs, timeframe)}
+      {candleCountdownLabel(remainingMs, timeframe)}
     </Badge>
   );
 }
@@ -489,6 +510,17 @@ export function ScannerChartPanel() {
   // Shared resolved truth — drives the live-price affordance so the chart can
   // never look more live/actionable than the header strip says it is.
   const { truth } = useScannerTruth(symbol, timeframe);
+  // ONE display precision for this instrument (server-declared, widened by the
+  // digits the loaded quotes carry) — the axis, badge, level labels and the
+  // page header all format with it (lib/instrumentPriceFormat).
+  const pricePrecision = truth?.candles.pricePrecision ?? null;
+  const pricePrecisionRef = useRef(pricePrecision);
+  pricePrecisionRef.current = pricePrecision;
+  // Shared live-tip key: the tick-stream tip this chart applies to its axis is
+  // published here so the header + badge show that SAME observation.
+  const tipKey = scannerTipKey(symbol, timeframe);
+  const tipKeyRef = useRef(tipKey);
+  tipKeyRef.current = tipKey;
 
   // Canonical verdict for display convergence (Task #818). The chart derives a
   // single shared actionability verdict from the SAME lifted + data-only sources
@@ -596,6 +628,7 @@ export function ScannerChartPanel() {
   // closeTimeMs), not on every incoming tick.
   const [formingCloseMs, setFormingCloseMs] = useState<number | null>(null);
   const formingCloseRef = useRef<number | null>(null);
+  const serverClockRef = useRef<(ServerClockSample & { intervalMs: number | null }) | null>(null);
   // Market-frozen / closed-market indicator (display/telemetry only). Driven by
   // the tick-stream `feed_status` event, whose verdict is derived from the
   // latest tick's BROKER-time staleness (calendar-independent). null = not
@@ -1243,6 +1276,9 @@ export function ScannerChartPanel() {
       // A dedicated effect below re-applies this on status change without rebuild.
       priceLineVisible: isLiveDisplay,
       lastValueVisible: isLiveDisplay,
+      // The axis last-value label prints at the instrument's precision, not
+      // lightweight-charts' default 2 dp (owner: axis 33575.37 vs 4-dp quotes).
+      ...(candlestickPriceFormat(pricePrecisionRef.current) ? { priceFormat: candlestickPriceFormat(pricePrecisionRef.current)! } : {}),
     });
     seriesRef.current = series as unknown as {
       priceToCoordinate: (p: number) => number | null;
@@ -1388,6 +1424,9 @@ export function ScannerChartPanel() {
     // CANDLE (and, server-side, the current forming tip), so setData here both
     // reconciles the tip and replaces it with the closed bar — no orphan dup.
     newestBarSecRef.current = mapped[mapped.length - 1]!.time as number;
+    // setData just replaced any tick-stream tip on the axis with the poll's
+    // newest close, so the published tip no longer matches what the axis shows.
+    publishScannerTip(tipKeyRef.current, null);
 
     if (!didFitRef.current) {
       // Phase 2 — smart initial visible range. Show the last N candles rather
@@ -1431,8 +1470,12 @@ export function ScannerChartPanel() {
     // Reset the countdown whenever the stream key changes — the previous
     // symbol/timeframe's forming bar is no longer relevant (Task #524).
     formingCloseRef.current = null;
+    serverClockRef.current = null;
     setFormingCloseMs(null);
     setMarketFrozen(null);
+    // A tip never outlives its stream key (symbol / timeframe / source / context).
+    const streamTipKey = scannerTipKey(symbol, timeframe);
+    publishScannerTip(streamTipKey, null);
     if (symbol.length === 0 || !tickSource) return;
     const url = u(`/api/chart/tick-stream?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&source=${encodeURIComponent(tickSource)}`);
     let es: EventSource | null = null;
@@ -1451,6 +1494,8 @@ export function ScannerChartPanel() {
         timeframe?: string;
         frozen?: boolean;
         tickWallMs?: number;
+        /** Server wall clock when the frame was sent (epoch ms). */
+        ts?: number;
         marketFrozen?: boolean;
         lastBrokerTimeMs?: number | null;
         bar?: { openTimeMs?: number; closeTimeMs?: number; open?: number; high?: number; low?: number; close?: number };
@@ -1482,12 +1527,31 @@ export function ScannerChartPanel() {
           formingCloseRef.current = null;
           setFormingCloseMs(null);
         }
-      } else if (formingCloseRef.current !== msg.bar.closeTimeMs) {
-        formingCloseRef.current = msg.bar.closeTimeMs;
-        setFormingCloseMs(msg.bar.closeTimeMs);
+        serverClockRef.current = null;
+      } else {
+        // Re-captured per frame (frames arrive per tick) so the server-clock
+        // offset stays fresh; a frame without a finite ts (older server)
+        // leaves no sample and the countdown falls back to the client clock.
+        const openMs = msg.bar.openTimeMs;
+        serverClockRef.current = typeof msg.ts === "number" && Number.isFinite(msg.ts)
+          ? {
+              serverTs: msg.ts,
+              receivedPerf: performance.now(),
+              intervalMs: typeof openMs === "number" && Number.isFinite(openMs) && msg.bar.closeTimeMs > openMs
+                ? msg.bar.closeTimeMs - openMs : null,
+            }
+          : null;
+        if (formingCloseRef.current !== msg.bar.closeTimeMs) {
+          formingCloseRef.current = msg.bar.closeTimeMs;
+          setFormingCloseMs(msg.bar.closeTimeMs);
+        }
       }
-      // Series tip update — only for a live (non-frozen) forming bar.
-      if (msg.frozen || !msg.bar) return;
+      // Series tip update — only for a live (non-frozen) forming bar. A frozen
+      // or barless frame also withdraws the published tip (no stale "current").
+      if (msg.frozen || !msg.bar) {
+        publishScannerTip(streamTipKey, null);
+        return;
+      }
       const series = lineSeriesRef.current;
       if (!series) return;
       // Task #496 latency addendum: measure ingest→browser latency from the
@@ -1525,6 +1589,12 @@ export function ScannerChartPanel() {
         close: b.close,
       });
       newestBarSecRef.current = tipSec;
+      // Publish the axis' current tip (rounded to the display precision so an
+      // unchanged label never re-renders a reader) — only on a live display.
+      publishScannerTip(
+        streamTipKey,
+        isLiveDisplayRef.current ? Number(formatInstrumentPrice(b.close, pricePrecisionRef.current)) : null,
+      );
     };
     es.onerror = () => {
       // The browser auto-reconnects an EventSource; nothing to do. The poll
@@ -1533,8 +1603,9 @@ export function ScannerChartPanel() {
     return () => {
       disposed = true;
       es?.close();
+      publishScannerTip(streamTipKey, null);
     };
-  }, [symbol, apiTf, tickSource, chartContext]);
+  }, [symbol, apiTf, timeframe, tickSource, chartContext]);
 
   // ── Display-truth: keep the candlestick series' built-in last-price line +
   //    last-value label in lockstep with the live/non-live display status,
@@ -1546,6 +1617,20 @@ export function ScannerChartPanel() {
     if (!series) return;
     series.applyOptions({ priceLineVisible: isLiveDisplay, lastValueVisible: isLiveDisplay });
   }, [isLiveDisplay, chartEpoch, chartContext]);
+
+  // A non-live display never carries a tick tip (header + badge fall back to
+  // the labelled last-known close).
+  useEffect(() => {
+    if (!isLiveDisplay) publishScannerTip(tipKey, null);
+  }, [isLiveDisplay, tipKey]);
+
+  // Axis precision follows the instrument precision without a chart rebuild.
+  useEffect(() => {
+    const series = lineSeriesRef.current;
+    const priceFormat = candlestickPriceFormat(pricePrecision);
+    if (!series || !priceFormat) return;
+    series.applyOptions({ priceFormat });
+  }, [pricePrecision, chartEpoch, chartContext]);
 
   // ── Phase 3 — overlay the user's own positions + pending orders as price
   //    lines. Runs on every positions/pending poll WITHOUT recreating the
@@ -1889,6 +1974,10 @@ export function ScannerChartPanel() {
   useEffect(() => { newsAlertedRef.current = new Set(); }, [symbol]);
 
   const lastClose = candles.length > 0 ? candles[candles.length - 1]!.close : null;
+  // The CURRENT price is the same observation the axis shows: the live tick tip
+  // when one has been applied since the last poll, else the poll's close.
+  const liveTip = useScannerTip(tipKey);
+  const shownClose = resolveDisplayClose({ tipClose: liveTip, lastClose, isLive: isLiveDisplay });
 
   // ── Last-known price stamp (Task #524). The series' built-in last-value label
   //    + price line (toggled in the effect above) ONLY render when the feed is
@@ -2269,11 +2358,8 @@ export function ScannerChartPanel() {
   // review surface; in an active trade mode we keep the quick menu focused.
   const isReviewMode = tradeMode == null;
 
-  const decimals = (() => {
-    const sample = lastClose ?? draft?.entry ?? 1;
-    return sample < 10 ? 5 : sample < 1000 ? 3 : 2;
-  })();
-  const fmt = (n: number) => n.toFixed(decimals);
+  // Level / draft / position labels share the instrument precision too.
+  const fmt = (n: number) => formatInstrumentPrice(n, pricePrecision);
 
   return (
     <Card data-testid="scanner-chart-panel" className="rounded-2xl border-border bg-card">
@@ -2284,14 +2370,14 @@ export function ScannerChartPanel() {
             <span data-testid="scanner-chart-symbol" className="text-base font-semibold text-foreground">
               {symbol}
             </span>
-            {lastClose != null && isLiveDisplay && (
+            {shownClose.value != null && isLiveDisplay && (
               <Badge variant="outline" className="font-mono text-xs" data-testid="scanner-chart-last">
-                {lastClose}
+                {formatInstrumentPrice(shownClose.value, pricePrecision)}
               </Badge>
             )}
             {lastClose != null && !isLiveDisplay && displayStatus !== "UNAVAILABLE" && (
               <Badge variant="outline" className="font-mono text-xs text-zinc-500" data-testid="scanner-chart-last-stale" title="Last-known candle close — not a live price">
-                {lastClose} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
+                {formatInstrumentPrice(lastClose, pricePrecision)} <span className="ml-1 text-[9px] uppercase tracking-wide">last-known</span>
               </Badge>
             )}
             {/* Feed-status badge — honest state of the data feed. Single-sourced
@@ -2326,7 +2412,7 @@ export function ScannerChartPanel() {
                 feed is genuinely LIVE and a live forming bar has reported its
                 broker-aligned close time. The child owns its own 1s ticker. */}
             {formingCloseMs != null && isLiveDisplay && (
-              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} />
+              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={timeframe} clockRef={serverClockRef} />
             )}
             {hasCandles && (
               <ChartHistoryBadge
@@ -2353,6 +2439,15 @@ export function ScannerChartPanel() {
             <ChartTimingChip symbol={symbol} apiTf={apiTf} timeframeLabel={timeframe} />
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
+            {hasCandles && (
+              <span
+                className="mr-1 text-[10px] text-zinc-500"
+                data-testid="scanner-chart-timezone"
+                title={CHART_TIME_AXIS_TITLE}
+              >
+                {CHART_TIME_AXIS_LABEL}
+              </span>
+            )}
             {PRIMARY_TIMEFRAMES.map((tf) => (
               <Button
                 key={tf.id}
@@ -2586,7 +2681,9 @@ export function ScannerChartPanel() {
               <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stale">
                 <span className="font-medium">Stale · last-known candles</span>
                 {feedStatus?.lastCandleTime && (
-                  <span className="text-orange-400/70">· last updated {new Date(feedStatus.lastCandleTime).toLocaleTimeString()}</span>
+                  formatUtcClock(feedStatus.lastCandleTime) && (
+                    <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle {formatUtcClock(feedStatus.lastCandleTime)}</span>
+                  )
                 )}
                 <span className="ml-auto text-orange-400/50 text-[10px]">No live price marker</span>
               </div>

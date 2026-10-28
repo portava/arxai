@@ -12417,6 +12417,15 @@ components:
         newsSource: { $ref: "#/components/schemas/MarketHeatSource" }
         calendarSource: { $ref: "#/components/schemas/MarketHeatSource" }
         priceUpdatedAt: { type: string, nullable: true }
+        priceTimeBasis:
+          type: string
+          nullable: true
+          enum: [tick, bar_open]
+          description: >
+            What priceUpdatedAt measures. "tick" = the symbol's own last venue
+            tick (when the price was observed); "bar_open" = the OPEN time of
+            the newest bar, which is not the observation time. Absent or null
+            must be read as "bar_open".
         newsUpdatedAt: { type: string, nullable: true }
         calendarUpdatedAt: { type: string, nullable: true }
         confidence: { type: string, enum: [high, medium, low, none] }

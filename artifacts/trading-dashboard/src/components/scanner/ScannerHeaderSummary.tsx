@@ -34,6 +34,9 @@ import {
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
 import { useSelectedActionStore } from "@/components/scanner/selectedActionStore";
 import { coerceVisibleTimeframe } from "@/components/scanner/scannerChartFormat";
+import { formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
+import { scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
+import { isLivePriceDisplay } from "@/lib/chart-display-status";
 import { TruthVerdictBias } from "@workspace/api-client-react";
 import { describeEngineAgreement } from "@/lib/engineAgreement";
 import { cn } from "@/lib/utils";
@@ -119,10 +122,6 @@ function readinessTone(r: ScannerTruth["readiness"]): { container: string; label
   }
 }
 
-function formatPrice(p: number | null): string {
-  if (p == null || !Number.isFinite(p)) return "—";
-  return p.toLocaleString(undefined, { maximumFractionDigits: p >= 100 ? 2 : 5 });
-}
 
 // `running` (the operator auto-scan engine) is accepted for older call sites
 // but no longer rendered here: it describes the scan engine, not this market,
@@ -158,7 +157,15 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
         ? "text-danger"
         : "text-primary";
 
-  const price = formatPrice(truth?.candles.lastClose ?? null);
+  // ONE price observation + ONE precision with the chart: on a live display the
+  // header shows the same forming-bar tip the chart's price axis and badge show
+  // (published by the chart from the tick stream), else the poll close — which
+  // off a live display is labelled last-known, never dressed as current.
+  const priceIsLive = truth ? isLivePriceDisplay(truth.displayStatus) : false;
+  const liveTip = useScannerTip(truth ? scannerTipKey(bare, coerceVisibleTimeframe(timeframe)) : null);
+  const shownClose = resolveDisplayClose({ tipClose: liveTip, lastClose: truth?.candles.lastClose ?? null, isLive: priceIsLive });
+  const price = formatInstrumentPrice(shownClose.value, truth?.candles.pricePrecision ?? null);
+  const priceIsLastKnown = shownClose.value != null && !priceIsLive;
   const dataV = truth?.strip.data.verdict ?? "Unavailable";
   const tradingV = truth?.strip.trading.verdict ?? "Read-only";
 
@@ -259,7 +266,14 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
         <Dot />
         <span className="text-txt-secondary">{timeframe}</span>
         <Dot />
-        <span className="font-mono">{price}</span>
+        <span
+          className={cn("font-mono", priceIsLastKnown && "text-txt-muted")}
+          data-testid="scanner-header-price"
+          title={priceIsLastKnown ? "Last-known candle close — not a live price" : undefined}
+        >
+          {price}
+          {priceIsLastKnown && <span className="ml-1 text-[10px] uppercase tracking-wide">last-known</span>}
+        </span>
         {biasLabel && (<><Dot /><span className={cn("font-semibold", biasTone)} data-testid="scanner-header-bias">{biasLabel}</span></>)}
         {agreement && (
           <>

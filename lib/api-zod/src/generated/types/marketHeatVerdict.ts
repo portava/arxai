@@ -9,6 +9,7 @@ import type { MarketHeatSource } from "./marketHeatSource";
 import type { MarketHeatVerdictConfidence } from "./marketHeatVerdictConfidence";
 import type { MarketHeatVerdictDirection } from "./marketHeatVerdictDirection";
 import type { MarketHeatVerdictIntensity } from "./marketHeatVerdictIntensity";
+import type { MarketHeatVerdictPriceTimeBasis } from "./marketHeatVerdictPriceTimeBasis";
 import type { MarketHeatVerdictScope } from "./marketHeatVerdictScope";
 import type { MarketHeatVerdictSourceStatus } from "./marketHeatVerdictSourceStatus";
 
@@ -30,6 +31,9 @@ export interface MarketHeatVerdict {
   newsSource: MarketHeatSource;
   calendarSource: MarketHeatSource;
   priceUpdatedAt?: string | null;
+  /** What priceUpdatedAt measures. "tick" = the symbol's own last venue tick (when the price was observed); "bar_open" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as "bar_open".
+   */
+  priceTimeBasis?: MarketHeatVerdictPriceTimeBasis;
   newsUpdatedAt?: string | null;
   calendarUpdatedAt?: string | null;
   confidence: MarketHeatVerdictConfidence;

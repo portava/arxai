@@ -346,6 +346,13 @@ const SYMBOL_TABLE: SymbolProfile[] = [
   },
 
   // ── Synthetics ────────────────────────────────────────────────────────────
+  // Price precision / pip for the Deriv volatility indices is VENUE-PIP-DERIVED:
+  // it mirrors the `pip` Deriv publishes in `active_symbols` (R_10/R_25 0.001,
+  // R_50/R_75 0.0001, R_100 0.01, every 1HZxxV "(1s)" index 0.01). The owner's
+  // own V75 quote 33588.0069 carries 4 dp. A wrong value here understated the
+  // instrument's digits on every display surface; derivSymbolDiscovery's
+  // validateProfilePrecision reports any drift against the live venue payload
+  // (report-only, never auto-corrected).
   {
     symbol: "V10", displayName: "Volatility 10 Index", assetClass: "synthetic", isSynthetic: true,
     pricePrecision: 3, pipSize: 0.001, pointSize: 0.001, typicalSpreadPips: 0.5,
@@ -364,7 +371,7 @@ const SYMBOL_TABLE: SymbolProfile[] = [
   },
   {
     symbol: "V50", displayName: "Volatility 50 Index", assetClass: "synthetic", isSynthetic: true,
-    pricePrecision: 3, pipSize: 0.001, pointSize: 0.001, typicalSpreadPips: 0.5,
+    pricePrecision: 4, pipSize: 0.0001, pointSize: 0.0001, typicalSpreadPips: 0.5,
     priceBasis: "SYNTHETIC", priceBasisNote: "SYNTHETIC", ohlcSourceType: "true_ohlc",
     allowedTimeframes: ALL_TIMEFRAMES, minHistoryDepthHours: 24 * 7,
     session: SYNTHETIC_SESSION,
@@ -372,7 +379,7 @@ const SYMBOL_TABLE: SymbolProfile[] = [
   },
   {
     symbol: "V75", displayName: "Volatility 75 Index", assetClass: "synthetic", isSynthetic: true,
-    pricePrecision: 3, pipSize: 0.001, pointSize: 0.001, typicalSpreadPips: 0.5,
+    pricePrecision: 4, pipSize: 0.0001, pointSize: 0.0001, typicalSpreadPips: 0.5,
     priceBasis: "SYNTHETIC", priceBasisNote: "SYNTHETIC", ohlcSourceType: "true_ohlc",
     allowedTimeframes: ALL_TIMEFRAMES, minHistoryDepthHours: 24 * 7,
     session: SYNTHETIC_SESSION,
@@ -388,7 +395,7 @@ const SYMBOL_TABLE: SymbolProfile[] = [
   },
   {
     symbol: "V10_1S", displayName: "Volatility 10 (1s) Index", assetClass: "synthetic", isSynthetic: true,
-    pricePrecision: 3, pipSize: 0.001, pointSize: 0.001, typicalSpreadPips: 0.3,
+    pricePrecision: 2, pipSize: 0.01, pointSize: 0.01, typicalSpreadPips: 0.3,
     priceBasis: "SYNTHETIC", priceBasisNote: "SYNTHETIC", ohlcSourceType: "true_ohlc",
     allowedTimeframes: ALL_TIMEFRAMES, minHistoryDepthHours: 24 * 7,
     session: SYNTHETIC_SESSION,
@@ -396,7 +403,7 @@ const SYMBOL_TABLE: SymbolProfile[] = [
   },
   {
     symbol: "V25_1S", displayName: "Volatility 25 (1s) Index", assetClass: "synthetic", isSynthetic: true,
-    pricePrecision: 3, pipSize: 0.001, pointSize: 0.001, typicalSpreadPips: 0.3,
+    pricePrecision: 2, pipSize: 0.01, pointSize: 0.01, typicalSpreadPips: 0.3,
     priceBasis: "SYNTHETIC", priceBasisNote: "SYNTHETIC", ohlcSourceType: "true_ohlc",
     allowedTimeframes: ALL_TIMEFRAMES, minHistoryDepthHours: 24 * 7,
     session: SYNTHETIC_SESSION,
@@ -404,7 +411,7 @@ const SYMBOL_TABLE: SymbolProfile[] = [
   },
   {
     symbol: "V50_1S", displayName: "Volatility 50 (1s) Index", assetClass: "synthetic", isSynthetic: true,
-    pricePrecision: 3, pipSize: 0.001, pointSize: 0.001, typicalSpreadPips: 0.3,
+    pricePrecision: 2, pipSize: 0.01, pointSize: 0.01, typicalSpreadPips: 0.3,
     priceBasis: "SYNTHETIC", priceBasisNote: "SYNTHETIC", ohlcSourceType: "true_ohlc",
     allowedTimeframes: ALL_TIMEFRAMES, minHistoryDepthHours: 24 * 7,
     session: SYNTHETIC_SESSION,
@@ -412,7 +419,7 @@ const SYMBOL_TABLE: SymbolProfile[] = [
   },
   {
     symbol: "V75_1S", displayName: "Volatility 75 (1s) Index", assetClass: "synthetic", isSynthetic: true,
-    pricePrecision: 3, pipSize: 0.001, pointSize: 0.001, typicalSpreadPips: 0.3,
+    pricePrecision: 2, pipSize: 0.01, pointSize: 0.01, typicalSpreadPips: 0.3,
     priceBasis: "SYNTHETIC", priceBasisNote: "SYNTHETIC", ohlcSourceType: "true_ohlc",
     allowedTimeframes: ALL_TIMEFRAMES, minHistoryDepthHours: 24 * 7,
     session: SYNTHETIC_SESSION,
@@ -549,6 +556,17 @@ function defaultForAssetClass(symbol: string, assetClass: AssetClass): SymbolPro
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * The instrument's display precision (decimal places) ONLY when the symbol is
+ * in the explicit profile table — null for an unknown symbol, so callers fall
+ * back to their own magnitude heuristic instead of trusting an asset-class
+ * default. Display only: never an order tick size or execution input.
+ */
+export function knownPricePrecision(symbol: string): number | null {
+  const known = BY_SYMBOL.get((symbol ?? "").trim().toUpperCase());
+  return known ? known.pricePrecision : null;
+}
 
 /** Return the profile for a symbol, falling back to asset-class defaults. Pure — no I/O. */
 export function getSymbolProfile(symbol: string, assetClass?: AssetClass): SymbolProfile {
