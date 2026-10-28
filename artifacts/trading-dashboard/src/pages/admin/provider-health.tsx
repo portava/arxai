@@ -196,6 +196,22 @@ function fmtAge(ageMs: number | null): string {
 
 // Compact UTC date+time (minute precision) for broker-candle oldest/newest,
 // which can span days — a time-only label would be ambiguous.
+// Shown when a refresh failed and the card is still displaying the data of an
+// earlier successful load: says how old it is and that it is not current.
+function StaleDataNote({ loadedAt, what, testId }: { loadedAt: number; what: string; testId: string }) {
+  return (
+    <Alert className="border-warning/40 bg-warning/10" data-testid={testId}>
+      <AlertTriangle className="h-4 w-4 text-warning" />
+      <AlertTitle>Not current — the latest refresh failed</AlertTitle>
+      <AlertDescription className="text-xs">
+        The {what} below is from the last successful load at{" "}
+        {new Date(loadedAt).toLocaleTimeString()} ({fmtAge(Date.now() - loadedAt)}). It may no
+        longer describe what is happening now.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -258,11 +274,14 @@ interface BrokerCoverageResponse {
 function BrokerCandleCoverageCard() {
   const [symbol, setSymbol] = useState("");
   const [data, setData] = useState<BrokerCoverage | null>(null);
+  // When `data` was loaded (client clock) and for which filter. A failed
+  // refresh keeps `data` but marks it as not current (see StaleDataNote).
+  const [loaded, setLoaded] = useState<{ at: number; symbol: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       const q = symbol.trim() ? `?symbol=${encodeURIComponent(symbol.trim())}` : "";
       const r = await fetch(`${BASE}/api/admin/market-data/broker-candles${q}`, {
@@ -276,7 +295,7 @@ function BrokerCandleCoverageCard() {
       }
       const j = (await r.json()) as BrokerCoverageResponse;
       if (!j.ok) setErr("Unknown error");
-      else setData(j.coverage);
+      else { setData(j.coverage); setLoaded({ at: Date.now(), symbol: symbol.trim() }); setErr(null); }
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -335,6 +354,13 @@ function BrokerCandleCoverageCard() {
           </Alert>
         )}
 
+        {data && err && loaded && (
+          <StaleDataNote
+            loadedAt={loaded.at}
+            what={`coverage${loaded.symbol ? ` for "${loaded.symbol.toUpperCase()}"` : " for all symbols"}`}
+            testId="alert-broker-coverage-stale"
+          />
+        )}
         {data && (
           <>
             {/* Per-backfill-status summary */}
@@ -444,11 +470,14 @@ function BrokerCandleCoverageCard() {
 // reaching for curl. Empty-state guides the operator to the EA contract doc.
 function Mt5CandleFeedCard() {
   const [feed, setFeed] = useState<Mt5FeedResponse | null>(null);
+  // Client time of the last successful load. A failed poll keeps `feed` but
+  // the card then says it is not current instead of "feed connected".
+  const [feedAt, setFeedAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       const r = await fetch(`${BASE}/api/admin/market-data/mt5-feed`, {
         credentials: "include",
@@ -461,7 +490,7 @@ function Mt5CandleFeedCard() {
       }
       const j = (await r.json()) as Mt5FeedResponse;
       if (!j.ok) setErr("Unknown error");
-      else setFeed(j);
+      else { setFeed(j); setFeedAt(Date.now()); setErr(null); }
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -484,12 +513,17 @@ function Mt5CandleFeedCard() {
         <CardTitle className="text-base flex items-center gap-2">
           <CandlestickChart className="h-4 w-4" />
           MT5 Candle Feed
-          {feed && (
+          {feed && !err && (
             <Badge
               className={feed.feedActive ? "bg-success/20 text-success" : "bg-secondary/20 text-txt-secondary"}
               data-testid="badge-mt5-feed-active"
             >
               {feed.feedActive ? "feed connected" : "feed offline"}
+            </Badge>
+          )}
+          {feed && err && (
+            <Badge className="bg-warning/20 text-warning" data-testid="badge-mt5-feed-active">
+              status unknown — last load {feedAt != null ? fmtAge(Date.now() - feedAt) : ""}: {feed.feedActive ? "connected" : "offline"}
             </Badge>
           )}
           <span className="ml-auto flex items-center gap-2">
@@ -516,8 +550,16 @@ function Mt5CandleFeedCard() {
           </Alert>
         )}
 
+        {feed && err && feedAt != null && (
+          <StaleDataNote loadedAt={feedAt} what="feed status" testId="alert-mt5-feed-stale" />
+        )}
         {feed && (
           <>
+            {feedAt != null && !err && (
+              <div className="text-[11px] text-muted-foreground" data-testid="text-mt5-feed-as-of">
+                As of {new Date(feedAt).toLocaleTimeString()}.
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               {[
                 ["Total series", feed.summary.totalSeries, "bg-secondary/20 text-foreground"],
@@ -584,11 +626,12 @@ function Mt5CandleFeedCard() {
 
 export default function ProviderHealthPage() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [snapAt, setSnapAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       const r = await fetch(`${BASE}/api/admin/providers/health`, {
         credentials: "include",
@@ -601,7 +644,7 @@ export default function ProviderHealthPage() {
       }
       const j = await r.json();
       if (!j.ok) setErr(j.message ?? j.error ?? "Unknown error");
-      else setSnap(j.snapshot as Snapshot);
+      else { setSnap(j.snapshot as Snapshot); setSnapAt(Date.now()); setErr(null); }
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -638,6 +681,9 @@ export default function ProviderHealthPage() {
         </Alert>
       )}
 
+      {snap && err && snapAt != null && (
+        <StaleDataNote loadedAt={snapAt} what="provider snapshot" testId="alert-provider-health-stale" />
+      )}
       {snap && (
         <>
           {/* Summary tiles */}
