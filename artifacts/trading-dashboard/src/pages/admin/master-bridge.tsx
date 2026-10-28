@@ -45,6 +45,19 @@ type MainBridge = {
     maxLiveLot: number | null;
   };
   latestHint?: MainBridge["bridge"];
+  masterLiveSettings?: MasterLiveSettings;
+};
+// The stored master-live settings as GET /admin/master-bridge/current read
+// them. readable:false (or a failed load) means they could not be read — the
+// page then says so instead of asserting live is off.
+export type MasterLiveSettings = {
+  readable: boolean;
+  platformMode: string | null;
+  accountRoutingMode: string | null;
+  sharedLiveTradingEnabled: boolean | null;
+  masterBridgeLiveEnabled: boolean | null;
+  platformMasterBridgeConnectionId: number | null;
+  readAt: string;
 };
 type GateVerdict = {
   ok: boolean;
@@ -52,7 +65,12 @@ type GateVerdict = {
     | { decision: "PASS"; boundBridgeId: number }
     | { decision: "BLOCKED"; primaryReason: string; blockReasons: string[] };
 };
-function MainBridgeCurrentConnectedCard() {
+function MainBridgeCurrentConnectedCard({
+  onSettings,
+}: {
+  /** Reports the stored master-live settings (null: could not be read). */
+  onSettings?: (s: MasterLiveSettings | null) => void;
+}) {
   const [main, setMain] = useState<MainBridge | null>(null);
   const [gate, setGate] = useState<GateVerdict | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,6 +82,9 @@ function MainBridgeCurrentConnectedCard() {
         fetch("/api/admin/master-bridge/gate", { credentials: "include" }).then((r) => r.json()),
       ]);
       setMain(m); setGate(g);
+      onSettings?.(m?.ok === true && m.masterLiveSettings?.readable === true ? m.masterLiveSettings : null);
+    } catch {
+      onSettings?.(null);
     } finally { setBusy(false); }
   }
   useEffect(() => { void load(); }, []);
@@ -161,6 +182,76 @@ function MainBridgeCurrentConnectedCard() {
     </Card>
   );
 }
+const NO_SECRETS_NOTE =
+  "No broker credentials, tokens, or hashes are rendered on this page — only masked operator metadata.";
+
+function flagText(v: boolean | null): string {
+  return v == null ? "unknown" : v ? "true" : "false";
+}
+
+// The live-posture banner. Driven by the stored flags — it never claims live is
+// off (or on) without having read them.
+export function MasterLiveSettingsAlert({ settings }: { settings: MasterLiveSettings | null | undefined }) {
+  if (settings === undefined) {
+    return (
+      <Alert data-testid="alert-master-live-settings">
+        <ShieldAlert className="h-4 w-4" />
+        <AlertTitle>Checking the master-bridge live settings…</AlertTitle>
+        <AlertDescription className="text-xs text-muted-foreground">{NO_SECRETS_NOTE}</AlertDescription>
+      </Alert>
+    );
+  }
+  if (settings === null || !settings.readable) {
+    return (
+      <Alert className="border-warning/40 bg-warning/10" data-testid="alert-master-live-settings">
+        <ShieldAlert className="h-4 w-4 text-warning" />
+        <AlertTitle>Master-bridge live settings could not be read.</AlertTitle>
+        <AlertDescription className="text-xs text-muted-foreground">
+          This page could not load shared_live_trading_enabled and
+          master_bridge_live_enabled, so it does not say whether live trading
+          through the master bridge is on or off. Check Live Shared Activation
+          or Trading Control. {NO_SECRETS_NOTE}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  const asOf = new Date(settings.readAt);
+  const flags = (
+    <>
+      shared_live_trading_enabled = <span className="font-mono">{flagText(settings.sharedLiveTradingEnabled)}</span>,
+      master_bridge_live_enabled = <span className="font-mono">{flagText(settings.masterBridgeLiveEnabled)}</span>,
+      platform mode <span className="font-mono">{settings.platformMode ?? "unknown"}</span>,
+      routing <span className="font-mono">{settings.accountRoutingMode ?? "unknown"}</span>
+      {Number.isFinite(asOf.getTime()) ? ` (read ${asOf.toLocaleTimeString()})` : ""}.
+    </>
+  );
+  if (settings.sharedLiveTradingEnabled === true && settings.masterBridgeLiveEnabled === true) {
+    return (
+      <Alert className="border-danger/40 bg-danger/10" data-testid="alert-master-live-settings">
+        <ShieldAlert className="h-4 w-4 text-danger" />
+        <AlertTitle>Shared live and master-bridge live are ON.</AlertTitle>
+        <AlertDescription className="text-xs text-muted-foreground">
+          {flags} A live order goes through the master bridge only when every
+          other gate also passes: platform mode LIVE, routing SHARED_MASTER_MT5,
+          the server switch and operator arm, no emergency or safety-core stop,
+          the master bridge binding, and the user&apos;s own approval. This page
+          itself places no orders. {NO_SECRETS_NOTE}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return (
+    <Alert className="border-warning/40 bg-warning/10" data-testid="alert-master-live-settings">
+      <ShieldAlert className="h-4 w-4 text-warning" />
+      <AlertTitle>Live trading via master bridge is off.</AlertTitle>
+      <AlertDescription className="text-xs text-muted-foreground">
+        {flags} Both flags must be on before the master bridge can take a live
+        order. {NO_SECRETS_NOTE}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function Kv({ label, v, mono }: { label: string; v: string; mono?: boolean }) {
   return (
     <div>
@@ -209,6 +300,7 @@ export default function AdminMasterBridgePage() {
   const [unattr, setUnattr] = useState<Unattributed[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [liveSettings, setLiveSettings] = useState<MasterLiveSettings | null | undefined>(undefined);
 
   async function refresh() {
     setBusy(true); setErr(null);
@@ -233,7 +325,7 @@ export default function AdminMasterBridgePage() {
 
   return (
     <div className="mx-auto w-full max-w-[1280px] p-4 md:p-6 pb-32 md:pb-6 space-y-4" data-testid="page-admin-master-bridge">
-      <MainBridgeCurrentConnectedCard />
+      <MainBridgeCurrentConnectedCard onSettings={setLiveSettings} />
       <LiveGatesDiagnosticPanel />
       <MasterLiveUserAccessTable />
       <OneClickControlsContent embedded />
@@ -243,9 +335,9 @@ export default function AdminMasterBridgePage() {
             <Layers className="w-6 h-6 text-warning" /> Master Bridge Dashboard
           </h1>
           <p className="text-sm text-muted-foreground">
-            Centralized MT5 demo routing. Per-user isolation enforced in every
-            attribution row. Live broker dispatch is permanently disabled on
-            this page.
+            Centralized master MT5 routing: shared master accounts with a
+            virtual ledger per user. Per-user isolation enforced in every
+            attribution row. This page places no broker orders.
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => void refresh()} disabled={busy}>
@@ -253,16 +345,7 @@ export default function AdminMasterBridgePage() {
         </Button>
       </div>
 
-      <Alert className="border-danger/40 bg-danger/10">
-        <ShieldAlert className="h-4 w-4 text-danger" />
-        <AlertTitle>Live trading via master bridge is disabled.</AlertTitle>
-        <AlertDescription className="text-xs text-muted-foreground">
-          This dashboard shows DEMO routing only. The shared LIVE flag remains
-          OFF (default-deny) and Phase B live dispatch is unaffected by master
-          mode. No broker credentials, tokens, or hashes are rendered on this
-          page — only masked operator metadata.
-        </AlertDescription>
-      </Alert>
+      <MasterLiveSettingsAlert settings={liveSettings} />
 
       {err && <div className="text-sm text-danger">{err}</div>}
 

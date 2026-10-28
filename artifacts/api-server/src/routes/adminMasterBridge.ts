@@ -22,6 +22,7 @@ import {
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import { liveBrokerExecutionEnabled as phaseBEnvMasterSwitch } from "../lib/live/phaseBConfig.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -47,10 +48,45 @@ function liveBrokerExecutionEnabled(): boolean {
   return phaseBEnvMasterSwitch();
 }
 
+// The stored master-live settings, as read now from the one switch authority,
+// so the Master Bridge page can say whether shared live / master-bridge live
+// are on instead of asserting they are off. Unreadable settings come back as
+// readable:false with null values — never as "off".
+export interface MasterLiveSettingsView {
+  readable: boolean;
+  platformMode: string | null;
+  accountRoutingMode: string | null;
+  sharedLiveTradingEnabled: boolean | null;
+  masterBridgeLiveEnabled: boolean | null;
+  platformMasterBridgeConnectionId: number | null;
+  readAt: string;
+}
+async function masterLiveSettingsView(): Promise<MasterLiveSettingsView> {
+  const readAt = new Date().toISOString();
+  const { switches: sw, config } = await loadPlatformSettings();
+  if (!sw.readable || !config) {
+    return {
+      readable: false, platformMode: null, accountRoutingMode: null,
+      sharedLiveTradingEnabled: null, masterBridgeLiveEnabled: null,
+      platformMasterBridgeConnectionId: null, readAt,
+    };
+  }
+  return {
+    readable: true,
+    platformMode: sw.platformMode,
+    accountRoutingMode: config.accountRoutingMode ?? null,
+    sharedLiveTradingEnabled: config.sharedLiveTradingEnabled === true,
+    masterBridgeLiveEnabled: config.masterBridgeLiveEnabled === true,
+    platformMasterBridgeConnectionId: config.platformMasterBridgeConnectionId ?? null,
+    readAt,
+  };
+}
+
 router.get("/admin/master-bridge/current", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const liveEnabled = liveBrokerExecutionEnabled();
   const det = await detectCurrentConnectedBridge();
+  const masterLiveSettings = await masterLiveSettingsView();
   if (!det.ok) {
     return res.json({
       ok: true,
@@ -58,6 +94,7 @@ router.get("/admin/master-bridge/current", async (req, res) => {
       primaryReason: det.primaryReason,
       latestHint: det.latestHint ? maskBridgeEvidenceForUser(det.latestHint) : null,
       liveBrokerExecutionEnabled: liveEnabled,
+      masterLiveSettings,
     });
   }
   return res.json({
@@ -65,6 +102,7 @@ router.get("/admin/master-bridge/current", async (req, res) => {
     detected: true,
     bridge: maskBridgeEvidenceForUser(det.bridge),
     liveBrokerExecutionEnabled: liveEnabled,
+    masterLiveSettings,
   });
 });
 
