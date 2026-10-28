@@ -26,6 +26,31 @@ type WatchItem = {
   urgencyTier: "info" | "watch" | "warning" | "urgent";
 };
 
+type Coverage = {
+  scannedVenues?: Array<"DEMO" | "SHARED_MASTER">;
+  scannedCount?: number;
+  notScanned?: { venue: "LIVE"; openPositions: number | null } | null;
+};
+
+const POLL_MS = 15_000;
+
+/** What the scan covered, in plain words (server-reported; absent → unknown). */
+export function sniperCoverage(c: Coverage | null): { scanned: string; gap: string | null } {
+  if (!c || !c.scannedVenues) {
+    return { scanned: "Which of your trades were scanned was not reported.", gap: null };
+  }
+  const what = c.scannedVenues.includes("SHARED_MASTER") ? "shared-account" : "demo";
+  const n = c.scannedCount ?? 0;
+  const scanned = `Scanned ${n} open ${what} trade${n === 1 ? "" : "s"}.`;
+  const live = c.notScanned?.venue === "LIVE" ? c.notScanned.openPositions : 0;
+  const gap = live === null
+    ? "Live positions on your own MT5 could not be checked and are not covered by this watchlist."
+    : live > 0
+      ? `${live} live position${live === 1 ? "" : "s"} on your own MT5 ${live === 1 ? "is" : "are"} not covered — this watchlist evaluates demo positions only.`
+      : null;
+  return { scanned, gap };
+}
+
 const tierStyle: Record<string, string> = {
   urgent: "border-rose-700 bg-rose-500/5 text-rose-300",
   warning: "border-amber-700 bg-amber-500/5 text-amber-300",
@@ -38,15 +63,17 @@ export default function SniperWatchlistPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [routingMode, setRoutingMode] = useState<string>("—");
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
 
   async function load() {
     setErr(null);
     try {
       const r = await fetch(u("/api/me/sniper-watchlist"), { credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const b = (await r.json()) as { items: WatchItem[]; routingMode: string };
+      const b = (await r.json()) as { items: WatchItem[]; routingMode: string } & Coverage;
       setItems(b.items ?? []);
       setRoutingMode(b.routingMode ?? "—");
+      setCoverage({ scannedVenues: b.scannedVenues, scannedCount: b.scannedCount, notScanned: b.notScanned ?? null });
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -56,7 +83,7 @@ export default function SniperWatchlistPage() {
 
   useEffect(() => {
     void load();
-    const id = setInterval(load, 15_000);
+    const id = setInterval(load, POLL_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -78,6 +105,16 @@ export default function SniperWatchlistPage() {
         — this is decision support only. Tap a row to open the trade detail.
       </p>
 
+      {!loading && !err && (() => {
+        const cov = sniperCoverage(coverage);
+        return (
+          <div className="space-y-1 text-xs" data-testid="watchlist-coverage">
+            <p className="text-zinc-400">{cov.scanned}</p>
+            {cov.gap && <p className="flex items-center gap-1 text-amber-300" data-testid="watchlist-coverage-gap"><AlertTriangle className="h-3 w-3" /> {cov.gap}</p>}
+          </div>
+        );
+      })()}
+
       {loading ? (
         <Card><CardContent className="flex items-center gap-2 p-6 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Scanning your open trades…</CardContent></Card>
       ) : err ? (
@@ -85,9 +122,11 @@ export default function SniperWatchlistPage() {
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="p-6 text-sm text-zinc-400" data-testid="watchlist-empty">
-            None of your open trades are flagged for attention right now. The engine watches your
-            trades continuously — if a profit-giveback, reversal, or close-urgency signal fires,
-            it will appear here automatically.
+            {(coverage?.scannedCount ?? 0) === 0
+              ? "There are no open trades in the scanned account for this watchlist to evaluate."
+              : "None of the scanned trades are flagged for attention right now."}{" "}
+            This page re-scans every {POLL_MS / 1000} seconds while it is open — if a profit-giveback,
+            reversal, or close-urgency signal fires on a scanned trade, it will appear here.
           </CardContent>
         </Card>
       ) : (
