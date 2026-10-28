@@ -99,6 +99,12 @@ type DemoCommand = {
 };
 
 const TERMINAL = new Set(["FILLED_DEMO", "REJECTED", "FAILED", "BLOCKED"]);
+// Statuses before the command is handed to the EA: nothing is "waiting for an
+// EA fill" yet.
+const PRE_DISPATCH = new Set(["DRAFT", "USER_CONFIRMATION_REQUIRED", "DEMO_APPROVED"]);
+// Consecutive failed status reads after which the modal stops narrating
+// progress and says the status is unavailable.
+const POLL_FAILURES_BEFORE_UNKNOWN = 3;
 
 // The server's per-user dispatch gate (GET /api/me/demo-bridge-debug →
 // bridge.gateBlockers) is evaluated with userConfirmed=false, so
@@ -165,6 +171,7 @@ export function ScannerTradeModal({
   const [err, setErr] = useState<string | null>(null);
   const [cmd, setCmd] = useState<DemoCommand | null>(null);
   const [statusLog, setStatusLog] = useState<string[]>([]);
+  const [pollFailures, setPollFailures] = useState(0);
   const [bridge, setBridge] = useState<BridgeReadiness | null>(null);
   const [bridgeLoading, setBridgeLoading] = useState(false);
   // Whether the last demo-bridge-debug read succeeded ("failed" covers a
@@ -323,6 +330,7 @@ export function ScannerTradeModal({
     setErr(null);
     setCmd(null);
     setStatusLog([]);
+    setPollFailures(0);
     currentPriceSeededRef.current = false;
     idempotencyKeyRef.current = `sc-${signal.symbol}-${signal.timeframe ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   }, [open, signal.symbol, signal.timeframe, signal.entry, signal.stopLoss, signal.takeProfit, defaultSide]);
@@ -442,25 +450,31 @@ export function ScannerTradeModal({
       if (!j1.ok || !j1.command) { setErr(j1.reason ?? `HTTP ${r1.status}`); return; }
       const commandId = j1.command.commandId as string;
       setCmd({ commandId, status: j1.command.status, reason: j1.command.reason ?? null });
-      setStatusLog((s) => [...s, `QUEUED ${commandId}`]);
+      setStatusLog((s) => [...s, `${j1.command.status} ${commandId}`]);
+      // Every step records the row status the SERVER returned — on success AND
+      // on refusal (a refused confirm can already have moved the row to BLOCKED).
+      const applyStep = (j: { command?: { status?: string; reason?: string | null } | null }) => {
+        const status = j.command?.status;
+        if (typeof status !== "string" || !status) return;
+        setCmd((c) => c ? { ...c, status, reason: j.command?.reason ?? null } : c);
+        setStatusLog((s) => (s[s.length - 1] === status ? s : [...s, status]));
+      };
       // 2. Confirm
       const r2 = await fetch(u(`/api/me/demo-commands/${encodeURIComponent(commandId)}/confirm`), {
         method: "POST", credentials: "include",
         headers: { "content-type": "application/json" }, body: "{}",
       });
       const j2 = await r2.json();
+      applyStep(j2);
       if (!j2.ok || !j2.command) { setErr(`CONFIRM_FAILED: ${j2.reason ?? r2.status}`); return; }
-      setCmd((c) => c ? { ...c, status: j2.command.status, reason: j2.command.reason ?? null } : c);
-      setStatusLog((s) => [...s, `DEMO_APPROVED`]);
       // 3. Dispatch
       const r3 = await fetch(u(`/api/me/demo-commands/${encodeURIComponent(commandId)}/dispatch`), {
         method: "POST", credentials: "include",
         headers: { "content-type": "application/json" }, body: "{}",
       });
       const j3 = await r3.json();
+      applyStep(j3);
       if (!j3.ok || !j3.command) { setErr(`DISPATCH_FAILED: ${j3.reason ?? r3.status}`); return; }
-      setCmd((c) => c ? { ...c, status: j3.command.status, reason: j3.command.reason ?? null } : c);
-      setStatusLog((s) => [...s, `SENT_TO_MT5_DEMO`]);
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -513,10 +527,13 @@ export function ScannerTradeModal({
     const t = setInterval(async () => {
       try {
         const r = await fetch(u(`/api/me/demo-commands/${encodeURIComponent(cmd.commandId)}`), { credentials: "include" });
-        if (!r.ok) return;
+        if (cancelled) return;
+        if (!r.ok) { setPollFailures((n) => n + 1); return; }
         const j = await r.json();
         const c = j.command;
-        if (!c || cancelled) return;
+        if (cancelled) return;
+        if (!c) { setPollFailures((n) => n + 1); return; }
+        setPollFailures(0);
         const next: DemoCommand = {
           commandId: c.commandId,
           status: c.status,
@@ -552,7 +569,7 @@ export function ScannerTradeModal({
             }
           }
         }
-      } catch {/* keep polling */}
+      } catch { if (!cancelled) setPollFailures((n) => n + 1); /* keep polling */ }
     }, 1200);
     return () => { cancelled = true; clearInterval(t); };
   }, [cmd?.commandId, cmd?.status]);
@@ -832,7 +849,7 @@ export function ScannerTradeModal({
                   "bg-warning/20 text-warning"
                 }`}>{cmd.status}</span>
               </div>
-              <div className="text-muted-foreground">Lifecycle: {statusLog.join(" → ")}</div>
+              <div className="text-muted-foreground" data-testid="scanner-trade-lifecycle">Lifecycle: {statusLog.join(" → ")}</div>
               {cmd.status === "FILLED_DEMO" && (
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 border-t border-border">
                   <div><span className="text-muted-foreground">Broker ticket:</span> <span className="font-mono">{cmd.brokerTicket ?? "—"}</span></div>
@@ -846,8 +863,22 @@ export function ScannerTradeModal({
                   <span className="font-semibold">Reason:</span> <span className="font-mono">{cmd.reason ?? "unknown"}</span>
                 </div>
               )}
+              {err && <div className="rounded bg-danger/10 p-1.5 text-danger">{err}</div>}
               {!terminal && cmd.status !== "DRAFT_SAVED" && (
-                <div className="flex items-center gap-1.5 text-warning"><Loader2 className="h-3 w-3 animate-spin" /> Waiting for EA fill…</div>
+                pollFailures >= POLL_FAILURES_BEFORE_UNKNOWN ? (
+                  <div className="flex items-start gap-1.5 text-warning" data-testid="scanner-trade-status-unavailable">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span>
+                      Status unavailable — the last {pollFailures} status checks for this command failed. Last status the server returned: {cmd.status}. Check Recent Demo Commands on the MT5 Bridge page.
+                    </span>
+                  </div>
+                ) : PRE_DISPATCH.has(cmd.status) ? (
+                  busy && !err
+                    ? <div className="flex items-center gap-1.5 text-warning"><Loader2 className="h-3 w-3 animate-spin" /> Submitting to the server…</div>
+                    : <div className="text-warning">Not sent to the EA — the command is at {cmd.status}.</div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-warning"><Loader2 className="h-3 w-3 animate-spin" /> Waiting for EA fill…</div>
+                )
               )}
             </div>
           )}
