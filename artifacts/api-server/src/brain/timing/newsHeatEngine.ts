@@ -25,7 +25,14 @@ export interface NewsHeatDeps {
   buildRadarFn?: typeof buildMarketImpactRadar;
 }
 
-export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): Promise<NewsOverlay> {
+/**
+ * The news overlay plus whether a real economic-calendar provider answered.
+ * `calendarConnected` is about the PROVIDER, not about whether an event is
+ * near: a connected calendar with nothing scheduled is still news data.
+ */
+export type NewsHeatResult = NewsOverlay & { calendarConnected: boolean };
+
+export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): Promise<NewsHeatResult> {
   const classify = deps.classify ?? classifySymbol;
   const analyzeNewsRiskFn = deps.analyzeNewsRiskFn ?? analyzeNewsRisk;
   const buildRadarFn = deps.buildRadarFn ?? buildMarketImpactRadar;
@@ -42,6 +49,7 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
       surpriseScore: null,
       heatAdjustment: 0,
       blocksTrade: false,
+      calendarConnected: false,
     };
   }
 
@@ -127,5 +135,6 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
     surpriseScore: null, // never fabricated — no actual result data available without a real provider
     heatAdjustment,
     blocksTrade: newsRisk.blockTrading,
+    calendarConnected,
   };
 }

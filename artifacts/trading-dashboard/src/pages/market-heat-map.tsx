@@ -846,10 +846,10 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
             </Badge>
           </div>
           {data.dataQuality.hasNewsData ? (
-            <CardDescription className="text-xs">Live news data</CardDescription>
+            <CardDescription className="text-xs">Economic calendar connected</CardDescription>
           ) : (
             <CardDescription className="text-xs text-amber-400/80">
-              No live news feed connected — showing basic timing estimate only
+              No economic calendar connected — news heat is a schedule-based estimate only
             </CardDescription>
           )}
         </CardHeader>
@@ -889,7 +889,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
               <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
               No active news events detected for {data.symbol}.
               {!data.dataQuality.hasNewsData && (
-                <span className="text-amber-400/80"> (No live news feed)</span>
+                <span className="text-amber-400/80"> (No economic calendar connected)</span>
               )}
             </div>
           )}

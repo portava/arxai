@@ -99,11 +99,14 @@ export async function computeTimingRead(
     ? (closes[closes.length - 1]!.close >= closes[0]!.close ? "BULL" : "BEAR")
     : "FLAT";
 
-  const [newsOverlay, broadFlowRaw] = await Promise.all([
+  const [newsHeat, broadFlowRaw] = await Promise.all([
     computeNewsHeatFn(symbol),
     computeBroadFlowFn(symbol, selfDir),
   ]);
-  const hasNewsData = newsOverlay.phase !== "NONE" || newsOverlay.blocksTrade;
+  // News data = a real economic-calendar provider answered, whether or not an
+  // event is near. A schedule-based fallback event is not live news data.
+  const { calendarConnected, ...newsOverlay } = newsHeat;
+  const hasNewsData = calendarConnected === true;
   const hasBroadFlowData = broadFlowRaw.dataQuality !== "unavailable";
 
   // ─── 4. Heat Score Engine ────────────────────────────────────────────────
@@ -335,7 +338,7 @@ function resolveDataQuality(
   const parts: string[] = [];
   if (!hasCandleData) parts.push("candles unavailable (session-only estimate)");
   if (!hasQuoteData) parts.push("live quote unavailable");
-  if (!hasNewsData) parts.push("no scheduled news events");
+  if (!hasNewsData) parts.push("economic calendar not connected");
   if (!hasBroadFlowData) parts.push("broad flow unavailable");
 
   const note = parts.length === 0

@@ -37,6 +37,7 @@ const quoteEmpty: QuoteResult = {
 const newsNone: NewsOverlay = {
   phase: "NONE", eventName: null, minutesUntil: null, minutesSince: null,
   eventType: "none", surpriseScore: null, heatAdjustment: 0, blocksTrade: false,
+  calendarConnected: false,
 };
 
 const broadAligned: BroadFlow = {
@@ -166,4 +167,26 @@ test("quote but no current candles → still no GO (timing was not measured)", a
   } finally {
     mock.timers.reset();
   }
+});
+
+test("connected calendar with no event near → hasNewsData reflects the provider (true), note does not claim it is missing", async () => {
+  const read = await computeTimingRead(
+    { symbol: "EURUSD", persistSnapshot: false },
+    baseDeps({ computeNewsHeatFn: async () => ({ ...newsNone, calendarConnected: true }) }),
+  );
+  assert.equal(read.dataQuality.hasNewsData, true);
+  assert.doesNotMatch(read.dataQuality.note, /news/i);
+  // The provider flag is internal; the published overlay keeps its contract shape.
+  assert.equal("calendarConnected" in read.newsOverlay, false);
+});
+
+test("calendar not connected but the schedule fallback has an event → hasNewsData false (not a live feed)", async () => {
+  const read = await computeTimingRead(
+    { symbol: "EURUSD", persistSnapshot: false },
+    baseDeps({
+      computeNewsHeatFn: async () => ({ ...newsNone, phase: "PRE_EVENT", eventName: "FOMC Rate Decision", calendarConnected: false }),
+    }),
+  );
+  assert.equal(read.dataQuality.hasNewsData, false);
+  assert.match(read.dataQuality.note, /economic calendar not connected/);
 });

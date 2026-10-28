@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, within } from "@testing-library/react";
 import type { MarketTimingRead } from "@workspace/api-client-react";
-import { BySessionTab, TodayTab, NowTab } from "./market-heat-map";
+import { BySessionTab, TodayTab, NowTab, NewsHeatTab } from "./market-heat-map";
 
 afterEach(() => {
   cleanup();
@@ -113,5 +113,21 @@ describe("Unmeasured timing reads (no candles, no quote)", () => {
   it("Today's Symbol Heat marks an estimate row with its data-quality badge", () => {
     render(<TodayTab data={undefined} multiData={[makeRead({ symbol: "GBPUSD", dataQuality: UNMEASURED_DQ })]} />);
     expect(screen.getByText("Basic timing estimate")).toBeTruthy();
+  });
+});
+
+describe("News Heat — provider copy", () => {
+  it("a connected calendar with no event near is described as connected, not as a missing feed", () => {
+    render(<NewsHeatTab data={makeRead()} />);
+    expect(screen.getByText("Economic calendar connected")).toBeTruthy();
+    expect(screen.queryByText(/No live news feed/)).toBeNull();
+    expect(screen.queryByText(/No economic calendar connected/)).toBeNull();
+  });
+
+  it("without a calendar the copy says so and does not call the read live", () => {
+    const dq = { ...makeRead().dataQuality, hasNewsData: false };
+    render(<NewsHeatTab data={makeRead({ dataQuality: dq })} />);
+    expect(screen.getByText(/No economic calendar connected — news heat is a schedule-based estimate only/)).toBeTruthy();
+    expect(screen.queryByText(/Live news data/)).toBeNull();
   });
 });

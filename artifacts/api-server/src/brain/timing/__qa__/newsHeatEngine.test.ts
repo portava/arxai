@@ -113,3 +113,22 @@ test("radar failure fails open — falls back to schedule engine without throwin
   assert.equal(out.phase, "NONE");
   assert.equal(out.heatAdjustment, 0);
 });
+
+test("calendarConnected reflects the radar provider, not whether an event is near", async () => {
+  const connectedEmpty: NewsHeatDeps["buildRadarFn"] = async () => ({
+    radar: {
+      symbol: "EURUSD",
+      provider: { connected: true, name: "fred", note: "live" },
+      events: [],
+      topSeverity: null,
+      highImpactWindowActive: false,
+      summary: "",
+    },
+    behavior: { mode: "NORMAL", note: "" },
+  });
+  const on = await computeNewsHeat("EURUSD", { classify: () => "forex", analyzeNewsRiskFn: () => newsRisk(), buildRadarFn: connectedEmpty });
+  assert.equal(on.phase, "NONE");
+  assert.equal(on.calendarConnected, true);
+  const off = await computeNewsHeat("EURUSD", { classify: () => "forex", analyzeNewsRiskFn: () => newsRisk(), buildRadarFn: disconnectedRadar });
+  assert.equal(off.calendarConnected, false);
+});
