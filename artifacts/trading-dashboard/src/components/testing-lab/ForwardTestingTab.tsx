@@ -35,21 +35,64 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
   // access-denied card on 403/401 rather than rendering "undefined" stats.
   const [accessDenied, setAccessDenied] = useState(false);
 
+  // Each read is tracked on its own. A read that is still in flight, failed, or
+  // could not reach the server is never shown as a confirmed result: the
+  // previous stats and RUNNING/IDLE badge are cleared on failure so nothing
+  // from an earlier poll is presented as current.
+  const [resultsState, setResultsState] = useState<ReadState>("loading");
+  const [statusState, setStatusState] = useState<ReadState>("loading");
+  const [resultsFailure, setResultsFailure] = useState<string | null>(null);
+
   // Returns true when access was denied, so the poller can stop hammering the
   // admin-gated endpoints for a non-admin session.
   async function load(): Promise<boolean> {
-    const [sRes, rRes] = await Promise.all([
-      fetch("/api/forward-testing/status"),
-      fetch("/api/forward-testing/results"),
-    ]);
+    let sRes: Response;
+    let rRes: Response;
+    try {
+      [sRes, rRes] = await Promise.all([
+        fetch("/api/forward-testing/status"),
+        fetch("/api/forward-testing/results"),
+      ]);
+    } catch {
+      setStatus(null);
+      setStatusState("error");
+      setResults(null);
+      setResultsState("error");
+      setResultsFailure("the server could not be reached");
+      return false;
+    }
     if (sRes.status === 403 || sRes.status === 401 || rRes.status === 403 || rRes.status === 401) {
       setAccessDenied(true);
       return true;
     }
-    if (!sRes.ok || !rRes.ok) return false;
     setAccessDenied(false);
-    setStatus(await sRes.json());
-    setResults(await rRes.json());
+    if (sRes.ok) {
+      try {
+        setStatus(await sRes.json());
+        setStatusState("ok");
+      } catch {
+        setStatus(null);
+        setStatusState("error");
+      }
+    } else {
+      setStatus(null);
+      setStatusState("error");
+    }
+    if (rRes.ok) {
+      try {
+        setResults(await rRes.json());
+        setResultsState("ok");
+        setResultsFailure(null);
+      } catch {
+        setResults(null);
+        setResultsState("error");
+        setResultsFailure("the response could not be read");
+      }
+    } else {
+      setResults(null);
+      setResultsState("error");
+      setResultsFailure(`HTTP ${rRes.status}`);
+    }
     return false;
   }
   useEffect(() => {
@@ -98,7 +141,11 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
           </p>
         </div>
         <Badge variant="outline">SHADOW</Badge>
-        {status && <Badge className={status.running ? "bg-emerald-500/20 text-emerald-400" : ""}>{status.running ? "RUNNING" : "IDLE"}</Badge>}
+        {status ? (
+          <Badge className={status.running ? "bg-emerald-500/20 text-emerald-400" : ""}>{status.running ? "RUNNING" : "IDLE"}</Badge>
+        ) : statusState === "error" ? (
+          <Badge variant="outline" className="text-amber-300">Status unavailable</Badge>
+        ) : null}
       </div>
 
       <Card>
@@ -117,26 +164,38 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
         </CardContent>
       </Card>
 
-      {results ? (
-        <div className="grid gap-2 md:grid-cols-4">
-          <Stat label="Decisions" value={String(results.totalShadowDecisions)} />
-          <Stat label="Tracked" value={String(results.shadowTradesTracked)} />
-          <Stat label="Wins" value={String(results.wins)} />
-          <Stat label="Losses" value={String(results.losses)} />
-          <Stat label="Win rate" value={`${results.winRate}%`} />
-          <Stat label="Avg R" value={String(results.avgR)} />
-          <Stat label="Max DD R" value={String(results.maxDrawdownR)} />
-          <Stat label="Calibration" value={results.confidenceCalibration} />
-          <Stat label="Best symbol" value={results.bestSymbol ?? "—"} />
-          <Stat label="Worst symbol" value={results.worstSymbol ?? "—"} />
-          <Stat label="Best strategy" value={results.bestStrategy ?? "—"} />
-          <Stat label="Weakest strategy" value={results.weakestStrategy ?? "—"} />
-        </div>
+      {results && resultsState === "ok" ? (
+        <ForwardStats results={results} />
+      ) : resultsState === "error" ? (
+        <p className="text-xs text-amber-300">
+          Forward-test results could not be loaded ({resultsFailure ?? "unknown error"}). No stats are shown until a read succeeds.
+        </p>
       ) : (
-        <p className="text-xs text-slate-500">No forward-test results yet.</p>
+        <p className="text-xs text-slate-500">Loading forward-test results…</p>
       )}
 
       <ForwardChartPanel />
+    </div>
+  );
+}
+
+type ReadState = "loading" | "ok" | "error";
+
+function ForwardStats({ results }: { results: ForwardResults }) {
+  return (
+    <div className="grid gap-2 md:grid-cols-4">
+      <Stat label="Decisions" value={String(results.totalShadowDecisions)} />
+      <Stat label="Tracked" value={String(results.shadowTradesTracked)} />
+      <Stat label="Wins" value={String(results.wins)} />
+      <Stat label="Losses" value={String(results.losses)} />
+      <Stat label="Win rate" value={`${results.winRate}%`} />
+      <Stat label="Avg R" value={String(results.avgR)} />
+      <Stat label="Max DD R" value={String(results.maxDrawdownR)} />
+      <Stat label="Calibration" value={results.confidenceCalibration} />
+      <Stat label="Best symbol" value={results.bestSymbol ?? "—"} />
+      <Stat label="Worst symbol" value={results.worstSymbol ?? "—"} />
+      <Stat label="Best strategy" value={results.bestStrategy ?? "—"} />
+      <Stat label="Weakest strategy" value={results.weakestStrategy ?? "—"} />
     </div>
   );
 }
