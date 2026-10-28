@@ -30,6 +30,52 @@ import {
 const CATEGORIES = ["all", "forex", "indices", "stocks", "synthetic"] as const;
 type Category = (typeof CATEGORIES)[number];
 
+// POST /brain/analyze answers with either a full analysis or the honest
+// refusal { available:false, reason:"INSUFFICIENT_REAL_DATA", ... } (see
+// api-server brain/marketBrain.ts). The refusal carries no scoring,
+// technical, macro, session or news details. A full analysis also names the
+// candle source and count; the generated client type predates those fields.
+type BrainOutcome = MarketBrainResult & {
+  available?: boolean;
+  reason?: string;
+  candleSource?: string;
+  candleCount?: number;
+};
+
+function isFullAnalysis(r: BrainOutcome): boolean {
+  return r.available !== false && !!r.scoring && !!r.technicalDetails;
+}
+
+function candleSourceLabel(source: string | undefined): string {
+  if (!source) return "an unreported source";
+  if (source === "router") return "the market-data router (provider not reported)";
+  if (source === "caller") return "candles supplied with the request";
+  return source;
+}
+
+function RefusalCard({ result }: { result: BrainOutcome }) {
+  const detail = (result.blockedReason ?? "").replace(/^INSUFFICIENT_REAL_DATA:\s*/, "").trim();
+  const insufficient = result.reason === "INSUFFICIENT_REAL_DATA";
+  return (
+    <Card data-testid="brain-refusal" className="border-2 border-amber-700/50 bg-amber-950/20">
+      <CardContent className="pt-5 space-y-2 text-sm">
+        <p className="font-semibold text-amber-300 flex items-center gap-2">
+          <AlertTriangle size={16} />
+          {insufficient
+            ? `No analysis for ${result.symbol}: not enough real candles`
+            : `No analysis for ${result.symbol}: the server returned no analysis details`}
+        </p>
+        {detail && <p className="text-zinc-300">{detail.charAt(0).toUpperCase() + detail.slice(1)}.</p>}
+        <p className="text-xs text-zinc-400">
+          ARX does not analyse made-up candles, so no direction, levels, confidence or bias is shown until a
+          real feed serves enough closed bars.
+        </p>
+        <p className="text-xs text-zinc-500">Checked at {new Date(result.timestamp).toLocaleTimeString()}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DirectionBadge({ direction }: { direction: string }) {
   if (direction === "BUY")
     return (
@@ -235,7 +281,7 @@ function ScoringPanel({ result }: { result: MarketBrainResult }) {
 export default function BrainAnalysis() {
   const [selectedCategory, setSelectedCategory] = useState<Category>("forex");
   const [selectedSymbol, setSelectedSymbol] = useState("");
-  const [result, setResult] = useState<MarketBrainResult | null>(null);
+  const [result, setResult] = useState<BrainOutcome | null>(null);
   const [enableNewsFilter, setEnableNewsFilter] = useState(true);
   const [enableSessionFilter, setEnableSessionFilter] = useState(true);
 
@@ -244,9 +290,12 @@ export default function BrainAnalysis() {
     queryFn: () => getBrainSymbols(selectedCategory !== "all" ? { category: selectedCategory } : undefined),
   });
 
-  const { mutate: analyze, isPending } = useMutation({
+  const { mutate: analyze, isPending, isError: analyzeFailed } = useMutation({
     ...getRunBrainAnalysisMutationOptions(),
-    onSuccess: setResult,
+    onSuccess: (r) => setResult(r as BrainOutcome),
+    // A failed request is not an analysis: drop any previous one so it is not
+    // read as the answer to this request.
+    onError: () => setResult(null),
   });
 
   const handleAnalyze = () => {
@@ -334,8 +383,16 @@ export default function BrainAnalysis() {
         </CardContent>
       </Card>
 
+      {analyzeFailed && !isPending && (
+        <p data-testid="brain-error" role="alert" className="text-sm text-rose-400">
+          The analysis could not be loaded. Nothing below is a current analysis.
+        </p>
+      )}
+
+      {result && !isFullAnalysis(result) && <RefusalCard result={result} />}
+
       {/* Results */}
-      {result && (
+      {result && isFullAnalysis(result) && (
         <div className="space-y-4">
           {/* Decision Bar */}
           <Card className={cn("border-2", result.direction === "BUY" ? "border-emerald-600/50 bg-emerald-950/20" : result.direction === "SELL" ? "border-red-600/50 bg-red-950/20" : "border-zinc-700/50 bg-zinc-900/40")}>
@@ -495,11 +552,16 @@ export default function BrainAnalysis() {
             </ul>
           </SectionCard>
 
-          <p className="text-center text-xs text-zinc-600">Analysis generated at {new Date(result.timestamp).toLocaleTimeString()} — data is simulated for demo mode</p>
+          <p data-testid="brain-provenance" className="text-center text-xs text-zinc-500">
+            Analysis generated at {new Date(result.timestamp).toLocaleTimeString()} from{" "}
+            {typeof result.candleCount === "number" ? `${result.candleCount} ` : ""}1-minute candles served by{" "}
+            {candleSourceLabel(result.candleSource)}. Entry, stop loss and take profit are derived from the
+            1-minute ATR.
+          </p>
         </div>
       )}
 
-      {!result && !isPending && (
+      {!result && !isPending && !analyzeFailed && (
         <div className="flex flex-col items-center justify-center py-20 text-center text-zinc-600">
           <Brain size={48} className="mb-4 opacity-30" />
           <p className="text-lg font-medium mb-1">Select a symbol and run analysis</p>
