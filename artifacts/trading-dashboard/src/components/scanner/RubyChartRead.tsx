@@ -241,7 +241,7 @@ export function RubyChartRead({
           {/* Bias / Confidence / HTF row */}
           <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
             <Metric label="Bias" value={read.bias ?? "—"} className={biasTone(read.bias ?? "")} testid="ruby-chart-read-bias" />
-            <Metric label="Confidence" value={read.confidence ?? "—"} className={confTone(read.confidence ?? "")} />
+            <Metric label="Structure confidence" value={read.confidence ?? "—"} className={confTone(read.confidence ?? "")} />
             <Metric label="HTF Bias" value={read.htfBias ?? "—"} className={biasTone(read.htfBias ?? "")} />
           </div>
 

@@ -163,6 +163,8 @@ export interface ChartRead extends RubyReadServerState {
   htfBias?: string;
   cautions?: string[];
   disclaimer?: string;
+  /** Server-measured momentum sentence (separate from the structure `confidence`). */
+  momentumNote?: string;
 }
 
 /** The Ruby read status capped against the server read + an optional override. */

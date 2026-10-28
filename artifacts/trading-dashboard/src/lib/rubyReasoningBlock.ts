@@ -572,9 +572,10 @@ export function buildReasoningFromChartRead(
       : read.bias,
     NOT_ENOUGH,
   );
-  const momentum = clean(read.confidence)
-    ? `Read confidence ${read.confidence}.`
-    : NOT_ENOUGH;
+  // Momentum is the server's measured momentum sentence. The structure read's
+  // Low/Medium/High confidence is not a momentum fact — it is named as the
+  // structure scale it is on the Structure row (see the return below).
+  const momentum = orElse(read.momentumNote, NOT_ENOUGH);
   const pattern = withheld
     ? "Pattern read withheld until the live feed confirms."
     : "No specific chart pattern named.";
@@ -636,12 +637,30 @@ export function buildReasoningFromChartRead(
   return {
     decision,
     why: orElse(read.why, orElse(read.headline, withheld ? `The live feed isn't confirmed, so ${assistantName} is holding back a directional call.` : NOT_ENOUGH)),
-    evidence: { structure, momentum, pattern, trendline, supportResistance, feedData, risk: evidenceRisk },
+    evidence: {
+      structure: withStructureConfidence(structure, read.confidence),
+      momentum,
+      pattern,
+      trendline,
+      supportResistance,
+      feedData,
+      risk: evidenceRisk,
+    },
     confirmation,
     invalidation,
     traderTest,
     riskNote,
   };
+}
+
+// The chart read's confidence is a three-level STRUCTURE scale (bias, timeframe
+// agreement, momentum strength) — a different instrument from the market-edge
+// card's 0–100 trade quality / edge. Name the scale wherever it is shown.
+function withStructureConfidence(structure: string, confidence: string | null | undefined): string {
+  const c = clean(confidence);
+  if (!c || structure === NOT_ENOUGH) return structure;
+  const sentence = /[.!?]$/.test(structure) ? structure : `${structure}.`;
+  return `${sentence} Structure-read confidence: ${c} (structure scale: Low / Medium / High).`;
 }
 
 // ── Opportunity Map detail (SelectedMarketPanel snapshot) ────────────────────
