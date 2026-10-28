@@ -69,6 +69,14 @@ export default function StatusCommandCenter() {
   const ff = useMemo(() => fixFirst(ctx), [ctx]);
   const status = useMemo(() => explainAppStatus(ctx), [ctx]);
   const reportContext = useMemo(() => buildSafeReportContext(ctx, "status-command-center"), [ctx]);
+  // One mode authority for the whole page: the account-mode envelope. The
+  // legacy diagnostic-summary mode (status.mode, from the bridge summary) is
+  // shown only as a labelled bridge-diagnostic row, never as the account mode.
+  const accountModeLabel = tradingMode.envelope
+    ? tradingMode.cleanModeLabel
+    : tradingMode.isLoading
+      ? "Account mode not resolved yet (loading)"
+      : "Account mode not resolved (could not be read)";
 
   return (
     <div
@@ -78,7 +86,7 @@ export default function StatusCommandCenter() {
     >
       <SummaryHeader
         score={score.total}
-        mode={tradingMode.envelope ? tradingMode.cleanModeLabel : status.mode}
+        mode={accountModeLabel}
         progress={progress}
       />
 
@@ -105,7 +113,7 @@ export default function StatusCommandCenter() {
 
         <section className="lg:col-span-5 space-y-4" data-testid="scc-mid-col">
           <BlockersCard cards={blockers} />
-          <RuntimeSummaryCard ctx={ctx} status={status} />
+          <RuntimeSummaryCard ctx={ctx} status={status} accountModeLabel={accountModeLabel} />
         </section>
 
         <section className="lg:col-span-3 space-y-4" data-testid="scc-right-col">
@@ -360,12 +368,13 @@ function BlockersCard({ cards }: { cards: BlockerCard[] }) {
   );
 }
 
-function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: ReturnType<typeof explainAppStatus> }) {
+function RuntimeSummaryCard({ ctx, status, accountModeLabel }: { ctx: RuntimeContext; status: ReturnType<typeof explainAppStatus>; accountModeLabel: string }) {
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-4" data-testid="scc-runtime-card">
       <h2 className="font-semibold text-zinc-100">Runtime Status</h2>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-zinc-300">
-        <dt className="text-zinc-500">Mode</dt><dd>{status.mode}</dd>
+        <dt className="text-zinc-500">Mode</dt><dd data-testid="scc-runtime-mode">{accountModeLabel}</dd>
+        <dt className="text-zinc-500" title="From the legacy bridge diagnostic summary; the account mode above is the mode authority.">Bridge diagnostic mode</dt><dd data-testid="scc-runtime-diagnostic-mode">{status.mode}</dd>
         <dt className="text-zinc-500">Demo-only</dt><dd>{String(ctx.paperOnly)}</dd>
         <dt className="text-zinc-500">Simulator</dt><dd>{String(ctx.simulatorMode)}</dd>
         <dt className="text-zinc-500">Live trading disabled</dt><dd>{String(ctx.liveTradingDisabled)}</dd>
