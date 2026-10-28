@@ -63,8 +63,10 @@ export default function ForexCenter() {
           <div className="text-foreground font-semibold">FX macro intelligence unavailable</div>
           <div className="text-txt-secondary text-sm max-w-md mx-auto">
             No backend FX macro provider is connected. Currency strength, rate differentials, pair
-            bias and confidence cannot be shown honestly, so nothing is displayed. Live FX prices and
-            signals remain fully wired on the Scanner, which uses real broker data.
+            bias and confidence cannot be shown honestly, so nothing is displayed. FX prices and setups
+            are on the Scanner. Its prices come from your MT5 broker feed when your bridge is connected,
+            otherwise from a third-party market-data vendor, and a row whose live feed is not current is
+            shown as not tradeable.
           </div>
         </CardContent>
       </Card>
