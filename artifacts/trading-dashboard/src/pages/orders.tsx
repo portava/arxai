@@ -67,9 +67,23 @@ export default function OrdersPage() {
     riskAmount: 15, confidenceScore: 70,
   });
 
+  // Why the latest fetch failed (null when it succeeded), and when the list on
+  // screen was last loaded. A failed fetch is never shown as an empty book.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+
   async function load() {
-    const r = await fetch("/api/orders?limit=200").then((x) => x.json());
-    setOrders(r.orders ?? []);
+    try {
+      const res = await fetch("/api/orders?limit=200");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const r = (await res.json()) as { orders?: unknown };
+      if (!Array.isArray(r?.orders)) throw new Error("response had no orders list");
+      setOrders(r.orders as Order[]);
+      setLoadedAt(Date.now());
+      setLoadErr(null);
+    } catch (e) {
+      setLoadErr(e instanceof Error ? e.message : String(e));
+    }
   }
   useEffect(() => { void load(); const id = setInterval(load, 5000); return () => clearInterval(id); }, []);
 
@@ -132,17 +146,33 @@ export default function OrdersPage() {
         {FILTERS.map((f) => (
           <Button key={f.k} size="sm" variant={filter === f.k ? "default" : "outline"} onClick={() => setFilter(f.k)}>{f.label}</Button>
         ))}
-        <span className="ml-auto text-xs text-muted-foreground self-center">{filtered.length} of {orders.length}</span>
+        {loadedAt != null && <span className="ml-auto text-xs text-muted-foreground self-center">{filtered.length} of {orders.length}</span>}
       </div>
 
+      {loadErr && (
+        <div data-testid="orders-load-error" className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {loadedAt == null
+            ? `Orders could not be loaded (${loadErr}).`
+            : `Could not refresh orders (${loadErr}). Showing the list as last loaded at ${new Date(loadedAt).toLocaleTimeString()}.`}
+        </div>
+      )}
+
       <div className="space-y-2">
-        {filtered.length === 0 && (
+        {loadedAt != null && filtered.length === 0 && (
           <div className="rounded-2xl border border-border bg-card p-2">
-            <EmptyState
-              icon={ListChecks}
-              title="No pending orders yet."
-              description="Orders you place will show up here. Choose a market in the Scanner to get started, or open Bot Control to let ARX scan for setups."
-            />
+            {orders.length === 0 ? (
+              <EmptyState
+                icon={ListChecks}
+                title="No orders yet."
+                description="Orders you place will show up here. Choose a market in the Scanner to get started, or open Bot Control to let ARX scan for setups."
+              />
+            ) : (
+              <EmptyState
+                icon={ListChecks}
+                title={`No orders match the “${FILTERS.find((f) => f.k === filter)?.label ?? filter}” filter.`}
+                description={`${orders.length} order${orders.length === 1 ? " is" : "s are"} loaded; choose All to see them.`}
+              />
+            )}
           </div>
         )}
         {filtered.map((o) => (
