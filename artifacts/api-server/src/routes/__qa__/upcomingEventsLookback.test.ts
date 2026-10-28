@@ -17,7 +17,9 @@ mock.method(database.pool, "connect", () => { throw new Error("Unexpected databa
 let lastWhere: SQL | undefined;
 const fakeDb = {
   select: () => ({
-    from: () => ({
+    // Awaited directly by the stored-calendar coverage aggregate (empty calendar);
+    // .where(...) is the window query under test.
+    from: () => Object.assign(Promise.resolve([{ n: 0, latest: null }]), {
       where: (cond: SQL) => {
         lastWhere = cond;
         return { orderBy: async () => [] };

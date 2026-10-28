@@ -18,8 +18,10 @@ vi.mock("@/hooks/useScannerReadGate", () => ({
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => ["5m", () => {}] }));
 vi.mock("@/hooks/useSymbolTruth", () => ({ useSymbolTruth: () => ({ news: null }) }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
-vi.mock("@/components/scanner/ChartTimingChip", () => ({
+vi.mock("@/components/scanner/ChartTimingChip", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/scanner/ChartTimingChip")>()),
   timingTimeframeLabel: (c: string | null | undefined) => (c === "M15" ? "15m" : c ?? null),
+  userTimingTimezone: () => "UTC",
 }));
 
 import { TimingIntelligenceCard } from "./TimingIntelligenceCard";

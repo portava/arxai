@@ -107,7 +107,9 @@ describe("failed diagnostic fetch is unknown, not a default safe posture", () =>
     expect(runtimeRow("Live trading disabled")).toBe("unknown");
     expect(runtimeRow("Demo-only")).toBe("unknown");
     expect(runtimeRow("Broker read-only")).toBe("unknown");
-    expect(runtimeRow("Heartbeat")).toBe("unknown");
+    // heartbeatLine names why the row is unknown: the summary was never read.
+    expect(runtimeRow("Heartbeat")).toBe("not checked — bridge summary unavailable");
+    expect(runtimeRow("Heartbeat")).not.toMatch(/^(present|absent|none)\b/);
     expect(runtimeRow("Server posture")).toMatch(/could not be read/i);
     expect(screen.getByTestId("scc-blocker-posture-unknown")).toBeTruthy();
     expect(screen.queryByTestId("scc-blocker-live-trading-disabled")).toBeNull();

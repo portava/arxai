@@ -764,8 +764,8 @@ export function resolveScannerTruth(
   const sourceNote =
     provider.tier === "broker"
       ? resolvedDisplayStatus === "LIVE"
-        ? "Bars are coming from an MT5 broker feed — not verified as your own account."
-        : "These are MT5 broker bars, but they are not confirmed live right now (they may be a stored copy or behind)."
+        ? "Live bars are coming from an MT5 broker feed — not verified as your own account."
+        : "These are bars from an MT5 broker feed, but they aren't confirmed current right now (they may be a stored copy or behind)."
       : provider.tier === "synthetic"
         ? "These are synthetic-market bars (algorithmic volatility index), not your broker's bars."
         : provider.tier === "thirdParty"

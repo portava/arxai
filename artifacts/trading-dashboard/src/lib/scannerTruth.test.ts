@@ -330,7 +330,8 @@ describe("source labels are user-safe", () => {
     expect(t.candles.tier).toBe("broker");
     expect(t.displayStatus).not.toBe("LIVE");
     expect(t.dataHealth.sourceNote).not.toMatch(/coming from/i);
-    expect(t.dataHealth.sourceNote).toMatch(/not confirmed live/i);
+    // The non-live note avoids the word "live" altogether (scannerTruth.sourceNote.test.ts).
+    expect(t.dataHealth.sourceNote).toMatch(/aren't confirmed current/i);
     expect(t.dataHealth.headline).not.toMatch(/^Live/);
     expect(t.candles.tier).toBe("broker");
   });

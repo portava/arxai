@@ -111,12 +111,17 @@ describe("Timing Intelligence — advice lifetime", () => {
   });
 
   it("a fresh read shows grade and permission, labelled as computed data, never 'Live data'", async () => {
-    timingFn.mockResolvedValue(timingRead({ generatedAt: new Date(Date.now() - 5_000).toISOString() }));
+    // "Real data" needs a current closed candle behind the read (marketEvidence);
+    // the line names the recalculation clock as "calculated", not the data age.
+    timingFn.mockResolvedValue(timingRead({
+      generatedAt: new Date(Date.now() - 5_000).toISOString(),
+      marketEvidence: { timeframe: "M15", lastClosedCandleAt: new Date(Date.now() - 6 * 60_000).toISOString() },
+    }));
     render(withClient(<TimingIntelligenceCard symbol="EURUSD" />));
     await waitFor(() => expect(screen.getByTestId("timing-intelligence-permission").textContent).toBe("Go"));
     const quality = screen.getByTestId("timing-intelligence-quality").textContent ?? "";
     expect(quality).not.toContain("Live data");
-    expect(quality).toMatch(/Real data · computed \d+s ago/);
+    expect(quality).toMatch(/Real data · calculated \d+s ago · last closed 15m candle ended 6m ago/);
   });
 });
 

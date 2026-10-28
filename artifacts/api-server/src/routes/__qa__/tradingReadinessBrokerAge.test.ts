@@ -23,6 +23,11 @@ function signals(brokerLog: Signals["brokerLog"]): Signals {
     safety: { killSwitchEngaged: false, operationalMode: "LIVE" },
     emergencyStopEngaged: false, activeLocks: [], brokerLog, upcomingNews: [],
     activeContract: null, recentReview: null,
+    // Calendar coverage is its own check; keep it covered so only the broker row varies.
+    calendarCoverage: {
+      providerConfigured: true, storedEventCount: 1, coveredThrough: new Date(Date.now() + 3 * 3600_000).toISOString(),
+      windowEnd: new Date(Date.now() + 2 * 3600_000).toISOString(), windowCovered: true, note: null,
+    },
   } as unknown as Signals;
 }
 function log(status: string, ageMs: number): Signals["brokerLog"] {

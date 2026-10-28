@@ -57,13 +57,13 @@ describe("ScalpSignalCard — the scalp read's own lifetime", () => {
     vi.setSystemTime(NOW);
     const publish = vi.fn();
     render(<ScalpSignalCard result={makeResult()} onBuild={() => {}} onActionability={publish} />);
-    expect(publish).toHaveBeenLastCalledWith("EURUSD", "5m", "READY_NOW");
+    expect(publish).toHaveBeenLastCalledWith("EURUSD", "5m", "READY_NOW", "BUY");
     expect((screen.getByTestId("scalp-build-EURUSD") as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByTestId("scalp-expired-EURUSD")).toBeNull();
 
     act(() => { vi.advanceTimersByTime(60_001); });
 
-    expect(publish).toHaveBeenLastCalledWith("EURUSD", "5m", null);
+    expect(publish).toHaveBeenLastCalledWith("EURUSD", "5m", null, null);
     expect((screen.getByTestId("scalp-build-EURUSD") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId("scalp-expired-EURUSD").textContent).toMatch(/expired/i);
     expect(screen.getByTestId("scalp-card-EURUSD").textContent).not.toMatch(/Ready now|Valid now/i);
@@ -72,7 +72,7 @@ describe("ScalpSignalCard — the scalp read's own lifetime", () => {
   it("a read with no parseable expiresAt is not lifted as current", () => {
     const publish = vi.fn();
     render(<ScalpSignalCard result={makeResult({ expiresAt: "not-a-date" })} onBuild={() => {}} onActionability={publish} />);
-    expect(publish).toHaveBeenLastCalledWith("EURUSD", "5m", null);
+    expect(publish).toHaveBeenLastCalledWith("EURUSD", "5m", null, null);
     expect((screen.getByTestId("scalp-build-EURUSD") as HTMLButtonElement).disabled).toBe(true);
   });
 });

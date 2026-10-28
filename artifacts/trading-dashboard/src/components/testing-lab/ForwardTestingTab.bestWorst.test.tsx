@@ -40,6 +40,10 @@ describe("ForwardTestingTab best / worst labels", () => {
     expect(screen.queryByText("EURUSD")).toBeNull();
     expect(screen.queryByText("XAUUSD")).toBeNull();
     expect(screen.queryByText("flame")).toBeNull();
-    expect(screen.getAllByText("No tracked outcomes").length).toBe(4);
+    // Each ranking states it is unavailable (the merged wording shared with
+    // win rate / avg R / drawdown), never a name.
+    for (const label of ["Best symbol", "Worst symbol", "Best strategy", "Weakest strategy"]) {
+      expect(screen.getByText(label).nextElementSibling?.textContent).toBe("Unavailable — no tracked trades");
+    }
   });
 });
