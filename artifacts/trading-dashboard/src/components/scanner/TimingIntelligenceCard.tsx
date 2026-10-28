@@ -295,6 +295,23 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                   "Not enough live data to produce a meaningful timing read right now."}
               </p>
             </div>
+          ) : gate.downgraded && gate.truth == null ? (
+            // Shared truth not landed yet: nothing has been measured, so this is
+            // the same pending state the compact gate above calls "Confirming
+            // market data" — never a "historical" read.
+            <div
+              className="rounded-xl border border-border bg-background/40 px-3 py-3"
+              data-testid="timing-intelligence-downgraded"
+            >
+              <div className="flex items-center gap-2 text-sm font-medium text-txt-secondary">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                Confirming market data
+              </div>
+              <p className="mt-1 text-xs text-txt-secondary">
+                The live-feed check for {symbol} hasn't returned yet, so the timing
+                grade, entry permission, and scores are held back until it does.
+              </p>
+            </div>
           ) : gate.downgraded ? (
             <div
               className="rounded-xl border border-warning/30 bg-warning/5 px-3 py-3"
