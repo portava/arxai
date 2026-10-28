@@ -12,7 +12,16 @@ type Trend = "UP" | "DOWN" | "SIDEWAYS" | "INSUFFICIENT_DATA";
 
 /** Fewest candles a timeframe needs before the server reports a trend for it. */
 const MIN_CANDLES_FOR_TREND = 20;
-type Snap = { trend: Trend; strength: number; slope: number; fastSma: number; slowSma: number; candlesUsed: number };
+type Freshness = "CURRENT" | "STALE" | "UNKNOWN";
+type Snap = {
+  trend: Trend; strength: number; slope: number; fastSma: number; slowSma: number; candlesUsed: number;
+  /** Newest bar's open time (ISO); null when the bars carried none; absent on older reports. */
+  newestBarTime?: string | null;
+  /** Whether the newest bar was current when the report was generated; absent on older reports. */
+  freshness?: Freshness;
+  /** Provider that served the bars; absent on older reports. */
+  source?: string | null;
+};
 
 export interface MultiTimeframeReport {
   id: number;
@@ -23,7 +32,7 @@ export interface MultiTimeframeReport {
   alignmentLabel:
     | "STRONG_BULLISH_ALIGNMENT" | "STRONG_BEARISH_ALIGNMENT" | "MIXED_ALIGNMENT"
     | "LOWER_TIMEFRAME_CONFLICT" | "HIGHER_TIMEFRAME_WARNING" | "NO_CLEAR_BIAS"
-    | "INSUFFICIENT_DATA";
+    | "INSUFFICIENT_DATA" | "DATA_NOT_CURRENT";
   conflictWarning: string | null;
   bestBias: "BUY" | "SELL" | "NEUTRAL";
   aiSummary: string;
@@ -38,6 +47,7 @@ const LABEL_STYLES: Record<MultiTimeframeReport["alignmentLabel"], string> = {
   HIGHER_TIMEFRAME_WARNING: "bg-orange-800 text-orange-100",
   NO_CLEAR_BIAS: "bg-slate-700 text-slate-200",
   INSUFFICIENT_DATA: "bg-slate-800 text-slate-300",
+  DATA_NOT_CURRENT: "bg-amber-900 text-amber-100",
 };
 const TREND_STYLES: Record<Trend, string> = {
   UP: "text-green-400", DOWN: "text-red-400", SIDEWAYS: "text-slate-400",
@@ -52,6 +62,36 @@ const TREND_STYLES: Record<Trend, string> = {
 function snapObserved(s: Snap): boolean {
   return s.trend !== "INSUFFICIENT_DATA" &&
     Number.isFinite(s.candlesUsed) && s.candlesUsed >= MIN_CANDLES_FOR_TREND;
+}
+
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+function utcStamp(iso: string): string | null {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return null;
+  return `${WEEKDAY[d.getUTCDay()]} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+}
+
+/** True when the report predates bar-time recording (no freshness on the snapshot). */
+function freshnessUnrecorded(s: Snap): boolean {
+  return s.freshness === undefined && s.newestBarTime === undefined;
+}
+
+/** A recorded freshness other than CURRENT means the timeframe was not a current read. */
+function snapNotCurrent(s: Snap): boolean {
+  return !freshnessUnrecorded(s) && s.freshness !== "CURRENT";
+}
+
+/**
+ * Plain-English line for a timeframe's newest bar, as recorded when the report
+ * was generated: when it opened and whether it was current, or that the bars
+ * carried no time, or (older reports) that it was never recorded.
+ */
+function barTimeText(s: Snap): string {
+  if (freshnessUnrecorded(s)) return "bar time not recorded";
+  const stamp = s.newestBarTime ? utcStamp(s.newestBarTime) : null;
+  if (!stamp) return "bars carried no time · age not checked";
+  const word = s.freshness === "CURRENT" ? "current" : s.freshness === "STALE" ? "stale" : "age not checked";
+  return `newest bar ${stamp} · ${word}`;
 }
 
 export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null }) {
@@ -98,7 +138,14 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
       ]
     : [];
   const unobserved = tiles.filter((tf) => !snapObserved(tf.s));
-  const measured = r != null && unobserved.length === 0 && r.alignmentLabel !== "INSUFFICIENT_DATA";
+  const observed = r != null && unobserved.length === 0 && r.alignmentLabel !== "INSUFFICIENT_DATA";
+  // The server labels a report DATA_NOT_CURRENT when any timeframe's newest bar
+  // is stale or untimestamped. The client may only downgrade, so a report with
+  // a current label but a recorded stale/unknown timeframe is treated the same.
+  const staleTiles = tiles.filter((tf) => snapNotCurrent(tf.s));
+  const notCurrent = observed && (r!.alignmentLabel === "DATA_NOT_CURRENT" || staleTiles.length > 0);
+  const measured = observed && !notCurrent;
+  const legacyFreshness = measured && tiles.some((tf) => freshnessUnrecorded(tf.s));
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
@@ -154,10 +201,58 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
         </>
       )}
 
+      {r && notCurrent && (
+        <>
+          <div className="flex flex-wrap items-center gap-3" data-testid="mtf-not-current">
+            <span
+              className={`rounded px-2 py-0.5 text-xs font-semibold ${LABEL_STYLES.DATA_NOT_CURRENT}`}
+              data-testid="mtf-label"
+            >
+              DATA NOT CURRENT
+            </span>
+            <span className="text-sm text-slate-300">Alignment not current · no bias given</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {tiles.map((tf) => (
+              <div key={tf.tag} className="rounded-md border border-slate-800 bg-slate-950/60 p-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">{tf.tag} · {tf.label}</div>
+                <div className="text-sm font-semibold text-slate-400">{tf.s.trend} on these bars</div>
+                <div className="text-[10px] text-slate-500" data-testid="mtf-candles-used">
+                  from {tf.s.candlesUsed} candles
+                </div>
+                <div
+                  className={`text-[10px] ${snapNotCurrent(tf.s) ? "text-amber-400/90" : "text-slate-500"}`}
+                  data-testid="mtf-bar-time"
+                >
+                  {barTimeText(tf.s)}
+                </div>
+              </div>
+            ))}
+          </div>
+          {r.alignmentLabel === "DATA_NOT_CURRENT" && r.conflictWarning ? (
+            <TimeframeConflictWarning warning={r.conflictWarning} label={r.alignmentLabel} />
+          ) : (
+            <p className="rounded-md border border-amber-800 bg-amber-950/30 p-3 text-xs text-amber-200">
+              Not a current read:{" "}
+              {staleTiles.map((tf) => `${tf.label} newest bar is not current (${barTimeText(tf.s)})`).join("; ")}.
+              No alignment score or bias is shown. Run the scan again once market data is current.
+            </p>
+          )}
+          {r.alignmentLabel === "DATA_NOT_CURRENT" && (
+            <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300">
+              {r.aiSummary}
+            </p>
+          )}
+        </>
+      )}
+
       {r && measured && (
         <>
           <div className="flex flex-wrap items-center gap-3">
-            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${LABEL_STYLES[r.alignmentLabel]}`}>
+            <span
+              className={`rounded px-2 py-0.5 text-xs font-semibold ${LABEL_STYLES[r.alignmentLabel] ?? LABEL_STYLES.NO_CLEAR_BIAS}`}
+              data-testid="mtf-label"
+            >
               {r.alignmentLabel.replace(/_/g, " ")}
             </span>
             <span className="text-sm text-slate-300">
@@ -177,9 +272,19 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
                 <div className="text-[10px] text-slate-500" data-testid="mtf-candles-used">
                   from {tf.s.candlesUsed} candles
                 </div>
+                <div className="text-[10px] text-slate-500" data-testid="mtf-bar-time">
+                  {barTimeText(tf.s)}
+                </div>
               </div>
             ))}
           </div>
+
+          {legacyFreshness && (
+            <p className="text-[11px] text-slate-500" data-testid="mtf-legacy-freshness">
+              This report was stored before bar times were recorded, so whether its candles were current
+              when it was generated was not checked.
+            </p>
+          )}
 
           <TimeframeConflictWarning warning={r.conflictWarning} label={r.alignmentLabel} />
           <HigherTimeframeBiasCard
