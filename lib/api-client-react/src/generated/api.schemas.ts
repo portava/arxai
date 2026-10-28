@@ -12583,6 +12583,16 @@ export type WeeklyReviewScoreTrends = {
   consistency?: number;
 } | null;
 
+/**
+ * The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).
+ */
+export type WeeklyReviewPerformanceSource =
+  (typeof WeeklyReviewPerformanceSource)[keyof typeof WeeklyReviewPerformanceSource];
+
+export const WeeklyReviewPerformanceSource = {
+  LEGACY_TRADES_RECORD: "LEGACY_TRADES_RECORD",
+} as const;
+
 export interface WeeklyReview {
   id: number;
   weekStartIso: string;
@@ -12620,6 +12630,12 @@ export interface WeeklyReview {
   /** @nullable */
   nextWeekFocus?: string | null;
   createdAtIso: string;
+  /** The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows). */
+  performanceSource?: WeeklyReviewPerformanceSource;
+  /** False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week. */
+  performanceMeasured?: boolean;
+  /** Plain statement of what the performance figures are and are not built from. */
+  performanceSourceNote?: string;
 }
 
 export interface WeeklyReviewList {

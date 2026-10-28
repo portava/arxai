@@ -21080,6 +21080,16 @@ components:
         aiSummary: { type: ["string", "null"] }
         nextWeekFocus: { type: ["string", "null"] }
         createdAtIso: { type: string }
+        performanceSource:
+          type: string
+          enum: [LEGACY_TRADES_RECORD]
+          description: The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).
+        performanceMeasured:
+          type: boolean
+          description: False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week.
+        performanceSourceNote:
+          type: string
+          description: Plain statement of what the performance figures are and are not built from.
 
     WeeklyReviewList:
       type: object

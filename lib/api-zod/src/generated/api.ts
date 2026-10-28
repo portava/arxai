@@ -14847,6 +14847,24 @@ export const ListWeeklyReviewsResponse = zod.object({
       aiSummary: zod.string().nullish(),
       nextWeekFocus: zod.string().nullish(),
       createdAtIso: zod.string(),
+      performanceSource: zod
+        .enum(["LEGACY_TRADES_RECORD"])
+        .optional()
+        .describe(
+          "The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).",
+        ),
+      performanceMeasured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week.",
+        ),
+      performanceSourceNote: zod
+        .string()
+        .optional()
+        .describe(
+          "Plain statement of what the performance figures are and are not built from.",
+        ),
     }),
   ),
 });
@@ -14885,6 +14903,24 @@ export const GetLatestWeeklyReviewResponse = zod.object({
         aiSummary: zod.string().nullish(),
         nextWeekFocus: zod.string().nullish(),
         createdAtIso: zod.string(),
+        performanceSource: zod
+          .enum(["LEGACY_TRADES_RECORD"])
+          .optional()
+          .describe(
+            "The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).",
+          ),
+        performanceMeasured: zod
+          .boolean()
+          .optional()
+          .describe(
+            "False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week.",
+          ),
+        performanceSourceNote: zod
+          .string()
+          .optional()
+          .describe(
+            "Plain statement of what the performance figures are and are not built from.",
+          ),
       }),
       zod.null(),
     ])
@@ -14943,6 +14979,24 @@ export const GenerateWeeklyReviewResponse = zod.object({
         aiSummary: zod.string().nullish(),
         nextWeekFocus: zod.string().nullish(),
         createdAtIso: zod.string(),
+        performanceSource: zod
+          .enum(["LEGACY_TRADES_RECORD"])
+          .optional()
+          .describe(
+            "The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).",
+          ),
+        performanceMeasured: zod
+          .boolean()
+          .optional()
+          .describe(
+            "False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week.",
+          ),
+        performanceSourceNote: zod
+          .string()
+          .optional()
+          .describe(
+            "Plain statement of what the performance figures are and are not built from.",
+          ),
       }),
       zod.null(),
     ])

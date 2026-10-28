@@ -2,6 +2,10 @@
 //
 // COMPOSES:
 //   - tradesTable                       (P/L, win rate, R:R, best/worst)
+//       This is the LEGACY simulated-trade record, closed to new rows since
+//       /execute-trade was retired. The trader's paper book, demo and live
+//       trades are not in it, so a week with no rows here is reported as
+//       "not measured" (performanceMeasured false), never as "no closed trades".
 //   - tradeJournalEntriesTable          (mistake/strength tag patterns)
 //   - vault_events  truthDomain="BEHAVIOR" (trend signal — append-only)
 //   - weeklyPerformanceReviewsTable     (this build, idempotent on user+week)
@@ -45,7 +49,24 @@ function weekEndUTC(start: Date): Date {
   return new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
 }
 
+/** The only trade source this review reads. */
+export const WEEKLY_REVIEW_PERFORMANCE_SOURCE = "LEGACY_TRADES_RECORD" as const;
+
+/** Plain statement of what the performance figures are, and are not, built from. */
+export const WEEKLY_REVIEW_SOURCE_NOTE =
+  "Performance figures come only from the legacy simulated-trade record, which has received no new trades since " +
+  "the old execute-trade path was retired. Trades on your paper book, demo account and live account are not counted here.";
+
+/** Shown in place of a "no closed trades" summary when the legacy record has no rows for the week. */
+export const WEEKLY_REVIEW_NOT_MEASURED_SUMMARY =
+  "ARX could not measure this week's trading. This review reads only the legacy simulated-trade record, which had no closed " +
+  "trades for this week; trades on your paper book, demo account and live account are not counted, so a zero here " +
+  "does not mean you closed no trades.";
+
 function serializeReview(row: typeof weeklyPerformanceReviewsTable.$inferSelect) {
+  // totalTrades 0 can only mean "the legacy record had nothing for this week";
+  // it is not evidence that the trader closed no trades.
+  const performanceMeasured = row.totalTrades > 0;
   return {
     id: row.id,
     weekStartIso: row.weekStart.toISOString(),
@@ -67,9 +88,12 @@ function serializeReview(row: typeof weeklyPerformanceReviewsTable.$inferSelect)
     biggestMistakePattern: row.biggestMistakePattern,
     biggestStrengthPattern: row.biggestStrengthPattern,
     scoreTrends: row.scoreTrends,
-    aiSummary: row.aiSummary,
+    aiSummary: performanceMeasured ? row.aiSummary : WEEKLY_REVIEW_NOT_MEASURED_SUMMARY,
     nextWeekFocus: row.nextWeekFocus,
     createdAtIso: row.createdAt.toISOString(),
+    performanceSource: WEEKLY_REVIEW_PERFORMANCE_SOURCE,
+    performanceMeasured,
+    performanceSourceNote: WEEKLY_REVIEW_SOURCE_NOTE,
   };
 }
 
@@ -205,7 +229,7 @@ router.post("/weekly-reviews/generate", requireUser, async (req, res): Promise<v
       biggestMistakePattern: metrics.biggestMistakePattern,
       biggestStrengthPattern: metrics.biggestStrengthPattern,
       scoreTrends: metrics.scoreTrends,
-      aiSummary: summary.aiSummary,
+      aiSummary: metrics.totalTrades > 0 ? summary.aiSummary : WEEKLY_REVIEW_NOT_MEASURED_SUMMARY,
       nextWeekFocus: summary.nextWeekFocus,
     };
 
