@@ -138,6 +138,10 @@ export function RubyScalpBasketPanel() {
   // latest read failed, so those positions (which may since have closed) and
   // their exit / add-on advice are not shown as current.
   const list = baskets.isError ? [] : data?.baskets ?? [];
+  // The server says the open positions for this account mode were not read
+  // (for example no MT5 snapshot is stored for this user). An empty list is
+  // then not "no positions".
+  const positionsUnread = !!data && !baskets.isError && data.positionsMeasured === false;
 
   return (
     <Card data-testid="ruby-scalp-baskets" className="rounded-2xl border-ruby/25 bg-card">
@@ -185,7 +189,20 @@ export function RubyScalpBasketPanel() {
               {name} is reading your open positions…
             </p>
           )}
-          {data && !baskets.isError && list.length === 0 && (
+          {positionsUnread && (
+            <div
+              className="rounded-md border border-warning/40 bg-warning/5 p-2 text-sm text-warning"
+              data-testid="ruby-scalp-baskets-not-measured"
+            >
+              <p className="font-medium">
+                Your open positions were not read, so {name} cannot say whether you have any to manage.
+              </p>
+              {data?.positionsNote ? (
+                <p className="mt-1 text-xs text-muted-foreground">{data.positionsNote}</p>
+              ) : null}
+            </div>
+          )}
+          {data && !baskets.isError && !positionsUnread && list.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No open scalp positions to manage. Once you're in a trade, {name} will
               watch the flame, exit urgency, and whether it's sane to add.
