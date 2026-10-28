@@ -63,3 +63,37 @@ describe("WorkflowHealthCard headline", () => {
     expect(badge.textContent).toMatch(/Degraded/);
   });
 });
+
+// Round 3: the server already folds an unread bridge aggregate and
+// all-bridges-down into ok:false, so checking !d.ok first made the specific
+// headlines unreachable and showed an unknown state as a measured failure.
+describe("WorkflowHealthCard headline with the server's real ok", () => {
+  it("says the bridge status is unknown (not red Degraded) when the aggregate could not be read", async () => {
+    stub(payload({ ok: false, dbOk: true, bridge: { readable: false } }));
+    render(<WorkflowHealthCard />);
+    const badge = await screen.findByTestId("badge-workflow-health");
+    expect(badge.textContent).toBe("Bridge status unknown");
+    expect(badge.className).not.toMatch(/rose/);
+  });
+
+  it("names the cause when every registered bridge is down", async () => {
+    stub(payload({ ok: false, dbOk: true, bridge: { total: 2, healthy: 0, stale: 0, down: 2, readable: true } }));
+    render(<WorkflowHealthCard />);
+    const badge = await screen.findByTestId("badge-workflow-health");
+    expect(badge.textContent).toBe("Degraded — no bridge heartbeating");
+  });
+
+  it("still says Degraded when the database ping failed", async () => {
+    stub(payload({ ok: false, dbOk: false, bridge: { readable: false } }));
+    render(<WorkflowHealthCard />);
+    const badge = await screen.findByTestId("badge-workflow-health");
+    expect(badge.textContent).toBe("Degraded");
+  });
+
+  it("does not upgrade an unexplained server ok:false", async () => {
+    stub(payload({ ok: false, dbOk: true, bridge: { total: 1, healthy: 1, readable: true } }));
+    render(<WorkflowHealthCard />);
+    const badge = await screen.findByTestId("badge-workflow-health");
+    expect(badge.textContent).toMatch(/Degraded/);
+  });
+});
