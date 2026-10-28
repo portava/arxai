@@ -22,10 +22,7 @@ import {
   BarChart3,
   ShieldAlert,
   RotateCcw,
-  Lock,
-  Unlock,
   RefreshCw,
-  GitMerge,
   AlertCircle,
   LineChart,
   Clock,
@@ -44,7 +41,7 @@ import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
 import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
-import { feedConfidence } from "@/lib/feed-confidence";
+import { capConfidence, feedConfidence } from "@/lib/feed-confidence";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
@@ -87,10 +84,9 @@ import {
 //  - Smart visible range: default shows last 150 candles (mobile: 80) so the
 //    chart opens to recent price action, not a compressed full-history view.
 //  - Reset Scale button: always-available control to restore the default range.
-//  - Chart Mirror Layer: compact status bar (Mirrored/Syncing/Stale/Conflict/
-//    Refreshing) with a Mirror Lock toggle. When locked the chart's symbol and
-//    timeframe stay in sync with the rest of the UI; when unlocked an
-//    "Inspection mode" badge shows clearly.
+//  - Feed strip: compact status bar naming the server's grade of the current
+//    candle response (the same capped label as the header chip), with a
+//    separate "Refreshing…" marker that never hides a stale/invalid verdict.
 //  - Chart Safe Mode: when the quality is "invalid" (integrity check failed),
 //    an overlay shows a clean user message and pauses AI confidence. Overlays
 //    (open positions) remain visible because execution state is independent.
@@ -129,49 +125,18 @@ function loadTimeframe(): ArxTimeframe {
   return (TIMEFRAMES.some((t) => t.id === v) ? (v as ArxTimeframe) : DEFAULT_TF);
 }
 
-// Mirror status — derived from feed quality + fetch state.
-type MirrorStatus = "Mirrored" | "Syncing" | "Stale" | "Conflict" | "Refreshing";
+// Feed strip — the one-line status bar under the header. It states the server's
+// own grade of THIS candle response (quality / stale / live flags), capped by
+// the same shared scanner-truth verdict as the header chip so the two never
+// disagree. It measures nothing else: there is no broker-mirror comparison
+// behind it, so it never claims the chart is "mirrored" or "syncing".
+type FeedStripTone = "clean" | "caution" | "danger" | "unknown";
 
-function getMirrorStatus(
-  quality: string | null | undefined,
-  stale: boolean | undefined,
-  isFetching: boolean,
-): MirrorStatus {
-  if (isFetching) return "Refreshing";
-  if (!quality) return "Syncing";
-  if (quality === "clean") return stale ? "Stale" : "Mirrored";
-  if (quality === "delayed" || quality === "partial") return "Mirrored";
-  if (quality === "stale") return "Stale";
-  if (quality === "invalid") return "Conflict";
-  return "Syncing"; // empty / unavailable
-}
-
-const MIRROR_STYLE: Record<MirrorStatus, { dot: string; text: string; label: string }> = {
-  Mirrored: {
-    dot: "bg-emerald-400",
-    text: "text-emerald-300",
-    label: "Mirrored",
-  },
-  Refreshing: {
-    dot: "bg-sky-400 animate-pulse",
-    text: "text-sky-300",
-    label: "Refreshing",
-  },
-  Syncing: {
-    dot: "bg-amber-400 animate-pulse",
-    text: "text-amber-300",
-    label: "Syncing",
-  },
-  Stale: {
-    dot: "bg-amber-400",
-    text: "text-amber-300",
-    label: "Stale",
-  },
-  Conflict: {
-    dot: "bg-red-400",
-    text: "text-red-300",
-    label: "Conflict",
-  },
+const FEED_STRIP_STYLE: Record<FeedStripTone, { dot: string; text: string }> = {
+  clean: { dot: "bg-emerald-400", text: "text-emerald-300" },
+  caution: { dot: "bg-amber-400", text: "text-amber-300" },
+  danger: { dot: "bg-red-400", text: "text-red-300" },
+  unknown: { dot: "bg-zinc-400", text: "text-zinc-300" },
 };
 
 // OHLC diversity check: a bar is "flat" when high==low (or effectively so).
@@ -244,12 +209,6 @@ export interface ARXNativeChartProps {
    * chart never executes from it.
    */
   onIntelligenceChange?: (state: ChartIntelligenceResponse["state"]) => void;
-  /**
-   * Phase 2 — Mirror lock initial state. When true (default) the chart's
-   * displayed symbol and timeframe are locked to the shared chart-symbol bus.
-   * When false the chart enters inspection mode and can diverge.
-   */
-  mirrorLockDefault?: boolean;
 }
 
 export function ARXNativeChart({
@@ -268,7 +227,6 @@ export function ARXNativeChart({
   overlays: suppliedOverlays = EMPTY_OVERLAYS,
   onChartContextChange,
   onIntelligenceChange,
-  mirrorLockDefault = true,
 }: ARXNativeChartProps) {
   // Normalize the incoming symbol to the bare, upper-cased form the contract
   // expects ("FX:EURUSD" -> "EURUSD"); the endpoint classifies from there.
@@ -341,12 +299,6 @@ export function ARXNativeChart({
   const overlays = useMemo(() => suppliedOverlays.filter(overlay =>
     overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
   [suppliedOverlays, resolvedSymbol, timeframe]);
-
-  // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
-  // as "mirrored" with the rest of the UI. When off, an inspection-mode
-  // indicator shows. This is visual state only; the symbol/timeframe come from
-  // the parent regardless — this flag only changes how the Mirror Layer reads.
-  const [mirrorLocked, setMirrorLocked] = useState(mirrorLockDefault);
 
   // Bumped each time the chart/series is (re)built so overlay effects redraw
   // onto the fresh series instead of a stale handle.
@@ -981,13 +933,23 @@ export function ARXNativeChart({
     // is applied only to the matching instrument, timeframe and provider.
   }, [intelligenceState, aiUsable, isLivePriceAffordance, chartEpoch, historySource, overlayRequiresEvidence, evidence, intelligenceQuery.data]);
 
-  // Phase 2 — mirror status derived from feed quality + fetch state.
-  const mirrorStatus = getMirrorStatus(
-    feedStatus?.quality,
-    feedStatus?.stale,
-    query.isFetching && !query.isLoading,
-  );
-  const mirrorStyle = MIRROR_STYLE[mirrorStatus];
+  // Feed strip — the header chip's capped verdict, plus the specific reason for
+  // a stale / invalid / unavailable grade. A background refetch is shown as its
+  // own marker and never replaces the verdict.
+  const stripConf = capConfidence(conf, badgeAiUsableResolved);
+  const stripLabel = feedStatus
+    ? stripConf.statusLabel
+    : query.isLoading
+      ? "Loading"
+      : query.isError
+        ? "Request failed"
+        : "Unknown";
+  const stripTone: FeedStripTone = feedStatus ? stripConf.severity : "unknown";
+  const stripStyle = FEED_STRIP_STYLE[stripTone];
+  const stripIntegrityFailed = feedStatus?.quality === "invalid";
+  const stripStale = !stripIntegrityFailed && (feedStatus?.quality === "stale" || feedStatus?.stale === true);
+  const stripUnavailable = feedStatus?.quality === "unavailable" || feedStatus?.quality === "empty";
+  const stripRefreshing = query.isFetching && !query.isLoading;
 
   // Phase 2 — Chart Safe Mode: active when candles exist but the integrity
   // check failed (quality="invalid"). We still show the candles (they are
@@ -1159,74 +1121,46 @@ export function ARXNativeChart({
 
       {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
 
-      {/* Phase 2 — Chart Mirror Layer.
-          Compact status bar between the header and the canvas. Shows the
-          mirror state (Mirrored / Syncing / Stale / Conflict / Refreshing),
-          the locked symbol and timeframe, and a Mirror Lock toggle.
-          When locked: "Mirrored · SYMBOL · TF" — chart is in sync.
-          When unlocked: "Inspection mode" badge — chart may diverge.
-          This is purely informational; it never gates candles or trades. */}
+      {/* Feed strip — the server's grade of the candle response on screen
+          (capped exactly like the header chip) and the specific reason when it
+          is stale, invalid or unavailable. Informational only; it never gates
+          candles or trades. */}
       <div
-        className="flex items-center gap-2 border-b border-zinc-800/60 bg-zinc-950/20 px-3 py-1.5 text-[10px]"
+        className="flex flex-wrap items-center gap-2 border-b border-zinc-800/60 bg-zinc-950/20 px-3 py-1.5 text-[10px]"
         data-testid="arx-mirror-layer"
+        title="Feed grade the server reported for the candles on screen, capped by the shared scanner truth."
       >
-        {/* Status dot + label */}
         <span
-          className={`inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${mirrorStyle.dot}`}
+          className={`inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${stripStyle.dot}`}
         />
-        <span className={`font-medium ${mirrorStyle.text}`} data-testid="arx-mirror-status">
-          {mirrorStatus}
+        <span className={`font-medium ${stripStyle.text}`} data-testid="arx-mirror-status">
+          {stripLabel}
         </span>
-        {/* Symbol · Timeframe */}
         <span className="text-zinc-500">
           {resolvedSymbol} · {timeframe}
         </span>
-        {/* Mirror state detail */}
-        {mirrorStatus === "Conflict" && (
+        {stripIntegrityFailed && (
           <span className="rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-300" data-testid="arx-mirror-conflict">
             Data integrity failed — use TradingView for reference
           </span>
         )}
-        {mirrorStatus === "Stale" && (
+        {stripStale && (
           <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300" data-testid="arx-mirror-stale">
             Feed is stale
           </span>
         )}
-        {mirrorStatus === "Syncing" && (
-          <span className="rounded border border-zinc-700 bg-zinc-800/40 px-1.5 py-0.5 text-[9px] text-zinc-400" data-testid="arx-mirror-syncing">
-            Waiting for data
+        {stripUnavailable && (
+          <span className="rounded border border-zinc-700 bg-zinc-800/40 px-1.5 py-0.5 text-[9px] text-zinc-400" data-testid="arx-mirror-unavailable">
+            {feedStatus?.quality === "empty"
+              ? "The provider returned no candles"
+              : "No provider could serve this symbol"}
           </span>
         )}
-        <span className="ml-auto flex items-center gap-1">
-          {!mirrorLocked && (
-            <Badge
-              variant="outline"
-              className="border-amber-500/40 bg-amber-500/10 text-[9px] text-amber-300"
-              data-testid="arx-mirror-inspection"
-            >
-              <GitMerge className="mr-0.5 h-2.5 w-2.5" />
-              Inspection mode
-            </Badge>
-          )}
-          <button
-            type="button"
-            className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
-              mirrorLocked
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-                : "border-zinc-600 bg-zinc-800/40 text-zinc-400 hover:bg-zinc-700/40"
-            }`}
-            onClick={() => setMirrorLocked((l) => !l)}
-            title={mirrorLocked ? "Mirror Lock ON — click to inspect freely" : "Mirror Lock OFF — click to re-lock"}
-            data-testid="arx-mirror-lock"
-          >
-            {mirrorLocked ? (
-              <Lock className="h-2.5 w-2.5" />
-            ) : (
-              <Unlock className="h-2.5 w-2.5" />
-            )}
-            {mirrorLocked ? "Lock ON" : "Lock OFF"}
-          </button>
-        </span>
+        {stripRefreshing && (
+          <span className="ml-auto inline-flex items-center gap-1 text-sky-300" data-testid="arx-mirror-refreshing">
+            <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Refreshing…
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2" role="toolbar" aria-label="Chart view controls">

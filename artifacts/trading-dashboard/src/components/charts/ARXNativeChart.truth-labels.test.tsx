@@ -7,6 +7,10 @@
 //   - an AI chip reading "No AI" while the same panel kept AI overlays live
 //     (the "Not AI-confirmed" badge and the aiUsable context reported to the
 //     page used the uncapped raw feed flag).
+//   - a "Mirror Layer" strip that read "Mirrored" over delayed/partial data,
+//     flipped to "Refreshing" on every poll (hiding "Stale"/"Conflict"), read
+//     "Syncing · Waiting for data" when every provider had declined, and showed
+//     a "Lock ON/OFF" toggle that locked nothing.
 //
 // The harness renders the REAL ARXNativeChart with the candle query, the
 // chart engine and the scanner-truth hook replaced by controllable stubs.
@@ -260,5 +264,53 @@ describe("AI usability is one verdict across chip, badge and page context", () =
     expect(screen.queryByTestId("arx-native-not-ai")).toBeNull();
     const last = onChartContextChange.mock.calls.at(-1)?.[0] as { aiUsable: boolean };
     expect(last.aiUsable).toBe(true);
+  });
+});
+
+describe("feed strip says what the server graded, never an unmeasured mirror", () => {
+  const strip = () => screen.getByTestId("arx-mirror-status").textContent ?? "";
+
+  it.each([
+    ["delayed", "Delayed"],
+    ["partial", "Partial"],
+  ] as const)("a %s feed is not shown as mirrored", (quality, label) => {
+    setResponse(makeResponse({ quality, isLive: false, aiUsable: false }));
+    renderChart();
+    expect(strip()).not.toMatch(/mirror/i);
+    expect(strip()).toBe(label);
+  });
+
+  it("a background refetch does not hide a stale verdict", () => {
+    setResponse(makeResponse({ quality: "stale", stale: true, isLive: false, aiUsable: false }), { isFetching: true });
+    renderChart();
+    expect(strip()).toBe("Stale");
+    expect(screen.queryByTestId("arx-mirror-stale")).not.toBeNull();
+  });
+
+  it("a background refetch does not hide an integrity failure", () => {
+    setResponse(makeResponse({ quality: "invalid", isLive: false, aiUsable: false }), { isFetching: true });
+    renderChart();
+    expect(screen.queryByTestId("arx-mirror-conflict")).not.toBeNull();
+  });
+
+  it("an unavailable feed is not described as syncing or waiting", () => {
+    setResponse(emptyResponse({ quality: "unavailable", source: null, warning: "No live feed is available for this symbol right now." }));
+    renderChart();
+    const layer = screen.getByTestId("arx-mirror-layer").textContent ?? "";
+    expect(layer).not.toMatch(/syncing|waiting for data/i);
+    expect(strip()).toBe("Unavailable");
+  });
+
+  it("a clean feed the shared truth has not confirmed reads the same as the chip", () => {
+    truthLevel = "historical_only";
+    renderChart();
+    expect(strip()).toBe("Unconfirmed");
+  });
+
+  it("offers no lock toggle or inspection mode that changes nothing", () => {
+    renderChart();
+    expect(screen.queryByTestId("arx-mirror-lock")).toBeNull();
+    expect(screen.queryByTestId("arx-mirror-inspection")).toBeNull();
+    expect(screen.getByTestId("arx-mirror-layer").textContent).not.toMatch(/mirror|lock/i);
   });
 });
