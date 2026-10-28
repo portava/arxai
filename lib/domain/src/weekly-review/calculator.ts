@@ -63,11 +63,32 @@ export function tradeSession(t: ClosedTrade): Session {
   return "NY";
 }
 
+/** The review week, inclusive on both ends (ISO timestamps). */
+export interface WeeklyWindow {
+  startIso: string;
+  endIso: string;
+}
+
+/** True when the trade's CLOSE time falls inside the window. A trade with no
+ * recorded close time cannot be attributed to a week, so it is excluded. */
+export function closedWithin(t: ClosedTrade, w: WeeklyWindow): boolean {
+  if (!t.closedAtIso) return false;
+  const at = Date.parse(t.closedAtIso);
+  return Number.isFinite(at) && at >= Date.parse(w.startIso) && at <= Date.parse(w.endIso);
+}
+
+/**
+ * Roll up closed trades and journal tags. When `week` is given, a trade
+ * counts for the week it CLOSED in (not the week it was opened), so a trade
+ * opened last Friday and closed this Tuesday belongs to this week only.
+ */
 export function calculateWeeklyMetrics(
   trades: ClosedTrade[],
   journal: JournalEntryLite[],
+  week?: WeeklyWindow,
 ): WeeklyMetrics {
-  const closed = trades.filter((t) => t.status === "CLOSED_WIN" || t.status === "CLOSED_LOSS");
+  const closed = trades.filter((t) =>
+    (t.status === "CLOSED_WIN" || t.status === "CLOSED_LOSS") && (!week || closedWithin(t, week)));
   const wins = closed.filter((t) => (t.pnl ?? 0) > 0);
   const losses = closed.filter((t) => (t.pnl ?? 0) <= 0);
 

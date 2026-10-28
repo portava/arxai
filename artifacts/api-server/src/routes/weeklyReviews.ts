@@ -145,13 +145,14 @@ router.post("/weekly-reviews/generate", requireUser, async (req, res): Promise<v
     const start = body?.weekStart ? weekStartUTC(new Date(body.weekStart)) : weekStartUTC(new Date());
     const end = weekEndUTC(start);
 
-    // Load trades + journal entries created in window.
+    // Load trades CLOSED in the window (a trade belongs to the week it
+    // closed, not the week it was opened) + journal entries created in it.
     const [tradeRows, journalRows] = await Promise.all([
       db.select().from(tradesTable).where(
         and(
           eq(tradesTable.userId, userId),
-          gte(tradesTable.createdAt, start),
-          lte(tradesTable.createdAt, end),
+          gte(tradesTable.closedAt, start),
+          lte(tradesTable.closedAt, end),
         ),
       ),
       db.select().from(tradeJournalEntriesTable).where(
@@ -181,7 +182,9 @@ router.post("/weekly-reviews/generate", requireUser, async (req, res): Promise<v
       createdAtIso: j.createdAt.toISOString(),
     }));
 
-    const metrics = calculateWeeklyMetrics(trades, journal);
+    const metrics = calculateWeeklyMetrics(trades, journal, {
+      startIso: start.toISOString(), endIso: end.toISOString(),
+    });
     const summary = summarizeWeek(metrics);
     const proposed = proposeWeeklyGoals(metrics);
 
