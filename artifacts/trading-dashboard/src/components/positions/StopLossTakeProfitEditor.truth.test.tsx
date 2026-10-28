@@ -40,3 +40,22 @@ describe("StopLossTakeProfitEditor pending broker confirmation", () => {
     expect(screen.queryByTestId("sltp-pending")).toBeNull();
   });
 });
+
+describe("StopLossTakeProfitEditor malformed input", () => {
+  it("a typo in the TP field is not sent as a removal (NaN serialises to null)", async () => {
+    const calls = mount(() => json({ id: 11, pending: { commandId: "c2" } }));
+    fireEvent.change(screen.getAllByPlaceholderText("empty = remove")[1], { target: { value: "1.09a" } });
+    fireEvent.click(screen.getByText("Update TP"));
+    await waitFor(() => expect(screen.getByTestId("sltp-error").textContent).toMatch(/is not a price\. Nothing was sent/));
+    expect(calls.length).toBe(0);
+  });
+
+  it("a typo in the SL field with removal confirmed is not sent as a removal", async () => {
+    const calls = mount(() => json({ id: 11, pending: { commandId: "c3" } }));
+    fireEvent.change(screen.getAllByPlaceholderText("empty = remove")[0], { target: { value: "1,08" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByText("Update SL"));
+    await waitFor(() => expect(screen.getByTestId("sltp-error").textContent).toMatch(/is not a price/));
+    expect(calls.length).toBe(0);
+  });
+});

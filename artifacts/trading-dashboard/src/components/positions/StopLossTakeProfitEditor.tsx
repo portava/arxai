@@ -8,6 +8,18 @@ import {
   type LivePosition,
 } from "@workspace/api-client-react";
 
+/**
+ * Parse a price field. Empty means "remove"; anything else must be a finite
+ * positive number. A typo is NOT turned into NaN, which JSON sends as null —
+ * i.e. a removal request the trader never asked for.
+ */
+function parseLevel(raw: string): { ok: true; value: number | null } | { ok: false } {
+  const t = raw.trim();
+  if (t === "") return { ok: true, value: null };
+  const n = Number(t);
+  return Number.isFinite(n) && n > 0 ? { ok: true, value: n } : { ok: false };
+}
+
 export function StopLossTakeProfitEditor({ position }: { position: LivePosition }) {
   const qc = useQueryClient();
   const [sl, setSL] = useState<string>(position.stopLoss?.toString() ?? "");
@@ -48,10 +60,11 @@ export function StopLossTakeProfitEditor({ position }: { position: LivePosition 
         </label>
         <button type="button"
           disabled={slMut.isPending}
-          onClick={() => slMut.mutate({ id: position.id, data: {
-            stopLoss: sl.trim() === "" ? null : Number(sl),
-            removeConfirmed: removeConfirm,
-          } })}
+          onClick={() => {
+            const p = parseLevel(sl);
+            if (!p.ok) { setSent(null); setError(`"${sl.trim()}" is not a price. Nothing was sent; enter a number, or leave it empty to remove the stop loss.`); return; }
+            slMut.mutate({ id: position.id, data: { stopLoss: p.value, removeConfirmed: removeConfirm } });
+          }}
           className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">
           Update SL
         </button>
@@ -63,9 +76,11 @@ export function StopLossTakeProfitEditor({ position }: { position: LivePosition 
         </label>
         <button type="button"
           disabled={tpMut.isPending}
-          onClick={() => tpMut.mutate({ id: position.id, data: {
-            takeProfit: tp.trim() === "" ? null : Number(tp),
-          } })}
+          onClick={() => {
+            const p = parseLevel(tp);
+            if (!p.ok) { setSent(null); setError(`"${tp.trim()}" is not a price. Nothing was sent; enter a number, or leave it empty to remove the take profit.`); return; }
+            tpMut.mutate({ id: position.id, data: { takeProfit: p.value } });
+          }}
           className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">
           Update TP
         </button>
