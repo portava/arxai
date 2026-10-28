@@ -62,3 +62,25 @@ describe("Live Trades header scope", () => {
     expect(screen.getByTestId("live-trades-mode").textContent).toBe("LIVE");
   });
 });
+
+// "Do I have open trades" was answered twice: the Open Trades panel reads the
+// live account (/me/live/slot-summary over arx_live_positions), while the
+// card grid below read the retired legacy `trades` table (GET /trades/open)
+// and said "No open trades." right under "Open Trades (2)".
+describe("Live Trades open-trades answer", () => {
+  it("an empty legacy list does not contradict the live Open Trades panel", () => {
+    tradingMode = { ...PAPER_MODE, isLiveShared: true, isPaper: false, envelope: { currentAccountMode: "LIVE_SHARED" } };
+    openTrades = [];
+    render(<LiveTrades />);
+    expect(screen.getByTestId("live-open-trades-panel").textContent).toContain("Open Trades (2)");
+    expect(document.body.textContent).not.toContain("No open trades.");
+    expect(document.body.textContent).not.toContain("AI coaching");
+  });
+
+  it("legacy rows that are still open are listed under their own heading", () => {
+    openTrades = [{ id: 1, symbol: "EURUSD" }];
+    render(<LiveTrades />);
+    expect(screen.getByTestId("legacy-open-trades").textContent).toContain("Older ARX trade records still marked open (1)");
+    expect(screen.getAllByTestId("legacy-trade-card")).toHaveLength(1);
+  });
+});

@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useGetOpenTrades, getGetOpenTradesQueryKey } from "@workspace/api-client-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Activity } from "lucide-react";
@@ -42,7 +41,7 @@ export default function LiveTrades() {
           <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <Activity className="text-primary" /> Live Trades
           </h2>
-          <p className="text-muted-foreground">Active positions with health, suggestions, and AI coaching.</p>
+          <p className="text-muted-foreground">Your open positions and their P/L, as your live account last reported them.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 max-w-full min-w-0">
           {modeBadge(tradingMode)}
@@ -62,16 +61,21 @@ export default function LiveTrades() {
       <LiveSlotSummaryCard />
       <LiveOpenTradesPanel />
 
+      {/* Legacy ARX trade records (GET /trades/open, the `trades` table, which
+          no longer receives new rows). The Open Trades panel above answers
+          "do I have open trades" from the live account, so an empty legacy
+          list says nothing here rather than a contradicting "No open trades". */}
       {isLoading ? <Skeleton className="h-64 w-full" /> :
-        !trades || trades.length === 0 ? (
-          <Card><CardContent className="py-16 text-center text-muted-foreground"><Activity size={48} className="mx-auto opacity-30 mb-3" /><p>No open trades.</p></CardContent></Card>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {trades.map((t) => (
-              <LiveTradeCard key={t.id} trade={t} onCoach={() => setSelected(t.id)} />
-            ))}
-          </div>
-        )
+        trades && trades.length > 0 ? (
+          <section className="space-y-2" data-testid="legacy-open-trades">
+            <h3 className="text-sm font-semibold text-muted-foreground">Older ARX trade records still marked open ({trades.length})</h3>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {trades.map((t) => (
+                <LiveTradeCard key={t.id} trade={t} onCoach={() => setSelected(t.id)} />
+              ))}
+            </div>
+          </section>
+        ) : null
       }
 
     </div>
