@@ -75,3 +75,19 @@ describe("useLiveAccountSnapshot reconciliation marker on the poll fallback", ()
     expect(pollReconciliationMarker(null, -5)).toMatchObject({ snapshotSummedPL: -5, exceedsThreshold: true, unverified: true });
   });
 });
+
+describe("useLiveAccountSnapshot carried position rows on the poll fallback", () => {
+  it("rows frozen from the last stream snapshot lose their live label", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const ev = streamSnapshot(FLAGGED);
+    ev.snapshot.positions = [{
+      positionId: "p1", symbol: "EURUSD", direction: "buy", volume: 0.1, entryPrice: 1.08, currentPrice: 1.081,
+      unrealizedPL: 10, plSource: "broker", plIsEstimate: false, lastUpdateAtMs: Date.now(), freshness: "live",
+    }];
+    act(() => { MockEventSource.instances[0]!.emit(ev); });
+    expect(result.current.snapshot?.positions[0]?.freshness).toBe("live");
+    await act(async () => { MockEventSource.instances[0]!.fail(); await Promise.resolve(); await Promise.resolve(); });
+    await vi.waitFor(() => expect(result.current.connectionStatus).toBe("polling"));
+    expect(result.current.snapshot?.positions[0]?.freshness).toBe("stale");
+  });
+});

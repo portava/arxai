@@ -58,6 +58,17 @@ export interface SnapshotReconciliation {
  * an unchecked poll total is never presented as reconciled (no marker would
  * read as "in agreement" to every consumer).
  */
+/**
+ * Position rows carried from the last stream snapshot into a poll-built one.
+ * The poll does not refresh them, so a "live" / "fresh" row label is
+ * downgraded to "stale"; delayed / stale / unavailable rows keep their label.
+ */
+export function carriedPositionsForPoll(rows: LivePositionPL[] | null | undefined): LivePositionPL[] {
+  return (rows ?? []).map((r) =>
+    r.freshness === "live" || r.freshness === "fresh" ? { ...r, freshness: "stale" as const } : r,
+  );
+}
+
 export function pollReconciliationMarker(
   prev: SnapshotReconciliation | null | undefined,
   polledOpenPL: number | null,
@@ -338,7 +349,9 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         openPositionsCount: accountMode === "LIVE_SHARED"
           ? Number((data["openPositionCount"] as number | undefined) ?? prev?.openPositionsCount ?? 0)
           : 0,
-        positions: accountMode === "LIVE_SHARED" ? (prev?.positions ?? []) : [],
+        // slot-summary does not re-read the rows: these are the last stream
+        // rows, frozen. Never keep their "live"/"fresh" label on the poll path.
+        positions: accountMode === "LIVE_SHARED" ? carriedPositionsForPoll(prev?.positions) : [],
         lastComputedAtMs: Date.now(),
         freshness: accountMode === "LIVE_SHARED" ? freshness : "unavailable",
         warnings: (data["snapshotWarning"] ? [String(data["snapshotWarning"])] : prev?.warnings) ?? [],
