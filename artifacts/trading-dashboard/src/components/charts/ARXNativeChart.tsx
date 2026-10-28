@@ -120,6 +120,59 @@ const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
 const EMPTY_OVERLAYS: ChartOverlay[] = [];
 
+// Comparison engine init is staged out of the frame that mounts the card.
+// The card, its controls and its sized canvas container commit synchronously;
+// only the lightweight-charts engine (init + its own first paint, the dominant
+// cost of adding comparison views) waits until after the mounting frame has
+// painted. A single rAF queued during the commit would still run inside that
+// frame, before its paint, so each job waits for an animation frame and then a
+// macrotask. Jobs share one queue and run one per frame, so adding several
+// comparisons never stacks their engine paints into a single frame. A hidden
+// document gets no animation frames, so a hidden tab (at scheduling time, or
+// becoming hidden while the frame is pending) falls back to the task alone.
+type DeferredEngineInit = { run: () => void; cancelled: boolean };
+const deferredEngineInits: DeferredEngineInit[] = [];
+let deferredEngineInitPending = false;
+
+function pumpDeferredEngineInits(): void {
+  while (deferredEngineInits[0]?.cancelled) deferredEngineInits.shift();
+  if (deferredEngineInitPending || deferredEngineInits.length === 0) return;
+  deferredEngineInitPending = true;
+  const runNext = () => {
+    deferredEngineInitPending = false;
+    let job = deferredEngineInits.shift();
+    while (job?.cancelled) job = deferredEngineInits.shift();
+    try { job?.run(); } finally { pumpDeferredEngineInits(); }
+  };
+  const hasDocument = typeof document !== "undefined";
+  let afterPaintQueued = false;
+  const onVisibilityChange = () => { if (document.hidden) afterPaint(); };
+  // Whichever comes first, the frame or the tab being hidden, queues the task
+  // once; the other then no-ops.
+  function afterPaint() {
+    if (afterPaintQueued) return;
+    afterPaintQueued = true;
+    if (hasDocument) document.removeEventListener("visibilitychange", onVisibilityChange);
+    setTimeout(runNext, 0);
+  }
+  if (typeof requestAnimationFrame !== "function" || (hasDocument && document.hidden)) {
+    afterPaint();
+    return;
+  }
+  if (hasDocument) document.addEventListener("visibilitychange", onVisibilityChange);
+  requestAnimationFrame(() => afterPaint());
+}
+
+function scheduleDeferredEngineInit(run: () => void): () => void {
+  const job: DeferredEngineInit = { run, cancelled: false };
+  deferredEngineInits.push(job);
+  pumpDeferredEngineInits();
+  return () => {
+    job.cancelled = true;
+    const index = deferredEngineInits.indexOf(job);
+    if (index >= 0) deferredEngineInits.splice(index, 1);
+  };
+}
 
 function loadTimeframe(): ArxTimeframe {
   if (typeof window === "undefined") return DEFAULT_TF;
@@ -474,7 +527,13 @@ export function ARXNativeChart({
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
   const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
-  const activeChartContext = useRef<{ key: string; adapter: ChartEngineAdapter } | null>(null);
+  // `adapter: null` binds a comparison view's context before its deferred
+  // engine exists, so stream frames for that context (feed_status, liveness)
+  // keep their effect; the primary always binds with its engine.
+  const activeChartContext = useRef<{ key: string; adapter: ChartEngineAdapter | null } | null>(null);
+  // The newest forming tip a deferred comparison received before its engine
+  // was built; applied once the engine has its context and candles.
+  const pendingTipRef = useRef<{ key: string; bar: ChartEngineCandle } | null>(null);
   // Newest bar time (Unix seconds) currently on screen. The poll keeps this in
   // sync with the authoritative closed window; the SSE tick handler reads it to
   // reject an out-of-order forming tip (one behind the newest bar).
@@ -505,21 +564,59 @@ export function ARXNativeChart({
 
   // Retain the expensive canvas. Context-owned observations are cleared in the
   // layout phase below, before a new market label can paint over old geometry.
+  //
+  // The primary chart builds its engine in this layout phase. Comparison views
+  // build theirs through the shared post-paint queue above; until then every
+  // engine consumer no-ops on the null adapter, and `engineGeneration` re-runs
+  // the context/link/stream effects so the late engine receives exactly the
+  // sequence a synchronously built one does (including the chartEpoch bump).
+  const defersEngine = workspaceId !== "primary";
+  const [engineGeneration, setEngineGeneration] = useState(0);
+  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend });
+  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend }; });
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    const adapter = createChartEngineAdapter();
-    adapter.init({ container: el, height: effectiveHeight });
-    adapter.setSymbol?.(resolvedSymbol);
-    adapter.setTimeframe?.(timeframe);
-    adapter.setCrosshairHandler?.(updateLegend);
-    adapter.setViewLinkStatusHandler?.(message => {if (linkStatusRef.current) linkStatusRef.current.textContent = message;});
-    updateLegend(null);
-    adapterRef.current = adapter;
+    let adapter: ChartEngineAdapter | null = null;
+    // The engine whose setup is still running (destroyed if that setup throws).
+    let building: ChartEngineAdapter | null = null;
+    const build = () => {
+      const inputs = engineInputsRef.current;
+      const engine = createChartEngineAdapter();
+      building = engine;
+      engine.init({ container: el, height: inputs.effectiveHeight });
+      engine.setSymbol?.(inputs.resolvedSymbol);
+      engine.setTimeframe?.(inputs.timeframe);
+      engine.setCrosshairHandler?.(inputs.updateLegend);
+      engine.setViewLinkStatusHandler?.(message => {if (linkStatusRef.current) linkStatusRef.current.textContent = message;});
+      inputs.updateLegend(null);
+      building = null;
+      adapter = engine;
+      adapterRef.current = engine;
+    };
+    let cancelDeferred: (() => void) | undefined;
+    if (!defersEngine) build();
+    else cancelDeferred = scheduleDeferredEngineInit(() => {
+      try {
+        build();
+      } catch (error) {
+        // A deferred build runs outside React, where a setup failure would
+        // escape every error boundary. Release the partly built engine and
+        // rethrow the error from the next render, so the boundary sees it as it
+        // sees a failed synchronous (primary) build. The queue moves on.
+        const partial = building;
+        building = null;
+        try { partial?.destroy(); } catch { /* the setup error is the one surfaced */ }
+        setEngineGeneration(() => { throw error; });
+        return;
+      }
+      setEngineGeneration(generation => generation + 1);
+    });
 
     return () => {
-      adapter.destroy();
+      cancelDeferred?.();
+      adapter?.destroy();
       adapterRef.current = null;
       activeChartContext.current = null;
     };
@@ -528,8 +625,24 @@ export function ARXNativeChart({
 
   useLayoutEffect(() => {
     const adapter = adapterRef.current;
-    if (!adapter) return;
-    if (activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapter) return;
+    const previous = activeChartContext.current;
+    if (!adapter) {
+      // A deferred comparison: bind its context now, with no engine, and clear
+      // the previous context's observations exactly as a context change does.
+      if (!defersEngine || (previous?.key === chartContext && previous.adapter === null)) return;
+      activeChartContext.current = { key: chartContext, adapter: null };
+      pendingTipRef.current = null;
+      newestBarSecRef.current = null;
+      inspectedCandleRef.current = null;
+      updateLegend(null);
+      setMarketFrozen(null);
+      setBubbles([]);
+      return;
+    }
+    if (previous?.key === chartContext && previous.adapter === adapter) return;
+    // The deferred engine arriving for the context it was bound to is not a
+    // context change: the stream state collected for that context is kept.
+    const engineArrived = previous?.key === chartContext && previous.adapter === null;
     activeChartContext.current = { key: chartContext, adapter };
     if (adapter.resetDataContext) adapter.resetDataContext();
     else {
@@ -542,18 +655,20 @@ export function ARXNativeChart({
     }
     adapter.setSymbol?.(resolvedSymbol);
     adapter.setTimeframe?.(timeframe);
-    newestBarSecRef.current = null;
+    if (!engineArrived) newestBarSecRef.current = null;
     inspectedCandleRef.current = null;
     updateLegend(null);
-    setMarketFrozen(null);
-    setBubbles([]);
+    if (!engineArrived) {
+      setMarketFrozen(null);
+      setBubbles([]);
+    }
     // Rebind channel ownership even when identity changes within one provider.
     setChartEpoch(epoch => epoch + 1);
-  }, [chartContext, resolvedSymbol, timeframe, viewLinks, workspaceId, updateLegend]);
+  }, [chartContext, resolvedSymbol, timeframe, viewLinks, workspaceId, updateLegend, engineGeneration, defersEngine]);
   useLayoutEffect(() => {
     const adapter = adapterRef.current;
     return adapter ? viewLinks?.register(workspaceId, adapter) : undefined;
-  }, [viewLinks, workspaceId, chartContext]);
+  }, [viewLinks, workspaceId, chartContext, engineGeneration]);
   useLayoutEffect(() => { adapterRef.current?.setCrosshairHandler?.(updateLegend); }, [updateLegend, chartEpoch]);
 
   useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
@@ -653,6 +768,20 @@ export function ARXNativeChart({
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
   }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext]);
+  // A forming tip that reached a deferred comparison before its engine existed
+  // is applied once that engine holds the context's candles, with the same
+  // out-of-order guard as a live frame. Never set for the primary.
+  useLayoutEffect(() => {
+    const pending = pendingTipRef.current;
+    const adapter = adapterRef.current;
+    const bound = activeChartContext.current;
+    if (!pending || !adapter || !bound?.adapter) return;
+    pendingTipRef.current = null;
+    if (pending.key !== chartContext || bound.key !== chartContext || bound.adapter !== adapter || !adapter.updateActiveCandle) return;
+    if (newestBarSecRef.current != null && pending.bar.time < newestBarSecRef.current) return;
+    adapter.updateActiveCandle(pending.bar);
+    newestBarSecRef.current = pending.bar.time;
+  }, [chartEpoch, chartContext]);
 
   const tickSource = chartTickSource(data?.feedStatus?.source);
 
@@ -691,15 +820,25 @@ export function ARXNativeChart({
     );
     let es: EventSource | null = null;
     let disposed = false;
-    const ownedAdapter = adapterRef.current;
+    // A comparison view's engine is built after its first paint, so its stream
+    // may open first; it adopts the first engine built for this context. The
+    // primary engine always exists here, so its ownership is unchanged.
+    let ownedAdapter = adapterRef.current;
+    const owner = () => (ownedAdapter ??= adapterRef.current);
     try {
       es = new EventSource(url, { withCredentials: true });
     } catch {
       return; // EventSource unavailable — the 8s poll still keeps the tip fresh.
     }
     streamWatchdog.noteStreamOpened();
+    // A context bound without an engine (a deferred comparison) belongs to
+    // this stream; its frames count, and its forming tip waits for the engine.
+    const accepts = () => {
+      const bound = activeChartContext.current;
+      return !disposed && bound?.key === chartContext && (bound.adapter === null || bound.adapter === owner());
+    };
     es.onmessage = (ev) => {
-      if (disposed || activeChartContext.current?.key !== chartContext || activeChartContext.current.adapter !== ownedAdapter) return;
+      if (!accepts()) return;
       // Any frame — tip, feed_status, or heartbeat — proves the stream is alive.
       // Recorded before parsing so even an unrecognised frame counts as liveness.
       streamWatchdog.noteFrame();
@@ -729,8 +868,9 @@ export function ARXNativeChart({
         );
         return;
       }
+      const engineBound = activeChartContext.current?.adapter != null;
       const adapter = adapterRef.current;
-      if (!adapter?.updateActiveCandle) return;
+      if (engineBound && !adapter?.updateActiveCandle) return;
       // Gate on THIS frame's own freshness marker (server-computed from the real
       // tick age), exactly like the Scanner — not on the sticky closed-feed grade.
       if (msg.type !== "forming_bar" || msg.frozen || !msg.bar) return;
@@ -753,6 +893,14 @@ export function ARXNativeChart({
       )
         return;
       const tipSec = Math.floor(b.openTimeMs / 1000);
+      if (!engineBound) {
+        // No engine yet: keep the newest tip for it, in time order.
+        const pending = pendingTipRef.current;
+        if (pending?.key === chartContext && tipSec < pending.bar.time) return;
+        pendingTipRef.current = { key: chartContext, bar: { time: tipSec, open: b.open, high: b.high, low: b.low, close: b.close } };
+        return;
+      }
+      if (!adapter?.updateActiveCandle) return;
       // Never feed an out-of-order time (the adapter also guards defensively).
       if (newestBarSecRef.current != null && tipSec < newestBarSecRef.current) return;
       adapter.updateActiveCandle({
@@ -765,7 +913,7 @@ export function ARXNativeChart({
       newestBarSecRef.current = tipSec;
     };
     es.onerror = () => {
-      if (disposed || activeChartContext.current?.key !== chartContext || activeChartContext.current.adapter !== ownedAdapter) return;
+      if (!accepts()) return;
       // The browser retries an EventSource on its own, but only for errors it
       // actually surfaces — and it never recovers a connection that stays "open"
       // while silently delivering nothing. Record the state so the UI is honest;
