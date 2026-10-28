@@ -546,7 +546,7 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
   if (-netPnl > cur.sessionRules.maxSessionLoss) ruleViolations.push({ code: "SESSION_LOSS_EXCEEDED", limit: cur.sessionRules.maxSessionLoss, actual: -netPnl });
   if (durationMinutes > cur.sessionRules.maxSessionMinutes) ruleViolations.push({ code: "SESSION_DURATION_EXCEEDED", limit: cur.sessionRules.maxSessionMinutes, actual: durationMinutes });
 
-  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${wins}W/${losses}L/${breakEven}BE), net $${(netPnl/100).toFixed(2)}, win rate ${winRate}%. Live trading remains DISABLED.`;
+  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${wins}W/${losses}L/${breakEven}BE), net $${(netPnl/100).toFixed(2)}, win rate ${winRate}%. This paper session places no live orders.`;
   const nextBestActions: string[] = [];
   if (winRate < 50 && closed.length >= 2) nextBestActions.push("Review setups in BB debriefs — focus on quality over quantity");
   if (ruleViolations.length > 0) nextBestActions.push(`Address ${ruleViolations.length} rule violation(s) before next session`);
@@ -604,7 +604,9 @@ export async function getLatestReport(paperSessionId: string): Promise<SessionRe
     rule_violations: r.ruleViolations as Array<Record<string, unknown>>,
     mistakes_detected: r.mistakesDetected as Array<Record<string, unknown>>,
     lessons_generated: r.lessonsGenerated as Array<Record<string, unknown>>,
-    coach_summary: r.coachSummary ?? "",
+    // Reports stored before this change end with an unverified account-wide
+    // claim; drop it rather than repeat it.
+    coach_summary: (r.coachSummary ?? "").replace(/ Live trading remains DISABLED\.$/, " This paper session places no live orders."),
     next_best_actions: r.nextBestActions as string[],
     warnings: r.warnings as Array<Record<string, unknown>>,
     mode: "PAPER_ONLY", liveTradingStatus: "DISABLED",

@@ -76,7 +76,10 @@ interface Logger {
 }
 const NOOP_LOG: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
-const LIVE_DISABLED_REMINDER = "Live trading remains DISABLED. Build II is paper-only coaching and never recommends live execution.";
+// This coach never reads the caller's account mode, so it must not claim the
+// account's live trading is disabled (a LIVE_SHARED user may be armed). It
+// can only say what it does itself: review only, no orders.
+const LIVE_DISABLED_REMINDER = "Coaching only: this report places no orders and never recommends live execution. It does not show whether your account is armed for live trading — check Account Mode for that.";
 const PAPER_MODE_REMINDER = "All guidance applies to PAPER mode only.";
 
 const SAFE_DEFAULT_CHECKLIST: CoachReport["preSessionChecklist"] = [
@@ -91,7 +94,7 @@ const SAFE_DEFAULT_CHECKLIST: CoachReport["preSessionChecklist"] = [
   { id: "confidence_threshold", label: "AI decision confidence meets your minimum", required: true, auto: false },
   { id: "risk_score_ok", label: "AI decision risk score is below your maximum", required: true, auto: false },
   { id: "sl_tp_set", label: "Stop loss and take profit are explicitly defined", required: true, auto: false },
-  { id: "live_disabled", label: "Live trading is DISABLED (Build HH check)", required: true, auto: true },
+  { id: "live_disabled", label: "Account mode checked: this session is paper practice, not live execution", required: true, auto: false },
   { id: "paper_only", label: "Mode is PAPER_ONLY (no live execution attempted)", required: true, auto: true },
 ];
 

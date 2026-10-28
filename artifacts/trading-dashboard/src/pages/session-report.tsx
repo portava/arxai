@@ -56,7 +56,7 @@ export default function SessionReport() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Session Report</h1>
-          <p className="text-sm text-muted-foreground">Build PP — demo-only session reporting. Live trading remains DISABLED.</p>
+          <p className="text-sm text-muted-foreground">Reports on your paper practice sessions. These sessions place no live orders.</p>
         </div>
         <div className="flex gap-2">
           <select value={selected} onChange={e => setSelected(e.target.value)} className="border rounded px-2 py-1">

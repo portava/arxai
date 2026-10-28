@@ -117,8 +117,11 @@ export default function TraderCoachPage() {
     <div className="p-6 space-y-6 text-gray-100">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Trader Coach</h1>
-        <span className="px-2 py-1 rounded text-xs bg-blue-700">DEMO ONLY</span>
-        <span className="px-2 py-1 rounded text-xs bg-gray-700">LIVE TRADING DISABLED</span>
+        {/* This page never reads the account mode, so it says what the coach
+            does (reviews paper trading, places no orders) — not whether the
+            account is armed for live trading. */}
+        <span className="px-2 py-1 rounded text-xs bg-blue-700">Paper trading review</span>
+        <span className="px-2 py-1 rounded text-xs bg-gray-700">Coaching only · places no orders</span>
         <span className={`px-2 py-1 rounded text-xs ${govBadge}`}>Governor: {coach.traderStatus.governorStatus === "PAPER_ALLOWED" ? "DEMO_ALLOWED" : coach.traderStatus.governorStatus === "PAPER_CAUTION" ? "DEMO_CAUTION" : coach.traderStatus.governorStatus === "PAPER_PAUSED" ? "DEMO_PAUSED" : coach.traderStatus.governorStatus}</span>
         <span className="px-2 py-1 rounded text-xs bg-gray-700">
           Readiness {coach.traderStatus.readinessScore}/{coach.traderStatus.readinessGrade} ({coach.traderStatus.readinessLevel})
