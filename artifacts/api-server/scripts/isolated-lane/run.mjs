@@ -20,8 +20,11 @@
 //      without the proxy, for tests that check unauthenticated access.
 //   6. Stops everything and deletes the cluster. Logs stay in ARX_LANE_OUT
 //      when it is set.
-// offline.cjs is preloaded into the server and the tests: any connection to
-// a non-loopback host fails, and the count of refused attempts is printed.
+// offline.cjs is preloaded into the server and the tests: TCP/TLS
+// connections, UDP sends and node:dns queries for a non-loopback host fail,
+// and the count of refused attempts is printed. Before anything starts, the
+// runner checks in a child process that the preload refuses each of the
+// three and still allows loopback; it stops if it does not.
 // Trading stays disabled (ARX_LIVE_BROKER_EXECUTION_ENABLED=false), dev auth
 // is off and the AI providers point at a closed loopback port.
 //
@@ -92,9 +95,30 @@ const countBlocked = (file) => {
   try { return (readFileSync(join(out, file), "utf8").match(/^ARX_ISOLATED_BLOCKED_NETWORK /gm) ?? []).length; } catch { return 0; }
 };
 
+// The preload's guarantee, checked on every run (see offline.cjs).
+function checkOffline() {
+  const probe = `
+    const net = require("node:net"), dgram = require("node:dgram"), dns = require("node:dns");
+    const seen = [];
+    const code = (f) => { try { f(); return "allowed"; } catch (e) { return e.code; } };
+    seen.push(code(() => net.connect(443, "192.0.2.1").destroy()));
+    seen.push(code(() => { const s = dgram.createSocket("udp4"); try { s.send(Buffer.from("x"), 53, "192.0.2.1"); } finally { s.close(); } }));
+    Promise.all([
+      dns.promises.resolve4("example.invalid").then(() => "allowed", (e) => e.code),
+      new Promise((ok) => dns.lookup("example.invalid", (e) => ok(e ? e.code : "allowed"))),
+      new Promise((ok) => dns.lookup("localhost", (e) => ok(e ? e.code : "loopback-ok"))),
+    ]).then((r) => console.log(JSON.stringify([...seen, ...r])));`;
+  const r = spawnSync(process.execPath, ["--require", offline, "-e", probe], { env: base, encoding: "utf8", timeout: 20_000 });
+  const got = r.stdout.trim();
+  const want = JSON.stringify([...Array(4).fill("ARX_ISOLATED_BLOCKED_NETWORK"), "loopback-ok"]);
+  if (got !== want) throw new Error(`offline preload check failed: got ${got || r.stderr}, want ${want}`);
+  console.log("isolated lane: offline preload refuses TCP, UDP and DNS to non-loopback hosts (checked)");
+}
+
 let started = false;
 let status = 1;
 try {
+  checkOffline();
   execFileSync(tool("initdb"), ["-D", data, "-U", "arx_qa", "--auth-local=trust", "--auth-host=reject", "--no-locale"], { env: base, stdio: "pipe" });
   execFileSync(tool("pg_ctl"), ["-D", data, "-l", join(out, "postgres.log"), "-o", `-k ${socket} -p ${pgPort} -h '' -c fsync=off`, "-w", "start"], { env: base, stdio: "pipe" });
   started = true;
