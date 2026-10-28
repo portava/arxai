@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import pg from "pg";
 
 const { Pool } = pg;
-const BASE = "http://localhost:80/api";
+const BASE = process.env.API_BASE_URL ?? "http://localhost:80/api";
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function j(method, path, body) {
