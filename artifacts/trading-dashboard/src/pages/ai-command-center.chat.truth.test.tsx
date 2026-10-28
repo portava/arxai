@@ -105,3 +105,19 @@ describe("Command Center Chat tab mentor reads", () => {
     expect(urls.some((u) => u.includes("/api/mentor/sessions?limit=20"))).toBe(true);
   });
 });
+
+describe("Command Center Chat tab readiness", () => {
+  it("shows no '<name> is ready' status, because nothing on this page checks the assistant", async () => {
+    routes.latest = { status: 500, body: { error: "x" } };
+    routes.history = { status: 500, body: { error: "x" } };
+    render(<QueryClientProvider client={newClient()}><AICommandCenterPage /></QueryClientProvider>);
+    await flush();
+    expect(screen.queryByText(/is ready/i)).toBeNull();
+  });
+
+  it("shows no readiness claim when every read succeeds either", async () => {
+    render(<QueryClientProvider client={newClient()}><AICommandCenterPage /></QueryClientProvider>);
+    await flush();
+    expect(screen.queryByText(/is ready/i)).toBeNull();
+  });
+});

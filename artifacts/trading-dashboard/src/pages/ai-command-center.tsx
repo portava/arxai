@@ -222,14 +222,13 @@ function ChatTab() {
       {/* Open-Ruby CTA */}
       <Card className="rounded-2xl border-ruby/25 bg-card">
         <CardContent className="p-5">
+          {/* No status pill: nothing on this page checks whether the
+              assistant or chat backend is up, so none is claimed. */}
           <div className="flex items-start justify-between gap-3">
             <h3 className="text-base font-semibold flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-ruby" />
               Talk to {name}
             </h3>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
-              <span className="h-1.5 w-1.5 rounded-full bg-success" /> {name} is ready
-            </span>
           </div>
           <p className="text-sm text-txt-secondary mt-1.5">
             Ask about the market, request a setup read, review a trade, or run
