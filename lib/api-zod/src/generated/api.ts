@@ -10358,6 +10358,32 @@ export const GetUpcomingEconomicEventsResponse = zod.object({
       createdAt: zod.string(),
     }),
   ),
+  calendarCoverage: zod
+    .object({
+      source: zod.enum(["ECONOMIC_EVENTS_TABLE"]),
+      providerConfigured: zod
+        .boolean()
+        .describe(
+          "A calendar provider is configured. It does not mean the table was synced.",
+        ),
+      storedEventCount: zod
+        .number()
+        .describe("Rows in the stored calendar. 0 means never synced."),
+      coveredThrough: zod
+        .string()
+        .nullable()
+        .describe("Latest stored event time (ISO); null when empty."),
+      windowEnd: zod.string(),
+      windowCovered: zod.boolean(),
+      note: zod
+        .string()
+        .nullable()
+        .describe("Plain statement when the window is not covered."),
+    })
+    .optional()
+    .describe(
+      'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
+    ),
 });
 
 /**
@@ -10368,6 +10394,32 @@ export const GenerateNewsRiskReportBody = zod.object({
 });
 
 export const GenerateNewsRiskReportResponse = zod.object({
+  calendarCoverage: zod
+    .object({
+      source: zod.enum(["ECONOMIC_EVENTS_TABLE"]),
+      providerConfigured: zod
+        .boolean()
+        .describe(
+          "A calendar provider is configured. It does not mean the table was synced.",
+        ),
+      storedEventCount: zod
+        .number()
+        .describe("Rows in the stored calendar. 0 means never synced."),
+      coveredThrough: zod
+        .string()
+        .nullable()
+        .describe("Latest stored event time (ISO); null when empty."),
+      windowEnd: zod.string(),
+      windowCovered: zod.boolean(),
+      note: zod
+        .string()
+        .nullable()
+        .describe("Plain statement when the window is not covered."),
+    })
+    .optional()
+    .describe(
+      'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
+    ),
   id: zod.number(),
   userId: zod.number().nullish(),
   symbol: zod.string(),
@@ -10415,6 +10467,32 @@ export const GetLatestNewsRiskReportQueryParams = zod.object({
 });
 
 export const GetLatestNewsRiskReportResponse = zod.object({
+  calendarCoverage: zod
+    .object({
+      source: zod.enum(["ECONOMIC_EVENTS_TABLE"]),
+      providerConfigured: zod
+        .boolean()
+        .describe(
+          "A calendar provider is configured. It does not mean the table was synced.",
+        ),
+      storedEventCount: zod
+        .number()
+        .describe("Rows in the stored calendar. 0 means never synced."),
+      coveredThrough: zod
+        .string()
+        .nullable()
+        .describe("Latest stored event time (ISO); null when empty."),
+      windowEnd: zod.string(),
+      windowCovered: zod.boolean(),
+      note: zod
+        .string()
+        .nullable()
+        .describe("Plain statement when the window is not covered."),
+    })
+    .optional()
+    .describe(
+      'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
+    ),
   id: zod.number(),
   userId: zod.number().nullish(),
   symbol: zod.string(),

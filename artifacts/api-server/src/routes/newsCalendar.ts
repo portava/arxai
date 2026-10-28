@@ -61,6 +61,60 @@ function serializeReport(r: typeof newsRiskReportsTable.$inferSelect) {
   return { ...r, createdAt: r.createdAt.toISOString() };
 }
 
+// ── Stored-calendar coverage ──────────────────────────────────────────────
+// Every "upcoming events" read below comes from the economic_events table,
+// which is filled ONLY by POST /economic-events/sync (no scheduler). A
+// connected provider therefore says nothing about what the table holds: it
+// may be empty (never synced) or end days ago. An empty result is only a
+// real "no events" when the stored calendar runs at least to the end of the
+// window asked about. Otherwise events cannot be ruled out, and the
+// response says so instead of a bare empty list.
+
+export interface StoredCalendarCoverage {
+  source: "ECONOMIC_EVENTS_TABLE";
+  /** A calendar provider is configured (it does not mean the table was synced). */
+  providerConfigured: boolean;
+  /** Rows in the stored calendar, all time. 0 = never synced. */
+  storedEventCount: number;
+  /** Latest event time held in the stored calendar (ISO), or null when empty. */
+  coveredThrough: string | null;
+  /** End of the window this read asked about (ISO). */
+  windowEnd: string;
+  /** True only when the stored calendar reaches the end of the window. */
+  windowCovered: boolean;
+  /** Plain statement when the window is not covered; null when it is. */
+  note: string | null;
+}
+
+export async function readStoredCalendarCoverage(windowEnd: Date): Promise<StoredCalendarCoverage> {
+  const providerConfigured = isCalendarProviderEnabled();
+  const [agg] = await db.select({
+    n: sql<number>`count(*)::int`,
+    latest: sql<string | Date | null>`max(${economicEventsTable.eventTime})`,
+  }).from(economicEventsTable);
+  const storedEventCount = Number(agg?.n ?? 0);
+  const latestMs = agg?.latest != null ? new Date(agg.latest).getTime() : NaN;
+  const coveredThrough = Number.isFinite(latestMs) ? new Date(latestMs).toISOString() : null;
+  const windowCovered = storedEventCount > 0 && Number.isFinite(latestMs) && latestMs >= windowEnd.getTime();
+  const how = providerConfigured
+    ? "Sync events on the Economic Calendar page to refresh it."
+    : "No economic-calendar provider is configured.";
+  const note = windowCovered
+    ? null
+    : storedEventCount === 0 || coveredThrough === null
+      ? `The stored economic calendar is empty (events have never been synced), so upcoming events cannot be ruled out. ${how}`
+      : `The stored economic calendar only runs to ${coveredThrough}; events after that have not been synced, so they cannot be ruled out. ${how}`;
+  return {
+    source: "ECONOMIC_EVENTS_TABLE",
+    providerConfigured,
+    storedEventCount,
+    coveredThrough,
+    windowEnd: windowEnd.toISOString(),
+    windowCovered,
+    note,
+  };
+}
+
 function rowToEventInput(r: typeof economicEventsTable.$inferSelect): EconomicEventInput {
   return {
     id: r.id, eventName: r.eventName, currency: r.currency,
@@ -247,7 +301,8 @@ router.get("/economic-events/upcoming", async (req, res): Promise<void> => {
       ))
       .orderBy(economicEventsTable.eventTime);
     const filtered = rows.filter((r) => allowed.includes(r.impactLevel));
-    res.json({ events: filtered.map(serializeEvent), windowHours: q.hours, minImpact: q.minImpact });
+    const calendarCoverage = await readStoredCalendarCoverage(until);
+    res.json({ events: filtered.map(serializeEvent), windowHours: q.hours, minImpact: q.minImpact, calendarCoverage });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /economic-events/upcoming failed");
     res.status(400).json({ error: "Invalid request" });
@@ -309,7 +364,8 @@ router.post("/news-risk/generate", async (req, res): Promise<void> => {
   try {
     const { symbol } = GenerateBody.parse(req.body);
     const { row, result } = await generateNewsRiskForSymbol(symbol);
-    res.json({ ...serializeReport(row), reasons: result.reasons, blockTrading: result.blockTrading });
+    const calendarCoverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
+    res.json({ ...serializeReport(row), reasons: result.reasons, blockTrading: result.blockTrading, calendarCoverage });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /news-risk/generate failed");
     res.status(400).json({ error: "Failed to generate news risk report" });
@@ -360,12 +416,15 @@ router.get("/news-risk/latest", async (req, res): Promise<void> => {
         updatedAt: null,
       };
     }
-    res.json({ ...serializeReport(rows[0]), news });
+    // The report scored the stored calendar's next 24h; say whether that
+    // calendar actually reaches that far, so a CLEAR from an empty or
+    // out-of-date table is not read as an all-clear.
+    const calendarCoverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
+    res.json({ ...serializeReport(rows[0]), news, calendarCoverage });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /news-risk/latest failed");
     res.status(400).json({ error: "Invalid request" });
   }
 });
 
-void sql; // keep import used if future query needs it
 export default router;

@@ -3350,6 +3350,7 @@ paths:
                   events:
                     type: array
                     items: { $ref: "#/components/schemas/EconomicEventRecord" }
+                  calendarCoverage: { $ref: "#/components/schemas/StoredCalendarCoverage" }
 
   /news-risk/generate:
     post:
@@ -19841,10 +19842,27 @@ components:
         volatilityFlag: { type: integer }
         createdAt:    { type: string }
 
+    StoredCalendarCoverage:
+      type: object
+      description: >
+        Whether the stored economic calendar (economic_events, filled only by
+        POST /economic-events/sync) reaches the end of the window read. An empty
+        event list is a real "no events" only when windowCovered is true.
+      required: [source, providerConfigured, storedEventCount, coveredThrough, windowEnd, windowCovered, note]
+      properties:
+        source:            { type: string, enum: [ECONOMIC_EVENTS_TABLE] }
+        providerConfigured: { type: boolean, description: "A calendar provider is configured. It does not mean the table was synced." }
+        storedEventCount:  { type: integer, description: "Rows in the stored calendar. 0 means never synced." }
+        coveredThrough:    { type: ["string", "null"], description: "Latest stored event time (ISO); null when empty." }
+        windowEnd:         { type: string }
+        windowCovered:     { type: boolean }
+        note:              { type: ["string", "null"], description: "Plain statement when the window is not covered." }
+
     NewsRiskReport:
       type: object
       required: [id, symbol, riskLevel, aiSummary, createdAt]
       properties:
+        calendarCoverage: { $ref: "#/components/schemas/StoredCalendarCoverage" }
         id:                       { type: integer }
         userId:                   { type: ["integer", "null"] }
         symbol:                   { type: string }

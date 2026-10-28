@@ -1618,6 +1618,8 @@ export * from "./smartChartOverlayHandshakeOverallStatus";
 export * from "./smartChartSignalProjection";
 export * from "./stateTransitionEntry";
 export * from "./stateTransitionsList";
+export * from "./storedCalendarCoverage";
+export * from "./storedCalendarCoverageSource";
 export * from "./strategy";
 export * from "./strategyAggregate";
 export * from "./strategyParameters";

@@ -3,6 +3,7 @@
 // Pulses red on CRITICAL.
 
 import { useQuery } from "@tanstack/react-query";
+import type { CalendarCoverage } from "./UpcomingEventsList";
 
 interface UpcomingEvent {
   id: number; eventName: string; currency: string; impactLevel: "HIGH" | "CRITICAL" | string;
@@ -10,7 +11,7 @@ interface UpcomingEvent {
 }
 
 export function HighImpactEventBanner() {
-  const { data } = useQuery<{ events: UpcomingEvent[] }>({
+  const { data } = useQuery<{ events: UpcomingEvent[]; calendarCoverage?: CalendarCoverage }>({
     queryKey: ["upcoming-high-impact"],
     queryFn: async () => {
       const r = await fetch("/api/economic-events/upcoming?hours=1&minImpact=HIGH");
@@ -20,7 +21,18 @@ export function HighImpactEventBanner() {
     refetchInterval: 60_000,
   });
   const events = data?.events ?? [];
-  if (events.length === 0) return null;
+  if (events.length === 0) {
+    // No banner is read as "nothing in the next hour". When the stored
+    // calendar does not reach that far, say it was not checked instead.
+    if (data?.calendarCoverage?.windowCovered === false) {
+      return (
+        <div data-testid="high-impact-banner-not-checked" className="rounded-md border border-slate-600 bg-slate-900/60 p-2 text-xs text-slate-300">
+          High-impact events in the next hour were not checked: {data.calendarCoverage.note ?? "the stored economic calendar does not cover it."}
+        </div>
+      );
+    }
+    return null;
+  }
   const hasCritical = events.some((e) => e.impactLevel === "CRITICAL");
   const cls = hasCritical
     ? "border-red-700 bg-red-950/60 text-red-100 animate-pulse"

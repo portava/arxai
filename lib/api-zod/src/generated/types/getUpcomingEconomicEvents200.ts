@@ -6,9 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EconomicEventRecord } from "./economicEventRecord";
+import type { StoredCalendarCoverage } from "./storedCalendarCoverage";
 
 export type GetUpcomingEconomicEvents200 = {
   windowHours: number;
   minImpact: string;
   events: EconomicEventRecord[];
+  calendarCoverage?: StoredCalendarCoverage;
 };

@@ -11058,6 +11058,37 @@ export interface EconomicEventRecord {
   createdAt: string;
 }
 
+export type StoredCalendarCoverageSource =
+  (typeof StoredCalendarCoverageSource)[keyof typeof StoredCalendarCoverageSource];
+
+export const StoredCalendarCoverageSource = {
+  ECONOMIC_EVENTS_TABLE: "ECONOMIC_EVENTS_TABLE",
+} as const;
+
+/**
+ * Whether the stored economic calendar (economic_events, filled only by POST /economic-events/sync) reaches the end of the window read. An empty event list is a real "no events" only when windowCovered is true.
+
+ */
+export interface StoredCalendarCoverage {
+  source: StoredCalendarCoverageSource;
+  /** A calendar provider is configured. It does not mean the table was synced. */
+  providerConfigured: boolean;
+  /** Rows in the stored calendar. 0 means never synced. */
+  storedEventCount: number;
+  /**
+   * Latest stored event time (ISO); null when empty.
+   * @nullable
+   */
+  coveredThrough: string | null;
+  windowEnd: string;
+  windowCovered: boolean;
+  /**
+   * Plain statement when the window is not covered.
+   * @nullable
+   */
+  note: string | null;
+}
+
 export type NewsRiskReportRiskLevel =
   (typeof NewsRiskReportRiskLevel)[keyof typeof NewsRiskReportRiskLevel];
 
@@ -11084,6 +11115,7 @@ export type NewsRiskReportNews = {
 } | null;
 
 export interface NewsRiskReport {
+  calendarCoverage?: StoredCalendarCoverage;
   id: number;
   /** @nullable */
   userId?: number | null;
@@ -16683,6 +16715,7 @@ export type GetUpcomingEconomicEvents200 = {
   windowHours: number;
   minImpact: string;
   events: EconomicEventRecord[];
+  calendarCoverage?: StoredCalendarCoverage;
 };
 
 export type GenerateNewsRiskReportBody = {
