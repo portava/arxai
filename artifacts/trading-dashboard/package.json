@@ -46,7 +46,7 @@
     "test:chart-live-affordance": "vitest run src/lib/chart-live-affordance-guard.test.ts",
     "test:scanner-scan-feedback": "vitest run src/pages/market-scanner.scan-feedback.test.ts",
     "test:scanner-chart-refresh": "vitest run src/components/scanner/ScannerChartPanel.refresh-affordance.test.ts",
-    "test:chart-drag-modify": "vitest run src/components/scanner/ScannerChartPanel.drag-modify.test.ts src/lib/chart-drag-modify.test.ts",
+    "test:chart-drag-modify": "vitest run src/components/scanner/ScannerChartPanel.drag-modify.test.ts src/lib/chart-drag-modify.test.ts src/lib/chart-drag-modify.pipUnit.test.ts",
     "test:scanner-refresh-affordance": "vitest run src/components/scanner/RefreshAffordance.cross-card.test.ts",
     "test:scanner-outage-banner": "vitest run src/pages/market-scanner.outage-banner.test.tsx",
     "test:synthetic-feed-copy": "vitest run src/lib/humanize.synthetic-feed-copy.test.ts",
