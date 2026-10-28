@@ -227,7 +227,7 @@ function RankTable({ title, rows }: { title: string; rows: { key: string; graded
   );
 }
 
-function BucketTable({ title, rows }: { title: string; rows: { bucket: string; total: number; wins: number; losses: number; winRate: number }[] }) {
+function BucketTable({ title, rows }: { title: string; rows: { bucket: string; total: number; wins: number; losses: number; winRate: number | null }[] }) {
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>

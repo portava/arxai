@@ -24493,12 +24493,16 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
       pending: zod.number(),
       graded: zod.number(),
     }),
-    rates: zod.object({
-      winRate: zod.number(),
-      tpRate: zod.number(),
-      slRate: zod.number(),
-      lateRate: zod.number(),
-    }),
+    rates: zod
+      .object({
+        winRate: zod.number().nullable(),
+        tpRate: zod.number().nullable(),
+        slRate: zod.number().nullable(),
+        lateRate: zod.number().nullable(),
+      })
+      .describe(
+        "Each rate is null when its denominator is empty (nothing to rate), never 0.",
+      ),
     timing: zod.record(zod.string(), zod.number()),
     averages: zod.object({
       slippage: zod.number().nullish(),
@@ -24544,7 +24548,12 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
     ),
     newsFailures: zod.number(),
     executionFailures: zod.number(),
-    explanationAccuracy: zod.number(),
+    explanationAccuracy: zod
+      .number()
+      .nullable()
+      .describe(
+        "Win rate among graded rows where the explanation was used; null when there are none.",
+      ),
     ignoredWarnings: zod.number(),
     avoidedBadTrades: zod.number(),
     missedOpportunities: zod.number(),
@@ -24554,7 +24563,12 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
         total: zod.number(),
         wins: zod.number(),
         losses: zod.number(),
-        winRate: zod.number(),
+        winRate: zod
+          .number()
+          .nullable()
+          .describe(
+            "wins \/ (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).",
+          ),
       }),
     ),
     edgeVsOutcome: zod.array(
@@ -24563,7 +24577,12 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
         total: zod.number(),
         wins: zod.number(),
         losses: zod.number(),
-        winRate: zod.number(),
+        winRate: zod
+          .number()
+          .nullable()
+          .describe(
+            "wins \/ (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).",
+          ),
       }),
     ),
   }),

@@ -13446,7 +13446,9 @@ components:
         total: { type: number }
         wins: { type: number }
         losses: { type: number }
-        winRate: { type: number }
+        winRate:
+          type: ["number", "null"]
+          description: wins / (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).
 
     RubyQualityMetrics:
       type: object
@@ -13467,11 +13469,12 @@ components:
         rates:
           type: object
           required: [winRate, tpRate, slRate, lateRate]
+          description: Each rate is null when its denominator is empty (nothing to rate), never 0.
           properties:
-            winRate: { type: number }
-            tpRate: { type: number }
-            slRate: { type: number }
-            lateRate: { type: number }
+            winRate: { type: ["number", "null"] }
+            tpRate: { type: ["number", "null"] }
+            slRate: { type: ["number", "null"] }
+            lateRate: { type: ["number", "null"] }
         timing:
           type: object
           additionalProperties: { type: number }
@@ -13496,7 +13499,9 @@ components:
           items: { $ref: "#/components/schemas/RubyQualitySymbolSessionStat" }
         newsFailures: { type: number }
         executionFailures: { type: number }
-        explanationAccuracy: { type: number }
+        explanationAccuracy:
+          type: ["number", "null"]
+          description: Win rate among graded rows where the explanation was used; null when there are none.
         ignoredWarnings: { type: number }
         avoidedBadTrades: { type: number }
         missedOpportunities: { type: number }

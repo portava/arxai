@@ -14,6 +14,7 @@ import type { RubyQualitySymbolSessionStat } from "./rubyQualitySymbolSessionSta
 
 export interface RubyQualityMetrics {
   totals: RubyQualityMetricsTotals;
+  /** Each rate is null when its denominator is empty (nothing to rate), never 0. */
   rates: RubyQualityMetricsRates;
   timing: RubyQualityMetricsTiming;
   averages: RubyQualityMetricsAverages;
@@ -23,7 +24,11 @@ export interface RubyQualityMetrics {
   worstSessions: RubyQualitySymbolSessionStat[];
   newsFailures: number;
   executionFailures: number;
-  explanationAccuracy: number;
+  /**
+   * Win rate among graded rows where the explanation was used; null when there are none.
+   * @nullable
+   */
+  explanationAccuracy: number | null;
   ignoredWarnings: number;
   avoidedBadTrades: number;
   missedOpportunities: number;

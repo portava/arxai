@@ -8,6 +8,8 @@
 //
 // Only EVIDENCE-RESOLVED rows count toward graded rates. PENDING/UNRESOLVED rows
 // are reported separately and never inflate a win/loss rate (no fabrication).
+// A rate whose denominator is empty is null (unknown — nothing to rate), never
+// 0, which would read as a measured 0%.
 
 import type { ExitReason, SignalOutcomeStatus, TimingClass } from "./rubyQuality.types";
 
@@ -40,7 +42,7 @@ export interface ScoreOutcomeBucket {
   total: number;
   wins: number;
   losses: number;
-  winRate: number;         // wins / graded, 0 when none graded
+  winRate: number | null;  // wins / (wins + losses), null when none graded
 }
 
 export interface SymbolSessionStat {
@@ -58,11 +60,12 @@ export interface RubyQualityMetrics {
     pending: number;
     graded: number;        // WIN+LOSS+BREAKEVEN (trades that resolved)
   };
+  /** Each rate is null when its denominator is empty (nothing to rate). */
   rates: {
-    winRate: number;       // wins / graded
-    tpRate: number;        // TP exits / entered-resolved
-    slRate: number;        // SL exits / entered-resolved
-    lateRate: number;      // LATE / entered-with-timing
+    winRate: number | null;   // wins / graded
+    tpRate: number | null;    // TP exits / entered-resolved
+    slRate: number | null;    // SL exits / entered-resolved
+    lateRate: number | null;  // LATE / entered-with-timing
   };
   timing: Record<TimingClass | "UNKNOWN", number>;
   averages: {
@@ -77,13 +80,17 @@ export interface RubyQualityMetrics {
   worstSessions: SymbolSessionStat[];
   newsFailures: number;        // entered + LOSS + news nearby
   executionFailures: number;   // actual slippage worse than expected
-  explanationAccuracy: number; // win rate among graded rows where explanation was used
+  explanationAccuracy: number | null; // win rate among graded rows where explanation was used; null when none
   ignoredWarnings: number;     // user entered against a reject/no_trade call
   avoidedBadTrades: number;    // credited no-trades
   missedOpportunities: number; // NO_TRADE_MISSED
   confidenceVsOutcome: ScoreOutcomeBucket[];
   edgeVsOutcome: ScoreOutcomeBucket[];
 }
+
+/** part / whole rounded to 3 dp, or null when there is nothing to rate. */
+const rate = (part: number, whole: number): number | null =>
+  whole > 0 ? Math.round((part / whole) * 1000) / 1000 : null;
 
 const avg = (xs: number[]): number | null =>
   xs.length === 0 ? null : Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10000) / 10000;
@@ -106,7 +113,7 @@ function bucketStat(rows: QualitySampleRow[], pick: (r: QualitySampleRow) => num
     const wins = inBucket.filter((r) => r.outcomeStatus === "WIN").length;
     const losses = inBucket.filter((r) => r.outcomeStatus === "LOSS").length;
     const gradedN = wins + losses;
-    return { bucket: label, total: inBucket.length, wins, losses, winRate: gradedN ? Math.round((wins / gradedN) * 1000) / 1000 : 0 };
+    return { bucket: label, total: inBucket.length, wins, losses, winRate: rate(wins, gradedN) };
   });
 }
 
@@ -165,10 +172,10 @@ export function computeRubyQualityMetrics(rows: QualitySampleRow[]): RubyQuality
       graded: graded.length,
     },
     rates: {
-      winRate: graded.length ? Math.round((wins / graded.length) * 1000) / 1000 : 0,
-      tpRate: enteredResolved.length ? Math.round((tp / enteredResolved.length) * 1000) / 1000 : 0,
-      slRate: enteredResolved.length ? Math.round((sl / enteredResolved.length) * 1000) / 1000 : 0,
-      lateRate: enteredTimed.length ? Math.round((late / enteredTimed.length) * 1000) / 1000 : 0,
+      winRate: rate(wins, graded.length),
+      tpRate: rate(tp, enteredResolved.length),
+      slRate: rate(sl, enteredResolved.length),
+      lateRate: rate(late, enteredTimed.length),
     },
     timing,
     averages: {
@@ -183,7 +190,7 @@ export function computeRubyQualityMetrics(rows: QualitySampleRow[]): RubyQuality
     worstSessions: rankedSessions.slice(-5).reverse(),
     newsFailures: enteredResolved.filter((r) => r.outcomeStatus === "LOSS" && r.newsNearby).length,
     executionFailures: rows.filter((r) => r.actualSlippage != null && r.expectedSlippage != null && r.actualSlippage > r.expectedSlippage).length,
-    explanationAccuracy: expWithExplain.length ? Math.round((explainWins / expWithExplain.length) * 1000) / 1000 : 0,
+    explanationAccuracy: rate(explainWins, expWithExplain.length),
     ignoredWarnings: rows.filter((r) => r.userEntered && (r.decision === "reject" || r.decision === "no_trade")).length,
     avoidedBadTrades: rows.filter((r) => r.noTradeCredited).length,
     missedOpportunities: rows.filter((r) => r.outcomeStatus === "NO_TRADE_MISSED").length,

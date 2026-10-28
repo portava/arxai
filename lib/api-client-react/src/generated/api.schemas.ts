@@ -3088,7 +3088,11 @@ export interface RubyQualityScoreBucket {
   total: number;
   wins: number;
   losses: number;
-  winRate: number;
+  /**
+   * wins / (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).
+   * @nullable
+   */
+  winRate: number | null;
 }
 
 export type RubyQualityMetricsTotals = {
@@ -3098,11 +3102,18 @@ export type RubyQualityMetricsTotals = {
   graded: number;
 };
 
+/**
+ * Each rate is null when its denominator is empty (nothing to rate), never 0.
+ */
 export type RubyQualityMetricsRates = {
-  winRate: number;
-  tpRate: number;
-  slRate: number;
-  lateRate: number;
+  /** @nullable */
+  winRate: number | null;
+  /** @nullable */
+  tpRate: number | null;
+  /** @nullable */
+  slRate: number | null;
+  /** @nullable */
+  lateRate: number | null;
 };
 
 export type RubyQualityMetricsTiming = { [key: string]: number };
@@ -3116,6 +3127,7 @@ export type RubyQualityMetricsAverages = {
 
 export interface RubyQualityMetrics {
   totals: RubyQualityMetricsTotals;
+  /** Each rate is null when its denominator is empty (nothing to rate), never 0. */
   rates: RubyQualityMetricsRates;
   timing: RubyQualityMetricsTiming;
   averages: RubyQualityMetricsAverages;
@@ -3125,7 +3137,11 @@ export interface RubyQualityMetrics {
   worstSessions: RubyQualitySymbolSessionStat[];
   newsFailures: number;
   executionFailures: number;
-  explanationAccuracy: number;
+  /**
+   * Win rate among graded rows where the explanation was used; null when there are none.
+   * @nullable
+   */
+  explanationAccuracy: number | null;
   ignoredWarnings: number;
   avoidedBadTrades: number;
   missedOpportunities: number;
