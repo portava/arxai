@@ -85,8 +85,32 @@ function humanize(map: Record<string, string>, raw: string | null | undefined): 
   return map[String(raw).toUpperCase()] ?? "—";
 }
 
-// Live "updated Xs ago" timer from a DATA timestamp (newest of the snapshot's
-// lastTickAt / lastCandleAt — never the signal build-time) against a ticking now.
+// A snapshot stamp later than now (beyond this clock-skew allowance) is not an
+// observation: lastCandleAt is the newest provider bar's closeTime, which for a
+// still-forming bar is its SCHEDULED close (open + interval), in the future.
+const FUTURE_STAMP_SKEW_MS = 5_000;
+// Shown instead of an age when the only data time is a forming bar's scheduled
+// close (e.g. an MT5 feed, which reports no tick time).
+const UNREPORTED_UPDATE_TIME = "last update time not reported — newest bar still forming";
+
+// Newest OBSERVED data time from the snapshot's lastTickAt / lastCandleAt.
+// Future stamps are dropped (never clamped to "0s ago"); `scheduledOnly` is true
+// when a stamp existed but every one of them was a future bar boundary.
+function observedDataTime(
+  stamps: Array<string | null | undefined>,
+  nowTs: number,
+): { iso: string | null; scheduledOnly: boolean } {
+  const parsed = stamps
+    .map((s) => (s ? Date.parse(s) : NaN))
+    .filter((n) => Number.isFinite(n));
+  const observed = parsed.filter((n) => n <= nowTs + FUTURE_STAMP_SKEW_MS);
+  if (observed.length > 0) return { iso: new Date(Math.max(...observed)).toISOString(), scheduledOnly: false };
+  return { iso: null, scheduledOnly: parsed.length > 0 };
+}
+
+// Live "updated Xs ago" timer from an OBSERVED data timestamp (see
+// observedDataTime — never the signal build-time, never a future bar close)
+// against a ticking now.
 function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
   if (!dataIso) return "—";
   const t = Date.parse(dataIso);
@@ -109,17 +133,22 @@ function resolveFeedRow(input: {
   signal: RubyMarketEdgeSignal | null;
   downgraded: boolean;
   dataUpdatedIso: string | null;
+  /** True when the snapshot's only data time is a forming bar's future close. */
+  dataTimeScheduledOnly?: boolean;
   snapshotState: string | null;
   nowTs: number;
 }): { text: string; tone: string; feedDataNote: string | null } {
   const { signal, downgraded, dataUpdatedIso, snapshotState, nowTs } = input;
+  const scheduledOnly = dataUpdatedIso == null && input.dataTimeScheduledOnly === true;
   if (!signal) return { text: "", tone: "text-txt-muted", feedDataNote: null };
   const f = freshnessLabel(signal);
   if (downgraded) {
-    const age = dataUpdatedIso ? ` · ${ageLabel(dataUpdatedIso, nowTs)}` : "";
+    const age = dataUpdatedIso
+      ? ` · ${ageLabel(dataUpdatedIso, nowTs)}`
+      : scheduledOnly ? ` · ${UNREPORTED_UPDATE_TIME}` : "";
     return { text: `Feed not confirmed${age}`, tone: "text-warning", feedDataNote: null };
   }
-  if (dataUpdatedIso == null) {
+  if (dataUpdatedIso == null && !scheduledOnly) {
     return {
       text: "Feed time unconfirmed — market-truth snapshot unavailable",
       tone: "text-warning",
@@ -127,7 +156,7 @@ function resolveFeedRow(input: {
         "Feed time unconfirmed — the market-truth snapshot is unavailable, so the live feed can't be confirmed here.",
     };
   }
-  const age = ageLabel(dataUpdatedIso, nowTs);
+  const age = dataUpdatedIso ? ageLabel(dataUpdatedIso, nowTs) : UNREPORTED_UPDATE_TIME;
   const state = String(snapshotState ?? "").toUpperCase();
   if (state !== "LIVE_CONFIRMED") {
     const word = f.text === "Live feed" ? "Live (unconfirmed)" : f.text;
@@ -139,7 +168,9 @@ function resolveFeedRow(input: {
     };
   }
   const tone = FRESHNESS_TONE[String(signal.freshness ?? "").toUpperCase()] ?? f.tone;
-  // Never paint a non-live word green just because the signal is young.
+  // Never paint a non-live word green just because the signal is young, and
+  // never paint it green when no observed update time backs it.
+  if (scheduledOnly) return { text: `${f.text} · ${age}`, tone: "text-warning", feedDataNote: null };
   return { text: `${f.text} · ${age}`, tone: f.text === "Live feed" ? tone : f.tone, feedDataNote: null };
 }
 
@@ -258,12 +289,10 @@ export function RubyMarketReadCard({
     hookNewsState ?? (news != null ? "available" : truthLoading ? "loading" : "unavailable");
   const eventRisk = eventRiskLine(news, newsState);
   const pricePrecision = scannerTruth?.candles.pricePrecision ?? null;
-  const dataUpdatedIso = useMemo(() => {
-    const stamps = [truthData?.lastTickAt, truthData?.lastCandleAt]
-      .map((s) => (s ? Date.parse(s) : NaN))
-      .filter((n) => Number.isFinite(n)) as number[];
-    return stamps.length > 0 ? new Date(Math.max(...stamps)).toISOString() : null;
-  }, [truthData?.lastTickAt, truthData?.lastCandleAt]);
+  // Re-evaluated on every tick so a bar close that was scheduled becomes a
+  // usable data time only once it has actually passed.
+  const dataTime = observedDataTime([truthData?.lastTickAt, truthData?.lastCandleAt], nowTs);
+  const dataUpdatedIso = dataTime.iso;
 
   const explanation: RubyMarketReadExplanation | null = data?.explanation ?? null;
   const signal = data?.signal ?? null;
@@ -296,6 +325,7 @@ export function RubyMarketReadCard({
     signal,
     downgraded,
     dataUpdatedIso,
+    dataTimeScheduledOnly: dataTime.scheduledOnly,
     snapshotState: truthData?.state ?? null,
     nowTs,
   });
