@@ -374,7 +374,7 @@ function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: Retu
         <dt className="text-zinc-500">Heartbeat</dt><dd>{ctx.heartbeatPresent ? `present (${ctx.heartbeatAgeSeconds ?? "?"}s)` : "absent"}</dd>
         <dt className="text-zinc-500">Broker read-only</dt><dd>{String(ctx.brokerReadOnly)}</dd>
         <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness}</dd>
-        <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive ? "ENGAGED" : "off"}</dd>
+        <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive === true ? "ENGAGED" : ctx.emergencyStopActive === false ? "off" : "not checked here (open Emergency page)"}</dd>
         <dt className="text-zinc-500">Selected symbol</dt><dd>{ctx.selectedSymbol ?? "—"}</dd>
         <dt className="text-zinc-500">Route</dt><dd className="truncate">{ctx.route}</dd>
         <dt className="text-zinc-500">Recent failed APIs</dt><dd>{ctx.recentFailedEndpoints.length}</dd>

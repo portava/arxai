@@ -140,7 +140,9 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
     mt5BridgeConnected,
     heartbeatPresent,
     heartbeatAgeSeconds,
-    emergencyStopActive: false, // surfaced by bridge if/when server exposes it
+    // No endpoint this collector reads reports the platform emergency stop or
+    // the kill switch, so its state is unknown here — never a measured "off".
+    emergencyStopActive: null,
     readiness: input.health && input.health.readinessReachable ? "unknown" : "unknown",
     serverRoleHint: input.serverRoleHint ?? "unknown",
     recentErrors: getErrors(),

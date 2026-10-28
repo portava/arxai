@@ -19,7 +19,7 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
   const out: DoctorDiagnosis[] = [];
 
   // 1) Emergency Stop active (highest priority)
-  pushIf(out, ctx.emergencyStopActive, {
+  pushIf(out, ctx.emergencyStopActive === true, {
     category: "safety-lock",
     id: "doc-emergency-stop",
     explanation: "The Emergency Stop is engaged. All trading activity is halted by design.",
@@ -205,7 +205,7 @@ export function explainAppStatus(ctx: RuntimeContext): {
   if (ctx.brokerReadOnly) cannotDo.push("Modify broker positions");
   if (!ctx.heartbeatPresent) cannotDo.push("Confirm an MT5 EA heartbeat");
 
-  const whyLiveUnavailable = ctx.emergencyStopActive
+  const whyLiveUnavailable = ctx.emergencyStopActive === true
     ? "Emergency Stop is engaged."
     : !ctx.heartbeatPresent
       ? "No confirmed MT5 EA heartbeat yet."

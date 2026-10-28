@@ -52,7 +52,7 @@ function withRoute(label: string, route: string | undefined): BlockerCard["relat
 export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[]): BlockerCard[] {
   const out: BlockerCard[] = [];
 
-  if (ctx.emergencyStopActive) {
+  if (ctx.emergencyStopActive === true) {
     out.push({
       kind: "emergency-stop",
       title: "Emergency Stop active",

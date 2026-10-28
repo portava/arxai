@@ -206,7 +206,7 @@ export function computeReadinessScore(
 
   const total = sections.reduce((acc, s) => acc + s.score, 0);
   const liveUnavailableReason =
-    ctx.emergencyStopActive ? "Emergency Stop is engaged."
+    ctx.emergencyStopActive === true ? "Emergency Stop is engaged."
     : !ctx.heartbeatPresent ? "No confirmed MT5 heartbeat."
     : ctx.mt5Deferred ? "MT5 bridge is deferred."
     : ctx.brokerReadOnly ? "Broker is in read-only mode."

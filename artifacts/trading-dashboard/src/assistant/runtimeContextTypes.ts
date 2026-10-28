@@ -77,7 +77,12 @@ export interface RuntimeContext {
   mt5BridgeConnected: boolean;
   heartbeatPresent: boolean;
   heartbeatAgeSeconds: number | null;
-  emergencyStopActive: boolean;
+  /**
+   * Platform emergency stop / kill switch. `null` means no source read on this
+   * page reports it — it is NOT a measured "off". Only `true`/`false` from a
+   * server reading may be shown as engaged/off.
+   */
+  emergencyStopActive: boolean | null;
   /** Free-form readiness label, e.g. "incomplete" / "ready" / "unknown". */
   readiness: "ready" | "incomplete" | "unknown";
 
