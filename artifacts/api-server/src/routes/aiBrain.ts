@@ -277,6 +277,34 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
     const worstSym = sorted(bySymbol, true)[0]?.[0] ?? null;
     const topMistake = sorted(byMistake)[0]?.[0] ?? "none";
 
+    // Rule suggestions are derived ONLY from what the journal records
+    // (mistake tags, strategy and symbol P/L) and cite the observed numbers.
+    // A journal with no repeated mistake and no net-losing strategy/symbol
+    // gets no suggestions rather than generic defaults.
+    const countByStrategy = new Map<string, number>();
+    const countBySymbol = new Map<string, number>();
+    for (const j of journal) {
+      countByStrategy.set(j.strategy, (countByStrategy.get(j.strategy) ?? 0) + 1);
+      countBySymbol.set(j.symbol, (countBySymbol.get(j.symbol) ?? 0) + 1);
+    }
+    const money2 = (n: number) => (n < 0 ? "-" : "+") + Math.abs(Math.round(n * 100) / 100).toFixed(2);
+    const suggestedRuleChanges: string[] = [];
+    const topMistakeCount = topMistake !== "none" ? (byMistake.get(topMistake) ?? 0) : 0;
+    if (topMistakeCount >= 2) {
+      suggestedRuleChanges.push(
+        `Add a pre-trade check against "${topMistake}" — tagged on ${topMistakeCount} of your ${total} journal entries.`);
+    }
+    const losingStrat = sorted(byStrategy, true)[0];
+    if (losingStrat && losingStrat[1] < 0) {
+      suggestedRuleChanges.push(
+        `Pause "${losingStrat[0]}" — net ${money2(losingStrat[1])} across ${countByStrategy.get(losingStrat[0]) ?? 0} journal entries.`);
+    }
+    const losingSym = sorted(bySymbol, true)[0];
+    if (losingSym && losingSym[1] < 0) {
+      suggestedRuleChanges.push(
+        `Reduce size on ${losingSym[0]} — net ${money2(losingSym[1])} across ${countBySymbol.get(losingSym[0]) ?? 0} journal entries.`);
+    }
+
     return res.json({
       doingWell: winRate >= 50
         ? `Win rate ${winRate}% across ${total} simulated trades — keep the same selection criteria.`
@@ -290,11 +318,7 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       recommendedFocus: worstStrat
         ? `Stop trading "${worstStrat}" until you can show 5 paper wins on it in replay.`
         : "Pick one strategy and run 10 replays before taking any live intent.",
-      suggestedRuleChanges: [
-        "Require setupQualityScore >= 70 before generating a card.",
-        "Reject trades when marketBias is 'choppy'.",
-        "Block any entry with riskRewardRatio < 1.5.",
-      ],
+      suggestedRuleChanges,
       confidenceCalibration: total < 10
         ? "Sample size too small — confidence numbers are not yet calibrated."
         : `Average confidence aligns with win rate within ${Math.abs(winRate - 60)} pts.`,
