@@ -31,8 +31,9 @@ or trading permission was introduced.
 
 ## Evidence
 
-Final application source: `23698959c7f097bcf712847a9d81b23e5ec62f16`.
-All later changes in this receipt commit are documentation/evidence only.
+Earlier application checkpoint: `23698959c7f097bcf712847a9d81b23e5ec62f16`.
+The original receipt at `ae332d23` contained documentation/evidence only after that source.
+The follow-up below records later application changes separately.
 The final quiet run passes **164 frontend files: 2,322 passed / 9 skipped**,
 dashboard typecheck, the production build, **87/87 guards** and **7/7 binding
 assertions**. Tooling tests pass **18/18**. Build warnings about bundle size and
@@ -91,10 +92,94 @@ route with an observer and synthetic historical data. It is not the deployable
 bundle or a broker/feed test. Reader truth is deliberately unavailable. Owned
 position/pending-order overlays and active automatic analysis are not browser
 accepted by this fixture. Secondary live pages have source/component checks;
-full browser acceptance of all four is separate work.
+full browser acceptance of all four was pending at this earlier checkpoint; see the follow-up below.
 
 Actual integrated Scanner latency, sustained streams/history, active analysis,
 and TradingView/MT5 comparison gaps remain open. Prior standalone performance
 misses remain in the comparison report; no percentage or parity is asserted.
 No main merge, deployment, existing database modification, worker/trading enable,
 email or live/demo broker operation was performed.
+
+
+## Follow-up: no chart logos and measured Scanner work
+
+Validated application checkpoint: `8e87e55d030547be4cb3cf1e3aab00b00dba792a`.
+The full dashboard lane passes **164 files, 2,328 tests / 9 skipped**, typecheck,
+production build, **87 guards** and **7 binding assertions**. Bundle warnings remain.
+The clean immutable browser fixture is `eee7b37ce1e8f1f3`. Scanner functional
+acceptance passes **43 assertions**, including full canonical/displayed data and
+logo absence after completed chart rendering. Four-page follow-up: pending report.
+
+The owner explicitly requested no TradingView logos anywhere. An independent
+source audit found two runtime chart constructors. The shared native adapter
+already disables the logo (Scanner, Replay and the four replacement pages).
+`PositionMiniChart` still inherited the library default; it now explicitly
+disables the logo and uses the shared plain-text credit. Its component test
+checks both the chart option and credit without images, SVG or canvas. The
+empty-position browser fixture does not mount that preview, so this specific
+renderer has component/source evidence, not new visual acceptance.
+Required text/link attribution remains; it is not an embedded product or a logo.
+The pinned [5.2.0 notice](https://raw.githubusercontent.com/tradingview/lightweight-charts/v5.2.0/NOTICE)
+and [library logo option](https://tradingview.github.io/lightweight-charts/docs/api/interfaces/LayoutOptions#attributionlogo)
+permit this alternative.
+
+Two performance fixes at `cc7ad0e0a1282a51f6ffe6efa369705747af13f4` preserve
+unchanged note collections and avoid requesting a drawing repaint for an
+unchanged selection. The two regressions failed before the fixes; the focused
+lane then passed 14/14. Independent reviews found no remaining blocker. Real
+note edits, source/interval changes and drawing/viewport changes still update.
+
+The same hardened diagnostic observed 18 seconds with 200 synthetic bars,
+one saved note and one actual browser-local drawing. It checks the active
+engine, series and drawing attachment every 100 ms and on wrapped calls, and
+restores all instrumentation. These probes are not a continuous execution trace.
+Both observations were valid, with unchanged candles, note values and drawings:
+
+| Idle work | Before: `23698959`, build `0b73849de1482966` | After: `cc7ad0e0`, build `0a98f2aa91d46955` |
+|---|---:|---:|
+| Price-line creation/removal | 39 / 39 | 2 / 2 |
+| Repeated selection calls | 40 | 42 |
+| Drawing repaint requests | 40 | 0 |
+| Drawing view updates | 349 | 3 |
+
+The remaining two line rebuilds are retained, and the original note handle did
+change. This proves less unchanged work in that interval, not zero chart work,
+an input-speed gain, physical paint timing or sustained 60 fps.
+
+A separate actual-Scanner timing run used 200 synthetic bars, unavailable AI
+truth, no active studies/drawings, desktop 1440×1100 and mobile 390×844, Chromium
+156 on macOS arm64, 14 reported logical processors, DPR 1, normal/4× throttled
+CPU. Our tests/builds and other agent browser work were stopped during timing;
+other user applications were not controlled. Each successfully measured control/rate has two passes
+of 40 retained measurements plus warmups. p99 is the nearest-rank maximum at
+80 samples. Completion means correct context/data/range or disclosure across
+two consecutive animation frames, including observer cost; it is not hardware
+paint. Native-menu navigation time is excluded from the intended style measure.
+
+| Control group | Before p95, normal / 4× | After p95, normal / 4× |
+|---|---|---|
+| Zoom in/out, pan earlier/later | 49.0–49.2 / 47.1–47.7 ms | 48.9–49.0 / 46.9–47.9 ms |
+| Open/close mobile Tools | 32.7–32.8 / 29.2–29.6 ms | 32.5–32.6 / 29.7–30.1 ms |
+| Style bars/candles | 0/80 each; unmeasured | 0/80 each; unmeasured |
+
+All six measured controls/rate have 80 successful samples and none over 100 ms;
+the candidate maximum is 54.5 ms. Baseline/candidate differences are small and
+mixed, so **no click-speed improvement is established**. Overall timing verdict
+is **FAIL / partial**: trusted keyboard input in this headless Mac browser never
+committed either native style selection. Pending arms/key events and all skipped
+samples remain recorded. Functional style switching is a separate passing test
+using programmatic selection and is not substituted for trusted-input timing.
+
+The original failed desktop measurement is retained. The corrected tool isolates
+only style-control failures so they do not suppress navigation samples. Candidate
+tooling adds a stricter final failure gate after review; this changes verdict
+handling only, not sampling, and the baseline was already FAIL. Timing source is
+`cc7ad0e0`, before the later mini-chart-logo change; final functional/source checks
+are tied to `8e87e55d`. No results are attributed to a different commit.
+
+Follow-up receipts are under [validation/followup](validation/scanner-smart-chart-20261028/followup/),
+with full local raw logs in `/Users/areyouok/arx-tier1-release/scanner-performance-20261028/`.
+Original failures and all outliers remain. Active reader/owned-position acceptance,
+streaming/heavy-history loads, style input latency, calendar intervals and equal-
+condition TradingView/MT5 comparisons remain open. No main merge, deployment,
+existing database change or broker operation occurred.

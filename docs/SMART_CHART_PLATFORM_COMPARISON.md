@@ -45,8 +45,9 @@ The actual Scanner page now mounts `ARXNativeChart` with its existing shared
 candle query and original response evidence. Native owns candle rendering,
 streaming and history; Scanner retains its owned-position, pending-order,
 annotation, context-menu and confirmation controls through a view-only surface
-bridge. Standalone native performance figures still cannot be attributed to
-Scanner without measuring that integrated page.
+bridge. Standalone native performance figures cannot be attributed to Scanner. A bounded
+actual-Scanner check is now recorded separately in the 28 October follow-up;
+its missing native-menu style samples keep its overall timing verdict partial.
 
 ## Comparison and implementation checklist
 
@@ -195,3 +196,14 @@ score is independent of this feature checklist and must not be reused as a
 Smart Chart completion percentage.
 
 Integrated Scanner replacement and exact-source browser evidence: [28 October integration receipt](SCANNER_SMART_CHART_INTEGRATION_2026_10_28.md).
+
+
+28 October follow-up: Scanner zoom/pan and mobile Tools each have 80 retained
+samples per CPU setting on `cc7ad0e0`, below 100 ms p95 in the bounded 200-bar
+unavailable-analysis fixture. Trusted native style selection could not be exercised,
+so the overall run remains FAIL/partial. The small mixed before/after differences
+do not establish faster clicks. Idle note/drawing work decreased in a separate
+18-second diagnostic; neither result supersedes the heavy-load and replay misses
+above. All TradingView logos are disabled in the two runtime constructors at
+`8e87e55d`; required plain-text library credit remains. See the exact sources,
+controls, failures and limitations in the [follow-up receipt](SCANNER_SMART_CHART_INTEGRATION_2026_10_28.md#follow-up-no-chart-logos-and-measured-scanner-work).

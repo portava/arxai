@@ -102,7 +102,8 @@ The exact static SPA route list also includes `/live-chart`, `/live-manual`,
 proxy is added. After the same setup, run
 `scripts/scanner-qa/shared-chart-pages-acceptance.js` in its own fresh session.
 This loads every real page, checks the executing build, obtains fresh page
-response evidence, and verifies full canonical/displayed candles after market
+response evidence bound to the chart request (including its 300-bar limit,
+separate from 200-bar truth/ticket requests), and verifies full canonical/displayed candles after market
 and interval changes. It records desktop/mobile chart screenshots and checks
 the mobile disclosure without touching order controls.
 
@@ -123,4 +124,28 @@ passed; inspect `passed`, every page record, failures, screenshots and network.
 ```sh
 node --test scripts/scanner-qa/shared-chart-pages-acceptance.test.mjs
 node --check scripts/scanner-qa/shared-chart-pages-acceptance.js
+```
+
+
+## Timing and idle-work diagnostics
+
+After fresh offline setup, `shared-chart-latency.js` measures the actual Scanner
+at desktop/mobile sizes and normal/4× CPU. It retains 80 measured samples per
+control, warmups, missing/failed actions, pending input and outliers. Use a quiet
+window, verify the executing build, and report completed chart state separately
+from control acknowledgement. The extra frame is a rendering opportunity, not
+physical paint. Inspect every control: native style selection may be unsupported
+by the runner; those controls stay incomplete and the overall result stays FAIL.
+A programmatic selection is allowed only for preparation/recovery outside timing.
+
+For a separate idle-work comparison, in a fresh session run
+`shared-chart-idle-setup.js` **before** `shared-chart-setup.js`, then
+`shared-chart-idle-observer.js`. The fixture supplies one synthetic saved note;
+the observer places one local drawing and counts work for 18 seconds. It checks
+current engine/series/attachment ownership, full data and note values, and restores
+all instrumented methods. Only `valid:true` receipts can support a work-reduction
+claim. Note-handle churn is reported independently. Counts do not measure latency.
+
+```sh
+node --test scripts/scanner-qa/shared-chart*.test.mjs
 ```

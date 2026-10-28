@@ -1,0 +1,2716 @@
+{
+  "valid": true,
+  "durationMs": 18001.099999904633,
+  "counts": {
+    "createPriceLine": 39,
+    "removePriceLine": 39,
+    "setSelection": 40,
+    "updateAllViews": 349,
+    "requestUpdate": 40
+  },
+  "calls": [
+    {
+      "at": 11058.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11478,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11478.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11478.200000286102,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11478.300000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11478.300000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 11508.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12479.300000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12479.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12479.400000095367,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12479.599999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12479.599999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12492.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12492.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12492.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12492.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12492.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12492.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12492.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 12508.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13479.200000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13479.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13479.400000095367,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13479.400000095367,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13479.400000095367,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 13508.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14479.800000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14479.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14479.800000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14480.099999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14480.099999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14491.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14491.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14491.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14491.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14491.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14491.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 14508.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15477.800000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15477.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15477.800000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15478,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15478,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15508.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15566.400000095367,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15567,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15567,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15567,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15567.099999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15575.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15575.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15575.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15575.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15575.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15575.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15575.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15587.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15587.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15587.800000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15587.900000095367,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15587.900000095367,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15591.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15592,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15592,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15592,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15592,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15592,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15592.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15608,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15649.800000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15650.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15650.300000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15650.300000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15650.300000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15658.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15658.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15658.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15658.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15658.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15658.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15658.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15674.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15940.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15941.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15941.800000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15942.099999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15942.200000286102,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15942.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15943,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15943,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15943,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15943,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15943,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15943.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 15957.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16397.300000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16397.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16397.800000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16397.800000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16397.900000095367,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16408.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16408.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16408.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16408.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16408.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16408.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16408.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16424.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16480.800000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16480.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16480.800000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16481,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16481,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16508,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16536,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16536.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16536.300000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16536.5,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16536.5,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16541.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16541.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16541.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16557.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16561,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16561.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16561.099999904633,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16561.300000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16561.300000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16575.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16575.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16575.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16575.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16575.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16575.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16575.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 16590.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17480.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17481.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17481.200000286102,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17481.400000095367,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17481.5,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17492.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17493.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17493.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17493.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17493.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17493.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17493.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17507.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17586.800000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17587,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17587,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17587.099999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17587.099999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17592.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17592.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17592.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17592.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17593,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17593.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17593.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 17608,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18478.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18478.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18478.900000095367,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18479.099999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18479.099999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18492,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18492.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18492.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18492.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18507.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18676.400000095367,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18676.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18676.599999904633,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18676.599999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18676.599999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18691.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18691.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18691.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18691.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18691.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18691.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18691.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18699,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18699.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18699.099999904633,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18699.200000286102,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18699.200000286102,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18708.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18708.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18708.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18708.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18708.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18708.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18708.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 18724.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19477.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19477.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19478,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19478.099999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19478.099999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19492,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19492.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19492.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19492.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19492.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19492.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19492.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19508,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19723.200000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19723.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19723.300000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19723.400000095367,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19723.400000095367,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19725.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19725.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19725.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19725.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19725.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19725.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19725.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 19741.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20480.5,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20480.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20480.700000286102,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20480.700000286102,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20480.700000286102,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20491.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20500.800000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20500.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20501,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20501,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20501,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20508.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20508.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20508.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20508.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20508.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20508.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20508.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20524.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20612.599999904633,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20612.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20612.800000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20613,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20613,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20624,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20624.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20624.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20624.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20624.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20624.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20624.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 20641.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21398.200000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21398.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21398.599999904633,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21400.800000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21400.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21400.900000095367,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21401.099999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21401.099999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21407.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21407.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21408,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21408,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21408,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21408,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21408.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21424.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21481.400000095367,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21481.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21481.5,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21481.700000286102,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21481.800000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21491.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21492,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21492,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21492,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21508.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21539.599999904633,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21540.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21540.200000286102,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21540.400000095367,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21540.400000095367,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21541.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21558.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21561.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21561.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21561.700000286102,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21561.800000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21561.800000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21575.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21575.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21575.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21575.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21575.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21575.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21575.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 21591,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22481,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22481.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22481.400000095367,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22481.599999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22481.599999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22492.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22492.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22492.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22492.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22492.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22492.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22493,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22507.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22584.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22585.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22585.200000286102,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22585.300000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22585.400000095367,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22591.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22591.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22591.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22591.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22591.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22591.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22591.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 22608,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23477.900000095367,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23478.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23478.099999904633,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23478.099999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23478.099999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23490.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23490.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23490.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23490.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23490.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23490.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23490.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 23507.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24477.5,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24477.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24477.599999904633,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24477.700000286102,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24477.700000286102,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24491.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24491.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24491.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24491.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24491.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 24508,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25481.900000095367,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25482.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25482.5,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25482.700000286102,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25482.800000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25491.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25507.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25642,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25642,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25642,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25642.200000286102,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25642.200000286102,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25657.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25658,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25658.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25658.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25658.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25658.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25658.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 25674,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26480.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26481.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26481.099999904633,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26481.300000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26481.300000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 26507.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27477.900000095367,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27478,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27478,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27478,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27478,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27491.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27491.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27491.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27507.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27724.300000190735,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27724.5,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27724.5,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27724.599999904633,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27724.599999904633,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27740.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27740.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27740.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27740.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27740.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27740.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27740.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27747.200000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27747.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27747.200000286102,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27747.300000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27747.300000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27757.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27758,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27758,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27758,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27758.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27758.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27758.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 27774.599999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28477.700000286102,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28477.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28477.800000190735,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28477.800000190735,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28477.800000190735,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28491.900000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28492.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28492.099999904633,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28492.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28492.200000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28492.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28492.400000095367,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28507.300000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28774.599999904633,
+      "method": "setSelection",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28774.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28774.900000095367,
+      "method": "requestUpdate",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28774.900000095367,
+      "method": "removePriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28774.900000095367,
+      "method": "createPriceLine",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28790.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28790.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28790.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28790.700000286102,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28790.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28790.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28790.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    },
+    {
+      "at": 28806.800000190735,
+      "method": "updateAllViews",
+      "selected": "26cebf18-948d-42be-b9da-3462d85edeaf"
+    }
+  ],
+  "bindingChecks": 689,
+  "bindingFailures": [],
+  "restorationFailures": [],
+  "restored": true,
+  "failure": null,
+  "before": {
+    "adapterId": 1,
+    "containerId": 2,
+    "chartId": 3,
+    "seriesId": 4,
+    "canvasIds": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "candlesId": 12,
+    "dataRevision": 11,
+    "barCount": 200,
+    "first": {
+      "time": 1767175200,
+      "open": 0.9999,
+      "high": 1.0003,
+      "low": 0.9997,
+      "close": 1
+    },
+    "last": {
+      "time": 1767354300,
+      "open": 0.9976255169022257,
+      "high": 0.9980255169022256,
+      "low": 0.9974255169022257,
+      "close": 0.9977255169022257
+    },
+    "symbol": "EURUSD",
+    "intervalSeconds": 900,
+    "style": "candles",
+    "feed": {
+      "source": "offline_fixture",
+      "livePriceAffordance": false
+    },
+    "range": {
+      "from": 50,
+      "to": 199
+    },
+    "bounds": {
+      "x": 290,
+      "y": 563.875,
+      "width": 1100,
+      "height": 520
+    }
+  },
+  "after": {
+    "adapterId": 1,
+    "containerId": 2,
+    "chartId": 3,
+    "seriesId": 4,
+    "canvasIds": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "candlesId": 12,
+    "dataRevision": 11,
+    "barCount": 200,
+    "first": {
+      "time": 1767175200,
+      "open": 0.9999,
+      "high": 1.0003,
+      "low": 0.9997,
+      "close": 1
+    },
+    "last": {
+      "time": 1767354300,
+      "open": 0.9976255169022257,
+      "high": 0.9980255169022256,
+      "low": 0.9974255169022257,
+      "close": 0.9977255169022257
+    },
+    "symbol": "EURUSD",
+    "intervalSeconds": 900,
+    "style": "candles",
+    "feed": {
+      "source": "offline_fixture",
+      "livePriceAffordance": false
+    },
+    "range": {
+      "from": 50,
+      "to": 199
+    },
+    "bounds": {
+      "x": 290,
+      "y": 563.875,
+      "width": 1100,
+      "height": 520
+    }
+  },
+  "note": {
+    "optionsBefore": {
+      "color": "#22d3ee",
+      "price": 0.999,
+      "lineStyle": 0,
+      "lineWidth": 2,
+      "lineVisible": true,
+      "axisLabelVisible": true,
+      "title": "S OFFLINE QA",
+      "axisLabelColor": "",
+      "axisLabelTextColor": ""
+    },
+    "optionsAfter": [
+      {
+        "color": "#22d3ee",
+        "price": 0.999,
+        "lineStyle": 0,
+        "lineWidth": 2,
+        "lineVisible": true,
+        "axisLabelVisible": true,
+        "title": "S OFFLINE QA",
+        "axisLabelColor": "",
+        "axisLabelTextColor": ""
+      }
+    ],
+    "sameHandle": false,
+    "unchangedOptions": true
+  },
+  "unchangedData": true,
+  "drawingsUnchanged": true,
+  "buildId": "0b73849de1482966",
+  "scope": "Idle instrumentation only: one synthetic note, one browser-local user drawing, 200 fixture bars; all APIs intercepted. Counts are not input latency. Identity probes run every100ms and on wrapped calls; periods between probes are not a continuous execution trace.",
+  "drawingsBefore": [
+    {
+      "id": "26cebf18-948d-42be-b9da-3462d85edeaf",
+      "kind": "horizontal",
+      "start": {
+        "time": 1767285900,
+        "price": 1.00018347472208
+      },
+      "color": "#fbbf24"
+    }
+  ],
+  "drawingsAfter": [
+    {
+      "id": "26cebf18-948d-42be-b9da-3462d85edeaf",
+      "kind": "horizontal",
+      "start": {
+        "time": 1767285900,
+        "price": 1.00018347472208
+      },
+      "color": "#fbbf24"
+    }
+  ],
+  "drawings": [
+    {
+      "id": "26cebf18-948d-42be-b9da-3462d85edeaf",
+      "kind": "horizontal",
+      "start": {
+        "time": 1767285900,
+        "price": 1.00018347472208
+      },
+      "color": "#fbbf24"
+    }
+  ]
+}

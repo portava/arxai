@@ -1,0 +1,378 @@
+{
+  "baselineSource": "23698959c7f097bcf712847a9d81b23e5ec62f16",
+  "candidateSource": "cc7ad0e0a1282a51f6ffe6efa369705747af13f4",
+  "baselineBuildId": "0b73849de1482966",
+  "candidateBuildId": "0a98f2aa91d46955",
+  "method": "Same host/offline200bars, same workload. Final-verdict guard added after baseline; no timing-path change. Single sequential baseline/candidate pair; descriptive comparison only.",
+  "overallCandidateVerdict": "FAIL",
+  "rows": [
+    {
+      "viewport": "desktop",
+      "cpuRate": 1,
+      "control": "Zoom in",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 48.69999980926514,
+        "p95": 49.09999990463257,
+        "p99": 49.59999990463257,
+        "max": 49.59999990463257
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 48.59999990463257,
+        "p95": 49,
+        "p99": 49.19999980926514,
+        "max": 49.19999980926514
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 1,
+      "control": "Zoom out",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 48.69999980926514,
+        "p95": 49,
+        "p99": 49.299999713897705,
+        "max": 49.299999713897705
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 48.60000038146973,
+        "p95": 48.90000009536743,
+        "p99": 49.30000019073486,
+        "max": 49.30000019073486
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 1,
+      "control": "Pan earlier",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 48.69999980926514,
+        "p95": 49.200000286102295,
+        "p99": 49.80000019073486,
+        "max": 49.80000019073486
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 48.59999990463257,
+        "p95": 48.90000009536743,
+        "p99": 49.19999980926514,
+        "max": 49.19999980926514
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 1,
+      "control": "Pan later",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 48.69999980926514,
+        "p95": 49.200000286102295,
+        "p99": 49.60000038146973,
+        "max": 49.60000038146973
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 48.59999990463257,
+        "p95": 48.90000009536743,
+        "p99": 49,
+        "max": 49
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 1,
+      "control": "Style bars",
+      "baselineCount": 0,
+      "candidateCount": 0,
+      "baseline": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "candidate": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "candidateOutliers": [],
+      "controlFailure": "trusted selection change was not observed"
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 1,
+      "control": "Style candles",
+      "baselineCount": 0,
+      "candidateCount": 0,
+      "baseline": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "candidate": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "candidateOutliers": [],
+      "controlFailure": "trusted selection change was not observed"
+    },
+    {
+      "viewport": "mobile",
+      "cpuRate": 1,
+      "control": "Open Tools",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 31.90000009536743,
+        "p95": 32.799999713897705,
+        "p99": 32.90000009536743,
+        "max": 32.90000009536743
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 31.800000190734863,
+        "p95": 32.59999990463257,
+        "p99": 33.10000038146973,
+        "max": 33.10000038146973
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "mobile",
+      "cpuRate": 1,
+      "control": "Close Tools",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 31.799999713897705,
+        "p95": 32.700000286102295,
+        "p99": 33,
+        "max": 33
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 31.700000286102295,
+        "p95": 32.5,
+        "p99": 32.80000019073486,
+        "max": 32.80000019073486
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 4,
+      "control": "Zoom in",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 45.59999990463257,
+        "p95": 47.09999990463257,
+        "p99": 49,
+        "max": 49
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 45.69999980926514,
+        "p95": 46.90000009536743,
+        "p99": 48.19999980926514,
+        "max": 48.19999980926514
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 4,
+      "control": "Zoom out",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 45.59999990463257,
+        "p95": 47.09999990463257,
+        "p99": 49.19999980926514,
+        "max": 49.19999980926514
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 45.700000286102295,
+        "p95": 47.30000019073486,
+        "p99": 48.700000286102295,
+        "max": 48.700000286102295
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 4,
+      "control": "Pan earlier",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 45.59999990463257,
+        "p95": 47.69999980926514,
+        "p99": 49.59999990463257,
+        "max": 49.59999990463257
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 45.40000009536743,
+        "p95": 47.39999961853027,
+        "p99": 49.40000009536743,
+        "max": 49.40000009536743
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 4,
+      "control": "Pan later",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 45.59999990463257,
+        "p95": 47.5,
+        "p99": 51.5,
+        "max": 51.5
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 45.69999980926514,
+        "p95": 47.90000009536743,
+        "p99": 54.5,
+        "max": 54.5
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 4,
+      "control": "Style bars",
+      "baselineCount": 0,
+      "candidateCount": 0,
+      "baseline": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "candidate": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "candidateOutliers": [],
+      "controlFailure": "trusted selection change was not observed"
+    },
+    {
+      "viewport": "desktop",
+      "cpuRate": 4,
+      "control": "Style candles",
+      "baselineCount": 0,
+      "candidateCount": 0,
+      "baseline": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "candidate": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null
+      },
+      "candidateOutliers": [],
+      "controlFailure": "trusted selection change was not observed"
+    },
+    {
+      "viewport": "mobile",
+      "cpuRate": 4,
+      "control": "Open Tools",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 28.100000381469727,
+        "p95": 29.59999990463257,
+        "p99": 32.299999713897705,
+        "max": 32.299999713897705
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 28.399999618530273,
+        "p95": 30.100000381469727,
+        "p99": 35.59999990463257,
+        "max": 35.59999990463257
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    },
+    {
+      "viewport": "mobile",
+      "cpuRate": 4,
+      "control": "Close Tools",
+      "baselineCount": 80,
+      "candidateCount": 80,
+      "baseline": {
+        "n": 80,
+        "p50": 27.90000009536743,
+        "p95": 29.200000286102295,
+        "p99": 31,
+        "max": 31
+      },
+      "candidate": {
+        "n": 80,
+        "p50": 28.09999990463257,
+        "p95": 29.699999809265137,
+        "p99": 37.69999980926514,
+        "max": 37.69999980926514
+      },
+      "candidateOutliers": [],
+      "controlFailure": null
+    }
+  ]
+}
