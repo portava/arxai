@@ -68,6 +68,13 @@ async function jget(url: string, init?: RequestInit) {
   return { ok: r.ok, status: r.status, body };
 }
 
+// Admin diagnostics: a flag the permission route did not return is "unknown",
+// never a default that reads as a checked answer.
+function permFlag(perm: any, key: string): string {
+  const v = perm?.testerAccess?.[key];
+  return typeof v === "boolean" ? String(v) : "unknown (permission status not loaded)";
+}
+
 // Map the real selected-market snapshot → trade card. Returns a FeedState so
 // NEUTRAL/WAIT and unavailable feeds produce honest states, never a fake setup.
 // Downgrade-only: a directional bias is shown only when the server says the
@@ -332,9 +339,10 @@ export default function LiveAiAssistPage() {
             <Card className="border border-border">
               <CardContent className="pt-3 text-xs">
                 <p className="font-semibold mb-1">Permission state (admin diagnostics)</p>
-                <div className="font-mono text-[11px]">canExecuteRealBrokerOrder: <span className="text-red-400">{String(perm?.testerAccess?.canExecuteRealBrokerOrder ?? false)}</span></div>
-                <div className="font-mono text-[11px]">canSubmitLiveIntent: <span className="text-emerald-400">{String(perm?.testerAccess?.canSubmitLiveIntent ?? true)}</span></div>
-                <div className="font-mono text-[11px]">mt5Connected: {String(perm?.testerAccess?.mt5Connected ?? false)}</div>
+                {/* Unknown is printed as unknown — never defaulted to true/false. */}
+                <div className="font-mono text-[11px]" data-testid="perm-can-execute">canExecuteRealBrokerOrder: <span className="text-red-400">{permFlag(perm, "canExecuteRealBrokerOrder")}</span></div>
+                <div className="font-mono text-[11px]" data-testid="perm-can-submit">canSubmitLiveIntent: <span className={perm?.testerAccess?.canSubmitLiveIntent === true ? "text-emerald-400" : "text-muted-foreground"}>{permFlag(perm, "canSubmitLiveIntent")}</span></div>
+                <div className="font-mono text-[11px]" data-testid="perm-mt5">mt5Connected: {permFlag(perm, "mt5Connected")}</div>
               </CardContent>
             </Card>
           )}

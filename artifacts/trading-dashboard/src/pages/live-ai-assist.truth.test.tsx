@@ -134,3 +134,18 @@ describe("Live AI Assist submit result truth", () => {
     expect(screen.getByTestId("ai-assist-no-broker-order").textContent).toBe("No broker order was placed.");
   });
 });
+
+describe("Live AI Assist admin permission diagnostics", () => {
+  it("a permission status that did not load prints unknown, not canSubmitLiveIntent: true", async () => {
+    vi.resetModules();
+    vi.doMock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ effectiveIsAdmin: true }) }));
+    const { default: Page } = await import("./live-ai-assist");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "Failed to compute permission status" }), { status: 500 })));
+    render(<Page />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByTestId("perm-can-submit").textContent).toMatch(/unknown/);
+    expect(screen.getByTestId("perm-can-execute").textContent).toMatch(/unknown/);
+    expect(screen.getByTestId("perm-mt5").textContent).toMatch(/unknown/);
+    vi.doUnmock("@/hooks/useViewMode");
+  });
+});
