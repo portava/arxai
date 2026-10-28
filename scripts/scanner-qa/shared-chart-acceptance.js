@@ -80,6 +80,20 @@ async page => {
     check(interval.state.adapterId===initial.state.adapterId,'Timeframe selection retains the shared engine');
     const tools=panel.getByRole('button',{name:'Chart tools',exact:true});
     if(await tools.isVisible()&&await tools.getAttribute('aria-expanded')!=='true')await tools.click();
+    // Exercise a real price-series replacement while Scanner owns the overlay
+    // bridge; canonical prices must survive and HA must use its exact formula.
+    await panel.getByLabel('Chart style',{exact:true}).selectOption('heikinAshi');
+    await page.waitForFunction(()=>window.__arxChartQa.snapshot()?.style==='heikinAshi');await frames();
+    const transformed=await save('scanner-heikin-ashi');let previousHa=null;
+    const expectedHa=interval.data.canonical.map(bar=>{
+      const close=(bar.open+bar.high+bar.low+bar.close)/4;
+      const open=previousHa?(previousHa.open+previousHa.close)/2:(bar.open+bar.close)/2;
+      const next={time:bar.time,open,high:Math.max(bar.high,open,close),low:Math.min(bar.low,open,close),close};previousHa=next;return next;
+    });
+    check(JSON.stringify(transformed.data.canonical)===JSON.stringify(interval.data.canonical),'Scanner style switch preserves original OHLC');
+    check(JSON.stringify(transformed.data.display.map(bar=>({time:bar.time,open:bar.open,high:bar.high,low:bar.low,close:bar.close})))===JSON.stringify(expectedHa),'Scanner displays formula-correct Heikin Ashi');
+    check(transformed.state.seriesId!==interval.state.seriesId&&transformed.state.adapterId===interval.state.adapterId,'Scanner replaces the price series without replacing its chart engine');
+    await panel.getByLabel('Chart style',{exact:true}).selectOption('candles');await waitSeries('GBPUSD','M5',300);
     await panel.getByRole('button',{name:'Fit history',exact:true}).click();await frames();
     let before=(await save('fit')).state;
     await panel.getByRole('button',{name:'Zoom in chart',exact:true}).click();
