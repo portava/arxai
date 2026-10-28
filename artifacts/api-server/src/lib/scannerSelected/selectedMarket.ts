@@ -34,6 +34,7 @@ import {
 import type { NormalizedChartCandle } from "../data/chart/candleNormalization.js";
 import {
   isChartTimeframe,
+  timeframeMs,
   type ChartTimeframe,
 } from "../data/chart/timeframes.js";
 import {
@@ -47,6 +48,7 @@ import { SYNTHETIC_EVENT_RISK_LABEL } from "@workspace/domain/truth";
 import type { EconomicEvent } from "../news/calendar/economicEvents.js";
 import { isSupported, normalizeSymbol, resolveCanonicalSymbol } from "../instruments/index.js";
 import { getCache } from "../cache/cacheAdapter.js";
+import { readStoredCalendarCoverage } from "../../routes/newsCalendar.js";
 
 // Namespace + TTL are intentionally hard-coded so the cache shape stays
 // predictable even after a Redis adapter is swapped in.
@@ -157,9 +159,10 @@ export interface SelectedMarketResult {
     blockTrading: boolean;
     summary: string;
     /**
-     * True only when a configured calendar supplied a non-empty stored window,
-     * or scheduled events do not apply (synthetic). false means the calendar
-     * was NOT checked: an empty event list is then not a confirmed quiet day.
+     * True only when the stored calendar reaches the end of the 24 h window
+     * (the shared readStoredCalendarCoverage rule), or scheduled events do not
+     * apply (synthetic). false means the calendar was NOT fully checked: an
+     * empty or short event list is then not a confirmed quiet day.
      */
     calendarChecked: boolean;
     /** Plain-English limit of the event list (not checked / synthetic / unmapped), or null. */
@@ -181,6 +184,14 @@ export interface SelectedMarketResult {
    * and never a forming bar's scheduled future close. null when unknown.
    */
   dataAsOf: string | null;
+  /**
+   * The latest instant the LIVE_CONFIRMED claim holds without a new read: the
+   * interval boundary at which the feed's newest bar would trail by two bars
+   * (no longer live). Equal to generatedAt when the gap is unknown, null when
+   * the envelope is not LIVE_CONFIRMED. A cached envelope is never served as
+   * live past it.
+   */
+  liveClaimExpiresAt: string | null;
   /** True when saved geometry drifted too far from price and was withheld. */
   levelsWithheld: boolean;
   /** The guard's reason sentence when levels are withheld, else null. */
@@ -411,8 +422,11 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
       lte(economicEventsTable.eventTime, until),
     ));
   const realRows = rows.filter((r) => r.source !== "mock");
-  const calendar: SelectedMarketCalendarStatus = realRows.length === 0
-    ? { checked: false, note: CALENDAR_EMPTY_WINDOW_NOTE }
+  // The table is filled only by a manual sync. Rows inside the window do not
+  // show that it reaches the window's end; the shared coverage rule does.
+  const coverage = await readStoredCalendarCoverage(until);
+  const calendar: SelectedMarketCalendarStatus = !coverage.windowCovered
+    ? { checked: false, note: coverage.note ?? CALENDAR_EMPTY_WINDOW_NOTE }
     : {
       checked: true,
       note: currencyHints.length === 0
@@ -515,6 +529,33 @@ function readWithheldReasonFor(state: TruthDataState, sufficiency: MarketDataSuf
   return sufficiency.mayShowBias ? null : sufficiency.humanReason;
 }
 
+/**
+ * The latest instant a LIVE_CONFIRMED read stays live without a new read.
+ * The feed is live only while its newest bar trails the current bar by at
+ * most one interval; the gap can only grow at an interval boundary, by one per
+ * boundary. With gap g (0 or 1) at build time, the gap reaches 2 at the
+ * (2 − g)-th boundary after the build. Unknown or out-of-range gap → no live
+ * window (the build time itself). null when the read is not LIVE_CONFIRMED.
+ */
+function liveClaimExpiry(
+  state: TruthDataState, fs: ChartFeedStatus | null, timeframe: ChartTimeframe, builtAtMs: number,
+): string | null {
+  if (state !== "LIVE_CONFIRMED") return null;
+  const gap = fs?.trailingIntervals;
+  const iv = timeframeMs(timeframe);
+  if (typeof gap !== "number" || !Number.isFinite(gap) || gap < 0 || gap > 1 || !(iv > 0)) {
+    return new Date(builtAtMs).toISOString();
+  }
+  const nextBoundary = Math.floor(builtAtMs / iv) * iv + iv;
+  return new Date(nextBoundary + (1 - gap) * iv).toISOString();
+}
+
+function liveClaimLapsed(env: SelectedMarketEnvelope, nowMs: number): boolean {
+  if (!env.ok || env.dataState !== "LIVE_CONFIRMED") return false;
+  const until = env.liveClaimExpiresAt == null ? NaN : Date.parse(env.liveClaimExpiresAt);
+  return !Number.isFinite(until) || nowMs >= until;
+}
+
 // ── Public ────────────────────────────────────────────────────────────────
 export async function getSelectedMarketSnapshot(args: {
   symbolRaw: string;
@@ -549,7 +590,9 @@ export async function getSelectedMarketSnapshot(args: {
   }
   if (!args.refresh) {
     const hit = cache().get<SelectedMarketEnvelope>(key);
-    if (hit.hit) {
+    // A cached LIVE_CONFIRMED envelope whose live window has lapsed is not
+    // served: the feed may have stopped being live since it was built.
+    if (hit.hit && !liveClaimLapsed(hit.value, Date.now())) {
       const cached = hit.value;
       return cached.ok ? { ...cached, symbolRaw: args.symbolRaw, cacheHit: true } : { ...cached, symbolRaw: args.symbolRaw };
     }
@@ -574,6 +617,8 @@ async function buildSelectedMarketSnapshot(
   // Pull REAL candles from the SAME canonical chart pipeline the chart bars and
   // the truth brain read. The simulator is never consulted from this envelope.
   const chart = await deps.getChartCandlesFn(symbol, timeframe, CANDLE_LIMIT, false);
+  // One clock reading for the build: the live window is measured from it.
+  const builtAtMs = Date.now();
   const fs = chart.feedStatus;
   const dataSourceLabel = sourceLabelFor(fs?.source ?? null);
   // Closed-bar rule (same as the scanner row): the analysis window is the newest
@@ -637,6 +682,7 @@ async function buildSelectedMarketSnapshot(
       dataSourceLabel,
       dataState: "UNAVAILABLE",
       dataAsOf,
+      liveClaimExpiresAt: null,
       levelsWithheld: true,
       levelsWithheldReason: null,
       readWithheldReason: "No closed candles from the market data feed yet, so there is no read to show.",
@@ -716,10 +762,11 @@ async function buildSelectedMarketSnapshot(
     dataSourceLabel,
     dataState,
     dataAsOf,
+    liveClaimExpiresAt: liveClaimExpiry(dataState, fs, timeframe, builtAtMs),
     levelsWithheld: !levelsShown,
     levelsWithheldReason: !readShown ? readWithheldReason : staleness.stale ? staleness.reason : null,
     readWithheldReason,
-    generatedAt: new Date().toISOString(),
+    generatedAt: new Date(builtAtMs).toISOString(),
     cacheHit: false,
   };
   return result;

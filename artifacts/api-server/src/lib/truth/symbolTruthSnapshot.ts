@@ -130,7 +130,10 @@ export interface TruthData {
   sourceLabel: string | null;
   /** Newest observed chart close (may be a provider forming bar), or null. */
   price: number | null;
-  /** DATA timestamp of the newest candle, or null. */
+  /**
+   * DATA timestamp of the newest CLOSED candle (its close time, never later
+   * than now), or null. Never a forming bar's scheduled future close.
+   */
   lastCandleAt: string | null;
   /** DATA timestamp of the newest tick, or null. */
   lastTickAt: string | null;
@@ -465,6 +468,25 @@ function buildNews(radar: RadarResult | null, synthetic: boolean): TruthNews {
   };
 }
 
+// ── Last closed candle time ───────────────────────────────────────────────────
+// Clock-skew allowance for a closed bar's close time (same as selected-market
+// dataAsOf). A closed bar cannot close in the future beyond it.
+const LAST_CANDLE_SKEW_MS = 5_000;
+
+/** Newest fully closed bar's close time (ISO), or null. Never a future instant. */
+function lastClosedCandleAt(
+  candles: Array<{ closeTime: string; isComplete: boolean; isForming?: boolean }>, nowMs: number,
+): string | null {
+  for (let i = candles.length - 1; i >= 0; i--) {
+    const c = candles[i];
+    if (!c || c.isComplete !== true || c.isForming === true) continue;
+    const ms = Date.parse(c.closeTime);
+    if (!Number.isFinite(ms) || ms > nowMs + LAST_CANDLE_SKEW_MS) continue;
+    return new Date(ms).toISOString();
+  }
+  return null;
+}
+
 // ── Settled extraction helper ─────────────────────────────────────────────────
 
 function valueOrNull<T>(r: PromiseSettledResult<T>): T | null {
@@ -521,7 +543,9 @@ export async function buildSymbolTruthSnapshot(
     source: feedStatus?.source ?? chart?.source ?? null,
     sourceLabel: sourceLabelFor(feedStatus?.source ?? chart?.source ?? null),
     price: newestClose(candles),
-    lastCandleAt: feedStatus?.lastCandleTime ?? null,
+    // Not feedStatus.lastCandleTime: that is the newest PROVIDER bar's
+    // closeTime, which for a forming bar is a scheduled future instant.
+    lastCandleAt: lastClosedCandleAt(candles, Date.now()),
     lastTickAt: feedStatus?.lastTickTime ?? null,
   };
 
