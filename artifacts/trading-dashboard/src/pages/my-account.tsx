@@ -25,9 +25,13 @@ type ShellResponse = {
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   allocation: {
     assignedStartingBalance: number | null;
-    currentBalance: number;
-    equity: number;
-    marginUsed: number;
+    // null = not available / not measured (see balanceNote / marginNote).
+    currentBalance: number | null;
+    equity: number | null;
+    marginUsed: number | null;
+    balanceSource?: "user_slot_allocation" | "virtual_trading_accounts" | null;
+    balanceNote?: string;
+    marginNote?: string;
     totalAllocation?: number | null;
     manualAllocation?: number | null;
     aiSleeveAllocation?: number | null;
@@ -78,6 +82,7 @@ function fmtMoney(v: number | null | undefined): string {
   return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 const NOT_MEASURED = "Not measured";
+const NOT_AVAILABLE = "Not available";
 function fmtPnl(v: number | null | undefined): string {
   if (v == null || !isFinite(Number(v))) return NOT_MEASURED;
   const sign = v > 0 ? "+" : v < 0 ? "-" : "";
@@ -212,21 +217,27 @@ export default function MyAccountPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Stat label="My Balance" value={fmtMoney(s.allocation.currentBalance)} testid="my-balance" />
-          <Stat label="My Equity" value={fmtMoney(s.allocation.equity)} testid="my-equity" />
-          <Stat label="Margin Used" value={fmtMoney(s.allocation.marginUsed)} testid="my-margin-used" />
+          <Stat label="My Balance" value={s.allocation.currentBalance == null ? NOT_AVAILABLE : fmtMoney(s.allocation.currentBalance)} testid="my-balance" />
+          <Stat label="My Equity" value={s.allocation.equity == null ? NOT_AVAILABLE : fmtMoney(s.allocation.equity)} testid="my-equity" />
+          <Stat label="Margin Used" value={s.allocation.marginUsed == null ? NOT_MEASURED : fmtMoney(s.allocation.marginUsed)} testid="my-margin-used" />
           <Stat
             label="Assigned Allocation"
             value={
               s.allocation.assignedStartingBalance != null
                 ? fmtMoney(s.allocation.assignedStartingBalance)
-                : s.allocation.currentBalance > 0
+                : (s.allocation.currentBalance ?? 0) > 0
                   ? fmtMoney(s.allocation.currentBalance)
                   : "—"
             }
             testid="my-allocation"
           />
         </CardContent>
+        {(s.allocation.balanceNote || s.allocation.marginNote) && (
+          <CardContent className="pt-0 text-xs text-txt-secondary space-y-1" data-testid="my-balance-source">
+            {s.allocation.balanceNote && <div>{s.allocation.balanceNote}</div>}
+            {s.allocation.marginNote && <div>{s.allocation.marginNote}</div>}
+          </CardContent>
+        )}
         {/* Manual / AI sleeve split — shown when the user has any admin
             allocation. AI fields are display-only here; toggles live on
             the admin Allocations page. */}

@@ -2,7 +2,7 @@
 // measured. A figure the server reports as unknown (null) is "Not measured" /
 // "Not available", never $0 or 0.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ envelope: null }) }));
@@ -18,7 +18,10 @@ function shell(patch: (s: Shell) => void = () => {}): Shell {
     ok: true, userId: 41, accountMode: "DEMO", approvalStatus: "NOT_REQUIRED", tradingStatus: "ACTIVE",
     tradingMode: "SIMULATED", tradingModeLabel: "Paper Mode — simulated only.",
     allocation: {
-      assignedStartingBalance: 1000, currentBalance: 1000, equity: 1000, marginUsed: 0,
+      assignedStartingBalance: 1000, currentBalance: 1000, equity: 1000, marginUsed: null,
+      balanceSource: "user_slot_allocation",
+      balanceNote: "From the allocation your operator assigned you, plus the realized P/L booked to it.",
+      marginNote: "Not measured: no margin figure is recorded for your account in this view.",
       totalAllocation: 1000, manualAllocation: 1000, aiSleeveAllocation: 0, aiSleeveEnabled: false,
       aiAutoTradingEnabled: false, aiStrategyMode: null, currency: "USD", availableCapacity: 1000,
       allocationPending: false, frozen: false, freezeMessage: null,
@@ -65,5 +68,24 @@ describe("My Account — measured figures only", () => {
     expect(screen.getByTestId("my-pnl-closed-note").textContent).toMatch(/no source for your closed trades/);
     expect(screen.getByTestId("my-daily-loss-remaining").textContent).toBe("Not measured");
     expect(screen.getByTestId("my-daily-loss-remaining-note").textContent).toMatch(/cannot be worked out/);
+  });
+
+  it("no allocation and no virtual account: balance and equity read 'Not available' and say why; margin is 'Not measured'", async () => {
+    stub(shell((s) => {
+      s.allocation = {
+        ...s.allocation, assignedStartingBalance: null, currentBalance: null, equity: null, marginUsed: null,
+        totalAllocation: null, manualAllocation: null, aiSleeveAllocation: null, availableCapacity: null,
+        balanceSource: null,
+        balanceNote: "Not available: no shared-account allocation or virtual account is recorded for you, so this card has no balance to show.",
+      };
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("my-balance-card")).toBeTruthy());
+    expect(screen.getByTestId("my-balance").textContent).toBe("Not available");
+    expect(screen.getByTestId("my-equity").textContent).toBe("Not available");
+    expect(screen.getByTestId("my-margin-used").textContent).toBe("Not measured");
+    expect(screen.getByTestId("my-allocation").textContent).toBe("—");
+    expect(screen.getByTestId("my-balance-source").textContent).toMatch(/no shared-account allocation or virtual account/);
+    expect(within(screen.getByTestId("my-balance-card")).queryByText("$0")).toBeNull();
   });
 });

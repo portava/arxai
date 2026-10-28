@@ -239,7 +239,7 @@ router.get("/me/account-mode", requireUser, async (req: Request, res) => {
 
     const allocation = accountShell.allocation;
     const hasAllocation =
-      allocation.currentBalance > 0 || allocation.assignedStartingBalance != null;
+      (allocation.currentBalance ?? 0) > 0 || allocation.assignedStartingBalance != null;
 
     const userFrozenStatus = {
       isFrozen:

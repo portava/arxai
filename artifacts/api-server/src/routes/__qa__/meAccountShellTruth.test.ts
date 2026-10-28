@@ -4,6 +4,8 @@
 //   * Closed P/L and today's trade counts were read from performance_daily, a
 //     table nothing in the app writes, so every user saw $0 / 0 and "Daily
 //     Loss Remaining" equal to the whole cap even after losing money today.
+//   * A user with no allocation row and no virtual account (personal MT5,
+//     demo, paper) saw My Balance / My Equity / Margin Used as $0.
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -110,4 +112,37 @@ test("a stray performance_daily row is not presented as today's P/L", async () =
   const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
   assert.equal(shell.pnl.closedPnlToday, null);
   assert.equal(shell.pnl.tradesToday, null);
+});
+
+test("no allocation and no virtual account: balance, equity and margin are not available, not $0", async () => {
+  platformMode = "DEMO";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+  tables.virtual_trading_accounts = [];
+  tables.user_slot_allocation = [];
+  investor = liveSnapshot({ source: "demo" });
+
+  const shell = await computeAccountShell(USER);
+
+  assert.equal(shell.accountMode, "DEMO");
+  assert.equal(shell.allocation.currentBalance, null);
+  assert.equal(shell.allocation.equity, null);
+  assert.equal(shell.allocation.marginUsed, null);
+  assert.equal(shell.allocation.balanceSource, null);
+  assert.match(shell.allocation.balanceNote, /no shared-account allocation or virtual account/);
+  assert.equal(shell.risk.availableRiskAmount, null, "no capital is invented for the risk amount");
+});
+
+test("an allocated user's balance names its source; margin is never reported as a measured $0", async () => {
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", manualAllocatedFunds: "0", aiAllocatedFunds: "0", allocationStatus: "active" }];
+  tables.virtual_trading_accounts = [{ virtualBalance: 1000, virtualEquity: 1000, virtualMarginUsed: 0, virtualPnl: 25, status: "active", sharedMasterAccountId: 3 }];
+
+  const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+
+  assert.equal(shell.allocation.balanceSource, "user_slot_allocation");
+  assert.equal(shell.allocation.currentBalance, 1025);
+  assert.match(shell.allocation.balanceNote, /allocation your operator assigned/);
+  assert.equal(shell.allocation.marginUsed, null);
+  assert.match(shell.allocation.marginNote, /not measured/i);
 });

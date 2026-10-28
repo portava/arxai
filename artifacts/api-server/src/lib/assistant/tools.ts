@@ -187,8 +187,9 @@ export async function getCurrentUserContext(userId: number) {
     approvalStatus: string;
     tradingStatus: string;
     accountStatus: string;
-    currentBalance: number;
-    equity: number;
+    // null = not available / not measured (the shell never reports a missing figure as 0).
+    currentBalance: number | null;
+    equity: number | null;
     availableRisk: number | null;
     availableRiskAmount: number | null;
     dailyLossRemaining: number | null;

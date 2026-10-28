@@ -57,9 +57,18 @@ export type AccountShellResponse = {
   // Money view — user's own slice only.
   allocation: {
     assignedStartingBalance: number | null;
-    currentBalance: number;
-    equity: number;
-    marginUsed: number;
+    // null = not available: the user has neither an allocation row nor a
+    // virtual trading account, so this view has no balance to report.
+    currentBalance: number | null;
+    equity: number | null;
+    // Always null: nothing records margin for this view (the virtual
+    // account's margin column is only ever seeded at 0).
+    marginUsed: number | null;
+    /** Where currentBalance comes from; null = no source (figures are null). */
+    balanceSource: "user_slot_allocation" | "virtual_trading_accounts" | null;
+    /** Plain English: the source of the balance, or why there is none. */
+    balanceNote: string;
+    marginNote: string;
     // T004: split allocation from user_slot_allocation (the authoritative
     // admin-allocated number). manualAllocation + aiSleeveAllocation
     // <= totalAllocation. All null when user has no allocation row.
@@ -275,12 +284,23 @@ export async function computeAccountShell(
     // makes the user view correct even if the legacy shell sync hasn't
     // run yet for this user (T004 backfill case). Falls back to the
     // shell-summed balance for non-allocated users.
-    const allocatedBalance = hasAlloc
+    // No allocation row and no virtual account: no balance was observed for
+    // this lane (personal MT5, demo, paper), so it is null — never $0.
+    const balanceSource: AccountShellResponse["allocation"]["balanceSource"] = hasAlloc
+      ? "user_slot_allocation"
+      : vAccounts.length > 0 ? "virtual_trading_accounts" : null;
+    const allocatedBalance: number | null = hasAlloc
       ? round2(totalAlloc + allocatedOpenPnl)
-      : shellBalance;
-    const allocatedEquity = hasAlloc
+      : balanceSource != null ? shellBalance : null;
+    const allocatedEquity: number | null = hasAlloc
       ? allocatedBalance
-      : (shellEquity || shellBalance);
+      : balanceSource != null ? (shellEquity || shellBalance) : null;
+    const balanceNote = balanceSource === "user_slot_allocation"
+      ? "From the allocation your operator assigned you, plus the realized P/L booked to it."
+      : balanceSource === "virtual_trading_accounts"
+        ? "From your shared-master virtual account ledger."
+        : "Not available: no shared-account allocation or virtual account is recorded for you, so this card has no balance to show.";
+    const marginNote = "Not measured: no margin figure is recorded for your account in this view.";
     const availableCapacity = hasAlloc
       ? Math.max(0, round2(totalAlloc - allocatedMargin))
       : null;
@@ -415,7 +435,7 @@ export async function computeAccountShell(
     // Never fabricate capital. When no real allocated balance is known we
     // cannot compute a dollar risk amount, so report it as unknown (null) —
     // rendered as "—" — rather than deriving it from a placeholder balance.
-    const baseBalance = allocatedBalance > 0 ? allocatedBalance : null;
+    const baseBalance = allocatedBalance != null && allocatedBalance > 0 ? allocatedBalance : null;
     const availableRiskAmount = baseBalance != null
       ? strictest((L.maxRiskPerTradePercent / 100) * baseBalance, L.maxRiskPerTradeAmount)
       : null;
@@ -461,7 +481,10 @@ export async function computeAccountShell(
           : (vAccounts.length > 0 ? allocatedBalance : null),
         currentBalance: allocatedBalance,
         equity: allocatedEquity || allocatedBalance,
-        marginUsed: allocatedMargin,
+        marginUsed: null,
+        balanceSource,
+        balanceNote,
+        marginNote,
         totalAllocation: hasAlloc ? round2(totalAlloc) : null,
         manualAllocation: hasAlloc ? round2(manualAlloc) : null,
         aiSleeveAllocation: hasAlloc ? round2(aiAlloc) : null,
