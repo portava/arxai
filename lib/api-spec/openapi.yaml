@@ -3620,6 +3620,7 @@ paths:
                 properties:
                   id:        { type: integer }
                   aiSummary: { type: string }
+                  metricsMeasurement: { $ref: "#/components/schemas/BacktestMetricsMeasurement" }
 
   /forward-testing/chart-series:
     get:
@@ -19682,6 +19683,36 @@ components:
         holdout: { type: string, enum: [not_recorded] }
         limitations: { type: array, items: { type: string } }
 
+    BacktestMetricsMeasurement:
+      type: object
+      description: >
+        Whether the run's aggregate metrics were measured. The metric columns
+        default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run
+        that did not complete any simulated trade carries placeholder zeros,
+        not results. Display only.
+      required: [measured, unmeasuredFields, note]
+      properties:
+        measured: { type: boolean, description: True only for a COMPLETED run with at least one completed simulated trade. }
+        unmeasuredFields:
+          type: array
+          items: { type: string }
+          description: Metric fields whose stored values are placeholders ([] when measured).
+        note: { type: ["string", "null"], description: Plain-English reason the metrics were not measured; null when they were. }
+
+    BacktestDataReliability:
+      type: object
+      description: >
+        Display-only depth verdict for the bars a run used. Never reliable for
+        generated prices (their count is not observed market depth).
+      required: [status, availableClosedCandles, minimumRequiredCandles, reliable]
+      properties:
+        status: { type: string, enum: [sufficient, partial, insufficient, blocked] }
+        availableClosedCandles: { type: integer }
+        minimumRequiredCandles: { type: integer }
+        reliable: { type: boolean }
+        basis: { type: string, enum: [generated_prices, broker_history, unknown] }
+        note: { type: ["string", "null"] }
+
     BacktestRun:
       type: object
       required: [id, strategyId, symbol, timeframe, startTime, endTime, initialBalance, totalTrades, winningTrades, losingTrades, netProfitLoss, maxDrawdown, winRate, averageRr, expectancy, profitFactor, status, isVerified, createdAt]
@@ -19710,6 +19741,8 @@ components:
         dataSource:     { type: string, enum: [broker, synthetic] }
         evidence: { $ref: "#/components/schemas/BacktestEvidence" }
         historyStatus: { type: string, enum: [available_unattested, unavailable, ambiguous_source, invalid_bars] }
+        metricsMeasurement: { $ref: "#/components/schemas/BacktestMetricsMeasurement" }
+        dataReliability: { $ref: "#/components/schemas/BacktestDataReliability" }
         aiSummary:      { type: ["string", "null"] }
         equityCurve:
           type: array
@@ -19792,6 +19825,7 @@ components:
         strategyId: { type: string }
         symbol:     { type: string }
         timeframe:  { type: string }
+        dataReliability: { $ref: "#/components/schemas/BacktestDataReliability" }
 
     ForwardEquityPoint:
       type: object

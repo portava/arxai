@@ -10801,6 +10801,55 @@ export interface BacktestEvidence {
   limitations: string[];
 }
 
+/**
+ * Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.
+
+ */
+export interface BacktestMetricsMeasurement {
+  /** True only for a COMPLETED run with at least one completed simulated trade. */
+  measured: boolean;
+  /** Metric fields whose stored values are placeholders ([] when measured). */
+  unmeasuredFields: string[];
+  /**
+   * Plain-English reason the metrics were not measured; null when they were.
+   * @nullable
+   */
+  note: string | null;
+}
+
+export type BacktestDataReliabilityStatus =
+  (typeof BacktestDataReliabilityStatus)[keyof typeof BacktestDataReliabilityStatus];
+
+export const BacktestDataReliabilityStatus = {
+  sufficient: "sufficient",
+  partial: "partial",
+  insufficient: "insufficient",
+  blocked: "blocked",
+} as const;
+
+export type BacktestDataReliabilityBasis =
+  (typeof BacktestDataReliabilityBasis)[keyof typeof BacktestDataReliabilityBasis];
+
+export const BacktestDataReliabilityBasis = {
+  generated_prices: "generated_prices",
+  broker_history: "broker_history",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).
+
+ */
+export interface BacktestDataReliability {
+  status: BacktestDataReliabilityStatus;
+  availableClosedCandles: number;
+  minimumRequiredCandles: number;
+  reliable: boolean;
+  basis?: BacktestDataReliabilityBasis;
+  /** @nullable */
+  note?: string | null;
+}
+
 export type BacktestRunStatus =
   (typeof BacktestRunStatus)[keyof typeof BacktestRunStatus];
 
@@ -10862,6 +10911,8 @@ export interface BacktestRun {
   dataSource?: BacktestRunDataSource;
   evidence?: BacktestEvidence;
   historyStatus?: BacktestRunHistoryStatus;
+  metricsMeasurement?: BacktestMetricsMeasurement;
+  dataReliability?: BacktestDataReliability;
   /** @nullable */
   aiSummary?: string | null;
   equityCurve?: number[];
@@ -10976,6 +11027,7 @@ export interface BacktestChartSeries {
   strategyId?: string;
   symbol?: string;
   timeframe?: string;
+  dataReliability?: BacktestDataReliability;
 }
 
 export interface ForwardEquityPoint {
@@ -16941,6 +16993,7 @@ export type GetBacktestTrades200 = {
 export type GenerateBacktestAiReview200 = {
   id: number;
   aiSummary: string;
+  metricsMeasurement?: BacktestMetricsMeasurement;
 };
 
 export type GetPaperAccounts200 = {

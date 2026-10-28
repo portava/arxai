@@ -43,6 +43,7 @@ import {
 import {
   buildBacktestChartSeries, type BacktestChartTradeInput,
 } from "../lib/backtest/backtestChartSeries.js";
+import { backtestMetricsMeasurement } from "../lib/backtest/backtestMetricsMeasurement.js";
 
 import { loadDiagnosticBrokerHistory } from "../lib/backtest/backtestHistory.js";
 
@@ -69,7 +70,7 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
 // SAFETY: read-only display. This NEVER blocks a run, alters metrics, or touches
 // the live trade path. The verdict can only describe reliability, never grant.
 function backtestDataReliability(args: {
-  symbol: string; timeframe: string; startTime: Date; endTime: Date;
+  symbol: string; timeframe: string; startTime: Date; endTime: Date; dataSource: string;
 }) {
   const availableClosedCandles = backtestClosedCandleCount(
     timeframeMs(args.timeframe),
@@ -80,6 +81,7 @@ function backtestDataReliability(args: {
     symbol: args.symbol,
     timeframe: args.timeframe,
     availableClosedCandles,
+    dataSource: args.dataSource,
   });
 }
 
@@ -207,6 +209,7 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
       });
       res.json({
         ...projectBacktestRun(insufficientRun),
+        metricsMeasurement: backtestMetricsMeasurement(insufficientRun),
         historyStatus: history.reason,
         startTime: insufficientRun.startTime.toISOString(),
         endTime: insufficientRun.endTime.toISOString(),
@@ -217,6 +220,7 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
           symbol: body.symbol,
           timeframe: body.timeframe,
           availableClosedCandles: brokerCandles.length,
+          dataSource: "broker",
         }),
       });
       return;
@@ -328,6 +332,7 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
 
     res.json({
       ...projectBacktestRun(run),
+      metricsMeasurement: backtestMetricsMeasurement(run),
       historyStatus: history.reason,
       startTime: run.startTime.toISOString(),
       endTime: run.endTime.toISOString(),
@@ -342,6 +347,7 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
             symbol: body.symbol,
             timeframe: body.timeframe,
             availableClosedCandles: candles.length,
+            dataSource: "broker",
           })
         : backtestDataReliability(run),
       ...(goldStrategyContext ? { goldStrategyContext } : {}),
@@ -368,6 +374,7 @@ router.get("/backtest-runs", async (req, res): Promise<void> => {
       const focusMarket = resolveArxMarket(r.symbol);
       return {
         ...projectBacktestRun(r),
+        metricsMeasurement: backtestMetricsMeasurement(r),
         startTime: r.startTime.toISOString(),
         endTime: r.endTime.toISOString(),
         createdAt: r.createdAt.toISOString(),
@@ -398,6 +405,7 @@ router.get("/backtest-runs/:id", async (req, res): Promise<void> => {
     }
     res.json({
       ...projectBacktestRun(r),
+      metricsMeasurement: backtestMetricsMeasurement(r),
       startTime: r.startTime.toISOString(),
       endTime: r.endTime.toISOString(),
       createdAt: r.createdAt.toISOString(),
@@ -525,7 +533,10 @@ router.post("/backtest-runs/:id/ai-review", async (req, res): Promise<void> => {
 
     await db.update(backtestRunsTable).set({ aiSummary }).where(eq(backtestRunsTable.id, id));
     await vaultBehavior("BACKTEST_AI_REVIEW_GENERATED", { runId: id });
-    res.json({ id, aiSummary, metrics, isVerified: "UNVERIFIED", evidence: backtestEvidence(run.dataSource) });
+    res.json({
+      id, aiSummary, metrics, isVerified: "UNVERIFIED", evidence: backtestEvidence(run.dataSource),
+      metricsMeasurement: backtestMetricsMeasurement({ status: run.status, totalTrades: metrics.totalTrades }),
+    });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /backtest-runs/:id/ai-review failed");
     res.status(500).json({ error: "Failed to generate AI review" });
