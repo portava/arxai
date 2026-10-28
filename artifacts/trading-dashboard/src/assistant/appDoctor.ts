@@ -19,7 +19,7 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
   const out: DoctorDiagnosis[] = [];
 
   // 1) Emergency Stop active (highest priority)
-  pushIf(out, ctx.emergencyStopActive, {
+  pushIf(out, ctx.emergencyStopActive === true, {
     category: "safety-lock",
     id: "doc-emergency-stop",
     explanation: "The Emergency Stop is engaged. All trading activity is halted by design.",
@@ -32,8 +32,22 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
     priority: 1,
   });
 
+  // 1b) Server posture unread — every lock/mode flag below is unknown.
+  pushIf(out, ctx.bridge === null && ctx.bridgeStatus === "unavailable", {
+    category: "backend-api",
+    id: "doc-posture-unknown",
+    explanation: "ARX could not read the server's bridge and safety posture, so it cannot say which locks or mode are in force right now.",
+    evidence: ["GET /api/mt5/diagnostic-summary failed or returned no data"],
+    likelyCause: "The API server is unreachable, restarting, or the request failed.",
+    safeNextStep: "Refresh the page. If it keeps failing, open System Health. Execution stays server-gated either way.",
+    relatedRoute: safeRoute("/system-health"),
+    doNotDo: "Do not assume live trading is off (or on) while the posture is unread.",
+    liveTradingStillUnavailable: true,
+    priority: 1,
+  });
+
   // 2) Live trading lock (informational — the lock is correct, not a bug)
-  pushIf(out, ctx.liveTradingDisabled, {
+  pushIf(out, ctx.liveTradingDisabled === true, {
     category: "safety-lock",
     id: "doc-live-trading-disabled",
     explanation: "Live trading is disabled. ARX cannot send real broker orders right now.",
@@ -47,7 +61,7 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
   });
 
   // 3) Missing MT5 heartbeat
-  pushIf(out, !ctx.heartbeatPresent && (ctx.mt5BridgeConnected || ctx.bridge?.bridgeMode === "disconnected"), {
+  pushIf(out, ctx.heartbeatPresent === false && (ctx.mt5BridgeConnected || ctx.bridge?.bridgeMode === "disconnected"), {
     category: "heartbeat",
     id: "doc-no-heartbeat",
     explanation: "I don't see a recent heartbeat from the MT5 EA.",
@@ -78,7 +92,7 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
   });
 
   // 5) Broker read-only
-  pushIf(out, ctx.brokerReadOnly && ctx.mt5BridgeConnected, {
+  pushIf(out, ctx.brokerReadOnly === true && ctx.mt5BridgeConnected, {
     category: "broker-mode",
     id: "doc-broker-readonly",
     explanation: "Broker is in read-only mode. ARX can read balance/positions but cannot place orders.",
@@ -162,7 +176,7 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
   });
 
   // Always include simulator-mode explanation at low priority so users have it.
-  pushIf(out, ctx.simulatorMode || ctx.paperOnly, {
+  pushIf(out, ctx.simulatorMode === true || ctx.paperOnly === true, {
     category: "simulator-mode",
     id: "doc-simulator-mode",
     explanation: "ARX is currently running in simulator/demo mode.",
@@ -200,20 +214,23 @@ export function explainAppStatus(ctx: RuntimeContext): {
     "Read live read-only diagnostics if the bridge is connected",
   ];
   const cannotDo: string[] = [];
-  if (ctx.liveTradingDisabled) cannotDo.push("Send real broker orders");
-  if (ctx.brokerExecutionDisabled) cannotDo.push("Trigger broker execution from the UI");
-  if (ctx.brokerReadOnly) cannotDo.push("Modify broker positions");
-  if (!ctx.heartbeatPresent) cannotDo.push("Confirm an MT5 EA heartbeat");
+  // Fail closed: an unread flag (null) still lists the action as unavailable.
+  if (ctx.liveTradingDisabled !== false) cannotDo.push("Send real broker orders");
+  if (ctx.brokerExecutionDisabled !== false) cannotDo.push("Trigger broker execution from the UI");
+  if (ctx.brokerReadOnly !== false) cannotDo.push("Modify broker positions");
+  if (ctx.heartbeatPresent !== true) cannotDo.push("Confirm an MT5 EA heartbeat");
 
-  const whyLiveUnavailable = ctx.emergencyStopActive
+  const whyLiveUnavailable = ctx.emergencyStopActive === true
     ? "Emergency Stop is engaged."
+    : ctx.bridge === null
+      ? "The server's bridge and safety posture could not be read, so ARX cannot say which lock applies."
     : !ctx.heartbeatPresent
       ? "No confirmed MT5 EA heartbeat yet."
       : ctx.mt5Deferred
         ? "MT5 bridge is deferred."
-        : ctx.brokerReadOnly
+        : ctx.brokerReadOnly === true
           ? "Broker is in read-only mode."
-          : ctx.liveTradingDisabled
+          : ctx.liveTradingDisabled === true
             ? "Server-enforced LIVE TRADING DISABLED lock is in place."
             : "All gates appear green from the client view, but execution remains server-gated.";
 

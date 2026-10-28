@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { eventCountdownLabel } from "@/lib/eventCountdown";
+import type { CalendarCoverage } from "./UpcomingEventsList";
 
 type Risk = "CLEAR" | "CAUTION" | "HIGH_RISK" | "NO_TRADE_WINDOW";
 
@@ -36,6 +37,8 @@ export interface NewsRiskReport {
   aiSummary: string;
   createdAt: string;
   news?: NewsContext | null;
+  /** Whether the stored calendar the report scored reaches the next 24h. */
+  calendarCoverage?: CalendarCoverage | null;
 }
 
 // Severity badge tone for a surfaced driving headline.
@@ -166,6 +169,9 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
   // Unknown age is treated as outdated (fail closed).
   const reportOutdated = r ? reportAgeMs == null || reportAgeMs > NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS : false;
   const scanTime = r && Number.isFinite(createdMs) ? new Date(createdMs).toLocaleTimeString() : "an unknown time";
+  // A CLEAR scored from a stored calendar that does not reach the next 24h is
+  // not an all-clear: shown as "not checked" with the server's reason.
+  const clearNotChecked = r?.riskLevel === "CLEAR" && r.calendarCoverage?.windowCovered === false;
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
       <header className="flex items-center justify-between">
@@ -223,14 +229,21 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
             </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
-            <span
-              className={`rounded px-2 py-0.5 text-xs font-semibold ${
-                reportOutdated ? "border border-slate-600 bg-slate-800 text-slate-300" : STYLES[r.riskLevel]
-              }`}
-              data-testid="news-risk-level"
-            >
-              {reportOutdated ? `At ${scanTime}: ` : ""}{r.riskLevel.replace(/_/g, " ")}
-            </span>
+            {clearNotChecked ? (
+              // A CLEAR from a calendar that does not cover the window is not an all-clear.
+              <span data-testid="news-risk-not-checked" className="rounded bg-slate-700 px-2 py-0.5 text-xs font-semibold text-slate-100">
+                {reportOutdated ? `At ${scanTime}: ` : ""}NOT CHECKED
+              </span>
+            ) : (
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                  reportOutdated ? "border border-slate-600 bg-slate-800 text-slate-300" : STYLES[r.riskLevel]
+                }`}
+                data-testid="news-risk-level"
+              >
+                {reportOutdated ? `At ${scanTime}: ` : ""}{r.riskLevel.replace(/_/g, " ")}
+              </span>
+            )}
             {r.timeUntilEventMinutes !== null && Number.isFinite(createdMs) && (
               // The minute offset is true only at report time (createdAt); count
               // from the event time it implies, against the ticking clock.
@@ -255,6 +268,11 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
                   : `⚠ ${r.riskLevel === "NO_TRADE_WINDOW" ? "Do not trade" : "Caution"}`}
               </div>
               <p>{r.tradeWarning}</p>
+            </div>
+          )}
+          {r.calendarCoverage?.windowCovered === false && (
+            <div data-testid="news-risk-calendar-not-covered" className="rounded-md border border-amber-800/60 bg-amber-950/30 p-3 text-xs text-amber-200">
+              {r.calendarCoverage.note ?? "The stored economic calendar does not cover the next 24h, so scheduled events cannot be ruled out."}
             </div>
           )}
           <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300" data-testid="news-risk-summary">

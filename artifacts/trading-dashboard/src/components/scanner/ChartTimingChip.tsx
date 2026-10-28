@@ -14,8 +14,12 @@
 //  - Hide a session-only estimate (no candle data): that grade is not a read of
 //    this chart.
 //  - Always print the timeframe the grade belongs to.
-//  - Hide a read past Truth's 30-second component lifetime (or with no valid
-//    `generatedAt`): it is no longer current advice.
+//  - Show a grade only while a CURRENT read backs it: not after a failed
+//    refetch (React Query keeps the last data), not past Truth's 30-second
+//    component lifetime (e.g. the tab slept and polling paused), not with a
+//    missing / malformed / future generatedAt, and not while the chart's own
+//    scanner-truth gate is downgraded (stale / delayed / unconfirmed feed).
+//    A non-current read shows "no current read" instead of a grade.
 //  - Request the SAME params as the Timing Intelligence card ({timeframe, tz})
 //    so, on a 15m chart, chip and card consume one query / one server cache
 //    entry and cannot disagree for cache-partition reasons.
@@ -30,6 +34,10 @@ import {
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useScannerReadGate } from "@/hooks/useScannerReadGate";
+
+// A generatedAt later than now by more than this is not a usable build time.
+const FUTURE_SKEW_MS = 5_000;
 
 // The timing route's timeframe enum (GetTimingBrainTimeframe). Spelled out so a
 // unit test's module mock cannot empty it; the type keeps it in lock-step.
@@ -137,25 +145,51 @@ function SupportedTimingChip({
   const q = useGetTimingBrain(symbol, params, {
     query: { queryKey: getGetTimingBrainQueryKey(symbol, params), refetchInterval: 30_000, staleTime: 20_000 },
   });
+  const gate = useScannerReadGate(symbol, timeframeLabel);
   const read = q.data as
     | {
+        generatedAt?: string;
         timeframe?: string;
         timingGrade?: string;
         entryPermission?: string;
         heatScore?: number;
-        generatedAt?: string;
         dataQuality?: { hasCandleData?: boolean } | null;
       }
     | undefined;
+  const builtAt = typeof read?.generatedAt === "string" ? Date.parse(read.generatedAt) : NaN;
   const expiresAt = timingReadExpiresAtMs(read?.generatedAt);
   const nowMs = useEvidenceDeadline(Number.isFinite(expiresAt) ? expiresAt + 1 : null);
   if (!read?.timingGrade || !read.entryPermission) return null;
-  // Past the advice lifetime (or no valid compute time): not current advice.
-  if (!isTimingReadCurrent(read.generatedAt, nowMs)) return null;
   // The server's echo is the authority on which timeframe this grade is for.
   if (read.timeframe !== apiTf) return null;
   // A session-only estimate is not a read of this chart's candles.
   if (read.dataQuality?.hasCandleData !== true) return null;
+  // The chart's feed is not confirmed: no timing grade over it (the chart
+  // header already states the feed condition).
+  if (gate.downgraded) return null;
+  const current =
+    !q.isError &&
+    Number.isFinite(builtAt) &&
+    builtAt <= nowMs + FUTURE_SKEW_MS &&
+    // Past the advice lifetime (or no valid compute time): not current advice.
+    isTimingReadCurrent(read.generatedAt, nowMs);
+  if (!current) {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-border text-[10px] text-txt-muted"
+        title={
+          q.isError
+            ? `The ${timeframeLabel} timing read could not be refreshed — no grade is shown until a current read arrives.`
+            : `The last ${timeframeLabel} timing read is not current — no grade is shown until a fresh read arrives.`
+        }
+        data-testid="scanner-chart-timing-chip-unavailable"
+      >
+        <Flame className="h-2.5 w-2.5" />
+        {timeframeLabel} timing · no current read
+      </Badge>
+    );
+  }
   const perm = permissionWords(read.entryPermission);
   return (
     <Badge

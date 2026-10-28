@@ -128,6 +128,19 @@ export type CandleStatus =
   | "insufficient"
   | "unavailable";
 export type ConsistencyStatus = "aligned" | "mismatch" | "unknown";
+/**
+ * Why `headerOk` is false, when the caller knows. The header cap still
+ * withholds a live read; this only makes the stated reason true:
+ *   analysis_pending      — the selected-market analysis has not answered yet
+ *   analysis_unavailable  — it answered without an analysis (ok:false)
+ *   analysis_request_failed — the analysis request itself failed
+ *   candles_refresh_failed — the latest candle refresh failed (cached bars)
+ */
+export type ScannerHeaderCapReason =
+  | "analysis_pending"
+  | "analysis_unavailable"
+  | "analysis_request_failed"
+  | "candles_refresh_failed";
 export type ReadLevel = "full" | "limited" | "historical_only" | "blocked";
 export type OverlayStatus = "verified" | "limited" | "check" | "blocked";
 export type EffectiveMode = "demo" | "live" | "read_only";
@@ -195,6 +208,12 @@ export interface ScannerTruth {
     ageMs: number | null;
     status: CandleStatus;
     reason: string;
+    /**
+     * Set only when the header cap (not the candles themselves) withheld the
+     * live read, naming why. "analysis_pending" means the downgrade is a
+     * still-confirming state, not a measured data problem.
+     */
+    headerCapReason?: ScannerHeaderCapReason | null;
   };
 
   consistency: {
@@ -344,6 +363,8 @@ export interface ScannerTruthInputs {
   quote?: { bid: number | null; ask: number | null; mid: number | null; source: string | null; timestamp: string | null } | null;
   /** Header ok flag (selected-market) — caps the display state. */
   headerOk: boolean | null;
+  /** Why headerOk is false, when known (changes the stated reason only). */
+  headerCapReason?: ScannerHeaderCapReason | null;
   mode: ScannerTruthMode;
   nowMs?: number;
   /**
@@ -431,6 +452,10 @@ export function resolveScannerTruth(
     : null;
   const rawDisplay = resolveDisplayStatus(feedForDisplay, count > 0);
   const displayStatus = applyHeaderCap(rawDisplay, input.headerOk);
+  // The cap, not the candles, demoted the display: say so instead of blaming
+  // the candle data.
+  const headerCapReason: ScannerHeaderCapReason | null =
+    displayStatus !== rawDisplay && input.headerOk === false ? input.headerCapReason ?? null : null;
 
   const provider = providerInfo(fs?.source ?? null);
   const sourceLabel = genericSourceLabel(provider.tier);
@@ -440,6 +465,7 @@ export function resolveScannerTruth(
   // ── Candle status (freshness + minimum-candle gating) ──────────────────────
   let candleStatus: CandleStatus;
   let candleReason: string;
+  let shownHeaderCapReason: ScannerHeaderCapReason | null = null;
   const minMet = closedCount >= thr.minCandles;
   if (count === 0 || displayStatus === "UNAVAILABLE") {
     candleStatus = "unavailable";
@@ -455,6 +481,25 @@ export function resolveScannerTruth(
   } else if (displayStatus === "STALE") {
     candleStatus = "stale";
     candleReason = "The latest candle is frozen — this is historical context, not a live read.";
+  } else if (displayStatus === "ANALYSIS_ONLY" && headerCapReason) {
+    candleStatus = "historical_only";
+    shownHeaderCapReason = headerCapReason;
+    const feedPart =
+      rawDisplay === "STALE"
+        ? "The latest candle is frozen"
+        : rawDisplay === "FALLBACK_COMPOSITE"
+          ? "Candles are delayed"
+          : candleAgeMs > thr.candleMaxAgeMs
+            ? "The latest candle is older than expected for this timeframe"
+            : "Candles are live";
+    candleReason =
+      headerCapReason === "analysis_pending"
+        ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} is still loading — not yet confirmed for a live entry.`
+        : headerCapReason === "analysis_request_failed"
+          ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} could not be loaded — not confirmed for a live entry.`
+          : headerCapReason === "analysis_unavailable"
+            ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} is unavailable — not confirmed for a live entry.`
+            : "The latest candle refresh failed — showing the last-loaded bars as historical context only, not valid for a live entry.";
   } else if (displayStatus === "ANALYSIS_ONLY") {
     candleStatus = "historical_only";
     candleReason = "Data is incomplete — historical context only, not valid for a live entry.";
@@ -703,8 +748,14 @@ export function resolveScannerTruth(
         ? "Delayed market data"
         : resolvedDisplayStatus === "STALE"
           ? "Stale — last-known prices"
-          : resolvedDisplayStatus === "ANALYSIS_ONLY"
-            ? "Historical data — analysis only"
+          : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason === "analysis_pending"
+            ? "Confirming market analysis"
+            : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason === "candles_refresh_failed"
+              ? "Refresh failed — last-loaded data only"
+              : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason
+                ? "Market analysis unavailable — analysis only"
+                : resolvedDisplayStatus === "ANALYSIS_ONLY"
+                  ? "Historical data — analysis only"
             : "Market data unavailable";
 
   // Honest source note. The thirdParty case is the GBPUSD situation: the data is
@@ -924,6 +975,7 @@ export function resolveScannerTruth(
       ageMs: candleAgeMs,
       status: candleStatus,
       reason: candleReason,
+      headerCapReason: shownHeaderCapReason,
     },
     consistency: {
       quoteCandlePriceDelta: delta,

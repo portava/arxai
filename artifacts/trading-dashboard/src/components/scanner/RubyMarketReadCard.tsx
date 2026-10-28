@@ -135,10 +135,13 @@ function resolveFeedRow(input: {
   nowTs: number;
 }): { text: string; tone: string; feedDataNote: string | null } {
   const { signal, downgraded, dataUpdatedIso, snapshotState, nowTs } = input;
+  const scheduledOnly = dataUpdatedIso == null && input.formingCloseOnly === true;
   if (!signal) return { text: "", tone: "text-txt-muted", feedDataNote: null };
   const f = freshnessLabel(signal);
   if (downgraded) {
-    const age = dataUpdatedIso ? ` · ${ageLabel(dataUpdatedIso, nowTs)}` : "";
+    const age = dataUpdatedIso
+      ? ` · ${ageLabel(dataUpdatedIso, nowTs)}`
+      : scheduledOnly ? " · no tick time reported — newest bar still forming" : "";
     return { text: `Feed not confirmed${age}`, tone: "text-warning", feedDataNote: null };
   }
   if (dataUpdatedIso == null && input.formingCloseOnly) {
@@ -364,9 +367,10 @@ export function RubyMarketReadCard({
             reason,
             newsRiskLabel: eventRisk,
             feedUnconfirmedReason: feedRow.feedDataNote,
+            pricePrecision,
           }, name)
         : null,
-    [explanation, signal, downgraded, level, reason, eventRisk, feedRow.feedDataNote, name],
+    [explanation, signal, downgraded, level, reason, eventRisk, feedRow.feedDataNote, name, pricePrecision],
   );
 
   return (

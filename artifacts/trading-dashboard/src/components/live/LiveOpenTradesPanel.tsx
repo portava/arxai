@@ -14,8 +14,7 @@ type SlotPosition = {
   currentPrice: number | null;
   stopLoss: number | null;
   takeProfit: number | null;
-  // null = the bridge has not reported this position's floating P/L
-  // (unknown, never shown as $0.00).
+  /** Null when the broker has not reported this position's P/L yet. */
   grossProfit: number | null;
   swap: number | null;
   commission: number | null;
@@ -23,9 +22,29 @@ type SlotPosition = {
   profitPercentOfSlot: number | null;
   openedAt: string | null;
   lastUpdated: string | null;
+  /** Server per-row freshness of the broker sync. */
   freshness?: "FRESH" | "STALE" | "MISSING";
+  /** BROKER_CONFIRMATION_PENDING when the broker has not re-confirmed the row recently. */
   confirmation?: "BROKER_CONFIRMED" | "BROKER_CONFIRMATION_PENDING";
 };
+
+/** Pending / stale rows are shown, but their P/L is not presented as live. */
+function rowPending(p: SlotPosition): boolean {
+  return p.confirmation === "BROKER_CONFIRMATION_PENDING" || p.freshness === "STALE" || p.freshness === "MISSING";
+}
+
+function PendingMarker({ p }: { p: SlotPosition }) {
+  if (!rowPending(p)) return null;
+  return (
+    <Badge variant="outline" className="text-amber-300 border-amber-500/40 text-[10px]" data-testid={`open-trade-pending-${p.brokerTicket ?? "x"}`}>
+      {p.freshness === "MISSING" ? "Not yet synced" : "Stale"} · awaiting broker confirmation
+    </Badge>
+  );
+}
+
+function plText(p: SlotPosition, ccy: string): string {
+  return p.grossProfit == null ? "Not reported" : fmtMoney(p.grossProfit, ccy);
+}
 
 type SlotSummary = {
   accountCurrency: string;
@@ -36,7 +55,8 @@ type SlotSummary = {
   // fresh heartbeat with an old/missing positions sweep is NOT a live book.
   positionSyncIncomplete?: boolean;
   snapshotWarning?: string | null;
-  lastUpdated: string;
+  /** When the broker last reported this book (null = never). Not the response time. */
+  lastUpdated: string | null;
 };
 
 // A row is confirmed only when the server says the broker re-confirmed it in a
@@ -89,9 +109,7 @@ export function LiveOpenTradesPanel() {
             <Briefcase className="h-4 w-4" /> Open Trades
             <span className="text-xs text-muted-foreground font-normal">({positions.length})</span>
           </CardTitle>
-          <CardDescription>
-            Floating P/L per position as last reported by your MT5 bridge, checked every 3 seconds.
-          </CardDescription>
+          <CardDescription>Floating P/L per position as last reported by the broker (before swap and commission, which the broker does not report).</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           {bookLive ? (
@@ -135,6 +153,7 @@ export function LiveOpenTradesPanel() {
                     <div className="font-mono font-semibold">{p.symbol}</div>
                     <Badge variant="outline">{p.direction}</Badge>
                   </div>
+                  <PendingMarker p={p} />
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div><span className="text-muted-foreground">Vol</span> {p.volume}</div>
                     <div><span className="text-muted-foreground">Entry</span> {p.entryPrice}</div>
@@ -144,12 +163,12 @@ export function LiveOpenTradesPanel() {
                   <div className="flex items-center justify-between border-t border-zinc-800 pt-2">
                     <div className="text-xs text-muted-foreground">{rowConfirmed(p) ? "Current P/L" : "Last reported P/L"}</div>
                     <div
-                      className={`text-base font-semibold tabular-nums flex items-center gap-1 ${toneFor(p.netProfit)}`}
+                      className={`text-base font-semibold tabular-nums flex items-center gap-1 ${rowPending(p) ? "text-zinc-400" : toneFor(p.grossProfit)}`}
                       data-testid={`open-trade-mobile-pl-${p.brokerTicket ?? "x"}`}
-                      title={p.netProfit == null ? "The bridge has not reported floating P/L for this position." : undefined}
+                      title={p.grossProfit == null ? "The broker has not reported floating P/L for this position." : undefined}
                     >
-                      {p.netProfit != null && p.netProfit > 0 ? <TrendingUp className="h-3 w-3" /> : p.netProfit != null && p.netProfit < 0 ? <TrendingDown className="h-3 w-3" /> : null}
-                      {p.netProfit == null ? "Not reported" : fmtMoney(p.netProfit, ccy)}
+                      {!rowPending(p) && p.grossProfit != null && p.grossProfit > 0 ? <TrendingUp className="h-3 w-3" /> : !rowPending(p) && p.grossProfit != null && p.grossProfit < 0 ? <TrendingDown className="h-3 w-3" /> : null}
+                      {plText(p, ccy)}
                       {p.profitPercentOfSlot != null && (
                         <span className="text-xs text-muted-foreground ml-1">({p.profitPercentOfSlot >= 0 ? "+" : ""}{p.profitPercentOfSlot.toFixed(2)}%)</span>
                       )}
@@ -187,7 +206,7 @@ export function LiveOpenTradesPanel() {
                     <th className="py-2 pr-2 text-right">SL / TP</th>
                     <th className="py-2 pr-2 text-right">Swap</th>
                     <th className="py-2 pr-2 text-right">Commission</th>
-                    <th className="py-2 pr-2 text-right">Net P/L</th>
+                    <th className="py-2 pr-2 text-right">Floating P/L</th>
                     <th className="py-2 pr-2 text-right">% of Slot</th>
                     <th className="py-2 pr-2 text-right">Updated</th>
                   </tr>
@@ -195,7 +214,7 @@ export function LiveOpenTradesPanel() {
                 <tbody>
                   {positions.map((p) => (
                     <tr key={p.brokerTicket} className="border-b border-zinc-900" data-testid={`open-trade-${p.brokerTicket ?? "x"}`}>
-                      <td className="py-2 pr-2 font-mono">{p.symbol}</td>
+                      <td className="py-2 pr-2 font-mono">{p.symbol} <PendingMarker p={p} /></td>
                       <td className="py-2 pr-2"><Badge variant="outline">{p.direction}</Badge></td>
                       <td className="py-2 pr-2 text-right tabular-nums">{p.volume}</td>
                       <td className="py-2 pr-2 text-right tabular-nums">{p.entryPrice}</td>
@@ -203,14 +222,8 @@ export function LiveOpenTradesPanel() {
                       <td className="py-2 pr-2 text-right tabular-nums text-xs">{p.stopLoss ?? "—"} / {p.takeProfit ?? "—"}</td>
                       <td className="py-2 pr-2 text-right tabular-nums text-xs">{p.swap == null ? "—" : fmtMoney(p.swap, ccy)}</td>
                       <td className="py-2 pr-2 text-right tabular-nums text-xs">{p.commission == null ? "—" : fmtMoney(p.commission, ccy)}</td>
-                      <td
-                        className={`py-2 pr-2 text-right tabular-nums font-semibold ${toneFor(p.netProfit)}`}
-                        data-testid={`open-trade-pl-${p.brokerTicket ?? "x"}`}
-                        title={p.netProfit == null ? "The bridge has not reported floating P/L for this position." : undefined}
-                      >
-                        {p.netProfit == null ? "—" : fmtMoney(p.netProfit, ccy)}
-                      </td>
-                      <td className={`py-2 pr-2 text-right tabular-nums ${toneFor(p.profitPercentOfSlot)}`}>
+                      <td className={`py-2 pr-2 text-right tabular-nums font-semibold ${rowPending(p) ? "text-zinc-400" : toneFor(p.grossProfit)}`} data-testid={`open-trade-pl-${p.brokerTicket ?? "x"}`}>{plText(p, ccy)}</td>
+                      <td className={`py-2 pr-2 text-right tabular-nums ${rowPending(p) ? "text-zinc-400" : toneFor(p.profitPercentOfSlot)}`}>
                         {p.profitPercentOfSlot == null ? "—" : `${p.profitPercentOfSlot >= 0 ? "+" : ""}${p.profitPercentOfSlot.toFixed(2)}%`}
                       </td>
                       <td
@@ -228,9 +241,11 @@ export function LiveOpenTradesPanel() {
             </div>
           </>
         )}
-        {q.data?.lastUpdated && (
-          <div className="mt-3 text-[11px] text-muted-foreground">
-            Last refresh: {new Date(q.data.lastUpdated).toLocaleTimeString()}
+        {q.data && (
+          <div className="mt-3 text-[11px] text-muted-foreground" data-testid="open-trades-last-update">
+            {q.data.lastUpdated
+              ? <>Last broker update: {new Date(q.data.lastUpdated).toLocaleTimeString()}{q.data.isStale ? " (stale)" : ""}</>
+              : "Last broker update: none received"}
           </div>
         )}
       </CardContent>

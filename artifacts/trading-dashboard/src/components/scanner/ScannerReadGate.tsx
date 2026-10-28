@@ -27,7 +27,9 @@ export function ScannerReadGate({
 }) {
   const { truth, level, isFull, reason } = useScannerReadGate(symbol, timeframe);
   if (isFull) return null;
-  const pending = truth == null;
+  // A live read still waiting on the scanner's market analysis is confirming,
+  // not a measured historical-only verdict.
+  const pending = truth == null || truth.candles?.headerCapReason === "analysis_pending";
 
   const tone: CompactAlertTone =
     pending ? "info" : level === "blocked" ? "danger" : level === "limited" ? "info" : "warning";

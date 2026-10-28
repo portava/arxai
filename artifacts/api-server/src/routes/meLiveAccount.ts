@@ -177,10 +177,9 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   // such as V75/V25), so the margin/free-margin totals are a forex-only lower
   // bound — we never fabricate a synthetic-index margin.
   let marginEstimateIncomplete = false;
-  // True when a visible position's floating P/L was never reported by the
-  // bridge. Its row carries null (unknown, not $0.00) and openPnL is the sum
-  // of the KNOWN rows only, so the total is flagged as incomplete.
-  let openPnLIncomplete = false;
+  // Visible positions whose floating P/L the broker has not reported yet
+  // (floatingPl null, e.g. just opened). Their P/L is unknown, never 0.
+  let unpricedPositionCount = 0;
   const slotBalanceForPct = allocatedFunds + realisedPnl;
   const mapped = openPositions.map((p) => {
     const syncedMs = p.lastSyncedAt ? new Date(p.lastSyncedAt).getTime() : null;
@@ -191,10 +190,7 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     // Visible = not broker-confirmed-absent. A stale row stays visible (and
     // counted) whenever we lack a reliable snapshot proving it closed.
     const visible = !cls.brokerConfirmedAbsent;
-    const floatingKnown = p.floatingPl != null && Number.isFinite(Number(p.floatingPl));
-    const floating = floatingKnown ? Number(p.floatingPl) : 0;
-    // Per-row wire value: null when the bridge never reported it.
-    const floatingWire: number | null = floatingKnown ? floating : null;
+    const floating: number | null = p.floatingPl != null && Number.isFinite(Number(p.floatingPl)) ? Number(p.floatingPl) : null;
     const vol = Number(p.volume);
     const price = p.currentPrice != null ? Number(p.currentPrice) : Number(p.entryPrice);
     // Margin is estimable only for forex (known 100k contract size). For other
@@ -203,15 +199,14 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     const forex = isForexPair(p.symbol);
     const marginEst = forex ? estimateMarginUsd(vol, price, leverage) : 0;
     if (visible) {
-      openPnL += floating;
-      if (!floatingKnown) openPnLIncomplete = true;
+      if (floating == null) unpricedPositionCount += 1;
+      else openPnL += floating;
       usedMargin += marginEst;
       if (!forex) marginEstimateIncomplete = true;
     } else {
       stalePositionCount += 1;
     }
-    const profitPercentOfSlot =
-      floatingKnown && slotBalanceForPct > 0 ? (floating / slotBalanceForPct) * 100 : null;
+    const profitPercentOfSlot = floating != null && slotBalanceForPct > 0 ? (floating / slotBalanceForPct) * 100 : null;
     return {
       brokerTicket: p.brokerTicket,
       symbol: p.symbol,
@@ -221,12 +216,13 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
       currentPrice: p.currentPrice != null ? Number(p.currentPrice) : null,
       stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null,
       takeProfit: p.takeProfit != null ? Number(p.takeProfit) : null,
-      grossProfit: floatingWire,
+      // Null when the broker has not reported this position's P/L yet.
+      grossProfit: floating,
       // EA does not currently push swap/commission per-position; we surface
       // null honestly rather than zero so the UI can omit the row.
       swap: null as number | null,
       commission: null as number | null,
-      netProfit: floatingWire,
+      netProfit: floating,
       profitPercentOfSlot,
       openedAt: p.openedAt,
       lastUpdated: p.lastSyncedAt,
@@ -251,9 +247,20 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   const snapshotWarning: string | null = positionSyncIncomplete ? POSITION_SYNC_INCOMPLETE_WARNING : null;
 
   const slotBalance = allocatedFunds + realisedPnl;
-  const slotEquity = slotBalance + openPnL;
-  const freeMargin = slotEquity - usedMargin;
-  const marginLevelPercent = usedMargin > 0 ? (slotEquity / usedMargin) * 100 : null;
+  // An unpriced visible position makes open P/L, and everything built on it,
+  // unknown: reported as null (with unpricedPositionCount), never as a sum
+  // that silently counts that position as 0.
+  const openPnLKnown: number | null = unpricedPositionCount > 0 ? null : openPnL;
+  const slotEquity: number | null = openPnLKnown == null ? null : slotBalance + openPnLKnown;
+  const freeMargin: number | null = slotEquity == null ? null : slotEquity - usedMargin;
+  const marginLevelPercent = slotEquity != null && usedMargin > 0 ? (slotEquity / usedMargin) * 100 : null;
+  // When the broker last reported this book: the bridge's complete-sweep
+  // marker or the newest row sync, whichever is later. Null when nothing
+  // was ever reported. This, not the response time, is the data's "last update".
+  const reportedTimes = [snapshotAtMs, lastSnapshotMs as number | null]
+    .filter((t): t is number => t != null && Number.isFinite(t));
+  const dataAsOfMs = reportedTimes.length > 0 ? Math.max(...reportedTimes) : null;
+  const lastUpdated: string | null = dataAsOfMs != null ? new Date(dataAsOfMs).toISOString() : null;
 
   // Task #451 — carry the canonical mark-to-market balance block (the SAME wire
   // shape the SSE stream sends as its `live` sibling, built from the same
@@ -280,8 +287,11 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     // non-forex positions are held whose margin we deliberately do not fabricate.
     marginSource: "ESTIMATED" as const,
     marginEstimateIncomplete,
-    openPnL,
-    openPnLIncomplete,
+    // Null when any open position's P/L is unreported (see unpricedPositionCount);
+    // openPnLIncomplete says the same for older readers.
+    openPnL: openPnLKnown,
+    openPnLIncomplete: unpricedPositionCount > 0,
+    unpricedPositionCount,
     openPositionCount: positions.length,
     positions,
     stalePositions,
@@ -302,7 +312,9 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     isFrozen,
     freezeMessage,
     aiSleeve,
-    lastUpdated: new Date().toISOString(),
+    lastUpdated,
+    // When this response was built (not a data time).
+    servedAt: new Date().toISOString(),
     readOnly: true,
     safetyMode: "phase_b_live_runtime_gated" as const,
   });

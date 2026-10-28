@@ -24,6 +24,7 @@ import {
 import {
   resolveScannerTruth,
   thresholdsFor,
+  type ScannerHeaderCapReason,
   type ScannerTruth,
   type ScannerTruthMode,
 } from "@/lib/scannerTruth";
@@ -71,7 +72,18 @@ export function useScannerTruth(
   // strip, chart, read-gate and cards all share an identical header-ok cap. No
   // surface re-applies applyHeaderCap on its own afterwards (Task #391).
   const headerSnapQ = useSelectedMarketSnapshot(symbol, chartTimeframe);
+  // Still loading / failed / ok:false all keep the live read withheld (false);
+  // headerCapReason only makes the stated reason true for each case.
   const headerOk: boolean | null = headerSnapQ.isError ? false : headerSnapQ.data?.ok ?? false;
+  const headerCapReason: ScannerHeaderCapReason | null = candlesQ.isError
+    ? "candles_refresh_failed"
+    : headerSnapQ.isError
+      ? "analysis_request_failed"
+      : headerSnapQ.data == null
+        ? "analysis_pending"
+        : headerSnapQ.data.ok === true
+          ? null
+          : "analysis_unavailable";
 
   const mode = useTradingMode();
   const { name: assistantName } = useAssistantName();
@@ -138,6 +150,7 @@ export function useScannerTruth(
         // Keep cached bars as historical context after a failed refresh, but
         // withdraw live affordances for every direct truth consumer as well.
         headerOk: candlesQ.isError ? false : headerOk,
+        headerCapReason,
         mode: truthMode,
         nowMs,
       }, assistantName)

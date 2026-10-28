@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, cleanup, within } from "@testing-library/react";
+import { render, screen, cleanup, within, act } from "@testing-library/react";
 import type { ScannerTruth } from "@/lib/scannerTruth";
 
 // ── SelectedMarketPanel honesty safety-net (follow-up to the Broad Scan locks) ──
@@ -518,5 +518,78 @@ describe("SelectedMarketPanel — labels describe what was observed", () => {
     const countdown = screen.getByTestId("text-selected-event-countdown").textContent ?? "";
     expect(countdown).not.toBe("in 1m");
     expect(countdown).toBe("just now");
+  });
+});
+
+// Truth fix — a STALE / SYNCING selected-market envelope whose levels passed the
+// stale-level guard used to print BUY + numeric entry/stop/target in Highlights
+// while the reasoning block beside it said "WAIT — live feed not confirmed" and
+// "withheld until a confirmed live feed".
+describe("SelectedMarketPanel — Highlights agree with the reasoning block on a non-live feed", () => {
+  function staleLevelsSnapshot(dataState: "STALE" | "SYNCING") {
+    const base = degradedOkSnapshot();
+    return {
+      ...base,
+      highlights: {
+        ...base.highlights,
+        bias: "BUY" as const,
+        confidenceLabel: "High",
+        entryZone: { low: 1.0841, high: 1.0849 },
+        suggestedStop: 1.0821,
+        suggestedTakeProfit: 1.0891,
+        riskRewardRatio: 2,
+      },
+      dataSource: "LIVE_FEED",
+      dataSourceLabel: "MT5 broker feed",
+      dataState,
+      dataAsOf: new Date(Date.now() - 120_000).toISOString(),
+      levelsWithheld: false,
+    };
+  }
+
+  it.each(["STALE", "SYNCING"] as const)("%s: no numeric levels and no bare BUY badge", (dataState) => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: staleLevelsSnapshot(dataState) }));
+    render(<SelectedMarketPanel />);
+    const reasoning = screen.getByTestId("opp-map-reasoning").textContent ?? "";
+    expect(reasoning).toMatch(/withheld until a confirmed live feed/);
+    expect(screen.queryByTestId("selected-market-levels")).toBeNull();
+    // Merged with the withheld-read rule: no bias badge at all on a non-live feed.
+    expect(screen.getByTestId("selected-market-levels-withheld")).toBeTruthy();
+    expect(screen.queryByTestId("badge-selected-bias")).toBeNull();
+    expect(screen.getByTestId("badge-read-withheld").textContent).toBe("No directional read");
+  });
+});
+
+// Truth fix — "Data as of Xs ago" used dataAsOf (the newest provider bar's
+// closeTime, a FUTURE scheduled close for a forming bar) with negatives clamped
+// to 0, and was computed once per render with no ticking clock.
+describe("SelectedMarketPanel — 'Data as of' is an observed, advancing age", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  function liveSnapshot(dataAsOf: string) {
+    return { ...degradedOkSnapshot(), dataSource: "LIVE_FEED", dataState: "LIVE_CONFIRMED" as const, dataAsOf };
+  }
+
+  it("never reads 'Data as of 0s ago' for a forming bar's future close", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const now = Date.parse("2026-10-28T10:40:00.000Z"); vi.setSystemTime(now);
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveSnapshot(new Date(now + 10 * 60_000).toISOString()) }));
+    render(<SelectedMarketPanel />);
+    const label = () => screen.getByTestId("text-selected-last-updated").textContent ?? "";
+    expect(label()).not.toContain("0s ago");
+    expect(label()).toContain("Data time unconfirmed");
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(label()).not.toContain("0s ago");
+  });
+
+  it("advances the age between renders", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const now = Date.parse("2026-10-28T10:40:00.000Z"); vi.setSystemTime(now);
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveSnapshot(new Date(now - 4_000).toISOString()) }));
+    render(<SelectedMarketPanel />);
+    const label = () => screen.getByTestId("text-selected-last-updated").textContent ?? "";
+    expect(label()).toBe("Data as of 4s ago");
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(label()).toBe("Data as of 1m ago");
   });
 });

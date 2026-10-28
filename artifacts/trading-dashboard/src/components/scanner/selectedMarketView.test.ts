@@ -116,3 +116,25 @@ describe("resolveSelectedMarketView — a feed that is not live-confirmed never 
     expect(view.kind === "withheld" && view.reason).toBe(reason);
   });
 });
+
+// Truth fix — the panel's Ruby reasoning block says "Entry, stop, and target are
+// withheld until a confirmed live feed" whenever the feed is not confirmed. The
+// Highlights box beside it must not print those same levels as numbers.
+describe("resolveSelectedMarketView — levels need a confirmed live feed", () => {
+  it.each(["STALE", "SYNCING"] as const)("%s feed with in-range levels does not render numbers", (dataState) => {
+    const view = resolveSelectedMarketView(input({ dataState }));
+    expect(view.kind).not.toBe("levels");
+    // Merged with the not-live-confirmed rule: withheld with the plain reason.
+    expect(view).toEqual({ kind: "withheld", reason: NOT_LIVE_LEVELS_REASON });
+  });
+
+  it("a missing dataState (older server) fails closed (no levels)", () => {
+    const view = resolveSelectedMarketView(input({ dataState: undefined }));
+    expect(view.kind).toBe("withheld");
+  });
+
+  it("a guard-withheld STALE read still surfaces the guard's own reason", () => {
+    const view = resolveSelectedMarketView(input({ dataState: "STALE", levelsWithheld: true, levelsWithheldReason: "Too far." }));
+    expect(view).toEqual({ kind: "withheld", reason: "Too far." });
+  });
+});

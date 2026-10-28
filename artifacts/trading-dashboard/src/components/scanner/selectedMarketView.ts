@@ -5,9 +5,10 @@
 // three render branches the panel draws, so the decision is unit-testable
 // without mounting the whole panel.
 //
-//   - "levels"   → real geometry passed the guard; render the numbers.
+//   - "levels"   → real geometry passed the guard on a LIVE_CONFIRMED feed.
 //   - "withheld" → guard fired (levels too far from price); show its reason.
-//   - "waiting"  → no confirmed live feed yet; show the waiting language.
+//   - "waiting"  → no confirmed live feed (UNAVAILABLE / STALE / SYNCING /
+//                  unstated); show the waiting language, never the numbers.
 
 export type SelectedMarketDataState =
   | "LIVE_CONFIRMED"
@@ -73,7 +74,12 @@ export function resolveSelectedMarketView(
     h.suggestedStop != null &&
     h.suggestedTakeProfit != null;
 
-  if (hasLevels && h.entryZone && h.suggestedStop != null && h.suggestedTakeProfit != null) {
+  // Levels print as numbers only on a confirmed live feed. A STALE / SYNCING
+  // (or unstated) feed is the same condition under which the panel's reasoning
+  // block says the levels are withheld, so the Highlights box must agree.
+  const feedConfirmed = ok.dataState === "LIVE_CONFIRMED";
+
+  if (feedConfirmed && hasLevels && h.entryZone && h.suggestedStop != null && h.suggestedTakeProfit != null) {
     return {
       kind: "levels",
       levels: {

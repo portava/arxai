@@ -158,6 +158,41 @@ type DemoCommand = {
 };
 
 const TERMINAL = new Set(["FILLED_DEMO", "REJECTED", "FAILED", "BLOCKED"]);
+// Statuses before the command is handed to the EA: nothing is "waiting for an
+// EA fill" yet.
+const PRE_DISPATCH = new Set(["DRAFT", "USER_CONFIRMATION_REQUIRED", "DEMO_APPROVED"]);
+// Consecutive failed status reads after which the modal stops narrating
+// progress and says the status is unavailable.
+const POLL_FAILURES_BEFORE_UNKNOWN = 3;
+
+// The server's per-user dispatch gate (GET /api/me/demo-bridge-debug →
+// bridge.gateBlockers) is evaluated with userConfirmed=false, so
+// USER_NOT_CONFIRMED is always listed and is cleared by this form's own
+// confirm step. Every other blocker means the server will refuse the order.
+const CONFIRM_STEP_BLOCKER = "USER_NOT_CONFIRMED";
+const GATE_BLOCKER_WORDS: Record<string, string> = {
+  WRONG_EXECUTION_MODE: "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)",
+  NOT_VERIFIED_DEMO: "the demo account has not passed demo verification",
+  ACCOUNT_TYPE_NOT_EXPLICIT_DEMO: "the bridge account is not confirmed as a demo account",
+  NO_BRIDGE_CONNECTION: "no demo bridge is connected",
+  BRIDGE_NOT_CONNECTED: "the demo bridge is not connected",
+  HEARTBEAT_STALE: "the demo bridge heartbeat is stale",
+  LIVE_LOCK_BROKEN: "the live lock is not in place",
+  RISK_GATE_FAILED: "the risk gate did not pass",
+  DUPLICATE_SUSPECTED: "a duplicate EA is suspected",
+};
+function gateBlockerWords(code: string): string {
+  if (GATE_BLOCKER_WORDS[code]) return GATE_BLOCKER_WORDS[code];
+  if (code.startsWith("EA_VERSION_TOO_OLD")) return "the EA version is too old";
+  return code;
+}
+
+type DemoExecutionState =
+  | { kind: "checking" }
+  | { kind: "unchecked" }
+  | { kind: "unreported" }
+  | { kind: "blocked"; reasons: string[] }
+  | { kind: "enabled" };
 
 // ScannerTradeModal — opens from a Market Scanner result card. Routes
 // MARKET orders through the demo-command queue (POST /api/me/demo-commands
@@ -195,6 +230,7 @@ export function ScannerTradeModal({
   const [err, setErr] = useState<string | null>(null);
   const [cmd, setCmd] = useState<DemoCommand | null>(null);
   const [statusLog, setStatusLog] = useState<string[]>([]);
+  const [pollFailures, setPollFailures] = useState(0);
   const [bridge, setBridge] = useState<BridgeReadiness | null>(null);
   // Outcome of the most recent bridge-status request. "checking" until the
   // first answer of this open; "failed" when the request errored — the bridge
@@ -286,7 +322,9 @@ export function ScannerTradeModal({
         if (!r.ok) { failed(`HTTP ${r.status}`); return; }
         const j = await r.json();
         if (cancelled) return;
-        setBridge(j.bridge ?? null);
+        // A payload with no bridge block is not an answer about the bridge.
+        if (!j.bridge) { failed("no bridge block in the response"); return; }
+        setBridge(j.bridge);
         setBridgeCheck("done");
         setBridgeCheckDetail(null);
       } catch (e) { failed(String((e as Error)?.message ?? e)); }
@@ -316,6 +354,19 @@ export function ScannerTradeModal({
   );
   const bridgeBlockReason: string | null = bridgeBlockReasonFor(bridge, bridgeReady);
 
+  // Is demo execution enabled for THIS user right now? Read from the server's
+  // own dispatch gate, never asserted: a ready bridge is not enough (the user
+  // must also be armed for demo execution and verified), and createDraftCommand
+  // refuses an unarmed user with NOT_ARMED_FOR_DEMO_EXECUTION.
+  const demoExecution: DemoExecutionState = (() => {
+    if (bridgeCheck === "checking") return { kind: "checking" };
+    if (bridgeCheck === "failed" || !bridge) return { kind: "unchecked" };
+    if (!Array.isArray(bridge.gateBlockers)) return { kind: "unreported" };
+    const blocking = bridge.gateBlockers.filter((b) => b !== CONFIRM_STEP_BLOCKER);
+    if (blocking.length > 0) return { kind: "blocked", reasons: blocking.map(gateBlockerWords) };
+    return { kind: "enabled" };
+  })();
+
   // Reset internal state every time the modal opens for a new signal,
   // including a fresh idempotency key so a different signal can't reuse
   // the previous one.
@@ -337,6 +388,7 @@ export function ScannerTradeModal({
     setErr(null);
     setCmd(null);
     setStatusLog([]);
+    setPollFailures(0);
     currentPriceSeededRef.current = false;
     setPriceBasis({ kind: "signal" });
     idempotencyKeyRef.current = `sc-${signal.symbol}-${signal.timeframe ?? ""}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -475,25 +527,31 @@ export function ScannerTradeModal({
       if (!j1.ok || !j1.command) { setErr(j1.reason ?? `HTTP ${r1.status}`); return; }
       const commandId = j1.command.commandId as string;
       setCmd({ commandId, status: j1.command.status, reason: j1.command.reason ?? null });
-      setStatusLog((s) => [...s, `QUEUED ${commandId}`]);
+      setStatusLog((s) => [...s, `${j1.command.status} ${commandId}`]);
+      // Every step records the row status the SERVER returned — on success AND
+      // on refusal (a refused confirm can already have moved the row to BLOCKED).
+      const applyStep = (j: { command?: { status?: string; reason?: string | null } | null }) => {
+        const status = j.command?.status;
+        if (typeof status !== "string" || !status) return;
+        setCmd((c) => c ? { ...c, status, reason: j.command?.reason ?? null } : c);
+        setStatusLog((s) => (s[s.length - 1] === status ? s : [...s, status]));
+      };
       // 2. Confirm
       const r2 = await fetch(u(`/api/me/demo-commands/${encodeURIComponent(commandId)}/confirm`), {
         method: "POST", credentials: "include",
         headers: { "content-type": "application/json" }, body: "{}",
       });
       const j2 = await r2.json();
+      applyStep(j2);
       if (!j2.ok || !j2.command) { setErr(`CONFIRM_FAILED: ${j2.reason ?? r2.status}`); return; }
-      setCmd((c) => c ? { ...c, status: j2.command.status, reason: j2.command.reason ?? null } : c);
-      setStatusLog((s) => [...s, `DEMO_APPROVED`]);
       // 3. Dispatch
       const r3 = await fetch(u(`/api/me/demo-commands/${encodeURIComponent(commandId)}/dispatch`), {
         method: "POST", credentials: "include",
         headers: { "content-type": "application/json" }, body: "{}",
       });
       const j3 = await r3.json();
+      applyStep(j3);
       if (!j3.ok || !j3.command) { setErr(`DISPATCH_FAILED: ${j3.reason ?? r3.status}`); return; }
-      setCmd((c) => c ? { ...c, status: j3.command.status, reason: j3.command.reason ?? null } : c);
-      setStatusLog((s) => [...s, `SENT_TO_MT5_DEMO`]);
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -546,10 +604,13 @@ export function ScannerTradeModal({
     const t = setInterval(async () => {
       try {
         const r = await fetch(u(`/api/me/demo-commands/${encodeURIComponent(cmd.commandId)}`), { credentials: "include" });
-        if (!r.ok) return;
+        if (cancelled) return;
+        if (!r.ok) { setPollFailures((n) => n + 1); return; }
         const j = await r.json();
         const c = j.command;
-        if (!c || cancelled) return;
+        if (cancelled) return;
+        if (!c) { setPollFailures((n) => n + 1); return; }
+        setPollFailures(0);
         const next: DemoCommand = {
           commandId: c.commandId,
           status: c.status,
@@ -585,7 +646,7 @@ export function ScannerTradeModal({
             }
           }
         }
-      } catch {/* keep polling */}
+      } catch { if (!cancelled) setPollFailures((n) => n + 1); /* keep polling */ }
     }, 1200);
     return () => { cancelled = true; clearInterval(t); };
   }, [cmd?.commandId, cmd?.status]);
@@ -596,7 +657,8 @@ export function ScannerTradeModal({
     (bigLot && !bigLotAck) ||
     (demoAffordance.requireAck && !feedAck) || // honest demo feed-not-live ack
     (cmd != null && !terminal) ||
-    (market && !bridgeReady); // block market dispatch when bridge isn't execution-ready
+    (market && !bridgeReady) || // block market dispatch when bridge isn't execution-ready
+    (market && demoExecution.kind === "blocked"); // the server's dispatch gate would refuse it
 
   // While either the account mode or the access verdict is still loading,
   // render a neutral skeleton — never the DEMO body, so a live account
@@ -666,9 +728,30 @@ export function ScannerTradeModal({
         />
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm min-h-0">
-          <div className="flex items-center gap-1.5 rounded border border-success/40 bg-success/5 px-2 py-1.5 text-[11px] text-success">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Demo trading enabled. Live broker execution disabled.
+          <div
+            className={`flex items-start gap-1.5 rounded border px-2 py-1.5 text-[11px] ${
+              demoExecution.kind === "enabled"
+                ? "border-success/40 bg-success/5 text-success"
+                : demoExecution.kind === "checking"
+                  ? "border-border bg-card text-muted-foreground"
+                  : "border-warning/50 bg-warning/10 text-warning"
+            }`}
+            data-testid="scanner-demo-execution-banner"
+          >
+            {demoExecution.kind === "enabled"
+              ? <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              : demoExecution.kind === "checking"
+                ? <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+                : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+            <span>
+              {demoExecution.kind === "enabled" && "Demo execution enabled for this account (server dispatch gate)."}
+              {demoExecution.kind === "checking" && "Checking demo execution for this account…"}
+              {demoExecution.kind === "unchecked" && "Demo execution for this account could not be checked — the server's dispatch gate did not respond."}
+              {demoExecution.kind === "unreported" && "The server did not report whether demo execution is allowed for this account."}
+              {demoExecution.kind === "blocked" &&
+                `Demo execution is not available for this account: ${demoExecution.reasons.join("; ")}. The server will refuse orders from this form until that is fixed.`}
+              {" "}This form sends demo orders only; live orders go through the separate LIVE ticket.
+            </span>
           </div>
 
           <SectionLabel>{name} Summary</SectionLabel>
@@ -864,7 +947,7 @@ export function ScannerTradeModal({
                   "bg-warning/20 text-warning"
                 }`}>{cmd.status}</span>
               </div>
-              <div className="text-muted-foreground">Lifecycle: {statusLog.join(" → ")}</div>
+              <div className="text-muted-foreground" data-testid="scanner-trade-lifecycle">Lifecycle: {statusLog.join(" → ")}</div>
               {cmd.status === "FILLED_DEMO" && (
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 border-t border-border">
                   <div><span className="text-muted-foreground">Broker ticket:</span> <span className="font-mono">{cmd.brokerTicket ?? "—"}</span></div>
@@ -883,8 +966,22 @@ export function ScannerTradeModal({
                   {cmd.reason ?? "Draft saved. It has not been sent to your broker."}
                 </div>
               )}
+              {err && <div className="rounded bg-danger/10 p-1.5 text-danger">{err}</div>}
               {!terminal && cmd.status !== "DRAFT_SAVED" && (
-                <div className="flex items-center gap-1.5 text-warning"><Loader2 className="h-3 w-3 animate-spin" /> Waiting for EA fill…</div>
+                pollFailures >= POLL_FAILURES_BEFORE_UNKNOWN ? (
+                  <div className="flex items-start gap-1.5 text-warning" data-testid="scanner-trade-status-unavailable">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span>
+                      Status unavailable — the last {pollFailures} status checks for this command failed. Last status the server returned: {cmd.status}. Check Recent Demo Commands on the MT5 Bridge page.
+                    </span>
+                  </div>
+                ) : PRE_DISPATCH.has(cmd.status) ? (
+                  busy && !err
+                    ? <div className="flex items-center gap-1.5 text-warning"><Loader2 className="h-3 w-3 animate-spin" /> Submitting to the server…</div>
+                    : <div className="text-warning">Not sent to the EA — the command is at {cmd.status}.</div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-warning"><Loader2 className="h-3 w-3 animate-spin" /> Waiting for EA fill…</div>
+                )
               )}
             </div>
           )}

@@ -74,7 +74,7 @@ describe("LiveOpenTradesPanel truth", () => {
     const panel = screen.getByTestId("live-open-trades-panel");
     expect(panel.textContent).not.toContain("$0.00");
     expect(panel.textContent).not.toContain("Live floating P/L");
-    expect(screen.getByTestId("open-trade-pl-1001").textContent).toBe("—");
+    expect(screen.getByTestId("open-trade-pl-1001").textContent).toBe("Not reported");
     expect(screen.getByTestId("open-trade-mobile-pl-1001").textContent).toContain("Not reported");
     expect(screen.getByTestId("open-trade-updated-1001").textContent).toContain("unconfirmed");
     expect(screen.getByTestId("open-trade-mobile-pending-1001").textContent).toMatch(

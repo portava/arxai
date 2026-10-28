@@ -1,5 +1,5 @@
 import { Target } from "lucide-react";
-import type { MentorSession } from "./types";
+import type { MentorSession, SessionType } from "./types";
 import { useAssistantName } from "@/lib/assistant-name";
 
 // Humanize raw session-type codes for user-facing display.
@@ -11,8 +11,26 @@ function label(t: string): string {
     .join(" ");
 }
 
-export function DailyMentorBriefingCard({ session }: { session: MentorSession }) {
+// The heading names the session's own cadence. Only WEEKLY_RESET is weekly;
+// every other session is per-day or per-event.
+const HEADING: Record<SessionType, string> = {
+  DAILY_BRIEFING: "Today's Focus",
+  PRE_MARKET_GUIDANCE: "Pre-Market Focus",
+  POST_TRADE_GUIDANCE: "Post-Trade Focus",
+  WEEKLY_RESET: "Weekly Focus",
+  RISK_WARNING: "Session Focus",
+  CONFIDENCE_REBUILD: "Session Focus",
+  DISCIPLINE_CHECK: "Session Focus",
+};
+
+/**
+ * `summaryShownElsewhere`: the caller already renders this session's focus
+ * and message (MentorWarningCard for RISK_WARNING / DISCIPLINE_CHECK), so the
+ * card shows only the next action instead of repeating them.
+ */
+export function DailyMentorBriefingCard({ session, summaryShownElsewhere = false }: { session: MentorSession; summaryShownElsewhere?: boolean }) {
   const { name } = useAssistantName();
+  const heading = HEADING[session.sessionType] ?? "Mentor Focus";
   return (
     <div className="rounded-2xl border border-warning/30 bg-warning/[0.06] p-4">
       <div className="flex items-start gap-3">
@@ -21,7 +39,7 @@ export function DailyMentorBriefingCard({ session }: { session: MentorSession })
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-bold text-warning">Weekly Focus</h2>
+            <h2 className="text-base font-bold text-warning">{heading}</h2>
             <span className="rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
               {label(session.sessionType)}
             </span>
@@ -29,8 +47,14 @@ export function DailyMentorBriefingCard({ session }: { session: MentorSession })
               {new Date(session.createdAt).toLocaleString()}
             </span>
           </div>
-          <h3 className="mt-1.5 text-sm font-semibold text-foreground">{session.mainFocus}</h3>
-          <p className="mt-1 text-sm leading-relaxed text-txt-secondary">{session.mentorMessage}</p>
+          {summaryShownElsewhere ? (
+            <p className="mt-1.5 text-xs text-txt-muted">Focus and message are shown in the warning above.</p>
+          ) : (
+            <>
+              <h3 className="mt-1.5 text-sm font-semibold text-foreground">{session.mainFocus}</h3>
+              <p className="mt-1 text-sm leading-relaxed text-txt-secondary">{session.mentorMessage}</p>
+            </>
+          )}
         </div>
       </div>
 

@@ -85,6 +85,12 @@ export interface InvestorLiveBalance {
   availableBalance: number;
   openTradeCount: number;
   freshness: { status: "fresh" | "stale" | "unavailable"; lastUpdatedAt: string | null; ageMs: number | null };
+  /**
+   * Closed trades whose realized P/L the server withheld (e.g. missing broker
+   * contract size). > 0 means realizedPnL / liveEquity are incomplete.
+   * Absent on older payloads.
+   */
+  realizedPnLPendingCount?: number;
 }
 
 export interface LiveAccountSnapshot {

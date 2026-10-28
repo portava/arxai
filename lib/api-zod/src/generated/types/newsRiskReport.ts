@@ -7,8 +7,10 @@
  */
 import type { NewsRiskReportNews } from "./newsRiskReportNews";
 import type { NewsRiskReportRiskLevel } from "./newsRiskReportRiskLevel";
+import type { StoredCalendarCoverage } from "./storedCalendarCoverage";
 
 export interface NewsRiskReport {
+  calendarCoverage?: StoredCalendarCoverage;
   id: number;
   /** @nullable */
   userId?: number | null;

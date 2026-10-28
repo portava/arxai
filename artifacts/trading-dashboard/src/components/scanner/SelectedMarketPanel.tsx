@@ -40,11 +40,36 @@ function impactBadgeClass(i: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"): string {
   return "bg-zinc-500/20 text-foreground border-zinc-500/40";
 }
 
-function timeAgo(iso: string): string {
-  const diff = Math.max(0, Date.now() - +new Date(iso));
-  const s = Math.round(diff / 1000);
+// A stamp later than now (beyond this clock-skew allowance) is not an
+// observation. dataAsOf is the newest provider bar's closeTime, which for a
+// still-forming bar is its SCHEDULED close in the future.
+const FUTURE_STAMP_SKEW_MS = 5_000;
+
+// Age of a past timestamp against a ticking now; null when the stamp is
+// missing, malformed or in the future (never clamped to "0s ago").
+function timeAgo(iso: string, nowTs: number): string | null {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t) || t > nowTs + FUTURE_STAMP_SKEW_MS) return null;
+  const s = Math.max(0, Math.floor((nowTs - t) / 1000));
   if (s < 60) return `${s}s ago`;
-  return `${Math.round(s / 60)}m ago`;
+  return `${Math.floor(s / 60)}m ago`;
+}
+
+
+// Re-renders once a second while the tab is visible so the ages above advance
+// between the 15s polls instead of freezing at their first value.
+function useTickingNow(): number {
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  useEffect(() => {
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => { if (id == null) id = setInterval(() => setNowTs(Date.now()), 1000); };
+    const stop = () => { if (id != null) { clearInterval(id); id = null; } };
+    const onVis = () => (document.hidden ? stop() : (setNowTs(Date.now()), start()));
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
+  return nowTs;
 }
 
 export function SelectedMarketPanel() {
@@ -54,13 +79,9 @@ export function SelectedMarketPanel() {
   const { name } = useAssistantName();
   const activeSymbol = resolveSymbol(bareSymbol(chartSym || "EURUSD").toUpperCase())?.canonicalSymbol ?? "EURUSD";
   const [ticket, setTicket] = useState<{ selection: string; side: "BUY" | "SELL" } | null>(null);
-  // Event countdowns are computed from each event's time at render, never from
-  // the server's build-time minute offset; re-render every 15 s to keep them current.
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 15_000);
-    return () => clearInterval(id);
-  }, []);
+  // Ages and event countdowns are computed against a ticking clock (never the
+  // server's build-time minute offset), so they advance between polls.
+  const nowTs = useTickingNow();
 
   // Compact public Deriv status — drives the "Deriv feed not configured"
   // badge in SymbolExplorer. Synthetics stay selectable either way.
@@ -322,12 +343,12 @@ export function SelectedMarketPanel() {
                 <Badge variant="outline" data-testid="badge-data-source">{ok.dataSourceLabel}</Badge>
               )}
               <span className="ml-auto" data-testid="text-selected-last-updated">
-                {selectedMarketDataAsOfLabel(ok.dataAsOf, Date.now())}
+                {selectedMarketDataAsOfLabel(ok.dataAsOf, nowTs)}
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-ruby-cache-note">
               {ok.dataAsOf
-                ? `Analysis built ${timeAgo(ok.generatedAt)}${ok.cacheHit ? " · cached" : ""}. `
+                ? `Analysis built ${timeAgo(ok.generatedAt, nowTs) ?? "at an unconfirmed time"}${ok.cacheHit ? " · cached" : ""}. `
                 : ""}
               {name} Market Intelligence uses cached market analysis and updates on interval/event triggers (no live AI/LLM call per refresh).
             </p>
@@ -400,7 +421,7 @@ export function SelectedMarketPanel() {
                         <Badge className={impactBadgeClass(e.impactLevel)}>{e.impactLevel}</Badge>
                         <span className="font-mono text-txt-muted">{e.currency}</span>
                         <span className="flex-1 truncate">{e.title}</span>
-                        <span className="text-txt-muted" data-testid="text-selected-event-countdown">{eventCountdownFromIso(e.eventTime, Math.max(nowMs, Date.now()))}</span>
+                        <span className="text-txt-muted" data-testid="text-selected-event-countdown">{eventCountdownFromIso(e.eventTime, nowTs)}</span>
                       </li>
                     ))}
                   </ul>

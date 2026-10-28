@@ -16,10 +16,12 @@ import { render, screen, cleanup } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({
   mt5State: undefined as undefined | { connected?: boolean; liveAllowed?: boolean },
+  snap: undefined as unknown,
+  queries: {} as Record<string, unknown>,
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
-  useGetTradeSnapshot: () => ({ data: undefined }),
+  useGetTradeSnapshot: () => ({ data: h.snap }),
   useGetCoachExplanation: () => ({ data: undefined, isLoading: false }),
   useMoveTradeToBreakeven: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTrailTradeStop: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -35,7 +37,7 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: {} }),
+  useQuery: (opts: { queryKey: unknown[] }) => ({ data: h.queries[String(opts.queryKey[0])] ?? {} }),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
@@ -55,6 +57,8 @@ const trade = {
 beforeEach(() => {
   vi.clearAllMocks();
   h.mt5State = undefined;
+  h.snap = undefined;
+  h.queries = {};
 });
 afterEach(() => cleanup());
 
@@ -78,5 +82,61 @@ describe("LiveTradeCard blocked/offline badge honesty", () => {
     render(<LiveTradeCard trade={trade} />);
     expect(screen.queryByTestId("badge-live-blocked")).toBeNull();
     expect(screen.queryByTestId("badge-bridge-offline")).toBeNull();
+  });
+});
+
+const snap = {
+  currentPrice: 1.105,
+  floatingPnl: 5,
+  rMultiple: 0.5,
+  health: { score: 60, state: "on_track" },
+  primarySuggestion: "Hold.",
+  suggestions: { breakEven: { recommended: false }, trail: { recommended: false }, partial: { recommended: false } },
+};
+
+describe("LiveTradeCard capability badges are gated, not unconditional", () => {
+  it("does not claim SL/TP edit or manual close while the kill switch is engaged and the bridge is offline", () => {
+    h.snap = snap;
+    h.mt5State = { connected: false, liveAllowed: false };
+    h.queries["/me/protective-auto-close/settings"] = { settings: { killSwitchEngaged: true } };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("badge-auto-close-killed")).toBeTruthy();
+    expect(screen.queryByTestId("badge-sltp-editable")).toBeNull();
+    expect(screen.queryByTestId("badge-manual-close")).toBeNull();
+  });
+
+  it("does not claim them while the kill-switch state has not been read", () => {
+    h.snap = snap;
+    h.mt5State = { connected: true, liveAllowed: true };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.queryByTestId("badge-sltp-editable")).toBeNull();
+    expect(screen.queryByTestId("badge-manual-close")).toBeNull();
+  });
+
+  it("does not claim them before the card shows the controls (no snapshot)", () => {
+    h.mt5State = { connected: true, liveAllowed: true };
+    h.queries["/me/protective-auto-close/settings"] = { settings: { killSwitchEngaged: false } };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.queryByTestId("badge-sltp-editable")).toBeNull();
+    expect(screen.queryByTestId("badge-manual-close")).toBeNull();
+  });
+
+  it("shows them when the controls are on screen, the kill switch reads off and the bridge is connected", () => {
+    h.snap = snap;
+    h.mt5State = { connected: true, liveAllowed: true };
+    h.queries["/me/protective-auto-close/settings"] = { settings: { killSwitchEngaged: false } };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("badge-sltp-editable").textContent).not.toMatch(/TP/);
+    expect(screen.getByTestId("badge-manual-close")).toBeTruthy();
+  });
+});
+
+describe("LiveTradeCard header mode badge", () => {
+  it("labels the stored mode as the Safety Core state at entry, not a venue", () => {
+    render(<LiveTradeCard trade={trade} />);
+    const b = screen.getByTestId("badge-trade-mode-1");
+    expect(b.textContent).not.toBe("LIVE");
+    expect(b.textContent).toMatch(/Safety Core/);
+    expect(b.getAttribute("title") ?? "").toMatch(/not a broker/i);
   });
 });

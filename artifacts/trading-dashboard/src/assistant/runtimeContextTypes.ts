@@ -54,6 +54,9 @@ export interface BridgeDiagnosticSummary {
   fetchedAt: string;
 }
 
+/** Outcome of the latest read of a diagnostic endpoint by the runtime collector. */
+export type RuntimeFetchStatus = "loading" | "loaded" | "unavailable";
+
 export interface RuntimeContext {
   /** Wall-clock when context was captured. */
   capturedAt: string;
@@ -71,16 +74,26 @@ export interface RuntimeContext {
 
   selectedSymbol: string | null;
   tradingMode: "paper" | "simulator" | "broker-readonly" | "live" | "unknown";
-  paperOnly: boolean;
-  simulatorMode: boolean;
-  liveTradingDisabled: boolean;
-  brokerExecutionDisabled: boolean;
-  brokerReadOnly: boolean;
+  /*
+   * Posture flags read from /api/mt5/diagnostic-summary. `null` means the
+   * summary was not read (still loading, request failed, or the field was
+   * missing) — it is unknown, never the default safe posture.
+   */
+  paperOnly: boolean | null;
+  simulatorMode: boolean | null;
+  liveTradingDisabled: boolean | null;
+  brokerExecutionDisabled: boolean | null;
+  brokerReadOnly: boolean | null;
   mt5Deferred: boolean;
   mt5BridgeConnected: boolean;
-  heartbeatPresent: boolean;
+  heartbeatPresent: boolean | null;
   heartbeatAgeSeconds: number | null;
-  emergencyStopActive: boolean;
+  /**
+   * Platform emergency stop / kill switch. `null` means no source read on this
+   * page reports it — it is NOT a measured "off". Only `true`/`false` from a
+   * server reading may be shown as engaged/off.
+   */
+  emergencyStopActive: boolean | null;
   /** Free-form readiness label, e.g. "incomplete" / "ready" / "unknown". */
   readiness: "ready" | "incomplete" | "unknown";
 
@@ -95,6 +108,10 @@ export interface RuntimeContext {
 
   health: HealthSummary | null;
   bridge: BridgeDiagnosticSummary | null;
+  /** Latest /api/mt5/diagnostic-summary read outcome (absent = not tracked). */
+  bridgeStatus?: RuntimeFetchStatus;
+  /** Latest /api/app/health-summary read outcome (absent = not tracked). */
+  healthStatus?: RuntimeFetchStatus;
 }
 
 export type DoctorIssueCategory =

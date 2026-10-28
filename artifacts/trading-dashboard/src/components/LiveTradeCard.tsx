@@ -179,8 +179,18 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   } else {
     badges.push({ label: "TP Targets Available", tone: "ok", testId: "badge-tp-available" });
   }
-  badges.push({ label: "SL/TP Editable", tone: "ok", testId: "badge-sltp-editable" });
-  badges.push({ label: "Manual Close Available", tone: "ok", testId: "badge-manual-close" });
+  // The stop / close capability badges used to be pushed UNCONDITIONALLY.
+  // They are claimed only when the card actually shows those controls (the
+  // snapshot loaded), the kill switch has been read and is not engaged, and
+  // the bridge status has been read as connected. Anything unknown or
+  // blocking claims nothing. The card can move the stop (Break-Even / Trail)
+  // but has no take-profit editor, so the label names the stop only.
+  const killRead = typeof safety?.settings?.killSwitchEngaged === "boolean";
+  const controlsUsable = Boolean(snap) && killRead && !killEngaged && mt5State?.connected === true;
+  if (controlsUsable) {
+    badges.push({ label: "Stop Adjustable", tone: "ok", testId: "badge-sltp-editable" });
+    badges.push({ label: "Manual Close Available", tone: "ok", testId: "badge-manual-close" });
+  }
 
   return (
     <div className="flex flex-wrap gap-1" data-testid={`safety-badges-${trade.id}`}>
@@ -295,7 +305,16 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
             </span>
             <span className="font-mono">{trade.symbol}</span>
             <Badge variant="outline" className="text-[10px]">{trade.lot} lots</Badge>
-            <Badge variant="outline" className="text-[10px]">{trade.mode}</Badge>
+            {/* trades.mode is the Safety Core state when the record was written,
+                not a broker venue (lib/db schema/trades.ts) — label it so. */}
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              data-testid={`badge-trade-mode-${trade.id}`}
+              title="Safety Core state when this ARX trade record was written. It is not a broker venue; this record is not a broker order."
+            >
+              Safety Core: {trade.mode ?? "unknown"} (at entry)
+            </Badge>
           </CardTitle>
           <Button variant="ghost" size="icon" onClick={() => { setCoachOpen(true); onCoach?.(); }} data-testid={`button-coach-${trade.id}`}>
             <Brain size={16} className="text-primary" />

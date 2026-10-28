@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useMutation, useQueryClient, type QueryClient, type Query } from "@tanstack/react-query";
 
 // Per-user identity client. Reads /api/me; null when logged out.
 // All requests use credentials: "include" so the httpOnly arx_user_session
@@ -41,6 +42,40 @@ const ME_KEY = ["me"] as const;
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 const url = (p: string) => `${BASE}${p}`;
 
+function isMeKey(key: readonly unknown[]): boolean {
+  return key.length === 1 && key[0] === ME_KEY[0];
+}
+
+/**
+ * Drop every cached query except the identity itself. Many per-user reads
+ * (account mode, market edge, chart intelligence, trade health, scalp baskets,
+ * one-click status, live profile) are keyed without a user id, so after the
+ * signed-in identity changes their cached data belongs to someone else.
+ * Reset (not remove) so mounted observers stay attached and refetch for the
+ * new identity, showing a loading state instead of the old user's data.
+ */
+export function resetPreviousUserQueries(qc: QueryClient): void {
+  void qc.resetQueries({ predicate: (q: Query) => !isMeKey(q.queryKey) }).catch(() => undefined);
+}
+
+// One identity watcher per QueryClient: when a /api/me response (another tab
+// signing out and in, or a session that expired) changes the user id, reset
+// the previous user's cached queries before they are shown as this user's.
+const identityWatchers = new WeakMap<QueryClient, () => void>();
+
+function watchIdentity(qc: QueryClient): void {
+  if (identityWatchers.has(qc)) return;
+  let lastId: number | null | undefined = qc.getQueryData<CurrentUser | null>(ME_KEY)?.id;
+  const unsubscribe = qc.getQueryCache().subscribe((event) => {
+    if (event.type !== "updated" || event.action.type !== "success") return;
+    if (!isMeKey(event.query.queryKey)) return;
+    const nextId = (event.query.state.data as CurrentUser | null | undefined)?.id ?? null;
+    if (lastId != null && nextId !== lastId) resetPreviousUserQueries(qc);
+    lastId = nextId;
+  });
+  identityWatchers.set(qc, unsubscribe);
+}
+
 async function fetchMe(): Promise<CurrentUser | null> {
   const r = await fetch(url("/api/me"), { credentials: "include" });
   if (r.status === 401) return null;
@@ -50,6 +85,8 @@ async function fetchMe(): Promise<CurrentUser | null> {
 }
 
 export function useCurrentUser() {
+  const qc = useQueryClient();
+  useEffect(() => { watchIdentity(qc); }, [qc]);
   const q = useQuery({
     queryKey: ME_KEY,
     queryFn: fetchMe,
@@ -80,7 +117,11 @@ export function useLogin() {
       }
       return (await r.json()) as { user: CurrentUser };
     },
-    onSuccess: (data) => qc.setQueryData(ME_KEY, data.user),
+    onSuccess: (data) => {
+      // A new session: nothing cached before it may be shown as this user's.
+      resetPreviousUserQueries(qc);
+      qc.setQueryData(ME_KEY, data.user);
+    },
   });
 }
 
@@ -106,7 +147,11 @@ export function useRegister() {
       }
       return (await r.json()) as { user: CurrentUser };
     },
-    onSuccess: (data) => qc.setQueryData(ME_KEY, data.user),
+    onSuccess: (data) => {
+      // A new session: nothing cached before it may be shown as this user's.
+      resetPreviousUserQueries(qc);
+      qc.setQueryData(ME_KEY, data.user);
+    },
   });
 }
 
