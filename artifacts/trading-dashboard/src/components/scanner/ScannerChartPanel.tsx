@@ -454,6 +454,25 @@ export function useScannerChartRead(
   };
 }
 
+/**
+ * Live Trade Health (Task #198) overlays for the chart symbol, as drawn on the
+ * chart. React Query keeps the last successful `data` after a failed refetch,
+ * but a failed check means position health is unknown and the position may no
+ * longer exist, so nothing from the earlier response is drawn while the latest
+ * check is in error: the overlay list is empty until a check succeeds again.
+ */
+export function useScannerTradeHealthOverlays(symbol: string) {
+  const tradeHealthParams = { chartSymbol: symbol };
+  const query = useGetMeTradeHealth(tradeHealthParams, {
+    query: {
+      queryKey: getGetMeTradeHealthQueryKey(tradeHealthParams),
+      refetchInterval: 20_000,
+    },
+  });
+  const overlays: SmartChartLayer[] = query.isError ? [] : query.data?.overlays ?? [];
+  return { query, overlays };
+}
+
 export function ScannerChartPanel() {
   const { name } = useAssistantName();
   const [chartSym] = useChartSymbol();
@@ -796,15 +815,8 @@ export function ScannerChartPanel() {
   // ── Live Trade Health (Task #198) — active, per-user post-entry overlays for
   //    the symbol on the chart. READ-ONLY; the endpoint returns honest empty
   //    when there are no open positions on this symbol (never fabricated).
-  const tradeHealthParams = { chartSymbol: symbol };
-  const tradeHealthQuery = useGetMeTradeHealth(tradeHealthParams, {
-    query: {
-      queryKey: getGetMeTradeHealthQueryKey(tradeHealthParams),
-      refetchInterval: 20_000,
-    },
-  });
-  const tradeHealthOverlays: SmartChartLayer[] =
-    tradeHealthQuery.data?.overlays ?? [];
+  const { query: tradeHealthQuery, overlays: tradeHealthOverlays } =
+    useScannerTradeHealthOverlays(symbol);
 
   // ── Derive the honest display status for this chart render.
   //    The shared scanner-truth (useScannerTruth) is the SINGLE resolved state:
@@ -2943,7 +2955,7 @@ export function ScannerChartPanel() {
                   data-testid="scanner-smart-reserved"
                 >
                   {tradeHealthQuery.isError
-                    ? "Trade-health is momentarily unavailable — the chart and your data are unaffected."
+                    ? "Trade-health could not be checked just now, so no trade-health lines are drawn until a check succeeds. The chart and your data are unaffected."
                     : tradeHealthQuery.isLoading && !tradeHealthQuery.data
                       ? "Checking trade health for this symbol…"
                       : tradeHealthOverlays.length > 0
