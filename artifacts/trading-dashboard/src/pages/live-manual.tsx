@@ -34,14 +34,15 @@ export default function LiveManualPage() {
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [resp, setResp] = useState<SubmitResp | null>(null);
-  const [perm, setPerm] = useState<any>(null);
-  const [defStatus, setDefStatus] = useState<any>(null);
+  // undefined while loading; null when the read failed or did not answer.
+  const [perm, setPerm] = useState<{ killSwitchEngaged?: unknown } | null | undefined>(undefined);
   const [masterBridge, setMasterBridge] = useState<any>(null);
   const [quote, setQuote] = useState<any>(null);
 
   useEffect(() => {
-    void jget("/api/permission/status").then(r => setPerm(r.body));
-    void jget("/api/system/mt5-deferred-status").then(r => setDefStatus(r.body));
+    void jget("/api/permission/status")
+      .then(r => setPerm(r.ok && r.body && typeof r.body === "object" ? r.body : null))
+      .catch(() => setPerm(null));
     // Real master shared-bridge health — the bridge that actually carries
     // live-shared dispatch. The per-user permission flag is NOT the bridge.
     void jget("/api/me/master-bridge/status").then(r => setMasterBridge(r.body));
@@ -68,7 +69,14 @@ export default function LiveManualPage() {
   // show "checking…" rather than asserting a state.
   const bridgeLoaded = masterBridge != null;
   const bridgeConnected = masterBridge?.detected === true;
-  const killSwitch = perm?.killSwitchEngaged === true || defStatus?.simulator?.enforcesKillSwitch;
+  // Kill switch state comes only from the permission status (the safety-core
+  // kill switch). /api/system/mt5-deferred-status `simulator.enforcesKillSwitch`
+  // is a constant capability description, never the engaged state.
+  const killSwitch: "checking" | "engaged" | "off" | "unknown" =
+    perm === undefined ? "checking"
+      : perm?.killSwitchEngaged === true ? "engaged"
+      : perm?.killSwitchEngaged === false ? "off"
+      : "unknown";
   const estLoss = stopLoss !== "" && quote ? Math.abs(quote.mid - Number(stopLoss)) * lotSize * 10000 : 0;
   const estGain = takeProfit !== "" && quote ? Math.abs(Number(takeProfit) - quote.mid) * lotSize * 10000 : 0;
   const rr = estLoss > 0 ? (estGain / estLoss) : 0;
@@ -158,7 +166,7 @@ export default function LiveManualPage() {
               <div className="flex justify-between"><span>Account mode</span><Badge variant="outline" className="text-[10px]">TESTER</Badge></div>
               <div className="flex justify-between"><span>Execution environment</span><Badge className="bg-warning/20 text-warning text-[10px]">SIMULATOR</Badge></div>
               <div className="flex justify-between"><span>Risk governor</span><Badge className="bg-success/20 text-success text-[10px]">active</Badge></div>
-              <div className="flex justify-between"><span>Kill switch</span><Badge variant={killSwitch ? "destructive" : "outline"} className="text-[10px]">{killSwitch ? "ENGAGED" : "off"}</Badge></div>
+              <div className="flex justify-between"><span>Kill switch</span><Badge variant={killSwitch === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={killSwitch === "unknown" ? "The permission status could not be read." : "From your permission status (safety-core kill switch)."}>{killSwitch === "engaged" ? "ENGAGED" : killSwitch === "off" ? "off" : killSwitch === "checking" ? "checking…" : "not checked"}</Badge></div>
               <div className="flex justify-between"><span>Master bridge</span><Badge className={!bridgeLoaded ? "bg-muted text-txt-muted text-[10px]" : bridgeConnected ? "bg-success/20 text-success text-[10px]" : "bg-warning/20 text-warning text-[10px]"}>{!bridgeLoaded ? "checking…" : bridgeConnected ? "connected" : "not connected"}</Badge></div>
             </div>
 
