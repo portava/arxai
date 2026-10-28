@@ -441,6 +441,9 @@ export function resolveScannerTruth(
 
   // ── Quote status (no real quote source today → unavailable, honestly) ───────
   const q = input.quote ?? null;
+  // The quote's provenance is the QUOTE's own provider — never the candle
+  // provider's label. With no quote observed there is no quote source at all.
+  const quoteSourceLabel = genericSourceLabel(providerInfo(q?.source ?? null).tier);
   const quoteAgeMs = ageMsOf(q?.timestamp ?? null, nowMs);
   const quoteMid = positivePrice(q?.mid);
   let quoteStatus: QuoteStatus;
@@ -839,7 +842,7 @@ export function resolveScannerTruth(
       ask: positivePrice(q?.ask),
       mid: priceMid,
       source: q?.source ?? null,
-      sourceLabel,
+      sourceLabel: quoteSourceLabel,
       timestamp: q?.timestamp ?? null,
       ageMs: quoteAgeMs,
       status: quoteStatus,
