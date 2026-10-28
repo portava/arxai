@@ -33,15 +33,29 @@ const ACTIONS = [
 export default function AdminReconciliationCenter() {
   const [data, setData] = useState<Resp | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Set when the issue list could not be loaded: nothing was evaluated, so
+  // the page must not show zero counts or "No open reconciliation issues."
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function load() {
     setErr(null);
-    const r = await fetch("/api/admin/reconciliation-center/issues", { credentials: "include" });
-    if (r.status === 403) { setErr("Admin-only page."); return; }
-    if (r.status === 401) { setErr("Sign in as admin to view this page."); return; }
-    const j = (await r.json()) as Resp;
-    setData(j);
+    try {
+      const r = await fetch("/api/admin/reconciliation-center/issues", { credentials: "include" });
+      if (r.status === 403) { setErr("Admin-only page."); return; }
+      if (r.status === 401) { setErr("Sign in as admin to view this page."); return; }
+      let j: Resp | null = null;
+      try { j = (await r.json()) as Resp; } catch { j = null; }
+      if (!r.ok || !j || j.ok !== true || !Array.isArray(j.issues)) {
+        setData(null);
+        setLoadErr(`HTTP ${r.status}${j?.error ? `: ${j.error}` : ""}`);
+        return;
+      }
+      setData(j); setLoadErr(null);
+    } catch (e) {
+      setData(null);
+      setLoadErr(e instanceof Error ? e.message : String(e));
+    }
   }
   useEffect(() => { void load(); }, []);
 
@@ -67,6 +81,23 @@ export default function AdminReconciliationCenter() {
   }
 
   if (err) return <div className="p-6"><Card><CardHeader><CardTitle>{err}</CardTitle></CardHeader></Card></div>;
+  if (loadErr) {
+    return (
+      <div className="p-6">
+        <Card data-testid="card-reconciliation-load-error">
+          <CardHeader><CardTitle className="text-base">Reconciliation issues could not be loaded.</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p className="text-danger">({loadErr})</p>
+            <p className="text-muted-foreground">
+              Nothing was evaluated, so this page cannot say whether any
+              reconciliation issues are open. It is not a count of zero.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => void load()}>Retry</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   if (!data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
 
   const sev = data.countsBySeverity ?? { critical: 0, high: 0, medium: 0, low: 0 };
