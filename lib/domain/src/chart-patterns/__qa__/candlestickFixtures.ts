@@ -99,4 +99,11 @@ export const CANDLE_FIXTURES:{id:string;bars:CatalogueCandle[]}[]=[
 {id:"upside_gap_side_by_side_white_lines",bars:make(sbsUpTail,"up")},
 {id:"downside_gap_side_by_side_white_lines",bars:make(sbsDownTail,"down")},
 {id:"mat_hold",bars:make(matHoldTail,"up")},
+{id:"identical_three_crows",bars:mirror(make([row(101,105.2,100.8,105),row(105,109.2,104.8,109),row(109,113.2,108.8,113)],"down"))},
+{id:"two_crows",bars:make([row(102,106.2,101.8,106),row(107,107.5,106.3,106.5),row(106.8,107,103.8,104)],"up")},
+{id:"upside_gap_two_crows",bars:make([row(102,106.2,101.8,106),row(107,107.3,106.1,106.6),row(107.2,107.4,106.2,106.3)],"up")},
+{id:"stick_sandwich",bars:make([row(101.5,101.7,99.3,99.5),row(100,101.8,99.8,101.5),row(101.6,101.9,99.4,99.55)],"down")},
+{id:"unique_three_river_bottom",bars:make([row(103,103.2,99.3,99.5),row(101,101.2,98.5,100.2),row(99.6,100,99.5,99.9)],"down")},
+{id:"three_stars_in_the_south",bars:make([row(102,102.2,95,99.5),row(100.5,100.7,97.5,98.5),row(98.6,98.65,98.05,98.1)],"down")},
+{id:"ladder_bottom",bars:make([row(101.5,101.7,99.3,99.5),row(100,100.2,97.8,98),row(98.5,98.7,96.3,96.5),row(96.8,97.8,95.6,95.8),row(97,99.2,96.9,99)],"down")},
 ];

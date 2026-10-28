@@ -75,6 +75,13 @@ export const CANDLE_MEANINGS:Readonly<Record<string,string>>=Object.freeze({
  upside_gap_side_by_side_white_lines:"After a rise, two similar up candles opened at nearly the same price, both with bodies above the earlier candle's body.",
  downside_gap_side_by_side_white_lines:"After a decline, two similar up candles opened at nearly the same price, both with bodies below the earlier candle's body.",
  mat_hold:"After a rise and a large up candle, a small down candle opened a gap above it and two more small candles held in the upper half of the first body; a fifth up candle then closed above all of them.",
+ identical_three_crows:"After a rise, three down candles closed progressively lower; each opened at about the previous close and finished near its low.",
+ two_crows:"After a rise and a large up candle, a down candle opened a body gap above it; a second down candle opened inside that body and closed inside the first candle's body.",
+ upside_gap_two_crows:"After a rise and a large up candle, a small down candle sat above it; a larger down candle then covered that small body but closed above the first candle's close.",
+ stick_sandwich:"After a decline, two down candles finished at nearly the same price around an up candle that traded entirely above the first close.",
+ unique_three_river_bottom:"After a decline and a large down candle, a second down candle reached a lower low but closed higher; a small up candle then opened above that low.",
+ three_stars_in_the_south:"After a decline, three down candles had progressively smaller bodies and ranges, the last one small with very short shadows inside the second candle's range.",
+ ladder_bottom:"After a decline, three down candles stepped lower and a fourth showed an upper shadow; an up candle then opened above the fourth open and closed above its high.",
 });
 const catalogueIds=new Set(CANDLE_DEFINITIONS.map(def=>def.id));
 export function smartChartNarrative(finding:SmartChartFinding):{summary:string;detail:string|null}{

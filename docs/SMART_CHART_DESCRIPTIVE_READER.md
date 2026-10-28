@@ -1,6 +1,6 @@
 # Smart Chart descriptive reader
 
-The embedded reader explains the actual applied, source-identified, closed viewport. It leads with plain-language descriptions of the 71 implemented candle variants, keeping measured anatomy and caveats in collapsed details. Those variants cover 74 of the owner's 104 names; the other 30 remain pending. Names and geometric observations are not profitable-trade recommendations or future confirmation.
+The embedded reader explains the actual applied, source-identified, closed viewport. It leads with plain-language descriptions of the 78 implemented candle variants, keeping measured anatomy and caveats in collapsed details. Those variants cover 81 of the owner's 104 names; the other 23 remain pending. Names and geometric observations are not profitable-trade recommendations or future confirmation.
 
 A concise second sentence places the last close among the analyzed closes and states the observed first-to-last change. Expanded details include an actual-time fitted trend, quartiles, tied close rank, RSI14, ROC14, ATR14, adjacent-return variability and a strictly prior-only latest-move comparison. Only the newest 600 visible closed bars are analyzed. The visible cap and all unavailable metrics are disclosed; offscreen bars are not borrowed for indicator warmup.
 

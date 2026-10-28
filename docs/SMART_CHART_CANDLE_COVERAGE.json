@@ -1,14 +1,14 @@
 {
-  "criteriaVersion": "arx-candle-geometry-v4",
+  "criteriaVersion": "arx-candle-geometry-v5",
   "updated": "2026-10-28",
   "ownerManifestSha256": "6dba7b73af6242dd08d56420aea250ce0f40079967e154d26653107f100d5508",
   "meaning": "Coverage of named requirements, not independent algorithms, predictive reliability, UI parity, or architecture completion. Related variants deliberately share geometry.",
   "counts": {
     "ownerNamedEntries": 104,
-    "newCatalogueNamedVariants": 71,
+    "newCatalogueNamedVariants": 78,
     "newGeometryFamilies": 19,
-    "includingExistingCoreNamedEntries": 74,
-    "pendingNamedEntries": 30
+    "includingExistingCoreNamedEntries": 81,
+    "pendingNamedEntries": 23
   },
   "entries": [
     {
@@ -574,26 +574,26 @@
     {
       "name": "Identical Three Crows",
       "ownerFamily": "Soldiers and crows",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "identical_three_crows",
+      "geometryFamily": "soldiers_crows",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Two Crows",
       "ownerFamily": "Soldiers and crows",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "two_crows",
+      "geometryFamily": "soldiers_crows",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Upside Gap Two Crows",
       "ownerFamily": "Soldiers and crows",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "upside_gap_two_crows",
+      "geometryFamily": "soldiers_crows",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Three Inside Up",
@@ -646,26 +646,26 @@
     {
       "name": "Three Stars in the South",
       "ownerFamily": "Other three-candle formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "three_stars_in_the_south",
+      "geometryFamily": "long_shadow",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Unique Three-River Bottom",
       "ownerFamily": "Other three-candle formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "unique_three_river_bottom",
+      "geometryFamily": "harami",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Stick Sandwich",
       "ownerFamily": "Other three-candle formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "stick_sandwich",
+      "geometryFamily": "tweezers",
+      "note": "Observed geometry only; the core Engulfing label may co-fire on the last two candles in the opposite direction."
     },
     {
       "name": "Rising Window",
@@ -806,10 +806,10 @@
     {
       "name": "Ladder Bottom",
       "ownerFamily": "Other extended formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "ladder_bottom",
+      "geometryFamily": "long_shadow",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Ladder Top",

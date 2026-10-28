@@ -32,6 +32,8 @@ The candle catalogue covers 65 of the owner's 104 requested names, with 62 defin
 
 Successor (2026-10-28): catalogue v4 covers 74 of 104 names with 71 definitions across 19 families; 30 pending. See [SMART_CHART_CANDLE_CATALOGUE_V4.md](SMART_CHART_CANDLE_CATALOGUE_V4.md).
 
+Successor (2026-10-28): catalogue v5 covers 81 of 104 names with 78 definitions across 19 families; 23 pending. See [SMART_CHART_CANDLE_CATALOGUE_V5.md](SMART_CHART_CANDLE_CATALOGUE_V5.md).
+
 ## Held experiments — GitHub backup only
 
 These branches preserve useful research history but are deliberately excluded from the combined source and Replit installation:

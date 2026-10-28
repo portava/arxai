@@ -17,7 +17,7 @@ describe("source-aware catalogue integration",()=>{
   expect(result.allFindings.some(f=>f.id.startsWith("rickshaw_man:"))).toBe(true);
   expect(result.findings.filter(f=>(f.family??f.id.split(":")[0])==="doji")).toHaveLength(1);
   expect(result.findings.every(f=>f.summaryEligible!==false)).toBe(true);
-  expect(result.catalogue).toMatchObject({definedVariants:71,geometryFamilies:19});
+  expect(result.catalogue).toMatchObject({definedVariants:78,geometryFamilies:19});
   expect(result.catalogue!.note).toContain("not independent confirmations");
  });
  it("never reuses another owner/source context or contradictory finality for catalogue observations",()=>{
@@ -121,5 +121,27 @@ describe("source-aware catalogue integration",()=>{
    expect(result.findings.filter(f=>f.family==="three_methods")).toHaveLength(1);
    expect(result.findings.find(f=>f.family==="three_methods")!.id).toBe(`${id}:${bars.at(-1)!.time}`);
   }
+ });
+ it("keeps overlapping Identical Three Crows and Three Black Crows in one soldiers_crows slot",()=>{
+  const bars=CANDLE_FIXTURES.find(f=>f.id==="identical_three_crows")!.bars.map(b=>({...b}));
+  bars.at(-2)!.open=bars.at(-3)!.close+.1;bars.at(-1)!.open=bars.at(-2)!.close+.1;
+  const result=analyzeSmartChart(input(bars)),t=bars.at(-1)!.time;
+  expect(result.allFindings.some(f=>f.id===`identical_three_crows:${t}`)).toBe(true);
+  expect(result.allFindings.some(f=>f.id===`three_black_crows:${t}`)).toBe(true);
+  expect(result.findings.filter(f=>f.family==="soldiers_crows")).toHaveLength(1);
+ });
+ it("records when Stick Sandwich and Unique Three-River meet the core Engulfing on the final bar",()=>{
+  const sandwich=CANDLE_FIXTURES.find(f=>f.id==="stick_sandwich")!.bars;
+  expect(analyzeSmartChart(input(sandwich)).allFindings.some(f=>f.id===`bearish_engulfing:${sandwich.at(-1)!.time}`)).toBe(false);
+  const river=CANDLE_FIXTURES.find(f=>f.id==="unique_three_river_bottom")!.bars;
+  expect(analyzeSmartChart(input(river)).allFindings.some(f=>f.id===`bullish_engulfing:${river.at(-1)!.time}`)).toBe(false);
+  // Co-fire needs the third open at or above the middle close, a larger third body, and a middle
+  // close above the close four bars before the final candle (104 here).
+  const cofire=sandwich.map(b=>({...b}));
+  Object.assign(cofire.at(-2)!,{open:100,high:104.6,low:99.8,close:104.5});Object.assign(cofire.at(-1)!,{open:104.6,high:104.9,low:99.4,close:99.55});
+  const result=analyzeSmartChart(input(cofire)),t=cofire.at(-1)!.time;
+  expect(result.allFindings.find(f=>f.id===`bearish_engulfing:${t}`)).toMatchObject({family:"engulfing",status:"confirmed"});
+  expect(result.allFindings.find(f=>f.id===`stick_sandwich:${t}`)).toMatchObject({family:"tweezers",status:"observed"});
+  expect(result.findings.map(f=>f.id.split(":")[0])).toEqual(["bearish_engulfing","closing_marubozu","stick_sandwich"]);
  });
 });

@@ -1,8 +1,8 @@
 import type { ChartPatternCandle } from "./types.js";
 
-/** ARX explicit geometry convention v4. These are observations, not forecasts,
+/** ARX explicit geometry convention v5. These are observations, not forecasts,
  * TA-Lib output parity, calibrated confidence, or execution instructions. */
-export const CANDLE_CRITERIA_VERSION = "arx-candle-geometry-v4";
+export const CANDLE_CRITERIA_VERSION = "arx-candle-geometry-v5";
 export interface CatalogueCandle extends ChartPatternCandle { time:number; closeTime:number; isFinal:boolean }
 export interface CandleDefinition { id:string; name:string; family:string; criteria:string; sources:readonly string[]; summaryEligible:boolean }
 export interface CandleObservation {
@@ -86,6 +86,13 @@ const gapMethodsDown=define("downside_gap_three_methods","Downside Gap Three Met
 const sideUp=define("upside_gap_side_by_side_white_lines","Upside-Gap Side-by-Side White Lines","side_by_side","After a rise, two up candles both have bodies strictly gapped above the first candle's body. Their opens differ by <=5% and their body lengths by <=25% of the prior-10 mean range before the middle candle. The first candle's colour is unrestricted.",TA+"CDLGAPSIDESIDEWHITE.c");
 const sideDown=define("downside_gap_side_by_side_white_lines","Downside-Gap Side-by-Side White Lines","side_by_side","After a decline, two up candles both have bodies strictly gapped below the first candle's body. Their opens differ by <=5% and their body lengths by <=25% of the prior-10 mean range before the middle candle. The first candle's colour is unrestricted.",TA+"CDLGAPSIDESIDEWHITE.c");
 const matHold=define("mat_hold","Mat Hold","three_methods","After a rise, a long up body; a short down body strictly gapped above it; two more short bodies of either colour with falling body tops whose lower body edges lie inside the upper 50% of the first body. A fifth, up candle opens strictly above the last reaction close and closes strictly above the highest reaction high. Bullish only; no final long-body rule.",TA+"CDLMATHOLD.c");
+const identicalCrows=define("identical_three_crows","Identical Three Crows","soldiers_crows","After a rise, three down candles with falling closes; the second and third each open within 5% of the prior-10 mean range (measured before the previous candle) of the previous close; each lower shadow is below 10% of its own prior-10 mean range. No body-length rule applies.",TA+"CDLIDENTICAL3CROWS.c");
+const twoCrows=define("two_crows","Two Crows","soldiers_crows","After a rise, a long up body; a down body strictly gapped above it; then a down candle opens strictly inside the second body and closes strictly inside the first body.",TA+"CDL2CROWS.c");
+const gapTwoCrows=define("upside_gap_two_crows","Upside Gap Two Crows","soldiers_crows","After a rise, a long up body; a short down body (below half its prior-10 mean body) strictly gapped above it; then a down candle opens strictly above the second open, closes strictly below the second close and strictly above the first close. Only a body gap is required.",TA+"CDLUPSIDEGAP2CROWS.c");
+const stickSandwich=define("stick_sandwich","Stick Sandwich","tweezers","After a decline, a down candle, an up candle whose low is strictly above the first close, then a down candle closing within 5% of the prior-10 mean range of the first close. The third open is unconstrained. The core Engulfing label may describe the last two candles in the opposite direction.",TA+"CDLSTICKSANDWICH.c");
+const uniqueRiver=define("unique_three_river_bottom","Unique Three-River Bottom","harami","After a decline, a long down body; a down candle closing strictly above the first close, opening at or below the first open and reaching a strictly lower low; then a short up body (below half its prior-10 mean body) opening strictly above the second low.",TA+"CDLUNIQUE3RIVER.c");
+const threeStars=define("three_stars_in_the_south","Three Stars in the South","long_shadow","After a decline, a long down body whose lower shadow exceeds its body; a smaller down body opening above the first close and at or below the first high, trading below the first close but not below the first low, with a lower shadow above 10% of its prior-10 mean range; then a short down body with both shadows below 10% of its prior-10 mean range and its range strictly inside the second range.",TA+"CDL3STARSINSOUTH.c");
+const ladderBottom=define("ladder_bottom","Ladder Bottom","long_shadow","After a decline, three down candles with strictly falling opens and closes; a fourth down candle whose upper shadow exceeds 10% of its prior-10 mean range; then an up candle opening strictly above the fourth open and closing strictly above the fourth high.",TA+"CDLLADDERBOTTOM.c");
 export const CANDLE_DEFINITIONS:readonly CandleDefinition[]=Object.freeze(defs.map(d=>Object.freeze(d)));
 const p=(n:number)=>Number(n.toPrecision(7)).toString();
 const body=(c:CatalogueCandle)=>Math.abs(c.close-c.open);
@@ -270,6 +277,20 @@ export function scanCandlestickCatalogue(bars:readonly CatalogueCandle[],options
         const sideBySideDown=t==="down"&&LT(top(mid),bot(a))&&LT(top(c),bot(a));
         if(sideBySideUp||sideBySideDown)add(sideBySideUp?sideUp:sideDown,i-2,i,`Two up candles opened at ${p(mid.open)} and ${p(c.open)} (tolerance ${p(.05*nearRange)}) with bodies ${p(mb)} and ${p(b)} (tolerance ${p(.25*nearRange)}), both ${sideBySideUp?"above":"below"} the first body. Whether the gap persists is unknown.`,t,sideBySideUp?top(a):bot(a));
       }
+      const e1=priorMean(closed,i-2,range);
+      if(e1!=null&&nearRange!=null&&meanRange!=null&&t==="up"&&down(a)&&down(mid)&&down(c)&&LT(mid.close,a.close)&&LT(c.close,mid.close)
+        &&LT(lower(a),.1*e1)&&LT(lower(mid),.1*nearRange)&&LT(l,.1*meanRange)&&LE(Math.abs(mid.open-a.close),.05*e1)&&LE(Math.abs(c.open-mid.close),.05*nearRange))
+        add(identicalCrows,i-2,i,`Three down candles closed at ${p(a.close)}, ${p(mid.close)} and ${p(c.close)}; each later open was within ${p(.05*e1)} or ${p(.05*nearRange)} of the previous close, and lower shadows were very short. Only this completed progression is observed.`,t,a.close);
+      if(t==="up"&&up(a)&&firstLong&&down(mid)&&GT(mid.close,a.close)&&down(c)){
+        if(GT(c.open,mid.close)&&LT(c.open,mid.open)&&GT(c.close,a.open)&&LT(c.close,a.close))add(twoCrows,i-2,i,`A down body gapped above the long up body; the third candle opened at ${p(c.open)} inside it and closed at ${p(c.close)} inside the first body. The fill is observed; what follows is unknown.`,t,a.close);
+        if(isShortAt(i-1)&&GT(c.open,mid.open)&&LT(c.close,mid.close)&&GT(c.close,a.close))add(gapTwoCrows,i-2,i,`Two down bodies sat above the long up body's close ${p(a.close)}; the third body (${p(c.open)} to ${p(c.close)}) covered the second and stayed above that close. Whether the gap persists is unknown.`,t,a.close);
+      }
+      const equalRange=e1;
+      if(equalRange!=null&&t==="down"&&down(a)&&up(mid)&&down(c)&&GT(mid.low,a.close)&&LE(Math.abs(c.close-a.close),.05*equalRange))add(stickSandwich,i-2,i,`Down candles closed at ${p(a.close)} and ${p(c.close)}, within ${p(.05*equalRange)}, around an up candle whose low ${p(mid.low)} stayed above the first close. Matching closes do not establish future support.`,t,a.close);
+      if(t==="down"&&down(a)&&firstLong&&down(mid)&&GT(mid.close,a.close)&&LE(mid.open,a.open)&&LT(mid.low,a.low)&&up(c)&&isShortAt(i)&&GT(c.open,mid.low))add(uniqueRiver,i-2,i,`The second down candle reached a lower low ${p(mid.low)} while closing above the first close ${p(a.close)}; a small up body then opened at ${p(c.open)}, above that low. No subsequent reversal is established.`,t,mid.low);
+      if(nearRange!=null&&meanRange!=null&&t==="down"&&down(a)&&firstLong&&GT(lower(a),ab)&&down(mid)&&LT(mb,ab)&&GT(mid.open,a.close)&&LE(mid.open,a.high)&&LT(mid.low,a.close)&&GE(mid.low,a.low)&&GT(lower(mid),.1*nearRange)
+        &&down(c)&&isShortAt(i)&&LT(u,.1*meanRange)&&LT(l,.1*meanRange)&&GT(c.low,mid.low)&&LT(c.high,mid.high))
+        add(threeStars,i-2,i,`Three down candles narrowed: lows ${p(a.low)}, ${p(mid.low)} and ${p(c.low)}, with the small third range inside the second. The narrowing is observed; a reversal is unproven.`,t,c.low);
     }
     if(i>=3&&contiguous(closed,i-3,i,intervalSeconds)){
       const a=closed[i-3]!,m1=closed[i-2]!,m2=closed[i-1]!;
@@ -285,9 +306,15 @@ export function scanCandlestickCatalogue(bars:readonly CatalogueCandle[],options
     }
     if(i>=4&&contiguous(closed,i-4,i,intervalSeconds)){
       const a=closed[i-4]!,r1=closed[i-3]!,r2=closed[i-2]!,r3=closed[i-1]!,ab=body(a),reactions=[r1,r2,r3];
-      const risingShape=up(a)&&down(r1)&&up(c),fallingShape=down(a)&&up(r1)&&up(r2)&&up(r3)&&down(c);
+      const risingShape=up(a)&&down(r1)&&up(c),fallingShape=down(a)&&up(r1)&&up(r2)&&up(r3)&&down(c),ladderShape=down(a)&&down(r1)&&down(r2)&&down(r3)&&up(c);
+      const t=risingShape||fallingShape||ladderShape?trendBefore(closed,i-4,intervalSeconds):"none";
+      if(ladderShape){
+        const shadowRange=priorMean(closed,i-1,range);
+        if(shadowRange!=null&&t==="down"&&GT(a.open,r1.open)&&GT(r1.open,r2.open)&&GT(a.close,r1.close)&&GT(r1.close,r2.close)&&GT(upper(r3),.1*shadowRange)&&GT(c.open,r3.open)&&GT(c.close,r3.high))
+          add(ladderBottom,i-4,i,`Three down candles stepped lower; the fourth showed an upper shadow of ${p(upper(r3))}; the up candle opened at ${p(c.open)} and closed at ${p(c.close)}, above the fourth high ${p(r3.high)}. No subsequent reversal is established.`,t,r3.high);
+      }
       if(risingShape||fallingShape){
-        const am=priorMean(closed,i-4,body),firstLong=am!=null&&GT(ab,am),t=trendBefore(closed,i-4,intervalSeconds);
+        const am=priorMean(closed,i-4,body),firstLong=am!=null&&GT(ab,am);
         const shortReactions=isShortAt(i-3)&&isShortAt(i-2)&&isShortAt(i-1);
         const contained=reactions.every(r=>GE(bot(r),a.low)&&LE(top(r),a.high));
         const rising=t==="up"&&risingShape&&down(r2)&&down(r3)&&firstLong&&shortReactions&&contained&&LE(r1.close,a.close)&&LT(r2.close,r1.close)&&LT(r3.close,r2.close)&&long&&GT(c.open,r3.close)&&GT(c.close,a.close);

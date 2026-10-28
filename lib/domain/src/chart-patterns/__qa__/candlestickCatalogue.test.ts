@@ -8,7 +8,7 @@ const ids=(bars:readonly CatalogueCandle[])=>scan(bars).observations.map(o=>o.de
 const fixture=(id:string)=>CANDLE_FIXTURES.find(f=>f.id===id)!.bars.map(b=>({...b}));
 test("every advertised definition has a distinct named fixture; related variants remain grouped",()=>{
  assert.deepEqual([...CANDLE_DEFINITIONS.map(d=>d.id)].sort(),CANDLE_FIXTURES.map(f=>f.id).sort());
- assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.id)).size,71);
+ assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.id)).size,78);
  assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,19);
 });
 test("owner coverage preserves all 104 entries and never advertises a missing catalogue implementation",()=>{
@@ -17,7 +17,7 @@ test("owner coverage preserves all 104 entries and never advertises a missing ca
  const catalogue=coverage.entries.filter((r:{status:string})=>r.status==="IMPLEMENTED_EXPLICIT_ARX_VARIANT");
  assert.deepEqual(catalogue.map((r:{definitionId:string})=>r.definitionId).sort(),CANDLE_DEFINITIONS.map(d=>d.id).sort());
  const pending=coverage.entries.filter((r:{definitionId:unknown})=>r.definitionId===null);
- assert.equal(pending.length,30);
+ assert.equal(pending.length,23);
  assert.ok(pending.every((r:{status:string})=>r.status.startsWith("PENDING_")));
 });
 for(const f of CANDLE_FIXTURES){
@@ -332,4 +332,60 @@ test("4- and 5-candle windows refuse internal gaps and short histories",()=>{
   const result=scanCandlestickCatalogue(tail,{asOf:tail.at(-1)!.closeTime,intervalSeconds:300});
   assert.equal(result.status,"ready");assert.ok(!result.observations.some(o=>o.definition.id===id),`${id}: no prior history`);
  }
+});
+test("Identical Three Crows needs equal opens and very short lower shadows",()=>{
+ assert.ok(!has(fixture("three_black_crows"),"identical_three_crows"),"opens 2 inside the prior body exceed the .125 equal tolerance");
+ assert.ok(!has(fixture("identical_three_crows"),"three_black_crows"),"opens equal to the prior close are not strictly inside the prior body");
+ const far=fixture("identical_three_crows");far.at(-2)!.open=far.at(-3)!.close+.2;assert.ok(!has(far,"identical_three_crows"));
+ const overlap=fixture("identical_three_crows");overlap.at(-2)!.open=overlap.at(-3)!.close+.1;overlap.at(-1)!.open=overlap.at(-2)!.close+.1;
+ assert.ok(has(overlap,"identical_three_crows")&&has(overlap,"three_black_crows"),"control: within tolerance and inside the prior bodies emits both ids");
+ const shadow=fixture("identical_three_crows");shadow.at(-3)!.low=shadow.at(-3)!.close-.4;assert.ok(!has(shadow,"identical_three_crows"),"first lower shadow .4 exceeds .25");
+});
+test("Two Crows needs a body gap, an open inside the second body and a close inside the first body",()=>{
+ const id="two_crows";
+ const outside=fixture(id);outside.at(-1)!.close=106.2;assert.ok(!has(outside,id),"third close above the first body");
+ const below=fixture(id);Object.assign(below.at(-1)!,{close:101.9,low:101.7});assert.ok(!has(below,id),"third close below the first open");
+ const touching=fixture(id);Object.assign(touching.at(-2)!,{close:106,low:105.9});assert.ok(!has(touching,id),"no body gap");
+ const high=fixture(id);Object.assign(high.at(-1)!,{open:107.1,high:107.2});assert.ok(!has(high,id),"third open above the second open");
+});
+test("Upside Gap Two Crows needs the third body to engulf the second and close above the first",()=>{
+ const id="upside_gap_two_crows";
+ const notBelow=fixture(id);notBelow.at(-1)!.close=106.7;assert.ok(!has(notBelow,id),"third close not below the second close");
+ const notAbove=fixture(id);notAbove.at(-1)!.open=106.9;assert.ok(!has(notAbove,id),"third open not above the second open");
+ const atFirst=fixture(id);Object.assign(atFirst.at(-1)!,{close:106,low:105.9});assert.ok(!has(atFirst,id),"third close equals the first close");
+ const bodyGap=fixture(id);assert.ok(bodyGap.at(-2)!.low<=bodyGap.at(-3)!.high);assert.ok(has(bodyGap,id),"a body gap is enough");
+ const fullGap=fixture(id);fullGap.at(-2)!.low=106.3;assert.ok(has(fullGap,id),"a full-range gap also qualifies");
+ // Touching bodies also leave no room for a third close between the second and first closes.
+ const touching=fixture(id);Object.assign(touching.at(-2)!,{close:106,low:105.9});assert.ok(!has(touching,id),"no body gap");
+});
+test("Stick Sandwich needs matching closes and a white middle",()=>{
+ const id="stick_sandwich";
+ const far=fixture(id);far.at(-1)!.close=99.7;assert.ok(!has(far,id),"closes .2 apart exceed .125");
+ const near=fixture(id);near.at(-1)!.close=99.6;assert.ok(has(near,id),"control: closes .1 apart");
+ const black=fixture(id);Object.assign(black.at(-2)!,{open:101.5,close:100});assert.ok(!has(black,id),"black middle");
+ const touch=fixture(id);touch.at(-2)!.low=touch.at(-3)!.close;assert.ok(!has(touch,id),"middle low touches the first close");
+});
+test("Unique Three-River needs a lower second low and a short third body",()=>{
+ const id="unique_three_river_bottom";
+ const long=fixture(id);Object.assign(long.at(-1)!,{close:100.9,high:101});assert.ok(!has(long,id),"third body 1.3 is not short");
+ const low=fixture(id);low.at(-2)!.low=99.4;assert.ok(!has(low,id),"second low not below the first low");
+ const open=fixture(id);Object.assign(open.at(-1)!,{open:98.5,low:98.4,close:98.7});assert.ok(!has(open,id),"third open at the second low");
+ const higher=fixture(id);Object.assign(higher.at(-2)!,{open:103.1,high:103.2});assert.ok(!has(higher,id),"second open above the first open");
+});
+test("Three Stars in the South keeps the third range inside the second",()=>{
+ const id="three_stars_in_the_south";
+ const low=fixture(id);low.at(-1)!.low=97.05;assert.ok(!has(low,id),"third low below the second low");
+ const high=fixture(id);high.at(-1)!.high=100.8;assert.ok(!has(high,id),"third high above the second high");
+ const shadow=fixture(id);Object.assign(shadow.at(-2)!,{open:100.4,close:98,low:97.75});assert.ok(!has(shadow,id),"second lower shadow .25 is within .1 of the mean range");
+ const deep=fixture(id);deep.at(-2)!.low=94.9;assert.ok(!has(deep,id),"second low below the first low");
+});
+test("Ladder Bottom needs a visible fourth upper shadow and a fifth open above the fourth body",()=>{
+ const id="ladder_bottom";
+ const shadow=fixture(id);shadow.at(-2)!.high=96.9;assert.ok(!has(shadow,id),"fourth upper shadow .1 is below .1 of the mean range");
+ const open=fixture(id);Object.assign(open.at(-1)!,{open:96.8,low:96.7});assert.ok(!has(open,id),"fifth open equals the fourth open");
+ const close=fixture(id);close.at(-1)!.close=97.8;assert.ok(!has(close,id),"fifth close equals the fourth high");
+ const opens=fixture(id);Object.assign(opens.at(-4)!,{open:101.5,high:101.6});assert.ok(!has(opens,id),"opens do not fall");
+ const gap=fixture(id);for(const b of gap.slice(-2)){b.time+=300;b.closeTime+=300;}assert.ok(!has(gap,id),"internal gap");
+ const tail=observed(fixture(id).slice(-5).map(({open,high,low,close})=>({open,high,low,close})));
+ assert.ok(!scanCandlestickCatalogue(tail,{asOf:tail.at(-1)!.closeTime,intervalSeconds:300}).observations.some(o=>o.definition.id===id),"no prior history");
 });
