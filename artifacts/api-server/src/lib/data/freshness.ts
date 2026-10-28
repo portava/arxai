@@ -29,12 +29,17 @@
 // naturally trail by 1, so trailing <= 1 is still "clean". A naive
 // "latest bar != now" check would false-flag every healthy closed-bar feed.
 
-/** Newest bar trails the current bar by AT MOST this many intervals → clean. */
-export const LIVE_TRAILING_INTERVALS = 1;
-/** Trailing by exactly this many intervals (but < stale) → delayed. */
-export const DELAYED_TRAILING_INTERVALS = 2;
-/** Trailing by >= this many intervals → stale (not safe as live truth). */
-export const STALE_TRAILING_INTERVALS = 3;
+// The thresholds and classification are the ONE domain rule
+// (@workspace/domain/market candleFreshnessRule) the dashboard scanner truth
+// uses too, so no board can call a series Live while another calls it Stale.
+import {
+  LIVE_TRAILING_INTERVALS,
+  DELAYED_TRAILING_INTERVALS,
+  STALE_TRAILING_INTERVALS,
+  classifyTrailingIntervals,
+} from "@workspace/domain/market";
+/** clean <= LIVE (1) · delayed = DELAYED (2) · stale >= STALE (3) intervals. */
+export { LIVE_TRAILING_INTERVALS, DELAYED_TRAILING_INTERVALS, STALE_TRAILING_INTERVALS };
 /**
  * Absolute clock-skew allowance (ms) between a producer's clock and this
  * server's clock. A newest bar may OPEN at most this far after `now`: a bar
@@ -212,14 +217,12 @@ export function classifyCandleFreshness(
   trailingIntervals: number | null,
   opts?: { syntheticAwaitingTick?: boolean },
 ): { freshness: CandleFreshness; stale: boolean } | null {
-  if (trailingIntervals == null || !Number.isFinite(trailingIntervals)) return null;
-  if (trailingIntervals >= STALE_TRAILING_INTERVALS) {
+  const shared = classifyTrailingIntervals(trailingIntervals);
+  if (shared == null) return null;
+  if (shared === "stale") {
     return { freshness: "stale", stale: true };
   }
-  if (
-    trailingIntervals >= DELAYED_TRAILING_INTERVALS ||
-    opts?.syntheticAwaitingTick === true
-  ) {
+  if (shared === "delayed" || opts?.syntheticAwaitingTick === true) {
     return { freshness: "delayed", stale: false };
   }
   return { freshness: "clean", stale: false };

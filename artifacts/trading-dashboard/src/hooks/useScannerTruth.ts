@@ -23,12 +23,12 @@ import {
 } from "@/lib/chartCandlesQuery";
 import {
   resolveScannerTruth,
-  thresholdsFor,
   type ScannerHeaderCapReason,
   nextWeekendClosureBoundaryMs,
   type ScannerTruth,
   type ScannerTruthMode,
 } from "@/lib/scannerTruth";
+import { candleIntervalMs } from "@workspace/domain/market";
 
 export interface UseScannerTruthResult {
   truth: ScannerTruth | null;
@@ -107,11 +107,15 @@ export function useScannerTruth(
     ? [...candles].reverse().find((c) => c.isComplete !== false)
     : undefined;
   const lastClosedTime = statesCompleteness ? candleTimeIso(lastClosedBar?.time) : undefined;
-  // Re-resolve at the earliest future evidence deadline: the candle freshness
-  // budget, or the start/end of a scheduled weekend closure.
+  // Re-resolve at the earliest future evidence deadline: the next candle
+  // interval boundary, or the start/end of a scheduled weekend closure.
   const renderNowMs = Date.now();
-  const candleDeadline = lastTime != null
-    ? Date.parse(lastTime) + thresholdsFor(chartTimeframe).candleMaxAgeMs + 1
+  // The shared trailing-interval rule only changes class at an interval
+  // boundary (the gap is measured from floor(now / interval)), so the next
+  // boundary is the exact next evidence deadline.
+  const candleIvMs = candleIntervalMs(chartTimeframe);
+  const candleDeadline = lastTime != null && candleIvMs != null
+    ? (Math.floor(renderNowMs / candleIvMs) + 1) * candleIvMs
     : null;
   const closureBoundary = nextWeekendClosureBoundaryMs(feedStatus?.assetClass ?? null, renderNowMs);
   const futureDeadlines = [candleDeadline, closureBoundary == null ? null : closureBoundary + 1]

@@ -27,9 +27,19 @@ it("expires stationary candle truth at its deadline without another render or re
   });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   const { result, unmount } = renderHook(() => useScannerTruth("EURUSD", "M1", { refetchInterval: 3_600_000 }), { wrapper });
+  // Shared trailing-interval rule (@workspace/domain/market): the bar opened
+  // 13:58:31, so it trails the current M1 bar by 1 interval until 14:01:00
+  // (clean), by 2 until 14:02:00 (delayed), then by 3 (stale). The class only
+  // changes on an interval boundary, and the hook re-resolves exactly there.
   expect(result.current.truth?.actionable).toBe(true);
-  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
-  expect(result.current.truth?.actionable).toBe(true); // inclusive age budget
+  expect(result.current.truth?.candles.status).toBe("live");
+  await act(async () => { await vi.advanceTimersByTimeAsync(59_999); });
+  expect(result.current.truth?.actionable).toBe(true); // still inside the 14:00 bar
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(result.current.truth?.actionable).toBe(false);
+  expect(result.current.truth?.candles.status).toBe("delayed");
+  await act(async () => { await vi.advanceTimersByTimeAsync(59_999); });
+  expect(result.current.truth?.candles.status).toBe("delayed");
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   expect(result.current.truth?.actionable).toBe(false);
   expect(result.current.truth?.candles.status).toBe("stale");

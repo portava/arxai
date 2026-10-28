@@ -38,6 +38,10 @@ import {
 } from "./scannerActionability";
 import {
   evaluateTradeHealthReadiness,
+  candleIntervalMs,
+  classifyTrailingIntervals,
+  trailingIntervalsFromOpen,
+  type CandleTrailingFreshness,
   type TradeHealthReadinessVerdict,
   type TradeReadLayer,
 } from "@workspace/domain/market";
@@ -61,7 +65,11 @@ function genReadId(input: ScannerTruthInputs): string {
 // ── Per-timeframe freshness + minimum-candle thresholds (spec section C) ──────
 //
 // quoteMaxAgeMs is reserved for when a real (non-simulator) quote feed is wired;
-// candleMaxAgeMs / minCandles gate the chart + every downstream read.
+// minCandles gates the chart + every downstream read. Candle freshness (clean /
+// delayed / stale) is NOT graded from candleMaxAgeMs: it uses the shared domain
+// trailing-interval rule (@workspace/domain/market candleFreshnessRule) so the
+// client and the server's freshness.ts / candleNormalization.ts always agree.
+// candleMaxAgeMs remains only as the read-expiry budget for downstream reads.
 export interface TimeframeThresholds {
   quoteMaxAgeMs: number;
   candleMaxAgeMs: number;
@@ -74,7 +82,7 @@ const MIN = 60 * SEC;
 // Keyed by the canonical lowercase timeframe tokens the chart panel uses. Covers
 // the full 21 MT5 set (1m,2m,3m,4m,5m,6m,10m,12m,15m,20m,30m,1h,2h,3h,4h,6h,8h,
 // 12h,1d,1w,1mo). The month token is "1mo" (never "1m", which is one minute).
-// candleMaxAgeMs ≈ 1.2–1.5× the interval (one missed bar + margin); minCandles
+// candleMaxAgeMs ≈ 1.2–1.5× the interval (read-expiry budget only); minCandles
 // eases as the interval coarsens (1d mirrors the backend D1 floor of 50). Every
 // timeframe the chart can select MUST have an entry — an unknown token falls back
 // to the strict 1m budget and would wrongly downgrade valid coarse-timeframe data.
@@ -570,6 +578,16 @@ export function resolveScannerTruth(
   const sourceLabel = genericSourceLabel(provider.tier);
   const candleAgeMs = ageMsOf(input.lastTime, nowMs);
   const lastClose = positivePrice(input.lastClose);
+  // The ONE trailing-interval freshness rule the server's feed status uses
+  // (@workspace/domain/market candleFreshnessRule): how many intervals the
+  // newest bar's open trails the current bar. A wall-clock budget of ~1.2-1.5x
+  // the interval used to call a healthy closed-bar series stale here while the
+  // chart (server rule) still called it live. null = cannot be measured.
+  const candleIntervalMsForTf = candleIntervalMs(tf);
+  const candleTrailing: CandleTrailingFreshness | null =
+    candleAgeMs != null && input.lastTime && candleIntervalMsForTf != null
+      ? classifyTrailingIntervals(trailingIntervalsFromOpen(Date.parse(input.lastTime), candleIntervalMsForTf, nowMs))
+      : null;
 
   // Scheduled weekend closure with no bar since the close (see
   // scheduledWeekendClosureFor). The newest CLOSED bar is used when known, so a
@@ -619,7 +637,7 @@ export function resolveScannerTruth(
         ? "The latest candle is frozen"
         : rawDisplay === "FALLBACK_COMPOSITE"
           ? "Candles are delayed"
-          : candleAgeMs > thr.candleMaxAgeMs
+          : candleTrailing !== "clean"
             ? "The latest candle is older than expected for this timeframe"
             : "Candles are live";
     candleReason =
@@ -642,14 +660,16 @@ export function resolveScannerTruth(
         ? `, ${fs.trailingIntervals} bars behind the current bar`
         : "";
     candleReason = `Delayed market data — the newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago${behind}. Not a live read.`;
-  } else if (
-    displayStatus === "LIVE" &&
-    candleAgeMs <= thr.candleMaxAgeMs
-  ) {
+  } else if (displayStatus === "LIVE" && candleTrailing === "clean") {
     candleStatus = "live";
     candleReason = "Live, confirmed candles.";
+  } else if (displayStatus === "LIVE" && candleTrailing === "delayed") {
+    // One closed bar is overdue: the same "delayed" the server rule assigns.
+    candleStatus = "delayed";
+    candleReason = `Delayed market data — the newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago, one closed bar overdue. Not a live read.`;
   } else {
-    // Display says live but the last bar is older than the timeframe budget.
+    // Display says live but the shared rule grades the newest bar stale (≥3
+    // intervals behind), or the timeframe's interval is unknown (fail closed).
     candleStatus = "stale";
     candleReason = "The latest candle is older than expected for this timeframe.";
   }
