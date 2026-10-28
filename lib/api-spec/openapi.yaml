@@ -9392,7 +9392,16 @@ paths:
         "409":
           description: >-
             CYCLE_ALREADY_RUNNING — another cycle is still running in this API
-            process; this run was not started.
+            process or in another API process (database cycle lock); this run
+            was not started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SelfTradeErrorResp" }
+        "500":
+          description: >-
+            CYCLE_FAILED — the cycle lock could not be taken (no cycle was
+            started) or the cycle threw before finishing, for example on a
+            bounded database wait. Anything already handed to the EA stands.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SelfTradeErrorResp" }
@@ -23428,6 +23437,31 @@ components:
           items: { $ref: "#/components/schemas/RunAutonomousCycleHoldDetail" }
         protective:
           $ref: "#/components/schemas/RunAutonomousCycleProtective"
+        completion:
+          $ref: "#/components/schemas/RunAutonomousCycleCompletion"
+
+    RunAutonomousCycleCompletion:
+      type: object
+      description: >-
+        Whether the cycle finished. COMPLETED only when every step ran and none
+        threw or hit a bounded database wait. INCOMPLETE: a step failed or a
+        connection/statement/lock wait timed out; the failed step's outcome is
+        not proven by the cycle (check the execution feed). STOPPED: the
+        cross-process cycle lock was lost, so the cycle stopped at a safe point
+        before its next dispatch.
+      required:
+        [status, stopReason, decisionsFailed, decisionsNotStarted, agentsFailed,
+         agentsNotStarted, managementStepFailed, protectiveNotRun, dbWaitTimeouts]
+      properties:
+        status: { type: string, enum: [COMPLETED, INCOMPLETE, STOPPED] }
+        stopReason: { type: string, nullable: true, enum: [LEASE_LOST] }
+        decisionsFailed: { type: integer }
+        decisionsNotStarted: { type: integer }
+        agentsFailed: { type: integer }
+        agentsNotStarted: { type: integer }
+        managementStepFailed: { type: boolean }
+        protectiveNotRun: { type: integer }
+        dbWaitTimeouts: { type: integer }
 
     RunAutonomousCycleHoldDetail:
       type: object

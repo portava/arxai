@@ -264,6 +264,67 @@ describe("run autonomous cycle: result", () => {
   });
 });
 
+describe("run autonomous cycle: a cycle that did not finish", () => {
+  const completion = (over: Partial<NonNullable<RunAutonomousCycleResp["completion"]>>) => ({
+    status: "COMPLETED" as const,
+    stopReason: null,
+    decisionsFailed: 0,
+    decisionsNotStarted: 0,
+    agentsFailed: 0,
+    agentsNotStarted: 0,
+    managementStepFailed: false,
+    protectiveNotRun: 0,
+    dbWaitTimeouts: 0,
+    ...over,
+  });
+
+  it("a finished cycle shows no warning", async () => {
+    h.runCycle.mockReturnValue(Promise.resolve(response({ completion: completion({}) })));
+    renderTab();
+    startRun();
+    await advance(0);
+    expect(txt(status())).toMatch(/cycle finished/i);
+    expect(screen.queryByRole("region", { name: /did not finish/i })).toBeNull();
+  });
+
+  it("INCOMPLETE says which steps failed and never says the cycle finished", async () => {
+    h.runCycle.mockReturnValue(
+      Promise.resolve(response({ completion: completion({ status: "INCOMPLETE", decisionsFailed: 1, agentsFailed: 2, dbWaitTimeouts: 3 }) })),
+    );
+    renderTab();
+    startRun();
+    await advance(0);
+    expect(txt(status())).toMatch(/without finishing every step/i);
+    expect(txt(status())).not.toMatch(/cycle finished/i);
+    const region = within(screen.getByRole("region", { name: /did not finish/i }));
+    const text = region.getByText(/did not finish every step/i).textContent ?? "";
+    expect(text).toMatch(/1 decision failed while executing \(outcome not proven\)/);
+    expect(text).toMatch(/management failed for 2 agents/);
+    expect(text).toMatch(/3 database waits timed out/);
+    expect(region.getByText(/cover only what ran/i)).toBeTruthy();
+    expect(document.body.textContent ?? "").not.toMatch(/completed/i);
+  });
+
+  it("STOPPED says the server lock was lost and what was not started", async () => {
+    h.runCycle.mockReturnValue(
+      Promise.resolve(
+        response({
+          completion: completion({ status: "STOPPED", stopReason: "LEASE_LOST", decisionsNotStarted: 2, protectiveNotRun: 1 }),
+        }),
+      ),
+    );
+    renderTab();
+    startRun();
+    await advance(0);
+    expect(txt(announce())).toMatch(/stopped before finishing/i);
+    const region = within(screen.getByRole("region", { name: /did not finish/i }));
+    const text = region.getByText(/lost its server lock/i).textContent ?? "";
+    expect(text).toMatch(/2 decisions not started/);
+    expect(text).toMatch(/1 protective candidate not run \(nothing sent for them\)/);
+    expect(text).toMatch(/sent nothing after the stop/);
+  });
+});
+
 describe("run autonomous cycle: errors that leave the outcome open", () => {
   it.each([
     ["a dropped connection", () => new TypeError("Failed to fetch")],

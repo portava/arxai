@@ -15,7 +15,10 @@
 //   - says plainly when the wait runs past the expected bound, claiming nothing;
 //   - on success reports protective dispatches as "sent to EA — awaiting broker
 //     confirmation" (never closed / completed) and every hold reason with its
-//     plain-English explanation from the server.
+//     plain-English explanation from the server;
+//   - says plainly when the server reports the cycle did not finish
+//     (completion INCOMPLETE: a step failed or a database wait timed out;
+//     STOPPED: it lost its server lock), instead of "Cycle finished".
 //
 // Running / result state is read from the shared TanStack MutationCache (by
 // mutation key), not from component state, because the admin page's tabs
@@ -36,6 +39,7 @@ import {
   useAdminRunSelfTradeAutonomousCycle,
   type RunAutonomousCycleResp,
   type RunAutonomousCycleHoldDetail,
+  type RunAutonomousCycleCompletion,
 } from "@workspace/api-client-react";
 
 /** Server-side protective wait for a fresh EA sweep (PROTECTIVE_EVIDENCE_WAIT_MS). */
@@ -117,6 +121,45 @@ function holdDetails(data: RunAutonomousCycleResp): RunAutonomousCycleHoldDetail
   }));
 }
 
+function plural(n: number, one: string): string {
+  return `${n} ${one}${n === 1 ? "" : "s"}`;
+}
+
+/** Plain-English list of what did not run or did not finish; empty for a finished cycle. */
+function unfinishedParts(c: RunAutonomousCycleCompletion): string[] {
+  const parts: string[] = [];
+  if (c.decisionsFailed > 0) parts.push(`${plural(c.decisionsFailed, "decision")} failed while executing (outcome not proven)`);
+  if (c.decisionsNotStarted > 0) parts.push(`${plural(c.decisionsNotStarted, "decision")} not started`);
+  if (c.managementStepFailed) parts.push("position management could not start");
+  if (c.agentsFailed > 0) parts.push(`management failed for ${plural(c.agentsFailed, "agent")}`);
+  if (c.agentsNotStarted > 0) parts.push(`${plural(c.agentsNotStarted, "agent")} not managed`);
+  if (c.protectiveNotRun > 0) parts.push(`${plural(c.protectiveNotRun, "protective candidate")} not run (nothing sent for them)`);
+  if (c.dbWaitTimeouts > 0) parts.push(`${plural(c.dbWaitTimeouts, "database wait")} timed out`);
+  return parts;
+}
+
+function CycleUnfinished({ completion }: { completion: RunAutonomousCycleCompletion }) {
+  const parts = unfinishedParts(completion);
+  const stopped = completion.status === "STOPPED";
+  return (
+    <section aria-label="Cycle did not finish" className="rounded-md border border-rose-500/30 bg-rose-500/5 p-2">
+      <div className="mb-1 flex flex-wrap items-center gap-1">
+        <Tone tone="danger">{stopped ? "stopped before finishing" : "did not finish"}</Tone>
+      </div>
+      <p className="text-rose-200">
+        {stopped
+          ? "The cycle stopped before finishing because it lost its server lock; another server process may be running a cycle now. It sent nothing after the stop."
+          : "The cycle did not finish every step."}
+        {parts.length > 0 ? ` ${parts.join("; ")}.` : ""}
+      </p>
+      <p className="mt-1 text-muted-foreground">
+        The tallies below cover only what ran. Anything already handed to the EA stands and is reconciled by later
+        cycles; check the execution feed and audit log before running again.
+      </p>
+    </section>
+  );
+}
+
 function CycleResult({ data }: { data: RunAutonomousCycleResp }) {
   const p = data.protective;
   const holds = holdDetails(data);
@@ -124,6 +167,7 @@ function CycleResult({ data }: { data: RunAutonomousCycleResp }) {
   const unresolved = p?.commandRecordedOrUnknown ?? 0;
   return (
     <div className="space-y-2 text-xs">
+      {data.completion && data.completion.status !== "COMPLETED" && <CycleUnfinished completion={data.completion} />}
       <div className="flex flex-wrap items-center gap-1">
         <Tone tone="info">considered {data.decisionsConsidered}</Tone>
         <Tone tone="success">filled {data.reconciled.filled}</Tone>
@@ -296,7 +340,13 @@ export function RunAutonomousCycleCard({ onRan }: { onRan?: () => void }) {
   } else if (offlineNotice) {
     announcement = `Not sent: this browser is offline (at ${clock(offlineAt!)}), so no cycle was started on the server. Reconnect and press Run cycle again.`;
   } else if (settled?.status === "success" && settled.data) {
-    announcement = `Cycle finished${when}; results below.`;
+    const c = settled.data.completion;
+    announcement =
+      c?.status === "STOPPED"
+        ? `Cycle stopped before finishing${when}: it lost its server lock; details below.`
+        : c?.status === "INCOMPLETE"
+          ? `Cycle ended${when} without finishing every step; details below.`
+          : `Cycle finished${when}; results below.`;
   } else if (errorKind === "conflict") {
     announcement = `Another cycle is still running on the server; this run was not started${when}.`;
   } else if (errorKind === "outcome-open") {

@@ -23757,6 +23757,22 @@ export const AdminRunSelfTradeAutonomousCycleResponse = zod.object({
     .describe(
       'Protective-action drain for this cycle. \"acted\" counts actions sent to the EA through the gated pipeline (awaiting broker confirmation); it is never a confirmed close or stop move and is not part of positionsClosed \/ positionsModified.',
     ),
+  completion: zod
+    .object({
+      status: zod.enum(["COMPLETED", "INCOMPLETE", "STOPPED"]),
+      stopReason: zod.enum(["LEASE_LOST"]).nullable(),
+      decisionsFailed: zod.number(),
+      decisionsNotStarted: zod.number(),
+      agentsFailed: zod.number(),
+      agentsNotStarted: zod.number(),
+      managementStepFailed: zod.boolean(),
+      protectiveNotRun: zod.number(),
+      dbWaitTimeouts: zod.number(),
+    })
+    .optional()
+    .describe(
+      "Whether the cycle finished. COMPLETED only when every step ran and none threw or hit a bounded database wait. INCOMPLETE: a step failed or a connection\/statement\/lock wait timed out; the failed step's outcome is not proven by the cycle (check the execution feed). STOPPED: the cross-process cycle lock was lost, so the cycle stopped at a safe point before its next dispatch.",
+    ),
 });
 
 /**
