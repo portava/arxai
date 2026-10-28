@@ -124,7 +124,7 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
     danger: "border-red-500/40 text-red-300 bg-red-500/10",
     ok: "border-emerald-500/40 text-emerald-300 bg-emerald-500/10",
   };
-  const badges: Array<{ label: string; tone: Tone; testId: string }> = [];
+  const badges: Array<{ label: string; tone: Tone; testId: string; title?: string }> = [];
 
   // Account / execution gates.
   // Feature Truth Audit: "Live Trading Blocked" and "Bridge Offline" used to be
@@ -180,22 +180,35 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
     badges.push({ label: "TP Targets Available", tone: "ok", testId: "badge-tp-available" });
   }
   // The stop / close capability badges used to be pushed UNCONDITIONALLY.
-  // They are claimed only when the card actually shows those controls (the
-  // snapshot loaded), the kill switch has been read and is not engaged, and
-  // the bridge status has been read as connected. Anything unknown or
-  // blocking claims nothing. The card can move the stop (Break-Even / Trail)
-  // but has no take-profit editor, so the label names the stop only.
+  // They now follow what /trade-management actually enforces
+  // (api-server routes/tradeManagement.ts): the buttons change this ARX
+  // record on the paper book through the Position Guardian, with no MT5
+  // bridge involved, and Close / Trail Stop answer 409 NO_CURRENT_QUOTE when
+  // the server has no quote. So the badges are claimed only when the
+  // snapshot loaded WITH a current price; the bridge state is not a
+  // condition. The protective auto-close kill switch does not gate these
+  // routes either, but the badges stay withheld while it is engaged or
+  // unread — that claims less, never more. The card can move the stop
+  // (Break-Even / Trail) but has no take-profit editor, so the label names
+  // the stop only.
   const killRead = typeof safety?.settings?.killSwitchEngaged === "boolean";
-  const controlsUsable = Boolean(snap) && killRead && !killEngaged && mt5State?.connected === true;
+  const hasQuote = (snap as { currentPrice?: number | null } | null | undefined)?.currentPrice != null;
+  const controlsUsable = hasQuote && killRead && !killEngaged;
   if (controlsUsable) {
-    badges.push({ label: "Stop Adjustable", tone: "ok", testId: "badge-sltp-editable" });
-    badges.push({ label: "Manual Close Available", tone: "ok", testId: "badge-manual-close" });
+    badges.push({
+      label: "Stop Adjustable", tone: "ok", testId: "badge-sltp-editable",
+      title: "Break-Even and Trail Stop move the stop on this ARX record (simulated, no broker order). The Position Guardian refuses any move that would widen the stop.",
+    });
+    badges.push({
+      label: "Manual Close Available", tone: "ok", testId: "badge-manual-close",
+      title: "Close books this ARX record at the server's current quote (simulated, no broker order).",
+    });
   }
 
   return (
     <div className="flex flex-wrap gap-1" data-testid={`safety-badges-${trade.id}`}>
       {badges.map((b) => (
-        <Badge key={b.label} variant="outline" className={`text-[10px] ${TONE[b.tone]}`} data-testid={b.testId}>{b.label}</Badge>
+        <Badge key={b.label} variant="outline" className={`text-[10px] ${TONE[b.tone]}`} data-testid={b.testId} title={b.title}>{b.label}</Badge>
       ))}
     </div>
   );
@@ -285,6 +298,20 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
     qc.invalidateQueries({ queryKey: getGetTradeSnapshotQueryKey(trade.id) });
     qc.invalidateQueries({ queryKey: getGetOpenTradesQueryKey() });
   };
+  // A refused or failed management request (e.g. 409 NO_CURRENT_QUOTE) is
+  // shown on the card, never swallowed — a silent click reads as success.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const runAction = async (label: string, fn: () => Promise<unknown>) => {
+    setActionError(null);
+    try {
+      await fn();
+    } catch (e) {
+      const msg = e instanceof Error && e.message ? e.message : "the request failed";
+      setActionError(`${label} did not go through: ${msg}`);
+      return;
+    }
+    refresh();
+  };
 
   // Truth rule: Current / P&L / R / Health are null when the server had no
   // quote — render "Unavailable" with the server's reason, never 0 or entry.
@@ -364,11 +391,14 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
             </div>
             <div className="text-xs p-2 rounded bg-muted/30 border border-border/50">{snap.primarySuggestion}</div>
             <div className="grid grid-cols-2 gap-2">
-              <Button size="sm" variant={snap.suggestions.breakEven.recommended ? "default" : "outline"} disabled={be.isPending} onClick={async () => { await be.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-breakeven-${trade.id}`}>Break-Even</Button>
-              <Button size="sm" variant={snap.suggestions.trail.recommended ? "default" : "outline"} disabled={trail.isPending} onClick={async () => { await trail.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-trail-${trade.id}`}>Trail Stop</Button>
-              <Button size="sm" variant={snap.suggestions.partial.recommended ? "default" : "outline"} disabled={partial.isPending} onClick={async () => { await partial.mutateAsync({ id: trade.id, data: { closePct: 50 } }); refresh(); }} data-testid={`button-partial-${trade.id}`}>Close 50%</Button>
-              <Button size="sm" variant="destructive" disabled={close.isPending} onClick={async () => { await close.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-close-${trade.id}`}><X size={14} className="mr-1" /> Close</Button>
+              <Button size="sm" variant={snap.suggestions.breakEven.recommended ? "default" : "outline"} disabled={be.isPending} onClick={() => runAction("Break-Even", () => be.mutateAsync({ id: trade.id }))} data-testid={`button-breakeven-${trade.id}`}>Break-Even</Button>
+              <Button size="sm" variant={snap.suggestions.trail.recommended ? "default" : "outline"} disabled={trail.isPending} onClick={() => runAction("Trail Stop", () => trail.mutateAsync({ id: trade.id }))} data-testid={`button-trail-${trade.id}`}>Trail Stop</Button>
+              <Button size="sm" variant={snap.suggestions.partial.recommended ? "default" : "outline"} disabled={partial.isPending} onClick={() => runAction("Close 50%", () => partial.mutateAsync({ id: trade.id, data: { closePct: 50 } }))} data-testid={`button-partial-${trade.id}`}>Close 50%</Button>
+              <Button size="sm" variant="destructive" disabled={close.isPending} onClick={() => runAction("Close", () => close.mutateAsync({ id: trade.id }))} data-testid={`button-close-${trade.id}`}><X size={14} className="mr-1" /> Close</Button>
             </div>
+            {actionError ? (
+              <p className="text-xs text-destructive" role="alert" data-testid={`trade-action-error-${trade.id}`}>{actionError}</p>
+            ) : null}
           </>
         }
       </CardContent>
