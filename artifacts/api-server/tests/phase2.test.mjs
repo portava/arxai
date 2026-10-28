@@ -242,7 +242,10 @@ test("LOG-5 signal-only (SUGGEST_ONLY) governed attempt books nothing and is rec
   const r = await paperOrder(t);
   const recent = await recentEvents(since);
   assert.deepEqual(await paperOrdersOf(pg, t.id), [], `SUGGEST_ONLY must not book (got HTTP ${r.status})`);
-  assert.ok(recent.find((e) => e.kind === "SIMULATED_TRADE"), "a signal-only vault row is required");
+  const held = recent.find((e) => e.kind === "GOVERNED_TRADE_BLOCKED" && e.payload.userId === t.id);
+  assert.ok(held, "the mode refusal must be recorded, not labelled as a completed simulated trade");
+  assert.match(held.summary, /PAPER_MODE_BLOCK/);
+  assert.equal(held.payload.decision, "block");
 });
 
 test("LOG-6 kill-switch engage logs KILL_SWITCH (CRITICAL, SAFETY domain)", async () => {

@@ -3780,7 +3780,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     const risk = await enforcePreTradeRisk({
       userId: args.userId,
       venue: "LIVE",
-      origin: /RUBY|ASSISTANT/i.test(row.sourcePage ?? "") ? "ruby"
+      origin: row.selfTradeDecisionId != null ? "automation" : /RUBY|ASSISTANT/i.test(row.sourcePage ?? "") ? "ruby"
         : /SELF_TRADE|MISSION|AUTOPILOT|AUTOMATION|POSITION_GUARDIAN/i.test(row.sourcePage ?? "") ? "automation" : "manual",
       action: rgAction,
       symbol: row.symbol,

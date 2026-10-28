@@ -7,8 +7,9 @@
 // PAPER) a DEMO or LIVE order faces. Nothing here reaches a broker, a bridge,
 // an MT5 mailbox or a position ledger. Every row stays scoped to its owner.
 //
-// The logic is moved, not changed: the same geometry checks, the same
-// governor intents, the same writes, events, vault rows and auto-debrief.
+// Entries require an executable Safety Core mode and the owner's entry policy.
+// Each booking/outcome and its linked evidence commit together. Existing
+// geometry, ownership and protective-action governors still apply.
 //
 // One paper book (docs/TIER1_PAPER_BOOK.md): this module is the ONLY writer
 // of paper_orders and paper_trade_events. The trader's ticket (via
@@ -31,7 +32,10 @@
 import {
   db, paperAccountsTable, paperOrdersTable, paperTradeEventsTable, vaultEventsTable,
 } from "@workspace/db";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { appendAuditInTransaction, type AuditTransaction } from "../auditVault.js";
+import { paperEntryOrigin, paperEntryPolicyReason } from "../safety/entryPolicy.js";
+import { readPaperEntryPosture } from "../safety/platformSwitches.js";
 import { generateDeterministicCandles } from "../backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
@@ -92,18 +96,18 @@ export interface PaperOpenArgs {
   intentRef?: string;
 }
 
-async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
-  await db.insert(vaultEventsTable).values({
-    kind, severity: "INFO", source: "SYSTEM", truthDomain: "BEHAVIOR",
-    summary: kind, payload: { ...payload, simulated: true, disclaimer: SIMULATED_TAG },
-    reasons: [], blockers: [], generatedAtIso: new Date().toISOString(),
-  }).catch(() => { /* non-fatal */ });
-}
-
-async function logEvent(userId: number | null, orderId: number, eventType: string, message: string) {
-  await db.insert(paperTradeEventsTable).values({
-    userId, paperOrderId: orderId, eventType, message,
-  }).catch(() => { /* non-fatal */ });
+/** Outcome evidence is mandatory and shares the order mutation's transaction. */
+async function recordPaperOutcome(tx: AuditTransaction, order: PaperOrderRow, eventType: string, message: string | null, riskId?: number | null) {
+  if (message != null) await tx.insert(paperTradeEventsTable).values({ userId: order.userId, paperOrderId: order.id, eventType, message });
+  const kind = eventType === "UPDATED" ? "PAPER_ORDER_UPDATED"
+    : eventType === "CANCELLED" ? "PAPER_ORDER_CANCELLED" : "PAPER_ORDER_CLOSED";
+  const linkedDecisionId = riskId != null ? `risk:${riskId}` : null;
+  const payload = { userId: order.userId, orderId: order.id, linkedTradeId: String(order.id), linkedDecisionId, entityType: "paper_order",
+    symbol: order.symbol, accountId: order.paperAccountId, status: order.status, stopLoss: order.stopLoss, takeProfit: order.takeProfit,
+    exitPrice: order.exitPrice, pnl: order.profitLoss, simulated: true, disclaimer: SIMULATED_TAG };
+  await tx.insert(vaultEventsTable).values({ kind, source: "SYSTEM", severity: "INFO", truthDomain: "EXECUTION", summary: message ?? eventType,
+    payload, symbol: order.symbol, linkedTradeId: String(order.id), linkedDecisionId, generatedAtIso: new Date().toISOString() });
+  await appendAuditInTransaction(tx, { eventType: kind, source: "SYSTEM", severity: "INFO", systemMode: null, globalState: null, payload });
 }
 
 export async function ownPaperAccount(id: number, userId: number) {
@@ -232,6 +236,49 @@ export async function markToMarket(accountId: number) {
     .where(eq(paperAccountsTable.id, accountId)).limit(1))[0] ?? null;
 }
 
+/** The order, its event and both audit records commit together. No network work
+ * is allowed inside this transaction. Safety Core writers serialize against
+ * the shared row lock, so a committed mode change cannot be missed at booking.
+ */
+async function bookPaperOrder(values: typeof paperOrdersTable.$inferInsert, risk: EnforceResult,
+  message: string | null, extra: Record<string, unknown> = {},
+): Promise<{ ok: true; order: PaperOrderRow; replayed?: boolean } | PaperFillBlocked> {
+  if (!risk.allowed || risk.auditEventId == null) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
+  return db.transaction(async tx => {
+    await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
+    await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
+    const posture = await readPaperEntryPosture(tx);
+    const reason = paperEntryPolicyReason(posture);
+    if (reason) {
+      const payload = { userId: values.userId, symbol: values.symbol, reason, linkedDecisionId: `risk:${risk.auditEventId}`, booked: false };
+      await tx.insert(vaultEventsTable).values({ kind: "PAPER_ENTRY_HELD", source: "RISK_GOVERNOR", severity: "WARN", truthDomain: "DECISION",
+        summary: reason, payload, blockers: [reason], symbol: values.symbol, linkedDecisionId: `risk:${risk.auditEventId}`, generatedAtIso: new Date().toISOString() });
+      await appendAuditInTransaction(tx, { eventType: "PAPER_ENTRY_HELD", source: "RISK_GOVERNOR", severity: "WARN",
+        systemMode: posture.operationalMode, globalState: posture.globalState, payload });
+      return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk: { ...risk, allowed: false, decision: "BLOCK", primaryReason: reason, blockedBy: ["trading_halt"] } };
+    }
+    const [order] = await tx.insert(paperOrdersTable).values(values)
+      .onConflictDoNothing({ target: [paperOrdersTable.userId, paperOrdersTable.clientRequestKey] }).returning();
+    if (!order) {
+      const [prior] = values.clientRequestKey && values.userId != null
+        ? await tx.select().from(paperOrdersTable).where(and(eq(paperOrdersTable.userId, values.userId), eq(paperOrdersTable.clientRequestKey, values.clientRequestKey))).limit(1) : [];
+      if (!prior) throw new Error("paper order insert returned no row");
+      return { ok: true, order: prior, replayed: true };
+    }
+    if (message != null) await tx.insert(paperTradeEventsTable).values({ userId: order.userId, paperOrderId: order.id, eventType: "PLACED", message });
+    const linkedDecisionId = `risk:${risk.auditEventId}`;
+    const payload = { ...extra, userId: order.userId, orderId: order.id, linkedTradeId: String(order.id), linkedDecisionId,
+      entityType: "paper_order", accountId: order.paperAccountId, symbol: order.symbol, direction: order.direction, lotSize: order.lotSize,
+      simulated: true, disclaimer: SIMULATED_TAG };
+    await tx.insert(vaultEventsTable).values({ kind: "PAPER_ORDER_PLACED", source: "SYSTEM", severity: "INFO", truthDomain: "EXECUTION",
+      summary: "Paper order booked", payload, symbol: order.symbol, linkedTradeId: String(order.id), linkedDecisionId,
+      operationalMode: posture.operationalMode, globalState: posture.globalState, generatedAtIso: new Date().toISOString() });
+    await appendAuditInTransaction(tx, { eventType: "PAPER_ORDER_PLACED", source: "SYSTEM", severity: "INFO",
+      systemMode: posture.operationalMode, globalState: posture.globalState, payload });
+    return { ok: true, order };
+  });
+}
+
 /** Open a paper order: owner check, SL/TP geometry, Risk Governor, then the simulator book. */
 export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
   if (!(await ownPaperAccount(a.paperAccountId, a.userId))) return { ok: false, reason: "PAPER_ACCOUNT_NOT_FOUND" };
@@ -253,7 +300,7 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
   // Pre-trade Risk Governor: the same rules a live order faces, priced
   // against the paper simulator's market.
   const risk = await enforcePreTradeRisk({
-    userId: a.userId, venue: "PAPER", origin: a.origin ?? "manual", action: "OPEN",
+    userId: a.userId, venue: "PAPER", origin: paperEntryOrigin(a.origin, a.decisionId), action: "OPEN",
     symbol: a.symbol, side: a.side, lots: a.lots,
     entryPrice: q ? null : a.entryPrice, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
     ...(a.intentRef ? { intentRef: a.intentRef } : {}),
@@ -265,7 +312,8 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
     auditContext: { caller: a.caller, ...(a.clientRequestKey ? { clientRequestKey: a.clientRequestKey } : {}) },
   });
   if (!risk.allowed) return governorRefusal(risk);
-  const ins = await db.insert(paperOrdersTable).values({
+  const priced = q ? ` (price ${q.source} at ${q.at.toISOString()})` : "";
+  const booked = await bookPaperOrder({
     userId: a.userId,
     paperAccountId: a.paperAccountId,
     symbol: a.symbol, direction: a.side, orderType: a.orderType,
@@ -276,21 +324,11 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
     tradePlanId: a.tradePlanId,
     decisionId: a.decisionId,
     clientRequestKey: a.clientRequestKey ?? null,
-  }).onConflictDoNothing({ target: [paperOrdersTable.userId, paperOrdersTable.clientRequestKey] }).returning();
-  const order = ins[0];
-  if (!order) {
-    // A concurrent request with the same key booked first: return its order.
-    const prior = a.clientRequestKey ? await paperOrderByRequestKey(a.userId, a.clientRequestKey) : null;
-    if (!prior) throw new Error("paper order insert returned no row");
-    return { ok: true, order: prior, replayed: true };
-  }
-  const priced = q ? ` (price ${q.source} at ${q.at.toISOString()})` : "";
-  await logEvent(a.userId, order.id, "PLACED", `${SIMULATED_TAG} ${a.side} ${a.symbol} @ ${px.toFixed(5)} SL ${a.stopLoss} TP ${a.takeProfit} lot ${a.lots}${priced}`);
-  await vaultBehavior("PAPER_ORDER_PLACED", {
-    orderId: order.id, accountId: a.paperAccountId,
-    symbol: a.symbol, direction: a.side, lotSize: a.lots,
-    ...(q ? { priceSource: q.source, quoteAt: q.at.toISOString(), caller: a.caller } : {}),
-  });
+  }, risk, `${SIMULATED_TAG} ${a.side} ${a.symbol} @ ${px.toFixed(5)} SL ${a.stopLoss} TP ${a.takeProfit} lot ${a.lots}${priced}`,
+    q ? { priceSource: q.source, quoteAt: q.at.toISOString(), caller: a.caller } : { caller: a.caller });
+  if (!booked.ok) return governorRefusal(booked.risk);
+  if (booked.replayed) return booked;
+  const order = booked.order;
   await markToMarket(a.paperAccountId);
   return { ok: true, order };
 }
@@ -325,9 +363,13 @@ export async function modifyPaperOrder(a: {
     auditContext: { caller: a.caller, orderId: a.orderId },
   });
   if (!risk.allowed) return governorRefusal(risk);
-  await db.update(paperOrdersTable).set(next)
-    .where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId)));
-  await logEvent(a.userId, a.orderId, "UPDATED", `${SIMULATED_TAG} SL→${next.stopLoss} TP→${next.takeProfit}`);
+  const updated = await db.transaction(async tx => {
+    const [order] = await tx.update(paperOrdersTable).set(next)
+      .where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"))).returning();
+    if (order) await recordPaperOutcome(tx, order, "UPDATED", `${SIMULATED_TAG} SL→${next.stopLoss} TP→${next.takeProfit}`, risk.auditEventId);
+    return order;
+  });
+  if (!updated) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
   await markToMarket(cur.paperAccountId);
   return { ok: true, order: await ownPaperOrder(a.orderId, a.userId) };
 }
@@ -353,13 +395,15 @@ export async function closePaperOrder(a: { userId: number; orderId: number; call
   });
   if (!risk.allowed) return governorRefusal(risk);
   const pnl = pnlFor(cur.direction, cur.lotSize, cur.entryPrice, exitPx);
-  const closed = await db.update(paperOrdersTable).set({
-    status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: exitPx,
-    profitLoss: pnl, updatedAt: new Date(),
-  }).where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"))).returning({ id: paperOrdersTable.id });
-  if (!closed.length) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
-  await logEvent(a.userId, a.orderId, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)} (${priceSource})`);
-  await vaultBehavior("PAPER_ORDER_CLOSED", { orderId: a.orderId, exitPrice: exitPx, pnl, manual: true });
+  const closed = await db.transaction(async tx => {
+    const [order] = await tx.update(paperOrdersTable).set({
+      status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: exitPx,
+      profitLoss: pnl, updatedAt: new Date(),
+    }).where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"))).returning();
+    if (order) await recordPaperOutcome(tx, order, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)} (${priceSource})`, risk.auditEventId);
+    return order;
+  });
+  if (!closed) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
   // markToMarket recomputes balance from starting + Σ closed-order P&L, so
   // this manual close's P&L is reflected.
   await markToMarket(cur.paperAccountId);
@@ -410,7 +454,7 @@ export interface PaperFillOpenArgs {
  */
 export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; order: PaperOrderRow; risk: EnforceResult } | PaperFillBlocked> {
   const risk = await enforcePreTradeRisk({
-    userId: a.userId, venue: "PAPER", origin: a.origin, action: "OPEN",
+    userId: a.userId, venue: "PAPER", origin: paperEntryOrigin(a.origin, a.decisionId), action: "OPEN",
     symbol: a.symbol, side: a.side, lots: a.lots,
     ...("governedEntryPrice" in a ? { entryPrice: a.governedEntryPrice } : {}),
     stopLoss: a.stopLoss, takeProfit: a.takeProfit,
@@ -421,7 +465,7 @@ export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; o
     auditContext: a.auditContext,
   });
   if (!risk.allowed) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
-  const ins = await db.insert(paperOrdersTable).values({
+  const booked = await bookPaperOrder({
     userId: a.userId,
     paperAccountId: a.paperAccountId,
     symbol: a.symbol, direction: a.side, orderType: "MARKET",
@@ -431,10 +475,9 @@ export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; o
     status: "OPEN",
     decisionId: a.decisionId,
     strategyId: a.strategyId,
-  }).returning();
-  const order = ins[0]!;
-  if (a.placedMessage != null) await logEvent(a.userId, order.id, "PLACED", a.placedMessage);
-  return { ok: true, order, risk };
+  }, risk, a.placedMessage, { caller: a.auditContext.caller ?? null });
+  if (!booked.ok) return booked;
+  return { ok: true, order: booked.order, risk };
 }
 
 /**
@@ -462,11 +505,14 @@ export async function closePaperFill(a: {
   if (!risk.allowed) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
   if (!Number.isFinite(a.exitPrice) || a.exitPrice <= 0) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
   const pnl = pnlFor(o.direction, o.lotSize, o.entryPrice, a.exitPrice);
-  const closed = await db.update(paperOrdersTable).set({
-    status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: a.exitPrice, profitLoss: pnl, updatedAt: new Date(),
-  }).where(and(eq(paperOrdersTable.id, o.id), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"))).returning();
-  if (!closed.length) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
-  await logEvent(o.userId, o.id, "CLOSED_MANUAL", `${SIMULATED_TAG} ${a.eventLabel} @ ${a.exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+  const closed = await db.transaction(async tx => {
+    const [order] = await tx.update(paperOrdersTable).set({
+      status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: a.exitPrice, profitLoss: pnl, updatedAt: new Date(),
+    }).where(and(eq(paperOrdersTable.id, o.id), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"))).returning();
+    if (order) await recordPaperOutcome(tx, order, "CLOSED_MANUAL", `${SIMULATED_TAG} ${a.eventLabel} @ ${a.exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)}`, risk.auditEventId);
+    return order;
+  });
+  if (!closed) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
   return { ok: true, pnl };
 }
 
@@ -481,20 +527,25 @@ export async function settlePaperOrder(a: {
   status: "CLOSED_SL" | "CLOSED_TP" | "CLOSED_MANUAL" | "CANCELLED";
   exitPrice: number; pnl: number; eventMessage: string | null;
 }): Promise<void> {
-  const settled = await db.update(paperOrdersTable).set({
-    status: a.status, closedAt: new Date(), exitPrice: a.exitPrice,
-    profitLoss: a.pnl, updatedAt: new Date(),
-  }).where(and(eq(paperOrdersTable.id, a.order.id), eq(paperOrdersTable.status, "OPEN"))).returning();
-  if (settled.length && a.eventMessage != null) await logEvent(a.order.userId, a.order.id, a.status, a.eventMessage);
+  await db.transaction(async tx => {
+    const [order] = await tx.update(paperOrdersTable).set({
+      status: a.status, closedAt: new Date(), exitPrice: a.exitPrice,
+      profitLoss: a.pnl, updatedAt: new Date(),
+    }).where(and(eq(paperOrdersTable.id, a.order.id), eq(paperOrdersTable.status, "OPEN"),
+      a.order.userId == null ? isNull(paperOrdersTable.userId) : eq(paperOrdersTable.userId, a.order.userId))).returning();
+    if (order) await recordPaperOutcome(tx, order, a.status, a.eventMessage);
+  });
 }
 
 /**
  * Roll back an order booked a moment ago whose caller then lost an
  * idempotency race (Build EE: another request recorded the same decision).
- * Best-effort, like the inline rollback it replaces.
+ * Audit failure rolls back the cancellation and propagates to the caller.
  */
 export async function voidPaperOrder(orderId: number): Promise<void> {
-  await db.update(paperOrdersTable).set({ status: "CANCELLED", updatedAt: new Date() })
-    .where(eq(paperOrdersTable.id, orderId))
-    .catch(() => { /* non-fatal */ });
+  await db.transaction(async tx => {
+    const [order] = await tx.update(paperOrdersTable).set({ status: "CANCELLED", updatedAt: new Date() })
+      .where(and(eq(paperOrdersTable.id, orderId), eq(paperOrdersTable.status, "OPEN"))).returning();
+    if (order) await recordPaperOutcome(tx, order, "CANCELLED", "Paper booking cancelled after an idempotency conflict.");
+  });
 }

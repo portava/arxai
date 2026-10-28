@@ -218,7 +218,7 @@ router.post("/system/kill-switch/reset", requireOperator, async (req, res) => {
 
 // GET /system/vault — query vault events by date / symbol / mode / source /
 // type / severity / truthDomain / linkedTradeId.
-router.get("/system/vault", async (req, res) => {
+router.get("/system/vault", requireOperator, async (req, res) => {
   try {
     const q = VaultListQuery.parse({
       limit:           req.query["limit"],
@@ -278,7 +278,7 @@ router.get("/system/state-transitions", async (req, res) => {
 
 // GET /system/vault/integrity — scan vault rows for missing / malformed /
 // suspicious records. The result is an audit summary, not a side-effect.
-router.get("/system/vault/integrity", async (req, res) => {
+router.get("/system/vault/integrity", requireOperator, async (req, res) => {
   try {
     const q = IntegrityQuery.parse({ limit: req.query["limit"], sinceIso: req.query["sinceIso"] });
     const report = await scanVaultIntegrity(q);

@@ -1,3 +1,5 @@
+import { executablePaperFixture } from "../../lib/safety/__qa__/paperModeFixture.js";
+let restorePaperMode: (() => Promise<void>) | undefined;
 import { enabledBrokerControlsFixture } from "../../lib/safety/__qa__/brokerControlsFixture.js";
 enabledBrokerControlsFixture();
 // Pre-trade Risk Governor — end-to-end proof on a real database.
@@ -162,6 +164,7 @@ function request(method: string, path: string, cookie: string, body?: unknown): 
 }
 
 before(async () => {
+  restorePaperMode = await executablePaperFixture();
   await deleteFixtures();
   const a = await seedUser(EMAIL_A, "QA Risk A");
   const b = await seedUser(EMAIL_B, "QA Risk B");
@@ -184,6 +187,7 @@ before(async () => {
 });
 
 after(async () => {
+  await restorePaperMode?.();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await deleteFixtures();
 });
@@ -346,7 +350,7 @@ test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm an
   assert.equal(result.ok, false);
   const [row] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, draft.action.id));
   assert.equal(row!.status, "rejected");
-  assert.match(row!.rejectionReason ?? "", /stop loss is required/i);
+  assert.match(row!.rejectionReason ?? "", /AI_ENTRY_POLICY_PENDING/);
   const guard = row!.guardResult as { failedCheckId: string };
   assert.equal(guard.failedCheckId, "risk_governor");
   const cmds = await db.select().from(mt5CommandsTable).where(eq(mt5CommandsTable.userId, u.a));
@@ -356,7 +360,7 @@ test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm an
   assert.ok(ev.blockedBy.includes("stop_loss_required"));
 });
 
-test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the PAPER venue", async () => {
+test("B demo Ruby: a sound Ruby draft still holds until the owner approves a confidence policy", async () => {
   await resetPaper(u.a);
   await seedBridge(u.a);
   const draft = await createActionDraft({
@@ -365,16 +369,12 @@ test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the PA
   });
   assert.ok(draft.ok);
   const result = await confirmAction({ userId: u.a, actionId: draft.action.id, confirmedMode: "SIMULATED" });
-  // Owner decision 13: a confirmed SIMULATED open books a PAPER order at a
-  // real current quote. This sandbox has no real market-data provider, so the
-  // venue refuses it by name and books nothing (test:simulated-open covers
-  // the booked path with a stubbed feed).
-  assert.equal(result.ok ? null : result.error, "venue_rejected", JSON.stringify(result));
+  assert.equal(result.ok ? null : result.error, "guard_rejected", JSON.stringify(result));
   const [row] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, draft.action.id));
-  assert.match(row!.rejectionReason ?? "", /No valid current price/);
+  assert.match(row!.rejectionReason ?? "", /AI_ENTRY_POLICY_PENDING/);
   assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u.a))).length, 0);
   const ev = await latestEvent(u.a);
-  assert.equal(ev.row.decision, "pass");
+  assert.equal(ev.row.decision, "block");
   assert.equal(ev.intent["origin"], "ruby");
   assert.equal(ev.intent["venue"], "PAPER");
 });
@@ -604,7 +604,7 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
   assert.match(read("../../lib/tradeEngine/pipeline.ts"), /venue\.openPaperFill\(/, "the pipeline's PAPER fill delegates to the governed venue fill");
   const venue = read("../../lib/tradeEngine/paperVenue.ts");
   const fill = venue.slice(venue.indexOf("export async function openPaperFill"));
-  assert.ok(fill.indexOf("enforcePreTradeRisk(") > 0 && fill.indexOf("enforcePreTradeRisk(") < fill.indexOf(".insert(paperOrdersTable)"),
+  assert.ok(fill.indexOf("enforcePreTradeRisk(") > 0 && fill.indexOf("enforcePreTradeRisk(") < fill.indexOf("await bookPaperOrder("),
     "openPaperFill calls the governor before it books");
   assert.match(read("../../lib/riskGovernor/enforce.ts"), /const halt = f\.halt !== undefined \? f\.halt\s*: await loadTradingHalt\(/,
     "every governed order reads the stop switches unless a test supplies them");

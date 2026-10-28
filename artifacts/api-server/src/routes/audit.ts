@@ -17,6 +17,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { eventSourced as ev } from "@workspace/domain/black-box-vault";
 import { db, vaultEventsTable } from "@workspace/db";
+import { requireOperator } from "../lib/auth/ownerScope.js";
 import {
   listAllAuditEvents,
   isAuditStorageAvailable,
@@ -31,6 +32,10 @@ import {
 } from "../lib/auditVault.js";
 
 const router: IRouter = Router();
+// These are global forensic records, including private trader decisions and
+// outcomes. Trader access is through the owner-scoped /me/risk/events surface.
+// Protect debug mutation endpoints too, including development preview installs.
+router.use("/audit", requireOperator);
 
 const QuerySchema = z.object({
   sinceIso: z.string().optional(),

@@ -3,7 +3,8 @@
 // Every pre-trade decision, trader override and post-close discipline event is
 // written here, scoped to its trader. Secrets never reach the details column.
 
-import { db, userRiskSettingsTable, userRiskEventsTable } from "@workspace/db";
+import { db, userRiskSettingsTable, userRiskEventsTable, vaultEventsTable } from "@workspace/db";
+import { appendAuditInTransaction } from "../auditVault.js";
 import { readTraderRiskSettings } from "./limitSettings.js";
 import { DEFAULT_USER_RISK_SETTINGS } from "./journalActivity.js";
 
@@ -21,13 +22,28 @@ export async function logRiskEvent(args: {
 }) {
   // Defensive: never persist anything resembling a bridge token
   const safeDetails = scrubSecrets(args.details ?? {});
-  const ins = await db.insert(userRiskEventsTable).values({
-    userId: args.userId, eventType: args.eventType, severity: args.severity, decision: args.decision,
-    reason: args.reason, details: safeDetails,
-    paperTradeId: args.paperTradeId ?? null,
-    tradingSessionId: args.tradingSessionId ?? null,
-    mt5ConnectionId: args.mt5ConnectionId ?? null,
-  }).returning();
+  const ins = await db.transaction(async tx => {
+    const rows = await tx.insert(userRiskEventsTable).values({
+      userId: args.userId, eventType: args.eventType, severity: args.severity, decision: args.decision,
+      reason: args.reason, details: safeDetails,
+      paperTradeId: args.paperTradeId ?? null,
+      tradingSessionId: args.tradingSessionId ?? null,
+      mt5ConnectionId: args.mt5ConnectionId ?? null,
+    }).returning();
+    if (safeDetails.source === "pre_trade_risk_governor") {
+      const intent = safeDetails.intent as { symbol?: string; venue?: string; action?: string } | undefined;
+      const linkedDecisionId = `risk:${rows[0]!.id}`;
+      const blockers = Array.isArray(safeDetails.blockedBy) ? safeDetails.blockedBy : [];
+      const kind = args.decision === "block" ? "GOVERNED_TRADE_BLOCKED" : "GOVERNED_TRADE_DECISION";
+      const payload = { userId: args.userId, linkedDecisionId, symbol: intent?.symbol ?? null, venue: intent?.venue, action: intent?.action, decision: args.decision, reason: args.reason, blockers };
+      await tx.insert(vaultEventsTable).values({ kind, severity: args.decision === "block" ? "WARN" : "INFO",
+        source: "RISK_GOVERNOR", truthDomain: "DECISION", summary: args.reason, payload, reasons: [args.reason], blockers,
+        symbol: intent?.symbol ?? null, linkedDecisionId, generatedAtIso: new Date().toISOString() });
+      await appendAuditInTransaction(tx, { eventType: kind, source: "RISK_GOVERNOR", severity: args.decision === "block" ? "WARN" : "INFO",
+        systemMode: null, globalState: null, payload });
+    }
+    return rows;
+  });
   // Phase 10F — emit notification + activity for warning/block events.
   if (args.decision !== "pass") {
     try {

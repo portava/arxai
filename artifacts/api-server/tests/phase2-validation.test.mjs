@@ -316,6 +316,9 @@ test("V-QY4 query by systemMode", async () => {
 // trades reach the audit log (open gaps 2 and 3 in
 // docs/TIER1_TRADE_ENGINE_MODES.md).
 test("V-QY5 query by tradeId / linkedTradeId finds the governed paper order", async () => {
+  // Booking now requires an explicit executable mode; the audit query must
+  // test a real permitted booking, not an order forbidden by OBSERVE_ONLY.
+  await pool.query("UPDATE safety_core SET operational_mode='PAPER_TRADING', global_state='NORMAL', kill_switch_engaged=false");
   const t = await freshTrader(pool, "v-qy5");
   const order = await paperOrder(t);
   assert.equal(order.status, 200, JSON.stringify(order.data));
@@ -333,6 +336,9 @@ test("V-QY5 query by tradeId / linkedTradeId finds the governed paper order", as
 
 test("V-QY6 query by symbol finds the governed paper order", async () => {
   const symbol = "Volatility 75 Index";
+  // Booking now requires an explicit executable mode; the audit query must
+  // test a real permitted booking, not an order forbidden by OBSERVE_ONLY.
+  await pool.query("UPDATE safety_core SET operational_mode='PAPER_TRADING', global_state='NORMAL', kill_switch_engaged=false");
   const t = await freshTrader(pool, "v-qy6");
   const order = await paperOrder(t, { symbol });
   assert.equal(order.status, 200, JSON.stringify(order.data));

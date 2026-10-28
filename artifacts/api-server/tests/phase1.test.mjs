@@ -212,7 +212,7 @@ test("RG-1 low-confidence AI order blocked by the Risk Governor confidence floor
 // which this offline lane has none of, so nothing books either way; the
 // requirement asserted is the Risk Governor's decision. This case fails until
 // a floor applies on these paths.
-test("RG-1b low-confidence Ruby / automation SIMULATED trade action is blocked by the Risk Governor confidence floor", async () => {
+test("RG-1b Ruby / automation SIMULATED entry stays blocked pending an approved confidence policy", async () => {
   await setHeartbeatAge(2);
   for (const source of ["decision_engine", "ai_suggested"]) {
     const t = await freshTrader(pg, `phase1-RG-1b-${source}`);
@@ -225,7 +225,7 @@ test("RG-1b low-confidence Ruby / automation SIMULATED trade action is blocked b
     assert.ok(ev, `${source}: the guard's Risk Governor decision is audited`);
     assert.equal(ev.decision, "block",
       `${source}: an AI-originated open with model confidence 10 must be blocked; got ${ev.decision}, blockedBy ${JSON.stringify(ev.details.blockedBy)}`);
-    assert.match(JSON.stringify(ev.details), /model confidence/, "blocked by the confidence floor");
+    assert.match(ev.reason, /AI_ENTRY_POLICY_PENDING/, "blocked without inventing a confidence floor");
     assert.equal(confirm.status, 400, JSON.stringify(confirm.data));
     assert.equal(confirm.data.action.guardResult.failedCheckId, "risk_governor");
     assert.deepEqual(await paperOrdersOf(pg, t.id), [], "nothing booked");

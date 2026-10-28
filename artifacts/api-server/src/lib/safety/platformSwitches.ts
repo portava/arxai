@@ -47,7 +47,7 @@
 // audited admin handlers (routes/adminTrading.ts and the reviewed writers
 // listed in the guard) and the safety-core state machine (lib/safetyCore.ts).
 
-import { asc } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 import { db, globalTradingSettingsTable, safetyCoreTable } from "@workspace/db";
 import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
 import { logger } from "../logger.js";
@@ -511,4 +511,21 @@ export interface SafetyCorePosture {
 export async function readSafetyCorePosture(): Promise<SafetyCorePosture> {
   const sc = await readSafetyCoreSwitch();
   return { readable: sc.readable, present: sc.present, operationalMode: sc.operationalMode, globalState: sc.globalState };
+}
+
+/** The final paper-entry check can hold the same rows until its booking commits.
+ * Missing/ambiguous state never grants permission. This reads, never seeds.
+ */
+export async function readPaperEntryPosture(tx?: Parameters<Parameters<typeof db.transaction>[0]>[0]): Promise<SafetyCorePosture & { engaged: boolean }> {
+  // Also exclude concurrent inserts/deletes of the singleton until booking
+  // commits; a row lock alone cannot prevent a second row appearing.
+  if (tx) await tx.execute(sql`LOCK TABLE ${safetyCoreTable} IN SHARE MODE`);
+  const query = (tx ?? db).select({
+    operationalMode: safetyCoreTable.operationalMode,
+    globalState: safetyCoreTable.globalState,
+    engaged: safetyCoreTable.killSwitchEngaged,
+  }).from(safetyCoreTable).orderBy(asc(safetyCoreTable.id)).limit(2);
+  const rows = await (tx ? query.for("share") : query);
+  if (rows.length !== 1) return { readable: false, present: rows.length > 0, operationalMode: null, globalState: null, engaged: true };
+  return { readable: true, present: true, ...rows[0]! };
 }
