@@ -17,11 +17,25 @@ async page => {
     return JSON.stringify(data.canonical)===JSON.stringify(expected.canonical)
       &&JSON.stringify(data.display.map(bar))===JSON.stringify(expected.canonical);
   }
+  async function waitForExpectedResponse(page,symbol,timeframe,deadline) {
+    while(Date.now()<deadline) {
+      const log=await page.evaluate(()=>window.__readFixtureLog());
+      const expected=log.candleResponses.filter(item=>item.symbol===symbol&&item.timeframe===timeframe).at(-1);
+      if(expected)return expected;
+      const remaining=deadline-Date.now();
+      if(remaining>0)await page.waitForTimeout(Math.min(25,remaining));
+    }
+    throw Error('No expected candle response before deadline: '+symbol+' '+timeframe);
+  }
   // Classification changes the report, never the route barrier: every write
   // receives 503. Only these exact POSTs are known non-trading background work.
   function classifyWrite(request) {
     if(request.method==='GET'||request.method==='HEAD')return 'read';
     if(request.method==='POST'&&['/api/me/activity-ping','/api/me/chart/ai-alerts/scan'].includes(request.path))return 'background';
+    // RubyScalpFocusCard requests this read on symbol/mode changes. Its route
+    // evaluates scalpService analysis (including advisory traces), not orders.
+    // It is still blocked: this is classification, not permission to execute it.
+    if(request.method==='POST'&&request.path==='/api/me/scalp/focus')return 'analysis';
     // Scanner order/management routes, including preparation and confirmation.
     // Unknown writes still fail separately, so this list is not an allowlist.
     if(/^\/api\/(?:trades?(?:\/|$)|orders?(?:\/|$)|positions?(?:\/|$)|execution-confirmations(?:\/|$)|trade-actions?(?:-center)?(?:\/|$)|live-ops(?:\/|$)|(?:me\/)?(?:live|paper)\/(?:commands?|orders?|drafts?|positions?|execute|confirm|close|modify|cancel|reverse)(?:\/|$)|me\/(?:pending-order-drafts?(?:\/|$)|assistant\/instant-trade-command(?:\/|$)|chart\/decision-receipt(?:\/|$)))/.test(request.path))return 'trade';
@@ -36,20 +50,23 @@ async page => {
   const waitSeries=async(symbol,timeframe,intervalSeconds)=>{
     // The response is the expected authority. Button state, query completion and
     // a nonempty canvas cannot satisfy this check without the actual series.
-    await page.waitForFunction(async({symbol,timeframe,intervalSeconds})=>{
-      const log=await window.__readFixtureLog();
-      const expected=log.candleResponses.filter(item=>item.symbol===symbol&&item.timeframe===timeframe).at(-1);
+    const deadline=Date.now()+15000;
+    const expected=await waitForExpectedResponse(page,symbol,timeframe,deadline);
+    // Keep this predicate synchronous. The installed browser runner tests a
+    // returned Promise's truthiness before awaiting it, so async false can end
+    // polling immediately. Await response acquisition on the runner side.
+    await page.waitForFunction(({symbol,timeframe,intervalSeconds,expected})=>{
       const state=window.__arxChartQa?.snapshot(),data=window.__arxChartQa?.data();
       if(!expected||!state||!data||state.symbol!==symbol||state.intervalSeconds!==intervalSeconds||state.style!=='candles'||state.feed.source!==expected.source)return false;
       const bar=point=>({time:point.time,open:point.open,high:point.high,low:point.low,close:point.close});
       return state.barCount===expected.canonical.length&&JSON.stringify(data.canonical)===JSON.stringify(expected.canonical)
         &&JSON.stringify(data.display.map(bar))===JSON.stringify(expected.canonical);
-    },{symbol,timeframe,intervalSeconds},{timeout:15000});
+    },{symbol,timeframe,intervalSeconds,expected},{timeout:Math.max(1,deadline-Date.now())});
     await frames();
     const current=await save(symbol+'-'+timeframe);
-    const expected=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.filter(item=>item.symbol===symbol&&item.timeframe===timeframe).at(-1);
-    check(matchesCompletedSeries(current,expected,{symbol,intervalSeconds}),'Full context, canonical and displayed bars match after a rendering opportunity: '+symbol+' '+timeframe);
-    check(current.state.canvasIds.length>0&&current.state.bounds.width>0&&current.state.bounds.height>0,'Real visible canvas: '+symbol+' '+timeframe);
+    const latestExpected=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.filter(item=>item.symbol===symbol&&item.timeframe===timeframe).at(-1);
+    check(matchesCompletedSeries(current,latestExpected,{symbol,intervalSeconds}),'Full context, canonical and displayed bars match after a rendering opportunity: '+symbol+' '+timeframe);
+    check(current.state.canvasIds.length>0&&current.state.bounds.width>0&&current.state.bounds.height>0,'Mounted canvas has dimensions: '+symbol+' '+timeframe);
     return current;
   };
   try {
@@ -58,6 +75,7 @@ async page => {
     report.executedBuildId=await page.evaluate(()=>window.__arxScannerQaBuildId);
     check(matchesExecutedBuild(report.executedBuildId,report.build),'Executed fixture build matches fetched metadata');
     check(report.build.minified&&report.build.productionRuntimeChecked&&report.build.sourceUnchanged&&!report.build.source.status,'Clean unchanged production fixture source');
+    check(report.build.dashboardUtilityCss?.source==='artifacts/trading-dashboard/src','Build checked real dashboard utility CSS');
     if(typeof SCANNER_QA_EXPECTED_COMMIT==='string')check(report.build.source.head===SCANNER_QA_EXPECTED_COMMIT,'Build matches requested commit');
     const panel=page.getByTestId('scanner-chart-panel');
     check(await panel.getByTestId('arx-native-chart').count()===1,'Scanner owns exactly one shared Smart Chart');
@@ -65,7 +83,10 @@ async page => {
     check(await page.locator('iframe,embed,object,script[src*="tradingview.com"]').count()===0,'No embedded chart or TradingView widget');
     await panel.getByTestId('arx-native-tf-M15').click();
     const initial=await waitSeries('EURUSD','M15',900);
-    await panel.scrollIntoViewIfNeeded();await screenshot('desktop');
+    await panel.getByTestId('arx-native-canvas').scrollIntoViewIfNeeded();await frames();
+    report.desktopPlotIntersection=await panel.getByTestId('arx-native-canvas').evaluate(element=>{const b=element.getBoundingClientRect();return{width:Math.max(0,Math.min(b.right,innerWidth)-Math.max(b.left,0)),height:Math.max(0,Math.min(b.bottom,innerHeight)-Math.max(b.top,0))};});
+    check(report.desktopPlotIntersection.width>=100&&report.desktopPlotIntersection.height>=100,'Desktop screenshot has a chart viewport intersection of at least 100 by 100 pixels');
+    await screenshot('desktop');
     const pick=async symbol=>{
       const selected=page.getByTestId('selected-market-panel');
       const chip=selected.getByTestId('chip-symbol-'+symbol);
@@ -145,12 +166,13 @@ async page => {
       report.network=await page.evaluate(()=>window.__readFixtureLog());
       const writes=report.network.blocked.filter(x=>x.kind==='mutation');
       report.blockedBackgroundRequests=writes.filter(x=>classifyWrite(x)==='background');
+      report.blockedAnalysisRequests=writes.filter(x=>classifyWrite(x)==='analysis');
       report.tradeRequests=writes.filter(x=>classifyWrite(x)==='trade');
       report.unclassifiedWriteRequests=writes.filter(x=>classifyWrite(x)==='unclassified');
       const external=report.network.blocked.filter(x=>x.kind==='external'||x.kind==='websocket');
       if(report.tradeRequests.length||report.unclassifiedWriteRequests.length||external.length||report.network.errors.length){report.passed=false;report.networkFailure={tradeRequests:report.tradeRequests,unclassifiedWriteRequests:report.unclassifiedWriteRequests,external,pageErrors:report.network.errors};}
       report.noTradeRequests=report.tradeRequests.length===0;
-      report.noWritesBeyondKnownBackground=report.tradeRequests.length===0&&report.unclassifiedWriteRequests.length===0;
+      report.noWritesBeyondKnownNonTradingRequests=report.tradeRequests.length===0&&report.unclassifiedWriteRequests.length===0;
       report.allMutationRequestsBlocked=writes.every(x=>x.status===503)&&report.network.requests.filter(x=>x.method!=='GET').every(x=>x.status===503);
       if(!report.allMutationRequestsBlocked)report.passed=false;
     }catch(error){report.passed=false;report.logFailure=String(error);}
