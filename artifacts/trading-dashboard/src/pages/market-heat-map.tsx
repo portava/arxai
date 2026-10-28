@@ -143,6 +143,15 @@ function humanizeBroadVerdict(verdict: string): string {
 
 // ── Shared small components ─────────────────────────────────────────────────
 
+// A read with no current candles was not measured: the server fails it closed
+// with a placeholder grade "F" and fills heat / tradeability / edge / danger /
+// trap / room / pressure from session constants. Those are not readings of the
+// market, so no tab prints them as numbers.
+const NOT_MEASURED = "Not measured";
+function isMeasuredRead(r: MarketTimingRead): boolean {
+  return r.dataQuality?.hasCandleData === true;
+}
+
 function ScoreBar({ label, score, tooltip }: { label: string; score: number; tooltip?: string }) {
   return (
     <div className="space-y-1" title={tooltip}>
@@ -214,6 +223,7 @@ export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | u
   if (isLoading) return <TimingLoadingSkeleton />;
   if (!data) return <HonestEmpty message={`No timing data available for ${symbol || "the selected symbol"}.`} />;
 
+  const measured = isMeasuredRead(data);
   const biasIcon =
     data.pressureBias === "BUY" ? <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
     : data.pressureBias === "SELL" ? <TrendingDown className="h-3.5 w-3.5 text-rose-400" />
@@ -222,7 +232,7 @@ export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | u
   return (
     <div className="space-y-4">
       {/* Heat summary hero card */}
-      <Card className={cn("border", heatBg(data.heatScore))}>
+      <Card className={cn("border", measured ? heatBg(data.heatScore) : "border-border")}>
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2 flex-wrap">
             <div>
@@ -232,7 +242,7 @@ export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | u
                 <span className="text-muted-foreground font-normal text-sm">· {data.timeframe}</span>
               </CardTitle>
               <CardDescription className="mt-0.5">
-                {data.heatState}
+                {measured ? data.heatState : "Heat not measured — no current candles"}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -251,27 +261,29 @@ export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | u
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="text-4xl font-bold tabular-nums">{Math.round(data.heatScore)}</div>
+            <div className="text-4xl font-bold tabular-nums">{measured ? Math.round(data.heatScore) : "—"}</div>
             <div className="flex flex-col gap-1 text-xs text-muted-foreground">
               <span>Heat score (0–100)</span>
-              <span>{humanizeMoveStage(data.moveStage)}</span>
+              <span>{measured ? humanizeMoveStage(data.moveStage) : "Scores below were not measured: no current candles for this read."}</span>
             </div>
           </div>
 
           {/* Separated scores */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <ScorePill label="Tradeability" value={Math.round(data.tradeabilityScore)} />
-            <ScorePill label="Edge" value={Math.round(data.edgeScore)} />
-            <ScorePill label="Danger" value={Math.round(data.dangerScore)} cls="border-rose-500/20" />
-            <ScorePill label="Trap prob." value={formatScorePct(data.trapProbability)} />
-            <ScorePill label="Room to move" value={Math.round(data.roomToMove)} />
+            <ScorePill label="Tradeability" value={measured ? Math.round(data.tradeabilityScore) : NOT_MEASURED} />
+            <ScorePill label="Edge" value={measured ? Math.round(data.edgeScore) : NOT_MEASURED} />
+            <ScorePill label="Danger" value={measured ? Math.round(data.dangerScore) : NOT_MEASURED} cls="border-rose-500/20" />
+            <ScorePill label="Trap prob." value={measured ? formatScorePct(data.trapProbability) : NOT_MEASURED} />
+            <ScorePill label="Room to move" value={measured ? Math.round(data.roomToMove) : NOT_MEASURED} />
             <ScorePill
               label="Pressure"
               value={
-                <span className="flex items-center gap-1">
-                  {biasIcon}
-                  {data.pressureBias === "BUY" ? "Buyers" : data.pressureBias === "SELL" ? "Sellers" : "Neutral"}
-                </span>
+                measured ? (
+                  <span className="flex items-center gap-1">
+                    {biasIcon}
+                    {data.pressureBias === "BUY" ? "Buyers" : data.pressureBias === "SELL" ? "Sellers" : "Neutral"}
+                  </span>
+                ) : NOT_MEASURED
               }
             />
           </div>
@@ -302,11 +314,19 @@ export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | u
           <CardTitle className="text-sm">Score Breakdown</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <ScoreBar label="Heat" score={data.heatScore} />
-          <ScoreBar label="Tradeability" score={data.tradeabilityScore} />
-          <ScoreBar label="Edge" score={data.edgeScore} />
-          <ScoreBar label="Danger" score={data.dangerScore} tooltip="Higher = more dangerous" />
-          <ScoreBar label="Room to move" score={data.roomToMove} />
+          {measured ? (
+            <>
+              <ScoreBar label="Heat" score={data.heatScore} />
+              <ScoreBar label="Tradeability" score={data.tradeabilityScore} />
+              <ScoreBar label="Edge" score={data.edgeScore} />
+              <ScoreBar label="Danger" score={data.dangerScore} tooltip="Higher = more dangerous" />
+              <ScoreBar label="Room to move" score={data.roomToMove} />
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground" data-testid="score-breakdown-unmeasured">
+              Not measured — no current candles for {data.symbol}, so no score was computed from the market.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -513,7 +533,7 @@ export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefin
 
 // ── Tab: By Symbol ─────────────────────────────────────────────────────────
 
-function BySymbolTab({ results, isLoading, selectedSymbol }: { results: MarketTimingRead[]; isLoading: boolean; selectedSymbol: string }) {
+export function BySymbolTab({ results, isLoading, selectedSymbol }: { results: MarketTimingRead[]; isLoading: boolean; selectedSymbol: string }) {
   if (isLoading) return <TimingLoadingSkeleton />;
   if (results.length === 0) return <HonestEmpty message="No timing data available. Multi-symbol reads require a connected market data provider." />;
 
@@ -525,6 +545,7 @@ function BySymbolTab({ results, isLoading, selectedSymbol }: { results: MarketTi
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {results.map((r) => {
           const isSelected = r.symbol === selectedSymbol;
+          const measured = isMeasuredRead(r);
           return (
             <Card
               key={r.symbol}
@@ -542,21 +563,27 @@ function BySymbolTab({ results, isLoading, selectedSymbol }: { results: MarketTi
                   </div>
                   <div className="flex items-center gap-1">
                     <DataQualityBadge label={r.dataQuality.label} />
-                    <Badge variant="outline" className={cn("text-[10px]", gradeColor(r.timingGrade))}>
-                      {r.timingGrade}
-                    </Badge>
+                    {measured ? (
+                      <Badge variant="outline" className={cn("text-[10px]", gradeColor(r.timingGrade))}>
+                        {r.timingGrade}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] text-zinc-400 border-zinc-500/30" data-testid={`symbol-grade-unmeasured-${r.symbol}`}>
+                        Not graded
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2.5">
-                <div className={cn("rounded-md border p-2 flex items-center justify-between", heatBg(r.heatScore))}>
-                  <div className="text-xs text-muted-foreground">{r.heatState}</div>
-                  <div className="text-xl font-bold tabular-nums">{Math.round(r.heatScore)}</div>
+                <div className={cn("rounded-md border p-2 flex items-center justify-between", measured ? heatBg(r.heatScore) : "border-border")}>
+                  <div className="text-xs text-muted-foreground">{measured ? r.heatState : "No current candles — timing not measured"}</div>
+                  <div className="text-xl font-bold tabular-nums">{measured ? Math.round(r.heatScore) : "—"}</div>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5 text-[10px] text-muted-foreground text-center">
-                  <ScorePill label="Edge" value={Math.round(r.edgeScore)} />
-                  <ScorePill label="Danger" value={Math.round(r.dangerScore)} />
-                  <ScorePill label="Trade" value={Math.round(r.tradeabilityScore)} />
+                  <ScorePill label="Edge" value={measured ? Math.round(r.edgeScore) : "—"} />
+                  <ScorePill label="Danger" value={measured ? Math.round(r.dangerScore) : "—"} />
+                  <ScorePill label="Trade" value={measured ? Math.round(r.tradeabilityScore) : "—"} />
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className={cn("inline-flex items-center gap-1 rounded border px-2 py-0.5 font-medium", actionColor(r.bestAction))}>

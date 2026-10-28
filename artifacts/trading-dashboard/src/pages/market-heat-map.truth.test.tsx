@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, within, act } from "@testing-library/react";
 import type { MarketTimingRead } from "@workspace/api-client-react";
-import { BySessionTab, TodayTab, NowTab, NewsHeatTab, SessionCard, TimingReadClock } from "./market-heat-map";
+import { BySessionTab, BySymbolTab, TodayTab, NowTab, NewsHeatTab, SessionCard, TimingReadClock } from "./market-heat-map";
 
 afterEach(() => {
   cleanup();
@@ -108,6 +108,35 @@ describe("Unmeasured timing reads (no candles, no quote)", () => {
     render(<NowTab data={makeRead({ dataQuality: UNMEASURED_DQ, timingGrade: "F", entryPermission: "STAND_DOWN" })} isLoading={false} symbol="EURUSD" />);
     expect(screen.queryByText(/^Grade /)).toBeNull();
     expect(screen.getByTestId("timing-grade-unmeasured")).toBeTruthy();
+  });
+
+  // The same no-candle read on the sibling tab: the server's "F" is a
+  // fail-closed stand-in, and heat / edge / danger / tradeability come from
+  // session constants, so none of them is a measured number.
+  const unmeasured = () => makeRead({
+    dataQuality: UNMEASURED_DQ, timingGrade: "F", entryPermission: "STAND_DOWN",
+    heatScore: 37, edgeScore: 41, dangerScore: 23, tradeabilityScore: 52, trapProbability: 44, roomToMove: 61,
+  });
+
+  it("By Symbol does not print the placeholder F or session-constant scores as measured", () => {
+    render(<BySymbolTab results={[unmeasured()]} isLoading={false} selectedSymbol="EURUSD" />);
+    expect(screen.queryByText(/^F$/)).toBeNull();
+    expect(screen.getByTestId("symbol-grade-unmeasured-EURUSD").textContent).toMatch(/Not graded/);
+    for (const n of ["37", "41", "23", "52"]) expect(screen.queryByText(n)).toBeNull();
+  });
+
+  it("By Symbol still shows a measured read's grade and scores", () => {
+    render(<BySymbolTab results={[makeRead({ heatScore: 37, edgeScore: 41 })]} isLoading={false} selectedSymbol="EURUSD" />);
+    expect(screen.getByText("B")).toBeTruthy();
+    expect(screen.getByText("37")).toBeTruthy();
+    expect(screen.getByText("41")).toBeTruthy();
+  });
+
+  it("Now tab does not print session-constant scores as measured numbers", () => {
+    render(<NowTab data={unmeasured()} isLoading={false} symbol="EURUSD" />);
+    for (const n of ["37", "41", "23", "52", "61", "44%"]) expect(screen.queryByText(n)).toBeNull();
+    expect(screen.queryByText("Neutral")).toBeNull();
+    expect(screen.getAllByText(/not measured/i).length).toBeGreaterThan(0);
   });
 
   it("Today's Symbol Heat marks an estimate row with its data-quality badge", () => {
