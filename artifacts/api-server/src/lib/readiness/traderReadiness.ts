@@ -87,8 +87,12 @@ export interface GovernorEvaluation {
   scopeUserId: number | null;
   governor_id: string;
   evaluated_at: string;
+  /** Fixed label of this paper-practice read model (also stored on each evaluation row); not the platform's or the account's live state. */
   mode: "PAPER_ONLY";
+  /** Fixed label of this read model, not whether live trading is on — see liveTradingStatusScope. */
   liveTradingStatus: "DISABLED";
+  /** Plain statement of what mode / liveTradingStatus / liveTradingAllowed describe and what they do not. */
+  liveTradingStatusScope: string;
   overallStatus: OverallStatus;
   paperTradingAllowed: boolean;
   autopilotAllowed: boolean;
@@ -550,6 +554,16 @@ export interface EvaluateOpts {
   userId?: number | null;
 }
 
+/**
+ * What the readiness constants mean. The read model scores paper practice and
+ * never reads live-trading state, so mode "PAPER_ONLY", liveTradingStatus
+ * "DISABLED", liveTradingAllowed false and canPlaceLiveTrade false are its own
+ * fixed labels. They are kept (they are stored on every evaluation row) and
+ * this says what they cover.
+ */
+export const GOVERNOR_LIVE_STATUS_SCOPE =
+  "mode, liveTradingStatus, liveTradingAllowed and allowedActions.canPlaceLiveTrade are fixed labels of this readiness score, which rates paper practice and cannot authorise or refuse any order. They are not whether live trading is on: each account's live-trading status is on its Trading Permission card.";
+
 export async function evaluateReadiness(opts: EvaluateOpts = {}): Promise<GovernorEvaluation> {
   const log = opts.log ?? defaultLog();
   const governorId = opts.governorId ?? `gov_${randomUUID()}`;
@@ -581,6 +595,7 @@ export async function evaluateReadiness(opts: EvaluateOpts = {}): Promise<Govern
     evaluated_at: startedAt.toISOString(),
     mode: "PAPER_ONLY",
     liveTradingStatus: "DISABLED",
+    liveTradingStatusScope: GOVERNOR_LIVE_STATUS_SCOPE,
     overallStatus: status,
     paperTradingAllowed: allowedActions.canOpenPaperTrade,
     autopilotAllowed: allowedActions.canRunPaperAutopilot,

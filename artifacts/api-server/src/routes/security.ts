@@ -10,6 +10,7 @@ import { readRoleFromRequest, requireAdmin } from "../lib/security/middleware.js
 import { getSettings, patchSettings } from "../lib/security/settings.js";
 import { listEvents, listAccessLogs, recordSecurityEvent, recordAccessLog, repeatedDeniedCount } from "../lib/security/events.js";
 import { redactionSelfTest, scrub } from "../lib/security/redact.js";
+import { readPlatformLivePosture } from "../lib/systemHealth/platformLivePosture.js";
 
 const router: IRouter = Router();
 
@@ -22,6 +23,14 @@ const ENVELOPE = {
 };
 
 function envelope<T extends object>(payload: T) { return { ...ENVELOPE, ...payload }; }
+
+// The security report's appMode / liveTradingStatus (and the envelope's
+// liveTradingStatus / mode / canPlaceLiveTrade) are fixed labels of this
+// security module; it never reads live-trading state. The status responses
+// say so and carry the platform live-execution switch as read for the
+// response (UNKNOWN when unreadable). Describes only; no gate reads it.
+const LIVE_STATUS_SCOPE =
+  "appMode and liveTradingStatus here are fixed labels of this security module, which cannot enable live trading. They are not whether live trading is on: livePosture is the platform's live-execution switch, and each account's status is on its Trading Permission card.";
 
 async function denyResponse(req: Request, res: Response, role: string, permissionKey: string, reason: string, forbidden = false) {
   const sev: "WARNING" | "CRITICAL" = forbidden ? "CRITICAL" : "WARNING";
@@ -50,13 +59,13 @@ router.get("/security/status", async (_req, res) => {
   await seedSecurity();
   const status = await buildSecurityStatus();
   const settings = await getSettings();
-  res.json(envelope({ status, settings }));
+  res.json(envelope({ status, settings, liveTradingStatusScope: LIVE_STATUS_SCOPE, livePosture: await readPlatformLivePosture() }));
 });
 
 router.post("/security/check", async (_req, res) => {
   await seedSecurity();
   const status = await buildSecurityStatus();
-  res.json(envelope({ status }));
+  res.json(envelope({ status, liveTradingStatusScope: LIVE_STATUS_SCOPE, livePosture: await readPlatformLivePosture() }));
 });
 
 router.get("/security/roles", async (_req, res) => {
