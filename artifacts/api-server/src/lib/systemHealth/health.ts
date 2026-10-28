@@ -99,7 +99,16 @@ export interface PerformanceStatus {
 export interface HealthCheckReport {
   health_check_id: string;
   generated_at: string;
+  /**
+   * HEALTHY means no warning or error was found. It does not mean the
+   * subsystems' service health was measured: see reachabilityOnlySubsystems.
+   */
   overallStatus: "HEALTHY" | "DEGRADED" | "UNSAFE" | "FAILED";
+  /**
+   * Subsystems reported OK whose probe only proved the route answered
+   * (checkScope REACHABILITY_ONLY): their service health was not checked.
+   */
+  reachabilityOnlySubsystems: SubsystemBuild[];
   /**
    * Legacy constants (also persisted): they name the paper stack this report
    * covers, NOT the platform's live-trading state. See liveTradingStatusScope
@@ -452,7 +461,14 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
   if (criticalUnread !== null && criticalUnread > 0)
     recommendedAdminActions.push(`Acknowledge ${criticalUnread} unread CRITICAL notification(s)`);
   if (subsystemStatus.FF.status === "OK") recommendedAdminActions.push("Stop autopilot before next session if not in use");
-  const HEALTHY_ACTION = "System healthy — no admin action required";
+  // An OK from an HTTP probe only proves reachability, so "System healthy"
+  // is said only when no subsystem's OK rests on reachability alone.
+  const reachabilityOnlySubsystems = (Object.keys(subsystemStatus) as SubsystemBuild[])
+    .filter((b) => subsystemStatus[b].status === "OK" && subsystemStatus[b].checkScope === REACHABILITY);
+  const totalSubsystems = Object.keys(subsystemStatus).length;
+  const HEALTHY_ACTION = reachabilityOnlySubsystems.length === 0
+    ? "System healthy — no admin action required"
+    : `No problems found, so no admin action is flagged. ${reachabilityOnlySubsystems.length} of ${totalSubsystems} subsystems (${reachabilityOnlySubsystems.join(", ")}) were only checked for reachability; their service health was not checked.`;
   if (warnings.length === 0 && errors.length === 0) recommendedAdminActions.push(HEALTHY_ACTION);
 
   // Overall — derived from the SAME warnings/errors the report carries, and
@@ -469,7 +485,7 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
 
   const livePosture = await readPlatformLivePosture();
   const report: HealthCheckReport = {
-    health_check_id: id, generated_at, overallStatus,
+    health_check_id: id, generated_at, overallStatus, reachabilityOnlySubsystems,
     liveTradingStatus: "DISABLED", mode: "PAPER_ONLY",
     liveTradingStatusScope: LIVE_STATUS_SCOPE,
     livePosture,

@@ -7,6 +7,7 @@ type Subsys = { status: string; checkScope?: "REACHABILITY_ONLY" | "IN_PROCESS";
 type Report = {
   health_check_id: string; generated_at: string;
   overallStatus: "HEALTHY"|"DEGRADED"|"UNSAFE"|"FAILED";
+  reachabilityOnlySubsystems?: string[];
   liveTradingStatus: string; mode: string;
   subsystemStatus: Record<string, Subsys>;
   databaseStatus: { connected: boolean; missingTables: string[]; rowCounts: Record<string, number> };
@@ -20,6 +21,25 @@ type Report = {
 /** "OK" from an HTTP probe only means the route answered — say exactly that. */
 export function subsystemBadgeLabel(v: Pick<Subsys, "status" | "checkScope">): string {
   return v.status === "OK" && v.checkScope === "REACHABILITY_ONLY" ? "Reachable" : v.status;
+}
+
+/**
+ * The Overall card. HEALTHY only means no warning or error was found; when a
+ * subsystem's OK rests on a reachability probe alone, its service health was
+ * not checked, so the card does not say HEALTHY. Downgrade-only: derived from
+ * the subsystems' own checkScope, so it also holds for an older report.
+ */
+export function overallLabel(r: Pick<Report, "overallStatus" | "subsystemStatus">): { label: string; note: string | null } {
+  if (r.overallStatus !== "HEALTHY") return { label: r.overallStatus, note: null };
+  const all = Object.values(r.subsystemStatus ?? {});
+  const reach = Object.entries(r.subsystemStatus ?? {})
+    .filter(([, v]) => v.status === "OK" && v.checkScope === "REACHABILITY_ONLY")
+    .map(([k]) => k);
+  if (reach.length === 0) return { label: "HEALTHY", note: null };
+  return {
+    label: "No problems found",
+    note: `${reach.length} of ${all.length} subsystems (${reach.join(", ")}) were only checked for reachability; their service health was not checked.`,
+  };
 }
 
 /** A scan that did not run is "not checked", never "true". Downgrade-only. */
@@ -90,7 +110,17 @@ export default function SystemHealthPage() {
       {report && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Card><CardHeader><CardTitle className="text-xs">Overall</CardTitle></CardHeader><CardContent><Badge variant={tone(report.overallStatus)}>{report.overallStatus}</Badge></CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Overall</CardTitle></CardHeader><CardContent data-testid="system-health-overall">
+              {(() => {
+                const o = overallLabel(report);
+                return (
+                  <>
+                    <Badge variant={o.note ? "outline" : tone(report.overallStatus)}>{o.label}</Badge>
+                    {o.note && <div className="mt-1 text-xs text-muted-foreground">{o.note}</div>}
+                  </>
+                );
+              })()}
+            </CardContent></Card>
             <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent>
               <Badge variant="outline" data-testid="system-health-live-trading">Not checked by this report</Badge>
             </CardContent></Card>
