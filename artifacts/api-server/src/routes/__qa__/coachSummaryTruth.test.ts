@@ -63,3 +63,31 @@ test("confidence calibration is not claimed from a hard-coded constant", async (
   const s = await coach(journal(rows));
   assert.doesNotMatch(String(s["confidenceCalibration"]), /aligns with win rate within/);
 });
+
+test("one profitable strategy is not also 'worst', and gets no 'Stop trading' advice", async () => {
+  const s = await coach(journal([{ pnl: 10 }, { pnl: 5 }, { pnl: 2 }]));
+  assert.equal(s["bestStrategy"], "Trend Continuation");
+  assert.equal(s["worstStrategy"], null);
+  assert.equal(s["bestSymbol"], "EURUSD");
+  assert.equal(s["weakestSymbol"], null);
+  assert.doesNotMatch(String(s["recommendedFocus"]), /Stop trading/);
+});
+
+test("a strategy with no recorded outcomes is not ranked as 'best' (null P&L is not 0)", async () => {
+  const s = await coach(journal([
+    { strategy: "Mean Reversion", symbol: "GBPUSD", pnl: null }, { strategy: "Mean Reversion", symbol: "GBPUSD", pnl: null },
+    { strategy: "Breakout", symbol: "XAUUSD", pnl: -4 },
+  ]));
+  assert.equal(s["bestStrategy"], null);
+  assert.equal(s["bestSymbol"], null);
+  assert.equal(s["worstStrategy"], "Breakout");
+  assert.equal(s["weakestSymbol"], "XAUUSD");
+  assert.match(String(s["recommendedFocus"]), /Stop trading "Breakout"/);
+});
+
+test("all strategies losing: no 'best' strategy is named", async () => {
+  const s = await coach(journal([{ pnl: -3 }, { pnl: -2 }]));
+  assert.equal(s["bestStrategy"], null);
+  assert.equal(s["bestSymbol"], null);
+  assert.equal(s["worstStrategy"], "Trend Continuation");
+});

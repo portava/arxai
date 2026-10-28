@@ -273,18 +273,25 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
     const bySymbol = new Map<string, number>();
     const byStrategy = new Map<string, number>();
     const byMistake = new Map<string, number>();
+    // Rank on recorded results only — a missing P&L is unknown, not 0.
+    for (const j of outcomes) {
+      bySymbol.set(j.symbol, (bySymbol.get(j.symbol) ?? 0) + j.pnl);
+      byStrategy.set(j.strategy, (byStrategy.get(j.strategy) ?? 0) + j.pnl);
+    }
     for (const j of journal) {
-      bySymbol.set(j.symbol, (bySymbol.get(j.symbol) ?? 0) + (j.pnl ?? 0));
-      byStrategy.set(j.strategy, (byStrategy.get(j.strategy) ?? 0) + (j.pnl ?? 0));
       if (j.mistakeTag) byMistake.set(j.mistakeTag, (byMistake.get(j.mistakeTag) ?? 0) + 1);
     }
     const sorted = (m: Map<string, number>, asc = false) =>
       Array.from(m.entries()).sort((a, b) => asc ? a[1] - b[1] : b[1] - a[1]);
+    // "Best" must be net profitable and "worst" net losing, so one key is
+    // never both, and a profitable strategy is never told to stop.
+    const bestOf = (m: Map<string, number>) => { const top = sorted(m)[0]; return top && top[1] > 0 ? top[0] : null; };
+    const worstOf = (m: Map<string, number>) => { const low = sorted(m, true)[0]; return low && low[1] < 0 ? low[0] : null; };
 
-    const bestStrat = sorted(byStrategy)[0]?.[0] ?? null;
-    const worstStrat = sorted(byStrategy, true)[0]?.[0] ?? null;
-    const bestSym = sorted(bySymbol)[0]?.[0] ?? null;
-    const worstSym = sorted(bySymbol, true)[0]?.[0] ?? null;
+    const bestStrat = bestOf(byStrategy);
+    const worstStrat = worstOf(byStrategy);
+    const bestSym = bestOf(bySymbol);
+    const worstSym = worstOf(bySymbol);
     const topMistake = sorted(byMistake)[0]?.[0] ?? "none";
 
     return res.json({
@@ -304,7 +311,7 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       mostCommonMistake: topMistake,
       recommendedFocus: worstStrat
         ? `Stop trading "${worstStrat}" until you can show 5 paper wins on it in replay.`
-        : "Pick one strategy and run 10 replays before taking any live intent.",
+        : "No strategy shows a net loss in your recorded results. Pick one strategy and run 10 replays before taking any live intent.",
       suggestedRuleChanges: [
         "Require setupQualityScore >= 70 before generating a card.",
         "Reject trades when marketBias is 'choppy'.",
