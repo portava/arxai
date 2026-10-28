@@ -3,7 +3,7 @@ import { FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageShell, SectionHeader } from "@/components/ss/PageShell";
-import { StatusPill } from "@/components/ss/StatusPill";
+import { StatusPill, type StatusKind } from "@/components/ss/StatusPill";
 import { LoadingState, EmptyState, ErrorState } from "@/components/ss/States";
 
 interface Scenario {
@@ -24,6 +24,22 @@ interface RunResult {
     mistake_patterns: { tag: string; count: number; note: string }[];
     should_promote_to_playbook: boolean; should_mark_for_review: boolean;
   };
+}
+
+// The engine returns COMPLETED, STOPPED or FAILED (upper case). Map each to a
+// pill whose icon and accessible label match the text shown; anything
+// unrecognised is disclosed as unknown, never as a finished run.
+function runStatusPill(status: string): { kind: StatusKind; label: string; ariaLabel: string } {
+  const raw = (status ?? "").trim();
+  switch (raw.toUpperCase()) {
+    case "COMPLETED": return { kind: "ACTIVE", label: "COMPLETED", ariaLabel: "status: completed" };
+    case "STOPPED": return { kind: "PAUSED", label: "STOPPED", ariaLabel: "status: stopped" };
+    case "FAILED": return { kind: "BLOCKED", label: "FAILED", ariaLabel: "status: failed" };
+    default: {
+      const shown = raw === "" ? "UNKNOWN" : raw.toUpperCase();
+      return { kind: "INACTIVE", label: shown, ariaLabel: `status: unknown (${raw === "" ? "none reported" : raw})` };
+    }
+  }
 }
 
 export default function ReplaySimulator() {
@@ -124,8 +140,26 @@ export default function ReplaySimulator() {
             <SectionHeader
               title="Replay Result"
               description="Simulation only — these numbers do not reflect live trading and do not guarantee future performance."
-              actions={<StatusPill status={result.status === "OK" || result.status === "completed" ? "ACTIVE" : "PAUSED"} label={result.status.toUpperCase()} />}
+              actions={(() => { const pill = runStatusPill(result.status); return <StatusPill status={pill.kind} label={pill.label} ariaLabel={pill.ariaLabel} />; })()}
             />
+            {["FAILED", "STOPPED"].includes((result.status ?? "").toUpperCase()) && (
+              <p className="text-xs text-amber-600" data-testid="replay-partial-note">
+                This replay did not finish: it covers {result.candles_processed} of {scn?.scenarioId === result.scenario_id ? scn.candleCount : "the scenario's"} candles. The numbers below are partial.
+              </p>
+            )}
+            {!["COMPLETED", "FAILED", "STOPPED"].includes((result.status ?? "").toUpperCase()) && (
+              <p className="text-xs text-amber-600" data-testid="replay-partial-note">
+                The server reported a status this page does not recognise, so it cannot confirm the replay finished.
+              </p>
+            )}
+            {(result.errors ?? []).length > 0 && (
+              <ErrorState title="Replay error" description={(result.errors ?? []).join(" · ")} />
+            )}
+            {(result.warnings ?? []).length > 0 && (
+              <ul className="text-xs text-amber-600 list-disc pl-5 space-y-0.5" data-testid="replay-warnings">
+                {(result.warnings ?? []).map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-sm">
               <Stat label="Candles" value={result.candles_processed} />
               <Stat label="Decisions" value={result.decisions_created} />
