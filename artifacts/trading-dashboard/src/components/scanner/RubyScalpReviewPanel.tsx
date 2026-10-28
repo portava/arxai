@@ -41,9 +41,11 @@ function resultBadge(entry: ScalpJournalEntry): { label: string; tone: string; i
   }
 }
 
-// Outcome P/L line — honest about what we actually know. KNOWN = the broker's
-// realised number; ESTIMATED = our last observed floating figure; UNKNOWN =
-// we never got a trustworthy close figure (common on the demo path).
+// Outcome P/L line — honest about what we actually know. KNOWN is reserved
+// for a broker-reported realised number, which the server does not record
+// today; ESTIMATED = the last floating reading of every leg (the server sends
+// this for every closed scalp it can estimate); UNKNOWN = no reading covered
+// every leg, so there is no trustworthy close figure.
 function plLine(entry: ScalpJournalEntry): { text: string; tone: string; note: string | null } {
   if (entry.plQuality === "KNOWN" && entry.realizedPl != null) {
     const tone = entry.realizedPl > 0 ? "text-success" : entry.realizedPl < 0 ? "text-danger" : "text-muted-foreground";

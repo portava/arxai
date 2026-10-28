@@ -9,10 +9,11 @@
 //    from another user is ever read or returned.
 //  - Additive only: this module records what already happened. It NEVER places,
 //    modifies, sizes or closes an order, and never touches trade/order/position
-//    truth tables (it only READS arx_live_positions to confirm realized P/L).
-//  - No fabrication: realized P/L is KNOWN only when matched to a broker-closed
-//    position; otherwise ESTIMATED (last floating) or UNKNOWN. We never invent a
-//    number or a margin.
+//    truth tables (it only READS arx_live_positions for each leg's last reading).
+//  - No fabrication: no broker-realised P/L is recorded, so a closed scalp's
+//    P/L is ESTIMATED (the last floating readings of every leg) or UNKNOWN.
+//    KNOWN is reserved for a broker-reported realised figure. We never invent
+//    a number or a margin.
 //  - Learning only ever TIGHTENS (qualityBias ≤ 0, minQualityDelta ≥ 0).
 
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
@@ -31,6 +32,7 @@ import {
   deriveReview,
   findContinuedEntry,
   higherUrgency,
+  storedLegTickets,
   unionLegTickets,
   EMPTY_PERSONALITY_COUNTS,
   type JournalEntrySnapshot,
@@ -202,37 +204,45 @@ async function finalizeClosedEntry(
   row: ScalpJournalEntry,
   now: Date,
 ): Promise<void> {
-  // Authoritative realized P/L for LIVE: sum broker-closed positions matched by
-  // ticket. DEMO has no persistent closed store → estimate from last floating.
-  let realizedPl: number | null = null;
+  // No broker-realised P/L is recorded anywhere: the closing paths only stamp
+  // closedAt on arx_live_positions, so its floatingPl is the last floating
+  // reading the bridge sent for that leg (no commission/swap, possibly
+  // minutes old). Every figure here is therefore an ESTIMATE, never KNOWN.
+  //  - LIVE: when every leg ticket has a closed ledger row with a reading,
+  //    the estimate is the sum of those last readings (it covers legs that
+  //    closed early, and is usually newer than the journal's last poll).
+  //  - Otherwise the journal's last floating reading, but only when it
+  //    covered every leg: once a leg closed while the scalp stayed open, that
+  //    reading misses it and the result is UNKNOWN.
+  const tickets = storedLegTickets(row.legTickets);
+  const legsClosedEarly = tickets.length > row.entryCount;
+  let ledgerReading: number | null = null;
   let exitPrice: number | null = null;
-  if (accountMode === "LIVE_SHARED") {
-    const tickets = Array.isArray(row.legTickets) ? (row.legTickets as unknown[]).map(String) : [];
-    if (tickets.length > 0) {
-      const closed = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          inArray(livePositionColumns.brokerTicket, tickets),
-          isNotNull(livePositionColumns.closedAt),
-        ),
-      });
-      if (closed.length > 0) {
-        let sum = 0;
-        let any = false;
-        for (const c of closed) {
-          if (c.floatingPl != null && Number.isFinite(Number(c.floatingPl))) {
-            sum += Number(c.floatingPl);
-            any = true;
-          }
-          if (c.currentPrice != null) exitPrice = Number(c.currentPrice);
-        }
-        if (any) realizedPl = sum;
-      }
+  if (accountMode === "LIVE_SHARED" && tickets.length > 0) {
+    const closed = await livePositionLedger.read({
+      where: and(
+        eq(livePositionColumns.userId, userId),
+        inArray(livePositionColumns.brokerTicket, tickets),
+        isNotNull(livePositionColumns.closedAt),
+      ),
+    });
+    const readings = new Map<string, number>();
+    for (const c of closed) {
+      const pl = c.floatingPl != null ? Number(c.floatingPl) : NaN;
+      if (c.brokerTicket != null && Number.isFinite(pl)) readings.set(String(c.brokerTicket), pl);
+      if (c.currentPrice != null) exitPrice = Number(c.currentPrice);
+    }
+    if (tickets.every((t) => readings.has(t))) {
+      ledgerReading = tickets.reduce((sum, t) => sum + readings.get(t)!, 0);
     }
   }
 
-  const lastFloatingPl = row.lastFloatingPl != null ? Number(row.lastFloatingPl) : null;
-  const { result, plQuality } = deriveResult({ realizedPl, lastFloatingPl });
+  const storedLast = row.lastFloatingPl != null ? Number(row.lastFloatingPl) : null;
+  const lastFloatingPl = ledgerReading ?? (legsClosedEarly ? null : storedLast);
+  const { result, plQuality } = deriveResult({ realizedPl: null, lastFloatingPl });
+  // The closed scalp's own legs: every ticket it held, not only the last open ones.
+  const entryCount = Math.max(row.entryCount, tickets.length);
+  const addOnCount = Math.max(row.addOnCount, entryCount - 1);
   const flameContinued = row.flameContinued ?? false;
   const review = deriveReview({
     result,
@@ -241,7 +251,7 @@ async function finalizeClosedEntry(
     entryTimingAtEntry: row.entryTimingAtEntry,
     maxExitUrgency: row.maxExitUrgency as ScalpExitUrgency,
     flameContinued,
-    addOnCount: row.addOnCount,
+    addOnCount,
     isSynthetic: row.isSynthetic,
   });
 
@@ -250,7 +260,10 @@ async function finalizeClosedEntry(
     status: "CLOSED",
     result,
     plQuality,
-    realizedPl,
+    realizedPl: null,
+    ...(ledgerReading != null ? { lastFloatingPl: ledgerReading } : {}),
+    entryCount,
+    addOnCount,
     exitPrice: exitPrice ?? row.lastCurrentPrice,
     exitReason: review.exitReason,
     lesson: review.lesson,
@@ -442,6 +455,23 @@ export interface JournalListItem {
 }
 
 function toListItem(r: ScalpJournalEntry): JournalListItem {
+  // Rows finalized before the fix above stored the sum of the legs' last
+  // floating readings as a KNOWN realised P/L. Nothing has ever recorded a
+  // broker-realised figure, so such a row is reported as the estimate it is.
+  // The stored row is not changed.
+  if (r.plQuality === "KNOWN") {
+    const item = toListItemAsStored(r);
+    return {
+      ...item,
+      plQuality: "ESTIMATED",
+      lastFloatingPl: item.realizedPl ?? item.lastFloatingPl,
+      realizedPl: null,
+    };
+  }
+  return toListItemAsStored(r);
+}
+
+function toListItemAsStored(r: ScalpJournalEntry): JournalListItem {
   return {
     id: r.id,
     accountMode: r.accountMode,
