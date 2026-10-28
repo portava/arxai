@@ -129,4 +129,15 @@ describe("My Account — measured figures only", () => {
     expect(screen.getByTestId("trading-status-badge").textContent).toBe("RESTRICTED");
     expect(screen.getByTestId("trading-status-reason").textContent).toMatch(/not enabled trading/);
   });
+
+  it("equity that was not marked to market reads 'Not available' and says why", async () => {
+    stub(shell((s) => {
+      s.allocation.equity = null;
+      s.allocation.equityNote = "Not marked to market: floating P/L of open positions is not read for your account here, so equity is not shown.";
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("my-equity").textContent).toBe("Not available"));
+    expect(screen.getByTestId("my-balance").textContent).toBe("$1,000");
+    expect(screen.getByTestId("my-equity-note").textContent).toMatch(/Not marked to market/);
+  });
 });

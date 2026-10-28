@@ -32,6 +32,7 @@ type ShellResponse = {
     // null = not available / not measured (see balanceNote / marginNote).
     currentBalance: number | null;
     equity: number | null;
+    equityNote?: string;
     marginUsed: number | null;
     balanceSource?: "user_slot_allocation" | "virtual_trading_accounts" | null;
     balanceNote?: string;
@@ -254,9 +255,10 @@ export default function MyAccountPage() {
             testid="my-allocation"
           />
         </CardContent>
-        {(s.allocation.balanceNote || s.allocation.marginNote) && (
+        {(s.allocation.balanceNote || s.allocation.equityNote || s.allocation.marginNote) && (
           <CardContent className="pt-0 text-xs text-txt-secondary space-y-1" data-testid="my-balance-source">
             {s.allocation.balanceNote && <div>{s.allocation.balanceNote}</div>}
+            {s.allocation.equityNote && <div data-testid="my-equity-note">Equity: {s.allocation.equityNote}</div>}
             {s.allocation.marginNote && <div>{s.allocation.marginNote}</div>}
           </CardContent>
         )}

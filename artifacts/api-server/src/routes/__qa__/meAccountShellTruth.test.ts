@@ -11,6 +11,8 @@
 //     everyone else; "Open Exposure" was paper-journal lots for personal MT5.
 //   * The trading-status badge said ACTIVE from the platform mode alone while
 //     the user's own mode was DISABLED or their allocation was frozen.
+//   * "My Equity" equalled My Balance for allocated users: floating P/L of
+//     open positions was never included.
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -220,4 +222,31 @@ test("the badge status is not ACTIVE when the user's own mode is DISABLED or the
   const active = await computeAccountShell(USER, { skipInvestorSnapshot: true });
   assert.equal(active.accountTradingStatus, "ACTIVE");
   assert.match(active.accountTradingStatusReason, /kill switch and risk limits are checked on every order/);
+});
+
+test("allocated user's equity is balance plus live floating P/L, or not shown — never the balance repeated", async () => {
+  platformMode = "LIVE";
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active" }];
+  tables.virtual_trading_accounts = [{ virtualBalance: 1025, virtualEquity: 1025, virtualMarginUsed: 0, virtualPnl: 25, status: "active", sharedMasterAccountId: 3 }];
+  investor = liveSnapshot({ floatingPnL: -40, openTradeCount: 2 });
+
+  const shell = await computeAccountShell(USER);
+  assert.equal(shell.allocation.currentBalance, 1025);
+  assert.notEqual(shell.allocation.equity, shell.allocation.currentBalance);
+  assert.equal(shell.allocation.equity, 985);
+  assert.match(shell.allocation.equityNote, /plus the floating P\/L/);
+
+  // Floating P/L not reported yet: equity is not shown, and the note says why.
+  investor = liveSnapshot({ floatingPnL: null, openTradeCount: 2 });
+  const pending = await computeAccountShell(USER);
+  assert.equal(pending.allocation.equity, null);
+  assert.match(pending.allocation.equityNote, /not reported floating P\/L/);
+
+  // Not in live shared mode: floating P/L is not read, so equity is not marked to market.
+  investor = liveSnapshot({ source: "demo" });
+  const demo = await computeAccountShell(USER);
+  assert.equal(demo.allocation.equity, null);
+  assert.match(demo.allocation.equityNote, /Not marked to market/);
 });

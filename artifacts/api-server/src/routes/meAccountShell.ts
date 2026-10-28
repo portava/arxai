@@ -70,7 +70,12 @@ export type AccountShellResponse = {
     // null = not available: the user has neither an allocation row nor a
     // virtual trading account, so this view has no balance to report.
     currentBalance: number | null;
+    // Balance marked to market: currentBalance + the floating P/L of open
+    // positions from the canonical live snapshot. null when that floating
+    // P/L is not read for this user or not current (equityNote says which)
+    // — never the balance repeated as if nothing were open.
     equity: number | null;
+    equityNote: string;
     // Always null: nothing records margin for this view (the virtual
     // account's margin column is only ever seeded at 0).
     marginUsed: number | null;
@@ -256,7 +261,6 @@ export async function computeAccountShell(
       .where(eq(virtualTradingAccountsTable.userId, userId));
 
     const shellBalance = vAccounts.reduce((s, a) => s + Number(a.virtualBalance || 0), 0);
-    const shellEquity = vAccounts.reduce((s, a) => s + Number(a.virtualEquity || 0), 0);
     const allocatedMargin = vAccounts.reduce((s, a) => s + Number(a.virtualMarginUsed || 0), 0);
     // virtualPnl is realized P/L booked from closed trades (virtualPnlSync).
     const allocatedRealizedPnl = vAccounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0);
@@ -312,9 +316,6 @@ export async function computeAccountShell(
     const allocatedBalance: number | null = hasAlloc
       ? round2(totalAlloc + allocatedRealizedPnl)
       : balanceSource != null ? shellBalance : null;
-    const allocatedEquity: number | null = hasAlloc
-      ? allocatedBalance
-      : balanceSource != null ? (shellEquity || shellBalance) : null;
     const balanceNote = balanceSource === "user_slot_allocation"
       ? "From the allocation your operator assigned you, plus the realized P/L booked to it."
       : balanceSource === "virtual_trading_accounts"
@@ -522,6 +523,21 @@ export async function computeAccountShell(
           ? "Not available: your open positions have not reported floating P/L yet."
           : "Floating P/L of your open positions on the shared master account.";
 
+    // Equity = balance + floating P/L. Nothing else marks this view to
+    // market (virtual_equity is only moved with the balance), so without a
+    // current floating P/L there is no equity figure to show.
+    const allocatedEquity: number | null =
+      allocatedBalance != null && openPnl != null ? round2(allocatedBalance + openPnl) : null;
+    const equityNote = allocatedBalance == null
+      ? "Not available: there is no balance to mark to market."
+      : allocatedEquity != null
+        ? "My Balance plus the floating P/L of your open positions."
+        : !liveShared
+          ? "Not marked to market: floating P/L of open positions is not read for your account here, so equity is not shown."
+          : inv!.freshness.status !== "fresh"
+            ? "Not current: the live position feed is not fresh, so equity is not shown here."
+            : "Not available: your open positions have not reported floating P/L yet.";
+
     const response: AccountShellResponse = {
       ok: true,
       userId,
@@ -540,7 +556,8 @@ export async function computeAccountShell(
           ? round2(totalAlloc)
           : (vAccounts.length > 0 ? allocatedBalance : null),
         currentBalance: allocatedBalance,
-        equity: allocatedEquity || allocatedBalance,
+        equity: allocatedEquity,
+        equityNote,
         marginUsed: null,
         balanceSource,
         balanceNote,
