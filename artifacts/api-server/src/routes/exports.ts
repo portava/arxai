@@ -13,6 +13,7 @@ import { shadowStatus, listDecisions as shadowDecisions, forwardStatus, readines
 import { listAudit } from "../lib/systemHealth/audit.js";
 import { listRiskEventsView, platformRiskPermissions } from "../lib/riskGovernor/riskProfile.js";
 import { requireRole, getSessionFromReq } from "../lib/security/session.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { auditEvent } from "../lib/systemHealth/audit.js";
 
 const router = Router();
@@ -26,7 +27,7 @@ const EXPORT_ROW_LIMIT = 5000;
 const PLATFORM_NOTE = "Platform-wide engine output, not tied to one user's account.";
 function exportScope(req: Parameters<typeof getSessionFromReq>[0]): { scope: OmsSummaryScope; owner: OmsOwnerScope; userId: number | null } {
   const s = getSessionFromReq(req);
-  if (s.role === "OWNER" || s.role === "ADMIN") return { scope: "platform_all_users", owner: {}, userId: null };
+  if (operatorRoleFromSession(s.role)) return { scope: "platform_all_users", owner: {}, userId: null };
   const uid = typeof s.uid === "number" ? s.uid : -1;
   return { scope: "own_simulator_book", owner: { ownerUserId: uid }, userId: uid };
 }
