@@ -130,6 +130,16 @@ function readinessTone(r: ScannerTruth["readiness"]): { container: string; label
   }
 }
 
+// Admin candle diagnostic — never a "200/150" ratio: bars LOADED (incl. a
+// forming tip) vs the CLOSED bars the readiness verdict actually counted vs the
+// minimum CLOSED bars required. `closedCount` falls back to `count` for a
+// partial truth payload.
+function candleDiagnostic(c: ScannerTruth["candles"]): string {
+  const closed = typeof c.closedCount === "number" ? c.closedCount : c.count;
+  const forming = c.hasFormingBar === true || closed < c.count;
+  return `candles ${c.count} loaded${forming ? " (incl. forming)" : ""} · ${closed} closed · min ${c.minRequired} closed`;
+}
+
 function formatPrice(p: number | null): string {
   if (p == null || !Number.isFinite(p)) return "—";
   return p.toLocaleString(undefined, { maximumFractionDigits: p >= 100 ? 2 : 5 });
@@ -370,8 +380,8 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
       )}
 
       {shouldShowAdminDiagnostics && truth && (
-        <p className="text-[11px] text-txt-muted">
-          source: {truth.candles.sourceTechnical} · candles {truth.candles.count}/{truth.candles.minRequired} · {truth.candles.status}
+        <p className="text-[11px] text-txt-muted" data-testid="scanner-header-candle-diag">
+          source: {truth.candles.sourceTechnical} · {candleDiagnostic(truth.candles)} · {truth.candles.status}
         </p>
       )}
       {shouldShowAdminDiagnostics && truth?.consolidated.readId && (

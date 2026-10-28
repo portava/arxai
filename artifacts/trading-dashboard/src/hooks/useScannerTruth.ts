@@ -107,6 +107,12 @@ export function useScannerTruth(
         timeframe: chartTimeframe,
         feedStatus,
         candleCount: candles.length,
+        // CLOSED bars only — the server marks the forming tip isComplete=false.
+        // Legacy shapes that never state completeness leave this undefined
+        // (the truth then falls back to candleCount).
+        closedCandleCount: candles.some((c) => typeof c.isComplete === "boolean")
+          ? candles.filter((c) => c.isComplete !== false).length
+          : undefined,
         requestedCount: limit,
         firstTime: candleTimeIso(first?.time),
         lastTime,

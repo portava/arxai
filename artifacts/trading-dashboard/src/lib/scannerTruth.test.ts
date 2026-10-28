@@ -664,10 +664,14 @@ describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE
       ...GATE_MODES.map((m) => inputs({ mode: m.mode })),
       ...GATE_MODES.map((m) => inputs({ ...NON_LIVE_SHAPES[1]!.over, mode: m.mode })),
       inputs({ mode: mode({ isLoading: true, isDemo: false, canManualTrade: false }) }),
+      // A series ending in the still-forming bar, incl. exactly at the minimum.
+      inputs({ candleCount: 200, closedCandleCount: 199 }),
+      inputs({ candleCount: 150, closedCandleCount: 149 }),
     ];
     for (const c of cases) {
       const t = resolveScannerTruth(c);
-      const count = t.candles.count;
+      // The CLOSED count is the one the contract must have been fed.
+      const count = t.candles.closedCount;
       const minRequired = thresholdsFor(t.timeframe).minCandles;
       const recomputed = evaluateTradeHealthReadiness({
         symbol: t.symbolInternal,
@@ -797,5 +801,39 @@ describe("trade-health readiness — shared floor + direct Ruby↔Scanner parity
       expect(ruby[flag], `ruby ${flag}`).toBe(false);
       expect(scanner[flag], `scanner ${flag}`).toBe(false);
     }
+  });
+});
+
+// Owner screenshot 2026-10-27 (V75 1m): the admin diagnostic read "candles
+// 200/150" while Trade Health said "…with enough recent closed candles" — but the
+// 200 included the still-forming bar. The forming tip is never counted closed.
+describe("closed candles exclude the still-forming bar", () => {
+  it("200 loaded with a forming tip → 199 closed fed to readiness; count stays 200", () => {
+    const t = resolveScannerTruth(inputs({ candleCount: 200, closedCandleCount: 199 }));
+    expect(t.candles.count).toBe(200);
+    expect(t.candles.closedCount).toBe(199);
+    expect(t.candles.hasFormingBar).toBe(true);
+    // (The parity test above proves the contract was fed closedCount.)
+  });
+
+  it("150 loaded on 1m with the last bar forming → insufficient (149 closed < 150)", () => {
+    const t = resolveScannerTruth(inputs({ candleCount: 150, closedCandleCount: 149 }));
+    expect(t.candles.status).toBe("insufficient");
+    expect(t.candles.reason).toContain("149 closed");
+    expect(t.readiness.readLayer).toBe("INSUFFICIENT");
+    expect(t.readiness.dataFreshness).not.toBe("LIVE_CONFIRMED");
+  });
+
+  it("150 CLOSED bars on 1m → sufficient", () => {
+    const t = resolveScannerTruth(inputs({ candleCount: 150, closedCandleCount: 150 }));
+    expect(t.candles.status).not.toBe("insufficient");
+    expect(t.candles.hasFormingBar).toBe(false);
+    expect(t.readiness.readLayer).toBe("FULL");
+  });
+
+  it("no completeness facts (legacy shape) → closed falls back to the loaded count", () => {
+    const t = resolveScannerTruth(inputs({ candleCount: 200 }));
+    expect(t.candles.closedCount).toBe(200);
+    expect(t.candles.hasFormingBar).toBe(false);
   });
 });

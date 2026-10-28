@@ -75,7 +75,7 @@ export function ScannerDataHealthPanel() {
       {shouldShowAdminDiagnostics && truth && (
         <p className="mt-3 border-t border-border pt-2 text-[11px] text-txt-muted">
           source: {truth.candles.sourceTechnical} · tier {truth.candles.tier} · candles{" "}
-          {truth.candles.count}/{truth.candles.minRequired} · {truth.candles.status} ·
+          {truth.candles.count} loaded · {truth.candles.closedCount ?? truth.candles.count} closed · min {truth.candles.minRequired} closed · {truth.candles.status} ·
           brokerFeedActive={String(truth.brokerFeedActive)}
         </p>
       )}
