@@ -133,9 +133,16 @@ export function PositionsPanel({ positions, isLoading = false, isError = false, 
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-sm font-semibold">{p.symbol}</div>
                 <div className="text-[11px] text-txt-muted">{p.lotSize} lot{p.entry ? ` · @${p.entry}` : ""}{p.stopLoss ? ` · SL ${p.stopLoss}` : ""}{p.takeProfit ? ` · TP ${p.takeProfit}` : ""}</div>
+                {/* A row the broker sync has not refreshed recently is not a
+                    current position read: say so instead of a bare dash. */}
+                {p.status === "stale" && (
+                  <div className="text-[11px] text-warning" data-testid={`position-${p.id}-stale`}>
+                    Not refreshed by the MT5 sync recently, so it may have changed or closed. Live P&amp;L not shown.
+                  </div>
+                )}
               </div>
-              <div className={cn("font-mono text-sm font-semibold", (p.pnl ?? 0) > 0 ? "text-success" : (p.pnl ?? 0) < 0 ? "text-danger" : "text-foreground")}>
-                {p.pnl == null ? "—" : (p.pnl > 0 ? "+" : "") + p.pnl.toFixed(2)}
+              <div className={cn("font-mono text-sm font-semibold", (p.pnl ?? 0) > 0 ? "text-success" : (p.pnl ?? 0) < 0 ? "text-danger" : "text-foreground")} data-testid={`position-${p.id}-pnl`}>
+                {p.status === "stale" ? "P&L stale" : p.pnl == null ? "P&L not reported" : (p.pnl > 0 ? "+" : "") + p.pnl.toFixed(2)}
               </div>
               <Link href="/live-trades" className="text-xs font-medium text-primary">Manage</Link>
             </li>
