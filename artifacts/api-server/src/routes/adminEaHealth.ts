@@ -63,7 +63,7 @@ function ageSeconds(ts: Date | null | undefined, now: Date): number | null {
 
 // ─── GET /api/admin/ea/health ───────────────────────────────────────────────
 // Per-connection EA health rows consolidating capabilities, heartbeat freshness,
-// EA inputs, clock drift, last command result, command-poll age, self-update
+// EA inputs, clock drift, last command result and when it was picked, self-update
 // support, and update status vs the latest approved manifest.
 router.get("/admin/ea/health", async (req, res): Promise<void> => {
   const role = requireAdmin(req, res);
@@ -175,8 +175,13 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
         pickedByEaAt: string | null;
         resultRecordedAt: string | null;
         createdAt: string | null;
+        /** The bridge the command was bound to (null until bound): the lookup is per user. */
+        bridgeConnectionId: number | null;
       } | null = null;
-      let commandPollAgeSeconds: number | null = null;
+      // Age of the pick of this USER's latest command (any of their bridges).
+      // The server records no EA poll time, so this is not a poll age: an EA
+      // polling every second still shows days when nothing was queued.
+      let lastCommandPickedAgeSeconds: number | null = null;
       if (c.userId != null) {
         const [lc] = await db
           .select()
@@ -196,8 +201,9 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
             pickedByEaAt: lc.pickedByEaAt ? new Date(lc.pickedByEaAt).toISOString() : null,
             resultRecordedAt: lc.resultRecordedAt ? new Date(lc.resultRecordedAt).toISOString() : null,
             createdAt: lc.createdAt ? new Date(lc.createdAt).toISOString() : null,
+            bridgeConnectionId: lc.bridgeConnectionId ?? null,
           };
-          commandPollAgeSeconds = ageSeconds(lc.pickedByEaAt, now);
+          lastCommandPickedAgeSeconds = ageSeconds(lc.pickedByEaAt, now);
         }
       }
 
@@ -277,7 +283,13 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
           severity: c.clockDriftSeverity ?? null,
         },
         lastCommand,
-        commandPollAgeSeconds,
+        lastCommandPickedAgeSeconds,
+        /**
+         * @deprecated Misnamed: the same value as lastCommandPickedAgeSeconds
+         * (age of the user's latest command pick), not an EA poll age. Kept
+         * for older clients.
+         */
+        commandPollAgeSeconds: lastCommandPickedAgeSeconds,
         lastReconciliationResult: reconciliationFor(c.userId, c.id),
         selfUpdateSupported,
         update: {

@@ -1,8 +1,9 @@
 // Task #33 — /admin/ea-health
 //
 // OPERATOR-ONLY EA Health dashboard. Consolidates existing reliability signals
-// (capabilities, heartbeat freshness, EA inputs, clock drift, command-poll age,
-// last command result, self-update support, update status) from the read-only
+// (capabilities, heartbeat freshness, EA inputs, clock drift, when the user's
+// last command was picked, last command result, self-update support, update
+// status) from the read-only
 // /api/admin/ea/health aggregator. NO new feature, NO new trading path.
 //
 // SECURITY: wrapped in AdminDiagnosticsGate (also blocks admin-previewing-as-user).
@@ -53,7 +54,12 @@ type HealthRow = {
     commandId: string; commandType: string; status: string; symbol: string;
     side: string; mt5Retcode: number | null; rejectionReason: string | null;
     pickedByEaAt: string | null; resultRecordedAt: string | null; createdAt: string | null;
+    /** Bridge the command was bound to (newer servers). The lookup is per user, not per bridge. */
+    bridgeConnectionId?: number | null;
   };
+  /** Age of the pick of this user's latest command (any bridge). Not an EA poll age. */
+  lastCommandPickedAgeSeconds?: number | null;
+  /** @deprecated older servers' name for lastCommandPickedAgeSeconds (never a poll age). */
   commandPollAgeSeconds: number | null;
   lastReconciliationResult: {
     issueCount: number;
@@ -109,6 +115,23 @@ function reconGapText(r: HealthRow["lastReconciliationResult"]): string | null {
     parts.push(`The ${cut.join(", ")} list hit its row cap, so issues for this bridge may not be listed.`);
   }
   return parts.length > 0 ? parts.join(" ") : null;
+}
+
+// "When was this user's latest command picked", which is NOT how recently the
+// EA polled: the server records no poll time, so a healthy EA polling every
+// second still shows days here when nothing was queued. The command lookup is
+// per user, so two bridges of one user show the same command.
+function lastCommandPickedText(row: HealthRow): { value: string; note: string } {
+  const lc = row.lastCommand;
+  if (!lc) return { value: "no commands", note: "This user has no live commands." };
+  const age = row.lastCommandPickedAgeSeconds !== undefined ? row.lastCommandPickedAgeSeconds : row.commandPollAgeSeconds;
+  const by = lc.bridgeConnectionId == null
+    ? "This user's latest command (any of their bridges)."
+    : lc.bridgeConnectionId === row.connection.id
+      ? "This user's latest command, bound to this bridge."
+      : `This user's latest command, bound to bridge #${lc.bridgeConnectionId}.`;
+  if (lc.pickedByEaAt == null || age == null) return { value: "not picked yet", note: `${by} Not an EA poll time.` };
+  return { value: `${age}s ago`, note: `${by} Not an EA poll time — the server does not record polls.` };
 }
 
 function livenessBadge(l: HealthRow["liveness"]) {
@@ -211,7 +234,8 @@ function EaHealthInner() {
                 <div className="flex justify-between"><span className="text-txt-secondary">Heartbeat age</span><span className={!isHeartbeatAgeSecondsFresh(row.heartbeatAgeSeconds) ? "text-warning" : ""}>{row.heartbeatAgeSeconds === null ? "—" : `${row.heartbeatAgeSeconds}s`}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Last heartbeat</span><span>{row.connection.lastHeartbeatAt ? new Date(row.connection.lastHeartbeatAt).toLocaleString() : "never"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Terminal connected</span><Tri v={row.eaInputs.terminalConnected} /></div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Command-poll age</span><span>{row.commandPollAgeSeconds === null ? "—" : `${row.commandPollAgeSeconds}s`}</span></div>
+                <div className="flex justify-between" data-testid={`ea-last-command-picked-${row.connection.id}`} title={lastCommandPickedText(row).note}><span className="text-txt-secondary">Last command picked</span><span>{lastCommandPickedText(row).value}</span></div>
+                <div className="text-[11px] text-txt-muted">{lastCommandPickedText(row).note}</div>
               </div>
 
               <div className="space-y-1.5">
