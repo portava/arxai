@@ -5,6 +5,18 @@ async page => {
       'Rendering opportunities and real series data are observed; hardware paint and latency targets are not measured.',
       'No broker tests and no matched TradingView or MT5 comparison.']};
   const prefix=typeof SCANNER_QA_OUTPUT_PREFIX==='string'?SCANNER_QA_OUTPUT_PREFIX:'.playwright-cli/scanner-shared-chart';
+  function matchesExecutedBuild(runtimeId,metadata) {
+    return typeof runtimeId==='string'&&runtimeId.length>0&&runtimeId===metadata?.buildId;
+  }
+  function matchesCompletedSeries(current,expected,context) {
+    const {state,data}=current??{};
+    if(!expected||!state||!data||state.symbol!==context.symbol||state.intervalSeconds!==context.intervalSeconds
+      ||state.style!=='candles'||state.feed?.source!==expected.source||state.barCount!==expected.canonical.length
+      ||!Array.isArray(data.canonical)||!Array.isArray(data.display))return false;
+    const bar=point=>({time:point.time,open:point.open,high:point.high,low:point.low,close:point.close});
+    return JSON.stringify(data.canonical)===JSON.stringify(expected.canonical)
+      &&JSON.stringify(data.display.map(bar))===JSON.stringify(expected.canonical);
+  }
   // Classification changes the report, never the route barrier: every write
   // receives 503. Only these exact POSTs are known non-trading background work.
   function classifyWrite(request) {
@@ -36,13 +48,15 @@ async page => {
     await frames();
     const current=await save(symbol+'-'+timeframe);
     const expected=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.filter(item=>item.symbol===symbol&&item.timeframe===timeframe).at(-1);
-    check(JSON.stringify(current.data.canonical)===JSON.stringify(expected.canonical),'Canonical bars match response after a rendering opportunity: '+symbol+' '+timeframe);
+    check(matchesCompletedSeries(current,expected,{symbol,intervalSeconds}),'Full context, canonical and displayed bars match after a rendering opportunity: '+symbol+' '+timeframe);
     check(current.state.canvasIds.length>0&&current.state.bounds.width>0&&current.state.bounds.height>0,'Real visible canvas: '+symbol+' '+timeframe);
     return current;
   };
   try {
     check(new URL(page.url()).pathname==='/market-scanner','Actual Scanner route is open');
     report.build=await page.evaluate(async()=>{const r=await fetch('/arx-scanner-qa-build-info.json');if(!r.ok)throw Error('Build metadata unavailable');return r.json();});
+    report.executedBuildId=await page.evaluate(()=>window.__arxScannerQaBuildId);
+    check(matchesExecutedBuild(report.executedBuildId,report.build),'Executed fixture build matches fetched metadata');
     check(report.build.minified&&report.build.productionRuntimeChecked&&report.build.sourceUnchanged&&!report.build.source.status,'Clean unchanged production fixture source');
     if(typeof SCANNER_QA_EXPECTED_COMMIT==='string')check(report.build.source.head===SCANNER_QA_EXPECTED_COMMIT,'Build matches requested commit');
     const panel=page.getByTestId('scanner-chart-panel');

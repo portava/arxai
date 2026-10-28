@@ -5,6 +5,26 @@ import vm from 'node:vm';
 
 const setupSource=readFileSync(new URL('./shared-chart-setup.js',import.meta.url),'utf8');
 const acceptanceSource=readFileSync(new URL('./shared-chart-acceptance.js',import.meta.url),'utf8');
+const helper=name=>{
+  const source=acceptanceSource.match(new RegExp('  function '+name+'\\([^]*?\\n  \\}'))?.[0];
+  assert.ok(source,name+' must remain discoverable');return vm.runInNewContext('('+source+')');
+};
+const matchesExecutedBuild=helper('matchesExecutedBuild');
+const matchesCompletedSeries=helper('matchesCompletedSeries');
+test('newly fetched metadata cannot validate an older already-executed fixture bundle',()=>{
+  assert.equal(matchesExecutedBuild('old-build',{buildId:'new-build'}),false);
+  assert.equal(matchesExecutedBuild(undefined,{buildId:'new-build'}),false);
+  assert.equal(matchesExecutedBuild('new-build',{buildId:'new-build'}),true);
+});
+test('runtime build identity is immutable after the fixture entry executes',()=>{
+  const entry=readFileSync(new URL('./shared-chart-fixture/main.ts',import.meta.url),'utf8');
+  const definition=entry.match(/Object\.defineProperty\(window, "__arxScannerQaBuildId", \{[\s\S]*?\n\}\);/)?.[0];
+  assert.ok(definition);const window={};
+  vm.runInNewContext(definition,{window,__ARX_SCANNER_QA_BUILD_ID__:'built-id'});
+  assert.equal(window.__arxScannerQaBuildId,'built-id');
+  assert.equal(Reflect.set(window,'__arxScannerQaBuildId','newer-id'),false);
+  assert.equal(Reflect.deleteProperty(window,'__arxScannerQaBuildId'),false);
+});
 const classificationSource=acceptanceSource.match(/  function classifyWrite\(request\) \{[\s\S]*?\n  \}/)?.[0];
 assert.ok(classificationSource,'Write classifier must remain discoverable');
 const classifyWrite=vm.runInNewContext('('+classificationSource+')');
@@ -25,6 +45,20 @@ test('trade writes are distinct from blocked annotations and ordinary read reque
 const pollSource=acceptanceSource.match(/await page\.waitForFunction\((async\(\{symbol,timeframe,intervalSeconds\}\)=>\{[\s\S]*?)\n    \},\{symbol,timeframe,intervalSeconds\}/)?.[1]+'\n}';
 assert.ok(pollSource.startsWith('async('),'Actual-series predicate must remain discoverable');
 const expected=[{time:100,open:1,high:3,low:.5,close:2},{time:400,open:2,high:4,low:1,close:3}];
+test('post-frame completion rejects displayed-only corruption after canonical success',()=>{
+  const current={state:{symbol:'EURUSD',intervalSeconds:300,style:'candles',feed:{source:'offline_fixture'},barCount:2},data:{canonical:structuredClone(expected),display:structuredClone(expected)}};
+  const authority={source:'offline_fixture',canonical:expected};const context={symbol:'EURUSD',intervalSeconds:300};
+  assert.equal(matchesCompletedSeries(current,authority,context),true);
+  current.data.display[0].close=99;
+  assert.equal(matchesCompletedSeries(current,authority,context),false);
+});
+test('post-frame completion rejects changed context even when both arrays match',()=>{
+  const correct={symbol:'EURUSD',intervalSeconds:300,style:'candles',feed:{source:'offline_fixture'},barCount:2};
+  const authority={source:'offline_fixture',canonical:expected},context={symbol:'EURUSD',intervalSeconds:300};
+  for(const mutation of [{symbol:'GBPUSD'},{intervalSeconds:900},{style:'line'},{feed:{source:'other'}},{barCount:1}]){
+    assert.equal(matchesCompletedSeries({state:{...correct,...mutation},data:{canonical:expected,display:expected}},authority,context),false,JSON.stringify(mutation));
+  }
+});
 function probe({state={},canonical=expected,display=expected}={}){
   return vm.runInNewContext('('+pollSource+')', {window:{
     __readFixtureLog:async()=>({candleResponses:[{symbol:'EURUSD',timeframe:'M5',source:'offline_fixture',canonical:expected}]}),

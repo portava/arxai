@@ -17,6 +17,9 @@ The server listens only on `127.0.0.1:4199`. It cannot proxy an API, and returns
 503 for unhandled API calls or writes. Each build gets a new ignored directory,
 source commit/status, runtime marker check and asset SHA-256 manifest. Serving
 checks every recorded asset. It never empties or overwrites dashboard `dist`.
+The fixture entry embeds an immutable build ID; acceptance requires the ID in
+the executing page to match the fetched metadata, so a newer metadata file
+cannot validate an older open page.
 Close the server after the check. Do not start it during another agent's timing
 window.
 
@@ -56,6 +59,8 @@ writes too. No order control is clicked.
 Acceptance requires the shared chart inside the actual Scanner, no old Scanner
 renderer or embedded widget, exact full canonical **and real displayed** OHLC
 arrays after selection/timeframe changes, and visible canvas geometry. It
+rechecks both arrays and the full series context after the rendering opportunity,
+not just when the initial polling predicate succeeds. It
 checks actual logical ranges after zoom, pan buttons, keyboard and pointer
 drag; mobile disclosure must preserve engine identity and canonical data.
 The new reader must explain unavailable truth rather than claim a ready read.

@@ -42,7 +42,7 @@ if (!serve) {
   const {build} = await import(require.resolve('vite'));
   const {default:react} = await import(require.resolve('@vitejs/plugin-react'));
   const {default:tailwind} = await import(require.resolve('@tailwindcss/vite'));
-  await build({root,configFile:false,base:'/',plugins:[react(),tailwind()],resolve:{alias:[
+  await build({root,configFile:false,base:'/',define:{__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id)},plugins:[react(),tailwind()],resolve:{alias:[
     {find:'react',replacement:path.dirname(require.resolve('react/package.json'))},
     {find:'react-dom',replacement:path.dirname(require.resolve('react-dom/package.json'))},
     {find:'@',replacement:path.join(dashboard,'src')},
