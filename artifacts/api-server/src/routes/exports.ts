@@ -25,6 +25,10 @@ const exportGate = requireRole("OWNER", "ADMIN", "TESTER");
 // user id → no rows). Every export says which.
 const EXPORT_ROW_LIMIT = 5000;
 const PLATFORM_NOTE = "Platform-wide engine output, not tied to one user's account.";
+// The system audit log is not engine output: it records actions by every
+// user and service, and listAudit has no owner filter, so every role allowed
+// to export receives all of it.
+const AUDIT_LOG_NOTE = "Platform-wide audit log: events from every user and service, not only yours.";
 function exportScope(req: Parameters<typeof getSessionFromReq>[0]): { scope: OmsSummaryScope; owner: OmsOwnerScope; userId: number | null } {
   const s = getSessionFromReq(req);
   if (operatorRoleFromSession(s.role)) return { scope: "platform_all_users", owner: {}, userId: null };
@@ -61,7 +65,7 @@ router.get("/export/full-system-report", exportGate, async (req, res) => {
   res.json({
     generatedAt: new Date().toISOString(),
     scope: sc.scope,
-    scopeNote: `oms and pnl: ${OMS_SCOPE_NOTE[sc.scope]} autopilot, shadow, forward, readiness, brokerRecon, permissions and recentAudit: ${PLATFORM_NOTE}`,
+    scopeNote: `oms and pnl: ${OMS_SCOPE_NOTE[sc.scope]} autopilot, shadow, forward, readiness, brokerRecon and permissions: ${PLATFORM_NOTE} recentAudit: ${AUDIT_LOG_NOTE}`,
     environments: ["PAPER", "DEMO_SIMULATOR", "LIVE_TESTER_INTENT", "SHADOW", "FORWARD_TEST", "FUTURE_MT5_DEMO", "FUTURE_MT5_LIVE"],
     safety: { mt5Connected: false, mt5Deferred: true, realBrokerExecutionAvailable: false },
     permissions: await platformRiskPermissions(),
@@ -112,7 +116,7 @@ router.get("/export/ai-decisions.json", exportGate, async (req, res) => {
 
 router.get("/export/audit.json", exportGate, async (req, res) => {
   await logExport(req, "export audit.json", "json");
-  res.json({ environment: "ALL", scope: "platform", scopeNote: "The platform audit log: events from every user and service.", events: await listAudit({ limit: 2000 }) });
+  res.json({ environment: "ALL", scope: "platform", scopeNote: AUDIT_LOG_NOTE, events: await listAudit({ limit: 2000 }) });
 });
 
 router.get("/export/strategies.json", exportGate, async (req, res) => {

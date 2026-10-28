@@ -92,6 +92,18 @@ test("a TESTER's full-system report scopes the book and labels platform sections
   assert.equal(body.scope, "own_simulator_book");
   assert.equal(body.oms.pendingMt5Intents, 2);
   assert.match(body.scopeNote, /recentAudit: Platform-wide/);
+  // The audit log holds other users' actions: it is not "engine output, not
+  // tied to one user's account".
+  assert.match(body.scopeNote, /recentAudit: Platform-wide audit log: events from every user and service/);
+  assert.doesNotMatch(body.scopeNote, /recentAudit: Platform-wide engine output/);
+});
+
+test("the audit export says it holds every user's events", async () => {
+  const r = await get("/export/audit.json", A);
+  assert.equal(r.status, 200);
+  const body = JSON.parse(r.text) as { scope: string; scopeNote: string };
+  assert.equal(body.scope, "platform");
+  assert.match(body.scopeNote, /events from every user and service/);
 });
 
 test("a TESTER's trades CSV is scoped and says so in headers", async () => {
