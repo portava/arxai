@@ -8,6 +8,7 @@ import {
   type ScannerTruthInputs,
   type ScannerTruthMode,
 } from "./scannerTruth";
+import { actionabilityDisplayUi } from "./scannerActionability";
 
 // Wednesday — a regular trading day for every asset class.
 const NOW = Date.parse("2026-10-28T12:00:00.000Z");
@@ -94,5 +95,14 @@ describe("quote source label", () => {
     }));
     expect(t.candles.sourceLabel).toBe("MT5 broker feed");
     expect(t.quote.sourceLabel).toBe("Market data feed");
+  });
+});
+
+describe("check-failed action copy", () => {
+  it("does not vouch for the feed it never checked", () => {
+    const ui = actionabilityDisplayUi("CHECK_FAILED");
+    expect(ui.copy).not.toMatch(/live data is unaffected/i);
+    expect(ui.copy).not.toMatch(/\blive data\b/i);
+    expect(ui.copy).toMatch(/couldn't complete/);
   });
 });

@@ -389,7 +389,9 @@ export const ACTIONABILITY_NO_CONFIRMATION_UI: ActionabilityUi = {
 export const ACTIONABILITY_CHECK_FAILED_UI: ActionabilityUi = {
   label: "Check failed",
   tone: "danger",
-  copy: "The setup check couldn't complete for this market — refresh the signal card to retry. Live data is unaffected.",
+  // The failed check was the SETUP read only; the feed was not checked by it,
+  // so this copy says nothing about the feed's state (the Data cell does).
+  copy: "The setup check couldn't complete for this market — refresh the signal card to retry. The feed was not checked by this failure; its state is reported separately.",
   canAct: false,
 };
 
