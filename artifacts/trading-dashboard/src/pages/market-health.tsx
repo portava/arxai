@@ -262,7 +262,7 @@ export default function MarketHealthPage() {
               <p className="text-muted-foreground">{truth.strip.data.detail}</p>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline" className="text-[10px]">
-                  {truth.brokerFeedActive ? "Broker feed active" : "Not your broker's bars"}
+                  {truth.brokerFeedActive ? "MT5 broker bars" : "Not MT5 broker bars"}
                 </Badge>
                 <Badge variant="outline" className="text-[10px]">
                   {truth.isLivePrice ? "Live price" : "No live price"}

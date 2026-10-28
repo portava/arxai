@@ -64,7 +64,7 @@ const TIER_CHIP: Record<FeedProviderTier, string> = {
 };
 
 const TIER_LABEL: Record<FeedProviderTier, string> = {
-  broker: "Primary broker feed",
+  broker: "Broker feed (MT5)",
   synthetic: "Synthetic feed",
   thirdParty: "Fallback feed",
   none: "No feed",

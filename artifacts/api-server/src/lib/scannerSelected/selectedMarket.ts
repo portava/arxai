@@ -122,7 +122,7 @@ export interface SelectedMarketResult {
    * SIMULATOR (Task #518).
    */
   dataSource: AnalysisDataSource;
-  /** Clean-English source label (e.g. "Live broker feed"); null when unknown. */
+  /** Clean-English source label (e.g. "MT5 broker feed"); null when unknown. */
   dataSourceLabel: string | null;
   /** Honest freshness state derived from the feed status. */
   dataState: TruthDataState;
@@ -296,7 +296,9 @@ function currencyHintsFor(symbol: string): string[] {
 function sourceLabelFor(source: string | null): string | null {
   if (!source) return null;
   const s = source.toLowerCase();
-  if (s.startsWith("mt5_broker")) return "Live broker feed";
+  // Source identity only — liveness is the data state's job (a stored mirror
+  // or stale series is still "mt5_broker").
+  if (s.startsWith("mt5_broker")) return "MT5 broker feed";
   if (s.startsWith("deriv")) return "Deriv feed";
   return "Market data feed";
 }

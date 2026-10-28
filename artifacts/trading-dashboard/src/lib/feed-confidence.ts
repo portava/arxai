@@ -199,7 +199,7 @@ export function providerInfo(source: string | null | undefined): FeedProviderInf
       label: "MT5 broker",
       tier: "broker",
       trustNote:
-        "Candles supplied by the MT5 broker bridge, the primary broker-data source. Check feed status for freshness; actual execution prices can differ.",
+        "Candles from the MT5 broker data path, the primary broker-data source: either a bridge's live push or the server's stored copy of earlier pushes. Check feed status for whether they are live; actual execution prices can differ.",
     };
   }
   if (source === "deriv" || source === "deriv_public") {

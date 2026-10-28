@@ -5,6 +5,7 @@
 //   - "Last tick" carries the MT5 broker tick time the server observed.
 //   - "Latency" is the winning provider read time; nothing served → unknown.
 //   - Source copy never says "your" broker: the chart route has no viewer.
+//   - The durable market_candles mirror is stored data, never a live bridge.
 //
 // Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
 //   src/lib/data/chart/__qa__/feedStatusTruthLabels.test.ts
@@ -126,4 +127,45 @@ test("Source copy: an MT5 series is never attributed to the viewer (the route kn
   assert.equal(out.feedStatus.quality, "clean");
   assert.doesNotMatch(out.feedStatus.message, /\byour\b/i);
   assert.match(out.feedStatus.message, /MetaTrader 5 broker bridge/);
+});
+
+function durableMirrorMt5(nowMs: number, intervalMs: number, newestOpenMs: number) {
+  // tryMt5Candles step 2: the in-memory store is empty (restart / EA silent
+  // >60s) and market_candles served the bars under MT5_BROKER_MIRROR_SOURCE.
+  route.ok = true;
+  route.primaryProvider = "mt5_broker";
+  route.assetClass = "forex";
+  route.candles = series(60, newestOpenMs, intervalMs);
+  route.attempts = [{ provider: "mt5_broker", ok: true, reason: null, candleCount: 60, ms: 3 }];
+  route.provenance = { providerId: "mt5_broker", subProviderId: "durable_mirror", brokerCode: "mt5", bridgeConnectionId: null, userId: null,
+    brokerSymbol: null, environment: "unknown", receivedAt: new Date(nowMs).toISOString(), delayed: null, source: "DERIVED", sourceId: "mt5_broker:EURUSD:H1" };
+}
+
+test("Durable mirror: stored broker candles are not a live bridge feed", async () => {
+  const H1 = 60 * MIN;
+  const currentOpen = Math.floor(WEEKDAY_NOW / H1) * H1;
+  durableMirrorMt5(WEEKDAY_NOW, H1, currentOpen - H1);
+  const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "H1", 60));
+  const { chartSeriesAttribution } = await import("../brokerQuoteBinding.js");
+  assert.equal(chartSeriesAttribution(out)?.subProviderId, "durable_mirror");
+  assert.equal(out.feedStatus.trailingIntervals, 1, "precondition: newest stored bar trails by one interval");
+  assert.equal(out.feedStatus.isLive, false, "no bridge is pushing this series — not live");
+  assert.doesNotMatch(out.feedStatus.message, /^Live feed active/);
+  assert.doesNotMatch(out.feedStatus.message, /\byour\b/i);
+  assert.match(out.feedStatus.message, /stored/i);
+});
+
+test("Durable mirror: the forming-tip display path does not make it live either", async () => {
+  const currentOpen = Math.floor(WEEKDAY_NOW / M5) * M5;
+  durableMirrorMt5(WEEKDAY_NOW, M5, currentOpen - M5);
+  const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
+  assert.equal(out.feedStatus.isLive, false);
+  assert.doesNotMatch(out.feedStatus.message, /^Live feed active/);
+});
+
+test("Live bridge push (no sub-channel) still reads live", async () => {
+  liveMt5(WEEKDAY_NOW);
+  const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60));
+  assert.equal(out.feedStatus.isLive, true);
+  assert.match(out.feedStatus.message, /^Live feed active for EURUSD/);
 });

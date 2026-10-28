@@ -321,6 +321,17 @@ describe("source labels are user-safe", () => {
     expect(t.candles.sourceLabel).toBe("MT5 broker feed");
     expect(t.candles.sourceLabel.toLowerCase()).not.toContain("your");
     expect(t.dataHealth.sourceNote).not.toMatch(/your broker feed/i);
+  });
+
+  it("a non-live MT5 series (stored mirror / closed market) is never described as bars coming in", () => {
+    // Server demotes the durable market_candles mirror to isLive:false while its
+    // bars still pass integrity (quality clean, trailing <= 1).
+    const t = resolveScannerTruth(inputs({ feedStatus: feed({ source: "mt5_broker", isLive: false }) }));
+    expect(t.candles.tier).toBe("broker");
+    expect(t.displayStatus).not.toBe("LIVE");
+    expect(t.dataHealth.sourceNote).not.toMatch(/coming from/i);
+    expect(t.dataHealth.sourceNote).toMatch(/not confirmed live/i);
+    expect(t.dataHealth.headline).not.toMatch(/^Live/);
     expect(t.candles.tier).toBe("broker");
   });
 });

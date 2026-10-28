@@ -375,14 +375,25 @@ async function buildChartFeed(
   // forming tip is present its tick freshness (folded into the verdict) governs
   // liveness — a frozen tip (>15s silent) reads NOT live even though a closed
   // bar still trails by only one interval.
+  //
+  // The durable market_candles mirror (tryMt5Candles step 2) is never live: it
+  // is served only when no bridge is currently pushing this series, it carries
+  // no bridge/owner attribution and its entitlement delay is unknown. Its bars
+  // are real stored broker bars (quality still describes them), but nothing
+  // backs a "live" claim.
+  const durableMirror = result.ok && result.provenance?.subProviderId === DURABLE_MIRROR_SUB_PROVIDER;
   const reachable = source != null && candles.length > 0;
-  const isLive = timestampsUnconfirmed
+  const isLive = timestampsUnconfirmed || durableMirror
     ? false
     : formingTipPresent
       ? reachable && !verdict.stale
       : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick);
 
-  const message = buildMessage(quality, source, displaySymbol);
+  const message = buildMessage(quality, source, displaySymbol, {
+    isLive,
+    durableMirror,
+    newestOpenTime: lastCandle?.openTime ?? null,
+  });
 
   const status: ChartFeedStatus = {
     symbol,
@@ -433,14 +444,37 @@ function friendlyFeedSource(source: string | null): string {
   return source;
 }
 
+/** Router sub-provider id of the restart-surviving MT5 market_candles mirror. */
+const DURABLE_MIRROR_SUB_PROVIDER = "durable_mirror";
+
+interface MessageContext {
+  isLive: boolean;
+  durableMirror: boolean;
+  /** Newest provider bar's open time (ISO), before any display tip. */
+  newestOpenTime: string | null;
+}
+
+function utcStamp(iso: string | null): string {
+  if (!iso) return "an unknown time";
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return "an unknown time";
+  return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
 function buildMessage(
   quality: ChartQuality,
   source: string | null,
   displaySymbol: string,
+  ctx: MessageContext,
 ): string {
+  if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) {
+    return `Showing stored MetaTrader 5 broker candles for ${displaySymbol} (newest bar opened ${utcStamp(ctx.newestOpenTime)}). No broker bridge is pushing this series right now, so this is not a live feed.`;
+  }
   switch (quality) {
     case "clean":
-      return `Live feed active for ${displaySymbol} (${friendlyFeedSource(source)}).`;
+      return ctx.isLive
+        ? `Live feed active for ${displaySymbol} (${friendlyFeedSource(source)}).`
+        : `Candles for ${displaySymbol} from ${friendlyFeedSource(source)} are complete but not confirmed live (newest bar opened ${utcStamp(ctx.newestOpenTime)}).`;
     case "delayed":
       return `Feed for ${displaySymbol} is delayed / not yet confirmed real-time.`;
     case "stale":
