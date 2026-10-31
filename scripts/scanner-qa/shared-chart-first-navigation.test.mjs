@@ -42,3 +42,14 @@ test('outlier stays a valid measurement but fails target; invalid chronology fai
  const slow=accept({...sample(),visibleCompleteMs:5000},budget);assert.equal(slow.valid,true);assert.equal(slow.meetsTarget,false);
  for(const fields of [{visibleCompleteMs:null},{sourceCompleteMs:null},{sourceCompleteMs:-1},{sourceCompleteMs:100,visibleCompleteMs:90}])assert.equal(accept({...sample(),...fields},budget).valid,false);
 });
+
+const visible=extract('plotVisible');
+test('a bottom navigation bar cannot conceal a genuine 100px visible plot region',()=>{
+ assert.equal(visible({x:12,y:650,width:366,height:360},{width:390,height:844},(_x,y)=>y<788),true);
+ assert.equal(visible({x:12,y:700,width:366,height:360},{width:390,height:844},(_x,y)=>y<788),false);
+});
+test('covered, undersized or offscreen plots fail even with valid candles',()=>{
+ assert.equal(visible({x:12,y:300,width:366,height:360},{width:390,height:844},()=>false),false);
+ assert.equal(visible({x:12,y:900,width:366,height:360},{width:390,height:844},()=>true),false);
+ assert.equal(visible({x:12,y:300,width:99,height:360},{width:390,height:844},()=>true),false);
+});

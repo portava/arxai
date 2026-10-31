@@ -27,6 +27,17 @@ async page => {
     const visible=!!b&&Math.min(b.x+b.width,viewport.width)-Math.max(b.x,0)>=100&&Math.min(b.y+b.height,viewport.height)-Math.max(b.y,0)>=100&&unobscured;
     return {source:true,visible,reason:visible?null:'plot offscreen or obscured',identity:[state.adapterId,state.chartId,state.seriesId,...state.canvasIds].join(':')};
   }
+  function plotVisible(bounds,viewport,hit) {
+    const left=Math.max(0,bounds.x),right=Math.min(viewport.width,bounds.x+bounds.width);
+    const top=Math.max(0,bounds.y),bottom=Math.min(viewport.height,bounds.y+bounds.height);
+    if(right-left<100||bottom-top<100)return false;
+    // A fixed bottom nav can cover the centre of a partial plot intersection.
+    // Find an actual 100px square; never infer visibility from bounds alone.
+    for(const x of [left+50,(left+right)/2,right-50])for(const y of [top+50,(top+bottom)/2,bottom-50]) {
+      if([[x,y],[x-49,y-49],[x+49,y-49],[x-49,y+49],[x+49,y+49]].every(([px,py])=>hit(px,py)))return true;
+    }
+    return false;
+  }
   function acceptSample(sample,budget) {
     const errors=[];
     if(sample.failure)errors.push(sample.failure);
@@ -36,8 +47,9 @@ async page => {
     if(!sample.responseMatches||!sample.buildMatches)errors.push('Response or executing build not verified');
     return {valid:errors.length===0,meetsTarget:errors.length===0&&sample.visibleCompleteMs<=budget.completionMs,errors};
   }
-  function install({authority,budget,assessSource}) {
+  function install({authority,budget,assessSource,visibilitySource}) {
     const assess=(0,eval)('('+assessSource+')');
+    const plotVisible=(0,eval)('('+visibilitySource+')');
     const result=window.__arxFirstNavigation={readyAt:null,click:null,readyToClickMs:null,trusted:false,pointerAt:null,canvasMs:null,sourceCompleteMs:null,visibleCompleteMs:null,witnessCostMs:0,frames:0,failure:null,done:false,dialogObserved:false};
     let previousSource=null,previousVisible=null,frame=0,timer=null;
     const started=performance.now();
@@ -58,11 +70,11 @@ async page => {
       if(document.querySelector('[role="dialog"][data-state="open"]'))result.dialogObserved=true;
       if(result.click===null){if(now-started>budget.timeoutMs)finish('Navigation not clicked before deadline');else frame=requestAnimationFrame(observe);return;}
       result.frames++;
+      const before=performance.now();
       const canvas=document.querySelector('[data-testid="arx-native-canvas"]');
       if(canvas&&result.canvasMs===null)result.canvasMs=now-result.click;
       let unobscured=false;
-      if(canvas){const b=canvas.getBoundingClientRect(),left=Math.max(0,b.x),right=Math.min(innerWidth,b.right),top=Math.max(0,b.y),bottom=Math.min(innerHeight,b.bottom),x=(left+right)/2,y=(top+bottom)/2;unobscured=right-left>=100&&bottom-top>=100&&[[x,y],[x-49,y-49],[x+49,y-49],[x-49,y+49],[x+49,y+49]].every(([px,py])=>{const hit=document.elementFromPoint(px,py);return canvas===hit||canvas.contains(hit);});}
-      const before=performance.now();
+      if(canvas)unobscured=plotVisible(canvas.getBoundingClientRect(),{width:innerWidth,height:innerHeight},(x,y)=>{const hit=document.elementFromPoint(x,y);return canvas===hit||canvas.contains(hit);});
       const witness=assess({state:window.__arxChartQa?.snapshot(),data:window.__arxChartQa?.data()},authority,{width:innerWidth,height:innerHeight},unobscured);
       const observedAt=performance.now();result.witnessCostMs+=observedAt-before;result.lastWitness=witness;
       if(witness.source&&previousSource===witness.identity&&result.sourceCompleteMs===null)result.sourceCompleteMs=observedAt-result.click;
@@ -90,7 +102,7 @@ async page => {
     const response=preflight.log.candleResponses.filter(r=>r.symbol==='EURUSD'&&r.timeframe==='M15').at(-1);
     if(!response||response.source!=='offline_fixture'||response.canonical.length!==200)throw Error('Expected fixture authority missing');
     const authority={symbol:'EURUSD',intervalSeconds:900,source:response.source,canonical:response.canonical};report.build=metadata;
-    await page.addInitScript(install,{authority,budget,assessSource:assess.toString()});
+    await page.addInitScript(install,{authority,budget,assessSource:assess.toString(),visibilitySource:plotVisible.toString()});
     for(const viewport of [{name:'desktop',width:1440,height:1100},{name:'mobile',width:390,height:844}]) {
       await page.setViewportSize({width:viewport.width,height:viewport.height});
       for(let index=0;index<5;index++) {
