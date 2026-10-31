@@ -1,5 +1,6 @@
 async page => {
   const report={passed:false,build:null,runs:[],failure:null,limitations:['Actual Scanner production fixture,200 historical synthetic bars; no real provider,broker,physical paint or competitor timing.','Desktop1440x1100,1x/4x CPU;20 measured toggles per condition plus4 retained warmups.','Completion is correct geometry/data on two frames; not guaranteed pixel presentation.']};
+  const prefix=typeof SCANNER_QA_OUTPUT_PREFIX==='string'?SCANNER_QA_OUTPUT_PREFIX:'.playwright-cli/chart-price-scale';
   const check=(value,message)=>{if(!value)throw Error(message);};
   const frames=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   const read=()=>page.evaluate(()=>({state:window.__arxChartQa.snapshot(),data:window.__arxChartQa.data(),configuration:window.__arxChartQa.configuration(),geometry:window.__arxChartQa.priceGeometry()}));
@@ -17,7 +18,7 @@ async page => {
     check(await button.getAttribute('aria-pressed')==='false','Default fitting policy changed');
     await panel.evaluate(element=>element.scrollIntoView({block:'start'}));await frames();
     const initial=await read();report.before=initial;
-    await page.screenshot({path:'/Users/areyouok/arx-tier1-release/chart-price-only-scale-20261031/disabled-final.png'});
+    await page.screenshot({path:prefix+'-disabled.png'});
     check(initial.configuration.studies[0].config.multiplier===100,'Wide-band workload not applied');
     const authority=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.filter(r=>r.symbol===initial.state.symbol&&r.timeframe==='M15').at(-1);
     check(authority&&JSON.stringify(initial.data.canonical)===JSON.stringify(authority.canonical)&&JSON.stringify(initial.data.display.map(({time,open,high,low,close})=>({time,open,high,low,close})))===JSON.stringify(authority.canonical),'Source/display mismatch before test');
@@ -54,7 +55,7 @@ async page => {
       const values=run.samples.filter(s=>s.record).map(s=>s.ms);run.summary=stats(values);run.passed=values.length===20&&run.summary.p95<=100;
     }
     await cdp.send('Emulation.setCPUThrottlingRate',{rate:1});await button.click();await frames();report.enabled=await read();
-    await page.screenshot({path:'/Users/areyouok/arx-tier1-release/chart-price-only-scale-20261031/enabled-final.png'});
+    await page.screenshot({path:prefix+'-enabled.png'});
     await page.reload();await page.waitForFunction(()=>window.__arxChartQa?.configuration()?.studies?.length===2&&window.__arxChartQa?.data()?.canonical.length===200);await frames();
     report.reloaded=await read();check(await button.getAttribute('aria-pressed')==='true'&&span(report.reloaded.geometry)>span(initial.geometry)*1.5,'Preference not restored after reload');
     report.network=await page.evaluate(()=>window.__readFixtureLog());check(!report.network.errors.length,'Page exceptions recorded');
