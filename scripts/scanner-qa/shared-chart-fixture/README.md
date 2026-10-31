@@ -217,7 +217,8 @@ other origin is rejected. No observer is installed in the ordinary fixture.
 
 These are version-specific fiber observations, with observer and profiling
 runtime overhead. Inclusive/nested and bailed-out durations are not additive;
-exclusive estimates are clipped at zero. Mounts are labelled separately. These
+exclusive estimates are clipped at zero. `alternateAbsent` is only a fiber
+observation; it does not prove a new mount or participation in that commit. These
 numbers locate candidates, not production latency. Always validate a candidate
 again in the regular production fixture without this hook or profiler.
 

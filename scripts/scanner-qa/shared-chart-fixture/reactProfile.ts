@@ -16,7 +16,7 @@ export function summarizeFibers(root: Fiber, limit = 10000) {
     if(!name||duration===null||duration<=0)continue;
     let childDuration=0,child=node.child,children=new Set<Fiber>();
     while(child&&!children.has(child)&&children.size<limit){children.add(child);childDuration+=finite(child.actualDuration)??0;child=child.sibling;}
-    rows.push({name,tag:node.tag,actualDuration:duration,exclusiveEstimate:Math.max(0,duration-childDuration),selfBaseDuration:finite(node.selfBaseDuration),treeBaseDuration:finite(node.treeBaseDuration),mount:node.alternate==null});
+    rows.push({name,tag:node.tag,actualDuration:duration,exclusiveEstimate:Math.max(0,duration-childDuration),selfBaseDuration:finite(node.selfBaseDuration),treeBaseDuration:finite(node.treeBaseDuration),alternateAbsent:node.alternate==null});
   }
   return {visited:seen.size,truncated:stack.length>0,topInclusive:[...rows].sort((a,b)=>b.actualDuration-a.actualDuration).slice(0,60),topExclusive:rows.sort((a,b)=>b.exclusiveEstimate-a.exclusiveEstimate).slice(0,60)};
 }
@@ -25,7 +25,7 @@ export function installReactProfile() {
   const target=window as unknown as Record<string,unknown>;
   if(target.__REACT_DEVTOOLS_GLOBAL_HOOK__)throw Error("Use an isolated browser without another DevTools hook");
   const record={diagnosticOnly:true,renderers:[] as unknown[],commits:[] as unknown[],droppedCommits:0,
-    limitations:["Profiling runtime and observer overhead: never performance acceptance.","Fiber fields are React-version-specific. Nested/bailout durations are not independently additive.","Names, timing and tags only; no props, state, DOM or account data are retained."]};
+    limitations:["Profiling runtime and observer overhead: never performance acceptance.","Fiber fields are React-version-specific. Nested/bailout durations are not independently additive.","alternateAbsent is a fiber observation, not proof the node mounted or rendered in this commit.","Names, timing and tags only; no props, state, DOM or account data are retained."]};
   target.__arxReactProfile=record;
   target.__REACT_DEVTOOLS_GLOBAL_HOOK__={supportsFiber:true,isDisabled:false,
     inject(renderer:{version?:string;rendererPackageName?:string}){record.renderers.push({version:renderer.version,package:renderer.rendererPackageName});return record.renderers.length;},
