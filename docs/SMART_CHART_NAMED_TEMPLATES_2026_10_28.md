@@ -61,7 +61,7 @@ mismatch and nested fullscreen Escape); both were corrected before integration.
 Exact combined source, final counts and actual Scanner browser receipts are
 recorded with the integration checkpoint, not inferred from earlier commits.
 The focused tests use a LockManager shim; native lock/focus behavior and delayed
-source binding passed in the30-assertion [real-browser receipt](SMART_CHART_WORKSPACE_ACCEPTANCE_2026_10_31.md) on1e879563. No latency target is established by these tests.
+source binding passed in the30-assertion [real-browser receipt](SMART_CHART_WORKSPACE_ACCEPTANCE_2026_10_31.md) on1e879563. A subsequent38-assertion run on406524df also accepts library persistence and actual study/style application after a full document reload. No latency target is established by these tests.
 
 Still open: account/cloud sync and recovery, named multi-chart workspace
 profiles, sharing permissions, study-on-study chains, TV/Pine or MT5 TPL imports,

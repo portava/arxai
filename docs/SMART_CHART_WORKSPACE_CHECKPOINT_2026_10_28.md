@@ -81,7 +81,7 @@ continue from the remaining-work list in that acceptance report.
 5. Rerun standard Scanner acceptance where the changed toolbar/banner layout
    matters, then update comparison/evidence and the existing draft PR.
 
-Remaining competitive gaps include touch-device coverage, full-reload note
+Remaining competitive gaps include touch-device coverage, browser/process-restart note
 persistence acceptance, named account/cloud workspaces, broader text styling,
 active-reader acceptance with attested source data, calendar intervals, heavy
 stream/history performance, and matched TradingView/MT5 comparisons. Native

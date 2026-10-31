@@ -66,7 +66,7 @@ original file sizes and SHA-256 hashes; non-image files use gzip. Local original
 
 ## Remaining work
 
-- Full document-reload persistence, touch devices and broader browser coverage.
+- Browser/process restart recovery, touch devices and broader browser coverage.
 - Attested active-reader and owned-position/mini-preview browser acceptance.
 - Calendar W1/MN1 boundaries and existing preserved calendar WIP.
 - Heavy streaming/history, current-catalogue replay and measured style switching.
@@ -76,3 +76,58 @@ original file sizes and SHA-256 hashes; non-image files use gzip. Local original
 The native style-input timing failure still has0/80 completed samples. Replay
 and heavy-load misses remain in the comparison document. This acceptance adds no
 new latency, physical-paint,60fps, broker or profitability evidence.
+
+## Full document-reload follow-up — 31 October
+
+No application code changed. The offline fixture gained an explicit
+`SCANNER_QA_PRESERVE_STORAGE_ON_RELOAD=true` option. It clears storage on the
+first document only, then performs no storage writes on subsequent documents.
+Default scenarios still clear on each navigation. Three regression tests cover
+both modes and missing/invalid initialization markers. The two acceptance
+scripts opt into their extra steps with `SCANNER_QA_RELOAD=true`; they refuse to
+claim reload acceptance with the default clearing fixture. Neither script seeds
+a note or template, forces primitive geometry or substitutes mock study values.
+
+- Notes:58 assertions pass at `ca36fcc4866b9a570027281fde1150b7cd8d4acd`,
+  clean build `dac533a3d0ee6846`. A UI-created/edited note retains its complete
+  serialized data, ID, literal text and candle/price anchor through `page.reload`.
+  A changed document time origin proves a new document; fresh intercepted
+  candles are checked against actual canonical/displayed data. The current
+  primitive paints and projects the restored note after a real zoom action;
+  Objects retains full text, Undo starts empty, and unavailable truth stays held.
+  The screenshots and real exported PNG were inspected, including the complete
+  mobile note after reload. This does not prove first-paint timing.
+- Templates:38 assertions pass at `406524dfae19fa69ebc0b656500618adb57204fc`,
+  clean build `b1b840426c829496`. The complete saved library survives byte-for-byte.
+  The visible original record is selected after reload and applied over a
+  deliberately different candles/indexed chart. Actual source-bound bars,
+  formula-correct SMA10 and logarithmic scale verify restoration. Desktop,
+  mobile and reopened-library images were inspected.
+- Tooling:72 tests pass at `406524df`. The previous full frontend/build/guards
+  result remains tied to1e879563; no repeated full application suite was needed
+  for these test-only changes.
+
+The first template attempt at `f8fb28c0`, build `a28c03c891e79fd3`, failed after34
+assertions: the new helper read `priceScale.mode` instead of the observer's
+existing `scale.mode`. Corrected in406524df. That failure, image and logs remain
+retained. The two successful runs are separate sources with identical application
+code; they are not reported as one combined run or additional unique features.
+
+The first two fresh-build attempts failed on missing local native dependencies
+(Rollup, then Lightning CSS). The successful build used existing matching local
+Rollup4.59.0, Lightning CSS1.31.1, Tailwind oxide4.2.1 and esbuild0.27.3 native
+files from `/Users/areyouok/arxai/node_modules` through process-local search paths
+and a local package-main shim; no source or dependencies in that checkout were
+modified. The prior temporary esbuild location was not relied on. Failed build
+logs are retained; fixture asset hashes identify what actually ran.
+
+All mutations remain503; no trade/unclassified write, external/WebSocket
+requests or page exceptions occurred. Expected fixture console/unknown-read
+counts: notes104/101; successful templates89/82; failed templates77/70. Test
+browsers and owned static servers are stopped. Raw evidence and SHA-256 manifest:
+`validation/scanner-smart-chart-20261031/reload/`.
+
+This verifies a full document reload in the tested Chromium session. It does not
+establish cross-device/account storage, browser/process restart, touch behavior,
+latency or competitor parity. Those gaps and the original performance failures
+remain open.
