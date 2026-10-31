@@ -1,0 +1,990 @@
+{
+  "testedApplicationHead": "2f7262980e6be13ccee02c1c4cb65511308a106e",
+  "fixture": "07d89bfa924ea08d",
+  "createdUtc": "2026-10-31T20:39:58.228856+00:00",
+  "rawDirectory": "/Users/areyouok/arx-tier1-release/chart-assistant-dock-20261031",
+  "checks": {
+    "head": "2f7262980e6be13ccee02c1c4cb65511308a106e",
+    "started": "2026-10-31T20:37:38.527308+00:00",
+    "results": [
+      {
+        "check": "frontend",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/chart-assistant-dock-20261031/2f726298-frontend.log"
+      },
+      {
+        "check": "typecheck",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/chart-assistant-dock-20261031/2f726298-typecheck.log"
+      },
+      {
+        "check": "build",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/chart-assistant-dock-20261031/2f726298-build.log"
+      },
+      {
+        "check": "guards",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/chart-assistant-dock-20261031/2f726298-guards.log"
+      },
+      {
+        "check": "bindings",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/chart-assistant-dock-20261031/2f726298-bindings.log"
+      }
+    ],
+    "finished": "2026-10-31T20:38:15.023657+00:00"
+  },
+  "browser": {
+    "functional-final": {
+      "passed": true,
+      "failure": null
+    },
+    "comparison-corrected": {
+      "passed": true,
+      "failure": null
+    },
+    "zoom-final": {
+      "passed": true,
+      "failure": null,
+      "summary": [
+        {
+          "cpu": 1,
+          "n": 10,
+          "medianMs": 48.40000009536743,
+          "maxMs": 50.299999713897705,
+          "under100": 10
+        },
+        {
+          "cpu": 4,
+          "n": 10,
+          "medianMs": 46,
+          "maxMs": 47.19999980926514,
+          "under100": 10
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "devicePixelRatio": 1,
+        "hardwareConcurrency": 14,
+        "viewport": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      "limitations": [
+        "Offline actual Scanner with 200 synthetic historical bars; all APIs intercepted.",
+        "390x844 desktop browser resized, not a physical phone.",
+        "Two rendering frames are not physical paint; no real-provider or competitor timing."
+      ],
+      "samples": [
+        {
+          "cpu": 1,
+          "repeat": 0,
+          "direction": "in",
+          "ms": 47.39999961853027,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 0,
+          "direction": "out",
+          "ms": 50.299999713897705,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 1,
+          "direction": "in",
+          "ms": 48.5,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 1,
+          "direction": "out",
+          "ms": 49.30000019073486,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 2,
+          "direction": "in",
+          "ms": 48.40000009536743,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 2,
+          "direction": "out",
+          "ms": 46.80000019073486,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 3,
+          "direction": "in",
+          "ms": 42.299999713897705,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 3,
+          "direction": "out",
+          "ms": 42.90000009536743,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 4,
+          "direction": "in",
+          "ms": 49.200000286102295,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 1,
+          "repeat": 4,
+          "direction": "out",
+          "ms": 46.799999713897705,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 0,
+          "direction": "in",
+          "ms": 46.40000009536743,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 0,
+          "direction": "out",
+          "ms": 47.19999980926514,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 1,
+          "direction": "in",
+          "ms": 45.30000019073486,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 1,
+          "direction": "out",
+          "ms": 45,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 2,
+          "direction": "in",
+          "ms": 46,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 2,
+          "direction": "out",
+          "ms": 46.5,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 3,
+          "direction": "in",
+          "ms": 44.200000286102295,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 3,
+          "direction": "out",
+          "ms": 44.69999980926514,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 4,
+          "direction": "in",
+          "ms": 44.60000038146973,
+          "trusted": true,
+          "failure": null
+        },
+        {
+          "cpu": 4,
+          "repeat": 4,
+          "direction": "out",
+          "ms": 46.19999980926514,
+          "trusted": true,
+          "failure": null
+        }
+      ]
+    },
+    "navigation-1x": {
+      "passed": true,
+      "failure": null,
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 40.40000009536743,
+          "maxMs": 43.59999990463257,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 40,
+          "maxMs": 92.7000002861023,
+          "failedIndices": []
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "hardwareConcurrency": 14,
+        "devicePixelRatio": 1,
+        "performanceTimeOrigin": 1793479146906.6,
+        "cpuThrottle": "Not set by this harness; outer runner/host settings must be recorded separately",
+        "browserVersion": "156.0.8078.79"
+      },
+      "outerCpuThrottle": 1,
+      "limitations": [
+        "Offline historical synthetic bars and fixed 80ms candle response delay; no provider, published app or broker measurement.",
+        "Two rendering opportunities are not hardware paint. Full OHLC witness cost is included, never subtracted.",
+        "Desktop/mobile viewports are browser emulation, not physical devices. Active AI analysis remains unavailable.",
+        "Navigation controls are already exposed on both sizes; no drawer opening or forced DOM click is substituted.",
+        "Fixture journal flushes occur before navigation and after evidence collection, outside measured clicks. An interrupted pending attempt is retained as incomplete.",
+        "Resource responseEnd is browser network completion, not JSON parsing or React query-cache readiness. Long tasks and frame gaps show overlap, not causation."
+      ],
+      "samples": [
+        {
+          "viewport": "desktop",
+          "index": 0,
+          "trusted": true,
+          "visibleCompleteMs": 43.59999990463257,
+          "sourceCompleteMs": 43.59999990463257,
+          "readyToClickMs": 118.5,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 1,
+          "trusted": true,
+          "visibleCompleteMs": 39.89999961853027,
+          "sourceCompleteMs": 39.89999961853027,
+          "readyToClickMs": 119.7000002861023,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 2,
+          "trusted": true,
+          "visibleCompleteMs": 40.40000009536743,
+          "sourceCompleteMs": 40.40000009536743,
+          "readyToClickMs": 119.59999990463257,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 3,
+          "trusted": true,
+          "visibleCompleteMs": 42.299999713897705,
+          "sourceCompleteMs": 42.299999713897705,
+          "readyToClickMs": 117.2000002861023,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 4,
+          "trusted": true,
+          "visibleCompleteMs": 40,
+          "sourceCompleteMs": 40,
+          "readyToClickMs": 118,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 0,
+          "trusted": true,
+          "visibleCompleteMs": 40,
+          "sourceCompleteMs": 40,
+          "readyToClickMs": 117.90000009536743,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 1,
+          "trusted": true,
+          "visibleCompleteMs": 40.90000009536743,
+          "sourceCompleteMs": 40.90000009536743,
+          "readyToClickMs": 118.5,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 2,
+          "trusted": true,
+          "visibleCompleteMs": 92.7000002861023,
+          "sourceCompleteMs": 92.7000002861023,
+          "readyToClickMs": 24.699999809265137,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 3,
+          "trusted": true,
+          "visibleCompleteMs": 38.40000009536743,
+          "sourceCompleteMs": 38.40000009536743,
+          "readyToClickMs": 119.7999997138977,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 4,
+          "trusted": true,
+          "visibleCompleteMs": 38.39999961853027,
+          "sourceCompleteMs": 38.39999961853027,
+          "readyToClickMs": 118.90000009536743,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    "navigation-4x": {
+      "passed": false,
+      "failure": null,
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 318.2000002861023,
+          "maxMs": 331.5,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 263.40000009536743,
+          "maxMs": 284,
+          "failedIndices": []
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "hardwareConcurrency": 14,
+        "devicePixelRatio": 1,
+        "performanceTimeOrigin": 1793479156252.1,
+        "cpuThrottle": "Not set by this harness; outer runner/host settings must be recorded separately",
+        "browserVersion": "156.0.8078.79"
+      },
+      "outerCpuThrottle": 4,
+      "limitations": [
+        "Offline historical synthetic bars and fixed 80ms candle response delay; no provider, published app or broker measurement.",
+        "Two rendering opportunities are not hardware paint. Full OHLC witness cost is included, never subtracted.",
+        "Desktop/mobile viewports are browser emulation, not physical devices. Active AI analysis remains unavailable.",
+        "Navigation controls are already exposed on both sizes; no drawer opening or forced DOM click is substituted.",
+        "Fixture journal flushes occur before navigation and after evidence collection, outside measured clicks. An interrupted pending attempt is retained as incomplete.",
+        "Resource responseEnd is browser network completion, not JSON parsing or React query-cache readiness. Long tasks and frame gaps show overlap, not causation."
+      ],
+      "samples": [
+        {
+          "viewport": "desktop",
+          "index": 0,
+          "trusted": true,
+          "visibleCompleteMs": 331.5,
+          "sourceCompleteMs": 331.5,
+          "readyToClickMs": 90.60000038146973,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 1,
+          "trusted": true,
+          "visibleCompleteMs": 296.69999980926514,
+          "sourceCompleteMs": 296.69999980926514,
+          "readyToClickMs": 90.40000009536743,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 2,
+          "trusted": true,
+          "visibleCompleteMs": 298.09999990463257,
+          "sourceCompleteMs": 298.09999990463257,
+          "readyToClickMs": 72.7000002861023,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 3,
+          "trusted": true,
+          "visibleCompleteMs": 322.2999997138977,
+          "sourceCompleteMs": 322.2999997138977,
+          "readyToClickMs": 78.5,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 4,
+          "trusted": true,
+          "visibleCompleteMs": 318.2000002861023,
+          "sourceCompleteMs": 318.2000002861023,
+          "readyToClickMs": 78.09999990463257,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 0,
+          "trusted": true,
+          "visibleCompleteMs": 263.40000009536743,
+          "sourceCompleteMs": 263.40000009536743,
+          "readyToClickMs": 85.09999990463257,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 1,
+          "trusted": true,
+          "visibleCompleteMs": 256.1000003814697,
+          "sourceCompleteMs": 256.1000003814697,
+          "readyToClickMs": 93.5,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 2,
+          "trusted": true,
+          "visibleCompleteMs": 260.30000019073486,
+          "sourceCompleteMs": 260.30000019073486,
+          "readyToClickMs": 89.7999997138977,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 3,
+          "trusted": true,
+          "visibleCompleteMs": 284,
+          "sourceCompleteMs": 284,
+          "readyToClickMs": 87.69999980926514,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 4,
+          "trusted": true,
+          "visibleCompleteMs": 263.7000002861023,
+          "sourceCompleteMs": 263.7000002861023,
+          "readyToClickMs": 86.2999997138977,
+          "failure": null,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        }
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "file": "06398c79-bindings.log",
+      "bytes": 63,
+      "sha256": "65e631cd46a507b53842547998e9817e4b8ee5344a04d83c2ccaa5b46b67ec05"
+    },
+    {
+      "file": "06398c79-build.log",
+      "bytes": 27736,
+      "sha256": "d2977218eade1386154f942cc2ec811680e1cdf8148e4736d878fd9550999262"
+    },
+    {
+      "file": "06398c79-checks.json",
+      "bytes": 957,
+      "sha256": "c67b845c1a29963dfec30f5f6d5a6c7c7e6ec462df5ec05be78cef3fb168f7d7"
+    },
+    {
+      "file": "06398c79-frontend.log",
+      "bytes": 486,
+      "sha256": "13e341c994903261943fb15f06c921393ad52b1e1b48232122f7e7055a924536"
+    },
+    {
+      "file": "06398c79-guards.log",
+      "bytes": 18460,
+      "sha256": "f1cf0d415502535ef9f7a0e5021d343c4b8ede9fcea4f19fae8eb7dcb04d5c5c"
+    },
+    {
+      "file": "06398c79-typecheck.log",
+      "bytes": 465,
+      "sha256": "b891e1b830e44d0206360b695be8d2192aabd798a6263209fba2bdfd9ceb4568"
+    },
+    {
+      "file": "2f726298-bindings.log",
+      "bytes": 63,
+      "sha256": "65e631cd46a507b53842547998e9817e4b8ee5344a04d83c2ccaa5b46b67ec05"
+    },
+    {
+      "file": "2f726298-build.log",
+      "bytes": 27736,
+      "sha256": "3ce019d9bc164ad1822befe1a3509ebf17da79242c3c7f4cbbba9ebf5b40f023"
+    },
+    {
+      "file": "2f726298-checks.json",
+      "bytes": 957,
+      "sha256": "5a7fc580e9656e248177841f122ef7926cddf55fbf602ce465cc7c16bc1d1b1d"
+    },
+    {
+      "file": "2f726298-frontend.log",
+      "bytes": 486,
+      "sha256": "65ef92ed4fbe3505045da7fa4bedb2c1094147ff17239d8b9fa0871a07fd27e6"
+    },
+    {
+      "file": "2f726298-guards.log",
+      "bytes": 18461,
+      "sha256": "1f2f18404a58528a873566afde8fd6324d0b4dc732fe2ec20691c810111a703b"
+    },
+    {
+      "file": "2f726298-typecheck.log",
+      "bytes": 159,
+      "sha256": "8e3bdc090f76bef4bd29f5142f6089b150a63a23dbee2a1c1e8d9b9474524b11"
+    },
+    {
+      "file": "6451a29d-bindings.log",
+      "bytes": 63,
+      "sha256": "65e631cd46a507b53842547998e9817e4b8ee5344a04d83c2ccaa5b46b67ec05"
+    },
+    {
+      "file": "6451a29d-build.log",
+      "bytes": 27736,
+      "sha256": "1ab5c6c57c1a50da53254e19eb61b92ee7420bceb26cfa7afcd548a4d0b96208"
+    },
+    {
+      "file": "6451a29d-checks.json",
+      "bytes": 957,
+      "sha256": "3cda094e62e358f97c19fd85999652554e3376e1bb2aacdeb1aa832cd2342794"
+    },
+    {
+      "file": "6451a29d-frontend.log",
+      "bytes": 486,
+      "sha256": "f29d9be002efd461b7963aa3c848bb6119746539e412509b2a0f82aaba034918"
+    },
+    {
+      "file": "6451a29d-guards.log",
+      "bytes": 18460,
+      "sha256": "48156d7ddd0dbb936020783f9d4a29a786522a430c1bda778baa64b37dc04d41"
+    },
+    {
+      "file": "6451a29d-typecheck.log",
+      "bytes": 159,
+      "sha256": "8e3bdc090f76bef4bd29f5142f6089b150a63a23dbee2a1c1e8d9b9474524b11"
+    },
+    {
+      "file": "b09c5ccb-bindings.log",
+      "bytes": 63,
+      "sha256": "65e631cd46a507b53842547998e9817e4b8ee5344a04d83c2ccaa5b46b67ec05"
+    },
+    {
+      "file": "b09c5ccb-build.log",
+      "bytes": 27736,
+      "sha256": "df5972aed028f94c4bd7f7ba5345c77a8da7908d7e094693bd99c4638ba3c756"
+    },
+    {
+      "file": "b09c5ccb-checks.json",
+      "bytes": 957,
+      "sha256": "ce2dde4c6464223ccb2d7b7a348763ff3c0122524bc9c4f2fa08616bbbf86070"
+    },
+    {
+      "file": "b09c5ccb-frontend.log",
+      "bytes": 486,
+      "sha256": "59ace5eab619d55c9fb00ed44683415adc9ba246b083275593340178e3f3f4f0"
+    },
+    {
+      "file": "b09c5ccb-guards.log",
+      "bytes": 18461,
+      "sha256": "21193cb0195e2620c7b365c8e7d3078f797c614387a366fae83fd9fddf303041"
+    },
+    {
+      "file": "b09c5ccb-typecheck.log",
+      "bytes": 159,
+      "sha256": "8e3bdc090f76bef4bd29f5142f6089b150a63a23dbee2a1c1e8d9b9474524b11"
+    },
+    {
+      "file": "baseline-obstruction.json",
+      "bytes": 36923,
+      "sha256": "ff1133ad11b8edf39044299be0e279dc03f55eab014a24576f4c12dbb2675e36"
+    },
+    {
+      "file": "baseline-obstruction.log",
+      "bytes": 34773,
+      "sha256": "28073c79cd44d4c6b2d743b83141cd6a93bc7711fdff32076320827aa2d93f85"
+    },
+    {
+      "file": "baseline-obstruction.png",
+      "bytes": 61607,
+      "sha256": "ff5f9ce1bd2f90934d45de83f0c495186d93f8173016e48c51c1361da8ecc350"
+    },
+    {
+      "file": "baseline-settled-obstruction.json",
+      "bytes": 36936,
+      "sha256": "25d1405650eea1cef0ee822198a5027d9b797df6329a6a3620e1140ccd336384"
+    },
+    {
+      "file": "baseline-settled-obstruction.log",
+      "bytes": 34863,
+      "sha256": "26c536ee82b2bdbe3b7e0aa8cfde81966d816672d367e46acfe93a3f4661571b"
+    },
+    {
+      "file": "baseline-setup.log",
+      "bytes": 13159,
+      "sha256": "44947ee60a457d287acb2489adee30a81f444f867e2b6a9f068cc37325b6e4cd"
+    },
+    {
+      "file": "candidate-obstruction.json",
+      "bytes": 36869,
+      "sha256": "a8049caad389f683833c61cd2ca06fefebe313e0e87c63f2586276d406172c72"
+    },
+    {
+      "file": "candidate-obstruction.log",
+      "bytes": 34883,
+      "sha256": "477e3d2ec5e3fd3fe67f1f1f3bdf3a7ad150c80d8c1a1c5cb0f6a14a311896da"
+    },
+    {
+      "file": "candidate-obstruction.png",
+      "bytes": 56493,
+      "sha256": "c2cfead7d4ee44e39dff6ae55082a0616ada37512db58c5f607a5aec7d1caa48"
+    },
+    {
+      "file": "candidate-setup.log",
+      "bytes": 13159,
+      "sha256": "e1f7bbe00ad0e61c485256e6bea2dc05e533dc3700f48770e73073f0b41a6ac3"
+    },
+    {
+      "file": "checks.py",
+      "bytes": 1950,
+      "sha256": "7d40514ad09e05f70ba7a434a56e731ccd2ffd8861638af8b5213b065636a27f"
+    },
+    {
+      "file": "comparison-corrected.json",
+      "bytes": 4772597,
+      "sha256": "1f918378945f2b9f9442710f20debe94f73d5d254b80e7c05f413cbaa1fcf429"
+    },
+    {
+      "file": "comparison-corrected.log",
+      "bytes": 2789989,
+      "sha256": "aeadf52af865632d409e4dcb52b29f455c4d8d7dfa405a1d75fbaa349f067d21"
+    },
+    {
+      "file": "comparison.js",
+      "bytes": 2140,
+      "sha256": "e13014720c92854e36eef23ccbfd80ae46cbf641cc53693f4e1537afd8694197"
+    },
+    {
+      "file": "comparison.json",
+      "bytes": 2304500,
+      "sha256": "0e5bfd3fc97a802e6e325cca30634ac6003624bd49b7b261ae19c30c353d966c"
+    },
+    {
+      "file": "comparison.log",
+      "bytes": 1371226,
+      "sha256": "276ccd171f78cd1ee72ece59598218979930e104a409bd785e0f0b34b8d589d7"
+    },
+    {
+      "file": "dock-header-1440.png",
+      "bytes": 200667,
+      "sha256": "3923d6c63b7e5d4620967ca987ab495fbbb1adedef60f8267d7483fc75b78de1"
+    },
+    {
+      "file": "dock-header-390.png",
+      "bytes": 74781,
+      "sha256": "e29f4902c0913ea989dd7a9c1fab44750341c5f221a4fb3b0dd7bc178fb2c540"
+    },
+    {
+      "file": "domain.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "final-setup.log",
+      "bytes": 13159,
+      "sha256": "1acdc21d87ae905140f46b4b7c69410149d3a6403e82b9bb3632d23b4f819374"
+    },
+    {
+      "file": "fixture-build.log",
+      "bytes": 42538,
+      "sha256": "79ff0a8df865a646d04cd627bc1b6d371ce2da77e3d1e5c64b2fab1f78652a4b"
+    },
+    {
+      "file": "fixture-final-build.log",
+      "bytes": 42538,
+      "sha256": "f31a3b6afc4f97fe9d946e21c7f05d1b228bafaa24bd8707d3c7067f00b748d8"
+    },
+    {
+      "file": "fixture-keyboard-build.log",
+      "bytes": 42538,
+      "sha256": "75cefd523e36a30823f09895aeddc8dcd4c1472ae23e52564864b4454c55dbeb"
+    },
+    {
+      "file": "fixture-reviewed-build.log",
+      "bytes": 42538,
+      "sha256": "c9104a1974f1d0ca0035d53fe695ef488d3173c3185da840375674d2b46a5e29"
+    },
+    {
+      "file": "focused-all.log",
+      "bytes": 265,
+      "sha256": "0cd80ccea867ac56a8a049a05c4d548fa0cd981b64eccec37c6344719b9043d1"
+    },
+    {
+      "file": "focused-corrected.log",
+      "bytes": 265,
+      "sha256": "fbcbfc47d44562a1eae08ac29058a3e78285433b085c1a0a977c879b6abd27fe"
+    },
+    {
+      "file": "focused.log",
+      "bytes": 2433,
+      "sha256": "56b3fa30d48f6dd0a06e73239a94bdec5a0e05739087325a2e8e4c60b24316fb"
+    },
+    {
+      "file": "functional-final.json",
+      "bytes": 4743311,
+      "sha256": "00f46b516f4d48521467c699e5321c9ddc602944e05a22866fff73cae52e20f6"
+    },
+    {
+      "file": "functional-final.log",
+      "bytes": 2766281,
+      "sha256": "31dfda51ac21332521f5155ce2c551eb361b101bc8587cc02a72e5ce523c9538"
+    },
+    {
+      "file": "functional-reviewed.json",
+      "bytes": 551002,
+      "sha256": "25fadb66a0604de3ffc0e90f3323285d1e6d91e4ae0bf6ecea3b602154ff49b9"
+    },
+    {
+      "file": "functional-reviewed.log",
+      "bytes": 312310,
+      "sha256": "885682bf797c9a3244b8f86e126bf3b3a6779872e56afe9099c557914baf6c80"
+    },
+    {
+      "file": "functional.js",
+      "bytes": 4102,
+      "sha256": "253cf975b287868642db18e2b0af0eaca2104ff2fd16855db66905e06bf8c0fa"
+    },
+    {
+      "file": "functional.json",
+      "bytes": 273761,
+      "sha256": "8fc34ccaee71f8d07943a3529b47e24a47fe01072118b65ef16db2cabd2d7eee"
+    },
+    {
+      "file": "functional.log",
+      "bytes": 168908,
+      "sha256": "9dec3114ba26fab0a2fc9e0b5daf86bacf41e3db9bd2133b79ed365bd889a177"
+    },
+    {
+      "file": "keyboard.log",
+      "bytes": 261,
+      "sha256": "2df5e07d8a878c371d01e752ed06719277eb428008734665af75185599bd20aa"
+    },
+    {
+      "file": "navigation-1x.js",
+      "bytes": 19226,
+      "sha256": "5710b591ecab174dc1094a5c91115c68d7975161fe35294575c7b5f3754fc342"
+    },
+    {
+      "file": "navigation-1x.json",
+      "bytes": 928991,
+      "sha256": "8f73c4b191b6a1d4fa939a1434bf42ff0e4b1ba30c736e654d13f2818be2c45f"
+    },
+    {
+      "file": "navigation-1x.log",
+      "bytes": 598108,
+      "sha256": "d41bcd6ddd9ee11db4e93f09d94fa37f43cde4ca45626dbfe4f3e7ebda7697fc"
+    },
+    {
+      "file": "navigation-4x.js",
+      "bytes": 19226,
+      "sha256": "59eef19cec2ff00ca33853374b76627f9b343a52551e339686bd28bce8426cd4"
+    },
+    {
+      "file": "navigation-4x.json",
+      "bytes": 1534232,
+      "sha256": "4f9f3c08dbde0227af5e8945e0a3db220ec1b57398dfad571f79a67769a402e6"
+    },
+    {
+      "file": "navigation-4x.log",
+      "bytes": 964259,
+      "sha256": "4ebf5f60258a3fceea04a60e1c2d64043f5d7e5d2b22949dd079ffdced021e38"
+    },
+    {
+      "file": "navigation-setup.log",
+      "bytes": 13159,
+      "sha256": "6bb0b58a4b559b1ef16bbd02dd898f31a6378a9bbbc689a9c073897475efbe27"
+    },
+    {
+      "file": "obstruction.js",
+      "bytes": 1782,
+      "sha256": "f9e87b85a0e3d9f7c076a18b2c4266f5de46c1808f7a1d5a154aae64c3296372"
+    },
+    {
+      "file": "zoom-corrected.json",
+      "bytes": 703650,
+      "sha256": "c1da2ebc5aae58cecffc970d3a92a09ccfe3300b1f6f939b3157849e9e49b60f"
+    },
+    {
+      "file": "zoom-corrected.log",
+      "bytes": 440164,
+      "sha256": "d2781a1ff2878d98bc16f0e43cdb13aceb3efba17fbd453de7a7c180dd95aa41"
+    },
+    {
+      "file": "zoom-final.json",
+      "bytes": 4562294,
+      "sha256": "ba2521e134daea8b23ac7bc002d0ce7487ada71933f67a5cf9f2ef7c9eb35041"
+    },
+    {
+      "file": "zoom-final.log",
+      "bytes": 2693847,
+      "sha256": "4dc21accff9c05204b6496ef8a55895509736b1fce55cb6c53e96818fc950bdb"
+    },
+    {
+      "file": "zoom.js",
+      "bytes": 4358,
+      "sha256": "86cc7cced349f190a69212edf67d936cf1e81806dc06da56cb509ef054c44897"
+    },
+    {
+      "file": "zoom.json",
+      "bytes": 282742,
+      "sha256": "3587a295242032874f96da91b27e865cbb64e955160eac032d3bcf5d2614feae"
+    },
+    {
+      "file": "zoom.log",
+      "bytes": 187572,
+      "sha256": "5719dab6631398f6c6bf525c5d45d5c978530ee713f95abc4cbbd0e4b9c498ad"
+    }
+  ]
+}
