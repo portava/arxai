@@ -1,0 +1,32 @@
+{
+  "head": "fa85336f4d7c9e33ae587bae66d0e0020b2d20fd",
+  "started": "2026-10-31T19:39:16.895143+00:00",
+  "results": [
+    {
+      "check": "frontend",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-navigation-profile-20261031/fa85336f-frontend.log"
+    },
+    {
+      "check": "typecheck",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-navigation-profile-20261031/fa85336f-typecheck.log"
+    },
+    {
+      "check": "build",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-navigation-profile-20261031/fa85336f-build.log"
+    },
+    {
+      "check": "guards",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-navigation-profile-20261031/fa85336f-guards.log"
+    },
+    {
+      "check": "bindings",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-navigation-profile-20261031/fa85336f-bindings.log"
+    }
+  ],
+  "finished": "2026-10-31T19:40:06.573766+00:00"
+}

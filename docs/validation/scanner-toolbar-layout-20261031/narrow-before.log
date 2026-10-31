@@ -1,0 +1,33 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-toolbar-layout-20261031/artifacts/trading-dashboard
+
+ ❯ src/components/charts/ChartWorkbenchTools.resize.test.tsx (6 tests | 1 failed) 175ms
+   × starts a narrow viewport collapsed without first laying out the expanded toolbar 35ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/charts/ChartWorkbenchTools.resize.test.tsx > starts a narrow viewport collapsed without first laying out the expanded toolbar
+AssertionError: expected 'contents' to be 'hidden' // Object.is equality
+
+Expected: "hidden"
+Received: "contents"
+
+ ❯ src/components/charts/ChartWorkbenchTools.resize.test.tsx:20:28
+     18| it('starts a narrow viewport collapsed without first laying out the ex…
+     19|  vi.stubGlobal('innerWidth',390);mount();
+     20|  expect(tools().className).toBe('hidden');
+       |                            ^
+     21|  resize(900);expect(tools().className).toBe('contents');
+     22| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  15:42:06
+   Duration  934ms (transform 98ms, setup 0ms, import 246ms, tests 175ms, environment 436ms)
+
+undefined
+/Users/areyouok/arx-chart-toolbar-layout-20261031/artifacts/trading-dashboard:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/components/charts/ChartWorkbenchTools.resize.test.tsx

@@ -1,0 +1,56 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-toolbar-layout-20261031/artifacts/trading-dashboard
+
+ ❯ src/components/charts/ChartWorkbenchTools.resize.test.tsx (5 tests | 2 failed) 189ms
+   × does not force a synchronous toolbar layout when mounting or opening tools 88ms
+   × uses each pane content width and the exact breakpoint 22ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/charts/ChartWorkbenchTools.resize.test.tsx > does not force a synchronous toolbar layout when mounting or opening tools
+AssertionError: expected "get clientWidth" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st get clientWidth call:
+
+    Array []
+
+
+Number of calls: 1
+
+ ❯ src/components/charts/ChartWorkbenchTools.resize.test.tsx:20:20
+     18| it('does not force a synchronous toolbar layout when mounting or openi…
+     19|  const reads=vi.spyOn(HTMLElement.prototype,'clientWidth','get');mount…
+     20|  expect(reads).not.toHaveBeenCalled();expect(observe).toHaveBeenCalled…
+       |                    ^
+     21|  resize(360);fireEvent.click(screen.getByRole('button',{name:'Chart to…
+     22|  expect(reads).not.toHaveBeenCalled();expect(observe).toHaveBeenCalled…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/charts/ChartWorkbenchTools.resize.test.tsx > uses each pane content width and the exact breakpoint
+AssertionError: expected 'contents' to be 'hidden' // Object.is equality
+
+Expected: "hidden"
+Received: "contents"
+
+ ❯ src/components/charts/ChartWorkbenchTools.resize.test.tsx:28:82
+     26|  resize(640);expect(tools().className).toBe('contents');
+     27|  resize(320);expect(tools().className).toBe('hidden');
+     28|  for(const width of [0,-1,NaN,Infinity]){resize(width);expect(tools().…
+       |                                                                                  ^
+     29| });
+     30| it('moves focus before responsive hiding and returns it to Pan when wi…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed (5)
+   Start at  15:38:47
+   Duration  1.08s (transform 107ms, setup 0ms, import 287ms, tests 189ms, environment 512ms)
+
+undefined
+/Users/areyouok/arx-chart-toolbar-layout-20261031/artifacts/trading-dashboard:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/components/charts/ChartWorkbenchTools.resize.test.tsx

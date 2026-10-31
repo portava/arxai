@@ -1,0 +1,14 @@
+
+> @workspace/trading-dashboard@0.0.0 test /Users/areyouok/arx-chart-toolbar-layout-20261031/artifacts/trading-dashboard
+> vitest run
+
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-toolbar-layout-20261031/artifacts/trading-dashboard
+
+Not implemented: navigation to another Document
+
+ Test Files  175 passed | 1 skipped (176)
+      Tests  2560 passed | 11 skipped (2571)
+   Start at  15:39:17
+   Duration  15.31s (transform 14.82s, setup 0ms, import 47.74s, tests 34.35s, environment 91.62s)
+

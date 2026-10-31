@@ -1,0 +1,9 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-toolbar-layout-20261031/artifacts/trading-dashboard
+
+
+ Test Files  2 passed (2)
+      Tests  30 passed (30)
+   Start at  15:38:56
+   Duration  1.39s (transform 200ms, setup 0ms, import 525ms, tests 897ms, environment 664ms)
+

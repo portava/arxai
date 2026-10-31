@@ -1,0 +1,324 @@
+{
+  "slow-cpu": {
+    "source": "643899a0a1ab5075957c851e3f2c9d40e511c160",
+    "fixture": "231a719410806a0e",
+    "passed": false,
+    "failure": null,
+    "cpu": 4,
+    "diagnosticOnly": false,
+    "summary": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 331.80000019073486,
+        "maxMs": 354.3999996185303,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 272,
+        "maxMs": 297.5,
+        "failedIndices": []
+      }
+    ],
+    "networkCounts": {
+      "requests": 486,
+      "unknown": 322,
+      "blocked": 32,
+      "consoleErrors": 354,
+      "errors": 0
+    },
+    "journal": {
+      "runId": "efc5291b299b6536de3b32f6cf734c46",
+      "sequence": 21,
+      "file": "efc5291b299b6536de3b32f6cf734c46.jsonl",
+      "buildId": "231a719410806a0e",
+      "directory": "231a719410806a0e-navigation-receipts"
+    }
+  },
+  "baseline-repeat": {
+    "source": "643899a0a1ab5075957c851e3f2c9d40e511c160",
+    "fixture": "231a719410806a0e",
+    "passed": false,
+    "failure": null,
+    "cpu": 4,
+    "diagnosticOnly": false,
+    "summary": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 318,
+        "maxMs": 332.5,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 262.30000019073486,
+        "maxMs": 298.59999990463257,
+        "failedIndices": []
+      }
+    ],
+    "networkCounts": {
+      "requests": 486,
+      "unknown": 322,
+      "blocked": 32,
+      "consoleErrors": 354,
+      "errors": 0
+    },
+    "journal": {
+      "runId": "8e3507079580e72606e5bc2ee1666e58",
+      "sequence": 21,
+      "file": "8e3507079580e72606e5bc2ee1666e58.jsonl",
+      "buildId": "231a719410806a0e",
+      "directory": "231a719410806a0e-navigation-receipts"
+    }
+  },
+  "candidate-slow-cpu": {
+    "source": "fa85336f4d7c9e33ae587bae66d0e0020b2d20fd",
+    "fixture": "8954a87ac8bfc2f6",
+    "passed": false,
+    "failure": null,
+    "cpu": 4,
+    "diagnosticOnly": false,
+    "summary": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 297.69999980926514,
+        "maxMs": 323.5,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 292.7000002861023,
+        "maxMs": 295.2000002861023,
+        "failedIndices": []
+      }
+    ],
+    "networkCounts": {
+      "requests": 486,
+      "unknown": 322,
+      "blocked": 32,
+      "consoleErrors": 354,
+      "errors": 0
+    },
+    "journal": {
+      "runId": "1bfdf75eb99380ce2923a9b58d3c691e",
+      "sequence": 21,
+      "file": "1bfdf75eb99380ce2923a9b58d3c691e.jsonl",
+      "buildId": "8954a87ac8bfc2f6",
+      "directory": "8954a87ac8bfc2f6-navigation-receipts"
+    }
+  },
+  "final-slow-cpu": {
+    "source": "81b7f0a8e9f127df9bbaf56048cd68f0b49655c2",
+    "fixture": "a48be51297ad7d78",
+    "passed": false,
+    "failure": null,
+    "cpu": 4,
+    "diagnosticOnly": false,
+    "summary": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 296.09999990463257,
+        "maxMs": 337.40000009536743,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 257.80000019073486,
+        "maxMs": 285.90000009536743,
+        "failedIndices": []
+      }
+    ],
+    "networkCounts": {
+      "requests": 486,
+      "unknown": 322,
+      "blocked": 32,
+      "consoleErrors": 354,
+      "errors": 0
+    },
+    "journal": {
+      "runId": "2ec080a7651da97954340ba8c4bd67b9",
+      "sequence": 21,
+      "file": "2ec080a7651da97954340ba8c4bd67b9.jsonl",
+      "buildId": "a48be51297ad7d78",
+      "directory": "a48be51297ad7d78-navigation-receipts"
+    }
+  },
+  "final-repeat": {
+    "source": "81b7f0a8e9f127df9bbaf56048cd68f0b49655c2",
+    "fixture": "a48be51297ad7d78",
+    "passed": false,
+    "failure": null,
+    "cpu": 4,
+    "diagnosticOnly": false,
+    "summary": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 293.90000009536743,
+        "maxMs": 304.30000019073486,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 264.7000002861023,
+        "maxMs": 266.19999980926514,
+        "failedIndices": []
+      }
+    ],
+    "networkCounts": {
+      "requests": 486,
+      "unknown": 322,
+      "blocked": 32,
+      "consoleErrors": 354,
+      "errors": 0
+    },
+    "journal": {
+      "runId": "c52c082c2686fcafd4ab84e77653930e",
+      "sequence": 21,
+      "file": "c52c082c2686fcafd4ab84e77653930e.jsonl",
+      "buildId": "a48be51297ad7d78",
+      "directory": "a48be51297ad7d78-navigation-receipts"
+    }
+  },
+  "normal": {
+    "source": "81b7f0a8e9f127df9bbaf56048cd68f0b49655c2",
+    "fixture": "a48be51297ad7d78",
+    "passed": true,
+    "failure": null,
+    "cpu": 1,
+    "diagnosticOnly": false,
+    "summary": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 5,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 38.10000038146973,
+        "maxMs": 97.59999990463257,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 5,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 37.69999980926514,
+        "maxMs": 99.09999990463257,
+        "failedIndices": []
+      }
+    ],
+    "networkCounts": {
+      "requests": 486,
+      "unknown": 322,
+      "blocked": 32,
+      "consoleErrors": 354,
+      "errors": 0
+    },
+    "journal": {
+      "runId": "4c569a7a91084c5c4c480c1c1b3f6985",
+      "sequence": 21,
+      "file": "4c569a7a91084c5c4c480c1c1b3f6985.jsonl",
+      "buildId": "a48be51297ad7d78",
+      "directory": "a48be51297ad7d78-navigation-receipts"
+    }
+  },
+  "profile": {
+    "source": "643899a0a1ab5075957c851e3f2c9d40e511c160",
+    "fixture": "231a719410806a0e",
+    "passed": false,
+    "failure": null,
+    "cpu": 4,
+    "diagnosticOnly": true,
+    "summary": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 343.2000002861023,
+        "maxMs": 349.7000002861023,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 312.09999990463257,
+        "maxMs": 327.80000019073486,
+        "failedIndices": []
+      }
+    ],
+    "networkCounts": {
+      "requests": 498,
+      "unknown": 334,
+      "blocked": 32,
+      "consoleErrors": 365,
+      "errors": 0
+    },
+    "journal": {
+      "runId": "afb90c0242ef12bd86d5d8a8627e72ec",
+      "sequence": 21,
+      "file": "afb90c0242ef12bd86d5d8a8627e72ec.jsonl",
+      "buildId": "231a719410806a0e",
+      "directory": "231a719410806a0e-navigation-receipts"
+    }
+  }
+}
