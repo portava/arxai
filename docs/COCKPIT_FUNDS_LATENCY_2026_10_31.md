@@ -41,6 +41,6 @@ No launch-ready, TradingView/MT5 parity, guaranteed fill speed, or architecture 
 
 ## Scanner work running separately
 
-The navigation fixes are installed in Replit development. Its first six measurements showed controls at 252–287 ms and an OHLC/canvas candidate at 673–799 ms, but reload-to-click delays of 27–55 seconds and pre-click candle requests invalidate those as immediate cold-navigation acceptance. Replit is retaining those samples and running bounded desktop/mobile method corrections on its original task. Exact saved source and final result are pending. Do not duplicate that task or import these funds changes during its timing pass.
+The navigation update finished at clean Replit development checkpoint **619f259db5f265a379190de42ff39fa5f876c768**. Actual checks passed (2,412 frontend tests/9 skips, typecheck/build, 87 guards/7 binding assertions). Immediate-first-click acceptance **did not pass**. The six original samples waited 27–55 seconds after reload and prefetched candles; desktop correction was blocked by onboarding, mobile correction missed its timing/paint criteria. All eight records and caveats remain. The agent is idle, not a running wait. See [final navigation outcome](SCANNER_FIRST_NAVIGATION_2026_10_31.md). Repair the measurement method before another claim or retry. These funds changes and the newer reader cache are not installed there.
 
 Receipts: [manifest](validation/cockpit-funds-20261031/manifest.json). Original logs: `/Users/areyouok/arx-tier1-release/cockpit-funds-20261031/`.
