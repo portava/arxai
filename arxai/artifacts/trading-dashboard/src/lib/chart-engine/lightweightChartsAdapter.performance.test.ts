@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const line = { applyOptions: vi.fn() };
-  const series = { setData: vi.fn(), update: vi.fn(), pop: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn(() => line), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
+  const series = { attachPrimitive: vi.fn(), setData: vi.fn(), update: vi.fn(), pop: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn(() => line), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
   const scale = { subscribeVisibleLogicalRangeChange: vi.fn(), getVisibleRange: vi.fn(() => ({from:100,to:400})), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 1 })), setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(), scrollToRealTime: vi.fn(), scrollToPosition: vi.fn(), options:()=>({rightOffset:8}) };
   const chart = { addSeries: vi.fn(() => series), subscribeCrosshairMove: vi.fn(), setCrosshairPosition:vi.fn(), clearCrosshairPosition:vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
   const createChart = vi.fn((_el: unknown, _options: any) => chart);
@@ -281,4 +281,87 @@ describe("display time zone", () => {
     expect(publish).toHaveBeenCalledExactlyOnceWith({kind:"crosshair",time:160});
     expect(mocks.series.setData).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("streamed candles notify the reader without a range change", () => {
+  it("coalesces a burst of applied revisions into one notification with the final OHLC", () => {
+    vi.useFakeTimers();
+    adapter.setCandles([bar(100), bar(200)]);
+    const observed: number[] = [];
+    adapter.subscribeViewport(() => observed.push(adapter.getVisibleCandles().at(-1)!.close));
+    for (let i = 0; i < 100; i++) adapter.updateActiveCandle(bar(200, 1.10 + i / 1000));
+    expect(observed).toEqual([]);
+    vi.advanceTimersByTime(20);
+    expect(observed).toEqual([1.199]);
+    expect(adapter.getVisibleCandles()).toEqual([bar(100), bar(200, 1.199)]);
+  });
+  it("ignores rejected streamed data and does not notify removed readers", () => {
+    vi.useFakeTimers();
+    adapter.setCandles([bar(200)]);
+    const notify = vi.fn();
+    const remove = adapter.subscribeViewport(notify);
+    adapter.updateActiveCandle(bar(100));
+    adapter.updateActiveCandle({ ...bar(200), high: 0 });
+    vi.advanceTimersByTime(20);
+    expect(notify).not.toHaveBeenCalled();
+    adapter.updateActiveCandle(bar(200, 1.19));
+    remove();
+    vi.advanceTimersByTime(20);
+    expect(notify).not.toHaveBeenCalled();
+    adapter.subscribeViewport(notify);
+    adapter.updateActiveCandle(bar(200, 1.18));
+    adapter.destroy();
+    vi.advanceTimersByTime(20);
+    expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+it("withdraws a visible reader explanation after a streamed OHLC revision and recovers on matching history", async () => {
+  const { createElement } = await import("react");
+  const { render, act, cleanup } = await import("@testing-library/react/pure");
+  const { SmartChartReader } = await import("../../components/charts/SmartChartReader");
+  vi.useFakeTimers();
+  const frames = new Map<number, FrameRequestCallback>(); let frameId = 0;
+  const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(callback => { frames.set(++frameId, callback); return frameId; });
+  const caf = vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(id => { frames.delete(id); });
+  const flushFrame = () => { const pending = [...frames.values()]; frames.clear(); for (const callback of pending) callback(performance.now()); };
+  const start = Date.parse("2026-10-31T10:00:00Z");
+  vi.setSystemTime(start + 30 * 300_000);
+  const raw = Array.from({ length: 30 }, (_, i) => ({
+    symbol: "V75", timeframe: "M5", source: "deriv_public", sourceMode: "live",
+    openTime: new Date(start + i * 300_000).toISOString(), closeTime: new Date(start + (i + 1) * 300_000).toISOString(),
+    open: 100, high: 101, low: 99, close: 100, isComplete: true, isFinal: true, isForming: false, qualityFlags: [],
+  }));
+  const canonical = raw.map(c => ({ time: Date.parse(c.openTime) / 1000, open: c.open, high: c.high, low: c.low, close: c.close }));
+  const data = { symbol: "V75", timeframe: "M5", source: "deriv_public", quality: "clean", candles: raw,
+    feedStatus: { source: "deriv_public" }, marketEvidence: { symbol: "V75", timeframe: "M5", source: "deriv_public", sourceIdentity: "a".repeat(64), lastClosedCandleAt: raw.at(-1)!.closeTime } };
+  mocks.scale.getVisibleLogicalRange.mockReturnValue({ from: 0, to: 29 });
+  adapter.setCandles(canonical);
+  const annotation = vi.spyOn(adapter, "setSmartAnnotation");
+  const view = render(createElement(SmartChartReader, { adapter, epoch: 1, symbol: "V75", timeframe: "M5", data: data as any, liveConfirmed: true, readFailed: false }));
+  try {
+    act(flushFrame);
+    expect(view.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("ready");
+    const notified = vi.fn(); adapter.subscribeViewport(notified);
+    act(() => { adapter.updateActiveCandle({ ...canonical.at(-1)!, close: 100.5 }); flushFrame(); });
+    expect(adapter.getVisibleCandles().at(-1)?.close).toBe(100.5);
+    expect(notified).toHaveBeenCalledOnce();
+    expect(view.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("unavailable");
+    expect(view.getByTestId("chart-reader-explanation").textContent).toContain("displayed candles are updating");
+    expect(annotation).toHaveBeenLastCalledWith(null);
+    act(() => { adapter.setCandles(canonical); flushFrame(); });
+    expect(view.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("ready");
+    const confirmedAsOf = view.getByTestId("smart-chart-reader").getAttribute("data-analysis-asof");
+    const tip = { ...canonical.at(-1)!, time: canonical.at(-1)!.time + 300 };
+    mocks.scale.getVisibleLogicalRange.mockReturnValue({ from: 0, to: 30 });
+    act(() => { for (let i = 0; i < 100; i++) adapter.updateActiveCandle({ ...tip, close: 100 + i / 1000 }); flushFrame(); });
+    expect(view.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("ready");
+    expect(view.getByTestId("smart-chart-reader").getAttribute("data-analysis-asof")).toBe(confirmedAsOf);
+    expect(view.getByTestId("chart-reader-context").textContent).toContain("30 closed candles");
+    // Two streamed bars do not certify that the older tip has closed at its source.
+    mocks.scale.getVisibleLogicalRange.mockReturnValue({ from: 0, to: 31 });
+    act(() => { adapter.updateActiveCandle({ ...tip, time: tip.time + 300 }); flushFrame(); });
+    expect(view.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("unavailable");
+    expect(annotation).toHaveBeenLastCalledWith(null);
+  } finally { cleanup(); adapter.destroy(); raf.mockRestore(); caf.mockRestore(); }
 });
