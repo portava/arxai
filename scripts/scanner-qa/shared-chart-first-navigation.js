@@ -41,9 +41,10 @@ async page => {
     const result=window.__arxFirstNavigation={readyAt:null,click:null,readyToClickMs:null,trusted:false,pointerAt:null,canvasMs:null,sourceCompleteMs:null,visibleCompleteMs:null,witnessCostMs:0,frames:0,failure:null,done:false,dialogObserved:false};
     let previousSource=null,previousVisible=null,frame=0,timer=null;
     const started=performance.now();
+    const navigationSelector=innerWidth<768?'[data-testid="bottomnav--market-scanner"]':'aside a[href="/market-scanner"]';
     const visibleBox=element=>{const r=element.getBoundingClientRect(),s=getComputedStyle(element);return r.width>0&&r.height>0&&s.visibility==='visible'&&Number(s.opacity)>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;};
     function actionableLink() {
-      return [...document.querySelectorAll('a[href="/market-scanner"]')].find(element=>{
+      return [...document.querySelectorAll(navigationSelector)].find(element=>{
         if(!visibleBox(element))return false;
         const r=element.getBoundingClientRect(),x=Math.max(0,r.left)+Math.min(r.width,innerWidth-Math.max(0,r.left))/2,y=Math.max(0,r.top)+Math.min(r.height,innerHeight-Math.max(0,r.top))/2;
         const hit=document.elementFromPoint(x,y);return hit===element||element.contains(hit);
@@ -70,13 +71,13 @@ async page => {
       if(result.visibleCompleteMs!==null){finish(null);return;}
       frame=requestAnimationFrame(observe);
     }
-    document.addEventListener('pointerdown',event=>{if(event.isTrusted&&event.target.closest?.('a[href="/market-scanner"]')&&result.pointerAt===null)result.pointerAt=event.timeStamp;},true);
+    document.addEventListener('pointerdown',event=>{if(event.isTrusted&&event.target.closest?.(navigationSelector)&&result.pointerAt===null)result.pointerAt=event.timeStamp;},true);
     document.addEventListener('click',event=>{
-      if(result.click!==null||!event.target.closest?.('a[href="/market-scanner"]'))return;
+      if(result.click!==null||!event.target.closest?.(navigationSelector))return;
       const now=performance.now();result.trusted=event.isTrusted;
       if(!event.isTrusted||!Number.isFinite(event.timeStamp)||event.timeStamp<0||event.timeStamp>now){finish('Untrusted click or unsupported event clock');return;}
       // Capture does not fabricate an earlier readiness mark if the observer missed it.
-      result.click=event.timeStamp;result.capturedAt=now;result.readyToClickMs=result.readyAt===null?null:event.timeStamp-result.readyAt;
+      result.click=event.timeStamp;result.capturedAt=now;result.clickTarget={selector:navigationSelector,testId:event.target.closest(navigationSelector).getAttribute("data-testid"),scrollY,rect:event.target.closest(navigationSelector).getBoundingClientRect().toJSON()};result.readyToClickMs=result.readyAt===null?null:event.timeStamp-result.readyAt;
       timer=setTimeout(()=>finish('Source-correct visible completion deadline exceeded'),budget.timeoutMs);
     },true);
     frame=requestAnimationFrame(observe);
@@ -96,7 +97,8 @@ async page => {
         const sample={viewport:viewport.name,index,failure:null};report.samples.push(sample);
         try {
           await page.goto(origin+'/',{waitUntil:'commit',timeout:15000});
-          await page.locator('a[href="/market-scanner"]').filter({visible:true}).first().click({timeout:budget.timeoutMs});
+          const navigationSelector=viewport.name==='mobile'?'[data-testid="bottomnav--market-scanner"]':'aside a[href="/market-scanner"]';
+          await page.locator(navigationSelector).click({timeout:budget.timeoutMs});
           await page.waitForFunction(()=>window.__arxFirstNavigation?.done,null,{timeout:budget.timeoutMs+1000});
         } catch(error){sample.failure=String(error?.message??error);}
         const current=await page.evaluate(async()=>({timing:window.__arxFirstNavigation,timeOrigin:performance.timeOrigin,runtime:window.__arxScannerQaBuildId,log:await window.__readFixtureLog()}));
