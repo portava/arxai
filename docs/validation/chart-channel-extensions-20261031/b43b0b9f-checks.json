@@ -1,0 +1,32 @@
+{
+  "head": "b43b0b9f63c5bfb1f89c38a9b5905e5e0fe2a4db",
+  "started": "2026-10-31T20:09:47.960083+00:00",
+  "results": [
+    {
+      "check": "frontend",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-channel-extensions-20261031/b43b0b9f-frontend.log"
+    },
+    {
+      "check": "typecheck",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-channel-extensions-20261031/b43b0b9f-typecheck.log"
+    },
+    {
+      "check": "build",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-channel-extensions-20261031/b43b0b9f-build.log"
+    },
+    {
+      "check": "guards",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-channel-extensions-20261031/b43b0b9f-guards.log"
+    },
+    {
+      "check": "bindings",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-channel-extensions-20261031/b43b0b9f-bindings.log"
+    }
+  ],
+  "finished": "2026-10-31T20:10:35.905224+00:00"
+}

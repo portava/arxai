@@ -1,0 +1,9 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-channel-extensions-20261031/artifacts/trading-dashboard
+
+
+ Test Files  4 passed (4)
+      Tests  59 passed (59)
+   Start at  16:09:24
+   Duration  1.28s (transform 268ms, setup 0ms, import 421ms, tests 793ms, environment 1.09s)
+
