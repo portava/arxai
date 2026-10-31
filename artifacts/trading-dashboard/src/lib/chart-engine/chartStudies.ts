@@ -114,7 +114,11 @@ export class StudyCalculator {
     }
     const prices = this.prices;
     const changed: StudyPoint[] = [];
-    const usesRange = c.kind === "stochastic" || c.kind === "williams" || c.kind === "donchian";
+    // Tiny revisions use the bounded direct scan: building four ring buffers
+    // costs more than scanning one/two windows. An incomplete warm-up has no
+    // range values at all. Bulk history remains linear in the number of bars.
+    const usesRange = bars.length >= p && bars.length - from > 2 &&
+      (c.kind === "stochastic" || c.kind === "williams" || c.kind === "donchian");
     const highs = usesRange ? new ChartRangeWindow(p, true) : null;
     const lows = usesRange ? new ChartRangeWindow(p, false) : null;
     // Only preceding observations enter the rebuilt window. Never inspect a
@@ -208,7 +212,11 @@ export class StudyCalculator {
           break;
         }
         case "stochastic": case "williams": case "donchian": {
-          const high = highs!.push(bar.high, i), low = lows!.push(bar.low, i);
+          let high = -Infinity, low = Infinity;
+          if (highs && lows) { high = highs.push(bar.high, i); low = lows.push(bar.low, i); }
+          else if (i >= p - 1) for (let j = i - p + 1; j <= i; j++) {
+            high = Math.max(high, bars[j]!.high); low = Math.min(low, bars[j]!.low);
+          }
           if (c.kind === "donchian") {
             values = i < p - 1 ? [null, null, null] : [high / 2 + low / 2, high, low];
             break;

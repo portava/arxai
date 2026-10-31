@@ -77,3 +77,15 @@ it("range windows match the simple extrema oracle through ties, signed zero and 
 it("catalog additions preserve the original starter collection and order", () => {
   expect(STUDY_DEFAULTS.map(s => s.kind)).toEqual(["sma", "ema", "bollinger", "rsi", "macd"]);
 });
+
+it("incomplete warm-up does not scan highs/lows for unavailable range values", () => {
+  for (const kind of ["stochastic", "williams", "donchian"] as const) {
+    let reads = 0;
+    const data = Array.from({ length: 200 }, (_, i) => ({ time: i + 1, open: 10, close: 10,
+      get high() { reads++; return 11; }, get low() { reads++; return 9; },
+    }));
+    const points = new StudyCalculator({ ...config, kind, period: 1000 }).calculate(data);
+    expect(reads).toBe(0);
+    expect(points.every(p => p.values.every(v => v === null))).toBe(true);
+  }
+});
