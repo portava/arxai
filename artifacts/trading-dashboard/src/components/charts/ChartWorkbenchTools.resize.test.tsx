@@ -15,6 +15,11 @@ const mount=()=>render(<ChartWorkbenchTools adapter={{setNavigationMode:vi.fn(),
 const resize=(width:number)=>act(()=>callback([{contentRect:{width}} as ResizeObserverEntry],{} as ResizeObserver));
 const tools=()=>screen.getByTestId('chart-advanced-tools');
 
+it('starts a narrow viewport collapsed without first laying out the expanded toolbar',()=>{
+ vi.stubGlobal('innerWidth',390);mount();
+ expect(tools().className).toBe('hidden');
+ resize(900);expect(tools().className).toBe('contents');
+});
 it('does not force a synchronous toolbar layout when mounting or opening tools',()=>{
  const reads=vi.spyOn(HTMLElement.prototype,'clientWidth','get');mount();
  expect(reads).not.toHaveBeenCalled();expect(observe).toHaveBeenCalledTimes(1);

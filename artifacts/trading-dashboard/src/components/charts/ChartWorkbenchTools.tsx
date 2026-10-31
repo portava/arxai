@@ -62,8 +62,11 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const panRef = useRef<HTMLButtonElement | null>(null);
   const toolsId = `${instanceId}-tools`;
-  const [compact,setCompact] = useState(false);
-  const compactRef = useRef(false);
+  // A narrow viewport cannot contain a wide pane. Start collapsed there so the
+  // first layout never measures an expanded mobile toolbar. Wider/split panes
+  // still resolve from their own observed content width, not this initial hint.
+  const [compact,setCompact] = useState(()=>typeof window!=="undefined"&&window.innerWidth<640);
+  const compactRef = useRef(compact);
   const resizeFocus = useRef<"toggle" | "pan" | null>(null);
   const toolsOpenRef = useRef(toolsOpen);
   useLayoutEffect(()=>{toolsOpenRef.current=toolsOpen;},[toolsOpen]);
