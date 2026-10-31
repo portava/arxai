@@ -70,5 +70,17 @@
   {
     "file": "unavailable-mobile.png",
     "sha256": "29bec9f6811d9d9a779d4e01f64485073c936de6d54c663965be6ae0d972c5d5"
+  },
+  {
+    "file": "desktop-corrective.js.gz",
+    "sha256": "cc73005f315c189c189a83822bfa7ad11ba0a60b45b36d461c2c64dcc5e9293f"
+  },
+  {
+    "file": "desktop-corrective.log.gz",
+    "sha256": "14cd2d403bc96c0494b4765166ba25e8f3c0af7ae166ef0e65c9c120bd83a293"
+  },
+  {
+    "file": "unavailable-desktop-stable.png",
+    "sha256": "6e1785fcfb1fe31b381a7a23ec3d3a3289310cee0e12faac05f3c059e303ddb0"
   }
 ]
