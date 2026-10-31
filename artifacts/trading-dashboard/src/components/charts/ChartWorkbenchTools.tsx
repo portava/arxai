@@ -64,9 +64,10 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [compact,setCompact] = useState(false);
   const compactRef = useRef(false);
   const resizeFocus = useRef<"toggle" | "pan" | null>(null);
-  // Measure each pane, not the window. Capture focus BEFORE React hides controls:
-  // CSS-only breakpoints can blur the element before ResizeObserver runs.
-  useLayoutEffect(()=>{
+  // Measure each pane after the parent engine layout setup, avoiding an early
+  // forced layout before that setup adds its canvas. ResizeObserver still
+  // captures focus before React hides controls at a pane breakpoint.
+  useEffect(()=>{
     const root=rootRef.current;
     if (!root || typeof ResizeObserver === "undefined") return;
     const measure=(width:number)=>{
