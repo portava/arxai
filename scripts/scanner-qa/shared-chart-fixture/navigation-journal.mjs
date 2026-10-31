@@ -7,7 +7,7 @@ export const journalPath='/__arx-qa/navigation-journal';
 export const maxRecordBytes=256*1024;
 export function recoverNavigationJournal(text) {
   const lines=text.split('\n'),records=[];
-  let error=null,pending=null,next=0,ended=false;
+  let error=null,pending=null,next=0,ended=false,allPassed=true;
   for(let i=0;i<lines.length;i++) {
     if(!lines[i]&&i===lines.length-1)break;
     try {
@@ -18,8 +18,8 @@ export function recoverNavigationJournal(text) {
       if(ended)throw Error('Record after completion');
       if(!records.length){if(e?.kind!=='start'||e.planned!==10)throw Error('Missing ten-attempt plan');}
       else if(e?.kind==='attempt'){if(pending!==null||next>=10||e.ordinal!==next)throw Error('Invalid attempt order');pending=next;}
-      else if(e?.kind==='result'){if(pending===null||e.ordinal!==pending||typeof e.sample?.acceptance?.valid!=='boolean'||typeof e.sample?.acceptance?.meetsTarget!=='boolean')throw Error('Invalid result');pending=null;next++;}
-      else if(e?.kind==='complete'){if(pending!==null||next!==10||typeof e.passed!=='boolean')throw Error('Premature completion');ended=true;}
+      else if(e?.kind==='result'){if(pending===null||e.ordinal!==pending||typeof e.sample?.acceptance?.valid!=='boolean'||typeof e.sample?.acceptance?.meetsTarget!=='boolean')throw Error('Invalid result');allPassed=allPassed&&e.sample.acceptance.valid&&e.sample.acceptance.meetsTarget;pending=null;next++;}
+      else if(e?.kind==='complete'){if(pending!==null||next!==10||e.passed!==allPassed)throw Error('Premature or inconsistent completion');ended=true;}
       else throw Error('Unknown event kind');
       records.push(record);
     } catch(e){error=`Invalid record ${i}: ${e.message}`;break;}
@@ -42,7 +42,7 @@ export function createNavigationJournal({directory,buildId,sourceHead}) {
     let runId=body.runId,run;
     if(event.kind==='start') {
       if(runId!==undefined||event.planned!==10||runs.size>=128)throw Error('Invalid new run');
-      runId=randomBytes(16).toString('hex');run={sequence:0,next:0,pending:null,complete:false};
+      runId=randomBytes(16).toString('hex');run={sequence:0,next:0,pending:null,complete:false,allPassed:true};
     } else {
       if(typeof runId!=='string'||!/^[a-f0-9]{32}$/.test(runId)||(run=runs.get(runId))===undefined||run.complete)throw Error('Unknown or completed run');
       run={...run};
@@ -51,9 +51,10 @@ export function createNavigationJournal({directory,buildId,sourceHead}) {
         run.pending=run.next;
       } else if(event.kind==='result') {
         if(run.pending===null||event.ordinal!==run.pending||!event.sample||typeof event.sample.acceptance?.valid!=='boolean'||typeof event.sample.acceptance?.meetsTarget!=='boolean')throw Error('Invalid result');
+        run.allPassed=run.allPassed&&event.sample.acceptance.valid&&event.sample.acceptance.meetsTarget;
         run.pending=null;run.next++;
       } else if(event.kind==='complete') {
-        if(run.pending!==null||run.next!==10||typeof event.passed!=='boolean')throw Error('Incomplete run');
+        if(run.pending!==null||run.next!==10||event.passed!==run.allPassed)throw Error('Incomplete or inconsistent run');
         run.complete=true;
       } else throw Error('Unknown event kind');
     }

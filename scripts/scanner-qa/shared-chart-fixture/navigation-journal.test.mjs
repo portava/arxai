@@ -30,11 +30,14 @@ test('completed receipts are flushed and survive destruction of the browser and 
   assert.equal((await f.post({runId,event:{kind:'attempt',ordinal}})).status,200);
   assert.equal((await f.post({runId,event:{kind:'result',ordinal,sample:sample(ordinal!==4)}})).status,200);
  }
+ assert.equal((await f.post({runId,event:{kind:'complete',passed:true}})).status,400);
  assert.equal((await f.post({runId,event:{kind:'complete',passed:false}})).status,200);
  const recovered=recoverNavigationJournal(await readFile(path.join(f.directory,file),'utf8'));
  assert.equal(recovered.complete,true);assert.equal(recovered.recorded,10);assert.equal(recovered.records.length,22);
  assert.equal(recovered.records.at(-1).event.passed,false);
  assert.equal(recovered.records.find(r=>r.event.sample?.failure)?.event.sample.visibleCompleteMs,250);
+ const corrupted=recovered.records.map((r,i)=>i===21?{...r,event:{...r.event,passed:true}}:r).map(JSON.stringify).join('\n')+'\n';
+ assert.equal(recoverNavigationJournal(corrupted).complete,false);
  assert.equal((await f.post({runId,event:{kind:'attempt',ordinal:10}})).status,400);
 });
 test('timeout with pending attempt preserves prior failed results and never passes',async t=>{
