@@ -43,3 +43,11 @@ test('profiling transforms require exact known files and anchors',()=>{
  }
  assert.equal(plugin.transform('untouched',root+'/other.ts'),undefined);
 });
+test('JSON and engine failures retain the original error object',async()=>{
+ const error=new Error('json failed');const response={status:200,json(){return Promise.reject(error)}};
+ const Adapter=setup(async()=>response);Adapter.prototype.setCandles=function(){throw error};installCandleTimeline(Adapter);
+ await assert.rejects((await window.fetch('/api/chart/candles')).json(),e=>e===error);
+ assert.throws(()=>new Adapter().setCandles([]),e=>e===error);
+ assert.equal(window.__arxCandleTimeline.events.some(e=>e.stage==='json.rejected'),true);
+ assert.equal(window.__arxCandleTimeline.events.at(-1).stage,'engine.setCandles.end');
+});
