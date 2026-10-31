@@ -317,10 +317,13 @@ describe("typed price window is bit-identical to the frozen State-object loops",
   const reference = (config: ChartStudy, data: ChartEngineCandle[]) => new ReferenceStudyCalculator(config).calculate(data);
   // Strip source from the catalog defaults (CCI defaults carry hlc3) so the
   // undefined case really exercises the `c.source ?? ...` fallback for every kind.
-  const configs = STUDY_CATALOG.flatMap(({ defaults: { source: _catalogSource, ...defaults }, appliedPrice: priced }) => periods.flatMap(period =>
+  // Freeze the legacy reference coverage; the new DMI has its own independent
+  // batch oracle and hand-computed vectors in chartDmi.test.ts.
+  const legacyCatalog = STUDY_CATALOG.filter(item=>item.defaults.kind !== "dmi");
+  const configs = legacyCatalog.flatMap(({ defaults: { source: _catalogSource, ...defaults }, appliedPrice: priced }) => periods.flatMap(period =>
     (priced ? sources : [undefined]).map(source => ({ ...defaults, period, ...(source ? { source } : {}) }) as ChartStudy)));
 
-  it.each(STUDY_CATALOG.map(item => item.defaults.kind))("%s full calculation matches by Object.is for every source and period 2/14/200/1000", kind => {
+  it.each(legacyCatalog.map(item => item.defaults.kind))("%s full calculation matches by Object.is for every source and period 2/14/200/1000", kind => {
     expect(configs.some(item => item.kind === kind && !("source" in item)), `${kind} has a config with no source key`).toBe(true);
     for (const config of configs.filter(item => item.kind === kind)) {
       const expected = reference(config, bars5000);

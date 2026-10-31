@@ -57,6 +57,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
     if (s.method != null && !["sma", "ema", "smma", "wma"].includes(s.method)) continue;
     if (["bollinger", "envelopes"].includes(s.kind) && (!Number.isFinite(s.multiplier) || s.multiplier <= 0 || s.multiplier > 100)) continue;
     if (s.kind === "macd" && (!period(s.slow) || s.slow <= s.period || !period(s.signal))) continue;
+    if (s.kind === "dmi" && !period(s.signal)) continue;
     if (s.kind === "stochastic" && (!period(s.smoothing) || !period(s.signal))) continue;
     seen.add(id);
     studies.push({
@@ -64,6 +65,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(s.source ? { source: s.source } : {}),
       ...(["bollinger", "envelopes"].includes(s.kind) ? { multiplier: s.multiplier } : {}),
       ...(s.kind === "macd" ? { slow: s.slow, signal: s.signal, ...(s.signalMethod ? { signalMethod: s.signalMethod } : {}) } : {}),
+      ...(s.kind === "dmi" ? {signal:s.signal} : {}),
       ...(s.kind === "stochastic" ? { smoothing: s.smoothing, signal: s.signal } : {}),
       ...(["atr", "envelopes"].includes(s.kind) && s.method ? { method: s.method } : {}),
     });

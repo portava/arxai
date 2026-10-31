@@ -51,6 +51,19 @@ describe("independent study configuration", () => {
     expect(add.hasAttribute("disabled")).toBe(false);
     fireEvent.click(add);
     expect(settings().studies).toHaveLength(12);
-    expect(within(screen.getByLabelText("Available studies")).getAllByRole("button")).toHaveLength(18);
+    expect(within(screen.getByLabelText("Available studies")).getAllByRole("button")).toHaveLength(19);
   });
+});
+
+it("configures DMI direction and strength lengths independently with clear semantics",()=>{
+ render(<Workspace/>);fireEvent.change(screen.getByLabelText("Search studies"),{target:{value:"ADX"}});
+ fireEvent.click(screen.getByRole("button",{name:"Add Directional movement (DMI / ADX)"}));
+ fireEvent.blur(screen.getByLabelText("DMI 1 DI period"),{target:{value:"7"}});
+ fireEvent.blur(screen.getByLabelText("DMI 1 ADX smoothing"),{target:{value:"21"}});
+ expect(settings().studies[0]).toMatchObject({kind:"dmi",period:7,signal:21});
+ expect(screen.queryByLabelText("DMI 1 Source")).toBeNull();
+ expect(screen.getByText(/ADX measures strength, not direction or confidence/)).toBeTruthy();
+ fireEvent.click(screen.getByRole("button",{name:"Duplicate study 1"}));
+ fireEvent.blur(screen.getByLabelText("DMI 2 ADX smoothing"),{target:{value:"3"}});
+ expect(settings().studies.map((s:any)=>s.signal)).toEqual([21,3]);
 });

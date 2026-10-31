@@ -4,7 +4,7 @@ import { ChartRangeWindow, scanChartRange } from "./chartRangeWindow";
 export type StudyKind =
   | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
   | "rsi" | "macd" | "atr" | "cci" | "stochastic" | "williams"
-  | "stddev" | "envelopes" | "momentum" | "roc" | "donchian";
+  | "stddev" | "envelopes" | "momentum" | "roc" | "donchian" | "dmi";
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
 export type AverageMethod = "sma" | "ema" | "smma" | "wma";
 export interface ChartStudy {
@@ -53,6 +53,7 @@ export const STUDY_CATALOG: StudyDefinition[] = [
   { name: "Momentum ratio", group: "Momentum", description: "Current price ÷ price N bars ago × 100 (MT5 convention).", defaults: { kind: "momentum", period: 14, color: "#4ade80" }, channels: ["Momentum"], pane: true, appliedPrice: true, levels: [100] },
   { name: "Rate of change", group: "Momentum", description: "Percentage price change over N bars.", defaults: { kind: "roc", period: 14, color: "#fbbf24" }, channels: ["ROC %"], pane: true, appliedPrice: true, levels: [0] },
   { name: "Donchian Channels", group: "Volatility", description: "Highest high, lowest low and their midpoint over the selected bars, including the forming bar. Requires a full window; channel contact alone is not a breakout signal.", defaults: { kind: "donchian", period: 20, color: "#38bdf8" }, channels: ["Midpoint", "Upper", "Lower"], pane: false, appliedPrice: false },
+  { name: "Directional movement (DMI / ADX)", group: "Trend", description: "Wilder-smoothed +DI and −DI show directional movement; ADX measures strength, not direction or confidence. Separate DI and ADX lengths; tied moves count as zero. Not a trade signal.", defaults: { kind: "dmi", period: 14, signal: 14, color: "#38bdf8" }, channels: ["+DI", "−DI", "ADX"], pane: true, appliedPrice: false, range: [0, 100] },
 ];
 /** Preserve the original starter collection and saved templates. */
 export const STUDY_DEFAULTS = (["sma", "ema", "bollinger", "rsi", "macd"] as const).map(kind => STUDY_CATALOG.find(item => item.defaults.kind === kind)!.defaults);
@@ -62,6 +63,7 @@ export const studyId = (study: ChartStudy) => study.id ?? study.kind;
 export function studyLabel(study: ChartStudy): string {
   const parameters = [study.period];
   if (study.kind === "macd") parameters.push(study.slow ?? 26, study.signal ?? 9);
+  if (study.kind === "dmi") parameters.push(study.signal ?? 14);
   if (study.kind === "stochastic") parameters.push(study.smoothing ?? 3, study.signal ?? 3);
   if (study.kind === "bollinger" || study.kind === "envelopes") parameters.push(study.multiplier ?? 2);
   const source = studyDefinition(study.kind).appliedPrice ? ` · ${study.source ?? (study.kind === "cci" ? "hlc3" : "close")}` : "";
@@ -209,6 +211,23 @@ export class StudyCalculator {
           const close = bars[i - 1]?.close;
           const range = close == null ? bar.high - bar.low : Math.max(bar.high - bar.low, Math.abs(bar.high - close), Math.abs(bar.low - close));
           values = [average("range", range, p, c.method ?? "smma")];
+          break;
+        }
+        case "dmi": {
+          // The first candle has no preceding movement. Seed all three Wilder
+          // averages from the same p real transitions, then seed ADX from its
+          // own full DX window. Revisions reuse the previous bar checkpoint.
+          const before = bars[i - 1];
+          const up = before ? bar.high - before.high : 0;
+          const down = before ? before.low - bar.low : 0;
+          const range = before ? Math.max(bar.high - bar.low, Math.abs(bar.high - before.close), Math.abs(bar.low - before.close)) : null;
+          const tr = average("tr", range, p, "smma");
+          const positive = average("positive", before ? (up > 0 && up > down ? up : 0) : null, p, "smma");
+          const negative = average("negative", before ? (down > 0 && down > up ? down : 0) : null, p, "smma");
+          const plus = tr == null || positive == null ? null : tr === 0 ? 0 : 100 * positive / tr;
+          const minus = tr == null || negative == null ? null : tr === 0 ? 0 : 100 * negative / tr;
+          const dx = plus == null || minus == null ? null : plus + minus === 0 ? 0 : 100 * Math.abs(plus - minus) / (plus + minus);
+          values = [plus, minus, average("adx", dx, c.signal ?? 14, "smma")];
           break;
         }
         case "stochastic": case "williams": case "donchian": {

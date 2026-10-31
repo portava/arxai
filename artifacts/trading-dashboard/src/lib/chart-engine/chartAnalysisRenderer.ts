@@ -364,7 +364,7 @@ function studySeriesOptions(config: ChartStudy, channel: number):
     return {histogram:true,options:{color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}};
   }
   const title = definition.pane ? `${config.kind.toUpperCase()} ${config.period} ${definition.channels[channel]}` : "";
-  return {histogram:false,options:{color:channel === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title,priceFormat:{type:"price",precision:config.kind === "rsi" ? 2 : 5,minMove:config.kind === "rsi" ? .01 : .00001}, ...(definition.range ? {autoscaleInfoProvider:() => ({priceRange:{minValue:definition.range![0],maxValue:definition.range![1]}})} : {})}};
+  return {histogram:false,options:{color:config.kind === "dmi" ? (channel === 0 ? "#4ade80" : channel === 1 ? "#fb7185" : config.color) : channel === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title,priceFormat:{type:"price",precision:config.kind === "rsi" ? 2 : 5,minMove:config.kind === "rsi" ? .01 : .00001}, ...(definition.range ? {autoscaleInfoProvider:() => ({priceRange:{minValue:definition.range![0],maxValue:definition.range![1]}})} : {})}};
 }
 /** Options that differ between two same-kind specs. Functions depend on the
  * kind only (autoscale range), so they never differ. */
