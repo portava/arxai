@@ -19,7 +19,7 @@ export function exportLabels({symbol,timeframe,capture,feedLabel,style,studies}:
 }
 const names = DRAWING_NAMES;
 interface Props {
-  adapter: ChartEngineAdapter | null; epoch: number; symbol: string; timeframe: string;
+  adapter: ChartEngineAdapter | null; epoch: number | string; symbol: string; timeframe: string;
   preferences: ChartPreferences; onPreferences: Dispatch<SetStateAction<ChartPreferences>>;
   hasCandles: boolean; feedLabel: string;
   /** Optional private analysis namespace; live charts keep their existing key. */

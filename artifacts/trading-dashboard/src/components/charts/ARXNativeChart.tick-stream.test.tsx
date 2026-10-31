@@ -766,6 +766,19 @@ describe("source-bound chart ticks", () => {
     expect(adapterSpies.setCandles.mock.calls.slice(first).some(([rows])=>rows.length===0)).toBe(true);
     act(()=>old!.emit(event()));expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
   });
+  it("clears and binds a changed source once without a second data delivery from an epoch-only render",()=>{
+    const proof={symbol:SYMBOL,timeframe:TF,source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:new Date(NEWEST_OPEN_MS+M5_MS).toISOString()};
+    currentCandleResponse={...currentCandleResponse!,marketEvidence:proof};const view=renderChart();
+    adapterSpies.setCandles.mockClear();adapterSpies.setFeedState.mockClear();
+    currentCandleResponse={...currentCandleResponse!,marketEvidence:{...proof,sourceIdentity:"b".repeat(64)}};
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const deliveries=adapterSpies.setCandles.mock.calls.map(([rows])=>rows);
+    expect(deliveries.filter(rows=>rows.length>0)).toHaveLength(1);
+    expect(deliveries[0]).toEqual([]);expect(deliveries.at(-1)?.length).toBeGreaterThan(0);
+    expect(adapterSpies.setFeedState.mock.calls[0]![0]).toEqual({livePriceAffordance:false,source:null});
+    expect(adapterSpies.setFeedState).toHaveBeenLastCalledWith({livePriceAffordance:true,source:"mt5_broker"});
+    expect(adapterSpies.init).toHaveBeenCalledOnce();
+  });
   it("discards a half-finished drawing when the observed source identity changes",()=>{
     const proof={symbol:SYMBOL,timeframe:TF,source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:new Date(NEWEST_OPEN_MS+M5_MS).toISOString()};
     currentCandleResponse={...currentCandleResponse!,marketEvidence:proof};const view=renderChart();
