@@ -1,0 +1,19 @@
+# Cockpit unavailable-data correction
+
+Checked code **06eb9a6a905aa3b244c5b3c91b82934f99ff46af**, based on combined candidate861c56f9. Separate development branch `codex/cockpit-unavailable-states-20261031`; not part of Replit's in-progress frozen861c56f9 update. No orders, gates, backend writes or data calculations changed.
+
+Denied API reads previously became confident empty states: no events, no alerts, manageable markets, no setups, or an instruction to make the first trade. Now five cockpit cards distinguish unavailable/malformed/refetch-failed reads from response-scoped empty results. Cached timing candidates are withdrawn on errors. Timing displays only unique requested provider-backed rows with complete required scores and a valid reported generation time; basic/partial estimates, unavailable or duplicate/conflicting rows cannot be promoted into ranked candidates. Partial coverage stays explicit, and response receipt time is no longer described as a live-provider observation. Read timestamps remain shown; this does not establish a new expiry/entry policy.
+
+Alert grouping no longer invents the current time when a timestamp is absent/invalid/future, or claims repeats all happened today. Unknown occurrence times remain explicit. The performance endpoint supplies all-time closed-trade counts and best trade alongside UTC today's realized profit: the card now labels those scopes, preserves a genuine zero best trade, and exposes excluded unknown results.
+
+Evidence:
+
+- Original focused16 tests: **15 fail /1 pass**, proving false-empty behavior, malformed-response problems and invented alert time/count scope. Initial native dependency startup failure retained separately.
+- Expanded regression suite: **33/33 pass**, covering missing/malformed/error-with-cache, timing quality/coverage/duplicates, positive candidate/caution rendering, response-scoped empty, timestamp honesty and performance scope.
+- Exact06eb9a6a full frontend: **2,510 pass /11 skip /0 fail**,173 passing files and one skipped opt-in benchmark file. Dashboard typecheck/build, **87 guards**, **7 binding assertions** pass. Full root CI/DB integration not run for this frontend-only change.
+- Immutable actual-app production fixture **69cde24eac3c9d49**: all5 unavailable cards verified in DOM, old false-all-clear copy absent; desktop/mobile screenshots inspected. Existing funds pause/manual-refresh/resume/expiry check PASS, one manual request while paused, no page exceptions. Five synthetic event-to-DOM samples0.8–10.5ms; two-frame observations32–41.6ms. All samples retained, including slower first observation. These are small local observations, not physical paint or broker/competitive latency; earlier combined source had0.6–9.7ms/31.1–41.4ms and no speedup is claimed.
+- Every external/API mutation blocked. Three ordinary background write attempts denied. All unfaked reads return unavailable; no real account or provider proof. Owned test browser/server stopped.
+
+Receipts and hashes: `docs/validation/cockpit-unavailable-20261031/manifest.json`.
+
+Remaining limits: stale/missing Open Positions can still say no positions right now, partial funds polls can preserve older position details, and currency formatting/other cockpit states remain to be audited. Today's profit derives from the existing server UTC convention; no user-local-day recomputation added. Timing generation time is displayed, not proof of underlying quote freshness. Full user journey, precise real-provider chart first paint/analysis, native terminal and matched TradingView/MT5 benchmarks remain open. This improves reliability against the owner's Truth requirements, not competitor parity certification or launch approval.
