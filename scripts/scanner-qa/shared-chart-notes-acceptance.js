@@ -2,10 +2,12 @@ async page => {
   const report={passed:false,checks:[],snapshots:[],screenshots:[],failure:null,png:{status:'NOT_ATTEMPTED'},
     limitations:['Actual Scanner in the isolated production fixture; synthetic historical data and unavailable AI truth.',
       'Drawing-tool selection uses selectOption; these are functional checks, not trusted-input latency or hardware-paint measurements.',
-      'Persistence is a same-document keyed Workbench unmount/remount. Setup clears browser storage on document navigation, so this script never reloads or reseeds a note.',
+      'Default persistence checks use same-document remounts. The explicit reload mode requires a fixture that clears storage only on its first document; no note is reseeded.',
       'Canvas geometry and real drawing attachment are observed; screenshots and exported PNG still require visual inspection.',
       'The 390px mobile viewport uses mouse/pointer interactions; this is not touch-device acceptance.',
       'No broker, trading, production, exhaustive device coverage or TradingView/MT5 parity acceptance.']};
+  const reloadRequested=typeof SCANNER_QA_RELOAD==='undefined'?false:SCANNER_QA_RELOAD;
+  if(typeof reloadRequested!=='boolean')throw Error('Reload acceptance flag must be boolean');
   const prefix=typeof SCANNER_QA_OUTPUT_PREFIX==='string'?SCANNER_QA_OUTPUT_PREFIX:'.playwright-cli/scanner-notes';
   const storageKey='arx.chart.drawings.v1:EURUSD:M15';
   const check=(condition,message)=>{if(!condition)throw Error(message);report.checks.push(message);};
@@ -308,6 +310,36 @@ async page => {
     check(await panel.getByTestId('smart-chart-reader').getAttribute('data-analysis-status')==='unavailable','User notes leave the reader explicitly unavailable');
     check(await page.getByRole('dialog').count()===0,'No order or confirmation dialog was opened');
     check(await page.evaluate(()=>window.__arxScannerQaBuildId)===report.build.buildId,'Executing build remains unchanged through all note actions');
+    if(reloadRequested) {
+      check(initialLog.preserveStorageOnReload===true,'Reload uses an explicitly storage-preserving offline fixture');
+      const savedBefore=await page.evaluate(key=>localStorage.getItem(key),storageKey);
+      const documentBefore=await page.evaluate(()=>performance.timeOrigin);
+      const responsesBefore=(await log()).candleResponses.length;
+      await page.evaluate(()=>window.__arxNotesQa.stop());
+      await page.reload();
+      await panel.getByTestId('arx-native-canvas').waitFor();
+      await page.waitForFunction(()=>window.__arxChartQa?.snapshot()?.barCount===200);
+      check(await page.evaluate(()=>performance.timeOrigin)!==documentBefore,'A new browser document actually loaded');
+      const afterReload=await waitSeries('EURUSD','M15',900);
+      const newResponses=(await log()).candleResponses.slice(responsesBefore);
+      check(newResponses.some(row=>matchesRequest(row,'EURUSD','M15')),'Reload fetched new exact Scanner candles through the existing network barrier');
+      check(JSON.stringify(afterReload.data)===JSON.stringify(baseline.data),'Reloaded actual canonical and displayed prices match the prior fixture');
+      check(await page.evaluate(key=>localStorage.getItem(key),storageKey)===savedBefore,'Reload preserves the complete serialized note without reseeding');
+      await page.evaluate(installNoteObserver);
+      await canvas.scrollIntoViewIfNeeded();
+      await panel.getByRole('button',{name:'Zoom in chart',exact:true}).click();
+      surface=await waitNote('document-reload',s=>savedNoteMatches(s.drawings,note)&&paintedNote(s)&&matchesProjection(s,note.id));
+      check(boundedNote(surface.notes[0],surface.pane),'Reloaded note is attached, painted and bounded on the current chart');
+      await openObjects();
+      check(await panel.getByLabel('Drawing 1 note text',{exact:true}).inputValue()===note.text,'Reloaded Objects editor retains the full literal note');
+      check(await panel.getByRole('button',{name:'Undo',exact:true}).isDisabled(),'Reload does not invent a drawing undo history');
+      const toggle=panel.getByRole('button',{name:'Chart tools',exact:true});
+      if(await toggle.isVisible()&&await toggle.getAttribute('aria-expanded')==='true')await toggle.click();
+      await saveCanvasScreenshot('reloaded-note');
+      check(await panel.getByTestId('smart-chart-reader').getAttribute('data-analysis-status')==='unavailable','Reload does not upgrade unavailable market truth');
+      check(await page.evaluate(()=>window.__arxScannerQaBuildId)===report.build.buildId,'Reload executes the identical immutable build');
+      report.documentReload={passed:true,documentBefore,documentAfter:await page.evaluate(()=>performance.timeOrigin)};
+    }
     report.passed=true;
   } catch(error) {
     report.failure=String(error?.stack??error);

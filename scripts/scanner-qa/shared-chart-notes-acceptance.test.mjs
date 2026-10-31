@@ -115,8 +115,11 @@ test('canvas operation observer forwards real calls unchanged and restores owner
   window.__arxNotesQa.resetTextDraws();assert.equal(Object.keys(window.__arxNotesQa.read().textDraws).length,0);
   window.__arxNotesQa.stop();assert.equal(CanvasContext.prototype.fillText,original);assert.equal(window.__arxNotesQa,undefined);assert.equal(listeners.size,0);
 });
-test('no reload, note seeding, rendering invocation or async-truthy poll can manufacture persistence/completion',()=>{
-  assert.doesNotMatch(source,/page\.(?:reload|goto)\s*\(/);
+test('explicit reload cannot seed notes, force rendering or use async-truthy completion',()=>{
+  assert.match(source,/if\(reloadRequested\) \{/);
+  assert.match(source,/initialLog\.preserveStorageOnReload===true/);
+  assert.match(source,/performance\.timeOrigin/);
+  assert.doesNotMatch(source,/page\.goto\s*\(/);
   assert.doesNotMatch(source,/localStorage\.(?:setItem|clear)\s*\(/);
   assert.doesNotMatch(source,/\.updateGeometry\s*\(|\.setDrawings\s*\(|\.setData\s*\(/);
   assert.doesNotMatch(source,/waitForFunction\(async\b/);

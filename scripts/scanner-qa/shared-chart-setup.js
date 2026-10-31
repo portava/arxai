@@ -5,6 +5,18 @@ async page => {
   throw Error('Offline fixture role must be USER or ADMIN');
  }
  const fixtureRole=resolveFixtureRole(typeof SCANNER_QA_ROLE==='undefined'?undefined:SCANNER_QA_ROLE);
+ const preserveStorageOnReload=typeof SCANNER_QA_PRESERVE_STORAGE_ON_RELOAD==='undefined'?false:SCANNER_QA_PRESERVE_STORAGE_ON_RELOAD;
+ if(typeof preserveStorageOnReload!=='boolean')throw Error('Offline storage preservation must be boolean');
+ function initializeOfflineStorage(preserve) {
+  const marker='arx.offline.qa.storage.initialized.v1';
+  if(!preserve||sessionStorage.getItem(marker)!=='yes') {
+   localStorage.clear();sessionStorage.clear();
+   localStorage.setItem('highroll.chartSymbol','EURUSD');
+   localStorage.setItem('highroll.onboarding.firstrun.dismissed.v1','1');
+   if(preserve)sessionStorage.setItem(marker,'yes');
+  }
+ }
+
  const requests=[],unknown=[],blocked=[],errors=[],consoleErrors=[],candleResponses=[];
  const origin=typeof SCANNER_QA_BASE_URL==='string'?SCANNER_QA_BASE_URL:'http://127.0.0.1:4199';
  if(new URL(origin).hostname!=='127.0.0.1')throw Error('Offline fixture requires loopback');
@@ -13,14 +25,11 @@ async page => {
  await page.exposeFunction('__fixtureSwitchSource', config => {fixtureSource=config.source;fixtureIdentity=config.identity;return true;});
  page.on('pageerror',e=>errors.push(e.message));
  page.on('console',m=>{if(m.type()==='error') consoleErrors.push(m.text());});
- await page.exposeFunction('__readFixtureLog',()=>({fixtureRole,requests,unknown,blocked,errors,consoleErrors,candleResponses}));
+ await page.exposeFunction('__readFixtureLog',()=>({fixtureRole,preserveStorageOnReload,requests,unknown,blocked,errors,consoleErrors,candleResponses}));
  await page.context().routeWebSocket('**/*',ws=>{blocked.push({kind:'websocket',url:ws.url()});ws.close();});
+ await page.addInitScript(initializeOfflineStorage,preserveStorageOnReload);
  await page.addInitScript(()=>{
-  localStorage.clear();
-  sessionStorage.clear();
   if(navigator.serviceWorker)navigator.serviceWorker.register=async()=>{throw Error('Service workers disabled for offline QA');};
-  localStorage.setItem('highroll.chartSymbol','EURUSD');
-  localStorage.setItem('highroll.onboarding.firstrun.dismissed.v1','1');
   window.__offlineStreams=[];
   class OfflineEventSource { constructor(url){this.url=url;this.readyState=2;window.__offlineStreams.push(this);} close(){this.closed=true;} addEventListener(){} removeEventListener(){} }
   window.EventSource=OfflineEventSource;
