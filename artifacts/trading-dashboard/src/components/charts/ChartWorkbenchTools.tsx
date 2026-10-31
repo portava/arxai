@@ -163,7 +163,9 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   };
   useEffect(()=>{adapter?.setDrawings?.(hidden ? [] : drawings);},[adapter,epoch,hidden,drawings]);
   useEffect(()=>{
-    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:setSelectedId,onCommit:change});
+    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:setSelectedId,onCommit:change,
+      ...(history.past.length ? {onUndo:()=>undo()} : {}),
+      ...(history.future.length ? {onRedo:()=>undo(true)} : {})});
   });
   useEffect(()=>()=>adapter?.setDrawingInteraction?.(null),[adapter]);
   useEffect(()=>{if(selectedId && !drawings.some(d=>d.id === selectedId && !d.hidden)) setSelectedId(null);},[drawings,selectedId]);
@@ -262,8 +264,8 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       </select>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={snap} title="Snap new anchors and dragged handles to the nearest open, high, low or close of the candle" onClick={()=>setSnap(value=>!value)}>Magnet {snap ? "on" : "off"}</Button>
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "objects"} onClick={()=>setPanel(p=>p === "objects" ? null : "objects")}>Objects ({drawings.length})</Button>
-      <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!history.past.length} onClick={()=>undo()}>Undo</Button>
-      <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!history.future.length} onClick={()=>undo(true)}>Redo</Button>
+      <Button size="sm" variant="ghost" className="h-8 text-xs" title="Undo drawing edit (Ctrl/Cmd+Z on chart)" disabled={!history.past.length} onClick={()=>undo()}>Undo</Button>
+      <Button size="sm" variant="ghost" className="h-8 text-xs" title="Redo drawing edit (Ctrl/Cmd+Shift+Z on chart)" disabled={!history.future.length} onClick={()=>undo(true)}>Redo</Button>
       {showTemplates && <ChartTemplatesPanel preferences={preferences} onPreferences={onPreferences} onHiddenTriggerClose={()=>{
         const fallback=[toggleRef.current,panRef.current].find(button=>button && !button.disabled && button.getClientRects().length);
         if(!fallback)return false;fallback.focus();return true;
