@@ -4,8 +4,11 @@ async page => {
       'Drawing-tool selection uses selectOption; these are functional checks, not trusted-input latency or hardware-paint measurements.',
       'Default persistence checks use same-document remounts. The explicit reload mode requires a fixture that clears storage only on its first document; no note is reseeded.',
       'Canvas geometry and real drawing attachment are observed; screenshots and exported PNG still require visual inspection.',
-      'The 390px mobile viewport uses mouse/pointer interactions; this is not touch-device acceptance.',
+      'Default input uses mouse. Explicit touch mode covers browser-emulated touch placement/drag/cancel; control selection remains programmatic and no physical-device acceptance is claimed.',
       'No broker, trading, production, exhaustive device coverage or TradingView/MT5 parity acceptance.']};
+  const touchRequested=typeof SCANNER_QA_TOUCH==='undefined'?false:SCANNER_QA_TOUCH;
+  if(typeof touchRequested!=='boolean')throw Error('Touch acceptance flag must be boolean');
+  let touchSession=null;
   const reloadRequested=typeof SCANNER_QA_RELOAD==='undefined'?false:SCANNER_QA_RELOAD;
   if(typeof reloadRequested!=='boolean')throw Error('Reload acceptance flag must be boolean');
   const prefix=typeof SCANNER_QA_OUTPUT_PREFIX==='string'?SCANNER_QA_OUTPUT_PREFIX:'.playwright-cli/scanner-notes';
@@ -14,6 +17,15 @@ async page => {
   const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const log=()=>page.evaluate(()=>window.__readFixtureLog());
   const snapshot=()=>page.evaluate(()=>({state:window.__arxChartQa?.snapshot(),data:window.__arxChartQa?.data()}));
+  async function dispatchTouchDrag(session,from,to,cancel,beforeEnd) {
+    let active=false;
+    try {
+      await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:from.x,y:from.y,id:1}]});active=true;
+      for(let step=1;step<=8;step++)await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*step/8,y:from.y+(to.y-from.y)*step/8,id:1}]});
+      if(beforeEnd)await beforeEnd();
+      await session.send('Input.dispatchTouchEvent',{type:cancel?'touchCancel':'touchEnd',touchPoints:[]});active=false;
+    } finally {if(active)await session.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});}
+  }
   function matchesRequest(response,symbol,timeframe) {
     if(response?.requestPath!=='/api/chart/candles'||typeof response.requestQuery!=='string'||response.symbol!==symbol||response.timeframe!==timeframe)return false;
     const query=new URLSearchParams(response.requestQuery);
@@ -127,7 +139,7 @@ async page => {
       const {adapter,container}=engine();
       if(!container.contains(event.target))return;
       const bounds=container.getBoundingClientRect(),x=event.clientX-bounds.left,y=event.clientY-bounds.top;
-      clicks.push({trusted:event.isTrusted,button:event.button,x,y,time:adapter.chart.timeScale().coordinateToTime(x),price:adapter.series.coordinateToPrice(y)});
+      clicks.push({trusted:event.isTrusted,pointerType:event.pointerType,button:event.button,x,y,time:adapter.chart.timeScale().coordinateToTime(x),price:adapter.series.coordinateToPrice(y)});
     };
     document.addEventListener('pointerdown',down,true);
     const api={
@@ -196,7 +208,12 @@ async page => {
     check(typeof report.executedBuildId==='string'&&report.executedBuildId===report.build.buildId,'Executing immutable fixture matches its metadata');
     check(report.build.minified&&report.build.productionRuntimeChecked&&report.build.sourceUnchanged&&!report.build.source.status&&report.build.dashboardUtilityCss?.source==='artifacts/trading-dashboard/src','Clean unchanged production fixture and actual dashboard CSS');
     if(typeof SCANNER_QA_EXPECTED_COMMIT==='string')check(report.build.source.head===SCANNER_QA_EXPECTED_COMMIT,'Exact requested source commit');
-    await page.setViewportSize({width:1440,height:1100});
+    if(touchRequested) {
+      report.touchEnvironment=await page.evaluate(()=>({maxTouchPoints:navigator.maxTouchPoints,coarse:matchMedia('(pointer: coarse)').matches}));
+      check(report.touchEnvironment.maxTouchPoints>0&&report.touchEnvironment.coarse,'Browser context actually enables touch and a coarse primary pointer');
+      touchSession=await page.context().newCDPSession(page);
+    }
+    await page.setViewportSize(touchRequested?{width:390,height:844}:{width:1440,height:1100});
     const panel=page.getByTestId('scanner-chart-panel'),canvas=panel.getByTestId('arx-native-canvas');
     check(await panel.getByTestId('arx-native-chart').count()===1,'Exactly one shared chart on Scanner');
     await panel.getByTestId('arx-native-tf-M15').click();
@@ -211,10 +228,12 @@ async page => {
     await canvas.scrollIntoViewIfNeeded();await frames();
     const target=await page.evaluate(()=>window.__arxNotesQa.target()),bounds=await canvas.boundingBox();
     check(bounds&&Number.isFinite(target.x)&&Number.isFinite(target.y)&&target.x>0&&target.y>0&&target.x<bounds.width&&target.y<bounds.height,'Placement targets a real loaded candle inside the plot');
-    await page.mouse.click(bounds.x+target.x,bounds.y+target.y);
+    if(touchRequested)await page.touchscreen.tap(bounds.x+target.x,bounds.y+target.y);
+    else await page.mouse.click(bounds.x+target.x,bounds.y+target.y);
     let surface=await waitNote('created',s=>s.drawings.length===1&&s.drawings[0].text===original&&paintedNote(s));
     let note=surface.drawings[0],click=surface.clicks.at(-1);
     check(click?.trusted===true&&click.button===0&&click.time===target.time,'A trusted canvas pointer click selected the intended loaded candle');
+    if(touchRequested)check(click.pointerType==='touch','Placement reached the actual chart as a trusted touch pointer');
     check(note.start.time===click.time&&Number.isFinite(click.price)&&Math.abs(note.start.price-click.price)<=Math.max(1,Math.abs(click.price))*1e-10,'Stored anchor matches the actual pointer time and price');
     check(baseline.data.canonical.some(c=>c.time===note.start.time),'Note anchor is in actual canonical OHLC');
     check(savedNoteMatches(await stored(),note),'Created note is actually saved with its anchor');
@@ -231,11 +250,17 @@ async page => {
     await panel.getByRole('button',{name:'Undo',exact:true}).click();await waitNote('undo-text',s=>s.drawings[0]?.text===original);
     await panel.getByRole('button',{name:'Redo',exact:true}).click();await waitNote('redo-text',s=>s.drawings[0]?.text===edited);
     check(savedNoteMatches(await stored(),note),'Text undo/redo restores saved full text and anchor');
-    const dragCard=async(dx,dy)=>{
+    const dragCard=async(dx,dy,cancel=false,beforeEnd)=>{
       await canvas.scrollIntoViewIfNeeded();await frames();const s=await noteSurface(),card=s.notes[0],box=await canvas.boundingBox();
       check(boundedNote(card,s.pane),'Drag uses current real card geometry');
       const x=box.x+card.x+card.width/2,y=box.y+card.y+Math.min(card.height-8,28);
-      await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:8});await page.mouse.up();await frames();
+      if(touchRequested) {
+        const count=s.clicks.length;
+        await dispatchTouchDrag(touchSession,{x,y},{x:x+dx,y:y+dy},cancel,beforeEnd);
+        const down=(await noteSurface()).clicks.slice(count).at(-1);
+        check(down?.trusted===true&&down.pointerType==='touch','Card drag begins with a trusted touch pointer on the chart');
+      } else {await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:8});await page.mouse.up();}
+      await frames();
     };
     await panel.getByRole('button',{name:'Lock drawing 1',exact:true}).click();
     surface=await waitNote('locked',s=>s.drawings[0]?.locked===true);const locked=surface.drawings[0];
@@ -253,6 +278,20 @@ async page => {
     await waitNote('undo-move',s=>JSON.stringify(s.drawings[0]?.start)===JSON.stringify(beforeMove.start));
     await panel.getByRole('button',{name:'Redo',exact:true}).click();
     await waitNote('redo-move',s=>JSON.stringify(s.drawings[0]?.start)===JSON.stringify(moved.start));note=moved;
+    if(touchRequested) {
+      const persisted=await page.evaluate(key=>localStorage.getItem(key),storageKey);
+      await dragCard(-30,18,true,async()=>{
+        await waitNote('touch-cancel-preview',s=>s.drawings[0]?.id===note.id&&JSON.stringify(s.drawings[0].start)!==JSON.stringify(note.start));
+        check(await page.evaluate(key=>localStorage.getItem(key),storageKey)===persisted,'Active touch preview does not persist a partial drag');
+      });
+      await waitNote('touch-cancel-restored',s=>savedNoteMatches(s.drawings,note)&&matchesProjection(s,note.id));
+      check(await page.evaluate(key=>localStorage.getItem(key),storageKey)===persisted,'Touch cancellation restores original geometry and exact saved data');
+      await openObjects();await panel.getByRole('button',{name:'Undo',exact:true}).click();
+      await waitNote('touch-cancel-no-undo-entry',s=>JSON.stringify(s.drawings[0]?.start)===JSON.stringify(beforeMove.start));
+      await panel.getByRole('button',{name:'Redo',exact:true}).click();await waitNote('touch-redo-restored',s=>savedNoteMatches(s.drawings,note));
+      check(true,'Cancelled touch adds no undo entry; one undo/redo covers the completed drag');
+      report.touchDrawing={placement:true,move:true,lockedHold:true,cancelRollback:true,singleUndo:true,physicalDevice:false};
+    }
     await panel.getByRole('button',{name:'Hide drawings',exact:true}).click();
     await waitNote('hidden',s=>s.drawings.length===0&&s.notes.length===0);
     check(savedNoteMatches(await stored(),note),'Hiding keeps saved note data');
@@ -269,7 +308,7 @@ async page => {
     check(savedNoteMatches(await stored(),note)&&sameMarket(baseline,await waitSeries('EURUSD','M15',900)),'Pan moves the real projected note while saved anchor, engine and OHLC stay unchanged');
     await panel.getByRole('button',{name:'Fit history',exact:true}).click();
     await waitNote('fit-projection',s=>savedNoteMatches(s.drawings,note)&&matchesProjection(s,note.id));
-    await saveCanvasScreenshot('desktop-note');
+    await saveCanvasScreenshot(touchRequested?'touch-note':'desktop-note');
     if(typeof page.waitForEvent==='function') {
       const [download]=await Promise.all([page.waitForEvent('download',{timeout:10000}),panel.getByRole('button',{name:'Export PNG',exact:true}).click()]);
       const path=prefix+'-export.png';await download.saveAs(path);
@@ -345,6 +384,7 @@ async page => {
     report.failure=String(error?.stack??error);
     try{report.failureSnapshot=await snapshot();await saveScreenshot('failure');}catch(captureError){report.captureFailure=String(captureError);}
   } finally {
+    if(touchSession)try{await touchSession.detach();}catch(error){report.touchCleanupFailure=String(error);report.passed=false;}
     try{report.observerRestored=await page.evaluate(()=>{window.__arxNotesQa?.stop();return !window.__arxNotesQa;});}catch(error){report.observerRestored=false;report.observerCleanupFailure=String(error);report.passed=false;}
     try{
       report.network=await log();const writes=report.network.blocked.filter(x=>x.kind==='mutation');

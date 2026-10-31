@@ -126,3 +126,23 @@ test('explicit reload cannot seed notes, force rendering or use async-truthy com
   assert.match(source,/data-analysis-status'\)==='unavailable'/);
   assert.match(source,/CAPTURED_REQUIRES_VISUAL_REVIEW/);
 });
+
+test('touch driver sends browser input with stable identity and a real end/cancel, never DOM synthetic events',async()=>{
+  const drag=helper('dispatchTouchDrag');
+  for(const cancel of [false,true]) {
+    const events=[];let previewObserved=false;
+    await drag({send:async(method,params)=>{events.push({method,...params});}},{x:20,y:40},{x:60,y:80},cancel,async()=>{previewObserved=true;assert.equal(events.at(-1).type,'touchMove');});
+    assert.equal(events.length,10);assert.equal(previewObserved,true);
+    assert.ok(events.every(e=>e.method==='Input.dispatchTouchEvent'));
+    assert.equal(events[0].type,'touchStart');assert.equal(events.at(-1).type,cancel?'touchCancel':'touchEnd');
+    assert.equal(events.at(-1).touchPoints.length,0);
+    assert.equal(events[8].touchPoints[0].x,60);assert.equal(events[8].touchPoints[0].y,80);
+    assert.ok(events.slice(0,9).every(e=>e.touchPoints[0].id===1));
+  }
+});
+test('touch driver cancels an active pointer if preview validation fails',async()=>{
+  const drag=helper('dispatchTouchDrag'),events=[];
+  await assert.rejects(()=>drag({send:async(_,params)=>{events.push(params);}},{x:20,y:40},{x:60,y:80},false,async()=>{throw Error('preview never moved');}),/preview never moved/);
+  assert.equal(events.at(-1).type,'touchCancel');assert.equal(events.at(-1).touchPoints.length,0);
+  assert.equal(events.some(e=>e.type==='touchEnd'),false);
+});
