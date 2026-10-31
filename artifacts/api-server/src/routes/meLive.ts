@@ -16,6 +16,7 @@
 //
 // Mount path: /api/me/live/*
 
+import { createAccountSnapshotScheduler } from "../lib/live/accountSnapshotScheduler.js";
 import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
@@ -1080,6 +1081,8 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
   (res as unknown as { flushHeaders?: () => void }).flushHeaders?.();
 
   let aborted = false;
+  let stopStream: (() => void) | undefined;
+  req.once("close", () => { aborted = true; stopStream?.(); });
   const send = (event: unknown) => {
     if (aborted) return;
     res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -1177,58 +1180,24 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
     }
   };
 
-  await buildOnce();
-
-  // Instant push: when an EA write route (heartbeat, account sync, live
-  // positions snapshot) signals this user's live state changed, rebuild the
-  // snapshot immediately instead of waiting for the 3s fallback tick. Bursts
-  // (heartbeat + sync-account + positions land within milliseconds) are
-  // coalesced: at most one build runs at a time, and a single trailing rebuild
-  // captures anything that arrived mid-build, bounded by a short min-gap so a
-  // chatty EA can never hammer the DB read.
+  // Subscribe before the initial read so an update arriving during that read
+  // earns a trailing refresh. Initial, change and fallback reads share one
+  // scheduler; the interval must never bypass it and race a newer snapshot.
   const { liveAccountEventBus } = await import("../lib/live/liveAccountEventBus.js");
-  const MIN_PUSH_GAP_MS = 250;
-  let building = false;
-  let pendingRebuild = false;
-  let lastBuildAt = 0;
-  let gapTimer: ReturnType<typeof setTimeout> | null = null;
-  const runBuild = async () => {
-    if (aborted) return;
-    building = true;
-    lastBuildAt = Date.now();
-    try {
-      await buildOnce();
-    } finally {
-      building = false;
-      if (pendingRebuild && !aborted) {
-        pendingRebuild = false;
-        void runBuild();
-      }
-    }
-  };
-  const onLiveChange = () => {
-    if (aborted) return;
-    if (building) { pendingRebuild = true; return; }
-    const sinceLast = Date.now() - lastBuildAt;
-    if (sinceLast >= MIN_PUSH_GAP_MS) {
-      void runBuild();
-    } else if (gapTimer == null) {
-      gapTimer = setTimeout(() => { gapTimer = null; if (!aborted) void runBuild(); }, MIN_PUSH_GAP_MS - sinceLast);
-    }
-  };
+  if (aborted) return;
+  const scheduler = createAccountSnapshotScheduler(buildOnce);
+  const onLiveChange = () => scheduler.request();
   liveAccountEventBus.on(userId, onLiveChange);
-
-  // Re-evaluate on a modest interval. This is a safe fallback cadence; it does
-  // NOT imply tick-by-tick liveness — the freshness field tells that truth.
-  const tick = setInterval(() => { if (!aborted) void buildOnce(); }, 3_000);
+  const tick = setInterval(onLiveChange, 3_000);
   const heartbeat = setInterval(() => { if (!aborted) send({ type: "heartbeat", ts: Date.now() }); }, 15_000);
-  req.on("close", () => {
-    aborted = true;
+  stopStream = () => {
+    scheduler.stop();
     clearInterval(tick);
     clearInterval(heartbeat);
-    if (gapTimer != null) { clearTimeout(gapTimer); gapTimer = null; }
     liveAccountEventBus.off(userId, onLiveChange);
-  });
+  };
+  scheduler.request();
+
 });
 
 export default router;

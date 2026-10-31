@@ -297,7 +297,7 @@ export default function MyTradesPage() {
 
       {/* Canonical balance (Task #430) — same source of truth as the Dashboard,
           account, risk panel, wallet and admin. */}
-      <CanonicalBalancePanel live={liveSnap.live} title="Live balance" />
+      <CanonicalBalancePanel live={liveSnap.live} updatesPaused={!liveSnap.autoRefreshEnabled} title="Live balance" />
 
       {/* Bridge / error state */}
       {err && (

@@ -49,10 +49,15 @@ class LiveAccountEventBus {
    */
   emit(userId: number | string | null | undefined): void {
     if (userId == null) return;
-    try {
-      this.emitter.emit(this.key(userId));
-    } catch {
-      // Advisory bus — never propagate a listener error to the EA write path.
+    // EventEmitter.emit stops at the first throw. Snapshot the listeners so a
+    // disconnected viewer cannot starve healthy viewers of this notification.
+    // Subscription changes during dispatch retain EventEmitter's semantics.
+    for (const listener of this.emitter.listeners(this.key(userId))) {
+      try {
+        listener.call(this.emitter);
+      } catch {
+        // Advisory bus — isolate each viewer and continue delivery.
+      }
     }
   }
 }

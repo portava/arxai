@@ -1,0 +1,197 @@
+{
+  "base": "a6147137c9da303c33422d8895a42475889f6b8d",
+  "candidate": "f09edbad73cd6fb1e3e44d8e500e95e22796ce84",
+  "paths": [
+    {
+      "path": "artifacts/api-server/package.json",
+      "baseBlob": "c2b8c6ef2bfecb2e44c141867027c58c4d789563",
+      "candidateBlob": "d2a84dbfd4faad013e25805b1f73140a225d9df1"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/brokerHub/freshness.ts",
+      "baseBlob": "4f0166a5035422acf4e066e1f38c216125f3d2bb",
+      "candidateBlob": "facae562595f7b493d2be80e31e2c536880339d7"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/live/__qa__/accountSnapshotScheduler.test.ts",
+      "baseBlob": null,
+      "candidateBlob": "11e76c180d23dc9c07b93c07815cbfb18d44ef05"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/live/__qa__/accountStreamScheduling.test.ts",
+      "baseBlob": null,
+      "candidateBlob": "76aec87153ea0e8376cf04b900333135748fdd85"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/live/__qa__/liveAccountEventBus.test.ts",
+      "baseBlob": null,
+      "candidateBlob": "a8f5a7e85e1c4da277e286d0c84207eb8d76d579"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/live/accountSnapshotScheduler.ts",
+      "baseBlob": null,
+      "candidateBlob": "b1a9bf47021d3a6aa51dc642cc684d7d11f9b20f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/live/liveAccountEventBus.ts",
+      "baseBlob": "984e6a3b3a14cf9c0d9bfa2c93c38e20f34c391d",
+      "candidateBlob": "9916c8edf40ffbb5665cd9309a17bebf57741097"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/meLive.ts",
+      "baseBlob": "eafd2f9b98860d7e70da937a52378c8c26732e8f",
+      "candidateBlob": "40ab9e38aee04d26d23151255eb938c2a8e86b37"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/account/CanonicalBalancePanel.test.tsx",
+      "baseBlob": null,
+      "candidateBlob": "87463848cc10fa828b45fee7626a82eff3e55e80"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/account/CanonicalBalancePanel.tsx",
+      "baseBlob": "a38b60f43bdc1c293e9dcfeb0eef5e9ead9267b5",
+      "candidateBlob": "4ab883a3043847a975a681828b932f32064e71af"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tick-stream.test.tsx",
+      "baseBlob": "a38ce9246a306c7b3b50ca597d09309503eacc8c",
+      "candidateBlob": "12dd2eda95a599f7896ae4170988437be677711e"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx",
+      "baseBlob": "e0de79533c61e385803f843697375480ecd1cd53",
+      "candidateBlob": "fa8e450e560d044e6b05bab4e3c8e4aa2ef1763e"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartReader.performance.test.tsx",
+      "baseBlob": null,
+      "candidateBlob": "952d0b369474e783f49409eb65a86003931a382b"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartReader.test.tsx",
+      "baseBlob": "cc17e3710b152c13a4a0f743ed7cd185752331e1",
+      "candidateBlob": "9ee5641f8557973b97d72acb50fb1b092d7e56b3"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartReader.tsx",
+      "baseBlob": "9fcbc7520262e553b7288b318da68dcf2f66a0da",
+      "candidateBlob": "bcf8a36134e816d39b3e712c3f56c5fb1b8db21c"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/live/LiveBridgeAutoRefreshControl.tsx",
+      "baseBlob": "d74bc813f85d9daca4f795e4d9b394c8882be7bc",
+      "candidateBlob": "f4d4771e06d9a98a2672cd0766c4b415ed120264"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/scanner/ScannerChartPanel.tsx",
+      "baseBlob": "a91e27cc69b1a35683261f96b26264b47faf36c2",
+      "candidateBlob": "44ad417eecc198c78ad39caef4fb232dd9afd6ce"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/scanner/ScannerHeaderSummary.tsx",
+      "baseBlob": "12c3dccc1b01b1501a5af136d4b8ec87e0268b84",
+      "candidateBlob": "d6f71b07f555cf6b25370d82fbe8d53bc4b7de24"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/hooks/useAccountRefreshPreference.ts",
+      "baseBlob": null,
+      "candidateBlob": "d19e74ae16541ee7efd8696815deff4fbdd84145"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/hooks/useAgedAccountSnapshot.test.ts",
+      "baseBlob": null,
+      "candidateBlob": "ea5256fb7384f275562fa5c18f0c4c98cf10fe70"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/hooks/useAgedAccountSnapshot.ts",
+      "baseBlob": null,
+      "candidateBlob": "804328ca79ebcc6a6a25174d98701fe0c02d9b0d"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/hooks/useLiveAccountSnapshot.test.ts",
+      "baseBlob": "4aec54fa10839110c53102c20b25c0add3211980",
+      "candidateBlob": "97f515352afab5792e542f232ecca35a7bb142d0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/hooks/useLiveAccountSnapshot.ts",
+      "baseBlob": "16c42718cf8b2f4f9c93facbb294be85a28c9024",
+      "candidateBlob": "cad2bcb9980abb8f8dcbbf3685ca10b2033c9f4a"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/hooks/useLiveBridgeRefresh.test.ts",
+      "baseBlob": "d192331cff035ed1af62830f50f551b0e152a911",
+      "candidateBlob": "5d3fc7e49047d90c8c6fc5b3818b2eec2e217542"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/hooks/useLiveBridgeRefresh.ts",
+      "baseBlob": "507523dba9a4122199456edfedd3e5cc5edbb4e8",
+      "candidateBlob": "e6f01d31e48eb8e0e25aad31c3531c1045525863"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/smartChartReadCache.test.ts",
+      "baseBlob": null,
+      "candidateBlob": "3eae5a13a49a890524e8bc570df20597b1e40c11"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/smartChartReadCache.ts",
+      "baseBlob": null,
+      "candidateBlob": "9f6bbe0ea930c503366236e0d1bf307c68f0e9df"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/pages/my-account.tsx",
+      "baseBlob": "1e5fb28a369d3c887d1ffab6d66f1d491ab9d036",
+      "candidateBlob": "e5054bc4e65197c80bd96e0218fba5a11cdeee91"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/pages/my-trades.tsx",
+      "baseBlob": "1f6f83a4565678fe2117c73311e4e28e8a688ee1",
+      "candidateBlob": "b851b9433544ef0820ef4897133458d4ef582298"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/pages/risk-settings.tsx",
+      "baseBlob": "bdefc827f9081618f639bcf74b5a3fc499e80ac4",
+      "candidateBlob": "f3897d69c13666280be111b9757bce50d531b166"
+    },
+    {
+      "path": "lib/domain/src/broker-health/accountSnapshotPolicy.ts",
+      "baseBlob": null,
+      "candidateBlob": "fb38ac4639a03413af2251a1d59d057f931b9447"
+    },
+    {
+      "path": "lib/domain/src/broker-health/index.ts",
+      "baseBlob": "4decf0b459a76c6befb021c90910c76a7838c9c2",
+      "candidateBlob": "81edde8451e7e69e3bbd96727abf77bf8e68e226"
+    },
+    {
+      "path": "package.json",
+      "baseBlob": "38b05075404fb572a682d10e73b5ff3576fa30fb",
+      "candidateBlob": "62decc0d682c6a035f3070c1190fec469c837bd9"
+    },
+    {
+      "path": "scripts/cockpit-qa/refresh-controls.js",
+      "baseBlob": null,
+      "candidateBlob": "dc9b22e1847c881550ae77d91019ffb5f762cbb1"
+    },
+    {
+      "path": "scripts/scanner-qa/shared-chart-first-navigation.js",
+      "baseBlob": null,
+      "candidateBlob": "7ad4ee8614a62291db30047884d0e50c57256a83"
+    },
+    {
+      "path": "scripts/scanner-qa/shared-chart-first-navigation.test.mjs",
+      "baseBlob": null,
+      "candidateBlob": "073ef5a1f96bf92180bf5a0c7eba5f6ad2866954"
+    },
+    {
+      "path": "scripts/src/ci/check-single-bridge-freshness-source.test.ts",
+      "baseBlob": "a2a7063dcb1060dac9084790d048962517f76330",
+      "candidateBlob": "5353cfdfd73523693e666681dc7b054189fefe95"
+    },
+    {
+      "path": "scripts/src/ci/check-single-bridge-freshness-source.ts",
+      "baseBlob": "5aac8a21dc8f9e74e3b50e696cc5150f1c02cd35",
+      "candidateBlob": "0e3bce805b636ec0de76effd9d4b935cfe720a9a"
+    }
+  ],
+  "note": "Selective delta only. Preserve Replit manifest/startup/auth/Truth differences; never whole-tree replacement."
+}

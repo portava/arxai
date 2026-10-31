@@ -1,0 +1,32 @@
+{
+  "head": "af002a34823fcd24f6ed1f2f56645a182ddbf470",
+  "started": "2026-10-31T17:25:18.763680+00:00",
+  "results": [
+    {
+      "check": "frontend",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/af002a34-frontend.log"
+    },
+    {
+      "check": "typecheck",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/af002a34-typecheck.log"
+    },
+    {
+      "check": "build",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/af002a34-build.log"
+    },
+    {
+      "check": "guards",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/af002a34-guards.log"
+    },
+    {
+      "check": "bindings",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/af002a34-bindings.log"
+    }
+  ],
+  "finished": "2026-10-31T17:25:57.865563+00:00"
+}

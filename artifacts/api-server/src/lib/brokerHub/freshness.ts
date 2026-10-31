@@ -64,9 +64,11 @@ export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;
  * defaults, tunable per call): ≤ 5 s live, ≤ 30 s fresh, ≤ 2 min delayed,
  * beyond stale. "Fresh" here is 30 s, not the 60 s MT5 snapshot window.
  */
-export const ACCOUNT_SNAPSHOT_LIVE_MS = 5_000;
-export const ACCOUNT_SNAPSHOT_FRESH_MS = 30_000;
-export const ACCOUNT_SNAPSHOT_DELAYED_MS = 120_000;
+export {
+  ACCOUNT_SNAPSHOT_LIVE_MS,
+  ACCOUNT_SNAPSHOT_FRESH_MS,
+  ACCOUNT_SNAPSHOT_DELAYED_MS,
+} from "@workspace/domain/broker-health";
 
 /**
  * 60 s — an MT5 positions / telemetry snapshot is fresh for this long

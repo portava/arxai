@@ -19,6 +19,8 @@
 //   authenticated session returns.
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useAgedAccountSnapshot } from "./useAgedAccountSnapshot";
+import { useAccountRefreshPreference } from "./useAccountRefreshPreference";
 
 // ── Mirrored type definitions (kept in sync with liveAccountSnapshot.ts) ─────
 export type AccountMode = "LIVE_SHARED" | "PAPER" | "DEMO" | "UNKNOWN";
@@ -115,9 +117,12 @@ export interface LiveAccountSnapshot {
 }
 
 // ── Connection status ─────────────────────────────────────────────────────────
-export type ConnectionStatus = "connecting" | "live" | "polling" | "disconnected" | "unavailable";
+export type ConnectionStatus = "connecting" | "live" | "polling" | "disconnected" | "unavailable" | "paused";
 
 export interface UseLiveAccountSnapshotResult {
+  autoRefreshEnabled: boolean;
+  setAutoRefreshEnabled: (enabled: boolean) => void;
+  isRefreshing: boolean;
   snapshot: LiveAccountSnapshot | null;
   /** Task #430 — canonical mark-to-market balance block. null until known. */
   live: InvestorLiveBalance | null;
@@ -139,6 +144,7 @@ const u = (p: string) => `${BASE}${p}`;
 
 const BACKOFF_MS = [2_000, 4_000, 8_000, 16_000, 30_000] as const;
 const POLL_INTERVAL_MS = 5_000;
+const POLL_TIMEOUT_MS = 10_000;
 
 // Task #440 — when freshness flips to `stale`, proactively re-request the
 // canonical snapshot instead of waiting for the next poll/SSE tick. Debounced
@@ -178,11 +184,17 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const [snapshot, setSnapshot] = useState<LiveAccountSnapshot | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
   const [reloadAt, setReloadAt] = useState(0);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useAccountRefreshPreference();
+  const enabledRef = useRef(autoRefreshEnabled);
+  enabledRef.current = autoRefreshEnabled;
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const streamWaitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs to escape stale-closure issues in async callbacks.
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRequestRef = useRef<AbortController | null>(null);
   const backoffIdxRef = useRef(0);
   const mountedRef = useRef(true);
   const snapRef = useRef<LiveAccountSnapshot | null>(null);
@@ -201,21 +213,37 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
     }
+    pollRequestRef.current?.abort();
+    pollRequestRef.current = null;
+    setIsRefreshing(false);
   }, []);
 
   // Task #445 — `allowWhileHidden` lets the one-shot stale self-heal issue a
   // SINGLE proactive poll on a backgrounded tab, bypassing the hidden-tab perf
   // guard for that heal only. The recurring 5s interval still calls doPoll()
   // WITHOUT the flag, so the background poll loop stays paused (perf intact).
-  const doPoll = useCallback(async (opts?: { allowWhileHidden?: boolean }) => {
-    if (!mountedRef.current) return;
+  const doPoll = useCallback(async (opts?: { allowWhileHidden?: boolean; manual?: boolean }) => {
+    if (!mountedRef.current || (!enabledRef.current && !opts?.manual)) return;
     if (document.hidden && !opts?.allowWhileHidden) return;
+    if (pollRequestRef.current) return;
+    const request = new AbortController();
+    pollRequestRef.current = request;
+    setIsRefreshing(true);
+    const current = () => mountedRef.current && pollRequestRef.current === request && !request.signal.aborted;
+    const timeout = setTimeout(() => {
+      if (!current()) return;
+      request.abort();
+      pollRequestRef.current = null;
+      setConnectionStatus(enabledRef.current ? "disconnected" : "paused");
+      setIsRefreshing(false);
+    }, POLL_TIMEOUT_MS);
+    request.signal.addEventListener("abort", () => clearTimeout(timeout), { once: true });
     try {
-      const res = await fetch(u("/api/me/live/slot-summary"), { credentials: "include" });
-      if (!mountedRef.current) return;
-      if (!res.ok) { setConnectionStatus("disconnected"); return; }
+      const res = await fetch(u("/api/me/live/slot-summary"), { credentials: "include", signal: request.signal });
+      if (!current()) return;
+      if (!res.ok) { setConnectionStatus(enabledRef.current ? "disconnected" : "paused"); return; }
       const data = await res.json() as Record<string, unknown>;
-      if (!mountedRef.current) return;
+      if (!current()) return;
       if (!data || typeof data !== "object") return;
 
       // slot-summary gives partial data — synthesize a LiveAccountSnapshot
@@ -251,33 +279,24 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
             ? "Bridge is not live or not connected."
             : undefined;
 
-      // Task #451 — slot-summary now CARRIES the canonical balance block (the
-      // same wire shape the SSE stream sends as its `live` sibling, built from
-      // the same server-side source). So on a poll-based heal we rebuild the
-      // detailed balance breakdown (realized P/L, available balance, floating
-      // P/L) from the poll response itself and mark its freshness to match the
-      // verified poll freshness (fresh/stale) — no longer downgrading to
-      // "unavailable". This lets a backgrounded tab show the full live picture
-      // without waiting to refocus. Honesty is preserved: the figures come from
-      // the same re-verified poll, and freshness mirrors the poll's own verdict
-      // so a stale poll yields a stale (never falsely-fresh) block.
-      //
-      // We force freshness.status to the poll's verdict (rather than trusting
-      // the block's own server-computed status) so the detailed status can never
-      // silently disagree with the headline `freshness`. When slot-summary
-      // somehow omits the block we fall back to the last SSE-known block; when
-      // the user is not LIVE_SHARED we leave the carried/polled block untouched.
+      // Heartbeat freshness and balance freshness measure different evidence.
+      // A successful poll must never promote stale/unknown canonical funds.
       const polledLive =
         data["live"] && typeof data["live"] === "object"
           ? (data["live"] as InvestorLiveBalance)
           : null;
-      const baseLive = polledLive ?? prev?.live ?? null;
-      const balanceStatus: InvestorLiveBalance["freshness"]["status"] =
-        freshness === "fresh" ? "fresh" : freshness === "stale" ? "stale" : "unavailable";
-      const healedLive: InvestorLiveBalance | null =
-        baseLive && accountMode === "LIVE_SHARED"
-          ? { ...baseLive, freshness: { ...baseLive.freshness, status: balanceStatus } }
-          : baseLive;
+      let healedLive = polledLive;
+      if (accountMode === "LIVE_SHARED") {
+        const baseLive = polledLive ?? prev?.live ?? null;
+        if (baseLive) {
+          const canonical = baseLive.freshness.status;
+          const status = canonical === "unavailable" || freshness === "unavailable"
+            ? "unavailable"
+            : canonical === "stale" || freshness !== "fresh" || !polledLive
+              ? "stale" : "fresh";
+          healedLive = { ...baseLive, freshness: { ...baseLive.freshness, status } };
+        }
+      }
 
       const synth: LiveAccountSnapshot = {
         userId: prev?.userId ?? "",
@@ -306,21 +325,30 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         warnings: (data["snapshotWarning"] ? [String(data["snapshotWarning"])] : prev?.warnings) ?? [],
         notLiveReason,
       };
+      snapRef.current = synth;
       setSnapshot(synth);
-      setConnectionStatus("polling");
+      setConnectionStatus(enabledRef.current ? "polling" : "paused");
     } catch {
-      if (mountedRef.current) setConnectionStatus("disconnected");
+      if (current()) setConnectionStatus(enabledRef.current ? "disconnected" : "paused");
+    } finally {
+      clearTimeout(timeout);
+      if (pollRequestRef.current === request) {
+        pollRequestRef.current = null;
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
   const startPolling = useCallback(() => {
-    stopPolling();
+    if (!enabledRef.current || pollTimerRef.current != null) return;
     void doPoll();
     pollTimerRef.current = setInterval(() => { void doPoll(); }, POLL_INTERVAL_MS);
-  }, [stopPolling, doPoll]);
+  }, [doPoll]);
 
   // ── SSE connection ─────────────────────────────────────────────────────────
   const stopSSE = useCallback(() => {
+    if (streamWaitRef.current != null) { clearTimeout(streamWaitRef.current); streamWaitRef.current = null; }
+    setIsRefreshing(false);
     if (esRef.current) { esRef.current.close(); esRef.current = null; }
     if (reconnectTimerRef.current != null) {
       clearTimeout(reconnectTimerRef.current);
@@ -331,15 +359,23 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const connectSSE = useCallback(() => {
     if (esRef.current?.readyState === EventSource.OPEN) return;
     stopSSE();
-    stopPolling();
-    if (!mountedRef.current) return;
+    // Keep fallback reads alive until the replacement stream actually delivers
+    // a snapshot; reconnecting alone is not evidence of recovery.
+    if (!mountedRef.current || !enabledRef.current) return;
 
     setConnectionStatus("connecting");
+    setIsRefreshing(true);
     const es = new EventSource(u("/api/me/live/account-stream"), { withCredentials: true });
     esRef.current = es;
+    // A socket that stays open without delivering data must not disable the
+    // refresh button forever. Keep it eligible to recover while polling.
+    streamWaitRef.current = setTimeout(() => {
+      streamWaitRef.current = null;
+      if (mountedRef.current && esRef.current === es && enabledRef.current) startPolling();
+    }, POLL_TIMEOUT_MS);
 
     es.addEventListener("message", (ev) => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || esRef.current !== es) return;
       try {
         const raw: unknown = JSON.parse(ev.data as string);
         const r = raw as Record<string, unknown>;
@@ -356,7 +392,12 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
 
         const parsed = parseSSEEvent(raw);
         if (parsed) {
+          // A confirmed stream snapshot supersedes any older fallback request.
+          // Abort it and reject even a response already decoding its JSON.
+          stopPolling();
+          if (streamWaitRef.current != null) { clearTimeout(streamWaitRef.current); streamWaitRef.current = null; }
           backoffIdxRef.current = 0;
+          snapRef.current = parsed;
           if (isServerUnavailable(parsed)) {
             setSnapshot(parsed);
             setConnectionStatus("unavailable");
@@ -371,9 +412,10 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     });
 
     es.onerror = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || esRef.current !== es) return;
       es.close();
       esRef.current = null;
+      if (streamWaitRef.current != null) { clearTimeout(streamWaitRef.current); streamWaitRef.current = null; }
       setConnectionStatus("disconnected");
       startPolling();
 
@@ -381,7 +423,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       backoffIdxRef.current = Math.min(backoffIdxRef.current + 1, BACKOFF_MS.length - 1);
 
       reconnectTimerRef.current = setTimeout(() => {
-        if (mountedRef.current && !document.hidden) connectSSE();
+        if (mountedRef.current && enabledRef.current && !document.hidden) connectSSE();
       }, delay);
     };
   }, [stopSSE, stopPolling, startPolling]);
@@ -391,7 +433,10 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     mountedRef.current = true;
     backoffIdxRef.current = 0;
 
-    if (document.hidden) {
+    if (!autoRefreshEnabled) {
+      setConnectionStatus("paused");
+      setIsRefreshing(false);
+    } else if (document.hidden) {
       setConnectionStatus("polling");
       startPolling();
     } else {
@@ -399,6 +444,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     }
 
     const onVis = () => {
+      if (!enabledRef.current) return;
       if (document.hidden) {
         stopSSE();
         startPolling();
@@ -418,12 +464,15 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     };
     // reloadAt intentionally in deps to force re-mount on reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reloadAt]);
+  }, [reloadAt, autoRefreshEnabled]);
 
   const reload = useCallback(() => {
     backoffIdxRef.current = 0;
-    setReloadAt(Date.now());
-  }, []);
+    if (enabledRef.current) setReloadAt(value => value + 1);
+    else void doPoll({ manual: true, allowWhileHidden: true });
+  }, [doPoll]);
+
+  const agedSnapshot = useAgedAccountSnapshot(snapshot);
 
   // ── Task #440: auto-refresh on stale ───────────────────────────────────────
   // The moment freshness flips to `stale` (canonical balance block OR the
@@ -439,20 +488,30 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   // MOST ONE refresh — not a recurring loop. This never clears the stale badge
   // optimistically — the badge stays stale until genuinely fresh data arrives.
   useEffect(() => {
-    const canonicalStale = snapshot?.live?.freshness.status === "stale";
-    const snapStale = snapshot?.freshness === "stale";
+    if (!autoRefreshEnabled) {
+      if (staleRefetchTimerRef.current != null) clearTimeout(staleRefetchTimerRef.current);
+      staleRefetchTimerRef.current = null;
+      return;
+    }
+    const canonicalStale = agedSnapshot?.live?.freshness.status === "stale";
+    const snapStale = agedSnapshot?.freshness === "stale";
     const isStaleNow = canonicalStale || snapStale;
+
+    if (!isStaleNow && staleRefetchTimerRef.current != null) {
+      clearTimeout(staleRefetchTimerRef.current);
+      staleRefetchTimerRef.current = null;
+    }
 
     if (isStaleNow && !wasStaleRef.current && staleRefetchTimerRef.current == null) {
       staleRefetchTimerRef.current = setTimeout(() => {
         staleRefetchTimerRef.current = null;
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || !enabledRef.current) return;
         if (document.hidden) void doPoll({ allowWhileHidden: true });
         else reload();
       }, STALE_REFETCH_DEBOUNCE_MS);
     }
     wasStaleRef.current = isStaleNow;
-  }, [snapshot, doPoll, reload]);
+  }, [agedSnapshot, doPoll, reload, autoRefreshEnabled]);
 
   // Clear any pending stale-refetch timer on unmount.
   useEffect(() => () => {
@@ -463,7 +522,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   }, []);
 
   // ── Derived state ─────────────────────────────────────────────────────────
-  const snap = snapshot;
+  const snap = agedSnapshot;
   const freshness: Freshness = snap?.freshness ?? "unavailable";
   const notLiveReason = snap?.notLiveReason ?? (snap?.warnings.length ? snap.warnings[0]! : null);
   const isEstimate = snap?.positions.some((p) => p.plIsEstimate) ?? false;
@@ -474,6 +533,9 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const warnings = snap?.warnings ?? [];
 
   return {
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+    isRefreshing,
     snapshot: snap,
     live: snap?.live ?? null,
     freshness,

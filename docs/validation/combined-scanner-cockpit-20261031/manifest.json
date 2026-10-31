@@ -1,0 +1,90 @@
+[
+  {
+    "file": "checks.py.gz",
+    "sha256": "9f9b7d55d793fe286c07c456727d382872f247f599fca3d0574b5d81316a2560"
+  },
+  {
+    "file": "cockpit-refresh-desktop.png",
+    "sha256": "a0e625a46e3a6699f579d539f306f7e701273b6222165cc63487b4f58d880f66"
+  },
+  {
+    "file": "cockpit-refresh-mobile.png",
+    "sha256": "8581bdc2968bcae3cc0602a6b253b6059864e53a1e3f50ade53ba5ceb0e1a330"
+  },
+  {
+    "file": "cockpit-result.json.gz",
+    "sha256": "3c694af8512e640dacd61463ad728f0a05c9c90a13467535b3b1d9923ed6fbb5"
+  },
+  {
+    "file": "cockpit-run.js.gz",
+    "sha256": "7a5eef35bf0161391904c234eacf512d2eb5d0ddf1961137617737d509d2a11c"
+  },
+  {
+    "file": "cockpit-run.log.gz",
+    "sha256": "c38803f22a48f28fd9d041e82abec9ff14a68bd1f56f6055cb29b7e5ae63ac5f"
+  },
+  {
+    "file": "development-paths.txt.gz",
+    "sha256": "dffb50e7a625456051c9da5a111bf0865c510a6355ec65e52cae74b4eca9442d"
+  },
+  {
+    "file": "f09edbad-all-tooling.log.gz",
+    "sha256": "3c56c39116e5036fa694c7c8978ec54dc547783de3ce5871ec168aa9d1e6f8e8"
+  },
+  {
+    "file": "f09edbad-api-build.log.gz",
+    "sha256": "d1af046b055e33d36ab2d09ab3e40dc7453f54f4bb5bd7d7f8ee049ebc9cdfdc"
+  },
+  {
+    "file": "f09edbad-api-typecheck.log.gz",
+    "sha256": "2aba6d7ebbb9bcc602bcf61e68bda42ed45265cd00dba0957fcf3af8b7f90d20"
+  },
+  {
+    "file": "f09edbad-bindings.log.gz",
+    "sha256": "fa1afe5db75546dd80f85ea2e59e07697141fce4c55442f353bebe745910cbae"
+  },
+  {
+    "file": "f09edbad-build.log.gz",
+    "sha256": "7ec038d82aeda36491c41358176af8e237f4ba0a646769ae0414aeaa5ccefdc2"
+  },
+  {
+    "file": "f09edbad-checks.json.gz",
+    "sha256": "82c02a70511f7b12be7a94f24b0b02f7447d56a05ba0c846463ea468daab8050"
+  },
+  {
+    "file": "f09edbad-fixture-build.log.gz",
+    "sha256": "b21373bb1abeb6eb29e14774e7128511e61b5a3296d95abd5d58ae80a7af29d7"
+  },
+  {
+    "file": "f09edbad-frontend.log.gz",
+    "sha256": "a627309501be5972b303b245618ddf4a960f85f2de5b1794bd41ac999536d2e9"
+  },
+  {
+    "file": "f09edbad-guards.log.gz",
+    "sha256": "79981a9b43229b5befc03b363a2cadf15496d0b7f2685a980ace2a6d93f1e622"
+  },
+  {
+    "file": "f09edbad-server-scheduling.log.gz",
+    "sha256": "b63ce15e7930b36b4ffb3625c8319f1c5db610e00253ab320568be181cd1091b"
+  },
+  {
+    "file": "f09edbad-tooling.log.gz",
+    "sha256": "a62ed0fe136e883c4b2a2a9861ecb9bd988650b770e80daa7bcc09e1d4e48bc6"
+  },
+  {
+    "file": "f09edbad-typecheck.log.gz",
+    "sha256": "d6eeb4fb6089f577547532a54d739343bc9a595b82bb5fd4a5d92670dd9d9bc1"
+  },
+  {
+    "file": "scanner-result.json.gz",
+    "sha256": "4f51c3a5e1a2d0a6fbb2425bed5769e4b78097b02e96cf9451044835ba3ab3b0"
+  },
+  {
+    "file": "scanner-run.js.gz",
+    "sha256": "6dbfce0df4720c90c9d2e8cdecf9eefaf802cd2a30a0897eab6fffe21741e292"
+  },
+  {
+    "file": "scanner-run.log.gz",
+    "sha256": "4392f9813dc2ab9e5808315bc26823741b3ed33ebc4d294ee306f3d10c0592d8"
+  }
+]
