@@ -41,3 +41,13 @@ development update.
 
 **How to apply:** Obtain separate authorization before importing resize-dedup;
 acceptance of other chart work is not permission to include it.
+
+The Scanner mount-budget experiment remains held. Accepted pending-candle engine
+startup does not authorize deferring other panels or importing performance
+ancestry. Source-branch diagnostic instrumentation must stay offline-only.
+
+**Why:** The owner explicitly excluded mount-budget and normal-runtime diagnostic
+tooling from the pending-engine development update.
+
+**How to apply:** Keep selective frontend lifecycle imports separate from held
+mount/layout work and offline fixture instrumentation.
