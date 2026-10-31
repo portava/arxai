@@ -242,12 +242,24 @@ describe("Replay analysis duplicate notifications",()=>{
     expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-source-identity')).toBe('b'.repeat(64));
     v.unmount();expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
   });
-  it("never deduplicates live callbacks or a revised same-bar forming tip",()=>{
+  it("reuses validated closed analysis for duplicate live callbacks and a revised unconfirmed tip",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);
-    f.show(f.all);expect(analyzeSmartChart).toHaveBeenCalledTimes(2);
+    f.show(f.all);expect(analyzeSmartChart).toHaveBeenCalledTimes(1);
     f.show([...f.all,{...f.all.at(-1)!,time:f.all.at(-1)!.time+300}]);
     f.show([...f.all,{...f.all.at(-1)!,time:f.all.at(-1)!.time+300,close:100.5}]);
-    expect(analyzeSmartChart).toHaveBeenCalledTimes(4);expect(describeSmartChartWindow).toHaveBeenCalledTimes(4);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(1);expect(describeSmartChartWindow).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-asof')).toBe(String(START/1000+30*300));
+  });
+  it("withdraws cached live findings on clock rollback, then recovers without stale annotations",()=>{
+    const f=fixture();render(<SmartChartReader {...f.props}/>);
+    vi.mocked(Date.now).mockReturnValue(START+30*300_000-1);
+    f.show(f.all);
+    expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-status')).toBe('unavailable');
+    expect(screen.queryByTestId('chart-reader-context')).toBeNull();
+    expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
+    vi.mocked(Date.now).mockReturnValue(NOW);f.show(f.all);
+    expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-status')).toBe('ready');
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toBeTruthy();
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(3);
   });
 });
