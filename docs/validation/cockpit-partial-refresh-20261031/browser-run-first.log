@@ -1,0 +1,5 @@
+### Error
+Error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at http://127.0.0.1:4199/my-trades
+Call log:
+[2m  - navigating to "http://127.0.0.1:4199/my-trades", waiting until "load"[22m
+
