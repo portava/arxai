@@ -1,0 +1,109 @@
+{
+  "panels": {
+    "x": 12,
+    "y": 2060.203125,
+    "width": 366,
+    "height": 2844.5,
+    "top": 2060.203125,
+    "right": 378,
+    "bottom": 4904.703125,
+    "left": 12
+  },
+  "style": "auto",
+  "tabs": [
+    {
+      "text": "Focus",
+      "id": "radix-\u00abru\u00bb-trigger-focus",
+      "selected": "true"
+    },
+    {
+      "text": "Broad Scan",
+      "id": "radix-\u00abru\u00bb-trigger-broad-scan",
+      "selected": "false"
+    },
+    {
+      "text": "Scalp Builder",
+      "id": "radix-\u00abru\u00bb-trigger-scalp-builder",
+      "selected": "false"
+    },
+    {
+      "text": "Symbols",
+      "id": "radix-\u00abru\u00bb-trigger-symbols",
+      "selected": "false"
+    },
+    {
+      "text": "Forex17",
+      "id": "",
+      "selected": "false"
+    },
+    {
+      "text": "Metals2",
+      "id": "",
+      "selected": "false"
+    },
+    {
+      "text": "Indices4",
+      "id": "",
+      "selected": "false"
+    },
+    {
+      "text": "Crypto2",
+      "id": "",
+      "selected": "false"
+    },
+    {
+      "text": "Synthetic18",
+      "id": "",
+      "selected": "false"
+    }
+  ],
+  "state": {
+    "adapterId": 1,
+    "containerId": 2,
+    "chartId": 3,
+    "seriesId": 4,
+    "canvasIds": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "candlesId": 15,
+    "dataRevision": 10,
+    "barCount": 200,
+    "first": {
+      "time": 1767175200,
+      "open": 0.9999,
+      "high": 1.0003,
+      "low": 0.9997,
+      "close": 1
+    },
+    "last": {
+      "time": 1767354300,
+      "open": 0.9976255169022257,
+      "high": 0.9980255169022256,
+      "low": 0.9974255169022257,
+      "close": 0.9977255169022257
+    },
+    "symbol": "EURUSD",
+    "intervalSeconds": 900,
+    "style": "candles",
+    "feed": {
+      "source": "offline_fixture",
+      "livePriceAffordance": false
+    },
+    "range": {
+      "from": 120,
+      "to": 199
+    },
+    "bounds": {
+      "x": 22,
+      "y": 654.21875,
+      "width": 346,
+      "height": 360
+    }
+  }
+}

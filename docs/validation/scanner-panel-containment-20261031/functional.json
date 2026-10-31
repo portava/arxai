@@ -1,0 +1,498 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "entry": {
+        "text": "Read this chart",
+        "events": [
+          {
+            "skipped": false,
+            "at": 139.2999997138977
+          }
+        ],
+        "panelY": 704.1875
+      },
+      "traversal": [
+        {
+          "text": "Focus",
+          "inside": true,
+          "visible": true
+        }
+      ],
+      "dataStable": true,
+      "engineStable": true,
+      "overflow": false,
+      "events": [
+        {
+          "skipped": false,
+          "at": 139.2999997138977
+        }
+      ]
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "entry": {
+        "text": "Read this chart",
+        "events": [
+          {
+            "skipped": false,
+            "at": 130.60000038146973
+          }
+        ],
+        "panelY": 646.203125
+      },
+      "traversal": [
+        {
+          "text": "Focus",
+          "inside": true,
+          "visible": true
+        }
+      ],
+      "dataStable": true,
+      "engineStable": true,
+      "overflow": false,
+      "events": [
+        {
+          "skipped": false,
+          "at": 130.60000038146973
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "blocked": [
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    }
+  ]
+}
