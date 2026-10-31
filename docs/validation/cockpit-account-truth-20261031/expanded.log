@@ -1,0 +1,67 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-cockpit-funds-20261031/artifacts/trading-dashboard
+
+ ❯ src/hooks/useLiveAccountSnapshot.test.ts (40 tests | 3 failed) 46ms
+     × first funds poll without a count has unknown count and incomplete positions 2ms
+     × a reported count does not make an absent position list complete; SSE restores it 0ms
+     × malformed counts cannot be displayed as known 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/hooks/useLiveAccountSnapshot.test.ts > funds-only polls do not certify position completeness > first funds poll without a count has unknown count and incomplete positions
+TypeError: result.current.poll is not a function
+ ❯ src/hooks/useLiveAccountSnapshot.test.ts:831:46
+    829|     fetchMock.mockResolvedValue({ok:true,json:async()=>body});
+    830|     const {result}=renderHook(()=>useLiveAccountSnapshot());
+    831|     await act(async()=>{await result.current.poll()});
+       |                                              ^
+    832|     expect(result.current.snapshot?.positionsComplete).toBe(false);
+    833|     expect(result.current.snapshot?.positionCountKnown).toBe(false);
+ ❯ ../../../arx-tier1-completion/node_modules/.pnpm/@testing-library+react@16.3.2_@testing-library+dom@10.4.1_@types+react-dom@19.2.3_@type_4fb512a4971c83f0bde1ddec20a6d431/node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act ../../../arx-tier1-completion/node_modules/.pnpm/react@19.1.0/node_modules/react/cjs/react.development.js:789:22
+ ❯ ../../../arx-tier1-completion/node_modules/.pnpm/@testing-library+react@16.3.2_@testing-library+dom@10.4.1_@types+react-dom@19.2.3_@type_4fb512a4971c83f0bde1ddec20a6d431/node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ src/hooks/useLiveAccountSnapshot.test.ts:831:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/hooks/useLiveAccountSnapshot.test.ts > funds-only polls do not certify position completeness > a reported count does not make an absent position list complete; SSE restores it
+TypeError: result.current.poll is not a function
+ ❯ src/hooks/useLiveAccountSnapshot.test.ts:838:46
+    836|     fetchMock.mockResolvedValue({ok:true,json:async()=>({...freshPollB…
+    837|     const {result}=renderHook(()=>useLiveAccountSnapshot());
+    838|     await act(async()=>{await result.current.poll()});
+       |                                              ^
+    839|     expect(result.current.snapshot?.openPositionsCount).toBe(2);
+    840|     expect(result.current.snapshot?.positionCountKnown).toBe(true);
+ ❯ ../../../arx-tier1-completion/node_modules/.pnpm/@testing-library+react@16.3.2_@testing-library+dom@10.4.1_@types+react-dom@19.2.3_@type_4fb512a4971c83f0bde1ddec20a6d431/node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act ../../../arx-tier1-completion/node_modules/.pnpm/react@19.1.0/node_modules/react/cjs/react.development.js:789:22
+ ❯ ../../../arx-tier1-completion/node_modules/.pnpm/@testing-library+react@16.3.2_@testing-library+dom@10.4.1_@types+react-dom@19.2.3_@type_4fb512a4971c83f0bde1ddec20a6d431/node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ src/hooks/useLiveAccountSnapshot.test.ts:838:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/hooks/useLiveAccountSnapshot.test.ts > funds-only polls do not certify position completeness > malformed counts cannot be displayed as known
+TypeError: result.current.poll is not a function
+ ❯ src/hooks/useLiveAccountSnapshot.test.ts:849:46
+    847|     fetchMock.mockResolvedValue({ok:true,json:async()=>({...freshPollB…
+    848|     const {result}=renderHook(()=>useLiveAccountSnapshot());
+    849|     await act(async()=>{await result.current.poll()});
+       |                                              ^
+    850|     expect(result.current.snapshot?.positionCountKnown).toBe(false);
+    851|   });
+ ❯ ../../../arx-tier1-completion/node_modules/.pnpm/@testing-library+react@16.3.2_@testing-library+dom@10.4.1_@types+react-dom@19.2.3_@type_4fb512a4971c83f0bde1ddec20a6d431/node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act ../../../arx-tier1-completion/node_modules/.pnpm/react@19.1.0/node_modules/react/cjs/react.development.js:789:22
+ ❯ ../../../arx-tier1-completion/node_modules/.pnpm/@testing-library+react@16.3.2_@testing-library+dom@10.4.1_@types+react-dom@19.2.3_@type_4fb512a4971c83f0bde1ddec20a6d431/node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ src/hooks/useLiveAccountSnapshot.test.ts:849:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  3 failed | 49 passed (52)
+   Start at  14:23:45
+   Duration  783ms (transform 194ms, setup 0ms, import 474ms, tests 101ms, environment 728ms)
+
+undefined
+/Users/areyouok/arx-cockpit-funds-20261031/artifacts/trading-dashboard:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/components/dashboard/cockpit/CockpitAccountTruth.test.tsx src/hooks/useLiveAccountSnapshot.test.ts

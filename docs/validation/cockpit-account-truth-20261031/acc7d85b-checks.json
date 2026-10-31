@@ -1,0 +1,32 @@
+{
+  "head": "acc7d85bb436d01893c2664183a5ae199fda3c54",
+  "started": "2026-10-31T18:24:45.425689+00:00",
+  "results": [
+    {
+      "check": "frontend",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-account-truth-20261031/acc7d85b-frontend.log"
+    },
+    {
+      "check": "typecheck",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-account-truth-20261031/acc7d85b-typecheck.log"
+    },
+    {
+      "check": "build",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-account-truth-20261031/acc7d85b-build.log"
+    },
+    {
+      "check": "guards",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-account-truth-20261031/acc7d85b-guards.log"
+    },
+    {
+      "check": "bindings",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-account-truth-20261031/acc7d85b-bindings.log"
+    }
+  ],
+  "finished": "2026-10-31T18:25:18.412599+00:00"
+}

@@ -1,0 +1,14 @@
+
+> @workspace/trading-dashboard@0.0.0 test /Users/areyouok/arx-cockpit-funds-20261031/artifacts/trading-dashboard
+> vitest run
+
+
+ RUN  v4.1.7 /Users/areyouok/arx-cockpit-funds-20261031/artifacts/trading-dashboard
+
+Not implemented: navigation to another Document
+
+ Test Files  174 passed | 1 skipped (175)
+      Tests  2525 passed | 11 skipped (2536)
+   Start at  14:24:45
+   Duration  14.79s (transform 13.71s, setup 0ms, import 46.00s, tests 30.69s, environment 88.54s)
+
