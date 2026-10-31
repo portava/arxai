@@ -13,7 +13,7 @@ with every TradingView or MT5 version, broker history, or seed boundary.
   `(H+L+C)/3`, weighted close `(H+L+2C)/4`, and OHLC average. Range-based studies
   use actual high/low/close instead of an arbitrary source.
 - Periods are 1–1,000, with at most 12 independent study instances on a chart.
-  The library has 17 types; moving-average variants count as separate types.
+  The library has 18 types as of the31October range-study branch; moving-average variants count as separate types.
   This is not equivalent to MT5's count of 38 built-in indicators.
 - A complete input window is required before output. Undefined values are blank,
   never zero-filled. Recursive averages seed with an SMA. Additional backfill can
@@ -42,6 +42,7 @@ with every TradingView or MT5 version, broker history, or seed boundary.
 | Williams %R | Raw stochastic − 100 | N−1 |
 | Envelopes | Selected moving average × `(1 ± widthPercent/100)` | N−1 |
 | Momentum ratio | `100 * price / price N bars ago` (MT5 ratio convention) | N |
+| Donchian Channels | Highest H, lowest L and their midpoint over N observed bars, including the current bar; default20 | N−1 |
 | ROC | `100 * (price / price N bars ago − 1)` | N |
 
 [MT5 moving averages](https://www.metatrader5.com/en/terminal/help/indicators/trend_indicators/ma),
@@ -162,3 +163,5 @@ line, and study values under every style.
 UI tests cover independent duplicate editing, invalid input, removal, limits and
 signal-method selection. Browser acceptance checks the real canvas and local
 persistence. These tests do not establish production feed or broker equivalence.
+
+Donchian implementation and exact-source validation: [range-study report](SMART_CHART_RANGE_STUDIES_2026_10_31.md). Bulk high/low windows use bounded monotone queues; tiny revisions retain direct scans. No independent study timeframe, shifted plot or filled channel is implied.
