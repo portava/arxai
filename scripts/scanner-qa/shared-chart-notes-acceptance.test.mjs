@@ -146,3 +146,19 @@ test('touch driver cancels an active pointer if preview validation fails',async(
   assert.equal(events.at(-1).type,'touchCancel');assert.equal(events.at(-1).touchPoints.length,0);
   assert.equal(events.some(e=>e.type==='touchEnd'),false);
 });
+
+test('pan accepts only current on-screen geometry or genuine off-screen culling',()=>{
+  const check=helper('projectedOrCulled',{matchesProjection:projection});
+  const value={pane:{width:200,height:100},projected:[{id:'n',x:150,y:20}],notes:[{id:'n',anchor:{x:150,y:20}}]};
+  assert.equal(check(value,'n'),true);
+  assert.equal(check({...value,notes:[]},'n'),false,'visible anchor cannot lose its note');
+  assert.equal(check({...value,notes:[{id:'n',anchor:{x:140,y:20}}]},'n'),false,'visible note must use current coordinates');
+  for(const point of [{x:201,y:20},{x:-1,y:20},{x:150,y:-1},{x:150,y:101}]){
+    const off={...value,projected:[{id:'n',...point}]};
+    assert.equal(check(off,'n'),false,'off-screen note cannot remain clamped on-screen');
+    assert.equal(check({...off,notes:[]},'n'),true);
+  }
+  assert.equal(check({...value,projected:[{id:'n',x:NaN,y:20}],notes:[]},'n'),false);
+  assert.equal(check({...value,projected:[],notes:[]},'n'),false);
+  assert.equal(check({...value,pane:{width:0,height:100}},'n'),false);
+});

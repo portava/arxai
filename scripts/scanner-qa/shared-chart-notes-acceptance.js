@@ -82,6 +82,12 @@ async page => {
     return !!note&&!!projected&&Number.isFinite(projected.x)&&Number.isFinite(projected.y)
       &&Math.abs(note.anchor.x-projected.x)<.01&&Math.abs(note.anchor.y-projected.y)<.01;
   }
+  function projectedOrCulled(surface,id) {
+    const point=surface?.projected?.find(point=>point.id===id),pane=surface?.pane;
+    if(!point||!Number.isFinite(point.x)||!Number.isFinite(point.y)||!Number.isFinite(pane?.width)||!Number.isFinite(pane?.height)||pane.width<=0||pane.height<=0)return false;
+    const outside=point.x<0||point.x>pane.width||point.y<0||point.y>pane.height;
+    return outside?!surface.notes.some(note=>note.id===id):matchesProjection(surface,id);
+  }
   function classifyWrite(request) {
     if(request.method==='GET'||request.method==='HEAD')return 'read';
     if(request.method==='POST'&&['/api/me/activity-ping','/api/me/chart/ai-alerts/scan'].includes(request.path))return 'background';
@@ -304,7 +310,7 @@ async page => {
     check(afterZoom.state.range.to-afterZoom.state.range.from<beforeZoom.state.range.to-beforeZoom.state.range.from,'Zoom changes actual range while note follows the current time/price projection');
     const beforePanX=surface.notes[0].anchor.x;
     await panel.getByRole('button',{name:'Pan to earlier candles',exact:true}).click();
-    surface=await waitNote('pan-projection',s=>savedNoteMatches(s.drawings,note)&&matchesProjection(s,note.id)&&Math.abs(s.notes[0].anchor.x-beforePanX)>.5);
+    surface=await waitNote('pan-projection',s=>savedNoteMatches(s.drawings,note)&&projectedOrCulled(s,note.id)&&Math.abs(s.projected.find(point=>point.id===note.id).x-beforePanX)>.5);
     check(savedNoteMatches(await stored(),note)&&sameMarket(baseline,await waitSeries('EURUSD','M15',900)),'Pan moves the real projected note while saved anchor, engine and OHLC stay unchanged');
     await panel.getByRole('button',{name:'Fit history',exact:true}).click();
     await waitNote('fit-projection',s=>savedNoteMatches(s.drawings,note)&&matchesProjection(s,note.id));
