@@ -13,6 +13,25 @@ const adapter={setDrawings:drawings,setDrawingHandler:(handler:typeof click)=>{c
 const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkbenchTools key={`${symbol}:${timeframe}`} adapter={engine} epoch={1} symbol={symbol} timeframe={timeframe} preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline fixture"/>);
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
+it("saves channel extensions and midpoint with undo, lock protection and reload",()=>{
+ const key=drawingStorageKey("EURUSD","M15");
+ const channel={id:"test-channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:150,price:30},color:"#ffffff"};
+ localStorage.setItem(key,JSON.stringify([channel]));const view=mount();
+ fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));
+ fireEvent.click(screen.getByLabelText("Drawing 1 extend right"));
+ expect(JSON.parse(localStorage.getItem(key)!)[0]).toEqual({...channel,extendRight:true});
+ fireEvent.click(screen.getByLabelText("Drawing 1 middle line"));
+ expect(JSON.parse(localStorage.getItem(key)!)[0].middleLine).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+ expect(JSON.parse(localStorage.getItem(key)!)[0].middleLine).not.toBe(true);
+ fireEvent.click(screen.getByLabelText("Drawing 1 extend left"));
+ fireEvent.click(screen.getByLabelText("Lock drawing 1"));
+ for(const field of ["extend left","extend right","middle line"])expect((screen.getByLabelText(`Drawing 1 ${field}`) as HTMLInputElement).disabled).toBe(true);
+ view.unmount();mount();fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));
+ expect((screen.getByLabelText("Drawing 1 extend left") as HTMLInputElement).checked).toBe(true);
+ expect((screen.getByLabelText("Drawing 1 extend right") as HTMLInputElement).checked).toBe(true);
+ expect((screen.getByLabelText("Drawing 1 middle line") as HTMLInputElement).checked).toBe(false);
+});
 describe("manual text note controls",()=>{
   const createNote=(text="My own observation")=>{
     fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"text"}});

@@ -27,7 +27,7 @@ export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extende
 export const DRAWING_NAMES: Record<DrawingKind, string> = { channel: "Parallel channel", horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
 export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical" || kind === "text"; }
 export interface ChartAnchor { time: number; price: number }
-export interface ChartDrawing { id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; offset?: ChartAnchor; color: string; locked?: boolean; width?: 1 | 2 | 3; dashed?: boolean; text?: string }
+export interface ChartDrawing { id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; offset?: ChartAnchor; color: string; locked?: boolean; width?: 1 | 2 | 3; dashed?: boolean; text?: string; extendLeft?: boolean; extendRight?: boolean; middleLine?: boolean }
 /**
  * Per chart view (each workspace view has its own stored preferences).
  * `timeZone` is display-only and optional: a missing value means UTC, and it is
@@ -76,12 +76,13 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
     if (!d || typeof d.id !== "string" || d.id.length > 80 || seen.has(d.id) || !Object.hasOwn(DRAWING_NAMES, d.kind) || !anchor(d.start) || !color(d.color)) return [];
     if (!singleAnchorDrawing(d.kind) && (!anchor(d.end) || d.end.time === d.start.time)) return [];
     if (d.kind === "channel" && !anchor(d.offset)) return [];
+    if (d.kind === "channel" && [d.extendLeft,d.extendRight,d.middleLine].some(v=>v != null && typeof v !== "boolean")) return [];
     const text = d.kind === "text" ? normalizeNoteText(d.text) : null;
     if (d.kind === "text" && text == null) return [];
     if (d.width != null && ![1, 2, 3].includes(d.width)) return [];
     if (d.locked != null && typeof d.locked !== "boolean" || d.dashed != null && typeof d.dashed !== "boolean") return [];
     seen.add(d.id);
-    return [{ id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(d.kind === "channel" ? {offset:{time:d.offset.time,price:d.offset.price}} : {}), color:d.color, ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
+    return [{ id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(d.kind === "channel" ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
   });
 }
 /** Local device preferences only. No account, positions, credentials or feed

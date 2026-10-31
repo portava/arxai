@@ -126,3 +126,28 @@ it("projects a channel with parallel boundaries in regular, logarithmic and inve
  const backwards={...channel,start:channel.end!,end:channel.start};
  const lines=drawingStrokes([backwards],a=>({x:a.time,y:a.price}),800,400);expect(lines[1].start.y).toBe(35);expect(lines[1].end.y).toBe(25);
 });
+
+it("extends channel boundaries toward viewport left/right regardless of anchor order",()=>{
+ const base={id:"channel",kind:"channel",start:{time:100,price:100},end:{time:200,price:110},offset:{time:150,price:130},color:"#ffffff"} as ChartDrawing;
+ for(const reverse of [false,true]) for(const direction of ["left","right","both"]){
+  const d={...base,...(reverse?{start:base.end!,end:base.start}:{}),extendLeft:direction!=="right",extendRight:direction!=="left"};
+  const strokes=drawingStrokes([d],a=>({x:a.time,y:a.price}),800,400);
+  const xs=[Math.min(strokes[0].start.x,strokes[0].end.x),Math.max(strokes[0].start.x,strokes[0].end.x)];
+  expect(xs).toEqual([direction!=="right"?0:100,direction!=="left"?800:200]);
+  expect(strokes[1].start.y-strokes[0].start.y).toBeCloseTo(25);
+  expect(strokes[1].end.y-strokes[0].end.y).toBeCloseTo(25);
+  expect(drawingHandles(d,a=>({x:a.time,y:a.price}),800,400).map(h=>h.point.x)).toEqual(reverse?[200,100,150]:[100,200,150]);
+  if(direction!=="left")expect(hitTestDrawings([d],null,a=>({x:a.time,y:a.price}),800,400,{x:700,y:160})?.part).toBe("body");
+ }
+});
+
+it("places a dashed midpoint halfway between projected channel rails including log/inverted scales",()=>{
+ const d={id:"channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:150,price:30},color:"#ffffff",middleLine:true,extendLeft:true,extendRight:true} as ChartDrawing;
+ for(const y of [(p:number)=>p,(p:number)=>Math.log(p),(p:number)=>-Math.log(p)]){
+  const strokes=drawingStrokes([d],a=>({x:a.time,y:y(a.price)}),800,400);
+  expect(strokes).toHaveLength(3);expect(strokes[2].dashed).toBe(true);
+  expect(strokes[2].start.y).toBeCloseTo((strokes[0].start.y+strokes[1].start.y)/2);
+  expect(strokes[2].end.y).toBeCloseTo((strokes[0].end.y+strokes[1].end.y)/2);
+ }
+ expect(drawingStrokes([d],a=>a.time===150?null:{x:a.time,y:a.price},800,400)).toEqual([]);
+});

@@ -57,7 +57,19 @@ export function drawingStrokes(drawings: ChartDrawing[], project: ProjectAnchor,
       // including logarithmic/inverted modes and real candle-index spacing.
       const shift = offset.y - (start.y + (end.y - start.y) * (offset.x - start.x) / (end.x - start.x));
       if (!Number.isFinite(shift)) continue;
-      strokes.push({...style,start,end}, {...style,start:{x:start.x,y:start.y+shift},end:{x:end.x,y:end.y+shift}});
+      // Left/right describe time-axis directions, not drawing gesture order.
+      // Keep original handles/anchors; only the displayed segments extend.
+      const slope = (end.y - start.y) / (end.x - start.x);
+      const left = Math.min(start.x,end.x), right = Math.max(start.x,end.x);
+      const x1 = drawing.extendLeft ? Math.min(0,left) : left;
+      const x2 = drawing.extendRight ? Math.max(width,right) : right;
+      const at = (x:number,delta=0) => ({x,y:start.y+slope*(x-start.x)+delta});
+      // Preserve finite-channel ordering for existing objects and drag logic.
+      const from = start.x <= end.x ? x1 : x2, to = start.x <= end.x ? x2 : x1;
+      const first = {start:at(from),end:at(to)}, second = {start:at(from,shift),end:at(to,shift)};
+      if (![first.start.y,first.end.y,second.start.y,second.end.y].every(Number.isFinite)) continue;
+      strokes.push({...style,...first}, {...style,...second});
+      if (drawing.middleLine) strokes.push({...style,dashed:true,start:at(from,shift/2),end:at(to,shift/2)});
       continue;
     }
     for (const segment of drawingSegments(drawing)) {

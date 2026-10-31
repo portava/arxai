@@ -249,6 +249,10 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.locked ? "Unlock" : "Lock"} drawing ${index+1}`} aria-pressed={!!d.locked} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,locked:!item.locked} : item))}>{d.locked ? "Unlock" : "Lock"}</Button>
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>change(drawings.filter(item=>item.id!==d.id))}>Delete</Button>
         {d.kind === "text" && <NoteTextEditor label={`Drawing ${index+1} note text`} value={d.text!} locked={d.locked === true} onSave={text=>change(drawings.map(item=>item.id===d.id ? {...item,text} : item))} />}
+        {d.kind === "channel" && <div className="flex basis-full flex-wrap gap-x-4 gap-y-2">
+          {([['extendLeft','Extend left','extend left'],['extendRight','Extend right','extend right'],['middleLine','Middle line','middle line']] as const).map(([property,label,accessible])=><label key={property} className="flex min-h-8 items-center gap-2"><input type="checkbox" aria-label={`Drawing ${index+1} ${accessible}`} checked={d[property] === true} disabled={d.locked === true} onChange={event=>{if(!d.locked)change(drawings.map(item=>item.id===d.id?{...item,[property]:event.target.checked}:item));}} />{label}</label>)}
+          <span className="basis-full text-zinc-400">Extensions follow your drawn slope; they are not a forecast. The midpoint is halfway between the displayed rails.</span>
+        </div>}
       </div>)}
     </div>}
       </div>
