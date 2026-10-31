@@ -7,6 +7,9 @@ export interface DrawingInteraction {
   snap: boolean;
   onSelect(id: string | null): void;
   onCommit(drawings: ChartDrawing[]): void;
+  /** Present only when this chart has a local drawing history action. */
+  onUndo?(): void;
+  onRedo?(): void;
 }
 export interface DrawingProjection {
   candles(): ChartEngineCandle[];
@@ -138,6 +141,9 @@ export class ChartDrawingEditor {
     if (event.button !== 0 || event.isPrimary === false || !(event.target instanceof HTMLCanvasElement)) return;
     const point = this.point(event), size = this.context.size();
     if (point.x < 0 || point.y < 0 || point.x > size.width || point.y > size.height) return;
+    // Selecting geometry prevents the native focus default; retain keyboard
+    // ownership on this chart without scrolling or touching other controls.
+    this.container.focus({preventScroll:true});
     if (this.placement) {
       this.tap = { id: event.pointerId, point }; this.block(event);
       try { this.container.setPointerCapture(event.pointerId); } catch { /* detached/test surface */ }
@@ -186,7 +192,30 @@ export class ChartDrawingEditor {
   };
   private release(id: number): void { try { this.container.releasePointerCapture(id); } catch { /* capture may already be released */ } }
   private cancelPointer = (event: PointerEvent) => { if (this.gesture?.pointerId === event.pointerId || this.tap?.id === event.pointerId) this.cancel(); };
-  private key = (event: KeyboardEvent) => { if (event.key === "Escape") this.cancel(); };
+  private key = (event: KeyboardEvent) => {
+    if (event.key === "Escape") { this.cancel(); return; }
+    // Each chart owns its shortcuts. A selected drawing in a background chart
+    // must not receive keys typed into another chart, toolbar or dialog.
+    if (event.defaultPrevented || event.isComposing || event.repeat || event.altKey
+      || event.target !== this.container || document.activeElement !== this.container
+      || !this.config || this.gesture || this.tap || this.placement) return;
+    const key = event.key.toLowerCase();
+    if (event.ctrlKey || event.metaKey) {
+      const action = key === "z" ? (event.shiftKey ? this.config.onRedo : this.config.onUndo)
+        : key === "y" && event.ctrlKey && !event.metaKey && !event.shiftKey ? this.config.onRedo : undefined;
+      if (action) { this.block(event); action(); }
+      return;
+    }
+    if (event.shiftKey || (key !== "delete" && key !== "backspace")) return;
+    const selected = this.drawings.find(d => d.id === this.config!.selectedId);
+    if (!selected || selected.locked || selected.hidden) return;
+    this.block(event);
+    this.drawings = this.drawings.filter(d => d.id !== selected.id);
+    this.context.render(this.drawings);
+    this.context.select(null);
+    this.config.onSelect(null);
+    this.config.onCommit(this.drawings);
+  };
   private cancel = () => {
     if (this.gesture) { this.context.render(this.gesture.original); this.release(this.gesture.pointerId); this.gesture = null; this.context.freeze(false); }
     if (this.tap) this.release(this.tap.id);

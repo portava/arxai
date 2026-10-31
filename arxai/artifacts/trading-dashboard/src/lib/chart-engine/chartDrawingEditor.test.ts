@@ -16,7 +16,7 @@ const projection: DrawingProjection = {
 const editors: ChartDrawingEditor[]=[];
 afterEach(()=>{editors.splice(0).forEach(editor=>editor.destroy());document.body.innerHTML="";});
 function fixture(drawings=[trend]) {
-  const container=document.createElement("div"),canvas=document.createElement("canvas");container.append(canvas);document.body.append(container);
+  const container=document.createElement("div"),canvas=document.createElement("canvas");container.tabIndex=0;container.append(canvas);document.body.append(container);
   const render=vi.fn(),select=vi.fn(),freeze=vi.fn(),onSelect=vi.fn(),onCommit=vi.fn();
   const editor=new ChartDrawingEditor(container,{...projection,render,select,freeze});editors.push(editor);
   editor.setDrawings(drawings);editor.configure({selectedId:"trend",snap:false,onSelect,onCommit});
@@ -155,4 +155,61 @@ it("validates optional visibility and never changes legacy objects",()=>{
  expect(validateDrawings([{...trend,hidden:true}])).toEqual([{...trend,hidden:true}]);
  expect(validateDrawings([{...trend,hidden:false}])).toEqual([trend]);
  for(const hidden of ["true",1,{},[]])expect(validateDrawings([{...trend,hidden}])).toEqual([]);
+});
+
+
+describe("focused chart drawing shortcuts",()=>{
+  const press=(target:EventTarget,key:string,options:KeyboardEventInit={})=>{
+    const event=new KeyboardEvent("keydown",{key,bubbles:true,cancelable:true,...options});target.dispatchEvent(event);return event;
+  };
+  it.each(["Delete","Backspace"])("removes only the selected drawing with %s and commits once",key=>{
+    const other={...trend,id:"other"},f=fixture([trend,other]);f.container.focus();
+    expect(press(f.container,key).defaultPrevented).toBe(true);
+    expect(f.onCommit).toHaveBeenCalledExactlyOnceWith([other]);
+    expect(f.render).toHaveBeenLastCalledWith([other]);expect(f.onSelect).toHaveBeenLastCalledWith(null);
+    press(f.container,key);expect(f.onCommit).toHaveBeenCalledTimes(1);
+  });
+  it("focuses the clicked chart even when drawing gestures prevent default",()=>{
+    const f=fixture();f.pointer("pointerdown",100,85);f.pointer("pointerup",100,85);
+    expect(document.activeElement).toBe(f.container);
+    press(f.container,"Delete");expect(f.onCommit).toHaveBeenCalledExactlyOnceWith([]);
+  });
+  it("edits only the focused chart, never another chart or a text field",()=>{
+    const first=fixture(),second=fixture();first.container.focus();
+    press(first.container,"Delete");expect(first.onCommit).toHaveBeenCalledTimes(1);expect(second.onCommit).not.toHaveBeenCalled();
+    const input=document.createElement("input");second.container.append(input);input.focus();
+    expect(press(input,"Backspace").defaultPrevented).toBe(false);
+    expect(press(second.container,"Delete").defaultPrevented).toBe(false);
+    expect(second.onCommit).not.toHaveBeenCalled();
+  });
+  it.each([{locked:true},{hidden:true}])("preserves protected drawings %j",flags=>{
+    const f=fixture([{...trend,...flags}]);f.container.focus();
+    expect(press(f.container,"Delete").defaultPrevented).toBe(false);expect(f.onCommit).not.toHaveBeenCalled();
+  });
+  it("leaves typing modifiers, composition, repetition and claimed events alone",()=>{
+    const f=fixture();f.container.focus();
+    for(const options of [{ctrlKey:true},{metaKey:true},{altKey:true},{shiftKey:true},{isComposing:true},{repeat:true}]) {
+      expect(press(f.container,"Delete",options).defaultPrevented).toBe(false);
+    }
+    const event=new KeyboardEvent("keydown",{key:"Delete",bubbles:true,cancelable:true});event.preventDefault();f.container.dispatchEvent(event);
+    expect(f.onCommit).not.toHaveBeenCalled();
+  });
+  it("ignores shortcuts during placement or an unfinished drag",()=>{
+    const f=fixture(),onUndo=vi.fn();f.editor.configure({selectedId:"trend",snap:false,onSelect:f.onSelect,onCommit:f.onCommit,onUndo});
+    f.container.focus();f.editor.setPlacement(vi.fn());press(f.container,"Delete");press(f.container,"z",{ctrlKey:true});
+    f.editor.setPlacement(null);f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);
+    press(f.container,"Delete");press(f.container,"z",{metaKey:true});
+    expect(f.onCommit).not.toHaveBeenCalled();expect(onUndo).not.toHaveBeenCalled();
+    f.pointer("pointercancel",150,65);press(f.container,"Delete");expect(f.onCommit).toHaveBeenCalledExactlyOnceWith([]);
+  });
+  it("dispatches available undo/redo only, and releases shortcuts when destroyed",()=>{
+    const f=fixture(),onUndo=vi.fn(),onRedo=vi.fn();f.container.focus();
+    expect(press(f.container,"z",{ctrlKey:true}).defaultPrevented).toBe(false);
+    f.editor.configure({selectedId:"trend",snap:false,onSelect:f.onSelect,onCommit:f.onCommit,onUndo,onRedo});
+    for(const options of [{ctrlKey:true},{metaKey:true}])expect(press(f.container,"z",options).defaultPrevented).toBe(true);
+    for(const [key,options] of [["Z",{metaKey:true,shiftKey:true}],["z",{ctrlKey:true,shiftKey:true}],["y",{ctrlKey:true}]] as const)expect(press(f.container,key,options).defaultPrevented).toBe(true);
+    expect(onUndo).toHaveBeenCalledTimes(2);expect(onRedo).toHaveBeenCalledTimes(3);
+    f.editor.destroy();press(f.container,"Delete");press(f.container,"z",{ctrlKey:true});
+    expect(f.onCommit).not.toHaveBeenCalled();expect(onUndo).toHaveBeenCalledTimes(2);
+  });
 });

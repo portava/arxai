@@ -1566,7 +1566,7 @@ export function ARXNativeChart({
           ref={containerRef}
           tabIndex={0}
           role="region"
-          aria-label={`${resolvedSymbol} ${timeframe} price chart. Drag or arrow keys to pan; scroll, plus or minus to zoom. Home fits history; End returns to latest candles.`}
+          aria-label={`${resolvedSymbol} ${timeframe} price chart. Drag or arrow keys to pan; scroll, plus or minus to zoom. Home fits history; End returns to latest candles. Delete or Backspace removes the selected unlocked drawing; Control or Command Z undoes a drawing edit; add Shift to redo.`}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey || event.altKey) return;
             if (event.key === "End") { event.preventDefault(); adapterRef.current?.goToLatest?.(); }

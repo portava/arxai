@@ -513,3 +513,24 @@ describe("focused controls during first candle layout",()=>{
     }finally{other.remove();vi.unstubAllGlobals();}
   });
 });
+
+
+it("routes keyboard history through the same persisted undo/redo as toolbar edits",()=>{
+ const row={id:"level",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"};
+ const key=drawingStorageKey("EURUSD","M15");localStorage.setItem(key,JSON.stringify([row]));
+ const interaction=vi.fn();const engine={...adapter,setDrawingInteraction:interaction} as unknown as ChartEngineAdapter;
+ mount("EURUSD","M15",engine);
+ const config=()=>interaction.mock.calls.at(-1)![0];
+ expect(config().onUndo).toBeUndefined();expect(config().onRedo).toBeUndefined();
+ act(()=>config().onCommit([]));
+ expect(screen.getByText("Drawing deleted. Undo restores it.")).toBeTruthy();
+ expect(JSON.parse(localStorage.getItem(key)!)).toEqual([]);expect(config().onUndo).toBeTypeOf("function");
+ act(()=>config().onUndo());
+ expect(screen.getByText("Drawing edit undone.")).toBeTruthy();
+ expect(JSON.parse(localStorage.getItem(key)!)).toEqual([row]);expect(config().onUndo).toBeUndefined();
+ act(()=>config().onRedo());expect(JSON.parse(localStorage.getItem(key)!)).toEqual([]);
+ act(()=>config().onUndo());act(()=>config().onCommit([{...row,start:{time:100,price:1.4}}]));
+ expect(config().onRedo).toBeUndefined();
+ act(()=>window.dispatchEvent(new StorageEvent("storage",{key})));
+ expect(config().onUndo).toBeUndefined();expect(config().onRedo).toBeUndefined();
+});

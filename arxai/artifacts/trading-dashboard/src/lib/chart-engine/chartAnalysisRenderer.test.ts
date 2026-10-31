@@ -765,3 +765,18 @@ describe("price-only automatic scale",()=>{
     f.renderer.replacePriceSeries(f.price,f.candles);assertExcluded();
   });
 });
+
+it("renders DMI as three distinct lines in one pane and recolors only ADX",()=>{
+ const f=fixture(100),c:ChartStudy={kind:"dmi",period:14,signal:7,color:"#38bdf8"};
+ f.renderer.setStudies([c],f.candles);f.frame();
+ expect(f.handles).toHaveLength(3);
+ expect(f.handles.map(h=>h.options.color)).toEqual(["#4ade80","#fb7185","#38bdf8"]);
+ expect(f.panes).toHaveLength(2);expect(f.panes[1]!.series).toHaveLength(3);
+ expect(f.handles.map(h=>h.options.title)).toEqual(["DMI 14 +DI","DMI 14 −DI","DMI 14 ADX"]);
+ const inspected=f.renderer.inspect(f.candles.at(-1)!.time);
+ expect(inspected[0]!.label).toBe("DMI (14, 7)");
+ expect(inspected[0]!.values.map(v=>v.name)).toEqual(["+DI","−DI","ADX"]);
+ f.renderer.setStudies([{...c,color:"#ffffff"}],f.candles);f.frame();
+ expect(f.handles).toHaveLength(3);expect(f.handles.map(h=>h.options.color)).toEqual(["#4ade80","#fb7185","#ffffff"]);
+ f.renderer.destroy();
+});

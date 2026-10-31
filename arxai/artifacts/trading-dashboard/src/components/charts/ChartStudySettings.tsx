@@ -49,12 +49,13 @@ export function ChartStudySettings({ preferences, onPreferences }: Props) {
         }} /></label>;
         return <fieldset key={id} className="rounded border border-zinc-800 px-3 pb-3" data-testid="chart-study-instance">
           <legend className="px-1 font-medium" style={{ color: config.color }}>{index + 1}. {studyLabel(config)}</legend>
-          <p className="mb-2 text-[11px] text-zinc-500">{definition.description}</p>
+          <p className="mb-2 text-[11px] text-zinc-500">{definition.description}{config.kind === "dmi" ? " +DI is green; −DI is rose; Color changes ADX. Each stage waits for its full window. Loading older candles can change seeded values." : ""}</p>
           <div className="flex flex-wrap items-center gap-3">
-            {number("period", config.kind === "macd" ? "Fast" : "Period", 1, config.kind === "macd" ? (config.slow ?? 26) - 1 : 1000)}
+            {number("period", config.kind === "macd" ? "Fast" : config.kind === "dmi" ? "DI period" : "Period", 1, config.kind === "macd" ? (config.slow ?? 26) - 1 : 1000)}
             {config.kind === "macd" && <>{number("slow", "Slow", config.period + 1)}{number("signal", "Signal")}
               <label className="flex items-center gap-2">Signal method<select aria-label={`${label} Signal method`} className={field} value={config.signalMethod ?? "ema"} onChange={event => update(id, { signalMethod: event.target.value as ChartStudy["signalMethod"] })}><option value="ema">EMA</option><option value="sma">SMA (MT5)</option></select></label>
             </>}
+            {config.kind === "dmi" && number("signal", "ADX smoothing")}
             {config.kind === "stochastic" && <>{number("smoothing", "K smoothing")}{number("signal", "D period")}</>}
             {config.kind === "bollinger" && number("multiplier", "Deviation", .1, 100, .1)}
             {config.kind === "envelopes" && number("multiplier", "Width %", .01, 100, .01)}
