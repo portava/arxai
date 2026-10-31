@@ -28,7 +28,7 @@ export function candleIndex(candles: ChartEngineCandle[], time: number): number 
 
 /** Translate in candle indices and screen-space prices. Weekends never become
  * invented bars, and logarithmic/inverted scales keep their visible geometry. */
-export function moveDrawing(drawing: ChartDrawing, part: "start" | "end" | "body", origin: PixelPoint, point: PixelPoint, projection: DrawingProjection, snap: boolean): ChartDrawing | null {
+export function moveDrawing(drawing: ChartDrawing, part: "start" | "end" | "offset" | "body", origin: PixelPoint, point: PixelPoint, projection: DrawingProjection, snap: boolean): ChartDrawing | null {
   if (drawing.kind === "text" && part === "body") {
     // A note's card can extend over whitespace with no candle beneath it. Move
     // the actual anchor by the pointer delta rather than rebinding that card
@@ -50,7 +50,7 @@ export function moveDrawing(drawing: ChartDrawing, part: "start" | "end" | "body
   if (!startPoint) return null;
   const index = (time: number) => candleIndex(candles, time);
   let delta = index(target.time) - index(startPoint.time);
-  const anchors = [drawing.start, ...(drawing.end ? [drawing.end] : [])];
+  const anchors = [drawing.start, ...(drawing.end ? [drawing.end] : []), ...(drawing.kind === "channel" && drawing.offset ? [drawing.offset] : [])];
   const indexes = anchors.map(anchor => index(anchor.time));
   if (drawing.kind !== "horizontal") {
     if (indexes.some(i => i < 0)) return null;
@@ -64,7 +64,7 @@ export function moveDrawing(drawing: ChartDrawing, part: "start" | "end" | "body
     return { time: drawing.kind === "horizontal" ? anchor.time : candles[indexes[i]! + delta]!.time, price };
   });
   if (moved.some(anchor => !anchor)) return null;
-  return validateDrawings([{ ...drawing, start: moved[0], ...(drawing.end ? { end: moved[1] } : {}) }])[0] ?? null;
+  return validateDrawings([{ ...drawing, start: moved[0], ...(drawing.end ? { end: moved[1] } : {}), ...(drawing.kind === "channel" ? {offset:moved[2]} : {}) }])[0] ?? null;
 }
 
 interface EditorContext extends DrawingProjection {
@@ -77,7 +77,7 @@ interface Gesture {
   origin: PixelPoint;
   original: ChartDrawing[];
   drawing: ChartDrawing;
-  part: "start" | "end" | "body";
+  part: "start" | "end" | "offset" | "body";
   preview: ChartDrawing[];
   changed: boolean;
 }

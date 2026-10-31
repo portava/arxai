@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ChartDrawingPrimitive, drawingStrokes } from "./chartDrawingPrimitive";
+import { ChartDrawingPrimitive, drawingStrokes, drawingHandles, hitTestDrawings } from "./chartDrawingPrimitive";
 import type { ChartDrawing } from "./chartWorkspace";
 
 const drawings: ChartDrawing[] = [
@@ -109,4 +109,20 @@ describe("shared drawing canvas", () => {
     expect(timeToCoordinate).toHaveBeenCalled();
     expect(context.lineTo).toHaveBeenLastCalledWith(200, 75);
   });
+});
+
+
+it("projects a channel with parallel boundaries in regular, logarithmic and inverted scales",()=>{
+ const channel:ChartDrawing={id:"channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:150,price:30},color:"#ffffff"};
+ for(const y of [(p:number)=>p,(p:number)=>Math.log(p),(p:number)=>-Math.log(p)]){
+  const project=(a:any)=>({x:a.time,y:y(a.price)});const lines=drawingStrokes([channel],project,800,400);
+  expect(lines).toHaveLength(2);
+  expect(lines[0].end.y-lines[0].start.y).toBeCloseTo(lines[1].end.y-lines[1].start.y);
+  expect((lines[1].start.y+lines[1].end.y)/2).toBeCloseTo(y(30));
+  expect(drawingHandles(channel,project,800,400).map(h=>h.part)).toEqual(["start","end","offset"]);
+  expect(hitTestDrawings([channel],"channel",project,800,400,project(channel.offset!))?.part).toBe("offset");
+  expect(drawingStrokes([channel],a=>a.time===150?null:project(a),800,400)).toEqual([]);
+ }
+ const backwards={...channel,start:channel.end!,end:channel.start};
+ const lines=drawingStrokes([backwards],a=>({x:a.time,y:a.price}),800,400);expect(lines[1].start.y).toBe(35);expect(lines[1].end.y).toBe(25);
 });

@@ -330,3 +330,19 @@ it("offers a reversible price-only scale control without altering other preferen
  view.rerender(<ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={enabled} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
  expect(button.getAttribute("aria-pressed")).toBe("true");fireEvent.click(button);expect(changed.mock.calls[1][0](enabled)).toEqual({...initial,priceOnlyScale:false});
 });
+
+
+it("places a channel in three steps, cancels partial placement and preserves its third anchor through undo and reload",()=>{
+ const view=mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"channel"}});
+ act(()=>click?.({time:100,price:10}));act(()=>click?.({time:200,price:20}));
+ expect(localStorage.getItem(drawingStorageKey("EURUSD","M15"))).toBeNull();
+ expect(screen.getByText(/choose a third candle/)).toBeTruthy();
+ act(()=>click?.({time:100,price:30}));
+ const saved=()=>JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!);
+ expect(saved()[0]).toMatchObject({kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:100,price:30}});
+ fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));expect(saved()).toEqual([]);
+ fireEvent.click(screen.getByRole("button",{name:"Redo",exact:true}));expect(saved()[0].offset).toEqual({time:100,price:30});
+ fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"channel"}});act(()=>click?.({time:300,price:10}));act(()=>click?.({time:400,price:20}));
+ fireEvent.keyDown(window,{key:"Escape"});expect(saved()).toHaveLength(1);
+ view.unmount();mount();expect(drawings.mock.calls.at(-1)![0][0].offset).toEqual({time:100,price:30});
+});

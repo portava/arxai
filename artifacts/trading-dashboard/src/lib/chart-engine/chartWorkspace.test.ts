@@ -76,3 +76,12 @@ it("retains only an explicit price-only scale preference",()=>{
  expect(validatePreferences({priceOnlyScale:true}).priceOnlyScale).toBe(true);
  for(const value of [false,undefined,null,1,"true",{},[]])expect(validatePreferences({priceOnlyScale:value}).priceOnlyScale).toBeUndefined();
 });
+
+
+it("requires and preserves a channel's three finite positive anchors without accepting invalid baselines",()=>{
+ const channel={id:"channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:100,price:15},color:"#ffffff"};
+ expect(validateDrawings([channel])).toEqual([channel]);
+ for(const offset of [undefined,{time:100,price:NaN},{time:0,price:10},{time:100,price:-1}])expect(validateDrawings([{...channel,offset}])).toEqual([]);
+ expect(validateDrawings([{...channel,end:{time:100,price:20}}])).toEqual([]);
+ expect(validateDrawings([{...channel,kind:"trend"}])[0]).not.toHaveProperty("offset");
+});

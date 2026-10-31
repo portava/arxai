@@ -119,3 +119,23 @@ describe("analysis-only drawing editing",()=>{
     f.editor.destroy();f.pointer("pointerdown",100,85);f.pointer("pointerup",100,85);expect(place).toHaveBeenCalledTimes(1);
   });
 });
+
+
+it("moves all three channel anchors over real bars and adjusts width independently",()=>{
+ const channel:ChartDrawing={...trend,kind:"channel",offset:{time:220,price:30}};
+ const moved=moveDrawing(channel,"body",{x:100,y:80},{x:150,y:70},projection,false)!;
+ expect(moved.start).toEqual({time:220,price:20});expect(moved.end).toEqual({time:1060,price:30});expect(moved.offset).toEqual({time:1000,price:40});
+ const adjusted=moveDrawing(channel,"offset",{x:100,y:70},{x:50,y:60},projection,false)!;
+ expect(adjusted.start).toEqual(channel.start);expect(adjusted.end).toEqual(channel.end);expect(adjusted.offset).toEqual({time:160,price:40});
+ expect(moveDrawing({...channel,offset:{time:999,price:30}},"body",{x:100,y:80},{x:150,y:70},projection,false)).toBeNull();
+});
+
+
+it("commits a channel width drag once, rolls back cancellation and respects locks",()=>{
+ const channel:ChartDrawing={...trend,kind:"channel",offset:{time:220,price:30}};const f=fixture([channel]);
+ f.pointer("pointerdown",100,70);f.pointer("pointermove",100,50);f.pointer("pointerup",100,50);
+ expect(f.onCommit).toHaveBeenCalledExactlyOnceWith([{...channel,offset:{time:220,price:50}}]);
+ f.editor.setDrawings([channel]);f.onCommit.mockClear();f.pointer("pointerdown",100,70);f.pointer("pointermove",100,50);f.pointer("pointercancel",100,50);
+ expect(f.onCommit).not.toHaveBeenCalled();expect(f.render).toHaveBeenLastCalledWith([channel]);
+ f.editor.setDrawings([{...channel,locked:true}]);f.pointer("pointerdown",100,70);f.pointer("pointermove",100,50);f.pointer("pointerup",100,50);expect(f.onCommit).not.toHaveBeenCalled();
+});

@@ -50,6 +50,16 @@ export function drawingStrokes(drawings: ChartDrawing[], project: ProjectAnchor,
       if (point) strokes.push({ ...style, start: { x: point.x, y: 0 }, end: { x: point.x, y: height } });
       continue;
     }
+    if (drawing.kind === "channel") {
+      const start = project(drawing.start), end = drawing.end && project(drawing.end), offset = drawing.offset && project(drawing.offset);
+      if (!start || !end || !offset || Math.abs(end.x - start.x) < .001) continue;
+      // Project first: parallelism is measured in the displayed price scale,
+      // including logarithmic/inverted modes and real candle-index spacing.
+      const shift = offset.y - (start.y + (end.y - start.y) * (offset.x - start.x) / (end.x - start.x));
+      if (!Number.isFinite(shift)) continue;
+      strokes.push({...style,start,end}, {...style,start:{x:start.x,y:start.y+shift},end:{x:end.x,y:end.y+shift}});
+      continue;
+    }
     for (const segment of drawingSegments(drawing)) {
       let start = project(segment.start), end = project(segment.end);
       if (!start || !end) continue;
@@ -67,17 +77,22 @@ export function drawingStrokes(drawings: ChartDrawing[], project: ProjectAnchor,
   return strokes;
 }
 
-export function drawingHandles(drawing: ChartDrawing, project: ProjectAnchor, width: number, height: number): { part: "start" | "end"; point: PixelPoint }[] {
+export function drawingHandles(drawing: ChartDrawing, project: ProjectAnchor, width: number, height: number): { part: "start" | "end" | "offset"; point: PixelPoint }[] {
   const start = project(drawing.start, drawing.kind === "horizontal");
   if (!start) return [];
   if (drawing.kind === "horizontal") return [{ part: "start", point: { x: width / 2, y: start.y } }];
   if (drawing.kind === "vertical") return [{ part: "start", point: { x: start.x, y: height / 2 } }];
   if (drawing.kind === "text") return [{ part: "start", point: start }];
   const end = drawing.end && project(drawing.end);
-  return end ? [{ part: "start", point: start }, { part: "end", point: end }] : [];
+  if (!end) return [];
+  if (drawing.kind === "channel") {
+    const offset = drawing.offset && project(drawing.offset);
+    return offset ? [{part:"start",point:start},{part:"end",point:end},{part:"offset",point:offset}] : [];
+  }
+  return [{ part: "start", point: start }, { part: "end", point: end }];
 }
 
-export function hitTestDrawings(drawings: ChartDrawing[], selected: string | null, project: ProjectAnchor, width: number, height: number, point: PixelPoint, tolerance = 8): { id: string; part: "start" | "end" | "body" } | null {
+export function hitTestDrawings(drawings: ChartDrawing[], selected: string | null, project: ProjectAnchor, width: number, height: number, point: PixelPoint, tolerance = 8): { id: string; part: "start" | "end" | "offset" | "body" } | null {
   const active = drawings.find(drawing => drawing.id === selected);
   if (active && !active.locked) for (const handle of drawingHandles(active, project, width, height)) {
     if (Math.hypot(point.x - handle.point.x, point.y - handle.point.y) <= tolerance + 2) return { id: active.id, part: handle.part };
