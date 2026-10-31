@@ -165,3 +165,12 @@ signal-method selection. Browser acceptance checks the real canvas and local
 persistence. These tests do not establish production feed or broker equivalence.
 
 Donchian implementation and exact-source validation: [range-study report](SMART_CHART_RANGE_STUDIES_2026_10_31.md). Bulk high/low windows use bounded monotone queues; tiny revisions retain direct scans. No independent study timeframe, shifted plot or filled channel is implied.
+
+
+## DMI / ADX (31 October 2026)
+
+DMI adds three Wilder-smoothed channels, +DI / −DI / ADX. Both lengths default to 14 and accept integers 1–1000; `period` is DI length and `signal` is ADX smoothing. No selectable applied-price source: it uses high, low and previous close. The first bar supplies no transition. UpMove = H − prior H; DownMove = prior L − L. Only the strictly larger positive move contributes; ties and inside bars contribute zero. True range is max(H−L, |H−prior C|, |L−prior C|).
+
+Seed TR, positive and negative movement with the arithmetic mean of the first DI-length transitions, then update each by previous + (input − previous)/length. DI = 100 × smoothed movement / smoothed TR. A zero smoothed TR maps both DI values to zero. DX = 100 × |+DI−−DI|/(+DI+−DI), or zero when the denominator is zero. Seed ADX with the first full window of DX, then apply the same Wilder recurrence with its own length. With zero-based bars, first DI is at `period`; first ADX is at `period+signal−1`. Earlier values are blank. History seeding and forming-candle revisions can change values; no future candles are read.
+
+Green is +DI, rose is −DI and the configurable color is ADX. ADX measures strength without direction; none of these values is calibrated confidence or entry permission. No threshold generates orders or AI approval. Platform seed, flat-market and smoothing conventions can differ; see the [DMI evidence and comparison](SMART_CHART_DMI_2026_10_31.md).
