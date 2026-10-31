@@ -114,7 +114,7 @@ async page => {
         try {
           await page.goto(origin+'/',{waitUntil:'commit',timeout:15000});
           const navigationSelector=viewport.name==='mobile'?'[data-testid="bottomnav--market-scanner"]':'aside a[href="/market-scanner"]';
-          if(budget.idleBeforeClickMs>0){await page.locator(navigationSelector).waitFor({state:'visible'});await page.waitForTimeout(budget.idleBeforeClickMs);}
+          if(budget.idleBeforeClickMs>0){await page.waitForFunction(()=>window.__arxFirstNavigation?.readyAt!==null&&window.__arxFirstNavigation?.readyAt!==undefined);await page.waitForTimeout(budget.idleBeforeClickMs);}
           await page.locator(navigationSelector).click({timeout:budget.timeoutMs});
           await page.waitForFunction(()=>window.__arxFirstNavigation?.done,null,{timeout:budget.timeoutMs+1000});
         } catch(error){sample.failure=String(error?.message??error);}
