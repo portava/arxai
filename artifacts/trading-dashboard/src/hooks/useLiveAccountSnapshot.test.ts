@@ -108,11 +108,8 @@ function snapshotEvent(opts: {
   };
 }
 
-// Task #451 — the canonical balance block slot-summary now carries (the same
-// wire shape the SSE stream sends as its `live` sibling). The block's own
-// freshness.status is intentionally set to a DIFFERENT value than the poll's
-// dataFreshness in these fixtures so the tests prove the hook forces the
-// detailed status to the verified poll freshness, not the block's stamp.
+// Canonical balance freshness is independent of heartbeat freshness. The
+// transport tests deliberately vary these separately to prevent promotion.
 function liveBlock(status: "fresh" | "stale" | "unavailable") {
   return {
     source: "live_shared" as const,
@@ -167,7 +164,7 @@ function freshPollBody() {
     openPnL: -10,
     openPositionCount: 0,
     positions: [],
-    live: liveBlock("unavailable"),
+    live: liveBlock("fresh"),
   };
 }
 
@@ -202,6 +199,104 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe("confirmed account updates survive transport races", () => {
+  it.each(["stale", "unavailable"] as const)("a fresh heartbeat cannot upgrade a %s canonical balance", async status => {
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ ...freshPollBody(), live: liveBlock(status) }) }));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(result.current.live?.freshness.status).toBe(status);
+  });
+
+  it("a poll without canonical funds keeps the last figures marked stale", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ ...freshPollBody(), live: undefined }) }));
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(result.current.live?.liveEquity).toBe(990);
+    expect(result.current.live?.freshness.status).toBe("stale");
+  });
+
+  it("leaving the allocated live mode cannot retain a previous live balance", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ ...freshPollBody(), isAllocated: false, live: undefined }) }));
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(result.current.live).toBeNull();
+  });
+
+  it("a slow fallback cannot overwrite a newer streamed balance", async () => {
+    let finish!: (value: unknown) => void;
+    fetchMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const confirmed = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    confirmed.snapshot.equity = 1234;
+    confirmed.live.liveEquity = 1234;
+    act(() => MockEventSource.latest().emit(confirmed));
+    await act(async () => { finish({ ok: true, json: async () => stalePollBody() }); });
+    expect(result.current.snapshot?.equity).toBe(1234);
+    expect(result.current.live?.liveEquity).toBe(1234);
+    expect(result.current.connectionStatus).toBe("live");
+  });
+
+  it("a recovered stream stops fallback polling", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    fetchMock.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.connectionStatus).toBe("live");
+  });
+
+  it("late events and errors from a replaced connection cannot change the current stream", () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const retired = MockEventSource.latest();
+    act(() => result.current.reload());
+    const current = MockEventSource.latest();
+    expect(current).not.toBe(retired);
+    const confirmed = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    confirmed.snapshot.equity = 1234;
+    act(() => current.emit(confirmed));
+    act(() => retired.emit(snapshotEvent({ snapFreshness: "stale", liveFreshness: "stale" })));
+    act(() => retired.onerror?.({}));
+    expect(result.current.snapshot?.equity).toBe(1234);
+    expect(result.current.connectionStatus).toBe("live");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(current.readyState).toBe(MockEventSource.OPEN);
+  });
+
+  it("slow polling never stacks requests and is aborted on unmount", async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { unmount } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("a hung fallback is bounded and the next poll can recover", async () => {
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+    expect(signal.aborted).toBe(true);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    expect(result.current.snapshot?.equity).toBe(990);
+  });
+
+  it("two explicit refreshes in the same millisecond are both honored", () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => result.current.reload());
+    act(() => result.current.reload());
+    expect(MockEventSource.instances).toHaveLength(3);
+  });
 });
 
 describe("useLiveAccountSnapshot — self-healing stale refetch (Task #440/#442)", () => {
@@ -465,12 +560,8 @@ describe("useLiveAccountSnapshot — self-healing stale refetch (Task #440/#442)
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(MockEventSource.instances.length).toBe(1);
 
-    // CONTRACT (Task #451): slot-summary now CARRIES the canonical balance block,
-    // so a FRESH poll-based heal rebuilds the detailed balance from the poll
-    // response and marks its freshness to the verified poll freshness — the
-    // detailed status heals all the way to "fresh", NOT the old "unavailable"
-    // downgrade. The fixture stamps the carried block "unavailable" to prove the
-    // hook forces it to the poll's verdict rather than echoing the block's stamp.
+    // Both the heartbeat and the returned canonical balance are fresh.
+    // A separate regression above proves one cannot upgrade the other.
     expect(result.current.freshness).toBe("fresh");
     expect(result.current.live?.freshness.status).toBe("fresh");
 
