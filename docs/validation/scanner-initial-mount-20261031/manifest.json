@@ -1,0 +1,1082 @@
+{
+  "status": "HELD; DO NOT IMPORT",
+  "candidateHead": "293483c56af3dc36fe910bd6883c272f9d59a749",
+  "candidateFixture": "47d80caaad17636d",
+  "baselineHead": "8941184919f01a02df4a238185116cd6ca0db1cf",
+  "baselineFixture": "86bed2ee966637d2",
+  "diagnosticHead": "6345956d4ada4171cbb40d9c97c20127e5e1b361",
+  "diagnosticFixture": "20df44b6983fa128",
+  "updatedUtc": "2026-10-31T21:08:00.094501+00:00",
+  "rawDirectory": "/Users/areyouok/arx-tier1-release/scanner-initial-mount-20261031",
+  "checks": {
+    "head": "293483c56af3dc36fe910bd6883c272f9d59a749",
+    "started": "2026-10-31T21:03:14.385969+00:00",
+    "results": [
+      {
+        "check": "frontend",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/scanner-initial-mount-20261031/293483c5-frontend.log"
+      },
+      {
+        "check": "typecheck",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/scanner-initial-mount-20261031/293483c5-typecheck.log"
+      },
+      {
+        "check": "build",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/scanner-initial-mount-20261031/293483c5-build.log"
+      },
+      {
+        "check": "guards",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/scanner-initial-mount-20261031/293483c5-guards.log"
+      },
+      {
+        "check": "bindings",
+        "exit": 0,
+        "log": "/Users/areyouok/arx-tier1-release/scanner-initial-mount-20261031/293483c5-bindings.log"
+      }
+    ],
+    "finished": "2026-10-31T21:04:05.012928+00:00"
+  },
+  "browser": {
+    "candidate-1x": {
+      "passed": false,
+      "failure": null,
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "hardwareConcurrency": 14,
+        "devicePixelRatio": 1,
+        "performanceTimeOrigin": 1793480685053.5,
+        "cpuThrottle": "Not set by this harness; outer runner/host settings must be recorded separately",
+        "browserVersion": "156.0.8078.79"
+      },
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 4,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 40.59999990463257,
+          "maxMs": 111.40000009536743,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 4,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 82.7000002861023,
+          "maxMs": 100.40000009536743,
+          "failedIndices": []
+        }
+      ],
+      "outerCpuThrottle": 1,
+      "samples": [
+        {
+          "viewport": "desktop",
+          "index": 0,
+          "failure": null,
+          "readyToClickMs": 116.2999997138977,
+          "trusted": true,
+          "sourceCompleteMs": 40.40000009536743,
+          "visibleCompleteMs": 40.40000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 1,
+          "failure": null,
+          "readyToClickMs": 33.799999713897705,
+          "trusted": true,
+          "sourceCompleteMs": 82.60000038146973,
+          "visibleCompleteMs": 82.60000038146973,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 2,
+          "failure": null,
+          "readyToClickMs": 119.5,
+          "trusted": true,
+          "sourceCompleteMs": 40.59999990463257,
+          "visibleCompleteMs": 40.59999990463257,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 3,
+          "failure": null,
+          "readyToClickMs": 116.80000019073486,
+          "trusted": true,
+          "sourceCompleteMs": 38.39999961853027,
+          "visibleCompleteMs": 38.39999961853027,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 4,
+          "failure": null,
+          "readyToClickMs": 19.199999809265137,
+          "trusted": true,
+          "sourceCompleteMs": 111.40000009536743,
+          "visibleCompleteMs": 111.40000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 0,
+          "failure": null,
+          "readyToClickMs": 16.799999713897705,
+          "trusted": true,
+          "sourceCompleteMs": 100.40000009536743,
+          "visibleCompleteMs": 100.40000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 1,
+          "failure": null,
+          "readyToClickMs": 115.69999980926514,
+          "trusted": true,
+          "sourceCompleteMs": 39,
+          "visibleCompleteMs": 39,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 2,
+          "failure": null,
+          "readyToClickMs": 18.199999809265137,
+          "trusted": true,
+          "sourceCompleteMs": 98.59999990463257,
+          "visibleCompleteMs": 98.59999990463257,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 3,
+          "failure": null,
+          "readyToClickMs": 116.69999980926514,
+          "trusted": true,
+          "sourceCompleteMs": 38,
+          "visibleCompleteMs": 38,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 4,
+          "failure": null,
+          "readyToClickMs": 34,
+          "trusted": true,
+          "sourceCompleteMs": 82.7000002861023,
+          "visibleCompleteMs": 82.7000002861023,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    "candidate-4x": {
+      "passed": false,
+      "failure": null,
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "hardwareConcurrency": 14,
+        "devicePixelRatio": 1,
+        "performanceTimeOrigin": 1793480677005.9,
+        "cpuThrottle": "Not set by this harness; outer runner/host settings must be recorded separately",
+        "browserVersion": "156.0.8078.79"
+      },
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 319.30000019073486,
+          "maxMs": 322.30000019073486,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 266.09999990463257,
+          "maxMs": 289.2999997138977,
+          "failedIndices": []
+        }
+      ],
+      "outerCpuThrottle": 4,
+      "samples": [
+        {
+          "viewport": "desktop",
+          "index": 0,
+          "failure": null,
+          "readyToClickMs": 79.19999980926514,
+          "trusted": true,
+          "sourceCompleteMs": 319.30000019073486,
+          "visibleCompleteMs": 319.30000019073486,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 1,
+          "failure": null,
+          "readyToClickMs": 85.90000009536743,
+          "trusted": true,
+          "sourceCompleteMs": 322,
+          "visibleCompleteMs": 322,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 2,
+          "failure": null,
+          "readyToClickMs": 95.19999980926514,
+          "trusted": true,
+          "sourceCompleteMs": 322.30000019073486,
+          "visibleCompleteMs": 322.30000019073486,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 3,
+          "failure": null,
+          "readyToClickMs": 84.80000019073486,
+          "trusted": true,
+          "sourceCompleteMs": 310.80000019073486,
+          "visibleCompleteMs": 310.80000019073486,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 4,
+          "failure": null,
+          "readyToClickMs": 98.89999961853027,
+          "trusted": true,
+          "sourceCompleteMs": 307.80000019073486,
+          "visibleCompleteMs": 307.80000019073486,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 0,
+          "failure": null,
+          "readyToClickMs": 80.80000019073486,
+          "trusted": true,
+          "sourceCompleteMs": 266.09999990463257,
+          "visibleCompleteMs": 266.09999990463257,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 1,
+          "failure": null,
+          "readyToClickMs": 93.2999997138977,
+          "trusted": true,
+          "sourceCompleteMs": 282.2000002861023,
+          "visibleCompleteMs": 282.2000002861023,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 2,
+          "failure": null,
+          "readyToClickMs": 94,
+          "trusted": true,
+          "sourceCompleteMs": 265.40000009536743,
+          "visibleCompleteMs": 265.40000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 3,
+          "failure": null,
+          "readyToClickMs": 82.69999980926514,
+          "trusted": true,
+          "sourceCompleteMs": 258,
+          "visibleCompleteMs": 258,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 4,
+          "failure": null,
+          "readyToClickMs": 96.2000002861023,
+          "trusted": true,
+          "sourceCompleteMs": 289.2999997138977,
+          "visibleCompleteMs": 289.2999997138977,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        }
+      ]
+    },
+    "baseline-1x": {
+      "passed": true,
+      "failure": null,
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "hardwareConcurrency": 14,
+        "devicePixelRatio": 1,
+        "performanceTimeOrigin": 1793480722469.3,
+        "cpuThrottle": "Not set by this harness; outer runner/host settings must be recorded separately",
+        "browserVersion": "156.0.8078.79"
+      },
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 39.69999980926514,
+          "maxMs": 45.59999990463257,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 39.90000009536743,
+          "maxMs": 94.30000019073486,
+          "failedIndices": []
+        }
+      ],
+      "outerCpuThrottle": 1,
+      "samples": [
+        {
+          "viewport": "desktop",
+          "index": 0,
+          "failure": null,
+          "readyToClickMs": 136.19999980926514,
+          "trusted": true,
+          "sourceCompleteMs": 45.59999990463257,
+          "visibleCompleteMs": 45.59999990463257,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 1,
+          "failure": null,
+          "readyToClickMs": 120,
+          "trusted": true,
+          "sourceCompleteMs": 39.40000009536743,
+          "visibleCompleteMs": 39.40000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 2,
+          "failure": null,
+          "readyToClickMs": 118.19999980926514,
+          "trusted": true,
+          "sourceCompleteMs": 39.19999980926514,
+          "visibleCompleteMs": 39.19999980926514,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 3,
+          "failure": null,
+          "readyToClickMs": 134.90000009536743,
+          "trusted": true,
+          "sourceCompleteMs": 39.69999980926514,
+          "visibleCompleteMs": 39.69999980926514,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 4,
+          "failure": null,
+          "readyToClickMs": 118.59999990463257,
+          "trusted": true,
+          "sourceCompleteMs": 40.299999713897705,
+          "visibleCompleteMs": 40.299999713897705,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 0,
+          "failure": null,
+          "readyToClickMs": 135,
+          "trusted": true,
+          "sourceCompleteMs": 39.90000009536743,
+          "visibleCompleteMs": 39.90000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 1,
+          "failure": null,
+          "readyToClickMs": 34.700000286102295,
+          "trusted": true,
+          "sourceCompleteMs": 82.59999990463257,
+          "visibleCompleteMs": 82.59999990463257,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 2,
+          "failure": null,
+          "readyToClickMs": 118.09999990463257,
+          "trusted": true,
+          "sourceCompleteMs": 37.59999990463257,
+          "visibleCompleteMs": 37.59999990463257,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 3,
+          "failure": null,
+          "readyToClickMs": 120.2000002861023,
+          "trusted": true,
+          "sourceCompleteMs": 39.90000009536743,
+          "visibleCompleteMs": 39.90000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 4,
+          "failure": null,
+          "readyToClickMs": 23.300000190734863,
+          "trusted": true,
+          "sourceCompleteMs": 94.30000019073486,
+          "visibleCompleteMs": 94.30000019073486,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    "baseline-4x": {
+      "passed": false,
+      "failure": null,
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "hardwareConcurrency": 14,
+        "devicePixelRatio": 1,
+        "performanceTimeOrigin": 1793480726698.5,
+        "cpuThrottle": "Not set by this harness; outer runner/host settings must be recorded separately",
+        "browserVersion": "156.0.8078.79"
+      },
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 317.7000002861023,
+          "maxMs": 335.19999980926514,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 290.40000009536743,
+          "maxMs": 296.19999980926514,
+          "failedIndices": []
+        }
+      ],
+      "outerCpuThrottle": 4,
+      "samples": [
+        {
+          "viewport": "desktop",
+          "index": 0,
+          "failure": null,
+          "readyToClickMs": 86.90000009536743,
+          "trusted": true,
+          "sourceCompleteMs": 335.19999980926514,
+          "visibleCompleteMs": 335.19999980926514,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 1,
+          "failure": null,
+          "readyToClickMs": 88.80000019073486,
+          "trusted": true,
+          "sourceCompleteMs": 303.8999996185303,
+          "visibleCompleteMs": 303.8999996185303,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 2,
+          "failure": null,
+          "readyToClickMs": 70,
+          "trusted": true,
+          "sourceCompleteMs": 317.7000002861023,
+          "visibleCompleteMs": 317.7000002861023,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 3,
+          "failure": null,
+          "readyToClickMs": 79,
+          "trusted": true,
+          "sourceCompleteMs": 305.6000003814697,
+          "visibleCompleteMs": 305.6000003814697,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "desktop",
+          "index": 4,
+          "failure": null,
+          "readyToClickMs": 74,
+          "trusted": true,
+          "sourceCompleteMs": 318.59999990463257,
+          "visibleCompleteMs": 318.59999990463257,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 0,
+          "failure": null,
+          "readyToClickMs": 93.09999990463257,
+          "trusted": true,
+          "sourceCompleteMs": 276.30000019073486,
+          "visibleCompleteMs": 276.30000019073486,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 1,
+          "failure": null,
+          "readyToClickMs": 78.5,
+          "trusted": true,
+          "sourceCompleteMs": 290.40000009536743,
+          "visibleCompleteMs": 290.40000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 2,
+          "failure": null,
+          "readyToClickMs": 110.7999997138977,
+          "trusted": true,
+          "sourceCompleteMs": 271.40000009536743,
+          "visibleCompleteMs": 271.40000009536743,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 3,
+          "failure": null,
+          "readyToClickMs": 76.7999997138977,
+          "trusted": true,
+          "sourceCompleteMs": 295.7000002861023,
+          "visibleCompleteMs": 295.7000002861023,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        },
+        {
+          "viewport": "mobile",
+          "index": 4,
+          "failure": null,
+          "readyToClickMs": 90.2000002861023,
+          "trusted": true,
+          "sourceCompleteMs": 296.19999980926514,
+          "visibleCompleteMs": 296.19999980926514,
+          "acceptance": {
+            "valid": true,
+            "meetsTarget": false,
+            "errors": []
+          }
+        }
+      ]
+    },
+    "first-frames": {
+      "passed": true,
+      "sizes": [
+        {
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "frames": [
+            {
+              "t": 238.2,
+              "width": 346,
+              "display": "none",
+              "toggleVisible": true
+            },
+            {
+              "t": 271.5,
+              "width": 346,
+              "display": "none",
+              "toggleVisible": true
+            },
+            {
+              "t": 288.2,
+              "width": 346,
+              "display": "none",
+              "toggleVisible": true
+            },
+            {
+              "t": 304.8,
+              "width": 346,
+              "display": "none",
+              "toggleVisible": true
+            },
+            {
+              "t": 321.5,
+              "width": 346,
+              "display": "none",
+              "toggleVisible": true
+            },
+            {
+              "t": 338.2,
+              "width": 346,
+              "display": "none",
+              "toggleVisible": true
+            },
+            {
+              "t": 354.9,
+              "width": 346,
+              "display": "none",
+              "toggleVisible": true
+            },
+            {
+              "t": 371.5,
+              "width": 346,
+              "display": "none",
+              "toggleVisible": true
+            }
+          ]
+        },
+        {
+          "viewport": {
+            "width": 1440,
+            "height": 1100
+          },
+          "frames": [
+            {
+              "t": 251.3,
+              "width": 1100,
+              "display": "contents",
+              "toggleVisible": false
+            },
+            {
+              "t": 268,
+              "width": 1100,
+              "display": "contents",
+              "toggleVisible": false
+            },
+            {
+              "t": 284.7,
+              "width": 1100,
+              "display": "contents",
+              "toggleVisible": false
+            },
+            {
+              "t": 301.4,
+              "width": 1100,
+              "display": "contents",
+              "toggleVisible": false
+            },
+            {
+              "t": 318,
+              "width": 1100,
+              "display": "contents",
+              "toggleVisible": false
+            },
+            {
+              "t": 334.6,
+              "width": 1100,
+              "display": "contents",
+              "toggleVisible": false
+            },
+            {
+              "t": 351.3,
+              "width": 1100,
+              "display": "contents",
+              "toggleVisible": false
+            },
+            {
+              "t": 368,
+              "width": 1100,
+              "display": "contents",
+              "toggleVisible": false
+            }
+          ]
+        }
+      ],
+      "failure": null
+    },
+    "responsive": {
+      "narrowFocus": true,
+      "wideFocus": true,
+      "openFocus": true,
+      "escapeFocus": true,
+      "sameData": true,
+      "sameEngine": true,
+      "overflow": false,
+      "pageErrors": [],
+      "passed": true
+    }
+  },
+  "rawFiles": [
+    {
+      "name": "293483c5-bindings.log",
+      "bytes": 63,
+      "sha256": "65e631cd46a507b53842547998e9817e4b8ee5344a04d83c2ccaa5b46b67ec05"
+    },
+    {
+      "name": "293483c5-build.log",
+      "bytes": 27825,
+      "sha256": "8783a5ca68ba0bc46ccf02c8f340062bfb10937e93943683339547d900cb56c8"
+    },
+    {
+      "name": "293483c5-checks.json",
+      "bytes": 962,
+      "sha256": "ab69300840853590909c472448493ab7a93b31e25d13b619f15a7ad1695486a4"
+    },
+    {
+      "name": "293483c5-frontend.log",
+      "bytes": 484,
+      "sha256": "809df2622dfbe6b7990e9c0987c32a41243f2c3a5bd4d508183e64138a78c580"
+    },
+    {
+      "name": "293483c5-guards.log",
+      "bytes": 18460,
+      "sha256": "0128591b125697f650481dcc846d7f63b5c7944943d36903a09beb0959ffd6cf"
+    },
+    {
+      "name": "293483c5-typecheck.log",
+      "bytes": 158,
+      "sha256": "eeb2093d245cb83a6f272a63f25dc25c4a989bd56b9e6073ffa6e1bce34a3c3d"
+    },
+    {
+      "name": "baseline-1x.js",
+      "bytes": 19208,
+      "sha256": "79fdc569de240054cdaf1d39a1714529a316fae98c329cd2e04d9ed57ef20ec7"
+    },
+    {
+      "name": "baseline-1x.json",
+      "bytes": 927339,
+      "sha256": "43097a7fff14ebd2ca44b6e1adb4c3b0aa32c029d42a1a6aa093969bb1cc92af"
+    },
+    {
+      "name": "baseline-1x.log",
+      "bytes": 596757,
+      "sha256": "d9a80fa169531e1619d30ce2bf13199e106f6de5ee5ac77cb8c27b66d9daa9ca"
+    },
+    {
+      "name": "baseline-4x.js",
+      "bytes": 19208,
+      "sha256": "50881021d6b212eec1026cface5536f1b46db484fc3915df5c30b4c871afb727"
+    },
+    {
+      "name": "baseline-4x.json",
+      "bytes": 1532271,
+      "sha256": "8c84927566bbf7d5b017849a6c8bb434464aa914ce4af6597c1b970abda6feb7"
+    },
+    {
+      "name": "baseline-4x.log",
+      "bytes": 962477,
+      "sha256": "a1c9005a6b99025b3f2dea7296d0393c543b2fe2daf184df26fc6dcddaf0bd9f"
+    },
+    {
+      "name": "baseline-setup.log",
+      "bytes": 13159,
+      "sha256": "9fbd632b75bdac2c678ce5546e6c5bfe45beed496c6090dc6ef8301f3f60ebc0"
+    },
+    {
+      "name": "candidate-1x.js",
+      "bytes": 19208,
+      "sha256": "ce6ebb29c7e80c5653abd226d2e8adaa6b581f30df7c1909ddca43bf18a3065d"
+    },
+    {
+      "name": "candidate-1x.json",
+      "bytes": 1519857,
+      "sha256": "aa9608bb19508d8d23f80a61f79821efff8cf40e8f46fb55973cdcdc9d776e71"
+    },
+    {
+      "name": "candidate-1x.log",
+      "bytes": 955206,
+      "sha256": "7d364607a446a7283e0a64df0eaef4d8bc756bf219fe768b3e51b130490bc81b"
+    },
+    {
+      "name": "candidate-4x.js",
+      "bytes": 19208,
+      "sha256": "891e3ccee42c3ae622e0c2dcfa7c205dc60edd992034ebed0c5227e0e73b92f5"
+    },
+    {
+      "name": "candidate-4x.json",
+      "bytes": 933884,
+      "sha256": "3076ed5f2b7c6e78f8950c5c8a61790ad460878e8cb5ab7800fc3b0299e17091"
+    },
+    {
+      "name": "candidate-4x.log",
+      "bytes": 599980,
+      "sha256": "a5226209777f4a1fa17dd4089cfb5127f1e61db3c23d22d49ec30154ba1e4696"
+    },
+    {
+      "name": "candidate-build.log",
+      "bytes": 42676,
+      "sha256": "8e0b5ea89601ec14b082f24c3c961b8d039bf8422f73e12ec3bd0a0cf632ad10"
+    },
+    {
+      "name": "candidate-setup.log",
+      "bytes": 13159,
+      "sha256": "39d78456b2a8a3cfaf0be04f03a32bfbd5a2756e4ecc6dab950250f22fd035db"
+    },
+    {
+      "name": "checks.py",
+      "bytes": 1950,
+      "sha256": "55728a3e7cd076a7edf144dac1ea2e389d1549f5aa9305ee1c722104a1ba9b63"
+    },
+    {
+      "name": "cpu-profile.js",
+      "bytes": 1431,
+      "sha256": "459a4b647ae0caa2b6c99612c1f11113c9d51c50f96263f1e9e26191dafbade1"
+    },
+    {
+      "name": "cpu-profile.json",
+      "bytes": 713728,
+      "sha256": "cba2de44f609161f16c93c3bf9c99fb1c711f93bd67da812e80a7e9a2816a70c"
+    },
+    {
+      "name": "cpu-profile.log",
+      "bytes": 403879,
+      "sha256": "5745f62d4f26fe2fb26b2e8a6f56255253b1076896d9f5afbd32cbb9502a050d"
+    },
+    {
+      "name": "domain.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "first-frames.js",
+      "bytes": 1533,
+      "sha256": "2449254776eea458ba8cb9382290e913808ae9908cf4b511d8da39f83fc90a18"
+    },
+    {
+      "name": "first-frames.json",
+      "bytes": 175422,
+      "sha256": "7eabcdef47f3b91926d43afcfca29142b88af5207b984569d16cbee3f800dd8f"
+    },
+    {
+      "name": "first-frames.log",
+      "bytes": 107325,
+      "sha256": "eac8debedf999560845cf72fca877313d07f44328107d47a3a85e8c72335805f"
+    },
+    {
+      "name": "profile-build.log",
+      "bytes": 42681,
+      "sha256": "f911f39e94d326736df31c54dbb6fead3b6ce018ecf8f12ac49032f96fb210ff"
+    },
+    {
+      "name": "profile.json",
+      "bytes": 2962961,
+      "sha256": "a372f42716288321d0572a62f5d4346c933d3bb29117e5f1977331a108ce1e6e"
+    },
+    {
+      "name": "profile.log",
+      "bytes": 1618470,
+      "sha256": "04c7129d06b50278df6438ef98b563eec4a89ae3f2574ebcec75b5e289719448"
+    },
+    {
+      "name": "responsive.js",
+      "bytes": 2405,
+      "sha256": "394c986ed26eb231efca859727278ae89fc05425e0e421a0bd300c2667f49725"
+    },
+    {
+      "name": "responsive.json",
+      "bytes": 223,
+      "sha256": "168ad72fb9051986bdc8729d146ec7649903b6d560711db2ef4defc4f827b2b4"
+    },
+    {
+      "name": "responsive.log",
+      "bytes": 2891,
+      "sha256": "ea7e740dcbb9a21aacf78f654985c7efd87c1717e16bb66938da600c2cd42936"
+    },
+    {
+      "name": "setup.log",
+      "bytes": 13248,
+      "sha256": "8a7d6a6f79e2301ed8b34b30194261a28a7d813a458288d5e974cd3d84ecf6a8"
+    },
+    {
+      "name": "toolbar-mobile.png",
+      "bytes": 55787,
+      "sha256": "69ce0b976e30aab1542c58f68eee91dca3c841c6ee105c0db8091175ce19ccbc"
+    },
+    {
+      "name": "ui-setup.log",
+      "bytes": 13159,
+      "sha256": "3523498d9b504da937affe08d18358da7c47d51de45da83a45f3a6310fd99e7c"
+    }
+  ]
+}
