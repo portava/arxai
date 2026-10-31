@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { flushSync } from "react-dom";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 import { studyId, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
@@ -64,25 +65,30 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [compact,setCompact] = useState(false);
   const compactRef = useRef(false);
   const resizeFocus = useRef<"toggle" | "pan" | null>(null);
+  const toolsOpenRef = useRef(toolsOpen);
+  useLayoutEffect(()=>{toolsOpenRef.current=toolsOpen;},[toolsOpen]);
   // Measure each pane, not the window. Capture focus BEFORE React hides controls:
   // CSS-only breakpoints can blur the element before ResizeObserver runs.
   useLayoutEffect(()=>{
     const root=rootRef.current;
     if (!root || typeof ResizeObserver === "undefined") return;
+    let activeObserver=true;
     const measure=(width:number)=>{
-      if(width<=0)return;
+      if(!activeObserver || !Number.isFinite(width) || width<=0)return;
       const next=width<640;
       if(next===compactRef.current)return;
       const active=document.activeElement;
-      if(next && !toolsOpen && advancedRef.current?.contains(active))resizeFocus.current="toggle";
+      if(next && !toolsOpenRef.current && advancedRef.current?.contains(active))resizeFocus.current="toggle";
       else if(!next && active===toggleRef.current)resizeFocus.current="pan";
-      compactRef.current=next;setCompact(next);
+      compactRef.current=next;
+      // ResizeObserver already has the laid-out content width. Commit the
+      // disclosure/focus change before its paint rather than forcing a second
+      // document layout during the initial React mount to read clientWidth.
+      flushSync(()=>setCompact(next));
     };
-    const css=getComputedStyle(root);
-    measure(root.clientWidth-parseFloat(css.paddingLeft)-parseFloat(css.paddingRight));
     const observer=new ResizeObserver(entries=>{const entry=entries[0];if(entry)measure(entry.contentRect.width);});
-    observer.observe(root);return()=>observer.disconnect();
-  },[toolsOpen]);
+    observer.observe(root);return()=>{activeObserver=false;observer.disconnect();};
+  },[]);
   useLayoutEffect(()=>{
     if(resizeFocus.current === "toggle")toggleRef.current?.focus();
     if(resizeFocus.current === "pan") {
