@@ -30,7 +30,7 @@
 //   TIMESTAMP_INVALID       — bar timestamp unparseable or negative
 //   OUTLIER_SPIKE          — single-bar close-to-close move far beyond neighbors
 //   OUTLIER_WICK           — wick-to-range ratio extreme for this asset class
-//   ZERO_VOLUME_GHOST       — zero volume on a non-synthetic bar (data gap signal)
+//   ZERO_VOLUME_GHOST       — explicitly reported zero on a non-synthetic bar
 //   HISTORICAL_PERIOD_SHIFT — bar's price is from a significantly different
 //                             price epoch (e.g. XAUUSD 2023 ~$2000 bars in a
 //                             chart currently priced at ~$4300). Real history;
@@ -241,8 +241,9 @@ function timeBasis(source: string | null): "open" | "close" {
 //     flagged when range > 0 AND body > 0 AND
 //       max_wick / range > wickRatioThreshold AND max_wick > body * 3
 //
-//   ZERO_VOLUME_GHOST: volume === 0 for a non-synthetic bar (source !== "deriv").
-//     Synthetics always have volume=0 (no traded volume); this is expected.
+//   ZERO_VOLUME_GHOST: an explicit input volume === 0 on a non-synthetic bar.
+//     Omitted/non-finite volume cannot establish a measured zero. Synthetics
+//     have no traded volume, so their zero is expected and remains exempt.
 //
 //   HISTORICAL_PERIOD_SHIFT: A bar's median of (open+close)/2 is more than
 //     historicalShiftThreshold below or above the median of the LAST 30 bars.
@@ -267,6 +268,8 @@ const DEFAULT_OUTLIER_OPTS: OutlierOpts = {
 
 interface IntermediateCandle extends Pick<NormalizedChartCandle, "open" | "high" | "low" | "close" | "volume" | "isComplete"> {
   openTime: string;
+  /** Preserve input evidence before the numeric compatibility fallback to zero. */
+  volumeReportedAsZero: boolean;
 }
 
 /**
@@ -326,8 +329,10 @@ function computeOutlierFlags(
       }
     }
 
-    // ZERO_VOLUME_GHOST — skip for synthetics (deriv always has volume=0)
-    if (!opts.isSyntheticSource && c.volume === 0) {
+    // Only an explicit provider zero supports this advisory. A missing or
+    // non-finite input normalized to zero is not evidence of a ghost candle.
+    // Synthetics have no traded volume and remain exempt.
+    if (!opts.isSyntheticSource && c.volumeReportedAsZero) {
       flags[i]!.push("ZERO_VOLUME_GHOST");
     }
 
@@ -437,6 +442,7 @@ export function normalizeCandles(
       rawIndex: i,
       open: c.open, high: c.high, low: c.low, close: c.close,
       volume: typeof c.volume === "number" && Number.isFinite(c.volume) ? c.volume : 0,
+      volumeReportedAsZero: c.volume === 0,
       isComplete: closeMs <= now,
       openTime: new Date(openMs).toISOString(),
     });
