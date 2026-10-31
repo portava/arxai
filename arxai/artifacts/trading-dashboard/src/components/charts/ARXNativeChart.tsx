@@ -554,6 +554,23 @@ export function ARXNativeChart({
   // A context change already renders the new source. Rebind consumers in that
   // commit; only a newly created engine needs an additional ref-to-prop render.
   const chartEpoch = `${engineGeneration}:${chartContext}`;
+  // The first candle response binds an initially empty workbench; it is not a
+  // replacement of a previously displayed source. Keep its DOM, focus and
+  // settings input instead of mounting the toolbar twice. Once any candles
+  // have been bound, every source-context change retains the old reset rule.
+  // A market change always remounts. Only committed renders update this record,
+  // so an abandoned concurrent render cannot advance the ownership generation.
+  const workbenchMarket = JSON.stringify([resolvedSymbol, timeframe]);
+  const committedWorkbench = useRef({ market: workbenchMarket, context: chartContext, bound: hasCandles, generation: 0 });
+  const priorWorkbench = committedWorkbench.current;
+  const sameWorkbenchMarket = priorWorkbench.market === workbenchMarket;
+  const workbenchGeneration = sameWorkbenchMarket
+    ? priorWorkbench.generation + (priorWorkbench.bound && priorWorkbench.context !== chartContext ? 1 : 0)
+    : 0;
+  const workbenchBound = hasCandles || (sameWorkbenchMarket && priorWorkbench.bound);
+  useLayoutEffect(() => {
+    committedWorkbench.current = { market: workbenchMarket, context: chartContext, bound: workbenchBound, generation: workbenchGeneration };
+  }, [workbenchMarket, chartContext, workbenchBound, workbenchGeneration]);
   // `adapter: null` binds a comparison view's context before its deferred
   // engine exists, so stream frames for that context (feed_status, liveness)
   // keep their effect; the primary always binds with its engine.
@@ -1288,7 +1305,7 @@ export function ARXNativeChart({
         </div>
         {!mobileLayout && fullscreenToggle}
       </div>
-      <ChartWorkbenchTools key={chartContext} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">

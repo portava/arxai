@@ -1,9 +1,10 @@
 import type { ChartEngineCandle } from "./types";
+import { ChartRangeWindow, scanChartRange } from "./chartRangeWindow";
 
 export type StudyKind =
   | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
   | "rsi" | "macd" | "atr" | "cci" | "stochastic" | "williams"
-  | "stddev" | "envelopes" | "momentum" | "roc";
+  | "stddev" | "envelopes" | "momentum" | "roc" | "donchian";
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
 export type AverageMethod = "sma" | "ema" | "smma" | "wma";
 export interface ChartStudy {
@@ -51,9 +52,10 @@ export const STUDY_CATALOG: StudyDefinition[] = [
   { name: "Moving average envelopes", group: "Trend", description: "Percentage bands above and below a configurable moving average.", defaults: { kind: "envelopes", period: 20, multiplier: 1, method: "sma", color: "#f472b6" }, channels: ["Basis", "Upper", "Lower"], pane: false, appliedPrice: true },
   { name: "Momentum ratio", group: "Momentum", description: "Current price ÷ price N bars ago × 100 (MT5 convention).", defaults: { kind: "momentum", period: 14, color: "#4ade80" }, channels: ["Momentum"], pane: true, appliedPrice: true, levels: [100] },
   { name: "Rate of change", group: "Momentum", description: "Percentage price change over N bars.", defaults: { kind: "roc", period: 14, color: "#fbbf24" }, channels: ["ROC %"], pane: true, appliedPrice: true, levels: [0] },
+  { name: "Donchian Channels", group: "Volatility", description: "Highest high, lowest low and their midpoint over the selected bars, including the forming bar. Requires a full window; channel contact alone is not a breakout signal.", defaults: { kind: "donchian", period: 20, color: "#38bdf8" }, channels: ["Midpoint", "Upper", "Lower"], pane: false, appliedPrice: false },
 ];
 /** Preserve the original starter collection and saved templates. */
-export const STUDY_DEFAULTS = STUDY_CATALOG.slice(0, 5).map(item => item.defaults);
+export const STUDY_DEFAULTS = (["sma", "ema", "bollinger", "rsi", "macd"] as const).map(kind => STUDY_CATALOG.find(item => item.defaults.kind === kind)!.defaults);
 export const MAX_STUDIES = 12;
 export const studyDefinition = (kind: StudyKind) => STUDY_CATALOG.find(item => item.defaults.kind === kind)!;
 export const studyId = (study: ChartStudy) => study.id ?? study.kind;
@@ -112,6 +114,20 @@ export class StudyCalculator {
     }
     const prices = this.prices;
     const changed: StudyPoint[] = [];
+    // Tiny revisions use the bounded direct scan: building four ring buffers
+    // costs more than scanning one/two windows. An incomplete warm-up has no
+    // range values at all. Bulk history remains linear in the number of bars.
+    const usesRange = bars.length >= p && bars.length - from > 2 &&
+      (c.kind === "stochastic" || c.kind === "williams" || c.kind === "donchian");
+    const highs = usesRange ? new ChartRangeWindow(p, true) : null;
+    const lows = usesRange ? new ChartRangeWindow(p, false) : null;
+    // Only preceding observations enter the rebuilt window. Never inspect a
+    // future bar when revising a tip or appending a replay prefix.
+    if (highs && lows && from < bars.length) {
+      for (let j = Math.max(0, from - p + 1); j < from; j++) {
+        highs.push(bars[j]!.high, j); lows.push(bars[j]!.low, j);
+      }
+    }
     let i = from;
     let state: State;
     let previous: State | undefined;
@@ -195,9 +211,14 @@ export class StudyCalculator {
           values = [average("range", range, p, c.method ?? "smma")];
           break;
         }
-        case "stochastic": case "williams": {
+        case "stochastic": case "williams": case "donchian": {
           let high = -Infinity, low = Infinity;
-          if (i >= p - 1) for (let j = i - p + 1; j <= i; j++) { high = Math.max(high, bars[j]!.high); low = Math.min(low, bars[j]!.low); }
+          if (highs && lows) { high = highs.push(bar.high, i); low = lows.push(bar.low, i); }
+          else if (i >= p - 1) [high, low] = scanChartRange(bars, i - p + 1, i);
+          if (c.kind === "donchian") {
+            values = i < p - 1 ? [null, null, null] : [high / 2 + low / 2, high, low];
+            break;
+          }
           // A zero price range has no position; keep the oscillator blank.
           const raw = i < p - 1 || high === low ? null : 100 * (bar.close - low) / (high - low);
           if (c.kind === "williams") values = [raw == null ? null : raw - 100];

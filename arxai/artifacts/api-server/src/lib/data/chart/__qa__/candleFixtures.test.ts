@@ -1154,3 +1154,50 @@ test("[F48] DST boundary at the exact lookback midpoint on M30 (4/8 = 0.5 tie): 
   );
   assert.equal(majorityRun.anomalies.missingCandleCount, 2, "a genuine majority-present boundary still flags a 2-bar gap");
 });
+
+
+// Missing volume is not evidence of a measured zero. The numeric compatibility
+// field remains zero; this does not make it usable by volume-based studies.
+test("volume evidence: omitted or non-finite input is not a zero-volume ghost", () => {
+  for (const volume of [undefined, NaN, Infinity, -Infinity]) {
+    const bar: Candle = { time: ts(), open: 10, high: 12, low: 9, close: 11 };
+    if (volume !== undefined) bar.volume = volume;
+    const result = normalizeCandles([bar], baseOpts());
+    assert.equal(result.candles[0]!.volume, 0);
+    assert.equal(result.anomalies.zeroVolumeGhostCount, 0, String(volume));
+    assert.equal(result.candles[0]!.qualityFlags.includes("ZERO_VOLUME_GHOST"), false);
+  }
+});
+
+test("volume evidence: explicitly reported zero retains the existing advisory", () => {
+  const result = normalizeCandles([
+    { time: ts(), open: 10, high: 12, low: 9, close: 11, volume: 0 },
+    { time: ts(M5_MS), open: 10, high: 12, low: 9, close: 11, volume: 5 },
+  ], baseOpts());
+  assert.equal(result.anomalies.zeroVolumeGhostCount, 1);
+  assert.equal(result.candles[0]!.qualityFlags.includes("ZERO_VOLUME_GHOST"), true);
+  assert.equal(result.candles[1]!.qualityFlags.includes("ZERO_VOLUME_GHOST"), false);
+});
+
+test("volume evidence: duplicate selection retains the selected candle's evidence", () => {
+  const bar: Candle = { time: ts(), open: 10, high: 12, low: 9, close: 11 };
+  for (const [raw, expected] of [
+    [[{ ...bar, volume: 0 }, bar], 0],
+    [[bar, { ...bar, volume: 0 }], 1],
+  ] as [Candle[], number][]) {
+    const result = normalizeCandles(raw, baseOpts());
+    assert.equal(result.candles.length, 1);
+    assert.equal(result.anomalies.duplicateCount, 1);
+    assert.equal(result.anomalies.zeroVolumeGhostCount, expected);
+    assert.equal(result.candles[0]!.qualityFlags.includes("DUPLICATE_BUCKET"), true);
+  }
+});
+
+test("volume evidence: omitted volume does not erase invalid price flags", () => {
+  const result = normalizeCandles([
+    { time: ts(), open: 10, high: 8, low: 9, close: 11 },
+  ], baseOpts());
+  assert.equal(result.anomalies.zeroVolumeGhostCount, 0);
+  assert.equal(result.anomalies.invalidOhlcCount, 1);
+  assert.equal(result.candles[0]!.qualityFlags.includes("OHLC_INVALID"), true);
+});
