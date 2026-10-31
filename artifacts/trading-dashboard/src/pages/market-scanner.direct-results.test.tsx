@@ -136,7 +136,7 @@ vi.mock("@/components/ui/select", () => ({
 vi.mock("@/components/trading/SetupQualityBadge", () => ({ SetupQualityBadge: () => null }));
 vi.mock("@/components/scanner/RubySetupReason", () => ({ RubySetupReason: () => null }));
 vi.mock("@/components/scanner/ScannerTimingBadges", () => ({ ScannerTimingBadges: () => null }));
-vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: () => null }));
+vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: () => <div data-testid="test-trade-ticket"/> }));
 vi.mock("@/components/scanner/RecentScannerTrades", () => ({ RecentScannerTrades: () => null }));
 vi.mock("@/components/live/MasterLiveAccessGuard", () => ({ MasterLiveAccessBanner: () => null }));
 vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel: () => null }));
@@ -301,4 +301,25 @@ describe("Scanner render isolation", () => {
     await settle(3_000);
     expect(chartRenders).toBe(chartBefore); expect(focusRenders).toBe(focusBefore);
   });
+});
+
+
+it("withdraws an expired setup and its open ticket exactly after the age boundary", async () => {
+  const at = new Date(Date.now()).toISOString();
+  globalFeed = envelope("all", ["EURUSD"]);
+  Object.assign(globalFeed.opportunities[0]!, {
+    dataStatus: "live", tradeable: true, generatedAt: at, scanGeneratedAt: at,
+    bias: "BUY", recommendedAction: "BUY", setupType: "fixture", confidenceScore: 0,
+    riskScore: 0, entrySniperScore: 0, riskRewardRatio: 2,
+    reasonForTrade: "Offline fixture", reasonToAvoid: "", rulesPassed: [], rulesFailed: [],
+    statusBadge: "WATCHLIST", opportunity: { score: 0, label: "WEAK" }, entry: 1, stopLoss: 0.99, takeProfit: 1.02,
+  });
+  render(<MarketScanner/>); await settle();
+  fireEvent.click(screen.getByTestId("scanner-buy-EURUSD")); await settle();
+  expect(screen.getByTestId("test-trade-ticket")).toBeTruthy();
+  await settle(30_000); expect(screen.getByTestId("scanner-buy-EURUSD")).toBeTruthy();
+  await settle(1);
+  expect(screen.queryByTestId("scanner-buy-EURUSD")).toBeNull();
+  expect(screen.queryByTestId("test-trade-ticket")).toBeNull();
+  expect(visible("EURUSD")).toBe(true);
 });
