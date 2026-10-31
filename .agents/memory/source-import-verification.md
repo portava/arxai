@@ -32,3 +32,13 @@ runtime-source probe despite the intended executable code being served.
 
 **How to apply:** Use blob/hash checks for source integrity and executable
 anchors for served-source checks. Neither substitutes for rendered acceptance.
+
+Review the internal dependency closure, not just files touched by the selected
+upstream commit, before calling an import complete.
+
+**Why:** A selectively imported workspace lacked an unchanged upstream helper.
+Every touched file matched its upstream base, but the new consumer still failed.
+
+**How to apply:** Check newly introduced imports against actual local exports
+and versions. Bring in only required, reviewed helper changes and their tests;
+do not replace unrelated source or use upstream test counts as local evidence.

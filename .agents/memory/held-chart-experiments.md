@@ -22,3 +22,13 @@ continuing to exclude held experiments.
 
 **How to apply:** Preserve the accepted dock in future imports without treating
 that acceptance as permission to import other layout/performance branches.
+
+Scanner render isolation and precise opportunity/ticket expiry are separately
+authorized correctness/work-reduction changes, including their narrow internal
+freshness helper dependency.
+
+**Why:** The owner accepted this work while continuing to exclude held toolbar
+phase/layout, containment and other performance experiments.
+
+**How to apply:** Preserve this accepted isolation without importing held
+ancestry or treating it as evidence that first-navigation latency is fixed.
