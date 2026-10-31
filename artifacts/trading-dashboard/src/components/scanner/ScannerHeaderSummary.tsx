@@ -8,7 +8,7 @@
 // was the source of the header≈1.08 vs chart≈1.15 mismatch). Plain-English
 // verdicts only; the precise provider name is shown to admins.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useId } from "react";
 import { Activity, Crosshair } from "lucide-react";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
@@ -126,6 +126,8 @@ function formatPrice(p: number | null): string {
 }
 
 export function ScannerHeaderSummary({ running }: { running: boolean }) {
+  const [statusDetailsOpen, setStatusDetailsOpen] = useState(false);
+  const statusDetailsId = useId();
   const [symbol] = useChartSymbol();
   const bare = bareSymbol(symbol);
   const [timeframe] = useScannerTimeframe();
@@ -233,13 +235,16 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
     <div className="space-y-3">
       {/* Hero */}
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 ring-1 ring-primary/25">
+        <span className="mt-0.5 hidden md:grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 ring-1 ring-primary/25">
           <Crosshair className="h-5 w-5 text-primary" />
         </span>
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold leading-tight">Market Scanner</h1>
-          <p className="text-sm text-txt-secondary">Find setups, compare opportunities, and let {name} explain the market.</p>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl md:text-2xl font-bold leading-tight">Market Scanner</h1>
+          <p className="hidden md:block text-sm text-txt-secondary">Find setups, compare opportunities, and let {name} explain the market.</p>
         </div>
+        <button type="button" className="md:hidden shrink-0 self-center text-xs text-primary underline underline-offset-4" aria-label={statusDetailsOpen ? "Hide status details" : "Show status details"} aria-expanded={statusDetailsOpen} aria-controls={statusDetailsId} onClick={() => setStatusDetailsOpen(value => !value)}>
+          Details
+        </button>
       </div>
 
       {/* Identity row — symbol · timeframe · price */}
@@ -293,11 +298,12 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
       {/* ONE truth strip — Data / Ruby / Trading / Action (single source). All
           four cells derive from the SAME shared contract, so they can never
           disagree with each other or with a card's badge. */}
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4" data-testid="scanner-header-strip">
-        <TruthPill label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
-        <TruthPill label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
-        <TruthPill label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
+      <div id={statusDetailsId} className="grid grid-cols-2 gap-2 md:grid-cols-4" data-testid="scanner-header-strip">
+        <TruthPill showDetail={statusDetailsOpen} label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
+        <TruthPill showDetail={statusDetailsOpen} label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
+        <TruthPill showDetail={statusDetailsOpen} label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
         <TruthPill
+          showDetail={statusDetailsOpen}
           label="Action"
           verdict={visibleActionLabel}
           tone={actionTone(actionUi.tone)}
@@ -351,7 +357,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   );
 }
 
-function TruthPill({ label, verdict, tone, detail, testId, prominent }: { label: string; verdict: string; tone: string; detail: string; testId?: string; prominent?: boolean }) {
+function TruthPill({ label, verdict, tone, detail, testId, prominent, showDetail }: { showDetail?: boolean; label: string; verdict: string; tone: string; detail: string; testId?: string; prominent?: boolean }) {
   return (
     <div
       className={cn(
@@ -364,7 +370,7 @@ function TruthPill({ label, verdict, tone, detail, testId, prominent }: { label:
         <span className="text-xs uppercase tracking-wide text-txt-muted">{label}</span>
         <span className={cn("text-sm font-semibold", tone)}>{verdict}</span>
       </div>
-      {detail && <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-txt-secondary">{detail}</p>}
+      {detail && <p className={cn("mt-0.5 line-clamp-2 text-[11px] leading-snug text-txt-secondary", !showDetail && "hidden md:block")}>{detail}</p>}
     </div>
   );
 }
