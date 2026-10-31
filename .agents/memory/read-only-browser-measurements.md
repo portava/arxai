@@ -28,3 +28,29 @@ visible reader content and late pixel checks did not establish fresh first paint
 
 **How to apply:** Keep failed/late samples, explicitly mark onboarding or runner
 blockers, and do not claim a target pass when precise readiness is unverified.
+
+Archive the actual browser/runtime, CPU controls, complete outer driver and
+enforced execution deadlines before timing. Persist each pending attempt before
+navigation and each result after collection, outside the measured interval.
+An unfinished slot is incomplete evidence, not zero attempts or a passing run.
+
+**Why:** A short outer browser-action deadline previously discarded an entire
+idle batch held only in memory. Browser-side measurement timeouts do not extend
+the outer tool's budget.
+
+**How to apply:** Use separate sufficiently bounded batch executions and recover
+private journals after browser/server exit. Permit diagnostic writes only to an
+isolated recorder, never an application API. Distinguish mock preparation,
+browser responseEnd, cache readiness, module evaluation and confirmed rendering;
+none proves the next stage, and overlapping tasks do not establish causation.
+
+A missing Playwright-managed executable does not establish that no browser is
+available. Check existing workspace browser executables before proposing an
+installation. Workspace and remote-automation loopback/runtime are not equivalent.
+
+**Why:** The managed browser cache was absent while an existing workspace
+Chromium was usable; remote and workspace fixture preflights also differed.
+
+**How to apply:** Preserve no-install boundaries, verify the executable actually
+launched, label the execution realm and CPU observability limits, and never
+attribute timing differences between unlike runtimes to application improvement.
