@@ -902,3 +902,51 @@ describe("mobile chart-first layout", () => {
     } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }
   });
 });
+
+
+describe("initial chart workbench binding", () => {
+  it("keeps the study panel and search input when the first candles arrive", () => {
+    currentCandleResponse=undefined;
+    const view=renderChart();
+    const control=view.getByRole("button",{name:"Studies (0)",exact:true});
+    fireEvent.click(control);
+    const search=view.getByLabelText("Search studies");
+    fireEvent.change(search,{target:{value:"Donchian"}});
+    search.focus();
+    currentCandleResponse=makeResponse(liveFeedStatus());
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.getByRole("button",{name:"Studies (0)",exact:true})).toBe(control);
+    expect(view.getByLabelText("Search studies")).toBe(search);
+    expect((search as HTMLInputElement).value).toBe("Donchian");
+    expect(document.activeElement).toBe(search);
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+  });
+  it("still resets workbench UI on a genuine provider change after candles have bound", () => {
+    const view=renderChart();
+    const control=view.getByRole("button",{name:"Studies (0)",exact:true});
+    fireEvent.click(control);
+    currentCandleResponse=makeResponse({...liveFeedStatus(),source:"deriv_public"} as ChartFeedStatus);
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.queryByLabelText("Search studies")).toBeNull();
+    expect(view.getByRole("button",{name:"Studies (0)",exact:true})).not.toBe(control);
+  });
+  it("does not treat lost evidence then a replacement source as a fresh initial load", () => {
+    const view=renderChart();
+    fireEvent.click(view.getByRole("button",{name:"Studies (0)",exact:true}));
+    currentCandleResponse=undefined;
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.queryByLabelText("Search studies")).toBeNull();
+    const emptyControl=view.getByRole("button",{name:"Studies (0)",exact:true});
+    fireEvent.click(emptyControl);
+    currentCandleResponse=makeResponse({...liveFeedStatus(),source:"deriv_public"} as ChartFeedStatus);
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.queryByLabelText("Search studies")).toBeNull();
+    expect(view.getByRole("button",{name:"Studies (0)",exact:true})).not.toBe(emptyControl);
+  });
+  it("resets an unbound workbench when the selected interval changes", () => {
+    currentCandleResponse=undefined;
+    const view=renderChart();fireEvent.click(view.getByRole("button",{name:"Studies (0)",exact:true}));
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.queryByLabelText("Search studies")).toBeNull();
+  });
+});
