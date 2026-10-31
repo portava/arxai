@@ -1,7 +1,7 @@
 import {
   describe, it, expect, beforeEach, afterEach, vi,
 } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 /**
@@ -95,6 +95,7 @@ vi.mock("wouter", () => ({
 }));
 
 import { ArxAssistantLivePanel } from "./ArxAssistantLivePanel";
+import { AssistantDockProvider, AssistantDockSlot } from "./AssistantDock";
 
 // The panel renders react-query-backed children (RubyTimingChip →
 // useGetTimingBrain, useScannerTruth). They must run inside a
@@ -132,6 +133,23 @@ afterEach(() => {
 });
 
 describe("ArxAssistantLivePanel — manual press-to-record only", () => {
+  it("keeps the same open conversation panel when the chart launcher docks and undocks",()=>{
+    const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+    const App=({chart}:{chart:boolean})=><QueryClientProvider client={client}><AssistantDockProvider>{chart&&<AssistantDockSlot/>}<ArxAssistantLivePanel/></AssistantDockProvider></QueryClientProvider>;
+    const view=render(<App chart={false}/>);
+    const panel=screen.getByTestId('arx-assistant-panel');
+    const input=screen.getByTestId('arx-input') as HTMLInputElement;
+    fireEvent.change(input,{target:{value:'Unsent chart question'}});
+    view.rerender(<App chart/>);
+    expect(screen.getByTestId('chart-assistant-dock').contains(screen.getByTestId('arx-assistant-trigger'))).toBe(true);
+    expect(screen.getByTestId('arx-assistant-panel')).toBe(panel);
+    expect(input.value).toBe('Unsent chart question');
+    view.rerender(<App chart={false}/>);
+    expect(screen.getByTestId('arx-assistant-panel')).toBe(panel);
+    expect(screen.getAllByTestId('arx-assistant-trigger')).toHaveLength(1);
+    expect(screen.getByTestId('arx-assistant-trigger').getAttribute('data-placement')).toBe('floating');
+    expect(input.value).toBe('Unsent chart question');
+  });
   it("renders open with the idle 'Tap to record' affordance and an enabled mic", () => {
     renderPanel();
     expect(screen.getByTestId("arx-assistant-panel")).toBeTruthy();

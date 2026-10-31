@@ -13,6 +13,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Search } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useChartActionDockTarget } from "@/components/help/AssistantDock";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
@@ -132,6 +134,7 @@ export function visibleCommandPaletteItems(
 }
 
 export function CommandPalette() {
+  const dockTarget = useChartActionDockTarget("search");
   const [, setLocation] = useLocation();
   const { effectiveIsAdmin: isAdmin } = useViewMode();
   const { isInvestor } = useProductRole();
@@ -169,17 +172,20 @@ export function CommandPalette() {
   // INVESTOR (view-only) accounts never get the command palette.
   if (isInvestor) return null;
 
-  if (!open) return (
+  if (!open) {
+    const trigger = (
     <button
       type="button"
       onClick={() => setOpen(true)}
       aria-label="Open command palette"
       data-testid="cmdk-trigger"
-      className="fixed bottom-20 left-3 md:bottom-6 md:left-6 z-40 inline-flex items-center gap-2 rounded-full border bg-background/85 px-3 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur hover:text-foreground"
+      className={`${dockTarget ? "h-11 w-11 justify-center" : "fixed bottom-20 left-3 md:bottom-6 md:left-6 z-40 gap-2 px-3 py-1.5"} inline-flex items-center rounded-full border bg-background/85 text-xs text-muted-foreground shadow-lg backdrop-blur hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary`}
     >
-      <Search size={14} /> <span className="hidden md:inline">Search</span> <kbd className="ml-1 hidden md:inline rounded border px-1 text-[10px]">Ctrl K</kbd>
+      <Search size={14} /> {!dockTarget && <><span className="hidden md:inline">Search</span> <kbd className="ml-1 hidden md:inline rounded border px-1 text-[10px]">Ctrl K</kbd></>}
     </button>
   );
+    return dockTarget ? createPortal(trigger, dockTarget) : trigger;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-20" onClick={() => setOpen(false)} role="dialog" aria-modal="true" aria-label="Command palette" data-testid="cmdk-dialog">
