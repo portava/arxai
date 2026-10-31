@@ -1,0 +1,27 @@
+{
+  "head": "7c5bcf8780a221b1cecd9e400edc30a55fe1e9ad",
+  "started": "2026-10-31T17:23:28.429705+00:00",
+  "results": [
+    {
+      "check": "libs",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/7c5bcf87-libs.log"
+    },
+    {
+      "check": "account-stream",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/7c5bcf87-account-stream.log"
+    },
+    {
+      "check": "api-typecheck",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/7c5bcf87-api-typecheck.log"
+    },
+    {
+      "check": "api-build",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/cockpit-refresh-controls-20261031/7c5bcf87-api-build.log"
+    }
+  ],
+  "finished": "2026-10-31T17:23:44.678489+00:00"
+}
