@@ -769,3 +769,56 @@ describe("useLiveAccountSnapshot — self-healing stale refetch (Task #440/#442)
     expect(MockEventSource.instances.length).toBe(1);
   });
 });
+
+
+describe("account evidence expires without another network message", () => {
+  it("ages canonical funds while paused without issuing a request", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    act(() => result.current.setAutoRefreshEnabled(false));
+    await act(async () => { await vi.advanceTimersByTimeAsync(29_001); });
+    expect(result.current.live?.freshness.status).toBe("stale");
+    expect(result.current.live?.liveEquity).toBe(990);
+    expect(result.current.connectionStatus).toBe("paused");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(MockEventSource.instances).toHaveLength(1);
+  });
+
+  it("heartbeat-only traffic cannot renew a Live snapshot", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "live", liveFreshness: "fresh" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_001); });
+    act(() => MockEventSource.latest().emit({ type: "heartbeat" }));
+    expect(result.current.freshness).toBe("fresh");
+    await act(async () => { await vi.advanceTimersByTimeAsync(25_001); });
+    expect(result.current.live?.freshness.status).toBe("stale");
+    expect(result.current.freshness).toBe("delayed");
+  });
+
+  it("a newly delivered old snapshot is already expired", () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const event = snapshotEvent({ snapFreshness: "live", liveFreshness: "fresh" });
+    event.snapshot.lastComputedAtMs -= 130_000;
+    act(() => MockEventSource.latest().emit(event));
+    expect(result.current.freshness).toBe("stale");
+    expect(result.current.live?.freshness.status).toBe("stale");
+  });
+
+  it("fresh funds without either an age or a data time are unavailable", () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const event = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    event.live.freshness.ageMs = null as unknown as number;
+    act(() => MockEventSource.latest().emit(event));
+    expect(result.current.live?.freshness.status).toBe("unavailable");
+    expect(result.current.live?.liveEquity).toBe(990);
+  });
+
+  it("only replacement account evidence restores freshness", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(29_001); });
+    expect(result.current.live?.freshness.status).toBe("stale");
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    expect(result.current.live?.freshness.status).toBe("fresh");
+  });
+});

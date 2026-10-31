@@ -1,5 +1,5 @@
 // LiveBridgeAutoRefreshControl — compact auto-refresh control for live
-// surfaces. Renders an On/Off toggle, a Refresh Now button, a "Checked Ns ago"
+// surfaces. Renders an On/Off toggle, a Refresh Now button, a "Checked at"
 // recency label, and a bridge-state badge (live/delayed/stale/offline).
 //
 // Usage: drop inside any header/toolbar that has access to useLiveBridgeRefresh.
@@ -16,13 +16,9 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { BridgeState } from "@/hooks/useLiveBridgeRefresh";
 
-function formatAgo(lastRefreshAt: number | null): string {
-  if (lastRefreshAt == null) return "—";
-  const ageMs = Date.now() - lastRefreshAt;
-  if (ageMs < 2_000) return "just now";
-  if (ageMs < 60_000) return `${Math.round(ageMs / 1000)}s ago`;
-  if (ageMs < 3_600_000) return `${Math.round(ageMs / 60_000)}m ago`;
-  return "over 1h ago";
+function formatCheckedAt(lastRefreshAt: number | null): string {
+  if (lastRefreshAt == null || !Number.isFinite(lastRefreshAt)) return "not yet";
+  return `at ${new Date(lastRefreshAt).toLocaleTimeString()}`;
 }
 
 const BRIDGE_STATE_STYLES: Record<BridgeState, { dot: string; label: string; text: string }> = {
@@ -99,7 +95,7 @@ export function LiveBridgeAutoRefreshControl({
 
       {/* Last checked label */}
       <span className="text-muted-foreground hidden sm:inline">
-        Checked {formatAgo(lastRefreshAt)}
+        Checked {formatCheckedAt(lastRefreshAt)}
       </span>
 
       {/* Refresh Now */}

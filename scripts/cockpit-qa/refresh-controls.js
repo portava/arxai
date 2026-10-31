@@ -34,7 +34,7 @@ async page => {
  const currentStreams=()=>page.evaluate(()=>window.__accountQA.streams.filter(s=>s.url.endsWith('/api/me/live/account-stream')).map(s=>s.readyState));
  if(JSON.stringify(await currentStreams())!=='[1]')throw Error('Cockpit must have exactly one shared account stream');
  await page.evaluate(()=>window.__accountQA.emit(1234));
- const equity=page.getByText('Live equity',{exact:true}).locator('..');
+ const equity=page.getByText(/^(Live|Last-known) equity$/).locator('..');
  await page.waitForFunction(()=>[...document.querySelectorAll('div')].some(n=>n.textContent==='Live equity$1,234.00'));
  await toggle.uncheck();
  await page.getByText('Updates paused',{exact:true}).waitFor();
@@ -42,7 +42,7 @@ async page => {
  await page.evaluate(()=>window.__accountQA.emit(9999));
  if(!(await equity.innerText()).includes('1,234.00'))throw Error('Closed stream changed displayed funds');
  await page.getByRole('button',{name:'Refresh',exact:true}).click();
- await page.waitForFunction(()=>[...document.querySelectorAll('div')].some(n=>n.textContent==='Live equity$1,300.00'));
+ await page.waitForFunction(()=>[...document.querySelectorAll('div')].some(n=>n.textContent==='Last-known equity$1,300.00'));
  await page.getByRole('button',{name:'Refresh',exact:true}).waitFor();
  await page.waitForTimeout(5500);
  if(polls!==1)throw Error('Paused manual refresh started recurring polling: '+polls);
@@ -75,6 +75,11 @@ async page => {
  await page.waitForFunction(()=>[...document.querySelectorAll('div')].some(n=>n.textContent==='Live equity$1,456.00'));
  await toggle.uncheck();
  await page.getByText('Updates paused',{exact:true}).waitFor();
+ await page.getByTestId('canonical-balance-paused-note').waitFor();
+ const beforeExpiryPolls=polls;
+ await page.getByTestId('canonical-balance-stale-note').waitFor({timeout:35000});
+ if(polls!==beforeExpiryPolls)throw Error('Evidence aging started a request while paused');
+ if(!(await equity.innerText()).includes('1,456.00'))throw Error('Aging changed funds');
  await page.screenshot({path:'cockpit-refresh-mobile.png',fullPage:true});
  const log=await page.evaluate(()=>window.__readFixtureLog());
  if(log.errors.length)throw Error('Page errors: '+JSON.stringify(log.errors));

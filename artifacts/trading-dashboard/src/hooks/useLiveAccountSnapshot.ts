@@ -19,6 +19,7 @@
 //   authenticated session returns.
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useAgedAccountSnapshot } from "./useAgedAccountSnapshot";
 import { useAccountRefreshPreference } from "./useAccountRefreshPreference";
 
 // ── Mirrored type definitions (kept in sync with liveAccountSnapshot.ts) ─────
@@ -471,6 +472,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     else void doPoll({ manual: true, allowWhileHidden: true });
   }, [doPoll]);
 
+  const agedSnapshot = useAgedAccountSnapshot(snapshot);
+
   // ── Task #440: auto-refresh on stale ───────────────────────────────────────
   // The moment freshness flips to `stale` (canonical balance block OR the
   // overall snapshot), proactively re-request the canonical snapshot so every
@@ -490,8 +493,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       staleRefetchTimerRef.current = null;
       return;
     }
-    const canonicalStale = snapshot?.live?.freshness.status === "stale";
-    const snapStale = snapshot?.freshness === "stale";
+    const canonicalStale = agedSnapshot?.live?.freshness.status === "stale";
+    const snapStale = agedSnapshot?.freshness === "stale";
     const isStaleNow = canonicalStale || snapStale;
 
     if (!isStaleNow && staleRefetchTimerRef.current != null) {
@@ -508,7 +511,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       }, STALE_REFETCH_DEBOUNCE_MS);
     }
     wasStaleRef.current = isStaleNow;
-  }, [snapshot, doPoll, reload, autoRefreshEnabled]);
+  }, [agedSnapshot, doPoll, reload, autoRefreshEnabled]);
 
   // Clear any pending stale-refetch timer on unmount.
   useEffect(() => () => {
@@ -519,7 +522,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   }, []);
 
   // ── Derived state ─────────────────────────────────────────────────────────
-  const snap = snapshot;
+  const snap = agedSnapshot;
   const freshness: Freshness = snap?.freshness ?? "unavailable";
   const notLiveReason = snap?.notLiveReason ?? (snap?.warnings.length ? snap.warnings[0]! : null);
   const isEstimate = snap?.positions.some((p) => p.plIsEstimate) ?? false;
