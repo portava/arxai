@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChartReplayBoundary } from "@/components/chart-replay/ChartReplayBoundary";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { useActivityPing } from "@/hooks/useActivityPing";
-import { loadMarketScannerPage } from "@/lib/scannerRoute";
+import { ScannerPageRoute } from "@/components/scanner/ScannerPageRoute";
 
 // Eager: dashboard (home) and not-found
 import Dashboard from "@/pages/dashboard";
@@ -110,7 +110,6 @@ const TradeGraderPage = lazy(() => import("@/pages/trade-grader"));
 const AiCoachPage = lazy(() => import("@/pages/ai-coach"));
 const PerformanceScorecardPage = lazy(() => import("@/pages/performance-scorecard"));
 const MarketReplayPage = lazy(() => import("@/pages/market-replay"));
-const MarketScannerPage = lazy(loadMarketScannerPage);
 const TradeCommandRoomPage = lazy(() => import("@/pages/trade-command-room"));
 const AlertsCenterPage = lazy(() => import("@/pages/alerts-center"));
 const SessionPlanPage = lazy(() => import("@/pages/session-plan"));
@@ -398,7 +397,7 @@ function Router() {
           <Route path="/ai-coach" component={AiCoachPage} />
           <Route path="/performance-scorecard" component={PerformanceScorecardPage} />
           <Route path="/market-replay" component={MarketReplayPage} />
-          <Route path="/market-scanner" component={MarketScannerPage} />
+          <Route path="/market-scanner" component={ScannerPageRoute} />
           <Route path="/trade-command-room" component={TradeCommandRoomPage} />
           <Route path="/alerts-center" component={AlertsCenterPage} />
           <Route path="/session-plan" component={SessionPlanPage} />
