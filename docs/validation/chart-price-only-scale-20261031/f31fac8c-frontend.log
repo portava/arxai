@@ -1,0 +1,14 @@
+
+> @workspace/trading-dashboard@0.0.0 test /Users/areyouok/arx-chart-price-only-scale-20261031/artifacts/trading-dashboard
+> vitest run
+
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-price-only-scale-20261031/artifacts/trading-dashboard
+
+Not implemented: navigation to another Document
+
+ Test Files  174 passed | 1 skipped (175)
+      Tests  2549 passed | 11 skipped (2560)
+   Start at  15:06:03
+   Duration  16.91s (transform 13.91s, setup 0ms, import 49.45s, tests 36.16s, environment 105.61s)
+

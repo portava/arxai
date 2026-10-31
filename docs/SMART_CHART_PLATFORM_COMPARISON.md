@@ -214,3 +214,8 @@ Final functional source `e011f25a`: 43 ordinary-user Scanner assertions and
 logo absence and full horizontal mobile chart/control bounds. This fixes a verified
 AI Assist mobile grid clipping defect; earlier failures remain in the receipt.
 Required library credit is plain text. The bounded timing source remains `cc7ad0e0`.
+
+
+## 31 October follow-up: price-only automatic fitting
+
+Source6f170f84 adds the previously missing choice to exclude overlay indicators from automatic main-price fitting, with oscillator data/scales unchanged and persistence/private-replay wiring. Actual Scanner synthetic200-bar wide-band fixture passes40measured toggles:normal/4xCPU p95=49.0/48.1ms, with a source-identical visible price span expanding10.3→308.1pixels. This is a scoped ARX-only offline result; MT5 fixed/one-to-one scale features, mobile acceptance and matched competitor performance remain open. See [source, tests, all samples and limits](SMART_CHART_PRICE_ONLY_SCALE_2026_10_31.md). Older measurements above are retained for their original sources; they are not replaced by this different interaction.
