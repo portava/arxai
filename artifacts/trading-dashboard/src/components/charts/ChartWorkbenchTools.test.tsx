@@ -523,8 +523,10 @@ it("routes keyboard history through the same persisted undo/redo as toolbar edit
  const config=()=>interaction.mock.calls.at(-1)![0];
  expect(config().onUndo).toBeUndefined();expect(config().onRedo).toBeUndefined();
  act(()=>config().onCommit([]));
+ expect(screen.getByText("Drawing deleted. Undo restores it.")).toBeTruthy();
  expect(JSON.parse(localStorage.getItem(key)!)).toEqual([]);expect(config().onUndo).toBeTypeOf("function");
  act(()=>config().onUndo());
+ expect(screen.getByText("Drawing edit undone.")).toBeTruthy();
  expect(JSON.parse(localStorage.getItem(key)!)).toEqual([row]);expect(config().onUndo).toBeUndefined();
  act(()=>config().onRedo());expect(JSON.parse(localStorage.getItem(key)!)).toEqual([]);
  act(()=>config().onUndo());act(()=>config().onCommit([{...row,start:{time:100,price:1.4}}]));

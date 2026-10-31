@@ -163,7 +163,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   };
   useEffect(()=>{adapter?.setDrawings?.(hidden ? [] : drawings);},[adapter,epoch,hidden,drawings]);
   useEffect(()=>{
-    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:setSelectedId,onCommit:change,
+    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:setSelectedId,onCommit:next=>{change(next);setMessage(next.length < drawings.length ? "Drawing deleted. Undo restores it." : "Drawing updated. Undo restores the previous edit.");},
       ...(history.past.length ? {onUndo:()=>undo()} : {}),
       ...(history.future.length ? {onRedo:()=>undo(true)} : {})});
   });
@@ -191,6 +191,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     const next = source.at(-1); if (!next) return;
     setHistory(h=>redo ? {past:[...h.past,h.present],present:next,future:h.future.slice(0,-1)} : {past:h.past.slice(0,-1),present:next,future:[...h.future,h.present]});
     persist(next);
+    setMessage(redo ? "Drawing edit redone." : "Drawing edit undone.");
   };
   const goToDrawing = (drawing: ChartDrawing, index: number) => {
     if (!hasCandles || !adapter?.goToTime) return;
