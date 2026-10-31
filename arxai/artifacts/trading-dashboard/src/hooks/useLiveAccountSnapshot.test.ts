@@ -16,6 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+import { useLiveBridgeRefresh, useLiveBridgeRefreshState } from "./useLiveBridgeRefresh";
 
 import {
   useLiveAccountSnapshot,
@@ -108,11 +109,8 @@ function snapshotEvent(opts: {
   };
 }
 
-// Task #451 — the canonical balance block slot-summary now carries (the same
-// wire shape the SSE stream sends as its `live` sibling). The block's own
-// freshness.status is intentionally set to a DIFFERENT value than the poll's
-// dataFreshness in these fixtures so the tests prove the hook forces the
-// detailed status to the verified poll freshness, not the block's stamp.
+// Canonical balance freshness is independent of heartbeat freshness. The
+// transport tests deliberately vary these separately to prevent promotion.
 function liveBlock(status: "fresh" | "stale" | "unavailable") {
   return {
     source: "live_shared" as const,
@@ -167,7 +165,7 @@ function freshPollBody() {
     openPnL: -10,
     openPositionCount: 0,
     positions: [],
-    live: liveBlock("unavailable"),
+    live: liveBlock("fresh"),
   };
 }
 
@@ -185,6 +183,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  localStorage.clear();
   MockEventSource.instances = [];
   hiddenValue = false;
   Object.defineProperty(document, "hidden", {
@@ -199,9 +198,250 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
 });
 
+describe("cockpit refresh controls own the shared transport", () => {
+  it("pausing aborts a pending read and visibility changes cannot restart it", async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    act(() => result.current.setAutoRefreshEnabled(false));
+    expect(signal.aborted).toBe(true);
+    expect(result.current.isRefreshing).toBe(false);
+    act(() => { setHidden(true); document.dispatchEvent(new Event("visibilitychange")); });
+    act(() => { setHidden(false); document.dispatchEvent(new Event("visibilitychange")); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a paused manual read times out without turning automatic updates back on", async () => {
+    localStorage.setItem("arx_autoRefresh_enabled", "false");
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    act(() => result.current.refreshNow());
+    expect(result.current.isRefreshing).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.snapshot).toBeNull();
+    expect(result.current.bridgeState).toBe("paused");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stream carrying heartbeats but no snapshot falls back to a bounded read", async () => {
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    act(() => MockEventSource.latest().emit({ type: "heartbeat" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.live?.liveEquity).toBe(990);
+    expect(result.current.live?.freshness.status).toBe("stale");
+  });
+
+  it("a preference change from another tab pauses the existing stream", () => {
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    const stream = MockEventSource.latest();
+    act(() => {
+      localStorage.setItem("arx_autoRefresh_enabled", "false");
+      window.dispatchEvent(new StorageEvent("storage", { key: "arx_autoRefresh_enabled", newValue: "false" }));
+    });
+    expect(result.current.autoRefreshEnabled).toBe(false);
+    expect(stream.readyState).toBe(MockEventSource.CLOSED);
+  });
+
+  it("stored OFF opens no stream and starts no automatic requests", async () => {
+    localStorage.setItem("arx_autoRefresh_enabled", "false");
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(result.current.autoRefreshEnabled).toBe(false);
+    expect(MockEventSource.instances).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.bridgeState).toBe("paused");
+  });
+
+  it("OFF closes the stream and cancels stale recovery; ON reconnects once", async () => {
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    const stream = MockEventSource.latest();
+    act(() => stream.emit(snapshotEvent({ snapFreshness: "stale", liveFreshness: "stale" })));
+    act(() => result.current.setAutoRefreshEnabled(false));
+    expect(stream.readyState).toBe(MockEventSource.CLOSED);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.live?.freshness.status).toBe("stale");
+    act(() => result.current.setAutoRefreshEnabled(true));
+    expect(MockEventSource.instances).toHaveLength(2);
+  });
+
+  it("manual refresh while paused performs one read, then stays paused", async () => {
+    localStorage.setItem("arx_autoRefresh_enabled", "false");
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    await act(async () => result.current.refreshNow());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.live?.liveEquity).toBe(990);
+    expect(result.current.isRefreshing).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(MockEventSource.instances).toHaveLength(0);
+    expect(result.current.bridgeState).toBe("paused");
+  });
+
+  it("a failed manual read ends the spinner without fabricating a response", async () => {
+    localStorage.setItem("arx_autoRefresh_enabled", "false");
+    fetchMock.mockRejectedValue(new Error("offline"));
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    await act(async () => result.current.refreshNow());
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.lastRefreshAt).toBeNull();
+    expect(result.current.snapshot).toBeNull();
+  });
+
+  it("two controls over one provider share the setting without duplicate streams", () => {
+    const { result } = renderHook(() => {
+      const base = useLiveAccountSnapshot();
+      return { first: useLiveBridgeRefreshState(base), second: useLiveBridgeRefreshState(base) };
+    });
+    expect(MockEventSource.instances).toHaveLength(1);
+    act(() => result.current.first.toggleAutoRefresh());
+    expect(result.current.second.autoRefreshEnabled).toBe(false);
+    expect(MockEventSource.latest().readyState).toBe(MockEventSource.CLOSED);
+  });
+
+  it("the cockpit control does not restart a slow fallback at five seconds", async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    renderHook(() => useLiveBridgeRefresh());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(signal.aborted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(MockEventSource.instances).toHaveLength(1);
+  });
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe("confirmed account updates survive transport races", () => {
+  it("a stream reconnect does not discard a valid fallback still in flight", async () => {
+    let finish!: (value: unknown) => void;
+    fetchMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().onerror?.({}));
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(MockEventSource.instances).toHaveLength(2);
+    expect(signal.aborted).toBe(false);
+    await act(async () => { finish({ ok: true, json: async () => freshPollBody() }); });
+    expect(result.current.live?.liveEquity).toBe(990);
+  });
+
+  it("repeated stream errors do not keep restarting the same fallback request", () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    expect(signal.aborted).toBe(false);
+  });
+
+  it.each(["stale", "unavailable"] as const)("a fresh heartbeat cannot upgrade a %s canonical balance", async status => {
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ ...freshPollBody(), live: liveBlock(status) }) }));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(result.current.live?.freshness.status).toBe(status);
+  });
+
+  it("a poll without canonical funds keeps the last figures marked stale", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ ...freshPollBody(), live: undefined }) }));
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(result.current.live?.liveEquity).toBe(990);
+    expect(result.current.live?.freshness.status).toBe("stale");
+  });
+
+  it("leaving the allocated live mode cannot retain a previous live balance", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ ...freshPollBody(), isAllocated: false, live: undefined }) }));
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(result.current.live).toBeNull();
+  });
+
+  it("a slow fallback cannot overwrite a newer streamed balance", async () => {
+    let finish!: (value: unknown) => void;
+    fetchMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const confirmed = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    confirmed.snapshot.equity = 1234;
+    confirmed.live.liveEquity = 1234;
+    act(() => MockEventSource.latest().emit(confirmed));
+    await act(async () => { finish({ ok: true, json: async () => stalePollBody() }); });
+    expect(result.current.snapshot?.equity).toBe(1234);
+    expect(result.current.live?.liveEquity).toBe(1234);
+    expect(result.current.connectionStatus).toBe("live");
+  });
+
+  it("a recovered stream stops fallback polling", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    fetchMock.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.connectionStatus).toBe("live");
+  });
+
+  it("late events and errors from a replaced connection cannot change the current stream", () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const retired = MockEventSource.latest();
+    act(() => result.current.reload());
+    const current = MockEventSource.latest();
+    expect(current).not.toBe(retired);
+    const confirmed = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    confirmed.snapshot.equity = 1234;
+    act(() => current.emit(confirmed));
+    act(() => retired.emit(snapshotEvent({ snapFreshness: "stale", liveFreshness: "stale" })));
+    act(() => retired.onerror?.({}));
+    expect(result.current.snapshot?.equity).toBe(1234);
+    expect(result.current.connectionStatus).toBe("live");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(current.readyState).toBe(MockEventSource.OPEN);
+  });
+
+  it("slow polling never stacks requests and is aborted on unmount", async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { unmount } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("a hung fallback is bounded and the next poll can recover", async () => {
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+    expect(signal.aborted).toBe(true);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    expect(result.current.snapshot?.equity).toBe(990);
+  });
+
+  it("two explicit refreshes in the same millisecond are both honored", () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => result.current.reload());
+    act(() => result.current.reload());
+    expect(MockEventSource.instances).toHaveLength(3);
+  });
 });
 
 describe("useLiveAccountSnapshot — self-healing stale refetch (Task #440/#442)", () => {
@@ -465,12 +705,8 @@ describe("useLiveAccountSnapshot — self-healing stale refetch (Task #440/#442)
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(MockEventSource.instances.length).toBe(1);
 
-    // CONTRACT (Task #451): slot-summary now CARRIES the canonical balance block,
-    // so a FRESH poll-based heal rebuilds the detailed balance from the poll
-    // response and marks its freshness to the verified poll freshness — the
-    // detailed status heals all the way to "fresh", NOT the old "unavailable"
-    // downgrade. The fixture stamps the carried block "unavailable" to prove the
-    // hook forces it to the poll's verdict rather than echoing the block's stamp.
+    // Both the heartbeat and the returned canonical balance are fresh.
+    // A separate regression above proves one cannot upgrade the other.
     expect(result.current.freshness).toBe("fresh");
     expect(result.current.live?.freshness.status).toBe("fresh");
 
@@ -531,5 +767,58 @@ describe("useLiveAccountSnapshot — self-healing stale refetch (Task #440/#442)
       document.dispatchEvent(new Event("visibilitychange"));
     });
     expect(MockEventSource.instances.length).toBe(1);
+  });
+});
+
+
+describe("account evidence expires without another network message", () => {
+  it("ages canonical funds while paused without issuing a request", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    act(() => result.current.setAutoRefreshEnabled(false));
+    await act(async () => { await vi.advanceTimersByTimeAsync(29_001); });
+    expect(result.current.live?.freshness.status).toBe("stale");
+    expect(result.current.live?.liveEquity).toBe(990);
+    expect(result.current.connectionStatus).toBe("paused");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(MockEventSource.instances).toHaveLength(1);
+  });
+
+  it("heartbeat-only traffic cannot renew a Live snapshot", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "live", liveFreshness: "fresh" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_001); });
+    act(() => MockEventSource.latest().emit({ type: "heartbeat" }));
+    expect(result.current.freshness).toBe("fresh");
+    await act(async () => { await vi.advanceTimersByTimeAsync(25_001); });
+    expect(result.current.live?.freshness.status).toBe("stale");
+    expect(result.current.freshness).toBe("delayed");
+  });
+
+  it("a newly delivered old snapshot is already expired", () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const event = snapshotEvent({ snapFreshness: "live", liveFreshness: "fresh" });
+    event.snapshot.lastComputedAtMs -= 130_000;
+    act(() => MockEventSource.latest().emit(event));
+    expect(result.current.freshness).toBe("stale");
+    expect(result.current.live?.freshness.status).toBe("stale");
+  });
+
+  it("fresh funds without either an age or a data time are unavailable", () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const event = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    event.live.freshness.ageMs = null as unknown as number;
+    act(() => MockEventSource.latest().emit(event));
+    expect(result.current.live?.freshness.status).toBe("unavailable");
+    expect(result.current.live?.liveEquity).toBe(990);
+  });
+
+  it("only replacement account evidence restores freshness", async () => {
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(29_001); });
+    expect(result.current.live?.freshness.status).toBe("stale");
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    expect(result.current.live?.freshness.status).toBe("fresh");
   });
 });

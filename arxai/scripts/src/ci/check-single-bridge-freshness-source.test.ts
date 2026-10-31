@@ -4,6 +4,7 @@ import ts from "typescript";
 import {
   ALLOW,
   AUTHORITY,
+  DISPLAY_POLICY,
   POLICY,
   checkAuthorityShape,
   constantRef,
@@ -164,3 +165,19 @@ assert.equal(isAgeIdentifier("quoteAgeMs"), false);
 
 // eslint-disable-next-line no-console
 console.log("check-single-bridge-freshness-source fixtures: ok");
+
+// Moving display bands to a shared pure module must not create a blanket escape.
+const displayPolicy = `export const ACCOUNT_SNAPSHOT_LIVE_MS = 5_000;
+export const ACCOUNT_SNAPSHOT_FRESH_MS = 30_000;
+export const ACCOUNT_SNAPSHOT_DELAYED_MS = 120_000;`;
+assert.deepEqual(scanSource(DISPLAY_POLICY, displayPolicy), []);
+for (const changed of [
+  displayPolicy.replace('5_000', '6_000'),
+  displayPolicy.replace('export const ACCOUNT_SNAPSHOT_LIVE_MS = 5_000;', ''),
+  displayPolicy + '\nexport const HEARTBEAT_FRESH_MS = 12345;',
+  displayPolicy + '\nfetch("https://example.com");',
+  displayPolicy + '\nexport const ACCOUNT_SNAPSHOT_LIVE_MS = 5_000;',
+  displayPolicy.replace('const ACCOUNT_SNAPSHOT_LIVE_MS', 'let ACCOUNT_SNAPSHOT_LIVE_MS'),
+]) assert.ok(scanSource(DISPLAY_POLICY, changed).length > 0, changed);
+assert.ok(scanSource('lib/domain/src/broker-health/duplicate.ts', displayPolicy).length > 0);
+console.log('shared account display policy negative fixtures: 8 passed');

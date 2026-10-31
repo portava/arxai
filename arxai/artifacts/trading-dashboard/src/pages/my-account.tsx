@@ -195,7 +195,7 @@ export default function MyAccountPage() {
 
       {/* Canonical balance (Task #430) — same source of truth as the Dashboard,
           Open Trades, risk panel, wallet and admin. */}
-      <CanonicalBalancePanel live={liveAcct.live} title="Live balance" />
+      <CanonicalBalancePanel live={liveAcct.live} updatesPaused={!liveAcct.autoRefreshEnabled} title="Live balance" />
 
       {/* My Balance + Equity */}
       <Card data-testid="my-balance-card" className="rounded-2xl border-border bg-card">

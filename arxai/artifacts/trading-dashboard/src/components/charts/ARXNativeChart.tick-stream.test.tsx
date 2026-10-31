@@ -849,3 +849,43 @@ describe("Scanner shared Smart Chart ownership", () => {
     view.unmount();expect(bind.mock.calls.at(-1)?.[0]).toBeNull();
   });
 });
+
+describe("mobile chart-first layout", () => {
+  it("keeps safety notices before the plot and keyboard controls after it on phones", () => {
+    const width = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+      currentCandleResponse = makeResponse({ ...liveFeedStatus(), quality: "invalid", aiUsable: false });
+      const view = renderChart();
+      const plot = view.getByTestId("arx-native-canvas");
+      const precedes = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(precedes(view.getByTestId("arx-native-safe-mode"), plot)).toBe(true);
+      expect(precedes(view.getByRole("button", { name: "Fullscreen" }), plot)).toBe(true);
+      expect(precedes(plot, view.getByRole("button", { name: "M1 timeframe" }))).toBe(true);
+      expect(precedes(plot, view.getByRole("toolbar", { name: "Chart view controls" }))).toBe(true);
+      expect(precedes(plot, view.getByRole("group", { name: "Zoom and pan" }))).toBe(true);
+    } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }
+  });
+  it("reorders controls at the breakpoint without replacing the chart engine or canvas", () => {
+    const width = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+      const view = renderChart();
+      const plot = view.getByTestId("arx-native-canvas"), controls = view.getByRole("group", { name: "Zoom and pan" });
+      const mounts = adapterSpies.init.mock.calls.length;
+      expect(Boolean(controls.compareDocumentPosition(plot) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+      act(() => window.dispatchEvent(new Event("resize")));
+      expect(view.getByTestId("arx-native-canvas")).toBe(plot);
+      expect(view.getByRole("group", { name: "Zoom and pan" })).toBe(controls);
+      expect(Boolean(plot.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      expect(adapterSpies.init).toHaveBeenCalledTimes(mounts);
+      expect(adapterSpies.destroy).not.toHaveBeenCalled();
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+      act(() => window.dispatchEvent(new Event("resize")));
+      expect(view.getByTestId("arx-native-canvas")).toBe(plot);
+      expect(Boolean(controls.compareDocumentPosition(plot) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      expect(adapterSpies.init).toHaveBeenCalledTimes(mounts);
+    } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }
+  });
+});

@@ -19,6 +19,7 @@ import { useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext
 
 interface CanonicalBalancePanelProps {
   live: InvestorLiveBalance | null;
+  updatesPaused?: boolean;
   className?: string;
   /** Optional heading; omit for an embedded/compact placement. */
   title?: string;
@@ -52,7 +53,7 @@ function Tile({ label, value, tone, sub }: { label: string; value: string; tone?
   );
 }
 
-export function CanonicalBalancePanel({ live, className, title }: CanonicalBalancePanelProps) {
+export function CanonicalBalancePanel({ live, className, title, updatesPaused = false }: CanonicalBalancePanelProps) {
   const status = live?.freshness.status ?? "unavailable";
   const lastUpdatedMs = live?.freshness.lastUpdatedAt ? Date.parse(live.freshness.lastUpdatedAt) : null;
   const floating = signedMoney(live?.floatingPnL ?? null);
@@ -71,7 +72,7 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Tile label="Allocated" value={money(live?.allocatedBalance ?? null)} />
-        <Tile label="Live equity" value={money(live?.liveEquity ?? null)} />
+        <Tile label={updatesPaused || status !== "fresh" ? "Last-known equity" : "Live equity"} value={money(live?.liveEquity ?? null)} />
         <Tile label="Available" value={money(live?.availableBalance ?? null)} />
         <Tile
           label="Floating P/L"
@@ -82,8 +83,13 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
         <Tile label="Realized P/L" value={realized.text} tone={realized.tone} />
         <Tile label="Margin used" value={money(live?.marginUsed ?? null)} />
         <Tile label="Free margin" value={money(live?.freeMargin ?? null)} />
-        <Tile label="Open trades" value={String(live?.openTradeCount ?? 0)} />
+        <Tile label="Open trades" value={live?.openTradeCount != null && Number.isInteger(live.openTradeCount) && live.openTradeCount >= 0 ? String(live.openTradeCount) : "—"} />
       </div>
+      {updatesPaused && (
+        <p className="mt-2 text-[11px] text-txt-muted" data-testid="canonical-balance-paused-note">
+          Automatic updates are paused. These are the last received figures; Refresh checks them once.
+        </p>
+      )}
       {status === "stale" && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-stale-note">
           Showing last known values — the live feed is overdue. Figures may be out of date.
@@ -91,7 +97,7 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
       )}
       {status === "unavailable" && (
         <p className="mt-2 text-[11px] text-txt-muted" data-testid="canonical-balance-unavailable-note">
-          Live balance is not available for this account mode.
+          Current balance freshness is unavailable. Any figures shown are last known.
         </p>
       )}
     </div>
@@ -104,6 +110,6 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
  * stream so it never opens a second connection.
  */
 export function CanonicalBalanceCard({ className, title }: { className?: string; title?: string }) {
-  const { live } = useLiveAccountSnapshotCtx();
-  return <CanonicalBalancePanel live={live} className={className} title={title} />;
+  const { live, autoRefreshEnabled } = useLiveAccountSnapshotCtx();
+  return <CanonicalBalancePanel live={live} updatesPaused={!autoRefreshEnabled} className={className} title={title} />;
 }

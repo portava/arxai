@@ -485,7 +485,7 @@ export default function RiskSettings() {
       {/* Canonical balance (Task #430) — risk caps are evaluated against this
           same live equity, so the panel matches the Dashboard, account,
           Open Trades, wallet and admin. */}
-      <CanonicalBalancePanel live={liveAcct.live} title="Live balance" />
+      <CanonicalBalancePanel live={liveAcct.live} updatesPaused={!liveAcct.autoRefreshEnabled} title="Live balance" />
 
       {/* ── Compliance + Live Audit Banner ── */}
       <DisclaimerBanner kind="riskCenter" />

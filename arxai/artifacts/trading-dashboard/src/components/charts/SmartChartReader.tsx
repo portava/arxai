@@ -4,12 +4,13 @@ import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import type { ChartEngineAdapter, ChartEngineCandle } from "@/lib/chart-engine";
 import type { Candle } from "@/components/scanner/scannerCandleAdapter";
 import type { ChartHistoryPage } from "@/lib/chartCandlesQuery";
-import { analyzeSmartChart, type SmartChartAnalysisResult, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
+import { type SmartChartAnalysisResult, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
+import { createSmartChartReadCache } from "@/lib/chart-engine/smartChartReadCache";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { captureReplayAnalysisPrefix, type ChartReplayReadWindow } from "@/lib/chart-engine/chartReplayAnalysis";
 import { smartChartNarrative } from "@/lib/chart-engine/smartChartNarrative";
 import { chartNumber, chartChangeSummary } from "@/lib/chart-engine/chartDescriptiveStats";
-import { describeSmartChartWindow, type ChartDescriptiveAnalysis, type ObservedMetric } from "@/lib/chart-engine/chartDescriptiveAnalysis";
+import { type ChartDescriptiveAnalysis, type ObservedMetric } from "@/lib/chart-engine/chartDescriptiveAnalysis";
 import { describeChartStyle, type ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
 import { effectiveDisplayZone, formatChartTime, zoneShortLabel } from "@/lib/chart-engine/chartTimeZone";
 import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotation";
@@ -43,6 +44,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
   // reads intentionally retain every refresh, including wall-clock changes.
   const previousReplayRead=useRef<{key:object;actual:ChartEngineCandle[]}|null>(null);
   const readKey=useMemo(()=>({}),[adapter,epoch,bound,contextKey,liveConfirmed,readFailed,view?.style,view?.scale,view?.inverted]);
+  const readValidated=useMemo(()=>createSmartChartReadCache(),[readKey]);
   const [reading,setReading]=useState<{key:string;result:SmartChartAnalysisResult;description:ChartDescriptiveAnalysis;historical:boolean}|null>(null);
   const [selected,setSelected]=useState<string|null>(null);
   const [annotations,setAnnotations]=useState(true);
@@ -59,10 +61,11 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
       visibleRange:range,asOfMs:replay?bound.asOfMs??NaN:Date.now(),
       replayCutoff:replay?bound.replayCutoff??undefined:undefined,
       dataState:replay?"historical" as const:!liveConfirmed||readFailed?"stale" as const:historical?"historical" as const:"current" as const};
-    const result=analyzeSmartChart(analysisInput),description=describeSmartChartWindow(analysisInput);
+    const {result,description}=readValidated(analysisInput);
     if(bound.status!=="ready"||mismatch||!actual.length){result.status="unavailable";result.findings=[];result.allFindings=[];result.reason=bound.reason??(mismatch?"The displayed candles are updating; analysis will follow the applied chart.":"Waiting for the chart's visible candles.");}
-    setReading({key:contextKey,result,description,historical});
-  },[adapter,bound,byTime,contextKey,liveConfirmed,readFailed,replay,readKey]);
+    setReading(previous=>previous?.key===contextKey&&previous.result===result&&previous.description===description&&previous.historical===historical
+      ?previous:{key:contextKey,result,description,historical});
+  },[adapter,bound,byTime,contextKey,liveConfirmed,readFailed,replay,readKey,readValidated]);
   useLayoutEffect(()=>{
     setSelected(null);refresh();
     return adapter?.subscribeViewport?.(refresh);
