@@ -164,6 +164,19 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     setHistory(h=>redo ? {past:[...h.past,h.present],present:next,future:h.future.slice(0,-1)} : {past:h.past.slice(0,-1),present:next,future:[...h.future,h.present]});
     persist(next);
   };
+  const goToDrawing = (drawing: ChartDrawing, index: number) => {
+    if (!hasCandles || !adapter?.goToTime) return;
+    if (!adapter.goToTime(drawing.start.time)) {
+      setMessage(historyWindowOnly
+        ? `Drawing ${index+1} starts outside the revealed replay window. Reveal more bars or choose another drawing.`
+        : `Drawing ${index+1} starts outside loaded history. Load its candles, then try again.`);
+      return;
+    }
+    // Navigation does not edit anchors, visibility, locking or undo history.
+    // An off-scale price need not be visible, so promise only the time location.
+    if (!hidden && !drawing.hidden) setSelectedId(drawing.id);
+    setMessage(`Centered on the first loaded candle at or after drawing ${index+1}'s start. Its price may still be outside the visible scale.${hidden || drawing.hidden ? " Drawing remains hidden; use Show to reveal it." : ""}`);
+  };
   const exportImage = () => {
     try {
       const url = adapter?.exportImage?.(); if(!url) return;
@@ -254,6 +267,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       {drawings.length > 0 && listedDrawings.length === 0 && <p>No matching drawings. Search does not hide objects on the chart.</p>}
       {listedDrawings.map(({d,index})=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
         <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} disabled={hidden || d.hidden} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}{d.hidden ? " · Hidden" : ""}</button>
+        <Button size="sm" variant="outline" className="h-8 text-xs" aria-label={`Go to drawing ${index+1} start`} disabled={!hasCandles || !adapter?.goToTime} onClick={()=>goToDrawing(d,index)}>Go to start</Button>
         {(["start","end","offset"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{formatChartTime(d[name]!.time,zone)}</span></label>)}
         <input type="color" aria-label={`Drawing ${index+1} color`} className="h-7 w-8 bg-transparent" value={d.color} onChange={e=>change(drawings.map(item=>item.id===d.id ? {...item,color:e.target.value} : item))}/>
         {d.kind !== "text" && <><select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>

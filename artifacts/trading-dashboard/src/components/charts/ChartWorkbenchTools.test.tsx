@@ -13,6 +13,67 @@ const adapter={setDrawings:drawings,setDrawingHandler:(handler:typeof click)=>{c
 const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkbenchTools key={`${symbol}:${timeframe}`} adapter={engine} epoch={1} symbol={symbol} timeframe={timeframe} preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline fixture"/>);
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
+describe("object navigation",()=>{
+  const seed=()=>{
+    const rows=[{id:"level",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"},
+      {id:"note",kind:"text",start:{time:200,price:1.3},color:"#ffffff",text:"Target note",locked:true}];
+    localStorage.setItem(drawingStorageKey("EURUSD","M15"),JSON.stringify(rows));
+    return rows;
+  };
+  it("jumps to a filtered object's start without editing it or adding undo history",()=>{
+    const rows=seed(), goToTime=vi.fn(()=>true), fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+    mount("EURUSD","M15",{...adapter,goToTime} as unknown as ChartEngineAdapter);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.change(screen.getByLabelText("Find drawing"),{target:{value:"Target note"}});
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 2 start",exact:true}));
+    expect(goToTime).toHaveBeenCalledExactlyOnceWith(200);
+    expect(screen.getByRole("button",{name:"Select drawing 2"}).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/Centered on the first loaded candle at or after drawing 2/)).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)).toEqual(rows);
+    expect(screen.getByRole("button",{name:"Undo",exact:true}).hasAttribute("disabled")).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("reports an unloaded anchor without claiming that the drawing is shown",()=>{
+    seed();const goToTime=vi.fn(()=>false);
+    mount("EURUSD","M15",{...adapter,goToTime} as unknown as ChartEngineAdapter);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start",exact:true}));
+    expect(screen.getByText(/Drawing 1 starts outside loaded history/)).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Select drawing 1"}).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByText(/Centered on/)).toBeNull();
+  });
+  it("preserves individual and global hiding when navigating to their candle",()=>{
+    const rows=seed();localStorage.setItem(drawingStorageKey("EURUSD","M15"),JSON.stringify([{...rows[0],hidden:true},rows[1]]));
+    const goToTime=vi.fn(()=>true);mount("EURUSD","M15",{...adapter,goToTime} as unknown as ChartEngineAdapter);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start",exact:true}));
+    expect(screen.getByText(/Drawing remains hidden/)).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Show drawing 1"})).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Select drawing 1"}).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(screen.getByRole("button",{name:"Hide drawings",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 2 start",exact:true}));
+    expect(screen.getByText(/Drawing remains hidden/)).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Show drawings",exact:true})).toBeTruthy();
+    expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+  });
+  it("disables navigation while candles or its engine are unavailable",()=>{
+    seed();const view=render(<ChartWorkbenchTools adapter={null} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles={false} feedLabel="Unavailable"/>);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    expect(screen.getByRole("button",{name:"Go to drawing 1 start"}).hasAttribute("disabled")).toBe(true);
+    view.unmount();mount();fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    expect(screen.getByRole("button",{name:"Go to drawing 1 start"}).hasAttribute("disabled")).toBe(true);
+  });
+  it("keeps replay navigation inside the revealed window without requesting history",()=>{
+    seed();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+    const engine={...adapter,goToTime:vi.fn(()=>false)} as unknown as ChartEngineAdapter;
+    render(<ChartWorkbenchTools adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles historyWindowOnly feedLabel="Replay"/>);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start"}));
+    expect(screen.getByText(/Drawing 1 starts outside the revealed replay window/)).toBeTruthy();
+    expect(screen.queryByText(/Load its candles/)).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
 it("saves channel extensions and midpoint with undo, lock protection and reload",()=>{
  const key=drawingStorageKey("EURUSD","M15");
  const channel={id:"test-channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:150,price:30},color:"#ffffff"};
