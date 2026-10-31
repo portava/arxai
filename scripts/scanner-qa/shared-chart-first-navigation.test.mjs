@@ -55,6 +55,14 @@ test('covered, undersized or offscreen plots fail even with valid candles',()=>{
 });
 
 const navigationBudget=extract('navigationBudget');
+test('profiling and unverified runtimes cannot produce navigation acceptance',async()=>{
+ for(const metadata of [{diagnosticOnly:true,productionRuntimeChecked:false},{diagnosticOnly:true,productionRuntimeChecked:true},{diagnosticOnly:false,productionRuntimeChecked:false}]){
+  const page={url:()=> 'http://127.0.0.1:4199/',evaluate:async()=>({metadata})};
+  const result=await vm.runInNewContext('('+text+')(page)',{page,URL});
+  assert.equal(result.passed,false);assert.equal(result.samples.length,0);
+  assert.match(result.failure,/Diagnostic\/profiling runtime cannot supply navigation acceptance/);
+ }
+});
 test('idle scenario is explicit and cannot pass as an immediate first click',()=>{
  assert.equal(navigationBudget(0).clickAfterReadyMs,150);
  const idle=navigationBudget(1500);
