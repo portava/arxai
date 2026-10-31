@@ -423,6 +423,8 @@ export function ARXNativeChart({
   // Bumped each time the chart/series is (re)built so overlay effects redraw
   // onto the fresh series instead of a stale handle.
   const [engineGeneration, setEngineGeneration] = useState(0);
+  const builtEngineGeneration = useRef(0);
+  const requestPrimaryEngine = useRef<(() => void) | null>(null);
   // P/L bubbles tracked in DOM coordinates (recomputed as the price scale moves).
   const [bubbles, setBubbles] = useState<
     { id: string; y: number; pnl: number; side: string | null; mode: string | null }[]
@@ -611,14 +613,18 @@ export function ARXNativeChart({
   // Retain the expensive canvas. Context-owned observations are cleared in the
   // layout phase below, before a new market label can paint over old geometry.
   //
-  // The primary chart builds its engine in this layout phase. Comparison views
+  // The primary builds in this layout phase once its initial request settles. Comparison views
   // build theirs through the shared post-paint queue above; until then every
   // engine consumer no-ops on the null adapter, and `engineGeneration` re-runs
   // the context/link/stream effects so the late engine receives exactly the
   // sequence a synchronously built one does (including its engine-generation binding).
   const defersEngine = workspaceId !== "primary";
-  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone });
-  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone }; });
+  // A pending initial response needs its loading/controls shell, not an empty
+  // canvas engine. Settled empty/error responses retain their existing engine
+  // behavior; an engine already created survives subsequent loading cycles.
+  const canStartPrimaryEngine = !query.isLoading || hasCandles;
+  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, canStartPrimaryEngine });
+  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, canStartPrimaryEngine }; });
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -628,6 +634,7 @@ export function ARXNativeChart({
     let building: ChartEngineAdapter | null = null;
     const build = () => {
       const inputs = engineInputsRef.current;
+      if (adapter || building || (!defersEngine && !inputs.canStartPrimaryEngine)) return;
       const engine = createChartEngineAdapter();
       building = engine;
       engine.init({ container: el, height: inputs.effectiveHeight });
@@ -641,10 +648,10 @@ export function ARXNativeChart({
       building = null;
       adapter = engine;
       adapterRef.current = engine;
-      setEngineGeneration(generation => generation + 1);
+      setEngineGeneration(++builtEngineGeneration.current);
     };
     let cancelDeferred: (() => void) | undefined;
-    if (!defersEngine) build();
+    if (!defersEngine) { requestPrimaryEngine.current = build; build(); }
     else cancelDeferred = scheduleDeferredEngineInit(() => {
       try {
         build();
@@ -663,20 +670,24 @@ export function ARXNativeChart({
 
     return () => {
       cancelDeferred?.();
+      if (requestPrimaryEngine.current === build) requestPrimaryEngine.current = null;
       adapter?.destroy();
       adapterRef.current = null;
       activeChartContext.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewLinks, workspaceId]);
+  useLayoutEffect(() => {
+    if (canStartPrimaryEngine) requestPrimaryEngine.current?.();
+  }, [canStartPrimaryEngine, viewLinks, workspaceId]);
 
   useLayoutEffect(() => {
     const adapter = adapterRef.current;
     const previous = activeChartContext.current;
     if (!adapter) {
-      // A deferred comparison: bind its context now, with no engine, and clear
+      // A waiting chart: bind its context now, with no engine, and clear
       // the previous context's observations exactly as a context change does.
-      if (!defersEngine || (previous?.key === chartContext && previous.adapter === null)) return;
+      if (previous?.key === chartContext && previous.adapter === null) return;
       activeChartContext.current = { key: chartContext, adapter: null };
       pendingTipRef.current = null;
       newestBarSecRef.current = null;
@@ -713,13 +724,14 @@ export function ARXNativeChart({
     }
     // chartEpoch includes the source identity, so this commit rebinds consumers.
   }, [chartContext, resolvedSymbol, timeframe, viewLinks, workspaceId, updateLegend, engineGeneration, defersEngine]);
-  // Primary engines register in their creation commit; their ref-to-prop
-  // render must not unregister/re-register and replay a peer range twice.
-  const linkEngineGeneration = defersEngine ? engineGeneration : 0;
+  // Register once after the new engine generation reaches props. This also
+  // covers a primary that starts after its pending response, without replaying
+  // a linked peer range both in the creation commit and its ref-to-prop render.
   useLayoutEffect(() => {
+    if (engineGeneration !== builtEngineGeneration.current) return;
     const adapter = adapterRef.current;
     return adapter ? viewLinks?.register(workspaceId, adapter) : undefined;
-  }, [viewLinks, workspaceId, chartContext, linkEngineGeneration]);
+  }, [viewLinks, workspaceId, chartContext, engineGeneration]);
   useLayoutEffect(() => { adapterRef.current?.setCrosshairHandler?.(updateLegend); }, [updateLegend, chartEpoch]);
   // One effect owns the zone: the ref is assigned first, then the engine and
   // the open legend are relabelled in the same commit (no separate ref effect).
@@ -889,7 +901,7 @@ export function ARXNativeChart({
     let disposed = false;
     // A comparison view's engine is built after its first paint, so its stream
     // may open first; it adopts the first engine built for this context. The
-    // primary engine always exists here, so its ownership is unchanged.
+    // primary may also wait for initial candles; ownership uses the same binding.
     let ownedAdapter = adapterRef.current;
     const owner = () => (ownedAdapter ??= adapterRef.current);
     try {

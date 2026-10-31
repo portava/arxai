@@ -950,3 +950,49 @@ describe("initial chart workbench binding", () => {
     expect(view.queryByLabelText("Search studies")).toBeNull();
   });
 });
+
+describe("pending initial candle engine", () => {
+  const refetch=vi.fn();
+  const tree=(data:ChartCandlesResponse|undefined,loading:boolean,error=false,symbol=SYMBOL)=><ARXNativeChart symbol={symbol} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} externalFeed={{data,isLoading:loading,isFetching:loading,isError:error,refetch,livePriceAllowed:false}}/>;
+  it("keeps controls and loading visible without building an empty engine, then binds exactly once",()=>{
+    const view=render(tree(undefined,true));
+    expect(adapterSpies.init).not.toHaveBeenCalled();
+    expect(view.getByText("Loading native candles…")).toBeTruthy();
+    fireEvent.click(view.getByRole("button",{name:"Studies (0)",exact:true}));
+    const input=view.getByLabelText("Search studies");fireEvent.change(input,{target:{value:"Donchian"}});input.focus();
+    view.rerender(tree(makeResponse(liveFeedStatus()),false));
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+    expect(adapterSpies.setCandles.mock.calls.some(([bars])=>bars.length>0)).toBe(true);
+    expect(view.getByLabelText("Search studies")).toBe(input);expect(document.activeElement).toBe(input);
+    view.rerender(tree(undefined,true));
+    expect(adapterSpies.destroy).not.toHaveBeenCalled();expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+    expect(adapterSpies.setCandles).toHaveBeenLastCalledWith([]);
+  });
+  it.each([false,true])("preserves a settled empty/error state (%s) and can subsequently load",error=>{
+    const view=render(tree(undefined,true));expect(adapterSpies.init).not.toHaveBeenCalled();
+    view.rerender(tree(undefined,false,error));expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+    expect(view.getByTestId(error?'arx-native-error':'arx-native-empty')).toBeTruthy();
+    view.rerender(tree(makeResponse(liveFeedStatus()),false));expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+    expect(adapterSpies.setCandles.mock.calls.some(([bars])=>bars.length>0)).toBe(true);
+  });
+  it("does not construct or dispose a nonexistent engine when leaving before the response",()=>{
+    const view=render(tree(undefined,true));view.unmount();expect(adapterSpies.init).not.toHaveBeenCalled();expect(adapterSpies.destroy).not.toHaveBeenCalled();
+  });
+  it("uses the latest selected market when the first response settles",()=>{
+    const view=render(tree(undefined,true));view.rerender(tree(undefined,true,false,"GBPUSD"));
+    expect(adapterSpies.init).not.toHaveBeenCalled();
+    const response=makeResponse(liveFeedStatus());
+    const changed={...response,symbol:"GBPUSD",candles:response.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+    view.rerender(tree(changed,false,false,"GBPUSD"));
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);expect(adapterSpies.setSymbol).toHaveBeenLastCalledWith("GBPUSD");
+    expect(adapterSpies.setCandles.mock.calls.some(([bars])=>bars.length>0)).toBe(true);
+  });
+  it("registers a waiting primary once with the current peer range when data arrives",()=>{
+    const link=new ChartViewLink();link.configure({crosshair:false,range:true});let publish:any;
+    link.register('peer',{setViewLinkHandler:(fn:any)=>{publish=fn;}} as any);
+    const range={from:NEWEST_OPEN_SEC-600,to:NEWEST_OPEN_SEC};publish({kind:'range',range});
+    const wrap=(ready:boolean)=><ChartLinkContext.Provider value={link}>{tree(ready?makeResponse(liveFeedStatus()):undefined,!ready)}</ChartLinkContext.Provider>;
+    const view=render(wrap(false));expect(adapterSpies.setLinkedTimeRange).not.toHaveBeenCalled();
+    view.rerender(wrap(true));expect(adapterSpies.setLinkedTimeRange).toHaveBeenCalledTimes(1);expect(adapterSpies.setLinkedTimeRange).toHaveBeenLastCalledWith(range);
+  });
+});
