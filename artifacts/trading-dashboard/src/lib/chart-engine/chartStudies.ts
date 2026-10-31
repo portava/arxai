@@ -35,7 +35,6 @@ export interface StudyDefinition {
 }
 
 export const STUDY_CATALOG: StudyDefinition[] = [
-  { name: "Donchian Channels", group: "Volatility", description: "Highest high, lowest low and their midpoint over the selected bars, including the forming bar. Requires a full window; channel contact alone is not a breakout signal.", defaults: { kind: "donchian", period: 20, color: "#38bdf8" }, channels: ["Midpoint", "Upper", "Lower"], pane: false, appliedPrice: false },
   { name: "Simple moving average", group: "Trend", description: "Equal weight over the selected period.", defaults: { kind: "sma", period: 20, color: "#fbbf24" }, channels: ["SMA"], pane: false, appliedPrice: true },
   { name: "Exponential moving average", group: "Trend", description: "Recent prices carry more weight; seeded with an SMA.", defaults: { kind: "ema", period: 50, color: "#38bdf8" }, channels: ["EMA"], pane: false, appliedPrice: true },
   { name: "Bollinger Bands", group: "Volatility", description: "SMA basis with population standard deviation bands.", defaults: { kind: "bollinger", period: 20, multiplier: 2, color: "#a78bfa" }, channels: ["Basis", "Upper", "Lower"], pane: false, appliedPrice: true },
@@ -53,9 +52,10 @@ export const STUDY_CATALOG: StudyDefinition[] = [
   { name: "Moving average envelopes", group: "Trend", description: "Percentage bands above and below a configurable moving average.", defaults: { kind: "envelopes", period: 20, multiplier: 1, method: "sma", color: "#f472b6" }, channels: ["Basis", "Upper", "Lower"], pane: false, appliedPrice: true },
   { name: "Momentum ratio", group: "Momentum", description: "Current price ÷ price N bars ago × 100 (MT5 convention).", defaults: { kind: "momentum", period: 14, color: "#4ade80" }, channels: ["Momentum"], pane: true, appliedPrice: true, levels: [100] },
   { name: "Rate of change", group: "Momentum", description: "Percentage price change over N bars.", defaults: { kind: "roc", period: 14, color: "#fbbf24" }, channels: ["ROC %"], pane: true, appliedPrice: true, levels: [0] },
+  { name: "Donchian Channels", group: "Volatility", description: "Highest high, lowest low and their midpoint over the selected bars, including the forming bar. Requires a full window; channel contact alone is not a breakout signal.", defaults: { kind: "donchian", period: 20, color: "#38bdf8" }, channels: ["Midpoint", "Upper", "Lower"], pane: false, appliedPrice: false },
 ];
 /** Preserve the original starter collection and saved templates. */
-export const STUDY_DEFAULTS = STUDY_CATALOG.slice(0, 5).map(item => item.defaults);
+export const STUDY_DEFAULTS = (["sma", "ema", "bollinger", "rsi", "macd"] as const).map(kind => STUDY_CATALOG.find(item => item.defaults.kind === kind)!.defaults);
 export const MAX_STUDIES = 12;
 export const studyDefinition = (kind: StudyKind) => STUDY_CATALOG.find(item => item.defaults.kind === kind)!;
 export const studyId = (study: ChartStudy) => study.id ?? study.kind;

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { StudyCalculator, type ChartStudy } from "./chartStudies";
+import { StudyCalculator, STUDY_DEFAULTS, type ChartStudy } from "./chartStudies";
 import { validatePreferences } from "./chartWorkspace";
 
 const config = { kind: "donchian", period: 3, color: "#38bdf8" } as ChartStudy;
@@ -71,4 +71,9 @@ it("range windows match the simple extrema oracle through ties, signed zero and 
       expect(Object.is(window.push(data[i]!, i), expected), `${period}/${maximum}/${i}`).toBe(true);
     }
   }
+});
+
+
+it("catalog additions preserve the original starter collection and order", () => {
+  expect(STUDY_DEFAULTS.map(s => s.kind)).toEqual(["sma", "ema", "bollinger", "rsi", "macd"]);
 });
