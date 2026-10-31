@@ -42,6 +42,7 @@ import { isNormalUserAllowedPath, isPendingTraderAllowedPath } from "@/lib/route
 const h = vi.hoisted(() => ({
   location: "/" as string,
   setLocation: vi.fn(),
+  prefetchQuery: vi.fn().mockResolvedValue(undefined),
   effectiveIsAdmin: false,
   isInvestor: false,
   isApprovedTrader: true,
@@ -77,7 +78,7 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetBotStatusQueryKey: () => ["bot-status"],
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: vi.fn(), prefetchQuery: h.prefetchQuery }),
 }));
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
@@ -268,4 +269,9 @@ describe("the normal-user filtering is real (non-vacuous guard)", () => {
     const offAllowlist = routes.filter((r) => !isNormalUserAllowedPath(r));
     expect(offAllowlist.length).toBeGreaterThan(0);
   });
+});
+
+
+it("does not warm Scanner candles for a pending trader",()=>{
+ asPendingTrader();render(<MobileBottomNav/>);expect(h.prefetchQuery).not.toHaveBeenCalled();
 });

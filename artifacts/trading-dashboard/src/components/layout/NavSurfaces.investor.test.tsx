@@ -31,6 +31,7 @@ import { FloatingActionPanel } from "@/components/trading/FloatingActionPanel";
 const h = vi.hoisted(() => ({
   location: "/investor" as string,
   setLocation: vi.fn(),
+  prefetchQuery: vi.fn().mockResolvedValue(undefined),
   isInvestor: true,
   effectiveIsAdmin: false,
   isApprovedTrader: true,
@@ -67,7 +68,7 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetBotStatusQueryKey: () => ["bot-status"],
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: vi.fn(), prefetchQuery: h.prefetchQuery }),
 }));
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
@@ -163,4 +164,14 @@ describe("CommandPalette — investor containment", () => {
     render(<CommandPalette />);
     expect(screen.getByTestId("cmdk-trigger")).toBeTruthy();
   });
+});
+
+
+it("never warms Scanner data for an investor, including one with admin visibility",()=>{
+ asInvestor();h.effectiveIsAdmin=true;render(<MobileBottomNav/>);
+ expect(h.prefetchQuery).not.toHaveBeenCalled();
+});
+it("warms only the bounded candle cache for an approved trader",()=>{
+ asTrader();render(<MobileBottomNav/>);
+ expect(h.prefetchQuery).toHaveBeenCalledWith(expect.objectContaining({staleTime:5000,retry:false}));
 });
