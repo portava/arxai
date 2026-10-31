@@ -41,3 +41,9 @@ The owner supplied the published `arx-ai-baseline-import.replit.app/market-scann
 Replit Agent is still performing authenticated desktop/mobile checks for that existing import. Its visible report says final frontend typecheck, build, corrected tests, catalogue and disclosure checks passed; exact final workspace commit and consolidated receipt remain pending. Do not duplicate or interrupt that import. The connector remains busy. The new navigation commits still need a coordinated development-only sync and measurements on the actual served build. Published deployment has not been changed or authorized here.
 
 Raw logs, benchmark wrappers, source manifests, failed runs and screenshot: [navigation receipts](validation/scanner-smart-chart-20261031/navigation/manifest.json). Local originals: `/Users/areyouok/arx-tier1-release/scanner-navigation-20261031/`.
+
+## Subsequent development handoff
+
+Replit confirmed the prior import saved clean checkpoint **e62483f047687956386ede7872538463dcbee4dd**, branch `codex/pr103-smart-chart-development-20261031`. The initial full run was 2,400 passed / 2 failed / 9 skipped; corrected affected tests passed 8, catalogue rerun passed 400 and disclosure checks passed 6. Typechecks/build passed. There was no wholesale full-suite rerun after those corrections; overlapping reruns must not be summed. Browser limitations above remain.
+
+The tested first-navigation commits were then submitted as a separate development-only follow-up, existing Replit turn `fabb7c9c-fa80-41cb-8714-1e5066b998e6/01a16919-d9a3-70b8-8aa4-ebf6df24c53e/01a192ca-1451-70cc-b174-5adc1c52c8a9`. The connector reports **updating**; exact resulting source and real-preview timing are pending. No duplicate import should be queued. This does not update the published app.
