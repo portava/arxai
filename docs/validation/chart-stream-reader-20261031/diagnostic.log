@@ -1,0 +1,33 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-stream-reader-20261031/artifacts/trading-dashboard
+
+ ❯ src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts (52 tests | 1 failed) 340ms
+   × withdraws a visible reader explanation after a streamed OHLC revision and recovers on matching history 306ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts > withdraws a visible reader explanation after a streamed OHLC revision and recovers on matching history
+AssertionError: expected 'unavailable' to be 'ready' // Object.is equality
+
+Expected: "ready"
+Received: "unavailable"
+
+ ❯ src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts:349:89
+    347|     expect(annotation).toHaveBeenLastCalledWith(null);
+    348|     act(() => { adapter.setCandles(canonical); vi.advanceTimersByTime(…
+    349|     expect(view.getByTestId("smart-chart-reader").getAttribute("data-a…
+       |                                                                                         ^
+    350|   } finally { cleanup(); }
+    351| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 51 passed (52)
+   Start at  14:40:13
+   Duration  781ms (transform 264ms, setup 0ms, import 119ms, tests 340ms, environment 253ms)
+
+undefined
+/Users/areyouok/arx-chart-stream-reader-20261031/artifacts/trading-dashboard:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts

@@ -1,0 +1,10 @@
+
+> @workspace/trading-dashboard@0.0.0 typecheck /Users/areyouok/arx-chart-stream-reader-20261031/artifacts/trading-dashboard
+> tsc -p tsconfig.json --noEmit
+
+src/lib/chart-engine/smartChartAnalysis.catalogue.benchmark.ts(11,33): error TS6305: Output file '/Users/areyouok/arx-chart-stream-reader-20261031/lib/domain/dist/chart-patterns/__qa__/candlestickFixtures.d.ts' has not been built from source file '/Users/areyouok/arx-chart-stream-reader-20261031/lib/domain/src/chart-patterns/__qa__/candlestickFixtures.ts'.
+src/lib/chart-engine/smartChartAnalysis.catalogue.benchmark.ts(39,40): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/lib/chart-engine/smartChartAnalysis.catalogue.benchmark.ts(48,55): error TS7006: Parameter 'p' implicitly has an 'any' type.
+/Users/areyouok/arx-chart-stream-reader-20261031/artifacts/trading-dashboard:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/trading-dashboard@0.0.0 typecheck: `tsc -p tsconfig.json --noEmit`
+Exit status 2

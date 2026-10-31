@@ -1,0 +1,32 @@
+{
+  "head": "be4b22d1a4ae608f96d1ee4c5506ec5d602a9c26",
+  "started": "2026-10-31T18:43:32.409111+00:00",
+  "results": [
+    {
+      "check": "frontend",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-stream-reader-20261031/be4b22d1-frontend.log"
+    },
+    {
+      "check": "typecheck",
+      "exit": 2,
+      "log": "/Users/areyouok/arx-tier1-release/chart-stream-reader-20261031/be4b22d1-typecheck.log"
+    },
+    {
+      "check": "build",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-stream-reader-20261031/be4b22d1-build.log"
+    },
+    {
+      "check": "guards",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-stream-reader-20261031/be4b22d1-guards.log"
+    },
+    {
+      "check": "bindings",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-stream-reader-20261031/be4b22d1-bindings.log"
+    }
+  ],
+  "finished": "2026-10-31T18:44:21.816062+00:00"
+}

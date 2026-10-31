@@ -1,0 +1,29 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-stream-reader-20261031/artifacts/trading-dashboard
+
+ ❯ src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts (52 tests | 1 failed) 186ms
+   × withdraws a visible reader explanation after a streamed OHLC revision and recovers on matching history 145ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts > withdraws a visible reader explanation after a streamed OHLC revision and recovers on matching history
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts:344:22
+    342|     await act(async () => { adapter.updateActiveCandle({ ...canonical.…
+    343|     expect(adapter.getVisibleCandles().at(-1)?.close).toBe(100.5);
+    344|     expect(notified).toHaveBeenCalledOnce();
+       |                      ^
+    345|     expect(view.getByTestId("smart-chart-reader").getAttribute("data-a…
+    346|     expect(view.getByTestId("chart-reader-explanation").textContent).t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 85 passed (86)
+   Start at  14:40:30
+   Duration  960ms (transform 577ms, setup 0ms, import 820ms, tests 503ms, environment 824ms)
+
+undefined
+/Users/areyouok/arx-chart-stream-reader-20261031/artifacts/trading-dashboard:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts src/components/charts/SmartChartReader.test.tsx src/lib/chart-engine/smartChartReadCache.test.ts
