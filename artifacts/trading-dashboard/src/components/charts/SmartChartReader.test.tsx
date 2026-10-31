@@ -262,4 +262,16 @@ describe("Replay analysis duplicate notifications",()=>{
     expect(f.setSmartAnnotation.mock.lastCall?.[0]).toBeTruthy();
     expect(analyzeSmartChart).toHaveBeenCalledTimes(3);
   });
+  it("does not carry a live cache across read failure, engine epoch or source changes",()=>{
+    const f=fixture(),view=render(<SmartChartReader {...f.props}/>);
+    f.show(f.all);expect(analyzeSmartChart).toHaveBeenCalledTimes(1);
+    view.rerender(<SmartChartReader {...f.props} readFailed/>);
+    expect(screen.getByText(/The feed is stale; this describes stored candles/)).toBeTruthy();
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(2);
+    view.rerender(<SmartChartReader {...f.props} epoch={2}/>);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(3);
+    view.rerender(<SmartChartReader {...f.props} epoch={2} data={{...f.data,marketEvidence:null}}/>);
+    expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-status')).toBe('unavailable');
+    expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
+  });
 });

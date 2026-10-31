@@ -34,6 +34,14 @@ it.skipIf(process.env.ARX_READER_BENCHMARK !== "1").each([200, 600])("reader not
   const view = render(<Profiler id="reader" onRender={() => { commits++; }}><SmartChartReader adapter={adapter} epoch={1} symbol="V75" timeframe="M5" data={data} older={[]} historyEvidence={null} liveConfirmed readFailed={false} /></Profiler>);
   const mountMs = performance.now() - mountStart;
   expect(view.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("ready");
+  // Match executed analyzer/React work before timing both variants. Without
+  // this warmup the old path executes 60 analyses while the cache executes none,
+  // making the subsequent changed-window control a different JIT state.
+  const warmup = process.env.ARX_READER_BENCHMARK_WARMUP === "1";
+  if (warmup) {
+    for (let i = 0; i < 80; i++) { visible = i % 2 ? all : all.slice(1); act(notify); }
+    visible = all; act(notify);
+  }
   const initialCalls = vi.mocked(analyzeSmartChart).mock.calls.length, initialCommits = commits;
   const times: number[] = [];
   for (let i = 0; i < 60; i++) {
@@ -43,10 +51,11 @@ it.skipIf(process.env.ARX_READER_BENCHMARK !== "1").each([200, 600])("reader not
   }
   const calls = vi.mocked(analyzeSmartChart).mock.calls.length - initialCalls, updates = commits - initialCommits;
   const changedAt = performance.now();
-  for (let i = 1; i <= 10; i++) { visible = all.slice(i); act(notify); }
+  const changedSamples: number[] = [];
+  for (let i = 1; i <= 10; i++) { visible = all.slice(i); const at = performance.now(); act(notify); changedSamples.push(performance.now() - at); }
   const changedMs = performance.now() - changedAt;
   expect(vi.mocked(analyzeSmartChart).mock.calls.length - initialCalls - calls).toBe(10);
   expect(view.getByText(new RegExp(`${count - 10} closed candles analyzed`))).toBeTruthy();
   const sorted = [...times].sort((a, b) => a - b);
-  console.log("ARX_READER_BENCHMARK " + JSON.stringify({ count, mountMs, samples: times, medianMs: sorted[30], p95Ms: sorted[56], maxMs: sorted.at(-1), analysisCalls: calls, reactCommits: updates, changedControl: { calls: 10, elapsedMs: changedMs }, scope: "Constructed source-shaped input, real detectors, React development/jsdom; not browser paint or provider acceptance." }));
+  console.log("ARX_READER_BENCHMARK " + JSON.stringify({ count, warmup, mountMs, samples: times, medianMs: sorted[30], p95Ms: sorted[56], maxMs: sorted.at(-1), analysisCalls: calls, reactCommits: updates, changedControl: { calls: 10, elapsedMs: changedMs, samples: changedSamples }, scope: "Constructed source-shaped input, real detectors, React development/jsdom; not browser paint or provider acceptance." }));
 });
