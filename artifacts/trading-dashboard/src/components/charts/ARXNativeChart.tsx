@@ -1225,6 +1225,11 @@ export function ARXNativeChart({
   // On a phone, show the price plot before secondary controls. The DOM order
   // follows the visual order, including keyboard focus; source/quality notices
   // remain above the plot. Keyed controls and the plot survive breakpoint moves.
+  const fullscreenToggle = (
+    <Button size="sm" variant="outline" className={mobileLayout ? "ml-auto h-7 px-2 text-xs" : "h-8 text-xs"} aria-pressed={expanded} aria-label={expanded ? "Exit fullscreen" : "Fullscreen"} onClick={() => setExpanded((v) => !v)}>
+          {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
+          <span className={mobileLayout ? "sr-only" : undefined}>{expanded ? "Exit fullscreen" : "Fullscreen"}</span>
+        </Button>);
   const timeframeControls = (<div className="flex flex-wrap items-center gap-1" data-testid="arx-native-tf-controls">
             {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>setReplayError(replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}))}>Replay loaded bars</Button>}
             {TIMEFRAMES.map((tf) => (
@@ -1275,10 +1280,7 @@ export function ARXNativeChart({
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
 
         </div>
-        <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={expanded} onClick={() => setExpanded((v) => !v)}>
-          {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
-          {expanded ? "Exit fullscreen" : "Fullscreen"}
-        </Button>
+        {!mobileLayout && fullscreenToggle}
       </div>
       <ChartWorkbenchTools key={chartContext} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
@@ -1296,6 +1298,7 @@ export function ARXNativeChart({
           <div className="flex flex-wrap items-center gap-2">
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
+            {mobileLayout && fullscreenToggle}
             <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
               {resolvedSymbol}
             </span>

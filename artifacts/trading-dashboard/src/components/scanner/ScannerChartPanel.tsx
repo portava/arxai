@@ -416,6 +416,14 @@ export function useScannerChartRead(
 }
 
 export function ScannerChartPanel() {
+  const [feedDetailsOpen, setFeedDetailsOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
+  useEffect(() => {
+    let wide = window.innerWidth >= 768;
+    const onResize = () => { const next = window.innerWidth >= 768; if (next !== wide) { wide = next; setFeedDetailsOpen(next); } };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const { name } = useAssistantName();
   const [chartSym] = useChartSymbol();
   const symbol = useMemo(() => bareSymbol(chartSym || "EURUSD").toUpperCase(), [chartSym]);
@@ -1858,6 +1866,8 @@ export function ScannerChartPanel() {
 
   return (
     <Card data-testid="scanner-chart-panel" className="rounded-2xl border-border bg-card">
+      <details open={feedDetailsOpen} onToggle={event => setFeedDetailsOpen(event.currentTarget.open)} data-testid="scanner-feed-details">
+      <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground md:hidden">Feed and position details</summary>
       <CardHeader className="px-3 py-2 sm:px-6 sm:py-3">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
@@ -1917,6 +1927,7 @@ export function ScannerChartPanel() {
           </div>
         </CardTitle>
       </CardHeader>
+      </details>
       <CardContent className="px-2 sm:px-6">
         <ARXNativeChart symbol={symbol} timeframe={apiTf as ArxTimeframe}
           onTimeframeChange={tf => setTimeframe(normalizeChartTimeframe(tf))}

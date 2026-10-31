@@ -860,6 +860,7 @@ describe("mobile chart-first layout", () => {
       const plot = view.getByTestId("arx-native-canvas");
       const precedes = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
       expect(precedes(view.getByTestId("arx-native-safe-mode"), plot)).toBe(true);
+      expect(precedes(view.getByRole("button", { name: "Fullscreen" }), plot)).toBe(true);
       expect(precedes(plot, view.getByRole("button", { name: "M1 timeframe" }))).toBe(true);
       expect(precedes(plot, view.getByRole("toolbar", { name: "Chart view controls" }))).toBe(true);
       expect(precedes(plot, view.getByRole("group", { name: "Zoom and pan" }))).toBe(true);

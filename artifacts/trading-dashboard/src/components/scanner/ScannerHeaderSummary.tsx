@@ -242,7 +242,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
           <h1 className="text-xl md:text-2xl font-bold leading-tight">Market Scanner</h1>
           <p className="hidden md:block text-sm text-txt-secondary">Find setups, compare opportunities, and let {name} explain the market.</p>
         </div>
-        <button type="button" className="md:hidden shrink-0 self-center text-xs text-primary underline underline-offset-4" aria-label={statusDetailsOpen ? "Hide status details" : "Show status details"} aria-expanded={statusDetailsOpen} aria-controls={statusDetailsId} onClick={() => setStatusDetailsOpen(value => !value)}>
+        <button type="button" className="md:hidden shrink-0 self-center text-xs text-primary underline underline-offset-4" aria-label={statusDetailsOpen ? "Hide status details" : "Show status details"} aria-expanded={statusDetailsOpen} aria-controls={`${statusDetailsId} ${statusDetailsId}-explanations`} onClick={() => setStatusDetailsOpen(value => !value)}>
           Details
         </button>
       </div>
@@ -313,6 +313,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
         />
       </div>
 
+      <div id={`${statusDetailsId}-explanations`} className={cn("space-y-3", !statusDetailsOpen && "hidden md:block")}>
       {/* ONE expandable "Why?" — explains, from the contract's single governing
           userMessage / internalReasonCode, exactly why action is allowed,
           limited, or blocked for the selected symbol. There is no second
@@ -342,6 +343,8 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
           {truth.dataHealth.sourceNote}
         </p>
       )}
+
+      </div>
 
       {shouldShowAdminDiagnostics && truth && (
         <p className="text-[11px] text-txt-muted">
