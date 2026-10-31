@@ -1,4 +1,4 @@
-import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy } from "./chartStudies";
+import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy, type StudyLineStyle } from "./chartStudies";
 import { isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 import { normalizeNoteText } from "./chartTextNote";
 export type ChartScaleMode = "linear" | "log" | "percent" | "indexed";
@@ -59,8 +59,25 @@ export function validatePreferences(value: unknown): ChartPreferences {
     if (s.kind === "macd" && (!period(s.slow) || s.slow <= s.period || !period(s.signal))) continue;
     if (s.kind === "dmi" && !period(s.signal)) continue;
     if (s.kind === "stochastic" && (!period(s.smoothing) || !period(s.signal))) continue;
+    let lineStyles: StudyLineStyle[] | undefined;
+    if (s.lineStyles != null) {
+      const channels = STUDY_CATALOG.find(item=>item.defaults.kind === s.kind)!.channels.length;
+      if (!Array.isArray(s.lineStyles) || s.lineStyles.length > channels) continue;
+      let invalid = false;
+      lineStyles = Array.from(s.lineStyles, (style: any, index) => {
+        if (!style || typeof style !== "object" || Array.isArray(style)
+          || (style.color != null && !color(style.color))
+          || (style.width != null && ![1,2,3].includes(style.width))
+          || (style.style != null && !["solid","dashed","dotted"].includes(style.style))
+          || (style.visible != null && typeof style.visible !== "boolean")
+          || (s.kind === "macd" && index === 2 && [style.color,style.width,style.style].some(v=>v != null))) { invalid=true; return {}; }
+        return {...(style.color != null ? {color:style.color} : {}),...(style.width != null ? {width:style.width} : {}),...(style.style != null ? {style:style.style} : {}),...(style.visible != null ? {visible:style.visible} : {})};
+      });
+      if (invalid) continue;
+    }
     seen.add(id);
     studies.push({
+      ...(lineStyles?.length ? {lineStyles} : {}),
       ...(s.id ? { id: s.id } : {}), kind: s.kind, period: s.period, color: s.color,
       ...(s.source ? { source: s.source } : {}),
       ...(["bollinger", "envelopes"].includes(s.kind) ? { multiplier: s.multiplier } : {}),

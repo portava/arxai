@@ -95,3 +95,26 @@ it("requires and preserves a channel's three finite positive anchors without acc
  expect(validateDrawings([{...channel,end:{time:100,price:20}}])).toEqual([]);
  expect(validateDrawings([{...channel,kind:"trend"}])[0]).not.toHaveProperty("offset");
 });
+
+
+describe("persisted study presentation validation",()=>{
+ const c={id:"dmi",kind:"dmi",period:14,signal:14,color:"#38bdf8"};
+ it("round trips styles independently, strips foreign fields and preserves old defaults",()=>{
+  const lineStyles=[{color:"#abcdef",width:3,style:"dashed",visible:false},{},{style:"dotted"}];
+  const result=validatePreferences({studies:[{...c,lineStyles}]});
+  expect(result.studies[0]).toEqual({...c,lineStyles});
+  expect(result.studies[0]!.lineStyles).not.toBe(lineStyles);
+  expect(result.studies[0]!.lineStyles![0]).not.toBe(lineStyles[0]);
+  expect(validatePreferences(JSON.parse(JSON.stringify(result)))).toEqual(result);
+  expect(validatePreferences({studies:[{...c,lineStyles:[{foreign:true}]}]}).studies[0]!.lineStyles).toEqual([{}]);
+  for(const lineStyles of [undefined,null,[]])expect(validatePreferences({studies:[{...c,lineStyles}]}).studies).toEqual([c]);
+ });
+ it.each([{},'red',[null],[[]],Array(1),[{width:0}],[{width:4}],[{width:'2'}],[{visible:'false'}],[{color:'red'}],[{style:'dash'}],[{},{},{},{}]])("rejects malformed line styles %#",lineStyles=>{
+  expect(validatePreferences({studies:[{...c,lineStyles}]}).studies).toEqual([]);
+ });
+ it("keeps MACD histogram sign colors and permits visibility only",()=>{
+  const macd={kind:"macd",period:12,slow:26,signal:9,color:"#ffffff"};
+  expect(validatePreferences({studies:[{...macd,lineStyles:[{},{},{visible:false}]}]}).studies).toHaveLength(1);
+  for(const override of [{color:'#ffffff'},{width:2},{style:'solid'}])expect(validatePreferences({studies:[{...macd,lineStyles:[{},{},override]}]}).studies).toEqual([]);
+ });
+});

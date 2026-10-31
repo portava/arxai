@@ -22,9 +22,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); client.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-it("warms the selected chart once at idle without starting a refresh loop", async () => {
+it("starts the selected candle read immediately but defers route code without a refresh loop", async () => {
   renderHook(() => useScannerNavigationWarmup(true), { wrapper });
   expect(preloadMarketScannerPage).not.toHaveBeenCalled();
+  expect(fetchChartCandles).toHaveBeenCalledOnce();
   await act(async () => vi.advanceTimersByTime(1500));
   expect(preloadMarketScannerPage).toHaveBeenCalledOnce();
   expect(fetchChartCandles).toHaveBeenCalledOnce();
@@ -61,13 +62,20 @@ it("respects the five-second cache budget; warming never resets evidence or its 
   expect(fetchChartCandles).toHaveBeenCalledTimes(2);
 });
 
-it("does nothing for denied roles or other destinations and cancels idle work on loss of access", async () => {
-  const h = renderHook(({ allowed }) => useScannerNavigationWarmup(allowed), { wrapper, initialProps: { allowed: true } });
-  act(() => h.result.current("/settings"));
-  h.rerender({ allowed: false });
-  await act(async () => { h.result.current("/market-scanner"); vi.advanceTimersByTime(5000); });
-  expect(preloadMarketScannerPage).not.toHaveBeenCalled();
+it("does nothing for denied roles or other destinations", async () => {
+  const denied = renderHook(() => useScannerNavigationWarmup(false), {wrapper});
+  await act(async()=>{denied.result.current("/market-scanner");vi.advanceTimersByTime(5000);});
+  expect(fetchChartCandles).not.toHaveBeenCalled();expect(preloadMarketScannerPage).not.toHaveBeenCalled();
+  const intentOnly=renderHook(()=>useScannerNavigationWarmup(true,false),{wrapper});
+  await act(async()=>{intentOnly.result.current("/settings");vi.advanceTimersByTime(5000);});
+  expect(fetchChartCandles).not.toHaveBeenCalled();expect(preloadMarketScannerPage).not.toHaveBeenCalled();
+});
+it("starts only after access is granted and cancels queued code warming when access is lost",async()=>{
+  const h=renderHook(({allowed})=>useScannerNavigationWarmup(allowed),{wrapper,initialProps:{allowed:false}});
   expect(fetchChartCandles).not.toHaveBeenCalled();
+  h.rerender({allowed:true});expect(fetchChartCandles).toHaveBeenCalledOnce();
+  h.rerender({allowed:false});await act(async()=>{h.result.current("/market-scanner");vi.advanceTimersByTime(5000);});
+  expect(fetchChartCandles).toHaveBeenCalledOnce();expect(preloadMarketScannerPage).not.toHaveBeenCalled();
 });
 
 it("uses the latest in-memory timeframe even when storage writes are denied", async () => {
@@ -101,6 +109,7 @@ it("does not start idle imports with data saver or a hidden document", async () 
   renderHook(() => useScannerNavigationWarmup(true), { wrapper });
   await act(async () => vi.advanceTimersByTime(2000));
   expect(preloadMarketScannerPage).not.toHaveBeenCalled();
+  expect(fetchChartCandles).not.toHaveBeenCalled();
 });
 
 
@@ -119,16 +128,42 @@ it("rechecks data-saver and visibility when a queued idle callback runs", async 
   renderHook(() => useScannerNavigationWarmup(true), { wrapper });
   Object.defineProperty(navigator, "connection", { configurable: true, value: { saveData: true } });
   act(() => callback?.());
-  expect(fetchChartCandles).not.toHaveBeenCalled();
+  expect(fetchChartCandles).toHaveBeenCalledOnce();
+  expect(preloadMarketScannerPage).not.toHaveBeenCalled();
   Object.defineProperty(navigator, "connection", { configurable: true, value: undefined });
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
   act(() => callback?.());
-  expect(fetchChartCandles).not.toHaveBeenCalled();
+  expect(fetchChartCandles).toHaveBeenCalledOnce();
+  expect(preloadMarketScannerPage).not.toHaveBeenCalled();
 });
 
-it("cancels an old interval's idle task and warms only the current interval", async () => {
+it("cancels old code warming while each selected interval has its own bounded candle read", async () => {
   const h = renderHook(() => ({ warm: useScannerNavigationWarmup(true), tf: useScannerTimeframe() }), { wrapper });
   act(() => h.result.current.tf[1]("M2"));
   await act(async () => vi.advanceTimersByTime(1500));
-  expect(fetchChartCandles).toHaveBeenCalledExactlyOnceWith("EURUSD", "M2", 200, expect.any(AbortSignal));
+  expect(fetchChartCandles).toHaveBeenCalledTimes(2);
+  expect(fetchChartCandles).toHaveBeenNthCalledWith(1,"EURUSD","M15",200,expect.any(AbortSignal));
+  expect(fetchChartCandles).toHaveBeenNthCalledWith(2,"EURUSD","M2",200,expect.any(AbortSignal));
+  expect(preloadMarketScannerPage).toHaveBeenCalledOnce();
+});
+
+
+it("a late idle callback warms code only and does not silently refresh stale candle evidence",async()=>{
+ let idleCallback:(()=>void)|undefined;
+ vi.stubGlobal("requestIdleCallback",(fn:()=>void)=>{idleCallback=fn;return 9;});vi.stubGlobal("cancelIdleCallback",vi.fn());
+ renderHook(()=>useScannerNavigationWarmup(true),{wrapper});await act(async()=>{});
+ const key=chartCandlesQueryKey("EURUSD","M15",200),at=client.getQueryState(key)!.dataUpdatedAt;
+ await act(async()=>{vi.advanceTimersByTime(10000);idleCallback?.();});
+ expect(preloadMarketScannerPage).toHaveBeenCalledOnce();expect(fetchChartCandles).toHaveBeenCalledOnce();
+ expect(client.getQueryState(key)!.dataUpdatedAt).toBe(at);
+});
+it("late old-interval responses cannot overwrite the newly selected interval",async()=>{
+ const resolve=new Map<string,(v:typeof response)=>void>();vi.mocked(fetchChartCandles).mockImplementation((_s,tf)=>new Promise(r=>resolve.set(tf,r)));
+ const h=renderHook(()=>({warm:useScannerNavigationWarmup(true),tf:useScannerTimeframe()}),{wrapper});
+ act(()=>h.result.current.tf[1]("M2"));
+ const newer={...response,originalResponse:{source:"current-M2"}},older={...response,originalResponse:{source:"old-M15"}};
+ await act(async()=>{resolve.get("M2")!(newer);});await act(async()=>{resolve.get("M15")!(older);});
+ expect(client.getQueryData(chartCandlesQueryKey("EURUSD","M2",200))).toBe(newer);
+ expect(client.getQueryData(chartCandlesQueryKey("EURUSD","M15",200))).toBe(older);
+ expect(fetchChartCandles).toHaveBeenCalledTimes(2);
 });

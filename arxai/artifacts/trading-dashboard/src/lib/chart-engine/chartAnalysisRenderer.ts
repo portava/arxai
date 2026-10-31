@@ -1,6 +1,6 @@
 import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "lightweight-charts";
 import type { ChartEngineCandle } from "./types";
-import { StudyCalculator, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
+import { StudyCalculator, studyChannelColor, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
 import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
 import { validateDrawings, validatePreferences, type ChartDrawing } from "./chartWorkspace";
 
@@ -126,12 +126,12 @@ export class ChartAnalysisRenderer {
         const old = reuse[i];
         if (!old) return {calculator:new StudyCalculator(config),lines:this.addStudySeries(config, paneIndex),rendered:[]};
         if (JSON.stringify(old.calculator.config) === JSON.stringify(config)) return old;
-        // Same kind: only colour and title can differ; the rest is per kind.
+        // Same kind: reconcile presentation options before refreshing data.
         old.lines.forEach((line, channel) => {
           const change = changedOptions(studySeriesOptions(old.calculator.config, channel).options, studySeriesOptions(config, channel).options);
           if (change) line.applyOptions(change);
         });
-        return {calculator:new StudyCalculator(config),lines:old.lines,rendered:old.rendered};
+        return {calculator:old.calculator.updatePresentation(config) ? old.calculator : new StudyCalculator(config),lines:old.lines,rendered:old.rendered};
       });
       exact = this.matchRebuildLayout();
     } finally { this.rendering = false; }
@@ -308,7 +308,7 @@ export class ChartAnalysisRenderer {
       }
       return {
         label: studyLabel(calculator.config), color: calculator.config.color,
-        values: studyDefinition(calculator.config.kind).channels.map((name, index) => ({ name, value: values[index] ?? null })),
+        values: studyDefinition(calculator.config.kind).channels.map((name, index) => ({ name: calculator.config.lineStyles?.[index]?.visible === false ? `${name} (hidden)` : name, value: values[index] ?? null })),
       };
     });
   }
@@ -360,11 +360,13 @@ export function studyDisplayWindow(count: number, visible: LogicalRange | null, 
 function studySeriesOptions(config: ChartStudy, channel: number):
   { histogram: true; options: HistogramSeriesPartialOptions } | { histogram: false; options: LineSeriesPartialOptions } {
   const definition = studyDefinition(config.kind);
+  const style = config.lineStyles?.[channel];
+  const visible = style?.visible !== false;
   if (config.kind === "macd" && channel === 2) {
-    return {histogram:true,options:{color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}};
+    return {histogram:true,options:{visible,color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}};
   }
   const title = definition.pane ? `${config.kind.toUpperCase()} ${config.period} ${definition.channels[channel]}` : "";
-  return {histogram:false,options:{color:config.kind === "dmi" ? (channel === 0 ? "#4ade80" : channel === 1 ? "#fb7185" : config.color) : channel === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title,priceFormat:{type:"price",precision:config.kind === "rsi" ? 2 : 5,minMove:config.kind === "rsi" ? .01 : .00001}, ...(definition.range ? {autoscaleInfoProvider:() => ({priceRange:{minValue:definition.range![0],maxValue:definition.range![1]}})} : {})}};
+  return {histogram:false,options:{visible,color:studyChannelColor(config,channel), lineWidth:style?.width ?? 1,lineStyle:style?.style === "dashed" ? LineStyle.Dashed : style?.style === "dotted" ? LineStyle.Dotted : LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title,priceFormat:{type:"price",precision:config.kind === "rsi" ? 2 : 5,minMove:config.kind === "rsi" ? .01 : .00001}, ...(definition.range ? {autoscaleInfoProvider:() => ({priceRange:{minValue:definition.range![0],maxValue:definition.range![1]}})} : {})}};
 }
 /** Options that differ between two same-kind specs. Functions depend on the
  * kind only (autoscale range), so they never differ. */

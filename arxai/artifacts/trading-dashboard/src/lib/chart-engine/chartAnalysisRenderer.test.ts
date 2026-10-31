@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChartAnalysisRenderer, studyDisplayWindow } from "./chartAnalysisRenderer";
-import { HistogramSeries } from "lightweight-charts";
+import { HistogramSeries, LineStyle } from "lightweight-charts";
 import { StudyCalculator, STUDY_DEFAULTS, STUDY_CATALOG, type ChartStudy } from "./chartStudies";
 
 const SCALE_DEFAULTS = { mode: 0, autoScale: true, invertScale: false, alignLabels: true, borderVisible: true, scaleMargins: { top: .2, bottom: .1 } };
@@ -383,21 +383,21 @@ describe("incremental study changes equal a full rebuild", () => {
       // Unchanged bars since that patch: kept studies have nothing to recalculate.
       const rsi9 = { ...OTHER.rsi, period: 9 };
       expect(step([OTHER.sma, rsi9, OTHER.stochastic])).toEqual([{ id: "a", from: COUNT + 1, start: COUNT + 1 }, { id: "b", from: COUNT + 1, start: 0 }, { id: "s", from: COUNT + 1, start: COUNT + 1 }]);
-      // A colour edit recalculates that study but re-renders nothing unchanged.
+      // Appearance edits retain checkpoints and re-render nothing unchanged.
       const rendered = f.handles.map(line => line.setData.mock.calls.length);
       const stochastic = { ...OTHER.stochastic, color: "#343434" };
-      expect(step([OTHER.sma, rsi9, stochastic])).toEqual([{ id: "a", from: COUNT + 1, start: COUNT + 1 }, { id: "b", from: COUNT + 1, start: COUNT + 1 }, { id: "s", from: COUNT + 1, start: 0 }]);
+      expect(step([OTHER.sma, rsi9, stochastic])).toEqual([{ id: "a", from: COUNT + 1, start: COUNT + 1 }, { id: "b", from: COUNT + 1, start: COUNT + 1 }, { id: "s", from: COUNT + 1, start: COUNT + 1 }]);
       expect(f.handles.map(line => line.setData.mock.calls.length)).toEqual(rendered);
       // Bars appended and refreshed from their last index only: the refresh
       // records every bar the calculators consumed.
       f.candles.push(next(102), next(103), next(104));
       f.renderer.refresh(f.candles, f.candles.length - 1, false);
       const length = f.candles.length;
-      expect(step([OTHER.sma, { ...rsi9, color: "#232323" }, stochastic])).toEqual([{ id: "a", from: length, start: length }, { id: "b", from: length, start: 0 }, { id: "s", from: length, start: length }]);
+      expect(step([OTHER.sma, { ...rsi9, color: "#232323" }, stochastic])).toEqual([{ id: "a", from: length, start: length }, { id: "b", from: length, start: length }, { id: "s", from: length, start: length }]);
       // A corrected old bar plus an appended bar, and an rsi edit.
       f.candles[700] = { ...f.candles[700]!, close: 140 };
       f.candles.push(next(105));
-      expect(step([OTHER.sma, rsi9, stochastic])).toEqual([{ id: "a", from: 700, start: 700 }, { id: "b", from: 700, start: 0 }, { id: "s", from: 700, start: 700 }]);
+      expect(step([OTHER.sma, rsi9, stochastic])).toEqual([{ id: "a", from: 700, start: 700 }, { id: "b", from: 700, start: 700 }, { id: "s", from: 700, start: 700 }]);
       // The kept calculator kept its points before the first changed bar.
       expect((f.renderer as any).studies[0].calculator.points).toBe(smaPoints);
       expect(smaPoints[600]).toBe(early);
@@ -779,4 +779,41 @@ it("renders DMI as three distinct lines in one pane and recolors only ADX",()=>{
  f.renderer.setStudies([{...c,color:"#ffffff"}],f.candles);f.frame();
  expect(f.handles).toHaveLength(3);expect(f.handles.map(h=>h.options.color)).toEqual(["#4ade80","#fb7185","#ffffff"]);
  f.renderer.destroy();
+});
+
+
+describe("study channel presentation",()=>{
+ it("changes and resets individual options without replacing values, panes or series",()=>{
+  const f=fixture(500),config:ChartStudy={id:"dmi",kind:"dmi",period:14,signal:14,color:"#38bdf8"};
+  f.renderer.setStudies([config],f.candles);
+  const calculator=(f.renderer as any).studies[0].calculator;
+  const point=calculator.points[100];const data=f.handles.map(h=>h.data);
+  f.renderer.setStudies([{...config,lineStyles:[{visible:false},{color:"#ffffff",width:3,style:"dashed"},{width:2,style:"dotted"}]}],f.candles);
+  expect((f.renderer as any).studies[0].calculator).toBe(calculator);
+  expect(calculator.points[100]).toBe(point);
+  expect(f.handles).toHaveLength(3);expect(f.chart.removeSeries).not.toHaveBeenCalled();
+  expect(f.handles[0].options.visible).toBe(false);
+  expect(f.handles[1].options).toMatchObject({visible:true,color:"#ffffff",lineWidth:3,lineStyle:LineStyle.Dashed});
+  expect(f.handles[2].options).toMatchObject({lineWidth:2,lineStyle:LineStyle.Dotted});
+  expect(f.renderer.inspect(f.candles[100]!.time)[0]!.values[0]).toEqual({name:"+DI (hidden)",value:point.values[0]});
+  f.handles.forEach((h,i)=>{expect(h.data).toBe(data[i]);expect(h.setData).toHaveBeenCalledTimes(1);});
+  f.renderer.setStudies([config],f.candles);
+  expect(f.handles.map(h=>[h.options.visible,h.options.color,h.options.lineWidth,h.options.lineStyle])).toEqual([[true,"#4ade80",1,LineStyle.Solid],[true,"#fb7185",1,LineStyle.Solid],[true,"#38bdf8",1,LineStyle.Solid]]);
+  expect(calculator.points[100]).toBe(point);
+  f.renderer.destroy();
+ });
+ it("hidden channels keep updating, retain histogram signs and can all be restored",()=>{
+  const f=fixture(100),config:ChartStudy={id:"macd",kind:"macd",period:3,slow:7,signal:3,color:"#38bdf8"};
+  f.renderer.setStudies([config],f.candles);
+  const hidden={...config,lineStyles:[{visible:false},{visible:false},{visible:false}]};
+  f.renderer.setStudies([hidden],f.candles);
+  expect(f.handles.every(h=>!h.options.visible)).toBe(true);
+  f.candles[99]={...f.candles[99]!,close:130};f.renderer.refresh(f.candles,99,false);
+  expect(f.renderer.inspect(f.candles[99]!.time)[0]!.values.map(v=>v.value)).toEqual(new StudyCalculator(config).calculate(f.candles)[99]!.values);
+  const histogram=f.handles[2].data.map((d:any)=>({...d}));
+  expect(new Set(histogram.filter((d:any)=>d.value!=null).map((d:any)=>d.color)).size).toBe(2);
+  f.renderer.setStudies([config],f.candles);
+  expect(f.handles[2].data).toEqual(histogram);expect(f.handles.every(h=>h.options.visible)).toBe(true);
+  expect(f.panes).toHaveLength(2);f.renderer.destroy();
+ });
 });
