@@ -60,6 +60,23 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [panOnly,setPanOnly] = useState(false);
   const [toolsOpen,setToolsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const previouslyPopulated = useRef(hasCandles);
+  useLayoutEffect(()=>{
+    const arrived = hasCandles && !previouslyPopulated.current;
+    previouslyPopulated.current = hasCandles;
+    if (!arrived) return;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !rootRef.current?.contains(active)) return;
+    const rect = active.getBoundingClientRect(), viewport = window.visualViewport;
+    const top = viewport?.offsetTop ?? 0, left = viewport?.offsetLeft ?? 0;
+    const bottom = top + (viewport?.height ?? window.innerHeight), right = left + (viewport?.width ?? window.innerWidth);
+    // The loading shell can grow into a full chart above mobile controls. Keep
+    // an actively edited control visible without stealing focus or moving an
+    // already-visible control. Normal navigation performs no geometry read.
+    if (rect.width > 0 && rect.height > 0 && (rect.top < top || rect.bottom > bottom || rect.left < left || rect.right > right)) {
+      active.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});
+    }
+  },[hasCandles]);
   const advancedRef = useRef<HTMLDivElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const panRef = useRef<HTMLButtonElement | null>(null);

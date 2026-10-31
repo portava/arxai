@@ -488,3 +488,28 @@ describe("individual drawing visibility and search",()=>{
   other.unmount();
  });
 });
+
+describe("focused controls during first candle layout",()=>{
+  it.each(["outside","visible","foreign","keyboard"] as const)("scrolls only a focused out-of-view workbench control: %s", scenario=>{
+    const props={adapter,epoch:1,symbol:"EURUSD",timeframe:"M15",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),feedLabel:"Offline"};
+    const view=render(<ChartWorkbenchTools {...props} hasCandles={false}/>);
+    fireEvent.click(screen.getByRole("button",{name:"Studies (0)",exact:true}));
+    const input=screen.getByLabelText("Search studies") as HTMLInputElement;
+    input.focus();
+    const scroll=vi.fn();input.scrollIntoView=scroll;
+    const rectSpy=vi.spyOn(input,"getBoundingClientRect").mockReturnValue({x:10,y:scenario==="outside"?2000:100,left:10,right:210,top:scenario==="outside"?2000:100,bottom:scenario==="outside"?2032:132,width:200,height:32,toJSON:()=>({})});
+    const other=document.createElement("input");
+    if(scenario==="keyboard")vi.stubGlobal("visualViewport",{offsetTop:0,offsetLeft:0,width:window.innerWidth,height:120});
+    const shouldScroll=scenario==="outside"||scenario==="keyboard";
+    if(scenario==="foreign"){document.body.append(other);other.focus();}
+    try{
+      view.rerender(<ChartWorkbenchTools {...props} hasCandles/>);
+      if(shouldScroll)expect(scroll).toHaveBeenCalledExactlyOnceWith({block:"center",inline:"nearest",behavior:"instant"});
+      else expect(scroll).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(scenario==="foreign"?other:input);
+      view.rerender(<ChartWorkbenchTools {...props} hasCandles/>);
+      expect(scroll).toHaveBeenCalledTimes(shouldScroll?1:0);
+      if(scenario==="foreign")expect(rectSpy).not.toHaveBeenCalled();
+    }finally{other.remove();vi.unstubAllGlobals();}
+  });
+});
