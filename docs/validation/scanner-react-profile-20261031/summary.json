@@ -1,0 +1,70 @@
+{
+  "diagnosticOnly": true,
+  "source": {
+    "head": "4bbf6b701890d745de49c16b3c7fedb05884aa57",
+    "status": "",
+    "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "fixture": "88ae9c0ead31deb1",
+  "samples": [
+    {
+      "viewport": {
+        "name": "desktop",
+        "width": 1440,
+        "height": 1100
+      },
+      "renderer": [
+        {
+          "version": "19.1.0",
+          "package": "react-dom"
+        }
+      ],
+      "commits": 35,
+      "dropped": 0,
+      "firstScannerCommitAfterClickMs": 114.80000019073486,
+      "rootRenderMs": 42,
+      "rootEffectsMs": 35.700000286102295,
+      "observerMs": 0.9000000953674316,
+      "firstSubtrees": {
+        "MarketScanner": 31,
+        "PageTabs": 14.300000190734863,
+        "ScannerChartPanel": 13.800000190734863,
+        "ARXNativeChart": 9.800000190734863,
+        "ChartWorkbenchTools": 4.900000095367432
+      }
+    },
+    {
+      "viewport": {
+        "name": "mobile",
+        "width": 390,
+        "height": 844
+      },
+      "renderer": [
+        {
+          "version": "19.1.0",
+          "package": "react-dom"
+        }
+      ],
+      "commits": 33,
+      "dropped": 0,
+      "firstScannerCommitAfterClickMs": 84.5,
+      "rootRenderMs": 39,
+      "rootEffectsMs": 33.09999990463257,
+      "observerMs": 0.6999998092651367,
+      "firstSubtrees": {
+        "MarketScanner": 25.699999809265137,
+        "PageTabs": 11.699999809265137,
+        "ScannerChartPanel": 10.699999809265137,
+        "ARXNativeChart": 8,
+        "ChartWorkbenchTools": 3.4000000953674316
+      }
+    }
+  ],
+  "networkCounts": {
+    "requests": 132,
+    "unknown": 88,
+    "blocked": 8,
+    "consoleErrors": 94,
+    "errors": 0
+  }
+}

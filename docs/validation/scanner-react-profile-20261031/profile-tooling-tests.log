@@ -1,0 +1,250 @@
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-first-navigation.test.mjs (49.943834ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-fixture/navigation-journal.test.mjs (49.091875ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-fixture/reactProfile.test.mjs (48.524625ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-idle-observer.test.mjs (48.413584ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-latency.test.mjs (47.984583ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-notes-acceptance.test.mjs (47.293ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-pages-acceptance.test.mjs (46.203333ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-storage-reload.test.mjs (44.78525ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-templates-acceptance.test.mjs (46.29775ms)
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /Users/areyouok/arx-scanner-react-profile-20261031/
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+    at #resolve (node:internal/modules/esm/loader:673:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+    at node:internal/modules/esm/loader:622:32 {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.16.0
+✖ scripts/scanner-qa/shared-chart-tooling.test.mjs (48.962708ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 0
+ℹ fail 10
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60.244791
+
+✖ failing tests:
+
+test at scripts/scanner-qa/shared-chart-first-navigation.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-first-navigation.test.mjs (49.943834ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-fixture/navigation-journal.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-fixture/navigation-journal.test.mjs (49.091875ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-fixture/reactProfile.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-fixture/reactProfile.test.mjs (48.524625ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-idle-observer.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-idle-observer.test.mjs (48.413584ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-latency.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-latency.test.mjs (47.984583ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-notes-acceptance.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-notes-acceptance.test.mjs (47.293ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-pages-acceptance.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-pages-acceptance.test.mjs (46.203333ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-storage-reload.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-storage-reload.test.mjs (44.78525ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-templates-acceptance.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-templates-acceptance.test.mjs (46.29775ms)
+  'test failed'
+
+test at scripts/scanner-qa/shared-chart-tooling.test.mjs:1:1
+✖ scripts/scanner-qa/shared-chart-tooling.test.mjs (48.962708ms)
+  'test failed'

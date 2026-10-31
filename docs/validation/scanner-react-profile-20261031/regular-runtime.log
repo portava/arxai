@@ -1,0 +1,16 @@
+### Result
+{
+  "observerAbsent": true,
+  "build": "c158d9634a95fd80",
+  "bars": 200
+}
+### Ran Playwright code
+```js
+await page.evaluate('() => (({observerAbsent:window.__arxReactProfile===undefined,build:window.__arxScannerQaBuildId,bars:window.__arxChartQa.snapshot()?.barCount}))');
+```
+### Page
+- Page URL: http://127.0.0.1:4199/market-scanner
+- Page Title: ARX actual Scanner — offline acceptance
+- Console: 36 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-10-31T19-53-29-521Z.log#L25-L36
