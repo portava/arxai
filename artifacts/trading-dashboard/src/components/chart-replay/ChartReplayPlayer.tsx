@@ -52,6 +52,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
     engine.setChartStyle?.(preferences.style);engine.setScaleMode?.(preferences.scale);
     engine.setPriceScaleInverted?.(preferences.inverted===true);engine.setStudies?.(preferences.studies);
   },[preferences.style,preferences.scale,preferences.inverted,preferences.studies,epoch]);
+  useLayoutEffect(()=>{adapter.current?.setPriceOnlyScale?.(preferences.priceOnlyScale===true);},[preferences.priceOnlyScale,epoch]);
   useLayoutEffect(()=>{adapter.current?.setDisplayTimeZone?.(zone);},[zone,epoch]);
   useLayoutEffect(()=>{
     const engine=adapter.current;if(!engine)return;

@@ -13,6 +13,7 @@ interface StudyHandle { calculator: StudyCalculator; lines: ISeriesApi<"Line" | 
 export class ChartAnalysisRenderer {
   private studies: StudyHandle[] = [];
   private studyKey = "";
+  private priceOnlyScale = false;
   private drawings: ChartDrawing[] = [];
   private drawingPrimitive: ChartDrawingPrimitive | null = null;
   private selectedDrawing: string | null = null;
@@ -29,6 +30,16 @@ export class ChartAnalysisRenderer {
   };
   constructor(private chart: IChartApi, private price: PriceSeries) {
     chart.timeScale().subscribeVisibleLogicalRangeChange(this.onViewport);
+  }
+  /** Exclude overlay studies from automatic price fitting, not from rendering.
+   * Oscillators retain their independent scales and fixed ranges. */
+  setPriceOnlyScale(enabled: boolean): boolean {
+    if (this.priceOnlyScale === enabled) return false;
+    this.priceOnlyScale = enabled;
+    for (const study of this.studies) if (!studyDefinition(study.calculator.config.kind).pane) {
+      for (const line of study.lines) line.applyOptions({autoscaleInfoProvider: enabled ? () => null : original => original()});
+    }
+    return true;
   }
   setStudies(configs: ChartStudy[], candles: ChartEngineCandle[]): void {
     const valid = validatePreferences({studies:configs}).studies;
@@ -59,6 +70,7 @@ export class ChartAnalysisRenderer {
     const definition = studyDefinition(config.kind);
     return definition.channels.map((_, i) => {
       const spec = studySeriesOptions(config, i);
+      if (this.priceOnlyScale && paneIndex === 0) spec.options.autoscaleInfoProvider = () => null;
       const line: ISeriesApi<"Line" | "Histogram"> = spec.histogram
         ? this.chart.addSeries(HistogramSeries, spec.options, paneIndex)
         : this.chart.addSeries(LineSeries, spec.options, paneIndex);

@@ -201,6 +201,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <option value="linear">Regular price</option><option value="log">Logarithmic</option><option value="percent">Percentage</option><option value="indexed">Indexed to 100</option>
       </select></label>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.inverted === true} onClick={()=>onPreferences(p=>({...p,inverted:!p.inverted}))}>Invert scale</Button>
+      <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.priceOnlyScale === true} title="Automatically fit the price scale to prices only. Indicator values stay unchanged but may fall outside the visible area. Turning off fits prices and overlay indicators." onClick={()=>onPreferences(p=>({...p,priceOnlyScale:!p.priceOnlyScale}))}>Scale price only</Button>
       <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
         {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
       </select></label>

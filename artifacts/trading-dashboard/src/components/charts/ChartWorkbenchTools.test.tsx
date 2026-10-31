@@ -320,3 +320,13 @@ describe("chart style picker and PNG labels",()=>{
     for(const style of CHART_STYLES.filter(style=>style!=="heikinAshi"))expect(exportLabels({...base,style}).join("\n")).not.toContain("averaged");
   });
 });
+
+
+it("offers a reversible price-only scale control without altering other preferences",()=>{
+ const changed=vi.fn();const initial={...DEFAULT_PREFERENCES,inverted:true};
+ const view=render(<ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={initial} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
+ const button=screen.getByRole("button",{name:"Scale price only",exact:true});expect(button.getAttribute("aria-pressed")).toBe("false");
+ fireEvent.click(button);const enabled=changed.mock.calls[0][0](initial);expect(enabled).toEqual({...initial,priceOnlyScale:true});
+ view.rerender(<ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={enabled} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
+ expect(button.getAttribute("aria-pressed")).toBe("true");fireEvent.click(button);expect(changed.mock.calls[1][0](enabled)).toEqual({...initial,priceOnlyScale:false});
+});

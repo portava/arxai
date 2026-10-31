@@ -70,3 +70,9 @@ describe("bounded chart workspace persistence",()=>{
     expect(readChartStorage("any")).toBeNull();expect(writeChartStorage("any",[])).toBe(false);
   });
 });
+
+
+it("retains only an explicit price-only scale preference",()=>{
+ expect(validatePreferences({priceOnlyScale:true}).priceOnlyScale).toBe(true);
+ for(const value of [false,undefined,null,1,"true",{},[]])expect(validatePreferences({priceOnlyScale:value}).priceOnlyScale).toBeUndefined();
+});

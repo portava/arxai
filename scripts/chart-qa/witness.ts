@@ -59,6 +59,15 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
       };
     },
+    priceGeometry(index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const {adapter} = found, range = adapter.chart.timeScale().getVisibleLogicalRange();
+      if (!range) return null;
+      const visible = adapter.candles.slice(Math.max(0, Math.floor(range.from)), Math.min(adapter.candles.length, Math.ceil(range.to) + 1));
+      if (!visible.length) return null;
+      const low = Math.min(...visible.map((c: any) => c.low)), high = Math.max(...visible.map((c: any) => c.high));
+      return {low,high,lowY:adapter.series.priceToCoordinate(low),highY:adapter.series.priceToCoordinate(high),paneHeight:adapter.chart.panes()[0].getHeight()};
+    },
     configuration(index = 0) {
       const found = adapterFor(index); if (!found) return null;
       const scale = found.adapter.series.priceScale().options();
