@@ -365,3 +365,49 @@ it("places a channel in three steps, cancels partial placement and preserves its
  fireEvent.keyDown(window,{key:"Escape"});expect(saved()).toHaveLength(1);
  view.unmount();mount();expect(drawings.mock.calls.at(-1)![0][0].offset).toEqual({time:100,price:30});
 });
+
+describe("individual drawing visibility and search",()=>{
+ const key=drawingStorageKey("EURUSD","M15");
+ const items=[{id:"level",kind:"horizontal",start:{time:100,price:10},color:"#ffffff",locked:true},
+ {id:"note",kind:"text",start:{time:200,price:20},color:"#ffffff",text:"Wait for a retest"}];
+ const stored=()=>JSON.parse(localStorage.getItem(key)!);
+ const open=()=>fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+ it("hides a locked object reversibly without losing geometry, and restores its visibility after reload",()=>{
+  localStorage.setItem(key,JSON.stringify(items));const view=mount();open();
+  fireEvent.click(screen.getByLabelText("Select drawing 1"));
+  fireEvent.click(screen.getByLabelText("Hide drawing 1"));
+  expect(stored()).toEqual([{...items[0],hidden:true},items[1]]);
+  expect(screen.getByLabelText("Select drawing 1").hasAttribute("disabled")).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));expect(stored()).toEqual(items);
+  fireEvent.click(screen.getByRole("button",{name:"Redo",exact:true}));expect(stored()[0].hidden).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Hide drawings",exact:true}));
+  expect(drawings).toHaveBeenLastCalledWith([]);
+  fireEvent.click(screen.getByRole("button",{name:"Show drawings",exact:true}));
+  expect(drawings).toHaveBeenLastCalledWith([{...items[0],hidden:true},items[1]]);
+  view.unmount();mount();open();
+  expect(screen.getByLabelText("Show drawing 1")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("Show drawing 1"));expect(stored()).toEqual(items);
+ });
+ it("searches type and note text without hiding canvas objects or renumbering actions",()=>{
+  localStorage.setItem(key,JSON.stringify(items));mount();open();const before=drawings.mock.calls.length;
+  fireEvent.change(screen.getByLabelText("Find drawing"),{target:{value:" RETEST "}});
+  expect(screen.queryByLabelText("Select drawing 1")).toBeNull();expect(screen.getByLabelText("Select drawing 2")).toBeTruthy();
+  expect(drawings.mock.calls.length).toBe(before);expect(stored()).toEqual(items);
+  fireEvent.click(screen.getByLabelText("Hide drawing 2"));expect(stored()).toEqual([items[0],{...items[1],hidden:true}]);
+  fireEvent.change(screen.getByLabelText("Find drawing"),{target:{value:"does not match"}});
+  expect(screen.getByText(/No matching drawings/)).toBeTruthy();expect(stored()).toHaveLength(2);
+  fireEvent.change(screen.getByLabelText("Find drawing"),{target:{value:"horizontal"}});
+  expect(screen.getByLabelText("Select drawing 1")).toBeTruthy();expect(screen.queryByLabelText("Select drawing 2")).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"Clear search"}));expect(screen.getAllByTestId("chart-drawing-object")).toHaveLength(2);
+ });
+ it("synchronizes hidden state to another same-context chart and preserves it on a visible-object drag",()=>{
+  localStorage.setItem(key,JSON.stringify(items));
+  const interaction=vi.fn();const engine={...adapter,setDrawingInteraction:interaction} as unknown as ChartEngineAdapter;
+  mount("EURUSD","M15",engine);open();fireEvent.click(screen.getByLabelText("Hide drawing 1"));
+  const otherDrawings=vi.fn();const other=mount("EURUSD","M15",{...adapter,setDrawings:otherDrawings} as unknown as ChartEngineAdapter);
+  const config=interaction.mock.calls.at(-1)![0];
+  act(()=>config.onCommit([{...items[0],hidden:true},{...items[1],start:{time:200,price:25}}]));
+  expect(otherDrawings).toHaveBeenLastCalledWith(stored());expect(stored()[0].hidden).toBe(true);
+  other.unmount();
+ });
+});

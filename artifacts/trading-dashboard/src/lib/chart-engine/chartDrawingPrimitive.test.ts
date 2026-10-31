@@ -151,3 +151,14 @@ it("places a dashed midpoint halfway between projected channel rails including l
  }
  expect(drawingStrokes([d],a=>a.time===150?null:{x:a.time,y:a.price},800,400)).toEqual([]);
 });
+
+it("hides strokes, notes, handles and price labels while retaining exact source objects",()=>{
+ const {primitive,draw,context}=fixture();
+ const objects:ChartDrawing[]=[...drawings,{id:"level",kind:"horizontal",start:{time:100,price:12},color:"#ffffff"},
+ {id:"note",kind:"text",start:{time:100,price:10},color:"#ffffff",text:"Hidden note"}].map(d=>({...d,hidden:true}));
+ const before=JSON.stringify(objects);primitive.setData(objects,candles);primitive.setSelection("fib");draw();
+ expect(context.stroke).not.toHaveBeenCalled();expect(context.fillText).not.toHaveBeenCalled();expect(context.arc).not.toHaveBeenCalled();
+ expect(primitive.priceAxisViews()).toEqual([]);expect(JSON.stringify(objects)).toBe(before);
+ primitive.setData(objects.filter(d=>d.kind!=="text").map(d=>({...d,hidden:false})),candles);draw();
+ expect(context.stroke).toHaveBeenCalled();expect(context.arc).toHaveBeenCalled();expect(primitive.priceAxisViews()).toHaveLength(1);
+});

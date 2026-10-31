@@ -14,7 +14,7 @@ export function drawingNotes(drawings: ChartDrawing[], project: ProjectAnchor, w
   const notes: DrawingNote[] = [];
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height < NOTE_PADDING * 2 + NOTE_LINE_HEIGHT + 8) return notes;
   for (const drawing of drawings) {
-    if (drawing.kind !== "text") continue;
+    if (drawing.hidden || drawing.kind !== "text") continue;
     const point = project(drawing.start);
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
       || point.x < 0 || point.x > width || point.y < 0 || point.y > height) continue;
@@ -39,6 +39,7 @@ export function drawingNotes(drawings: ChartDrawing[], project: ProjectAnchor, w
 export function drawingStrokes(drawings: ChartDrawing[], project: ProjectAnchor, width: number, height = 0): DrawingStroke[] {
   const strokes: DrawingStroke[] = [];
   for (const drawing of drawings) {
+    if (drawing.hidden) continue;
     const style = { id: drawing.id, color: drawing.color, width: drawing.width ?? 1, dashed: drawing.dashed ?? ["horizontal", "fibonacci"].includes(drawing.kind) };
     if (drawing.kind === "horizontal") {
       const start = project(drawing.start, true);
@@ -90,6 +91,7 @@ export function drawingStrokes(drawings: ChartDrawing[], project: ProjectAnchor,
 }
 
 export function drawingHandles(drawing: ChartDrawing, project: ProjectAnchor, width: number, height: number): { part: "start" | "end" | "offset"; point: PixelPoint }[] {
+  if (drawing.hidden) return [];
   const start = project(drawing.start, drawing.kind === "horizontal");
   if (!start) return [];
   if (drawing.kind === "horizontal") return [{ part: "start", point: { x: width / 2, y: start.y } }];
@@ -105,7 +107,7 @@ export function drawingHandles(drawing: ChartDrawing, project: ProjectAnchor, wi
 }
 
 export function hitTestDrawings(drawings: ChartDrawing[], selected: string | null, project: ProjectAnchor, width: number, height: number, point: PixelPoint, tolerance = 8): { id: string; part: "start" | "end" | "offset" | "body" } | null {
-  const active = drawings.find(drawing => drawing.id === selected);
+  const active = drawings.find(drawing => drawing.id === selected && !drawing.hidden);
   if (active && !active.locked) for (const handle of drawingHandles(active, project, width, height)) {
     if (Math.hypot(point.x - handle.point.x, point.y - handle.point.y) <= tolerance + 2) return { id: active.id, part: handle.part };
   }
@@ -187,12 +189,12 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
   priceAxisViews(): readonly ISeriesPrimitiveAxisView[] { return this.labels; }
 
   setData(drawings: ChartDrawing[], candles: ChartEngineCandle[]): void {
-    this.drawings = drawings;
+    this.drawings = drawings.filter(drawing => !drawing.hidden);
     const key = `${candles.length}:${candles[0]?.time}:${candles.at(-1)?.time}`;
     if (this.candleRef !== candles || this.candleKey !== key) {
       this.times = new Set(candles.map(candle => candle.time)); this.candleRef = candles; this.candleKey = key;
     }
-    this.labels = drawings.filter(drawing => drawing.kind === "horizontal").map(drawing => ({
+    this.labels = this.drawings.filter(drawing => drawing.kind === "horizontal").map(drawing => ({
       coordinate: () => this.attachment?.series.priceToCoordinate(drawing.start.price) ?? -1e6,
       text: () => this.attachment?.series.priceFormatter().format(drawing.start.price) ?? String(drawing.start.price),
       textColor: () => "#09090b", backColor: () => drawing.color,

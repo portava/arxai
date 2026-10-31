@@ -49,6 +49,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [channelEnd,setChannelEnd] = useState<ChartAnchor | null>(null);
   const [noteText,setNoteText] = useState("");
   const [hidden,setHidden] = useState(false);
+  const [objectSearch,setObjectSearch] = useState("");
   const [message,setMessage] = useState("");
   const [goToDate,setGoToDate] = useState("");
   const [storageFailed,setStorageFailed] = useState(false);
@@ -106,6 +107,10 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     return ()=>adapter?.setNavigationMode?.("inspect");
   },[adapter,epoch,panOnly]);
   const drawings = history.present;
+  // Filtering changes only the list, never canvas data or stable object indices.
+  const query = objectSearch.trim().toLocaleLowerCase();
+  const listedDrawings = drawings.map((d,index)=>({d,index})).filter(({d,index})=>
+    !query || `${index+1} ${DRAWING_NAMES[d.kind]} ${d.text ?? ""}`.toLocaleLowerCase().includes(query));
   const persist = (next: ChartDrawing[]) => {
     if(ephemeralDrawings)return;
     const saved = writeChartStorage(key,next);
@@ -132,10 +137,10 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   };
   useEffect(()=>{adapter?.setDrawings?.(hidden ? [] : drawings);},[adapter,epoch,hidden,drawings]);
   useEffect(()=>{
-    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId,snap,onSelect:setSelectedId,onCommit:change});
+    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:setSelectedId,onCommit:change});
   });
   useEffect(()=>()=>adapter?.setDrawingInteraction?.(null),[adapter]);
-  useEffect(()=>{if(selectedId && !drawings.some(d=>d.id === selectedId)) setSelectedId(null);},[drawings,selectedId]);
+  useEffect(()=>{if(selectedId && !drawings.some(d=>d.id === selectedId && !d.hidden)) setSelectedId(null);},[drawings,selectedId]);
   useEffect(()=>{
     adapter?.setDrawingHandler?.(tool && hasCandles && (tool !== "text" || normalizeNoteText(noteText) != null) ? point=>{
       if (drawings.length >= MAX_DRAWINGS) {setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first.`);setTool(null);return;}
@@ -145,7 +150,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       const id = crypto.randomUUID();
       change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:channelEnd ?? point} : {}),...(tool === "channel" ? {offset:point} : {}),color:"#fbbf24",...(tool === "text" ? {text:normalizeNoteText(noteText)!} : {})}]);
       if (tool === "text") setPanel("objects");
-      setSelectedId(id);setTool(null);setAnchor(null);setChannelEnd(null);setHidden(false);setMessage(tool === "text" ? "Your note added. Drag its card or anchor to move it; edit the text in Objects. This is your annotation, not an automated reading." : "Drawing added. Drag the line or its handles to edit; Objects has exact values and locking.");
+      setSelectedId(id);setObjectSearch("");setTool(null);setAnchor(null);setChannelEnd(null);setHidden(false);setMessage(tool === "text" ? "Your note added. Drag its card or anchor to move it; edit the text in Objects. This is your annotation, not an automated reading." : "Drawing added. Drag the line or its handles to edit; Objects has exact values and locking.");
     } : null);
     return ()=>adapter?.setDrawingHandler?.(null);
   },[adapter,epoch,tool,anchor,channelEnd,drawings,hasCandles,key,noteText]);
@@ -240,13 +245,21 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     {panel === "objects" && <div className="basis-full mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
       <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Objects outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>setHidden(h=>!h)}>{hidden ? "Show drawings" : "Hide drawings"}</Button></div>
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}
-      {drawings.map((d,index)=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
-        <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}</button>
+      {drawings.length > 0 && <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2">Find drawing<input type="search" aria-label="Find drawing" placeholder="Type or note text" maxLength={160} className={`${field} w-48`} value={objectSearch} onChange={event=>setObjectSearch(event.target.value)}/></label>
+        {objectSearch && <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>setObjectSearch("")}>Clear search</Button>}
+        <span role="status">{listedDrawings.length} of {drawings.length} drawings</span>
+      </div>}
+      {hidden && <p className="text-amber-300">All drawings are temporarily hidden. Show drawings restores each object's own visibility.</p>}
+      {drawings.length > 0 && listedDrawings.length === 0 && <p>No matching drawings. Search does not hide objects on the chart.</p>}
+      {listedDrawings.map(({d,index})=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
+        <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} disabled={hidden || d.hidden} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}{d.hidden ? " · Hidden" : ""}</button>
         {(["start","end","offset"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{formatChartTime(d[name]!.time,zone)}</span></label>)}
         <input type="color" aria-label={`Drawing ${index+1} color`} className="h-7 w-8 bg-transparent" value={d.color} onChange={e=>change(drawings.map(item=>item.id===d.id ? {...item,color:e.target.value} : item))}/>
         {d.kind !== "text" && <><select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>
         <select className={field} aria-label={`Drawing ${index+1} line style`} value={(d.dashed ?? ["horizontal","fibonacci"].includes(d.kind)) ? "dashed" : "solid"} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,dashed:event.target.value==="dashed"} : item))}><option value="solid">Solid</option><option value="dashed">Dashed</option></select></>}
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.locked ? "Unlock" : "Lock"} drawing ${index+1}`} aria-pressed={!!d.locked} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,locked:!item.locked} : item))}>{d.locked ? "Unlock" : "Lock"}</Button>
+        <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.hidden ? "Show" : "Hide"} drawing ${index+1}`} aria-pressed={!d.hidden} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,hidden:!item.hidden} : item))}>{d.hidden ? "Show" : "Hide"}</Button>
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>change(drawings.filter(item=>item.id!==d.id))}>Delete</Button>
         {d.kind === "text" && <NoteTextEditor label={`Drawing ${index+1} note text`} value={d.text!} locked={d.locked === true} onSave={text=>change(drawings.map(item=>item.id===d.id ? {...item,text} : item))} />}
         {d.kind === "channel" && <div className="flex basis-full flex-wrap gap-x-4 gap-y-2">
