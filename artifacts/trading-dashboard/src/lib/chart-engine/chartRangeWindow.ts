@@ -1,3 +1,14 @@
+import type { ChartEngineCandle } from "./types";
+
+/** Keep the small revision loop independent of the full study state machine. */
+export function scanChartRange(bars: ChartEngineCandle[], from: number, to: number): [number, number] {
+  let high = -Infinity, low = Infinity;
+  for (let i = from; i <= to; i++) {
+    high = Math.max(high, bars[i]!.high); low = Math.min(low, bars[i]!.low);
+  }
+  return [high, low];
+}
+
 /** Bounded monotone queue for an inclusive high/low lookback. Rebuilt from the
  * unchanged prefix for each calculation, so revised bars and replay rollback
  * cannot leave stale extrema behind. Each observation enters/leaves once. */

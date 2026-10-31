@@ -1,5 +1,5 @@
 import type { ChartEngineCandle } from "./types";
-import { ChartRangeWindow } from "./chartRangeWindow";
+import { ChartRangeWindow, scanChartRange } from "./chartRangeWindow";
 
 export type StudyKind =
   | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
@@ -214,9 +214,7 @@ export class StudyCalculator {
         case "stochastic": case "williams": case "donchian": {
           let high = -Infinity, low = Infinity;
           if (highs && lows) { high = highs.push(bar.high, i); low = lows.push(bar.low, i); }
-          else if (i >= p - 1) for (let j = i - p + 1; j <= i; j++) {
-            high = Math.max(high, bars[j]!.high); low = Math.min(low, bars[j]!.low);
-          }
+          else if (i >= p - 1) [high, low] = scanChartRange(bars, i - p + 1, i);
           if (c.kind === "donchian") {
             values = i < p - 1 ? [null, null, null] : [high / 2 + low / 2, high, low];
             break;
