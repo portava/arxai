@@ -1,0 +1,9 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-parallel-channel-20261031/artifacts/trading-dashboard
+
+
+ Test Files  4 passed (4)
+      Tests  54 passed (54)
+   Start at  15:13:50
+   Duration  1.48s (transform 281ms, setup 0ms, import 470ms, tests 723ms, environment 1.96s)
+

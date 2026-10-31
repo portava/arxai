@@ -219,3 +219,8 @@ Required library credit is plain text. The bounded timing source remains `cc7ad0
 ## 31 October follow-up: price-only automatic fitting
 
 Source6f170f84 adds the previously missing choice to exclude overlay indicators from automatic main-price fitting, with oscillator data/scales unchanged and persistence/private-replay wiring. Actual Scanner synthetic200-bar wide-band fixture passes40measured toggles:normal/4xCPU p95=49.0/48.1ms, with a source-identical visible price span expanding10.3→308.1pixels. This is a scoped ARX-only offline result; MT5 fixed/one-to-one scale features, mobile acceptance and matched competitor performance remain open. See [source, tests, all samples and limits](SMART_CHART_PRICE_ONLY_SCALE_2026_10_31.md). Older measurements above are retained for their original sources; they are not replaced by this different interaction.
+
+
+## 31 October follow-up: parallel channels
+
+Sourceb107f1db adds manual three-anchor parallel channels with width/whole-object edits, locking and local undo/persistence. Final264e53d1 actual Scanner fixture passes20mouse/emulated-touch placements, logarithmic rendering and source-correct reload; maximum third-press completion84.7ms in this small offline workload. Extensions,fills,extra channel levels,physical touch and matched competitor performance remain open. See [full channel evidence and limitations](SMART_CHART_PARALLEL_CHANNEL_2026_10_31.md). Replit navigation still fails its own acceptance independently of these channel results.

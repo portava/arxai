@@ -1,0 +1,14 @@
+
+> @workspace/trading-dashboard@0.0.0 test /Users/areyouok/arx-chart-parallel-channel-20261031/artifacts/trading-dashboard
+> vitest run
+
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-parallel-channel-20261031/artifacts/trading-dashboard
+
+Not implemented: navigation to another Document
+
+ Test Files  174 passed | 1 skipped (175)
+      Tests  2555 passed | 11 skipped (2566)
+   Start at  15:16:16
+   Duration  16.97s (transform 16.20s, setup 0ms, import 56.30s, tests 39.21s, environment 98.26s)
+
