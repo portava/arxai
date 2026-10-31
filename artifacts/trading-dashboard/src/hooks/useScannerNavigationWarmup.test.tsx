@@ -22,12 +22,17 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); client.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-it("warms code at idle without fetching any market data", async () => {
+it("warms the selected chart once at idle without starting a refresh loop", async () => {
   renderHook(() => useScannerNavigationWarmup(true), { wrapper });
   expect(preloadMarketScannerPage).not.toHaveBeenCalled();
   await act(async () => vi.advanceTimersByTime(1500));
   expect(preloadMarketScannerPage).toHaveBeenCalledOnce();
-  expect(fetchChartCandles).not.toHaveBeenCalled();
+  expect(fetchChartCandles).toHaveBeenCalledOnce();
+  expect(fetchChartCandles).toHaveBeenCalledWith("EURUSD", "M15", 200, expect.any(AbortSignal));
+  const timestamp = client.getQueryState(chartCandlesQueryKey("EURUSD", "M15", 200))!.dataUpdatedAt;
+  await act(async () => vi.advanceTimersByTime(60_000));
+  expect(fetchChartCandles).toHaveBeenCalledOnce();
+  expect(client.getQueryState(chartCandlesQueryKey("EURUSD", "M15", 200))!.dataUpdatedAt).toBe(timestamp);
 });
 
 it("starts candles before the page import resolves and deduplicates focus, pointer and mount", async () => {
@@ -96,4 +101,34 @@ it("does not start idle imports with data saver or a hidden document", async () 
   renderHook(() => useScannerNavigationWarmup(true), { wrapper });
   await act(async () => vi.advanceTimersByTime(2000));
   expect(preloadMarketScannerPage).not.toHaveBeenCalled();
+});
+
+
+it("deduplicates desktop and mobile idle requests and subsequent navigation", async () => {
+  const h = renderHook(() => ({ desktop: useScannerNavigationWarmup(true), mobile: useScannerNavigationWarmup(true) }), { wrapper });
+  await act(async () => vi.advanceTimersByTime(1500));
+  expect(fetchChartCandles).toHaveBeenCalledOnce();
+  await act(async () => { h.result.current.desktop("/market-scanner"); h.result.current.mobile("/market-scanner"); });
+  expect(fetchChartCandles).toHaveBeenCalledOnce();
+});
+
+it("rechecks data-saver and visibility when a queued idle callback runs", async () => {
+  let callback: (() => void) | undefined;
+  vi.stubGlobal("requestIdleCallback", (fn: () => void) => { callback = fn; return 7; });
+  vi.stubGlobal("cancelIdleCallback", vi.fn());
+  renderHook(() => useScannerNavigationWarmup(true), { wrapper });
+  Object.defineProperty(navigator, "connection", { configurable: true, value: { saveData: true } });
+  act(() => callback?.());
+  expect(fetchChartCandles).not.toHaveBeenCalled();
+  Object.defineProperty(navigator, "connection", { configurable: true, value: undefined });
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  act(() => callback?.());
+  expect(fetchChartCandles).not.toHaveBeenCalled();
+});
+
+it("cancels an old interval's idle task and warms only the current interval", async () => {
+  const h = renderHook(() => ({ warm: useScannerNavigationWarmup(true), tf: useScannerTimeframe() }), { wrapper });
+  act(() => h.result.current.tf[1]("M2"));
+  await act(async () => vi.advanceTimersByTime(1500));
+  expect(fetchChartCandles).toHaveBeenCalledExactlyOnceWith("EURUSD", "M2", 200, expect.any(AbortSignal));
 });

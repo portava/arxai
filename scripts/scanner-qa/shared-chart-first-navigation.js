@@ -4,11 +4,15 @@ async page => {
   const origin='http://127.0.0.1:4199';
   if(new URL(page.url()).origin!==origin)throw Error('Offline loopback fixture required');
   const expectedHead=typeof SCANNER_QA_EXPECTED_COMMIT==='string'?SCANNER_QA_EXPECTED_COMMIT:null;
-  const budget={clickAfterReadyMs:150,completionMs:100,timeoutMs:8000};
+  function navigationBudget(idleBeforeClickMs) {
+    if(!Number.isSafeInteger(idleBeforeClickMs)||idleBeforeClickMs<0||idleBeforeClickMs>2000)throw Error('Idle-before-click must be an explicit 0..2000ms integer');
+    return {idleBeforeClickMs,clickAfterReadyMs:150+idleBeforeClickMs,completionMs:100,timeoutMs:8000};
+  }
+  const budget=navigationBudget(typeof SCANNER_QA_IDLE_BEFORE_CLICK_MS==='undefined'?0:SCANNER_QA_IDLE_BEFORE_CLICK_MS);
   const report={schemaVersion:2,passed:false,build:null,samples:[],failure:null,budget,
-    method:{start:'Trusted click event.timeStamp. First actionable navigation link is observed in-page from document initialization.',
+    method:{scenario:budget.idleBeforeClickMs===0?'immediate first actionable click':`first click after explicit ${budget.idleBeforeClickMs}ms idle dwell; NOT immediate-click acceptance`,start:'Trusted click event.timeStamp. First actionable navigation link is observed in-page from document initialization.',
       completion:'Exact canonical AND displayed OHLC, source, symbol, interval and real series identity match on two consecutive rendering frames. Visible completion additionally requires 100x100 viewport intersection and five unobscured plot hit-test points.',
-      click:'After document commit, immediately issue the visible Scanner-link click. No metadata fetch, screenshot, readback or intentional hover dwell precedes it.',
+      click:budget.idleBeforeClickMs===0?'After document commit, immediately issue the visible Scanner-link click. No metadata fetch, screenshot, readback or intentional hover dwell precedes it.':`After navigation becomes visible, wait ${budget.idleBeforeClickMs}ms without hovering, then click. This distinct idle-warmed scenario must not be mixed with immediate clicks.`,
       cache:'Full-document route reloads with intercepted requests (HTTP cache disabled by Playwright routing). Initial fixture preparation primes browser resources; this is not cold browser-process startup.',
       failures:'Every planned attempt remains. A blocked or late click, missing response, incorrect series or offscreen chart cannot pass. Successful timing distributions are labelled separately.'},
     limitations:['Offline historical synthetic bars and fixed 80ms candle response delay; no provider, published app or broker measurement.',
@@ -42,7 +46,7 @@ async page => {
     const errors=[];
     if(sample.failure)errors.push(sample.failure);
     if(sample.trusted!==true||!Number.isFinite(sample.click)||sample.click<0)errors.push('No trusted valid-clock Scanner click');
-    if(!Number.isFinite(sample.readyAt)||!Number.isFinite(sample.readyToClickMs)||sample.readyToClickMs<0||sample.readyToClickMs>budget.clickAfterReadyMs)errors.push('Not an immediate first actionable click');
+    if(!Number.isFinite(sample.readyAt)||!Number.isFinite(sample.readyToClickMs)||sample.readyToClickMs<(budget.idleBeforeClickMs??0)||sample.readyToClickMs>budget.clickAfterReadyMs)errors.push('Click outside declared readiness/dwell window');
     if(!Number.isFinite(sample.sourceCompleteMs)||!Number.isFinite(sample.visibleCompleteMs)||sample.sourceCompleteMs<0||sample.visibleCompleteMs<sample.sourceCompleteMs)errors.push('Source-correct visible completion not proven');
     if(!sample.responseMatches||!sample.buildMatches)errors.push('Response or executing build not verified');
     return {valid:errors.length===0,meetsTarget:errors.length===0&&sample.visibleCompleteMs<=budget.completionMs,errors};
@@ -110,6 +114,7 @@ async page => {
         try {
           await page.goto(origin+'/',{waitUntil:'commit',timeout:15000});
           const navigationSelector=viewport.name==='mobile'?'[data-testid="bottomnav--market-scanner"]':'aside a[href="/market-scanner"]';
+          if(budget.idleBeforeClickMs>0){await page.locator(navigationSelector).waitFor({state:'visible'});await page.waitForTimeout(budget.idleBeforeClickMs);}
           await page.locator(navigationSelector).click({timeout:budget.timeoutMs});
           await page.waitForFunction(()=>window.__arxFirstNavigation?.done,null,{timeout:budget.timeoutMs+1000});
         } catch(error){sample.failure=String(error?.message??error);}
