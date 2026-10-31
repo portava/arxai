@@ -1,9 +1,10 @@
 import type { ChartEngineCandle } from "./types";
+import { ChartRangeWindow } from "./chartRangeWindow";
 
 export type StudyKind =
   | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
   | "rsi" | "macd" | "atr" | "cci" | "stochastic" | "williams"
-  | "stddev" | "envelopes" | "momentum" | "roc";
+  | "stddev" | "envelopes" | "momentum" | "roc" | "donchian";
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
 export type AverageMethod = "sma" | "ema" | "smma" | "wma";
 export interface ChartStudy {
@@ -34,6 +35,7 @@ export interface StudyDefinition {
 }
 
 export const STUDY_CATALOG: StudyDefinition[] = [
+  { name: "Donchian Channels", group: "Volatility", description: "Highest high, lowest low and their midpoint over the selected bars, including the forming bar. Requires a full window; channel contact alone is not a breakout signal.", defaults: { kind: "donchian", period: 20, color: "#38bdf8" }, channels: ["Midpoint", "Upper", "Lower"], pane: false, appliedPrice: false },
   { name: "Simple moving average", group: "Trend", description: "Equal weight over the selected period.", defaults: { kind: "sma", period: 20, color: "#fbbf24" }, channels: ["SMA"], pane: false, appliedPrice: true },
   { name: "Exponential moving average", group: "Trend", description: "Recent prices carry more weight; seeded with an SMA.", defaults: { kind: "ema", period: 50, color: "#38bdf8" }, channels: ["EMA"], pane: false, appliedPrice: true },
   { name: "Bollinger Bands", group: "Volatility", description: "SMA basis with population standard deviation bands.", defaults: { kind: "bollinger", period: 20, multiplier: 2, color: "#a78bfa" }, channels: ["Basis", "Upper", "Lower"], pane: false, appliedPrice: true },
@@ -112,6 +114,16 @@ export class StudyCalculator {
     }
     const prices = this.prices;
     const changed: StudyPoint[] = [];
+    const usesRange = c.kind === "stochastic" || c.kind === "williams" || c.kind === "donchian";
+    const highs = usesRange ? new ChartRangeWindow(p, true) : null;
+    const lows = usesRange ? new ChartRangeWindow(p, false) : null;
+    // Only preceding observations enter the rebuilt window. Never inspect a
+    // future bar when revising a tip or appending a replay prefix.
+    if (highs && lows && from < bars.length) {
+      for (let j = Math.max(0, from - p + 1); j < from; j++) {
+        highs.push(bars[j]!.high, j); lows.push(bars[j]!.low, j);
+      }
+    }
     let i = from;
     let state: State;
     let previous: State | undefined;
@@ -195,9 +207,12 @@ export class StudyCalculator {
           values = [average("range", range, p, c.method ?? "smma")];
           break;
         }
-        case "stochastic": case "williams": {
-          let high = -Infinity, low = Infinity;
-          if (i >= p - 1) for (let j = i - p + 1; j <= i; j++) { high = Math.max(high, bars[j]!.high); low = Math.min(low, bars[j]!.low); }
+        case "stochastic": case "williams": case "donchian": {
+          const high = highs!.push(bar.high, i), low = lows!.push(bar.low, i);
+          if (c.kind === "donchian") {
+            values = i < p - 1 ? [null, null, null] : [high / 2 + low / 2, high, low];
+            break;
+          }
           // A zero price range has no position; keep the oscillator blank.
           const raw = i < p - 1 || high === low ? null : 100 * (bar.close - low) / (high - low);
           if (c.kind === "williams") values = [raw == null ? null : raw - 100];

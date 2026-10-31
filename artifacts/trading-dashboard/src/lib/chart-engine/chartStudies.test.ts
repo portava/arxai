@@ -233,6 +233,14 @@ class ReferenceStudyCalculator {
           values = [average("range", range, p, c.method ?? "smma")];
           break;
         }
+        // Independent, deliberately simple Donchian oracle; no rolling queue.
+        case "donchian": {
+          const window = bars.slice(i - p + 1, i + 1);
+          const high = Math.max(...window.map(b => b.high));
+          const low = Math.min(...window.map(b => b.low));
+          values = i < p - 1 ? [null, null, null] : [high / 2 + low / 2, high, low];
+          break;
+        }
         case "stochastic": case "williams": {
           let high = -Infinity, low = Infinity;
           if (i >= p - 1) for (let j = i - p + 1; j <= i; j++) { high = Math.max(high, bars[j]!.high); low = Math.min(low, bars[j]!.low); }
