@@ -3,6 +3,7 @@
 // substituted. Network isolation is installed by the browser setup beforehand.
 import { LightweightChartsAdapter } from "../../../artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter";
 import { installChartQaWitnesses } from "../../chart-qa/witness";
+import { installCandleTimeline } from "./candleTimeline";
 import { installReactProfile } from "./reactProfile";
 
 declare const __ARX_SCANNER_QA_BUILD_ID__: string;
@@ -13,6 +14,6 @@ Object.defineProperty(window, "__arxScannerQaBuildId", {
   value: __ARX_SCANNER_QA_BUILD_ID__, writable: false, configurable: false,
 });
 installChartQaWitnesses(LightweightChartsAdapter);
-if(__ARX_SCANNER_QA_REACT_PROFILE__)installReactProfile();
+if(__ARX_SCANNER_QA_REACT_PROFILE__) { installReactProfile(); installCandleTimeline(LightweightChartsAdapter); }
 // Dynamic import guarantees the observer exists before the real app mounts.
 void import("../../../artifacts/trading-dashboard/src/main");

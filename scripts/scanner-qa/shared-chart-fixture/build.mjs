@@ -11,6 +11,7 @@ import http from 'node:http';
 import path from 'node:path';
 import {dashboardStyleSourcePlugin,assertDashboardUtilityCss} from './stylesheet.mjs';
 import {isOfflineChartPagePath} from './routes.mjs';
+import {candleTimelinePlugin} from './candleTimelinePlugin.mjs';
 import {createNavigationJournal} from './navigation-journal.mjs';
 
 process.env.NODE_ENV = 'production';
@@ -46,7 +47,7 @@ if (!serve) {
   const {build} = await import(require.resolve('vite'));
   const {default:react} = await import(require.resolve('@vitejs/plugin-react'));
   const {default:tailwind} = await import(require.resolve('@tailwindcss/vite'));
-  await build({root,configFile:false,base:'/',define:{__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_SCANNER_QA_REACT_PROFILE__:JSON.stringify(profile)},esbuild:{keepNames:profile},plugins:[dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
+  await build({root,configFile:false,base:'/',define:{__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_SCANNER_QA_REACT_PROFILE__:JSON.stringify(profile)},esbuild:{keepNames:profile},plugins:[...(profile?[candleTimelinePlugin(repo)]:[]),dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
     ...(profile?[{find:'react-dom/client',replacement:require.resolve('react-dom/profiling')}]:[]),
     {find:'react',replacement:path.dirname(require.resolve('react/package.json'))},
     {find:'react-dom',replacement:path.dirname(require.resolve('react-dom/package.json'))},
@@ -61,7 +62,7 @@ if (!serve) {
   const dev = ['react-stack-bottom-frame','data must be asc ordered by time','series item data value must be'];
   if (dev.some(marker=>sources.some(s=>s.includes(marker)))) throw Error('Development runtime found');
   if (!['Minified React error #','tv-lightweight-charts'].every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
-  const metadata = {schemaVersion:1,buildId:id,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:!profile,diagnosticOnly:profile,reactProfiling:profile,
+  const metadata = {schemaVersion:1,buildId:id,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:!profile,diagnosticOnly:profile,reactProfiling:profile,candleTimeline:profile,
     entry:'Actual dashboard src/main.tsx; observer installed before mount',fixtureOnlyObserver:'scripts/chart-qa/witness.ts',dashboardUtilityCss,hashes,
     limitations:['Isolated Vite configuration; this is not the deployable dashboard bundle.','Offline synthetic data and unavailable reader truth; no production or broker validation.','No hardware paint or competitor performance measurement.']};
   await writeFile(path.join(out,metadataFile),JSON.stringify(metadata,null,2)+'\n');
