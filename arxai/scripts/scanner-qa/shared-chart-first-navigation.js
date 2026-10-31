@@ -9,7 +9,7 @@ async page => {
     return {idleBeforeClickMs,clickAfterReadyMs:150+idleBeforeClickMs,completionMs:100,timeoutMs:8000};
   }
   const budget=navigationBudget(typeof SCANNER_QA_IDLE_BEFORE_CLICK_MS==='undefined'?0:SCANNER_QA_IDLE_BEFORE_CLICK_MS);
-  const report={schemaVersion:2,passed:false,build:null,samples:[],failure:null,budget,
+  const report={schemaVersion:3,passed:false,build:null,samples:[],failure:null,budget,
     method:{scenario:budget.idleBeforeClickMs===0?'immediate first actionable click':`first click after explicit ${budget.idleBeforeClickMs}ms idle dwell; NOT immediate-click acceptance`,start:'Trusted click event.timeStamp. First actionable navigation link is observed in-page from document initialization.',
       completion:'Exact canonical AND displayed OHLC, source, symbol, interval and real series identity match on two consecutive rendering frames. Visible completion additionally requires 100x100 viewport intersection and five unobscured plot hit-test points.',
       click:budget.idleBeforeClickMs===0?'After document commit, immediately issue the visible Scanner-link click. No metadata fetch, screenshot, readback or intentional hover dwell precedes it.':`After navigation becomes visible, wait ${budget.idleBeforeClickMs}ms without hovering, then click. This distinct idle-warmed scenario must not be mixed with immediate clicks.`,
@@ -18,7 +18,9 @@ async page => {
     limitations:['Offline historical synthetic bars and fixed 80ms candle response delay; no provider, published app or broker measurement.',
       'Two rendering opportunities are not hardware paint. Full OHLC witness cost is included, never subtracted.',
       'Desktop/mobile viewports are browser emulation, not physical devices. Active AI analysis remains unavailable.',
-      'Navigation controls are already exposed on both sizes; no drawer opening or forced DOM click is substituted.']};
+      'Navigation controls are already exposed on both sizes; no drawer opening or forced DOM click is substituted.',
+      'Fixture journal flushes occur before navigation and after evidence collection, outside measured clicks. An interrupted pending attempt is retained as incomplete.',
+      'Resource responseEnd is browser network completion, not JSON parsing or React query-cache readiness. Long tasks and frame gaps show overlap, not causation.']};
   function assess(current,authority,viewport,unobscured) {
     const state=current?.state,data=current?.data;
     if(!state||!data||!Array.isArray(data.canonical)||!Array.isArray(data.display))return {source:false,visible:false,reason:'chart observer unavailable'};
@@ -56,6 +58,12 @@ async page => {
     const plotVisible=(0,eval)('('+visibilitySource+')');
     const result=window.__arxFirstNavigation={readyAt:null,click:null,readyToClickMs:null,trusted:false,pointerAt:null,canvasMs:null,sourceCompleteMs:null,visibleCompleteMs:null,witnessCostMs:0,frames:0,failure:null,done:false,dialogObserved:false};
     let previousSource=null,previousVisible=null,frame=0,timer=null;
+    const diagnostic={longTasks:[],frameGaps:[],linkChanges:[],droppedLongTasks:0,droppedFrameGaps:0,droppedLinkChanges:0};
+    let longTaskObserver=null,lastFrame=null,lastLink=null;
+    const bounded=(key,value)=>{if(diagnostic[key].length<200)diagnostic[key].push(value);else diagnostic['dropped'+key[0].toUpperCase()+key.slice(1)]++;};
+    const recordTasks=entries=>entries.forEach(e=>bounded('longTasks',{startTime:e.startTime,duration:e.duration,name:e.name}));
+    try {longTaskObserver=new PerformanceObserver(list=>recordTasks(list.getEntries()));longTaskObserver.observe({type:'longtask',buffered:true});diagnostic.longTaskSupported=true;}
+    catch {diagnostic.longTaskSupported=false;}
     const started=performance.now();
     const navigationSelector=innerWidth<768?'[data-testid="bottomnav--market-scanner"]':'aside a[href="/market-scanner"]';
     const visibleBox=element=>{const r=element.getBoundingClientRect(),s=getComputedStyle(element);return r.width>0&&r.height>0&&s.visibility==='visible'&&Number(s.opacity)>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;};
@@ -66,11 +74,23 @@ async page => {
         const hit=document.elementFromPoint(x,y);return hit===element||element.contains(hit);
       });
     }
-    function finish(failure) { result.failure=failure;result.done=true;cancelAnimationFrame(frame);clearTimeout(timer); }
+    function finish(failure) {
+      if(result.done)return;
+      result.failure=failure;result.done=true;cancelAnimationFrame(frame);clearTimeout(timer);
+      if(longTaskObserver){recordTasks(longTaskObserver.takeRecords());longTaskObserver.disconnect();}
+      const resources=performance.getEntriesByType('resource').filter(e=>{const u=new URL(e.name);return u.origin===location.origin&&(u.pathname==='/api/chart/candles'||/\.(js|css)$/.test(u.pathname));});
+      diagnostic.resources=resources.slice(0,200).map(e=>({url:new URL(e.name).pathname+new URL(e.name).search,initiatorType:e.initiatorType,startTime:e.startTime,responseStart:e.responseStart,responseEnd:e.responseEnd,duration:e.duration,transferSize:e.transferSize}));
+      diagnostic.droppedResources=Math.max(0,resources.length-200);
+      result.diagnostics=diagnostic;
+    }
     function observe() {
       if(result.done)return;
       const now=performance.now();
-      if(result.readyAt===null&&actionableLink())result.readyAt=now;
+      if(lastFrame!==null&&now-lastFrame>25)bounded('frameGaps',{startTime:lastFrame,duration:now-lastFrame});lastFrame=now;
+      const link=actionableLink(),rect=link?.getBoundingClientRect();
+      const linkState=rect?`${rect.x},${rect.y},${rect.width},${rect.height}`:'unavailable';
+      if(linkState!==lastLink){bounded('linkChanges',{at:now,rect:rect?{x:rect.x,y:rect.y,width:rect.width,height:rect.height}:null});lastLink=linkState;}
+      if(result.readyAt===null&&link)result.readyAt=now;
       if(document.querySelector('[role="dialog"][data-state="open"]'))result.dialogObserved=true;
       if(result.click===null){if(now-started>budget.timeoutMs)finish('Navigation not clicked before deadline');else frame=requestAnimationFrame(observe);return;}
       result.frames++;
@@ -106,28 +126,50 @@ async page => {
     const response=preflight.log.candleResponses.filter(r=>r.symbol==='EURUSD'&&r.timeframe==='M15').at(-1);
     if(!response||response.source!=='offline_fixture'||response.canonical.length!==200)throw Error('Expected fixture authority missing');
     const authority={symbol:'EURUSD',intervalSeconds:900,source:response.source,canonical:response.canonical};report.build=metadata;
+    const endpoint=origin+'/__arx-qa/navigation-journal';
+    const journalResponse=await page.request.get(endpoint,{timeout:5000});
+    if(!journalResponse.ok())throw Error('Durable fixture journal unavailable');
+    const journal=await journalResponse.json();
+    if(journal.schemaVersion!==1||journal.buildId!==metadata.buildId||journal.sourceHead!==metadata.source.head)throw Error('Journal source mismatch');
+    const checkpoint=async event=>{
+      const response=await page.request.post(endpoint,{headers:{'x-arx-qa-token':journal.token,'content-type':'application/json'},data:{runId:report.journal?.runId,event},timeout:5000});
+      if(!response.ok())throw Error('Journal write failed: '+await response.text());
+      const receipt=await response.json();report.journal={...receipt,directory:metadata.buildId+'-navigation-receipts'};
+    };
+    report.environment=await page.evaluate(()=>({userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,devicePixelRatio,performanceTimeOrigin:performance.timeOrigin}));
+    report.environment.cpuThrottle='Not set by this harness; outer runner/host settings must be recorded separately';
+    report.environment.browserVersion=await page.context().browser()?.version()??null;
+    await checkpoint({kind:'start',planned:10,budget,method:report.method,environment:report.environment});
     await page.addInitScript(install,{authority,budget,assessSource:assess.toString(),visibilitySource:plotVisible.toString()});
     for(const viewport of [{name:'desktop',width:1440,height:1100},{name:'mobile',width:390,height:844}]) {
       await page.setViewportSize({width:viewport.width,height:viewport.height});
       for(let index=0;index<5;index++) {
         const sample={viewport:viewport.name,index,failure:null};report.samples.push(sample);
+        const ordinal=report.samples.length-1;
+        await checkpoint({kind:'attempt',ordinal,viewport:viewport.name,index});
+        sample.runner={navigationIssuedAt:Date.now()};
         try {
           await page.goto(origin+'/',{waitUntil:'commit',timeout:15000});
+          sample.runner.navigationCommittedAt=Date.now();
           const navigationSelector=viewport.name==='mobile'?'[data-testid="bottomnav--market-scanner"]':'aside a[href="/market-scanner"]';
           if(budget.idleBeforeClickMs>0){await page.waitForFunction(()=>window.__arxFirstNavigation?.readyAt!==null&&window.__arxFirstNavigation?.readyAt!==undefined);await page.waitForTimeout(budget.idleBeforeClickMs);}
+          sample.runner.clickIssuedAt=Date.now();
           await page.locator(navigationSelector).click({timeout:budget.timeoutMs});
+          sample.runner.clickReturnedAt=Date.now();
           await page.waitForFunction(()=>window.__arxFirstNavigation?.done,null,{timeout:budget.timeoutMs+1000});
         } catch(error){sample.failure=String(error?.message??error);}
         const current=await page.evaluate(async()=>({timing:window.__arxFirstNavigation,timeOrigin:performance.timeOrigin,runtime:window.__arxScannerQaBuildId,log:await window.__readFixtureLog()}));
         const failure=sample.failure;Object.assign(sample,current.timing??{});if(failure)sample.failure=failure;
         sample.timeOrigin=current.timeOrigin;sample.buildMatches=current.runtime===metadata.buildId;
         const requests=current.log.requests.filter(r=>r.started>=current.timeOrigin&&r.path==='/api/chart/candles');
-        sample.candleRequests=requests.map(r=>({...r,relativeToClick:sample.click===null?null:r.started-current.timeOrigin-sample.click}));
+        sample.candleRequests=requests.map(r=>({...r,endedMeaning:'Mock response preparation, before route.fulfill; NOT browser receipt',relativeToClick:sample.click===null?null:r.started-current.timeOrigin-sample.click}));
         const received=current.log.candleResponses.filter(r=>r.symbol==='EURUSD'&&r.timeframe==='M15').at(-1);
         sample.responseMatches=requests.length>0&&received?.source===authority.source&&JSON.stringify(received.canonical)===JSON.stringify(authority.canonical);
         const knownWrites=['/api/me/activity-ping','/api/me/chart/ai-alerts/scan','/api/me/scalp/focus'];
         if(current.log.errors.length||current.log.blocked.some(r=>r.kind!=='mutation'||r.method!=='POST'||r.status!==503||!knownWrites.includes(r.path)))sample.failure='Page error, external request or unexpected write';
         sample.acceptance=acceptSample(sample,budget);
+        sample.networkCounts={requests:current.log.requests.length,unknown:current.log.unknown.length,blocked:current.log.blocked.length,pageErrors:current.log.errors.length,consoleErrors:current.log.consoleErrors.length};
+        await checkpoint({kind:'result',ordinal,sample});
       }
     }
     report.network=await page.evaluate(()=>window.__readFixtureLog());
@@ -137,6 +179,7 @@ async page => {
         medianMs:times.length?times[Math.floor(times.length/2)]:null,maxMs:times.at(-1)??null,failedIndices:all.filter(s=>!s.acceptance.valid).map(s=>s.index)};
     });
     report.passed=report.samples.length===10&&report.samples.every(s=>s.acceptance.meetsTarget);
-  } catch(error){report.failure=String(error?.stack??error);}
+    await checkpoint({kind:'complete',passed:report.passed,summary:report.summary});
+  } catch(error){report.passed=false;report.failure=String(error?.stack??error);}
   return report;
 }
