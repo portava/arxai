@@ -1,0 +1,58 @@
+
+ RUN  v4.1.7 /Users/areyouok/arx-scanner-idle-candles-20261031/artifacts/trading-dashboard
+
+ ❯ src/hooks/useScannerNavigationWarmup.test.tsx (10 tests | 3 failed) 22ms
+   × warms the selected chart once at idle without starting a refresh loop 9ms
+   × deduplicates desktop and mobile idle requests and subsequent navigation 1ms
+   × cancels an old interval's idle task and warms only the current interval 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/hooks/useScannerNavigationWarmup.test.tsx > warms the selected chart once at idle without starting a refresh loop
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ src/hooks/useScannerNavigationWarmup.test.tsx:30:29
+     28|   await act(async () => vi.advanceTimersByTime(1500));
+     29|   expect(preloadMarketScannerPage).toHaveBeenCalledOnce();
+     30|   expect(fetchChartCandles).toHaveBeenCalledOnce();
+       |                             ^
+     31|   expect(fetchChartCandles).toHaveBeenCalledWith("EURUSD", "M15", 200,…
+     32|   const timestamp = client.getQueryState(chartCandlesQueryKey("EURUSD"…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/hooks/useScannerNavigationWarmup.test.tsx > deduplicates desktop and mobile idle requests and subsequent navigation
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ src/hooks/useScannerNavigationWarmup.test.tsx:110:29
+    108|   const h = renderHook(() => ({ desktop: useScannerNavigationWarmup(tr…
+    109|   await act(async () => vi.advanceTimersByTime(1500));
+    110|   expect(fetchChartCandles).toHaveBeenCalledOnce();
+       |                             ^
+    111|   await act(async () => { h.result.current.desktop("/market-scanner");…
+    112|   expect(fetchChartCandles).toHaveBeenCalledOnce();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/hooks/useScannerNavigationWarmup.test.tsx > cancels an old interval's idle task and warms only the current interval
+AssertionError: expected "vi.fn()" to be called once with arguments: [ 'EURUSD', 'M2', 200, …(1) ]
+
+Number of calls: 0
+
+ ❯ src/hooks/useScannerNavigationWarmup.test.tsx:133:29
+    131|   act(() => h.result.current.tf[1]("M2"));
+    132|   await act(async () => vi.advanceTimersByTime(1500));
+    133|   expect(fetchChartCandles).toHaveBeenCalledExactlyOnceWith("EURUSD", …
+       |                             ^
+    134| });
+    135|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 7 passed (10)
+   Start at  14:49:56
+   Duration  809ms (transform 203ms, setup 0ms, import 322ms, tests 22ms, environment 391ms)
+
+undefined
+/Users/areyouok/arx-scanner-idle-candles-20261031/artifacts/trading-dashboard:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/hooks/useScannerNavigationWarmup.test.tsx

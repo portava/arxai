@@ -1,0 +1,18 @@
+✔ exact source and actual series must both be correct inside the timed witness (0.496667ms)
+✔ count, final candle and early feedback alone never satisfy completion (0.067416ms)
+✔ wrong context, source, live claim, style or logical range cannot pass (0.114167ms)
+✔ offscreen or covered charts retain source-ready evidence but fail visible completion (0.101958ms)
+✔ late click remains invalid even with a fast correct chart (0.072792ms)
+✔ missing readiness, fake click, incorrect build and response cannot be accepted (0.078208ms)
+✔ outlier stays a valid measurement but fails target; invalid chronology fails validity (0.060334ms)
+✔ a bottom navigation bar cannot conceal a genuine 100px visible plot region (0.074583ms)
+✔ covered, undersized or offscreen plots fail even with valid candles (0.08225ms)
+✔ idle scenario is explicit and cannot pass as an immediate first click (0.180416ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 43.273583

@@ -1,0 +1,4 @@
+
+> @workspace/trading-dashboard@0.0.0 typecheck /Users/areyouok/arx-scanner-idle-candles-20261031/artifacts/trading-dashboard
+> tsc -p tsconfig.json --noEmit
+
