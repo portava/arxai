@@ -77,3 +77,16 @@ This was not a browser timing failure.
 **How to apply:** Use `GIT_OPTIONAL_LOCKS=0` for those read-only child commands.
 Retain interrupted pre-launch reports separately from actual browser samples;
 do not bypass Git protection just to collect status.
+
+Keep optional launch introspection separate from required measurement gates.
+The workspace Chromium can refuse command-line inspection because its
+automation flag is absent, even when launched through Playwright.
+
+**Why:** An optional metadata call stopped a diagnostic before any samples.
+Changing launch flags merely to obtain metadata would change the execution
+conditions being investigated.
+
+**How to apply:** Retain that preparation failure and mark flags unverified;
+do not add automation flags or weaken source/input/visible-completion gates.
+Also preserve a fixed-plan recorder's contract: bounded diagnostic prefixes
+must leave remaining slots incomplete, never emit a false full completion.

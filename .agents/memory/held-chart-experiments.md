@@ -32,3 +32,12 @@ phase/layout, containment and other performance experiments.
 
 **How to apply:** Preserve this accepted isolation without importing held
 ancestry or treating it as evidence that first-navigation latency is fixed.
+
+The chart-resize-dedup branch remains held even when source-binding and
+drawing-object follow-ups are authorized.
+
+**Why:** The owner explicitly excluded resize-dedup during the drawing-navigation
+development update.
+
+**How to apply:** Obtain separate authorization before importing resize-dedup;
+acceptance of other chart work is not permission to include it.
