@@ -38,6 +38,7 @@ export function AssistantDockSlot() {
   useLayoutEffect(() => {
     if (register && assistant.current && quickActions.current && search.current)
       return register({assistant:assistant.current,quickActions:quickActions.current,search:search.current});
+    return undefined;
   }, [register]);
   return register ? <div className="flex h-11 shrink-0 gap-1" role="group" aria-label="Chart help and navigation" data-testid="chart-assistant-dock">
     <div ref={quickActions} className="h-11 w-11" />
