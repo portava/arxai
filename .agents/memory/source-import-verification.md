@@ -42,3 +42,13 @@ Every touched file matched its upstream base, but the new consumer still failed.
 **How to apply:** Check newly introduced imports against actual local exports
 and versions. Bring in only required, reviewed helper changes and their tests;
 do not replace unrelated source or use upstream test counts as local evidence.
+
+A direct development-domain module 404 is not conclusive evidence that the
+preview is serving old or missing code.
+
+**Why:** Direct-domain probes failed while the artifact-resolved shared preview
+router served the expected executable modules successfully.
+
+**How to apply:** Retain the failed probe and check the artifact-resolved preview
+target. Distinguish routing evidence, source integrity and rendered acceptance;
+do not repair application code solely to make an incorrect probe URL succeed.
