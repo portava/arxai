@@ -7,6 +7,7 @@ export type StudyKind =
   | "stddev" | "envelopes" | "momentum" | "roc" | "donchian" | "dmi";
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
 export type AverageMethod = "sma" | "ema" | "smma" | "wma";
+export interface StudyLineStyle { color?: string; width?: 1 | 2 | 3; style?: "solid" | "dashed" | "dotted"; visible?: boolean }
 export interface ChartStudy {
   /** Old workspaces used kind as identity. Explicit IDs allow repeated studies. */
   id?: string;
@@ -20,6 +21,7 @@ export interface ChartStudy {
   signalMethod?: "sma" | "ema";
   method?: AverageMethod;
   smoothing?: number;
+  lineStyles?: StudyLineStyle[];
 }
 export interface StudyPoint { time: number; values: (number | null)[] }
 export interface StudyDefinition {
@@ -60,6 +62,9 @@ export const STUDY_DEFAULTS = (["sma", "ema", "bollinger", "rsi", "macd"] as con
 export const MAX_STUDIES = 12;
 export const studyDefinition = (kind: StudyKind) => STUDY_CATALOG.find(item => item.defaults.kind === kind)!;
 export const studyId = (study: ChartStudy) => study.id ?? study.kind;
+export function studyChannelColor(config: ChartStudy, channel: number): string {
+  return config.lineStyles?.[channel]?.color ?? (config.kind === "dmi" ? (channel === 0 ? "#4ade80" : channel === 1 ? "#fb7185" : config.color) : channel === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color);
+}
 export function studyLabel(study: ChartStudy): string {
   const parameters = [study.period];
   if (study.kind === "macd") parameters.push(study.slow ?? 26, study.signal ?? 9);
@@ -97,7 +102,15 @@ export class StudyCalculator {
    * never read, because the loops only read j < i. */
   private prices = new Float64Array(0);
   readonly points: StudyPoint[] = [];
-  constructor(readonly config: ChartStudy) {}
+  constructor(private currentConfig: ChartStudy) {}
+  get config(): ChartStudy { return this.currentConfig; }
+  /** Preserve checkpoints only when every calculation input is unchanged. */
+  updatePresentation(next: ChartStudy): boolean {
+    const inputs = ({color: _color, id: _id, lineStyles: _styles, ...rest}: ChartStudy) => JSON.stringify(rest);
+    if (inputs(next) !== inputs(this.currentConfig)) return false;
+    this.currentConfig = next;
+    return true;
+  }
 
   /** Rendering reads points directly and can omit the duplicate changed list.
    * Default callers still receive every changed point in its original order. */

@@ -435,3 +435,23 @@ describe("typed price window is bit-identical to the frozen State-object loops",
     expect(Float64Array.prototype.set).toBe(typedArraySet);
   });
 });
+
+
+describe("presentation-only checkpoint reuse",()=>{
+ it.each(STUDY_CATALOG.map(item=>item.defaults))("retains $kind values through style edits and subsequent revisions",config=>{
+  const data=bars(Array.from({length:80},(_,i)=>100+Math.sin(i)*5));
+  const calc=new StudyCalculator(config);calc.calculate(data);const first=calc.points[25];
+  const changed={...config,color:"#123456",lineStyles:[{visible:false,width:3,style:"dashed"}]} as ChartStudy;
+  expect(calc.updatePresentation(changed)).toBe(true);calc.calculate(data,data.length);
+  expect(calc.points[25]).toBe(first);
+  data[79]={...data[79]!,close:104};calc.calculate(data,79);
+  expect(calc.points).toEqual(new StudyCalculator(config).calculate(data));
+  expect(calc.updatePresentation({...changed,period:config.period+1})).toBe(false);
+  expect(calc.config).toBe(changed);
+ });
+ it.each([['kind','sma'],['period',4],['source','open'],['slow',10],['signal',5],['signalMethod','sma'],['method','wma'],['smoothing',4],['multiplier',3]] as const)("refuses to reuse checkpoints for changed %s",(key,value)=>{
+  const config:ChartStudy={kind:"macd",period:2,slow:7,signal:3,color:"#ffffff"};
+  const calc=new StudyCalculator(config);
+  expect(calc.updatePresentation({...config,[key]:value})).toBe(false);expect(calc.config).toBe(config);
+ });
+});

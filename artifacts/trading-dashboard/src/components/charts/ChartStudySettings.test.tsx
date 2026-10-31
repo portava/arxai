@@ -67,3 +67,25 @@ it("configures DMI direction and strength lengths independently with clear seman
  fireEvent.blur(screen.getByLabelText("DMI 2 ADX smoothing"),{target:{value:"3"}});
  expect(settings().studies.map((s:any)=>s.signal)).toEqual([21,3]);
 });
+
+
+it("edits individual DMI lines, duplicates independently, and restores default appearance",()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole("button",{name:"Add Directional movement (DMI / ADX)"}));
+ fireEvent.click(screen.getByLabelText("DMI 1 +DI visible"));
+ fireEvent.change(screen.getByLabelText("DMI 1 −DI color"),{target:{value:"#123456"}});
+ fireEvent.change(screen.getByLabelText("DMI 1 −DI width"),{target:{value:"3"}});
+ fireEvent.change(screen.getByLabelText("DMI 1 −DI style"),{target:{value:"dotted"}});
+ expect(settings().studies[0].lineStyles).toEqual([{visible:false},{color:"#123456",width:3,style:"dotted"},{}]);
+ fireEvent.click(screen.getByRole("button",{name:"Duplicate study 1"}));
+ fireEvent.click(screen.getByLabelText("DMI 2 +DI visible"));
+ expect(settings().studies.map((s:any)=>s.lineStyles[0].visible)).toEqual([false,true]);
+ fireEvent.click(screen.getByRole("button",{name:"Reset study 1 line appearance"}));
+ expect(settings().studies[0].lineStyles).toBeUndefined();expect(settings().studies[1].lineStyles[1].color).toBe("#123456");
+ expect((screen.getByLabelText("DMI 1 +DI color") as HTMLInputElement).value).toBe("#4ade80");
+});
+it("exposes MACD histogram visibility without a misleading single sign-color control",()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole("button",{name:"Add MACD"}));
+ fireEvent.click(screen.getByLabelText("MACD 1 Histogram visible"));
+ expect(settings().studies[0].lineStyles[2]).toEqual({visible:false});
+ expect(screen.queryByLabelText("MACD 1 Histogram color")).toBeNull();
+});

@@ -1,6 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { Button } from "@/components/ui/button";
-import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyId, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
+import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyId, studyChannelColor, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { validatePreferences, type ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
 
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
@@ -49,7 +49,7 @@ export function ChartStudySettings({ preferences, onPreferences }: Props) {
         }} /></label>;
         return <fieldset key={id} className="rounded border border-zinc-800 px-3 pb-3" data-testid="chart-study-instance">
           <legend className="px-1 font-medium" style={{ color: config.color }}>{index + 1}. {studyLabel(config)}</legend>
-          <p className="mb-2 text-[11px] text-zinc-500">{definition.description}{config.kind === "dmi" ? " +DI is green; −DI is rose; Color changes ADX. Each stage waits for its full window. Loading older candles can change seeded values." : ""}</p>
+          <p className="mb-2 text-[11px] text-zinc-500">{definition.description}{config.kind === "dmi" ? " Default colors: +DI green, −DI rose; the main Color changes ADX. Individual overrides are in Line appearance. Each stage waits for its full window. Loading older candles can change seeded values." : ""}</p>
           <div className="flex flex-wrap items-center gap-3">
             {number("period", config.kind === "macd" ? "Fast" : config.kind === "dmi" ? "DI period" : "Period", 1, config.kind === "macd" ? (config.slow ?? 26) - 1 : 1000)}
             {config.kind === "macd" && <>{number("slow", "Slow", config.period + 1)}{number("signal", "Signal")}
@@ -65,6 +65,27 @@ export function ChartStudySettings({ preferences, onPreferences }: Props) {
             <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={full} aria-label={`Duplicate study ${index + 1}`} onClick={() => add(config)}>Duplicate</Button>
             <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Remove study ${index + 1}`} onClick={() => onPreferences(previous => ({ ...previous, studies: previous.studies.filter(study => studyId(study) !== id) }))}>Remove</Button>
           </div>
+          <details className="mt-3">
+            <summary className="cursor-pointer text-zinc-300">Line appearance</summary>
+            <p className="mt-2 text-[11px] text-zinc-400">Hidden lines keep their calculated values in the data window. Appearance does not change the calculation.</p>
+            <div className="mt-2 space-y-2">
+              {definition.channels.map((name,channel)=>{
+                const style=config.lineStyles?.[channel] ?? {};
+                const histogram=config.kind === "macd" && channel === 2;
+                const change=(patch:Partial<NonNullable<ChartStudy["lineStyles"]>[number]>)=>update(id,{lineStyles:Array.from({length:definition.channels.length},(_,i)=>i === channel ? {...(config.lineStyles?.[i] ?? {}),...patch} : {...(config.lineStyles?.[i] ?? {})})});
+                const prefix=`${label} ${name}`;
+                return <div key={name} className="flex flex-wrap items-center gap-3">
+                  <label className="flex min-w-24 items-center gap-2"><input type="checkbox" aria-label={`${prefix} visible`} checked={style.visible !== false} onChange={event=>change({visible:event.target.checked})}/>{name}</label>
+                  {histogram ? <span className="text-[11px] text-zinc-400">Histogram colors keep their positive/negative meaning.</span> : <>
+                    <label className="flex items-center gap-2">Color<input type="color" aria-label={`${prefix} color`} className="h-8 w-9 bg-transparent" value={studyChannelColor(config,channel)} onChange={event=>change({color:event.target.value})}/></label>
+                    <label className="flex items-center gap-2">Width<select className={field} aria-label={`${prefix} width`} value={style.width ?? 1} onChange={event=>change({width:Number(event.target.value) as 1|2|3})}>{[1,2,3].map(width=><option key={width} value={width}>{width}</option>)}</select></label>
+                    <label className="flex items-center gap-2">Style<select className={field} aria-label={`${prefix} style`} value={style.style ?? "solid"} onChange={event=>change({style:event.target.value as "solid"|"dashed"|"dotted"})}><option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select></label>
+                  </>}
+                </div>;
+              })}
+              <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Reset study ${index+1} line appearance`} disabled={!config.lineStyles?.length} onClick={()=>update(id,{lineStyles:undefined})}>Reset line appearance</Button>
+            </div>
+          </details>
         </fieldset>;
       })}
     </div>
