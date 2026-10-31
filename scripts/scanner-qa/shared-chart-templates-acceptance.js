@@ -165,7 +165,7 @@ async page => {
       check(!!reloadResponse,'Reload context has a new exact Scanner response');
       await panel.getByLabel('Chart style',{exact:true}).selectOption('candles');
       await panel.getByLabel('Price scale',{exact:true}).selectOption('indexed');await frames();
-      check((await page.evaluate(()=>window.__arxChartQa.snapshot())).style==='candles'&&(await page.evaluate(()=>window.__arxChartQa.configuration())).priceScale.mode===3,'Current chart differs from saved template before post-reload apply');
+      check((await page.evaluate(()=>window.__arxChartQa.snapshot())).style==='candles'&&(await page.evaluate(()=>window.__arxChartQa.configuration())).scale.mode===3,'Current chart differs from saved template before post-reload apply');
       await open();await select('Trend study');
       check((await saved()).entries[0].id===entry.id,'Reloaded visible template retains its original record ID');
       await button('Apply selected').click();await close();
