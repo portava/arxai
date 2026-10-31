@@ -17,14 +17,14 @@ vi.mock("@/lib/chart-engine/chartDescriptiveAnalysis",async importOriginal=>{
   return {...actual,describeSmartChartWindow:vi.fn(actual.describeSmartChartWindow)};
 });
 const START=Date.parse("2026-10-25T10:00:00Z"),NOW=START+100*300_000;
-function fixture(){
-  const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe:"M5",source:"deriv_public",sourceMode:"live",openTime:new Date(START+i*300_000).toISOString(),closeTime:new Date(START+(i+1)*300_000).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
-  const data={symbol:"V75",timeframe:"M5",source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public"},marketEvidence:{symbol:"V75",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
+function fixture(timeframe="M5",start=START,step=300_000){
+  const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe,source:"deriv_public",sourceMode:"live",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
+  const data={symbol:"V75",timeframe,source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public"},marketEvidence:{symbol:"V75",timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
   let visible:ChartEngineCandle[]=candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}));
   const all=visible;let listener:(()=>void)|undefined;
   const setSmartAnnotation=vi.fn(),unsubscribe=vi.fn(()=>{listener=undefined;});
   const adapter={getVisibleCandles:()=>visible,subscribeViewport:(fn:()=>void)=>{listener=fn;return unsubscribe;},setSmartAnnotation} as unknown as ChartEngineAdapter;
-  const props={adapter,epoch:1,symbol:"V75",timeframe:"M5",data,older:[],historyEvidence:null,liveConfirmed:true,readFailed:false};
+  const props={adapter,epoch:1,symbol:"V75",timeframe,data,older:[],historyEvidence:null,liveConfirmed:true,readFailed:false};
   return {data,props,all,setSmartAnnotation,unsubscribe,show:(bars:ChartEngineCandle[])=>{visible=bars;act(()=>listener?.());}};
 }
 beforeEach(()=>{vi.mocked(describeSmartChartWindow).mockClear();vi.mocked(analyzeSmartChart).mockClear();vi.spyOn(Date,"now").mockReturnValue(NOW);});
@@ -116,11 +116,53 @@ describe("embedded chart reader follows applied candles",()=>{
     const annotation=findingAnnotation(finding)!;
     expect(annotation.level).toBeUndefined();expect(annotation.guide).toMatchObject({from:{time:2,price:100},to:{time:4,price:101}});
   });
+  it("labels reading times in the view's display zone while machine-readable times stay UTC ISO",()=>{
+    const f=fixture();
+    const visible=vi.fn(f.props.adapter.getVisibleCandles!);
+    const props={...f.props,adapter:{...f.props.adapter,getVisibleCandles:visible} as ChartEngineAdapter};
+    const view=render(<SmartChartReader {...props} view={{style:"candles",scale:"linear",timeZone:"Asia/Tokyo"}}/>);
+    expect(screen.getByText("More readings · deriv_public · times in Asia/Tokyo")).toBeTruthy();
+    const dates=within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true}).map(button=>button.querySelector("time")!);
+    expect(dates.length).toBeGreaterThan(1);
+    for(const time of dates){
+      expect(time.dateTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(time.textContent).toMatch(/^As of \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} GMT\+9$/);
+    }
+    fireEvent.click(within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true}).at(-1)!);
+    expect(screen.getByText(/· observed \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} GMT\+9$/)).toBeTruthy();
+    const reads=visible.mock.calls.length,analyses=vi.mocked(analyzeSmartChart).mock.calls.length,descriptions=vi.mocked(describeSmartChartWindow).mock.calls.length;
+    view.rerender(<SmartChartReader {...props} view={{style:"candles",scale:"linear",timeZone:"America/New_York"}}/>);
+    view.rerender(<SmartChartReader {...props} view={{style:"candles",scale:"linear"}}/>);
+    expect(visible.mock.calls).toHaveLength(reads);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(analyses);expect(describeSmartChartWindow).toHaveBeenCalledTimes(descriptions);
+    expect(screen.getByText("More readings · deriv_public · times in UTC")).toBeTruthy();
+  });
+  it("keeps daily readings in UTC whatever zone the view selects",()=>{
+    const start=Date.parse("2026-09-01T00:00:00Z");
+    vi.spyOn(Date,"now").mockReturnValue(start+40*86_400_000);
+    const f=fixture("D1",start,86_400_000);
+    render(<SmartChartReader {...f.props} view={{style:"candles",scale:"linear",timeZone:"Asia/Tokyo"}}/>);
+    expect(screen.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("ready");
+    expect(screen.getByText("More readings · deriv_public · times in UTC")).toBeTruthy();
+    expect(screen.getByTestId("smart-chart-reader").textContent).not.toContain("GMT+9");
+  });
   it("discloses inverted/nonlinear and close-only views while preserving underlying analysis",()=>{
     const f=fixture();render(<SmartChartReader {...f.props} view={{style:"line",scale:"log",inverted:true}}/>);
     expect(screen.getByText("Inverted scale · higher prices appear lower")).toBeTruthy();
     expect(screen.getByText(/The line shows closes; candle patterns also use open, high and low/)).toBeTruthy();
     expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("are nearly equal");
+  });
+  it.each([
+    ["heikinAshi","Display: Heikin Ashi · linear scale","Heikin Ashi bodies are averaged, not traded prices; readings, pattern anchors, drawings and trade levels use the underlying candles."],
+    ["area","Display: Close area · linear scale","The area shows closes; candle patterns also use open, high and low prices."],
+    ["hollow","Display: Hollow candles · linear scale","Hollow candle fill and colour are display encodings of the same OHLC"],
+  ] as const)("names the %s style and states what it shows",(style,name,note)=>{
+    const f=fixture();render(<SmartChartReader {...f.props} view={{style,scale:"linear"}}/>);
+    const display=screen.getByText(text=>text.startsWith("Display: "));
+    expect(display.textContent).toContain(name);
+    expect(display.textContent).toContain("Readings use the underlying prices and selected period.");
+    expect(display.textContent).toContain(note);
+    expect(display.textContent).not.toContain("The line shows closes");
   });
   it("keeps factual context concise and metric details collapsed with visible-only warmup",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);

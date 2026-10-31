@@ -231,7 +231,6 @@ describe("chart live-price affordance guard", () => {
     // direct-scan's reach.)
     expect(names).toEqual(
       expect.arrayContaining([
-        "components/scanner/ScannerChartPanel.tsx",
         "components/positions/PositionMiniChart.tsx",
       ]),
     );

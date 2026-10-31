@@ -53,3 +53,47 @@ describe("approved symbol suggestions and multi-match search", () => {
     }
   });
 });
+
+// The registry is static, so resolution is memoized (Task: scanner click
+// latency). The memo must be invisible: identical results, keyed by every input
+// that can change the answer, and identity-stable so memoized consumers hold.
+describe("memoized symbol resolution", () => {
+  it("returns the same resolved object for repeated resolves of one query", () => {
+    const first = resolveSymbol("EURUSD");
+    expect(first?.canonicalSymbol).toBe("EURUSD");
+    expect(resolveSymbol("EURUSD")).toBe(first);
+    expect(resolveSymbol(" eurusd ")).toBe(first);
+    expect(resolveSymbol("GBPUSD")).not.toBe(first);
+  });
+
+  it("keeps the exact-canonical shortcut identical to the ranked search", () => {
+    for (const query of SYMBOL_REGISTRY.map((entry) => entry.canonicalSymbol)) {
+      const single = resolveSymbol(query);
+      const ranked = searchSymbols(query);
+      expect(single).toEqual(ranked[0]);
+      expect(single?.canonicalSymbol).toBe(query);
+    }
+    expect(resolveSymbol("EURUSD")?.matchSource).toBe("exact");
+    expect(resolveSymbol("xauusd")?.matchSource).toBe("exact");
+    expect(resolveSymbol("volatility 75")?.matchSource).not.toBe("exact");
+    expect(resolveSymbol("volatility 75")).toEqual(searchSymbols("volatility 75", { limit: 1 })[0]);
+  });
+
+  it("hands out a fresh result array so callers cannot corrupt the memo", () => {
+    const a = searchSymbols("75");
+    const b = searchSymbols("75");
+    expect(a).not.toBe(b);
+    expect(a).toEqual(b);
+    a.length = 0;
+    expect(searchSymbols("75")).toEqual(b);
+    expect(searchSymbols("75", { limit: 2 })).toEqual(b.slice(0, 2));
+  });
+
+  it("keys the memo on the feed-availability option", () => {
+    const configured = resolveSymbol("V75", { derivFeedConfigured: true });
+    const missing = resolveSymbol("V75", { derivFeedConfigured: false });
+    expect(configured?.unavailableReason).toBeNull();
+    expect(missing?.unavailableReason).toBe("DERIV_FEED_NOT_CONFIGURED");
+    expect(resolveSymbol("V75")?.unavailableReason).toBeNull();
+  });
+});

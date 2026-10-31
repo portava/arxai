@@ -4,8 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown } from "lucide-react";
-import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
-import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
+import { SmartChartView } from "@/components/charts/SmartChartView";
+import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symbol";
 
 type SubmitResp = {
   accepted: boolean; testerAccess: boolean; brokerExecution: boolean;
@@ -226,7 +226,7 @@ export default function LiveManualPage() {
             )}
           </div>
         </div>
-        <TradingViewLiveChart defaultSymbol={symbol} height={620} compact />
+        <SmartChartView symbol={symbol} onSymbolChange={next => { setSymbol(next); setChartSymbol(next); }} height={620} />
       </div>
     </div>
   );

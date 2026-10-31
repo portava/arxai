@@ -155,6 +155,27 @@ describe("LightweightChartsAdapter marker re-anchoring (repaint-crash lock)", ()
     expect(lastMarkerTimes()).toEqual([200]);
   });
 
+  it("keeps above/below-bar markers in Heikin Ashi style with no per-tick marker work", () => {
+    const adapter = makeAdapter();
+    adapter.setCandles([bar(100), bar(200), bar(300)]);
+    adapter.setChartStyle("heikinAshi");
+    const overlays = (["BUY", "SELL"] as const).map((side) => ({
+      id: `pos-${side}`, type: "marker", symbol: "EURUSD", label: side, source: "position", marker: { side },
+    }) as ChartOverlay);
+    adapter.setOverlays(overlays, 300);
+    adapter.setStructureLines([], [structMarker(200)]);
+    const calls = createSeriesMarkersMock.mock.calls as unknown as [unknown, Array<{ time: number; position: string }>][];
+    const trade = calls.find(([, markers]) => markers.length === 2)![1];
+    // Heikin Ashi high >= canonical high and low <= canonical low, so these
+    // positions clear the canonical extremes without price anchoring.
+    expect(trade.map((m) => [m.time, m.position])).toEqual([[300, "belowBar"], [300, "aboveBar"]]);
+    expect(lastMarkerTimes()).toEqual([200]);
+    const before = createSeriesMarkersMock.mock.calls.length;
+    adapter.updateActiveCandle({ time: 300, open: 1, high: 2.5, low: 0.4, close: 2.2 });
+    adapter.updateActiveCandle({ time: 400, open: 2.2, high: 2.6, low: 2, close: 2.4 });
+    expect(createSeriesMarkersMock.mock.calls.length).toBe(before);
+  });
+
   it("destroy() drops raw structure so a rebuilt chart cannot resurrect stale anchors", () => {
     const adapter = makeAdapter();
     adapter.setCandles([bar(100), bar(200)]);

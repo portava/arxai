@@ -1,12 +1,10 @@
 import { type ChartFeedStatus } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
   Activity,
   ShieldCheck,
   ShieldAlert,
-  BarChart3,
   Landmark,
   Boxes,
   Globe,
@@ -28,8 +26,7 @@ import type { LucideIcon } from "lucide-react";
 // A compact-when-clean / prominent-when-poor chip that surfaces the real
 // backend feed status (source, live/stale, latency, last update times,
 // missing-candle count, AI-usable, warning). The chip opens a popover with the
-// full readout, and when the feed can't be trusted it offers the TradingView
-// fallback. The component is purely presentational — it never gates anything.
+// full readout. The component is purely presentational — it never gates anything.
 
 const DOT: Record<FeedSeverity, string> = {
   clean: "bg-emerald-400",
@@ -81,8 +78,9 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 export interface FeedConfidenceBadgeProps {
   feedStatus: ChartFeedStatus | null | undefined;
-  /** Render a "Use TradingView" action inside the detail popover. */
+  /** @deprecated Compatibility only; external-chart fallback is no longer rendered. */
   showFallback?: boolean;
+  /** @deprecated Compatibility only; never called. */
   onRequestFallback?: () => void;
   /**
    * Optional RESOLVED verdict that overrides the raw-feed verdict (Task #506).
@@ -109,8 +107,6 @@ export interface FeedConfidenceBadgeProps {
 
 export function FeedConfidenceBadge({
   feedStatus,
-  showFallback = false,
-  onRequestFallback,
   aiUsableResolved,
   showTrailingGap = false,
 }: FeedConfidenceBadgeProps) {
@@ -251,16 +247,6 @@ export function FeedConfidenceBadge({
           <p className="text-xs text-amber-300" data-testid="arx-feed-warning">{fs.warning}</p>
         ) : null}
 
-        {conf.suggestFallback && showFallback && onRequestFallback ? (
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={onRequestFallback}
-            data-testid="arx-feed-fallback"
-          >
-            <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView reference
-          </Button>
-        ) : null}
       </PopoverContent>
     </Popover>
   );

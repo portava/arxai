@@ -17,7 +17,7 @@ describe("source-aware catalogue integration",()=>{
   expect(result.allFindings.some(f=>f.id.startsWith("rickshaw_man:"))).toBe(true);
   expect(result.findings.filter(f=>(f.family??f.id.split(":")[0])==="doji")).toHaveLength(1);
   expect(result.findings.every(f=>f.summaryEligible!==false)).toBe(true);
-  expect(result.catalogue).toMatchObject({definedVariants:62,geometryFamilies:16});
+  expect(result.catalogue).toMatchObject({definedVariants:78,geometryFamilies:19});
   expect(result.catalogue!.note).toContain("not independent confirmations");
  });
  it("never reuses another owner/source context or contradictory finality for catalogue observations",()=>{
@@ -88,4 +88,64 @@ describe("source-aware catalogue integration",()=>{
   expect(finding.explanation).toContain("not a forecast");
  });
 
+ for(const [id,core,bars] of [
+  ["bullish_three_line_strike","bearish_engulfing",CANDLE_FIXTURES.find(f=>f.id==="bullish_three_line_strike")!.bars],
+  ["bearish_three_line_strike","bullish_engulfing",CANDLE_FIXTURES.find(f=>f.id==="bearish_three_line_strike")!.bars],
+ ] as const)it(`keeps ${id} in its own family beside the same-bar core ${core}`,()=>{
+  const result=analyzeSmartChart(input(bars)),t=bars.at(-1)!.time;
+  expect(result.allFindings.find(f=>f.id===`${core}:${t}`)).toMatchObject({family:"engulfing",status:"confirmed"});
+  expect(result.allFindings.find(f=>f.id===`${id}:${t}`)).toMatchObject({family:"three_line_strike",status:"observed"});
+  expect(result.findings.find(f=>f.family==="engulfing")!.id.startsWith(`${core}:`)).toBe(true);
+  expect(result.findings.some(f=>f.id.startsWith(`${id}:`))).toBe(true);
+  // Recorded composition, not a ranking change: a same-bar trendline observation takes the first slot.
+  expect(result.findings.map(f=>f.id.split(":")[0])).toEqual(["trendline_break",core,id]);
+ });
+ it("records the same-bar id tie-break when a Three-Line Strike candle is also a Marubozu",()=>{
+  const bars=CANDLE_FIXTURES.find(f=>f.id==="bullish_three_line_strike")!.bars.map(b=>({...b}));
+  Object.assign(bars.at(-1)!,{high:108.55,low:101.45});
+  for(const [series,id,inSummary] of [[bars,"bullish_three_line_strike",false],[mirror(bars),"bearish_three_line_strike",true]] as const){
+   const result=analyzeSmartChart(input(series)),t=series.at(-1)!.time;
+   expect(result.allFindings.find(f=>f.id===`${id}:${t}`)).toMatchObject({family:"three_line_strike",status:"observed"});
+   // Ties on one bar fall back to status, scale and then id order (smartChartAnalysis.ts ranking), so
+   // "bearish_belt_hold" sorts before "bullish_three_line_strike" and the strike stays in details only.
+   expect(result.findings.some(f=>f.id===`${id}:${t}`)).toBe(inSummary);
+  }
+ });
+ it("keeps Gap Three Methods and Tasuki Gap in one tasuki_gap slot and Three Methods in one slot",()=>{
+  for(const id of ["upside_gap_three_methods","downside_gap_three_methods","upside_tasuki_gap","downside_tasuki_gap"]){
+   const bars=CANDLE_FIXTURES.find(f=>f.id===id)!.bars,result=analyzeSmartChart(input(bars)),t=bars.at(-1)!.time,own=`${id}:${t}`;
+   // findings is the capped three-slot summary, so each fixture's own id must survive ranking into it.
+   expect(result.findings.length).toBeLessThanOrEqual(3);
+   expect(result.findings.map(f=>f.id)).toContain(own);
+   expect(result.findings.filter(f=>f.family==="tasuki_gap").map(f=>f.id)).toEqual([own]);
+   expect(result.allFindings.filter(f=>f.family==="tasuki_gap"&&f.id.endsWith(`:${t}`)).map(f=>f.id)).toEqual([own]);
+  }
+  for(const id of ["rising_three_methods","falling_three_methods","mat_hold"]){
+   const bars=CANDLE_FIXTURES.find(f=>f.id===id)!.bars,result=analyzeSmartChart(input(bars));
+   expect(result.findings.filter(f=>f.family==="three_methods")).toHaveLength(1);
+   expect(result.findings.find(f=>f.family==="three_methods")!.id).toBe(`${id}:${bars.at(-1)!.time}`);
+  }
+ });
+ it("keeps overlapping Identical Three Crows and Three Black Crows in one soldiers_crows slot",()=>{
+  const bars=CANDLE_FIXTURES.find(f=>f.id==="identical_three_crows")!.bars.map(b=>({...b}));
+  bars.at(-2)!.open=bars.at(-3)!.close+.1;bars.at(-1)!.open=bars.at(-2)!.close+.1;
+  const result=analyzeSmartChart(input(bars)),t=bars.at(-1)!.time;
+  expect(result.allFindings.some(f=>f.id===`identical_three_crows:${t}`)).toBe(true);
+  expect(result.allFindings.some(f=>f.id===`three_black_crows:${t}`)).toBe(true);
+  expect(result.findings.filter(f=>f.family==="soldiers_crows")).toHaveLength(1);
+ });
+ it("records when Stick Sandwich and Unique Three-River meet the core Engulfing on the final bar",()=>{
+  const sandwich=CANDLE_FIXTURES.find(f=>f.id==="stick_sandwich")!.bars;
+  expect(analyzeSmartChart(input(sandwich)).allFindings.some(f=>f.id===`bearish_engulfing:${sandwich.at(-1)!.time}`)).toBe(false);
+  const river=CANDLE_FIXTURES.find(f=>f.id==="unique_three_river_bottom")!.bars;
+  expect(analyzeSmartChart(input(river)).allFindings.some(f=>f.id===`bullish_engulfing:${river.at(-1)!.time}`)).toBe(false);
+  // Co-fire needs the third open at or above the middle close, a larger third body, and a middle
+  // close above the close four bars before the final candle (104 here).
+  const cofire=sandwich.map(b=>({...b}));
+  Object.assign(cofire.at(-2)!,{open:100,high:104.6,low:99.8,close:104.5});Object.assign(cofire.at(-1)!,{open:104.6,high:104.9,low:99.4,close:99.55});
+  const result=analyzeSmartChart(input(cofire)),t=cofire.at(-1)!.time;
+  expect(result.allFindings.find(f=>f.id===`bearish_engulfing:${t}`)).toMatchObject({family:"engulfing",status:"confirmed"});
+  expect(result.allFindings.find(f=>f.id===`stick_sandwich:${t}`)).toMatchObject({family:"tweezers",status:"observed"});
+  expect(result.findings.map(f=>f.id.split(":")[0])).toEqual(["bearish_engulfing","closing_marubozu","stick_sandwich"]);
+ });
 });

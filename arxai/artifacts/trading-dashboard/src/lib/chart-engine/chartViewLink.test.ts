@@ -41,6 +41,21 @@ describe("workspace-local chart links",()=>{
     expect(b.adapter.setLinkedCrosshair).not.toHaveBeenCalled();expect(b.adapter.setLinkedTimeRange).not.toHaveBeenCalled();
     a.publish({kind:"crosshair",time:null});expect(b.adapter.setLinkedCrosshair).toHaveBeenCalledWith(null);
   });
+  it("carries raw UTC seconds between views that display different time zones",()=>{
+    const bus=new ChartViewLink();
+    const zones=["UTC","Asia/Tokyo","America/New_York"] as const;
+    const peers=zones.map(zone=>{const peer=participant();const setDisplayTimeZone=vi.fn();Object.assign(peer.adapter,{setDisplayTimeZone});peer.adapter.setDisplayTimeZone!(zone);setDisplayTimeZone.mockClear();return {...peer,setDisplayTimeZone};});
+    peers.forEach((peer,i)=>bus.register(zones[i]!,peer.adapter));
+    bus.configure({crosshair:true,range:true});
+    const time=Date.UTC(2026,9,28,5,46)/1000, range={from:time-3_600,to:time};
+    peers[1]!.publish({kind:"crosshair",time});
+    peers[2]!.publish({kind:"range",range});
+    expect(peers[0]!.adapter.setLinkedCrosshair).toHaveBeenCalledExactlyOnceWith(time);
+    expect(peers[2]!.adapter.setLinkedCrosshair).toHaveBeenCalledExactlyOnceWith(time);
+    expect(peers[0]!.adapter.setLinkedTimeRange).toHaveBeenCalledExactlyOnceWith(range);
+    expect(peers[1]!.adapter.setLinkedTimeRange).toHaveBeenCalledExactlyOnceWith(range);
+    for (const peer of peers) expect(peer.setDisplayTimeZone).not.toHaveBeenCalled();
+  });
   it("aligns unequal intervals using actual bar opens and refuses gaps / outside history",()=>{
     const bars=[1000,1060,1120,5000].map(time=>({time,open:1,high:2,low:1,close:1.5}));
     expect(candleAtLinkedTime(bars,1119,60)?.time).toBe(1060);

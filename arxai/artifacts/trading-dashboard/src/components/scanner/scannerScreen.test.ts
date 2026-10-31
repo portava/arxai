@@ -34,6 +34,12 @@ describe("scanner view scope and filters", () => {
     const scope = resolveScreenScope(1, [{ id: 1, name: "Old", items: [{ symbol: "EURUSD" }] }], true, [row()], []);
     expect(scope.symbols?.size).toBe(0);
   });
+  it("a saved watchlist scope with lists not loaded yet is unavailable, not missing", () => {
+    const scope = resolveScreenScope(1, undefined, false, [row()], []);
+    expect(scope.symbols?.size).toBe(0);
+    expect(scope.message).toContain("Watchlists are unavailable");
+    expect(resolveScreenScope(1, [], false, [row()], []).message).toContain("no longer exists");
+  });
   it("combines filters without changing row identities or the original timestamp", () => {
     const input = [Object.assign(row(), { generatedAt: stamp }), row({ symbol: "GBPUSD", direction: "SELL", edgeScore: 90 })];
     const original = JSON.stringify(input);

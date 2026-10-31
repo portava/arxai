@@ -1,9 +1,11 @@
+import type { ScannerChartSurface } from "./scannerChartSurface";
 import type { DrawingInteraction } from "./chartDrawingEditor";
 import type { SmartChartAnnotation } from "./smartChartAnnotation";
 import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 import type { ChartStudy } from "./chartStudies";
 import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
+import type { ChartTimeZone } from "./chartTimeZone";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ARX Smart Chart — swappable chart-engine adapter contract (Task #373).
@@ -123,6 +125,9 @@ export interface ChartStructureMarker {
  * any future engine implements the same surface.
  */
 export interface ChartEngineAdapter {
+  /** Scanner migration bridge: display overlays/coordinates only. */
+  getScannerOverlaySurface?(): Pick<ScannerChartSurface, "chart" | "series" | "container"> | null;
+
   readonly capabilities: ChartEngineCapabilities;
 
   /** Mount the engine into the container. Resets all internal render state. */
@@ -174,9 +179,15 @@ export interface ChartEngineAdapter {
   setSmartAnnotation?(annotation: SmartChartAnnotation | null): void;
   setScaleMode?(mode: ChartScaleMode): void;
   setPriceScaleInverted?(inverted: boolean): void;
+  /** Display-only, already resolved for timeframe by the caller; candle times,
+   * anchors and link events stay UTC seconds. */
+  setDisplayTimeZone?(zone: ChartTimeZone): void;
   goToTime?(time: number): boolean;
   showRecentRange?(seconds: number): { complete: boolean } | null;
   getStudyValues?(time: number): { label: string; color: string; values: { name: string; value: number | null }[] }[];
+  /** Transformed display bar (Heikin Ashi only) at this time; null in other
+   * styles. Legend text only. Never used for studies, drawings or orders. */
+  getDisplayCandle?(time: number): ChartEngineCandle | null;
   setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
   /** Linked workspace inspection only. Never changes instrument/order context. */
   setViewLinkHandler?(handler: ((event: ChartViewEvent) => void) | null): void;

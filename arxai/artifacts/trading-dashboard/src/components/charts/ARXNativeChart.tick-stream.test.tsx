@@ -25,7 +25,7 @@
 //   stubbed — everything CI cannot supply headlessly.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup, act, fireEvent } from "@testing-library/react";
+import { render, cleanup, act, fireEvent, waitFor } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { ChartViewLink } from "@/lib/chart-engine/chartViewLink";
 import { ChartLinkContext } from "./ChartLinkContext";
@@ -40,6 +40,8 @@ import type {
 // The mocked useGetChartCandles reads this each render, so a test can simulate
 // the 8s reconciliation poll by updating it and re-rendering.
 let currentCandleResponse: ChartCandlesResponse | undefined;
+let standaloneEnabled: boolean | undefined;
+let cachedIntelligence: unknown;
 
 // ── Spy chart-engine adapter ────────────────────────────────────────────────
 // We assert against updateActiveCandle (the live tip) and setCandles (the full
@@ -54,6 +56,7 @@ const adapterSpies = {
   setCandles: vi.fn(),
   updateActiveCandle: vi.fn(),
   setOverlays: vi.fn(),
+  setStructureLines: vi.fn(),
   resetScale: vi.fn(),
   resize: vi.fn(),
   goToLatest: vi.fn(),
@@ -66,6 +69,8 @@ const adapterSpies = {
   setDrawingHandler: vi.fn(),
   setDrawingInteraction: vi.fn(),
   setScaleMode: vi.fn(),
+  setChartStyle: vi.fn(),
+  getScannerOverlaySurface: vi.fn(() => null as unknown),
   setReachStartHandler: vi.fn(),
   priceToCoordinate: vi.fn(() => null),
 };
@@ -92,14 +97,14 @@ vi.mock("@/lib/useChartDeepHistory", () => ({
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
-  useGetChartCandles: () => ({
+  useGetChartCandles: (_params: unknown, options: {query: {enabled: boolean}}) => (standaloneEnabled = options.query.enabled, {
     data: currentCandleResponse,
     isLoading: false,
     isError: false,
     isFetching: false,
   }),
   getGetChartCandlesQueryKey: () => ["chart-candles"],
-  useGetMeChartIntelligence: () => ({ data: undefined, error: null }),
+  useGetMeChartIntelligence: () => ({ data: cachedIntelligence, error: null }),
   getGetMeChartIntelligenceQueryKey: () => ["chart-intelligence"],
   GetChartCandlesTimeframe: { M1: "M1", M5: "M5", M15: "M15", M30: "M30", H1: "H1", H4: "H4", D1: "D1" },
 }));
@@ -277,9 +282,12 @@ function renderChart() {
 
 beforeEach(() => {
   localStorage.clear();
+  cachedIntelligence = undefined;
   openedStreams = [];
   for (const fn of Object.values(adapterSpies)) (fn as ReturnType<typeof vi.fn>).mockClear();
   adapterSpies.priceToCoordinate.mockReturnValue(null);
+  adapterSpies.getScannerOverlaySurface.mockReturnValue(null);
+  adapterSpies.setChartStyle.mockImplementation(() => {});
   (globalThis as unknown as { EventSource: unknown }).EventSource = MockEventSource;
   currentCandleResponse = makeResponse(liveFeedStatus());
 });
@@ -664,6 +672,52 @@ describe("Smart Chart view controls", () => {
     expect(adapterSpies.init).toHaveBeenCalledTimes(1);
     expect(openedStreams).toHaveLength(1);
   });
+  it("closes the templates dialog before exiting fullscreen on Escape", async () => {
+    const view = renderChart();
+    fireEvent.click(view.getByRole("button", {name:"Fullscreen",exact:true}));
+    fireEvent.click(view.getByRole("button", {name:"Templates",exact:true}));
+    const dialog = view.getByRole("dialog", {name:"Chart templates"});
+    fireEvent.keyDown(dialog, {key:"Escape"});
+    await waitFor(() => expect(view.queryByRole("dialog", {name:"Chart templates"})).toBeNull());
+    expect(view.getByRole("button", {name:"Exit fullscreen",exact:true})).toBeTruthy();
+    fireEvent.keyDown(window, {key:"Escape"});
+    expect(view.getByRole("button", {name:"Fullscreen",exact:true})).toBeTruthy();
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+  });
+  it("keeps template input and pending import through source binding but cancels drawing placement", async () => {
+    const view=renderChart();
+    fireEvent.change(view.getByLabelText("Drawing tool"),{target:{value:"trend"}});
+    expect(typeof adapterSpies.setDrawingHandler.mock.lastCall?.[0]).toBe("function");
+    fireEvent.click(view.getByRole("button",{name:"Templates",exact:true}));
+    const dialog=view.getByRole("dialog",{name:"Chart templates"});
+    fireEvent.change(view.getByLabelText("Template name"),{target:{value:"Keep my input"}});
+    let finish!: (text:string)=>void;
+    fireEvent.change(view.getByLabelText("Import chart template file"),{target:{files:[{size:200,text:()=>new Promise<string>(resolve=>{finish=resolve;})}]}});
+    currentCandleResponse=makeResponse({...liveFeedStatus(),source:"deriv_public"} as ChartFeedStatus);
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.getByRole("dialog",{name:"Chart templates"})).toBe(dialog);
+    expect((view.getByLabelText("Template name") as HTMLInputElement).value).toBe("Keep my input");
+    expect(adapterSpies.setDrawingHandler.mock.lastCall?.[0]).toBeNull();
+    await act(async()=>finish(JSON.stringify({format:"arx-chart-template",version:1,name:"Checked file",settings:{style:"line",scale:"linear",studies:[]}})));
+    expect(view.getByTestId("chart-template-import-preview")).toBeTruthy();
+    expect(adapterSpies.setChartStyle.mock.lastCall?.[0]).toBe("candles");
+  });
+  it("closes templates and cancels a pending file when the selected chart changes", async () => {
+    currentCandleResponse=undefined;
+    const view=renderChart();
+    fireEvent.click(view.getByRole("button",{name:"Templates",exact:true}));
+    let finish!: (text:string)=>void;
+    fireEvent.change(view.getByLabelText("Import chart template file"),{target:{files:[{size:200,text:()=>new Promise<string>(resolve=>{finish=resolve;})}]}});
+    currentCandleResponse=makeResponse(liveFeedStatus());
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.getByRole("dialog",{name:"Chart templates"})).toBeTruthy();
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(view.queryByRole("dialog",{name:"Chart templates"})).toBeNull();
+    await act(async()=>finish(JSON.stringify({format:"arx-chart-template",version:1,name:"Too late",settings:{style:"line",scale:"linear",studies:[]}})));
+    fireEvent.click(view.getByRole("button",{name:"Templates",exact:true}));
+    expect(view.queryByTestId("chart-template-import-preview")).toBeNull();
+    expect(localStorage.getItem("arx.chart.templates.v1")).toBeNull();
+  });
   it("supports Home and End only inside the focused chart", () => {
     const view = renderChart();
     const chart=view.getByTestId("arx-native-canvas");
@@ -755,5 +809,43 @@ describe("source-bound chart ticks", () => {
     currentCandleResponse = makeResponse({ ...liveFeedStatus(), source: null } as unknown as ChartFeedStatus);
     renderChart();
     expect(openedStreams).toHaveLength(0);
+  });
+});
+
+
+describe("Scanner shared Smart Chart ownership", () => {
+  it("uses the Scanner response, disables duplicate fetch and never upgrades its live-price cap", () => {
+    const scannerResponse = makeResponse(liveFeedStatus());
+    currentCandleResponse = { ...scannerResponse, candles: scannerResponse.candles.map(c=>({...c,close:99})) };
+    render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} externalFeed={{data:scannerResponse,isLoading:false,isFetching:false,isError:false,refetch:vi.fn(),livePriceAllowed:false}} />);
+    expect(standaloneEnabled).toBe(false);
+    expect(adapterSpies.setCandles.mock.calls.at(-1)?.[0].at(-1).close).toBe(1.102);
+    expect(adapterSpies.setFeedState.mock.calls.at(-1)?.[0].livePriceAffordance).toBe(false);
+    expect(openedStreams).toHaveLength(1);
+  });
+  it("ignores cached standalone intelligence when Scanner owns server overlays", () => {
+    cachedIntelligence={state:{symbol:SYMBOL,timeframe:TF,truthState:{source:"mt5_broker"},trendlineOverlay:{visible:true,
+      lines:[{id:"cached",start:{time:1,price:1},end:{time:2,price:2},bias:"bullish",dominant:true}],markers:[]}}};
+    const report=vi.fn();
+    render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} onIntelligenceChange={report}
+      externalFeed={{data:currentCandleResponse,isLoading:false,isFetching:false,isError:false,refetch:vi.fn(),livePriceAllowed:true}} />);
+    expect(report).not.toHaveBeenCalled();
+    expect(adapterSpies.setStructureLines.mock.calls.every(call=>call[0].length===0)).toBe(true);
+  });
+  it("revokes overlay handles before replacing the price series, then publishes the selected style", () => {
+    const operations: string[]=[];
+    const surface={chart:{},series:{name:"candles"},container:document.createElement("div")};
+    adapterSpies.getScannerOverlaySurface.mockImplementation(()=>surface);
+    adapterSpies.setChartStyle.mockImplementation((style: string)=>{operations.push(`style:${style}`);surface.series={name:style};});
+    const bind=vi.fn((value:any)=>{operations.push(value ? `bind:${value.style}:${value.series.name}` : "revoke");});
+    const view=render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} onScannerSurfaceChange={bind} />);
+    operations.length=0;
+    fireEvent.change(view.getByLabelText("Chart style"),{target:{value:"line"}});
+    expect(operations.indexOf("revoke")).toBeLessThan(operations.indexOf("style:line"));
+    expect(operations.indexOf("bind:line:line")).toBeGreaterThan(operations.indexOf("style:line"));
+    operations.length=0;currentCandleResponse=undefined;
+    view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} onScannerSurfaceChange={bind} />);
+    expect(bind.mock.calls.at(-1)?.[0]).toBeNull();
+    view.unmount();expect(bind.mock.calls.at(-1)?.[0]).toBeNull();
   });
 });

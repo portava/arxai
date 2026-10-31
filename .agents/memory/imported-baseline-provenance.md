@@ -14,3 +14,16 @@ For an authorized exact-source development sync, use the last actually imported 
 **Why:** The combined upstream integration can diverge from the previously imported source branch while the workspace also contains independent authentication, test-isolation and environment fixes. Replacing the source tree or using the workspace's unrelated ancestry would discard those fixes.
 
 **How to apply:** Keep a pre-update backup reference, audit local differences before and after reconciliation, and record the exact source and validation limitations in the update report.
+
+For selective feature imports, audit the complete feature dependency set rather
+than selecting only obvious component filenames. Matching source-owned test
+metadata and legacy status indicators can be required even when package versions
+are unchanged.
+
+**Why:** A component-only chart selection omitted catalogue/scope metadata and a
+shared status-header change; existing regression checks correctly rejected the
+incomplete combination.
+
+**How to apply:** Preserve initial failures, bring only the missing dependencies
+from the same verified source, and rerun the affected checks without weakening
+assertions or importing unrelated backend work.
