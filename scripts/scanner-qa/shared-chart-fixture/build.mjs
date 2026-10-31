@@ -11,6 +11,7 @@ import http from 'node:http';
 import path from 'node:path';
 import {dashboardStyleSourcePlugin,assertDashboardUtilityCss} from './stylesheet.mjs';
 import {isOfflineChartPagePath} from './routes.mjs';
+import {createNavigationJournal} from './navigation-journal.mjs';
 
 process.env.NODE_ENV = 'production';
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -71,7 +72,10 @@ if (!serve) {
     if(sha(await readFile(path.join(out,relative)))!==expected) throw Error('Asset changed: '+relative);
   }
   const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
+  const journalDirectory=path.join(parent,id+'-navigation-receipts');
+  const journal=createNavigationJournal({directory:journalDirectory,buildId:id,sourceHead:info.source.head});
   const server=http.createServer(async(req,res)=>{
+    if(await journal(req,res))return;
     const pathname=new URL(req.url,'http://127.0.0.1:4199').pathname;
     if(req.method!=='GET' || pathname.startsWith('/api/')) {res.writeHead(503,{'content-type':'application/json'});res.end('{"error":"OFFLINE_API_NOT_INTERCEPTED"}');return;}
     const relative=pathname===`/${metadataFile}`?metadataFile:(isOfflineChartPagePath(pathname)?'index.html':pathname.slice(1));
@@ -79,6 +83,6 @@ if (!serve) {
     try {const data=await readFile(path.join(out,relative));res.writeHead(200,{'content-type':relative===metadataFile?'application/json':types[path.extname(relative)]??'application/octet-stream','cache-control':'no-store'});res.end(data);}
     catch {res.writeHead(500);res.end();}
   });
-  server.listen(4199,'127.0.0.1',()=>console.log('Actual Scanner offline QA on http://127.0.0.1:4199; build '+id));
+  server.listen(4199,'127.0.0.1',()=>console.log('Actual Scanner offline QA on http://127.0.0.1:4199; build '+id+'; navigation receipts '+journalDirectory));
   for(const signal of ['SIGINT','SIGTERM']) process.once(signal,()=>server.close(()=>process.exit(0)));
 }

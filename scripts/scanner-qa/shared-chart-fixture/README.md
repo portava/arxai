@@ -149,3 +149,51 @@ claim. Note-handle churn is reported independently. Counts do not measure latenc
 ```sh
 node --test scripts/scanner-qa/shared-chart*.test.mjs
 ```
+
+## Durable first-navigation receipts
+
+`shared-chart-first-navigation.js` uses a fixture-only journal in addition to its
+returned report. The loopback fixture server prints its receipt directory:
+`scripts/node_modules/.scanner-shared-chart-qa/BUILD_ID-navigation-receipts/`.
+Each run gets a new private `.jsonl` file. The ten-attempt plan, each pending
+attempt, each collected result (including failures), and final summary are
+appended and flushed before acknowledgement. This survives loss of the browser
+or outer runner. Writes take place before document navigation and after measured
+completion, never during the measured click-to-chart interval. A write failure
+stops the run; it cannot silently turn missing receipts into success.
+
+The runner uses its direct HTTP request context to the exact loopback journal
+endpoint with an ephemeral server token. The endpoint rejects browser-originated
+requests. Application HTTP/WebSocket interception and all trading barriers stay
+unchanged. No application server, application database or application route is
+involved. The receipt directory is outside the immutable build asset directory.
+
+Recover after interruption, even after stopping the server:
+
+```sh
+node scripts/scanner-qa/shared-chart-fixture/navigation-journal.mjs /absolute/path/to/RUN_ID.jsonl
+```
+
+A started attempt without a result means **incomplete**, not zero attempts and
+not PASS. Recovery rejects malformed/truncated records, mismatched source or run
+identities, out-of-order results and premature completion. A complete journal
+still carries the original measured verdict; recovery itself is not a new test.
+Archive the complete receipt directory before removing the checkout or container.
+The journal is not resumable after a server restart; use a fresh run and retain
+both files. It cannot survive deletion of its filesystem.
+
+The report now records browser version, viewport/UA, runner call timestamps,
+link bounds changes, long tasks, frame gaps, and browser Resource Timing for
+candles/modules/styles. Diagnostic arrays are bounded and disclose overflow.
+Mock `ended` timestamps mean response preparation before `route.fulfill`, not
+browser receipt. Even browser `responseEnd` does not prove JSON parsing or query
+cache readiness. Link visibility is not the complete Playwright stability check.
+These observations locate delays; overlap alone does not prove causation.
+Diagnostics add observer cost; do not silently compare this harness with old
+measurements as though instrumentation were identical. The 100 ms completion and
+150 ms immediate-click gates are unchanged. Record external throttling/load and
+outer runner timeout separately; the harness cannot infer them.
+
+```sh
+node --test scripts/scanner-qa/shared-chart-first-navigation.test.mjs scripts/scanner-qa/shared-chart-fixture/navigation-journal.test.mjs
+```
