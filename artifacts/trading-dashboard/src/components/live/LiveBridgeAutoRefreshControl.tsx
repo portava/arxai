@@ -29,6 +29,7 @@ const BRIDGE_STATE_STYLES: Record<BridgeState, { dot: string; label: string; tex
   live:    { dot: "bg-emerald-500 animate-pulse", label: "Live",    text: "text-emerald-400" },
   delayed: { dot: "bg-amber-400",                  label: "Delayed", text: "text-amber-400"   },
   stale:   { dot: "bg-orange-500",                 label: "Stale",   text: "text-orange-400"  },
+  paused:  { dot: "bg-slate-400", label: "Updates paused", text: "text-muted-foreground" },
   offline: { dot: "bg-red-500",                    label: "Offline", text: "text-red-400"     },
 };
 

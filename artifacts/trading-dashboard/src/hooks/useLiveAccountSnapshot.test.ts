@@ -16,6 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+import { useLiveBridgeRefresh, useLiveBridgeRefreshState } from "./useLiveBridgeRefresh";
 
 import {
   useLiveAccountSnapshot,
@@ -182,6 +183,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  localStorage.clear();
   MockEventSource.instances = [];
   hiddenValue = false;
   Object.defineProperty(document, "hidden", {
@@ -194,6 +196,126 @@ beforeEach(() => {
     json: async () => stalePollBody(),
   }));
   vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+});
+
+describe("cockpit refresh controls own the shared transport", () => {
+  it("pausing aborts a pending read and visibility changes cannot restart it", async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    act(() => result.current.setAutoRefreshEnabled(false));
+    expect(signal.aborted).toBe(true);
+    expect(result.current.isRefreshing).toBe(false);
+    act(() => { setHidden(true); document.dispatchEvent(new Event("visibilitychange")); });
+    act(() => { setHidden(false); document.dispatchEvent(new Event("visibilitychange")); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a paused manual read times out without turning automatic updates back on", async () => {
+    localStorage.setItem("arx_autoRefresh_enabled", "false");
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    act(() => result.current.refreshNow());
+    expect(result.current.isRefreshing).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.snapshot).toBeNull();
+    expect(result.current.bridgeState).toBe("paused");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stream carrying heartbeats but no snapshot falls back to a bounded read", async () => {
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    act(() => MockEventSource.latest().emit({ type: "heartbeat" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.live?.liveEquity).toBe(990);
+    expect(result.current.live?.freshness.status).toBe("stale");
+  });
+
+  it("a preference change from another tab pauses the existing stream", () => {
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    const stream = MockEventSource.latest();
+    act(() => {
+      localStorage.setItem("arx_autoRefresh_enabled", "false");
+      window.dispatchEvent(new StorageEvent("storage", { key: "arx_autoRefresh_enabled", newValue: "false" }));
+    });
+    expect(result.current.autoRefreshEnabled).toBe(false);
+    expect(stream.readyState).toBe(MockEventSource.CLOSED);
+  });
+
+  it("stored OFF opens no stream and starts no automatic requests", async () => {
+    localStorage.setItem("arx_autoRefresh_enabled", "false");
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(result.current.autoRefreshEnabled).toBe(false);
+    expect(MockEventSource.instances).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.bridgeState).toBe("paused");
+  });
+
+  it("OFF closes the stream and cancels stale recovery; ON reconnects once", async () => {
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    const stream = MockEventSource.latest();
+    act(() => stream.emit(snapshotEvent({ snapFreshness: "stale", liveFreshness: "stale" })));
+    act(() => result.current.setAutoRefreshEnabled(false));
+    expect(stream.readyState).toBe(MockEventSource.CLOSED);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.live?.freshness.status).toBe("stale");
+    act(() => result.current.setAutoRefreshEnabled(true));
+    expect(MockEventSource.instances).toHaveLength(2);
+  });
+
+  it("manual refresh while paused performs one read, then stays paused", async () => {
+    localStorage.setItem("arx_autoRefresh_enabled", "false");
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    await act(async () => result.current.refreshNow());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.live?.liveEquity).toBe(990);
+    expect(result.current.isRefreshing).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(MockEventSource.instances).toHaveLength(0);
+    expect(result.current.bridgeState).toBe("paused");
+  });
+
+  it("a failed manual read ends the spinner without fabricating a response", async () => {
+    localStorage.setItem("arx_autoRefresh_enabled", "false");
+    fetchMock.mockRejectedValue(new Error("offline"));
+    const { result } = renderHook(() => useLiveBridgeRefresh());
+    await act(async () => result.current.refreshNow());
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.lastRefreshAt).toBeNull();
+    expect(result.current.snapshot).toBeNull();
+  });
+
+  it("two controls over one provider share the setting without duplicate streams", () => {
+    const { result } = renderHook(() => {
+      const base = useLiveAccountSnapshot();
+      return { first: useLiveBridgeRefreshState(base), second: useLiveBridgeRefreshState(base) };
+    });
+    expect(MockEventSource.instances).toHaveLength(1);
+    act(() => result.current.first.toggleAutoRefresh());
+    expect(result.current.second.autoRefreshEnabled).toBe(false);
+    expect(MockEventSource.latest().readyState).toBe(MockEventSource.CLOSED);
+  });
+
+  it("the cockpit control does not restart a slow fallback at five seconds", async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    renderHook(() => useLiveBridgeRefresh());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(signal.aborted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(MockEventSource.instances).toHaveLength(1);
+  });
 });
 
 afterEach(() => {
