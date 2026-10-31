@@ -197,3 +197,29 @@ outer runner timeout separately; the harness cannot infer them.
 ```sh
 node --test scripts/scanner-qa/shared-chart-first-navigation.test.mjs scripts/scanner-qa/shared-chart-fixture/navigation-journal.test.mjs
 ```
+
+## React component profiling (diagnostic only)
+
+Build with `node scripts/scanner-qa/shared-chart-fixture/build.mjs --react-profile`,
+then serve its returned ID normally. This build uses React's profiling renderer
+and preserves function names. It listens only on **127.0.0.1:4299**, separate from
+the 4199 acceptance fixture, and records `diagnosticOnly:true`,
+`reactProfiling:true`, `productionRuntimeChecked:false` in its metadata.
+The ordinary first-navigation harness rejects profiling metadata explicitly.
+
+Use a new isolated browser and the same offline setup with
+`SCANNER_QA_BASE_URL='http://127.0.0.1:4299'`. The fixture adds a DevTools-compatible
+observer before importing the real App. Read `window.__arxReactProfile` for
+bounded commit summaries and the actual React renderer version. No component,
+feed, gate or route is replaced. Only names, tags and timing fields are copied;
+props, state and account data are not inspected. An existing DevTools hook or any
+other origin is rejected. No observer is installed in the ordinary fixture.
+
+These are version-specific fiber observations, with observer and profiling
+runtime overhead. Inclusive/nested and bailed-out durations are not additive;
+exclusive estimates are clipped at zero. Mounts are labelled separately. These
+numbers locate candidates, not production latency. Always validate a candidate
+again in the regular production fixture without this hook or profiler.
+
+Run the observer tests from `scripts`, where the existing tsx dependency lives:
+`node --import tsx --test scanner-qa/shared-chart-fixture/reactProfile.test.mjs`.

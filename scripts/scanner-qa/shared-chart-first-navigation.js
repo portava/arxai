@@ -122,6 +122,7 @@ async page => {
     // Preflight the already prepared fixture OUTSIDE all reload/click samples.
     const preflight=await page.evaluate(async()=>({metadata:await (await fetch('/arx-scanner-qa-build-info.json')).json(),runtime:window.__arxScannerQaBuildId,log:await window.__readFixtureLog()}));
     const metadata=preflight.metadata;
+    if(metadata.diagnosticOnly||!metadata.productionRuntimeChecked)throw Error('Diagnostic/profiling runtime cannot supply navigation acceptance');
     if(preflight.runtime!==metadata.buildId||!metadata.sourceUnchanged||metadata.source.status||(expectedHead&&metadata.source.head!==expectedHead))throw Error('Unverified fixture source');
     const response=preflight.log.candleResponses.filter(r=>r.symbol==='EURUSD'&&r.timeframe==='M15').at(-1);
     if(!response||response.source!=='offline_fixture'||response.canonical.length!==200)throw Error('Expected fixture authority missing');

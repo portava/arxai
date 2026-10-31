@@ -22,8 +22,9 @@ const sha = data => createHash('sha256').update(data).digest('hex');
 const git = args => execFileSync('git', args, {cwd:repo, encoding:'utf8'}).trim();
 const state = () => ({head:git(['rev-parse','HEAD']), status:git(['status','--porcelain','--untracked-files=all']), diffSha256:sha(git(['diff','HEAD','--']))});
 const args = process.argv.slice(2);
-if (args.length > 1 || (args[0] && !/^--serve=[a-f0-9]{16}$/.test(args[0]))) throw Error('Only --serve=<build-id> is supported');
-const serve = args[0]?.slice(8);
+if (args.length > 1 || (args[0] && args[0]!=='--react-profile' && !/^--serve=[a-f0-9]{16}$/.test(args[0]))) throw Error('Use --react-profile for diagnostic build, or --serve=<build-id>');
+const profile=args[0]==='--react-profile';
+const serve = args[0]?.startsWith('--serve=')?args[0].slice(8):undefined;
 const id = serve ?? randomBytes(8).toString('hex');
 const parent = path.join(repo, 'scripts/node_modules/.scanner-shared-chart-qa');
 const out = path.join(parent, id);
@@ -45,7 +46,8 @@ if (!serve) {
   const {build} = await import(require.resolve('vite'));
   const {default:react} = await import(require.resolve('@vitejs/plugin-react'));
   const {default:tailwind} = await import(require.resolve('@tailwindcss/vite'));
-  await build({root,configFile:false,base:'/',define:{__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id)},plugins:[dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
+  await build({root,configFile:false,base:'/',define:{__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_SCANNER_QA_REACT_PROFILE__:JSON.stringify(profile)},esbuild:{keepNames:profile},plugins:[dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
+    ...(profile?[{find:'react-dom/client',replacement:require.resolve('react-dom/profiling')}]:[]),
     {find:'react',replacement:path.dirname(require.resolve('react/package.json'))},
     {find:'react-dom',replacement:path.dirname(require.resolve('react-dom/package.json'))},
     {find:'@',replacement:path.join(dashboard,'src')},
@@ -59,7 +61,7 @@ if (!serve) {
   const dev = ['react-stack-bottom-frame','data must be asc ordered by time','series item data value must be'];
   if (dev.some(marker=>sources.some(s=>s.includes(marker)))) throw Error('Development runtime found');
   if (!['Minified React error #','tv-lightweight-charts'].every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
-  const metadata = {schemaVersion:1,buildId:id,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:true,
+  const metadata = {schemaVersion:1,buildId:id,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:!profile,diagnosticOnly:profile,reactProfiling:profile,
     entry:'Actual dashboard src/main.tsx; observer installed before mount',fixtureOnlyObserver:'scripts/chart-qa/witness.ts',dashboardUtilityCss,hashes,
     limitations:['Isolated Vite configuration; this is not the deployable dashboard bundle.','Offline synthetic data and unavailable reader truth; no production or broker validation.','No hardware paint or competitor performance measurement.']};
   await writeFile(path.join(out,metadataFile),JSON.stringify(metadata,null,2)+'\n');
@@ -67,6 +69,7 @@ if (!serve) {
 } else {
   const info = JSON.parse(await readFile(path.join(out,metadataFile),'utf8'));
   if(info.buildId!==id || info.schemaVersion!==1) throw Error('Wrong build metadata');
+  const port=info.reactProfiling?4299:4199;
   for (const [relative,expected] of Object.entries(info.hashes)) {
     if (path.isAbsolute(relative) || relative.split('/').includes('..')) throw Error('Invalid manifest path');
     if(sha(await readFile(path.join(out,relative)))!==expected) throw Error('Asset changed: '+relative);
@@ -83,6 +86,6 @@ if (!serve) {
     try {const data=await readFile(path.join(out,relative));res.writeHead(200,{'content-type':relative===metadataFile?'application/json':types[path.extname(relative)]??'application/octet-stream','cache-control':'no-store'});res.end(data);}
     catch {res.writeHead(500);res.end();}
   });
-  server.listen(4199,'127.0.0.1',()=>console.log('Actual Scanner offline QA on http://127.0.0.1:4199; build '+id+'; navigation receipts '+journalDirectory));
+  server.listen(port,'127.0.0.1',()=>console.log('Actual Scanner offline QA on http://127.0.0.1:'+port+'; build '+id+'; diagnosticOnly '+Boolean(info.diagnosticOnly)+'; navigation receipts '+journalDirectory));
   for(const signal of ['SIGINT','SIGTERM']) process.once(signal,()=>server.close(()=>process.exit(0)));
 }
