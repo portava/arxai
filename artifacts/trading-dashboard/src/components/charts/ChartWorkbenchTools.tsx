@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useLayoutEffect, useId, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 import { studyId, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
@@ -30,8 +30,10 @@ interface Props {
   historyWindowOnly?: boolean;
   /** Native mounts its browser-local library outside source-keyed drawing state. */
   showTemplates?: boolean;
+  /** Return focus to this view's plot after a successful object jump. */
+  chartTarget?: RefObject<HTMLDivElement | null>;
 }
-export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false,showTemplates=true}: Props) {
+export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false,showTemplates=true,chartTarget}: Props) {
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;
@@ -65,6 +67,13 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [compact,setCompact] = useState(false);
   const compactRef = useRef(false);
   const resizeFocus = useRef<"toggle" | "pan" | null>(null);
+  const navigateFocus = useRef(false);
+  useLayoutEffect(()=>{
+    if (!navigateFocus.current) return;
+    navigateFocus.current=false;
+    chartTarget?.current?.focus({preventScroll:true});
+    chartTarget?.current?.scrollIntoView({block:"nearest",behavior:"instant"});
+  });
   // Measure each pane, not the window. Capture focus BEFORE React hides controls:
   // CSS-only breakpoints can blur the element before ResizeObserver runs.
   useLayoutEffect(()=>{
@@ -175,6 +184,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     // Navigation does not edit anchors, visibility, locking or undo history.
     // An off-scale price need not be visible, so promise only the time location.
     if (!hidden && !drawing.hidden) setSelectedId(drawing.id);
+    if (chartTarget?.current) {navigateFocus.current=true;setPanel(null);}
     setMessage(`Centered on the first loaded candle at or after drawing ${index+1}'s start. Its price may still be outside the visible scale.${hidden || drawing.hidden ? " Drawing remains hidden; use Show to reveal it." : ""}`);
   };
   const exportImage = () => {

@@ -118,7 +118,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
     </section>
     <div className="mt-3 overflow-hidden rounded border border-zinc-800">
 
-      <ChartWorkbenchTools key={snapshot.id} adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
+      <ChartWorkbenchTools key={snapshot.id} chartTarget={container} adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
         preferences={preferences} onPreferences={setPreferences} hasCandles={installed>0}
         drawingKey={replayDrawingKey(snapshot)} ephemeralDrawings historyWindowOnly feedLabel={`HISTORICAL REPLAY · ${snapshot.source} · through ${fmt(current.closeTime)} · not live or tradable`}/>
       <div ref={container} className="w-full" style={{height:600}} data-testid="replay-canvas"

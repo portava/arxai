@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { useState } from "react";
+import { createRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChartWorkbenchTools, exportLabels } from "./ChartWorkbenchTools";
 import type { ChartAnchor, ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
@@ -32,6 +32,22 @@ describe("object navigation",()=>{
     expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)).toEqual(rows);
     expect(screen.getByRole("button",{name:"Undo",exact:true}).hasAttribute("disabled")).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
+  });
+  it("closes Objects and returns focus to this chart only after successful navigation",()=>{
+    seed();const chartTarget=createRef<HTMLDivElement>(), scroll=vi.fn(), goToTime=vi.fn(()=>false);
+    const engine={...adapter,goToTime} as unknown as ChartEngineAdapter;
+    render(<><ChartWorkbenchTools chartTarget={chartTarget} adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline"/><div ref={chartTarget} tabIndex={0}/></>);
+    chartTarget.current!.scrollIntoView=scroll;
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start"}));
+    expect(scroll).not.toHaveBeenCalled();
+    expect(screen.getByRole("button",{name:"Go to drawing 1 start"})).toBeTruthy();
+    goToTime.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start"}));
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({block:"nearest",behavior:"instant"});
+    expect(document.activeElement).toBe(chartTarget.current);
+    expect(screen.queryByRole("button",{name:"Go to drawing 1 start"})).toBeNull();
+    expect(screen.getByRole("button",{name:"Objects (2)",exact:true}).getAttribute("aria-expanded")).toBe("false");
   });
   it("reports an unloaded anchor without claiming that the drawing is shown",()=>{
     seed();const goToTime=vi.fn(()=>false);
