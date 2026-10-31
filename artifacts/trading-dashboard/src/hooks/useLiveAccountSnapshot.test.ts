@@ -822,3 +822,31 @@ describe("account evidence expires without another network message", () => {
     expect(result.current.live?.freshness.status).toBe("fresh");
   });
 });
+
+describe('funds-only polls do not certify position completeness',()=>{
+  it('first funds poll without a count has unknown count and incomplete positions',async()=>{
+    const body={...freshPollBody()} as Record<string,unknown>;delete body.openPositionCount;
+    fetchMock.mockResolvedValue({ok:true,json:async()=>body});
+    const {result}=renderHook(()=>useLiveAccountSnapshot());
+    await act(async()=>{MockEventSource.latest().emit({type:"error_safe"});await Promise.resolve();await Promise.resolve();});
+    expect(result.current.snapshot?.positionsComplete).toBe(false);
+    expect(result.current.snapshot?.positionCountKnown).toBe(false);
+  });
+  it('a reported count does not make an absent position list complete; SSE restores it',async()=>{
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({...freshPollBody(),openPositionCount:2})});
+    const {result}=renderHook(()=>useLiveAccountSnapshot());
+    await act(async()=>{MockEventSource.latest().emit({type:"error_safe"});await Promise.resolve();await Promise.resolve();});
+    expect(result.current.snapshot?.openPositionsCount).toBe(2);
+    expect(result.current.snapshot?.positionCountKnown).toBe(true);
+    expect(result.current.snapshot?.positionsComplete).toBe(false);
+    act(()=>MockEventSource.latest().emit(snapshotEvent({snapFreshness:'fresh',liveFreshness:'fresh'})));
+    expect(result.current.snapshot?.positionsComplete).not.toBe(false);
+    expect(result.current.snapshot?.openPositionsCount).toBe(0);
+  });
+  it('malformed counts cannot be displayed as known',async()=>{
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({...freshPollBody(),openPositionCount:'0'})});
+    const {result}=renderHook(()=>useLiveAccountSnapshot());
+    await act(async()=>{MockEventSource.latest().emit({type:"error_safe"});await Promise.resolve();await Promise.resolve();});
+    expect(result.current.snapshot?.positionCountKnown).toBe(false);
+  });
+});

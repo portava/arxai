@@ -105,6 +105,9 @@ export interface LiveAccountSnapshot {
   openPL: number | null;
   openPositionsCount: number;
   positions: LivePositionPL[];
+  /** Client fallback polls carry funds/counts, never a complete position list. */
+  positionsComplete?: boolean;
+  positionCountKnown?: boolean;
   lastBrokerSnapshotAtMs?: number;
   lastQuoteUpdateAtMs?: number;
   lastComputedAtMs: number;
@@ -319,7 +322,12 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         openPositionsCount: accountMode === "LIVE_SHARED"
           ? Number((data["openPositionCount"] as number | undefined) ?? prev?.openPositionsCount ?? 0)
           : 0,
-        positions: accountMode === "LIVE_SHARED" ? (prev?.positions ?? []) : [],
+        positions: accountMode === "LIVE_SHARED" && prev?.accountMode === "LIVE_SHARED" ? prev.positions : [],
+        positionsComplete: false,
+        positionCountKnown: accountMode === "LIVE_SHARED" && (
+          (typeof data["openPositionCount"] === "number" && Number.isSafeInteger(data["openPositionCount"]) && Number(data["openPositionCount"]) >= 0)
+          || (data["openPositionCount"] == null && prev?.accountMode === "LIVE_SHARED" && prev.positionCountKnown !== false && Number.isSafeInteger(prev.openPositionsCount) && prev.openPositionsCount >= 0)
+        ),
         lastComputedAtMs: Date.now(),
         freshness: accountMode === "LIVE_SHARED" ? freshness : "unavailable",
         warnings: (data["snapshotWarning"] ? [String(data["snapshotWarning"])] : prev?.warnings) ?? [],

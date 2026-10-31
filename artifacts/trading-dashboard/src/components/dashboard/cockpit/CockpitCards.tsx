@@ -58,8 +58,10 @@ import { cn } from "@/lib/utils";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
 
+const finite = (n: unknown): number | null => typeof n === "number" && Number.isFinite(n) ? n : null;
+const knownCount = (n: unknown): number | null => typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : null;
 const money = (n: number | null | undefined) =>
-  n == null ? "—" : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  finite(n) == null ? "—" : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const pnlClass = (n: number | null | undefined) =>
   n == null ? "text-foreground" : n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-foreground";
@@ -92,7 +94,7 @@ export function AccountSnapshotCard() {
   });
 
   const summary = summaryQ.data;
-  const accounts = summary?.accounts ?? [];
+  const accounts = Array.isArray(summary?.accounts) ? summary.accounts : [];
   const master = summary?.masterMt5 ?? null;
   const isOwnerAdmin = Boolean(summary?.masterAccess);
   // Canonical per-user allocation — the SAME source the live gate/preflight use.
@@ -102,18 +104,19 @@ export function AccountSnapshotCard() {
   const canonicalAvailable = allocationView?.availableAllocation ?? null;
   const hasAllocation = allocationView?.hasAllocation ?? false;
 
-  const alloc = useMemo(() => ({
-    balance: accounts.reduce((s, a) => s + Number(a.virtualBalance || 0), 0),
-    equity: accounts.reduce((s, a) => s + Number(a.virtualEquity || 0), 0),
-    pnl: accounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0),
-    open: accounts.reduce((s, a) => s + Number(a.openAttributions || 0), 0),
-  }), [accounts]);
+  const alloc = useMemo(() => {
+    const sum = (field: "virtualBalance" | "virtualEquity" | "virtualPnl" | "openAttributions") => {
+      if (!accounts.length || accounts.some(a => finite(a[field]) == null)) return null;
+      return finite(accounts.reduce((total, a) => total + Number(a[field]), 0));
+    };
+    return { balance: sum("virtualBalance"), equity: sum("virtualEquity"), pnl: sum("virtualPnl"), open: knownCount(sum("openAttributions")) };
+  }, [accounts]);
 
   // When in live-shared mode (non-admin): prefer the SSE stream's open P/L and
   // count — they come from the same buildLiveAccountSnapshot adapter as the
   // account-stream, giving identical numbers across Dashboard, Open Trades,
   // and Ruby. Admin/owner stay on the master-snapshot path they need.
-  const liveSnap = mode.isLiveShared && !isOwnerAdmin && !liveCtx.isUnavailable
+  const liveSnap = mode.isLiveShared && !isOwnerAdmin && liveCtx.snapshot?.accountMode === "LIVE_SHARED"
     ? liveCtx.snapshot
     : null;
 
@@ -123,8 +126,8 @@ export function AccountSnapshotCard() {
   // which double-counts reserved risk + open floating loss and so drifts above
   // what the gate will actually allow (the bug this fixes). Never fabricated.
   const allocation = isOwnerAdmin && master
-    ? master.arxAllocated ?? alloc.balance
-    : (canonicalAvailable ?? alloc.balance);
+    ? finite(master.arxAllocated)
+    : finite(canonicalAvailable);
   // Prefer the user's OWN EA-synced balance/equity from the live snapshot when
   // present. liveSnap is scoped to the caller's own connection (null for pure
   // shared users → safe fallback to ARX allocation; never the master's figures),
@@ -133,14 +136,15 @@ export function AccountSnapshotCard() {
   // The first tile relabels to "Balance" when a real broker balance is shown, or
   // "Available" for the canonical per-user headroom, so the label never claims an
   // allocation/headroom figure is a broker balance, or vice-versa.
-  const liveBalance = liveSnap?.balance ?? null;
+  const liveBalance = finite(liveSnap?.balance);
   const balanceLabel = liveBalance != null
     ? "Balance"
     : isOwnerAdmin && master ? "Allocation" : "Available";
   const balanceValue = liveBalance ?? allocation;
-  const equity = liveSnap?.equity ?? (isOwnerAdmin && master ? master.mt5Equity : alloc.equity);
-  const openPnl = liveSnap?.openPL ?? (isOwnerAdmin && master ? master.mt5OpenPnl : alloc.pnl);
-  const openCount = liveSnap?.openPositionsCount ?? (isOwnerAdmin && master ? master.openPositions : alloc.open);
+  const equity = liveSnap ? finite(liveSnap.equity) : finite(isOwnerAdmin && master ? master.mt5Equity : alloc.equity);
+  const openPnl = liveSnap ? finite(liveSnap.openPL) : finite(isOwnerAdmin && master ? master.mt5OpenPnl : alloc.pnl);
+  const openCount = liveSnap ? (liveSnap.positionCountKnown === false ? null : knownCount(liveSnap.openPositionsCount)) : knownCount(isOwnerAdmin && master ? master.openPositions : alloc.open);
+  const lastKnown = liveSnap ? !["live", "fresh"].includes(liveCtx.freshness) : Boolean(summary && summaryQ.isError);
 
   // Reconciliation — unified contract for ALL paths.
   //
@@ -207,14 +211,15 @@ export function AccountSnapshotCard() {
   const broker = master?.brokerName ?? accounts[0]?.masterBrokerName ?? "—";
   const masked = master?.accountNumberMasked ?? accounts[0]?.masterAccountNumberMasked ?? null;
   const liveLabel = mode.isLiveShared ? "LIVE" : mode.isDemo ? "DEMO" : "SIM";
-  const isActive = (accounts[0]?.status ?? master?.syncStatus ?? "").toString().toLowerCase() === "active"
-    || mode.isLiveShared || (master?.syncStatus === "LIVE");
+  const reportedStatus = !summaryQ.isError ? (accounts[0]?.status ?? master?.syncStatus ?? "").toString().toLowerCase() : "";
+  const isActive = ["active", "live"].includes(reportedStatus);
+  const statusKnown = ["active", "live", "inactive", "disabled", "disconnected"].includes(reportedStatus);
 
   return (
     <CockpitCard
       icon={<Wallet className="h-[18px] w-[18px]" />}
       accent="blue"
-      loading={summaryQ.isLoading && !summary}
+      loading={summaryQ.isLoading && !summary && !liveSnap}
       data-testid="cockpit-account-snapshot"
     >
       {/* Own header row: title on the left, glowing shield on the right.
@@ -244,7 +249,7 @@ export function AccountSnapshotCard() {
           value={
             plUnderReview ? "Under review"
             : plIsEstimate && openPnl != null ? `~${formatPnl(openPnl)}`
-            : formatPnl(openPnl)
+            : openPnl == null ? "—" : formatPnl(openPnl)
           }
           valueClass={
             plUnderReview ? "text-warning"
@@ -253,9 +258,11 @@ export function AccountSnapshotCard() {
           }
           data-testid="cockpit-open-pnl"
         />
-        <StatTile label="Open Trades" value={String(openCount ?? 0)} />
+        <StatTile label="Open Trades" value={openCount == null ? "—" : String(openCount)} />
       </div>
 
+      {lastKnown && <p className="mt-2 text-xs text-warning">Last-known account figures — current values have not been confirmed.</p>}
+      {balanceValue == null && equity == null && openPnl == null && <p className="mt-2 text-xs text-txt-muted">Account figures unavailable.</p>}
       {equityStale && (
         <p
           className="mt-2 flex items-center gap-1 text-[11px] font-medium text-warning"
@@ -339,7 +346,7 @@ export function AccountSnapshotCard() {
               compact
             />
           )}
-          <Pill tone={isActive ? "success" : "muted"}>{isActive ? "Active" : "Inactive"}</Pill>
+          <Pill tone={isActive ? "success" : "muted"}>{!statusKnown ? "Status unknown" : isActive ? "Active" : "Inactive"}</Pill>
         </div>
       </div>
     </CockpitCard>
@@ -635,7 +642,7 @@ export function OpenPositionsCard() {
     source?: "ARX" | "MANUAL" | "PENDING"; attributedUserId?: number | null;
   };
 
-  const endpointCount = posQ.data?.count ?? 0;
+  const endpointCount = knownCount(posQ.data?.count);
   const scope = (posQ.data as { scope?: string } | undefined)?.scope;
   const isMasterScope = scope === "MASTER";
 
@@ -644,8 +651,10 @@ export function OpenPositionsCard() {
   // always agree with the AccountSnapshotCard's "Open Trades" tile.
   // For master (admin) scope keep the endpoint rows: they carry the `source`
   // field (ARX / MANUAL / PENDING) needed for master-account attribution.
-  const rows: PositionRow[] = (!isMasterScope && liveCtx.snapshot != null)
-    ? liveCtx.snapshot.positions.map((p) => ({
+  const positionSnapshot = !isMasterScope && liveCtx.snapshot?.accountMode === "LIVE_SHARED" ? liveCtx.snapshot : null;
+  const positionDataAvailable = positionSnapshot != null || (!posQ.isError && Array.isArray(posQ.data?.rows));
+  const rows: PositionRow[] = positionSnapshot != null
+    ? positionSnapshot.positions.map((p) => ({
         id: p.positionId,
         symbol: p.symbol,
         side: p.direction.toUpperCase(),
@@ -655,11 +664,13 @@ export function OpenPositionsCard() {
         pnl: p.unrealizedPL,
         stale: p.plIsEstimate || p.plSource === "unavailable",
       }))
-    : (posQ.data?.rows ?? []) as PositionRow[];
+    : (positionDataAvailable ? posQ.data?.rows ?? [] : []) as PositionRow[];
 
-  const count = (!isMasterScope && liveCtx.snapshot != null)
-    ? (liveCtx.snapshot.openPositionsCount ?? endpointCount)
-    : endpointCount;
+  const count = positionSnapshot != null
+    ? (positionSnapshot.positionCountKnown === false ? null : knownCount(positionSnapshot.openPositionsCount))
+    : positionDataAvailable ? endpointCount : null;
+  const incomplete = positionSnapshot?.positionsComplete === false || count == null || count !== rows.length;
+  const lastKnownPositions = positionSnapshot != null && !["live", "fresh"].includes(liveCtx.freshness);
 
   // Owner/admin master view labels real exposure; regular users only ever get
   // ARX-attributed rows (no `source` field → no badge), isolation unchanged.
@@ -674,8 +685,8 @@ export function OpenPositionsCard() {
       title="Open Positions"
       icon={<Briefcase className="h-[18px] w-[18px]" />}
       accent="blue"
-      badge={String(count)}
-      loading={posQ.isLoading}
+      badge={count == null ? undefined : String(count)}
+      loading={posQ.isLoading && !positionSnapshot}
       headerExtra={
         liveCtx.snapshot != null ? (
           <FreshnessBadge
@@ -693,11 +704,12 @@ export function OpenPositionsCard() {
           Master-account exposure — every real open position, including manual / unattributed.
         </p>
       )}
-      {rows.length === 0 ? (
+      {!positionDataAvailable ? <p className="py-4 text-sm text-txt-secondary">Position data unavailable. Open exposure has not been checked.</p> : incomplete ? <p className="py-4 text-sm text-warning">Position details incomplete. Wait for a complete position snapshot.</p> : null}
+      {lastKnownPositions && rows.length > 0 && <p className="text-xs text-warning">Last-known positions — current exposure has not been confirmed.</p>}
+      {positionDataAvailable && rows.length === 0 && !incomplete ? (
         <div className="flex flex-col items-center justify-center py-6 text-center">
           <Briefcase className="mb-2 h-6 w-6 text-txt-muted" />
-          <p className="text-sm font-medium text-foreground">No open positions</p>
-          <p className="text-xs text-txt-muted">You have no open trades right now.</p>
+          <p className="text-sm font-medium text-foreground">{lastKnownPositions ? "Last reported snapshot contained no positions." : "Latest snapshot reports no open positions."}</p>
         </div>
       ) : (
         <ul className="divide-y divide-border/50">
@@ -720,7 +732,7 @@ export function OpenPositionsCard() {
                   </div>
                 </div>
                 <div className={cn("shrink-0 font-mono text-sm font-semibold", pnlClass(r.pnl))}>
-                  {r.stale || r.pnl == null ? "—" : formatPnl(r.pnl)}
+                  {r.stale || lastKnownPositions || incomplete || finite(r.pnl) == null ? "—" : formatPnl(r.pnl)}
                 </div>
               </li>
             );
