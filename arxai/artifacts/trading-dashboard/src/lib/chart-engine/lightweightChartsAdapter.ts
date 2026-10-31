@@ -740,6 +740,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const modes = {linear:PriceScaleMode.Normal,log:PriceScaleMode.Logarithmic,percent:PriceScaleMode.Percentage,indexed:PriceScaleMode.IndexedTo100};
     this.chart?.applyOptions({ rightPriceScale: { mode: modes[mode] } });
   }
+  setPriceOnlyScale(enabled: boolean): void {
+    // Selecting either fitting policy returns to automatic price scaling; an
+    // unchanged preference must not undo a later manual scale adjustment.
+    if (this.analysis?.setPriceOnlyScale(enabled)) this.chart?.applyOptions({rightPriceScale:{autoScale:true}});
+  }
   setPriceScaleInverted(invertScale: boolean): void { this.chart?.applyOptions({rightPriceScale:{invertScale}}); }
   /** Relabel axis ticks and the crosshair time. Re-applying the same formatter
    * references clears the library's tick-label cache; data, drawings, links and

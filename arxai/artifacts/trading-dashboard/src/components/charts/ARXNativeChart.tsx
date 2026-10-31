@@ -709,6 +709,7 @@ export function ARXNativeChart({
 
   useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
+  useEffect(() => { adapterRef.current?.setPriceOnlyScale?.(preferences.priceOnlyScale === true); }, [preferences.priceOnlyScale, chartEpoch]);
   useEffect(() => { adapterRef.current?.setPriceScaleInverted?.(preferences.inverted === true); }, [preferences.inverted, chartEpoch]);
 
   useLayoutEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);

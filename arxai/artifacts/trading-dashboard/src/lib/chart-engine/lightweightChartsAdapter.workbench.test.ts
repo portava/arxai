@@ -349,3 +349,17 @@ describe("area, baseline, Heikin Ashi and hollow display styles",()=>{
     expect(price.data).toEqual(expectedPoints("hollow",[...varied,tip]));
   });
 });
+
+
+it("changes only overlay autoscaling and does not reset a subsequent manual scale on an unchanged preference",()=>{
+ adapter.setStudies([STUDY_DEFAULTS[0]]);const price=m.handles[0],overlay=m.handles[1];
+ const data=JSON.stringify(m.handles.map(h=>h.data));const writes=m.handles.map(h=>h.setData.mock.calls.length);
+ adapter.setPriceOnlyScale(true);
+ expect(overlay.applyOptions.mock.calls.at(-1)[0].autoscaleInfoProvider(()=>({priceRange:{minValue:0,maxValue:1000}}))).toBeNull();
+ expect(price.applyOptions.mock.calls.some((c:any[])=>"autoscaleInfoProvider" in c[0])).toBe(false);
+ expect(m.chart.applyOptions).toHaveBeenLastCalledWith({rightPriceScale:{autoScale:true}});
+ m.chart.applyOptions.mockClear();adapter.setPriceOnlyScale(true);expect(m.chart.applyOptions).not.toHaveBeenCalled();
+ expect(JSON.stringify(m.handles.map(h=>h.data))).toBe(data);expect(m.handles.map(h=>h.setData.mock.calls.length)).toEqual(writes);
+ adapter.setChartStyle("heikinAshi");adapter.setPriceOnlyScale(false);
+ const original=vi.fn(()=>({priceRange:{minValue:1,maxValue:2}}));expect(overlay.applyOptions.mock.calls.at(-1)[0].autoscaleInfoProvider(original)).toEqual(original());
+});

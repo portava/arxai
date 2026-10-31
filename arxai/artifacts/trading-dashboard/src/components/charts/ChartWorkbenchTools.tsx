@@ -46,6 +46,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [panel,setPanel] = useState<"studies" | "objects" | null>(null);
   const [tool,setTool] = useState<DrawingKind | null>(null);
   const [anchor,setAnchor] = useState<ChartAnchor | null>(null);
+  const [channelEnd,setChannelEnd] = useState<ChartAnchor | null>(null);
   const [noteText,setNoteText] = useState("");
   const [hidden,setHidden] = useState(false);
   const [message,setMessage] = useState("");
@@ -139,16 +140,17 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     adapter?.setDrawingHandler?.(tool && hasCandles && (tool !== "text" || normalizeNoteText(noteText) != null) ? point=>{
       if (drawings.length >= MAX_DRAWINGS) {setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first.`);setTool(null);return;}
       if (!singleAnchorDrawing(tool) && !anchor) {setAnchor(point);return;}
-      if (anchor && point.time === anchor.time) {setMessage("Choose a different candle for the second anchor.");return;}
+      if (anchor && !channelEnd && point.time === anchor.time) {setMessage("Choose a different candle for the second anchor.");return;}
+      if (tool === "channel" && !channelEnd) {setChannelEnd(point);return;}
       const id = crypto.randomUUID();
-      change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:point} : {}),color:"#fbbf24",...(tool === "text" ? {text:normalizeNoteText(noteText)!} : {})}]);
+      change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:channelEnd ?? point} : {}),...(tool === "channel" ? {offset:point} : {}),color:"#fbbf24",...(tool === "text" ? {text:normalizeNoteText(noteText)!} : {})}]);
       if (tool === "text") setPanel("objects");
-      setSelectedId(id);setTool(null);setAnchor(null);setHidden(false);setMessage(tool === "text" ? "Your note added. Drag its card or anchor to move it; edit the text in Objects. This is your annotation, not an automated reading." : "Drawing added. Drag the line or its handles to edit; Objects has exact values and locking.");
+      setSelectedId(id);setTool(null);setAnchor(null);setChannelEnd(null);setHidden(false);setMessage(tool === "text" ? "Your note added. Drag its card or anchor to move it; edit the text in Objects. This is your annotation, not an automated reading." : "Drawing added. Drag the line or its handles to edit; Objects has exact values and locking.");
     } : null);
     return ()=>adapter?.setDrawingHandler?.(null);
-  },[adapter,epoch,tool,anchor,drawings,hasCandles,key,noteText]);
+  },[adapter,epoch,tool,anchor,channelEnd,drawings,hasCandles,key,noteText]);
   useEffect(()=>{
-    const cancel = (event: KeyboardEvent) => {if(event.key === "Escape"){setTool(null);setAnchor(null);}};
+    const cancel = (event: KeyboardEvent) => {if(event.key === "Escape"){setTool(null);setAnchor(null);setChannelEnd(null);}};
     window.addEventListener("keydown",cancel);return()=>window.removeEventListener("keydown",cancel);
   },[]);
   const undo = (redo = false) => {
@@ -184,12 +186,12 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   };
   return <div ref={rootRef} className="border-b border-zinc-800 px-3 py-2 text-xs" data-testid="chart-workbench-tools" onKeyDown={event=>{
     if(event.key === "Escape" && toolsOpen && advancedRef.current?.contains(event.target as Node) && toggleRef.current?.getClientRects().length){
-      event.preventDefault();event.stopPropagation();toggleRef.current.focus();setToolsOpen(false);setTool(null);setAnchor(null);
+      event.preventDefault();event.stopPropagation();toggleRef.current.focus();setToolsOpen(false);setTool(null);setAnchor(null);setChannelEnd(null);
     }
   }}>
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-1 rounded-md border border-zinc-800 p-0.5" role="group" aria-label="Zoom and pan">
-        <Button ref={panRef} size="sm" variant={panOnly ? "secondary" : "ghost"} className="h-8 gap-1.5 text-xs" aria-pressed={panOnly} disabled={!hasCandles || !adapter?.setNavigationMode} title="Drag freely across candles and drawings. Select again to edit drawings." onClick={()=>{setPanOnly(value=>!value);setTool(null);setAnchor(null);setSelectedId(null);setMessage("");}}><Hand className="h-3.5 w-3.5"/>Pan</Button>
+        <Button ref={panRef} size="sm" variant={panOnly ? "secondary" : "ghost"} className="h-8 gap-1.5 text-xs" aria-pressed={panOnly} disabled={!hasCandles || !adapter?.setNavigationMode} title="Drag freely across candles and drawings. Select again to edit drawings." onClick={()=>{setPanOnly(value=>!value);setTool(null);setAnchor(null);setChannelEnd(null);setSelectedId(null);setMessage("");}}><Hand className="h-3.5 w-3.5"/>Pan</Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Pan to earlier candles" title="Earlier candles (Left arrow on chart)" disabled={!hasCandles || !adapter?.panBy} onClick={()=>adapter?.panBy?.(-0.25)}><ArrowLeft className="h-3.5 w-3.5"/></Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Pan to later candles" title="Later candles (Right arrow on chart)" disabled={!hasCandles || !adapter?.panBy} onClick={()=>adapter?.panBy?.(0.25)}><ArrowRight className="h-3.5 w-3.5"/></Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom in chart" title="Zoom in (+ on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(0.75)}><ZoomIn className="h-3.5 w-3.5"/></Button>
@@ -201,6 +203,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <option value="linear">Regular price</option><option value="log">Logarithmic</option><option value="percent">Percentage</option><option value="indexed">Indexed to 100</option>
       </select></label>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.inverted === true} onClick={()=>onPreferences(p=>({...p,inverted:!p.inverted}))}>Invert scale</Button>
+      <Button size="sm" variant={preferences.priceOnlyScale ? "secondary" : "ghost"} className="h-8 text-xs" aria-pressed={preferences.priceOnlyScale === true} title="Automatically fit the price scale to prices only. Indicator values stay unchanged but may fall outside the visible area. Turning off fits prices and overlay indicators." onClick={()=>onPreferences(p=>({...p,priceOnlyScale:!p.priceOnlyScale}))}>Scale price only</Button>
       <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
         {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
       </select></label>
@@ -209,7 +212,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       </select></label>
       {zone !== selectedZone && resolveTimeZone(selectedZone) !== "UTC" && <span className="text-[11px] text-zinc-500" data-testid="chart-daily-zone-note">Daily bars keep UTC day labels.</span>}
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "studies"} onClick={()=>setPanel(p=>p === "studies" ? null : "studies")}>Studies ({preferences.studies.length})</Button>
-      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setNoteText("");setHidden(false);setMessage("");}}>
+      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setChannelEnd(null);setNoteText("");setHidden(false);setMessage("");}}>
         <option value="">Select / crosshair / pan</option>{Object.entries(names).map(([kind,name])=><option key={kind} value={kind}>{name}</option>)}
       </select>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={snap} title="Snap new anchors and dragged handles to the nearest open, high, low or close of the candle" onClick={()=>setSnap(value=>!value)}>Magnet {snap ? "on" : "off"}</Button>
@@ -239,20 +242,24 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}
       {drawings.map((d,index)=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
         <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}</button>
-        {(["start","end"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{formatChartTime(d[name]!.time,zone)}</span></label>)}
+        {(["start","end","offset"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{formatChartTime(d[name]!.time,zone)}</span></label>)}
         <input type="color" aria-label={`Drawing ${index+1} color`} className="h-7 w-8 bg-transparent" value={d.color} onChange={e=>change(drawings.map(item=>item.id===d.id ? {...item,color:e.target.value} : item))}/>
         {d.kind !== "text" && <><select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>
         <select className={field} aria-label={`Drawing ${index+1} line style`} value={(d.dashed ?? ["horizontal","fibonacci"].includes(d.kind)) ? "dashed" : "solid"} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,dashed:event.target.value==="dashed"} : item))}><option value="solid">Solid</option><option value="dashed">Dashed</option></select></>}
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.locked ? "Unlock" : "Lock"} drawing ${index+1}`} aria-pressed={!!d.locked} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,locked:!item.locked} : item))}>{d.locked ? "Unlock" : "Lock"}</Button>
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>change(drawings.filter(item=>item.id!==d.id))}>Delete</Button>
         {d.kind === "text" && <NoteTextEditor label={`Drawing ${index+1} note text`} value={d.text!} locked={d.locked === true} onSave={text=>change(drawings.map(item=>item.id===d.id ? {...item,text} : item))} />}
+        {d.kind === "channel" && <div className="flex basis-full flex-wrap gap-x-4 gap-y-2">
+          {([['extendLeft','Extend left','extend left'],['extendRight','Extend right','extend right'],['middleLine','Middle line','middle line']] as const).map(([property,label,accessible])=><label key={property} className="flex min-h-8 items-center gap-2"><input type="checkbox" aria-label={`Drawing ${index+1} ${accessible}`} checked={d[property] === true} disabled={d.locked === true} onChange={event=>{if(!d.locked)change(drawings.map(item=>item.id===d.id?{...item,[property]:event.target.checked}:item));}} />{label}</label>)}
+          <span className="basis-full text-zinc-400">Extensions follow your drawn slope; they are not a forecast. The midpoint is halfway between the displayed rails.</span>
+        </div>}
       </div>)}
     </div>}
       </div>
     </div>
     {styleNote && <p id={styleNoteId} data-testid="chart-style-note" className="mt-2 text-[11px] leading-relaxed text-zinc-400">{styleNote}</p>}
     {tool === "text" && <label className="mt-2 flex max-w-sm flex-col gap-1 text-zinc-300">Your note<textarea aria-label="New user note" className="w-full min-w-0 rounded border border-zinc-700 bg-zinc-900 p-2 text-xs" rows={2} maxLength={MAX_NOTE_LENGTH} value={noteText} onChange={event=>setNoteText(event.target.value)} placeholder="Write your observation, then tap a candle" /><span className="text-[11px] text-zinc-400">Plain text, up to {MAX_NOTE_LENGTH} characters and {MAX_NOTE_PARAGRAPHS} lines. Your annotations are separate from automated analysis.</span></label>}
-    {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {tool === "text" && normalizeNoteText(noteText) == null ? "enter a valid note above before choosing its candle" : anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Drawings are analysis only. <Button size="sm" variant="ghost" className="ml-1 h-8 text-xs" onClick={()=>{setTool(null);setAnchor(null);panRef.current?.focus();}}>Cancel drawing</Button></p>}
+    {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {tool === "text" && normalizeNoteText(noteText) == null ? "enter a valid note above before choosing its candle" : channelEnd ? "choose a third candle and price to set the channel width" : anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Drawings are analysis only. <Button size="sm" variant="ghost" className="ml-1 h-8 text-xs" onClick={()=>{setTool(null);setAnchor(null);setChannelEnd(null);panRef.current?.focus();}}>Cancel drawing</Button></p>}
     {panOnly && <p className="mt-2 text-zinc-400" role="status">Pan mode · drag through history without moving drawings. Use + / − to zoom and arrow keys to pan while the chart is focused.</p>}
     {message && <p className="mt-2 text-zinc-300" role="status">{message}</p>}
     {storageFailed && <p className="mt-2 text-amber-300" role="alert">Browser storage is unavailable. Drawing changes will be lost when this view closes.</p>}

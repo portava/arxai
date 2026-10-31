@@ -59,6 +59,28 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
       };
     },
+    anchorCoordinates(time: number, price: number, index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const x = found.adapter.chart.timeScale().timeToCoordinate(time), y = found.adapter.series.priceToCoordinate(price);
+      if (x == null || y == null) return null;
+      const box = found.container.getBoundingClientRect(); return {x:box.x+x,y:box.y+y};
+    },
+    drawingGeometry(index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const analysis = found.adapter.analysis, primitive = analysis?.drawingPrimitive;
+      // Observe the actual last render only; never force a geometry update here.
+      return {drawings:analysis?.drawings?.map((d: any)=>JSON.parse(JSON.stringify(d))) ?? [],dirty:primitive?.dirty ?? false,
+        strokes:primitive?.strokes?.map((s: any)=>JSON.parse(JSON.stringify(s))) ?? [],handles:primitive?.handles?.map((p: any)=>({...p})) ?? []};
+    },
+    priceGeometry(index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const {adapter} = found, range = adapter.chart.timeScale().getVisibleLogicalRange();
+      if (!range) return null;
+      const visible = adapter.candles.slice(Math.max(0, Math.floor(range.from)), Math.min(adapter.candles.length, Math.ceil(range.to) + 1));
+      if (!visible.length) return null;
+      const low = Math.min(...visible.map((c: any) => c.low)), high = Math.max(...visible.map((c: any) => c.high));
+      return {low,high,lowY:adapter.series.priceToCoordinate(low),highY:adapter.series.priceToCoordinate(high),paneHeight:adapter.chart.panes()[0].getHeight()};
+    },
     configuration(index = 0) {
       const found = adapterFor(index); if (!found) return null;
       const scale = found.adapter.series.priceScale().options();

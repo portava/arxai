@@ -13,6 +13,25 @@ const adapter={setDrawings:drawings,setDrawingHandler:(handler:typeof click)=>{c
 const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkbenchTools key={`${symbol}:${timeframe}`} adapter={engine} epoch={1} symbol={symbol} timeframe={timeframe} preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline fixture"/>);
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
+it("saves channel extensions and midpoint with undo, lock protection and reload",()=>{
+ const key=drawingStorageKey("EURUSD","M15");
+ const channel={id:"test-channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:150,price:30},color:"#ffffff"};
+ localStorage.setItem(key,JSON.stringify([channel]));const view=mount();
+ fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));
+ fireEvent.click(screen.getByLabelText("Drawing 1 extend right"));
+ expect(JSON.parse(localStorage.getItem(key)!)[0]).toEqual({...channel,extendRight:true});
+ fireEvent.click(screen.getByLabelText("Drawing 1 middle line"));
+ expect(JSON.parse(localStorage.getItem(key)!)[0].middleLine).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+ expect(JSON.parse(localStorage.getItem(key)!)[0].middleLine).not.toBe(true);
+ fireEvent.click(screen.getByLabelText("Drawing 1 extend left"));
+ fireEvent.click(screen.getByLabelText("Lock drawing 1"));
+ for(const field of ["extend left","extend right","middle line"])expect((screen.getByLabelText(`Drawing 1 ${field}`) as HTMLInputElement).disabled).toBe(true);
+ view.unmount();mount();fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));
+ expect((screen.getByLabelText("Drawing 1 extend left") as HTMLInputElement).checked).toBe(true);
+ expect((screen.getByLabelText("Drawing 1 extend right") as HTMLInputElement).checked).toBe(true);
+ expect((screen.getByLabelText("Drawing 1 middle line") as HTMLInputElement).checked).toBe(false);
+});
 describe("manual text note controls",()=>{
   const createNote=(text="My own observation")=>{
     fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"text"}});
@@ -319,4 +338,30 @@ describe("chart style picker and PNG labels",()=>{
     expect(exportLabels({...base,style:"baseline",studies:[]})).toEqual(["ARX · EURUSD M15","Captured 2026-10-28T05:46:11.123Z","Offline fixture","Style Close baseline"]);
     for(const style of CHART_STYLES.filter(style=>style!=="heikinAshi"))expect(exportLabels({...base,style}).join("\n")).not.toContain("averaged");
   });
+});
+
+
+it("offers a reversible price-only scale control without altering other preferences",()=>{
+ const changed=vi.fn();const initial={...DEFAULT_PREFERENCES,inverted:true};
+ const view=render(<ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={initial} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
+ const button=screen.getByRole("button",{name:"Scale price only",exact:true});expect(button.getAttribute("aria-pressed")).toBe("false");
+ fireEvent.click(button);const enabled=changed.mock.calls[0][0](initial);expect(enabled).toEqual({...initial,priceOnlyScale:true});
+ view.rerender(<ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={enabled} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
+ expect(button.getAttribute("aria-pressed")).toBe("true");fireEvent.click(button);expect(changed.mock.calls[1][0](enabled)).toEqual({...initial,priceOnlyScale:false});
+});
+
+
+it("places a channel in three steps, cancels partial placement and preserves its third anchor through undo and reload",()=>{
+ const view=mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"channel"}});
+ act(()=>click?.({time:100,price:10}));act(()=>click?.({time:200,price:20}));
+ expect(localStorage.getItem(drawingStorageKey("EURUSD","M15"))).toBeNull();
+ expect(screen.getByText(/choose a third candle/)).toBeTruthy();
+ act(()=>click?.({time:100,price:30}));
+ const saved=()=>JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!);
+ expect(saved()[0]).toMatchObject({kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:100,price:30}});
+ fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));expect(saved()).toEqual([]);
+ fireEvent.click(screen.getByRole("button",{name:"Redo",exact:true}));expect(saved()[0].offset).toEqual({time:100,price:30});
+ fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"channel"}});act(()=>click?.({time:300,price:10}));act(()=>click?.({time:400,price:20}));
+ fireEvent.keyDown(window,{key:"Escape"});expect(saved()).toHaveLength(1);
+ view.unmount();mount();expect(drawings.mock.calls.at(-1)![0][0].offset).toEqual({time:100,price:30});
 });

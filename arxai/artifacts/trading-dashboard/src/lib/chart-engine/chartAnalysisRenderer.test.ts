@@ -739,3 +739,29 @@ describe("incremental study changes equal a full rebuild", () => {
     expect(readsBefore).toBeLessThan(10);
   });
 });
+
+
+describe("price-only automatic scale",()=>{
+  it("excludes overlay studies without hiding/rebuilding them or changing oscillator scales and data",()=>{
+    const f=fixture(200);const configs=[{...STUDY_DEFAULTS[0],id:"average"},{kind:"rsi",period:14,color:"#ffffff",id:"osc"}] as ChartStudy[];
+    f.renderer.setStudies(configs,f.candles);const [overlay,oscillator]=f.handles;
+    const data=f.handles.map(h=>JSON.stringify(h.data));const writes=f.handles.map(h=>h.setData.mock.calls.length);
+    const oscillatorScale=oscillator.options.autoscaleInfoProvider;const base=vi.fn(()=>({priceRange:{minValue:1,maxValue:1000}}));
+    f.renderer.setPriceOnlyScale(true);
+    expect(overlay.options.autoscaleInfoProvider(base)).toBeNull();expect(base).not.toHaveBeenCalled();
+    expect(oscillator.options.autoscaleInfoProvider).toBe(oscillatorScale);
+    expect(f.handles.map(h=>JSON.stringify(h.data))).toEqual(data);expect(f.handles.map(h=>h.setData.mock.calls.length)).toEqual(writes);
+    const calls=overlay.applyOptions.mock.calls.length;f.renderer.setPriceOnlyScale(true);expect(overlay.applyOptions).toHaveBeenCalledTimes(calls);
+    f.renderer.setPriceOnlyScale(false);expect(overlay.options.autoscaleInfoProvider(base)).toEqual(base());
+    expect(f.chart.addSeries).toHaveBeenCalledTimes(2);expect(f.chart.removeSeries).not.toHaveBeenCalled();
+  });
+  it("keeps the policy through appended, edited and rebuilt studies and price-style replacement",()=>{
+    const f=fixture(200);f.renderer.setPriceOnlyScale(true);
+    const a={...STUDY_DEFAULTS[0],id:"a"};f.renderer.setStudies([a],f.candles);
+    const assertExcluded=()=>{for(const h of f.panes[0].series.filter(s=>s!==f.price))expect(h.options.autoscaleInfoProvider(()=>({priceRange:{minValue:0,maxValue:999}}))).toBeNull();};
+    assertExcluded();f.renderer.setStudies([a,{...a,id:"b",period:30}],f.candles);assertExcluded();
+    f.renderer.setStudies([{...a,color:"#ffffff"},{...a,id:"b",period:30}],f.candles);assertExcluded();
+    f.renderer.setStudies([{...a,id:"b",period:30},a],f.candles);assertExcluded();
+    f.renderer.replacePriceSeries(f.price,f.candles);assertExcluded();
+  });
+});

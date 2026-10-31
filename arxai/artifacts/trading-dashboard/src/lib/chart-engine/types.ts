@@ -179,6 +179,7 @@ export interface ChartEngineAdapter {
   setSmartAnnotation?(annotation: SmartChartAnnotation | null): void;
   setScaleMode?(mode: ChartScaleMode): void;
   setPriceScaleInverted?(inverted: boolean): void;
+  setPriceOnlyScale?(enabled: boolean): void;
   /** Display-only, already resolved for timeframe by the caller; candle times,
    * anchors and link events stay UTC seconds. */
   setDisplayTimeZone?(zone: ChartTimeZone): void;

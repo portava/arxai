@@ -2,6 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHART_STYLE_NAMES, CHART_STYLES, closeOnlyStyle, describeChartStyle, drawingSegments, drawingStorageKey, PREFERENCES_KEY, readChartStorage, validateDrawings, validatePreferences, writeChartStorage } from "./chartWorkspace";
 import { STUDY_DEFAULTS } from "./chartStudies";
 afterEach(()=>vi.restoreAllMocks());
+it("validates optional channel controls without changing old drawings or retaining foreign flags",()=>{
+ const channel={id:"channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:150,price:30},color:"#ffffff"};
+ expect(validateDrawings([channel])).toEqual([channel]);
+ const configured={...channel,extendLeft:true,extendRight:true,middleLine:true};
+ expect(validateDrawings([configured])).toEqual([configured]);
+ for(const key of ['extendLeft','extendRight','middleLine']) for(const invalid of [1,'true',{},[]])expect(validateDrawings([{...channel,[key]:invalid}])).toEqual([]);
+ expect(validateDrawings([{...channel,extendLeft:false,extendRight:false,middleLine:false}])).toEqual([channel]);
+ const line={id:'line',kind:'trend',start:channel.start,end:channel.end,color:channel.color};
+ expect(validateDrawings([{...line,extendLeft:true,middleLine:true}])).toEqual([line]);
+});
 describe("bounded chart workspace persistence",()=>{
   it("rejects bad settings without allowing unbounded study work",()=>{
     expect(validatePreferences({style:"random",scale:"bad",studies:[{...STUDY_DEFAULTS[0],period:1e9},STUDY_DEFAULTS[1],STUDY_DEFAULTS[1],{...STUDY_DEFAULTS[4],slow:2}]})).toEqual({style:"candles",scale:"linear",studies:[STUDY_DEFAULTS[1]]});
@@ -69,4 +79,19 @@ describe("bounded chart workspace persistence",()=>{
     vi.spyOn(Storage.prototype,"setItem").mockImplementation(()=>{throw Error("quota");});
     expect(readChartStorage("any")).toBeNull();expect(writeChartStorage("any",[])).toBe(false);
   });
+});
+
+
+it("retains only an explicit price-only scale preference",()=>{
+ expect(validatePreferences({priceOnlyScale:true}).priceOnlyScale).toBe(true);
+ for(const value of [false,undefined,null,1,"true",{},[]])expect(validatePreferences({priceOnlyScale:value}).priceOnlyScale).toBeUndefined();
+});
+
+
+it("requires and preserves a channel's three finite positive anchors without accepting invalid baselines",()=>{
+ const channel={id:"channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:100,price:15},color:"#ffffff"};
+ expect(validateDrawings([channel])).toEqual([channel]);
+ for(const offset of [undefined,{time:100,price:NaN},{time:0,price:10},{time:100,price:-1}])expect(validateDrawings([{...channel,offset}])).toEqual([]);
+ expect(validateDrawings([{...channel,end:{time:100,price:20}}])).toEqual([]);
+ expect(validateDrawings([{...channel,kind:"trend"}])[0]).not.toHaveProperty("offset");
 });
