@@ -1,3 +1,4 @@
+import { TickingTime } from "@/components/ui/TickingTime";
 import { ARXNativeChart, type ArxTimeframe } from "@/components/charts/ARXNativeChart";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { isChartInterval, parseChartInterval } from "@/lib/chart-engine/chartIntervals";
@@ -2316,7 +2317,7 @@ export function ScannerChartPanel() {
                             <span className="font-semibold">{st.label}</span>
                             <span className="font-mono">{ev.currency}</span>
                             <span>{ev.title}</span>
-                            <span className="text-zinc-400">{formatCountdown((Date.parse(ev.eventTimeIso) - Date.now()) / 1000)}</span>
+                            <span className="text-zinc-400">{<TickingTime timestamp={ev.eventTimeIso} format={(stamp, now) => formatCountdown((Date.parse(stamp) - now) / 1000)} />}</span>
                           </Badge>
                         );
                       })}

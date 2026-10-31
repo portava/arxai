@@ -1,8 +1,13 @@
+import { TickingTime } from "@/components/ui/TickingTime";
 // (N) Dashboard banner — shows when a HIGH/CRITICAL economic event is within
 // the next 60 minutes. Polls /economic-events/upcoming?hours=1&minImpact=HIGH.
 // Pulses red on CRITICAL.
 
 import { useQuery } from "@tanstack/react-query";
+
+function minutesUntil(timestamp: string, now: number): string {
+  return `${Math.max(0, Math.round((Date.parse(timestamp) - now) / 60000))}m`;
+}
 
 interface UpcomingEvent {
   id: number; eventName: string; currency: string; impactLevel: "HIGH" | "CRITICAL" | string;
@@ -30,10 +35,9 @@ export function HighImpactEventBanner() {
       <div className="font-semibold">⚠ {hasCritical ? "Critical" : "High-impact"} economic event{events.length > 1 ? "s" : ""} within 1 hour</div>
       <ul className="mt-1 space-y-0.5 text-xs">
         {events.slice(0, 4).map((e) => {
-          const m = Math.max(0, Math.round((new Date(e.eventTime).getTime() - Date.now()) / 60000));
           return (
             <li key={e.id}>
-              <span className="font-mono">{m}m</span> · {e.impactLevel} · {e.currency} · {e.eventName}
+              <span className="font-mono"><TickingTime timestamp={e.eventTime} format={minutesUntil} /></span> · {e.impactLevel} · {e.currency} · {e.eventName}
             </li>
           );
         })}

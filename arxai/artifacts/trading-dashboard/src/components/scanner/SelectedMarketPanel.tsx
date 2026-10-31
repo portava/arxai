@@ -1,3 +1,4 @@
+import { TickingTime } from "@/components/ui/TickingTime";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,8 +35,8 @@ function impactBadgeClass(i: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"): string {
   return "bg-zinc-500/20 text-foreground border-zinc-500/40";
 }
 
-function timeAgo(iso: string): string {
-  const diff = Math.max(0, Date.now() - +new Date(iso));
+function timeAgo(iso: string, now: number): string {
+  const diff = Math.max(0, now - +new Date(iso));
   const s = Math.round(diff / 1000);
   if (s < 60) return `${s}s ago`;
   return `${Math.round(s / 60)}m ago`;
@@ -257,13 +258,13 @@ export function SelectedMarketPanel() {
               )}
               <span className="ml-auto" data-testid="text-selected-last-updated">
                 {ok.dataAsOf
-                  ? `Data as of ${timeAgo(ok.dataAsOf)}`
+                  ? <>Data as of <TickingTime timestamp={ok.dataAsOf} format={timeAgo} /></>
                   : "Awaiting live market data"}
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-ruby-cache-note">
               {ok.dataAsOf
-                ? `Analysis built ${timeAgo(ok.generatedAt)}${ok.cacheHit ? " · cached" : ""}. `
+                ? <>Analysis built <TickingTime timestamp={ok.generatedAt} format={timeAgo} />{ok.cacheHit ? " · cached" : ""}. </>
                 : ""}
               {name} Market Intelligence uses cached market analysis and updates on interval/event triggers (no live AI/LLM call per refresh).
             </p>
