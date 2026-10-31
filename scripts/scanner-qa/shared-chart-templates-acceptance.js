@@ -1,4 +1,6 @@
 async page => {
+  const reloadRequested=typeof SCANNER_QA_RELOAD==='undefined'?false:SCANNER_QA_RELOAD;
+  if(typeof reloadRequested!=='boolean')throw Error('Reload acceptance flag must be boolean');
   const prefix=typeof SCANNER_QA_OUTPUT_PREFIX==='string'?SCANNER_QA_OUTPUT_PREFIX:'.playwright-cli/scanner-templates';
   const report={passed:false,checks:[],screenshots:[],failure:null,limitations:[
     'Actual Scanner route in isolated production fixture, synthetic historical candles and unavailable AI truth.',
@@ -145,6 +147,35 @@ async page => {
     check(await page.getByRole('dialog',{name:'Chart templates',exact:true}).getAttribute('id')===openedDialogId&&await page.getByLabel('Template name',{exact:true}).inputValue()==='Keep this input through loading','Early template interaction survives the delayed candle-response source binding');
     await select('Trend study');check((await saved()).entries[0].id===entry.id,'Named template survives chart-context remount');await close();
     check(await page.locator('#tv-attr-logo,iframe,embed,object,script[src*="tradingview.com"]').count()===0,'No TradingView logo or embedded chart is introduced');
+    if(reloadRequested) {
+      check((await page.evaluate(()=>window.__readFixtureLog())).preserveStorageOnReload===true,'Reload uses explicitly storage-preserving offline setup');
+      const storedBefore=await page.evaluate(()=>localStorage.getItem('arx.chart.templates.v1'));
+      const documentBefore=await page.evaluate(()=>performance.timeOrigin);
+      const responseCount=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.length;
+      await page.reload();
+      await panel.getByTestId('arx-native-canvas').waitFor();
+      await page.waitForFunction(()=>window.__arxChartQa?.snapshot()?.barCount===200);
+      check(await page.evaluate(()=>performance.timeOrigin)!==documentBefore,'Template check actually loaded a new document');
+      check(await page.evaluate(()=>localStorage.getItem('arx.chart.templates.v1'))===storedBefore,'Entire named template library survives reload byte-for-byte without reseeding');
+      await page.setViewportSize({width:1600,height:1100});
+      await panel.getByTestId('arx-native-tf-M15').click();
+      await page.waitForFunction(()=>window.__arxChartQa?.snapshot()?.intervalSeconds===900&&window.__arxChartQa?.snapshot()?.barCount===200);
+      const newRows=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.slice(responseCount);
+      const reloadResponse=newRows.filter(row=>row.requestPath==='/api/chart/candles'&&row.symbol==='EURUSD'&&row.timeframe==='M15'&&new URLSearchParams(row.requestQuery).get('limit')==='200').at(-1);
+      check(!!reloadResponse,'Reload context has a new exact Scanner response');
+      await panel.getByLabel('Chart style',{exact:true}).selectOption('candles');
+      await panel.getByLabel('Price scale',{exact:true}).selectOption('indexed');await frames();
+      check((await page.evaluate(()=>window.__arxChartQa.snapshot())).style==='candles'&&(await page.evaluate(()=>window.__arxChartQa.configuration())).priceScale.mode===3,'Current chart differs from saved template before post-reload apply');
+      await open();await select('Trend study');
+      check((await saved()).entries[0].id===entry.id,'Reloaded visible template retains its original record ID');
+      await button('Apply selected').click();await close();
+      await page.waitForFunction(()=>window.__arxChartQa.snapshot()?.style==='bars');await frames();
+      const after=await page.evaluate(()=>({state:window.__arxChartQa.snapshot(),data:window.__arxChartQa.data(),configuration:window.__arxChartQa.configuration()}));
+      check(matchesSeries(after,reloadResponse,'bars')&&matchesSma(after.configuration,reloadResponse.canonical,10,1),'Reloaded saved template installs exact bars, formula-correct SMA10 and logarithmic scale');
+      check(await page.evaluate(()=>window.__arxScannerQaBuildId)===report.build.buildId,'Reload executes the identical immutable build');
+      await open();await select('Trend study');await screenshot('reloaded-library');await close();
+      report.documentReload={passed:true,documentBefore,documentAfter:await page.evaluate(()=>performance.timeOrigin)};
+    }
     report.passed=true;
   } catch(error) {report.failure=String(error?.stack??error);try{await screenshot('failure');}catch(capture){report.captureFailure=String(capture);}}
   finally {
