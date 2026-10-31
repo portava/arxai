@@ -15,10 +15,12 @@ async page => {
     const panel=page.getByTestId('scanner-chart-panel'),button=panel.getByRole('button',{name:'Scale price only',exact:true});
     const tools=panel.getByRole('button',{name:'Chart tools',exact:true});if(await tools.isVisible()&&await tools.getAttribute('aria-expanded')!=='true')await tools.click();
     check(await button.getAttribute('aria-pressed')==='false','Default fitting policy changed');
+    await panel.evaluate(element=>element.scrollIntoView({block:'start'}));await frames();
     const initial=await read();report.before=initial;
+    await page.screenshot({path:'/Users/areyouok/arx-tier1-release/chart-price-only-scale-20261031/disabled-final.png'});
     check(initial.configuration.studies[0].config.multiplier===100,'Wide-band workload not applied');
     const authority=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.filter(r=>r.symbol===initial.state.symbol&&r.timeframe==='M15').at(-1);
-    check(authority&&JSON.stringify(initial.data.canonical)===JSON.stringify(authority.canonical),'Source mismatch before test');
+    check(authority&&JSON.stringify(initial.data.canonical)===JSON.stringify(authority.canonical)&&JSON.stringify(initial.data.display.map(({time,open,high,low,close})=>({time,open,high,low,close})))===JSON.stringify(authority.canonical),'Source/display mismatch before test');
     const span=g=>Math.abs(g.highY-g.lowY);check(Number.isFinite(span(initial.geometry))&&span(initial.geometry)>0,'No initial price geometry');
     for(const cpuRate of [1,4]){
       await cdp.send('Emulation.setCPUThrottlingRate',{rate:cpuRate});
@@ -29,7 +31,7 @@ async page => {
           const button=document.querySelector('[data-testid="scanner-chart-panel"] button[title^="Automatically fit the price scale"]');
           const capture=event=>{
             if(!event.isTrusted)return;
-            const start=event.timeStamp;const result=window.__priceScaleTiming={start,enabled,trusted:event.isTrusted,done:false,failure:null,frames:0};
+            const start=event.timeStamp;if(!Number.isFinite(start)||start<0||start>performance.now())throw Error('Invalid input clock');const result=window.__priceScaleTiming={start,enabled,trusted:event.isTrusted,done:false,failure:null,frames:0};
             let matched=false;
             const timer=setTimeout(()=>{result.failure='completion deadline';result.done=true;},5000);
             const tick=()=>{
@@ -37,7 +39,9 @@ async page => {
               const w=window.__arxChartQa,state=w.snapshot(),data=w.data(),configuration=w.configuration(),geometry=w.priceGeometry();result.frames++;
               const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),span=g=>Math.abs(g.highY-g.lowY);
               const bounds=state.bounds,visible=Math.min(bounds.y+bounds.height,innerHeight)-Math.max(bounds.y,0)>=100&&Math.min(bounds.x+bounds.width,innerWidth)-Math.max(bounds.x,0)>=100;
-              const correct=visible&&button.getAttribute('aria-pressed')===String(enabled)&&same(data,initial.data)&&same(configuration,initial.configuration)&&same(state.range,initial.state.range)&&same(state.feed,initial.state.feed)&&state.seriesId===initial.state.seriesId&&state.chartId===initial.state.chartId&&geometry&&Number.isFinite(span(geometry))&&(enabled?span(geometry)>span(initial.geometry)*1.5:Math.abs(span(geometry)-span(initial.geometry))<1);
+              const container=document.querySelector('[data-testid="scanner-chart-panel"] [data-testid="arx-native-canvas"]'),left=Math.max(bounds.x,0),right=Math.min(bounds.x+bounds.width,innerWidth),top=Math.max(bounds.y,0),bottom=Math.min(bounds.y+bounds.height,innerHeight);
+              const unobscured=[[.5,.5],[.2,.2],[.8,.2],[.2,.8],[.8,.8]].every(([x,y])=>container.contains(document.elementFromPoint(left+(right-left)*x,top+(bottom-top)*y)));
+              const correct=visible&&unobscured&&button.getAttribute('aria-pressed')===String(enabled)&&same(data,initial.data)&&same(configuration,initial.configuration)&&same(state.range,initial.state.range)&&same(state.feed,initial.state.feed)&&state.seriesId===initial.state.seriesId&&state.chartId===initial.state.chartId&&geometry&&Number.isFinite(span(geometry))&&(enabled?span(geometry)>span(initial.geometry)*1.5:Math.abs(span(geometry)-span(initial.geometry))<1);
               result.last={state,geometry,correct};
               if(correct&&matched){result.ms=performance.now()-start;result.done=true;clearTimeout(timer);return;}
               matched=correct;requestAnimationFrame(tick);
@@ -50,7 +54,7 @@ async page => {
       const values=run.samples.filter(s=>s.record).map(s=>s.ms);run.summary=stats(values);run.passed=values.length===20&&run.summary.p95<=100;
     }
     await cdp.send('Emulation.setCPUThrottlingRate',{rate:1});await button.click();await frames();report.enabled=await read();
-    await page.screenshot({path:'/Users/areyouok/arx-tier1-release/chart-price-only-scale-20261031/enabled.png'});
+    await page.screenshot({path:'/Users/areyouok/arx-tier1-release/chart-price-only-scale-20261031/enabled-final.png'});
     await page.reload();await page.waitForFunction(()=>window.__arxChartQa?.configuration()?.studies?.length===2&&window.__arxChartQa?.data()?.canonical.length===200);await frames();
     report.reloaded=await read();check(await button.getAttribute('aria-pressed')==='true'&&span(report.reloaded.geometry)>span(initial.geometry)*1.5,'Preference not restored after reload');
     report.network=await page.evaluate(()=>window.__readFixtureLog());check(!report.network.errors.length,'Page exceptions recorded');
