@@ -25,13 +25,34 @@ const GRADE_BAD = new Set(["D", "F"]);
 const PERMISSION_PASS = new Set(["GO"]);
 const PERMISSION_BLOCK = new Set(["STAND_DOWN", "NO_TRADE"]);
 
-// Honest source/freshness footer (Task #611). Timing reads are real-or-empty —
-// this label never claims live data when the feed is stale or absent.
-function freshnessFooter(updatedAt: number | undefined, count: number): string {
-  if (!updatedAt || count === 0) return "Source: live market provider when connected";
-  const s = Math.max(0, Math.round((Date.now() - updatedAt) / 1000));
-  const age = s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
-  return `Source: live market provider · updated ${age}`;
+// The multi-read endpoint omits failed markets. An empty/partial response is
+// not an all-clear, and HTTP receipt time is not provider data time.
+function timingRows(data: unknown): Array<Record<string, unknown>> {
+  const results = (data as { results?: unknown } | null)?.results;
+  if (!Array.isArray(results)) return [];
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const r of results) {
+    const symbol = r && typeof r === "object" ? (r as Record<string, unknown>).symbol : null;
+    if (typeof symbol === "string") { if (seen.has(symbol)) duplicates.add(symbol); seen.add(symbol); }
+  }
+  return results.filter((r): r is Record<string, unknown> => {
+    if (!r || typeof r !== "object") return false;
+    const row = r as Record<string, unknown>;
+    const quality = row.dataQuality as Record<string, unknown> | null;
+    return typeof row.symbol === "string" && SCAN_SYMBOLS.includes(row.symbol) && !duplicates.has(row.symbol)
+      && quality?.label === "real" && quality.hasCandleData === true && quality.hasQuoteData === true
+      && ["A+", "A", "B", "C", "D", "F"].includes(String(row.timingGrade))
+      && ["GO", "WAIT_FOR_ENTRY", "WAIT_NEWS", "NO_TRADE", "STAND_DOWN"].includes(String(row.entryPermission))
+      && [row.heatScore, row.tradeabilityScore, row.dangerScore].every(n => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100)
+      && typeof row.generatedAt === "string" && Number.isFinite(Date.parse(row.generatedAt)) && Date.parse(row.generatedAt) <= Date.now();
+  });
+}
+
+function responseFooter(updatedAt: number | undefined, count: number): string {
+  const received = typeof updatedAt === "number" && Number.isFinite(updatedAt) && updatedAt > 0 && updatedAt <= Date.now()
+    ? ` · response received ${new Date(updatedAt).toLocaleString()}` : "";
+  return `Provider-backed timing reads: ${count}/${SCAN_SYMBOLS.length}${received}. Advisory only; not a trading approval.`;
 }
 
 const HEAT_STATE_SHORT: Record<string, string> = {
@@ -58,7 +79,7 @@ export function BestMarketsCard() {
     },
   );
 
-  const results = (q.data as { results?: unknown[] })?.results ?? [];
+  const results = q.isError ? [] : timingRows(q.data);
 
   const best = results.filter((r: unknown) => {
     if (!r || typeof r !== "object") return false;
@@ -69,17 +90,19 @@ export function BestMarketsCard() {
 
   return (
     <CockpitCard
-      title="Best Markets Now"
+      title="Timing Candidates"
       icon={<TrendingUp className="h-[18px] w-[18px]" />}
       accent="success"
       loading={q.isLoading}
       data-testid="cockpit-best-markets"
     >
-      {!q.isLoading && best.length === 0 ? (
+      {results.length === 0 ? (
+        <p className="py-4 text-center text-sm text-txt-secondary">Timing data unavailable. Market opportunities have not been assessed.</p>
+      ) : best.length === 0 ? (
         <div className="py-4 text-center">
           <Flame className="mx-auto mb-1 h-5 w-5 text-txt-muted" />
-          <p className="text-sm text-txt-secondary">No A-grade setups right now.</p>
-          <p className="text-xs text-txt-muted">Check back when session conditions improve.</p>
+          <p className="text-sm text-txt-secondary">No A/B candidates in the returned timing reads.</p>
+          <p className="text-xs text-txt-muted">These reads do not cover every market or every risk.</p>
         </div>
       ) : (
         <ul className="space-y-2">
@@ -100,6 +123,7 @@ export function BestMarketsCard() {
                     <span className="font-mono font-semibold text-sm">{sym}</span>
                     <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">{grade}</span>
                   </div>
+                  <div className="text-[10px] text-txt-muted">Read generated {new Date(String(r["generatedAt"])).toLocaleString()}</div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-txt-muted capitalize">{state}</span>
                     <span className="text-[10px] text-txt-muted">·</span>
@@ -114,7 +138,8 @@ export function BestMarketsCard() {
           })}
         </ul>
       )}
-      <p className="mt-2 text-[10px] text-txt-muted">{freshnessFooter(q.dataUpdatedAt, results.length)}</p>
+      {results.length > 0 && results.length < SCAN_SYMBOLS.length && <p className="mt-2 text-xs text-warning">Partial coverage. Missing or estimated market reads are excluded.</p>}
+      <p className="mt-2 text-[10px] text-txt-muted">{responseFooter(q.dataUpdatedAt, results.length)}</p>
       <div className="mt-3">
         <ActionButton href="/market-scanner" subtle icon={<Flame className="h-4 w-4" />} data-testid="best-markets-scanner">
           Open Scanner
@@ -136,7 +161,7 @@ export function AvoidMarketsCard() {
     },
   );
 
-  const results = (q.data as { results?: unknown[] })?.results ?? [];
+  const results = q.isError ? [] : timingRows(q.data);
 
   const avoid = results.filter((r: unknown) => {
     if (!r || typeof r !== "object") return false;
@@ -148,17 +173,19 @@ export function AvoidMarketsCard() {
 
   return (
     <CockpitCard
-      title="Avoid Right Now"
+      title="Timing Cautions"
       icon={<ShieldAlert className="h-[18px] w-[18px]" />}
       accent="danger"
       loading={q.isLoading}
       data-testid="cockpit-avoid-markets"
     >
-      {!q.isLoading && avoid.length === 0 ? (
+      {results.length === 0 ? (
+        <p className="py-4 text-center text-sm text-txt-secondary">Timing data unavailable. Market cautions have not been assessed.</p>
+      ) : avoid.length === 0 ? (
         <div className="py-4 text-center">
           <ShieldAlert className="mx-auto mb-1 h-5 w-5 text-txt-muted" />
-          <p className="text-sm text-txt-secondary">No major red flags right now.</p>
-          <p className="text-xs text-txt-muted">Market conditions look manageable.</p>
+          <p className="text-sm text-txt-secondary">No listed cautions in the returned timing reads.</p>
+          <p className="text-xs text-txt-muted">This is not an all-clear for trading.</p>
         </div>
       ) : (
         <ul className="space-y-2">
@@ -183,6 +210,7 @@ export function AvoidMarketsCard() {
                         : "border-amber-500/40 bg-amber-500/15 text-amber-400",
                     )}>{grade}</span>
                   </div>
+                  <div className="text-[10px] text-txt-muted">Read generated {new Date(String(r["generatedAt"])).toLocaleString()}</div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-txt-muted capitalize">{state}</span>
                     <span className="text-[10px] text-txt-muted">·</span>
@@ -199,7 +227,8 @@ export function AvoidMarketsCard() {
           })}
         </ul>
       )}
-      <p className="mt-2 text-[10px] text-txt-muted">{freshnessFooter(q.dataUpdatedAt, results.length)}</p>
+      {results.length > 0 && results.length < SCAN_SYMBOLS.length && <p className="mt-2 text-xs text-warning">Partial coverage. Missing or estimated market reads are excluded.</p>}
+      <p className="mt-2 text-[10px] text-txt-muted">{responseFooter(q.dataUpdatedAt, results.length)}</p>
       <div className="mt-3">
         <ActionButton href="/market-heat-map" subtle icon={<TrendingDown className="h-4 w-4" />} data-testid="avoid-markets-heat">
           Heat Map

@@ -556,12 +556,15 @@ export function RubyMarketViewCard() {
    ──────────────────────────────────────────────────────────────────────── */
 export function CriticalEventsCard() {
   const eventsQ = useGetEconomicCalendar({ impact: "high", days: 3 });
-  const events = (eventsQ.data ?? []).slice(0, 4);
+  const eventsAvailable = !eventsQ.isError && Array.isArray(eventsQ.data)
+    && eventsQ.data.every(e => e && typeof e.title === "string" && e.title.trim()
+      && typeof e.eventTime === "string" && Number.isFinite(Date.parse(e.eventTime)));
+  const events = eventsAvailable ? eventsQ.data!.slice(0, 4) : [];
 
   const minsUntil = (iso: string) => {
     const d = (new Date(iso).getTime() - Date.now()) / 60000;
     if (Number.isNaN(d)) return "";
-    if (d < 0) return "now";
+    if (d < 0) return "passed";
     if (d < 60) return `${Math.round(d)}m`;
     if (d < 1440) return `${Math.round(d / 60)}h`;
     return `${Math.round(d / 1440)}d`;
@@ -576,8 +579,10 @@ export function CriticalEventsCard() {
       loading={eventsQ.isLoading}
       data-testid="cockpit-critical-events"
     >
-      {events.length === 0 ? (
-        <p className="py-4 text-center text-sm text-txt-secondary">No high-impact events in the next 3 days.</p>
+      {!eventsAvailable ? (
+        <p className="py-4 text-center text-sm text-txt-secondary">Event data unavailable. Upcoming event risk has not been checked.</p>
+      ) : events.length === 0 ? (
+        <p className="py-4 text-center text-sm text-txt-secondary">No high-impact events returned for the requested 3-day window.</p>
       ) : (
         <ul className="space-y-2">
           {events.map((e) => (
@@ -734,22 +739,28 @@ export function TodayPerformanceCard() {
   const perfQ = useGetPerformanceSummary();
   const p = perfQ.data;
   const trades = p?.totalTrades ?? 0;
-  const empty = !p || trades === 0;
+  const available = !perfQ.isError && p != null
+    && [p.totalTrades, p.winningTrades, p.losingTrades, p.excludedUnknownCount].every(n => Number.isSafeInteger(n) && n >= 0)
+    && [p.todayPnl, p.winRate, p.bestTradePnl].every(n => typeof n === "number" && Number.isFinite(n));
+  const empty = trades === 0;
 
   return (
     <CockpitCard
-      title="Today's Performance"
+      title="Trading Performance"
       icon={<Activity className="h-[18px] w-[18px]" />}
       accent="blue"
       loading={perfQ.isLoading}
       data-testid="cockpit-today-performance"
     >
-      {empty ? (
+      {!available ? (
+        <p className="py-4 text-center text-sm text-txt-secondary">Performance data unavailable. Trade counts and returns have not been checked.</p>
+      ) : empty ? (
         <div className="py-4 text-center text-sm text-txt-secondary">
-          Place or close your first trade to build today's performance summary.
+          No closed trades with known results in this response.
         </div>
       ) : (
         <>
+          <p className="mb-2 text-xs text-txt-muted">All-time closed trades with known results</p>
           <div className="grid grid-cols-4 gap-2 text-center">
             <MiniStat label="Trades" value={String(p!.totalTrades)} />
             <MiniStat label="Wins" value={String(p!.winningTrades)} valueClass="text-success" />
@@ -758,18 +769,19 @@ export function TodayPerformanceCard() {
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-sm">
             <div>
-              <div className="text-[11px] uppercase tracking-wide text-txt-muted">Realized P/L</div>
+              <div className="text-[11px] uppercase tracking-wide text-txt-muted">Today's realized P/L (UTC)</div>
               <div className={cn("font-mono text-lg font-bold", pnlClass(p!.todayPnl))}>{formatPnl(p!.todayPnl)}</div>
             </div>
             <div className="text-right">
-              <div className="text-[11px] uppercase tracking-wide text-txt-muted">Best trade</div>
+              <div className="text-[11px] uppercase tracking-wide text-txt-muted">Best trade (all time)</div>
               <div className={cn("font-mono font-semibold", pnlClass(p!.bestTradePnl))}>
-                {p!.bestTradePnl ? formatPnl(p!.bestTradePnl) : "—"}
+                {formatPnl(p!.bestTradePnl)}
               </div>
             </div>
           </div>
         </>
       )}
+      {available && p!.excludedUnknownCount > 0 && <p className="mt-2 text-xs text-warning">{p!.excludedUnknownCount} closed trade results are unknown and excluded.</p>}
       <SectionLink href="/journal" data-testid="performance-journal">Open journal</SectionLink>
     </CockpitCard>
   );
@@ -794,31 +806,42 @@ export function AlertsSummaryCard() {
     ? (alertsQ.data as Array<{ id: number; title: string; createdAt?: string; timestamp?: string }>)
     : ((alertsQ.data as { alerts?: Array<{ id: number; title: string; createdAt?: string }> } | undefined)?.alerts ?? []);
 
+  const alertsAvailable = !alertsQ.isError
+    && (Array.isArray(alertsQ.data) || Array.isArray((alertsQ.data as { alerts?: unknown } | undefined)?.alerts))
+    && Array.isArray(raw) && raw.every(a => a && typeof a.title === "string" && a.title.trim());
+  const safeAlerts = alertsAvailable ? raw : [];
+
   // Group by title so a repeated alert collapses into one row with a count
   // and the most-recent timestamp — the core fix for "disconnected ×20".
   const grouped = useMemo(() => {
-    const map = new Map<string, { title: string; count: number; last: number }>();
-    for (const a of raw) {
+    const map = new Map<string, { title: string; count: number; last: number | null; unknownTime: boolean }>();
+    for (const a of safeAlerts) {
       const key = a.title ?? "Alert";
-      const ts = new Date(a.createdAt ?? (a as { timestamp?: string }).timestamp ?? Date.now()).getTime();
+      const timestamp = a.createdAt ?? (a as { timestamp?: string }).timestamp;
+      const parsed = typeof timestamp === "string" ? Date.parse(timestamp) : NaN;
+      const ts = Number.isFinite(parsed) && parsed <= Date.now() ? parsed : null;
       const cur = map.get(key);
-      if (cur) { cur.count += 1; cur.last = Math.max(cur.last, ts); }
-      else map.set(key, { title: key, count: 1, last: ts });
+      if (cur) {
+        cur.count += 1; cur.unknownTime ||= ts === null;
+        if (ts !== null) cur.last = cur.last === null ? ts : Math.max(cur.last, ts);
+      } else map.set(key, { title: key, count: 1, last: ts, unknownTime: ts === null });
     }
-    return [...map.values()].sort((a, b) => b.last - a.last).slice(0, 4);
-  }, [raw]);
+    return [...map.values()].sort((a, b) => (b.last ?? -Infinity) - (a.last ?? -Infinity)).slice(0, 4);
+  }, [safeAlerts]);
 
   return (
     <CockpitCard
       title="Alerts Summary"
       icon={<Bell className="h-[18px] w-[18px]" />}
       accent="warning"
-      badge={raw.length ? String(raw.length) : undefined}
+      badge={safeAlerts.length ? String(safeAlerts.length) : undefined}
       loading={alertsQ.isLoading}
       data-testid="cockpit-alerts-summary"
     >
-      {grouped.length === 0 ? (
-        <p className="py-4 text-center text-sm text-txt-secondary">No major alerts right now.</p>
+      {!alertsAvailable ? (
+        <p className="py-4 text-center text-sm text-txt-secondary">Alert data unavailable. Current alerts have not been checked.</p>
+      ) : grouped.length === 0 ? (
+        <p className="py-4 text-center text-sm text-txt-secondary">No critical alerts returned in the latest response.</p>
       ) : (
         <ul className="space-y-2">
           {grouped.map((g) => (
@@ -832,8 +855,9 @@ export function AlertsSummaryCard() {
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">{g.title}</div>
                   <div className="text-[11px] text-txt-muted">
-                    {g.count > 1 ? `${g.count} times today · ` : ""}
-                    Last seen {new Date(g.last).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                    {g.count > 1 ? `${g.count} occurrences in this response · ` : ""}
+                    {g.last === null ? "Time unavailable" : `Latest reported time ${new Date(g.last).toLocaleString()}`}
+                    {g.last !== null && g.unknownTime ? " · some occurrence times unavailable" : ""}
                   </div>
                 </div>
               </div>
