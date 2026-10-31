@@ -1,0 +1,50 @@
+{
+  "testedCommit": "af9e3c9ab4414e0286dea151995ab7bca8250738",
+  "files": [
+    {
+      "file": "api-build.log",
+      "bytes": 606,
+      "sha256": "1e631add6883364dec7344f0515d77f8f0773903d20a1daadbcee97ca1bb8cfd"
+    },
+    {
+      "file": "api-typecheck.log",
+      "bytes": 146,
+      "sha256": "d5d40e0522195e71f9455da65bf8eae69dc2600a864ba03555fcbcf7fcb5e38f"
+    },
+    {
+      "file": "baseline.log",
+      "bytes": 8159,
+      "sha256": "742b9720b1f383bb03eb37c04a1467e88be722186a467a577a8dca6a1327da89"
+    },
+    {
+      "file": "chart-contracts.log",
+      "bytes": 11589,
+      "sha256": "32a35ba3dd65d709fb7cb7a5f2c6974c6664eef892c6cb7a0fca82cf6aad73d1"
+    },
+    {
+      "file": "checks.json",
+      "bytes": 950,
+      "sha256": "fd859f34ea317bb980fb5d854dfa61ffc37c4e9cf423bcc044ce150d843d6663"
+    },
+    {
+      "file": "domain-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "fixed-fixtures.log",
+      "bytes": 5078,
+      "sha256": "acdce5f36c017c85ed57b61f85183c539a4097707930d174f4aa432fee6e2bc1"
+    },
+    {
+      "file": "guards.log",
+      "bytes": 18461,
+      "sha256": "0e64c676f4824cd8087796ccbc3cc22235650eabdef0de4f338f87e219088676"
+    },
+    {
+      "file": "pure-contracts.log",
+      "bytes": 6945,
+      "sha256": "2e18e24815e9e8724e04ea5affbee1d74b1fd0b6fea4b67c3eae9a61c33ffc0c"
+    }
+  ]
+}
