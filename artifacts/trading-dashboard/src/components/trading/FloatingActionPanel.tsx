@@ -29,7 +29,7 @@ export function FloatingActionPanel() {
   if (isInvestor) return null;
 
   const trigger = <Button size="icon" onClick={() => setOpen(!open)}
-    className={cn(dockTarget ? "h-11 w-11 rounded-full shadow-lg" : "h-12 w-12 rounded-full shadow-2xl shadow-black/40", "transition-colors",
+    className={cn(dockTarget ? "h-11 w-11 rounded-full shadow-lg" : "h-12 w-12 rounded-full shadow-2xl shadow-black/40", "transition-colors", dockTarget && open && "relative z-50",
       open ? "bg-muted text-foreground" : "bg-primary text-primary-foreground hover:brightness-110")}
     aria-label={open ? "Close quick actions" : "Open quick actions"} aria-expanded={open} data-testid="fab-toggle">
     {open ? <X size={20} /> : <Plus size={20} />}
