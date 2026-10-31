@@ -1,27 +1,27 @@
 # Donchian Channels and range-study calculation — 31 October 2026
 
-Tested application `f1a47fcc791742a2c7e6ed20451a65f60bcce479`, branch `codex/chart-range-studies-20261031`, baseline `8c40032a` (volume-evidence branch). No main merge, Replit import, deployment, database migration or broker testing. The existing Replit update from8072ad76 is separate and remains pending.
+Tested application `f1a47fcc791742a2c7e6ed20451a65f60bcce479`, branch `codex/chart-range-studies-20261031`, baseline `8c40032a` (volume-evidence branch). No main merge, Replit import, deployment, database migration or broker testing. The existing Replit update from 8072ad76 is separate and remains pending.
 
 ## Capability and implementation
 
-Donchian Channels add the highest high, lowest low and midpoint over N observed bars; default20, configurable1–1000. The selected window includes the current forming bar, so values can change; a complete window is required and warm-up stays blank. The three lines share the configured study colour. Search, repeated study instances, saved settings and the existing data-window renderer use the same catalog integration. The original five starter studies are explicitly preserved in their original order.
+Donchian Channels add the highest high, lowest low and midpoint over N observed bars; default 20, configurable 1–1000. The selected window includes the current forming bar, so values can change; a complete window is required and warm-up stays blank. The three lines share the configured study colour. Search, repeated study instances, saved settings and the existing data-window renderer use the same catalog integration. The original five starter studies are explicitly preserved in their original order.
 
-Formula reference: [TradingView Donchian Channels](https://www.tradingview.com/support/solutions/43000502253-donchian-channels-dc/), accessed31October2026. ARX does not yet provide the documented offset, independent per-line styling/background fill or independent study-timeframe controls. This is a partial capability match, not verified pixel/seed/timeframe parity. Contact with the current channel is not labeled a confirmed breakout or an order signal.
+Formula reference: [TradingView Donchian Channels](https://www.tradingview.com/support/solutions/43000502253-donchian-channels-dc/), accessed 31 October 2026. ARX does not yet provide the documented offset, independent per-line styling/background fill or independent study-timeframe controls. This is a partial capability match, not verified pixel/seed/timeframe parity. Contact with the current channel is not labeled a confirmed breakout or an order signal.
 
 Stochastic, Williams %R and Donchian share bounded monotone queues on bulk history. Each bar enters/leaves once; a corrected suffix reconstructs only the preceding lookback. No future bars enter a replay prefix. Incomplete warm-up skips range work. One/two-bar revisions use an isolated direct scan to avoid queue allocation and a measured slowdown in the combined state machine. Queue memory is bounded by the selected period. Signed-zero, NaN and infinity behavior matches the simple extrema oracle; final non-finite study values remain blank.
 
 ## Validation on the exact application commit
 
-- Full frontend: **2,611 pass /11 skip /0 fail**,179passed files/1skipped.
-- Dashboard typecheck and production build pass; **87/87 guards**,7bridge binding assertions pass.
+- Full frontend: **2,611 pass  / 11 skip  / 0 fail**,179 passed files / 1 skipped.
+- Dashboard typecheck and production build pass; **87/87 guards**,7 bridge binding assertions pass.
 - Existing independent frozen-loop vectors now include a simple Donchian oracle. New tests cover hand-computed bands, flat/period-one values, linear bulk input reads, missing warm-up work, corrections, replay truncation/appends, extrema ties/non-finite values and starter collection stability.
-- Actual Scanner production fixture `7b91fefefadc931a`: **28/28 browser checks**,1440×1100 and390×844. UI adds the study, edits20→5, verifies all three actual library series against200 intercepted canonical bars, reloads a new document, and checks mobile bounds. Exact clean source/build metadata required. Desktop/mobile PNGs inspected; plot and safe-mode notices visible. Mobile tools extend below the viewport, so this is not a full-screen controls certification.
-- Synthetic unavailable-AI fixture only: API mutations blocked; expected503/unknown-read logs retained. No page exceptions. No real provider, physical-touch, hardware-paint, browser-latency or competitor benchmark claim.
+- Actual Scanner production fixture `7b91fefefadc931a`: **28/28 browser checks**, 1440×1100 and 390×844. UI adds the study, edits 20→5, verifies all three actual library series against 200 intercepted canonical bars, reloads a new document, and checks mobile bounds. Exact clean source/build metadata required. Desktop/mobile PNGs inspected; plot and safe-mode notices visible. Mobile tools extend below the viewport, so this is not a full-screen controls certification.
+- Synthetic unavailable-AI fixture only: API mutations blocked; expected 503/unknown-read logs retained. No page exceptions. No real provider, physical-touch, hardware-paint, browser-latency or competitor benchmark claim.
 - Self-review only, not an independent agent review. Root/backend/database suites were not rerun for these frontend changes.
 
 ## Retained performance evidence
 
-Nodev24.16.0, deterministic synthetic OHLC, baseline8c40032a versus the tested application above. Two warm-ups, five retained measurements per variant per case, alternating order, GC before each. Construction is excluded; calculation includes complete study points/state. Final arrays must exactly match baseline. All owned builds/tests/browsers were stopped during timing; unrelated host activity was not controlled. With five samples p95 is the maximum. These are calculator timings, not chart/page or competitor timings.
+Node v24.16.0, deterministic synthetic OHLC, baseline 8c40032a versus the tested application above. Two warm-ups, five retained measurements per variant per case, alternating order, GC before each. Construction is excluded; calculation includes complete study points/state. Final arrays must exactly match baseline. All owned builds/tests/browsers were stopped during timing; unrelated host activity was not controlled. With five samples p95 is the maximum. These are calculator timings, not chart/page or competitor timings.
 
 Bulk milliseconds, median / maximum:
 
@@ -49,11 +49,11 @@ Bulk milliseconds, median / maximum:
 | williams | 1000 | 200 | 0.083 | 0.077 / 0.086 |
 | williams | 1000 | 50000 | 0.194 | 0.311 / 0.335 |
 
-Long-history calculations improve substantially; small cases are mixed. Period1000 revision batches remain slower than baseline by roughly0.1ms per100updates, despite removing the earlier roughly3ms regression. No all-workload speedup is claimed. The whole-chart50k rendering and Scanner first-navigation failures remain open; this does not supersede their receipts.
+Long-history calculations improve substantially; small cases are mixed. Period1000 revision batches remain slower than baseline by roughly 0.1 ms per 100 updates, despite removing the earlier roughly 3 ms regression. No all-workload speedup is claimed. The whole-chart 50k rendering and Scanner first-navigation failures remain open; this does not supersede their receipts.
 
 ## Failures preserved
 
-Baseline plus initial four tests:3fail/1pass. First implementation f9e8fd3c accidentally shifted positional starter defaults: fullfrontend2599pass/10fail/11skip, corrected bycc542762 and an explicit starter regression. The initial queue-only benchmark exposed unnecessary warm-up work;30676b9b removed it and bounded tiny revisions. That version still produced roughly3ms100-update batches for period1000; the isolated scan fixed most of that overhead. Every earlier benchmark, sample/outlier and patch remains archived.
+Baseline plus initial four tests:3 fail / 1 pass. First implementation f9e8fd3c accidentally shifted positional starter defaults: fullfrontend2599pass/10fail / 11skip, corrected by cc542762 and an explicit starter regression. The initial queue-only benchmark exposed unnecessary warm-up work; 30676b9b removed it and bounded tiny revisions. That version still produced roughly 3 ms100-update batches for period 1000; the isolated scan fixed most of that overhead. Every earlier benchmark, sample/outlier and patch remains archived.
 
 An initial benchmark failed before execution because root cwd could not resolve tsx; rerun from scripts. One final-source browser attempt stopped at the clean-source gate because earlier owned Playwright logs were untracked. Logs were moved into this receipt, the identical application rebuilt clean, and acceptance rerun. That failed attempt is not relabelled as passing. Intermediate browser acceptance belongs to its own exact commits, not the final source.
 
