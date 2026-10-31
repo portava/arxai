@@ -67,7 +67,7 @@ async page => {
     const log=await read();check(log.geometry.strokes.length===count*2&&!log.geometry.dirty,'Log channel geometry absent');
     for(const d of log.geometry.drawings){const l=log.geometry.strokes.filter(s=>s.id===d.id);check(Math.abs((l[0].end.y-l[0].start.y)-(l[1].end.y-l[1].start.y))<1e-6,'Log boundaries not parallel');}
     report.logarithmic=log;
-    await page.reload();await page.waitForFunction(()=>window.__arxChartQa?.drawingGeometry()?.drawings.length===20);await canvas.evaluate(e=>e.scrollIntoView({block:'center'}));await frames();
+    await page.reload();await page.waitForFunction(expected=>{const w=window.__arxChartQa,g=w?.drawingGeometry(),d=w?.data();return g?.drawings.length===20&&g.strokes.length===40&&!g.dirty&&JSON.stringify(d)===JSON.stringify(expected);},before.data,{timeout:15000});await canvas.evaluate(e=>e.scrollIntoView({block:'center'}));await frames();
     report.reloaded=await read();check(JSON.stringify(report.reloaded.geometry.drawings)===JSON.stringify(saved.geometry.drawings)&&report.reloaded.geometry.strokes.length===40,'Channel reload differs');
     report.summary=[1,4].flatMap(cpu=>['mouse','touch'].map(input=>{const values=report.samples.filter(s=>s.cpu===cpu&&s.input===input).map(s=>s.ms).sort((a,b)=>a-b);return{cpu,input,n:values.length,medianMs:values[2],maxMs:values.at(-1),allUnder100:values.length===5&&values.every(v=>Number.isFinite(v)&&v>=0&&v<=100)};}));
     report.passed=report.samples.length===20&&report.summary.every(s=>s.allUnder100);
