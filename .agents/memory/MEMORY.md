@@ -15,3 +15,4 @@
 - [Source import verification](source-import-verification.md) — bound GitHub payloads before caching; verify transformed modules by executable code, not comments.
 - [Held chart experiments](held-chart-experiments.md) — toolbar layout, supporting-panel containment and other held performance work need separate authorization.
 - [Chart volume evidence](chart-volume-evidence.md) — a corrected zero-volume advisory is not proof of real traded volume or permission to enable volume analytics.
+- [Browser evidence accounting](browser-evidence-accounting.md) — count unique coverage separately from repeated probe executions; corrected raw receipts outrank stale summaries.
