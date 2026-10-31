@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 
+let chartRenders = 0, focusRenders = 0;
 const mapGroups: string[] = [];
 const pickCallbacks: Array<(symbol: string) => void> = [];
 const fetchMock = vi.fn<typeof fetch>();
@@ -142,10 +143,10 @@ vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel
 vi.mock("@/components/scanner/ScannerDataHealthPanel", () => ({ ScannerDataHealthPanel: () => null }));
 vi.mock("@/components/news/HighImpactEventBanner", () => ({ HighImpactEventBanner: () => null }));
 vi.mock("@/components/scanner/SymbolExplorer", () => ({ SymbolExplorer: () => null }));
-vi.mock("@/components/scanner/ScannerChartPanel", () => ({ ScannerChartPanel: () => null }));
+vi.mock("@/components/scanner/ScannerChartPanel", () => ({ ScannerChartPanel: () => { chartRenders++; return null; } }));
 vi.mock("@/components/live/TradeHealthPanel", () => ({ TradeHealthPanel: () => null }));
 vi.mock("@/components/scanner/ScannerHeaderSummary", () => ({ ScannerHeaderSummary: () => null }));
-vi.mock("@/components/scanner/RubyScalpFocusCard", () => ({ RubyScalpFocusCard: () => null }));
+vi.mock("@/components/scanner/RubyScalpFocusCard", () => ({ RubyScalpFocusCard: () => { focusRenders++; return null; } }));
 vi.mock("@/components/scanner/RubyScalpRanking", () => ({ RubyScalpRanking: () => null }));
 vi.mock("@/components/scanner/RubyMarketReadCard", () => ({ RubyMarketReadCard: () => null }));
 vi.mock("@/components/scanner/TimingIntelligenceCard", () => ({ TimingIntelligenceCard: () => null }));
@@ -163,6 +164,7 @@ function refreshPoll() {
   document.dispatchEvent(new Event("visibilitychange"));
 }
 beforeEach(() => {
+  chartRenders = 0; focusRenders = 0;
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-26T16:00:00Z"));
   globalFeed = envelope("all", ["EURUSD", "BTCUSD", "XAUUSD"]);
@@ -283,5 +285,20 @@ describe("scanner direct scan response and request ownership", () => {
     expect(fetchMock.mock.calls[0]![1]!.signal!.aborted).toBe(true);
     await act(async () => { pending.resolve(response(envelope())); });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("Scanner render isolation", () => {
+  it("does not re-run chart and Focus subtrees for unrelated scan updates", async () => {
+    render(<MarketScanner />); await settle();
+    const chartBefore = chartRenders, focusBefore = focusRenders;
+    expect(chartBefore).toBeGreaterThan(0); expect(focusBefore).toBeGreaterThan(0);
+    fetchMock.mockResolvedValue(response(envelope("all", ["BTCUSD"])));
+    fireEvent.click(screen.getByTestId("scanner-btn-scan")); await settle();
+    expect(visible("BTCUSD")).toBe(true);
+    expect(chartRenders).toBe(chartBefore); expect(focusRenders).toBe(focusBefore);
+    await settle(3_000);
+    expect(chartRenders).toBe(chartBefore); expect(focusRenders).toBe(focusBefore);
   });
 });

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, useState, useCallback } from "react";
+import { memo, useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { markActionStart, markUiFeedback, markActionEnd } from "@/lib/perf";
 import { useGetAaciCohesion, getGetAaciCohesionQueryKey, type AaciCohesionItem } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -42,6 +42,7 @@ import { RubyScalpBasketPanel } from "@/components/scanner/RubyScalpBasketPanel"
 import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel";
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
+import { useScannerOpportunityClock } from "@/components/scanner/useScannerOpportunityClock";
 import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
 import type { ScalpResult } from "@workspace/api-client-react";
 
@@ -212,6 +213,27 @@ export function scalpResultToSignal(r: ScalpResult) {
  * Advanced. The default Focus view stays calm: one selected-market card,
  * one Ruby read, no chip walls.
  */
+// Parent scan polling/cooldowns do not change this subtree's inputs. Its own
+// queries, symbol subscriptions and shared Truth contexts still update normally.
+const StableScannerChart = memo(ScannerChartPanel);
+const ScannerFocusPanels = memo(function ScannerFocusPanels({ symbol, onBuild }: {
+  symbol: string; onBuild: (result: ScalpResult) => void;
+}) {
+  return <div className="space-y-4">
+    <MasterLiveAccessBanner />
+    <HighImpactEventBanner />
+    <GlobalMarketHeatCard />
+    <SelectedMarketPanel />
+    <ScannerDataHealthPanel />
+    <RubyScalpBasketPanel />
+    <RubyScalpReviewPanel />
+    <RubyScalpFocusCard symbol={symbol} onBuild={onBuild} />
+    <ScannerReadGate symbol={symbol} />
+    <TimingIntelligenceCard symbol={symbol} />
+    <RubyMarketReadCard symbol={symbol} />
+  </div>;
+});
+
 export default function MarketScanner() {
   const [universe, setUniverse] = useState<UniverseId>("all");
   const [universes, setUniverses] = useState<UniverseInfo[]>([]);
@@ -235,14 +257,11 @@ export default function MarketScanner() {
     if (symbols) { const scope = new Set(symbols); return snapshotOpps.filter((row) => scope.has(row.symbol)); }
     return universe === "all" ? snapshotOpps : [];
   }, [snapshotOpps, universes, universe]);
-  const [snapshotClock, setSnapshotClock] = useState(Date.now);
   const loadVersion = useRef(0);
   useEffect(() => {
     mounted.current = true;
-    const timer = setInterval(() => setSnapshotClock(Date.now()), 1000);
     return () => {
       mounted.current = false;
-      clearInterval(timer);
       loadVersion.current++;
       actionVersion.current++;
       readController.current?.abort();
@@ -277,6 +296,7 @@ export default function MarketScanner() {
   // claim "No scan run yet" while the map renders populated results.
   const [mapScanned, setMapScanned] = useState(false);
   const [tradeTarget, setTradeTarget] = useState<{ opp: Opp; side: "BUY" | "SELL" } | null>(null);
+  const snapshotClock = useScannerOpportunityClock(opps, tradeTarget?.opp ?? null);
   const tradeTargetUsable = !!tradeTarget && !err && canUseScannerOpportunity(tradeTarget.opp, snapshotClock) &&
     opps.some((current) => current.symbol === tradeTarget.opp.symbol && current.timeframe === tradeTarget.opp.timeframe &&
       canUseScannerOpportunity(current, snapshotClock) && current.recommendedAction === tradeTarget.opp.recommendedAction &&
@@ -574,9 +594,9 @@ export default function MarketScanner() {
   // ---------- Scalp handlers ----------------------------------------------
 
   // Open the gated trade ticket pre-filled from a scalp result.
-  const openScalpTrade = (r: ScalpResult) => {
+  const openScalpTrade = useCallback((r: ScalpResult) => {
     setScalpTrade({ result: r, side: r.direction === "SELL" ? "SELL" : "BUY" });
-  };
+  }, []);
 
   // Load a ranked/built pick onto the shared chart bus (canonicalised).
   const handleScalpPick = (r: ScalpResult) => {
@@ -594,21 +614,7 @@ export default function MarketScanner() {
 
   // ---------- Tab contents -------------------------------------------------
 
-  const focusTab = (
-    <div className="space-y-4">
-      <MasterLiveAccessBanner />
-      <HighImpactEventBanner />
-      <GlobalMarketHeatCard />
-      <SelectedMarketPanel />
-      <ScannerDataHealthPanel />
-      <RubyScalpBasketPanel />
-      <RubyScalpReviewPanel />
-      <RubyScalpFocusCard symbol={symbolsTabActive} onBuild={openScalpTrade} />
-      <ScannerReadGate symbol={symbolsTabActive} />
-      <TimingIntelligenceCard symbol={symbolsTabActive} />
-      <RubyMarketReadCard symbol={symbolsTabActive} />
-    </div>
-  );
+  const focusTab = <ScannerFocusPanels symbol={symbolsTabActive} onBuild={openScalpTrade} />;
 
   const scalpBuilderTab = (
     <div className="space-y-4">
@@ -977,7 +983,7 @@ export default function MarketScanner() {
       )}
 
       <SectionErrorBoundary section="Chart">
-        <ScannerChartPanel />
+        <StableScannerChart />
       </SectionErrorBoundary>
 
       <SectionErrorBoundary section="Trade Health">
