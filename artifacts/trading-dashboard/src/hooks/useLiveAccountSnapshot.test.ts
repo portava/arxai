@@ -202,6 +202,29 @@ afterEach(() => {
 });
 
 describe("confirmed account updates survive transport races", () => {
+  it("a stream reconnect does not discard a valid fallback still in flight", async () => {
+    let finish!: (value: unknown) => void;
+    fetchMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().onerror?.({}));
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(MockEventSource.instances).toHaveLength(2);
+    expect(signal.aborted).toBe(false);
+    await act(async () => { finish({ ok: true, json: async () => freshPollBody() }); });
+    expect(result.current.live?.liveEquity).toBe(990);
+  });
+
+  it("repeated stream errors do not keep restarting the same fallback request", () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    expect(signal.aborted).toBe(false);
+  });
+
   it.each(["stale", "unavailable"] as const)("a fresh heartbeat cannot upgrade a %s canonical balance", async status => {
     fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ ...freshPollBody(), live: liveBlock(status) }) }));
     const { result } = renderHook(() => useLiveAccountSnapshot());

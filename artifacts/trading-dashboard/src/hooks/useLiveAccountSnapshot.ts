@@ -324,10 +324,10 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   }, []);
 
   const startPolling = useCallback(() => {
-    stopPolling();
+    if (pollTimerRef.current != null) return;
     void doPoll();
     pollTimerRef.current = setInterval(() => { void doPoll(); }, POLL_INTERVAL_MS);
-  }, [stopPolling, doPoll]);
+  }, [doPoll]);
 
   // ── SSE connection ─────────────────────────────────────────────────────────
   const stopSSE = useCallback(() => {
@@ -341,7 +341,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const connectSSE = useCallback(() => {
     if (esRef.current?.readyState === EventSource.OPEN) return;
     stopSSE();
-    stopPolling();
+    // Keep fallback reads alive until the replacement stream actually delivers
+    // a snapshot; reconnecting alone is not evidence of recovery.
     if (!mountedRef.current) return;
 
     setConnectionStatus("connecting");
