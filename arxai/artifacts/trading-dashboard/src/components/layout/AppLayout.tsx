@@ -29,6 +29,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
+import { useScannerNavigationWarmup } from "@/hooks/useScannerNavigationWarmup";
 import { RouteAccessGuard } from "./RouteAccessGuard";
 
 // Lazy-load the Ruby assistant panel (voice / realtime-WebRTC / TTS stack) so
@@ -317,6 +318,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
   const { effectiveIsAdmin: isAdmin } = useViewMode();
   const { isInvestor } = useProductRole();
   const { isApprovedTrader } = useTraderTier();
+  const warmScanner = useScannerNavigationWarmup(!isInvestor && (isAdmin || isApprovedTrader));
   const { name } = useAssistantName();
   void user;
 
@@ -376,6 +378,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
   }
 
   function navigate(href: string) {
+    warmScanner(href);
     pushRecent(href);
     setRecent(readRecent());
     setQuery("");
@@ -531,7 +534,10 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
                   </Button>
                 );
                 return (
-                  <Link key={item.href} href={item.href} className="block" onClick={() => { pushRecent(item.href); setRecent(readRecent()); onNavigate?.(); }}>
+                  <Link key={item.href} href={item.href} className="block"
+                    onPointerEnter={() => warmScanner(item.href)} onFocus={() => warmScanner(item.href)}
+                    onPointerDown={() => warmScanner(item.href)}
+                    onClick={() => { warmScanner(item.href); pushRecent(item.href); setRecent(readRecent()); onNavigate?.(); }}>
                     {collapsed ? (
                       <Tooltip>
                         <TooltipTrigger asChild>{button}</TooltipTrigger>

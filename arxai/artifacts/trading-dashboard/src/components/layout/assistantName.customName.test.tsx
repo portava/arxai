@@ -43,6 +43,10 @@ vi.mock("@/hooks/useProductRole", () => ({ useProductRole: () => ({ isInvestor: 
 vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: null }) }));
 vi.mock("@/hooks/useTraderTier", () => ({ useTraderTier: () => ({ isLoading: false, isApprovedTrader: true }) }));
 
+// This text-only suite does not exercise navigation prefetch. Its cache and
+// intent behavior have a separate real QueryClient regression suite.
+vi.mock("@/hooks/useScannerNavigationWarmup", () => ({ useScannerNavigationWarmup: () => vi.fn() }));
+
 // Imported AFTER the mocks (vi.mock is hoisted) so they bind the stubs.
 import { SidebarContent } from "./AppLayout";
 import { CommandPalette } from "./CommandPalette";

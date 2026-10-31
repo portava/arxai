@@ -16,6 +16,7 @@ import { Search } from "lucide-react";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
+import { useScannerNavigationWarmup } from "@/hooks/useScannerNavigationWarmup";
 import { DEFAULT_ASSISTANT_NAME, useAssistantName } from "@/lib/assistant-name";
 
 export interface CommandPaletteItem { label: string; hint?: string; href: string; admin?: boolean; approvedOnly?: boolean; }
@@ -135,6 +136,7 @@ export function CommandPalette() {
   const { effectiveIsAdmin: isAdmin } = useViewMode();
   const { isInvestor } = useProductRole();
   const { isApprovedTrader } = useTraderTier();
+  const warmScanner = useScannerNavigationWarmup(!isInvestor && (isAdmin || isApprovedTrader), false);
   const { name } = useAssistantName();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -162,7 +164,7 @@ export function CommandPalette() {
     return visibleItems.filter((i) => i.label.toLowerCase().includes(term) || i.href.includes(term) || (i.hint?.toLowerCase().includes(term) ?? false)).slice(0, 30);
   }, [q, visibleItems]);
 
-  function go(item: CommandPaletteItem) { setOpen(false); setLocation(item.href); }
+  function go(item: CommandPaletteItem) { warmScanner(item.href); setOpen(false); setLocation(item.href); }
 
   // INVESTOR (view-only) accounts never get the command palette.
   if (isInvestor) return null;
@@ -203,7 +205,9 @@ export function CommandPalette() {
           {results.map((it, i) => (
             <li key={it.href + it.label}>
               <button
-                onMouseEnter={() => setHi(i)}
+                onMouseEnter={() => { setHi(i); warmScanner(it.href); }}
+                onFocus={() => warmScanner(it.href)}
+                onPointerDown={() => warmScanner(it.href)}
                 onClick={() => go(it)}
                 className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${i === hi ? "bg-muted" : ""}`}
                 data-testid={`cmdk-result-${it.href.replace(/\//g, "-") || "home"}`}
