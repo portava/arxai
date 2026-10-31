@@ -73,7 +73,7 @@ card, continuation footer and short-pane badge above close that finding.
 - Notes remain manual local annotations. They do not identify chart patterns,
   establish market truth, generate advice or enter any trading path.
 - Actual Scanner desktop/mobile mouse behavior and PNG export passed46 browser
-  assertions plus image inspection on1e879563; see [acceptance](SMART_CHART_WORKSPACE_ACCEPTANCE_2026_10_31.md). A subsequent58-assertion run onca36fcc4 also accepts full document reload; touch, browser/process restart and integrated latency remain unverified.
+  assertions plus image inspection on1e879563; see [acceptance](SMART_CHART_WORKSPACE_ACCEPTANCE_2026_10_31.md). A subsequent58-assertion run onca36fcc4 also accepts full document reload; a55-assertion run on0af7ebd7 accepts browser-emulated touch placement/move/lock/cancel. Physical devices, browser/process restart and integrated latency remain unverified.
 - Existing W1/MN1 calendar gaps, active reader acceptance, sustained stream/history
   loads and equal-condition competitor measurements remain open.
 

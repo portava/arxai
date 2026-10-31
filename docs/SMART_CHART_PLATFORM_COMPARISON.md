@@ -77,7 +77,7 @@ this Smart Chart implementation. None means production verification is complete.
 | Oscillator panes | MT5 separate indicator windows [M4] | Implemented; resizable panes and reference levels |
 | Indicator custom scripting | Pine/MQL5/platform APIs [T3,T4,M4] | Open; no user script execution sandbox |
 | Volume studies / VWAP | MT5 distinguishes tick and actual traded volume [M4] | Open; volume semantics must be preserved end to end |
-| User levels / trend / Fibonacci | TV drawing families [T5] | Implemented: eight tools including manual text notes, real candle anchors, reversible edits; actual Scanner notes accepted in46 browser assertions plus desktop/mobile/PNG visual inspection on1e879563; touch remains open |
+| User levels / trend / Fibonacci | TV drawing families [T5] | Implemented: eight tools including manual text notes, real candle anchors, reversible edits; actual Scanner notes accepted in46 browser assertions plus desktop/mobile/PNG visual inspection on1e879563; browser-emulated touch note placement/move/lock/cancel accepted separately on0af7ebd7; physical-device coverage remains open |
 | Pointer/touch placement | Drawing interaction [T5] | Implemented; rapid two-anchor mouse/touch tested |
 | Drag handles / whole object | MT5 graphical objects / drawing interaction [M6,T5] | Implemented: selection, whole-object/anchor mouse and touch drag; one undo entry, cancel rollback |
 | Snap / lock / styling | MT5 object settings [M6] | Implemented: OHLC magnetic anchors, geometry locks, width/dash/color and exact prices; no object groups |

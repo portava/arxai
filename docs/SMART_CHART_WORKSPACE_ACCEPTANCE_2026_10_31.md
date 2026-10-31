@@ -131,3 +131,46 @@ This verifies a full document reload in the tested Chromium session. It does not
 establish cross-device/account storage, browser/process restart, touch behavior,
 latency or competitor parity. Those gaps and the original performance failures
 remain open.
+
+## Browser-emulated touch follow-up — 31 October
+
+Source `0af7ebd72a88c6702ab41a6729363e8bff770f33`, immutable clean production
+fixture `17c30394fc267357`:55 assertions pass on the actual Scanner with a390x844
+CSS viewport, coarse primary pointer and `navigator.maxTouchPoints=1` in the
+CLI's mobile Chromium context. This is browser emulation, not a physical phone.
+Application code is unchanged;75 tooling checks pass on this test-only source.
+
+Note placement uses the browser touchscreen API. Card moves use CDP touch input
+through the browser's real event pipeline, not DOM event dispatch. The observer
+records trusted `pointerType=touch` at the chart. Checks cover placement at a real
+loaded candle/price, movement, lock refusal, exactly one completed-drag undo/redo,
+actual changed preview before cancellation, no persisted partial movement and
+rollback of that preview after `touchCancel`. Control selection/editor filling,
+zoom/pan buttons and menu actions remain programmatic/mouse; this is not an
+all-touch journey, multi-touch pinch, keyboard, iOS or physical-input latency test.
+
+Source-bound OHLC, current drawing attachment/projection, warning clearance,
+long-text bounds, mobile editing, symbol/interval persistence and PNG export
+also pass. Three screenshots and the captured PNG were visually inspected. The
+editor view is scrolled and does not promise the full chart fits alongside it;
+the separate note view shows the complete card. Export retains the synthetic,
+not-live-confirmed source label.
+
+Initial source `0da8e7ba`, build `3b0a0987c74ae1c6`, failed after36 assertions at
+the later pan-projection expectation. Touch placement/move/lock/cancel had passed,
+but panning earlier moved the anchor to x246.3344 on a228px pane. A read-only
+primitive observation confirmed saved geometry remained and the off-screen card
+was correctly absent. The helper now requires matching rendered geometry for an
+on-screen anchor or absence of the card for a finite out-of-bounds anchor. Its
+adversarial test rejects missing visible notes, stale coordinates, clamped
+out-of-bounds cards, missing/NaN projections and invalid pane dimensions.
+The failed run and diagnostic remain retained; it is not relabelled as a pass.
+
+All mutations503; zero trade/unclassified/external/WebSocket requests and page
+exceptions. Expected HTTP console/unknown-read counts: initial54/51, final82/73.
+Observers, owned browsers and static servers were cleaned up. Evidence:
+`validation/scanner-smart-chart-20261031/touch/`, with original sizes and hashes.
+
+Physical-device and broader gesture coverage remain open, as do active-reader,
+heavy-workload, calendar and equal-condition competitor gaps. No new performance
+or parity result follows from these functional touch checks.
