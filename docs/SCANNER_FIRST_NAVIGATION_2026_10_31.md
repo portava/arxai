@@ -1,0 +1,43 @@
+# Scanner first navigation — 31 October 2026
+
+Owner report: the first Market Scanner click after reload takes about five seconds. This work targets that first visit, not only repeat navigation. No production performance or completion claim is made.
+
+## Changes
+
+`df4e0161e3de580bc5550c23cbbda7f1c6db0b8b` prepares the route code during browser idle time for users whose navigation permits Scanner. Hover, keyboard focus, pointer-down and navigation start the selected market's existing candle query concurrently with the route import. Sidebar, mobile navigation and command palette use the same import promise and QueryClient cache. Requests retain the existing symbol/timeframe/count identity, original provider evidence and five-second freshness budget. Idle work fetches code only; it does not mount the Scanner, poll, open streams, request positions, or trade. Hidden documents and data-saving connections skip speculative idle imports. Denied roles do not warm the route.
+
+`a6147137c9da303c33422d8895a42475889f6b8d` removes the Scanner's dependency on the outer router Suspense reveal. An already-loaded module renders synchronously; a cold visit gets a local loading shell that is replaced as soon as the module resolves. Leaving the route cancels its state update, and import errors still reach the error boundary. Other routes and authorization gates are unchanged.
+
+The chart-symbol storage reader also tolerates unavailable browser storage, since the navigation preparation now consumes that shared selection outside Scanner.
+
+## Measured results
+
+Same offline production fixture, desktop browser, synthetic EURUSD M15, 200 bars, intentionally delayed candle response (80 ms). Each sample fully reloads the home document, waits only for the Scanner link to be visible, then clicks it without an intentional hover dwell. Five samples per row. Timing starts at the captured click; the end is the correct series installed plus two animation frames. Full canonical and displayed OHLC are compared with the intercepted response outside the timed region. These are rendering opportunities, not hardware paint measurements.
+
+| Source / fixture | Median click → completed series + frames | Range | Samples below 100 ms |
+| --- | ---: | ---: | ---: |
+| Baseline `0af7ebd7` / `17c30394fc267357` (application `1a4fa6d7`) | 460.1 ms | 447.1–463.4 ms | 0/5 |
+| Early-query change `df4e0161` / `212ca7178deceb96` | 364.4 ms | 345.2–366.1 ms | 0/5 |
+| Final `a6147137` / `9841d8a56acf12c1` | 129.9 ms | 128.4–143.3 ms | 0/5 |
+
+Final chart-container observation: 34.7–37.6 ms after click. Final bars installed: 103.9–110.2 ms. The immediate-click completed-series result still misses 100 ms. Cold remote requests, active automatic analysis and a production host can take longer. Do not call this instant loading, a measured fix of the owner's five-second delay, or TradingView/MT5 parity.
+
+All final samples match the response's OHLC, including rendered series. No page exceptions or unexpected writes/external requests occurred. Expected background POST attempts were denied with 503 by the offline fixture; all unknown API reads also remained unavailable. No broker connection or live/demo order was used. Unknown-read errors are retained in the raw browser reports.
+
+## Validation on final application commit a6147137
+
+- Full frontend: **169 files; 2,417 passed, 9 skipped, 0 failed**.
+- Frontend typecheck and production build passed. Existing sourcemap/large-chunk warnings retained.
+- **87/87 guards** and **7/7 binding assertions** passed.
+- New tests cover cache sharing with a mounted reader, cache expiry without timestamp inflation, denied access, changing interval with blocked storage, unavailable intervals, request failures, idle constraints, immediate prepared rendering and leaving during import.
+- Final screenshot inspected. Historical/unavailable truth remains visible; the fixture does not claim live analysis.
+
+Failures retained: first full test run had four failures in two standalone navigation test fixtures lacking the newly required query context. One fixture now supplies its real QueryClient; the text-only assistant-name fixture mocks the separate preparation hook. Assertions were not removed. A first timing-tool run wrongly rejected the fixture's known blocked background calls; classification was corrected while all writes remained denied. An intermediate baseline was rerun in a fresh browser to eliminate accumulated timing listeners. Those diagnostic runs are not the accepted baseline above.
+
+## Replit state and remaining acceptance
+
+The owner supplied the published `arx-ai-baseline-import.replit.app/market-scanner` link. That URL redirects this browser session to sign-in. Subsequent read-only inspection found the signed-in Scanner inside the **Replit desktop development preview**, at the observed `*.pike.replit.dev` address. It visibly contains the shared chart, interval menu, templates, zoom/pan and automatic analysis. The existing Replit import targets PR103 `9d3b3ea8`, not the new loading fixes.
+
+Replit Agent is still performing authenticated desktop/mobile checks for that existing import. Its visible report says final frontend typecheck, build, corrected tests, catalogue and disclosure checks passed; exact final workspace commit and consolidated receipt remain pending. Do not duplicate or interrupt that import. The connector remains busy. The new navigation commits still need a coordinated development-only sync and measurements on the actual served build. Published deployment has not been changed or authorized here.
+
+Raw logs, benchmark wrappers, source manifests, failed runs and screenshot: [navigation receipts](validation/scanner-smart-chart-20261031/navigation/manifest.json). Local originals: `/Users/areyouok/arx-tier1-release/scanner-navigation-20261031/`.
