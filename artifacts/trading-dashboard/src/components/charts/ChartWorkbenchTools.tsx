@@ -232,7 +232,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       };image.src=url;
     } catch {setMessage("Chart image could not be saved in this browser.");}
   };
-  return <div ref={rootRef} className="border-b border-zinc-800 px-3 py-2 text-xs" data-testid="chart-workbench-tools" onKeyDown={event=>{
+  return <div ref={rootRef} style={{contain:"inline-size layout"}} className="border-b border-zinc-800 px-3 py-2 text-xs" data-testid="chart-workbench-tools" onKeyDown={event=>{
     if(event.key === "Escape" && toolsOpen && advancedRef.current?.contains(event.target as Node) && toggleRef.current?.getClientRects().length){
       event.preventDefault();event.stopPropagation();toggleRef.current.focus();setToolsOpen(false);setTool(null);setAnchor(null);setChannelEnd(null);
     }
