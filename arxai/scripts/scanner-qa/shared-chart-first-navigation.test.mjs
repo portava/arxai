@@ -53,3 +53,14 @@ test('covered, undersized or offscreen plots fail even with valid candles',()=>{
  assert.equal(visible({x:12,y:900,width:366,height:360},{width:390,height:844},()=>true),false);
  assert.equal(visible({x:12,y:300,width:99,height:360},{width:390,height:844},()=>true),false);
 });
+
+const navigationBudget=extract('navigationBudget');
+test('idle scenario is explicit and cannot pass as an immediate first click',()=>{
+ assert.equal(navigationBudget(0).clickAfterReadyMs,150);
+ const idle=navigationBudget(1500);
+ assert.equal(idle.completionMs,100);
+ assert.equal(accept({...sample(),readyToClickMs:1520},idle).valid,true);
+ assert.equal(accept({...sample(),readyToClickMs:1520},budget).valid,false);
+ assert.equal(accept({...sample(),readyToClickMs:20},idle).valid,false);
+ for(const value of [undefined,null,'1500',-1,NaN,Infinity,2001,1.5])assert.throws(()=>navigationBudget(value));
+});
