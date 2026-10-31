@@ -66,3 +66,14 @@ reload therefore discarded the synthetic studies/annotations being tested.
 profile for persistence acceptance, retain reset semantics for fresh-navigation
 measurements, and archive the original failures. Do not change application
 storage behavior or silently replace failed receipts to repair a fixture setup.
+
+Disable Git optional locks for read-only metadata probes inside isolated QA
+processes.
+
+**Why:** A stripped-environment measurement driver attempted an index refresh
+during `git status`; the workspace Git guard stopped it before browser launch.
+This was not a browser timing failure.
+
+**How to apply:** Use `GIT_OPTIONAL_LOCKS=0` for those read-only child commands.
+Retain interrupted pre-launch reports separately from actual browser samples;
+do not bypass Git protection just to collect status.
