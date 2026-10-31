@@ -1,0 +1,90 @@
+{
+  "reportedAt": "2026-10-31T21:47:23.494694+00:00",
+  "source": "Replit read-only connector completion report; remote raw logs not independently inspected locally",
+  "phase": "paused",
+  "application": "b87e3629ce7f4744a806f8b86c966711a19bfc65",
+  "checkpoint": "a1c6d9b31df8249bafab0e941170b5226613a368",
+  "recovery": "58a338b43184c0a9f1240570c05b2e97c850cc0e",
+  "branch": "codex/pr103-smart-chart-development-20261031",
+  "tree": "reported clean/no newer commits/no visible concurrent differences;11-file preservation audit",
+  "checks": {
+    "frontend": {
+      "pass": 2575,
+      "fail": 0,
+      "skip": 11
+    },
+    "serverScheduling": 13,
+    "recorderNavigationDisclosure": 22,
+    "guards": 87,
+    "bindings": 7,
+    "typesBuilds": "pass",
+    "functional": "desktop/mobile primary/comparison and12symbol/timeframe checks pass"
+  },
+  "initialFailures": {
+    "frontendPass": 2559,
+    "frontendFail": 13,
+    "frontendSkip": 11,
+    "typesBuildFixture": "failed missing helpers, archived",
+    "keyboard": "viewport-mislabeled failure retained;explicit-mobile corrected check passed"
+  },
+  "navigation": {
+    "planned": 40,
+    "valid": 0,
+    "baseline1xReadinessToClickMs": [
+      1339.7,
+      1596.1
+    ],
+    "combined1xReadinessToClickMs": [
+      1301.1,
+      1608.7
+    ],
+    "baseline1xLateCompletionMs": [
+      287.2,
+      575.2
+    ],
+    "combined1xLateCompletionMs": [
+      414.2,
+      699.8
+    ],
+    "validMediansMaxima": null,
+    "cpu4x": "All20 slots 8s locator/actionability timeout with no trusted click; durations null. One candidate mobile link resolved but stalled stability/visibility/enabled.",
+    "verdict": "FAIL;late diagnostics not acceptance"
+  },
+  "zoom4x": {
+    "plannedEach": 60,
+    "driverDeadlineSeconds": 180,
+    "baseline": {
+      "completed": 18,
+      "under100": 0,
+      "completedSubsetMedianMs": 860.4,
+      "maxMs": 1487.3,
+      "unfinished": 1,
+      "unfinishedMs": null,
+      "unstarted": 41
+    },
+    "combined": {
+      "completed": 29,
+      "under100": 0,
+      "completedSubsetMedianMs": 640,
+      "maxMs": 1188.6,
+      "unstarted": 31
+    },
+    "verdict": "Both incomplete, unequal deadline-censored samples; no speedup conclusion"
+  },
+  "browser": "headless Chromium152.0.7977.64;explicitCDP1x/4x",
+  "report": "ARX_SCANNER_RENDER_ISOLATION_DEVELOPMENT.md",
+  "evidenceRoot": "generated-artifacts/arx-scanner-isolation-validation/",
+  "receiptFiles": [
+    "baseline/-workspace.json",
+    "candidate-run/-workspace.json",
+    "validation-summary.json",
+    "final-checkpoint.json",
+    "four retained navigation journals",
+    "evidence-sha256.json"
+  ],
+  "limits": [
+    "No deployment or database/trading changes",
+    "Earlier slowtouch/loading failures unresolved",
+    "Objectcontrols/sourcebindings/objectnavigation not yet imported"
+  ]
+}
