@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => {
   const series = { attachPrimitive: vi.fn(), setData: vi.fn(), update: vi.fn(), pop: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn(() => line), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
   const scale = { subscribeVisibleLogicalRangeChange: vi.fn(), getVisibleRange: vi.fn(() => ({from:100,to:400})), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 1 })), setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(), scrollToRealTime: vi.fn(), scrollToPosition: vi.fn(), options:()=>({rightOffset:8}) };
   const chart = { addSeries: vi.fn(() => series), subscribeCrosshairMove: vi.fn(), setCrosshairPosition:vi.fn(), clearCrosshairPosition:vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
-  const createChart = vi.fn((_el: unknown, _options: any) => chart);
+  const createChart = vi.fn((_el: unknown, _options: any) => ({...chart}));
   return { line, series, scale, chart, createChart };
 });
 vi.mock("lightweight-charts", () => ({ createChart: (el: unknown, options: unknown) => mocks.createChart(el, options), CandlestickSeries: {}, LineSeries: {}, createSeriesMarkers: vi.fn(), ColorType: { Solid: "solid" }, CrosshairMode: {Normal: 0}, LineStyle: {Dashed: 2}, PriceScaleMode: {Normal: 0, Logarithmic: 1, Percentage:2, IndexedTo100:3} }));
@@ -14,15 +14,52 @@ import { candleDisplayPrecision } from "./candleReconciliation";
 import { CHART_INTERVALS, chartIntervalSeconds } from "./chartIntervals";
 const bar = (time: number, close = 1.15) => ({time,open:1.1,high:1.2,low:1.0,close});
 let adapter: LightweightChartsAdapter;
+let resizeNotifications: Array<()=>void>;
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubGlobal("ResizeObserver", class { observe(){} disconnect(){} });
+  resizeNotifications=[];
+  vi.stubGlobal("ResizeObserver", class { constructor(callback:()=>void){resizeNotifications.push(callback);} observe(){} disconnect(){} });
   mocks.scale.getVisibleLogicalRange.mockReturnValue({from:0,to:1});
   adapter = new LightweightChartsAdapter();
   adapter.init({container:document.createElement("div"),height:400});
 });
 afterEach(() => {adapter.destroy();vi.useRealTimers();});
 describe("chart refresh and inspection", () => {
+  it("does not reapply the initial size for repeated observer and shell notifications",()=>{
+    const container=document.createElement("div");Object.defineProperty(container,"clientWidth",{value:800,configurable:true});
+    adapter.init({container,height:400});mocks.chart.applyOptions.mockClear();
+    adapter.resize(undefined,400);resizeNotifications.at(-1)!();adapter.resize(800,400);
+    expect(mocks.chart.applyOptions).not.toHaveBeenCalled();
+    Object.defineProperty(container,"clientWidth",{value:640,configurable:true});resizeNotifications.at(-1)!();
+    adapter.resize(640,400);
+    expect(mocks.chart.applyOptions).toHaveBeenCalledExactlyOnceWith({width:640});
+    adapter.resize(undefined,600);adapter.resize(undefined,600);
+    expect(mocks.chart.applyOptions).toHaveBeenLastCalledWith({height:600});
+    expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(2);
+  });
+  it("retries a failed size change and resets dimension state on reinitialization",()=>{
+    const container=document.createElement("div");Object.defineProperty(container,"clientWidth",{value:800});
+    adapter.init({container,height:400});mocks.chart.applyOptions.mockClear();
+    mocks.chart.applyOptions.mockImplementationOnce(()=>{throw Error("removed during resize");});
+    adapter.resize(640,600);adapter.resize(640,600);adapter.resize(640,600);
+    expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(2);
+    adapter.init({container,height:400});mocks.chart.applyOptions.mockClear();
+    adapter.resize(640,600);expect(mocks.chart.applyOptions).toHaveBeenCalledExactlyOnceWith({width:640,height:600});
+    adapter.destroy();adapter.resize(800,400);resizeNotifications.at(-1)!();
+    expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(1);
+  });
+  it("ignores an obsolete observer after replacement and keeps height updates at zero width",()=>{
+    adapter.init({container:document.createElement("div"),height:400});
+    const oldNotification=resizeNotifications.at(-1)!();
+    const container=document.createElement("div");Object.defineProperty(container,"clientWidth",{value:800,configurable:true});
+    adapter.init({container,height:400});mocks.chart.applyOptions.mockClear();
+    oldNotification();expect(mocks.chart.applyOptions).not.toHaveBeenCalled();
+    Object.defineProperty(container,"clientWidth",{value:0,configurable:true});
+    adapter.resize(undefined,600);adapter.resize(undefined,600);
+    expect(mocks.chart.applyOptions).toHaveBeenCalledExactlyOnceWith({width:0,height:600});
+    Object.defineProperty(container,"clientWidth",{value:800,configurable:true});resizeNotifications.at(-1)!();
+    expect(mocks.chart.applyOptions).toHaveBeenLastCalledWith({width:800});
+  });
   it("avoids all series work for identical polls; tail edits and appends use update", () => {
     adapter.setCandles([bar(100),bar(200),bar(300)]);
     adapter.setCandles([bar(100),bar(200),bar(300)]);

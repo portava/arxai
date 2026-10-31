@@ -165,6 +165,9 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private readonly tickLabel: TickMarkFormatter = (time, type, locale) => typeof time === "number" ? tickMarkLabel(time, type as number as ChartTickMarkType, this.displayZone, locale) : null;
 
   private container: HTMLElement | null = null;
+  // Last successfully submitted dimensions, including the initial create.
+  // Shell effects and ResizeObserver often report the same size in one mount.
+  private appliedSize: {width:number; height:number} | null = null;
   private candles: ChartEngineCandle[] = [];
   // Newest bar time (Unix seconds) the series currently holds. Tracks both
   // setCandles (authoritative closed window) and updateActiveCandle (live tip)
@@ -198,8 +201,9 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.visibleDesktop = options.visibleDesktop ?? DEFAULT_VISIBLE_DESKTOP;
     this.visibleMobile = options.visibleMobile ?? DEFAULT_VISIBLE_MOBILE;
 
+    const initialWidth = el.clientWidth;
     const chart = createChart(el, {
-      width: el.clientWidth,
+      width: initialWidth,
       height: options.height,
       layout: {
         // Both native/replay shells render ChartLibraryCredit below the plot.
@@ -235,6 +239,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       },
     });
 
+    this.appliedSize = {width:initialWidth,height:options.height};
     // lightweight-charts v5: addSeries(SeriesDefinition, options). The legacy v4
     // addCandlestickSeries() was removed and throws at runtime. Do NOT cast.
     const series = chart.addSeries(CandlestickSeries, {
@@ -347,9 +352,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       // braces against "Object is disposed" (applyOptions on a removed chart
       // throws via window.onerror, uncatchable by React boundaries).
       if (!this.container || this.chart !== chart) return;
-      try {
-        chart.applyOptions({ width: this.container.clientWidth });
-      } catch { /* chart was removed mid-resize — nothing to size */ }
+      this.resize();
     });
     ro.observe(el);
     this.resizeObserver = ro;
@@ -409,13 +412,22 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.structureMarkersRaw = [];
     this.structureSnappedTimes = [];
     this.container = null;
+    this.appliedSize = null;
   }
 
   resize(width?: number, height?: number): void {
     if (!this.chart) return;
     const w = width ?? this.container?.clientWidth;
     if (w != null && Number.isFinite(w)) {
-      try { this.chart.applyOptions({ width: w, ...(height != null && height > 0 ? { height } : {}) }); } catch { /* ignore */ }
+      const previous = this.appliedSize;
+      const h = height != null && height > 0 ? height : previous?.height;
+      const dimensions = {...(w !== previous?.width ? {width:w} : {}),...(h != null && h !== previous?.height ? {height:h} : {})};
+      if (Object.keys(dimensions).length === 0) return;
+      try {
+        this.chart.applyOptions(dimensions);
+        // A failed application must remain retryable on the next notification.
+        if (h != null) this.appliedSize = {width:w,height:h};
+      } catch { /* chart was removed mid-resize — nothing to size */ }
     }
   }
 
