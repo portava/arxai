@@ -3,7 +3,7 @@ import { ChartLibraryCredit } from "./ChartLibraryCredit";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds } from "@/lib/chart-engine/chartIntervals";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "../scanner/useDerivedOverlayContext";
@@ -567,9 +567,11 @@ export function ARXNativeChart({
   // honour `mobileHeight` when provided; otherwise cap at 320px on mobile so
   // the chart is always readable without crushing the rest of the page.
   const [effectiveHeight, setEffectiveHeight] = useState(height);
+  const [mobileLayout, setMobileLayout] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
     const update = () => {
       const isMobile = window.innerWidth < 768;
+      setMobileLayout(isMobile);
       if (expanded) {
         setEffectiveHeight(Math.max(240, window.innerHeight - 240));
       } else if (isMobile && mobileHeight != null) {
@@ -1220,6 +1222,75 @@ export function ARXNativeChart({
   // The contract returns 200 with an honest empty list when no feed is available.
   const isEmpty = !isInitialLoading && !isError && !hasCandles;
 
+  // On a phone, show the price plot before secondary controls. The DOM order
+  // follows the visual order, including keyboard focus; source/quality notices
+  // remain above the plot. Keyed controls and the plot survive breakpoint moves.
+  const fullscreenToggle = (
+    <Button size="sm" variant="outline" className={mobileLayout ? "ml-auto h-7 px-2 text-xs" : "h-8 text-xs"} aria-pressed={expanded} aria-label={expanded ? "Exit fullscreen" : "Fullscreen"} onClick={() => setExpanded((v) => !v)}>
+          {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
+          <span className={mobileLayout ? "sr-only" : undefined}>{expanded ? "Exit fullscreen" : "Fullscreen"}</span>
+        </Button>);
+  const timeframeControls = (<div className="flex flex-wrap items-center gap-1" data-testid="arx-native-tf-controls">
+            {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>setReplayError(replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}))}>Replay loaded bars</Button>}
+            {TIMEFRAMES.map((tf) => (
+              <Button
+                key={tf.id}
+                size="sm"
+                variant={timeframe === tf.id ? "default" : "outline"}
+                className="h-7 px-2 text-xs"
+                onClick={() => setTimeframe(tf.id)}
+                aria-pressed={timeframe === tf.id}
+                aria-label={`${tf.label} timeframe`}
+                data-testid={`arx-native-tf-${tf.id}`}
+              >
+                {tf.label}
+              </Button>
+            ))}
+            <select className="h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100" aria-label="More chart intervals" title="Additional intervals; weekly and monthly source boundaries are not yet supported"
+              value={(MORE_TIMEFRAMES as readonly string[]).includes(timeframe) ? timeframe : ""}
+              onChange={event => {if (isChartInterval(event.target.value)) setTimeframe(event.target.value);}}>
+              <option value="" disabled>More intervals</option>
+              {MORE_TIMEFRAMES.map(id => <option key={id} value={id}>{id}</option>)}
+              <option value="W1" disabled>W1 — source week boundaries not verified</option>
+              <option value="MN1" disabled>MN1 — calendar boundaries not verified</option>
+            </select>
+            {hasCandles && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px] text-zinc-500 hover:text-zinc-300"
+                onClick={resetScale}
+                aria-label="Reset chart scale"
+                title="Reset scale — restore default visible range"
+                data-testid="arx-native-reset-scale"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>);
+  const chartControls = <Fragment key="chart-controls">
+    {mobileLayout && <div className="px-3 py-2">{timeframeControls}</div>}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2" role="toolbar" aria-label="Chart view controls">
+        <div className="flex flex-wrap items-center gap-1">
+          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.goToLatest?.()} title="Return to latest candles (End)">
+            <ArrowRightToLine className="mr-1 h-3.5 w-3.5" /> Latest
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
+          {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
+          <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
+
+        </div>
+        {!mobileLayout && fullscreenToggle}
+      </div>
+      <ChartWorkbenchTools key={chartContext} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
+
+      <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
+        Move the crosshair over a candle to inspect it
+      </output>
+      <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
+  </Fragment>;
+
   return (
     <Card ref={cardRef} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? `${resolvedSymbol} fullscreen chart` : undefined} data-testid="arx-native-chart" className={expanded ? "fixed inset-0 z-50 overflow-auto rounded-none border-zinc-800 bg-zinc-950" : "overflow-hidden border-zinc-800 bg-zinc-950/40"}>
       <CardHeader className="py-3 px-3 md:px-4">
@@ -1227,6 +1298,7 @@ export function ARXNativeChart({
           <div className="flex flex-wrap items-center gap-2">
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
+            {mobileLayout && fullscreenToggle}
             <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
               {resolvedSymbol}
             </span>
@@ -1304,45 +1376,7 @@ export function ARXNativeChart({
               />
             )}
           </div>
-          {/* Phase 2 — TF controls + Reset Scale button. */}
-          <div className="flex flex-wrap items-center gap-1" data-testid="arx-native-tf-controls">
-            {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>setReplayError(replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}))}>Replay loaded bars</Button>}
-            {TIMEFRAMES.map((tf) => (
-              <Button
-                key={tf.id}
-                size="sm"
-                variant={timeframe === tf.id ? "default" : "outline"}
-                className="h-7 px-2 text-xs"
-                onClick={() => setTimeframe(tf.id)}
-                aria-pressed={timeframe === tf.id}
-                aria-label={`${tf.label} timeframe`}
-                data-testid={`arx-native-tf-${tf.id}`}
-              >
-                {tf.label}
-              </Button>
-            ))}
-            <select className="h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100" aria-label="More chart intervals" title="Additional intervals; weekly and monthly source boundaries are not yet supported"
-              value={(MORE_TIMEFRAMES as readonly string[]).includes(timeframe) ? timeframe : ""}
-              onChange={event => {if (isChartInterval(event.target.value)) setTimeframe(event.target.value);}}>
-              <option value="" disabled>More intervals</option>
-              {MORE_TIMEFRAMES.map(id => <option key={id} value={id}>{id}</option>)}
-              <option value="W1" disabled>W1 — source week boundaries not verified</option>
-              <option value="MN1" disabled>MN1 — calendar boundaries not verified</option>
-            </select>
-            {hasCandles && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-[11px] text-zinc-500 hover:text-zinc-300"
-                onClick={resetScale}
-                aria-label="Reset chart scale"
-                title="Reset scale — restore default visible range"
-                data-testid="arx-native-reset-scale"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
+          {!mobileLayout && timeframeControls}
         </CardTitle>
       </CardHeader>
 
@@ -1419,28 +1453,7 @@ export function ARXNativeChart({
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2" role="toolbar" aria-label="Chart view controls">
-        <div className="flex flex-wrap items-center gap-1">
-          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.goToLatest?.()} title="Return to latest candles (End)">
-            <ArrowRightToLine className="mr-1 h-3.5 w-3.5" /> Latest
-          </Button>
-          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
-          {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
-          <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
-
-        </div>
-        <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={expanded} onClick={() => setExpanded((v) => !v)}>
-          {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
-          {expanded ? "Exit fullscreen" : "Fullscreen"}
-        </Button>
-      </div>
-      <ChartWorkbenchTools key={chartContext} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
-      {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
-
-      <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
-        Move the crosshair over a candle to inspect it
-      </output>
-      <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
+      {!mobileLayout && chartControls}
 
       {/* Persistent notices stay in normal flow so they cannot obscure candles,
           user notes or projected position controls. The relative canvas/overlay
@@ -1509,7 +1522,7 @@ export function ARXNativeChart({
         </div>
       )}
 
-      <CardContent className="relative p-0">
+      <CardContent key="plot" className="relative p-0">
         {/* The chart canvas is always mounted so the v5 series handle is stable;
             overlays cover it for loading / empty / error. */}
         <div
@@ -1597,6 +1610,7 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
+      {mobileLayout && chartControls}
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
         <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
