@@ -7,6 +7,8 @@
 // - Suggestion chips collapsible
 // - Market provider connectivity surfaced in-panel
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
+import { useAssistantDockTarget } from "./AssistantDock";
 import { useGetTimingBrain, getGetTimingBrainQueryKey } from "@workspace/api-client-react";
 import { Mic, MicOff, Send, X, Sparkles, Loader2, ChevronDown, ChevronUp, ShieldCheck, Wrench, AlertCircle, Wifi, WifiOff, Radio, Square, VolumeX, Volume2, MoreHorizontal, Plus, Trash2, Eraser, Download, Brain, BrainCircuit, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -151,6 +153,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 interface Conversation { id: number; title: string }
 
 export function ArxAssistantLivePanel() {
+  const dockTarget = useAssistantDockTarget();
   const { name } = useAssistantName();
   const [pathname] = useLocation();
   const tradingMode = useTradingMode();
@@ -1010,26 +1013,28 @@ export function ArxAssistantLivePanel() {
   const realtimeEngaged = realtime.state === "connecting" || realtime.state === "listening" || realtime.state === "speaking" || realtime.state === "muted";
   const realtimeConnected = realtime.state === "listening" || realtime.state === "speaking" || realtime.state === "muted";
 
-  return (
-    <>
-      {/* Floating trigger */}
-      <button
+  const trigger = <button
         ref={triggerRef}
         type="button"
         onClick={() => { if (open) { void closePanel(); } else { setOpen(true); } }}
         className={cn(
-          "fixed z-50 rounded-full shadow-lg transition-all",
-          "bottom-20 right-4 md:bottom-6 md:right-6",
-          "h-14 w-14 flex items-center justify-center",
+          "rounded-full shadow-lg transition-colors flex items-center justify-center",
+          dockTarget ? "h-11 w-11" : "fixed z-50 bottom-20 right-4 md:bottom-6 md:right-6 h-14 w-14",
           "bg-gradient-to-br from-cyan-500 to-emerald-500 text-zinc-950",
-          "hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300",
+          "hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300",
         )}
         data-testid="arx-assistant-trigger"
+        data-placement={dockTarget ? "chart-header" : "floating"}
+        aria-expanded={open}
         aria-label={open ? `Close ${name} assistant` : `Open ${name} assistant`}
         title={open ? `Close ${name}` : `Open ${name} — your ARX trading assistant`}
       >
         <AnimatedArxAssistantIcon state={iconState.state} status={iconState.status} className="h-7 w-7" />
-      </button>
+      </button>;
+
+  return (
+    <>
+      {dockTarget ? createPortal(trigger, dockTarget) : trigger}
 
       {open && (
         <div

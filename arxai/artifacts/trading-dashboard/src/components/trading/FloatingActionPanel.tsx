@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
+import { useChartActionDockTarget } from "@/components/help/AssistantDock";
 import { Link } from "wouter";
 import {
   Plus, X, Radar, Bell, AlertOctagon,
@@ -11,6 +13,7 @@ import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
 
 export function FloatingActionPanel() {
+  const dockTarget = useChartActionDockTarget("quickActions");
   const [open, setOpen] = useState(false);
   const { effectiveIsAdmin: isAdmin } = useViewMode();
   const { isInvestor } = useProductRole();
@@ -24,6 +27,13 @@ export function FloatingActionPanel() {
 
   // INVESTOR accounts are view-only — no quick trade/bot actions at all.
   if (isInvestor) return null;
+
+  const trigger = <Button size="icon" onClick={() => setOpen(!open)}
+    className={cn(dockTarget ? "h-11 w-11 rounded-full shadow-lg" : "h-12 w-12 rounded-full shadow-2xl shadow-black/40", "transition-colors", dockTarget && open && "relative z-50",
+      open ? "bg-muted text-foreground" : "bg-primary text-primary-foreground hover:brightness-110")}
+    aria-label={open ? "Close quick actions" : "Open quick actions"} aria-expanded={open} data-testid="fab-toggle">
+    {open ? <X size={20} /> : <Plus size={20} />}
+  </Button>;
 
   return (
     <>
@@ -63,19 +73,9 @@ export function FloatingActionPanel() {
             <FabAction label="Emergency Kill Switch" icon={AlertOctagon} href="/emergency" onClick={close} tone="danger" />
           </div>
         )}
-        <Button
-          size="icon"
-          onClick={() => setOpen(!open)}
-          className={cn(
-            "h-12 w-12 rounded-full shadow-2xl shadow-black/40 transition-all",
-            open ? "bg-muted text-foreground rotate-45" : "bg-primary text-primary-foreground hover:scale-105"
-          )}
-          aria-label={open ? "Close quick actions" : "Open quick actions"}
-          data-testid="fab-toggle"
-        >
-          {open ? <X size={20} /> : <Plus size={20} />}
-        </Button>
+        {!dockTarget && trigger}
       </div>
+      {dockTarget && createPortal(trigger, dockTarget)}
     </>
   );
 }

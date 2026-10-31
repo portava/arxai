@@ -31,6 +31,7 @@ import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
 import { useScannerNavigationWarmup } from "@/hooks/useScannerNavigationWarmup";
 import { RouteAccessGuard } from "./RouteAccessGuard";
+import { AssistantDockProvider } from "@/components/help/AssistantDock";
 
 // Lazy-load the Ruby assistant panel (voice / realtime-WebRTC / TTS stack) so
 // its large module graph stays OUT of every page's first-paint critical path.
@@ -588,7 +589,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground font-sans overflow-x-clip">
+    <AssistantDockProvider><div className="min-h-screen flex bg-background text-foreground font-sans overflow-x-clip">
       {/* SS — skip-to-content link for keyboard/screen-reader users */}
       <a
         href="#main-content"
@@ -649,6 +650,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <ArxAssistantLivePanel />
       </Suspense>
-    </div>
+    </div></AssistantDockProvider>
   );
 }

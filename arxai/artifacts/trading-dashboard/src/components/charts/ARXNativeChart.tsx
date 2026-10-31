@@ -39,6 +39,7 @@ import {
 import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
 import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { SmartChartReader } from "./SmartChartReader";
+import { AssistantDockSlot } from "@/components/help/AssistantDock";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { effectiveDisplayZone, formatChartTime, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
@@ -1299,6 +1300,7 @@ export function ARXNativeChart({
           <div className="flex flex-wrap items-center gap-2">
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
+            {(workspaceId === "primary" || expanded) && <AssistantDockSlot />}
             {mobileLayout && fullscreenToggle}
             <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
               {resolvedSymbol}
