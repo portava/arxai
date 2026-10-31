@@ -132,6 +132,13 @@ No full root CI, existing-database integration, native-terminal/broker/live/demo
 real authenticated desktop/mobile, new mocked-browser fixture, first-click timing
 or release/launch test was run.
 
+A post-check evidence-extraction helper initially failed to match ANSI-colored
+test-count lines and raised an assertion. Stripping the control sequences
+confirmed the saved 12/33/53 per-file counts and aggregate result. This was an
+evidence-formatting failure, not a test failure; no application or test rerun was
+needed. Both the failure explanation and correction are retained in
+`evidence-extraction.json`.
+
 Warnings remain: frontend chunks above 500 kB, API bundle-size advisory,
 28 React act-warning occurrences, four chart zero-size warnings and hydration/
 DOM-nesting warning text in the frontend test output. Runtime logs continue to
@@ -184,6 +191,8 @@ Retained locally, ignored from Git and deployment:
 - `audit.py`, `preservation.json`: preservation assertions.
 - `run.py`, `offline.cjs`: credential-free validation harness.
 - `relevant-frontend-results.json`: the three included regression file results.
+- `validation-summary.json`, `evidence-extraction.json`: actual combined results
+  and the corrected extraction-helper limitation.
 - `reliability-frontend-results.json`, `reliability-frontend-0.log`.
 - `reliability-checks-results.json`, `reliability-checks-{0..6}.log`.
 - `runtime-checks.json`, `checkpoint-receipt.json`, `evidence-manifest.json`.
