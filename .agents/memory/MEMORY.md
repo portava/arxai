@@ -12,3 +12,4 @@
 - [Preview availability](preview-availability.md) — deferred feature migrations must not unnecessarily block sign-in; preserve a safe development-only startup.
 - [Database rehearsal fidelity](database-rehearsal-fidelity.md) — match source encoding and locale in disposable restores; matching rows alone does not prove parity.
 - [Read-only browser measurements](read-only-browser-measurements.md) — block background mutations before navigation; measure controls, correct candles and analysis separately.
+- [Source import verification](source-import-verification.md) — bound GitHub payloads before caching; verify transformed modules by executable code, not comments.
