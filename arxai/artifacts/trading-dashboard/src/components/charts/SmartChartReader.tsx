@@ -16,7 +16,7 @@ import { effectiveDisplayZone, formatChartTime, zoneShortLabel } from "@/lib/cha
 import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotation";
 import { Button } from "@/components/ui/button";
 
-interface Props {adapter:ChartEngineAdapter|null;epoch:number;symbol:string;timeframe:string;data:ChartCandlesResponse|undefined;
+interface Props {adapter:ChartEngineAdapter|null;epoch:number|string;symbol:string;timeframe:string;data:ChartCandlesResponse|undefined;
   older:readonly Candle[];historyEvidence:ChartHistoryPage["historyEvidence"];liveConfirmed:boolean;readFailed:boolean;view?:Pick<ChartPreferences,"style"|"scale"|"inverted"|"timeZone">;replay?:ChartReplayReadWindow}
 const EMPTY:readonly Candle[]=[];
 const metricNumber=(metric:ObservedMetric<number>|undefined,suffix="")=>metric?.status==="available"?`${chartNumber(metric.value)}${suffix}`:"Unavailable";

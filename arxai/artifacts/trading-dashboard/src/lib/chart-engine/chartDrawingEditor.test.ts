@@ -139,3 +139,20 @@ it("commits a channel width drag once, rolls back cancellation and respects lock
  expect(f.onCommit).not.toHaveBeenCalled();expect(f.render).toHaveBeenLastCalledWith([channel]);
  f.editor.setDrawings([{...channel,locked:true}]);f.pointer("pointerdown",100,70);f.pointer("pointermove",100,50);f.pointer("pointerup",100,50);expect(f.onCommit).not.toHaveBeenCalled();
 });
+
+it("hidden objects cannot capture gestures and survive editing an overlapping visible object",()=>{
+ const hidden={...trend,id:"hidden",hidden:true};const f=fixture([trend,hidden]);
+ f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);f.pointer("pointerup",150,65);
+ expect(f.onSelect).toHaveBeenLastCalledWith("trend");
+ expect(f.onCommit.mock.calls[0]![0][1]).toEqual(hidden);
+ f.editor.setDrawings([hidden]);f.onCommit.mockClear();f.freeze.mockClear();
+ f.editor.configure({selectedId:"hidden",snap:false,onSelect:f.onSelect,onCommit:f.onCommit});
+ f.pointer("pointerdown",50,90);f.pointer("pointermove",100,65);f.pointer("pointerup",100,65);
+ expect(f.onSelect).toHaveBeenLastCalledWith(null);expect(f.onCommit).not.toHaveBeenCalled();expect(f.freeze).not.toHaveBeenCalled();
+});
+it("validates optional visibility and never changes legacy objects",()=>{
+ expect(validateDrawings([trend])).toEqual([trend]);
+ expect(validateDrawings([{...trend,hidden:true}])).toEqual([{...trend,hidden:true}]);
+ expect(validateDrawings([{...trend,hidden:false}])).toEqual([trend]);
+ for(const hidden of ["true",1,{},[]])expect(validateDrawings([{...trend,hidden}])).toEqual([]);
+});

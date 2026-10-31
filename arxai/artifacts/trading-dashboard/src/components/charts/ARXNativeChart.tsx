@@ -422,7 +422,7 @@ export function ARXNativeChart({
 
   // Bumped each time the chart/series is (re)built so overlay effects redraw
   // onto the fresh series instead of a stale handle.
-  const [chartEpoch, setChartEpoch] = useState(0);
+  const [engineGeneration, setEngineGeneration] = useState(0);
   // P/L bubbles tracked in DOM coordinates (recomputed as the price scale moves).
   const [bubbles, setBubbles] = useState<
     { id: string; y: number; pnl: number; side: string | null; mode: string | null }[]
@@ -551,6 +551,9 @@ export function ARXNativeChart({
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
   const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
+  // A context change already renders the new source. Rebind consumers in that
+  // commit; only a newly created engine needs an additional ref-to-prop render.
+  const chartEpoch = `${engineGeneration}:${chartContext}`;
   // `adapter: null` binds a comparison view's context before its deferred
   // engine exists, so stream frames for that context (feed_status, liveness)
   // keep their effect; the primary always binds with its engine.
@@ -595,9 +598,8 @@ export function ARXNativeChart({
   // build theirs through the shared post-paint queue above; until then every
   // engine consumer no-ops on the null adapter, and `engineGeneration` re-runs
   // the context/link/stream effects so the late engine receives exactly the
-  // sequence a synchronously built one does (including the chartEpoch bump).
+  // sequence a synchronously built one does (including its engine-generation binding).
   const defersEngine = workspaceId !== "primary";
-  const [engineGeneration, setEngineGeneration] = useState(0);
   const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone });
   useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone }; });
   useLayoutEffect(() => {
@@ -622,6 +624,7 @@ export function ARXNativeChart({
       building = null;
       adapter = engine;
       adapterRef.current = engine;
+      setEngineGeneration(generation => generation + 1);
     };
     let cancelDeferred: (() => void) | undefined;
     if (!defersEngine) build();
@@ -639,7 +642,6 @@ export function ARXNativeChart({
         setEngineGeneration(() => { throw error; });
         return;
       }
-      setEngineGeneration(generation => generation + 1);
     });
 
     return () => {
@@ -692,13 +694,15 @@ export function ARXNativeChart({
       setFormingCloseMs(null);
       setBubbles([]);
     }
-    // Rebind channel ownership even when identity changes within one provider.
-    setChartEpoch(epoch => epoch + 1);
+    // chartEpoch includes the source identity, so this commit rebinds consumers.
   }, [chartContext, resolvedSymbol, timeframe, viewLinks, workspaceId, updateLegend, engineGeneration, defersEngine]);
+  // Primary engines register in their creation commit; their ref-to-prop
+  // render must not unregister/re-register and replay a peer range twice.
+  const linkEngineGeneration = defersEngine ? engineGeneration : 0;
   useLayoutEffect(() => {
     const adapter = adapterRef.current;
     return adapter ? viewLinks?.register(workspaceId, adapter) : undefined;
-  }, [viewLinks, workspaceId, chartContext, engineGeneration]);
+  }, [viewLinks, workspaceId, chartContext, linkEngineGeneration]);
   useLayoutEffect(() => { adapterRef.current?.setCrosshairHandler?.(updateLegend); }, [updateLegend, chartEpoch]);
   // One effect owns the zone: the ref is assigned first, then the engine and
   // the open legend are relabelled in the same commit (no separate ref effect).
@@ -1284,7 +1288,7 @@ export function ARXNativeChart({
         </div>
         {!mobileLayout && fullscreenToggle}
       </div>
-      <ChartWorkbenchTools key={chartContext} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools key={chartContext} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">

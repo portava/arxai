@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { useState } from "react";
+import { createRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChartWorkbenchTools, exportLabels } from "./ChartWorkbenchTools";
 import type { ChartAnchor, ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
@@ -13,6 +13,83 @@ const adapter={setDrawings:drawings,setDrawingHandler:(handler:typeof click)=>{c
 const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkbenchTools key={`${symbol}:${timeframe}`} adapter={engine} epoch={1} symbol={symbol} timeframe={timeframe} preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline fixture"/>);
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
+describe("object navigation",()=>{
+  const seed=()=>{
+    const rows=[{id:"level",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"},
+      {id:"note",kind:"text",start:{time:200,price:1.3},color:"#ffffff",text:"Target note",locked:true}];
+    localStorage.setItem(drawingStorageKey("EURUSD","M15"),JSON.stringify(rows));
+    return rows;
+  };
+  it("jumps to a filtered object's start without editing it or adding undo history",()=>{
+    const rows=seed(), goToTime=vi.fn(()=>true), fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+    mount("EURUSD","M15",{...adapter,goToTime} as unknown as ChartEngineAdapter);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.change(screen.getByLabelText("Find drawing"),{target:{value:"Target note"}});
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 2 start",exact:true}));
+    expect(goToTime).toHaveBeenCalledExactlyOnceWith(200);
+    expect(screen.getByRole("button",{name:"Select drawing 2"}).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/Centered on the first loaded candle at or after drawing 2/)).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)).toEqual(rows);
+    expect(screen.getByRole("button",{name:"Undo",exact:true}).hasAttribute("disabled")).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("closes Objects and returns focus to this chart only after successful navigation",()=>{
+    seed();const chartTarget=createRef<HTMLDivElement>(), scroll=vi.fn(), goToTime=vi.fn(()=>false);
+    const engine={...adapter,goToTime} as unknown as ChartEngineAdapter;
+    render(<><ChartWorkbenchTools chartTarget={chartTarget} adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline"/><div ref={chartTarget} tabIndex={0}/></>);
+    chartTarget.current!.scrollIntoView=scroll;
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start"}));
+    expect(scroll).not.toHaveBeenCalled();
+    expect(screen.getByRole("button",{name:"Go to drawing 1 start"})).toBeTruthy();
+    goToTime.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start"}));
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({block:"nearest",behavior:"instant"});
+    expect(document.activeElement).toBe(chartTarget.current);
+    expect(screen.queryByRole("button",{name:"Go to drawing 1 start"})).toBeNull();
+    expect(screen.getByRole("button",{name:"Objects (2)",exact:true}).getAttribute("aria-expanded")).toBe("false");
+  });
+  it("reports an unloaded anchor without claiming that the drawing is shown",()=>{
+    seed();const goToTime=vi.fn(()=>false);
+    mount("EURUSD","M15",{...adapter,goToTime} as unknown as ChartEngineAdapter);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start",exact:true}));
+    expect(screen.getByText(/Drawing 1 starts outside loaded history/)).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Select drawing 1"}).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByText(/Centered on/)).toBeNull();
+  });
+  it("preserves individual and global hiding when navigating to their candle",()=>{
+    const rows=seed();localStorage.setItem(drawingStorageKey("EURUSD","M15"),JSON.stringify([{...rows[0],hidden:true},rows[1]]));
+    const goToTime=vi.fn(()=>true);mount("EURUSD","M15",{...adapter,goToTime} as unknown as ChartEngineAdapter);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start",exact:true}));
+    expect(screen.getByText(/Drawing remains hidden/)).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Show drawing 1"})).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Select drawing 1"}).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(screen.getByRole("button",{name:"Hide drawings",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 2 start",exact:true}));
+    expect(screen.getByText(/Drawing remains hidden/)).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Show drawings",exact:true})).toBeTruthy();
+    expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
+  });
+  it("disables navigation while candles or its engine are unavailable",()=>{
+    seed();const view=render(<ChartWorkbenchTools adapter={null} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles={false} feedLabel="Unavailable"/>);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    expect(screen.getByRole("button",{name:"Go to drawing 1 start"}).hasAttribute("disabled")).toBe(true);
+    view.unmount();mount();fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    expect(screen.getByRole("button",{name:"Go to drawing 1 start"}).hasAttribute("disabled")).toBe(true);
+  });
+  it("keeps replay navigation inside the revealed window without requesting history",()=>{
+    seed();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+    const engine={...adapter,goToTime:vi.fn(()=>false)} as unknown as ChartEngineAdapter;
+    render(<ChartWorkbenchTools adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles historyWindowOnly feedLabel="Replay"/>);
+    fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+    fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start"}));
+    expect(screen.getByText(/Drawing 1 starts outside the revealed replay window/)).toBeTruthy();
+    expect(screen.queryByText(/Load its candles/)).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
 it("saves channel extensions and midpoint with undo, lock protection and reload",()=>{
  const key=drawingStorageKey("EURUSD","M15");
  const channel={id:"test-channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:150,price:30},color:"#ffffff"};
@@ -364,4 +441,50 @@ it("places a channel in three steps, cancels partial placement and preserves its
  fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"channel"}});act(()=>click?.({time:300,price:10}));act(()=>click?.({time:400,price:20}));
  fireEvent.keyDown(window,{key:"Escape"});expect(saved()).toHaveLength(1);
  view.unmount();mount();expect(drawings.mock.calls.at(-1)![0][0].offset).toEqual({time:100,price:30});
+});
+
+describe("individual drawing visibility and search",()=>{
+ const key=drawingStorageKey("EURUSD","M15");
+ const items=[{id:"level",kind:"horizontal",start:{time:100,price:10},color:"#ffffff",locked:true},
+ {id:"note",kind:"text",start:{time:200,price:20},color:"#ffffff",text:"Wait for a retest"}];
+ const stored=()=>JSON.parse(localStorage.getItem(key)!);
+ const open=()=>fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
+ it("hides a locked object reversibly without losing geometry, and restores its visibility after reload",()=>{
+  localStorage.setItem(key,JSON.stringify(items));const view=mount();open();
+  fireEvent.click(screen.getByLabelText("Select drawing 1"));
+  fireEvent.click(screen.getByLabelText("Hide drawing 1"));
+  expect(stored()).toEqual([{...items[0],hidden:true},items[1]]);
+  expect(screen.getByLabelText("Select drawing 1").hasAttribute("disabled")).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));expect(stored()).toEqual(items);
+  fireEvent.click(screen.getByRole("button",{name:"Redo",exact:true}));expect(stored()[0].hidden).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"Hide drawings",exact:true}));
+  expect(drawings).toHaveBeenLastCalledWith([]);
+  fireEvent.click(screen.getByRole("button",{name:"Show drawings",exact:true}));
+  expect(drawings).toHaveBeenLastCalledWith([{...items[0],hidden:true},items[1]]);
+  view.unmount();mount();open();
+  expect(screen.getByLabelText("Show drawing 1")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("Show drawing 1"));expect(stored()).toEqual(items);
+ });
+ it("searches type and note text without hiding canvas objects or renumbering actions",()=>{
+  localStorage.setItem(key,JSON.stringify(items));mount();open();const before=drawings.mock.calls.length;
+  fireEvent.change(screen.getByLabelText("Find drawing"),{target:{value:" RETEST "}});
+  expect(screen.queryByLabelText("Select drawing 1")).toBeNull();expect(screen.getByLabelText("Select drawing 2")).toBeTruthy();
+  expect(drawings.mock.calls.length).toBe(before);expect(stored()).toEqual(items);
+  fireEvent.click(screen.getByLabelText("Hide drawing 2"));expect(stored()).toEqual([items[0],{...items[1],hidden:true}]);
+  fireEvent.change(screen.getByLabelText("Find drawing"),{target:{value:"does not match"}});
+  expect(screen.getByText(/No matching drawings/)).toBeTruthy();expect(stored()).toHaveLength(2);
+  fireEvent.change(screen.getByLabelText("Find drawing"),{target:{value:"horizontal"}});
+  expect(screen.getByLabelText("Select drawing 1")).toBeTruthy();expect(screen.queryByLabelText("Select drawing 2")).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"Clear search"}));expect(screen.getAllByTestId("chart-drawing-object")).toHaveLength(2);
+ });
+ it("synchronizes hidden state to another same-context chart and preserves it on a visible-object drag",()=>{
+  localStorage.setItem(key,JSON.stringify(items));
+  const interaction=vi.fn();const engine={...adapter,setDrawingInteraction:interaction} as unknown as ChartEngineAdapter;
+  mount("EURUSD","M15",engine);open();fireEvent.click(screen.getByLabelText("Hide drawing 1"));
+  const otherDrawings=vi.fn();const other=mount("EURUSD","M15",{...adapter,setDrawings:otherDrawings} as unknown as ChartEngineAdapter);
+  const config=interaction.mock.calls.at(-1)![0];
+  act(()=>config.onCommit([{...items[0],hidden:true},{...items[1],start:{time:200,price:25}}]));
+  expect(otherDrawings).toHaveBeenLastCalledWith(stored());expect(stored()[0].hidden).toBe(true);
+  other.unmount();
+ });
 });
