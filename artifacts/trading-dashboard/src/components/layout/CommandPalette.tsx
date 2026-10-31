@@ -148,12 +148,14 @@ export function CommandPalette() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.defaultPrevented) return;
       const meta = e.ctrlKey || e.metaKey;
       if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); }
-      else if (e.key === "Escape" && open) { setOpen(false); }
+      else if (e.key === "Escape" && open) { e.preventDefault(); setOpen(false); }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // The active palette owns Escape before the underlying fullscreen chart.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [open]);
 
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 30); else { setQ(""); setHi(0); } }, [open]);
