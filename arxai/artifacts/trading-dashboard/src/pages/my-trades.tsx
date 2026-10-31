@@ -138,6 +138,12 @@ export default function MyTradesPage() {
 
   const cards = useMemo(() => data?.cards ?? [], [data]);
 
+  // A funds-only response may omit the count. Its legacy numeric placeholder
+  // is not evidence that positions have closed.
+  const displayOpenCount = !liveSnap.isUnavailable && liveSnap.snapshot != null
+    ? liveSnap.snapshot.positionCountKnown === false ? null : liveSnap.snapshot.openPositionsCount
+    : !loading && !err && data != null ? cards.length : null;
+
   // Phase 3 — advisory timing reads for all open symbols (fail-open).
   const uniqueSymbols = useMemo(() => [...new Set(cards.map((c) => c.symbol))], [cards]);
   const timingQ = useGetTimingBrainMulti(
@@ -268,12 +274,7 @@ export default function MyTradesPage() {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border bg-card px-4 py-2 text-sm">
         <span className="inline-flex items-center gap-1.5"><span className={cn("h-2 w-2 rounded-full", err ? "bg-danger" : "bg-success")} /><span className="text-txt-secondary">{liveLabel}</span></span>
         <span className="text-txt-muted">
-          {(!liveSnap.isUnavailable && liveSnap.snapshot != null
-            ? liveSnap.snapshot.openPositionsCount
-            : cards.length)} Open Trade{(
-              (!liveSnap.isUnavailable && liveSnap.snapshot != null
-                ? liveSnap.snapshot.openPositionsCount
-                : cards.length) === 1 ? "" : "s")}
+          {displayOpenCount ?? "—"} Open Trade{displayOpenCount === 1 ? "" : "s"}
         </span>
         <span className="text-txt-muted">Open P/L <span className={cn("font-medium", pnlTone(
           !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null

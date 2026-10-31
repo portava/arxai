@@ -822,3 +822,96 @@ describe("account evidence expires without another network message", () => {
     expect(result.current.live?.freshness.status).toBe("fresh");
   });
 });
+
+describe('funds-only polls do not certify position completeness',()=>{
+  it('first funds poll without a count has unknown count and incomplete positions',async()=>{
+    const body={...freshPollBody()} as Record<string,unknown>;delete body.openPositionCount;
+    fetchMock.mockResolvedValue({ok:true,json:async()=>body});
+    const {result}=renderHook(()=>useLiveAccountSnapshot());
+    await act(async()=>{MockEventSource.latest().emit({type:"error_safe"});await Promise.resolve();await Promise.resolve();});
+    expect(result.current.snapshot?.positionsComplete).toBe(false);
+    expect(result.current.snapshot?.positionCountKnown).toBe(false);
+  });
+  it('a reported count does not make an absent position list complete; SSE restores it',async()=>{
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({...freshPollBody(),openPositionCount:2})});
+    const {result}=renderHook(()=>useLiveAccountSnapshot());
+    await act(async()=>{MockEventSource.latest().emit({type:"error_safe"});await Promise.resolve();await Promise.resolve();});
+    expect(result.current.snapshot?.openPositionsCount).toBe(2);
+    expect(result.current.snapshot?.positionCountKnown).toBe(true);
+    expect(result.current.snapshot?.positionsComplete).toBe(false);
+    act(()=>MockEventSource.latest().emit(snapshotEvent({snapFreshness:'fresh',liveFreshness:'fresh'})));
+    expect(result.current.snapshot?.positionsComplete).not.toBe(false);
+    expect(result.current.snapshot?.openPositionsCount).toBe(0);
+  });
+  it('malformed counts cannot be displayed as known',async()=>{
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({...freshPollBody(),openPositionCount:'0'})});
+    const {result}=renderHook(()=>useLiveAccountSnapshot());
+    await act(async()=>{MockEventSource.latest().emit({type:"error_safe"});await Promise.resolve();await Promise.resolve();});
+    expect(result.current.snapshot?.positionCountKnown).toBe(false);
+  });
+});
+
+
+describe("successful partial funds responses cannot refresh old amounts", () => {
+  const fields = [
+    ["balance", "balance"], ["equity", "equity"], ["margin", "margin"],
+    ["freeMargin", "freeMargin"], ["marginLevelPercent", "marginLevel"], ["openPnL", "openPL"],
+  ] as const;
+  it.each([null, undefined, "12", Number.NaN, Number.POSITIVE_INFINITY])("clears unknown or malformed funds (%s) instead of reusing old numbers", async (value) => {
+    const body = freshPollBody() as Record<string, unknown>;
+    for (const [wire] of fields) {
+      if (value === undefined) delete body[wire]; else body[wire] = value;
+    }
+    fetchMock.mockResolvedValue({ ok: true, json: async () => body });
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const prior = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    for (const [, field] of fields) prior.snapshot[field] = 123;
+    act(() => MockEventSource.latest().emit(prior));
+    await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
+    for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBeNull();
+  });
+  it("keeps newly reported zeroes and a negative open loss", async () => {
+    const body = freshPollBody() as Record<string, unknown>;
+    for (const [wire] of fields) body[wire] = 0;
+    body.openPnL = -7;
+    fetchMock.mockResolvedValue({ ok: true, json: async () => body });
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
+    for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBe(field === "openPL" ? -7 : 0);
+  });
+  it.each([null, undefined])("does not revive a previously known position count when the response count is %s", async (value) => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ...freshPollBody(), openPositionCount: value }) });
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const prior = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    prior.snapshot.openPositionsCount = 3;
+    act(() => MockEventSource.latest().emit(prior));
+    await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
+    expect(result.current.snapshot?.positionCountKnown).toBe(false);
+  });
+  it("explicitly unavailable canonical funds clear the previous canonical block", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ...freshPollBody(), live: null }) });
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
+    expect(result.current.live).toBeNull();
+  });
+  it.each([false, "false", 1])("requires boolean live allocation signals (%s)", async (flag) => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ...freshPollBody(), isAllocated: flag }) });
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
+    expect(result.current.snapshot?.accountMode).toBe("UNKNOWN");
+    expect(result.current.live).toBeNull();
+    for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBeNull();
+  });
+  it("does not carry paper account canonical values into a live fallback", async () => {
+    const body = freshPollBody() as Record<string, unknown>; delete body.live;
+    fetchMock.mockResolvedValue({ ok: true, json: async () => body });
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const prior = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    prior.snapshot.accountMode = "PAPER";
+    act(() => MockEventSource.latest().emit(prior));
+    await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
+    expect(result.current.live).toBeNull();
+  });
+});

@@ -105,6 +105,9 @@ export interface LiveAccountSnapshot {
   openPL: number | null;
   openPositionsCount: number;
   positions: LivePositionPL[];
+  /** Client fallback polls carry funds/counts, never a complete position list. */
+  positionsComplete?: boolean;
+  positionCountKnown?: boolean;
   lastBrokerSnapshotAtMs?: number;
   lastQuoteUpdateAtMs?: number;
   lastComputedAtMs: number;
@@ -247,8 +250,9 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       if (!data || typeof data !== "object") return;
 
       // slot-summary gives partial data — synthesize a LiveAccountSnapshot
-      // using the EXACT field names the endpoint returns, falling back to the
-      // last known SSE snapshot for fields slot-summary doesn't carry.
+      // using the EXACT field names the endpoint returns. A successful response
+      // stands on its own: absent/null amounts must not refresh previous amounts.
+      // Request failure preserves the previous snapshot and its original age.
       //
       // Actual slot-summary response fields (meLiveAccount.ts):
       //   openPnL, openPositionCount, dataFreshness ("FRESH"/"STALE"/"MISSING"),
@@ -269,8 +273,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       // here using the same signals slot-summary already returns. A user who is
       // not allocated or not connected stays UNKNOWN so their data is never
       // mislabelled as live-shared.
-      const isAllocated = Boolean(data["isAllocated"]);
-      const isBridgeLive = Boolean(data["isLive"]);
+      const isAllocated = data["isAllocated"] === true;
+      const isBridgeLive = data["isLive"] === true;
       const accountMode: AccountMode = isAllocated && isBridgeLive ? "LIVE_SHARED" : "UNKNOWN";
       const notLiveReason: string | undefined =
         !isAllocated
@@ -285,9 +289,13 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         data["live"] && typeof data["live"] === "object"
           ? (data["live"] as InvestorLiveBalance)
           : null;
-      let healedLive = polledLive;
+      let healedLive: InvestorLiveBalance | null = null;
       if (accountMode === "LIVE_SHARED") {
-        const baseLive = polledLive ?? prev?.live ?? null;
+        // Explicit null invalidates the block. Older endpoints may omit it:
+        // preserve only same-mode last-known evidence, marked stale below.
+        const baseLive = data["live"] !== undefined
+          ? polledLive
+          : prev?.accountMode === "LIVE_SHARED" ? prev.live ?? null : null;
         if (baseLive) {
           const canonical = baseLive.freshness.status;
           const status = canonical === "unavailable" || freshness === "unavailable"
@@ -298,28 +306,33 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         }
       }
 
+      const amount = (field: string): number | null => {
+        const value = data[field];
+        return accountMode === "LIVE_SHARED" && typeof value === "number" && Number.isFinite(value) ? value : null;
+      };
+      const count = data["openPositionCount"];
+      const positionCountKnown = accountMode === "LIVE_SHARED" && typeof count === "number" && Number.isSafeInteger(count) && count >= 0;
       const synth: LiveAccountSnapshot = {
         userId: prev?.userId ?? "",
         accountMode,
         live: healedLive,
         source: "computed",
-        balance: (data["balance"] as number | null | undefined) ?? prev?.balance ?? null,
-        equity: (data["equity"] as number | null | undefined) ?? prev?.equity ?? null,
-        margin: (data["margin"] as number | null | undefined) ?? prev?.margin ?? null,
-        freeMargin: (data["freeMargin"] as number | null | undefined) ?? prev?.freeMargin ?? null,
-        marginLevel: (data["marginLevelPercent"] as number | null | undefined) ?? prev?.marginLevel ?? null,
+        balance: amount("balance"),
+        equity: amount("equity"),
+        margin: amount("margin"),
+        freeMargin: amount("freeMargin"),
+        marginLevel: amount("marginLevelPercent"),
         // slot-summary doesn't carry the account-sync marker; keep the last
         // SSE-known value so the >60s stale note stays honest across fallback.
-        accountSyncedAtMs: prev?.accountSyncedAtMs ?? null,
+        accountSyncedAtMs: accountMode === "LIVE_SHARED" && prev?.accountMode === "LIVE_SHARED" ? prev.accountSyncedAtMs ?? null : null,
         // Only forward financial figures when the user is actually in live-shared
         // mode — never surface a LIVE_SHARED-sourced number to a non-live user.
-        openPL: accountMode === "LIVE_SHARED"
-          ? ((data["openPnL"] as number | null | undefined) ?? prev?.openPL ?? null)
-          : null,
-        openPositionsCount: accountMode === "LIVE_SHARED"
-          ? Number((data["openPositionCount"] as number | undefined) ?? prev?.openPositionsCount ?? 0)
-          : 0,
-        positions: accountMode === "LIVE_SHARED" ? (prev?.positions ?? []) : [],
+        openPL: amount("openPnL"),
+        // Legacy numeric shape remains; display consumers must honor unknown metadata.
+        openPositionsCount: positionCountKnown ? count as number : 0,
+        positions: accountMode === "LIVE_SHARED" && prev?.accountMode === "LIVE_SHARED" ? prev.positions : [],
+        positionsComplete: false,
+        positionCountKnown,
         lastComputedAtMs: Date.now(),
         freshness: accountMode === "LIVE_SHARED" ? freshness : "unavailable",
         warnings: (data["snapshotWarning"] ? [String(data["snapshotWarning"])] : prev?.warnings) ?? [],
