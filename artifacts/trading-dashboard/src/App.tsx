@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChartReplayBoundary } from "@/components/chart-replay/ChartReplayBoundary";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { useActivityPing } from "@/hooks/useActivityPing";
+import { loadMarketScannerPage } from "@/lib/scannerRoute";
 
 // Eager: dashboard (home) and not-found
 import Dashboard from "@/pages/dashboard";
@@ -109,7 +110,7 @@ const TradeGraderPage = lazy(() => import("@/pages/trade-grader"));
 const AiCoachPage = lazy(() => import("@/pages/ai-coach"));
 const PerformanceScorecardPage = lazy(() => import("@/pages/performance-scorecard"));
 const MarketReplayPage = lazy(() => import("@/pages/market-replay"));
-const MarketScannerPage = lazy(() => import("@/pages/market-scanner"));
+const MarketScannerPage = lazy(loadMarketScannerPage);
 const TradeCommandRoomPage = lazy(() => import("@/pages/trade-command-room"));
 const AlertsCenterPage = lazy(() => import("@/pages/alerts-center"));
 const SessionPlanPage = lazy(() => import("@/pages/session-plan"));

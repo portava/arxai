@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, cleanup } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SidebarContent } from "@/components/layout/AppLayout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -57,9 +58,11 @@ function rawRoutes(container: HTMLElement): string[] {
 
 function adminSidebarRoutes(): string[] {
   const { container } = render(
-    <TooltipProvider>
-      <SidebarContent collapsed />
-    </TooltipProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <SidebarContent collapsed />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
   return rawRoutes(container);
 }
