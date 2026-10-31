@@ -50,7 +50,7 @@ describe("chart refresh and inspection", () => {
   });
   it("ignores an obsolete observer after replacement and keeps height updates at zero width",()=>{
     adapter.init({container:document.createElement("div"),height:400});
-    const oldNotification=resizeNotifications.at(-1)!();
+    const oldNotification=resizeNotifications.at(-1)!;
     const container=document.createElement("div");Object.defineProperty(container,"clientWidth",{value:800,configurable:true});
     adapter.init({container,height:400});mocks.chart.applyOptions.mockClear();
     oldNotification();expect(mocks.chart.applyOptions).not.toHaveBeenCalled();
