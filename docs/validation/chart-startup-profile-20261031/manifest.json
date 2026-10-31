@@ -1,0 +1,67 @@
+{
+  "source": "bcba1b6115f1333210167f93c6d2f7b4a3d25d02",
+  "application": "d83a02d773743990704465548af7cea556851d0c",
+  "diagnosticOnly": true,
+  "files": [
+    {
+      "original": "build.log",
+      "archive": "build.log.gz",
+      "originalSha256": "fb299b91d2691ccaacba5ef4c559c69bad1fefff4763b771d2675749c4a9867d",
+      "archiveSha256": "cb5c37e82fa7cbe5b6c59822928856b4cdfc7d9d642c4638763d00ba4a7d3232"
+    },
+    {
+      "original": "close.log",
+      "archive": "close.log.gz",
+      "originalSha256": "6f718de4da7a9cf47d5c2974628d8dca9b5b216507674bce2bde1988d1cdd291",
+      "archiveSha256": "d9356fc618826f3b1e61bec5f090d5d9ba064d08031b943ac7099dcef145157c"
+    },
+    {
+      "original": "open.log",
+      "archive": "open.log.gz",
+      "originalSha256": "f8f7a9a192d1a8cb74691caa0cac370224c387bc0c8e028daf261c4e8ec4188d",
+      "archiveSha256": "892283733f480a085f8b88d0e38e7c23377e1e78aada0aa5fedf310384a1c9a3"
+    },
+    {
+      "original": "profile.json",
+      "archive": "profile.json.gz",
+      "originalSha256": "97fb176ba365fa31d80df6448d9a263ddacc88ab08c0b9e654e3276d29ffe670",
+      "archiveSha256": "4dd1cdb9184c9a2209c0aa7595f74da8f868a4807dbba0e7092c35a4e07f5a86"
+    },
+    {
+      "original": "profile.log",
+      "archive": "profile.log.gz",
+      "originalSha256": "d63bb3299d6ef54e9191de709caa78a3a9b6d10105f3d0b67f7767f40fa4bee8",
+      "archiveSha256": "d72cf85ce04cba54a4b1f478d9ea186612062d71a62ef8a02f9a394ac2163172"
+    },
+    {
+      "original": "replit-completion.json",
+      "archive": "replit-completion.json.gz",
+      "originalSha256": "c57f3b0c06c778940ec012ca4c85f40b5204bcac10406abb2aca19ce9fecc5b9",
+      "archiveSha256": "51bfb58ecc33cb9f17277363c09c639d09817daa6f9b26ad767b58a26692ceed"
+    },
+    {
+      "original": "run.js",
+      "archive": "run.js.gz",
+      "originalSha256": "5282d35b1facae5b0a8f07258fbcc1179c8fc9e7e7660d0cd87eaac0811c1ef7",
+      "archiveSha256": "3b9bc3acdb98c4aa5860074b3389eea9bb05e0345963f12e5b36d8047bc4a354"
+    },
+    {
+      "original": "setup.js",
+      "archive": "setup.js.gz",
+      "originalSha256": "72ae4abc0c331937304d27ca9e3b75b51128a681c861cb6dfeca3e24618bc1ef",
+      "archiveSha256": "6e7ca083a08d54f94333a29a777f792fa44247a824c77b686cdd448fe7534499"
+    },
+    {
+      "original": "setup.log",
+      "archive": "setup.log.gz",
+      "originalSha256": "5430a6400578402e3dc779ec3270d46a2f6da589938f6a88b73e29ac2650f1a9",
+      "archiveSha256": "1111febf0ea9e0c1e98f6f6f2e66879191d77685493b43701057891128ac0ab6"
+    },
+    {
+      "original": "summary.json",
+      "archive": "summary.json.gz",
+      "originalSha256": "ee8b134d5e6e24d72482eb653ffd2943d3b3c9572cc0b50ff365da7102967251",
+      "archiveSha256": "aa9831f9c3d3c505a83b77754407cec30a1c215d4d6c892b2cf64c24649076d6"
+    }
+  ]
+}
