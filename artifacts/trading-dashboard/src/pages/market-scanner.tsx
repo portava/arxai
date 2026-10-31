@@ -980,6 +980,9 @@ export default function MarketScanner() {
         <ScannerChartPanel />
       </SectionErrorBoundary>
 
+      {/* Keep supporting panels mounted and updating. The browser may skip only
+          their offscreen layout/paint; keyboard/search access remains available. */}
+      <div className="space-y-4 [content-visibility:auto] [contain-intrinsic-block-size:auto_900px]" data-testid="scanner-supporting-panels">
       <SectionErrorBoundary section="Trade Health">
         <TradeHealthPanel chartSymbol={chartSym} />
       </SectionErrorBoundary>
@@ -996,6 +999,7 @@ export default function MarketScanner() {
         ]}
       />
 
+      </div>
       {tradeTarget && tradeTargetUsable && (
         <SectionErrorBoundary section="Trade ticket">
         <ScannerTradeModal
