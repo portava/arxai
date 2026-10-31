@@ -1,0 +1,23 @@
+### Result
+{"records":[{"label":"initial","value":"candles","state":{"adapterId":1,"containerId":2,"chartId":3,"seriesId":4,"canvasIds":[5,6,7,8,9,10,11],"candlesId":15,"dataRevision":9,"barCount":200,"first":{"time":1767175200,"open":0.9999,"high":1.0003,"low":0.9997,"close":1},"last":{"time":1767354300,"open":0.9976255169022257,"high":0.9980255169022256,"low":0.9974255169022257,"close":0.9977255169022257},"symbol":"EURUSD","intervalSeconds":900,"style":"candles","feed":{"source":"offline_fixture","livePriceAffordance":false},"range":{"from":45.281250000000014,"to":161.71875},"bounds":{"x":290,"y":268.875,"width":1100,"height":520}}},{"label":"after ArrowDown","value":"candles","state":{"adapterId":1,"containerId":2,"chartId":3,"seriesId":4,"canvasIds":[5,6,7,8,9,10,11],"candlesId":15,"dataRevision":9,"barCount":200,"first":{"time":1767175200,"open":0.9999,"high":1.0003,"low":0.9997,"close":1},"last":{"time":1767354300,"open":0.9976255169022257,"high":0.9980255169022256,"low":0.9974255169022257,"close":0.9977255169022257},"symbol":"EURUSD","intervalSeconds":900,"style":"candles","feed":{"source":"offline_fixture","livePriceAffordance":false},"range":{"from":45.281250000000014,"to":161.71875},"bounds":{"x":290,"y":268.875,"width":1100,"height":520}}},{"label":"after Enter","value":"candles","state":{"adapterId":1,"containerId":2,"chartId":3,"seriesId":4,"canvasIds":[5,6,7,8,9,10,11],"candlesId":15,"dataRevision":9,"barCount":200,"first":{"time":1767175200,"open":0.9999,"high":1.0003,"low":0.9997,"close":1},"last":{"time":1767354300,"open":0.9976255169022257,"high":0.9980255169022256,"low":0.9974255169022257,"close":0.9977255169022257},"symbol":"EURUSD","intervalSeconds":900,"style":"candles","feed":{"source":"offline_fixture","livePriceAffordance":false},"range":{"from":45.281250000000014,"to":161.71875},"bounds":{"x":290,"y":268.875,"width":1100,"height":520}}},{"label":"after Tab","value":"candles","state":{"adapterId":1,"containerId":2,"chartId":3,"seriesId":4,"canvasIds":[5,6,7,8,9,10,11],"candlesId":15,"dataRevision":9,"barCount":200,"first":{"time":1767175200,"open":0.9999,"high":1.0003,"low":0.9997,"close":1},"last":{"time":1767354300,"open":0.9976255169022257,"high":0.9980255169022256,"low":0.9974255169022257,"close":0.9977255169022257},"symbol":"EURUSD","intervalSeconds":900,"style":"candles","feed":{"source":"offline_fixture","livePriceAffordance":false},"range":{"from":45.281250000000014,"to":161.71875},"bounds":{"x":290,"y":268.875,"width":1100,"height":520}}}],"events":[{"kind":"keydown","key":"ArrowDown","trusted":true,"value":"candles","at":320451.5,"eventAt":320444},{"kind":"keyup","key":"ArrowDown","trusted":true,"value":"candles","at":320457.09999990463,"eventAt":320456.90000009537},{"kind":"keydown","key":"Enter","trusted":true,"value":"candles","at":320459.59999990463,"eventAt":320459},{"kind":"keyup","key":"Enter","trusted":true,"value":"candles","at":320460.5,"eventAt":320460.5},{"kind":"keydown","key":"Tab","trusted":true,"value":"candles","at":320461.90000009537,"eventAt":320461.90000009537}]}
+### Ran Playwright code
+```js
+await (async page=>{
+ const panel=page.getByTestId('scanner-chart-panel');await page.setViewportSize({width:1440,height:1100});
+ const style=panel.getByLabel('Chart style',{exact:true});await style.selectOption('candles');
+ await page.evaluate(()=>{window.__styleEvents=[];for(const kind of ['keydown','keyup','input','change','click'])window.addEventListener(kind,e=>{if(e.target?.matches?.('select[aria-label="Chart style"]'))window.__styleEvents.push({kind,key:e.key,trusted:e.isTrusted,value:e.target.value,at:performance.now(),eventAt:e.timeStamp});},true);});
+ const records=[];const save=async label=>records.push({label,value:await style.inputValue(),state:await page.evaluate(()=>window.__arxChartQa.snapshot())});
+ await style.scrollIntoViewIfNeeded();await style.focus();await save('initial');
+ await page.keyboard.press('ArrowDown');await save('after ArrowDown');
+ await page.keyboard.press('Enter');await save('after Enter');
+ await page.keyboard.press('Tab');await save('after Tab');
+ return{records,events:await page.evaluate(()=>window.__styleEvents)};
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:4199/market-scanner
+- Page Title: ARX actual Scanner — offline acceptance
+- Console: 187 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-10-28T17-17-37-469Z.log#L349-L727

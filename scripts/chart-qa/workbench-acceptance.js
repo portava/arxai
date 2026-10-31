@@ -1,6 +1,7 @@
 async page => {
+ const base=typeof CHART_QA_BASE_URL==='string'?CHART_QA_BASE_URL:'http://127.0.0.1:4178';
  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:4178');
+ await page.goto(base);
  await page.evaluate(()=>localStorage.clear()); await page.reload();
  await page.setViewportSize({width:1600,height:1100});
  const chart=page.getByTestId('arx-native-canvas');
@@ -43,9 +44,16 @@ async page => {
  await page.getByRole('button',{name:'Hide drawings',exact:true}).click();
  await page.getByRole('button',{name:'Show drawings',exact:true}).click();
  await page.getByRole('button',{name:'Objects (3)',exact:true}).click();
- await page.getByRole('button',{name:'Save template',exact:true}).click();
+ await page.getByRole('button',{name:'Templates',exact:true}).click();
+ await page.getByLabel('Template name',{exact:true}).fill('Acceptance template');
+ await page.getByRole('button',{name:'Save new',exact:true}).click();
+ await page.getByText('Template saved in this browser.',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Close',exact:true}).click();
  await page.getByLabel('Chart style',{exact:true}).selectOption('line');
- await page.getByRole('button',{name:'Load template',exact:true}).click();
+ await page.getByRole('button',{name:'Templates',exact:true}).click();
+ await page.getByRole('listbox').selectOption({label:'Acceptance template'});
+ await page.getByRole('button',{name:'Apply selected',exact:true}).click();
+ await page.getByRole('button',{name:'Close',exact:true}).click();
  if(await page.getByLabel('Chart style',{exact:true}).inputValue()!=='candles') throw Error('Template did not restore style');
  const downloadPromise=page.waitForEvent('download');
  await page.getByRole('button',{name:'Export PNG',exact:true}).click();
@@ -80,13 +88,15 @@ async page => {
  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)) throw Error('Mobile page overflow');
  await page.screenshot({path:'/private/tmp/arx-smart-chart-workbench-mobile.png',fullPage:true});
  await page.getByRole('button',{name:'One chart',exact:true}).click();
+ await page.getByRole('button',{name:'Chart tools',exact:true}).click();
  await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
  for(let i=0;i<5;i++) await page.getByRole('button',{name:'Remove study 1',exact:true}).click();
  await page.getByRole('button',{name:'Studies (0)',exact:true}).click();
  if(await page.getByTestId('arx-native-canvas').locator('tr').count()!==2) throw Error('Empty indicator panes leaked');
  const touchContext=await page.context().browser().newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
  const touch=await touchContext.newPage();
- await touch.goto('http://127.0.0.1:4178');
+ await touch.goto(base);
+ await touch.getByRole('button',{name:'Chart tools',exact:true}).click();
  await touch.getByLabel('Drawing tool',{exact:true}).selectOption('trend');
  await touch.getByTestId('arx-native-canvas').tap({position:{x:70,y:70}});
  await touch.getByTestId('arx-native-canvas').tap({position:{x:200,y:140}});

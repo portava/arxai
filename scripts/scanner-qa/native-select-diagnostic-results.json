@@ -1,0 +1,127 @@
+{
+  "purpose": "Offline trusted native-select diagnostic, not latency or ARX acceptance",
+  "cliVersion": "0.1.22",
+  "applicationReference": "0f12247640a589b655a6d8e74ba521a899a06cf4",
+  "applicationUsed": false,
+  "runs": [
+    {
+      "mode": "headless",
+      "log": "native-select-headless.log",
+      "sha256": "1b82ee36611f7bce48d5e126a0606f327359dc529136c7c83ad58edd22202d40",
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "platform": "MacIntel"
+      },
+      "trials": [
+        {
+          "name": "dropdown-down-enter",
+          "value": "candles",
+          "checked": null,
+          "events": 4,
+          "trustedChanges": 0,
+          "preventedKeys": 0
+        },
+        {
+          "name": "dropdown-space-down-enter",
+          "value": "candles",
+          "checked": null,
+          "events": 6,
+          "trustedChanges": 0,
+          "preventedKeys": 0
+        },
+        {
+          "name": "dropdown-alt-down-down-enter",
+          "value": "candles",
+          "checked": null,
+          "events": 8,
+          "trustedChanges": 0,
+          "preventedKeys": 0
+        },
+        {
+          "name": "dropdown-click-down-enter",
+          "value": "candles",
+          "checked": null,
+          "events": 5,
+          "trustedChanges": 0,
+          "preventedKeys": 0
+        },
+        {
+          "name": "list-down",
+          "value": "bars",
+          "checked": null,
+          "events": 4,
+          "trustedChanges": 1,
+          "preventedKeys": 0
+        },
+        {
+          "name": "checkbox-click",
+          "value": null,
+          "checked": true,
+          "events": 3,
+          "trustedChanges": 1,
+          "preventedKeys": 0
+        }
+      ]
+    },
+    {
+      "mode": "headed",
+      "log": "native-select-headed.log",
+      "sha256": "608952e3f073ac4614df05f703b66c46bdc937a555797bead1d100b3177e82be",
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "platform": "MacIntel"
+      },
+      "trials": [
+        {
+          "name": "dropdown-down-enter",
+          "value": "candles",
+          "checked": null,
+          "events": 4,
+          "trustedChanges": 0,
+          "preventedKeys": 0
+        },
+        {
+          "name": "dropdown-space-down-enter",
+          "value": "candles",
+          "checked": null,
+          "events": 6,
+          "trustedChanges": 0,
+          "preventedKeys": 0
+        },
+        {
+          "name": "dropdown-alt-down-down-enter",
+          "value": "candles",
+          "checked": null,
+          "events": 8,
+          "trustedChanges": 0,
+          "preventedKeys": 0
+        },
+        {
+          "name": "dropdown-click-down-enter",
+          "value": "candles",
+          "checked": null,
+          "events": 5,
+          "trustedChanges": 0,
+          "preventedKeys": 0
+        },
+        {
+          "name": "list-down",
+          "value": "bars",
+          "checked": null,
+          "events": 4,
+          "trustedChanges": 1,
+          "preventedKeys": 0
+        },
+        {
+          "name": "checkbox-click",
+          "value": null,
+          "checked": true,
+          "events": 3,
+          "trustedChanges": 1,
+          "preventedKeys": 0
+        }
+      ]
+    }
+  ],
+  "result": "Dropdown trusted selection was not achieved by the tested CLI input sequences in this environment; native listbox and checkbox controls succeeded. This does not prove all native input routes unsupported or ARX style behavior defective."
+}

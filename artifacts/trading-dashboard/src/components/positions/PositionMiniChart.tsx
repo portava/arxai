@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, LineStyle, CrosshairMode, type UTCTimestamp } from "lightweight-charts";
 import { ChartFeedStatusBadge } from "@/components/charts/ChartFeedStatusBadge";
+import { ChartLibraryCredit } from "@/components/charts/ChartLibraryCredit";
 import { isLivePriceDisplay, type ChartDisplayStatus } from "@/lib/chart-display-status";
 import { sanitizeCandlestickData } from "@/lib/chart-engine/candleSanitize";
 
@@ -51,6 +52,8 @@ export function PositionMiniChart({
       width: el.clientWidth,
       height,
       layout: {
+        // Use the plain-text library credit below, never an in-chart logo.
+        attributionLogo: false,
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#a1a1aa",
         fontSize: 10,
@@ -167,6 +170,7 @@ export function PositionMiniChart({
       <div className="pointer-events-none absolute left-2 top-2 z-10">
         <ChartFeedStatusBadge status={displayStatus} hasCandles={candles.length > 0} testIdPrefix="position-mini-chart" />
       </div>
+      <ChartLibraryCredit />
     </div>
   );
 }

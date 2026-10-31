@@ -1,0 +1,262 @@
+[PASS] worktree-integrity
+  · tracked deletions: 0 (tripwire fires above 20).
+  · .replit scanned: no uncommented secret-literal assignments.
+[PASS] can-place-trades-invariant
+  · Inviolable invariant: canPlaceTrades must always be false in advisory APIs.
+  · If you need a literal type, use `false as const`.
+[PASS] vault-append-only
+  · Inviolable invariant: vault tables (auditEventsTable, vaultEventsTable, stateTransitionsTable, executionEventsTable, ownerDecisionsTable) are append-only.
+  · Raw-SQL append-only surfaces also guarded: execution_events, owner_decisions.
+  · DB-layer REVOKE is NOT in force: the app connects as a superuser, which bypasses privilege checks, so a REVOKE would assert an immutability the table does not have. This guard is the enforcement.
+  · Forward-fix via corrective events; never UPDATE or DELETE.
+  · (Note: `\.update\s*\(|\.delete\s*\(` patterns checked.)
+[PASS] no-console-in-server
+  · Server code must use req.log or the singleton logger; never console.*
+[PASS] route-collisions
+  · Inspected 283 route file(s); 1622 unique (method,path) pairs.
+[PASS] duplicate-tables
+  · Inspected 164 schema file(s); 294 unique table name(s).
+[PASS] cross-artifact-imports
+  · Leaf artifacts (api-server, trading-dashboard, mockup-sandbox) must not import each other.
+  · Share via libs (lib/db, lib/domain, lib/api-zod, lib/api-client-react, lib/api-spec).
+[PASS] domain-circular-deps
+  · Inspected 1042 files in lib/domain/src.
+  · 10 pre-existing cycle(s) tolerated via known-domain-cycles.json (debt).
+[PASS] paper-autopilot-isolation
+  · Inspected 7 FF file(s) under paperAutopilot/, routes/paperAutopilot.ts, schema/paperAutopilot.ts.
+  · Build FF is PAPER_ONLY. Forbidden surfaces: /api/execute-trade, /api/mt5/*, executeTrade(), setCanPlaceTrades(), engageKillSwitch(), live_positions/trades/mt5_commands mutations, canPlaceTrades:true.
+[PASS] live-trading-readiness-lock
+  · Inspected 7 TT file(s). Build TT is LOCKED — no broker placement layer permitted.
+  · placeLiveOrderGuarded() must always return REJECTED with reason BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
+[PASS] emergency-kill-switch
+  · Schema OK at lib/db/src/schema/liveTrading.ts
+[PASS] admin-gate-single-source
+  · 53 local requireAdmin gates use the shared decision; 0 legacy exceptions
+[PASS] live-order-risk-limits
+  · Verified 9 hard-coded limits and 25 guard checks.
+[PASS] security-role-header-allowlist
+  · Direct reads of the `x-security-role` header are forbidden outside the approved files.
+  · Approved (allowlisted) authority sources:
+  ·   - artifacts/api-server/src/lib/security/session.ts (single auditable control point)
+  · All other server code MUST resolve role via `readRoleFromRequest(req)` from
+  · `lib/security/middleware.ts`. Never trust client-supplied role headers.
+  · User-facing frontend scanned (must NOT send a spoofed header):
+  ·   - artifacts/trading-dashboard/src/pages/market-scanner.tsx
+  ·   - artifacts/trading-dashboard/src/pages/live-ai-auto-test.tsx
+[PASS] no-committed-pepper
+  · Scanned 85 tracked config file(s) for a literal REGISTRATION_KEY_PEPPER assignment.
+  · The pepper must come from the environment (Replit Secrets) only — the code
+  · reads process.env and fails closed when it is absent.
+[PASS] live-broker-execution-defaults (Phase B 9-invariant bundle)
+[PASS] master-live-bridge-binding-non-bypassable
+  · BRIDGE_BINDING_MISMATCH still enforced
+  · master-live gate wired ahead of Phase B
+  · no auto-fire callers
+  · detector/gate import-clean
+[PASS] master-live-user-approval-required
+  · user-access gate wired before master-bridge gate inside SHARED_MASTER_MT5
+  · all admin mutations require ADMIN + write audit row
+  · user endpoint requireUser + no email/role leak
+  · gate library import-clean
+[PASS] one-click-concurrency
+[PASS] live-dispatch-cas
+  · both CAS claims are (commandId AND status) predicated ✓
+  · SENT_TO_MT5_LIVE: 1 transition site(s), all routed through the CAS ✓
+  · LIVE_APPROVED: 1 transition site(s), all routed through the CAS ✓
+  · race-lost refusal returns before the EA mailbox mirror ✓
+  · 27 dispatch refusal writes preserve already claimed commands
+  · artifacts/api-server/src/routes/meLive.ts: 5 dispatch call site(s), 5 per-user lock scope(s)
+[PASS] one-click-arm-routes-through-gate
+[PASS] scanner-selected-market-safety
+[PASS] per-user-isolation-me-routes
+  · scanned 77 route file(s) containing /me/* routes; 341 /me/* handlers evaluated
+[PASS] master-bridge-modern-demo-dispatch-uses-routing
+[PASS] master-bridge-live-locked
+[PASS] master-bridge-secrets-not-leaked
+[PASS] risky-wording-frontend
+  · 0 forbidden wording matches across 1 path(s) / 11 pattern(s)
+[PASS] no-internal-names-user-ui
+  · 0 internal-name leaks in user-facing UI (5 regex patterns over artifacts/trading-dashboard/src, plus a comment/string-aware "Ruby" scan over artifacts/trading-dashboard/src + artifacts/api-server/src/routes + artifacts/api-server/src/lib + lib/domain/src; 18 admin/dev frontend paths + backend admin/operator/dev routes + 11 admin/operator/dev library files excluded)
+[PASS] no-real-user-password-mutation
+  · Tests/seeds/scripts must create isolated test-only users (random email + random id) for password work.
+  · The ONLY legitimate password-mutation tool is scripts/src/ownerSetPassword.ts.
+  · Banned smoke-test password literals: SmokeTest!2026.
+  · Real user ids guarded against: 4.
+[PASS] shared-bridge-reconciliation
+  · acceptance harness present at scripts/src/qaSharedBridgeReconciliation.ts
+  · npm script test:shared-bridge-reconciliation registered
+[PASS] realized-pnl-downstream-guard
+  · scanned 7 consumer file(s) for realizedPlUsd reads
+  · Allowlist: schema, writer (liveTestCycle.ts), helper (realizedPnl.ts), correction script, test fixtures.
+  · All other readers MUST gate on pnlStatus === 'COMPUTED' or call isRealizedPnlIngestible().
+[PASS] ea-inputs-telemetry
+  · all-good eaInputs passes the master-live gate
+  · missing/false core fields fail closed (NOT_LIVE_CAPABLE)
+  · diagnostic shows missing as 'not reported', distinct from 'disconnected'
+[PASS] product-role-enforcement
+  · Single-active-role model: INVESTOR is view-only, admin namespaces need ADMIN/OWNER.
+  · Central gate enforceProductRoleAccess must stay mounted after the auth gate.
+[PASS] investor-no-guaranteed-return
+  · 0 return-promise matches across 5 investor surface(s) / 6 pattern(s)
+[PASS] investor-performance-metrics
+  · deposits-only ledger keeps the honest empty performance state
+  · a real PERFORMANCE figure populates returns and moves the equity curve
+  · PERFORMANCE is excluded from contributions but included in current value
+  · recorded losses preserve their sign (negative return)
+[PASS] investor-equity-series
+  · empty ledger produces an empty series (no seeded/projected point)
+  · deposits/withdrawals/adjustments accumulate to the exact running value
+  · same-day entries collapse to one real end-of-day point
+  · series is chronologically ordered regardless of input order
+  · empty ledger reports hasPerformanceData=false
+[PASS] router-level-access-guard-leak
+  · Attach access guards (denyInvestorExecution, requireUser, requireRole) PER ROUTE, not at the router level.
+  · Router-level router.use(<guard>) is only safe if the router is mounted under a path prefix.
+  · A globally-mounted router (router.use(<router>) with no prefix) runs router-level middleware on EVERY request.
+[PASS] global-auth-gate-order
+  · routes/index.ts must mount "requireAuthOrPublic" then "enforceProductRoleAccess" globally, each exactly once, in that order.
+  · The product-role gate runs after the auth gate so it sees a populated req.authUser.
+  · A swapped/missing/duplicated global gate can silently lock out a whole class of users with no other CI signal.
+[PASS] fundbook-no-broker-writes
+  · Inspected 22 fundbook source file(s); forbidden write targets: mt5ConnectionTable, mt5CommandsTable, mt5DemoCommandsTable, arxLiveCommandsTable, arxLivePositionsTable, arxLiveArmingTable.
+  · Multi-line calls and local table aliases are resolved; comments are stripped first.
+  · Reads (.select/.from/joins) against broker tables are allowed; only writes are forbidden.
+[PASS] chart-truth-mock-leak
+  · Mock-source gate: sourceModeFromProvider → 'mock' for all known shims ✓
+  · Truth-engine gate: mockDataDetected → DEGRADED assessment, never CLEAN ✓
+  · Data-service gate: mockDataDetected → quality='invalid', aiUsable=false ✓
+  · No-mock-in-routes: scanned 283 route file(s) ✓
+[PASS] chart-truth-bypass
+  · AST-scanned 244 route file(s); 3 reference routeCandles.
+  · Per-flow taint (incl. destructuring + import aliases): raw routeCandles() candle arrays may never reach a client response unvalidated ✓
+[PASS] chart-truth-service-bypass
+  · AST-scanned 655 service file(s) under lib/ + brain/; 20 reference routeCandles.
+  · Per-flow taint (incl. destructuring + import aliases): a shared helper may never RETURN raw routeCandles() candles; map/transform/count uses pass ✓
+[PASS] reconciled-ghost-exposure
+  · openLiveExposureCondition enforces both closedAt IS NULL and reconcileState IS NULL
+  · read model EXPOSURE basis (per-user and cross-user) is openLiveExposureCondition
+  · masterBridgePool open-position reads delegate to openLiveExposureCondition
+  · executionGate floating P/L reads the EXPOSURE basis (openLiveExposureCondition)
+  · executionGate: openPositionsCount counts on RISK_COUNT_BASIS (UNCLOSED), from live rows
+  · Risk Governor and self-trade cap count on the same RISK_COUNT_BASIS
+[PASS] bridge-v2-truth
+[PASS] mode-scope-no-investor-snapshot
+[PASS] ruby-derived-safety-envelope (assistant reports DERIVED, not hardcoded, safety state)
+  · scanned artifacts/api-server/src/lib/assistant/derivedEnvelope.ts
+  · scanned artifacts/api-server/src/lib/assistant/tools.ts
+  · scanned artifacts/api-server/src/lib/assistant/systemPrompt.ts
+  · scanned artifacts/api-server/src/lib/adminTrading/orderGuard.ts
+  · scanned artifacts/api-server/src/lib/assistant/realtimeSession.ts
+  · scanned artifacts/api-server/src/routes/meAssistant.ts
+  · scanned artifacts/api-server/src/lib/assistant/coachTools.ts
+[PASS] mock-provider-live-feed
+  · Mock contract: mockProvider declares name = "mock" ✓
+  · No-live-feed-with-mock: scanned 1211 api-server file(s), zero mock⨯LIVE_FEED overlaps ✓
+  · Router: marketDataRouter.ts free of the mock surface ✓
+  · Scanner: marketScanner.ts free of the mock surface, keeps "SIMULATOR" default ✓
+[PASS] synthetic-floor-prod-default-deny
+[PASS] cooldown-advisory-lock
+[PASS] display-contract-import-boundary
+  · Import boundary: scanned 220 execution/safety file(s); none import the display-only readability contract or its mayShow* flags ✓
+[PASS] test-scripts-wired
+  · Inspected 598 test:* script(s) across 4 package(s): 326 wired into ci, 142 covered by the integration lane (ci:integration), 130 manual-only.
+[PASS] fix-agent-import-boundary
+  · scanned 9 fenced Fix Agent file(s)
+[PASS] assistant-no-direct-execution (Ruby routes ONLY through executeInstant, never a 2nd execution path)
+  · scanned artifacts/api-server/src/routes/meAssistant.ts
+  · provenance-resolved re-export alias bindings: 0
+  · curated forbidden-origin integrity issues: 0
+[PASS] chart-trade-no-direct-execution (chart/scanner actions incl. SL/TP drag route ONLY through the instant-trade router, never a 2nd execution path)
+  · scanned artifacts/api-server/src/routes/instantTrade.ts
+  · scanned artifacts/trading-dashboard/src/components/scanner/ScannerChartPanel.tsx
+  · provenance-resolved re-export alias bindings: 0
+  · curated forbidden-origin integrity issues: 0
+[PASS] unified-readiness-no-dispatch
+  · scanned artifacts/api-server/src/lib/live/unifiedLiveReadiness.ts
+  · scanned artifacts/api-server/src/lib/live/unifiedLiveReadinessDecision.ts
+  · scanned artifacts/api-server/src/lib/data/brokerConfirmedFeed.ts
+[PASS] admin-trading-no-live-bypass (no non-Phase-B path can deliver a LIVE mt5_commands row to the EA mailbox)
+  · mailbox writer files found: 5; allowlisted: 5
+  · deliverable-LIVE mt5_commands writers: 0; sanctioned: 1
+[PASS] live-ai-harness-honesty
+  · The /live-ai-auto-test harness must stay admin/dev-only, audit-only, and honest:
+  ·   - no Math.random-driven displayed results, no hardcoded risk-governor state,
+  ·   - the audit-only banner and accepted=false explanation must remain,
+  ·   - its routes must never enter NORMAL_USER_EXACT,
+  ·   - investor.tsx must never import/call live execution surfaces.
+[PASS] backtest-no-live-execution
+[PASS] mission-no-direct-execution (Profit Mission trades route ONLY through executeInstant → 18-gate dispatch; planning/backtest never touches execution; no fabricated randomness)
+  · mission backend surfaces scanned: 14/14
+  · dispatch surfaces anchored (submitInstantTrade / guardianInstantManage + source "mission" + missionId): 2
+  · isolated planning/backtest surfaces scanned: 35
+  · Math.random-scanned surfaces: 51
+  · provenance-resolved re-export alias bindings: 0
+  · curated forbidden-origin integrity issues: 0
+[PASS] scanner-verdict-import-boundary
+  · All scanner verdict engine functions are used only by designated publishers.
+[PASS] no-fabrication
+  · Rule 1: 7/7 protected honest-data surfaces scanned for Math.random( and Date.now( (comments excluded — the P0-4 fix documents the formulas it deleted).
+  · Rule 2: swept 869 live file(s) under artifacts/api-server/src/lib, artifacts/api-server/src/routes; 5 file(s) quarantined with pinned counts.
+  · Allowed without quarantine: only base36 and hex IDENTIFIER shapes. Nothing that can yield a price, level, confidence, volatility or size.
+[PASS] capital-constitution
+  · 8 pinned article heading(s) + central-rule sentence verified in docs/CAPITAL_CONSTITUTION.md
+[PASS] provenance-no-collapse
+  · artifacts/api-server/src/lib/data/mt5FeedStalenessWatchdogCore.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓
+  · artifacts/api-server/src/lib/data/providers/mt5Provider.ts: 1 partition-scoped key(s), pin exact ✓
+  · artifacts/api-server/src/lib/data/chart/chartIntelligence.ts: 2 allowlisted display/diagnostic key(s), pin exact ✓
+  · artifacts/api-server/src/lib/data/chart/formingBarComposer.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓
+  · artifacts/api-server/src/lib/data/chart/sessionProfile.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓
+  · Scanned 74 live file(s) under lib/data; 6 symbol|tf key(s) classified.
+[PASS] broker-hub-no-execution
+  · hub directories found: 2/2
+  · source files scanned: 21
+  · forbidden-pattern groups: 53
+[PASS] execution-single-entry
+  · writers: 7 governed, 7 lifecycle, 3 non-trade, 5 QA scripts
+[PASS] instrument-mapping-single-source
+  · 905 files scanned outside lib/instruments; 4 retired modules absent
+[PASS] broker-state-single-reader
+  · 909 files scanned; mt5_state read only via lib/brokerHub/mt5StateReader.ts, written only by routes/mt5.ts
+[PASS] single-risk-authority
+  · 910 files scanned; 4 retired risk modules absent; pre-trade verdicts only in lib/riskGovernor/
+[PASS] broker-connection-single-owner
+  · 893 files scanned; mt5_connection read and written only via lib/brokerHub/connections.ts
+[PASS] learning-memory-single-owner
+  · 909 files scanned; strategy_edges / mistake_patterns read and written only via lib/learning/scopedMemory.ts
+[PASS] position-guardian-wired
+  · 886 files scanned; 5 required Guardian hooks
+[PASS] single-role-model
+  · 886 files scanned; the role is users.role, read on every request
+[PASS] stop-modification-authority
+  · 886 files scanned; 5 broker-truth ledger writers
+[PASS] single-position-sizer
+  · one engine (lib/domain/src/risk/positionSizing.engine.ts); 2 value-model adapters
+[PASS] single-position-ledger
+  · 886 runtime files scanned; two physical tables, one ledger; broker-fact writer boundary preserved
+[PASS] single-position-guardian
+  · 8 guardian rules (5 acting, 3 advisory) over 22 modules; 886 runtime files scanned; one exit door lib/positionGuardian/manage.ts
+[PASS] single-open-position-view
+  · 886 runtime files scanned; 1 justified raw open-position reads in 1 allowlisted modules; 10 operator-wide modules use the cross-user read-model functions; everything else reads lib/positions/openPositions.ts
+[PASS] trade-engine-single-pipeline
+  · 886 runtime files scanned; one pipeline (lib/tradeEngine/pipeline.ts) with modes LIVE/DEMO/PAPER; 2 listed venue producers, 3 listed paper writers, 1 internal legacy DEMO close transport (lib/tradeEngine/legacyDemoClose.ts); no route trade writer
+[PASS] single-paper-book
+  · 886 runtime files scanned; paper_orders + paper_trade_events → lib/tradeEngine/paperVenue.ts; paper_trades (journal) → routes/mePaperTrades.ts; trades (legacy record) → lib/trades/paperBook.ts; 5 governed venue functions, 2 settlements
+[PASS] single-limit-store
+  · limits: user_risk_settings; risk_settings preferences only via lib/risk/userRiskSettings.ts
+[PASS] legacy-live-state-confined
+  · live_trading_state only under lib/liveTrading/
+[PASS] single-llm-gateway
+  · model SDKs only under lib/ai/
+[PASS] single-safety-switch-source
+  · safety switches read only through lib/safety/platformSwitches.ts + lib/safety/tradingHalt.ts; emergency stop engaged and stops released only through lib/safety/platformStopWriter.ts; shared-live pause read and written only through lib/safety/sharedLivePause.ts; 10 reviewed exceptions
+[PASS] single-risk-limit-source
+  · 886 files scanned; limit settings read only through lib/riskGovernor/limitSettings.ts; limits evaluated only in lib/riskGovernor/; 29 reviewed exceptions
+[PASS] broker-read-adapter-single-factory
+  · 2 venue adapters, constructed only in lib/brokerHub/readAdapters.ts
+[PASS] single-broker-state-source
+  · 910 files scanned; 6 broker state tables, 5 allowlisted files outside lib/brokerHub/
+  · delegated: mt5_connection, mt5_state
+[PASS] single-bridge-freshness-source
+  · 2667 files scanned (api-server, lib/domain, trading-dashboard); heartbeat bounds only in lib/domain/src/broker-health/heartbeatPolicy.ts, snapshot thresholds only in lib/brokerHub/freshness.ts; 4 reviewed exceptions
+
+87/87 guards passed in 9.62s

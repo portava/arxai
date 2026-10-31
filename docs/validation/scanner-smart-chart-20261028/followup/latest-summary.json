@@ -1,0 +1,45 @@
+{
+  "applicationSource": "e011f25aca6dfd2913dda134ca59c86a5b124a95",
+  "buildId": "c4d30f0544b392e4",
+  "sourceChecks": {
+    "frontendFiles": 164,
+    "passed": 2328,
+    "skipped": 9,
+    "typecheck": "PASS",
+    "productionBuild": "PASS with bundle warning",
+    "guards": 87,
+    "bindings": 7,
+    "tooling": 54
+  },
+  "scanner": {
+    "passed": true,
+    "checks": 43,
+    "role": "USER",
+    "pageErrors": 0,
+    "blockedHttpConsoleErrors": 96,
+    "unknownReads": 89,
+    "tradeRequests": 0,
+    "externalRequests": 0,
+    "blockedWrites": 7,
+    "allWritesBlocked": true
+  },
+  "secondaryPages": {
+    "passed": true,
+    "checks": 158,
+    "role": "ADMIN",
+    "pageErrors": 0,
+    "blockedHttpConsoleErrors": 83,
+    "unknownReads": 77,
+    "tradeRequests": 0,
+    "externalRequests": 0,
+    "blockedWrites": 6,
+    "allWritesBlocked": true
+  },
+  "performanceApplicationSource": "cc7ad0e0a1282a51f6ffe6efa369705747af13f4",
+  "performanceVerdict": "FAIL / partial; six controls measured, two styles unmeasured; no established click-speed improvement",
+  "limits": [
+    "Offline synthetic fixtures; active AI truth and broker readiness not accepted.",
+    "Mini-chart logo option has component/source evidence; no position fixture opens that renderer.",
+    "No main merge, deployment, database change, trading enable or broker operation."
+  ]
+}

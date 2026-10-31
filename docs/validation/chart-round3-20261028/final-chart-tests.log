@@ -1,0 +1,13 @@
+
+> @workspace/trading-dashboard@0.0.0 test:chart-performance /Users/areyouok/arx-chart-round3-acceptance-20261028/artifacts/trading-dashboard
+> vitest run src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts src/lib/chart-engine/lightweightChartsAdapter.markers.test.ts src/lib/chart-engine/lightweightChartsAdapter.workbench.test.ts src/lib/chart-engine/chartStudies.test.ts src/lib/chart-engine/chartWorkspace.test.ts src/lib/chart-engine/chartDrawingPrimitive.test.ts src/lib/chart-engine/chartDrawingEditor.test.ts src/lib/chart-engine/chartAnalysisRenderer.test.ts src/components/charts/ChartWorkbenchTools.test.tsx src/components/charts/ChartStudySettings.test.tsx src/components/charts/SmartChartLayout.test.tsx src/lib/chart-engine/chartViewLink.test.ts src/lib/chart-engine/chartTimeZone.test.ts src/components/charts/ARXNativeChart.deferred-init.test.tsx src/lib/chart-engine/heikinAshi.test.ts
+
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-round3-acceptance-20261028/artifacts/trading-dashboard
+
+
+ Test Files  15 passed (15)
+      Tests  437 passed (437)
+   Start at  11:21:01
+   Duration  6.48s (transform 4.74s, setup 0ms, import 7.05s, tests 11.00s, environment 22.24s)
+

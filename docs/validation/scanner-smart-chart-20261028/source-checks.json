@@ -1,0 +1,32 @@
+{
+  "head": "23698959c7f097bcf712847a9d81b23e5ec62f16",
+  "started": "2026-10-28T16:57:37.047112+00:00",
+  "results": [
+    {
+      "name": "frontend",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-mobile-20261028/scanner-final-23698959-frontend.log"
+    },
+    {
+      "name": "typecheck",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-mobile-20261028/scanner-final-23698959-typecheck.log"
+    },
+    {
+      "name": "build",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-mobile-20261028/scanner-final-23698959-build.log"
+    },
+    {
+      "name": "guards",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-mobile-20261028/scanner-final-23698959-guards.log"
+    },
+    {
+      "name": "bindings",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/chart-mobile-20261028/scanner-final-23698959-bindings.log"
+    }
+  ],
+  "finished": "2026-10-28T16:58:08.307415+00:00"
+}

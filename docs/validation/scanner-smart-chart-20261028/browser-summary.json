@@ -1,0 +1,706 @@
+{
+  "passed": true,
+  "checks": [
+    "Actual Scanner route is open",
+    "Executed fixture build matches fetched metadata",
+    "Clean unchanged production fixture source",
+    "Build checked real dashboard utility CSS",
+    "Build matches requested commit",
+    "Scanner owns exactly one shared Smart Chart",
+    "Retired Scanner renderer is absent",
+    "No embedded chart or TradingView widget",
+    "Full context, canonical and displayed bars match after a rendering opportunity: EURUSD M15",
+    "Mounted canvas has dimensions: EURUSD M15",
+    "Desktop screenshot has a chart viewport intersection of at least 100 by 100 pixels",
+    "Full context, canonical and displayed bars match after a rendering opportunity: GBPUSD M15",
+    "Mounted canvas has dimensions: GBPUSD M15",
+    "Symbol selection retains the shared chart engine and canvas",
+    "Full context, canonical and displayed bars match after a rendering opportunity: GBPUSD M5",
+    "Mounted canvas has dimensions: GBPUSD M5",
+    "Timeframe selection retains the shared engine",
+    "Scanner style switch preserves original OHLC",
+    "Scanner displays formula-correct Heikin Ashi",
+    "Scanner replaces the price series without replacing its chart engine",
+    "Full context, canonical and displayed bars match after a rendering opportunity: GBPUSD M5",
+    "Mounted canvas has dimensions: GBPUSD M5",
+    "Zoom in reduces actual visible logical range",
+    "Zoom out expands actual visible logical range",
+    "Earlier pan changes the actual range toward older bars",
+    "Later pan changes the actual range toward newer bars",
+    "Keyboard pan reaches the real chart",
+    "Canvas has a pointer target",
+    "Pointer drag changes the real chart range",
+    "Full context, canonical and displayed bars match after a rendering opportunity: GBPUSD M5",
+    "Mounted canvas has dimensions: GBPUSD M5",
+    "Synthetic unavailable truth is not promoted to ready analysis",
+    "Reader explains its unavailable state",
+    "Mobile page has no horizontal overflow",
+    "Mobile tools expand and reveal style and study controls",
+    "Mobile tools preserve engine and exact canonical bars",
+    "Mobile tools close and hide style and study controls",
+    "Mobile zoom and pan remain visible with advanced tools closed"
+  ],
+  "screenshots": [
+    "/Users/areyouok/arx-tier1-release/chart-mobile-20261028/scanner-final-desktop.png",
+    "/Users/areyouok/arx-tier1-release/chart-mobile-20261028/scanner-final-mobile-closed.png"
+  ],
+  "failure": null,
+  "limitations": [
+    "Actual dashboard route in an isolated production fixture with an adapter observer; not the deployable bundle.",
+    "Synthetic historical OHLC with unavailable AI truth. Active automatic analysis is not covered.",
+    "Rendering opportunities and real series data are observed; hardware paint and latency targets are not measured.",
+    "No broker tests and no matched TradingView or MT5 comparison."
+  ],
+  "build": {
+    "schemaVersion": 1,
+    "buildId": "0b73849de1482966",
+    "builtAt": "2026-10-28T16:58:23.425Z",
+    "source": {
+      "head": "23698959c7f097bcf712847a9d81b23e5ec62f16",
+      "status": "",
+      "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "sourceUnchanged": true,
+    "minified": true,
+    "productionRuntimeChecked": true,
+    "entry": "Actual dashboard src/main.tsx; observer installed before mount",
+    "fixtureOnlyObserver": "scripts/chart-qa/witness.ts",
+    "dashboardUtilityCss": {
+      "source": "artifacts/trading-dashboard/src",
+      "selectors": [
+        "flex",
+        "hidden",
+        "h-8",
+        "rounded-2xl",
+        "border-zinc-800"
+      ]
+    },
+    "hashes": {
+      "assets/ARXNativeChart-DXXmI8n_.js": "e2060a9032396430c5f8b285a1471311580f23996a07c869b9233098aba56f94",
+      "assets/AdminDiagnosticsGate-Dzqvw4VA.js": "dc550b4e339f3b77517da5af01d0efbab1fd81c34e8503373e228cd6a8ce15eb",
+      "assets/AdminOnlyGate-1vZkTI-b.js": "683a255cc5eee2f2231fc02dced9ed6e772b24d49b2e5d565ec9dd68f37748d3",
+      "assets/AreaChart-Bc2gPal5.js": "ec057a9e12337bbc745a972240e360549895c8ee25ea49cff7303a018f228754",
+      "assets/ArxAssistantLivePanel-B2F5fmVB.css": "3c3ec4d2fdcb92821e959a1a940fe3aacfd6d0772276202d4986d6e20c857c1c",
+      "assets/ArxAssistantLivePanel-CpsXfrCq.js": "ba9968c67e410c70e6be7a18cf385fe61beb9ffa29e44867eec0fa3a687ca36b",
+      "assets/CartesianGrid-Bc7hATTx.js": "c76845d036c6bc97160c356f2b6d7454efdeb3e548105cfc807dcbcea9a850d3",
+      "assets/ChartDiagnosticsPanel-4d2GOrQ7.js": "67d7b77d582dfc67e693425393e5e5e7617926a8d32de31efcdbfbf7c5330729",
+      "assets/ChartFeedConfidence-BYCJ1cB-.js": "42b38a932f23f6629441ce2cece4970a306f9576da6944af75d4058bfe105c92",
+      "assets/ChartFeedStatusBadge-B4Ole47X.js": "a7e9a7b844a8057398162635d68233990ead0200259389e806f27d9b13d740af",
+      "assets/ChartReadPanels-CBNc9Iss.js": "a71b4a3a6f21a8f3d5497321286e07662947510c4d5a3f33678b13bbc2aaed21",
+      "assets/ChartReplayPlayer-BhZmuwza.js": "4dd2d5181e4fdf9ff662877707f6ec2b03f922e690fb25dc2baddccc458b677f",
+      "assets/ChartSentencesPanel-D2Mgt8oY.js": "74fdf53dc27aa83ab96db1d70177333753605376929c2c918ca614185d81411e",
+      "assets/CollapsibleSection-Bx37avU-.js": "9cdeaf2c54e54419557a364222ebf70476f53ff574fd19269764c9dbee16597e",
+      "assets/CompactAlert-DMVMdENo.js": "a17e140a754c9b6e7c2946091500e159c175f85f7a4ae73ab220a71cfbcafe48",
+      "assets/ConfirmCloseModal-BGSb7EZz.js": "7d44a7c5c06234463adc6d9ae2ebac9e41d245b674b73a96b6230efa69e91a28",
+      "assets/DisclaimerBanner-Bj80wP2w.js": "36d204b0c2f6aab34d795735f135998c4d025e3da7f5ee59587920fd1e7f7982",
+      "assets/DrawdownChart-BY_fpt5b.js": "01e3cce9e7e6350da546001461fecbc5beb5b94653200761c2a7d8b2fd09e423",
+      "assets/EmptyState-Cimz0uS8.js": "99ac09c7e6582c3ad48833f79e0ef1aedd72c81fe7608616679899ed357d567b",
+      "assets/FeedConfidenceBadge-DaXee6ob.js": "6e567b4d4266a2c0c4736822d2ed4d4b43f93ba7d52b8d420dd82aa276d908d5",
+      "assets/HighImpactEventBanner-BMlZEpsC.js": "599990332ca228f9357973a0d14a0475168a00acc1952d15322f942853b8e696",
+      "assets/LineChart-DUExMxyx.js": "d4f2df4f04bb8f2b5f6c47a8ba2e2b6ff3899fe99836059795c1cb32f37a9a17",
+      "assets/LiveSharedTradeTicket-BdoHbXIp.js": "aa67a94291e2e49b5e1db8df6ba518cb2d28318b5946013639fe644686327a1f",
+      "assets/MentorHistory-Crd2emQ6.js": "7cb5a9440c29ae6063b0f7be22a64bb247d981ba4d80ea4cbc7b0b44e09d4634",
+      "assets/NewsRiskCard-CSVaZ7c6.js": "909462093a82c7a3c92095b3dfbd9377ffa15f505a57236e20e5f8f9f771f014",
+      "assets/NewsRiskCheckPanel-FrGmonvi.js": "2840421ebf2c29c2181061f97adff9a45ed3a098814fcfc7e2737b02c66859d6",
+      "assets/OneClickToggleCard-D6kx1FwD.js": "67685f6d9baa84c06c758d12b60b3bfcef22df48cc13399fce7884cf6e041c17",
+      "assets/PageShell-Th7mwzVY.js": "8fac0535fc11c0ca888c5cc38b40c76f10aa503b7ab44d71f157ccb04b13426e",
+      "assets/PageTabs-hd8tq8Fg.js": "8f051fde65053c2410b735d8a75a99e8fcb1c841cbfc568a65f6eb4c75ea347d",
+      "assets/RejectionDisplay-DzoqXnUK.js": "755c23852fdb6703088d87df99b7733933a97843b0a9185840931c4b21b96d3c",
+      "assets/RubyDraftReadPanel-BiWMmeiX.js": "12e1d970c43b6a9ce1787a3af32d82f0bebf1b4b969f7f15404c7eb63af3ffac",
+      "assets/SchoolUI-C4SHaj7G.js": "f14b63c35276da8c0ed6d6b477f5a8152e51006ba457587c56c249484efe7ad1",
+      "assets/SchoolUI-CqNgkTTV.css": "ad28a7b95cfc6f8f80ee3865cef770df9e99e052e12b090ad7b40e8ecd46b88c",
+      "assets/SelectedMarketPanel-BClOkv7P.js": "8a12e276be948a5ee466b8c145ca229e9fd11d7ffaede9ff02beb6ae95f698cc",
+      "assets/SmartChartView-D8CqqY6H.js": "267d4c84238778452d319fb3c8de9e299d748a17f03aa74e372a3f22a035c6a2",
+      "assets/States-Cu8r2cxD.js": "e23cb76a39ba06466d9787358d7ff3d4ccc5659855c93a039c81fd53be986b1c",
+      "assets/SymbolExplorer-D5c2oSul.js": "1e7b622d516e755a3a3faa19685f18da0edb3aac6b26c1b120676342f3c13af6",
+      "assets/TradeHealthPanel-DTP85JSs.js": "528c216e5102bb1ece4cd225f52b5ebbe5062419f1b4e26b014d4caa67c65a8c",
+      "assets/TradingSchoolGlossary-Dcc8mlfL.js": "3b4a1310ecbc4f27b95d7ea2ca6d85a1d3ad279b6609d44ff6180ce83cd401a7",
+      "assets/TradingSchoolHome-DFt-5sfJ.js": "d07ac4449b8678e9ddb10c7630b13b8268be885898a28a86db0fc6fb9168e0fe",
+      "assets/TradingSchoolLabs-CuulwIhe.js": "5588727fdad42b07385057102e362392f8881f2f5e60c6581b02152c7e90fa46",
+      "assets/TradingSchoolLesson-abjeDFVf.js": "22a0e7957986bb4e4289725333a3350a831c78332be865c9166793be220fae55",
+      "assets/TradingSchoolProgram-CnhxdMQ5.js": "b41ab240443a8a886fa7cc7e6128258680ec70d726509cf7edc2581debcccdaa",
+      "assets/TradingSchoolProgress-B6sYgbPq.js": "c60b9c0747d5964cd743065816a8199588a17c043227582314d80c4cf0a0cf8e",
+      "assets/TradingSchoolRiskSimulator-DO9900Ot.js": "95b295a610744500e3fc7cd43157dbcfbabf9f6e6aa61b3415b7a3e7320e7fa7",
+      "assets/action-center-CkmlC1HA.js": "be612de4e1d5244874df005f21361acb3f5d9f05ee66a910e2e324c8430a6adf",
+      "assets/activity-D1LbkntL.js": "6252f9e6a48e37cc8bf5230d9559c8e6c5e68a926acf971b19fcdec581cf028d",
+      "assets/admin-control-B-6QGcAy.js": "365151574f947349c766fc14e2411b88531d1535cf48be34e4d976a2c8b11dfc",
+      "assets/admin-data-management-Cr_a-5UB.js": "066ae6fee7f60ce265b2d43fe5f334fd4f1705623ca0beb2e8dfd8e60db95f20",
+      "assets/admin-diagnostics-9gw8YhK8.js": "0816d3299c062277367959e0c66fcda37c2aaa3cdacb34104e463937a7844619",
+      "assets/admin-hub-DnPS-7y5.js": "d8d1bc9b171f962e8dda93192f605a89271f422ac190f4874428265456574823",
+      "assets/admin-issues-BykK-Gpw.js": "0634de690d3ae3ccc8b05bbd68566e34f49966ee2e19135d0a8d9874e2787df2",
+      "assets/admin-permissions-Tyg_BF58.js": "6a89d56d5dd0660e5e1740ac6f5d9cbc2f16461d4fd023705e243f2ca1d021a2",
+      "assets/admin-security-status-CfvXaYxU.js": "96d0b3af7dfa9a5594bdbcd81ea3de8a82b176e4f2dbddc49c7ec35d923584c1",
+      "assets/agent-ecosystem-DmGYt17I.js": "ca9f8d08d062b3e82b18d2a320bcd177c0c5de8e08ef0181be5a5f49f9b53509",
+      "assets/ai-coach-DpAaf7nK.js": "add98e0acf00738a011c712707245975d062c753ad0a8d89b7a335cefe13f822",
+      "assets/ai-command-center-B6xVv5PO.js": "c2346408a7ba158539da58ddd9976c361eb29529e821f4dd52b0473dfdb06e6e",
+      "assets/ai-fix-agent-UrO_as29.js": "9b864c16e34f89412bb8f7436500d506912252ae1676f7b35f408835aff15213",
+      "assets/ai-mentor-Y9M7zFgn.js": "4511705f4e11aacc2657fcc501d546bff983ca1d47b3c044208eefe4e647d539",
+      "assets/ai-readiness-score-CZ8wVq_D.js": "a29a6d7026f9de09f35e5e03871b67985dc3917728815b32df944b17ef3f45f5",
+      "assets/alert-Wy3jpeOo.js": "6960871c61fae3816440bc2d3fe30fb5e7e1f33fdff33a794dcc95bd35c2ea99",
+      "assets/alert-dialog-D8JEQJt7.js": "d205246ed0ba3144d248f81fcdc35ea41e4018e10d360615c01c39b08fe75125",
+      "assets/alert-preferences-C92JJ0NP.js": "3aeea54ddf27a8643c9264dff574d83e160681ddeae75d53447580069ff862e0",
+      "assets/alerts-BjE1Lxt1.js": "fed20631f4447f10f1893904a32fc20a81c0b29336aa25ac439128258556baaf",
+      "assets/alerts-center--0KhkTkY.js": "459558c5e0628f3293c90ede911413af9e0b7fae1d70e4a56cc3085820a6483b",
+      "assets/allocations--YH975nv.js": "eca75e560d0edcab7e94accedc0f3c767f77f4425d019d203a59c05582f49ec3",
+      "assets/analytics-command-CLx2d7zu.js": "e7d67cc6f2cb9e6de25a05e3efc7dd27790891ef31f7baec2bd295e3e8d0f5fa",
+      "assets/analytics-yjZ83X3g.js": "967f823c544889ce401e21a7f1ef12290381ee51cae16d3c937acded2cf45d1a",
+      "assets/api.schemas-Dcuhe-95.js": "4ae9f7f50dfb62141b141a2950de0298cea54bf5019e2cab95f5ee42b0a33ca3",
+      "assets/appDoctor-Cy8GQk7B.js": "0859431016008aefb815c069881ae3487dda11b500aad980abeca4f7b021a974",
+      "assets/arrow-down-to-line-DR8Mbnoy.js": "f42eef71ac5c91a349db2d113685e82eb122b8697923668dc6d5c3f78f6019dc",
+      "assets/arrow-left-8kOyETbf.js": "73ce81060ed6829acce0a311269b9bbfc200111d02d66d0d84e631cd2b8f437a",
+      "assets/arrow-up-from-line-0ocnHI-h.js": "0d524a215b1124ee860e1ce157dc84bddfc74d471a78a9af78b821453b1c3771",
+      "assets/arrow-up-right-hCHS6MP8.js": "736d12aced94f43f7bc52e8d4ad2e934ad2266b148f0a4ef54ba822cc7a81eca",
+      "assets/assistant-knowledge-console-BOtTax_S.js": "a32e25a975c132abc8a09c0b65e3193a254d5dbd44225c3eec19c9b894a9f981",
+      "assets/assistant-knowledge-gaps-BV-1jd5H.js": "344bb72d335941451a461a524baaaa548eed87ac7a17272d79346275fb4cdf00",
+      "assets/assistant-manual-CZDjZqmy.js": "d48bbfc9b8d1f7f0493f6abefa04c4251f9f45b5e5b798a4a1723b31f9385964",
+      "assets/audit-center-BcV_92wj.js": "c3bad8eb3b7c889c81d53ea043d51cb71a47194f2e3a9a316a3b1bd92d610a5a",
+      "assets/audit-log-CJ2hHyNt.js": "ff4001e205ae6790dbd3b10ff9663427e6fdc8b50c64cd0664925dc7e40b45cb",
+      "assets/autopilot-control-center-DB38zW6v.js": "c67ae8f11816bcd82854af21c21311a41e5998e46a669f9a79b19cfeeb639689",
+      "assets/backtest-CNh1jnbI.js": "7df5dd130d005474b98a34b4a67244adf11e135f9241af93337387c8314a974d",
+      "assets/ban-gNUT8o-m.js": "08c78e82ebce6798c10fc7894c0df5779868bbb5deef5aeda726379d9efb8f8e",
+      "assets/bell-ring-Bk-D6oBW.js": "f112856e32b540fad514b601466b8acf4d4990e99373e00a436d9f26dfa15c14",
+      "assets/beta-control-Dsg5DSBK.js": "856931a31ed4c89d075f3c02e207177b5ecb61a0310dce1fe18166bddd354dae",
+      "assets/beta-readiness-VGtqTkxx.js": "b8fc06dfb4eec3d7411e9c988c776b3da669e874a5a18d5587d9b359f328bc4d",
+      "assets/bot-control-DH-jBiFt.js": "03493999bab58f098cb6986cb4f53591a83bfeeb7155de7630cd7e8663a785da",
+      "assets/brain-analysis-DldiInkN.js": "eae5d25c984dc94555ca3b6a12904bee5e77f0e33b79c47d8eddf40d74c6c493",
+      "assets/brand-kit-NhomPfIB.js": "0464ec55e2242ac3870ab9e8111c00d55bcc50caf7094709aaaf47de4fd4899a",
+      "assets/bridge-diagnostics-BkteeLH1.js": "dff315ffdfa754e0b416cd7f16f52ea697730fdde6eb1fb7cf1278503cfb48e2",
+      "assets/bridge-v2-monitor-KA4WBn_g.js": "713bfb6ae549a325fada512c4f307b88888fb183b1fb9b0cbacc46b27d6c3d75",
+      "assets/broker-readonly-BDc3bxSe.js": "2dae208474de8b292ac29ceee04a2998ef6e7b77bfb09e07a4f14a954739abfd",
+      "assets/broker-reconciliation-Sh8oezkb.js": "812061520945384d9e49b73be1f7cf9d9ac141f9b7a369f298cfa287fe681220",
+      "assets/calculator-B9mpiMsX.js": "7676844f001d1c6ff757c3417863e0ebc2df3578c057bf9757824790fcabd090",
+      "assets/calendar-BLbdGvvh.js": "c3176dcf3d47437ae24e79571fe8a01f050bebead045458924412f9100af6627",
+      "assets/calendar-days-DlykaWMO.js": "8d5b8db66eb47b6de92a9c2844f75188a34a30529433b5902f33483029d2c642",
+      "assets/chart-brain-benchmark-Dfco7qEg.js": "72c57d89c45b167f035fad88cb854332e84aa0be63d7ccaaa370d8e5e5998543",
+      "assets/chart-candlestick-BWdWXoQX.js": "b38f7bcf0d59c3263d47b9e2b5e4d893854d9d13d98509f318723d4034d19333",
+      "assets/chart-no-axes-column-B0Bs0jyc.js": "6729fc8b35562829218f7b27f17da11faa4702a2b5543c82fafcc393d959df42",
+      "assets/chart-pie-CYe6K3P1.js": "89e767ed6cf60d2996d42829ec4dad037ee6ea227825ff82d91c375cd6eaa575",
+      "assets/checkbox-Li3xSYlH.js": "007e6823a67d431bd2f968c37e2a2780bc52a01e5ee794e3134a62c34def6938",
+      "assets/chevron-up-VKL7x1dI.js": "9cf58f72aaf2b67a87a123fbc0b76883321052f4c19541a22321981087c614cb",
+      "assets/circle-check-big-DY6BpB8Z.js": "784872b609a38114f362f5d360f843243f5a6b8d171732a1ec3d58b5e87a830f",
+      "assets/circle-minus-UaEILdTk.js": "8493e0999f4a87916f85bfcc20c42d21bcbf97a574994d14f725ead8360aebcc",
+      "assets/circle-pause-BsDqN5ze.js": "985ff3413e8f52fc1b1defda153fc14c36bd9d1802c76e9d541facd891fb93fc",
+      "assets/circle-stop-BS-kjWLD.js": "a5b82acaa5d6a9c8325a07f70c9e991ddb2229b7e1a1c3aa8a2a250e69320e0c",
+      "assets/clipboard-list-Bbn9rkBL.js": "5c4e3482f8e4cc407032391df092c8c6a9275b9a7409ead7a9deb47056bb9407",
+      "assets/cockpit-Dr08DTsH.js": "b57c4e391c1dd20925630555e626d5f8eee7cfaaa5942ee581a67437dd864533",
+      "assets/confidence-calibration-6EWe6g4Q.js": "43f7e2c5ba9d8b53f73bad883d2f99fe8d639074d2102ab882e3278e87d81be5",
+      "assets/copy-CztXKswn.js": "32a2819a578c33ed1d0fb9d06cebc5c46ef4dc8654cf99faa21efaa7490988c3",
+      "assets/data-import-CSsuCgjN.js": "a5d8d3b41995c3fbc09a4d646bab6ebeb2974888f5edce32c9535a4211604bc7",
+      "assets/data-protection-BkmnYM1k.js": "3fe1ddff39cfa6daff6668d03f6605217205e04cf0f011e2a70d5fa8fc134415",
+      "assets/data-quality-G2yMniv9.js": "9201f99e0e2d30ab74375e2a501aca15197e28dfea4084b008b3f93fb3efe706",
+      "assets/deriv-health-JGLCemW3.js": "3290d6d24696d1f5a7663ff97e31050c59a24463c4b76d1df228684520cc4423",
+      "assets/download-CGqOv277.js": "e1e49d54e38018d2040af4c8a226cd50fec1782e6cbaefa204454553be1e0410",
+      "assets/ea-health-CwHgTT95.js": "501011a3b1b30a51afa701e0bdf21945ec58e1062978efe8db73687ee7047491",
+      "assets/ea-updates-1uju7CmM.js": "9edcdb987ea84144284f0fa11d0885d138da2b48f0cb2943f87108c90010897c",
+      "assets/eaCloseFill-xd0v8O7G.js": "bb5959f4ac89205b95f729ad95883dbe02c96f3e8a77baddb88f7462d58bc740",
+      "assets/economic-calendar-CKwYZAPS.js": "b8365e588c1983828cf15dddcdd99f5bad28e16e8315cc3aad2c51b5019df925",
+      "assets/edge-discovery-CEOL1OnX.js": "5e5ac08d303bef7827b15da38adc879eb5b15d787f0f80f1431e2f5d0f41a9f2",
+      "assets/emergency-CTOnfDhY.js": "8e86beb1a80a28759ad560e472eca7d03ebff4f830546fee50ebd9fab902a3d7",
+      "assets/eraser-CDC_ZACX.js": "715f38e30a2767d70046cafd085ee0d73721c72a289ae5e4e7d6387e21070198",
+      "assets/eye-off-H1fRpafG.js": "8131beb2f837be3623ee54f87ea174d462811f893a3c4e9cb513e5b651fed957",
+      "assets/feedback-center-DdPoIRaL.js": "f2da6df5f61860325d3dc59e156654607f9d2321339c6029371e7f9af027e1c3",
+      "assets/forex-center-BmZpouUy.js": "8f13cf1acce8bfdf2b133bcde53626ca280b17c631b4c0a310969aadf62d1dfe",
+      "assets/friendlyLabels-5RVb4YI_.js": "f55d42af01d3767d960188c5ab7c33c8478a94268fccaf523e4fccaea817d9a3",
+      "assets/fund-control-center-DPNlJqfZ.js": "85ea905bdffca6be021425dfbcd7a1e5a3b47521c9d3c764e16236e67fd41466",
+      "assets/funnel-cG-Cygj_.js": "42ce89f31b4ff91db5770ed0142fd1e354120c8068c99048f70bccaffa77a304",
+      "assets/generateCategoricalChart-IsfRF_Ju.js": "7df457484957767ac3c008e21eb2448f8a5ac4662398dc9941799fbc8cc3e507",
+      "assets/git-branch-CBKriLUO.js": "f7992009f473998e1069a37e9424a91dc0886a3aa6d4fa718dde1882bf60f502",
+      "assets/globe-CPIhb8c-.js": "dfe9708c54f0ad4ccc4db676e68c9081d7ad1c53d31faf6ac4200f43e708db39",
+      "assets/handshake-monitor-C4rzzDZn.js": "424219fd3bbb1026825311f0360ac3e119ab9a0a868634fc118cf6ab956bc367",
+      "assets/heart-pulse-e0n0xBNf.js": "9912e186462db039c728f85663f8d60870bea2c1b582de92d110436093ce06e3",
+      "assets/heartbeatPolicy-BAdUQk6H.js": "58665ecb120a4aef5d4a8aaac3098301a6aeb7f63ed92325648c8d70d00171a3",
+      "assets/help-center-B2NRBoXU.js": "b8d3fbd8243edd30b0d0b7ec43aa98cbccd1e39a7013558cda78d24460805668",
+      "assets/history-DT2ycw2W.js": "693754bac93c5dab450ec6608711bd953bd610c03955045793eb9ac9088c8a55",
+      "assets/humanize-CsKF5jAi.js": "b6e35ff165285ab885635d78bf92f248cfbeb889c2c407e9d0b910be5c5903bb",
+      "assets/index-Bs9W7xnK.js": "76e87be193e6ca3ad903e7d0c05f5390178834b0d445a2749b67f49ffcefee39",
+      "assets/index-CP91Wq0C.js": "3f9c80dae95926b2242d3662b4ac104ff70ca4aef31abf8fa592c302aae45c62",
+      "assets/index-DO1JMUfS.js": "a674419e27462fddab99974b5f4c92f895fffb23788ebf3b4a614bfc5fd1d45d",
+      "assets/indices-center-CzycJaJZ.js": "a7fe581016cec1ce6c4d896e05c5e1c1bd8fa37aa5733144fd83d968109887a9",
+      "assets/instantTradeRouter-7ui5p6Rt.js": "b0a309a75348d3f7616a42b270b99b6454f2dce0a488d9628651010dc976df0b",
+      "assets/investor-r78qKTyJ.js": "ae7001a6d9b32337befc0fafa9c0e50c3ad9b80a28efb04fcd351c86de0b4f09",
+      "assets/investors-DcNhc6KW.js": "822523cd622157ecb738cfb273b073e4c8b2dc5c0bced1156b2002e495c70f97",
+      "assets/journal-BIA3vYld.js": "b4df3027ef4593b40c91ffdfa5f730feb36204adc95f76037c3e0ccd7a06f6a4",
+      "assets/key-CizyRMsR.js": "6d1bd3788e6c76b2599a31ad31b5ec31aa13e70baa27a42f74b0815ad86901d3",
+      "assets/key-round-j4rb00UD.js": "ab15ddd272599b0bc5e34d7c0b42e609277298c1f7ddd917833c1967a47c962a",
+      "assets/knowledgeCompiler-Ck76R7fw.js": "77a4a47c1e8bcfd3f30b6d20a52113ad911b8825c75b34897c00a3dac11131ab",
+      "assets/label-f9cnQyCi.js": "617663e0cd6e2c4ce83fc3216f66a93db8a89664e59014234db0c20293881c41",
+      "assets/landmark-DlQr7fxD.js": "51b3bd9ecbe64b19a577b3edf741a8e2dc2d00473a7f9dce82a7fa6e18f32e5e",
+      "assets/launch-readiness-CLtCKgcz.js": "2e33ee3105d1d2fe78118844bb2d5ce41bddb5db290aa84b8c9fd7cb1540bfc7",
+      "assets/layers-CIg6WRkh.js": "f13743d7043ac555f58f91f9d07e19b5332378c1e04ca351077f950464c35a8b",
+      "assets/layout-dashboard-Rd29wFwP.js": "75390fd9223a46ad9d4f7eb6aea374da7a5c43924cfd3a2a307e0fbbc59c68d7",
+      "assets/learning-4h5r6ntU.js": "81c869876e5b6dba2fb37e0a35649cc120134904a4621af24dc147a98f149181",
+      "assets/learning-versions-FyE13ZpN.js": "027440f9d4c3a0d9f24c0b92562ab186baf1b9ad0b5158680078fc29c3f316ba",
+      "assets/lightbulb-D80cgaYb.js": "a0e7782c846f3767fd2212159d9e4624f35997d0e56ea44ed75738fdf3d6a765",
+      "assets/live-ai-assist-Pwlj9pIL.js": "39f6357ee8f9e1852bcb308c2247b6364b61a2acd9455e7f65171ef1ab69bc64",
+      "assets/live-ai-auto-test-Chh5DfzW.js": "f2ad83f9fd841c465d219ca45873b06b34be96300a3fbd0f78b14b1bc54b4334",
+      "assets/live-chart-CuSUejAg.js": "72bf0d34645dc2d1b409f8e3acba60a016464919fbc21abca75054152643fcd5",
+      "assets/live-intent-queue-1NLcDK72.js": "ad7d2428f668043f87b37a333c433062e72c47f6490a89596ee7ca6979bffa43",
+      "assets/live-manual-DZ-Cqf2w.js": "54dc9f611d13afcb9f0b616a1a600feb8d7edf495bdb152200f0eab49c28dc8c",
+      "assets/live-shared-B6n6xMkL.js": "faf4f89ce386a9245bdd622ede36c135c2333764904bc423bc2656697adfeb51",
+      "assets/live-shared-BHcl_cxs.js": "05ea23aeb5eac4f8fd8f22f16f9e4fba335c9cf7e7ef50a3126e51612be28208",
+      "assets/live-shared-activation-ByR2iOSb.js": "0c9cd7988866285008d24994a97075fd9591032b76ff0d2c62b13c0c2703a8dc",
+      "assets/live-test-readiness-hLxpxmec.js": "831007c2ed31590519494b3ecc06509090cfdb67e394d66840128add240dad8a",
+      "assets/live-trades-CQswIryo.js": "5c90aae6c6e8d6be163059dd20f21c6513c8cd81b4c4ba290d07bd2e18e4e903",
+      "assets/live-trading-DCbA-KQv.js": "3bf38e6ea6005cf4eab7124bc63ea334e744a88bd4e33afcba9d60d7a19c2df9",
+      "assets/live-trading-control-DpR02DKo.js": "a6d0b95f2097cecb72534278a98739d52bb9de10bd76352f910d71e148ea3d35",
+      "assets/liveActionCapabilities-DZWqEWFQ.js": "d152cccc2d5a0fe118a75fa80bd2f7c69371730dcf6ab44cbaf00a53261e07c3",
+      "assets/lock-open-WwBwphj4.js": "6cd46ad8974f673f49fcc33070ef20569259dab2307710ecd0c8bb147a494d93",
+      "assets/login-Bh2adrvl.js": "bda0ef1bff45a0f857f416969c09f34b3d769493836156eaad16b26578dbe54c",
+      "assets/main-CYYxId-h.css": "bb28faefe62ef0c843a421e24a4c5d8c824d4049d817b39e49428808d5ee2d0d",
+      "assets/main-DW_Tu3xg.js": "142d429e5f5b67146fe3955d612b4773669fa51a7f9ae3275f688ec0bc315b52",
+      "assets/market-health-fCwqk03S.js": "cfcd0b3cbee2c2fd0f982c67c6240d3b792b803c84c7c5ba6abb6b768d7b3c4d",
+      "assets/market-heat-map-h-zFcyJD.js": "21cfd97d383d13223e6b13706678f15d064c7770afd816dabed4b2949372c887",
+      "assets/market-replay-CfHqnrhZ.js": "1174d1f8d5f95e2c99f6e9459cc50e2b5f724cb203bdb755cb07c4b9af9e835c",
+      "assets/market-scanner-BlVbcxd6.js": "cd5108f45afe6705db6707d90c11690812bf8f4a26920ffac8601a0ec49094fb",
+      "assets/market-sessions-D8FZKnWR.js": "b24a466fa18308bad0eeb660687e9df80f47d2750f92898204af667f0ec2404b",
+      "assets/master-bridge-CnVAmf-t.js": "4a492f373105b96a8461a6145ae4e92109f3f0393ba1799cdd1e8cb7d2c8c6f0",
+      "assets/mic-DaSwWhAG.js": "a7206d7aaa6fca3c39b45f5f474842261c0d5f22279cb776447959fbe52929ef",
+      "assets/minus-CKQt9K4j.js": "41b9dbdf6ae6ca2c7b0c756212f7d67f7b096c9be0094d5b3e9504e0c5735ef7",
+      "assets/mt5-bridge-D0BCX4UZ.js": "fd1205c2a603defd0462f9c81df02bfa5c724d87453bf4b35c706d65cf93e1f3",
+      "assets/mt5-setup-HjvtYd9v.js": "5940c6363341ca27c157833697e5ac850c56efd68876a62948aab5a72d8b98dc",
+      "assets/my-account-vOzE8him.js": "7c8f2bf3ed906ea5ff970da18ec0d99ac54e9186e6845eeb3b7840f238d7e0b7",
+      "assets/my-mt5-ueM31GQY.js": "7af3ce92ed474a4494c988dc064648e2ae89e129f8293de7ca2424047cd68c92",
+      "assets/my-paper-trades-CfFUaVUl.js": "b99ca5455f239aae590ef57b05dec08989a46a6a38b80ec936666185c180d4e6",
+      "assets/my-trades-C54FaG3o.js": "1de4cb0e20e555cb60b46b51cf1747a5b8f83ab5d05e9c7ae6171e4fcc8ff2ed",
+      "assets/news-risk-C7eGR7t8.js": "3733f6fc2dfc800b1522a22136e1be8a0d31dea8ff2c272d29ed0b6ac8112b99",
+      "assets/newspaper-C0fEkb_E.js": "659ceaa44ed9d63c513733822d18d5e91d72b813cb9be4404a8739302809936a",
+      "assets/notifications-xPoJ1f9N.js": "a2f07b47b18105c652c693afebd5adf5249da0f97ab01aa81b23afa4ba7eff36",
+      "assets/onboarding-DnTi_ebF.js": "516bce63385265391ac576dce7bca40a6eb67360c4f22063aa3cd984980f3c18",
+      "assets/one-click-controls-BG4-Sd7a.js": "3e7a2901ef7adac345fe039156d0676295b64beefc4a4a56aee23fa1b4c67935",
+      "assets/operator-command-center-BNSdyHg_.js": "5e416eb5fd983a3b3005d874480e26b1c234655bce7b8289e320dc16cd43a56c",
+      "assets/orders-DNc2rCX2.js": "2231234faf7a14bed3bd0b7b08d5d674976588611300b7a38f9399b778efa27a",
+      "assets/paper-trading-lfMgdplN.js": "e2dad1566a63d03f674802d2503a6fc3ce96253c30c9ac0e54cde7acbdaa2abd",
+      "assets/performance-scorecard-S_o9gGZS.js": "1a041c3527b0b9b3c030fa094dc022ec4eb314e68e34aafb3e581eebbd9a3dfd",
+      "assets/play-neTQprpK.js": "c2a8259fb7e5fd8ba40a72194c34904883bf1825c4bf19c7462abc3f48dba226",
+      "assets/playbook-DiaiZztB.js": "a1e88f49913e1853b2d720e75d9515fc03bb9f8ffcd55a7e1d0f6710f5eba307",
+      "assets/portfolio-DnPtjTiu.js": "d121cdb8055b51d9d9e812a22f283aab05d931e8ac6e3dcd66c353c1cf327965",
+      "assets/positions-DjO0ObQD.js": "136d20da2fc5cf08f1253b64173fdce0785a5f17ba4629142ce4b7f90190a65a",
+      "assets/post-trade-debriefs-CAaKbe5p.js": "244a1c77d9e6fb5dee4a9eba8ab7f5d131d2cc3e07852c819ea0ac5791158887",
+      "assets/profit-missions-eGJYM6Je.js": "97499413edb5b28a6ca1c993f18d7afc45b6635d9b166bc715ecbba1bfdf8e96",
+      "assets/progress-BgJfjk2C.js": "832a8329d6d9d016ae8597b437f9039ae15b5a96e020ddaab5ab417de40e20de",
+      "assets/progress-DuY8eWmL.js": "ef6a62181995f1555d0820e43668412dc68240f3ac44ab938ac56cb396340e10",
+      "assets/prop-challenge-RecqJMmZ.js": "c586b74f3dbc41ff556bdb34e44725d8a76da795c2e72be13addf8c0c72f1a9d",
+      "assets/prop-firm-mode-DB2Mltaa.js": "6ac008c0e01968f0ec65569069ad36f244ffd9086d5d98e395a092f74a474bd2",
+      "assets/protective-auto-close-DKeLcFxJ.js": "162dce96e89bef3796f1215bfcd69d2b46b8bd8a8754c9a973d13f5c500c2217",
+      "assets/provider-health-pmw-vGh0.js": "970a9813e5598a6d22f38cd291ab241051eb580d3f7b9b3d9da3b1774f7d6f5f",
+      "assets/radio-hrmEq-Ur.js": "5e3372a27f0407b95d93bd2c6f7a018ae956f700addb1f52c75a44e70a0a1612",
+      "assets/radio-tower-CMA2krA6.js": "afd0db7d5b664de8a70ee82a180c0fc7627b5dbeb81179b1b8f3ec2ecd0a07e0",
+      "assets/readiness-checklist-C4UnbVLZ.js": "a1df9e8a8c3aef300d8d7ccd68fb92cd602fcc06e999afcafee538457447499c",
+      "assets/reconciliation-center-Dr3hLDjQ.js": "ad6f6ae0f111168e23021c22110c5028cb0bab5724763945a59904942a257ef9",
+      "assets/refresh-ccw-EsK0RLlv.js": "5e2ab7896745337d20884e36cb161a6748b156140e80951ccbc344ed78252b85",
+      "assets/register-lcjf8DCX.js": "6b118679471390be80fc7ca11c80820850d5da00b03a34ccfdb96b7c7cfa1f12",
+      "assets/release-notes-PEf79DFq.js": "62d3b95497a6e00d12dd4a1bad0b975baa8c9f9e3ca6c15f2dc7393a25b60175",
+      "assets/release-status-C2AiO4S0.js": "c4fe48d22b4baf99621c94e09fdf665fadaee8478fb92ef3521f60d69fafcd0d",
+      "assets/replay-simulator-DvP7-om-.js": "3f83adad30249a2fdb24c9c40685af89a0f2569ca775cdba16cb276cfc5a27e9",
+      "assets/reports-DCCMa7N5.js": "b46348f77ae4ea9ac53443a4a8ba261522dadd42a249f113768e9193ab8d8d4f",
+      "assets/reset-password-uBfoyO96.js": "f5a24b0495cc881677a101f49f401f64ff1aa570311b7bcffe083eea04233778",
+      "assets/risk-command-center-GtpzpqVE.js": "07af8e3b4a5913a3253b0eb3a017c1a6d4053627eee5cc2d8173595bb74b9b8c",
+      "assets/risk-events-BsVvAIfN.js": "f08155f790de0b1c1c70bf2d8a86ab61416af5f42a4880d4e26d5c3a3d90394c",
+      "assets/risk-settings-q6PI1l2d.js": "1b3c4337badb010947fd7ca65fd0c4d93085630d29c4b6405cd2874120a97f27",
+      "assets/rocket-Dg6uICF3.js": "bcadb45988ad266ca5e13932c645ef73d818edaf963342eb11a703286d6f1e4e",
+      "assets/roles-permissions-OIttFvg0.js": "1435450df577d0d4a6454fe030b40531017235301677e629b495cc0eb4fa6064",
+      "assets/routeKnowledge-CeI6YUm9.js": "b0cb7580fe86de1e74e156f9faa5943dc87ac2af8f2e2699543cb3cdf2dccb06",
+      "assets/ruby-quality-CnIsed4s.js": "087d9cc7d8b0bc6dc81e41666a89e437e102000652b1a1228b52563945c84920",
+      "assets/ruby-voice-settings-BRFTVx5Z.js": "2a34116e1999b225c0cd4d843cccabbbbbe8da5649c8859ead016121803d3f3b",
+      "assets/rubyReadPanelState-s8K1Beb_.js": "14e9bdd92feed1bb3809ef7afcc1dd5c5c97a5754bb9540a9f714c49d07fe4fa",
+      "assets/rubyReasoningBlock-BC2VC-Dd.js": "ffa8e20a3dc73a9efc45fcb2e993234f4a5f36aeeaa7051d0346eb80ded83535",
+      "assets/rule-contracts-CQ2_yQy7.js": "11979b94cb178d57b2e3fc019920b01621fa8427ede941f8b13834c25b65a8ce",
+      "assets/safeFormat-DbRHThu4.js": "2f1d22c67bf90cb22091b8bc1eb3a0092bf078ad53c2c426ae23f0210044641e",
+      "assets/save-8h-XhX8l.js": "f055dbdb47a8ed16e8933a8c650f0504ab4558951ba9ca538930e247440a1f5a",
+      "assets/scalp-journal-BzMvJlEU.js": "da6ee7681da9da8fde6e88428d2f003935404c04d6bdc7862ae006908d986e7f",
+      "assets/scalpLabels-BCkKkdfy.js": "0b5f69295b953e583583472375215aca06dbff87a71cb6850bab63ad31e9f1b3",
+      "assets/scissors-CAjoavuv.js": "3eacf1a1a93c7d67caddfbee32c9a9eb586c9b94cd4f7034be1c3e5c3ac6a2fe",
+      "assets/security-center-BxNemL1E.js": "2971ea7bb584ebe509e6b2aa35523a903980b3c5748b135434f7d0dd33d5825b",
+      "assets/security-events-BmdqeEiC.js": "1c441619de59cac5c5601e6cbd3948a2c0101d78112cdae9395006eb0bac1271",
+      "assets/select-DxRcgK6C.js": "991334e129ed42791b47c03980e4e87f04b46ec9f146ba79786be292e3174d0f",
+      "assets/self-trade-ai-DwnaSHFn.js": "b669005af55dfeb44acc5b67c12a91594d64065e5b9f01957f50dec0d6953d52",
+      "assets/send-Hrv3E1mk.js": "d8e44e88a78ae2ca7efe5e8b1b0aba1a560584bd3730b8d120aed0e4fc409d0e",
+      "assets/separator-Bd5DqsTL.js": "db313f462522d52fc43b739b08ab5f563a8380ac564a84be8ba661e5d65e04dc",
+      "assets/session-plan-D-XxoZcY.js": "608e77dfd6c9d11a80911bf60ac3ca5b14642ff0346c35e4ba91934454c76138",
+      "assets/session-report-CrsAORG-.js": "f6f75d871c2a022cdf7e9bdc18cfe6cd86db264eb4c3f1b7029cf95fe4f44334",
+      "assets/settings-BueWe78A.js": "57c1234544babe545561610d4f0ef462100d5385d2dca8f4a62051d63515b1cd",
+      "assets/shadow-journal-DLRLbKMw.js": "7ef8e17308e0a23d65d410eeadc9ed0882aecc208e9f89435ae61a3bfee68d90",
+      "assets/shadow-mode-B7_b9KU9.js": "1e3a89aaa3aa0f55e8c2e66a5bae2127d948d3939e60d0f944c133056e51b4f2",
+      "assets/skip-forward-MlsKA0Gx.js": "39835bf6fa15439224ed93661de50936b36149590dba3c9b1d1862bbef565294",
+      "assets/slider-CBf6Yt4I.js": "d47f16dbe2ea7688fd26bf00f2481caee1cf3d6bb856caa03bcf1dc47c360071",
+      "assets/sliders-horizontal-IfcYYoA-.js": "d84d92f1305e6298b7be5efaddb2753397de844b24853f74a7974cf889ee668b",
+      "assets/sliders-vertical-CWZWU5Wn.js": "c76241fde42523c64b3d3abe9b662e36ff5e2d9bddc88aeca597035f76729856",
+      "assets/sniper-watchlist-D3OFyTLo.js": "954ae8f0ad415b03ce522e38a42b39f950c73a5941e82cabfd2dffafae9bbe3a",
+      "assets/square-BfEJ1jPk.js": "41662eeaaa3e1107618ee42510faa11efaf2c2351b64dcfef4707b4601c79994",
+      "assets/star-DWZb2H6T.js": "014f83264ff5bca7fde21cd5944aa4488632b724bc79362134b87fdd98906b03",
+      "assets/status-command-center-BgaS7Hd7.js": "ae571a8fc29a8672d1d5db075cca16514b21280c861f9f2519d836ede72d1ef2",
+      "assets/stocks-center-C6ECdLfY.js": "20dac5a26c1d035b2331ace2bed810ab00c7ad5138ed2107d99bec4c2aa25038",
+      "assets/strategy-lab-Dv2x200E.js": "5341e711ffbda5e6600ffa76d4ab35f186c9193140e10f744c863c4466b524d2",
+      "assets/strategy-promotion-YBvq3psD.js": "4654d6e0d723040d8e39307ecdbf4793bbe4e0d5339bc4c5e35c6b4003490335",
+      "assets/strategy-settings-CoKuTGdM.js": "4be3ff62e2a76a208f797eed7da0819f4c8a13b78932a77a07a9f2001a2f70f4",
+      "assets/strategy-tournament-BDGwAypc.js": "a59925a94cf500a1e2e19ed8acebcbe9ec8a7061ec148905fc6d06125c055e21",
+      "assets/structuredRejection-Dhqa3vIg.js": "a008b4fa1cfd68a4ae2269cb7c82e2388faee6062357e90b3846d3f19b472436",
+      "assets/synthetic-center-C3FcDvG-.js": "8efdb471091be23f496b43ad09544255add8908951225c12fee502f420b1bf44",
+      "assets/system-cohesion-B0SelK7P.js": "c5053386b84bb6d6e7877e18ae6ce9074ddfa0931be33c01acf5f7e22f74215b",
+      "assets/system-health-DkO6s1eA.js": "5022c3e842ba296d92df268de496b2af1dcc9e0c8d12bd6f5277adebff4e0a49",
+      "assets/table-oLqYtzqF.js": "5e56211fd5e76a0f6505389cb33b5fddbdf0df2c1ff59de01916a7832fe08e4e",
+      "assets/tabs-DKc9JMIa.js": "f770014d47adf18be4c2e3e8237e84d5ee2799c15b965b4c9df5954e10c04898",
+      "assets/testing-control-center-BIDzgW_z.js": "f2f75aaa1b158547ab40a1b762014dd9c77358e553eaffc4af7c1f844dedbf8d",
+      "assets/testing-lab-CmvuhmRJ.js": "91fe656fb6459a52ece3791dd4fd44f0a786a1ac0d6828e96ea7ce72c3bd93a5",
+      "assets/textarea-QhrWI91Z.js": "77202666aba3e2d2ca56c476fd88a18b722f1dfbcd446e1e864857880e9d2384",
+      "assets/thumbs-up-P-F-HFfc.js": "2d33beea3cefa81d09490630ca1dede759fd823c4dafb44f972c8e431b4e1f62",
+      "assets/timing-brain-snapshots-BhK9T1xg.js": "c3c3e3b75ee572e2e069b524e0ca84e6c603751709a54cc479cd16117aa52cd0",
+      "assets/trade-command-room-mnrwpByg.js": "8d8a47249d6b614c3bdf0fdcb0e23d268e6d2befeca62564549caa6c17a52fc0",
+      "assets/trade-detail-DJiiDkjo.js": "e82557d1c4be41b7d0997304677f0db89b3964f5782fa2ed050e4cee8496346b",
+      "assets/trade-grader-D8CG9UEY.js": "dcb77129cb7c9ec7689f96363e79918fbfa4f23088ea6b83222b664965e7964e",
+      "assets/trade-logs-BHSMQau_.js": "10927a321dbaa061122cab01199ccc00f2b00526738570a211d0b6f143a1fe5c",
+      "assets/trade-plan-builder-D_S3uRpt.js": "8c994be41980bb54cc42a7c0e568948f32698e5c41f67b134471ae0cd02fe7f3",
+      "assets/trader-coach-CBhARMyW.js": "180c3faf4d6db20d6df7b4925b7f4de4f1c9298e8c4e7fd4d0d6348237804721",
+      "assets/trader-skill-BU5hmUHF.js": "e6a6d094aaf32cf6664b1b7fbf99e8f56eb4e92b084c598df7a596ea34085a26",
+      "assets/trading-calendar-CKOb7bwu.js": "3d46f6361ff898d5ee4cdf37f82a918dcea0a0fb4a0a580627df4b83db3ac909",
+      "assets/trading-control-Cw-wjC1U.js": "d9c44d6f219c3339bc011148b9e57f3054954391a35d804b74f1ef479c85a4d9",
+      "assets/trading-intelligence-CgTX7HO3.js": "9a7e69cb6d6f6f45dbba49e9bdc074952ae51e0310d2156243727a20a7666745",
+      "assets/trading-readiness-CpxOejjY.js": "ae1b0b822641edb35ba0d8441183015b1bd487c3a6a1270bc21114acc8d9940b",
+      "assets/trash-2-DwVV4hcf.js": "6af8c562f8a5e4f0900d4024418e4c1f270a2f4d152dab7f78fc8e124b0f6750",
+      "assets/upload-DQ8WTNoE.js": "5d0fa1b03feebec5139656fc477d8c7a0615458e63c3b2a4238457ba930cbf58",
+      "assets/useRubyTTS-CYOah4Nv.js": "802fe9d77b1404e09d287547c75286a67faefbd4720da97de7376dbdedaa3571",
+      "assets/useScannerTimeframe-CZA-7F1Q.js": "580150d0c158c7ed8f0f48758ec67b0757e72e8a9baf476473fac06ab037f68c",
+      "assets/useScannerTruth-BVmpT2_c.js": "0db941d2d9e936dfd509f7fd2e4ca95b6491dea7efef49f1cf7fbf0190e769db",
+      "assets/user-control-center-Ca6Lz9Rw.js": "5470929a6df97028f280cec177829f6668583d6364c37cfc6810ad625d1da27b",
+      "assets/wand-sparkles-BcAO1ks8.js": "e489396b2485547a1442f0b5962fa16d0c811f15a4bdbdd39a4430a17f38e40f",
+      "assets/watchlists-ByLjaS-N.js": "5802caaaa3cb5ad306e785363954cd730dbdd8863663b8687710875d4615c7bc",
+      "assets/waves-BnxzJFcY.js": "9e45f2a0e07451a41bde435100436338fa1dc8695bcf1297da5aecea4ef9ed51",
+      "assets/weekly-review-BwqDXWCD.js": "beafef8354ff3e4f6ee352c3db2fb1d6017c174fa4177d6736518142c0be2b1b",
+      "index.html": "7e6ca5c05cc22074cdb92faa092a96400d86f22bc6a1830d831211db6ef438c4"
+    },
+    "limitations": [
+      "Isolated Vite configuration; this is not the deployable dashboard bundle.",
+      "Offline synthetic data and unavailable reader truth; no production or broker validation.",
+      "No hardware paint or competitor performance measurement."
+    ]
+  },
+  "executedBuildId": "0b73849de1482966",
+  "desktopPlotIntersection": {
+    "width": 1100,
+    "height": 520
+  },
+  "blockedBackgroundRequests": [
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/activity-ping",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/chart/ai-alerts/scan",
+      "method": "POST",
+      "status": 503
+    }
+  ],
+  "blockedAnalysisRequests": [
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "kind": "mutation",
+      "path": "/api/me/scalp/focus",
+      "method": "POST",
+      "status": 503
+    }
+  ],
+  "tradeRequests": [],
+  "unclassifiedWriteRequests": [],
+  "noTradeRequests": true,
+  "noWritesBeyondKnownNonTradingRequests": true,
+  "allMutationRequestsBlocked": true,
+  "network": {
+    "errors": [],
+    "blocked": [
+      {
+        "kind": "mutation",
+        "path": "/api/me/chart/ai-alerts/scan",
+        "method": "POST",
+        "status": 503
+      },
+      {
+        "kind": "mutation",
+        "path": "/api/me/scalp/focus",
+        "method": "POST",
+        "status": 503
+      },
+      {
+        "kind": "mutation",
+        "path": "/api/me/activity-ping",
+        "method": "POST",
+        "status": 503
+      },
+      {
+        "kind": "mutation",
+        "path": "/api/me/chart/ai-alerts/scan",
+        "method": "POST",
+        "status": 503
+      },
+      {
+        "kind": "mutation",
+        "path": "/api/me/scalp/focus",
+        "method": "POST",
+        "status": 503
+      },
+      {
+        "kind": "mutation",
+        "path": "/api/me/chart/ai-alerts/scan",
+        "method": "POST",
+        "status": 503
+      }
+    ],
+    "unknown": [
+      {
+        "path": "/api/me/symbols",
+        "query": ""
+      },
+      {
+        "path": "/api/me/live/arming",
+        "query": ""
+      },
+      {
+        "path": "/api/me/notifications",
+        "query": ""
+      },
+      {
+        "path": "/api/release/version",
+        "query": ""
+      },
+      {
+        "path": "/api/me/market/truth/EURUSD",
+        "query": "?tf=M15"
+      },
+      {
+        "path": "/api/me/timing-brain/EURUSD",
+        "query": ""
+      },
+      {
+        "path": "/api/me/chart/annotations",
+        "query": "?symbol=EURUSD"
+      },
+      {
+        "path": "/api/me/trade-health",
+        "query": "?chartSymbol=EURUSD"
+      },
+      {
+        "path": "/api/alert-preferences",
+        "query": ""
+      },
+      {
+        "path": "/api/me/positions/all",
+        "query": ""
+      },
+      {
+        "path": "/api/me/pending-order-drafts",
+        "query": ""
+      },
+      {
+        "path": "/api/me/one-click/status",
+        "query": ""
+      },
+      {
+        "path": "/api/me/master-live/access",
+        "query": ""
+      },
+      {
+        "path": "/api/economic-events/upcoming",
+        "query": "?hours=1&minImpact=HIGH"
+      },
+      {
+        "path": "/api/market-heat",
+        "query": "?timeframe=M15"
+      },
+      {
+        "path": "/api/market-data/tradability",
+        "query": "?symbol=EURUSD"
+      },
+      {
+        "path": "/api/me/scalp/baskets",
+        "query": ""
+      },
+      {
+        "path": "/api/me/timing-brain/EURUSD",
+        "query": "?tz=America%2FNew_York"
+      },
+      {
+        "path": "/api/me/market-edge",
+        "query": "?symbol=EURUSD&timeframe=M15"
+      },
+      {
+        "path": "/api/me/chart/intelligence",
+        "query": "?symbol=EURUSD&timeframe=M15&limit=200"
+      },
+      {
+        "path": "/api/me/master-live/access",
+        "query": ""
+      },
+      {
+        "path": "/api/me/live/profile",
+        "query": ""
+      },
+      {
+        "path": "/api/me/notifications",
+        "query": ""
+      },
+      {
+        "path": "/api/me/market/truth/EURUSD",
+        "query": "?tf=M15"
+      },
+      {
+        "path": "/api/economic-events/upcoming",
+        "query": "?hours=1&minImpact=HIGH"
+      },
+      {
+        "path": "/api/me/timing-brain/EURUSD",
+        "query": ""
+      },
+      {
+        "path": "/api/me/chart/annotations",
+        "query": "?symbol=EURUSD"
+      },
+      {
+        "path": "/api/me/trade-health",
+        "query": "?chartSymbol=EURUSD"
+      },
+      {
+        "path": "/api/alert-preferences",
+        "query": ""
+      },
+      {
+        "path": "/api/market-heat",
+        "query": "?timeframe=M15"
+      },
+      {
+        "path": "/api/me/scalp/baskets",
+        "query": ""
+      },
+      {
+        "path": "/api/me/timing-brain/EURUSD",
+        "query": "?tz=America%2FNew_York"
+      },
+      {
+        "path": "/api/me/market-edge",
+        "query": "?symbol=EURUSD&timeframe=M15"
+      },
+      {
+        "path": "/api/me/chart/intelligence",
+        "query": "?symbol=EURUSD&timeframe=M15&limit=200"
+      },
+      {
+        "path": "/api/me/chart/intelligence",
+        "query": "?symbol=EURUSD&timeframe=M15&limit=200"
+      },
+      {
+        "path": "/api/me/positions/all",
+        "query": ""
+      },
+      {
+        "path": "/api/me/pending-order-drafts",
+        "query": ""
+      },
+      {
+        "path": "/api/me/chart/intelligence",
+        "query": "?symbol=EURUSD&timeframe=M15&limit=200"
+      },
+      {
+        "path": "/api/me/market/truth/GBPUSD",
+        "query": "?tf=M15"
+      },
+      {
+        "path": "/api/me/timing-brain/GBPUSD",
+        "query": ""
+      },
+      {
+        "path": "/api/me/chart/annotations",
+        "query": "?symbol=GBPUSD"
+      },
+      {
+        "path": "/api/me/trade-health",
+        "query": "?chartSymbol=GBPUSD"
+      },
+      {
+        "path": "/api/market-data/tradability",
+        "query": "?symbol=GBPUSD"
+      },
+      {
+        "path": "/api/me/timing-brain/GBPUSD",
+        "query": "?tz=America%2FNew_York"
+      },
+      {
+        "path": "/api/me/market-edge",
+        "query": "?symbol=GBPUSD&timeframe=M15"
+      },
+      {
+        "path": "/api/me/chart/intelligence",
+        "query": "?symbol=GBPUSD&timeframe=M15&limit=200"
+      },
+      {
+        "path": "/api/me/market/truth/GBPUSD",
+        "query": "?tf=M5"
+      },
+      {
+        "path": "/api/me/market-edge",
+        "query": "?symbol=GBPUSD&timeframe=M5"
+      },
+      {
+        "path": "/api/me/chart/intelligence",
+        "query": "?symbol=GBPUSD&timeframe=M5&limit=200"
+      },
+      {
+        "path": "/api/me/master-live/access",
+        "query": ""
+      },
+      {
+        "path": "/api/me/live/arming",
+        "query": ""
+      },
+      {
+        "path": "/api/me/timing-brain/GBPUSD",
+        "query": ""
+      },
+      {
+        "path": "/api/me/chart/annotations",
+        "query": "?symbol=GBPUSD"
+      },
+      {
+        "path": "/api/me/trade-health",
+        "query": "?chartSymbol=GBPUSD"
+      },
+      {
+        "path": "/api/me/timing-brain/GBPUSD",
+        "query": "?tz=America%2FNew_York"
+      },
+      {
+        "path": "/api/me/market/truth/GBPUSD",
+        "query": "?tf=M5"
+      },
+      {
+        "path": "/api/me/market-edge",
+        "query": "?symbol=GBPUSD&timeframe=M5"
+      },
+      {
+        "path": "/api/me/chart/intelligence",
+        "query": "?symbol=GBPUSD&timeframe=M5&limit=200"
+      }
+    ]
+  },
+  "raw_sha256": "b91e53e397bb2a02656e2e9cfa49f40b397797ae19761c0e574a1fd25c91b478",
+  "raw_file": "browser-acceptance.json.gz",
+  "raw_sha256_scope": "decompressed UTF-8 JSON bytes",
+  "compressed_sha256": "3834a83d737d8f275b773a57e2a127bff7e7ed110e97c76fb5f4df3e0fd5e7ad"
+}

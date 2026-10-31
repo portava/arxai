@@ -8,6 +8,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
+import { useScannerNavigationWarmup } from "@/hooks/useScannerNavigationWarmup";
 
 // App Shell 4.1 — mobile bottom nav surfaces the 5 most-used anchors per
 // Nov-2025 nav spec: Cockpit · Trade · Scanner · AI · More/Me.
@@ -57,6 +58,7 @@ export function MobileBottomNav() {
   const { effectiveIsAdmin: isAdmin } = useViewMode();
   const { isInvestor } = useProductRole();
   const { isApprovedTrader } = useTraderTier();
+  const warmScanner = useScannerNavigationWarmup(!isInvestor && (isAdmin || isApprovedTrader));
   void user;
   // Tier resolution: investor → portal bar; admin → full + admin tail; approved
   // human trader → full + Me tail; pending/unapproved (or loading approval) →
@@ -81,6 +83,10 @@ export function MobileBottomNav() {
           <Link
             key={item.href}
             href={item.href}
+            onPointerEnter={() => warmScanner(item.href)}
+            onFocus={() => warmScanner(item.href)}
+            onPointerDown={() => warmScanner(item.href)}
+            onClick={() => warmScanner(item.href)}
             aria-label={item.label}
             aria-current={isActive ? "page" : undefined}
             className={cn(

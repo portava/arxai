@@ -1,0 +1,8 @@
+{
+  "scriptCommit": "ac8298999a0e7c2e0269060db17036dfe0c0356c",
+  "scriptSha256": "1103f63f1d5c291d1af2d8dd8d7dde28cc7f5af51193e2f63211bd85180874e0",
+  "buildSource": "23698959c7f097bcf712847a9d81b23e5ec62f16",
+  "buildId": "0b73849de1482966",
+  "preservedPriorFailure": "latency-baseline.json",
+  "wrapper": "run-latency-baseline-corrected.js"
+}

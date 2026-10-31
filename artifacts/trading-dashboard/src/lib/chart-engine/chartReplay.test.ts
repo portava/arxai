@@ -3,8 +3,31 @@ import { captureChartReplay, replayPrefix, replayCountAtClose, replayCount, repl
 import { DEFAULT_PREFERENCES } from "./chartWorkspace";
 import { StudyCalculator, STUDY_CATALOG } from "./chartStudies";
 import { NOW, replayResponse } from "@/components/chart-replay/replayFixture";
+import { CHART_INTERVALS, chartIntervalSeconds } from "./chartIntervals";
 const capture=(data=replayResponse())=>captureChartReplay(data,7,DEFAULT_PREFERENCES,NOW);
 describe("source-bound historical replay snapshot",()=>{
+ it.each(CHART_INTERVALS)("captures %s only with exact observed close boundaries and retains real gaps",timeframe=>{
+  const data=replayResponse(4), seconds=chartIntervalSeconds(timeframe)!;
+  data.timeframe=timeframe;data.marketEvidence!.timeframe=timeframe;
+  data.candles.forEach((c,i)=>{c.timeframe=timeframe;c.openTime=new Date(NOW-(4-i)*seconds*1000).toISOString();c.closeTime=new Date(NOW-(3-i)*seconds*1000).toISOString();});
+  data.candles.splice(1,1);
+  const snapshot=capture(data).snapshot!;
+  expect(snapshot.timeframe).toBe(timeframe);expect(snapshot.gaps).toBe(1);expect(snapshot.bars).toHaveLength(3);
+  expect(snapshot.bars[0]!.closeTime-snapshot.bars[0]!.time).toBe(seconds);
+  expect(replayCountAtClose(snapshot,snapshot.bars[0]!.closeTime+seconds-1)).toBe(1);
+  data.candles[0]!.closeTime=new Date(Date.parse(data.candles[0]!.closeTime)+1000).toISOString();
+  expect(capture(data).snapshot).toBeUndefined();
+ });
+ it("withholds weekly replay until source week boundaries are proven",()=>{
+  const data=replayResponse(1);data.timeframe="W1";data.marketEvidence!.timeframe="W1";
+  Object.assign(data.candles[0]!,{timeframe:"W1",openTime:"2026-10-19T00:00:00Z",closeTime:"2026-10-26T00:00:00Z"});
+  expect(capture(data).snapshot).toBeUndefined();expect(capture(data).error).toContain("source-verified week boundaries");
+ });
+ it.each([28,29,30,31])("refuses MN1 even when %i-day arithmetic seems plausible; calendar source semantics are not proven",days=>{
+  const data=replayResponse(1);data.timeframe="MN1";data.marketEvidence!.timeframe="MN1";
+  Object.assign(data.candles[0]!,{timeframe:"MN1",openTime:new Date(NOW-days*86400_000).toISOString(),closeTime:new Date(NOW).toISOString()});
+  const result=capture(data);expect(result.snapshot).toBeUndefined();expect(result.error).toContain("source-verified calendar-month");
+ });
  it("freezes only closed source-identified bars independently of mutable query data",()=>{
   const data=replayResponse();const result=capture(data);expect(result.error).toBeUndefined();const snapshot=result.snapshot!;
   data.candles[0]!.close=999;data.marketEvidence!.sourceIdentity="b".repeat(64);

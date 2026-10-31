@@ -1,0 +1,18 @@
+### Result
+{"details":[{"kind":"keydown","key":"ArrowDown","code":"ArrowDown","keyCode":40,"which":40,"trusted":true,"preventedAtCapture":false,"target":"SELECT"},{"kind":"keyup","key":"ArrowDown","code":"ArrowDown","keyCode":40,"which":40,"trusted":true,"preventedAtCapture":false,"target":"SELECT"},{"kind":"keydown","key":"Enter","code":"Enter","keyCode":13,"which":13,"trusted":true,"preventedAtCapture":false,"target":"SELECT"},{"kind":"keyup","key":"Enter","code":"Enter","keyCode":13,"which":13,"trusted":true,"preventedAtCapture":false,"target":"SELECT"},{"kind":"keydown","key":"Escape","code":"Escape","keyCode":27,"which":27,"trusted":true,"preventedAtCapture":false,"target":"SELECT"},{"kind":"keyup","key":"Escape","code":"Escape","keyCode":27,"which":27,"trusted":true,"preventedAtCapture":false,"target":"SELECT"}],"select":{"disabled":false,"size":0,"options":[{"value":"candles","disabled":false,"selected":true},{"value":"bars","disabled":false,"selected":false},{"value":"line","disabled":false,"selected":false},{"value":"area","disabled":false,"selected":false},{"value":"baseline","disabled":false,"selected":false},{"value":"heikinAshi","disabled":false,"selected":false},{"value":"hollow","disabled":false,"selected":false}],"active":true}}
+### Ran Playwright code
+```js
+await (async page=>{
+ const style=page.getByTestId('scanner-chart-panel').getByLabel('Chart style',{exact:true});await style.selectOption('candles');await style.focus();
+ await page.evaluate(()=>{window.__keyDetails=[];for(const kind of ['keydown','keyup'])window.addEventListener(kind,e=>{const o={kind,key:e.key,code:e.code,keyCode:e.keyCode,which:e.which,trusted:e.isTrusted,preventedAtCapture:e.defaultPrevented,target:e.target.tagName};window.__keyDetails.push(o);setTimeout(()=>o.preventedAfterDispatch=e.defaultPrevented,0);},true);});
+ await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');await page.keyboard.press('Escape');
+ return{details:await page.evaluate(()=>window.__keyDetails),select:await style.evaluate(e=>({disabled:e.disabled,size:e.size,options:[...e.options].map(o=>({value:o.value,disabled:o.disabled,selected:o.selected})),active:e===document.activeElement}))};
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:4199/market-scanner
+- Page Title: ARX actual Scanner — offline acceptance
+- Console: 183 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-10-28T17-17-37-469Z.log#L763-L843

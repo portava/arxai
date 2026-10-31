@@ -1,8 +1,10 @@
 export * from "../../lib/api-client-react/src/index";
 import { useMemo } from "react";
+import { chartIntervalSeconds } from "../../artifacts/trading-dashboard/src/lib/chart-engine/chartIntervals";
 export function useGetChartCandles({symbol,timeframe,limit}: {symbol:string;timeframe:string;limit:number}) {
  const data = useMemo(() => {
- const interval = ({M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400} as Record<string,number>)[timeframe] ?? 300;
+ const interval = chartIntervalSeconds(timeframe);
+ if (interval == null) return undefined; // Disabled/unsupported requests never get fabricated fixture bars.
  const end = Math.floor(Date.now()/1000/interval)*interval;
  const base=symbol === "EURUSD" ? 1.08 : 2300;
  const step=base/1000;

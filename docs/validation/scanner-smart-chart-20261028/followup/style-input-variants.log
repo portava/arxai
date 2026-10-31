@@ -1,0 +1,27 @@
+### Result
+[{"name":"click-down-enter","value":"candles","state":"candles","events":[{"kind":"click","trusted":true,"value":"candles","at":351142.69999980927,"eventAt":351139.09999990463},{"kind":"keydown","key":"ArrowDown","trusted":true,"value":"candles","at":351144.19999980927,"eventAt":351144.09999990463},{"kind":"keyup","key":"ArrowDown","trusted":true,"value":"candles","at":351145.09999990463,"eventAt":351145},{"kind":"keydown","key":"Enter","trusted":true,"value":"candles","at":351145.59999990463,"eventAt":351145.19999980927},{"kind":"keyup","key":"Enter","trusted":true,"value":"candles","at":351145.59999990463,"eventAt":351145.59999990463},{"kind":"keydown","key":"Tab","trusted":true,"value":"candles","at":351145.90000009537,"eventAt":351145.90000009537}]},{"name":"space-down-enter","value":"candles","state":"candles","events":[{"kind":"keydown","key":" ","trusted":true,"value":"candles","at":351156.90000009537,"eventAt":351155.59999990463},{"kind":"keyup","key":" ","trusted":true,"value":"candles","at":351157.30000019073,"eventAt":351157.19999980927},{"kind":"keydown","key":"ArrowDown","trusted":true,"value":"candles","at":351157.5,"eventAt":351157.5},{"kind":"keyup","key":"ArrowDown","trusted":true,"value":"candles","at":351157.69999980927,"eventAt":351157.69999980927},{"kind":"keydown","key":"Enter","trusted":true,"value":"candles","at":351157.90000009537,"eventAt":351157.80000019073},{"kind":"keyup","key":"Enter","trusted":true,"value":"candles","at":351157.90000009537,"eventAt":351157.90000009537},{"kind":"keydown","key":"Tab","trusted":true,"value":"candles","at":351158,"eventAt":351158}]},{"name":"down-down-enter","value":"candles","state":"candles","events":[{"kind":"keydown","key":"ArrowDown","trusted":true,"value":"candles","at":351164.40000009537,"eventAt":351164.30000019073},{"kind":"keyup","key":"ArrowDown","trusted":true,"value":"candles","at":351164.59999990463,"eventAt":351164.59999990463},{"kind":"keydown","key":"ArrowDown","trusted":true,"value":"candles","at":351164.80000019073,"eventAt":351164.80000019073},{"kind":"keyup","key":"ArrowDown","trusted":true,"value":"candles","at":351164.80000019073,"eventAt":351164.80000019073},{"kind":"keydown","key":"Enter","trusted":true,"value":"candles","at":351165,"eventAt":351165},{"kind":"keyup","key":"Enter","trusted":true,"value":"candles","at":351165.19999980927,"eventAt":351165.19999980927},{"kind":"keydown","key":"Tab","trusted":true,"value":"candles","at":351165.30000019073,"eventAt":351165.30000019073}]},{"name":"letter-b-enter","value":"candles","state":"candles","events":[{"kind":"keydown","key":"b","trusted":true,"value":"candles","at":351175.09999990463,"eventAt":351175},{"kind":"keyup","key":"b","trusted":true,"value":"candles","at":351179.69999980927,"eventAt":351179.59999990463},{"kind":"keydown","key":"Enter","trusted":true,"value":"candles","at":351180.09999990463,"eventAt":351180},{"kind":"keyup","key":"Enter","trusted":true,"value":"candles","at":351181.69999980927,"eventAt":351181.59999990463},{"kind":"keydown","key":"Tab","trusted":true,"value":"candles","at":351182,"eventAt":351182}]}]
+### Ran Playwright code
+```js
+await (async page=>{
+ const style=page.getByTestId('scanner-chart-panel').getByLabel('Chart style',{exact:true});
+ const variants=[];
+ for(const name of ['click-down-enter','space-down-enter','down-down-enter','letter-b-enter']){
+  await page.keyboard.press('Escape');await style.selectOption('candles');await style.focus();
+  await page.evaluate(()=>{window.__styleEvents=[];});
+  if(name==='click-down-enter'){await style.click();await page.keyboard.press('ArrowDown');}
+  if(name==='space-down-enter'){await page.keyboard.press('Space');await page.keyboard.press('ArrowDown');}
+  if(name==='down-down-enter'){await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');}
+  if(name==='letter-b-enter')await page.keyboard.press('b');
+  await page.keyboard.press('Enter');await page.keyboard.press('Tab');
+  variants.push({name,value:await style.inputValue(),state:await page.evaluate(()=>window.__arxChartQa.snapshot().style),events:await page.evaluate(()=>window.__styleEvents)});
+ }
+ return variants;
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:4199/market-scanner
+- Page Title: ARX actual Scanner — offline acceptance
+- Console: 182 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-10-28T17-17-37-469Z.log#L728-L762

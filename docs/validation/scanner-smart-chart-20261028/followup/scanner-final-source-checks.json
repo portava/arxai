@@ -1,0 +1,32 @@
+{
+  "head": "8e87e55d030547be4cb3cf1e3aab00b00dba792a",
+  "started": "2026-10-28T17:43:41.548817+00:00",
+  "results": [
+    {
+      "name": "frontend",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/scanner-final-8e87e55d-frontend.log"
+    },
+    {
+      "name": "typecheck",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/scanner-final-8e87e55d-typecheck.log"
+    },
+    {
+      "name": "build",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/scanner-final-8e87e55d-build.log"
+    },
+    {
+      "name": "guards",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/scanner-final-8e87e55d-guards.log"
+    },
+    {
+      "name": "bindings",
+      "exit": 0,
+      "log": "/Users/areyouok/arx-tier1-release/scanner-performance-20261028/scanner-final-8e87e55d-bindings.log"
+    }
+  ],
+  "finished": "2026-10-28T17:44:14.368124+00:00"
+}

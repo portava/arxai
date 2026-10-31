@@ -1,0 +1,12 @@
+### Result
+{"roleCount":1,"labelCount":0,"aria":"- combobox \"Chart market\":\n  - option \"V75 · Volatility 75 Index\"\n  - option \"V75_1S · Volatility 75 (1s) Index\"\n  - option \"V100 · Volatility 100 Index\"\n  - option \"V50 · Volatility 50 Index\"\n  - option \"V50_1S · Volatility 50 (1s) Index\"\n  - option \"V25_1S · Volatility 25 (1s) Index\"\n  - option \"V10 · Volatility 10 Index\"\n  - option \"BOOM1000 · Boom 1000 Index\"\n  - option \"CRASH1000 · Crash 1000 Index\"\n  - option \"BOOM500 · Boom 500 Index\"\n  - option \"CRASH500 · Crash 500 Index\"\n  - option \"JUMP10 · Jump 10 Index\"\n  - option \"JUMP25 · Jump 25 Index\"\n  - option \"JUMP50 · Jump 50 Index\"\n  - option \"JUMP75 · Jump 75 Index\"\n  - option \"JUMP100 · Jump 100 Index\"\n  - option \"BOOM300 · Boom 300 Index\"\n  - option \"CRASH300 · Crash 300 Index\"\n  - option \"EURUSD · EUR/USD\" [selected]\n  - option \"GBPUSD · GBP/USD\"\n  - option \"USDJPY · USD/JPY\"\n  - option \"USDCHF · USD/CHF\"\n  - option \"USDCAD · USD/CAD\"\n  - option \"AUDUSD · AUD/USD\"\n  - option \"NZDUSD · NZD/USD\"\n  - option \"EURJPY · EUR/JPY\"\n  - option \"EURGBP · EUR/GBP\"\n  - option \"EURAUD · EUR/AUD\"\n  - option \"EURCAD · EUR/CAD\"\n  - option \"GBPJPY · GBP/JPY\"\n  - option \"GBPAUD · GBP/AUD\"\n  - option \"GBPCAD · GBP/CAD\"\n  - option \"AUDJPY · AUD/JPY\"\n  - option \"CADJPY · CAD/JPY\"\n  - option \"CHFJPY · CHF/JPY\"\n  - option \"XAUUSD · Gold (XAU/USD)\"\n  - option \"XAGUSD · Silver (XAG/USD)\"\n  - option \"DXY · US Dollar Index (DXY)\"\n  - option \"SPX500 · S&P 500 (SPX500)\"\n  - option \"GER30 · Germany 40 / DAX (GER30)\"\n  - option \"US30 · Dow Jones (US30)\"\n  - option \"BTCUSD · Bitcoin (BTC/USD)\"\n  - option \"ETHUSD · Ethereum (ETH/USD)\""}
+### Ran Playwright code
+```js
+await (async page => {await page.goto("http://127.0.0.1:4199/live-chart");await page.getByTestId("arx-native-chart").waitFor();return {roleCount:await page.getByRole("combobox",{name:"Chart market",exact:true}).count(),labelCount:await page.getByLabel("Chart market",{exact:true}).count(),aria:await page.getByRole("combobox",{name:"Chart market",exact:true}).ariaSnapshot()};})(page);
+```
+### Page
+- Page URL: http://127.0.0.1:4199/live-chart
+- Page Title: ARX actual Scanner — offline acceptance
+- Console: 14 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-10-28T17-52-36-161Z.log#L26-L49

@@ -1,0 +1,28 @@
+{
+  "writer": "scripts/chart-qa/prod-server.mjs",
+  "buildId": "7168a27029cc5359",
+  "buildStartedAt": "2026-10-28T15:20:39.346Z",
+  "builtAt": "2026-10-28T15:20:41.690Z",
+  "minified": true,
+  "sourcemap": false,
+  "label": "Vite production build (minified) / React production build",
+  "vite": "7.3.2",
+  "git": {
+    "head": "c9402b5b611058740a49849ecfae598ded03095a",
+    "dirty": false,
+    "dirtyHash": null,
+    "treeChangedDuringBuild": false
+  },
+  "guard": {
+    "devMarkersAbsent": [
+      "react-stack-bottom-frame",
+      "data must be asc ordered by time",
+      "series item data value must be",
+      "should not be changed once the chart has been created"
+    ],
+    "prodMarkersPresent": [
+      "Minified React error #",
+      "tv-lightweight-charts"
+    ]
+  }
+}

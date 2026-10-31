@@ -1,0 +1,14 @@
+
+> @workspace/trading-dashboard@0.0.0 test /Users/areyouok/arx-chart-round3-acceptance-20261028/artifacts/trading-dashboard
+> vitest run
+
+
+ RUN  v4.1.7 /Users/areyouok/arx-chart-round3-acceptance-20261028/artifacts/trading-dashboard
+
+Not implemented: navigation to another Document
+
+ Test Files  164 passed (164)
+      Tests  2322 passed | 9 skipped (2331)
+   Start at  12:57:37
+   Duration  12.98s (transform 13.55s, setup 0ms, import 43.38s, tests 26.70s, environment 76.33s)
+

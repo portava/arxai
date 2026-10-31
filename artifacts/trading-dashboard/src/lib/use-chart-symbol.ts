@@ -26,7 +26,8 @@ function approvedChartSymbol(raw: string | null | undefined): string {
 
 export function getChartSymbol(): string {
   if (typeof window === "undefined") return DEFAULT;
-  return approvedChartSymbol(localStorage.getItem(KEY));
+  try { return approvedChartSymbol(localStorage.getItem(KEY)); }
+  catch { return DEFAULT; }
 }
 
 export function setChartSymbol(rawSymbol: string) {

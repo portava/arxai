@@ -1,10 +1,10 @@
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import { validatePreferences, type ChartPreferences } from "./chartWorkspace";
 import type { ChartEngineCandle } from "./types";
+import { chartIntervalSeconds, chartIntervalLimitation } from "./chartIntervals";
 
 export const MAX_REPLAY_BARS = 5_000;
 export const REPLAY_SPEEDS = [0.5, 1, 2, 4, 8] as const;
-const intervals: Record<string, number> = { M1:60, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400 };
 export interface ReplayBar extends ChartEngineCandle { closeTime: number }
 export interface ChartReplaySnapshot {
   readonly id: string;
@@ -29,7 +29,9 @@ export function captureChartReplay(data: ChartCandlesResponse | undefined, owner
   const unavailable = (error: string): ReplayCapture => ({ error });
   if (!Number.isSafeInteger(ownerId) || ownerId <= 0) return unavailable("Sign in to open a private replay.");
   const evidence = data?.marketEvidence;
-  const seconds = intervals[data?.timeframe ?? ""];
+  const intervalLimitation = chartIntervalLimitation(data?.timeframe);
+  if (intervalLimitation) return unavailable(intervalLimitation);
+  const seconds = chartIntervalSeconds(data?.timeframe);
   if (!data || !evidence || !seconds || !Number.isFinite(now)
     || (expected && (expected.symbol !== data.symbol || expected.timeframe !== data.timeframe))
     || evidence.symbol !== data.symbol || evidence.timeframe !== data.timeframe

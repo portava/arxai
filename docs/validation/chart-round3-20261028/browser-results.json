@@ -1,0 +1,142 @@
+{
+  "baseline-workbench": {
+    "browser": "Chromium",
+    "fixture": "synthetic offline",
+    "styles": 7,
+    "haLegend": true,
+    "studies": 5,
+    "drawings": 3,
+    "persistence": true,
+    "undoRedo": true,
+    "touchDrawing": true,
+    "exportPng": true,
+    "layouts": 2,
+    "mobileNoOverflow": true,
+    "errors": [],
+    "basic": {
+      "timingScope": "synchronous ingestion; streamed studies are coalesced per frame",
+      "withStudies": false,
+      "bars": 5000,
+      "polls": 100,
+      "ticks": 1000,
+      "fullReplacements": 2,
+      "incrementalUpdates": 1099,
+      "pollP95Ms": 0.6000003814697266,
+      "tickP95Ms": 0.10000038146972656,
+      "range": {
+        "from": 1100,
+        "to": 1200
+      },
+      "historyAnchorPreserved": true
+    },
+    "allStudies": {
+      "timingScope": "synchronous ingestion; streamed studies are coalesced per frame",
+      "withStudies": true,
+      "bars": 5000,
+      "polls": 100,
+      "ticks": 1000,
+      "fullReplacements": 2,
+      "incrementalUpdates": 1099,
+      "pollP95Ms": 0.5,
+      "tickP95Ms": 0.10000038146972656,
+      "range": {
+        "from": 1100,
+        "to": 1200
+      },
+      "historyAnchorPreserved": true
+    },
+    "sourceCommit": "0b519bd8ec5a655f9b134005e546e38e14e64b97"
+  },
+  "workbench-production": {
+    "browser": "Chromium",
+    "fixture": "synthetic offline",
+    "styles": 7,
+    "haLegend": true,
+    "studies": 5,
+    "drawings": 3,
+    "persistence": true,
+    "undoRedo": true,
+    "touchDrawing": true,
+    "exportPng": true,
+    "layouts": 2,
+    "mobileNoOverflow": true,
+    "errors": [],
+    "basic": {
+      "timingScope": "synchronous ingestion; streamed studies are coalesced per frame",
+      "withStudies": false,
+      "bars": 5000,
+      "polls": 100,
+      "ticks": 1000,
+      "fullReplacements": 2,
+      "incrementalUpdates": 1099,
+      "pollP95Ms": 0.5999999046325684,
+      "tickP95Ms": 0.10000038146972656,
+      "range": {
+        "from": 1100,
+        "to": 1200
+      },
+      "historyAnchorPreserved": true
+    },
+    "allStudies": {
+      "timingScope": "synchronous ingestion; streamed studies are coalesced per frame",
+      "withStudies": true,
+      "bars": 5000,
+      "polls": 100,
+      "ticks": 1000,
+      "fullReplacements": 2,
+      "incrementalUpdates": 1099,
+      "pollP95Ms": 0.5,
+      "tickP95Ms": 0.10000038146972656,
+      "range": {
+        "from": 1100,
+        "to": 1200
+      },
+      "historyAnchorPreserved": true
+    },
+    "build": "7168a27029cc5359",
+    "sourceCommit": "c9402b5b611058740a49849ecfae598ded03095a"
+  },
+  "style-timezone-dev-final": {
+    "base": "http://127.0.0.1:4178",
+    "fixture": "synthetic offline, no broker",
+    "transformedStyleNotes": 3,
+    "canonicalPricesAcrossZones": [
+      "Asia/Tokyo",
+      "America/New_York",
+      "Europe/London",
+      "UTC"
+    ],
+    "goToInstantPreserved": true,
+    "dstGapRejected": true,
+    "dailyUtcAndIntradayRestore": true,
+    "persistedStyleAndZone": true,
+    "canvasRetained": true,
+    "mobileNoOverflow": true,
+    "errors": [],
+    "externalRequests": [],
+    "scope": "functional acceptance only; no latency, feed or competitor parity claim",
+    "sourceCommit": "c9402b5b611058740a49849ecfae598ded03095a"
+  },
+  "style-timezone-production": {
+    "base": "http://127.0.0.1:4179",
+    "fixture": "synthetic offline, no broker",
+    "transformedStyleNotes": 3,
+    "canonicalPricesAcrossZones": [
+      "Asia/Tokyo",
+      "America/New_York",
+      "Europe/London",
+      "UTC"
+    ],
+    "goToInstantPreserved": true,
+    "dstGapRejected": true,
+    "dailyUtcAndIntradayRestore": true,
+    "persistedStyleAndZone": true,
+    "canvasRetained": true,
+    "mobileNoOverflow": true,
+    "errors": [],
+    "externalRequests": [],
+    "scope": "functional acceptance only; no latency, feed or competitor parity claim",
+    "build": "7168a27029cc5359",
+    "sourceCommit": "c9402b5b611058740a49849ecfae598ded03095a"
+  }
+}

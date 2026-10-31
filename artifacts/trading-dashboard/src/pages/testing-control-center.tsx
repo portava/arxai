@@ -164,7 +164,7 @@ const AVAILABLE_NOW: Omit<CheckRow, "status">[] = [
   {
     id: "live-chart-embed",
     label: "Live chart embed reachable",
-    describe: "Confirms /live-chart route renders (TradingView widget loads client-side).",
+    describe: "Confirms /live-chart renders Smart Chart with its market-data status.",
     run: async () => {
       const r = await fetch("/live-chart");
       return { pass: r.ok, detail: `HTTP ${r.status}` };

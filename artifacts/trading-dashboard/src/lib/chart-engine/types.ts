@@ -1,3 +1,4 @@
+import type { ScannerChartSurface } from "./scannerChartSurface";
 import type { DrawingInteraction } from "./chartDrawingEditor";
 import type { SmartChartAnnotation } from "./smartChartAnnotation";
 import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
@@ -124,6 +125,9 @@ export interface ChartStructureMarker {
  * any future engine implements the same surface.
  */
 export interface ChartEngineAdapter {
+  /** Scanner migration bridge: display overlays/coordinates only. */
+  getScannerOverlaySurface?(): Pick<ScannerChartSurface, "chart" | "series" | "container"> | null;
+
   readonly capabilities: ChartEngineCapabilities;
 
   /** Mount the engine into the container. Resets all internal render state. */

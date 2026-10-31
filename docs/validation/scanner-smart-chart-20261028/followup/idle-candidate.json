@@ -1,0 +1,426 @@
+{
+  "valid": true,
+  "durationMs": 18001.599999904633,
+  "counts": {
+    "createPriceLine": 2,
+    "removePriceLine": 2,
+    "setSelection": 42,
+    "updateAllViews": 3,
+    "requestUpdate": 0
+  },
+  "calls": [
+    {
+      "at": 10050.199999809265,
+      "method": "updateAllViews",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 10473.5,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 10496.699999809265,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 10497.099999904633,
+      "method": "removePriceLine",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 10497.099999904633,
+      "method": "createPriceLine",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 10500.5,
+      "method": "updateAllViews",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 10560.799999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 10672.699999809265,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 11472.900000095367,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 12474,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 13468.5,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 14473.400000095367,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 15473.599999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 15557.900000095367,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 15585,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 15645,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 15929.5,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 16385.900000095367,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 16474.799999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 16529,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 16556,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 17473.299999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 17581.400000095367,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 18474.599999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 18674.199999809265,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 18696.599999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 19471.599999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 19723.099999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 20474.199999809265,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 20497.099999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 20497.199999809265,
+      "method": "removePriceLine",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 20497.299999713898,
+      "method": "createPriceLine",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 20500.199999809265,
+      "method": "updateAllViews",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 20613.400000095367,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 21385.799999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 21388,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 21472.699999809265,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 21530.599999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 21553.099999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 22471.799999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 22579.5,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 23471.299999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 24473.299999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 25472.199999809265,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 25640.099999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 26471.599999904633,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 27472.400000095367,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 27724.799999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    },
+    {
+      "at": 27754.299999713898,
+      "method": "setSelection",
+      "selected": "ec906b45-b2e7-4419-b826-52054fc6486e"
+    }
+  ],
+  "bindingChecks": 231,
+  "bindingFailures": [],
+  "restorationFailures": [],
+  "restored": true,
+  "failure": null,
+  "before": {
+    "adapterId": 1,
+    "containerId": 2,
+    "chartId": 3,
+    "seriesId": 4,
+    "canvasIds": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "candlesId": 12,
+    "dataRevision": 11,
+    "barCount": 200,
+    "first": {
+      "time": 1767175200,
+      "open": 0.9999,
+      "high": 1.0003,
+      "low": 0.9997,
+      "close": 1
+    },
+    "last": {
+      "time": 1767354300,
+      "open": 0.9976255169022257,
+      "high": 0.9980255169022256,
+      "low": 0.9974255169022257,
+      "close": 0.9977255169022257
+    },
+    "symbol": "EURUSD",
+    "intervalSeconds": 900,
+    "style": "candles",
+    "feed": {
+      "source": "offline_fixture",
+      "livePriceAffordance": false
+    },
+    "range": {
+      "from": 50,
+      "to": 199
+    },
+    "bounds": {
+      "x": 290,
+      "y": 563.875,
+      "width": 1100,
+      "height": 520
+    }
+  },
+  "after": {
+    "adapterId": 1,
+    "containerId": 2,
+    "chartId": 3,
+    "seriesId": 4,
+    "canvasIds": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "candlesId": 12,
+    "dataRevision": 11,
+    "barCount": 200,
+    "first": {
+      "time": 1767175200,
+      "open": 0.9999,
+      "high": 1.0003,
+      "low": 0.9997,
+      "close": 1
+    },
+    "last": {
+      "time": 1767354300,
+      "open": 0.9976255169022257,
+      "high": 0.9980255169022256,
+      "low": 0.9974255169022257,
+      "close": 0.9977255169022257
+    },
+    "symbol": "EURUSD",
+    "intervalSeconds": 900,
+    "style": "candles",
+    "feed": {
+      "source": "offline_fixture",
+      "livePriceAffordance": false
+    },
+    "range": {
+      "from": 50,
+      "to": 199
+    },
+    "bounds": {
+      "x": 290,
+      "y": 563.875,
+      "width": 1100,
+      "height": 520
+    }
+  },
+  "note": {
+    "optionsBefore": {
+      "color": "#22d3ee",
+      "price": 0.999,
+      "lineStyle": 0,
+      "lineWidth": 2,
+      "lineVisible": true,
+      "axisLabelVisible": true,
+      "title": "S OFFLINE QA",
+      "axisLabelColor": "",
+      "axisLabelTextColor": ""
+    },
+    "optionsAfter": [
+      {
+        "color": "#22d3ee",
+        "price": 0.999,
+        "lineStyle": 0,
+        "lineWidth": 2,
+        "lineVisible": true,
+        "axisLabelVisible": true,
+        "title": "S OFFLINE QA",
+        "axisLabelColor": "",
+        "axisLabelTextColor": ""
+      }
+    ],
+    "sameHandle": false,
+    "unchangedOptions": true
+  },
+  "unchangedData": true,
+  "drawingsUnchanged": true,
+  "buildId": "0a98f2aa91d46955",
+  "scope": "Idle instrumentation only: one synthetic note, one browser-local user drawing, 200 fixture bars; all APIs intercepted. Counts are not input latency. Identity probes run every100ms and on wrapped calls; periods between probes are not a continuous execution trace.",
+  "drawingsBefore": [
+    {
+      "id": "ec906b45-b2e7-4419-b826-52054fc6486e",
+      "kind": "horizontal",
+      "start": {
+        "time": 1767285900,
+        "price": 1.00018347472208
+      },
+      "color": "#fbbf24"
+    }
+  ],
+  "drawingsAfter": [
+    {
+      "id": "ec906b45-b2e7-4419-b826-52054fc6486e",
+      "kind": "horizontal",
+      "start": {
+        "time": 1767285900,
+        "price": 1.00018347472208
+      },
+      "color": "#fbbf24"
+    }
+  ],
+  "drawings": [
+    {
+      "id": "ec906b45-b2e7-4419-b826-52054fc6486e",
+      "kind": "horizontal",
+      "start": {
+        "time": 1767285900,
+        "price": 1.00018347472208
+      },
+      "color": "#fbbf24"
+    }
+  ]
+}

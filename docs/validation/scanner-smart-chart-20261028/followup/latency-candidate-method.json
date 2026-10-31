@@ -1,0 +1,8 @@
+{
+  "scriptCommit": "b953e3e4",
+  "scriptSha256": "0fff4f02f4739519308c7216063b39c9439ad2ea24a30a7693c2f0c78f25c297",
+  "buildSource": "cc7ad0e0a1282a51f6ffe6efa369705747af13f4",
+  "buildId": "0a98f2aa91d46955",
+  "wrapper": "run-latency-candidate.js",
+  "differenceFromBaseline": "Only stricter retained-error verdict gate; sampling unchanged; both runs remain FAIL/partial."
+}

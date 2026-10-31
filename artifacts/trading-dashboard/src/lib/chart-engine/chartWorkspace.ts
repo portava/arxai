@@ -1,5 +1,6 @@
 import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy } from "./chartStudies";
 import { isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
+import { normalizeNoteText } from "./chartTextNote";
 export type ChartScaleMode = "linear" | "log" | "percent" | "indexed";
 /** Display styles in picker order. The first three keep their original order
  * so existing keyboard steps (candles <-> bars) measure the same thing. */
@@ -22,11 +23,11 @@ export function describeChartStyle(style: ChartStyle): { name: string; note: str
   const known: ChartStyle = (CHART_STYLES as readonly string[]).includes(style) ? style : "candles";
   return { name: CHART_STYLE_NAMES[known], note: STYLE_NOTES[known] };
 }
-export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci";
-export const DRAWING_NAMES: Record<DrawingKind, string> = { horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement" };
-export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical"; }
+export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci" | "text";
+export const DRAWING_NAMES: Record<DrawingKind, string> = { horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
+export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical" || kind === "text"; }
 export interface ChartAnchor { time: number; price: number }
-export interface ChartDrawing { id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; color: string; locked?: boolean; width?: 1 | 2 | 3; dashed?: boolean }
+export interface ChartDrawing { id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; color: string; locked?: boolean; width?: 1 | 2 | 3; dashed?: boolean; text?: string }
 /**
  * Per chart view (each workspace view has its own stored preferences).
  * `timeZone` is display-only and optional: a missing value means UTC, and it is
@@ -74,10 +75,12 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
   return (Array.isArray(value) ? value.slice(0, MAX_DRAWINGS) : []).flatMap((d: any) => {
     if (!d || typeof d.id !== "string" || d.id.length > 80 || seen.has(d.id) || !Object.hasOwn(DRAWING_NAMES, d.kind) || !anchor(d.start) || !color(d.color)) return [];
     if (!singleAnchorDrawing(d.kind) && (!anchor(d.end) || d.end.time === d.start.time)) return [];
+    const text = d.kind === "text" ? normalizeNoteText(d.text) : null;
+    if (d.kind === "text" && text == null) return [];
     if (d.width != null && ![1, 2, 3].includes(d.width)) return [];
     if (d.locked != null && typeof d.locked !== "boolean" || d.dashed != null && typeof d.dashed !== "boolean") return [];
     seen.add(d.id);
-    return [{ id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), color:d.color, ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}) }];
+    return [{ id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), color:d.color, ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
   });
 }
 /** Local device preferences only. No account, positions, credentials or feed

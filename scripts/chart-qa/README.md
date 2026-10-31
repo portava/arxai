@@ -12,6 +12,7 @@ node scripts/chart-qa/server.mjs
 playwright-cli -s=arx-chart open http://127.0.0.1:4178 --browser=chrome
 playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/acceptance.js
 playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/workbench-acceptance.js
+playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/style-timezone-acceptance.js
 playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/interaction-latency.js
 ```
 
@@ -36,6 +37,20 @@ also repeats the benchmark with all five studies enabled. Both scripts clear
 only this isolated fixture origin's browser storage before running. Exported
 images and browser screenshots are written under `/private/tmp/` for inspection.
 
+`style-timezone-acceptance.js` additionally checks visible explanations for
+Heikin Ashi, baseline and hollow candles, complete unchanged canonical OHLC across
+four display zones, go-to instant preservation, daylight-saving gap rejection,
+actual daily UTC / intraday New York inspector labels, canvas retention,
+persistence and mobile horizontal overflow. External HTTP requests are blocked
+and fail the run. This is functional acceptance; `selectOption` is not a trusted
+human interaction or a latency measurement. Mobile no-overflow is not complete
+mobile usability acceptance: many controls still push the chart below the fold.
+
+Both workbench and style/time-zone scripts accept `CHART_QA_BASE_URL` as an
+evaluation global for the production fixture on port 4179. The workbench's
+separate touch context uses the same base URL. Record the production fixture
+build metadata and the exact source commit with each result.
+
 The fixture mounts the real `SmartChartLayout` and primary `ARXNativeChart`.
 The comparison chart uses the same synthetic data hooks. No order ticket or
 authenticated application shell is present, so these browser checks are not
@@ -47,6 +62,43 @@ from main commit 76cdbdc9 into a temporary sibling module and removed afterwards
 Do not ship an old adapter or expose this harness through production routes.
 
 ## Interaction latency
+
+### Mobile tools disclosure
+
+`mobile-disclosure-latency.js` is a separate bounded production-fixture check.
+Run it only after integrating the responsive `Chart tools` disclosure. It uses
+390×844, 5,000 synthetic EURUSD M15 bars, no studies/drawings, and two passes of
+40 open/close pairs after two warm-up pairs per pass, separately at 1× and 4× CPU.
+The default target is port 4179; an evaluation global `CHART_QA_BASE_URL` can
+override it. `CHART_QA_EXPECTED_COMMIT`, when supplied, must match build metadata.
+The fixture must be a clean, unchanged-during-build, minified production build.
+
+The fixture-only `witness.ts` observes actual adapter, chart, series, canvas and
+canonical-candle identities. It also counts data installation calls, catching
+in-place forming-bar changes. Completion requires actual disclosure geometry and
+association plus unchanged source, OHLC endpoints, timeframe, style, dimensions
+and logical range, followed by another animation frame with the same invariants.
+The expanded subtree uses `display:contents` and has no own box. The witness
+checks descendant controls and their union rectangle; closed means that none of
+those controls has a visible box. It does not mistake a zero-size parent for a
+closed panel. A data-revision change fails this preservation workload, including
+an unrelated source/watchdog refresh: retain and diagnose that trial rather than
+silently excusing it or attributing its cost to the toggle.
+It separately reports the second-rAF opportunity, which does not prove visible feedback. This is a rendering-opportunity proxy,
+not a hardware paint timestamp. Full canonical/rendered price arrays are captured
+outside timed actions before/after; all samples, warmups, long tasks and witness
+overhead remain in the result. No production application imports this observer.
+
+**Inspect the returned `verdict`.** The script returns `FAIL` and retained partial
+samples on exceptions, missing observations, source changes or completion p95
+above 100 ms. A successful Playwright command/exit is only transport success.
+Save the entire result, including failed trials. Pending arms and captured in-flight samples remain in the result if a timeout interrupts observation; the runner also retains its current sample identity if the page becomes unreadable. Coordinate a quiet machine and
+do not run builds/tests simultaneously with a measurement. Its 4× CPU column is
+throttling on the reported host, not a physical reference device or competitor.
+
+This check does not run the automatic reader: the existing fixture has no usable
+source evidence. It is not an integrated-app, market-feed or reader-inclusive
+latency claim. Do not apply its result to other controls or workloads.
 
 `interaction-latency.js` measures Smart Chart local controls by adapting the method
 of `scripts/scanner-qa/responsiveness.js` (document capture, second rAF): a trusted
