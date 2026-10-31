@@ -983,6 +983,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       if (ha) { this.haBars.length = changedIndex; this.haBars.push(ha); }
       if (changedIndex === 0) this.applyBaselineValue();
       this.analysis?.refreshLater(this.candles, changedIndex);
+      // A same-time revision does not move the time scale. Notify the embedded
+      // reader of the applied OHLC anyway, so it can withdraw mismatched reads.
+      // The existing frame queue collapses tick bursts; closed-source evidence
+      // still belongs to the reader, never to this streamed display update.
+      this.queueViewportUpdate();
       this.queueLegendUpdate();
       if (this.lastPriceLine && this.feedState.livePriceAffordance) this.lastPriceLine.applyOptions({ price: candle.close });
     } catch { /* ignore a bad streaming update */ }
