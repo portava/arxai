@@ -54,3 +54,15 @@ Chromium was usable; remote and workspace fixture preflights also differed.
 **How to apply:** Preserve no-install boundaries, verify the executable actually
 launched, label the execution realm and CPU observability limits, and never
 attribute timing differences between unlike runtimes to application improvement.
+
+Match a fixture's storage-reset policy to the scenario before testing saved
+preferences or drawings across reload. An intentional fixture reset is not a
+product persistence failure.
+
+**Why:** Initial chart acceptance runs used fresh-navigation reset semantics;
+reload therefore discarded the synthetic studies/annotations being tested.
+
+**How to apply:** Use the fixture's existing preservation opt-in in an isolated
+profile for persistence acceptance, retain reset semantics for fresh-navigation
+measurements, and archive the original failures. Do not change application
+storage behavior or silently replace failed receipts to repair a fixture setup.
