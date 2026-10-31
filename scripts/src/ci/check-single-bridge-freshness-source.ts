@@ -14,7 +14,9 @@
 // 60 s, 90 s, 120 s, 5 min, in both ms and seconds), so two surfaces could
 // disagree without anyone noticing. They are now named once, by concept, in
 // artifacts/api-server/src/lib/brokerHub/freshness.ts, and every other file
-// imports the named threshold.
+// imports the named threshold. Display-only account bands are shared with the
+// browser in accountSnapshotPolicy.ts and re-exported by the server; this guard
+// permits exactly the three unchanged constants there and rejects extra code.
 //
 // This guard fails, outside that module, on:
 //
@@ -56,6 +58,7 @@ import { ROOT, walk, rel, reportResult, type CheckResult } from "./_lib.js";
 const API_SRC = join(ROOT, "artifacts/api-server/src");
 export const AUTHORITY = "lib/brokerHub/freshness.ts";
 /** The shared pure heartbeat policy (repo-relative key; domain and dashboard files use repo-relative keys). */
+export const DISPLAY_POLICY = "lib/domain/src/broker-health/accountSnapshotPolicy.ts";
 export const POLICY = "lib/domain/src/broker-health/heartbeatPolicy.ts";
 /** Extra trees scanned since round 5, keyed by repo-relative path. */
 export const EXTRA_ROOTS = ["lib/domain/src", "artifacts/trading-dashboard/src"] as const;
@@ -212,6 +215,24 @@ export function scanSource(key: string, source: string): Hit[] {
   const file = ts.createSourceFile(key, source, ts.ScriptTarget.Latest, true, key.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const out: Hit[] = [];
   const at = (node: ts.Node) => file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
+  // The shared display-only authority is deliberately limited to these three
+  // unchanged constants. No extra thresholds, imports, functions or side effects.
+  if (key === DISPLAY_POLICY) {
+    const expected = new Map([['ACCOUNT_SNAPSHOT_LIVE_MS', 5000], ['ACCOUNT_SNAPSHOT_FRESH_MS', 30000], ['ACCOUNT_SNAPSHOT_DELAYED_MS', 120000]]);
+    for (const statement of file.statements) {
+      const declarations = ts.isVariableStatement(statement) && statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)
+        && (statement.declarationList.flags & ts.NodeFlags.Const) ? statement.declarationList.declarations : [];
+      let valid = declarations.length === 1;
+      const declaration = declarations[0];
+      if (declaration && ts.isIdentifier(declaration.name) && declaration.initializer
+        && ts.isNumericLiteral(declaration.initializer) && expected.has(declaration.name.text)
+        && Number(declaration.initializer.text) === expected.get(declaration.name.text)) expected.delete(declaration.name.text);
+      else valid = false;
+      if (!valid) out.push({ line: at(statement), rule: 'threshold_const', msg: 'Display policy may contain only its three unchanged exported account snapshot constants' });
+    }
+    for (const name of expected.keys()) out.push({ line: 1, rule: 'threshold_const', msg: `Display policy lost ${name}` });
+    return out;
+  }
   // A local computed from a heartbeat/snapshot age (const age = now - r.lastHeartbeat...)
   // is a heartbeat age too, whatever it is called.
   const tainted = new Set<ts.Node>();
@@ -337,13 +358,25 @@ export function checkSingleBridgeFreshnessSource(): CheckResult {
     const p = join(API_SRC, key);
     return existsSync(p) ? readFileSync(p, "utf8") : null;
   };
+  const display = readRepo(DISPLAY_POLICY);
+  if (!display) violations.push(`${DISPLAY_POLICY} is missing`);
+  const server = read(AUTHORITY) ?? '';
+  const serverAst = ts.createSourceFile(AUTHORITY, server, ts.ScriptTarget.Latest, true);
+  const displayNames = ['ACCOUNT_SNAPSHOT_LIVE_MS', 'ACCOUNT_SNAPSHOT_FRESH_MS', 'ACCOUNT_SNAPSHOT_DELAYED_MS'];
+  const exportsDisplay = serverAst.statements.some(statement => ts.isExportDeclaration(statement)
+    && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === '@workspace/domain/broker-health'
+    && statement.exportClause && ts.isNamedExports(statement.exportClause)
+    && displayNames.every(name => (statement.exportClause as ts.NamedExports).elements.some(element => element.name.text === name && !element.propertyName)));
+  if (!exportsDisplay || /(?:const|let|var) ACCOUNT_SNAPSHOT_(LIVE|FRESH|DELAYED)_MS\b/.test(server)) {
+    violations.push(`${AUTHORITY} must re-export the three display bands from ${DISPLAY_POLICY}, never redeclare them`);
+  }
   for (const s of staleEntries(read)) violations.push(`stale allowlist: ${s}`);
   for (const s of checkAuthorityShape(read, readRepo)) violations.push(s);
   return {
     name: "single-bridge-freshness-source",
     ok: violations.length === 0,
     violations,
-    notes: [`${scanned} files scanned (api-server, lib/domain, trading-dashboard); heartbeat bounds only in ${POLICY}, snapshot thresholds only in ${AUTHORITY}; ${Object.keys(ALLOW).length} reviewed exceptions`],
+    notes: [`${scanned} files scanned (api-server, lib/domain, trading-dashboard); heartbeat bounds only in ${POLICY}, display bands only in ${DISPLAY_POLICY}, other snapshot thresholds only in ${AUTHORITY}; ${Object.keys(ALLOW).length} reviewed exceptions`],
   };
 }
 
