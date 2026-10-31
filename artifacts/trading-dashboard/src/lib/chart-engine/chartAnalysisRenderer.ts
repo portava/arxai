@@ -1,4 +1,4 @@
-import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions } from "lightweight-charts";
+import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "lightweight-charts";
 import type { ChartEngineCandle } from "./types";
 import { StudyCalculator, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
 import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
@@ -36,8 +36,9 @@ export class ChartAnalysisRenderer {
   setPriceOnlyScale(enabled: boolean): boolean {
     if (this.priceOnlyScale === enabled) return false;
     this.priceOnlyScale = enabled;
+    const autoscaleInfoProvider: AutoscaleInfoProvider = enabled ? () => null : original => original();
     for (const study of this.studies) if (!studyDefinition(study.calculator.config.kind).pane) {
-      for (const line of study.lines) line.applyOptions({autoscaleInfoProvider: enabled ? () => null : original => original()});
+      for (const line of study.lines) line.applyOptions({autoscaleInfoProvider});
     }
     return true;
   }
