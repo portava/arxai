@@ -1,0 +1,36 @@
+{
+  "head": "9ebb687ae9e0b68c4ad250d5ad72843ad5bb8940",
+  "build": "552924174f969fd3",
+  "passed": false,
+  "failure": null,
+  "summary": [
+    {
+      "viewport": "desktop",
+      "planned": 5,
+      "recorded": 5,
+      "valid": 5,
+      "meets100ms": 0,
+      "successfulTimingDistributionOnly": true,
+      "medianMs": 115.40000009536743,
+      "maxMs": 115.59999990463257,
+      "failedIndices": []
+    },
+    {
+      "viewport": "mobile",
+      "planned": 5,
+      "recorded": 5,
+      "valid": 5,
+      "meets100ms": 0,
+      "successfulTimingDistributionOnly": true,
+      "medianMs": 115.69999980926514,
+      "maxMs": 116.30000019073486,
+      "failedIndices": []
+    }
+  ],
+  "limits": [
+    "Offline historical synthetic bars and fixed 80ms candle response delay; no provider, published app or broker measurement.",
+    "Two rendering opportunities are not hardware paint. Full OHLC witness cost is included, never subtracted.",
+    "Desktop/mobile viewports are browser emulation, not physical devices. Active AI analysis remains unavailable.",
+    "Navigation controls are already exposed on both sizes; no drawer opening or forced DOM click is substituted."
+  ]
+}
