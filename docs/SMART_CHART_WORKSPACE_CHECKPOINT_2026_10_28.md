@@ -56,7 +56,16 @@ Receipts, failed attempts, screenshots, review records and checksums:
 The local uncompressed copies remain at
 `/Users/areyouok/arx-tier1-release/chart-workspace-tools-20261028/`.
 
-## Resume without restarting
+## Follow-up recorded 31 October
+
+The pending full pipeline and three browser scopes are now complete on this
+checkpoint:2,407 frontend tests/9 skips, typecheck/build,87 guards,7 bindings;
+30 template,46 note and43 standard Scanner browser assertions pass. Images
+and exported PNG were inspected. See [source-bound acceptance](SMART_CHART_WORKSPACE_ACCEPTANCE_2026_10_31.md).
+The historical pending steps below describe the original28 October checkpoint;
+continue from the remaining-work list in that acceptance report.
+
+## Original resume steps (completed scopes recorded above)
 
 1. Start from this draft branch's latest GitHub head. Check concurrent worktrees
    and preserve separate calendar WIP and held performance branches.

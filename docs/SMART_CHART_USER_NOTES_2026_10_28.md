@@ -72,9 +72,8 @@ card, continuation footer and short-pane badge above close that finding.
   configurable background/border are not implemented.
 - Notes remain manual local annotations. They do not identify chart patterns,
   establish market truth, generate advice or enter any trading path.
-- This branch has unit/component and source validation. Actual Scanner desktop,
-  mobile/touch, PNG and integrated latency acceptance must be recorded on the
-  eventual combined source; they are not inferred from component tests.
+- Actual Scanner desktop/mobile mouse behavior and PNG export passed46 browser
+  assertions plus image inspection on1e879563; see [acceptance](SMART_CHART_WORKSPACE_ACCEPTANCE_2026_10_31.md). Touch, full document-reload persistence and integrated latency remain unverified.
 - Existing W1/MN1 calendar gaps, active reader acceptance, sustained stream/history
   loads and equal-condition competitor measurements remain open.
 
