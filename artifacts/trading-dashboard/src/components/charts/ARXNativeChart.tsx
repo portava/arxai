@@ -1,12 +1,13 @@
 import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
 import { chartVolumeEvidence, observedTickVolume } from "@/lib/chart-engine/chartVolume";
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
+import { registerChartResearchAssistant } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLibraryCredit } from "./ChartLibraryCredit";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds } from "@/lib/chart-engine/chartIntervals";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "../scanner/useDerivedOverlayContext";
@@ -69,6 +70,8 @@ import {
   type ChartStructureLine,
   type ChartStructureMarker,
 } from "@/lib/chart-engine";
+
+const ChartResearchWorkbench = lazy(() => import("@/components/testing-lab/ChartResearchWorkbench"));
 
 // ARXNativeChart — Level 2 native chart shell.
 //
@@ -413,9 +416,11 @@ export function ARXNativeChart({
   const supportedTimeframe = isChartInterval(timeframe);
   // Per-view display zone; daily bars keep UTC labels. Display only.
   const displayZone = effectiveDisplayZone(preferences.timeZone, timeframe);
-  const overlays = useMemo(() => suppliedOverlays.filter(overlay =>
-    overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
-  [suppliedOverlays, resolvedSymbol, timeframe]);
+  const [researchOpen,setResearchOpen] = useState(false);
+  const [researchRequest,setResearchRequest] = useState<{id:number;text:string;context:string}|null>(null);
+  const researchSequence = useRef(0);
+  const researchExplanation = useRef<{context:string;text:string}|null>(null);
+  const [researchLayer,setResearchLayer] = useState<{context:string;rows:ChartOverlay[]}|null>(null);
 
   // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
   // as "mirrored" with the rest of the UI. When off, an inspection-mode
@@ -556,6 +561,22 @@ export function ARXNativeChart({
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
   const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
+  const overlays = useMemo(() => [...suppliedOverlays,...(researchOpen&&researchLayer?.context===chartContext?researchLayer.rows:[])].filter(overlay =>
+    overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
+  [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
+  const acceptResearchOverlays = useCallback((rows:ChartOverlay[])=>setResearchLayer(rows.length?{context:chartContext,rows}:null),[chartContext]);
+  const acceptResearchExplanation = useCallback((text:string|null)=>{if(text)researchExplanation.current={context:chartContext,text};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
+  const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
+  useLayoutEffect(()=>{
+    if(workspaceId!=="primary")return;
+    return registerChartResearchAssistant(text=>{
+      if(!hasCandles)return "The primary chart has no source candles ready. No historical test was prepared or run.";
+      setResearchOpen(true);
+      if(/^\s*explain\s+(?:the\s+)?(?:last\s+)?(?:test|historical)\s+trade[.!?]?\s*$/i.test(text))return researchExplanation.current?.context===chartContext?researchExplanation.current.text:"Select a completed simulated trade in Test an idea to inspect its exact signal, entry, exit, stop, target and costs. No historical trade has been inferred from a chart pattern.";
+      setResearchRequest({id:++researchSequence.current,text,context:chartContext});
+      return "Opened Test an idea on the current chart. Your request will be checked against the supported rules and available closed history. Review the editable rules and assumptions there before running; no calculation or order has been sent.";
+    });
+  },[workspaceId,hasCandles,chartContext]);
   // A context change already renders the new source. Rebind consumers in that
   // commit; only a newly created engine needs an additional ref-to-prop render.
   const chartEpoch = `${engineGeneration}:${chartContext}`;
@@ -1337,6 +1358,7 @@ export function ARXNativeChart({
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
           {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
+          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>
         {!mobileLayout && fullscreenToggle}
@@ -1672,6 +1694,7 @@ export function ARXNativeChart({
         )}
       </CardContent>
       {mobileLayout && chartControls}
+      {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
         <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>

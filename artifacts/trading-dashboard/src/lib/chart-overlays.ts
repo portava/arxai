@@ -36,6 +36,7 @@ export type ChartOverlaySource =
   | "signal"
   | "ruby"
   | "agent"
+  | "research"
   | "preview";
 
 export type ChartOverlayLineStyle = "solid" | "dashed";
