@@ -149,3 +149,8 @@ Application `35fd2aa2` connects existing MACD periods/signal method and Bollinge
 ## Chart / Truth audit and compact study labels
 
 Independent agent review plus a limited ChatGPT numeric/text second opinion confirmed missing-calendar false assurance and unavailable-analysis grades. Application47cbb89a corrects the existing shared evidence path and preserves recent-event risk. Actual Scanner19checks, frontend3403pass/11skip and backend18pass; guard8bbf5e3d enforces shared authority and catches14 mutations. Root-cwd84/87 exposes3unchanged wording-guard failures and a cwd coverage gap; release remains notgreen. Compact-title source def40251 passed40desktop/41phone checks and independent review. This closes specific label inaccuracies, not live-provider acceptance, broad mobile quality, double-top correctness or competitor parity. See [source, retained failures and limitations](SMART_CHART_TRUTH_CROSSCHECK_2026_11_01.md).
+
+
+## Reader feed evidence and trustworthy guard coverage
+
+Application b11a6632 separates stale/delayed/unavailable/unconfirmed feeds and request failure while retaining source-bound history and frozen replay isolation. Six new checks failed before;182focused/2optional skips,3409frontend/11skips,typecheck/build and17actualScanner browser assertions pass. Independent source review found no blocker. Integration ed5ec5f4 includes reliable wording scans with28negative/coverage assertions; full guards85/87 retain semantic/audience findings. No release-green, live acceptance or parity claim. See [evidence and remaining gaps](SMART_CHART_READER_FEED_EVIDENCE_2026_11_01.md).

@@ -1,0 +1,133 @@
+{
+  "applicationCommit": "b11a66326dffc9a62ab33bbb6f97d2cf3029df1d",
+  "baseCommit": "78f7721f102cf382795417528fd6094b734e9abb",
+  "buildId": "17dc68841d83ada5",
+  "before": {
+    "pass": 35,
+    "fail": 6,
+    "scope": "Component feed labels and cache failure evidence"
+  },
+  "focused": {
+    "pass": 182,
+    "skip": 2,
+    "fail": 0,
+    "note": "Optional performance cases skipped; not a latency qualification"
+  },
+  "frontend": {
+    "pass": 3409,
+    "skip": 11,
+    "fail": 0,
+    "filesPassed": 211,
+    "filesSkipped": 1
+  },
+  "typecheck": "dashboard pass",
+  "build": "ordinary immutable dashboard pass",
+  "browser": {
+    "pass": 17,
+    "fail": 0,
+    "source": "Actual Scanner with intercepted synthetic historical candles",
+    "checks": "Stale, unconfirmed, delayed and unavailable evidence; canonical candles preserved, historical analysis remains, phone overflow and no external requests",
+    "limitations": "Read failure/recovery and replay isolation covered by component/cache tests, not this browser journey"
+  },
+  "independentReview": "profile_truth_review: no actionable blocker, read-only source review; root separately reviewed guard code",
+  "retainedInitialFailure": "after-initial-old-expectations.log:2 obsolete assertions expected read failure to assert stale and frozen replay to recompute for unrelated live read failure; replaced with explicit evidence/replay isolation checks",
+  "priorGuardStatus": "Root-cwd84/87 at8bbf5e3d. Guard coverage correction separate/concurrent. Not release-green.",
+  "limits": [
+    "No live API/provider/real-calendar/broker test, deployment or runtime activation",
+    "No new navigation/CPU latency or TradingView/MT5 parity measurement",
+    "Synthetic original-clock fixture cannot qualify a real feed",
+    "Double-top detection was not independently qualified by prior ChatGPT text review"
+  ],
+  "logHashes": {
+    "reader-phone.png": "e721dce675d20e1d257f6d3c21447b72729f984c29f59b2ca69e776c73914108",
+    "frontend.log": "23f64fad94e0e0a58601b5665ad09741201764f00c28191aa817c7c265a99525",
+    "typecheck.log": "7381f6fe872efab37d9e07d437cfa0f8d8773f2dcc6cfc35d6f4c7928739b496",
+    "before.log": "fb7b14378f5f63bd7202933a731e4cf7ba61967eb0dab43da276428312b8739b",
+    "after-initial-old-expectations.log": "d951eea73918b5db8a314efebd908683791d1f9471be6334e1dcec193495d900",
+    "browser.json": "9e56d26beef9974f8f8303ea7c2b9d14850359213a92960e2064f29e39234edd",
+    "after.log": "e47dc3ee0fc8048590eb6178498e381f8bb7239547db47e41beb174bbe7dd259",
+    "build.log": "01d407817a70f8da1074a9a2a5de3c2efdea999cd41e18ed2e97c1f95f367af4"
+  },
+  "integrationCommit": "ed5ec5f4f6dc5aa3a3113dde0797492663539d66",
+  "appTreesIdenticalToApplicationCommit": true,
+  "guardRepair": {
+    "base": "78f7721f102cf382795417528fd6094b734e9abb",
+    "commit": "9b9091e4ce7a6306aeec42b29b0ef134b5f22555",
+    "branch": "codex/wording-guard-coverage-20261101",
+    "worktree": "/Users/areyouok/arx-wording-guard-coverage-20261101",
+    "scope": [
+      "Three wording guards use explicit repository-rooted source enumeration; missing tool/path/no product source/read/parse failures fail visibly.",
+      "TypeScript AST distinguishes comments, tests, types, property names, import syntax, logging and known nondisplay metadata from potential runtime copy. Custom copy props and accessible text remain checked.",
+      "Concrete JSX raw JSON/API display checks include potentially displayed attribute expressions. Approved existing path exceptions and forbidden patterns retained. No product source edits."
+    ],
+    "validation": {
+      "focusedAssertions": 28,
+      "focusedTypecheck": "PASS; only changed guard/helper/test modules with explicit Node type roots, not a whole-app check",
+      "before": "baseline-cwd.json proves mismatched root/package results on78f7721f. attribute-regression-before.log fails on the reviewer-identified broad JSX-attribute exclusion; final fixtures pass.",
+      "rootPackageParity": "Exact identical final results: risky-wording38 findings, internal-name3 findings, investor-return0 findings",
+      "fullRootGuards": "85/87, exit1, NOT GREEN",
+      "existingAssistantSuite": "33/34; the remaining assertion requires a clean actual repository and fails on the3 retained JSON display findings. Semantic fixture assertions pass.",
+      "gitStatus": "clean"
+    },
+    "remainingFindings": {
+      "riskyWordMatches": {
+        "count": 38,
+        "status": "Unresolved lexical/context/audience findings, not38 confirmed product defects",
+        "groups": {
+          "adminCapitalAndFundControls": 20,
+          "chartEvidenceOrPreviewWithdrawalLanguage": 9,
+          "educationalMarginAndWrongQuizOption": 4,
+          "negatedDisclaimersAndBrandInstruction": 3,
+          "analyticsDepositWithdrawalFilterLabels": 2
+        },
+        "policy": "No broad exceptions or product copy changes made. Existing exact investor/admin-page exceptions do not automatically cover extracted admin components."
+      },
+      "jsonDisplays": {
+        "count": 3,
+        "details": [
+          "FloatingHelpWidget.tsx:1050 renders sanitized report context when Review is clicked. Actual raw JSON display; no credentials/exposure claim established.",
+          "assistant-knowledge-console.tsx:202 and208 render runtime diagnostics under !error. Comment says tester/admin/owner; root route does not wrap this specific route in an explicit role gate. Runtime audience/access behavior not exercised; needs separate review."
+        ]
+      }
+    },
+    "limits": [
+      "Static literal/JSX inspection does not prove arbitrary interprocedural dataflow or phrases assembled across interpolation/concatenation. Runtime authorization is not inferred from AST patterns.",
+      "No browser, app, provider, database, broker or model requests. Full guard runner uses inert localhost port1 DATABASE_URL solely for existing import initialization.",
+      "No global guards-green or launch-ready claim. Root independent review identified and corrected test-only coverage and JSX-attribute holes.",
+      "App reader b11a6632 independently reviewed read-only; no blocker found; its tests/browser evidence belong to root, not this agent."
+    ],
+    "commands": {
+      "focused": "ESBUILD_BINARY_PATH=/private/tmp/claude-501/-Users-areyouok/ce01a419-14af-45ac-8fb0-c306921f99ff/scratchpad/wt-tg-b3/node_modules/.pnpm/@esbuild+darwin-arm64@0.27.3/node_modules/@esbuild/darwin-arm64/bin/esbuild node --import ./scripts/node_modules/tsx/dist/loader.mjs scripts/src/ci/wording-source.test.ts",
+      "typecheck": "node node_modules/typescript/bin/tsc --noEmit --target es2022 --module esnext --moduleResolution bundler --esModuleInterop --skipLibCheck --types node --typeRoots ./scripts/node_modules/@types scripts/src/ci/wording-source.ts scripts/src/ci/wording-source.test.ts scripts/src/ci/check-risky-wording-frontend.ts scripts/src/ci/check-no-internal-names-user-ui.ts scripts/src/ci/check-investor-no-guaranteed-return.ts",
+      "rootGuards": "DATABASE_URL=postgresql://offline:offline@127.0.0.1:1/offline ESBUILD_BINARY_PATH=/private/tmp/claude-501/-Users-areyouok/ce01a419-14af-45ac-8fb0-c306921f99ff/scratchpad/wt-tg-b3/node_modules/.pnpm/@esbuild+darwin-arm64@0.27.3/node_modules/@esbuild/darwin-arm64/bin/esbuild node --import ./scripts/node_modules/tsx/dist/loader.mjs scripts/src/ci/run-all.ts",
+      "cwd": "/Users/areyouok/arx-wording-guard-coverage-20261101"
+    },
+    "logs": {
+      "after-first.json": "5fcbc7fb9b2f50a83a746a96833b42ed027d8ab408c9555801a24504e6f9d5e3",
+      "focused-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "full-root-guards.log": "a94ab63130e025171846e5b07747055ce1908f325ee07e094861e9b8ed47bd18",
+      "final-cwd.json": "38c8dce53ed8b8c4b09660890d0ad9e566e2d3f5f78feef4c291b39120c7dfb6",
+      "baseline-cwd.json": "ce587895ddc0753c37dacf714883cceabe0a181ff39c6a4395fe53a57d0f8afd",
+      "attribute-regression-before.log": "1104055fe57745a82667b77b0a8c08a3aa4a8bc3b2e8478a23a0497c823091e9",
+      "focused.log": "ea52afd33b844ff83ab98ce59ddb49f2e2adfa51aa733b6ed9b95d7b40e7875f",
+      "existing-assistant-tests.log": "2e6f1aa5738f2c2073787364b63756c17c348e1980ea3e5ed81853cada316940"
+    }
+  },
+  "rootCombinedChecks": {
+    "guardsPassed": 85,
+    "guardsFailed": 2,
+    "wordingAssertions": 28,
+    "calendarNegativeMutations": 14,
+    "bindingAssertions": 7,
+    "releaseGreen": false,
+    "cwdOutcomesIdentical": true,
+    "rawLogs": {
+      "combined-guards.log": "5dc5b6f2046a1ec4e64823d4992999e90b46aeb27eb8ecbc6581a68619eebf63",
+      "combined-guards-scripts-cwd.log": "c6d075d88e4a0a56fb6a2bdd0e3d7505e6d44d26ed0d78971ff1c80ff2836ffd",
+      "combined-wording-tests.log": "ea52afd33b844ff83ab98ce59ddb49f2e2adfa51aa733b6ed9b95d7b40e7875f",
+      "combined-calendar-mutations.log": "0698cb0fcd8d78fe93d39af6d6e38cf31cf7ad3e7747171f16df92f177586870",
+      "combined-bindings.log": "65e631cd46a507b53842547998e9817e4b8ee5344a04d83c2ccaa5b46b67ec05"
+    }
+  },
+  "replit": "Previous78f7721f import confirmedbusy; no duplicate import requested. This newer source not imported or activated."
+}

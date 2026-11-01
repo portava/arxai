@@ -1,0 +1,61 @@
+{
+  "baseCommit": "78f7721f102cf382795417528fd6094b734e9abb",
+  "applicationCommit": "ed5ec5f4f6dc5aa3a3113dde0797492663539d66",
+  "validatedDashboardApplication": "b11a66326dffc9a62ab33bbb6f97d2cf3029df1d",
+  "branch": "codex/chart-reader-feed-evidence-20261101",
+  "purpose": "Source-only incremental sync after prior78f7721f finishes: truthful reader feed states and deterministic wording scan coverage. Preserve all current runtime and build outputs.",
+  "files": [
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartReader.test.tsx",
+      "sha256": "3c60f01ff5ed4ae27b3c952f0cc40950c99d5a036949ae68443fe17dedfeb004"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartReader.tsx",
+      "sha256": "5df69d460f44e8d2d54c1a39ced42c5790f8b21a5db6143faf881b79c00af9a4"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/smartChartAnalysis.ts",
+      "sha256": "c58b2c16e7162abb4c71787a8f881d8bf41d74e6f79b7df92f6912942255fe33"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/smartChartReadCache.test.ts",
+      "sha256": "322b9192b93a13d4018664a440388964cd19b916360382b1c4613eca1f6fd79d"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/smartChartReadCache.ts",
+      "sha256": "0806121eccdd8f9ae0f587032ac73767a41a8ae99b310862a1497d1e3a90ed86"
+    },
+    {
+      "path": "scripts/package.json",
+      "sha256": "e6d71da93b1797ed3304727e8a4a2ad8505b011012e6f4903f56355af777714c"
+    },
+    {
+      "path": "scripts/src/ci/check-investor-no-guaranteed-return.ts",
+      "sha256": "af87316334bff86a0d80a8e79b6ea2672e15be2326b3454456c773515974cb67"
+    },
+    {
+      "path": "scripts/src/ci/check-no-internal-names-user-ui.test.ts",
+      "sha256": "73c076c43f258a71f4559226d072bbe81c72a4f1dfeb37363d9157bc346e018a"
+    },
+    {
+      "path": "scripts/src/ci/check-no-internal-names-user-ui.ts",
+      "sha256": "7966fcabfbbf8580b47f0cd8dce79c6abfc61cdb77d1b4567550cf1298f440f4"
+    },
+    {
+      "path": "scripts/src/ci/check-risky-wording-frontend.ts",
+      "sha256": "8d2db468a2aad61a946913e3b8955becc7f457c25d32b17e84803a0aef557920"
+    },
+    {
+      "path": "scripts/src/ci/wording-source.test.ts",
+      "sha256": "302c27f974dffa11710eaf86a980ebb09bb08de35da724b769591b489a091a48"
+    },
+    {
+      "path": "scripts/src/ci/wording-source.ts",
+      "sha256": "e1efb2ae86031e802cfd1cef844da32ffbf8936632aea05d4c1072222ccac409"
+    }
+  ],
+  "report": "docs/SMART_CHART_READER_FEED_EVIDENCE_2026_11_01.md",
+  "receipt": "docs/development-sync/CHART_READER_FEED_EVIDENCE_VALIDATION_2026_11_01.json",
+  "releaseStatus": "NOT GREEN:85/87guard outcomes; unresolved semantic/audience review. No parity or latency claim.",
+  "boundaries": "No main merge, API/frontend restart/activation/build-output replacement, deployment, existing DB modifications, workers/emails, model/provider/broker calls or trading."
+}
