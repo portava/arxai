@@ -301,4 +301,10 @@ describe("mobile chart conversation layout",()=>{
   try{const view=renderChartPanel();const reveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=reveal;fireEvent.click(screen.getByTestId("arx-assistant-trigger"));view.rerender(<view.App showChart={false}/>);act(()=>vi.advanceTimersByTime(30));expect(reveal).not.toHaveBeenCalled();view.rerender(<view.App showChart={true}/>);const nextReveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=nextReveal;act(()=>vi.advanceTimersByTime(30));expect(nextReveal).not.toHaveBeenCalled();}finally{vi.useRealTimers();}
  });
 
+ it("uses the current narrow viewport when opening after a closed desktop-to-phone resize",()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",1024);vi.stubGlobal("innerHeight",844);
+  const rect=vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(){return this.getAttribute("data-testid")==="arx-native-canvas"?{top:484,bottom:844,left:0,right:390,width:390,height:360} as DOMRect:{top:426,bottom:764,left:8,right:382,width:374,height:338} as DOMRect;});
+  try{renderChartPanel();fireEvent.click(screen.getByRole("button",{name:"Close",exact:true}));vi.stubGlobal("innerWidth",390);fireEvent(window,new Event("resize"));const reveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=reveal;fireEvent.click(screen.getByTestId("arx-assistant-trigger"));act(()=>vi.advanceTimersByTime(30));expect(screen.getByTestId("arx-assistant-panel").getAttribute("data-chart-layout")).toBe("compact");expect(reveal).toHaveBeenCalledOnce();}finally{rect.mockRestore();vi.useRealTimers();}
+ });
+
 });
