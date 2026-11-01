@@ -1,3 +1,5 @@
+import { registerChartFibonacciAssistant } from "@/lib/chart-engine/chartFibonacciAssistant";
+import { explainFibonacciProposal, explainSelectedFibonacci } from "@/lib/chart-engine/chartFibonacciExplanation";
 import { fibonacciProposalDrawing, type ChartFibonacciRead, type ChartFibonacciProposal } from "@/lib/chart-engine/chartAutoFibonacci";
 import { useEffect, useLayoutEffect, useMemo, useId, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
@@ -37,8 +39,10 @@ interface Props {
   chartTarget?: RefObject<HTMLDivElement | null>;
   /** Pull current source-qualified proposal; never an imperative drawing write. */
   getFibonacciProposal?: () => ChartFibonacciRead;
+  /** Only the current primary Native chart owns assistant drawing commands. */
+  assistantPrimary?: boolean;
 }
-export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal}: Props) {
+export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,assistantPrimary=false}: Props) {
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;
@@ -251,11 +255,12 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     if (chartTarget?.current) {navigateFocus.current=true;setPanel(null);}
     setMessage(`Centered on the first loaded candle at or after drawing ${index+1}'s start. Its price may still be outside the visible scale.${hidden || drawing.hidden ? " Drawing remains hidden; use Show to reveal it." : ""}`);
   };
-  const requestFibonacci=()=>{
-    const next=getFibonacciProposal?.();setTool(null);setAnchor(null);setChannelEnd(null);
-    if(next?.status!=="ready"){setFibonacciPreview(null);setMessage(next?.reason??"Automatic Fibonacci is unavailable for this source.");return;}
-    if(drawings.length>=MAX_DRAWINGS){setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object before previewing.`);return;}
+  const requestFibonacci=():ChartFibonacciRead=>{
+    const next=getFibonacciProposal?.()??{status:"unavailable" as const,proposal:null,reason:"Automatic Fibonacci is unavailable for this source."};setTool(null);setAnchor(null);setChannelEnd(null);
+    if(next.status!=="ready"){setFibonacciPreview(null);setMessage(next.reason);return next;}
+    if(drawings.length>=MAX_DRAWINGS){const reason=`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object before previewing.`;setMessage(reason);return {status:"unavailable",proposal:null,reason};}
     setHidden(false);setFibonacciPreview(next.proposal);setMessage("Preview only. Its anchors stay fixed; changes to the source or window withdraw it. Keep and edit to create your own drawing.");
+    return next;
   };
   const keepFibonacci=()=>{
     const current=getFibonacciProposal?.();
@@ -265,6 +270,34 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     change([...drawings,fibonacciProposalDrawing(fibonacciPreview,id,false)]);setFibonacciPreview(null);setSelectedId(id);setPanel("objects");setObjectSearch("");setHidden(false);
     setMessage("Fibonacci kept as your editable drawing. Original proposal provenance is retained; automatic updates never move it. Undo removes this addition.");
   };
+  useLayoutEffect(()=>{
+    if(!assistantPrimary||ephemeralDrawings)return;
+    return registerChartFibonacciAssistant(request=>{
+      if(!hasCandles||!adapter?.setDrawings||!getFibonacciProposal)return "Fibonacci not changed: the primary chart renderer and source candles are not ready. No drawing was saved or order sent.";
+      const prepare=()=>{const next=requestFibonacci();return next.status==="ready"?explainFibonacciProposal(next.proposal,"prepared"):`No new Fibonacci added: ${next.reason} No drawing was saved or order sent.`;};
+      if(request.action==="preview")return prepare();
+      const fresh=getFibonacciProposal();
+      if(fresh.status!=="ready"){
+        if(fibonacciPreview)withdrawPreview(fresh.reason);
+        return `No new Fibonacci added: ${fresh.reason} ${fibonacciPreview?"The previous preview was withdrawn. ":""}No current source-backed explanation can be established; your kept drawings remain yours. No drawing was saved or order sent.`;
+      }
+      if(fibonacciPreview&&fresh.proposal.comparisonKey!==fibonacciPreview.comparisonKey){
+        withdrawPreview("The source or chart window changed since this preview.");
+        return "The previous Fibonacci preview is withdrawn because its source or window changed. Request a new preview; old anchors are not presented as a current reading. Your kept drawings were not changed.";
+      }
+      if(request.action!=="selected"&&fibonacciPreview){
+        const installed=installedDrawings.current;
+        const state=hidden?"hidden":installed?.adapter===adapter&&installed.epoch===epoch&&installed.rows.some(d=>d.id===previewId)?"shown":"prepared";
+        return explainFibonacciProposal(fibonacciPreview,state);
+      }
+      const selected=drawings.find(d=>d.id===selectedId&&d.kind==="fibonacci");
+      if(request.action==="selected"||request.action==="explain"&&selected){
+        return selected?explainSelectedFibonacci({...selected,hidden:hidden||selected.hidden},symbol,timeframe):"Select one of your kept Fibonacci drawings in Objects first. No preview was created, saved or traded.";
+      }
+      if(request.action==="explain_preview")return "There is no current Fibonacci preview. Ask to preview automatic Fibonacci first; your kept drawings were not changed.";
+      return prepare();
+    });
+  },[assistantPrimary,ephemeralDrawings,hasCandles,adapter,epoch,getFibonacciProposal,fibonacciPreview,hidden,drawings,selectedId,previewId,symbol,timeframe]);
   const exportImage = () => {
     try {
       if(fibonacciPreview){const read=getFibonacciProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==fibonacciPreview.comparisonKey){withdrawPreview(read?.reason??"Source or window changed before export.");return;}}
