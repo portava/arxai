@@ -1,3 +1,4 @@
+import { resolveCandlePriceBasisEvidence, type CandlePriceBasisEvidence } from "../candlePriceBasisEvidence.js";
 import { resolveCandleVolumeEvidence, type CandleVolumeEvidence } from "../candleVolumeEvidence.js";
 // ARX Native Chart — Level 1: candle normalization + sequence validation.
 // Phase 1 extension: VerifiedCandle shape, quality flags, outlier detection.
@@ -19,7 +20,7 @@ import { resolveCandleVolumeEvidence, type CandleVolumeEvidence } from "../candl
 //   "unknown" — provider not recognized; treat conservatively
 //
 // ── PriceBasis ──────────────────────────────────────────────────────────────
-//   "BID"       — MT5 broker OHLC bars are built from bid-side prices
+//   "BID"       — original producer declares bid-side observations
 //   "MID"       — composite midpoint (TwelveData forex/metals)
 //   "LAST"      — last-trade price (indices, stocks, crypto)
 //   "SYNTHETIC" — Deriv volatility algorithm (no real underlying)
@@ -101,6 +102,7 @@ export interface NormalizedChartCandle {
   source: string;          // provider id (e.g. "deriv", "assistant_real:twelve_data")
   sourceMode: SourceMode;  // live / mock / demo / dev / unknown
   priceBasis: PriceBasis;  // BID / MID / LAST / SYNTHETIC / UNKNOWN
+  priceBasisEvidence?: CandlePriceBasisEvidence; // absent on legacy responses
   providerSymbol: string | null; // provider's own symbol string (e.g. "EUR/USD")
   brokerSymbol: string | null;   // MT5 broker symbol when source is mt5_broker; null otherwise
 
@@ -194,7 +196,7 @@ export function sourceModeFromProvider(source: string | null): SourceMode {
 /** Derive the PriceBasis from a provider id string. */
 export function priceBasisFromProvider(source: string | null): PriceBasis {
   if (!source) return "UNKNOWN";
-  if (source === "mt5_broker") return "BID"; // MT5 OHLC bars are bid-based
+  if (source === "mt5_broker") return "UNKNOWN"; // CopyRates may be BID or LAST; the producer must declare it
   if (source === "deriv" || source === "deriv_public") return "SYNTHETIC";
   // TwelveData, Polygon: forex/metals → MID; indices/stocks/crypto → LAST
   // We don't have asset-class context here — caller should override if known.
@@ -273,6 +275,7 @@ interface IntermediateCandle extends Pick<NormalizedChartCandle, "open" | "high"
   /** Preserve input evidence before the numeric compatibility fallback to zero. */
   volumeReportedAsZero: boolean;
   volumeEvidence: CandleVolumeEvidence;
+  priceBasisEvidence: CandlePriceBasisEvidence;
 }
 
 /**
@@ -412,8 +415,8 @@ export function normalizeCandles(
   const sourceLabel = source ?? "unknown";
 
   const sourceMode = sourceModeFromProvider(source);
-  const priceBasis = opts.priceBasisOverride ?? priceBasisFromProvider(source);
   const isSyntheticSource = (source === "deriv" || source === "deriv_public");
+  const compatibilityPriceBasis = isSyntheticSource ? "SYNTHETIC" : opts.priceBasisOverride ?? priceBasisFromProvider(source);
   const providerSym = providerSymbolFrom(source, symbol);
   const brokerSym = source === "mt5_broker" ? symbol : null;
   const isMockSource = sourceMode === "mock";
@@ -447,6 +450,7 @@ export function normalizeCandles(
       volume: typeof c.volume === "number" && Number.isFinite(c.volume) ? c.volume : 0,
       volumeReportedAsZero: c.volume === 0,
       volumeEvidence: resolveCandleVolumeEvidence(c.volumeEvidence, source),
+      priceBasisEvidence: resolveCandlePriceBasisEvidence(c.priceBasisEvidence, source),
       isComplete: closeMs <= now,
       openTime: new Date(openMs).toISOString(),
     });
@@ -655,7 +659,8 @@ export function normalizeCandles(
       volumeEvidence: c.volumeEvidence,
       source: sourceLabel,
       sourceMode,
-      priceBasis,
+      priceBasis: source === "mt5_broker" ? c.priceBasisEvidence.basis ?? "UNKNOWN" : compatibilityPriceBasis,
+      priceBasisEvidence: c.priceBasisEvidence,
       providerSymbol: providerSym,
       brokerSymbol: brokerSym,
       isComplete: c.isComplete,

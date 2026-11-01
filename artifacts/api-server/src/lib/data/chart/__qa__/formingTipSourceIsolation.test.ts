@@ -10,6 +10,7 @@ const bars = Array.from({ length: 60 }, (_, i) => ({
   time: new Date(currentOpen - (60 - i) * interval).toISOString(),
   open: 1000 + i, high: 1002 + i, low: 999 + i, close: 1001 + i, volume: 100,
   volumeEvidence: { kind: "tick_count", quantity: 100, unit: "ticks", reason: null },
+  priceBasisEvidence: { kind: "producer_declared", basis: "BID", reason: null },
 }));
 mock.module("../../marketDataRouter.js", { namedExports: {
   classifySymbol: () => "synthetic",
@@ -45,6 +46,11 @@ for (const history of sources) {
       assert.equal(accepted.candles.at(-1)?.source, history);
       assert.equal(accepted.candles.at(-1)?.volumeEvidence?.kind, "unavailable");
       assert.equal(accepted.candles.at(-1)?.volumeEvidence?.quantity, null);
+      assert.equal(accepted.candles.at(-1)?.priceBasisEvidence?.kind, "unavailable");
+      if(history === "mt5_broker") {
+        assert.equal(refused.candles.at(-1)?.priceBasisEvidence?.kind, "producer_declared");
+        assert.equal(accepted.candles.at(-1)?.priceBasis, "UNKNOWN");
+      }
       const analysis = await getChartCandles("V75", "M5", 60);
       assert.equal(analysis.candles.some((bar) => bar.isForming), false);
     } finally { Date.now = oldNow; }
@@ -122,5 +128,7 @@ test("same-bar forming update clears the provider count instead of reusing stale
     assert.equal(current.candles.at(-1)?.isForming, true);
     assert.equal(current.candles.at(-1)?.volumeEvidence?.kind, "unavailable");
     assert.equal(current.candles.at(-1)?.volumeEvidence?.quantity, null);
+    assert.equal(current.candles.at(-1)?.priceBasisEvidence?.kind, "unavailable");
+    assert.equal(current.candles.at(-1)?.priceBasis, "UNKNOWN");
   } finally { Date.now = oldNow; last.time = priorTime; }
 });

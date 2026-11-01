@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { CandlePriceBasisEvidence } from "./candlePriceBasisEvidence";
 import type { CandleVolumeEvidence } from "./candleVolumeEvidence";
 import type { ChartCandlePriceBasis } from "./chartCandlePriceBasis";
 import type { ChartCandleQualityFlagsItem } from "./chartCandleQualityFlagsItem";
@@ -47,7 +48,8 @@ export interface ChartCandle {
   /** live = real market data; demo = MT5 demo bridge context; mock = simulation provider (never safe as tradable truth); dev = developer test data; unknown = unrecognized source.
    */
   sourceMode: ChartCandleSourceMode;
-  /** BID = MT5 broker bid-based bars; MID = bid-ask midpoint (forex/metals REST); LAST = exchange last price (indices/stocks/crypto); SYNTHETIC = Deriv volatility algorithm; UNKNOWN = provider not identified.
+  priceBasisEvidence?: CandlePriceBasisEvidence;
+  /** BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.
    */
   priceBasis: ChartCandlePriceBasis;
   /** Alias for isComplete. true when the bar's bucket is closed and will not be updated. */

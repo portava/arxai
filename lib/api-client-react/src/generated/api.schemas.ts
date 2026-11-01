@@ -3277,6 +3277,34 @@ export interface CandleVolumeEvidence {
   reason: string | null;
 }
 
+export type CandlePriceBasisEvidenceKind =
+  (typeof CandlePriceBasisEvidenceKind)[keyof typeof CandlePriceBasisEvidenceKind];
+
+export const CandlePriceBasisEvidenceKind = {
+  producer_declared: "producer_declared",
+  unavailable: "unavailable",
+} as const;
+
+export type CandlePriceBasisEvidenceBasis =
+  | (typeof CandlePriceBasisEvidenceBasis)[keyof typeof CandlePriceBasisEvidenceBasis]
+  | null;
+
+export const CandlePriceBasisEvidenceBasis = {
+  BID: "BID",
+  MID: "MID",
+  LAST: "LAST",
+  SYNTHETIC: "SYNTHETIC",
+} as const;
+
+/**
+ * Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.
+ */
+export interface CandlePriceBasisEvidence {
+  kind: CandlePriceBasisEvidenceKind;
+  basis: CandlePriceBasisEvidenceBasis;
+  reason: string | null;
+}
+
 export type ChartCandleTimeframe =
   (typeof ChartCandleTimeframe)[keyof typeof ChartCandleTimeframe];
 
@@ -3320,7 +3348,7 @@ export const ChartCandleSourceMode = {
 } as const;
 
 /**
- * BID = MT5 broker bid-based bars; MID = bid-ask midpoint (forex/metals REST); LAST = exchange last price (indices/stocks/crypto); SYNTHETIC = Deriv volatility algorithm; UNKNOWN = provider not identified.
+ * BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.
 
  */
 export type ChartCandlePriceBasis =
@@ -3386,7 +3414,8 @@ export interface ChartCandle {
   /** live = real market data; demo = MT5 demo bridge context; mock = simulation provider (never safe as tradable truth); dev = developer test data; unknown = unrecognized source.
    */
   sourceMode: ChartCandleSourceMode;
-  /** BID = MT5 broker bid-based bars; MID = bid-ask midpoint (forex/metals REST); LAST = exchange last price (indices/stocks/crypto); SYNTHETIC = Deriv volatility algorithm; UNKNOWN = provider not identified.
+  priceBasisEvidence?: CandlePriceBasisEvidence;
+  /** BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.
    */
   priceBasis: ChartCandlePriceBasis;
   /** Alias for isComplete. true when the bar's bucket is closed and will not be updated. */

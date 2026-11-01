@@ -13616,6 +13616,14 @@ components:
         quantity: { type: number, nullable: true, minimum: 0 }
         unit: { type: string, nullable: true, enum: [ticks, broker_units] }
         reason: { type: string, nullable: true }
+    CandlePriceBasisEvidence:
+      type: object
+      description: Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.
+      required: [kind, basis, reason]
+      properties:
+        kind: { type: string, enum: [producer_declared, unavailable] }
+        basis: { type: string, nullable: true, enum: [BID, MID, LAST, SYNTHETIC] }
+        reason: { type: string, nullable: true }
     ChartCandle:
       type: object
       description: >
@@ -13659,13 +13667,15 @@ components:
             live = real market data; demo = MT5 demo bridge context; mock = simulation
             provider (never safe as tradable truth); dev = developer test data;
             unknown = unrecognized source.
+        priceBasisEvidence: { $ref: "#/components/schemas/CandlePriceBasisEvidence" }
         priceBasis:
           type: string
           enum: [BID, MID, LAST, SYNTHETIC, UNKNOWN]
           description: >
-            BID = MT5 broker bid-based bars; MID = bid-ask midpoint (forex/metals REST);
-            LAST = exchange last price (indices/stocks/crypto); SYNTHETIC = Deriv
-            volatility algorithm; UNKNOWN = provider not identified.
+            BID = bid-side observations; MID = bid-ask midpoint; LAST = last price;
+            SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis.
+            Other providers may retain legacy compatibility labels; priceBasisEvidence
+            determines whether an original producer declaration exists.
         isFinal:
           type: boolean
           description: Alias for isComplete. true when the bar's bucket is closed and will not be updated.

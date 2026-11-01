@@ -1,3 +1,4 @@
+import { mt5PriceBasisEvidence } from "./candlePriceBasisEvidence.js";
 import { mt5TickVolumeEvidence } from "./candleVolumeEvidence.js";
 // ── MT5 candle-history contract (Task #432) ──────────────────────────────────
 //
@@ -155,6 +156,7 @@ export async function ingestMt5CandleHistory(
       low: b.low,
       close: b.close,
       volumeEvidence: mt5TickVolumeEvidence(b.tickVolume),
+      priceBasisEvidence: mt5PriceBasisEvidence(payload.priceBasis),
       ...(b.tickVolume ?? b.volume) != null ? { volume: b.tickVolume ?? b.volume } : {},
     });
   }

@@ -51,7 +51,7 @@
 //     [F28] sourceModeFromProvider("mock") = "mock"
 //     [F29] sourceModeFromProvider("deriv") = "live"
 //     [F30] sourceModeFromProvider("assistant_real:twelve_data") = "live"
-//     [F31] priceBasisFromProvider("mt5_broker") = "BID"
+//     [F31] priceBasisFromProvider("mt5_broker") = "UNKNOWN"
 //     [F32] priceBasisFromProvider("deriv") = "SYNTHETIC"
 //     [F33] isValidOhlc rejects negative prices
 //     [F34] isValidOhlc rejects non-finite values
@@ -512,8 +512,8 @@ test("[F30] sourceModeFromProvider('assistant_real:twelve_data') = 'live'", () =
   assert.equal(sourceModeFromProvider("assistant_real:twelve_data"), "live");
 });
 
-test("[F31] priceBasisFromProvider('mt5_broker') = 'BID'", () => {
-  assert.equal(priceBasisFromProvider("mt5_broker"), "BID");
+test("[F31] priceBasisFromProvider('mt5_broker') = 'UNKNOWN' (producer declaration required)", () => {
+  assert.equal(priceBasisFromProvider("mt5_broker"), "UNKNOWN");
 });
 
 test("[F32] priceBasisFromProvider('deriv') = 'SYNTHETIC'", () => {

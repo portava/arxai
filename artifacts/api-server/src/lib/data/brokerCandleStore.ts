@@ -1,3 +1,4 @@
+import { mt5PriceBasisEvidence, type CandlePriceBasisEvidence } from "./candlePriceBasisEvidence.js";
 import { mt5TickVolumeEvidence, type CandleVolumeEvidence } from "./candleVolumeEvidence.js";
 // ── Broker-native candle store + backfill state machine (Task #469, Phase A) ──
 //
@@ -183,6 +184,7 @@ const barSchema = z.object({
 });
 
 export const BrokerCandleIngestSchema = z.object({
+  priceBasis: z.enum(["bid", "ask", "mid", "last"]).optional(),
   symbol: z.string().min(1),
   brokerSymbol: z.string().min(1).optional(),
   timeframe: z.string().min(1),
@@ -330,6 +332,7 @@ interface NormalizedBar {
   low: number;
   close: number;
   volumeEvidence: CandleVolumeEvidence;
+  priceBasisEvidence: CandlePriceBasisEvidence;
   tickVolume: number | null;
   realVolume: number | null;
   spread: number | null;
@@ -425,6 +428,7 @@ export async function ingestBrokerCandles(
       low: b.low,
       close: b.close,
       volumeEvidence: mt5TickVolumeEvidence(b.tickVolume),
+      priceBasisEvidence: mt5PriceBasisEvidence(payload.priceBasis),
       tickVolume: b.tickVolume ?? b.volume ?? null,
       realVolume: b.realVolume ?? null,
       spread: b.spread ?? null,
@@ -549,6 +553,7 @@ export async function ingestBrokerCandles(
         low: bar.low,
         close: bar.close,
         volumeEvidence: bar.volumeEvidence,
+        priceBasisEvidence: bar.priceBasisEvidence,
         ...(bar.tickVolume != null ? { volume: bar.tickVolume } : {}),
       });
     }

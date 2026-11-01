@@ -1,3 +1,4 @@
+import { mt5PriceBasisEvidence } from "../lib/data/candlePriceBasisEvidence.js";
 import { mt5TickVolumeEvidence } from "../lib/data/candleVolumeEvidence.js";
 import type { Candle } from "../lib/data/types.js";
 import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
@@ -2140,7 +2141,7 @@ router.post("/mt5/sync-symbol-specs", bridgeAuthPerUserOnly, async (req, res) =>
 //     "symbol": "EURUSD",          // ARX/display symbol the chart queries by
 //     "brokerSymbol": "EURUSD.r",  // optional broker Market-Watch name (audit only)
 //     "timeframe": "M5",           // M1|M5|M15|M30|H1|H4|D1 (or 1m/5m/...; normalized)
-//     "priceBasis": "bid",         // bid|ask|mid|last (audit only)
+//     "priceBasis": "bid",         // original producer declaration; ASK unsupported by chart
 //     "bars": [
 //       { "time": "2026-06-07T08:00:00Z", "open": 1.09, "high": 1.092,
 //         "low": 1.089, "close": 1.091, "tickVolume": 312, "spread": 0.6 }
@@ -2250,13 +2251,14 @@ router.post("/mt5/sync-candles", bridgeAuthPerUserOnly, async (req, res) => {
       time, open: b.open, high: b.high, low: b.low, close: b.close,
       volume: b.tickVolume ?? b.volume,
       volumeEvidence: mt5TickVolumeEvidence(b.tickVolume),
+      priceBasisEvidence: mt5PriceBasisEvidence(priceBasis),
     });
   }
   const candles = [...byTime.values()].sort((a, b) => a.time.localeCompare(b.time));
 
   // Provenance fields are accepted for audit traceability and forward-compat.
-  // They are NOT persisted into the in-memory candle store (which holds OHLC+
-  // volume only) — they are logged so an operator can trace which EA build /
+  // The original price-basis declaration is retained per candle in memory;
+  // other envelope fields are logged so an operator can trace which EA build /
   // price basis / broker symbol produced a given push. The store is keyed by
   // the ARX `symbol` verbatim; `brokerSymbol` is informational (symbol
   // resolution to the broker happens at chart READ time, not at ingest).

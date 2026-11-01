@@ -241,7 +241,7 @@
     "test:security-handshake-enforcement": "node --import tsx --test --test-force-exit src/lib/security/__qa__/handshakeEnforcement.test.ts",
     "test:command-integrity": "node --import tsx --test --test-force-exit src/lib/security/__qa__/commandIntegrity.test.ts",
     "test:chart-truth-fixtures": "node --import tsx --test src/lib/data/chart/__qa__/candleFixtures.test.ts",
-    "test:chart-candle-shape": "node --import tsx --experimental-test-module-mocks --test src/lib/data/chart/__qa__/candleResponseShape.test.ts src/lib/data/chart/__qa__/candleVolumeProducer.test.ts",
+    "test:chart-candle-shape": "node --import tsx --experimental-test-module-mocks --test src/lib/data/chart/__qa__/candleResponseShape.test.ts src/lib/data/chart/__qa__/candleVolumeProducer.test.ts src/lib/data/chart/__qa__/priceBasisProducer.test.ts src/lib/data/chart/__qa__/priceBasisStore.test.ts",
     "test:session-profile": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/sessionProfile.test.ts",
     "test:session-aware-chart-feed": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/sessionAwareChartFeed.test.ts",
     "test:forming-tip-source-gate": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/data/chart/__qa__/formingTipSourceGate.test.ts src/lib/data/chart/__qa__/formingTipSourceIsolation.test.ts",
