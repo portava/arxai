@@ -17,3 +17,4 @@
 - [Chart volume evidence](chart-volume-evidence.md) — a corrected zero-volume advisory is not proof of real traded volume or permission to enable volume analytics.
 - [Browser evidence accounting](browser-evidence-accounting.md) — audit coverage and rendered state; corrected raw receipts outrank stale summaries and wrong-state screenshots.
 - [Chart research boundaries](chart-research-boundaries.md) — extend existing authorities; keep API activation deferred and missing optional evidence unavailable.
+- [Source-only validation](source-only-validation.md) — isolate typecheck caches as well as bundles; disclose metadata changes separately from runtime preservation.

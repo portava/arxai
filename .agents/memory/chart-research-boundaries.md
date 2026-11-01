@@ -38,14 +38,30 @@ restricted.
 current research markers/explanations when it disappears, and treat any producer
 upgrade or real-provider acceptance as separately authorized work.
 
-No current production adapter qualifies original historical UTC. ISO formatting
+Historical UTC qualification is specific to an audited endpoint, market and
+interval subset. Reviewed adapter source can qualify a subset without proving
+that the existing API process or live feed has that capability. ISO formatting
 and today's broker offset cannot establish past UTC mapping. Keep prices visible
 while historical research and timezone conversion remain held without authority.
 
-**Why:** The owner explicitly identified broker-clock chart coordinates and
-required original authority rather than inferred UTC.
+**Why:** The owner required original clock authority and later accepted provider
+alignment source while continuing to prohibit API activation and provider tests.
 
 **How to apply:** Preserve source-coordinate disclosures across chart, reader,
-replay and archived analysis. An audited adapter and its original evidence path
-require separate qualification; client claims or EA price-basis declarations
+replay and archived analysis. Distinguish reviewed source qualification from
+runtime/provider acceptance; do not repeat a blanket claim that no adapter source
+qualifies UTC after reviewed adapter additions. MT5 clock authority is not
+established by those additions. Client claims or EA price-basis declarations
 cannot supply clock authority.
+
+Adding stock-volume calculations does not authorize expansion of the Scanner or
+trading universe. Calculator/renderer tests do not establish positive acceptance
+for an instrument that the actual Scanner cannot select.
+
+**Why:** The owner explicitly kept the Common Stocks reachability limitation open
+and prohibited expanding the universe or fabricating data to close it.
+
+**How to apply:** Keep positive Scanner stock VWAP/trade-volume acceptance open
+until a separately reviewed, reachable integration exists. Do not inject approved
+instruments, relabel stock candles as another market, or treat an analysis-only
+comparison design as implemented functionality.
