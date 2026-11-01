@@ -12,7 +12,8 @@ async page => {
   result.build=await page.evaluate(async()=>{const r=await fetch('/arx-scanner-qa-build-info.json');return r.json();});
   check(result.build.nativeEngine&&result.build.qaOnlyDefaultEngineOverride&&result.build.sourceUnchanged&&!result.build.source.status,'Clean exact-source actual-app native QA build');
   await page.setViewportSize({width:1800,height:1200});
-  const primary=page.getByTestId('scanner-chart-panel');
+  await page.getByRole('button',{name:'One chart',exact:true}).click();await ready(1);
+  const primary=page.getByTestId('arx-native-chart').first();
   await primary.getByTestId('arx-native-tf-M15').click();await ready(1);
   const original=(await snap()).adapterId;
   await page.getByRole('button',{name:'Two charts',exact:true}).click();await ready(2);
@@ -26,13 +27,13 @@ async page => {
   await primary.getByRole('button',{name:'Zoom in chart',exact:true}).click();await ready(2);await frames();
   const a=await snap(0),b=await snap(1);
   check(b.state.linkedCrosshairTime==null,'Link activation invents no crosshair');
-  check(a.visibleTimeRange&&b.visibleTimeRange&&Math.abs(a.visibleTimeRange.to-b.visibleTimeRange.to)<=900,'Linked ranges align UTC edges within the differing interval');
+  check(a.visibleTimeRange&&b.visibleTimeRange&&Math.abs(a.visibleTimeRange.to-b.visibleTimeRange.to)<=900,'Linked ranges align source-time edges within the differing interval');
   const data=await page.evaluate(()=>window.__arxChartQa.data(0).canonical);
   const target=data.find(c=>c.time>=a.visibleTimeRange.from+Math.floor((a.visibleTimeRange.to-a.visibleTimeRange.from)/2));
   await primary.getByTestId('arx-native-canvas').scrollIntoViewIfNeeded();await frames();
   const point=await page.evaluate(target=>window.__arxChartQa.anchorCoordinates(target.time,target.close,0),target);
-  check(!!point,'Crosshair target has real frame coordinates');await page.mouse.move(point.x,point.y);await frames();
-  check((await snap(1)).state.linkedCrosshairTime===target.time,'Real pointer crosshair links by UTC into independent M5 chart');
+  check(!!point,'Crosshair target has real frame coordinates');const visibleBox=(await snap()).bounds;await page.mouse.move(point.x,visibleBox.y+visibleBox.height/2);await frames();
+  check((await snap(1)).state.linkedCrosshairTime===target.time,'Real pointer crosshair links by source time into independent M5 chart');
   await page.screenshot({path:'native-linked-layout.png',fullPage:false});result.screenshots.push('native-linked-layout.png');
   await page.getByRole('button',{name:'One chart',exact:true}).click();await ready(1);
   check((await snap()).adapterId===original,'Closing comparison retains primary adapter');
