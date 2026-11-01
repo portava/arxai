@@ -25,3 +25,15 @@ single-chart order while retaining the separate partial-visibility limitation.
 **How to apply:** Preserve the original diagnosis and corrected receipts.
 Distinguish geometric viewport intersection, unobscured visibility, whole-plot
 fit and source-correct completion latency; none automatically proves the others.
+
+Browser-exposed fixture readers are asynchronous, and assistant welcome cards
+can disappear on the first send. Do not treat exposed readers as synchronous
+arrays or identify a fresh reply by a stable count of all DOM children.
+
+**Why:** Promise-array predicates and unstable welcome-card child indexing
+repeatedly stopped browser probes before their intended acceptance cases.
+
+**How to apply:** Await exposed readers inside browser predicates; synchronize
+replies by stable message identity or role-qualified freshness, not a phrase
+anywhere in old history. Preserve assertion counts separately from failed
+steps and unstarted cases, and capture full error messages incrementally.

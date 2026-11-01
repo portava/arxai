@@ -21,6 +21,18 @@ builds in a separate output directory.
 deferring API and operational-worker activation.
 
 **How to apply:** Frontend/shared-domain code can be newer than the running API.
-Missing optional source identity or volume provenance must remain unavailable.
+Missing optional source identity, volume provenance or original price-basis
+declarations must remain unavailable.
 Report source/runtime mismatch and obtain separate authorization before
 refreshing the API or claiming its new source is active.
+
+The shipped MT5 feed lacks an original candle-price-basis declaration.
+Historical cost research must remain unavailable until original evidence is
+supplied; do not infer BID/MID from the provider or an asset profile.
+
+**Why:** The owner explicitly identified the missing producer declaration and
+prohibited manufacturing it or treating synthetic fixtures as broker acceptance.
+
+**How to apply:** Keep candles visible, qualify only original evidence, withdraw
+current research markers/explanations when it disappears, and treat any producer
+upgrade or real-provider acceptance as separately authorized work.

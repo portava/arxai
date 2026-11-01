@@ -72,3 +72,11 @@ the owner explicitly excluded every held performance experiment.
 **How to apply:** Keep ruler geometry, arithmetic and drawing controls separate
 from startup/layout experiments, and preserve partial-visibility limitations
 rather than implying this feature resolves them.
+
+Automatic Fibonacci work is separate and not yet accepted.
+
+**Why:** The owner explicitly excluded unfinished Fibonacci branches from the
+chart/research evidence correction.
+
+**How to apply:** Do not import that work through shared ancestry or an unrelated
+feature inventory without separate acceptance.
