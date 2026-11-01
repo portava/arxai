@@ -14,12 +14,17 @@
 //                                bar must never masquerade as a live feed).
 //   - Never touches execution / arx_live_* / positions / balances / 16-gate.
 //
-// Touches the REAL DB (bridge_v2_events + bridge_v2_stream_state). Uses a
-// run-unique NEGATIVE synthetic userId (no FK on user_id) and deletes its rows
-// at the end, fail-closed: a leftover synthetic row is reported, never ignored.
+// Run only against a disposable test database. Creates a run-unique test user
+// and non-trading connection, then resolves that connection through the SAME
+// token-hash lookup as bridgeAuthPerUserOnly. No login, terminal or broker call.
+// Cleanup is in finally, scoped to exact created IDs + UUID run namespaces;
+// failed cleanup is reported rather than deleting another run's rows.
 
-import { sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { and, eq as dbEq, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import assert from "node:assert/strict";
+import { db, usersTable, mt5ConnectionTable } from "@workspace/db";
+import { createConnection, findConnectionByBridgeTokenHash } from "../../artifacts/api-server/src/lib/brokerHub/connections.js";
 import { bridgeV2 } from "@workspace/domain";
 import {
   ingestBridgeV2Message,
@@ -50,8 +55,45 @@ function eq<T>(actual: T, expected: T, label: string): void {
 }
 
 // Run-unique so reruns never collide on the idempotency unique index.
-const RUN = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const USER_ID = -Math.floor(1_000_000 + Math.random() * 8_000_000);
+const RUN = `qa-bridge-v2-${randomUUID()}`;
+const EMAIL = `${RUN}@arx.test`;
+let fixtureUserId: number | null = null;
+let fixtureConnectionId: number | null = null;
+let authenticated: { userId: number; bridgeConnectionId: number } | null = null;
+
+async function createFixture(): Promise<void> {
+  const [user] = await db.insert(usersTable).values({email:EMAIL,name:RUN,role:"USER",isSystemUser:true}).returning({id:usersTable.id});
+  assert.ok(user && user.id > 0, "disposable user insert must return a positive ID");
+  fixtureUserId=user.id;
+  const tokenHash=createHash("sha256").update(randomUUID()).digest("hex");
+  const connection=await createConnection({userId:user.id,connectionName:RUN,status:"disconnected",accountType:"demo",apiKeyHash:tokenHash});
+  fixtureConnectionId=connection.id;
+  const match=await findConnectionByBridgeTokenHash(tokenHash);
+  assert.equal(match?.connection.id,fixtureConnectionId);
+  assert.equal(match?.connection.userId,fixtureUserId);
+  assert.ok(Number.isSafeInteger(connection.id) && connection.id > 0);
+  authenticated={userId:user.id,bridgeConnectionId:connection.id};
+}
+
+async function cleanupFixture(): Promise<void> {
+  if(fixtureUserId==null)return;
+  if(fixtureConnectionId!=null){
+    // UUID namespaces and both owning IDs are required. No broad user-only wipe.
+    await db.execute(sql`DELETE FROM bridge_v2_events WHERE user_id = ${fixtureUserId} AND bridge_connection_id = ${fixtureConnectionId} AND idempotency_key LIKE ${RUN+"-%"} AND stream_key LIKE ${RUN+":%"}`);
+    await db.execute(sql`DELETE FROM bridge_v2_stream_state WHERE user_id = ${fixtureUserId} AND bridge_connection_id = ${fixtureConnectionId} AND stream_key LIKE ${RUN+":%"}`);
+    const events=await db.execute(sql`SELECT count(*)::int AS n FROM bridge_v2_events WHERE user_id = ${fixtureUserId} AND bridge_connection_id = ${fixtureConnectionId}`);
+    const state=await db.execute(sql`SELECT count(*)::int AS n FROM bridge_v2_stream_state WHERE user_id = ${fixtureUserId} AND bridge_connection_id = ${fixtureConnectionId}`);
+    assert.equal(Number(events.rows[0]?.n),0,"exact-run event cleanup must leave no owned rows");
+    assert.equal(Number(state.rows[0]?.n),0,"exact-run state cleanup must leave no owned rows");
+    await db.delete(mt5ConnectionTable).where(and(dbEq(mt5ConnectionTable.id,fixtureConnectionId),dbEq(mt5ConnectionTable.userId,fixtureUserId),dbEq(mt5ConnectionTable.connectionName,RUN)));
+    const left=await db.select({id:mt5ConnectionTable.id}).from(mt5ConnectionTable).where(dbEq(mt5ConnectionTable.id,fixtureConnectionId));
+    assert.equal(left.length,0,"disposable connection cleanup must be complete");
+  }
+  await db.delete(usersTable).where(and(dbEq(usersTable.id,fixtureUserId),dbEq(usersTable.email,EMAIL)));
+  const left=await db.select({id:usersTable.id}).from(usersTable).where(dbEq(usersTable.id,fixtureUserId));
+  assert.equal(left.length,0,"disposable user cleanup must be complete");
+  fixtureUserId=null;fixtureConnectionId=null;authenticated=null;
+}
 
 function envelope(
   messageType: string,
@@ -61,7 +103,7 @@ function envelope(
   return {
     protocolVersion: BRIDGE_V2_PROTOCOL_VERSION,
     messageType,
-    streamKey: over.streamKey ?? "default",
+    streamKey: `${RUN}:${over.streamKey ?? "default"}`,
     sequence: over.sequence,
     idempotencyKey: over.idem,
     eaCreatedAtEpochMs: over.eaCreatedAtEpochMs ?? Date.now(),
@@ -72,9 +114,9 @@ function envelope(
 
 async function ingest(raw: unknown, eaCreatedAtEpochMs?: number) {
   const now = Date.now();
+  assert.ok(authenticated, "fixture must resolve through authenticated connection lookup");
   const input: BridgeV2IngestInput = {
-    userId: USER_ID,
-    bridgeConnectionId: null,
+    ...authenticated,
     raw,
     serverReceivedAtEpochMs: now,
   };
@@ -84,8 +126,7 @@ async function ingest(raw: unknown, eaCreatedAtEpochMs?: number) {
   return ingestBridgeV2Message(input);
 }
 
-async function main(): Promise<void> {
-  __resetMt5ProviderStore();
+async function exerciseFeed(): Promise<void> {
 
   // ── 1. ACCEPTED + fresh CANDLE feeds the provider and wins at the router ──
   {
@@ -105,6 +146,8 @@ async function main(): Promise<void> {
     const r = await routeCandles("EURUSD", "M5", 100);
     eq(r.ok, true, "router ok after broker feed");
     eq(r.primaryProvider, "mt5_broker", "router serves mt5_broker first when fresh broker bars exist");
+    eq(r.provenance?.bridgeConnectionId,authenticated!.bridgeConnectionId,"serving partition is the authenticated fixture connection");
+    eq(r.provenance?.userId,authenticated!.userId,"serving partition retains the authenticated fixture owner");
   }
 
   // ── 2. A SECOND accepted CANDLE merges (history preserved, not replaced) ──
@@ -194,15 +237,19 @@ async function main(): Promise<void> {
     eq(getMt5SeriesFreshness("AUDUSD", "M5").barCount, 1, "exact idempotency replay did NOT re-feed/re-stamp the bar");
   }
 
-  // ── Cleanup (fail-closed): remove only this run's synthetic rows ──
-  await db.execute(sql`DELETE FROM bridge_v2_events WHERE user_id = ${USER_ID}`);
-  await db.execute(sql`DELETE FROM bridge_v2_stream_state WHERE user_id = ${USER_ID}`);
-  const leftEvents = await db.execute(sql`SELECT count(*)::int AS n FROM bridge_v2_events WHERE user_id = ${USER_ID}`);
-  const leftState = await db.execute(sql`SELECT count(*)::int AS n FROM bridge_v2_stream_state WHERE user_id = ${USER_ID}`);
-  const nEvents = Number((leftEvents.rows[0] as { n: number }).n);
-  const nState = Number((leftState.rows[0] as { n: number }).n);
-  eq(nEvents, 0, "cleanup removed synthetic bridge_v2_events rows");
-  eq(nState, 0, "cleanup removed synthetic bridge_v2_stream_state rows");
+}
+
+async function main(): Promise<void> {
+  __resetMt5ProviderStore();
+  const errors: unknown[] = [];
+  try { await createFixture(); await exerciseFeed(); }
+  catch(error) { errors.push(error); }
+  finally {
+    try { await cleanupFixture(); } catch(error) { errors.push(error); }
+    finally { __resetMt5ProviderStore(); }
+  }
+  if(errors.length===1)throw errors[0];
+  if(errors.length>1)throw new AggregateError(errors,"Feed validation and exact-run cleanup both failed");
 }
 
 main()
