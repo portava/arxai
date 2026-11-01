@@ -1,0 +1,11 @@
+# Smart Chart average comparison — 1 November 2026
+
+The existing chart assistant now accepts the owner's example, “Compare the 20 EMA and 50 EMA.” It adds or reveals those two averages through the same study collection, renderer and preference storage used by manual controls. No second chart, calculator or model request is introduced.
+
+Complete supported phrases specify two different SMA/EMA selections with whole-number periods from 1 to 1000. Extra instruments, timeframes, price inputs, trading instructions and ambiguous repeated manual instances are refused locally. Both additions are capacity-checked before the renderer changes. Existing calculation inputs, colors and line styles remain intact; the requested pair is explicitly made visible. New instances use the existing catalogue defaults and distinct colors.
+
+The receipt reads actual renderer values at the last visible source candle. It names the symbol, timeframe, feed description, applied-price input, window, values and their relationship. Missing/nonfinite/warmup values remain unavailable. A single-bar comparison is not labeled a crossover, forecast, confidence score or trade instruction. Source-coordinate timestamps are not claimed to prove UTC.
+
+Validation before integration: the feature tests failed on the base (8 failed, 9 passed). The candidate's comparison, existing study assistant and real-adapter suites pass 134 checks. The adapter case compares manual and assistant values with Heikin Ashi displayed while both studies retain underlying source prices. Independent review caught case-sensitive color matching: an uppercase manual color could duplicate the new line color. Its test failed before the fix and passes with normalized comparison; manual color values are retained. Typecheck initially lacked this isolated worktree's audio declarations; after building that local dependency it passed. Final combined review/build/browser checks remain separate receipts.
+
+Limitations: deliberately bounded language, two averages per request, existing 12-study limit, no free-form strategy or live execution, no physical-paint or latency claim. Source-clock qualification, historical coverage, actual volume-based tools and competitor parity remain separate open requirements.

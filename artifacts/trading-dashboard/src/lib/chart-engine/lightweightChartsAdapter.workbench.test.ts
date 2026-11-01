@@ -416,3 +416,20 @@ describe("qualified volume lifecycle",()=>{
     expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBeNull();
   });
 });
+
+it("manual and assistant average comparisons use identical rendered values across display styles",()=>{
+  Object.assign(m.scale.getVisibleLogicalRange(),{from:70,to:95});
+  const ema=STUDY_CATALOG.find(d=>d.defaults.kind==='ema')!.defaults;
+  adapter.setStudies([{...ema,id:'manual-20',period:20},{...ema,id:'manual-50',period:50}]);
+  const at=adapter.getVisibleCandles().at(-1)!.time;
+  const manual=adapter.getStudyValues(at).map(row=>row.values);
+  expect(manual.every(row=>row[0].value!=null)).toBe(true);
+  adapter.setStudies([]);adapter.setChartStyle('heikinAshi');
+  const save=vi.fn();const reply=executeStudyRequest(parseStudyRequest('Compare the 20 EMA and 50 EMA')!,{adapter,studies:[],symbol:'EURUSD',timeframe:'M1',feedLabel:'Not live-confirmed',save});
+  expect(adapter.getStudyValues(at).map(row=>row.values)).toEqual(manual);
+  expect(save.mock.calls[0][0].map((s:any)=>s.period)).toEqual([20,50]);
+  for(const row of manual)expect(reply).toContain(String(Number(row[0].value!.toPrecision(8))));
+  adapter.resetDataContext();save.mockClear();
+  expect(executeStudyRequest(parseStudyRequest('Compare the 20 EMA and 50 EMA')!,{adapter,studies:[],symbol:'GBPUSD',timeframe:'M5',feedLabel:'Unknown',save})).toContain('not applied');
+  expect(save).not.toHaveBeenCalled();
+});
