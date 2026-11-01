@@ -36,6 +36,9 @@ import { foldFormingTick } from "../data/chart/formingBarComposer.js";
 import type { Candle, MarketQuote } from "../data/types.js";
 import { mt5PriceBasisEvidence } from "../data/candlePriceBasisEvidence.js";
 import { isUniqueViolation } from "../pgError.js";
+import { randomUUID } from "node:crypto";
+import { isExactNativeAccountReplay } from "../brokerHub/nativeAccountReport.js";
+import { emitConnectionAccountChanged } from "../live/liveAccountEventBus.js";
 
 const {
   validateBridgeV2Message,
@@ -53,6 +56,12 @@ export interface BridgeV2IngestInput {
 
 export interface BridgeV2IngestResult {
   accepted: boolean;
+  /** Native-account acknowledgement correlation; never an execution result. */
+  idempotencyKey?: string;
+  streamKey?: string;
+  sequence?: number;
+  exactReplay?: boolean;
+  duplicateReason?: "IDEMPOTENCY_CONFLICT" | "SEQUENCE";
   // Stable outcome code so the EA can decide whether to retry or drop.
   outcome:
     | "ACCEPTED"
@@ -82,7 +91,8 @@ export async function ingestBridgeV2Message(
     // into the EA). We still need an idempotency key to avoid unique collisions,
     // so derive a synthetic one for the rejected-trace row when absent.
     const synthetic = `reject:${userId}:${serverReceivedAtEpochMs}:${Math.random().toString(36).slice(2, 10)}`;
-    await safeInsertRejected(userId, bridgeConnectionId, raw, validation.error, validation.detail, synthetic, serverReceivedAtEpochMs);
+    const recorded = await safeInsertRejected(userId, bridgeConnectionId, raw, validation.error, validation.detail, synthetic, serverReceivedAtEpochMs);
+    if (recorded && raw && typeof raw === "object" && "messageType" in raw && raw.messageType === "ACCOUNT_SNAPSHOT") emitConnectionAccountChanged(bridgeConnectionId);
     return {
       accepted: false,
       outcome: validation.error,
@@ -91,8 +101,18 @@ export async function ingestBridgeV2Message(
   }
 
   const { envelope, payload } = validation;
-  const transportLatencyMs = Math.max(0, serverReceivedAtEpochMs - envelope.eaCreatedAtEpochMs);
-  const freshnessVerdict = classifyFreshness(transportLatencyMs);
+  const native = envelope.messageType === "ACCOUNT_SNAPSHOT" && payload != null && typeof payload === "object" && "reportVersion" in payload;
+  if (native && (!Number.isSafeInteger(envelope.sequence) || envelope.sequence > bridgeV2.NATIVE_ACCOUNT_MAX_SEQUENCE || !Number.isSafeInteger(envelope.eaCreatedAtEpochMs) || envelope.eaCreatedAtEpochMs > serverReceivedAtEpochMs || envelope.eaCreatedAtEpochMs < (payload as unknown as {observedAtEpochMs:number}).observedAtEpochMs)) {
+    const recorded = await safeInsertRejected(userId, bridgeConnectionId, raw, "PAYLOAD_INVALID", "Native sequence or capture/creation time is invalid", `reject:${userId}:${randomUUID()}`, serverReceivedAtEpochMs);
+    if(recorded) emitConnectionAccountChanged(bridgeConnectionId);
+    return {accepted:false,outcome:"PAYLOAD_INVALID",detail:"Native sequence or capture/creation time is invalid"};
+  }
+  const measuredLatencyMs = Math.max(0, serverReceivedAtEpochMs - envelope.eaCreatedAtEpochMs);
+  // The trace's latency column is int4; preserve very old native captures as
+  // historical evidence without overflowing it or claiming current values.
+  const transportLatencyMs = native && measuredLatencyMs > 2147483647 ? null : measuredLatencyMs;
+  const freshnessVerdict = native ? null : classifyFreshness(measuredLatencyMs);
+  let accountAttemptRecorded = false;
   const lifecycleState = mapLifecycleForMessage(envelope.messageType, payload);
 
   try {
@@ -165,7 +185,25 @@ export async function ingestBridgeV2Message(
       };
 
       try {
-        await tx.insert(bridgeV2EventsTable).values(row);
+        if(native){
+          const inserted = await tx.insert(bridgeV2EventsTable).values(row).onConflictDoNothing({target:[bridgeV2EventsTable.userId,bridgeV2EventsTable.idempotencyKey]}).returning({id:bridgeV2EventsTable.id});
+          if(inserted.length===0){
+            const [stored] = await tx.select().from(bridgeV2EventsTable).where(and(eq(bridgeV2EventsTable.userId,userId),eq(bridgeV2EventsTable.idempotencyKey,envelope.idempotencyKey))).limit(1);
+            if(isExactNativeAccountReplay(stored, {...row,payload} as Parameters<typeof isExactNativeAccountReplay>[1])){
+              // Exact replay: original receipt/capture age remains unchanged.
+              return {accepted:false,outcome:"DUPLICATE" as const,messageType:envelope.messageType,sequenceVerdict:"DUPLICATE",exactReplay:true,transportLatencyMs,freshnessVerdict,lifecycleState};
+            }
+            // A key collision is a new rejected attempt in THIS authenticated
+            // scope, never an acknowledgement of another report/connection.
+            await tx.insert(bridgeV2EventsTable).values({...row,idempotencyKey:`reject:${userId}:${randomUUID()}`,accepted:false,duplicateDropped:true,sequenceVerdict:"DUPLICATE",rejectReason:"NATIVE_IDEMPOTENCY_CONFLICT",payload:null});
+            accountAttemptRecorded=true;
+            return {accepted:false,outcome:"DUPLICATE" as const,messageType:envelope.messageType,sequenceVerdict:"DUPLICATE",exactReplay:false,duplicateReason:"IDEMPOTENCY_CONFLICT" as const,transportLatencyMs,freshnessVerdict,lifecycleState};
+          }
+          accountAttemptRecorded=true;
+        }else{
+          await tx.insert(bridgeV2EventsTable).values(row);
+          if(envelope.messageType==="ACCOUNT_SNAPSHOT") accountAttemptRecorded=true;
+        }
       } catch (e) {
         if (isUniqueViolation(e)) {
           // Replayed idempotency key → exactly-once drop. Do NOT advance state.
@@ -217,8 +255,11 @@ export async function ingestBridgeV2Message(
         transportLatencyMs,
         freshnessVerdict,
         lifecycleState,
+        ...(native && !seq.accept ? {exactReplay:false,duplicateReason:"SEQUENCE" as const} : {}),
       };
     });
+
+    if (accountAttemptRecorded) emitConnectionAccountChanged(bridgeConnectionId);
 
     // ── Post-commit: feed accepted, fresh market data into the live store ────
     // ONLY after the trace row + per-stream state committed, and ONLY for an
@@ -232,7 +273,7 @@ export async function ingestBridgeV2Message(
       feedMarketDataStore(envelope.messageType, payload, freshnessVerdict, { userId, bridgeConnectionId });
     }
 
-    return result;
+    return native ? {...result,idempotencyKey:envelope.idempotencyKey,streamKey:envelope.streamKey,sequence:envelope.sequence} : result;
   } catch (e) {
     throw e instanceof Error ? e : new Error(String(e));
   }
@@ -310,7 +351,7 @@ async function safeInsertRejected(
   detail: string,
   idempotencyKey: string,
   serverReceivedAtEpochMs: number,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const mt = (raw && typeof raw === "object" && "messageType" in raw)
       ? String((raw as { messageType?: unknown }).messageType ?? "UNKNOWN").slice(0, 48)
@@ -331,7 +372,9 @@ async function safeInsertRejected(
       serverReceivedAtEpochMs,
       payload: null,
     });
+    return true;
   } catch {
     // Never let trace-logging failure propagate into the EA response path.
+    return false;
   }
 }

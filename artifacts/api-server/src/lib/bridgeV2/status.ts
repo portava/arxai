@@ -25,6 +25,9 @@ import {
 import { listBridgeV2StreamStates, type BridgeV2StreamStateRow } from "../brokerHub/bridgeV2StreamState.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { loadBridgeV2ConfigForEa, listBridgeV2CommandsForEa } from "./egress.js";
+import { getUserConnection } from "../brokerHub/connections.js";
+import { loadBridgeV2AccountReport } from "../brokerHub/nativeAccountReportReader.js";
+import type { NativeAccountReportView } from "../brokerHub/nativeAccountReport.js";
 
 // Liveness facts (owner decision 18, lib/bridgeV2/liveness.ts): the
 // comparable heartbeat fact in the shared vocabulary (`heartbeatFreshness`),
@@ -72,6 +75,9 @@ export interface BridgeV2AdminStatus {
   lastTradeTransactionAt: string | null;
 
   // Account broker truth (latest ACCOUNT_SNAPSHOT payload)
+  nativeAccountReport?: NativeAccountReportView;
+  accountAmountsCurrentVerified: false;
+  accountMoneyReason: string;
   accountBalance: number | null;
   accountEquity: number | null;
   accountCurrency: string | null;
@@ -190,6 +196,11 @@ function streamLastAt(streams: StreamRow[], messageType: string): string | null 
   return isoOf(latest);
 }
 
+async function accountReportForKey(key:BridgeKey){
+  const connection=key.bridgeConnectionId==null?null:await getUserConnection(key.userId,key.bridgeConnectionId);
+  return loadBridgeV2AccountReport(connection);
+}
+
 // Build the full admin readiness DTO for every bridge (optionally one user).
 export async function buildBridgeV2AdminStatus(
   userId: number | null,
@@ -212,7 +223,7 @@ export async function buildBridgeV2AdminStatus(
   for (const { key, streams } of groups.values()) {
     const [heartbeat, account, positions, manifest, commands] = await Promise.all([
       latestAcceptedEvent(key, "HEARTBEAT"),
-      latestAcceptedEvent(key, "ACCOUNT_SNAPSHOT"),
+      accountReportForKey(key),
       latestAcceptedEvent(key, "POSITIONS_SNAPSHOT"),
       loadBridgeV2ConfigForEa(key.userId, key.bridgeConnectionId).catch(() => null),
       listBridgeV2CommandsForEa(key.userId, key.bridgeConnectionId).catch(() => []),
@@ -278,14 +289,17 @@ export async function buildBridgeV2AdminStatus(
       configVersion: manifest?.configVersion ?? null,
       lastAckedConfigVersion: manifest?.lastAckedVersion ?? null,
       executionAllowedServed,
-      lastAccountSnapshotAt: streamLastAt(streams, "ACCOUNT_SNAPSHOT"),
+      lastAccountSnapshotAt: account.lastAccountSnapshotAt,
       lastPositionsSnapshotAt: streamLastAt(streams, "POSITIONS_SNAPSHOT"),
       lastQuoteAt: streamLastAt(streams, "TICK"),
       lastCandleAt: streamLastAt(streams, "CANDLE"),
       lastTradeTransactionAt: streamLastAt(streams, "TRADE_TRANSACTION"),
-      accountBalance: readNum(account?.payload, "balance"),
-      accountEquity: readNum(account?.payload, "equity"),
-      accountCurrency: readStr(account?.payload, "currency"),
+      accountBalance: account.accountBalance,
+      accountEquity: account.accountEquity,
+      accountCurrency: account.accountCurrency,
+      nativeAccountReport: account.nativeAccountReport,
+      accountAmountsCurrentVerified: false,
+      accountMoneyReason: account.accountMoneyReason,
       openPositionsCount,
       lastSequence,
       totalAccepted,
@@ -330,6 +344,11 @@ export async function buildBridgeV2UserStatus(userId: number): Promise<BridgeV2U
     };
   }
 
+  // This redacted DTO has no selected-account identity. Multiple concrete
+  // connections cannot borrow one another's latest account observation.
+  const accountConnections = [...new Set(streams.map(stream=>stream.bridgeConnectionId))];
+  const account = accountConnections.length===1 && accountConnections[0]!=null
+    ? await accountReportForKey({userId,bridgeConnectionId:accountConnections[0]}) : null;
   const heartbeat = await latestAcceptedEvent({ userId, bridgeConnectionId: null }, "HEARTBEAT").catch(() => null);
   // Fall back to the HEARTBEAT stream's lastEventAt when there is no per-conn
   // null-keyed event (the user may have a concrete connection id).
@@ -346,7 +365,7 @@ export async function buildBridgeV2UserStatus(userId: number): Promise<BridgeV2U
     streamImpliesExecutionReady: liveness.streamImpliesExecutionReady,
     accountType: readStr(heartbeat?.payload, "accountType"),
     lastHeartbeatAt,
-    lastAccountAt: streamLastAt(streams, "ACCOUNT_SNAPSHOT"),
+    lastAccountAt: account?.lastAccountSnapshotAt ?? null,
     lastPositionAt: streamLastAt(streams, "POSITIONS_SNAPSHOT"),
     lastQuoteAt: streamLastAt(streams, "TICK"),
     lastCandleAt: streamLastAt(streams, "CANDLE"),
