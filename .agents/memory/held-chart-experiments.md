@@ -51,3 +51,14 @@ tooling from the pending-engine development update.
 
 **How to apply:** Keep selective frontend lifecycle imports separate from held
 mount/layout work and offline fixture instrumentation.
+
+Scanner one/two/four-chart layouts and optional one-way primary-interval
+following are separately authorized features. Keep the default Scanner at one
+chart, with layout controls below that single chart.
+
+**Why:** The owner explicitly accepted these chart features while continuing to
+exclude held performance experiments.
+
+**How to apply:** Preserve the Scanner-specific layout and independent comparison
+contexts without treating this acceptance as permission for held toolbar-phase,
+resize-dedup, containment or mount-budget work.
