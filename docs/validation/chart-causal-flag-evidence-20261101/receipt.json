@@ -1,0 +1,169 @@
+{
+  "date": "2026-11-01",
+  "status": "Bounded offline flag correctness repair validated; release not green",
+  "base": "f0605589d8491c84c3f339d958f8e1e818eeffaa",
+  "applicationCommit": "44e653725ce598c66672100d0d3a80972c94be83",
+  "copyCorrectionCommit": "3afc8b2fab1d0d5b0674a6045f1d47f7842f4a4f",
+  "validation": {
+    "frontendPass": 3656,
+    "frontendSkip": 11,
+    "domainPass": 506,
+    "backendPatternTruthPass": 26,
+    "dashboardTypecheck": "pass",
+    "apiTypecheck": "pass",
+    "domainDeclarationBuild": "pass",
+    "productionDashboardBuild": "pass",
+    "guards": "85/87, same violations; scanned product file count changed2701to2702",
+    "finalCopyFlagTests": 27,
+    "finalAdapterVisualCases": 8,
+    "independentReview": "Domain negative-target and numeric frontend findings fixed, final reviews clear within scope"
+  },
+  "performance": {
+    "samples": 8000,
+    "warmups": 1280,
+    "order": [
+      "baseline-1",
+      "candidate-1",
+      "candidate-2",
+      "baseline-2"
+    ],
+    "metrics": {
+      "baseline-1": {
+        "raw_catalog_600": {
+          "n": 500,
+          "p50": 0.04387500000007094,
+          "p95": 0.05354200000010678,
+          "p99": 0.07449999999994361,
+          "max": 0.25841700000000856
+        },
+        "complete_analysis_5000": {
+          "n": 500,
+          "p50": 0.49374999999997726,
+          "p95": 0.6711250000000746,
+          "p99": 0.7513750000000528,
+          "max": 0.8001669999999876
+        },
+        "binding_and_analysis_5000": {
+          "n": 500,
+          "p50": 0.8996660000000247,
+          "p95": 1.1219170000000531,
+          "p99": 1.307042000000024,
+          "max": 2.4155830000000833
+        },
+        "dense_analysis_600": {
+          "n": 500,
+          "p50": 0.7649589999998625,
+          "p95": 1.0292919999999413,
+          "p99": 1.1682919999999513,
+          "max": 1.3145419999999604
+        }
+      },
+      "candidate-1": {
+        "raw_catalog_600": {
+          "n": 500,
+          "p50": 0.19695799999999508,
+          "p95": 0.2200830000000451,
+          "p99": 0.3883329999999887,
+          "max": 0.42804099999989376
+        },
+        "complete_analysis_5000": {
+          "n": 500,
+          "p50": 0.6676660000000538,
+          "p95": 0.85287500000004,
+          "p99": 0.9123339999999871,
+          "max": 1.012042000000065
+        },
+        "binding_and_analysis_5000": {
+          "n": 500,
+          "p50": 1.0746670000000904,
+          "p95": 1.3503330000000915,
+          "p99": 1.5682090000000244,
+          "max": 2.0893330000000105
+        },
+        "dense_analysis_600": {
+          "n": 500,
+          "p50": 0.9446249999998599,
+          "p95": 1.193708000000015,
+          "p99": 1.305291000000011,
+          "max": 1.616041999999993
+        }
+      },
+      "candidate-2": {
+        "raw_catalog_600": {
+          "n": 500,
+          "p50": 0.1962079999998423,
+          "p95": 0.22166600000014114,
+          "p99": 0.37512500000002547,
+          "max": 0.43574999999998454
+        },
+        "complete_analysis_5000": {
+          "n": 500,
+          "p50": 0.6586249999998017,
+          "p95": 0.842542000000094,
+          "p99": 0.9128749999999854,
+          "max": 1.0447909999999183
+        },
+        "binding_and_analysis_5000": {
+          "n": 500,
+          "p50": 1.0684999999999718,
+          "p95": 1.3502500000001874,
+          "p99": 1.5102500000000418,
+          "max": 1.5862090000000535
+        },
+        "dense_analysis_600": {
+          "n": 500,
+          "p50": 0.931791000000203,
+          "p95": 1.1646670000000086,
+          "p99": 1.2949160000000575,
+          "max": 1.5262089999999944
+        }
+      },
+      "baseline-2": {
+        "raw_catalog_600": {
+          "n": 500,
+          "p50": 0.04416599999990467,
+          "p95": 0.054666999999994914,
+          "p99": 0.0690829999999778,
+          "max": 0.23679100000003928
+        },
+        "complete_analysis_5000": {
+          "n": 500,
+          "p50": 0.5022080000001097,
+          "p95": 0.6667500000000928,
+          "p99": 0.8402500000000828,
+          "max": 1.1488749999998618
+        },
+        "binding_and_analysis_5000": {
+          "n": 500,
+          "p50": 0.9047920000000431,
+          "p95": 1.1212500000000318,
+          "p99": 1.3177910000000566,
+          "max": 2.0262500000000045
+        },
+        "dense_analysis_600": {
+          "n": 500,
+          "p50": 0.7718330000000151,
+          "p95": 1.0529169999999795,
+          "p99": 1.1612499999999955,
+          "max": 4.009957999999983
+        }
+      }
+    },
+    "allExistingComputeBudgetsPass": true,
+    "interpretation": "Additional causal validation costs CPU; not a speed win or browser/provider latency claim.",
+    "quietWindow": "Task tests/builds/fixture browsers and servers stopped. Other host activity not controlled."
+  },
+  "openTruthFindings": [
+    "Master cockpit figures freshness is bound to a different account context.",
+    "Cached Eleanor reads lack full source/account/window identity and request ordering/expiry.",
+    "Other heuristic grade/edge displays still require audit."
+  ],
+  "limits": [
+    "No infallibility/calibrated probability/vendor parity/launch readiness claim.",
+    "Fixed8bar pole/6bar channel and latest600closed observations; no exhaustive history/formation discovery.",
+    "Unrepresentable public reference prices withhold; positive price assumptions.",
+    "Close-only outcome semantics; vendor wick/threshold/pivot differences explicit.",
+    "Two existing guards remain.",
+    "No Replit watched-source edit/restart, main merge, deployment, DB changes, workers, orders or broker tests."
+  ]
+}
