@@ -81,8 +81,11 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const panRef = useRef<HTMLButtonElement | null>(null);
   const toolsId = `${instanceId}-tools`;
-  const [compact,setCompact] = useState(false);
-  const compactRef = useRef(false);
+  // A phone cannot contain a wider chart pane. Start compact there so the
+  // first layout need not render and immediately hide the advanced controls.
+  // The existing pane measurement still handles narrow desktop comparisons.
+  const [compact,setCompact] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  const compactRef = useRef(compact);
   const resizeFocus = useRef<"toggle" | "pan" | null>(null);
   const navigateFocus = useRef(false);
   useLayoutEffect(()=>{
