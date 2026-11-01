@@ -1,3 +1,5 @@
+import { mt5TickVolumeEvidence } from "../lib/data/candleVolumeEvidence.js";
+import type { Candle } from "../lib/data/types.js";
 import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
 import { projectManagementMailbox } from "../lib/mt5/managementTargetTransport.js";
 import { appendExecutionEvidence as recordExecutionEvent } from "../lib/live/executionEvidence.js";
@@ -2237,7 +2239,7 @@ router.post("/mt5/sync-candles", bridgeAuthPerUserOnly, async (req, res) => {
   }
 
   // Normalize → validate → de-dupe by timestamp (last write wins) → sort ascending.
-  const byTime = new Map<string, { time: string; open: number; high: number; low: number; close: number; volume?: number }>();
+  const byTime = new Map<string, Candle>();
   let rejected = 0;
   for (const b of bars) {
     if (!isValidOhlc(b)) { rejected += 1; continue; }
@@ -2247,6 +2249,7 @@ router.post("/mt5/sync-candles", bridgeAuthPerUserOnly, async (req, res) => {
     byTime.set(time, {
       time, open: b.open, high: b.high, low: b.low, close: b.close,
       volume: b.tickVolume ?? b.volume,
+      volumeEvidence: mt5TickVolumeEvidence(b.tickVolume),
     });
   }
   const candles = [...byTime.values()].sort((a, b) => a.time.localeCompare(b.time));

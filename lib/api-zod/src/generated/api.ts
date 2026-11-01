@@ -5248,6 +5248,8 @@ export const GetChartCandlesQueryParams = zod.object({
     .default(getChartCandlesQueryLimitDefault),
 });
 
+export const getChartCandlesResponseCandlesItemVolumeEvidenceQuantityMin = 0;
+
 export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMin = 0;
 export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMax = 1;
 
@@ -5358,7 +5360,23 @@ export const GetChartCandlesResponse = zod.object({
         close: zod.number(),
         volume: zod
           .number()
-          .describe("Real traded volume when the provider supplies it"),
+          .describe(
+            "Legacy ambiguous provider volume or default zero. Use volumeEvidence to determine observed quantity and semantics.",
+          ),
+        volumeEvidence: zod
+          .object({
+            kind: zod.enum(["tick_count", "real_volume", "unavailable"]),
+            quantity: zod
+              .number()
+              .min(getChartCandlesResponseCandlesItemVolumeEvidenceQuantityMin)
+              .nullable(),
+            unit: zod.enum(["ticks", "broker_units"]).nullable(),
+            reason: zod.string().nullable(),
+          })
+          .optional()
+          .describe(
+            "Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.",
+          ),
         tickVolume: zod
           .number()
           .nullable()
@@ -6139,6 +6157,10 @@ export const GetMeChartIntelligenceQueryParams = zod.object({
     .default(getMeChartIntelligenceQueryLimitDefault),
 });
 
+export const getMeChartIntelligenceResponseStateCurrentCandleOneVolumeEvidenceQuantityMin = 0;
+
+export const getMeChartIntelligenceResponseStateLatestClosedCandleOneVolumeEvidenceQuantityMin = 0;
+
 export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMin = 0;
 export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMax = 1;
 
@@ -6275,7 +6297,25 @@ export const GetMeChartIntelligenceResponse = zod.object({
             close: zod.number(),
             volume: zod
               .number()
-              .describe("Real traded volume when the provider supplies it"),
+              .describe(
+                "Legacy ambiguous provider volume or default zero. Use volumeEvidence to determine observed quantity and semantics.",
+              ),
+            volumeEvidence: zod
+              .object({
+                kind: zod.enum(["tick_count", "real_volume", "unavailable"]),
+                quantity: zod
+                  .number()
+                  .min(
+                    getMeChartIntelligenceResponseStateCurrentCandleOneVolumeEvidenceQuantityMin,
+                  )
+                  .nullable(),
+                unit: zod.enum(["ticks", "broker_units"]).nullable(),
+                reason: zod.string().nullable(),
+              })
+              .optional()
+              .describe(
+                "Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.",
+              ),
             tickVolume: zod
               .number()
               .nullable()
@@ -6383,7 +6423,25 @@ export const GetMeChartIntelligenceResponse = zod.object({
             close: zod.number(),
             volume: zod
               .number()
-              .describe("Real traded volume when the provider supplies it"),
+              .describe(
+                "Legacy ambiguous provider volume or default zero. Use volumeEvidence to determine observed quantity and semantics.",
+              ),
+            volumeEvidence: zod
+              .object({
+                kind: zod.enum(["tick_count", "real_volume", "unavailable"]),
+                quantity: zod
+                  .number()
+                  .min(
+                    getMeChartIntelligenceResponseStateLatestClosedCandleOneVolumeEvidenceQuantityMin,
+                  )
+                  .nullable(),
+                unit: zod.enum(["ticks", "broker_units"]).nullable(),
+                reason: zod.string().nullable(),
+              })
+              .optional()
+              .describe(
+                "Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.",
+              ),
             tickVolume: zod
               .number()
               .nullable()
