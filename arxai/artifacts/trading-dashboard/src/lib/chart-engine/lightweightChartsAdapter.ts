@@ -126,6 +126,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   // OWN line series + marker channel, separate from trade-plan price lines, so
   // clearing one never disturbs the other. Display-only.
   private structureSeries: ISeriesApi<"Line">[] = [];
+  private researchSeries: ISeriesApi<"Line">[] = [];
   private structureMarkersApi: { detach: () => void } | null = null;
   // Raw (un-snapped) structural overlay as last handed to setStructureLines, so
   // the markers can be RE-SNAPPED onto real bars whenever setCandles slides the
@@ -406,6 +407,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.structureSeries = [];
     this.structureMarkersApi = null;
     this.structureLinesRaw = [];
+    this.researchSeries = [];
     this.structureMarkersRaw = [];
     this.structureSnappedTimes = [];
     this.container = null;
@@ -478,6 +480,10 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.syncDisplay(unchanged);
     this.smartAnnotationPrimitive?.setData(this.smartAnnotation, this.candles);
     this.newestSeriesTime = sanitized.at(-1)?.time ?? null;
+    if (this.overlaysRaw.some(o => o.source === "research" && o.type === "marker")
+      && (previous.length !== sanitized.length || previous.some((bar, i) => bar.time !== sanitized[i]?.time))) {
+      this.setOverlays(this.overlaysRaw, this.overlayTime);
+    }
     this.applyPricePrecision();
     const reconcile = () => {
       if (trimTail) {
@@ -528,6 +534,17 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.overlaysRaw = overlays; this.overlayTime = latestBarTime;
     const series = this.series;
     if (!series) return;
+    const hasResearch = overlays.some(o => o.source === "research");
+    const availableTimes = hasResearch ? new Set(this.sanitizedBarSecsAsc()) : null;
+    if (this.chart && (hasResearch || this.researchSeries.length)) {
+      const researchLines: ChartStructureLine[] = overlays.flatMap(o =>
+        o.source === "research" && o.type === "line" && o.price != null && Number.isFinite(o.price) && o.price > 0
+        && o.startTime != null && o.endTime != null && o.startTime < o.endTime
+        && availableTimes?.has(o.startTime) && availableTimes.has(o.endTime)
+          ? [{ id:o.id, start:{time:o.startTime,price:o.price}, end:{time:o.endTime,price:o.price}, color:overlayColor(o), dashed:true, width:1 }]
+          : []);
+      this.researchSeries = applyStructureLines(this.chart, series, researchLines, [], {series:this.researchSeries,markersApi:null}).series;
+    }
 
     // Clear prior overlay lines (the "Last" price line is owned separately).
     for (const line of this.overlayLines) {
@@ -552,6 +569,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     };
 
     for (const o of overlays) {
+      if (o.source === "research") continue;
       if (o.type === "line") {
         addLine(o.price, o, o.label);
       } else if (o.type === "zone") {
@@ -574,17 +592,24 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       latestBarTime != null
         ? snapSecToCandle(latestBarTime, this.sanitizedBarSecsAsc())
         : null;
-    if (anchorSec != null && markerOverlays.length > 0) {
-      const markerData: SeriesMarker<UTCTimestamp>[] = markerOverlays.map((o) => {
+    if (markerOverlays.length > 0) {
+      const markerData = markerOverlays.flatMap<SeriesMarker<UTCTimestamp>>((o) => {
+        // Historical ledger markers are tied to an exact observed bar. They
+        // must never slide onto the latest price or a nearby missing bar.
+        const time = o.source === "research"
+          ? o.startTime != null && availableTimes?.has(o.startTime) ? o.startTime : null
+          : anchorSec;
+        if (time == null) return [];
         const side = o.marker!.side;
-        return {
-          time: anchorSec as UTCTimestamp,
+        return [{
+          time: time as UTCTimestamp,
           position: side === "BUY" ? "belowBar" : "aboveBar",
           color: overlayColor(o),
           shape: side === "BUY" ? "arrowUp" : "arrowDown",
           text: o.label,
-        };
-      });
+        }];
+      }).sort((a, b) => Number(a.time) - Number(b.time));
+      if (!markerData.length) return;
       try {
         this.markersApi = createSeriesMarkers(series, markerData);
       } catch { /* markers are decorative — never break the chart */ }
@@ -994,7 +1019,9 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       // still belongs to the reader, never to this streamed display update.
       this.queueViewportUpdate();
       this.queueLegendUpdate();
-      if (this.lastPriceLine && this.feedState.livePriceAffordance) this.lastPriceLine.applyOptions({ price: candle.close });
+      if (this.lastPriceLine && this.feedState.livePriceAffordance && this.lastPriceLine.options().price !== candle.close) {
+        this.lastPriceLine.applyOptions({ price: candle.close });
+      }
     } catch { /* ignore a bad streaming update */ }
   }
 
@@ -1029,14 +1056,20 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // would show the averaged close, so it stays hidden; the dashed "Last"
     // line below always carries the canonical last close.
     const seriesLabel = live && this.displayMode !== "heikinAshi";
-    series.applyOptions({ priceLineVisible: seriesLabel, lastValueVisible: seriesLabel });
+    // applyOptions invalidates the renderer even when values are identical.
+    // Read its actual state so poll reconciliation can skip redundant work
+    // without caching away a live/stale transition or a new series instance.
+    const current = series.options();
+    if (current.priceLineVisible !== seriesLabel || current.lastValueVisible !== seriesLabel) {
+      series.applyOptions({ priceLineVisible: seriesLabel, lastValueVisible: seriesLabel });
+    }
 
     const last = this.candles.at(-1);
     if (!live || !last) {
       if (this.lastPriceLine) series.removePriceLine(this.lastPriceLine);
       this.lastPriceLine = null;
     } else if (this.lastPriceLine) {
-      this.lastPriceLine.applyOptions({ price: last.close });
+      if (this.lastPriceLine.options().price !== last.close) this.lastPriceLine.applyOptions({ price: last.close });
     } else {
       this.lastPriceLine = series.createPriceLine({
         price: last.close, color: "#60a5fa", lineWidth: 1,

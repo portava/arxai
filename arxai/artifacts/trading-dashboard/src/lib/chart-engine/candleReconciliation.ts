@@ -1,10 +1,11 @@
+import { observedTickVolume } from "./chartVolume";
 import type { ChartEngineCandle } from "./types";
 
 export function sameCandle(a: ChartEngineCandle, b: ChartEngineCandle): boolean {
-  return a.time === b.time && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close;
+  return a.time === b.time && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close && observedTickVolume(a.volumeEvidence) === observedTickVolume(b.volumeEvidence);
 }
 
-/** Number of observed candles whose OHLC and timestamp are unchanged. Study
+/** Number of observed candles whose OHLC, qualified tick count and timestamp are unchanged. Study
  * state before this index is causal and may survive appends or truncation. */
 export function unchangedCandlePrefix(previous: readonly ChartEngineCandle[], next: readonly ChartEngineCandle[]): number {
   let index = 0;

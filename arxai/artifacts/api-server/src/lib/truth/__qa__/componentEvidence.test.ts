@@ -156,3 +156,19 @@ test("component expiry inside the 4.5-second cache window withdraws votes withou
   assert.equal(after.generatedAt, before.generatedAt); assert.deepEqual(after.data, before.data);
   assert.equal(before.components.scanner.present, true, "cached original is not mutated");
 });
+
+
+test("snapshot retains the observed opaque identity for downstream chart binding", async () => {
+  const result = await snapshot();
+  assert.equal(result.data.sourceIdentity, fixture.evidence.sourceIdentity);
+  assert.match(result.data.sourceIdentity!, /^[a-f0-9]{64}$/);
+});
+
+for (const change of [
+  { sourceIdentity: "malformed" }, { sourceIdentity: null },
+  { symbol: "GBPUSD" }, { timeframe: "M5" }, { source: "deriv_public" },
+]) test(`snapshot withholds unproven chart source identity ${JSON.stringify(change)}`, async () => {
+  const chart = { ...fixture.chart, marketEvidence: { ...fixture.evidence, ...change } };
+  const result = await snapshot(signal(), { getChartCandlesFn: async () => chart as never });
+  assert.equal(result.data.sourceIdentity, null);
+});

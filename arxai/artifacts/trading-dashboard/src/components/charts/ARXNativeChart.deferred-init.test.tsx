@@ -1,3 +1,4 @@
+import { requestChartStudy } from "@/lib/chart-engine/chartStudyAssistant";
 // P2 — comparison chart cards mount in the click commit, but each new
 // comparison's chart engine (lightweight-charts init + its own first paint)
 // is built only after the mounting frame has painted: one animation frame,
@@ -829,5 +830,64 @@ describe("deferred comparison engine init", () => {
     expect(screen.getByTestId("chart-daily-zone-note")).toBeTruthy();
     act(() => (daily.setCrosshairHandler.mock.calls.at(-1)![0] as (bar: unknown) => void)({ time: OPEN_MS / 1000, open: 1.101, high: 1.103, low: 1.1, close: 1.102 }));
     expect(screen.getByTestId("chart-candle-inspector").textContent!.startsWith("2023-11-14 22:13 UTC")).toBe(true);
+  });
+});
+
+describe("current chart assistant binding",()=>{
+  it("applies to primary only, updates saved manual settings and releases on unmount",()=>{
+    candleResponse=liveResponse("EURUSD","H1");
+    const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    const primary=created[0]!;
+    primary.getVisibleCandles=vi.fn(()=>[{time:1700000000,open:1.1,high:1.2,low:1,close:1.15}]);
+    primary.getStudyValues=vi.fn(()=>[{label:"RSI (14) · close",color:"#fff",values:[{name:"RSI",value:63.25}]}]);
+    let reply:string|null=null;
+    act(()=>{reply=requestChartStudy("show RSI");});
+    expect(reply).toContain("RSI: 63.25");
+    expect(reply).toContain("EURUSD · H1");
+    expect(primary.setStudies).toHaveBeenLastCalledWith([expect.objectContaining({kind:"rsi",period:14})]);
+    expect(localStorage.getItem("arx.chart.preferences.v1")).toContain('"rsi"');
+    view.unmount();
+    expect(requestChartStudy("show RSI")).toContain("Open");
+  });
+  it("does not apply retained old data while the next asset has no matching response",()=>{
+    candleResponse=liveResponse("EURUSD","H1");
+    const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    const adapter=created[0]!;
+    adapter.getVisibleCandles=vi.fn(()=>[{time:1700000000,open:1.1,high:1.2,low:1,close:1.15}]);
+    adapter.getStudyValues=vi.fn(()=>[]);
+    view.rerender(<ARXNativeChart symbol="USDJPY" timeframe="M5"/>);
+    adapter.setStudies.mockClear();
+    expect(requestChartStudy("show RSI")).toContain("not applied");
+    expect(adapter.setStudies).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it("a comparison does not hijack the chart assistant",()=>{
+    candleResponse=liveResponse("EURUSD","H1");
+    const view=render(<><ARXNativeChart symbol="EURUSD" timeframe="H1"/><ARXNativeChart symbol="USDJPY" timeframe="M5" workspaceId="comparison"/></>);
+    created[0]!.getVisibleCandles=vi.fn(()=>[{time:1700000000,open:1.1,high:1.2,low:1,close:1.15}]);
+    created[0]!.getStudyValues=vi.fn(()=>[]);
+    let reply:string|null=null; act(()=>{reply=requestChartStudy("show RSI");});
+    expect(reply).toContain("EURUSD · H1");
+    view.unmount();
+  });
+});
+
+
+describe("qualified volume handoff to native renderer",()=>{
+  it("explains a selected but unavailable tick-volume pane without inventing zeros",()=>{
+    candleResponse=liveResponse("EURUSD","H1");
+    localStorage.setItem("arx.chart.preferences.v1",JSON.stringify({studies:[{kind:"tick_volume",period:1,color:"#38bdf8"}]}));
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    expect(screen.getByText(/Tick volume unavailable for these loaded candles/)).toBeTruthy();
+  });
+  it("preserves explicit source-qualified historical counts and never promotes partial ticks",()=>{
+    const data=liveResponse("EURUSD","H1");
+    const volumeEvidence={kind:"tick_count",quantity:42,unit:"ticks",reason:null};
+    candleResponse={...data,candles:data.candles.map(bar=>({...bar,volumeEvidence}))};
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    const engine=created[0]!;
+    expect(engine.setCandles.mock.calls.at(-1)![0].at(-1).volumeEvidence).toEqual(volumeEvidence);
+    act(()=>{streams[0]!.onmessage?.(formingBar(1.102));});
+    expect(engine.updateActiveCandle.mock.calls.at(-1)![0].volumeEvidence).toBeUndefined();
   });
 });

@@ -211,3 +211,58 @@ for (const [name, mutate, code] of [
   const i = clone(input()), c = config(); mutate(i, c);
   assert.throws(() => runCausalResearch(i, c), (e: unknown) => e instanceof ResearchInputError && e.code === code);
 });
+
+// Pre-extraction SHA-256 receipts from base 46f209f5. These catch a shared
+// Node/WebCrypto regression even when both wrappers make the same mistake.
+import { runCausalResearchWeb } from "@workspace/domain/backtest/research-browser";
+const V1_GOLDEN = [
+  {
+    "algorithm": "sha256",
+    "input": "1f9b1833a62a4ba44568df1561a69e11d14a196b6ea203db53aebc4cdd2b42f4",
+    "configuration": "8ea000831405ad2ff96943f14ad0fa9a99179afafbf8809dcc27da1d95b0e310",
+    "strategy": "d675ad29bc4a6d5ae0f573cc0b0d354239a12b0271c0a3fa4a6908320d93d4b6",
+    "result": "6b4f670b91994bf68a678a79d1562f57df5a5d8e04c5ba2740ed66a75e72c67b"
+  },
+  {
+    "algorithm": "sha256",
+    "input": "257aacbace51a37b8a9692beb88e718f09dae6362a585899719c262736b84c45",
+    "configuration": "b658de4702a1cbac77b89812bc3de41a6b1395b2670f58d9cd8ada1f34392a71",
+    "strategy": "ae9614cd2006e3c1a2ba1f209324c18dd19727155f399f6588f20fcc3f57b7f7",
+    "result": "d82ef886754fdc05294aa7ede46aa3bad741bf421c6564139148db019f8fdc13"
+  },
+  {
+    "algorithm": "sha256",
+    "input": "c21d54217c3293aa7d0c02a0d4aef8cd79e552e37a5da1201123ff9ddd478f06",
+    "configuration": "97206f5ec4b8eac3e8af9c9a343184d3a495e797565d86573c3a80bfe0eb30d5",
+    "strategy": "ae9614cd2006e3c1a2ba1f209324c18dd19727155f399f6588f20fcc3f57b7f7",
+    "result": "6c4ab8b1e16d6f120253d3f036d433d276d63a6f24f6d7381fb75531bc0dccdf"
+  }
+];
+test("portable v1 preserves all pre-extraction fingerprints and exact WebCrypto output", async () => {
+  const cases = [[input(), config()], [workload(100), workloadConfig(100)], [workload(500), workloadConfig(500)]] as const;
+  for (const [i, [source, cfg]] of cases.entries()) {
+    const node = runCausalResearch(source, cfg);
+    assert.deepEqual(node.fingerprints, V1_GOLDEN[i]);
+    const web = await runCausalResearchWeb(source, cfg);
+    assert.equal(JSON.stringify(web), JSON.stringify(node));
+    assert.ok(Object.isFrozen(web.inputSnapshot.bars[0]));
+    assert.ok(Object.isFrozen(web.partitions[0]!.markedCurve));
+  }
+});
+test("WebCrypto await cannot observe later caller input or configuration edits", async () => {
+  const source = workload(100), cfg = workloadConfig(100);
+  const expected = runCausalResearch(source, cfg), pending = runCausalResearchWeb(source, cfg);
+  (source.bars[0] as {close:number}).close = 999;
+  cfg.costs.fullSpreadPriceUnits = 999;
+  assert.equal(JSON.stringify(await pending), JSON.stringify(expected));
+});
+test("browser main thread is refused before any historical input is read", async () => {
+  Object.defineProperty(globalThis, "document", {value: {}, configurable: true});
+  try {
+    const badInput = new Proxy({} as Parameters<typeof runCausalResearchWeb>[0], { get() { throw Error("input must not be read"); } });
+    await assert.rejects(runCausalResearchWeb(badInput, config()), (error: unknown) => error instanceof ResearchInputError && error.code === "RESEARCH_WORKER_REQUIRED");
+  } finally { delete (globalThis as {document?:unknown}).document; }
+});
+
+// Same registered CI lane owns both immutable research versions.
+import "./causalResearchV2.test.js";

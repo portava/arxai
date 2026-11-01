@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
-  const line = { applyOptions: vi.fn() };
-  const series = { attachPrimitive: vi.fn(), setData: vi.fn(), update: vi.fn(), pop: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn(() => line), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
+  const lineState: Record<string, any> = {};
+  const seriesState: Record<string, any> = {};
+  const line = { options: () => ({...lineState}), applyOptions: vi.fn((change) => Object.assign(lineState, change)) };
+  const series = { attachPrimitive: vi.fn(), setData: vi.fn(), update: vi.fn(), pop: vi.fn(), options: () => ({...seriesState}), applyOptions: vi.fn(change => Object.assign(seriesState, change)), createPriceLine: vi.fn(options => {Object.assign(lineState,options);return line;}), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
   const scale = { subscribeVisibleLogicalRangeChange: vi.fn(), getVisibleRange: vi.fn(() => ({from:100,to:400})), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 1 })), setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(), scrollToRealTime: vi.fn(), scrollToPosition: vi.fn(), options:()=>({rightOffset:8}) };
-  const chart = { addSeries: vi.fn(() => series), subscribeCrosshairMove: vi.fn(), setCrosshairPosition:vi.fn(), clearCrosshairPosition:vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
+  const chart = { addSeries: vi.fn((_kind,options) => {for(const key of Object.keys(seriesState))delete seriesState[key];Object.assign(seriesState,{priceLineVisible:true,lastValueVisible:true},options);return series;}), subscribeCrosshairMove: vi.fn(), setCrosshairPosition:vi.fn(), clearCrosshairPosition:vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
   const createChart = vi.fn((_el: unknown, _options: any) => chart);
   return { line, series, scale, chart, createChart };
 });
@@ -364,4 +366,38 @@ it("withdraws a visible reader explanation after a streamed OHLC revision and re
     expect(view.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("unavailable");
     expect(annotation).toHaveBeenLastCalledWith(null);
   } finally { cleanup(); adapter.destroy(); raf.mockRestore(); caf.mockRestore(); }
+});
+
+describe("live-price settings on repeated reconciliation",()=>{
+ it.each([false,true])("repeated identical polls do not rewrite price settings (live=%s)",live=>{
+  const candles=[bar(100),bar(200)];adapter.setFeedState({livePriceAffordance:live,source:"fixture"});adapter.setCandles(candles);
+  mocks.series.applyOptions.mockClear();mocks.line.applyOptions.mockClear();mocks.series.setData.mockClear();mocks.series.update.mockClear();
+  for(let i=0;i<20;i++){adapter.setFeedState({livePriceAffordance:live,source:"fixture"});adapter.setCandles(candles);}
+  expect(mocks.series.applyOptions).not.toHaveBeenCalled();expect(mocks.line.applyOptions).not.toHaveBeenCalled();expect(mocks.series.setData).not.toHaveBeenCalled();expect(mocks.series.update).not.toHaveBeenCalled();
+ });
+ it("withdraws live labels immediately, including repeated stale and resumed states",()=>{
+  adapter.setFeedState({livePriceAffordance:true,source:"fixture"});adapter.setCandles([bar(100)]);
+  mocks.series.applyOptions.mockClear();mocks.series.removePriceLine.mockClear();
+  adapter.setFeedState({livePriceAffordance:false,source:"fixture"});adapter.setFeedState({livePriceAffordance:false,source:"fixture"});
+  expect(mocks.series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(mocks.series.applyOptions).toHaveBeenCalledTimes(1);expect(mocks.series.removePriceLine).toHaveBeenCalledTimes(1);
+  adapter.setFeedState({livePriceAffordance:true,source:"fixture"});expect(mocks.series.options()).toMatchObject({priceLineVisible:true,lastValueVisible:true});expect(mocks.line.options().price).toBe(1.15);
+ });
+ it("still updates canonical Last when only the candle price changes",()=>{
+  adapter.setFeedState({livePriceAffordance:true,source:"fixture"});adapter.setCandles([bar(100)]);mocks.line.applyOptions.mockClear();mocks.series.applyOptions.mockClear();
+  adapter.setCandles([bar(100,1.17)]);expect(mocks.line.options().price).toBe(1.17);expect(mocks.line.applyOptions).toHaveBeenCalledExactlyOnceWith({price:1.17});expect(mocks.series.applyOptions).not.toHaveBeenCalled();
+  mocks.line.applyOptions.mockClear();adapter.updateActiveCandle(bar(100,1.17));expect(mocks.line.applyOptions).not.toHaveBeenCalled();
+  adapter.updateActiveCandle(bar(100,1.18));expect(mocks.line.options().price).toBe(1.18);
+ });
+ it("repairs either actual label setting and Last price if changed elsewhere",()=>{
+  adapter.setFeedState({livePriceAffordance:true,source:"fixture"});adapter.setCandles([bar(100)]);
+  for(const key of ['priceLineVisible','lastValueVisible']){
+   mocks.series.applyOptions({[key]:false});mocks.series.applyOptions.mockClear();adapter.setFeedState({livePriceAffordance:true,source:"fixture"});expect(mocks.series.applyOptions).toHaveBeenCalledExactlyOnceWith({priceLineVisible:true,lastValueVisible:true});
+  }
+  mocks.line.applyOptions({price:999});adapter.setFeedState({livePriceAffordance:true,source:"fixture"});expect(mocks.line.options().price).toBe(1.15);
+ });
+ it("clears and repopulates without retaining a stale Last line",()=>{
+  adapter.setFeedState({livePriceAffordance:true,source:"fixture"});adapter.setCandles([bar(100)]);adapter.setCandles([]);expect(mocks.series.removePriceLine).toHaveBeenCalledWith(mocks.line);
+  adapter.setFeedState({livePriceAffordance:false,source:null});adapter.setCandles([bar(200,1.19)]);expect(mocks.series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
+  adapter.setFeedState({livePriceAffordance:true,source:"next"});expect(mocks.line.options().price).toBe(1.19);
+ });
 });

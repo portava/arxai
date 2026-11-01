@@ -102,6 +102,8 @@ export interface TruthData {
   state: TruthDataState;
   /** Raw provider id — for logic/admin only, never rendered raw. */
   source: string | null;
+  /** Original chart identity; provider name alone cannot bind account/environment. */
+  sourceIdentity?: string | null;
   /** Clean-English provider label for display. */
   sourceLabel: string | null;
   /** Newest observed chart close (may be a provider forming bar), or null. */
@@ -439,6 +441,7 @@ export async function buildSymbolTruthSnapshot(
   const chartEvidence = chart?.marketEvidence;
   const expected: TruthReadEvidence | null = chartEvidence?.symbol === symbol && chartEvidence.timeframe === timeframe && chartEvidence.source === data.source
     ? chartEvidence : null;
+  data.sourceIdentity = expected && /^[a-f0-9]{64}$/.test(expected.sourceIdentity) ? expected.sourceIdentity : null;
   const matches = (e: TruthReadEvidence | null | undefined, generatedAt: unknown, accountDependent = false) =>
     evidenceMatches(e, expected, now, accountDependent ? userId : undefined) && isCurrentBuild(generatedAt, now);
   const scannerUsable = scanner != null && scanner.symbol === symbol && scanner.timeframe === timeframe &&

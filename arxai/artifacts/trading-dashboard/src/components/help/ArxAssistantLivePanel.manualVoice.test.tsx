@@ -1,3 +1,4 @@
+import { registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import {
   describe, it, expect, beforeEach, afterEach, vi,
 } from "vitest";
@@ -133,6 +134,20 @@ afterEach(() => {
 });
 
 describe("ArxAssistantLivePanel — manual press-to-record only", () => {
+  it("routes chart curiosity through the mounted chart without a remote model request", () => {
+    const handler=vi.fn(()=>"Applied RSI (14). Actual chart observation RSI: 61.");
+    const release=registerChartStudyAssistant(handler);
+    try {
+      renderPanel();
+      vi.mocked(fetch).mockClear();
+      fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"What does RSI tell me about this chart?"}});
+      fireEvent.click(screen.getByTestId("arx-send"));
+      expect(handler).toHaveBeenCalledWith({kind:"rsi",action:"show",period:undefined});
+      expect(screen.getByText(/Actual chart observation RSI: 61/)).toBeTruthy();
+      expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes("/messages"))).toBe(false);
+    } finally { release(); }
+  });
+
   it("keeps the same open conversation panel when the chart launcher docks and undocks",()=>{
     const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
     const App=({chart}:{chart:boolean})=><QueryClientProvider client={client}><AssistantDockProvider>{chart&&<AssistantDockSlot/>}<ArxAssistantLivePanel/></AssistantDockProvider></QueryClientProvider>;

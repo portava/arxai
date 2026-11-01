@@ -1,12 +1,13 @@
+import { executeStudyRequest, parseStudyRequest } from "./chartStudyAssistant";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const m=vi.hoisted(()=>{
   const handles:any[]=[];
   const range={from:10,to:30};
   const scale={subscribeVisibleLogicalRangeChange:vi.fn(),getVisibleLogicalRange:()=>range,setVisibleLogicalRange:vi.fn(),setVisibleRange:vi.fn(),fitContent:vi.fn(),width:()=>800,coordinateToTime:vi.fn(()=>100),scrollToPosition:vi.fn(),scrollToRealTime:vi.fn(),options:()=>({rightOffset:8})};
-  const chart={addSeries:vi.fn((kind:any,options:any,pane=0)=>{const data:any[]=[];const handle={kind,options,pane,data,
+  const chart={addSeries:vi.fn((kind:any,options:any,pane=0)=>{const data:any[]=[];const state={priceLineVisible:true,lastValueVisible:true,...options};const handle={kind,options:()=>({...state}),pane,data,
     setData:vi.fn((next:any[])=>data.splice(0,data.length,...next.map(point=>({...point})))),
     update:vi.fn((point:any)=>{const last=data.at(-1);if(last&&point.time<last.time)throw new Error('Historical update');if(last?.time===point.time)data[data.length-1]={...point};else data.push({...point});}),
-    pop:vi.fn((count:number)=>{for(let i=data.length-1;i>=0&&count>0;i--)if(data[i].value!=null||data[i].close!=null){data.splice(i,1);count--;}}),applyOptions:vi.fn(),createPriceLine:vi.fn(()=>({applyOptions:vi.fn()})),removePriceLine:vi.fn(),coordinateToPrice:()=>1.2,attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};handles.push(handle);return handle;}),removeSeries:vi.fn(),subscribeClick:vi.fn(),subscribeCrosshairMove:vi.fn(),timeScale:()=>scale,applyOptions:vi.fn(),remove:vi.fn(),clearCrosshairPosition:vi.fn(),panes:()=>Array.from({length:4},()=>({setHeight:vi.fn(),setStretchFactor:vi.fn(),getHeight:()=>300}))};
+    pop:vi.fn((count:number)=>{for(let i=data.length-1;i>=0&&count>0;i--)if(data[i].value!=null||data[i].close!=null){data.splice(i,1);count--;}}),applyOptions:vi.fn(change=>Object.assign(state,change)),createPriceLine:vi.fn(options=>{const state={...options};return{options:()=>({...state}),applyOptions:vi.fn(change=>Object.assign(state,change))};}),removePriceLine:vi.fn(),coordinateToPrice:()=>1.2,attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};handles.push(handle);return handle;}),removeSeries:vi.fn(),subscribeClick:vi.fn(),subscribeCrosshairMove:vi.fn(),timeScale:()=>scale,applyOptions:vi.fn(),remove:vi.fn(),clearCrosshairPosition:vi.fn(),panes:()=>Array.from({length:4},()=>({setHeight:vi.fn(),setStretchFactor:vi.fn(),getHeight:()=>300}))};
   return{chart,handles,scale};
 });
 vi.mock("lightweight-charts",()=>({createChart:()=>m.chart,CandlestickSeries:"candles",BarSeries:"bars",LineSeries:"line",AreaSeries:"area",BaselineSeries:"baseline",HistogramSeries:"histogram",createSeriesMarkers:()=>({detach:vi.fn()}),ColorType:{Solid:"solid"},CrosshairMode:{Normal:0},LineStyle:{Dashed:2,Solid:0},PriceScaleMode:{Normal:0,Logarithmic:1}}));
@@ -86,7 +87,7 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
     for(const study of studies){expect(study.setData).toHaveBeenCalledTimes(1);expect(study.update).toHaveBeenCalledTimes(1);}
     adapter.setChartStyle("line");const price=m.handles.at(-1);
     expect(price.setData.mock.calls[0][0].at(-1)).toEqual({time:bars.at(-1)!.time,value:1.7});
-    expect(price.applyOptions).toHaveBeenCalledWith({priceLineVisible:false,lastValueVisible:false});
+    expect(price.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
     expect(m.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:10,to:30});
     adapter.setStudies([]);expect(m.chart.removeSeries).not.toHaveBeenCalledWith(price);
     for(const study of studies)expect(m.chart.removeSeries).toHaveBeenCalledWith(study);
@@ -208,7 +209,7 @@ describe("area, baseline, Heikin Ashi and hollow display styles",()=>{
     for(const study of studies)expect(m.chart.removeSeries).not.toHaveBeenCalledWith(study);
     expect(price.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({price:1.105,title:"Entry"}));
     expect(price.data).toEqual(expectedPoints(style,varied));
-    if(style==="hollow")expect(price.options.borderVisible).toBe(true);
+    if(style==="hollow")expect(price.options().borderVisible).toBe(true);
     // Studies, visible candles and the canonical history are untouched.
     expect(adapter.getVisibleCandles()).toEqual(varied.slice(10,31));
     expect(adapter.getStudyValues(varied.at(-1)!.time)[0]!.values[0]!.value).toBeCloseTo(new StudyCalculator(STUDY_DEFAULTS[0]!).calculate(varied).at(-1)!.values[0]!,12);
@@ -240,7 +241,7 @@ describe("area, baseline, Heikin Ashi and hollow display styles",()=>{
 
   it("pins the baseline base to the first loaded close and moves it only when that bar changes",()=>{
     adapter.setChartStyle("baseline");const price=priceHandle();
-    expect(price.options.baseValue).toEqual({type:"price",price:varied[0]!.close});
+    expect(price.options().baseValue).toEqual({type:"price",price:varied[0]!.close});
     const next={...varied.at(-1)!,time:varied.at(-1)!.time+60};
     adapter.setCandles([...varied,next]);
     expect(baseValueCalls(price)).toEqual([]);
@@ -328,7 +329,7 @@ describe("area, baseline, Heikin Ashi and hollow display styles",()=>{
   it("keeps the Last line canonical and hides the Heikin Ashi series' own last-value label",()=>{
     adapter.setChartStyle("heikinAshi");const price=priceHandle();
     adapter.setFeedState({livePriceAffordance:true,source:"fixture"});
-    expect(price.applyOptions).toHaveBeenLastCalledWith({priceLineVisible:false,lastValueVisible:false});
+    expect(price.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
     expect(price.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({price:varied.at(-1)!.close,title:"Last"}));
     const line=price.createPriceLine.mock.results.at(-1)!.value;
     const tip={...varied.at(-1)!,close:varied.at(-1)!.close+0.001,high:varied.at(-1)!.high+0.001};
@@ -362,4 +363,56 @@ it("changes only overlay autoscaling and does not reset a subsequent manual scal
  expect(JSON.stringify(m.handles.map(h=>h.data))).toBe(data);expect(m.handles.map(h=>h.setData.mock.calls.length)).toEqual(writes);
  adapter.setChartStyle("heikinAshi");adapter.setPriceOnlyScale(false);
  const original=vi.fn(()=>({priceRange:{minValue:1,maxValue:2}}));expect(overlay.applyOptions.mock.calls.at(-1)[0].autoscaleInfoProvider(original)).toEqual(original());
+});
+
+it.each(['candles','bars','line','area','baseline','heikinAshi','hollow'] as ChartStyle[])("keeps live/stale settings correct without redundant writes after switching to %s",style=>{
+ adapter.setFeedState({livePriceAffordance:true,source:'fixture'});adapter.setChartStyle(style);
+ const surface=adapter.getScannerOverlaySurface()!,series=surface.series as any;
+ expect(series.options()).toMatchObject({priceLineVisible:style!=='heikinAshi',lastValueVisible:style!=='heikinAshi'});
+ const last=series.createPriceLine.mock.results.at(-1)!.value;expect(last.options().price).toBe(bars.at(-1)!.close);
+ series.applyOptions.mockClear();last.applyOptions.mockClear();adapter.setFeedState({livePriceAffordance:true,source:'fixture'});adapter.setFeedState({livePriceAffordance:true,source:'fixture'});
+ expect(series.applyOptions).not.toHaveBeenCalled();expect(last.applyOptions).not.toHaveBeenCalled();
+ adapter.setFeedState({livePriceAffordance:false,source:'fixture'});expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.removePriceLine).toHaveBeenCalledWith(last);
+ adapter.setFeedState({livePriceAffordance:true,source:'fixture'});expect(series.options()).toMatchObject({priceLineVisible:style!=='heikinAshi',lastValueVisible:style!=='heikinAshi'});expect(series.createPriceLine.mock.results.at(-1)!.value.options().price).toBe(bars.at(-1)!.close);
+});
+
+it("reads the new series after remount and withdraws its live labels on context reset",()=>{
+ adapter.setFeedState({livePriceAffordance:true,source:'old'});adapter.destroy();adapter.init({container,height:500});adapter.setFeedState({livePriceAffordance:true,source:'new'});adapter.setCandles(bars);
+ const series=adapter.getScannerOverlaySurface()!.series as any;expect(series.options()).toMatchObject({priceLineVisible:true,lastValueVisible:true});expect(series.createPriceLine.mock.results.at(-1)!.value.options().price).toBe(bars.at(-1)!.close);
+ adapter.resetDataContext();expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.data).toEqual([]);
+ adapter.setCandles(bars);expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
+});
+
+
+describe("qualified volume lifecycle",()=>{
+  it("manual and assistant tick-volume controls use the same renderer and exact count",()=>{
+    const evidence={kind:"tick_count" as const,quantity:123456789,unit:"ticks" as const,reason:null};
+    adapter.setCandles(bars.map(bar=>({...bar,volumeEvidence:evidence})));
+    const config=STUDY_CATALOG.find(d=>d.defaults.kind === "tick_volume")!.defaults;
+    adapter.setStudies([config]);
+    const observedTime=adapter.getVisibleCandles().at(-1)!.time;
+    const manual=adapter.getStudyValues(observedTime)[0]!.values;
+    adapter.setStudies([]);
+    const save=vi.fn();
+    const reply=executeStudyRequest(parseStudyRequest("show tick volume")!,{adapter,studies:[],symbol:"EURUSD",timeframe:"M1",feedLabel:"MT5 · Not live-confirmed",save});
+    expect(save).toHaveBeenCalledWith([expect.objectContaining(config)]);
+    expect(adapter.getStudyValues(observedTime)[0]!.values).toEqual(manual);
+    expect(reply).toContain("Ticks: 123456789"); expect(reply).not.toContain("123456790");
+  });
+  it("withdraws stale same-bar volume when a streaming price update has no evidence",()=>{
+    const evidence={kind:"tick_count" as const,quantity:25,unit:"ticks" as const,reason:null};
+    const observed=bars.map(bar=>({...bar,volumeEvidence:evidence}));
+    adapter.setCandles(observed);
+    adapter.setStudies([{kind:"tick_volume",period:1,color:"#38bdf8"}]);
+    const last=bars.at(-1)!;
+    expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBe(25);
+    adapter.updateActiveCandle({...last}); // same OHLC/time, unqualified partial stream
+    expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBeNull();
+    adapter.setCandles(observed.map(bar=>({...bar,volumeEvidence:{...evidence,quantity:40}})));
+    expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBe(40);
+    adapter.resetDataContext();
+    adapter.setCandles(bars);
+    adapter.setStudies([{kind:"tick_volume",period:1,color:"#38bdf8"}]);
+    expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBeNull();
+  });
 });

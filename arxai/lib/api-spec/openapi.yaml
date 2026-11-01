@@ -13607,6 +13607,15 @@ components:
           type: string
 
     # ── ARX Native Chart — Level 1: candle data truth contract ──────────────
+    CandleVolumeEvidence:
+      type: object
+      description: Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.
+      required: [kind, quantity, unit, reason]
+      properties:
+        kind: { type: string, enum: [tick_count, real_volume, unavailable] }
+        quantity: { type: number, nullable: true, minimum: 0 }
+        unit: { type: string, nullable: true, enum: [ticks, broker_units] }
+        reason: { type: string, nullable: true }
     ChartCandle:
       type: object
       description: >
@@ -13627,7 +13636,8 @@ components:
         high: { type: number }
         low: { type: number }
         close: { type: number }
-        volume: { type: number, description: Real traded volume when the provider supplies it, else 0 }
+        volume: { type: number, description: Legacy ambiguous provider volume or default zero. Use volumeEvidence to determine observed quantity and semantics. }
+        volumeEvidence: { $ref: "#/components/schemas/CandleVolumeEvidence" }
         tickVolume:
           type: ["number", "null"]
           description: Verified tick count when a provider supplies one; null otherwise (e.g. synthetic indices / current REST adapters)
@@ -15352,6 +15362,11 @@ components:
           type: string
           enum: [LIVE_CONFIRMED, SYNCING, STALE, UNAVAILABLE]
         source: { type: string, nullable: true }
+        sourceIdentity:
+          type: string
+          nullable: true
+          pattern: '^[a-f0-9]{64}$'
+          description: Original chart source identity; absent on older servers, never inferred from provider name.
         sourceLabel: { type: string, nullable: true }
         price: { type: number, nullable: true }
         lastCandleAt: { type: string, nullable: true }

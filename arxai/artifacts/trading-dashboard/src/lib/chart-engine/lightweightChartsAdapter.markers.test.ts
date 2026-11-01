@@ -26,14 +26,17 @@ const { createSeriesMarkersMock } = vi.hoisted(() => ({
 
 vi.mock("lightweight-charts", () => {
   const makeLineSeries = () => ({ setData: vi.fn() });
-  const makeCandleSeries = () => ({
+  const makeCandleSeries = () => {
+    const state: Record<string, unknown> = {priceLineVisible:true,lastValueVisible:true};
+    return ({
     setData: vi.fn(),
     update: vi.fn(),
-    applyOptions: vi.fn(),
-    createPriceLine: vi.fn(() => ({ applyOptions: vi.fn() })),
+    options: () => ({...state}),
+    applyOptions: vi.fn(change => Object.assign(state,change)),
+    createPriceLine: vi.fn(options => {const state={...options};return {options:()=>({...state}),applyOptions:vi.fn(change=>Object.assign(state,change))};}),
     removePriceLine: vi.fn(),
     priceToCoordinate: vi.fn(() => 0),
-  });
+  });};
   const CandlestickSeries = { __kind: "CandlestickSeries" };
   const LineSeries = { __kind: "LineSeries" };
   const createChart = vi.fn(() => ({
@@ -102,6 +105,21 @@ beforeEach(() => {
 });
 
 describe("LightweightChartsAdapter marker re-anchoring (repaint-crash lock)", () => {
+  it("anchors research entries/exits to exact historical bars, sorted alongside current positions", () => {
+    const adapter=makeAdapter(); adapter.setCandles([bar(100),bar(200),bar(300)]);
+    const marker=(id:string,startTime:number,source:ChartOverlay["source"]="research"):ChartOverlay=>({id,type:"marker",symbol:"EURUSD",source,label:id,startTime,marker:{side:"BUY"}});
+    adapter.setOverlays([marker("exit",200),marker("position",100,"position"),marker("entry",100),marker("missing",150)],300);
+    expect(lastMarkerTimes()).toEqual([100,200,300]);
+    adapter.setCandles([bar(200),bar(300),bar(400)]);
+    expect(lastMarkerTimes()).toEqual([200,300]);
+  });
+  it("does not move historical markers to the nearest candle or resurrect them on a style change", () => {
+    const adapter=makeAdapter(); adapter.setCandles([bar(100),bar(200)]);
+    adapter.setOverlays([{id:"missing",type:"marker",symbol:"EURUSD",source:"research",label:"Test",startTime:150,marker:{side:"SELL"}}],200);
+    expect(createSeriesMarkersMock).not.toHaveBeenCalled();
+    adapter.setChartStyle("heikinAshi");
+    expect(createSeriesMarkersMock).not.toHaveBeenCalled();
+  });
   it("re-snaps structure markers when setCandles slides the window past their bar", () => {
     const adapter = makeAdapter();
     adapter.setCandles([bar(100), bar(200), bar(300)]);

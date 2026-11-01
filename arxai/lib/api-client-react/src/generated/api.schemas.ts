@@ -3248,6 +3248,35 @@ export interface HealthStatus {
   status: string;
 }
 
+export type CandleVolumeEvidenceKind =
+  (typeof CandleVolumeEvidenceKind)[keyof typeof CandleVolumeEvidenceKind];
+
+export const CandleVolumeEvidenceKind = {
+  tick_count: "tick_count",
+  real_volume: "real_volume",
+  unavailable: "unavailable",
+} as const;
+
+export type CandleVolumeEvidenceUnit =
+  | (typeof CandleVolumeEvidenceUnit)[keyof typeof CandleVolumeEvidenceUnit]
+  | null;
+
+export const CandleVolumeEvidenceUnit = {
+  ticks: "ticks",
+  broker_units: "broker_units",
+} as const;
+
+/**
+ * Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.
+ */
+export interface CandleVolumeEvidence {
+  kind: CandleVolumeEvidenceKind;
+  /** @minimum 0 */
+  quantity: number | null;
+  unit: CandleVolumeEvidenceUnit;
+  reason: string | null;
+}
+
 export type ChartCandleTimeframe =
   (typeof ChartCandleTimeframe)[keyof typeof ChartCandleTimeframe];
 
@@ -3339,8 +3368,9 @@ export interface ChartCandle {
   high: number;
   low: number;
   close: number;
-  /** Real traded volume when the provider supplies it */
+  /** Legacy ambiguous provider volume or default zero. Use volumeEvidence to determine observed quantity and semantics. */
   volume: number;
+  volumeEvidence?: CandleVolumeEvidence;
   /**
    * Verified tick count when a provider supplies one; null otherwise (e.g. synthetic indices / current REST adapters)
    * @nullable
@@ -6275,6 +6305,11 @@ export const TruthDataState = {
 export interface TruthData {
   state: TruthDataState;
   source: string | null;
+  /**
+   * Original chart source identity; absent on older servers, never inferred from provider name.
+   * @pattern ^[a-f0-9]{64}$
+   */
+  sourceIdentity?: string | null;
   sourceLabel: string | null;
   price: number | null;
   lastCandleAt: string | null;

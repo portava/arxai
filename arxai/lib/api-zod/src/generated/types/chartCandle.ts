@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { CandleVolumeEvidence } from "./candleVolumeEvidence";
 import type { ChartCandlePriceBasis } from "./chartCandlePriceBasis";
 import type { ChartCandleQualityFlagsItem } from "./chartCandleQualityFlagsItem";
 import type { ChartCandleSourceMode } from "./chartCandleSourceMode";
@@ -28,8 +29,9 @@ export interface ChartCandle {
   high: number;
   low: number;
   close: number;
-  /** Real traded volume when the provider supplies it */
+  /** Legacy ambiguous provider volume or default zero. Use volumeEvidence to determine observed quantity and semantics. */
   volume: number;
+  volumeEvidence?: CandleVolumeEvidence;
   /**
    * Verified tick count when a provider supplies one; null otherwise (e.g. synthetic indices / current REST adapters)
    * @nullable

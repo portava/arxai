@@ -1,9 +1,13 @@
+import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
+import { chartVolumeEvidence, observedTickVolume } from "@/lib/chart-engine/chartVolume";
+import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
+import { registerChartResearchAssistant } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLibraryCredit } from "./ChartLibraryCredit";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds } from "@/lib/chart-engine/chartIntervals";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "../scanner/useDerivedOverlayContext";
@@ -66,6 +70,8 @@ import {
   type ChartStructureLine,
   type ChartStructureMarker,
 } from "@/lib/chart-engine";
+
+const ChartResearchWorkbench = lazy(() => import("@/components/testing-lab/ChartResearchWorkbench"));
 
 // ARXNativeChart — Level 2 native chart shell.
 //
@@ -376,7 +382,7 @@ export function ARXNativeChart({
         label.textContent = row.label;
         label.style.color = row.color;
         const values = document.createElement("span");
-        values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? "— (warm-up / unavailable)" : Number(item.value.toPrecision(8))}`).join(" · ");
+        values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? (item.name === "Ticks" || item.name === "Ticks (hidden)" ? "— (no qualified tick count)" : "— (warm-up / unavailable)") : formatStudyNumber(item.value,item.name)}`).join(" · ");
         line.append(label, values);
         fragment.append(line);
       }
@@ -410,9 +416,11 @@ export function ARXNativeChart({
   const supportedTimeframe = isChartInterval(timeframe);
   // Per-view display zone; daily bars keep UTC labels. Display only.
   const displayZone = effectiveDisplayZone(preferences.timeZone, timeframe);
-  const overlays = useMemo(() => suppliedOverlays.filter(overlay =>
-    overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
-  [suppliedOverlays, resolvedSymbol, timeframe]);
+  const [researchOpen,setResearchOpen] = useState(false);
+  const [researchRequest,setResearchRequest] = useState<{id:number;text:string;context:string}|null>(null);
+  const researchSequence = useRef(0);
+  const researchExplanation = useRef<{context:string;text:string}|null>(null);
+  const [researchLayer,setResearchLayer] = useState<{context:string;rows:ChartOverlay[]}|null>(null);
 
   // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
   // as "mirrored" with the rest of the UI. When off, an inspection-mode
@@ -553,6 +561,22 @@ export function ARXNativeChart({
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
   const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
+  const overlays = useMemo(() => [...suppliedOverlays,...(researchOpen&&researchLayer?.context===chartContext?researchLayer.rows:[])].filter(overlay =>
+    overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
+  [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
+  const acceptResearchOverlays = useCallback((rows:ChartOverlay[])=>setResearchLayer(rows.length?{context:chartContext,rows}:null),[chartContext]);
+  const acceptResearchExplanation = useCallback((text:string|null)=>{if(text)researchExplanation.current={context:chartContext,text};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
+  const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
+  useLayoutEffect(()=>{
+    if(workspaceId!=="primary")return;
+    return registerChartResearchAssistant(text=>{
+      if(!hasCandles)return "The primary chart has no source candles ready. No historical test was prepared or run.";
+      setResearchOpen(true);
+      if(/^\s*explain\s+(?:the\s+)?(?:last\s+)?(?:test|historical)\s+trade[.!?]?\s*$/i.test(text))return researchExplanation.current?.context===chartContext?researchExplanation.current.text:"Select a completed simulated trade in Test an idea to inspect its exact signal, entry, exit, stop, target and costs. No historical trade has been inferred from a chart pattern.";
+      setResearchRequest({id:++researchSequence.current,text,context:chartContext});
+      return "Opened Test an idea on the current chart. Your request will be checked against the supported rules and available closed history. Review the editable rules and assumptions there before running; no calculation or order has been sent.";
+    });
+  },[workspaceId,hasCandles,chartContext]);
   // A context change already renders the new source. Rebind consumers in that
   // commit; only a newly created engine needs an additional ref-to-prop render.
   const chartEpoch = `${engineGeneration}:${chartContext}`;
@@ -752,6 +776,23 @@ export function ARXNativeChart({
     updateLegend(inspectedCandleRef.current);
   }, [preferences.studies, chartEpoch, updateLegend]);
 
+  // Bind only the primary mounted chart. Each request reads the committed
+  // chart context and actual renderer values; comparison panes never steal it.
+  useLayoutEffect(() => {
+    if (workspaceId !== "primary") return;
+    let currentStudies = preferences.studies;
+    return registerChartStudyAssistant(request => executeStudyRequest(request, {
+      adapter: hasCandles && activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapterRef.current ? adapterRef.current : null,
+      studies: currentStudies, symbol: resolvedSymbol, timeframe,
+      feedLabel: `${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"}`,
+      save: studies => {
+        currentStudies = studies;
+        setPreferences(previous => ({ ...previous, studies }));
+        updateLegend(inspectedCandleRef.current);
+      },
+    }));
+  }, [workspaceId, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend]);
+
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
     adapterRef.current?.resetScale();
@@ -768,6 +809,7 @@ export function ARXNativeChart({
           high: c.high,
           low: c.low,
           close: c.close,
+          volumeEvidence: chartVolumeEvidence(c.volumeEvidence,c.source),
         }))
         .filter(
           (c) =>
@@ -796,12 +838,15 @@ export function ARXNativeChart({
         Number.isFinite(c.low) &&
         Number.isFinite(c.close)
       ) {
-        byTime.set(time, { time, open: c.open, high: c.high, low: c.low, close: c.close });
+        byTime.set(time, { time, open: c.open, high: c.high, low: c.low, close: c.close, volumeEvidence: c.volumeEvidence });
       }
     }
     for (const c of engineCandles) byTime.set(c.time, c); // live window wins
     return [...byTime.values()].sort((a, b) => a.time - b.time);
   }, [deepHistory.olderCandles, engineCandles]);
+
+  const hasQualifiedTickVolume = useMemo(() => mergedEngineCandles.some(candle => observedTickVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
+  const tickVolumeSelected = preferences.studies.some(study => study.kind === "tick_volume" && study.lineStyles?.[0]?.visible !== false);
 
   // Oldest bar currently on screen as an ISO string — the cursor seed the
   // reach-start handler pages behind. Held in a ref so the (stable) handler
@@ -1313,6 +1358,7 @@ export function ARXNativeChart({
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
           {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
+          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>
         {!mobileLayout && fullscreenToggle}
@@ -1417,6 +1463,7 @@ export function ARXNativeChart({
       </CardHeader>
 
       {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
+      {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className="px-3 pb-2 text-xs text-amber-300" role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
       {!supportedTimeframe && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
       {/* Phase 2 — Chart Mirror Layer.
@@ -1647,6 +1694,7 @@ export function ARXNativeChart({
         )}
       </CardContent>
       {mobileLayout && chartControls}
+      {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
         <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>

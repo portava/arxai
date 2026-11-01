@@ -36,6 +36,15 @@ const BACKTEST_FILES = [
   "artifacts/api-server/src/lib/backtest/backtestChartSeries.ts",
   "artifacts/api-server/src/lib/backtestStrategyRegistry.ts",
   "artifacts/api-server/src/lib/backtest/backtestDataReliability.ts",
+  "lib/domain/src/backtest/research.ts",
+  "lib/domain/src/backtest/researchCore.ts",
+  "lib/domain/src/backtest/researchBrowser.ts",
+  "artifacts/trading-dashboard/src/components/testing-lab/ChartResearchWorkbench.tsx",
+  "artifacts/trading-dashboard/src/lib/chart-research/researchWorker.ts",
+  "artifacts/trading-dashboard/src/lib/chart-research/researchRunner.ts",
+  "artifacts/trading-dashboard/src/lib/chart-research/chartResearchAssistant.ts",
+  "artifacts/trading-dashboard/src/lib/chart-engine/chartResearchDraft.ts",
+  "artifacts/trading-dashboard/src/lib/chart-engine/chartResearchEvidence.ts",
 ];
 
 const FORBIDDEN: Array<{ rx: RegExp; why: string }> = [

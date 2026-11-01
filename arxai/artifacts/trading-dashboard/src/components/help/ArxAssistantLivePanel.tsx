@@ -1,3 +1,5 @@
+import { requestChartStudy } from "@/lib/chart-engine/chartStudyAssistant";
+import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistant";
 // Phase 13 — ARX AI Live Assistant panel.
 // Replaces the menu-heavy help widget with a clean live-chat surface.
 // - Streams responses via SSE (fetch + ReadableStream) with safety envelope
@@ -668,6 +670,20 @@ export function ArxAssistantLivePanel() {
   // ── streaming text send ─────────────────────────────────────────────
   const sendText = useCallback(async (text: string) => {
     if (!text.trim()) return;
+    const chartReply = requestChartResearch(text) ?? requestChartStudy(text);
+    if (chartReply !== null) {
+      // Existing chat surface, deterministic local display action. It needs no
+      // remote conversation and makes no model request or trading call.
+      abortRef.current?.abort();
+      tts.stop();
+      setErrorBanner(null);
+      setInput("");
+      setStatus("idle");
+      setMessages(current => [...current.map(message => message.pending ? { ...message, pending: false, content: message.content || "Previous reply stopped." } : message),
+        { id: `u-${Date.now()}`, role: "user", content: text },
+        { id: `a-${Date.now()+1}`, role: "assistant", content: chartReply }]);
+      return;
+    }
     if (!conversation) { setErrorBanner("Chat session not ready yet. One moment…"); return; }
     // PART 8 — Ruby first-text timing. Three distinct moments matter:
     //   send (T0) → "thinking" indicator visible (T1, sub-100ms)

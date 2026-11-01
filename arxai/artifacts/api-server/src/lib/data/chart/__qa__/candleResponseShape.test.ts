@@ -18,6 +18,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { normalizeCandles, type NormalizeOptions } from "../candleNormalization.js";
+import { mt5TickVolumeEvidence, resolveCandleVolumeEvidence } from "../../candleVolumeEvidence.js";
 import type { Candle } from "../../types.js";
 
 export {};
@@ -84,4 +85,40 @@ test("[SHAPE02] closeTime is exactly one interval after openTime, ascending orde
       "candles must be ascending by openTime",
     );
   }
+});
+
+
+for (const quantity of [0, 17]) test(`explicit MT5 tick evidence preserves observed ${quantity} ticks`, () => {
+  const raw: Candle = { ...bar(), volume: quantity, volumeEvidence: { kind: "tick_count", quantity, unit: "ticks", reason: null } };
+  const c = normalizeCandles([raw], baseOpts({ source: "mt5_broker" })).candles[0]!;
+  assert.deepEqual(c.volumeEvidence, raw.volumeEvidence);
+  assert.equal(c.tickVolume, quantity);
+});
+for (const volume of [undefined, 0, 50]) test(`legacy numeric volume ${volume} cannot establish volume semantics`, () => {
+  const c = normalizeCandles([{ ...bar(), volume }], baseOpts({ source: "mt5_broker" })).candles[0]!;
+  assert.equal(c.volumeEvidence?.kind, "unavailable");
+  assert.equal(c.volumeEvidence?.quantity, null);
+});
+for (const source of ["deriv_public", "mock", "assistant_real:twelve_data"]) test(`unsupported ${source} never borrows MT5 volume evidence`, () => {
+  const raw: Candle = { ...bar(), volume: 10, volumeEvidence: { kind: "tick_count", quantity: 10, unit: "ticks", reason: null } };
+  const c = normalizeCandles([raw], baseOpts({ source })).candles[0]!;
+  assert.equal(c.volumeEvidence?.kind, "unavailable");
+});
+
+for (const quantity of [-1, .5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "17", null, undefined]) test(`invalid explicit tick quantity ${quantity} is unavailable`, () => {
+  assert.equal(mt5TickVolumeEvidence(quantity).kind, "unavailable");
+  const raw = { kind: "tick_count", unit: "ticks", quantity, reason: null };
+  assert.equal(resolveCandleVolumeEvidence(raw, "mt5_broker").quantity, null);
+});
+for (const quantity of [0, 10]) test(`unqualified real-volume ${quantity} is withheld rather than called traded volume`, () => {
+  assert.equal(resolveCandleVolumeEvidence({ kind: "real_volume", unit: "broker_units", quantity, reason: null }, "mt5_broker").kind, "unavailable");
+});
+for (const change of [{ unit: "broker_units" }, { reason: "partial" }, { kind: "unavailable" }]) test(`contradicting tick metadata ${JSON.stringify(change)} is unavailable`, () => {
+  assert.equal(resolveCandleVolumeEvidence({ ...mt5TickVolumeEvidence(5), ...change }, "mt5_broker").kind, "unavailable");
+});
+test("duplicate replacement cannot carry the old candle's volume evidence", () => {
+  const observed: Candle = { ...bar(), volume: 17, volumeEvidence: mt5TickVolumeEvidence(17) };
+  const result = normalizeCandles([observed, { ...bar(), close: 1.1016 }], baseOpts({ source: "mt5_broker" }));
+  assert.equal(result.candles.length, 1);
+  assert.equal(result.candles[0]!.volumeEvidence?.kind, "unavailable");
 });
