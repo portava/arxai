@@ -56,3 +56,33 @@ it('summary-only user figures cannot borrow an unrelated stream badge',()=>{
  h.summary={data:{accounts:[{virtualEquity:77,virtualPnl:12,openAttributions:3}],allocationView:{availableAllocation:123,hasAllocation:true}},isError:false};h.live.freshness='live';h.live.snapshot=null;
  render(<AccountSnapshotCard/>);expect(screen.queryByLabelText('Data freshness: Live')).toBeNull();expect(screen.getByLabelText('Data freshness: Unavailable')).toBeTruthy();
 });
+
+it.each([null,0,110])('unmatched account comparison never claims consistent or fabricated delta (%s)',difference=>{
+ h.summary={data:{masterAccess:false,accounts:[]},isError:false};h.mode.shouldShowAdminDiagnostics=true;
+ h.live={...h.live,snapshot:snapshot({openPositionsCount:1,reconciliation:{snapshotSummedPL:10,equityMinusBalancePL:difference,discrepancy:null,exceedsThreshold:false,excludedCount:0,brokerAbsentExcludedCount:0,stalePLCount:0}}),freshness:'fresh'};
+ render(<AccountSnapshotCard/>);const diagnostic=screen.getByTestId('account-pl-discrepancy-admin');
+ expect(diagnostic.textContent).not.toMatch(/consistent|Δ: \$0\.00/);expect(diagnostic.textContent).toMatch(/not verified|unverified/i);
+ expect(diagnostic.textContent).not.toContain('$');
+});
+it('partial supplied-position total is unavailable and its scope is explained',()=>{
+ h.live={...h.live,snapshot:snapshot({openPL:10,reconciliation:{status:'unverified',positionPnlComplete:false,positionPnlScope:'supplied_rows',snapshotSummedPL:10}}),freshness:'fresh'};
+ render(<AccountSnapshotCard/>);expect(within(screen.getByText(/^(Open|Position) P\/L$/).parentElement!).getByText('—')).toBeTruthy();
+ expect(screen.getByText(/position.*incomplete/i)).toBeTruthy();
+});
+
+it('legacy missing completeness never exposes an aggregate as a known total',()=>{
+ h.live={...h.live,snapshot:snapshot({openPL:10,positions:[{unrealizedPL:10},{unrealizedPL:null}]}),freshness:'fresh'};
+ render(<AccountSnapshotCard/>);expect(within(screen.getByText('Position P/L').parentElement!).getByText('—')).toBeTruthy();
+ expect(screen.getByText(/Position P\/L is incomplete/)).toBeTruthy();
+});
+it('quote-derived sums are explicitly estimated and never claim broker currency',()=>{
+ h.live={...h.live,snapshot:snapshot({openPL:10,reconciliation:{positionPnlComplete:true},positions:[{unrealizedPL:10,plIsEstimate:true,plSource:'computed'}]}),freshness:'live',isEstimate:false};
+ render(<AccountSnapshotCard/>);const tile=screen.getByText('Position P/L').parentElement!;
+ expect(tile.textContent).toContain('~10 (currency unverified)');expect(tile.textContent).not.toContain('$');
+ expect(screen.getByText(/quote-based account-currency conversion is unverified/)).toBeTruthy();
+});
+
+it('complete broker-valued supplied rows remain neutral without proven account/currency scope',()=>{
+ h.live={...h.live,snapshot:snapshot({openPL:10,reconciliation:{positionPnlComplete:true},positions:[{unrealizedPL:10,plIsEstimate:false,plSource:'broker'}]}),freshness:'live',isEstimate:false};
+ render(<AccountSnapshotCard/>);expect(screen.getByText('10 (currency unverified)').className).toContain('text-txt-muted');
+});

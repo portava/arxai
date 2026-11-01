@@ -77,8 +77,8 @@ type OpenResponse = {
 type PosFilter = "all" | "winning" | "losing" | "unprotected" | "protected";
 
 function money(n: number | null | undefined): string {
-  const v = n ?? 0;
-  return `${v >= 0 ? "+" : "-"}$${Math.abs(v).toFixed(2)}`;
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `${n > 0 ? "+" : ""}${n} (currency unverified)`;
 }
 function plain(n: number | null | undefined): string {
   return n == null ? "—" : `$${n.toFixed(2)}`;
@@ -176,7 +176,9 @@ export default function MyTradesPage() {
 
   // ── Derived summary (real data only) ──────────────────────────────────────
   const sum = useMemo(() => {
-    const openPnl = cards.reduce((s, c) => s + (c.unrealizedPnl ?? 0), 0);
+    const known = cards.length > 0 && cards.every(c => typeof c.unrealizedPnl === "number" && Number.isFinite(c.unrealizedPnl));
+    const subtotal = known ? cards.reduce((s, c) => s + c.unrealizedPnl!, 0) : NaN;
+    const openPnl = Number.isFinite(subtotal) ? subtotal : null;
     const totalLots = cards.reduce((s, c) => s + (c.lotSize ?? 0), 0);
     const protectedN = cards.filter(isProtected).length;
     const unprotectedN = cards.length - protectedN;
@@ -276,14 +278,10 @@ export default function MyTradesPage() {
         <span className="text-txt-muted">
           {displayOpenCount ?? "—"} Open Trade{displayOpenCount === 1 ? "" : "s"}
         </span>
-        <span className="text-txt-muted">Open P/L <span className={cn("font-medium", pnlTone(
-          !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
-            ? liveSnap.snapshot.openPL
-            : sum.openPnl
-        ))}>{money(
-          !liveSnap.isUnavailable && liveSnap.snapshot?.openPL != null
-            ? liveSnap.snapshot.openPL
-            : sum.openPnl
+        <span className="text-txt-muted" data-testid="open-trades-position-subtotal">Position subtotal (unverified) <span className="font-medium">{money(
+          liveSnap.snapshot != null
+            ? !liveSnap.isUnavailable && liveSnap.snapshot.reconciliation?.positionPnlComplete === true ? liveSnap.snapshot.openPL : null
+            : !loading && !err ? sum.openPnl : null
         )}</span></span>
         <span className="text-txt-muted">Total Lots <span className="text-foreground font-medium">{sum.totalLots.toFixed(2)}</span></span>
         <span className="text-txt-muted">Exposure <span className="text-success font-medium">{cards.length === 0 ? "None" : "Active"}</span></span>
@@ -325,7 +323,7 @@ export default function MyTradesPage() {
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Mini label="Open Trades" value={String(cards.length)} />
-              <Mini label="Open P/L" value={money(sum.openPnl)} tone={pnlTone(sum.openPnl)} />
+              <Mini label="Row subtotal (unverified)" value={money(!loading && !err ? sum.openPnl : null)} />
               <Mini label="Total Lots" value={sum.totalLots.toFixed(2)} />
               <Mini label="Protected" value={`${sum.protectedN} / ${cards.length}`} />
               <Mini label="Unprotected" value={String(sum.unprotectedN)} tone={sum.unprotectedN ? "text-danger" : undefined} />
@@ -343,7 +341,7 @@ export default function MyTradesPage() {
           ) : (
             <>
               <p className="mt-2 text-sm text-txt-secondary">
-                {sum.openPnl >= 0 ? "Your open trades are net positive right now." : "Your open trades are net negative right now."}{" "}
+                Position totals have no verified shared account and currency scope; they do not establish account-wide profit or loss.{" "}
                 {sum.unprotectedN > 0 ? `${sum.unprotectedN} position${sum.unprotectedN === 1 ? " is" : "s are"} unprotected — consider adding a stop.` : "All positions have a stop in place."}
               </p>
               <div className="mt-3 flex flex-wrap gap-1.5">

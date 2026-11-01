@@ -30,7 +30,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
-import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
+import { buildInvestorLiveBalanceSnapshot, toInvestorLiveBalanceWire } from "../lib/live/investorLiveBalance.js";
 import { loadStoredLimitRows } from "../lib/riskGovernor/limitSettings.js";
 import { effectiveLimitViews, type EffectiveLimitView } from "../lib/riskGovernor/limitLayers.js";
 
@@ -503,18 +503,7 @@ export async function computeAccountShell(
         sharedMasterAccountAssigned: sharedMasterAssigned,
       },
       live: inv
-        ? {
-            source: inv.source,
-            allocatedBalance: inv.allocatedBalance,
-            realizedPnL: inv.realizedPnL,
-            floatingPnL: inv.floatingPnL,
-            liveEquity: inv.liveEquity,
-            marginUsed: inv.marginUsed,
-            freeMargin: inv.freeMargin,
-            availableBalance: inv.availableBalance,
-            openTradeCount: inv.openTradeCount,
-            freshness: inv.freshness,
-          }
+        ? toInvestorLiveBalanceWire(inv)
         : {
             // Cycle-break path (skipInvestorSnapshot): the caller
             // (getUserModeScope) discards `live`; surface honest unavailable

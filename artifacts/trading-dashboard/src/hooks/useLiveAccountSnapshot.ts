@@ -18,7 +18,7 @@
 //   Per-user isolation lives on the server — the hook only forwards what the
 //   authenticated session returns.
 
-import { useEffect, useRef, useState, useCallback, useContext } from "react";
+import { useEffect, useRef, useState, useCallback, useContext, useMemo } from "react";
 import { QueryClientContext } from "@tanstack/react-query";
 import { createSharedAccountChangeRefresh } from "./sharedAccountChangeRefresh";
 import { useAgedAccountSnapshot } from "./useAgedAccountSnapshot";
@@ -29,17 +29,15 @@ export type AccountMode = "LIVE_SHARED" | "PAPER" | "DEMO" | "UNKNOWN";
 export type Freshness = "live" | "fresh" | "delayed" | "stale" | "unavailable";
 export type PlSource = "broker" | "computed" | "unavailable";
 
-/**
- * Reconciliation marker — present on every live snapshot.  When
- * exceedsThreshold is true the summed position P/L materially disagrees with
- * the authoritative equity − balance and the UI must surface "P/L under
- * verification" rather than show the stale value as normal live profit.
- *
- * Kept in sync with SnapshotReconciliation in liveAccountSnapshot.ts on the
- * server.
- */
+/** Supplied-position diagnostics, not a verified native account-profit report.
+ * A false exceedsThreshold never establishes agreement. */
 export interface SnapshotReconciliation {
+  status?: "unverified";
+  reason?: "NO_MATCHED_ACCOUNT_PROFIT_REPORT";
+  positionPnlScope?: "supplied_rows";
+  positionPnlComplete?: boolean;
   snapshotSummedPL: number | null;
+  /** Legacy name: balance/equity arithmetic only, never broker profit. */
   equityMinusBalancePL: number | null;
   discrepancy: number | null;
   exceedsThreshold: boolean;
@@ -79,6 +77,12 @@ export interface LivePositionPL {
  * never relabelled live.
  */
 export interface InvestorLiveBalance {
+  /** Display scope/completeness; not a new balance or execution authority. */
+  valueScope?: "arx_allocation";
+  positionPnlComplete?: boolean;
+  positionPnlEstimated?: boolean;
+  monetaryScopeVerified?: boolean;
+  realizedPnLPendingCount?: number;
   source: "live_shared" | "demo" | "paper" | "unknown";
   allocatedBalance: number;
   realizedPnL: number;
@@ -552,7 +556,14 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   }, []);
 
   // ── Derived state ─────────────────────────────────────────────────────────
-  const snap = agedSnapshot;
+  // Missing legacy completeness cannot turn a subtotal into an account total.
+  // Preserve every real position value; this is aggregate display sanitation.
+  const snap = useMemo(() => agedSnapshot == null ? null : {
+    ...agedSnapshot,
+    openPL: agedSnapshot.reconciliation?.positionPnlComplete === true
+      && typeof agedSnapshot.openPL === "number" && Number.isFinite(agedSnapshot.openPL)
+      ? agedSnapshot.openPL : null,
+  }, [agedSnapshot]);
   const freshness: Freshness = snap?.freshness ?? "unavailable";
   const notLiveReason = snap?.notLiveReason ?? (snap?.warnings.length ? snap.warnings[0]! : null);
   const isEstimate = snap?.positions.some((p) => p.plIsEstimate) ?? false;
