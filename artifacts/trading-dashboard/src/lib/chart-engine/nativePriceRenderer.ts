@@ -1,5 +1,5 @@
 import { sanitizeCandlestickData, isValidCandlestickPoint } from "./candleSanitize";
-import { heikinAshi, hollowPoint } from "./heikinAshi";
+import { heikinAshi, heikinAshiBar, hollowPoint } from "./heikinAshi";
 import { closeOnlyStyle, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import type { ChartEngineCandle } from "./types";
 import type { LogicalWindow } from "./chartNavigation";
@@ -26,6 +26,27 @@ export function prepareNativePriceSeries(input: readonly ChartEngineCandle[]): N
     heikinAshi: Object.freeze(heikinAshi(candles).map(bar => Object.freeze(bar))),
     discarded: input.length - candles.length,
   });
+}
+
+/** Replace the current observation or append one later bar. Existing snapshots
+ * remain immutable. Array reference copies are O(n); validation and HA math
+ * touch only the changed bar, never re-sanitize/recalculate the history. */
+export function updateNativePriceSeries(series: NativePriceSeries, input: ChartEngineCandle): NativePriceSeries | null {
+  if (!input || !isValidCandlestickPoint(input)) return null;
+  const last = series.candles.at(-1);
+  if (last && input.time < last.time) return null;
+  const index = last && input.time === last.time ? series.candles.length - 1 : series.candles.length;
+  // Do not merge the previous bar: an unqualified streamed observation cannot
+  // inherit its closed-bar or volume evidence.
+  const {time,open,high,low,close,volumeEvidence,profileEvidence} = input;
+  const candle = Object.freeze({time,open,high,low,close,
+    ...(volumeEvidence ? {volumeEvidence:Object.freeze({...volumeEvidence})} : {}),
+    ...(profileEvidence ? {profileEvidence:Object.freeze({...profileEvidence})} : {}),
+  });
+  const candles = series.candles.slice(0,index), display = series.heikinAshi.slice(0,index);
+  candles.push(candle);
+  display.push(Object.freeze(heikinAshiBar(candle,index ? display[index-1]! : null)));
+  return Object.freeze({candles:Object.freeze(candles),heikinAshi:Object.freeze(display),discarded:series.discarded});
 }
 
 export interface NativePlot { readonly left: number; readonly top: number; readonly width: number; readonly height: number }

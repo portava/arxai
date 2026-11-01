@@ -1,4 +1,4 @@
-import { prepareNativePriceSeries, createNativePriceFrame, paintNativePriceLayer, type NativePriceFrame } from "./nativePriceRenderer";
+import { updateNativePriceSeries, prepareNativePriceSeries, createNativePriceFrame, paintNativePriceLayer, type NativePriceFrame } from "./nativePriceRenderer";
 import { nativePlotLayout, paintNativeAxes } from "./nativeChartAxes";
 import { panChartWindow, zoomChartWindow, type LogicalWindow } from "./chartNavigation";
 import { candleDisplayPrecision, historyRangeShift } from "./candleReconciliation";
@@ -7,12 +7,12 @@ import { effectiveDisplayZone, isChartTimeZone, type ChartTimeZone } from "./cha
 import type { ChartEngineCandle, ChartStructureLine, ChartStructureMarker } from "./types";
 import type { ChartOverlay } from "../chart-overlays";
 import type { SmartChartAnnotation } from "./smartChartAnnotationCanvas";
-import { NativeScannerOverlays } from "./nativeScannerOverlays";
+import { NativeScannerOverlays, paintScannerPriceLines } from "./nativeScannerOverlays";
 import { NativeChartOverlayLayers } from "./nativeChartOverlayLayers";
 import type { ChartStudy } from "./chartStudies";
 import { NativeChartStudies, layoutNativeStudyPanes, paintNativeStudies } from "./nativeChartStudies";
 
-import { ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
+import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
 import { drawingStrokes, drawingNotes, drawingHandles, paintChartDrawings, type PixelPoint } from "./chartDrawingCanvas";
 
 export interface NativeCrosshair {
@@ -33,6 +33,8 @@ export interface NativeChartViewportOptions {
   priceDigits?: number;
   onCrosshair?: (value: NativeCrosshair | null) => void;
   onViewportChange?: () => void;
+  /** User-origin pan/zoom only. Programmatic/data/link updates never echo. */
+  onUserRangeChange?: (range: Readonly<LogicalWindow>) => void;
 }
 interface Point { x: number; y: number }
 interface Gesture { center: Point; distance: number }
@@ -40,8 +42,8 @@ interface Gesture { center: Point; distance: number }
 const MAX_CSS_SIDE = 16_384, MAX_BACKING_SIDE = 8_192, MAX_BACKING_PIXELS = 16_777_216;
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
-/** Independent DOM controller. Still not a complete engine adapter:
- * trading overlays and replay are pending; the registered app is unchanged. */
+/** ARX DOM/Canvas controller. The adapter and shell retain feed/source
+ * qualification, replay boundaries and cross-view policy; no execution API. */
 export class NativeChartViewport {
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
@@ -71,6 +73,7 @@ export class NativeChartViewport {
   private timeZone: ChartTimeZone = "UTC";
   private timeframe = "M1";
   private priceDigits = 2;
+  private symbol = "";
   private width = 0;
   private height = 0;
   private pixelRatio = 1;
@@ -88,6 +91,8 @@ export class NativeChartViewport {
   private frameIssue: string | null = null;
   private callbackError: string | null = null;
   private hover: NativeCrosshair | null = null;
+  private linkedCrosshairTime: number | null = null;
+  private livePriceAffordance = false;
   private pointers = new Map<number, Point>();
   private gesture: Gesture | null = null;
   private observer: ResizeObserver | null = null;
@@ -215,7 +220,7 @@ export class NativeChartViewport {
       this.referencePrice = next.candles[0]!.close; this.referenceSet = true;
     }
     this.priceDigits = Number.isInteger(this.options.priceDigits) && this.options.priceDigits! >= 0 && this.options.priceDigits! <= 16
-      ? this.options.priceDigits! : candleDisplayPrecision(next.candles);
+      ? this.options.priceDigits! : candleDisplayPrecision(next.candles,this.symbol);
     // A refresh, append, prepend or rolling window retains the CSS pointer
     // baseline: historyRangeShift rebases its logical observation below. Empty
     // or disjoint history has no shared anchor and explicitly ends the gesture.
@@ -232,6 +237,73 @@ export class NativeChartViewport {
       this.range = bounded;
     }
     this.invalidate();
+  }
+
+  /** Immutable applied source snapshot. No parallel adapter candle cache. */
+  getCandles(): readonly ChartEngineCandle[] { return this.series.candles; }
+  getVisibleCandles(): ChartEngineCandle[] {
+    if (this.destroyed || !this.range) return [];
+    return this.series.candles.slice(Math.max(0,Math.ceil(this.range.from)),Math.max(0,Math.floor(this.range.to)+1)).map(bar=>({...bar}));
+  }
+  getDisplayCandle(time: number): ChartEngineCandle | null {
+    if (this.destroyed || this.style!=="heikinAshi" || !Number.isFinite(time)) return null;
+    const index=candleIndex(this.series.candles as ChartEngineCandle[],time);
+    return index<0 ? null : {...this.series.heikinAshi[index]!};
+  }
+  getPricePrecision(): number { return this.priceDigits; }
+  /** Display precision only. Caller must reset source context separately. */
+  setSymbol(symbol: string): void {
+    if(this.destroyed||typeof symbol!=="string"||this.symbol===symbol)return;
+    this.symbol=symbol;
+    this.priceDigits=Number.isInteger(this.options.priceDigits)&&this.options.priceDigits!>=0&&this.options.priceDigits!<=16
+      ?this.options.priceDigits!:candleDisplayPrecision(this.series.candles,this.symbol);
+    this.schedule();
+  }
+  setLivePriceAffordance(enabled: boolean): void {
+    if (this.destroyed || this.livePriceAffordance===(enabled===true)) return;
+    this.livePriceAffordance=enabled===true;this.schedule();
+  }
+  setLinkedCrosshair(time: number | null): void {
+    if (this.destroyed) return;
+    const next=typeof time==="number" && Number.isFinite(time) && time>0 ? time : null;
+    if(this.linkedCrosshairTime===next && this.hover===null)return;
+    // Programmatic inspection owns this display but never emits a user event.
+    this.hover=null;this.linkedCrosshairTime=next;this.schedule();
+  }
+  private linkedCrosshair(frame: NativePriceFrame): NativeCrosshair | null {
+    if(this.linkedCrosshairTime===null)return null;
+    const index=candleIndex(this.series.candles as ChartEngineCandle[],this.linkedCrosshairTime);
+    if(index<0)return null;
+    const candle=this.series.candles[index]!,x=frame.timeToX(candle.time),y=frame.priceToY(candle.close);
+    if(x===null||y===null||x<frame.plot.left||x>frame.plot.left+frame.plot.width||y<frame.plot.top||y>frame.plot.top+frame.plot.height)return null;
+    return {candle,x,y,price:candle.close};
+  }
+  /** Tail-only data revision. Does not authorize live-price presentation. */
+  updateActiveCandle(candle: ChartEngineCandle): boolean {
+    if(this.destroyed)return false;
+    const next=updateNativePriceSeries(this.series,candle);
+    if(!next)return false;
+    const revision=++this.mutationRevision,previousHover=this.hover;
+    this.series=next;
+    // Both helpers use the same canonical validation. A full reinstall is only
+    // a recovery for an independently replaced study history, never the normal tip path.
+    if(!this.studies.updateActiveCandle(next.candles.at(-1)!))this.studies.setCandles(next.candles);
+    if(!this.referenceSet&&next.candles.length){this.referencePrice=next.candles[0]!.close;this.referenceSet=true;}
+    this.priceDigits=Number.isInteger(this.options.priceDigits)&&this.options.priceDigits!>=0&&this.options.priceDigits!<=16
+      ?this.options.priceDigits!:candleDisplayPrecision(next.candles,this.symbol);
+    if(!this.range||(this.followingLatest&&!this.frozenDrawingFrame))this.range=this.latestRange(this.range?this.range.to-this.range.from:undefined);
+    this.invalidate();
+    if(previousHover){
+      // A routine tick is not a pointer-leave event. Preserve the inspected
+      // timestamp; only a changed inspected row needs a legend notification.
+      const frame=this.getFrame(),index=candleIndex(next.candles as ChartEngineCandle[],previousHover.candle.time);
+      const candle=index<0?null:next.candles[index]!,x=candle&&frame?frame.timeToX(candle.time):null;
+      if(frame&&candle&&x!==null&&x>=frame.plot.left&&x<=frame.plot.left+frame.plot.width){
+        this.hover=Object.freeze({candle,x,y:previousHover.y,price:previousHover.y>=frame.plot.top&&previousHover.y<=frame.plot.top+frame.plot.height?frame.yToPrice(previousHover.y):null});
+        if(candle!==previousHover.candle)this.notify("crosshair",()=>this.options.onCrosshair?.(this.hover));
+      }else this.clearHover();
+    }
+    return !this.destroyed&&revision===this.mutationRevision;
   }
 
   private latestRange(span = this.options.visibleBars ?? 100): LogicalWindow | null {
@@ -365,6 +437,7 @@ export class NativeChartViewport {
     this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();if(this.destroyed || revision!==this.mutationRevision)return;
     this.studies.setStudies(configs, this.series.candles);this.invalidate();
   }
+  getStudies(): readonly Readonly<ChartStudy>[] { return this.studies.getStudies(); }
   getStudyValues(time: number) { return this.analysisFocused ? [] : this.studies.getValues(time); }
   getVolumeProfiles() { return this.analysisFocused ? [] : this.studies.getProfiles(); }
   setPriceOnlyScale(enabled: boolean): void {
@@ -400,6 +473,7 @@ export class NativeChartViewport {
       error: this.paintError ?? this.frameIssue, callbackError: this.callbackError, referencePrice: this.referencePrice, style: this.style, scale: this.scale, inverted: this.inverted,
       timeZone: this.timeZone, effectiveTimeZone: effectiveDisplayZone(this.timeZone, this.timeframe), timeframe: this.timeframe,
       barCount: this.series.candles.length, discarded: this.series.discarded, range: this.getRange(), followingLatest: this.followingLatest,
+      livePriceAffordance: this.livePriceAffordance, linkedCrosshairTime: this.linkedCrosshairTime,
       drawingCount: this.drawings.length, selectedDrawing: this.selectedDrawing, editingDrawing: this.frozenDrawingFrame !== null,
       analysisFocused: this.analysisFocused, overlayLayers: this.overlayLayers.getState(), scannerOverlays: this.scannerOverlays.getState(),
       paneCount: this.analysisFocused ? 0 : this.studies.paneCount, priceOnlyScale: this.priceOnlyScale,
@@ -445,6 +519,7 @@ export class NativeChartViewport {
     this.drawings = []; this.selectedDrawing = null; this.drawingInteraction = null; this.drawingHandler = null;
     this.frozenDrawingFrame = null;this.editAnchorTimes=[];
     this.overlayLayers.reset();this.scannerOverlays.reset();
+    this.livePriceAffordance=false;this.linkedCrosshairTime=null;
     this.studies.reset();
     this.followingLatest = true; this.invalidate();
   }
@@ -479,13 +554,16 @@ export class NativeChartViewport {
         }
         this.overlayLayers.paint(ctx,frame,this.width,this.analysisFocused);
         this.scannerOverlays.paint(ctx);
-        if (this.hover) {
+        const lastCandle=this.series.candles.at(-1);
+        if(this.livePriceAffordance&&lastCandle)paintScannerPriceLines(ctx,frame,this.width,[{price:lastCandle.close,color:"#60a5fa",lineWidth:1,lineStyle:"dashed",axisLabelVisible:true,title:""}]);
+        const crosshair=this.hover ?? this.linkedCrosshair(frame);
+        if (crosshair) {
           ctx.save();
           try {
             ctx.beginPath(); ctx.rect(frame.plot.left, frame.plot.top, frame.plot.width, chartBottom-frame.plot.top); ctx.clip();
             ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-            ctx.beginPath();ctx.moveTo(this.hover.x, frame.plot.top);ctx.lineTo(this.hover.x, chartBottom);
-            ctx.moveTo(frame.plot.left, this.hover.y);ctx.lineTo(frame.plot.left + frame.plot.width, this.hover.y);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(crosshair.x, frame.plot.top);ctx.lineTo(crosshair.x, chartBottom);
+            ctx.moveTo(frame.plot.left, crosshair.y);ctx.lineTo(frame.plot.left + frame.plot.width, crosshair.y);ctx.stroke();
           } finally { ctx.restore(); }
         }
       }
@@ -525,6 +603,9 @@ export class NativeChartViewport {
   }
   private clearHover() { if (this.hover) { this.hover = null; this.notify("crosshair", () => this.options.onCrosshair?.(null)); this.schedule(); } }
   private updateHover(point: Point) {
+    // User inspection takes ownership; a previous remote cursor must not
+    // reappear after this local pointer subsequently leaves the chart.
+    if(this.linkedCrosshairTime!==null){this.linkedCrosshairTime=null;this.schedule();}
     const frame = this.getFrame(), candle = this.inside(point, frame) ? frame!.barAtX(point.x) : null;
     if (!frame || !candle) { this.clearHover(); return; }
     const x = frame.timeToX(candle.time);
@@ -565,10 +646,16 @@ export class NativeChartViewport {
     const next = this.shift(zoomed, desiredFrom - zoomed.from);
     if (next) { this.range = next; this.followingLatest = false; this.frame = null; this.schedule(); }
   }
+  private emitUserRange(previous: Readonly<LogicalWindow> | null): void {
+    if(this.destroyed||!this.range||(previous&&previous.from===this.range.from&&previous.to===this.range.to))return;
+    const range=Object.freeze({...this.range});
+    this.notify("user range",()=>this.options.onUserRangeChange?.(range));
+  }
   private onPointerMove = (event: PointerEvent) => {
     if (this.destroyed) return;
     const point = this.point(event); if (!point) return;
     if (!this.pointers.has(event.pointerId)) { if (!this.pointers.size) this.updateHover(point); return; }
+    const previousRange=this.range;
     event.preventDefault(); const previous = this.gesture;this.pointers.set(event.pointerId, point);const next = this.gestureState();
     const frame = this.getFrame();
     if (previous && next && frame && this.range) {
@@ -579,6 +666,7 @@ export class NativeChartViewport {
       }
     }
     this.gesture = next;
+    this.emitUserRange(previousRange);
   };
   private onOutsidePointerMove = (event: PointerEvent) => {
     // Canvas events have already been handled before bubbling here.
@@ -603,17 +691,19 @@ export class NativeChartViewport {
     const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
     const raw = horizontal ? event.deltaX : event.deltaY;
     const pixels = raw * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (horizontal ? frame!.plot.width : frame!.plot.height) : 1);
-    const revision = ++this.mutationRevision;
+    const revision = ++this.mutationRevision,previousRange=this.range;
     event.preventDefault();this.cancelGesture();this.clearHover();if (this.destroyed || revision !== this.mutationRevision) return;
     if (horizontal && this.range) {
       const next = this.shift(this.range, pixels / frame!.spacing);
       if (next) { this.range = next;this.followingLatest = false;this.frame = null;this.schedule(); }
     } else this.zoomAt(Math.exp(clamp(pixels * .002, -.65, .65)), point.x);
+    this.emitUserRange(previousRange);
   };
   private onKeyDown = (event: KeyboardEvent) => {
     if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || event.defaultPrevented || event.target !== this.canvas || this.canvas.ownerDocument.activeElement !== this.canvas
       || this.canvas.isContentEditable || this.canvas.getAttribute("contenteditable") === "true"
       || event.ctrlKey || event.metaKey || event.altKey || !this.range) return;
+    const previousRange=this.range,generation=this.generation,revision=this.mutationRevision;
     if (event.key === "Home") this.fit();
     else if (event.key === "End") this.goLatest();
     else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -622,11 +712,12 @@ export class NativeChartViewport {
       const next = zoomChartWindow(this.range, event.key === "+" || event.key === "=" ? .8 : 1.25, this.series.candles.length);if (next) this.setRange(next);
     } else return;
     event.preventDefault();
+    if(!this.destroyed&&generation===this.generation&&this.mutationRevision===revision+1)this.emitUserRange(previousRange);
   };
   destroy(): void {
     if (this.destroyed) return;
     this.drawingEditor.destroy();this.drawings=[];this.drawingInteraction=null;this.drawingHandler=null;this.selectedDrawing=null;this.frozenDrawingFrame=null;this.editAnchorTimes=[];
-    this.scannerOverlays.destroy();this.overlayLayers.reset();
+    this.scannerOverlays.destroy();this.overlayLayers.reset();this.livePriceAffordance=false;this.linkedCrosshairTime=null;
     this.destroyed = true;this.generation++;this.mutationRevision++;this.cancelGesture();this.clearHover();
     if (this.raf != null) cancelAnimationFrame(this.raf);this.raf = null;
     this.observer?.disconnect();this.observer = null;this.media?.removeEventListener("change", this.onDprChange);this.media = null;

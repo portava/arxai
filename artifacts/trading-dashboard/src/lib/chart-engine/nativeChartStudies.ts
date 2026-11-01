@@ -1,7 +1,7 @@
 import { StudyCalculator, studyDefinition, studyChannelColor, studyId, studyLabel, formatStudyNumber, type ChartStudy } from './chartStudies';
 import { validatePreferences, type ChartScaleMode } from './chartWorkspace';
 import { unchangedCandlePrefix } from './candleReconciliation';
-import { sanitizeCandlestickData } from './candleSanitize';
+import { sanitizeCandlestickData, isValidCandlestickPoint } from './candleSanitize';
 import { projectVolumeProfile } from './chartVolumeProfilePrimitive';
 import type { VolumeProfileInspection, VolumeProfileResult } from './chartVolumeProfile';
 import type { ChartEngineCandle } from './types';
@@ -51,6 +51,25 @@ export class NativeChartStudies {
     // Empty configurations must not duplicate the viewport's history snapshot.
     if(!this.calculators.length){this.candles=[];this.snapshots=Object.freeze([]);this.retained.clear();return;}
     const next=copyCandles(candles),from=unchangedCandlePrefix(this.candles,next);
+    this.calculateFrom(next,from);
+  }
+  /** Known newest-bar update; no full-history reconciliation or sanitization.
+   * Reference arrays/point prefixes still copy O(n); calculator math starts at
+   * the changed index. Volume-profile's established full-range math is retained. */
+  updateActiveCandle(input:ChartEngineCandle):boolean {
+    if(!input||!isValidCandlestickPoint(input))return false;
+    if(!this.calculators.length)return true;
+    const last=this.candles.at(-1);
+    if(last&&input.time<last.time)return false;
+    const from=last&&input.time===last.time?this.candles.length-1:this.candles.length;
+    const {time,open,high,low,close,volumeEvidence,profileEvidence}=input;
+    const next=this.candles.slice(0,from);
+    next.push(Object.freeze({time,open,high,low,close,
+      ...(volumeEvidence?{volumeEvidence:Object.freeze({...volumeEvidence})}:{}),
+      ...(profileEvidence?{profileEvidence:Object.freeze({...profileEvidence})}:{})}));
+    this.calculateFrom(next,from);return true;
+  }
+  private calculateFrom(next:ChartEngineCandle[],from:number):void {
     this.candles=next;
     let pane=0;const retained=new Map<StudyCalculator,NativeStudySnapshot>();
     this.snapshots=Object.freeze(this.calculators.map(calculator=>{

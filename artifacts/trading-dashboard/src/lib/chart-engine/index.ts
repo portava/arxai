@@ -4,6 +4,7 @@ import type {
   ChartEngineId,
 } from "./types";
 import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
+import { NativeChartsAdapter } from "./nativeChartsAdapter";
 
 export type {
   ChartEngineAdapter,
@@ -16,10 +17,11 @@ export type {
   ChartStructureMarker,
 } from "./types";
 export { LightweightChartsAdapter } from "./lightweightChartsAdapter";
+export { NativeChartsAdapter } from "./nativeChartsAdapter";
 
-// The engine the Smart Chart Shell renders through by default. lightweight-charts
-// v5 is the only currently-licensed/bundled engine (see
-// docs/TRADINGVIEW_ADVANCED_CHARTS_LICENSING.md).
+// Keep the existing default until the native adapter has passed all consumer,
+// browser and performance acceptance. Explicit native selection is available
+// for integration; registration alone is not proof of migration completion.
 export const DEFAULT_CHART_ENGINE_ID: ChartEngineId = "lightweight-charts";
 
 /**
@@ -30,6 +32,7 @@ export const DEFAULT_CHART_ENGINE_ID: ChartEngineId = "lightweight-charts";
  * lightweight-charts v5 stays the labeled, real fallback.
  */
 export const CHART_ENGINE_DESCRIPTORS: Record<ChartEngineId, ChartEngineCapabilities> = {
+  "arx-native": new NativeChartsAdapter().capabilities,
   "lightweight-charts": new LightweightChartsAdapter().capabilities,
   "tradingview-advanced": {
     id: "tradingview-advanced",
@@ -54,6 +57,8 @@ export function createChartEngineAdapter(
   id: ChartEngineId = DEFAULT_CHART_ENGINE_ID,
 ): ChartEngineAdapter {
   switch (id) {
+    case "arx-native":
+      return new NativeChartsAdapter();
     case "lightweight-charts":
       return new LightweightChartsAdapter();
     case "tradingview-advanced":

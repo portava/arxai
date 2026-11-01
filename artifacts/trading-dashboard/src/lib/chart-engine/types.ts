@@ -28,7 +28,7 @@ import type { ChartTimeZone } from "./chartTimeZone";
 //    contract. An adapter never fabricates bars.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ChartEngineId = "lightweight-charts" | "tradingview-advanced";
+export type ChartEngineId = "arx-native" | "lightweight-charts" | "tradingview-advanced";
 
 /** A single OHLC bar, normalized to Unix SECONDS (engine-agnostic). */
 export interface ChartEngineCandle {
