@@ -83,9 +83,9 @@ describe("existing assistant to current chart study action",()=>{
     expect(response).toContain("warming up"); expect(response).not.toMatch(/EMA: 0/);
   });
   it("uses mounted current chart only, cleans up safely, leaves ordinary conversation alone",()=>{
-    expect(requestChartStudy("hello")).toBeNull(); expect(requestChartStudy("show RSI")).toContain("Open");
+    expect(requestChartStudy("hello")).toBeNull(); expect(requestChartStudy("show RSI")).toContain("Select a ready");
     const a=registerChartStudyAssistant(()=>"old"); const b=registerChartStudyAssistant(()=>"current"); a();
-    expect(requestChartStudy("show RSI")).toBe("current"); b(); expect(requestChartStudy("show RSI")).toContain("Open");
+    expect(requestChartStudy("show RSI")).toBe("current"); b(); expect(requestChartStudy("show RSI")).toContain("Select a ready");
   });
   it("marks nonfinite renderer values unavailable rather than inventing zero",()=>{
     const f=fixture(); f.adapter.getStudyValues=()=>[{label:"RSI (14) · close",color:"#fff",values:[{name:"RSI",value:NaN}]}];

@@ -68,6 +68,7 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const stoppedRef = useRef(false);
+  const startGeneration=useRef(0);
   const userTranscriptBufRef = useRef("");
   const assistantTranscriptBufRef = useRef("");
 
@@ -76,6 +77,7 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
 
   const cleanup = useCallback(() => {
     stoppedRef.current = true;
+    startGeneration.current++;
     try { dcRef.current?.close(); } catch { /* noop */ }
     dcRef.current = null;
     try { pcRef.current?.getSenders().forEach((s) => { try { s.track?.stop(); } catch { /* noop */ } }); } catch { /* noop */ }
@@ -176,6 +178,8 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
   const start = useCallback(async () => {
     if (state === "connecting" || state === "listening" || state === "speaking") return;
     stoppedRef.current = false;
+    const owner=++startGeneration.current;
+    const isCurrent=()=>owner===startGeneration.current&&!stoppedRef.current;
     setState("connecting");
     setIsMuted(false);
     userTranscriptBufRef.current = "";
@@ -192,11 +196,13 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
       if (!r.ok) throw new Error(`mint HTTP ${r.status}`);
       mint = (await r.json()) as MintResponse;
     } catch {
+      if(!isCurrent())return;
       setState("failed");
       optsRef.current.onMode?.("degraded_gpt_audio_fallback", "MINT_NETWORK_ERROR");
       optsRef.current.onError?.("Couldn't start Realtime voice session. Falling back to degraded voice / text.");
       return;
     }
+    if(!isCurrent())return;
     if (mint.mode !== "true_webrtc_realtime" || !mint.clientSecret?.value) {
       setState("failed");
       optsRef.current.onMode?.(
@@ -225,11 +231,12 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      if(!isCurrent())return;
       setState("failed");
       optsRef.current.onError?.("Microphone access denied. Realtime voice unavailable — text chat still works.");
       return;
     }
-    if (stoppedRef.current) { micStream.getTracks().forEach((t) => t.stop()); return; }
+    if (!isCurrent()) { micStream.getTracks().forEach((t) => t.stop()); return; }
     micStreamRef.current = micStream;
 
     // 3. Build PeerConnection.
@@ -243,9 +250,10 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
     document.body.appendChild(audioEl);
     audioElRef.current = audioEl;
     pc.ontrack = (ev) => {
+      if(!isCurrent())return;
       const stream = ev.streams[0];
-      if (stream && audioElRef.current) {
-        audioElRef.current.srcObject = stream;
+      if (stream) {
+        audioEl.srcObject = stream;
       }
     };
 
@@ -257,6 +265,7 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
     const dc = pc.createDataChannel("oai-events");
     dcRef.current = dc;
     dc.onopen = () => {
+      if(!isCurrent())return;
       // Ask provider to transcribe input audio so we can show user speech.
       sendDc({
         type: "session.update",
@@ -266,14 +275,16 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
       });
     };
     dc.onmessage = (e) => {
+      if(!isCurrent())return;
       try {
         const obj = JSON.parse(e.data) as Record<string, unknown>;
         handleEvent(obj as Parameters<typeof handleEvent>[0]);
       } catch { /* ignore non-JSON */ }
     };
-    dc.onerror = () => optsRef.current.onError?.("Realtime data channel error.");
+    dc.onerror = () => {if(isCurrent())optsRef.current.onError?.("Realtime data channel error.");};
 
     pc.onconnectionstatechange = () => {
+      if(!isCurrent())return;
       const st = pc.connectionState;
       if (st === "failed" || st === "disconnected" || st === "closed") {
         if (!stoppedRef.current) {
@@ -291,14 +302,16 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
     let offer: RTCSessionDescriptionInit;
     try {
       offer = await pc.createOffer();
+      if(!isCurrent())return;
       await pc.setLocalDescription(offer);
     } catch {
+      if(!isCurrent())return;
       setState("failed");
       optsRef.current.onError?.("Failed to create WebRTC offer.");
       cleanup();
       return;
     }
-    if (stoppedRef.current) { cleanup(); return; }
+    if (!isCurrent()) return;
 
     let sdpResp: Response;
     try {
@@ -316,12 +329,14 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
         signal: AbortSignal.timeout(8_000),
       });
     } catch {
+      if(!isCurrent())return;
       setState("failed");
       optsRef.current.onMode?.("degraded_gpt_audio_fallback", "SDP_NETWORK_ERROR");
       optsRef.current.onError?.("Realtime voice handshake failed.");
       cleanup();
       return;
     }
+    if(!isCurrent())return;
     if (!sdpResp.ok) {
       setState("failed");
       optsRef.current.onMode?.("degraded_gpt_audio_fallback", `SDP_HTTP_${sdpResp.status}`);
@@ -330,10 +345,11 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
       return;
     }
     const answerSdp = await sdpResp.text();
-    if (stoppedRef.current) { cleanup(); return; }
+    if (!isCurrent()) return;
     try {
       await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
     } catch {
+      if(!isCurrent())return;
       setState("failed");
       optsRef.current.onError?.("Failed to apply Realtime voice answer.");
       cleanup();
