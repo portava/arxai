@@ -1,3 +1,4 @@
+import { mt5StatusReadOptions } from "@/hooks/readSharedAccountSummary";
 import React from "react";
 import { useGetMt5Status, getGetMt5StatusQueryKey } from "@workspace/api-client-react";
 import { Wifi, WifiOff, Clock } from "lucide-react";
@@ -17,7 +18,7 @@ export function MT5StatusIndicator({ variant = "badge", className }: Props) {
   const { unlocked: mt5Unlocked } = useFeatureUnlock("mt5");
   const { data: mt5 } = useGetMt5Status({
     query: {
-      queryKey: getGetMt5StatusQueryKey(),
+      queryKey: getGetMt5StatusQueryKey(), ...mt5StatusReadOptions,
       refetchInterval: 5000,
       enabled: mt5Unlocked,
     },

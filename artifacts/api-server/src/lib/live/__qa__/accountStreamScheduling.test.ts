@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import vm from "node:vm";
 import ts from "typescript";
 import { createSharedAccountChangeStream, resolveSharedAccountChangeScope, resolveAccountStreamAuthorization } from "../sharedAccountChangeStream.js";
+import * as changeStreamModule from "../sharedAccountChangeStream.js";
 import { createAccountSnapshotScheduler } from "../accountSnapshotScheduler.js";
 
 // Execute the actual route body with read-only data/transport seams. No DB,
@@ -19,7 +20,12 @@ const route = source.slice(begin, source.indexOf("\n});", begin) + 4)
 const js = ts.transpileModule(route, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
-function harness(delayModule = false, initialAdmin = false, master: number | null = null, live = false) {
+function harness(delayModule = false, initialAdmin = false, master: number | null = null, live = false, personal: number | null = null) {
+  let personalId = personal;
+  let personalUserId = 7;
+  let personalFailure = false;
+  let personalReadHook: (() => Promise<void>) | null = null;
+  const personalSelections: number[] = [];
   let pinned = master;
   let allocated = master != null;
   let failSession = false;
@@ -43,6 +49,8 @@ function harness(delayModule = false, initialAdmin = false, master: number | nul
     requireUser: () => {}, uid: () => 7, isAdmin: () => initialAdmin,
     USER_SESSION_COOKIE: "arx_user_session", findUserBySessionToken: async (_token:string, options?:{readOnly?:boolean}) => { assert.equal(options?.readOnly,true); if (failSession) throw Error("session unavailable"); return session; },
     resolveAccountStreamAuthorization, resolveSharedAccountChangeScope,
+    resolvePersonalAccountChangeScope: (changeStreamModule as any).resolvePersonalAccountChangeScope,
+    getUserActiveConnection: async (id: number) => { personalSelections.push(id); if (personalReadHook) await personalReadHook(); if (personalFailure) throw Error("personal selection unavailable"); return personalId == null ? null : { id: personalId, userId: personalUserId }; },
     createSharedAccountChangeStream: (options:Parameters<typeof createSharedAccountChangeStream>[0]) => createSharedAccountChangeStream({...options,schedulerOptions:{minGapMs:0}}),
     getUserAllocationView: async () => ({pool:pinned == null ? null : {masterConnectionId:pinned},hasAllocation:allocated}), resolveActiveMasterConnectionId: async () => pinned,
     snapshotModule: () => delayModule ? new Promise(resolve => { finishModule = resolve; }) : Promise.resolve({buildLiveAccountSnapshot:()=>({balance:100,privateFixture:true})}),
@@ -66,6 +74,8 @@ function harness(delayModule = false, initialAdmin = false, master: number | nul
   const response = { setHeader() {}, flushHeaders() {}, write: (value: string) => writes.push(value), end: () => { ended=true; } };
   const run = handler(req, response);
   return {
+    personal: (id:number|null)=>{personalId=id;}, personalOwner: (id:number)=>{personalUserId=id;}, personalFailure: (v:boolean)=>{personalFailure=v;}, personalReadHook: (v:typeof personalReadHook)=>{personalReadHook=v;}, personalSelections,
+    monetaryWrites: () => writes.filter(x => JSON.parse(x.slice(6)).type === "account_snapshot"),
     pin: (id:number|null)=>{pinned=id;}, allocation:(value:boolean)=>{allocated=value;}, failSession:()=>{failSession=true;},
     run, req, bus, writes, intervals, scopes, ended: () => ended, session: (value:typeof session) => {session=value;},
     finishModule: () => finishModule({}),
@@ -82,7 +92,7 @@ test("an update during the initial account read earns a trailing refresh", async
     h.bus.emit("7"); h.release(); await flush();
     assert.equal(h.reads(), 2);
     h.release(); await flush();
-    assert.equal(h.writes.length, 2);
+    assert.equal(h.monetaryWrites().length, 2);
   } finally { h.req.emit("close"); }
 });
 
@@ -113,23 +123,23 @@ test("disconnect during a read suppresses writes and trailing work", async () =>
   assert.equal(h.reads(), 1);
   assert.equal(h.bus.listenerCount("7"), 0);
   assert.equal(h.intervals.size, 0);
-  assert.equal(h.writes.length, 0);
+  assert.equal(h.monetaryWrites().length, 0);
 });
 
 for (const changedSession of [null, {id:8,role:"OWNER"}]) {
   test(`revoked/replaced session during pending read closes stream without monetary payload: ${changedSession?.id ?? 'revoked'}`, async () => {
     const h=harness();await flush();assert.equal(h.reads(),1);
     h.session(changedSession);h.release();await flush();
-    assert.equal(h.writes.length,0);assert.equal(h.ended(),true);assert.equal(h.bus.listenerCount("7"),0);assert.equal(h.intervals.size,0);
+    assert.equal(h.monetaryWrites().length,0);assert.equal(h.ended(),true);assert.equal(h.bus.listenerCount("7"),0);assert.equal(h.intervals.size,0);
   });
 }
 test('role downgrade during pending monetary read discards privileged result and rebuilds under user gate',async()=>{
  const h=harness(false,true);await flush();assert.deepEqual(h.scopes,[true]);
- h.session({id:7,role:'USER'});h.release();await flush();assert.equal(h.writes.length,0);assert.deepEqual(h.scopes,[true,false]);
- h.release();await flush();assert.equal(h.writes.length,1);h.req.emit('close');
+ h.session({id:7,role:'USER'});h.release();await flush();assert.equal(h.monetaryWrites().length,0);assert.deepEqual(h.scopes,[true,false]);
+ h.release();await flush();assert.equal(h.monetaryWrites().length,1);h.req.emit('close');
 });
 test('initial effective user cap survives a persisted owner role',async()=>{
- const h=harness();h.session({id:7,role:'OWNER'});await flush();assert.deepEqual(h.scopes,[false]);h.release();await flush();assert.equal(h.writes.length,1);h.req.emit('close');
+ const h=harness();h.session({id:7,role:'OWNER'});await flush();assert.deepEqual(h.scopes,[false]);h.release();await flush();assert.equal(h.monetaryWrites().length,1);h.req.emit('close');
 });
 
 test('actual route sends only empty authorized master hints and rebinds on fallback pin change',async()=>{
@@ -166,8 +176,69 @@ test('actual route fallback tick requests a canonical summary reread without a l
 for(const revoke of [true,false]){
  test(`LIVE monetary result rechecks authorization after final awaited read (${revoke?'logout':'downgrade'})`,async()=>{
   const h=harness(false,true,null,true);await flush();assert.equal(h.reads(),1);
-  h.session(revoke?null:{id:7,role:'USER'});h.release();await flush();assert.equal(h.writes.length,0);
-  if(revoke){assert.equal(h.ended(),true);}else{assert.deepEqual(h.scopes,[true,false]);h.release();await flush();assert.equal(h.writes.length,1);}
+  h.session(revoke?null:{id:7,role:'USER'});h.release();await flush();assert.equal(h.monetaryWrites().length,0);
+  if(revoke){assert.equal(h.ended(),true);}else{assert.deepEqual(h.scopes,[true,false]);h.release();await flush();assert.equal(h.monetaryWrites().length,1);}
   h.req.emit('close');
  });
 }
+
+const personalHints = (h: ReturnType<typeof harness>) => h.writes.map(x => JSON.parse(x.slice(6))).filter(x => x.type === 'personal_account_changed');
+test('actual route binds only selected own connection and clears/refetches on selection removal', async () => {
+ const h = harness(false, false, null, false, 81); await flush();
+ try {
+  assert.deepEqual(personalHints(h), [{type:'personal_account_changed'}]); assert.deepEqual(h.personalSelections, [7]);
+  assert.equal(h.bus.listenerCount('c:81'), 1); h.bus.emit('c:82'); await flush(); assert.equal(personalHints(h).length, 1);
+  h.bus.emit('c:81'); await flush(); assert.equal(personalHints(h).length, 2);
+  h.personal(null); h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 3); assert.equal(h.bus.listenerCount('c:81'), 0);
+  h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 4);
+  h.personal(82); h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 5); assert.equal(h.bus.listenerCount('c:82'), 1);
+  h.bus.emit('c:81'); await flush(); assert.equal(personalHints(h).length, 5);
+ } finally { h.req.emit('close'); h.release(); await flush(); }
+ assert.equal(h.bus.listenerCount('c:82'), 0); assert.equal(h.intervals.size, 0);
+});
+test('actual route empty personal selection invalidates cached view without master allocation access', async () => {
+ const h = harness(); await flush();
+ try { assert.deepEqual(personalHints(h), [{type:'personal_account_changed'}]); assert.equal(h.bus.listenerCount('c:81'), 0); }
+ finally { h.req.emit('close'); h.release(); await flush(); }
+});
+test('personal scope refuses foreign owner and recovers after failed selector without old listeners', async () => {
+ const h = harness(false, false, null, false, 81); await flush();
+ try {
+  h.personalOwner(8); h.bus.emit('c:81'); await flush(); assert.equal(personalHints(h).length, 1); assert.equal(h.bus.listenerCount('c:81'), 0);
+  h.personalOwner(7); h.personalFailure(true); h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 1);
+  h.personalFailure(false); h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 2);
+ } finally { h.req.emit('close'); h.release(); await flush(); }
+});
+test('logout during awaited personal selection closes whole stream before another hint', async () => {
+ const h = harness(false, false, null, false, 81); await flush();
+ h.personalReadHook(async () => { h.session(null); }); h.bus.emit('c:81'); await flush();
+ assert.equal(personalHints(h).length, 1); assert.equal(h.ended(), true); assert.equal(h.bus.listenerCount('c:81'), 0); assert.equal(h.bus.listenerCount('7'), 0); assert.equal(h.intervals.size, 0);
+ h.release(); await flush(); assert.equal(h.monetaryWrites().length, 0);
+});
+test('close during awaited personal selection cannot emit or rebind', async () => {
+ const h = harness(false, false, null, false, 81); await flush(); let release!: () => void;
+ h.personalReadHook(() => new Promise<void>(r => { release = r; })); h.bus.emit('c:81'); await flush();
+ h.req.emit('close'); release(); await flush(); assert.equal(personalHints(h).length, 1); assert.equal(h.bus.listenerCount('c:81'), 0); h.release(); await flush();
+});
+
+test('personal selection changing during an awaited lookup rebinds to current result and rejects queued old events', async () => {
+ const h = harness(false, false, null, false, 81); await flush(); let release!: () => void;
+ h.personalReadHook(() => new Promise<void>(r => { release = r; })); h.bus.emit('c:81'); await flush();
+ for(let i=0;i<20;i++) h.bus.emit('c:81');
+ h.personal(82); h.personalReadHook(null); release(); await flush();
+ try {
+  assert.equal(h.bus.listenerCount('c:81'), 0); assert.equal(h.bus.listenerCount('c:82'), 1);
+  assert.equal(personalHints(h).length, 2);
+  h.bus.emit('c:81'); await flush(); assert.equal(personalHints(h).length, 2);
+  h.bus.emit('c:82'); await flush(); assert.equal(personalHints(h).length, 3);
+ } finally { h.req.emit('close'); h.release(); await flush(); }
+});
+
+test('existing own-user account event reselects promptly, while another user event cannot refresh personal scope', async () => {
+ const h = harness(false, false, null, false, 81); await flush();
+ try {
+  h.personal(82); h.bus.emit('8'); await flush(); assert.equal(personalHints(h).length, 1); assert.equal(h.personalSelections.length, 1);
+  h.bus.emit('7'); await flush(); assert.equal(personalHints(h).length, 2);
+  assert.equal(h.bus.listenerCount('c:81'), 0); assert.equal(h.bus.listenerCount('c:82'), 1);
+ } finally { h.req.emit('close'); h.release(); await flush(); }
+});

@@ -1,10 +1,9 @@
-import type { Query, QueryClient } from "@tanstack/react-query";
-import { getGetMeSharedAccountSummaryQueryKey } from "@workspace/api-client-react";
+import type { Query, QueryClient, QueryKey } from "@tanstack/react-query";
+import { getGetMeSharedAccountSummaryQueryKey, getGetMt5StatusQueryKey } from "@workspace/api-client-react";
 
 /** Hints carry no evidence: only the canonical HTTP reader may update amounts
  * or observation times. One controller belongs to one existing SSE connection. */
-export function createSharedAccountChangeRefresh(client: QueryClient) {
-  const queryKey = getGetMeSharedAccountSummaryQueryKey();
+function createAccountChangeRefresh(client: QueryClient, queryKey: QueryKey) {
   const filters = { queryKey, exact: true } as const;
   let disposed = false;
   let dirty = false;
@@ -61,4 +60,12 @@ export function createSharedAccountChangeRefresh(client: QueryClient) {
     },
     dispose,
   };
+}
+
+/** Keep both account readers on their existing generated cache keys. */
+export function createSharedAccountChangeRefresh(client: QueryClient) {
+  return createAccountChangeRefresh(client, getGetMeSharedAccountSummaryQueryKey());
+}
+export function createPersonalAccountChangeRefresh(client: QueryClient) {
+  return createAccountChangeRefresh(client, getGetMt5StatusQueryKey());
 }

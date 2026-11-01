@@ -43,6 +43,31 @@ export async function resolveSharedAccountChangeScope(
   return connectionId!;
 }
 
+/** The personal status endpoint selects this same user's active connection.
+ * A valid session with no connection is an authorized empty scope: clients must
+ * reread and clear any previous account. Null instead means no verified scope.
+ * These are sequential authority reads, not an atomic selection/session proof. */
+export async function resolvePersonalAccountChangeScope(
+  initialUserId: number,
+  dependencies: {
+    readSession: () => Promise<{ id: number; role: string } | null>;
+    readConnection: (userId: number) => Promise<{ id: number; userId: number | null } | null>;
+  },
+): Promise<{ connectionId: number | null } | null> {
+  const before = await dependencies.readSession();
+  if (before?.id !== initialUserId) return null;
+  const connection = await dependencies.readConnection(initialUserId);
+  const after = await dependencies.readSession();
+  if (after?.id !== initialUserId) return null;
+  if (connection == null) return { connectionId: null };
+  if (connection.userId !== initialUserId || !Number.isSafeInteger(connection.id) || connection.id <= 0) return null;
+  return { connectionId: connection.id };
+}
+
+/** Legacy shared scopes return a positive ID or null. An explicitly authorized
+ * personal scope may be empty, which still requests a safe canonical reread. */
+export type AccountChangeScope = number | { connectionId: number | null } | null;
+
 type ConnectionBus = {
   onConnection: (connectionId: number, listener: () => void) => void;
   offConnection: (connectionId: number, listener: () => void) => void;
@@ -58,7 +83,7 @@ type ConnectionBus = {
  */
 export function createSharedAccountChangeStream(options: {
   bus: ConnectionBus;
-  readScope: () => Promise<number | null>;
+  readScope: () => Promise<AccountChangeScope>;
   sendHint: () => void;
   schedulerOptions?: Parameters<typeof createAccountSnapshotScheduler>[1];
 }) {
@@ -77,10 +102,17 @@ export function createSharedAccountChangeStream(options: {
     // authorization read earns a trailing read rather than being lost.
     const reconcile = reconcilePending;
     reconcilePending = false;
-    let id: number | null;
-    try { id = await options.readScope(); }
+    let scope: AccountChangeScope;
+    try { scope = await options.readScope(); }
     catch { if (!stopped) unbind(); return; }
     if (stopped) return;
+    const id = typeof scope === "object" && scope !== null ? scope.connectionId : scope;
+    if (scope !== null && typeof scope === "object" && id === null) {
+      const hadBinding = bound !== null;
+      unbind();
+      if (reconcile || hadBinding) options.sendHint();
+      return;
+    }
     if (id == null || !Number.isSafeInteger(id) || id <= 0) { unbind(); return; }
     const changed = bound?.id !== id;
     if (changed) {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import MT5BridgePage from './mt5-bridge';
+vi.mock('@/hooks/useLiveAccountSnapshot', () => ({ useLiveAccountSnapshot: () => ({}) }));
 const h = vi.hoisted(() => ({ status: {} as any, summaryReads: 0 }));
 vi.mock('@workspace/api-client-react', async original => ({
   ...await original<typeof import('@workspace/api-client-react')>(),

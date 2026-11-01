@@ -20,7 +20,7 @@
 
 import { useEffect, useRef, useState, useCallback, useContext, useMemo } from "react";
 import { QueryClientContext } from "@tanstack/react-query";
-import { createSharedAccountChangeRefresh } from "./sharedAccountChangeRefresh";
+import { createSharedAccountChangeRefresh, createPersonalAccountChangeRefresh } from "./sharedAccountChangeRefresh";
 import { useAgedAccountSnapshot } from "./useAgedAccountSnapshot";
 import { useAccountRefreshPreference } from "./useAccountRefreshPreference";
 
@@ -194,6 +194,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   // application QueryClient with both master-account cards.
   const queryClient = useContext(QueryClientContext);
   const sharedAccountRefreshRef = useRef<ReturnType<typeof createSharedAccountChangeRefresh> | null>(null);
+  const personalAccountRefreshRef = useRef<ReturnType<typeof createPersonalAccountChangeRefresh> | null>(null);
   const [snapshot, setSnapshot] = useState<LiveAccountSnapshot | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
   const [reloadAt, setReloadAt] = useState(0);
@@ -372,6 +373,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const stopSSE = useCallback(() => {
     sharedAccountRefreshRef.current?.dispose();
     sharedAccountRefreshRef.current = null;
+    personalAccountRefreshRef.current?.dispose();
+    personalAccountRefreshRef.current = null;
     if (streamWaitRef.current != null) { clearTimeout(streamWaitRef.current); streamWaitRef.current = null; }
     setIsRefreshing(false);
     if (esRef.current) { esRef.current.close(); esRef.current = null; }
@@ -393,6 +396,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     const es = new EventSource(u("/api/me/live/account-stream"), { withCredentials: true });
     esRef.current = es;
     sharedAccountRefreshRef.current = queryClient ? createSharedAccountChangeRefresh(queryClient) : null;
+    personalAccountRefreshRef.current = queryClient ? createPersonalAccountChangeRefresh(queryClient) : null;
     // A socket that stays open without delivering data must not disable the
     // refresh button forever. Keep it eligible to recover while polling.
     streamWaitRef.current = setTimeout(() => {
@@ -406,8 +410,11 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         const raw: unknown = JSON.parse(ev.data as string);
         const r = raw as Record<string, unknown>;
 
-        if (r["type"] === "shared_account_changed") {
-          if (enabledRef.current && !document.hidden) sharedAccountRefreshRef.current?.notify();
+        if (r["type"] === "shared_account_changed" || r["type"] === "personal_account_changed") {
+          if (enabledRef.current && !document.hidden) {
+            const refresh = r["type"] === "personal_account_changed" ? personalAccountRefreshRef : sharedAccountRefreshRef;
+            refresh.current?.notify();
+          }
           // Advisory only: do not renew freshness, change money, or treat this
           // as an account snapshot that can stop fallback reads.
           return;
@@ -447,6 +454,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       if (!mountedRef.current || esRef.current !== es) return;
       sharedAccountRefreshRef.current?.dispose();
       sharedAccountRefreshRef.current = null;
+      personalAccountRefreshRef.current?.dispose();
+      personalAccountRefreshRef.current = null;
       es.close();
       esRef.current = null;
       if (streamWaitRef.current != null) { clearTimeout(streamWaitRef.current); streamWaitRef.current = null; }

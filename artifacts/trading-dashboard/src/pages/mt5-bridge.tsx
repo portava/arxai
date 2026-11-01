@@ -1,3 +1,5 @@
+import { useLiveAccountSnapshot } from "@/hooks/useLiveAccountSnapshot";
+import { mt5StatusReadOptions } from "@/hooks/readSharedAccountSummary";
 import { NativeAccountReport } from "@/components/sharedAccount/NativeAccountReport";
 import { useMemo } from "react";
 import {
@@ -111,11 +113,14 @@ function SectionCard({ title, icon: Icon, action, children, className }: { title
 }
 
 export default function MT5BridgePage() {
+  // This page has no dashboard provider. Reuse its existing account stream so
+  // personal hints reach the canonical status query; header readers add none.
+  useLiveAccountSnapshot();
   const qc = useQueryClient();
   const mode = useTradingMode();
   const { name } = useAssistantName();
 
-  const status = useGetMt5Status({ query: { queryKey: getGetMt5StatusQueryKey(), refetchInterval: 5000 } });
+  const status = useGetMt5Status({ query: { queryKey: getGetMt5StatusQueryKey(), ...mt5StatusReadOptions, refetchInterval: 5000 } });
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: getGetMt5StatusQueryKey() });

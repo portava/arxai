@@ -1,3 +1,4 @@
+import { mt5StatusReadOptions } from "@/hooks/readSharedAccountSummary";
 import React from "react";
 import { useGetMt5Status, useGetBotStatus, getGetMt5StatusQueryKey, getGetBotStatusQueryKey } from "@workspace/api-client-react";
 import { SymbolPicker } from "./SymbolPicker";
@@ -35,7 +36,7 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   // (account, broker, mode, running flag) into the global header.
   const { data: mt5 } = useGetMt5Status({
     query: {
-      queryKey: getGetMt5StatusQueryKey(),
+      queryKey: getGetMt5StatusQueryKey(), ...mt5StatusReadOptions,
       refetchInterval: 5000,
       enabled: unlocks.mt5,
     },
