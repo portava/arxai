@@ -1,0 +1,62 @@
+{
+  "applicationCommit": "97e545a4cc9d302479dc959dc9d4017c6ff12a34",
+  "base": "032a76f51b4f6a14af8637be6cb05f02a6886694",
+  "files": {
+    "artifacts/trading-dashboard/src/lib/chart-engine/smartChartAnalysis.test.ts": "43b9c6d0cf33491d68aaaf41d098f5a8df5f8a5b72ba0eb38452e0543d35c87d",
+    "artifacts/trading-dashboard/src/lib/chart-engine/smartChartAnalysis.ts": "b436d28b75d1d3439575cbdc76b35da76a8f29f7646cc22b62ca76b4b698b398",
+    "lib/domain/src/chart-patterns/__qa__/breakoutRetest.test.ts": "051b9e6c795d447126f4058f712a53985d8e153a8455a4c583756e1398c4e1d9",
+    "lib/domain/src/chart-patterns/patternEngine.ts": "7c89c3d3131eecb98446869703ce3cc053ef06115b538108d86430cd706b9275",
+    "lib/domain/src/market/patternTruthContract.ts": "322cd809fb0b02eece7eb713d161611332ec16bf3dc5c0c092562ec53817a067"
+  },
+  "typechecks": {
+    "domainBuild": "pass",
+    "dashboard": "pass",
+    "api": "pass",
+    "initialFailuresRetained": true
+  },
+  "fullFrontend": {
+    "pass": 3582,
+    "fail": 0,
+    "skip": 11,
+    "filesPass": 217,
+    "filesSkip": 1,
+    "scope": "Before final type-only number annotation; all application behavior identical. Not a fresh whole-repo CI run."
+  },
+  "finalCommitChecks": {
+    "domainCatalogue": {
+      "pass": 427,
+      "fail": 0
+    },
+    "frontendFocused": {
+      "pass": 260,
+      "fail": 0
+    },
+    "actualScannerBrowser": {
+      "pass": 6,
+      "fail": 0,
+      "fixture": "bdef3658b1fe4d71",
+      "scope": "Four generated H&S/breakout prefixes; desktop M15; no real market/provider/model/broker"
+    },
+    "benchmarks": "Four counterbalanced runs; 8000 measured samples +1280 warmups; all pure-compute budgets pass"
+  },
+  "backendPatternTruth": {
+    "pass": 26,
+    "fail": 0
+  },
+  "guards": "85/87; failure blocks identical to prior032 receipt;38 wording+3 internal-name violations",
+  "build": "pass; size/sourcemap warnings retained",
+  "independentReview": "Agent review and separate both-direction H&S reproduction; no additional causal blocker found. Final number annotation is type-only.",
+  "openNewGap": "Early Explain this finding click before assistant lazy mount can report unavailable; browser-first retains this. browser-second waits for visible assistant trigger to isolate causal evidence. Not fixed by this commit.",
+  "environment": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "node": "v24.16.0"
+  },
+  "limitations": [
+    "Generated OHLC only; no owner screenshot raw candles or market-accuracy proof.",
+    "Break discovery latest12 closed bars; H&S discovery latest24 prefixes; no permanent event ledger.",
+    "No global detector or TradingView/MT5 parity; no vendor performance baseline.",
+    "No Replit runtime change, main merge, deployment, DB changes or broker tests.",
+    "Causal checking adds measured CPU; no speed-win claim."
+  ]
+}
