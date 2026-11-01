@@ -70,4 +70,12 @@ describe('native adapter viewport bridge',()=>{
   const proofs:boolean[]=[];mount({onViewportChange:()=>proofs.push(v.isAnalysisFocusVerified())});expect(proofs.at(-1)).toBe(true);proofs.length=0;ctx.stroke.mockImplementation(()=>{throw Error('renderer failure');});v.setScale('log');flush();expect(v.getState().status).toBe('error');expect(proofs).toEqual([false]);expect(queue.size).toBe(0);flush();expect(proofs).toEqual([false]);ctx.stroke.mockReset();v.setScale('linear');flush();expect(proofs).toEqual([false,true]);
  });
 
+ it('failure notification cannot certify a replacement context before its own successful paint',()=>{
+  let replace=false;const proofs:boolean[]=[];
+  mount({onViewportChange:()=>{proofs.push(v.isAnalysisFocusVerified());if(replace){replace=false;ctx.stroke.mockReset();v.resetContext();v.setCandles(bars(10));proofs.push(v.isAnalysisFocusVerified());}}});
+  proofs.length=0;replace=true;ctx.stroke.mockImplementation(()=>{throw Error('old renderer failure');});v.setScale('log');flush();
+  expect(proofs).toEqual([false,false]);expect(v.isAnalysisFocusVerified()).toBe(false);expect(v.getCandles()).toHaveLength(10);expect(queue.size).toBe(1);
+  flush();expect(proofs).toEqual([false,false,true]);expect(v.isAnalysisFocusVerified()).toBe(true);expect(queue.size).toBe(0);
+ });
+
 });
