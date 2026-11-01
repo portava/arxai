@@ -8,7 +8,7 @@ function fixture() {
   const adapter = {
     setStudies: vi.fn((next:ChartStudy[])=>{ studies=next; }),
     getVisibleCandles: ()=>candles.slice(25,35),
-    getStudyValues: (time:number)=>studies.map(study=>({label:studyLabel(study),color:study.color,values:studyDefinition(study.kind).channels.map((name,index)=>({name,value:new StudyCalculator(study).calculate(candles).find(p=>p.time===time)?.values[index]??null}))})),
+    getStudyValues: (time:number)=>studies.map(study=>({label:studyLabel(study),color:study.color,values:studyDefinition(study.kind).channels.map((name,index)=>({name:study.lineStyles?.[index]?.visible===false ? `${name} (hidden)` : name,value:new StudyCalculator(study).calculate(candles).find(p=>p.time===time)?.values[index]??null}))})),
   };
   const save = vi.fn((next:ChartStudy[])=>{studies=next;});
   return {adapter,save,context:()=>({adapter,studies,symbol:"V75",timeframe:"M1",feedLabel:"MT5 · Not live-confirmed",save}),studies:()=>studies};
@@ -42,6 +42,25 @@ describe("existing assistant to current chart study action",()=>{
     const f=fixture();
     expect(executeStudyRequest(parseStudyRequest("show MACD")!,f.context())).toContain("MACD (12, 26, 9) · close · EMA signal");
     expect(executeStudyRequest(parseStudyRequest("show Bollinger Bands")!,f.context())).toContain("BOLLINGER (20, 2) · close");
+  });
+  it("period edits preserve hidden RSI and explain hidden actual values without calling them warmup",()=>{
+    const f=fixture(); executeStudyRequest(parseStudyRequest("show RSI")!,f.context());
+    executeStudyRequest(parseStudyRequest("hide RSI")!,f.context());
+    const reply=executeStudyRequest(parseStudyRequest("set RSI period to 10")!,f.context());
+    expect(f.studies()[0].lineStyles?.[0]?.visible).toBe(false);
+    expect(reply).toContain("RSI (hidden): 100"); expect(reply).toContain("visibility retained");
+    expect(reply).not.toContain("warming up");
+  });
+  it("explicit show reveals manual MACD channels and discloses the visibility change",()=>{
+    const f=fixture(); const c=f.context();c.studies=[{...studyDefinition("macd").defaults,lineStyles:[{}, {visible:false}, {visible:false}]}];
+    const reply=executeStudyRequest(parseStudyRequest("show MACD")!,c);
+    expect(f.studies()[0].lineStyles?.every(s=>s.visible)).toBe(true);
+    expect(reply).toContain("all channels shown");
+  });
+  it("compares the underlying source close, never a transformed display close",()=>{
+    const f=fixture(); const reply=executeStudyRequest(parseStudyRequest("show SMA")!,f.context());
+    expect(reply).toContain("underlying source candle close"); expect(reply).toContain("not averaged display candles");
+    expect(reply).not.toContain("visible candle close");
   });
   it("hide/show uses existing channel visibility, not a second chart",()=>{
     const f=fixture(); executeStudyRequest(parseStudyRequest("show MACD")!,f.context());
