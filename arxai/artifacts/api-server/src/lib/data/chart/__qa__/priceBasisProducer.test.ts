@@ -1,3 +1,4 @@
+import "./candleTimeBasis.test.js";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { Candle } from "../../types.js";

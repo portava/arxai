@@ -12,6 +12,7 @@
 export type ChartCandleTruthResultSourceDocumentation = {
   dataMode: string;
   priceBasisNote: string;
+  timeBasisNote?: string;
   updateMethod: string;
   freshnessNote: string;
   supportedTimeframes: string[];

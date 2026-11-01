@@ -1,12 +1,15 @@
+import { formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
+import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
+import { captureReplayAnalysisPrefix } from "@/lib/chart-engine/chartReplayAnalysis";
 import { ChartLibraryCredit } from "@/components/charts/ChartLibraryCredit";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChartWorkbenchTools } from "@/components/charts/ChartWorkbenchTools";
 import { SmartChartReader } from "@/components/charts/SmartChartReader";
 import { createChartEngineAdapter, type ChartEngineAdapter } from "@/lib/chart-engine";
 import { validatePreferences } from "@/lib/chart-engine/chartWorkspace";
 import { replayCount, replayCountAtClose, replayDrawingKey, replayPrefix, REPLAY_SPEEDS, type ChartReplaySnapshot } from "@/lib/chart-engine/chartReplay";
-import { convertWallClock, effectiveDisplayZone, formatChartTime, parseWallClockInZone, toWallClockInput, zoneShortLabel } from "@/lib/chart-engine/chartTimeZone";
+import { formatChartTime, parseWallClockInZone, toWallClockInput } from "@/lib/chart-engine/chartTimeZone";
 const NO_OLDER = [] as const;
 
 /** No data hooks, SSE, positions, order controls or current intelligence. The
@@ -23,19 +26,19 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
   const container=useRef<HTMLDivElement>(null);
   const adapter=useRef<ChartEngineAdapter|null>(null);
   const replayRead=useMemo(()=>({snapshot,installedCount:installed}),[snapshot,installed]);
+  const getFibonacciProposal=useCallback(()=>{
+    const bound=captureReplayAnalysisPrefix(replayRead,{symbol:snapshot.symbol,timeframe:snapshot.timeframe});
+    if(bound.status!=="ready")return {status:"unavailable" as const,proposal:null,reason:bound.reason??"Replay evidence unavailable."};
+    return proposeChartFibonacci({...bound.context,bars:bound.bars,asOfMs:bound.asOfMs??NaN,replayCutoff:bound.replayCutoff??undefined},adapter.current?.getVisibleCandles?.()??[]);
+  },[replayRead,snapshot]);
   const current=snapshot.bars[count-1]!;
   const seek=(next:number)=>{setPlaying(false);setCount(replayCount(next,snapshot.bars.length));setMessage("");};
-  // Display-only zone (UTC by default, always UTC on daily bars). The seek still
-  // resolves to a UTC close second through replayCountAtClose.
-  const zone=effectiveDisplayZone(preferences.timeZone,snapshot.timeframe);
-  const zoneText=zoneShortLabel(zone);
-  const fmt=(time:number)=>formatChartTime(time,zone,{seconds:true});
+  // Replay snapshots do not retain original UTC authority. Keep their source
+  // coordinates; a saved display preference is not permission to convert them.
+  const zone="UTC" as const;
+  const zoneText="source-clock";
+  const fmt=(time:number)=>formatSourceChartTime(time,false,zone,{seconds:true});
   const inputValue=(time:number)=>toWallClockInput(time,zone,true);
-  const previousZone=useRef(zone);
-  useLayoutEffect(()=>{
-    const from=previousZone.current;previousZone.current=zone;
-    if(from!==zone)setDate(value=>value && convertWallClock(value,from,zone,true));
-  },[zone]);
   useLayoutEffect(()=>{
     if(!container.current)return;
     const engine=createChartEngineAdapter();adapter.current=engine;
@@ -93,7 +96,8 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
         <h1 className="text-xl font-semibold">{snapshot.symbol} · {snapshot.timeframe}</h1></div>
       <Button variant="outline" onClick={()=>{setPlaying(false);onExit();}}>Exit replay · load current data</Button>
     </header>
-    <p className="my-3 max-w-4xl text-xs text-zinc-400">Frozen {snapshot.source} response window: {snapshot.bars.length.toLocaleString()} closed bars, {fmt(snapshot.bars[0]!.time)} to {fmt(snapshot.lastClosedAt)}. Captured {fmt(snapshot.capturedAt/1000)}. Current prices, positions, trading and live advice are not shown here. This is not a fill simulation or verified strategy result.</p>
+    <p className="my-3 max-w-4xl text-xs text-zinc-400">Frozen {snapshot.source} response window: {snapshot.bars.length.toLocaleString()} closed bars, {fmt(snapshot.bars[0]!.time)} to {fmt(snapshot.lastClosedAt)}. Captured {formatChartTime(snapshot.capturedAt/1000,"UTC",{seconds:true})}. Current prices, positions, trading and live advice are not shown here. This is not a fill simulation or verified strategy result.</p>
+    <p className="mb-3 text-xs text-amber-300" data-testid="replay-clock-authority">{SOURCE_CLOCK_NOTE}</p>
     {snapshot.source==="mt5_broker" && <p className="mb-3 text-xs text-amber-300">This source identity does not attest each candle’s historical broker account. Account-era history remains unverified.</p>}
     {snapshot.gaps>0 && <p className="mb-3 text-xs text-amber-300">{snapshot.gaps} gaps in the available history. No missing bars were filled; session closures and missing data are not distinguished here.</p>}
     <section aria-label="Replay controls" className="space-y-3 rounded border border-amber-600/40 bg-amber-950/10 p-3">
@@ -118,7 +122,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
     </section>
     <div className="mt-3 overflow-hidden rounded border border-zinc-800">
 
-      <ChartWorkbenchTools key={snapshot.id} chartTarget={container} adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
+      <ChartWorkbenchTools utcClockQualified={false} getFibonacciProposal={getFibonacciProposal} key={snapshot.id} chartTarget={container} adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
         preferences={preferences} onPreferences={setPreferences} hasCandles={installed>0}
         drawingKey={replayDrawingKey(snapshot)} ephemeralDrawings historyWindowOnly feedLabel={`HISTORICAL REPLAY · ${snapshot.source} · through ${fmt(current.closeTime)} · not live or tradable`}/>
       <div ref={container} className="w-full" style={{height:600}} data-testid="replay-canvas"

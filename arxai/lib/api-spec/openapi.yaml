@@ -13616,6 +13616,15 @@ components:
         quantity: { type: number, nullable: true, minimum: 0 }
         unit: { type: string, nullable: true, enum: [ticks, broker_units] }
         reason: { type: string, nullable: true }
+    CandleTimeBasisEvidence:
+      type: object
+      description: Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.
+      required: [kind, basis, authority, reason]
+      properties:
+        kind: { type: string, enum: [original_utc, unavailable] }
+        basis: { type: string, enum: [UTC, BROKER_SERVER], nullable: true }
+        authority: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
     CandlePriceBasisEvidence:
       type: object
       description: Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.
@@ -13668,6 +13677,7 @@ components:
             provider (never safe as tradable truth); dev = developer test data;
             unknown = unrecognized source.
         priceBasisEvidence: { $ref: "#/components/schemas/CandlePriceBasisEvidence" }
+        timeBasisEvidence: { $ref: "#/components/schemas/CandleTimeBasisEvidence" }
         priceBasis:
           type: string
           enum: [BID, MID, LAST, SYNTHETIC, UNKNOWN]
@@ -13875,6 +13885,7 @@ components:
           properties:
             dataMode: { type: string }
             priceBasisNote: { type: string }
+            timeBasisNote: { type: string }
             updateMethod: { type: string }
             freshnessNote: { type: string }
             supportedTimeframes:

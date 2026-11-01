@@ -1,3 +1,4 @@
+import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Sparkles, Eye, EyeOff } from "lucide-react";
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
@@ -12,7 +13,7 @@ import { smartChartNarrative } from "@/lib/chart-engine/smartChartNarrative";
 import { chartNumber, chartChangeSummary } from "@/lib/chart-engine/chartDescriptiveStats";
 import { type ChartDescriptiveAnalysis, type ObservedMetric } from "@/lib/chart-engine/chartDescriptiveAnalysis";
 import { describeChartStyle, type ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
-import { effectiveDisplayZone, formatChartTime, zoneShortLabel } from "@/lib/chart-engine/chartTimeZone";
+import { effectiveDisplayZone, zoneShortLabel } from "@/lib/chart-engine/chartTimeZone";
 import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotation";
 import { Button } from "@/components/ui/button";
 
@@ -34,7 +35,9 @@ export function findingAnnotation(finding:SmartChartFinding|null):SmartChartAnno
 export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay}:Props) {
   // Display-only: the zone relabels times and is deliberately not in readKey,
   // so a zone change never re-runs the analysis.
-  const zone=effectiveDisplayZone(view?.timeZone,timeframe);
+  const utcClockQualified=!replay && older.length===0 && chartUtcClockQualified(data?.candles??[]);
+  const zone=utcClockQualified ? effectiveDisplayZone(view?.timeZone,timeframe) : "UTC";
+  const chartTime=(time:number)=>formatSourceChartTime(time,utcClockQualified,zone,{seconds:true});
   const ownershipKey=JSON.stringify([symbol,timeframe,replay?.snapshot.id,replay?.snapshot.sourceIdentity??data?.marketEvidence?.sourceIdentity,replay?.snapshot.source??data?.feedStatus?.source]);
   const contextKey=JSON.stringify([ownershipKey,replay?.installedCount]);
   const bound=useMemo<ReturnType<typeof captureSmartChartBars> & {asOfMs?:number|null;replayCutoff?:number|null}>(()=>replay?captureReplayAnalysisPrefix(replay,{symbol,timeframe}):captureSmartChartBars(data,{symbol,timeframe},older,historyEvidence,Date.now()),[data,symbol,timeframe,older,historyEvidence,replay?.snapshot,replay?.installedCount]);
@@ -101,7 +104,8 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
     <details className="mt-2 text-zinc-400">
       <summary className="w-fit cursor-pointer text-[11px] text-sky-300">Analysis, evidence and chart statistics</summary>
       <div className="mt-3 space-y-3">
-        {chosen&&<div className="space-y-1.5"><p className="text-zinc-200">{statusText[chosen.status]} · observed {formatChartTime(chosen.asOf,zone,{seconds:true})}</p>{chosenNarrative?.detail&&<p data-testid="chart-reader-anatomy">{chosenNarrative.detail}</p>}{chosen.invalidation&&<p>What would change this reading: {chosen.invalidation}</p>}<p>{chosen.caveat}</p></div>}
+        {!utcClockQualified&&<p className="text-amber-200/80" data-testid="chart-reader-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
+        {chosen&&<div className="space-y-1.5"><p className="text-zinc-200">{statusText[chosen.status]} · observed {chartTime(chosen.asOf)}</p>{chosenNarrative?.detail&&<p data-testid="chart-reader-anatomy">{chosenNarrative.detail}</p>}{chosen.invalidation&&<p>What would change this reading: {chosen.invalidation}</p>}<p>{chosen.caveat}</p></div>}
         {stats&&<dl className="grid grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-4">{[["Price change",`${chartNumber(stats.change)} (${chartNumber(stats.changePercent)}%)`],["Mean close",chartNumber(stats.mean)],["Median close",chartNumber(stats.median)],["Close variability",chartNumber(stats.stdDev)],["Highest observed price",chartNumber(stats.high)],["Lowest observed price",chartNumber(stats.low)],["Price range",chartNumber(stats.range)],["Close-to-close drawdown",`${chartNumber(stats.maxDrawdownPercent)}%`]].map(([label,value])=><div key={label}><dt className="text-[10px]">{label}</dt><dd className="mt-0.5 font-mono text-zinc-200">{value}</dd></div>)}</dl>}
         {description&&<div className="space-y-2" aria-label="Descriptive window metrics">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-4">{[
@@ -125,10 +129,10 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
         {gaps&&<p>{gaps.gaps?`${gaps.gaps} elapsed gap${gaps.gaps===1?"":"s"} between observations; the largest spans ${chartNumber(gaps.largestSeconds/60)} minutes. Market closures or missing intervals may explain these gaps; this view cannot distinguish them.`:"No elapsed gaps between the observed candles in this window."} Missing volume is not treated as zero trading activity.</p>}
         {view&&<p>Display: {describeChartStyle(view.style).name} · {view.scale} scale{view.inverted?" · inverted":""}. Readings use the underlying prices and selected period. {describeChartStyle(view.style).note}{view.scale!=="linear"?" Axis transformations change visual spacing, not the observed price change.":""}</p>}
         {moreFindings.length>0&&<div className="space-y-2">
-          <p className="text-[10px]">More readings · {bound.context.source??"Source unavailable"} · times in {zoneShortLabel(zone)}</p>
+          <p className="text-[10px]">More readings · {bound.context.source??"Source unavailable"} · times in {utcClockQualified?zoneShortLabel(zone):"source clock (UTC unverified)"}</p>
           <div className="flex flex-wrap gap-2" aria-label="More observed patterns">{moreFindings.map(finding=>{
             const observedAt=new Date(finding.asOf*1000).toISOString();
-            return <button type="button" key={finding.id} className="rounded border border-zinc-700 px-2 py-1 text-left text-zinc-300" onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}<time dateTime={observedAt} className="block text-[10px] text-zinc-400">As of {formatChartTime(finding.asOf,zone,{seconds:true})}</time></button>;
+            return <button type="button" key={finding.id} className="rounded border border-zinc-700 px-2 py-1 text-left text-zinc-300" onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}<time dateTime={utcClockQualified?observedAt:undefined} className="block text-[10px] text-zinc-400">As of {chartTime(finding.asOf)}</time></button>;
           })}</div>
         </div>}
         <p className="text-[10px]">Volume, order flow, forecasts and statistical significance are not inferred from this OHLC window. A pattern alone does not establish causation or a profitable trade.</p>

@@ -13,7 +13,8 @@
 // - An accepted, fresh TICK/CANDLE is ALSO pushed into the in-memory market-data
 //   store (mt5Provider) so the marketDataRouter's top "mt5_broker" slot serves
 //   broker-native chart/quote data. That store is an analysis cache only: it
-//   feeds chart/scanner reads, never an order. No execution surface is touched.
+//   feeds chart/scanner and existing governed readers; it never dispatches an
+//   order or changes their execution gates. No execution surface is touched.
 // - It NEVER fabricates success: a validation failure or duplicate is recorded
 //   honestly and surfaced to the caller.
 // - Per-user isolation: every row is attributed to the authenticated userId.
@@ -29,9 +30,11 @@ import { bridgeV2 } from "@workspace/domain";
 import {
   mergeCandleFromMT5,
   updateQuoteFromMT5,
+  type Mt5BridgeIdentity,
 } from "../data/providers/mt5Provider.js";
 import { foldFormingTick } from "../data/chart/formingBarComposer.js";
 import type { Candle, MarketQuote } from "../data/types.js";
+import { mt5PriceBasisEvidence } from "../data/candlePriceBasisEvidence.js";
 import { isUniqueViolation } from "../pgError.js";
 
 const {
@@ -226,7 +229,7 @@ export async function ingestBridgeV2Message(
     // touches arx_live_* / positions / balances / the 16-gate pipeline. A feed
     // failure is swallowed so it can never corrupt the honest ingest response.
     if (result.accepted) {
-      feedMarketDataStore(envelope.messageType, payload, freshnessVerdict);
+      feedMarketDataStore(envelope.messageType, payload, freshnessVerdict, { userId, bridgeConnectionId });
     }
 
     return result;
@@ -245,6 +248,7 @@ function feedMarketDataStore(
   messageType: string,
   payload: unknown,
   freshnessVerdict: string | null,
+  authenticated: { userId: number; bridgeConnectionId: number | null },
 ): void {
   // Transport-STALE (>30s late) data is not trustworthy as a live feed.
   if (freshnessVerdict === "STALE") return;
@@ -252,6 +256,12 @@ function feedMarketDataStore(
   const p = (payload ?? {}) as Record<string, unknown>;
   try {
     if (messageType === "CANDLE") {
+      // Both v2 and batch routes obtain this exact mt5_connection.id from
+      // bridgeAuthPerUserOnly. Never use payload ids or an unattributed fallback.
+      const bridgeConnectionId = authenticated.bridgeConnectionId;
+      if (typeof bridgeConnectionId !== "number" || !Number.isSafeInteger(bridgeConnectionId) || bridgeConnectionId <= 0
+        || !Number.isSafeInteger(authenticated.userId) || authenticated.userId <= 0) return;
+      const bridge: Mt5BridgeIdentity = { bridgeConnectionId, userId: authenticated.userId };
       const symbol = typeof p.symbol === "string" ? p.symbol : null;
       const timeframe = typeof p.timeframe === "string" ? p.timeframe : null;
       const openTimeEpochMs = typeof p.openTimeEpochMs === "number" ? p.openTimeEpochMs : null;
@@ -263,8 +273,9 @@ function feedMarketDataStore(
         low: Number(p.low),
         close: Number(p.close),
         volume: typeof p.volume === "number" ? p.volume : 0,
+        priceBasisEvidence: mt5PriceBasisEvidence(p.priceBasis),
       };
-      mergeCandleFromMT5(symbol, candle, timeframe);
+      mergeCandleFromMT5(symbol, candle, timeframe, bridge);
       return;
     }
     // TICK → latest quote (the quote store correctly keeps a single latest).

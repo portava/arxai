@@ -1,3 +1,4 @@
+import { resolveCandleTimeBasisEvidence, type CandleTimeBasisEvidence } from "../candleTimeBasisEvidence.js";
 import { resolveCandlePriceBasisEvidence, type CandlePriceBasisEvidence } from "../candlePriceBasisEvidence.js";
 import { resolveCandleVolumeEvidence, type CandleVolumeEvidence } from "../candleVolumeEvidence.js";
 // ARX Native Chart — Level 1: candle normalization + sequence validation.
@@ -102,6 +103,7 @@ export interface NormalizedChartCandle {
   source: string;          // provider id (e.g. "deriv", "assistant_real:twelve_data")
   sourceMode: SourceMode;  // live / mock / demo / dev / unknown
   priceBasis: PriceBasis;  // BID / MID / LAST / SYNTHETIC / UNKNOWN
+  timeBasisEvidence?: CandleTimeBasisEvidence;
   priceBasisEvidence?: CandlePriceBasisEvidence; // absent on legacy responses
   providerSymbol: string | null; // provider's own symbol string (e.g. "EUR/USD")
   brokerSymbol: string | null;   // MT5 broker symbol when source is mt5_broker; null otherwise
@@ -275,6 +277,7 @@ interface IntermediateCandle extends Pick<NormalizedChartCandle, "open" | "high"
   /** Preserve input evidence before the numeric compatibility fallback to zero. */
   volumeReportedAsZero: boolean;
   volumeEvidence: CandleVolumeEvidence;
+  timeBasisEvidence: CandleTimeBasisEvidence;
   priceBasisEvidence: CandlePriceBasisEvidence;
 }
 
@@ -451,6 +454,7 @@ export function normalizeCandles(
       volumeReportedAsZero: c.volume === 0,
       volumeEvidence: resolveCandleVolumeEvidence(c.volumeEvidence, source),
       priceBasisEvidence: resolveCandlePriceBasisEvidence(c.priceBasisEvidence, source),
+      timeBasisEvidence: resolveCandleTimeBasisEvidence(c.timeBasisEvidence, source),
       isComplete: closeMs <= now,
       openTime: new Date(openMs).toISOString(),
     });
@@ -661,6 +665,7 @@ export function normalizeCandles(
       sourceMode,
       priceBasis: source === "mt5_broker" ? c.priceBasisEvidence.basis ?? "UNKNOWN" : compatibilityPriceBasis,
       priceBasisEvidence: c.priceBasisEvidence,
+      timeBasisEvidence: c.timeBasisEvidence,
       providerSymbol: providerSym,
       brokerSymbol: brokerSym,
       isComplete: c.isComplete,

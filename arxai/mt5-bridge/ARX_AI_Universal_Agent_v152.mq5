@@ -1579,8 +1579,28 @@ string PostJsonGetBody(const string path, const string json)
    return CharArrayToString(result);
 }
 
+// CopyRates bar basis is a per-symbol terminal property, not the quote side.
+// Bool overload matters: a failed query's numeric zero must not become BID.
+string ReadCandleChartBasis(const string symbol)
+{
+   long mode = -1;
+   if(!SymbolInfoInteger(symbol, SYMBOL_CHART_MODE, mode)) return "";
+   if(mode == SYMBOL_CHART_MODE_BID) return "bid";
+   if(mode == SYMBOL_CHART_MODE_LAST) return "last";
+   return "";
+}
+
+// Bracket each CopyRates call; a changed/failed observation withholds metadata.
+// This is a producer declaration, not independent historical attestation.
+string ConfirmCandleChartBasis(const string symbol, const string before)
+{
+   string after = ReadCandleChartBasis(symbol);
+   if(before == "" || before != after) return "";
+   return before;
+}
+
 string BuildCandleBatchBody(const string sym, const string tfName,
-                            const MqlRates &r[], int got, bool brokerLimited)
+                            const MqlRates &r[], int got, bool brokerLimited, const string priceBasis)
 {
    int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
    if(digits <= 0 || digits > 8) digits = 5;
@@ -1612,6 +1632,7 @@ string BuildCandleBatchBody(const string sym, const string tfName,
    body += "\"brokerServerTime\":"+ (string)((long)TimeCurrent() * 1000) + ",";
    body += "\"sentAt\":"          + (string)((long)TimeGMT() * 1000) + ",";
    body += "\"brokerLimited\":"   + (brokerLimited ? "true" : "false") + ",";
+   if(priceBasis != "") body += "\"priceBasis\":\"" + priceBasis + "\",";
    body += "\"bars\":"            + bars;
    body += "}";
    return body;
@@ -1632,10 +1653,12 @@ void ProcessCandleSeries(const string sym, const string tfNameIn)
    if(liveCount < 1)    liveCount = 1;
    if(liveCount > 5000) liveCount = 5000;
    MqlRates live[];
+   string liveBasisBefore = ReadCandleChartBasis(sym);
    int gotLive = CopyRates(sym, tf, 1, liveCount, live);
+   string liveBasis = ConfirmCandleChartBasis(sym, liveBasisBefore);
    if(gotLive <= 0) return; // history not ready yet — retry next cycle
 
-   string body = BuildCandleBatchBody(sym, tfName, live, gotLive, false);
+   string body = BuildCandleBatchBody(sym, tfName, live, gotLive, false, liveBasis);
    string resp = PostJsonGetBody("/api/mt5/candles/ingest", body);
    if(StringLen(resp) == 0) return;
 
@@ -1656,7 +1679,9 @@ void ProcessCandleSeries(const string sym, const string tfNameIn)
       datetime fromT = toT - (datetime)((long)pageBars * (long)tfSec);
 
       MqlRates page[];
+      string pageBasisBefore = ReadCandleChartBasis(sym);
       int gotPage = CopyRates(sym, tf, fromT, toT, page);
+      string pageBasis = ConfirmCandleChartBasis(sym, pageBasisBefore);
       if(gotPage <= 0) break; // nothing in this window (or still loading) — retry later
 
       // Honest BROKER_LIMITED signal: the broker's first available bar is at or
@@ -1666,7 +1691,7 @@ void ProcessCandleSeries(const string sym, const string tfNameIn)
       for(int i = 1; i < gotPage; i++) if(page[i].time < oldestBar) oldestBar = page[i].time;
       bool limited = (firstAvail > 0 && oldestBar <= firstAvail);
 
-      string pbody = BuildCandleBatchBody(sym, tfName, page, gotPage, limited);
+      string pbody = BuildCandleBatchBody(sym, tfName, page, gotPage, limited, pageBasis);
       string presp = PostJsonGetBody("/api/mt5/candles/ingest", pbody);
       if(StringLen(presp) == 0) break;
 
@@ -1796,7 +1821,9 @@ bool PostV2Ingest(const string messageType, const string streamKey, const string
 void PushLiveCandleV2(const string sym, const string tfName, ENUM_TIMEFRAMES tf)
 {
    MqlRates r[];
+   string basisBefore = ReadCandleChartBasis(sym);
    if(CopyRates(sym, tf, 1, 1, r) != 1) return;   // index 1 = last CLOSED bar
+   string priceBasis = ConfirmCandleChartBasis(sym, basisBefore);
    if(r[0].open <= 0 || r[0].high <= 0 || r[0].low <= 0 || r[0].close <= 0) return;
 
    string barKey = sym + "|" + tfName;
@@ -1815,6 +1842,7 @@ void PushLiveCandleV2(const string sym, const string tfName, ENUM_TIMEFRAMES tf)
    payload += "\"low\":"   + SafeF(r[0].low,   digits) + ",";
    payload += "\"close\":" + SafeF(r[0].close, digits) + ",";
    payload += "\"volume\":"+ (string)(long)r[0].tick_volume + ",";
+   if(priceBasis != "") payload += "\"priceBasis\":\"" + priceBasis + "\",";
    payload += "\"isClosed\":true";
    payload += "}";
 

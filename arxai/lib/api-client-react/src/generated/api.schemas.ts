@@ -3277,6 +3277,33 @@ export interface CandleVolumeEvidence {
   reason: string | null;
 }
 
+export type CandleTimeBasisEvidenceKind =
+  (typeof CandleTimeBasisEvidenceKind)[keyof typeof CandleTimeBasisEvidenceKind];
+
+export const CandleTimeBasisEvidenceKind = {
+  original_utc: "original_utc",
+  unavailable: "unavailable",
+} as const;
+
+export type CandleTimeBasisEvidenceBasis =
+  | (typeof CandleTimeBasisEvidenceBasis)[keyof typeof CandleTimeBasisEvidenceBasis]
+  | null;
+
+export const CandleTimeBasisEvidenceBasis = {
+  UTC: "UTC",
+  BROKER_SERVER: "BROKER_SERVER",
+} as const;
+
+/**
+ * Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.
+ */
+export interface CandleTimeBasisEvidence {
+  kind: CandleTimeBasisEvidenceKind;
+  basis: CandleTimeBasisEvidenceBasis;
+  authority: string | null;
+  reason: string | null;
+}
+
 export type CandlePriceBasisEvidenceKind =
   (typeof CandlePriceBasisEvidenceKind)[keyof typeof CandlePriceBasisEvidenceKind];
 
@@ -3415,6 +3442,7 @@ export interface ChartCandle {
    */
   sourceMode: ChartCandleSourceMode;
   priceBasisEvidence?: CandlePriceBasisEvidence;
+  timeBasisEvidence?: CandleTimeBasisEvidence;
   /** BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.
    */
   priceBasis: ChartCandlePriceBasis;
@@ -3655,6 +3683,7 @@ export const ChartCandleTruthResultAssessment = {
 export type ChartCandleTruthResultSourceDocumentation = {
   dataMode: string;
   priceBasisNote: string;
+  timeBasisNote?: string;
   updateMethod: string;
   freshnessNote: string;
   supportedTimeframes: string[];

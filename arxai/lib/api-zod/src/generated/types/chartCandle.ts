@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CandlePriceBasisEvidence } from "./candlePriceBasisEvidence";
+import type { CandleTimeBasisEvidence } from "./candleTimeBasisEvidence";
 import type { CandleVolumeEvidence } from "./candleVolumeEvidence";
 import type { ChartCandlePriceBasis } from "./chartCandlePriceBasis";
 import type { ChartCandleQualityFlagsItem } from "./chartCandleQualityFlagsItem";
@@ -49,6 +50,7 @@ export interface ChartCandle {
    */
   sourceMode: ChartCandleSourceMode;
   priceBasisEvidence?: CandlePriceBasisEvidence;
+  timeBasisEvidence?: CandleTimeBasisEvidence;
   /** BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.
    */
   priceBasis: ChartCandlePriceBasis;
