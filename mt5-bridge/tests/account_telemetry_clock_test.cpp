@@ -34,6 +34,7 @@ void PushSnapshots() { ++snapshots; }
 void PollAndExecute() { ++commands; }
 void PushCandleHistory() { ++candles; }
 void PushLiveBrokerStream() { ++streams; }
+void PumpNativeAccountReport() {} // separately exercised by native_account_report_test.cpp
 #include "account_timer_wire.inc"
 
 int failures = 0, checks = 0;
