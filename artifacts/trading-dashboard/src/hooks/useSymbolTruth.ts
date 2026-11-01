@@ -109,9 +109,10 @@ export function useSymbolTruth(
   const nowMs = useEvidenceDeadline(symbolTruthDeadline(rawSnapshot));
   const { snapshot, actionCapped } = useMemo(() => resolveSymbolTruthEvidence({
     snapshot: rawSnapshot, symbol, apiTimeframe: apiTf, scannerTruth,
+    scannerSourceIdentity: scanner.sourceIdentity,
     scannerLastCandleAt: scanner.feedStatus?.lastCandleTime ?? null,
     scannerError: scanner.isError, snapshotError: snapQ.isError, nowMs,
-  }), [rawSnapshot, symbol, apiTf, scannerTruth, scanner.feedStatus, scanner.isError, snapQ.isError, nowMs]);
+  }), [rawSnapshot, symbol, apiTf, scannerTruth, scanner.feedStatus, scanner.sourceIdentity, scanner.isError, snapQ.isError, nowMs]);
 
   return {
     snapshot,

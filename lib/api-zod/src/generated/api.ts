@@ -7588,6 +7588,10 @@ export const GetMeMarketTruthQueryParams = zod.object({
     .default(getMeMarketTruthQueryTfDefault),
 });
 
+export const getMeMarketTruthResponseDataSourceIdentityRegExp = new RegExp(
+  "^[a-f0-9]{64}$",
+);
+
 export const GetMeMarketTruthResponse = zod.object({
   symbol: zod.string(),
   displaySymbol: zod.string(),
@@ -7596,6 +7600,13 @@ export const GetMeMarketTruthResponse = zod.object({
   data: zod.object({
     state: zod.enum(["LIVE_CONFIRMED", "SYNCING", "STALE", "UNAVAILABLE"]),
     source: zod.string().nullable(),
+    sourceIdentity: zod
+      .string()
+      .regex(getMeMarketTruthResponseDataSourceIdentityRegExp)
+      .nullish()
+      .describe(
+        "Original chart source identity; absent on older servers, never inferred from provider name.",
+      ),
     sourceLabel: zod.string().nullable(),
     price: zod.number().nullable(),
     lastCandleAt: zod.string().nullable(),

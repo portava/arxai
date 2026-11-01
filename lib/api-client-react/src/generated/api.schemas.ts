@@ -6275,6 +6275,11 @@ export const TruthDataState = {
 export interface TruthData {
   state: TruthDataState;
   source: string | null;
+  /**
+   * Original chart source identity; absent on older servers, never inferred from provider name.
+   * @pattern ^[a-f0-9]{64}$
+   */
+  sourceIdentity?: string | null;
   sourceLabel: string | null;
   price: number | null;
   lastCandleAt: string | null;

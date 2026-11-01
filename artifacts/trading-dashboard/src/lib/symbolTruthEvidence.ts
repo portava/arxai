@@ -32,6 +32,7 @@ export function resolveSymbolTruthEvidence(input: {
   symbol: string;
   apiTimeframe: string;
   scannerTruth: ScannerTruth | null;
+  scannerSourceIdentity: string | null;
   scannerLastCandleAt: string | null;
   scannerError: boolean;
   snapshotError: boolean;
@@ -55,6 +56,10 @@ export function resolveSymbolTruthEvidence(input: {
   const confirmed = !input.scannerError && scannerTruth?.actionable === true &&
     scannerTruth.symbolInternal === input.symbol && normalizeChartTimeframe(scannerTruth.timeframe) === normalizeChartTimeframe(input.apiTimeframe) &&
     snapshot.data.state === "LIVE_CONFIRMED" &&
+    // Same provider/bar can belong to a different account or provider session.
+    // Missing legacy identity is unconfirmed, never guessed from provider name.
+    typeof input.scannerSourceIdentity === "string" && /^[a-f0-9]{64}$/.test(input.scannerSourceIdentity) &&
+    snapshot.data.sourceIdentity === input.scannerSourceIdentity &&
     snapshot.data.source != null && snapshot.data.source === scannerTruth.candles.source &&
     Number.isFinite(snapshotCandleAt) && snapshotCandleAt === chartCandleAt;
   if (confirmed) return { snapshot, actionCapped: false };
