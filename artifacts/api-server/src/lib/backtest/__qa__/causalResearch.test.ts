@@ -263,3 +263,6 @@ test("browser main thread is refused before any historical input is read", async
     await assert.rejects(runCausalResearchWeb(badInput, config()), (error: unknown) => error instanceof ResearchInputError && error.code === "RESEARCH_WORKER_REQUIRED");
   } finally { delete (globalThis as {document?:unknown}).document; }
 });
+
+// Same registered CI lane owns both immutable research versions.
+import "./causalResearchV2.test.js";
