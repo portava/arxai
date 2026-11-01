@@ -9,7 +9,7 @@ const origin={method:"confirmed-swings-v1" as const,span:2 as const,symbol:"EURU
 const ready=():ChartFibonacciRead=>({status:"ready",reason:null,proposal:{comparisonKey:"sample-a",origin,note:"Twelve closed bars; no forecast."}});
 let read:ChartFibonacciRead;
 const draw=vi.fn(),engine={setDrawings:draw,setDrawingInteraction:vi.fn()} as unknown as ChartEngineAdapter;
-const props={adapter:engine,epoch:1,symbol:"EURUSD",timeframe:"M1",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:"Offline",getFibonacciProposal:()=>read,assistantPrimary:true};
+const props={adapter:engine,epoch:1,symbol:"EURUSD",timeframe:"M1",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:"Offline",getFibonacciProposal:()=>read,assistantActive:true};
 const key=drawingStorageKey("EURUSD","M1"),saved=()=>JSON.parse(localStorage.getItem(key)??"[]") as ChartDrawing[];
 const ask=(text:string)=>{let reply:string|null=null;act(()=>{reply=requestChartFibonacci(text);});return reply;};
 const preview=()=>ask("preview Fibonacci");
@@ -66,7 +66,7 @@ it("no selection, non-Fib selection, unsupported compounds and unmount refuse wi
  expect(ask("remove selected Fibonacci")).toContain("Select one");fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));fireEvent.click(screen.getByRole("button",{name:"Select drawing 1"}));
  for(const text of ["hide selected Fibonacci","show selected Fibonacci","remove selected Fibonacci"]){expect(ask(text)).toContain("Select one");}expect(saved()).toEqual(before);
  for(const text of ["keep Fibonacci and buy","remove selected Fibonacci on USDJPY","hide all Fibonacci"]){expect(ask(text)).toContain("Chart not changed");}expect(saved()).toEqual(before);
- view.unmount();expect(ask("keep Fibonacci")).toContain("Open the primary");expect(saved()).toEqual(before);
+ view.unmount();expect(ask("keep Fibonacci")).toContain("Select a ready");expect(saved()).toEqual(before);
 });
 it("same-turn selected hide then show retains both reversible edits",()=>{
  render(<ChartWorkbenchTools {...props}/>);preview();ask("keep Fibonacci");const kept=saved()[0]!;

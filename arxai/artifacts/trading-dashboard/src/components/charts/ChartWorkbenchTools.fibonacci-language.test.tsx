@@ -9,7 +9,7 @@ const origin={method:"confirmed-swings-v1" as const,span:2 as const,symbol:"EURU
 const ready=():ChartFibonacciRead=>({status:"ready",reason:null,proposal:{comparisonKey:"sample-a",origin,note:"Twelve observed closed bars; no forecast."}});
 let read:ChartFibonacciRead;
 const draw=vi.fn(),engine={setDrawings:draw,setDrawingInteraction:vi.fn()} as unknown as ChartEngineAdapter;
-const props={adapter:engine,epoch:1,symbol:"EURUSD",timeframe:"M1",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:"Offline",getFibonacciProposal:()=>read,assistantPrimary:true};
+const props={adapter:engine,epoch:1,symbol:"EURUSD",timeframe:"M1",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:"Offline",getFibonacciProposal:()=>read,assistantActive:true};
 const saved=()=>JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M1"))??"[]") as ChartDrawing[];
 const ask=(text:string)=>{let reply:string|null=null;act(()=>{reply=requestChartFibonacci(text);});return reply;};
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();read=ready();});afterEach(cleanup);
@@ -45,10 +45,10 @@ it("distinguishes a selected user's edited anchors from archived automatic prove
  const before=JSON.stringify(saved()),reply=ask("explain selected Fibonacci");
  expect(reply).toContain("current editable anchors are your annotation");expect(reply).toContain("23.6%: 14.72");expect(reply).toContain("originally used 10");expect(reply).toContain("and 20");expect(JSON.stringify(saved())).toBe(before);
 });
-it("secondary and replay tools do not hijack primary ownership and unmount releases it",()=>{
+it("unselected and replay tools do not hijack selected ownership and unmount releases it",()=>{
  const primary=render(<ChartWorkbenchTools {...props}/>);
- const other=render(<><ChartWorkbenchTools {...props} assistantPrimary={false} symbol="USDJPY"/><ChartWorkbenchTools {...props} ephemeralDrawings assistantPrimary symbol="V75"/></>);
- expect(ask("show Fibonacci")).toContain("EURUSD M1");primary.unmount();expect(ask("show Fibonacci")).toContain("Open the primary");other.unmount();
+ const other=render(<><ChartWorkbenchTools {...props} assistantActive={false} symbol="USDJPY"/><ChartWorkbenchTools {...props} ephemeralDrawings assistantActive symbol="V75"/></>);
+ expect(ask("show Fibonacci")).toContain("EURUSD M1");primary.unmount();expect(ask("show Fibonacci")).toContain("Select a ready");other.unmount();
 });
 it("explicit selected explanation without selection refuses without preparing or saving",()=>{
  render(<ChartWorkbenchTools {...props}/>);draw.mockClear();expect(ask("explain selected Fibonacci")).toContain("Select one");expect(draw).not.toHaveBeenCalled();expect(saved()).toEqual([]);

@@ -1,3 +1,5 @@
+import {vwapAnchorEvidence} from "./chartVwapAnchor";
+import type {VwapAnchor} from "./chartStudies";
 import { chartIntervalSeconds } from "./chartIntervals";
 import {
   createChart,
@@ -799,7 +801,12 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.chart.timeScale().setVisibleLogicalRange({from:lo,to:this.candles.length - 1 + 3});
     return {complete:first.time <= start};
   }
-  getStudyValues(time: number) { return this.analysis?.inspect(time) ?? []; }
+  getVolumeProfiles() { return this.analysis?.inspectProfiles() ?? []; }
+  getVwapAnchorEvidence(anchor:VwapAnchor) {
+    let lo=0,hi=this.candles.length;while(lo<hi){const mid=(lo+hi)>>>1;if(this.candles[mid]!.time<anchor.time)lo=mid+1;else hi=mid;}
+    return vwapAnchorEvidence(anchor,this.candles.slice(Math.max(0,lo-1),lo+2));
+  }
+  getStudyValues(time: number) { return this.analysis?.inspect(time,anchor=>this.getVwapAnchorEvidence(anchor)) ?? []; }
   setCrosshairHandler(handler: ((candle: ChartEngineCandle | null) => void) | null): void { this.crosshairHandler = handler; }
 
   setViewLinkHandler(handler: ((event: ChartViewEvent) => void) | null): void { this.viewLinkHandler = handler; }

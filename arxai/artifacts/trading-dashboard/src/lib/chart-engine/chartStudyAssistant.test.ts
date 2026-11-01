@@ -1,13 +1,16 @@
+import {calculateVolumeProfile} from "./chartVolumeProfile";
+import {TRADE_VOLUME_AUTHORITY} from "./chartVolume";
 import { describe, expect, it, vi } from "vitest";
 import { STUDY_CATALOG, StudyCalculator, studyDefinition, studyLabel, type ChartStudy } from "./chartStudies";
 import { executeStudyRequest, parseStudyRequest, registerChartStudyAssistant, requestChartStudy } from "./chartStudyAssistant";
 
 function fixture(qualifiedTrade=false) {
   let studies: ChartStudy[] = [];
-  const candles = Array.from({length:40},(_,i)=>({time:1700000000+i*60,open:100+i,high:102+i,low:99+i,close:101+i,...(qualifiedTrade ? {volumeEvidence:{kind:"real_volume" as const,unit:"provider_trade_units" as const,quantity:2,reason:null,authority:"twelve-data:time-series:common-stock:regular-unadjusted:v1",seriesIdentity:"a".repeat(64)}} : {})}));
+  const candles = Array.from({length:40},(_,i)=>({time:1700000000+i*60,open:100+i,high:102+i,low:99+i,close:101+i,...(qualifiedTrade ? {volumeEvidence:{kind:"real_volume" as const,unit:"provider_trade_units" as const,quantity:2,reason:null,authority:"twelve-data:time-series:common-stock:regular-unadjusted:v1",seriesIdentity:"a".repeat(64)},profileEvidence:{finality:"closed" as const,clockAuthority:TRADE_VOLUME_AUTHORITY}} : {})}));
   const adapter = {
     setStudies: vi.fn((next:ChartStudy[])=>{ studies=next; }),
     getVisibleCandles: ()=>candles.slice(25,35),
+    getVolumeProfiles: ()=>studies.filter(s=>s.kind==="volume_profile").map(s=>({id:s.id??s.kind,label:studyLabel(s),visible:s.lineStyles?.[0]?.visible!==false,result:calculateVolumeProfile(candles,s.profileRange,s.profileRows??32,s.profileValueAreaPercent??70)})),
     getStudyValues: (time:number)=>studies.map(study=>({label:studyLabel(study),color:study.color,values:studyDefinition(study.kind).channels.map((name,index)=>({name:study.lineStyles?.[index]?.visible===false ? `${name} (hidden)` : name,value:new StudyCalculator(study).calculate(candles).find(p=>p.time===time)?.values[index]??null}))})),
   };
   const save = vi.fn((next:ChartStudy[])=>{studies=next;});
@@ -16,11 +19,11 @@ function fixture(qualifiedTrade=false) {
 
 describe("existing assistant to current chart study action",()=>{
   it.each(STUDY_CATALOG.map(d=>[d.defaults.kind] as const))("applies existing catalogue kind %s without introducing a calculation",kind=>{
-    const f=fixture(kind === "vwap"); expect(executeStudyRequest(parseStudyRequest(`show ${kind}`)!,f.context())).toContain("Applied");
+    const f=fixture(kind === "vwap" || kind === "volume_profile"); expect(executeStudyRequest(parseStudyRequest(`show ${kind}`)!,f.context())).toContain("Applied");
     expect(f.studies()[0].kind).toBe(kind);
   });
   it.each(STUDY_CATALOG.map(d=>[d.name] as const))("recognizes existing full catalogue name %s",name=>{
-    const f=fixture(name === "Anchored VWAP"); expect(executeStudyRequest(parseStudyRequest(`show ${name}`)!,f.context())).toContain("Applied");
+    const f=fixture(name === "Anchored VWAP" || name === "Estimated volume profile"); expect(executeStudyRequest(parseStudyRequest(`show ${name}`)!,f.context())).toContain("Applied");
   });
   it("curiosity applies RSI and explains the actual visible bar using the existing calculator",()=>{
     const f=fixture(); const response=executeStudyRequest(parseStudyRequest("What does RSI tell me about this chart?")!,f.context());
@@ -83,9 +86,9 @@ describe("existing assistant to current chart study action",()=>{
     expect(response).toContain("warming up"); expect(response).not.toMatch(/EMA: 0/);
   });
   it("uses mounted current chart only, cleans up safely, leaves ordinary conversation alone",()=>{
-    expect(requestChartStudy("hello")).toBeNull(); expect(requestChartStudy("show RSI")).toContain("Open");
+    expect(requestChartStudy("hello")).toBeNull(); expect(requestChartStudy("show RSI")).toContain("Select a ready");
     const a=registerChartStudyAssistant(()=>"old"); const b=registerChartStudyAssistant(()=>"current"); a();
-    expect(requestChartStudy("show RSI")).toBe("current"); b(); expect(requestChartStudy("show RSI")).toContain("Open");
+    expect(requestChartStudy("show RSI")).toBe("current"); b(); expect(requestChartStudy("show RSI")).toContain("Select a ready");
   });
   it("marks nonfinite renderer values unavailable rather than inventing zero",()=>{
     const f=fixture(); f.adapter.getStudyValues=()=>[{label:"RSI (14) · close",color:"#fff",values:[{name:"RSI",value:NaN}]}];

@@ -11,6 +11,9 @@ describe("source-qualified tick volume through existing study engine",()=>{
     expect(formatStudyNumber(123456789,"Ticks")).toBe("123456789");
     expect(formatStudyNumber(123456789,"Ticks (hidden)")).toBe("123456789");
   });
+  it.each(["Frozen-range total trade units", "Frozen-range total trade units (hidden)"])("keeps qualified profile totals exact: %s", channel=>{
+    expect(formatStudyNumber(123456789123,channel)).toBe("123456789123");
+  });
   it("offers an actual tick-volume study, explicitly not traded size",()=>{
     const definition=STUDY_CATALOG.find(d=>d.defaults.kind as string === "tick_volume");
     expect(definition?.description).toContain("not traded size"); expect(definition?.pane).toBe(true);

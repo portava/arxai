@@ -1,3 +1,5 @@
+import {profileCandleEvidence} from "@/lib/chart-engine/chartVolumeProfile";
+import { chartAssistantPaneContext } from "@/lib/chart-engine/chartAssistantPaneContext";
 import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
 import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
@@ -46,7 +48,7 @@ import {
 import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
 import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { SmartChartReader } from "./SmartChartReader";
-import { AssistantDockSlot } from "@/components/help/AssistantDock";
+import { AssistantDockSlot, useAssistantChartPane } from "@/components/help/AssistantDock";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { effectiveDisplayZone, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
@@ -383,7 +385,7 @@ export function ARXNativeChart({
         const line = document.createElement("div");
         line.className = "flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-zinc-800 py-1.5";
         const label = document.createElement("span");
-        label.textContent = row.label;
+        label.textContent = row.displayLabel ?? row.label;
         label.style.color = row.color;
         const values = document.createElement("span");
         values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? (row.reason ? `— (${row.reason})` : item.name === "Ticks" || item.name === "Ticks (hidden)" ? "— (no qualified tick count)" : "— (warm-up / unavailable)") : formatStudyNumber(item.value,item.name)}`).join(" · ");
@@ -578,16 +580,18 @@ export function ARXNativeChart({
     if(bound.status!=="ready")return {status:"unavailable" as const,proposal:null,reason:bound.reason??"Original source evidence unavailable."};
     return proposeChartFibonacci({...bound.context,bars:bound.bars,asOfMs:now},researchVisibleBars());
   },[data,resolvedSymbol,timeframe,deepHistory.olderCandles,deepHistory.analysisEvidence,researchVisibleBars]);
+  const assistantPaneKey=useMemo(()=>chartAssistantPaneContext(data,resolvedSymbol,timeframe,engineGeneration),[data,resolvedSymbol,timeframe,engineGeneration]);
+  const assistantPane=useAssistantChartPane({contextKey:assistantPaneKey,symbol:resolvedSymbol,timeframe,source:data?.feedStatus?.source??"Unknown source",analysisOnly:workspaceId!=="primary",ready:hasCandles&&!query.isError&&!!adapterRef.current});
   useLayoutEffect(()=>{
-    if(workspaceId!=="primary")return;
+    if(!assistantPane.active)return;
     return registerChartResearchAssistant(text=>{
-      if(!hasCandles)return "The primary chart has no source candles ready. No historical test was prepared or run.";
+      if(!assistantPane.isCurrent()||!hasCandles||activeChartContext.current?.key!==chartContext||activeChartContext.current.adapter!==adapterRef.current)return "The selected chart source or renderer is no longer ready. Select the current chart again. No historical test was prepared or run.";
       setResearchOpen(true);
       if(/^\s*explain\s+(?:the\s+)?(?:last\s+)?(?:test|historical)\s+trade[.!?]?\s*$/i.test(text))return researchExplanation.current?.context===chartContext?researchExplanation.current.text:"Select a completed simulated trade in Test an idea to inspect its exact signal, entry, exit, stop, target and costs. No historical trade has been inferred from a chart pattern.";
       setResearchRequest({id:++researchSequence.current,text,context:chartContext});
       return "Opened Test an idea on the current chart. Your request will be checked against the supported rules and available closed history. Review the editable rules and assumptions there before running; no calculation or order has been sent.";
     });
-  },[workspaceId,hasCandles,chartContext]);
+  },[assistantPane.active,assistantPane.isCurrent,hasCandles,chartContext]);
   // A context change already renders the new source. Rebind consumers in that
   // commit; only a newly created engine needs an additional ref-to-prop render.
   const chartEpoch = `${engineGeneration}:${chartContext}`;
@@ -788,13 +792,13 @@ export function ARXNativeChart({
     updateLegend(inspectedCandleRef.current);
   }, [preferences.studies, chartEpoch, updateLegend]);
 
-  // Bind only the primary mounted chart. Each request reads the committed
-  // chart context and actual renderer values; comparison panes never steal it.
+  // Only explicit selected-pane ownership binds the existing local registry.
+  // Retained callbacks recheck ownership and the actual renderer context.
   useLayoutEffect(() => {
-    if (workspaceId !== "primary") return;
+    if (!assistantPane.active) return;
     let currentStudies = preferences.studies;
     return registerChartStudyAssistant(request => executeStudyRequest(request, {
-      adapter: hasCandles && activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapterRef.current ? adapterRef.current : null,
+      adapter: assistantPane.isCurrent() && hasCandles && activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapterRef.current ? adapterRef.current : null,
       studies: currentStudies, symbol: resolvedSymbol, timeframe, utcClockQualified,
       feedLabel: `${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"}`,
       save: studies => {
@@ -803,7 +807,7 @@ export function ARXNativeChart({
         updateLegend(inspectedCandleRef.current);
       },
     }));
-  }, [workspaceId, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend, utcClockQualified]);
+  }, [assistantPane.active,assistantPane.isCurrent, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend, utcClockQualified]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
@@ -822,6 +826,7 @@ export function ARXNativeChart({
           low: c.low,
           close: c.close,
           volumeEvidence: chartVolumeEvidence(c.volumeEvidence,c.source),
+          profileEvidence: profileCandleEvidence(c),
         }))
         .filter(
           (c) =>
@@ -1378,7 +1383,7 @@ export function ARXNativeChart({
         {!mobileLayout && fullscreenToggle}
       </div>
       {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
-      <ChartWorkbenchTools assistantPrimary={workspaceId==="primary"} utcClockQualified={utcClockQualified} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
@@ -1394,7 +1399,9 @@ export function ARXNativeChart({
           <div className="flex flex-wrap items-center gap-2">
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
-            {(workspaceId === "primary" || expanded) && <AssistantDockSlot />}
+            {workspaceId === "primary" ? <AssistantDockSlot assistantEnabled={assistantPane.active}/> : assistantPane.active ? <AssistantDockSlot assistantOnly/> : null}
+            <button type="button" className="min-h-11 rounded border border-zinc-700 px-2 text-xs text-cyan-300 disabled:opacity-50" aria-pressed={assistantPane.active} disabled={!hasCandles||query.isError||!adapterRef.current} onClick={()=>assistantPane.activate()} data-testid="chart-assistant-activate">{assistantPane.active?"Assistant selected":"Use chart with assistant"}</button>
+            <span className="text-[11px] text-zinc-400" data-testid="chart-assistant-pane-context">{assistantPane.active?"Selected for local chart tools: ":"Select to use local chart tools: "}{resolvedSymbol} · {timeframe} · {data?.feedStatus?.source??"Unknown source"}{workspaceId!=="primary"?" · analysis only; primary trading unchanged":" · primary chart"}</span>
             {mobileLayout && fullscreenToggle}
             <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
               {resolvedSymbol}

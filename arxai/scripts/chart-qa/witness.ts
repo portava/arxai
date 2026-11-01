@@ -92,6 +92,37 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         })),
       };
     },
+    volumeProfiles(index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const { adapter, container } = found;
+      const bounds = container.getBoundingClientRect();
+      return {
+        bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        paneHeight: adapter.chart.panes()[0].getHeight(),
+        profiles: (adapter.analysis?.studies ?? []).filter((study: any) => study.calculator.config.kind === "volume_profile").map((study: any) => {
+          const result = study.calculator.profileResult;
+          const primitive = study.profilePrimitive;
+          return {
+            calculatorId: id(study.calculator), resultId: id(result),
+            config: JSON.parse(JSON.stringify(study.calculator.config)),
+            result: result == null ? null : JSON.parse(JSON.stringify(result)),
+            dirty: primitive?.dirty ?? null,
+            primitivePresent: !!primitive,
+            geometry: primitive?.geometry == null ? [] : JSON.parse(JSON.stringify(primitive.geometry)),
+            priceCoordinates: result?.status === "ready" ? result.rows.map((row: any) => ({
+              low: adapter.series.priceToCoordinate(row.low), high: adapter.series.priceToCoordinate(row.high),
+            })) : [],
+          };
+        }),
+      };
+    },
+    researchGeometry(index = 0) {
+      const found=adapterFor(index);if(!found)return null;
+      const {adapter}=found;
+      return {overlays:JSON.parse(JSON.stringify(adapter.overlaysRaw ?? [])),
+        markers:adapter.markersApi?.markers?.().map((marker:any)=>({...marker})) ?? [],
+        segments:(adapter.researchSeries ?? []).map((series:any)=>({data:series.data().map((point:any)=>({...point})),options:{color:series.options().color,priceLineVisible:series.options().priceLineVisible}}))};
+    },
     // Expensive full snapshots are captured outside timed actions. No cached
     // checksum can conceal an in-place mutation or a hash collision.
     data(index = 0) {

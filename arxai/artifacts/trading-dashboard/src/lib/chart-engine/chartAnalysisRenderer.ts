@@ -1,3 +1,8 @@
+import {formatSourceChartTime} from './chartClockEvidence';
+import type {VwapAnchor} from './chartStudies';
+import {ChartVolumeProfilePrimitive} from "./chartVolumeProfilePrimitive";
+import type {VolumeProfileInspection} from "./chartVolumeProfile";
+import {studyId} from "./chartStudies";
 import { volumeInputQuantity, observedTradeVolumeIdentity } from "./chartVolume";
 import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "lightweight-charts";
 import type { ChartEngineCandle } from "./types";
@@ -6,7 +11,7 @@ import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
 import { validateDrawings, validatePreferences, type ChartDrawing } from "./chartWorkspace";
 
 export type PriceSeries = ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area" | "Baseline">;
-interface StudyHandle { calculator: StudyCalculator; lines: ISeriesApi<"Line" | "Histogram">[]; rendered: StudyPoint[] }
+interface StudyHandle { calculator: StudyCalculator; lines: ISeriesApi<"Line" | "Histogram">[]; rendered: StudyPoint[];profilePrimitive?:ChartVolumeProfilePrimitive }
 
 /** Separate ownership for user studies/drawings. Clearing these never removes
  * execution overlays or server-detected structure. Auxiliary series never add
@@ -25,6 +30,8 @@ export class ChartAnalysisRenderer {
   /** Numeric OHLC/time and qualified quantity of every consumed bar; source identity stays separate. */
   private inputs: number[] = [];
   private inputVolumeIdentities:(string|null)[]=[];
+  private inputFinality:(string|undefined)[]=[];
+  private inputClock:(string|null|undefined)[]=[];
   private onViewport = () => {
     if (this.rendering || !this.studies.length) return;
     const window = this.nextWindow();
@@ -71,6 +78,7 @@ export class ChartAnalysisRenderer {
   }
   private addStudySeries(config: ChartStudy, paneIndex: number): ISeriesApi<"Line" | "Histogram">[] {
     const definition = studyDefinition(config.kind);
+    if(config.kind === "volume_profile")return [];
     return definition.channels.map((_, i) => {
       const spec = studySeriesOptions(config, i);
       if (this.priceOnlyScale && paneIndex === 0) spec.options.autoscaleInfoProvider = () => null;
@@ -121,7 +129,7 @@ export class ChartAnalysisRenderer {
     let exact = false;
     this.rendering = true;
     try {
-      for (const study of [...previous].reverse()) if (!kept.has(study)) for (const line of study.lines) this.chart.removeSeries(line);
+      for (const study of [...previous].reverse()) if (!kept.has(study)) { if(study.profilePrimitive)this.price.detachPrimitive(study.profilePrimitive); for (const line of study.lines) this.chart.removeSeries(line); }
       let pane = 0;
       this.studies = valid.map((config, i) => {
         const paneIndex = studyDefinition(config.kind).pane ? ++pane : 0;
@@ -133,7 +141,7 @@ export class ChartAnalysisRenderer {
           const change = changedOptions(studySeriesOptions(old.calculator.config, channel).options, studySeriesOptions(config, channel).options);
           if (change) line.applyOptions(change);
         });
-        return {calculator:old.calculator.updatePresentation(config) ? old.calculator : new StudyCalculator(config),lines:old.lines,rendered:old.rendered};
+        return {calculator:old.calculator.updatePresentation(config) ? old.calculator : new StudyCalculator(config),lines:old.lines,rendered:old.rendered,profilePrimitive:old.profilePrimitive};
       });
       exact = this.matchRebuildLayout();
     } finally { this.rendering = false; }
@@ -143,8 +151,9 @@ export class ChartAnalysisRenderer {
     // they consumed; new calculators start at 0 (calculate clamps to them).
     for (const study of this.studies) study.calculator.calculate(candles, dirty, false);
     this.recordInputs(candles, dirty);
+    this.refreshProfiles();
     // The window a rebuild would choose: it starts from displayWindow = null.
-    const window = studyDisplayWindow(this.studies[0]!.calculator.points.length, this.chart.timeScale().getVisibleLogicalRange(), null);
+    const window = studyDisplayWindow(candles.length, this.chart.timeScale().getVisibleLogicalRange(), null);
     this.displayWindow = window;
     this.rendering = true;
     try {
@@ -192,18 +201,19 @@ export class ChartAnalysisRenderer {
     const start = Math.max(0, Math.min(from, this.inputs.length / INPUT_STRIDE, candles.length));
     const inputs = this.inputs;
     inputs.length = candles.length * INPUT_STRIDE;
-    this.inputVolumeIdentities.length=candles.length;
+    this.inputVolumeIdentities.length=candles.length;this.inputFinality.length=candles.length;this.inputClock.length=candles.length;
     for (let i = start, k = start * INPUT_STRIDE; i < candles.length; i++, k += INPUT_STRIDE) {
       const bar = candles[i]!;
       inputs[k] = bar.time; inputs[k + 1] = bar.open; inputs[k + 2] = bar.high; inputs[k + 3] = bar.low; inputs[k + 4] = bar.close; inputs[k + 5] = volumeInputQuantity(bar.volumeEvidence);
       this.inputVolumeIdentities[i]=observedTradeVolumeIdentity(bar.volumeEvidence);
+      this.inputFinality[i]=bar.profileEvidence?.finality;this.inputClock[i]=bar.profileEvidence?.clockAuthority;
     }
   }
   private firstInputChange(candles: ChartEngineCandle[]): number {
     const inputs = this.inputs, count = Math.min(inputs.length / INPUT_STRIDE, candles.length);
     for (let i = 0, k = 0; i < count; i++, k += INPUT_STRIDE) {
       const bar = candles[i]!;
-      if (bar.time !== inputs[k] || bar.open !== inputs[k + 1] || bar.high !== inputs[k + 2] || bar.low !== inputs[k + 3] || bar.close !== inputs[k + 4] || volumeInputQuantity(bar.volumeEvidence) !== inputs[k + 5] || observedTradeVolumeIdentity(bar.volumeEvidence) !== this.inputVolumeIdentities[i]) return i;
+      if (bar.time !== inputs[k] || bar.open !== inputs[k + 1] || bar.high !== inputs[k + 2] || bar.low !== inputs[k + 3] || bar.close !== inputs[k + 4] || volumeInputQuantity(bar.volumeEvidence) !== inputs[k + 5] || observedTradeVolumeIdentity(bar.volumeEvidence) !== this.inputVolumeIdentities[i] || bar.profileEvidence?.finality!==this.inputFinality[i] || bar.profileEvidence?.clockAuthority!==this.inputClock[i]) return i;
     }
     return count;
   }
@@ -221,6 +231,7 @@ export class ChartAnalysisRenderer {
     this.cancelPending();
     for (const study of this.studies) study.calculator.calculate(candles, dirtyFrom, false);
     if (this.studies.length) this.recordInputs(candles, dirtyFrom);
+    this.refreshProfiles();
     const window = this.nextWindow();
     if (replace || !this.displayWindow || window.from !== this.displayWindow.from) { this.renderWindow(window); return; }
     this.displayWindow = window;
@@ -264,7 +275,7 @@ export class ChartAnalysisRenderer {
     };
   }
   private nextWindow() {
-    return studyDisplayWindow(this.studies[0]?.calculator.points.length ?? 0, this.chart.timeScale().getVisibleLogicalRange(), this.displayWindow);
+    return studyDisplayWindow(this.inputs.length / INPUT_STRIDE, this.chart.timeScale().getVisibleLogicalRange(), this.displayWindow);
   }
   /** Keep all calculated values for inspection/replay, but only ask the chart
    * library to rebuild visible study geometry plus a generous pan buffer. Its
@@ -298,10 +309,14 @@ export class ChartAnalysisRenderer {
     this.frame = null;
     this.pending = null;
   }
-  destroy(): void { this.cancelPending(); this.chart.timeScale().unsubscribeVisibleLogicalRangeChange?.(this.onViewport); }
-  inspect(time: number): { label: string; color: string; reason?:string; values: { name: string; value: number | null }[] }[] {
+  destroy(): void { for(const study of this.studies)if(study.profilePrimitive){this.price.detachPrimitive(study.profilePrimitive);study.profilePrimitive=undefined;} this.cancelPending(); this.chart.timeScale().unsubscribeVisibleLogicalRangeChange?.(this.onViewport); }
+  inspect(time: number, anchorEvidence?:(anchor:VwapAnchor)=>{utcQualified:boolean}): { label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[] {
     this.flushPending();
     return this.studies.map(({ calculator }) => {
+      if(calculator.config.kind === "volume_profile") {
+        const result=calculator.profileResult;
+        return {label:studyLabel(calculator.config),color:calculator.config.color,...(result?.status==='held'?{reason:result.reason}:{}),values:[{name:calculator.config.lineStyles?.[0]?.visible===false?'Frozen-range total trade units (hidden)':'Frozen-range total trade units',value:result?.status==='ready'?result.totalTradeUnits:null}]};
+      }
       let lo = 0, hi = calculator.points.length - 1;
       let values: (number | null)[] = [];
       let reason:string|undefined;
@@ -312,10 +327,23 @@ export class ChartAnalysisRenderer {
         if (point.time < time) lo = mid + 1; else hi = mid - 1;
       }
       return {
-        label: studyLabel(calculator.config), color: calculator.config.color, ...(reason ? {reason} : {}),
+        label: studyLabel(calculator.config), ...(calculator.config.kind==='vwap'&&calculator.config.vwapAnchor?{displayLabel:`VWAP · ${calculator.config.source??'hlc3'} · observed-bar anchor ${formatSourceChartTime(calculator.config.vwapAnchor.time,anchorEvidence?.(calculator.config.vwapAnchor).utcQualified??false,'UTC',{seconds:true})}`} : {}), color: calculator.config.color, ...(reason ? {reason} : {}),
         values: studyDefinition(calculator.config.kind).channels.map((name, index) => ({ name: calculator.config.lineStyles?.[index]?.visible === false ? `${name} (hidden)` : name, value: values[index] ?? null })),
       };
     });
+  }
+  inspectProfiles():VolumeProfileInspection[] {
+    this.flushPending();
+    return this.studies.flatMap(({calculator})=>calculator.profileResult?[{id:studyId(calculator.config),label:studyLabel(calculator.config),visible:calculator.config.lineStyles?.[0]?.visible!==false,result:calculator.profileResult}]:[]);
+  }
+  private refreshProfiles():void {
+    const visible=this.studies.filter(study=>study.calculator.config.kind==='volume_profile'&&study.calculator.profileResult?.status==='ready'&&study.calculator.config.lineStyles?.[0]?.visible!==false);
+    for(const study of this.studies){
+      const slot=visible.indexOf(study);
+      if(slot<0){if(study.profilePrimitive){this.price.detachPrimitive(study.profilePrimitive);study.profilePrimitive=undefined;}continue;}
+      if(!study.profilePrimitive){study.profilePrimitive=new ChartVolumeProfilePrimitive();this.price.attachPrimitive(study.profilePrimitive);}
+      study.profilePrimitive.setData(study.calculator.profileResult!,study.calculator.config.lineStyles?.[0]?.color??study.calculator.config.color,slot,visible.length);
+    }
   }
   setDrawings(drawings: ChartDrawing[], candles: ChartEngineCandle[]): void {
     this.drawings = validateDrawings(drawings);
@@ -332,11 +360,14 @@ export class ChartAnalysisRenderer {
   selectDrawing(id: string | null): void { this.selectedDrawing = id; this.drawingPrimitive?.setSelection(id); }
   replacePriceSeries(price: PriceSeries, candles: ChartEngineCandle[]): void {
     if (this.drawingPrimitive) this.price.detachPrimitive(this.drawingPrimitive);
+    for(const study of this.studies)if(study.profilePrimitive)this.price.detachPrimitive(study.profilePrimitive);
     this.price = price;
+    for(const study of this.studies)if(study.profilePrimitive)this.price.attachPrimitive(study.profilePrimitive);
     if (this.drawingPrimitive) this.price.attachPrimitive(this.drawingPrimitive);
     this.refreshDrawings(candles);
   }
   private clearStudies(): void {
+    for(const study of this.studies)if(study.profilePrimitive)this.price.detachPrimitive(study.profilePrimitive);
     // Empty oscillator panes are automatically removed by the library.
     for (const study of [...this.studies].reverse()) for (const line of study.lines) this.chart.removeSeries(line);
     this.studies = [];

@@ -1,4 +1,4 @@
-import { resolveSymbol } from "@/lib/symbolRegistry";
+import { exactChartSymbol } from "./chartAnalysisCatalogue";
 import { restoreChartInterval, type ChartInterval, type ChartRequestedInterval } from "./chartIntervals";
 export { CHART_INTERVALS, isChartInterval, type ChartInterval, type ChartRequestedInterval } from "./chartIntervals";
 
@@ -18,7 +18,7 @@ export function validateChartLayout(value: unknown): ChartLayoutState {
     const raw = Array.isArray(v.comparisons) ? v.comparisons[index] : null;
     const row = raw && typeof raw === "object" ? raw : {};
     const tf = row.timeframe ?? (index === 0 ? v.timeframe : null);
-    const symbol = typeof row.symbol === "string" && row.symbol.length <= 100 ? resolveSymbol(row.symbol)?.canonicalSymbol ?? null : null;
+    const symbol = typeof row.symbol === "string" && row.symbol.length <= 100 ? exactChartSymbol(row.symbol, "chart-analysis")?.canonicalSymbol ?? null : null;
     return { symbol, timeframe: restoreChartInterval(tf, fallback), ...(row.followPrimaryInterval === true ? {followPrimaryInterval:true} : {}) };
   });
   return { count:v.count === 2 || v.count === 4 ? v.count : 1, comparisons, crosshair:v.crosshair === true, range:v.range === true };

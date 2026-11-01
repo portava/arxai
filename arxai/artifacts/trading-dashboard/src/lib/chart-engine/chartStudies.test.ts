@@ -25,7 +25,7 @@ describe("close-price study calculations",()=>{
     const points=new StudyCalculator({kind:"macd",period:2,slow:3,signal:2,color:"#ffffff"}).calculate(bars([1,2,3,4,5,6]));
     expect(points.map(p=>p.values)).toEqual([[null,null,null],[null,null,null],[.5,null,null],[.5,.5,0],[.5,.5,0],[.5,.5,0]]);
   });
-  it.each(STUDY_CATALOG.map(item => item.defaults))("$kind forming-bar revisions and appends equal a clean calculation without compounding",config=>{
+  it.each(STUDY_CATALOG.filter(item=>item.defaults.kind!=="volume_profile").map(item => item.defaults))("$kind forming-bar revisions and appends equal a clean calculation without compounding",config=>{
     const data=bars(Array.from({length:300},(_,i)=>100+Math.sin(i/8)*5));
     const calculator=new StudyCalculator(config);calculator.calculate(data);
     for(let n=0;n<25;n++){
@@ -319,7 +319,7 @@ describe("typed price window is bit-identical to the frozen State-object loops",
   // undefined case really exercises the `c.source ?? ...` fallback for every kind.
   // Freeze the legacy reference coverage; the new DMI has its own independent
   // batch oracle and hand-computed vectors in chartDmi.test.ts.
-  const legacyCatalog = STUDY_CATALOG.filter(item=>item.defaults.kind !== "dmi");
+  const legacyCatalog = STUDY_CATALOG.filter(item=>item.defaults.kind !== "dmi" && item.defaults.kind !== "volume_profile");
   const configs = legacyCatalog.flatMap(({ defaults: { source: _catalogSource, ...defaults }, appliedPrice: priced }) => periods.flatMap(period =>
     (priced ? sources : [undefined]).map(source => ({ ...defaults, period, ...(source ? { source } : {}) }) as ChartStudy)));
 
