@@ -1,4 +1,4 @@
-import { RESEARCH_V2_STRATEGY_VERSION, validateResearchV2Config, validateResearchV2Strategy, type ResearchV2Config } from "@workspace/domain/backtest/research-core";
+import { RESEARCH_V2_STRATEGY_VERSION, validateResearchCashConfig, validateResearchV2Config, validateResearchV2Strategy, type ResearchV2Config } from "@workspace/domain/backtest/research-core";
 import { chartIntervalSeconds, isChartInterval, parseChartInterval, type ChartInterval } from "./chartIntervals";
 
 /** Editable configuration only. These helpers cannot fetch bars, run research,
@@ -13,6 +13,7 @@ export interface ChartResearchContext {
 export interface ChartResearchSettings {
   requestedWindow: { fromInclusiveMs: number; toExclusiveMs: number };
   strategy: ResearchV2Config["strategy"];
+  cash?: ResearchV2Config["cash"];
   costs: ResearchV2Config["costs"];
   maxEntryGapMs: number;
   partitions: { trainFraction: number; validationFraction: number };
@@ -42,12 +43,12 @@ export function defaultChartResearchSettings(requestedWindow:ChartResearchSettin
 
 /** The manual form and bounded text request both construct this same draft. */
 export function createChartResearchDraft(context:ChartResearchContext,settings:ChartResearchSettings):ChartResearchDraftResult {
-  if (!onlyKeys(settings,["requestedWindow","strategy","costs","maxEntryGapMs","partitions","schemaVersion","symbol","timeframe","intervalMs"])
+  if (!onlyKeys(settings,["requestedWindow","strategy","costs","maxEntryGapMs","partitions","schemaVersion","symbol","timeframe","intervalMs","cash"])
     || !onlyKeys(settings.strategy,["version","fastPeriod","slowPeriod","atrPeriod","stopAtrMultiple","targetR","maxHoldingBars","direction"])
     || !onlyKeys(settings.costs,["fullSpreadPriceUnits","adverseSlippagePerFillPriceUnits","feePerFillPriceUnits"])
     || !onlyKeys(settings.requestedWindow,["fromInclusiveMs","toExclusiveMs"])
     || !onlyKeys(settings.partitions,["trainFraction","validationFraction"]))
-    return refused("Unsupported settings cannot be ignored. This schema has no capital, currency, sizing, extra entry rules or broker-order fields.");
+    return refused("Unsupported settings cannot be ignored. Only the explicit cash-funded fixed-quantity scenario is supported; no inferred currency, leverage, extra entry rules or broker-order fields.");
   const timeframe=parseChartInterval(context.timeframe);
   if (!isChartInterval(timeframe)) return refused("Select a supported fixed-duration chart interval first. Weekly/monthly or unknown intervals are not guessed.");
   const intervalMs=chartIntervalSeconds(timeframe)!*1000;
@@ -77,8 +78,13 @@ export function createChartResearchDraft(context:ChartResearchContext,settings:C
     return refused("Development, validation and holdout must each have a positive share of the historical window.");
   if (!Number.isFinite(costs.fullSpreadPriceUnits+2*costs.adverseSlippagePerFillPriceUnits+2*costs.feePerFillPriceUnits))
     return refused("The combined cost scenario is too large for finite price-unit arithmetic.");
+  let cash:ResearchV2Config["cash"];
+  if(settings.cash!==undefined){
+    try {cash=validateResearchCashConfig(settings.cash);}catch{return refused("Use positive starting capital, fixed quantity and explicit point value, with a bounded scenario-unit label. Unsupported financing fields cannot be ignored.");}
+    if(strategy.direction!=="long_only")return refused("The cash-funded asset scenario requires Long only. Short positions and margin financing are unsupported; your direction was not changed.");
+  }
   const draft:ChartResearchDraft={schemaVersion:"arx-chart-research-draft-v1",symbol:context.symbol,timeframe,intervalMs,
-    requestedWindow:{...window},strategy:{...strategy},costs:{...costs},maxEntryGapMs:settings.maxEntryGapMs,partitions:{...partitions}};
+    requestedWindow:{...window},strategy:{...strategy},costs:{...costs},maxEntryGapMs:settings.maxEntryGapMs,partitions:{...partitions},...(cash?{cash}:{})};
   return {kind:"draft",draft,disclosures:describeChartResearchDraft(draft)};
 }
 
@@ -95,7 +101,7 @@ export function finalizeChartResearchConfig(draft:ChartResearchDraft,verifiedBar
   const validationEndExclusive=Math.floor(verifiedBarCount*(draft.partitions.trainFraction+draft.partitions.validationFraction));
   try {
     return {ok:true,config:validateResearchV2Config({strategy:draft.strategy,costs:draft.costs,maxEntryGapMs:draft.maxEntryGapMs,
-      splits:{trainEndExclusive,validationEndExclusive}},verifiedBarCount)};
+      splits:{trainEndExclusive,validationEndExclusive},...(draft.cash?{cash:draft.cash}:{})},verifiedBarCount)};
   } catch { return {ok:false,message:"The edited configuration or chronological partitions are unsupported by the research engine. Review the rules, cost scenarios and data size; no test ran."}; }
 }
 
@@ -113,11 +119,14 @@ function subtractCalendar(end:number,count:number,unit:string):number {
 /** Full-phrase, deterministic grammar. Unrecognised modifiers never partly
  * apply; ordinary non-research conversation returns null for the caller. */
 export function parseChartResearchRequest(text:string,context:ChartResearchContext):ChartResearchDraftResult | null {
-  const input=text.trim().toLowerCase().replace(/[\u2010-\u2015]/g,"-").replace(/\s+/g," ").replace(/^please /,"").replace(/[.!?]+$/,"");
+  let input=text.trim().toLowerCase().replace(/[\u2010-\u2015]/g,"-").replace(/\s+/g," ").replace(/^please /,"").replace(/[.!?]+$/,"");
   if (!/^(?:test|backtest)\b/.test(input)) return null;
   if (input.length>1000) return refused("Use one bounded historical-rule request at a time.");
+  let requestedCash:ResearchV2Config["cash"];
+  const cashSuffix=/,? (?:using|with) starting capital (\d+(?:\.\d+)?) scenario units,? (?:fixed )?quantity (\d+(?:\.\d+)?) and point value (\d+(?:\.\d+)?)$/.exec(input);
+  if(cashSuffix){requestedCash={version:"cash-fixed-units-v1",initialCapital:Number(cashSuffix[1]),fixedQuantity:Number(cashSuffix[2]),pointValue:Number(cashSuffix[3]),unitLabel:"scenario units",benchmark:"same_quantity_buy_hold"};input=input.slice(0,cashSuffix.index);}
   if (/[$€£%]|\b(capital|currency|dollars?|leverage|lots?|position sizing)\b/.test(input))
-    return refused("This version models one synthetic unit in price units. Capital, account-currency returns, leverage and position sizing are unsupported; they cannot be silently ignored.");
+    return refused("Capital requires explicit financing assumptions. Append “with starting capital 10000 scenario units, quantity 1 and point value 1” for a fully paid long-only asset scenario. Point value is scenario units per one-price-unit change per quantity unit; broker lots, currency conversion, leverage and risk-percent sizing are unsupported and cannot be silently ignored.");
   const match=/^(?:test|backtest) (buying|selling) when (?:the )?(\d{1,4})\s*ema crosses (above|below) (?:the )?(\d{1,4})\s*ema,? with (?:an? )?atr(?:-| )based stop,? over (?:the )?last (\d{1,4}|one|two|three|four|five|six|seven|eight|nine|ten) (day|week|month|year)s?$/.exec(input);
   if (!match) return refused("Supported example: “Test buying when the 20 EMA crosses above the 50 EMA, with an ATR-based stop, over the last two years.” The selected asset/timeframe is reused. Extra assets, intervals or rules require an explicit supported edit; nothing was partially applied.");
   const [,side,fast,,slow,countText,unit]=match;
@@ -132,7 +141,7 @@ export function parseChartResearchRequest(text:string,context:ChartResearchConte
   const intervalMs=interval*1000;
   const from=context.closedThroughMs-Math.floor((context.closedThroughMs-nominalFrom)/intervalMs)*intervalMs;
   const defaults=defaultChartResearchSettings({fromInclusiveMs:from,toExclusiveMs:context.closedThroughMs});
-  const result=createChartResearchDraft(context,{...defaults,
+  const result=createChartResearchDraft(context,{...defaults,...(requestedCash?{cash:requestedCash}:{}),
     strategy:{...defaults.strategy,fastPeriod:Number(fast),slowPeriod:Number(slow),direction:side==="buying"?"long_only":"short_only"},
   });
   if (result.kind==="draft") result.disclosures.unshift(`Requested last ${count} ${unit}${count===1?"":"s"} uses UTC calendar arithmetic through the supplied closed-history endpoint.${from!==nominalFrom ? ` Start aligned forward from ${new Date(nominalFrom).toISOString()} to ${new Date(from).toISOString()}; this adjustment is explicit.` : " No date range was shortened."}`);
@@ -147,7 +156,7 @@ export function describeChartResearchDraft(draft:ChartResearchDraft):string[] {
     `${s.direction}: EMA ${s.fastPeriod}/${s.slowPeriod} closed-candle crossover; enter at the next observed open. ATR ${s.atrPeriod} × ${s.stopAtrMultiple} stop distance frozen at the signal and anchored to the modeled entry fill; target ${s.targetR}R; maximum hold ${s.maxHoldingBars} bars schedules an exit at the next observed open.`,
     "EMA uses underlying source closes and an SMA seed; ATR uses Wilder smoothing with the first bar’s high-low range. Opposite crosses do not exit an open position. Stops, targets and the holding rule are the exits; no averaged display prices replace source data.",
     `Explicit constant cost scenario in source price units: full spread ${c.fullSpreadPriceUnits}, adverse slippage per fill ${c.adverseSlippagePerFillPriceUnits}, fee equivalent per fill ${c.feePerFillPriceUnits}. These are assumptions, not historical broker costs.${Object.values(c).every(value=>value===0)?" This zero-cost exploratory baseline excludes those costs until edited; it is not a claim of cost-free trading.":""}`,
-    `Maximum delay from signal close to entry open: ${draft.maxEntryGapMs} ms. One synthetic unit; no capital, contract multiplier, account-currency returns or sizing model.`,
+    `Maximum delay from signal close to entry open: ${draft.maxEntryGapMs} ms. ${draft.cash?`Cash-funded long-only scenario: starting capital ${draft.cash.initialCapital} ${draft.cash.unitLabel}, fixed quantity ${draft.cash.fixedQuantity}, point value ${draft.cash.pointValue} ${draft.cash.unitLabel} per price unit per quantity unit. This is a hypothetical fully paid asset model, not broker lots, contract metadata or currency conversion. Entry fill plus fee must fit settled cash; unaffordable signals are skipped without a fee or delayed retry. Each partition starts independently. Same-quantity buy-and-hold starts once at that partition's first open with the same costs, or stays flat cash if unaffordable. Open holdings are marked with hypothetical exit costs, not reported as completed sales. Annualization requires positive terminal equity and at least365.25 days.`:"One synthetic unit; no capital, contract multiplier, account-currency returns or sizing model."}` ,
     `Chronological development ${pct(draft.partitions.trainFraction)}, validation ${pct(draft.partitions.validationFraction)}, holdout ${pct(1-draft.partitions.trainFraction-draft.partitions.validationFraction)}. Fixed parameters; no optimization, untouched-holdout or profitability claim. All rules and scenario values remain editable before running.`,
   ];
 }

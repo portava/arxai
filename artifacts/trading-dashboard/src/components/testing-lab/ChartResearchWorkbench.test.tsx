@@ -165,3 +165,16 @@ describe("loss follow-ups use the selected frozen ledger only",()=>{
     expect(h.run).toHaveBeenCalledTimes(1);
   });
 });
+it('uses editable cash settings in the real engine and invalidates displayed equity when they change',()=>{
+ const props=fixture();render(<ChartResearchWorkbench {...props}/>);fireEvent.click(screen.getByLabelText('Use cash-funded historical scenario'));
+ fireEvent.change(screen.getByLabelText('Starting capital · accounting units'),{target:{value:'2000'}});fireEvent.change(screen.getByLabelText('Fixed quantity · hypothetical asset units'),{target:{value:'2'}});
+ fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));const result=finish();expect(result.configSnapshot.cash?.initialCapital).toBe(2000);expect(result.configSnapshot.cash?.fixedQuantity).toBe(2);expect(screen.getByRole('region',{name:'Cash-funded historical scenario'})).toBeTruthy();expect(screen.getAllByRole('img',{name:/marked equity and same-quantity/})).toHaveLength(3);
+ fireEvent.change(screen.getByLabelText('Starting capital · accounting units'),{target:{value:'1000'}});expect(screen.queryByRole('region',{name:'Cash-funded historical scenario'})).toBeNull();expect(screen.queryByTestId('chart-research-result')).toBeNull();expect(h.run).toHaveBeenCalledTimes(1);
+});
+it('rejects a forged equity result before publishing monetary tables or chart markers',()=>{
+ const props=fixture();render(<ChartResearchWorkbench {...props}/>);fireEvent.click(screen.getByLabelText('Use cash-funded historical scenario'));fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));const [input,config,receive]=h.run.mock.calls.at(-1)! as [ResearchV2Input,ResearchV2Config,(value:unknown)=>void];const result=structuredClone(runCausalResearchV2(input,config));result.partitions[0].cash!.lastEquity+=100;act(()=>receive({status:'complete',result}));expect(screen.queryByTestId('chart-research-result')).toBeNull();expect(screen.getByTestId('chart-research-status').textContent).toContain('do not reconcile');expect(props.onOverlays.mock.calls.every(([rows])=>rows.length===0)).toBe(true);
+});
+it('answers buy-and-hold from the frozen cash result without a selected trade, then clears it on edit',()=>{
+ const props=fixture();render(<ChartResearchWorkbench {...props}/>);fireEvent.click(screen.getByLabelText('Use cash-funded historical scenario'));fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));const result=finish();const evidence=props.onExplanation.mock.calls.at(-1)![0];const reply=answerChartResearchFollowup('Compare this with buy-and-hold',evidence);expect(reply).toContain(result.fingerprints.result.slice(0,12));expect(reply).toContain('strategy marked equity');expect(h.run).toHaveBeenCalledTimes(1);
+ fireEvent.change(screen.getByLabelText('Starting capital · accounting units'),{target:{value:'20000'}});expect(answerChartResearchFollowup('Compare this with buy-and-hold',props.onExplanation.mock.calls.at(-1)![0])).toContain('No source-bound');
+});

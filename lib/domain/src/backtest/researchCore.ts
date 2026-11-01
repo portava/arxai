@@ -48,7 +48,7 @@ export interface ResearchDecision {
   knownThroughMs: number;
   side: ResearchSide;
   momentumPriceUnits: number;
-  disposition: "filled" | "gap_expired" | "invalid_bracket" | "partition_ended";
+  disposition: "filled" | "gap_expired" | "invalid_bracket" | "partition_ended" | "insufficient_capital";
   entryIndex: number | null;
 }
 interface ResearchPosition {
@@ -123,7 +123,26 @@ export interface ResearchV2Strategy {
   stopAtrMultiple: number; targetR: number; maxHoldingBars: number;
   direction: "both" | "long_only" | "short_only";
 }
-export interface ResearchV2Config extends Omit<ResearchConfig, "strategy"> { strategy: ResearchV2Strategy }
+/** Explicit hypothetical fully-paid asset accounting; never broker contract metadata. */
+export interface ResearchCashConfig {
+  version: "cash-fixed-units-v1";
+  initialCapital: number;
+  fixedQuantity: number;
+  /** Accounting units for a one-price-unit change in one quantity unit. */
+  pointValue: number;
+  unitLabel: string;
+  benchmark: "same_quantity_buy_hold";
+}
+export interface ResearchCashPoint { index: number; observedThroughMs: number; cash: number; equity: number; benchmarkEquity: number }
+export interface ResearchCashAccount {
+  version: "cash-fixed-units-v1"; initialCapital: number; unitLabel: string;
+  completedNet: number; completedCosts: number; lastEquity: number;
+  totalReturnPercent: number; annualizedReturnPercent: number | null;
+  maxDrawdown: number; maxDrawdownPercent: number; capitalDeficit: boolean;
+  benchmark: {status:"entered_unresolved"|"insufficient_capital";entryPrice:number|null;lastEquity:number;totalReturnPercent:number};
+  curve: ResearchCashPoint[];
+}
+export interface ResearchV2Config extends Omit<ResearchConfig, "strategy"> { strategy: ResearchV2Strategy; cash?: ResearchCashConfig }
 export interface ResearchV2SignalEvidence {
   previousFastEma: number; previousSlowEma: number; fastEma: number; slowEma: number; atr: number;
   stopDistancePriceUnits: number; targetDistancePriceUnits: number;
@@ -136,7 +155,7 @@ export interface ResearchV2OpenObservation extends Omit<ResearchOpenObservation,
   entryReferencePrice: number; markReferencePrice: number;
 }
 export interface ResearchV2Partition extends Omit<ResearchPartition, "decisions" | "trades" | "openPosition"> {
-  decisions: ResearchV2Decision[]; trades: ResearchV2Trade[]; openPosition: ResearchV2OpenObservation | null;
+  decisions: ResearchV2Decision[]; trades: ResearchV2Trade[]; openPosition: ResearchV2OpenObservation | null; cash?: ResearchCashAccount;
 }
 export interface ResearchV2Result extends Omit<ResearchResult, "engineVersion" | "inputSnapshot" | "configSnapshot" | "partitions"> {
   engineVersion: typeof RESEARCH_V2_ENGINE_VERSION;
@@ -156,6 +175,16 @@ function requireCondition(condition: unknown, code: string): asserts condition {
 function finite(value: number, code: string): number {
   requireCondition(Number.isFinite(value), code);
   return Object.is(value, -0) ? 0 : value;
+}
+function cashAmount(value:number,scale:number):number {
+  const amount=finite(value*scale,"ACCOUNT_OVERFLOW");
+  requireCondition(value===0||amount!==0&&Number.isFinite(amount/scale)&&Math.abs(amount/scale-value)<=Math.max(Number.MIN_VALUE,Math.abs(value)*1e-8),"ACCOUNT_PRECISION_LOSS");
+  return amount;
+}
+function cashMove(balance:number,delta:number):number {
+  const next=finite(balance+delta,"ACCOUNT_OVERFLOW");
+  requireCondition(delta===0 || next!==balance && Math.abs((next-balance)-delta)<=Math.max(Number.MIN_VALUE,Math.abs(delta)*1e-8),"ACCOUNT_PRECISION_LOSS");
+  return next;
 }
 function positive(value: number, code: string): number {
   requireCondition(Number.isFinite(value) && value > 0, code); return value;
@@ -189,15 +218,26 @@ export function validateResearchV2Strategy(raw: ResearchV2Strategy): ResearchV2S
     atrPeriod: integer(raw.atrPeriod, 1, 1000, "INVALID_ATR_PERIOD"), stopAtrMultiple, targetR,
     maxHoldingBars: integer(raw.maxHoldingBars, 1, 10000, "INVALID_HOLDING_PERIOD"), direction: raw.direction };
 }
+export function validateResearchCashConfig(raw: ResearchCashConfig): ResearchCashConfig {
+  requireCondition(raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).every(key=>["version","initialCapital","fixedQuantity","pointValue","unitLabel","benchmark"].includes(key)), "UNSUPPORTED_CASH_SETTINGS");
+  requireCondition(raw.version === "cash-fixed-units-v1" && raw.benchmark === "same_quantity_buy_hold", "UNSUPPORTED_CASH_MODEL");
+  const initialCapital=positive(raw.initialCapital,"INVALID_STARTING_CAPITAL"),fixedQuantity=positive(raw.fixedQuantity,"INVALID_QUANTITY"),pointValue=positive(raw.pointValue,"INVALID_POINT_VALUE");
+  positive(cashAmount(fixedQuantity,pointValue),"INVALID_ACCOUNT_SCALE");
+  requireCondition(typeof raw.unitLabel === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,31}$/.test(raw.unitLabel) && raw.unitLabel.trim()===raw.unitLabel,"INVALID_ACCOUNT_UNIT_LABEL");
+  return {version:"cash-fixed-units-v1",initialCapital,fixedQuantity,pointValue,unitLabel:raw.unitLabel,benchmark:"same_quantity_buy_hold"};
+}
 export function validateResearchV2Config(raw: ResearchV2Config, barCount: number): ResearchV2Config {
   requireCondition(raw && raw.costs && raw.splits, "MISSING_INPUT_OR_CONFIG");
   integer(barCount, 3, MAX_RESEARCH_BARS, "BAR_COUNT_OUT_OF_BOUNDS");
   const strategy = validateResearchV2Strategy(raw.strategy);
   const costs = validateCosts(raw.costs);
+  const cash=raw.cash===undefined?undefined:validateResearchCashConfig(raw.cash);
+  requireCondition(!cash||strategy.direction==="long_only","CASH_LONG_ONLY_REQUIRED");
+  if(cash)for(const cost of Object.values(costs))cashAmount(cost,cash.fixedQuantity*cash.pointValue);
   const trainEndExclusive = integer(raw.splits.trainEndExclusive, 1, barCount - 2, "INVALID_TRAIN_SPLIT");
   const validationEndExclusive = integer(raw.splits.validationEndExclusive, trainEndExclusive + 1, barCount - 1, "INVALID_VALIDATION_SPLIT");
   return { strategy, costs, maxEntryGapMs: integer(raw.maxEntryGapMs, 0, 366 * 86400000, "INVALID_ENTRY_GAP"),
-    splits: { trainEndExclusive, validationEndExclusive } };
+    splits: { trainEndExclusive, validationEndExclusive }, ...(cash?{cash}:{}) };
 }
 function validateCosts(raw: ResearchConfig["costs"]): ResearchConfig["costs"] {
   const costs = { fullSpreadPriceUnits: nonnegative(raw.fullSpreadPriceUnits, "INVALID_SPREAD"),
@@ -286,7 +326,7 @@ function emaAtrFeatures(bars: readonly ResearchBar[], strategy: ResearchV2Strate
   return features;
 }
 type InternalDecision = ResearchDecision | ResearchV2Decision;
-type InternalPartition = Omit<ResearchPartition, "decisions"> & {decisions: InternalDecision[]};
+type InternalPartition = Omit<ResearchPartition, "decisions"> & {decisions: InternalDecision[];cash?:ResearchCashAccount};
 const direction = (side: ResearchSide) => side === "BUY" ? 1 : -1;
 
 function runPartition(name: ResearchPartition["name"], from: number, to: number, input: ResearchInput | ResearchV2Input, config: ResearchConfig | ResearchV2Config, features?: (ResearchV2SignalEvidence | null)[]): InternalPartition {
@@ -295,23 +335,31 @@ function runPartition(name: ResearchPartition["name"], from: number, to: number,
   const decisions: InternalDecision[] = [], trades: ResearchTrade[] = [], markedCurve: ResearchPartition["markedCurve"] = [];
   let position: ResearchPosition | null = null, pending: InternalDecision | null = null, exitNextOpen = false;
   let completedNet = 0, markedNet = 0, peak = 0, drawdown = 0;
+  const cashConfig="cash" in config?config.cash:undefined,scale=cashConfig?positive(cashConfig.fixedQuantity*cashConfig.pointValue,"INVALID_ACCOUNT_SCALE"):1;
+  const cashCurve:ResearchCashPoint[]=[];
+  let availableCash=cashConfig?.initialCapital??0;
+  const entryFill=(reference:number,side:ResearchSide)=>finite(input.priceBasis==="BID"?reference+(side==="BUY"?costs.fullSpreadPriceUnits+slip:-slip):reference+direction(side)*(halfSpread+slip),"ENTRY_PRICE_OVERFLOW");
   const exitPrice = (reference: number, side: ResearchSide) => finite(input.priceBasis === "BID"
     ? reference + (side === "SELL" ? costs.fullSpreadPriceUnits + slip : -slip)
     : reference - direction(side) * (halfSpread + slip), "EXIT_PRICE_OVERFLOW");
   const netAt = (p: ResearchPosition, mid: number) => finite(direction(p.side) * (exitPrice(mid, p.side) - p.entryPrice) - 2 * costs.feePerFillPriceUnits, "PNL_OVERFLOW");
+  const benchmarkEntry=cashConfig?entryFill(bars[from]!.open,"BUY"):null;
+  const benchmarkDebit=benchmarkEntry==null?0:positive(cashAmount(benchmarkEntry+costs.feePerFillPriceUnits,scale),"INVALID_ACCOUNT_DEBIT");
+  const benchmarkEntered=!!cashConfig&&benchmarkDebit<=cashConfig.initialCapital;
   for (let i = from; i < to; i++) {
     const bar = bars[i]!;
     if (pending) {
       if (bar.openTimeMs - pending.knownThroughMs > config.maxEntryGapMs) pending.disposition = "gap_expired";
       else {
-        const sign = direction(pending.side), entryPrice = finite(input.priceBasis === "BID"
-          ? bar.open + (pending.side === "BUY" ? costs.fullSpreadPriceUnits + slip : -slip)
-          : bar.open + sign * (halfSpread + slip), "ENTRY_PRICE_OVERFLOW");
+        const sign = direction(pending.side), entryPrice = entryFill(bar.open,pending.side);
         const brackets = "signal" in pending ? pending.signal : strategy as ResearchConfig["strategy"];
         const stopPrice = finite(entryPrice - sign * brackets.stopDistancePriceUnits, "BRACKET_OVERFLOW");
         const targetPrice = finite(entryPrice + sign * brackets.targetDistancePriceUnits, "BRACKET_OVERFLOW");
+        const debit=cashConfig?positive(cashAmount(entryPrice+costs.feePerFillPriceUnits,scale),"INVALID_ACCOUNT_DEBIT"):0;
         if (stopPrice <= 0 || targetPrice <= 0) pending.disposition = "invalid_bracket";
+        else if(cashConfig&&debit>availableCash)pending.disposition="insufficient_capital";
         else {
+          if(cashConfig)availableCash=cashMove(availableCash,-debit);
           pending.disposition = "filled"; pending.entryIndex = i;
           position = { signalIndex: pending.signalIndex, entryIndex: i, side: pending.side,
             entryTimeMs: bar.openTimeMs, entryMid: bar.open, entryPrice, stopPrice, targetPrice };
@@ -342,6 +390,7 @@ function runPartition(name: ResearchPartition["name"], from: number, to: number,
           spreadCostPriceUnits: costs.fullSpreadPriceUnits, slippageCostPriceUnits: 2 * slip,
           feeCostPriceUnits: 2 * costs.feePerFillPriceUnits, netPriceUnits: netAt(p, reference) };
         trades.push(trade); completedNet = finite(completedNet + trade.netPriceUnits, "PNL_OVERFLOW");
+        if(cashConfig)availableCash=cashMove(availableCash,cashAmount(trade.exitPrice-costs.feePerFillPriceUnits,scale));
         position = null; exitNextOpen = false;
       } else if (i - p.entryIndex + 1 >= strategy.maxHoldingBars) exitNextOpen = true;
     }
@@ -371,6 +420,13 @@ function runPartition(name: ResearchPartition["name"], from: number, to: number,
     markedNet = finite(completedNet + (position ? netAt(position, bar.close) : 0), "PNL_OVERFLOW");
     peak = Math.max(peak, markedNet); drawdown = Math.max(drawdown, finite(peak - markedNet, "DRAWDOWN_OVERFLOW"));
     markedCurve.push({ index: i, observedThroughMs: bar.openTimeMs + intervalMs, netPriceUnits: markedNet });
+    if(cashConfig){
+      cashAmount(markedNet,scale);
+      if(benchmarkEntered)cashAmount(exitPrice(bar.close,"BUY")-benchmarkEntry!-2*costs.feePerFillPriceUnits,scale);
+      const equity=cashMove(availableCash,position?cashAmount(exitPrice(bar.close,"BUY")-costs.feePerFillPriceUnits,scale):0);
+      const benchmarkEquity=benchmarkEntered?cashMove(cashMove(cashConfig.initialCapital,-benchmarkDebit),cashAmount(exitPrice(bar.close,"BUY")-costs.feePerFillPriceUnits,scale)):cashConfig.initialCapital;
+      cashCurve.push({index:i,observedThroughMs:bar.openTimeMs+intervalMs,cash:availableCash,equity,benchmarkEquity});
+    }
   }
   const last = bars[to - 1]!;
   const openPosition: ResearchOpenObservation | null = position ? { ...position,
@@ -383,7 +439,21 @@ function runPartition(name: ResearchPartition["name"], from: number, to: number,
     if (trade.netPriceUnits > 0) { wins++; grossWins = finite(grossWins + trade.netPriceUnits, "PNL_OVERFLOW"); }
     if (trade.netPriceUnits < 0) grossLosses = finite(grossLosses - trade.netPriceUnits, "PNL_OVERFLOW");
   }
-  return { name, fromInclusive: from, toExclusive: to, decisions, trades, openPosition,
+  let cash:ResearchCashAccount|undefined;
+  if(cashConfig){
+    const initial=cashConfig.initialCapital,lastEquity=cashCurve.at(-1)!.equity;
+    let equityPeak=initial,maxDrawdown=0,maxDrawdownPercent=0;
+    for(const point of cashCurve){equityPeak=Math.max(equityPeak,point.equity);const drop=finite(equityPeak-point.equity,"ACCOUNT_OVERFLOW");maxDrawdown=Math.max(maxDrawdown,drop);maxDrawdownPercent=Math.max(maxDrawdownPercent,finite(drop/equityPeak*100,"ACCOUNT_OVERFLOW"));}
+    const elapsedMs=last.openTimeMs+intervalMs-bars[from]!.openTimeMs,yearMs=365.25*86400000;
+    const annualized=elapsedMs>=yearMs&&lastEquity>0?100*Math.expm1(Math.log(lastEquity/initial)*yearMs/elapsedMs):null;
+    const benchmarkLast=cashCurve.at(-1)!.benchmarkEquity;
+    cash={version:cashConfig.version,initialCapital:initial,unitLabel:cashConfig.unitLabel,
+      completedNet:cashAmount(completedNet,scale),completedCosts:cashAmount(trades.reduce((sum,t)=>sum+t.spreadCostPriceUnits+t.slippageCostPriceUnits+t.feeCostPriceUnits,0),scale),lastEquity,
+      totalReturnPercent:finite((lastEquity-initial)/initial*100,"ACCOUNT_OVERFLOW"),annualizedReturnPercent:annualized!=null&&Number.isFinite(annualized)?annualized:null,
+      maxDrawdown,maxDrawdownPercent,capitalDeficit:cashCurve.some(point=>point.cash<0||point.equity<0),
+      benchmark:{status:benchmarkEntered?"entered_unresolved":"insufficient_capital",entryPrice:benchmarkEntered?benchmarkEntry:null,lastEquity:benchmarkLast,totalReturnPercent:finite((benchmarkLast-initial)/initial*100,"ACCOUNT_OVERFLOW")},curve:cashCurve};
+  }
+  return { name, fromInclusive: from, toExclusive: to, decisions, trades, openPosition,...(cash?{cash}:{}),
     status: openPosition ? trades.length ? "completed_and_open" : "open_outcome"
       : trades.length ? "completed" : decisions.length ? "no_completed_trades" : "no_signals",
     metrics: { completedTrades: trades.length, completedNetPriceUnits: completedNet,
@@ -462,6 +532,13 @@ export function prepareCausalResearchV2(raw: ResearchV2Input, rawConfig: Researc
       "Partitions run fixed parameters, start flat and may use prior bars for warmup. No optimization, unseen-holdout guarantee or statistical edge claim is made.",
       "Snapshots and hashes are frozen in memory, not persisted immutable experiment history; repeated trials and parameter selection are not audited. The v1 durable experiment store does not accept v2 results.",
       "Price units per unit are not account currency; binary floating-point arithmetic remains. Existing stored backtests are not repaired or upgraded.",
+      ...(config.cash?[
+        "Cash scenario v1 assumes a fully paid long-only asset with fixed quantity and explicit point value. This is not actual FX/CFD/futures financing, broker lots, leverage, contract metadata or currency conversion. Each partition restarts with its own capital.",
+        "Entry affordability includes the modeled entry fill and fee. Unfunded signals are skipped without fees or delayed retries. Sale proceeds can be less than exit fees; negative cash/equity is retained, not clamped.",
+        "Account equity is cash plus hypothetical net liquidation value at each observed close. Spread/slippage are already in fills; round-trip cost decomposition is not deducted twice. Closed-trade costs exclude unresolved-position costs.",
+        "Same-quantity buy-and-hold attempts one buy at the first partition open using identical costs. An unaffordable benchmark remains flat cash; no smaller quantity or later entry is substituted. Its final mark is unresolved, not a completed sale. No dividends, interest or corporate adjustments are added.",
+        "Annualized return is a historical equivalent rate shown only for positive terminal equity and at least 365.25 elapsed days. Close-observed drawdown does not measure worst intrabar loss."
+      ]:[]),
     ],
   };
   return freezeResearch({ body, input, config });

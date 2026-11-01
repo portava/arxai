@@ -1,14 +1,16 @@
 // The existing assistant routes historical requests to the current chart's
 // editable research panel. No remote model call, execution, or silent run.
-export type ChartResearchExplanation =
+export type ChartResearchExplanation = (
   | { status: "ready"; text: string; netPriceUnits: number }
-  | { status: "no_result" | "no_selection" | "unavailable"; reason: string };
+  | { status: "no_result" | "no_selection" | "unavailable"; reason: string }) & {benchmark?: {text:string}};
 const lossPrefix = /^\s*(?:please\s+)?why\s+did\s+(?:this|the selected)\s+(?:(?:historical|simulated)\s+)?trade\b/i;
 const lossQuestion = /^\s*(?:please\s+)?why\s+did\s+(?:this|the selected)\s+(?:(?:historical|simulated)\s+)?trade\s+lose(?:\s+money)?[.!?]?\s*$/i;
 const explainPrefix = /^\s*(?:please\s+)?explain\s+(?:the\s+)?(?:last\s+)?(?:test|historical)\s+trade\b/i;
 const explainQuestion = /^\s*(?:please\s+)?explain\s+(?:the\s+)?(?:last\s+)?(?:test|historical)\s+trade[.!?]?\s*$/i;
 /** One grammar for routing and answering: rejected read-only requests never become drafts. */
-function followupKind(text: string): "loss" | "explain" | "unsupported" | null {
+function followupKind(text: string): "loss" | "explain" | "benchmark" | "unsupported" | null {
+  if(/^\s*(?:please\s+)?compare\s+(?:this|the historical test)\s+with\s+buy[- ]and[- ]hold[.!?]?\s*$/i.test(text))return "benchmark";
+  if(/^\s*(?:please\s+)?compare\b.*buy[- ]and[- ]hold/i.test(text))return "unsupported";
   if (lossQuestion.test(text)) return "loss";
   if (explainQuestion.test(text)) return "explain";
   return lossPrefix.test(text) || explainPrefix.test(text) ? "unsupported" : null;
@@ -18,6 +20,7 @@ export function answerChartResearchFollowup(text: string, evidence: ChartResearc
   const kind = followupKind(text);
   if (kind === null) return null;
   if (kind === "unsupported") return 'Ask “Why did this trade lose?” or “Explain the historical trade” for the selected simulated trade only. Additional actions or ambiguous trade references were not applied. No calculation or order was run.';
+  if(kind==="benchmark")return evidence?.benchmark?.text??"No source-bound cash-funded historical comparison is available. Run a long-only cash scenario in Test an idea first; starting capital, quantity, point value and costs must be explicit. No benchmark or return was invented and no order was sent.";
   if (!evidence) return "Select a completed simulated trade in Test an idea. No current selected historical result is available; no trade was inferred and no order was sent.";
   if (evidence.status !== "ready") return evidence.reason;
   if (kind === "explain") return evidence.text;
