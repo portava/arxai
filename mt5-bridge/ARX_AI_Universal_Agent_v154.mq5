@@ -115,7 +115,8 @@ input int     LiveTickThrottleMs           = 1000;   // min ms between TICK push
 
 //─── Globals ───────────────────────────────────────────────────────
 CTrade        trade;
-datetime      lastHeartbeatAt   = 0;
+ulong         heartbeatLastAttemptMs = 0;
+bool          heartbeatAttempted = false;
 datetime      lastPollAt        = 0;
 datetime      lastSnapshotAt    = 0;
 datetime      lastCandlePushAt  = 0;
@@ -208,7 +209,16 @@ void OnTimer()
    datetime now = TimeCurrent();
    if(StringLen(BridgeBaseUrl) == 0 || StringLen(BridgeToken) == 0) return;
 
-   if(now - lastHeartbeatAt >= HeartbeatIntervalSeconds) { SendHeartbeat(); lastHeartbeatAt = now; }
+   // Account telemetry must continue without quotes. TimeCurrent is the last
+   // quote's broker clock, not an elapsed timer. Preserve the configured rate
+   // and bound failed attempts; this timestamp is not evidence of delivery.
+   ulong accountNowMs = GetTickCount64();
+   if(!heartbeatAttempted || accountNowMs - heartbeatLastAttemptMs >= (ulong)MathMax(1, HeartbeatIntervalSeconds) * 1000)
+   {
+      heartbeatLastAttemptMs = accountNowMs;
+      heartbeatAttempted = true;
+      SendHeartbeat();
+   }
    if(now - lastSnapshotAt  >= SnapshotIntervalSeconds)  { PushSnapshots();  lastSnapshotAt  = now; }
    if(now - lastPollAt      >= PollIntervalSeconds)      { PollAndExecute(); lastPollAt      = now; }
    if(StreamCandleHistory && now - lastCandlePushAt >= CandlePushIntervalSeconds)
