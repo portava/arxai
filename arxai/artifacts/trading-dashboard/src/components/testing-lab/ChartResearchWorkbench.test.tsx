@@ -88,5 +88,10 @@ describe("historical clock authority",()=>{
   view.rerender(<ChartResearchWorkbench {...props} data={data}/>);
   expect(props.onOverlays.mock.calls.at(-1)![0]).toEqual([]);expect(props.onExplanation.mock.calls.at(-1)![0]).toBeNull();
   expect(screen.queryByTestId('chart-research-trade-detail')).toBeNull();
+  expect(screen.getByTestId('chart-research-result').textContent).toMatch(/frozen result remains inspectable/i);
+  fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));
+  expect(h.run).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('status').textContent).toMatch(/qualified original UTC/i);
+  expect(screen.getByTestId('chart-research-result').textContent).toMatch(/frozen result remains inspectable/i);
  });
 });
