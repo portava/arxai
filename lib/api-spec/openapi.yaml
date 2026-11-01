@@ -18894,7 +18894,7 @@ components:
       required: [connected, mode, lastHeartbeatAt, pendingCommands, completedCommands, failedCommands, openPositions, accountSnapshot, liveLocked, secondsSinceHeartbeat, executionMode, placementLayer, liveExecutionEnabled, liveBrokerExecutionAvailable, readOnlyGuardActive, paperTradingEnabled, brokerPlacementImplemented, demoExecutionEnabled, accountType, maxDemoLot]
       properties:
         connected: { type: boolean }
-        mode: { type: string, enum: [MOCK, DEMO, LIVE_LOCKED, LIVE] }
+        mode: { type: string, enum: [MOCK, DEMO, LIVE_LOCKED, LIVE, NOT_CONNECTED, STALE] }
         lastHeartbeatAt: { type: ["string", "null"] }
         secondsSinceHeartbeat: { type: ["integer", "null"] }
         pendingCommands: { type: integer }
@@ -18909,14 +18909,19 @@ components:
         paperTradingEnabled: { type: boolean }
         brokerPlacementImplemented: { type: boolean }
         demoExecutionEnabled: { type: boolean, description: "Server-side flag (env ARX_ALLOW_DEMO_EXECUTION). When true, the demo-execution layer accepts DEMO_MARKET_ORDER queues; live execution remains impossible." }
-        accountType: { type: string, enum: [DEMO, REAL, UNKNOWN] }
+        accountType: { type: string, enum: [DEMO, REAL, UNKNOWN, NONE] }
         maxDemoLot: { type: number }
         openPositions:
           type: array
           items:
             $ref: "#/components/schemas/Mt5Position"
+        nativeAccountReport:
+          description: Native reported observations for the authenticated user's selected personal MT5 connection only. Never shared-master funds or proof of current broker state.
+          oneOf:
+            - $ref: "#/components/schemas/NativeAccountReport"
+            - type: "null"
         accountSnapshot:
-          type: object
+          type: ["object", "null"]
           required: [account, balance, equity, currency]
           properties:
             account: { type: ["string", "null"] }
