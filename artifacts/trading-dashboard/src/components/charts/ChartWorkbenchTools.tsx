@@ -51,13 +51,23 @@ interface Props {
 }
 export function ChartWorkbenchTools({adapter,epoch,studyEvidenceRevision,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,assistantActive=false,assistantIsCurrent}: Props) {
   const displayRevision=studyEvidenceRevision??epoch;
+  const needsStudyEvidence=preferences.studies.some(study=>study.kind==='vwap'||study.kind==='volume_profile');
   const [committedStudyEvidence,setCommittedStudyEvidence]=useState<{adapter:ChartEngineAdapter|null;revision:unknown}|null>(null);
+  const studyEvidenceActive=useRef(false);
   // Child renders/layout effects precede Native's candle installation. Never
   // reuse previous-row UTC proof while a new parent snapshot is committing.
   // A passive marker runs after parent layout work; it clones no history and
   // subscribes to neither pan nor ticks. Exact anchor proof is still the engine's.
-  useEffect(()=>{setCommittedStudyEvidence(previous=>previous?.adapter===adapter&&previous.revision===displayRevision?previous:{adapter,revision:displayRevision});},[adapter,displayRevision]);
-  const studyDisplayAdapter=committedStudyEvidence?.adapter===adapter&&committedStudyEvidence.revision===displayRevision?adapter:null;
+  // An ordinary chart has no anchor label consumer and needs no marker state
+  // update. Invalidate the activation in the committed effect, so re-adding an
+  // anchored study cannot borrow an old marker even if a revision object recurs.
+  useEffect(()=>{
+    if(!needsStudyEvidence){studyEvidenceActive.current=false;return;}
+    const newlyActive=!studyEvidenceActive.current;
+    studyEvidenceActive.current=true;
+    setCommittedStudyEvidence(previous=>!newlyActive&&previous?.adapter===adapter&&previous.revision===displayRevision?previous:{adapter,revision:displayRevision});
+  },[adapter,displayRevision,needsStudyEvidence]);
+  const studyDisplayAdapter=needsStudyEvidence&&studyEvidenceActive.current&&committedStudyEvidence?.adapter===adapter&&committedStudyEvidence.revision===displayRevision?adapter:null;
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;

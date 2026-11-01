@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createRef, useState, useLayoutEffect } from "react";
+import { createRef, useState, useLayoutEffect, Profiler } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChartWorkbenchTools, exportLabels } from "./ChartWorkbenchTools";
 import type { ChartAnchor, ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
@@ -603,4 +603,45 @@ it('revokes anchor wording before parent engine layout commit and recovers only 
  view.rerender(<Parent revision={recovered} qualified/>);
  expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
  expect(screen.getByLabelText('Active studies').textContent).toContain('22:13:20 UTC');
+});
+
+describe('anchor display marker only runs for an actual consumer',()=>{
+ it.each([false,true])('revision-only updates cause no marker commit when ordinary studies exist: %s',withOrdinaryStudy=>{
+  const commits=vi.fn(),proof=vi.fn(()=>({utcQualified:true,reason:null}));
+  const preferences={...DEFAULT_PREFERENCES,studies:withOrdinaryStudy?[{kind:'sma' as const,period:20,color:'#fff'}]:[]};
+  const engine={...adapter,getVwapAnchorEvidence:proof};
+  const onPreferences=vi.fn();
+  const app=(revision:object)=><Profiler id="workbench" onRender={commits}><ChartWorkbenchTools showTemplates={false} adapter={engine} epoch="same-owner" studyEvidenceRevision={revision} symbol="AAPL" timeframe="M15" preferences={preferences} onPreferences={onPreferences} hasCandles feedLabel="Delayed"/></Profiler>;
+  const view=render(app({}));commits.mockClear();
+  view.rerender(app({}));expect(commits).toHaveBeenCalledTimes(1);
+  commits.mockClear();view.rerender(app({}));expect(commits).toHaveBeenCalledTimes(1);
+  expect(proof).not.toHaveBeenCalled();
+ });
+
+ it.each(['vwap','volume_profile'] as const)('adding, removing and readding %s cannot borrow a marker from an unchecked revision',kind=>{
+  let installed=true;const precommit:string[]=[];
+  const engine={...adapter,getVwapAnchorEvidence:()=>({utcQualified:installed,reason:installed?null:'clock withdrawn'})};
+  const anchor={kind:'observed_bar' as const,time:1700000000,seriesIdentity:'a'.repeat(64)};
+  const study=kind==='vwap'?{kind,period:1,color:'#fff',vwapAnchor:anchor}:{kind,period:1,color:'#fff',profileRows:32,profileValueAreaPercent:70,profileRange:{kind:'observed_range' as const,fromTime:anchor.time,toTime:anchor.time+60,seriesIdentity:anchor.seriesIdentity,clockAuthority:'twelve-data:time-series:common-stock:regular-unadjusted:v1'}};
+  function Parent({revision,qualified,present}:{revision:object;qualified:boolean;present:boolean}){
+   useLayoutEffect(()=>{precommit.push(screen.queryByLabelText('Study settings')?.textContent??'');installed=qualified;},[revision,qualified,present]);
+   return <ChartWorkbenchTools adapter={engine} epoch="same-source" studyEvidenceRevision={revision} symbol="AAPL" timeframe="M15" preferences={{...DEFAULT_PREFERENCES,studies:present?[study]:[]}} onPreferences={vi.fn()} hasCandles feedLabel="Delayed" assistantActive={false}/>;
+  }
+  const first={},unchecked={},later={};const view=render(<Parent revision={first} qualified present/>);
+  fireEvent.click(screen.getByRole('button',{name:'Studies (1)'}));
+  expect(screen.getByLabelText('Study settings').textContent).toContain('22:13:20 UTC');
+  view.rerender(<Parent revision={first} qualified present={false}/>);
+  view.rerender(<Parent revision={unchecked} qualified present={false}/>);
+  // Re-use the old revision object to prove a retained pre-removal marker
+  // cannot qualify old installed rows before the parent installs withdrawn data.
+  view.rerender(<Parent revision={first} qualified={false} present/>);
+  expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
+  expect(screen.getByLabelText('Study settings').textContent).toContain('source clock (UTC unverified)');
+  view.rerender(<Parent revision={later} qualified present/>);
+  expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
+  expect(screen.getByLabelText('Study settings').textContent).toContain('22:13:20 UTC');
+  view.rerender(<Parent revision={{}} qualified={false} present/>);
+  expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
+  expect(screen.getByLabelText('Study settings').textContent).toContain('source clock (UTC unverified)');
+ });
 });
