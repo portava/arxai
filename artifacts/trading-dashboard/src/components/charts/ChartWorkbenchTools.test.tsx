@@ -565,6 +565,6 @@ describe("source-clock coordinate controls",()=>{
   expect((screen.getByLabelText("Go to source-clock date and time") as HTMLInputElement).value).toBe("");
   expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).disabled).toBe(true);
   expect(engine.goToTime).not.toHaveBeenCalled();
-  expect(screen.getByTestId("chart-source-clock-note").textContent).toContain("UTC mapping unverified");
+  expect(screen.getByLabelText("Display time zone").closest("label")?.title).toContain("UTC mapping unverified");
  });
 });
