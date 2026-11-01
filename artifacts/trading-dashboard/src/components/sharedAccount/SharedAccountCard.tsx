@@ -1,3 +1,4 @@
+import { NativeAccountReport } from "./NativeAccountReport";
 // User-facing Shared Master Account card.
 //
 // Backed by read-only typed React Query hooks (generated from openapi.yaml):
@@ -37,8 +38,6 @@ import {
 } from "lucide-react";
 import { formatPnl, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useMasterAccountEvidence } from "@/hooks/useMasterAccountEvidence";
-import { MASTER_VALUE_LIMITATION, masterAccountMoney, masterAccountUpdateText } from "@/lib/masterAccountPresentation";
 
 const POLL_MS = 3000;
 const allocationAmount = (value: number | null | undefined): string =>
@@ -94,8 +93,6 @@ export function SharedAccountCard({ className }: { className?: string }) {
   // snapshot is null (bridge unpinned/offline), so a stored-state refresh stays
   // available. Never inferred from `master != null`.
   const isOwnerAdmin = Boolean(summary?.masterAccess);
-  const masterEvidence = useMasterAccountEvidence(isOwnerAdmin ? master : null, Boolean(summaryQ.error));
-  const masterAmount = (n: number | null) => masterAccountMoney(masterEvidence.observedAtMs != null && masterEvidence.ageMs != null ? n : null, master?.accountCurrency);
 
   const reloadAll = () => {
     void summaryQ.refetch();
@@ -199,7 +196,7 @@ export function SharedAccountCard({ className }: { className?: string }) {
   );
 
   const badge = isOwnerAdmin && master
-    ? { text: "Stored values", cls: "bg-amber-500/10 text-amber-400 border-amber-500/30" }
+    ? { text: "Current state unverified", cls: "bg-amber-500/10 text-amber-400 border-amber-500/30" }
     : { text: "Unavailable", cls: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30" };
 
   return (
@@ -227,11 +224,6 @@ export function SharedAccountCard({ className }: { className?: string }) {
             </Button>
           </div>
         </div>
-        {isOwnerAdmin && (
-          <p className="text-[11px] text-zinc-500 mt-1">
-            {masterAccountUpdateText(masterEvidence)}
-          </p>
-        )}
         {refreshError && (
           <p className="text-[11px] text-red-400 mt-1" data-testid="shared-account-refresh-error">{refreshError}</p>
         )}
@@ -267,16 +259,8 @@ export function SharedAccountCard({ className }: { className?: string }) {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-              <Stat label={`Balance (unverified)${master.accountCurrency ? ` (${master.accountCurrency})` : ""}`}
-                value={masterAmount(master.mt5Balance)} icon={<Wallet className="h-3 w-3" />} />
-              <Stat label="Equity (unverified)" value={masterAmount(master.mt5Equity)} icon={<Shield className="h-3 w-3" />} />
-              <Stat label="Open P/L" value="—" />
-              <Stat label="Used Margin (unverified)" value={masterAmount(master.mt5UsedMargin)} />
-              <Stat label="Free Margin (unverified)" value={masterAmount(master.mt5FreeMargin)} />
-              <Stat label="Recorded trades" value={Number.isSafeInteger(master.openPositions) && master.openPositions! >= 0 ? String(master.openPositions) : "—"} icon={<Activity className="h-3 w-3" />} />
-            </div>
-            <p className="mt-2 text-xs text-amber-400">{MASTER_VALUE_LIMITATION}</p>
+            <NativeAccountReport report={master.nativeAccountReport ?? null} failed={Boolean(summaryQ.error)} />
+            <p className="mt-2 text-xs text-zinc-500">Recorded trades: {Number.isSafeInteger(master.openPositions) && master.openPositions! >= 0 ? String(master.openPositions) : "—"}</p>
             {master.unattributedCount > 0 && (
               <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-400" data-testid="master-unattributed">
                 <AlertTriangle className="h-3 w-3" />

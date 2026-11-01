@@ -122,7 +122,7 @@ it('unknown master monetary fields render safely without fabricated zero or null
 });
 it('recent account update is not a live coherent-funds claim',()=>{
  h.summary={ok:true,userId:4,masterAccess:true,accounts:[],masterMt5:masterFixture({mt5Balance:1000,mt5Equity:900,mt5OpenPnl:0,snapshotStatus:'FRESH',syncStatus:'LIVE',accountCurrency:'EUR',lastMt5SnapshotAt:new Date().toISOString(),snapshotAgeMs:0})};render(<SharedAccountCard/>);
- expect(screen.getByTestId('shared-account-sync-badge').textContent).toBe('Stored values');expect(screen.getByText(/Value freshness unverified/)).toBeTruthy();expect(screen.getByText('€900.00')).toBeTruthy();expect(screen.getByText(/Last account update:/)).toBeTruthy();
+ expect(screen.getByTestId('shared-account-sync-badge').textContent).toBe('Current state unverified');expect(screen.getByText(/Complete MT5 account report unavailable/)).toBeTruthy();expect(screen.queryByText('€900.00')).toBeNull();expect(screen.queryByText(/Last account update:/)).toBeNull();
 });
 
 it.each([false,true])('owner missing master does not substitute user allocation or zero (empty rows=%s)',empty=>{
@@ -155,4 +155,14 @@ it.each(['missing','failed','exception'])('stored refresh %s never diagnoses bro
  render(<SharedAccountCard/>);fireEvent.click(screen.getByRole('button',{name:'Refresh'}));
  await waitFor(()=>expect(screen.getByTestId('shared-account-refresh-error').textContent).toMatch(/stored/i));
  expect(screen.getByTestId('shared-account-refresh-error').textContent).not.toMatch(/offline|connected|sync/i);
+});
+
+it.each([undefined,null,{status:"unavailable",amounts:null}])("native report %j cannot fall back to stored money",value=>{h.summary={ok:true,userId:4,masterAccess:true,accounts:[],masterMt5:masterFixture({mt5Balance:1000,mt5Equity:900,nativeAccountReport:value})};render(<SharedAccountCard/>);expect(screen.getByTestId("native-money-equity").textContent).toBe("—");expect(screen.queryByText("$900.00")).toBeNull();});
+
+it('shared account native report preserves direct profit and reported precision',()=>{
+ h.summary={ok:true,userId:4,masterAccess:true,accounts:[],masterMt5:masterFixture({nativeAccountReport:{status:'reported',reason:'CLOCK_AND_CONTINUITY_UNVERIFIED',currentVerified:false,observedAt:new Date(Date.now()-2000).toISOString(),receivedAt:new Date(Date.now()-1000).toISOString(),currency:'KWD',currencyDigits:3,amounts:{balance:'12.345',equity:'15.000',profit:'-0.123',credit:'3.000',margin:'0.000',freeMargin:'15.000'}}})};
+ render(<SharedAccountCard/>);expect(screen.getByTestId('native-money-balance').textContent).toBe('KWD 12.345');expect(screen.getByTestId('native-money-profit').textContent).toBe('KWD -0.123');
+});
+it('ordinary user does not see accidentally supplied native master money',()=>{
+ h.summary={...h.summary!,masterAccess:false,masterMt5:masterFixture({nativeAccountReport:{status:'reported',amounts:{balance:'999999.00'}}})};render(<SharedAccountCard/>);expect(screen.queryByTestId('native-account-report')).toBeNull();expect(screen.queryByText(/999999/)).toBeNull();
 });

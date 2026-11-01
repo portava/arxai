@@ -15524,6 +15524,12 @@ export const GetMeSharedAccountSummaryResponse = zod.object({
           mt5FreeMargin: zod.number().nullable(),
           mt5OpenPnl: zod.number().nullable(),
           openPositions: zod.number().nullable(),
+          nativeAccountReport: zod.object({
+            status: zod.enum(["reported", "unavailable"]), reason: zod.string(),
+            observationAgeMs: zod.number().nonnegative().nullish(), currentVerified: zod.literal(false), observedAt: zod.string().nullable(), receivedAt: zod.string().nullable(),
+            currency: zod.string().nullable(), currencyDigits: zod.number().int().min(0).max(16).nullable(),
+            amounts: zod.object({ balance: zod.string(), equity: zod.string(), profit: zod.string(), credit: zod.string(), margin: zod.string(), freeMargin: zod.string() }).nullable(),
+          }).nullish(),
           accountObservationScope: zod.literal("LATEST_ACCOUNT_UPDATE"),
           amountsCoherent: zod.boolean(),
           accountCurrency: zod.string().nullish(),
@@ -15545,7 +15551,7 @@ export const GetMeSharedAccountSummaryResponse = zod.object({
             .describe("Freshness of the latest account update only, not of every amount."),
         })
         .describe(
-          "Real MT5 master-account snapshot, owner\/admin only. Sourced from the pinned connection account update. Amounts are stored values that may include never-observed database defaults after a partial update; individual observations and simultaneity are unverified. Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
+          "Owner\/admin-only pinned MT5 account view. Native decimal reports remain clock- and continuity-unverified. Legacy scalar fields cannot substitute for a missing native report. Allocation remains separate.\n",
         ),
       zod.null(),
     ])
@@ -15576,6 +15582,12 @@ export const RefreshMeSharedAccountSnapshotResponse = zod.object({
           mt5FreeMargin: zod.number().nullable(),
           mt5OpenPnl: zod.number().nullable(),
           openPositions: zod.number().nullable(),
+          nativeAccountReport: zod.object({
+            status: zod.enum(["reported", "unavailable"]), reason: zod.string(),
+            observationAgeMs: zod.number().nonnegative().nullish(), currentVerified: zod.literal(false), observedAt: zod.string().nullable(), receivedAt: zod.string().nullable(),
+            currency: zod.string().nullable(), currencyDigits: zod.number().int().min(0).max(16).nullable(),
+            amounts: zod.object({ balance: zod.string(), equity: zod.string(), profit: zod.string(), credit: zod.string(), margin: zod.string(), freeMargin: zod.string() }).nullable(),
+          }).nullish(),
           accountObservationScope: zod.literal("LATEST_ACCOUNT_UPDATE"),
           amountsCoherent: zod.boolean(),
           accountCurrency: zod.string().nullish(),
@@ -15597,7 +15609,7 @@ export const RefreshMeSharedAccountSnapshotResponse = zod.object({
             .describe("Freshness of the latest account update only, not of every amount."),
         })
         .describe(
-          "Real MT5 master-account snapshot, owner\/admin only. Sourced from the pinned connection account update. Amounts are stored values that may include never-observed database defaults after a partial update; individual observations and simultaneity are unverified. Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
+          "Owner\/admin-only pinned MT5 account view. Native decimal reports remain clock- and continuity-unverified. Legacy scalar fields cannot substitute for a missing native report. Allocation remains separate.\n",
         ),
       zod.null(),
     ])

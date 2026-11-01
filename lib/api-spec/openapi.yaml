@@ -21330,22 +21330,49 @@ components:
         openAttributions: { type: integer }
         realizedPnl7d: { type: number }
 
+    NativeAccountReport:
+      type: object
+      description: Read-only MT5 native reported decimal strings for one bound account. Clock accuracy and producer continuity remain unverified; never execution authority.
+      required: [status, reason, currentVerified, observedAt, receivedAt, currency, currencyDigits, amounts]
+      properties:
+        status: { type: string, enum: [reported, unavailable] }
+        reason: { type: string }
+        currentVerified: { type: boolean, enum: [false] }
+        observedAt: { type: string, nullable: true }
+        observationAgeMs: { type: number, minimum: 0, nullable: true }
+        receivedAt: { type: string, nullable: true }
+        currency: { type: string, nullable: true }
+        currencyDigits: { type: integer, minimum: 0, maximum: 16, nullable: true }
+        amounts:
+          type: object
+          nullable: true
+          required: [balance, equity, profit, credit, margin, freeMargin]
+          properties:
+            balance: { type: string }
+            equity: { type: string }
+            profit: { type: string }
+            credit: { type: string }
+            margin: { type: string }
+            freeMargin: { type: string }
+
     MasterMt5Snapshot:
       type: object
       description: >
-        Real MT5 master-account snapshot, owner/admin only. Sourced from the
-        pinned mt5_connection account update. Amounts are stored values that may
-        include never-observed database defaults after a partial update.
-        accountSyncedAt proves some account data arrived, not that each amount
-        was observed or that all amounts arrived together. Direct broker account profit is not persisted by this view,
-        so open P/L is withheld rather than derived from equity minus balance. Never includes tokens, IPs,
-        or the unmasked account number. Null for normal users.
+        Owner/admin-only pinned MT5 account view. nativeAccountReport preserves
+        direct reported decimal text with unverified clock and continuity.
+        Legacy scalar fields are compatibility data and must not substitute for
+        a missing native report. ARX allocation fields remain separate.
+        Never includes tokens, IPs, or the unmasked account number. Null for normal users.
       required:
         [mt5Balance, mt5Equity, mt5UsedMargin, mt5FreeMargin, mt5OpenPnl,
          openPositions, arxAllocated, arxAvailable, arxReserved, realizedPnl7d,
          snapshotStatus, isOverAllocated, unattributedCount, syncStatus,
          accountObservationScope, amountsCoherent]
       properties:
+        nativeAccountReport:
+          oneOf:
+            - $ref: "#/components/schemas/NativeAccountReport"
+            - type: "null"
         mt5Balance: { type: number, nullable: true }
         mt5Equity: { type: number, nullable: true }
         mt5UsedMargin: { type: number, nullable: true }

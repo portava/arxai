@@ -1,3 +1,4 @@
+import { NativeAccountReport } from "@/components/sharedAccount/NativeAccountReport";
 // ARX 5.0 Cockpit cards.
 //
 // UI/UX refactor ONLY. Every card below is bound to the SAME existing
@@ -31,8 +32,6 @@ import {
   useGetEconomicCalendar,
 } from "@workspace/api-client-react";
 import { useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
-import { useMasterAccountEvidence } from "@/hooks/useMasterAccountEvidence";
-import { MASTER_VALUE_LIMITATION, masterAccountMoney, masterAccountUpdateText } from "@/lib/masterAccountPresentation";
 import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
 import {
   Wallet,
@@ -98,8 +97,6 @@ export function AccountSnapshotCard() {
   const accounts = Array.isArray(summary?.accounts) ? summary.accounts : [];
   const master = summary?.masterMt5 ?? null;
   const isOwnerAdmin = Boolean(summary?.masterAccess);
-  const masterEvidence = useMasterAccountEvidence(isOwnerAdmin ? master : null, Boolean(summaryQ.isError));
-  const masterAmountsKnown = masterEvidence.observedAtMs != null && masterEvidence.ageMs != null;
   // Canonical per-user allocation — the SAME source the live gate/preflight use.
   // Display surfaces must read availableAllocation from here, never the static
   // virtual_balance, which drifts from the headroom the gate actually enforces.
@@ -144,7 +141,7 @@ export function AccountSnapshotCard() {
     ? "Balance"
     : isOwnerAdmin ? "Allocation" : "Available";
   const balanceValue = liveBalance ?? allocation;
-  const equity = liveSnap ? finite(liveSnap.equity) : isOwnerAdmin ? (masterAmountsKnown ? finite(master?.mt5Equity) : null) : finite(alloc.equity);
+  const equity = liveSnap ? finite(liveSnap.equity) : isOwnerAdmin ? null : finite(alloc.equity);
   const partialPositionPnl = liveSnap != null && liveSnap.reconciliation?.positionPnlComplete !== true;
   const openPnl = liveSnap ? (partialPositionPnl ? null : finite(liveSnap.openPL)) : isOwnerAdmin ? null : finite(alloc.pnl);
   const openCount = liveSnap ? (liveSnap.positionCountKnown === false ? null : knownCount(liveSnap.openPositionsCount)) : knownCount(isOwnerAdmin ? master?.openPositions : alloc.open);
@@ -211,9 +208,13 @@ export function AccountSnapshotCard() {
         </div>
       </div>
 
+      {isOwnerAdmin ? <>
+        <NativeAccountReport report={master?.nativeAccountReport ?? null} failed={Boolean(summaryQ.isError)} />
+        <p className="mt-3 text-xs text-txt-muted">ARX allocation: {money(allocation)} · Recorded trades: {openCount == null ? "—" : String(openCount)}</p>
+      </> : <>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label={balanceLabel} value={money(balanceValue)} />
-        <StatTile label={isOwnerAdmin ? "Equity (unverified)" : "Equity"} value={isOwnerAdmin ? masterAccountMoney(equity, master?.accountCurrency) : money(equity)} />
+        <StatTile label="Equity" value={money(equity)} />
         {/* Open P/L:
             - reconciliation flag fires → "Under review" (warning color)
             - live snapshot figures are estimated/stale → tilde prefix + muted
@@ -236,12 +237,10 @@ export function AccountSnapshotCard() {
         <StatTile label={isOwnerAdmin ? "Recorded trades" : "Open Trades"} value={openCount == null ? "—" : String(openCount)} />
       </div>
 
+      </>}
+
       {lastKnown && <p className="mt-2 text-xs text-warning">Last-known account figures — current values have not been confirmed.</p>}
-      {isOwnerAdmin && master && <div className="mt-2 text-xs text-warning" data-testid="master-account-evidence">
-        <p>{MASTER_VALUE_LIMITATION}</p>
-        <p>{masterAccountUpdateText(masterEvidence)}</p>
-      </div>}
-      {balanceValue == null && equity == null && openPnl == null && <p className="mt-2 text-xs text-txt-muted">Account figures unavailable.</p>}
+      {!isOwnerAdmin && balanceValue == null && equity == null && openPnl == null && <p className="mt-2 text-xs text-txt-muted">Account figures unavailable.</p>}
       {equityStale && (
         <p
           className="mt-2 flex items-center gap-1 text-[11px] font-medium text-warning"

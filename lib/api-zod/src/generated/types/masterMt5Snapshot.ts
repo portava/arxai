@@ -9,10 +9,22 @@ import type { MasterMt5SnapshotSnapshotStatus } from "./masterMt5SnapshotSnapsho
 import type { MasterMt5SnapshotSyncStatus } from "./masterMt5SnapshotSyncStatus";
 
 /**
- * Real MT5 master-account snapshot, owner/admin only. Sourced from the pinned connection account update. Amounts are stored values that may include never-observed database defaults after a partial update; individual observations and simultaneity are unverified; open P/L is unavailable without a verified broker profit report. Never includes tokens, IPs, or the unmasked account number. Null for normal users.
+ * Owner/admin-only pinned MT5 account view. nativeAccountReport preserves direct reported decimal text with unverified clock and continuity. Legacy scalar fields are compatibility data and must not substitute for a missing native report. ARX allocation fields remain separate. Never includes tokens, IPs, or the unmasked account number. Null for normal users.
 
  */
 export interface MasterMt5Snapshot {
+  /** Native reported decimal text, never proof of current account state. */
+  nativeAccountReport?: {
+    status: "reported" | "unavailable";
+    reason: string;
+    currentVerified: false;
+    observedAt: string | null;
+    observationAgeMs?: number | null;
+    receivedAt: string | null;
+    currency: string | null;
+    currencyDigits: number | null;
+    amounts: { balance: string; equity: string; profit: string; credit: string; margin: string; freeMargin: string } | null;
+  } | null;
   mt5Balance: number | null;
   mt5Equity: number | null;
   mt5UsedMargin: number | null;
