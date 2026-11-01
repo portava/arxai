@@ -17,4 +17,4 @@
 - [Chart volume evidence](chart-volume-evidence.md) — a corrected zero-volume advisory is not proof of real traded volume or permission to enable volume analytics.
 - [Browser evidence accounting](browser-evidence-accounting.md) — audit observer/DOM contracts, separate repeated/unfinished coverage, and retain failure screenshots and raw receipts.
 - [Chart research boundaries](chart-research-boundaries.md) — extend existing authorities; keep API activation deferred and missing optional evidence unavailable.
-- [Source-only validation](source-only-validation.md) — isolate typecheck caches as well as bundles; disclose metadata changes separately from runtime preservation.
+- [Source-only validation](source-only-validation.md) — inspect actual source watchers before edits; isolate outputs/caches and run guards from the real repository root.

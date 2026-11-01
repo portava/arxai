@@ -1,0 +1,186 @@
+{
+  "applicationCommit": "47cbb89a77f4d3dc1d9d63c7893969b23eb9aa7c",
+  "buildId": "2403398ecd2d1cee",
+  "frontend": {
+    "pass": 3403,
+    "skip": 11,
+    "fail": 0,
+    "filesPassed": 211,
+    "filesSkipped": 1
+  },
+  "selectedMarketBackend": {
+    "pass": 18,
+    "fail": 0,
+    "skip": 0
+  },
+  "dashboardTypecheck": "pass",
+  "apiTypecheck": "pass after building previously absent local declaration outputs",
+  "apiBuild": "pass",
+  "ordinaryDashboardBuild": "pass",
+  "browser": {
+    "pass": 19,
+    "fail": 0,
+    "scope": "Actual Scanner desktop/390px, intercepted synthetic responses, no model/broker/provider calls"
+  },
+  "guardInitial": {
+    "passed": 86,
+    "failed": 1,
+    "reason": "Old guard required direct economic_events read instead of existing connected-calendar resolver",
+    "followup": "Separate guard migration receipt pending"
+  },
+  "review": "Independent agent audit; root implementation review found and corrected post-event filtering; limited ChatGPT second opinion recorded separately",
+  "retainedFailures": [
+    "combined-guards-ipc-blocked.log: local IPC permission required",
+    "combined-api-typecheck-missing-declarations.log: local DB declarations absent; generated offline then rootcheck passed",
+    "combined-guards.log: old calendar authority static constraint fails; not waived"
+  ],
+  "limitations": [
+    "Synthetic offline fixture, not published-app/provider acceptance",
+    "Unavailable/freshness/stale classification outside selected-market labels unchanged",
+    "No latency or competitor parity measurement",
+    "Synthetic-instrument nonapplicability covered by backend/UI unit tests, not this EURUSD browser fixture",
+    "Not full root CI or isolated live API suite",
+    "Agent initial API typecheck used cross-worktree symlinks and cannot replace the root combined result",
+    "No deployment/activation, existing database modification, live or demo testing"
+  ],
+  "rawDirectory": "/Users/areyouok/arx-tier1-release/selected-market-evidence-truth-20261101",
+  "logSha256": {
+    "combined-backend.log": "c4d5a695463e5340a4b52995e377c8a5a660843179c3f21f03acc4b573910bcb",
+    "combined-guards.log": "e831cc909f256b9de55deac6ecc04a6c34138363d925c1ead5cbccdbda751437",
+    "combined-frontend.log": "8b232e6a82a2c70333abf1d1ace608eea77790704e5df6100a0acbc1d0913da4",
+    "combined-dashboard-typecheck.log": "7381f6fe872efab37d9e07d437cfa0f8d8773f2dcc6cfc35d6f4c7928739b496",
+    "combined-api-typecheck-missing-declarations.log": "5af51173d40904eb459f1e570711c817db25c9871ed4fd951989ce77478aa884",
+    "combined-build.log": "d19593457fb5827ca89ac428537af9fb65abd806334223ce4095bf61481e1a53",
+    "combined-guards-ipc-blocked.log": "50f39dd830ff55dcb1d1348ccbd3c7c4c26e2dcbf80f6c164f07b45df08d002d",
+    "combined-api-declarations.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "combined-api-typecheck.log": "68ee3998467751f1da1529cca951bc4f5a63326a0781d8368f89fbff30b495eb",
+    "combined-api-build.log": "4aced7adf97d24619eb63eed1094b52b33ebd19867c1597c3e774c0dae13fd4a"
+  },
+  "guardFollowup": {
+    "commit": "8bbf5e3d54231d485cf7ca5cefc5357d70105a8a",
+    "base": "47cbb89a77f4d3dc1d9d63c7893969b23eb9aa7c",
+    "scope": "Replace obsolete direct-calendar-table requirement with existing calendar authority, explicit availability, unavailable fallback, original event set and propagation into both envelopes. All unrelated guard invariants retained. New negative fixtures wired into ci:guards.",
+    "before": "scanner-selected-market-safety failed solely on obsolete Drizzle requirement (guard-before.log).",
+    "checks": {
+      "selectedMarketGuard": "PASS",
+      "mutationNegativesCaught": 14,
+      "otherAssertions": "valid source, all existing selected-market invariants, harmless comment ignored",
+      "masterBridgeBindingAssertions": 7,
+      "fullRunnerRootCwd": {
+        "passed": 84,
+        "total": 87,
+        "notGreen": true,
+        "failures": {
+          "risky-wording-frontend": 50,
+          "no-internal-names-user-ui": 25,
+          "investor-no-guaranteed-return": 3
+        }
+      },
+      "packageCwdDiagnostic": "The same three unchanged guards report PASS from scripts/ because cwd-relative rg paths do not exist and errors are swallowed. Not a legitimate coverage pass."
+    },
+    "rootCommand": {
+      "cwd": "/Users/areyouok/arx-selected-market-evidence-truth-20261101",
+      "command": "DATABASE_URL=postgresql://offline:offline@127.0.0.1:1/offline ESBUILD_BINARY_PATH=/private/tmp/claude-501/-Users-areyouok/ce01a419-14af-45ac-8fb0-c306921f99ff/scratchpad/wt-tg-b3/node_modules/.pnpm/@esbuild+darwin-arm64@0.27.3/node_modules/@esbuild/darwin-arm64/bin/esbuild node --import ./scripts/node_modules/tsx/dist/loader.mjs scripts/src/ci/run-all.ts",
+      "exitCode": 1
+    },
+    "baselineProof": "guard-baseline-content-proof.json: all41 logged violating files and all3 guard sources byte-identical to def40251 and47cbb89a; entire artifacts tree unchanged from47cbb89a. Baseline runner not rerun.",
+    "logs": [
+      "guard-before.log",
+      "guard-mutations.log",
+      "guard-bindings.log",
+      "guards-after.log",
+      "guards-cwd-diagnostic.log",
+      "guards-startup-missing-env.log"
+    ],
+    "review": "Root independently reviewed guard diff and mutation tests: no actionable issue before commit.",
+    "limits": [
+      "No global guard-green claim. Cwd/coverage repair and wording review remain open.",
+      "No application source changes in this commit, no push, merge, deployment, DB or broker actions.",
+      "API typecheck earlier receipts corrected to explicitly scope shared-worktree node_modules resolution; root self-contained checks authoritative."
+    ]
+  },
+  "compactStudyLabels": {
+    "application": "def4025124864e843e4cc7b96b4c4aa19df04dae",
+    "base": "e0ccc39d7e1a2d04ae6d0c4b0f89faa5c4fab454",
+    "build": "5cd69e76bf41dc12",
+    "before": {
+      "failed": 5,
+      "passed": 285,
+      "scope": "renderer/workbench new regressions"
+    },
+    "after": {
+      "focusedPassed": 290,
+      "frontendPassed": 3395,
+      "frontendSkipped": 11,
+      "guards": 87,
+      "bindings": 7,
+      "dashboardTypecheck": "pass",
+      "ordinaryBuild": "pass",
+      "browserDesktop": 40,
+      "browserPhone": 41
+    },
+    "independentReview": {
+      "agent": "profile_truth_review",
+      "result": "No actionable findings; source-only review on def40251 vs e0ccc39d",
+      "scope": "width lifecycle/initialization/resize identity fencing; preserves calculations/channel data/numeric axes/named inspection values"
+    },
+    "retainedFailure": {
+      "file": "browser-390-first-failed.json",
+      "pass": 30,
+      "fail": 1,
+      "reason": "Harness used requested pointer candle instead of actual nearby candle selected by compressed phone coordinates. Corrected to actual hoveredCandle.time with nearest-within-M15 bound, then matched all3named channel values. No application code change."
+    },
+    "limits": [
+      "Synthetic source and emulated viewport, no physical-device/provider/remote-app qualification",
+      "No navigation or matched competitor timing on this source",
+      "Study titles compact below600px; full names retained in existing data window; not a complete phone UX signoff"
+    ],
+    "logs": {
+      "frontend.log": "089941a1c45590b9ef2e5bafcb6569a8e61d9abb3aa0fa6c6d8a93fc45469ce3",
+      "truth-audit-chart.png": "e657aff4109b3b421288463f57d6a32b19cdf25df4547c8ad449acea99e34a9a",
+      "studies-390.png": "063244940f1da5bf8ac11aa89be144210adc5483e31fc2e387422754c6f77528",
+      "typecheck.log": "7381f6fe872efab37d9e07d437cfa0f8d8773f2dcc6cfc35d6f4c7928739b496",
+      "audit-capture.json": "9c5864eaf3bf00fc26e25c09a718d8e794d86f5ff14e3bf523afb47fa2a719ea",
+      "browser-390.json": "ec1d45ad15188b66a7286a43a59669a62c2626351d6e2088b982c644ea02df85",
+      "studies-1440.png": "216a789da98777e1510f52ed92109b7c55b0b9a014c7c11dff88f8ab0a42e09d",
+      "browser-390-first-failed.json": "2a2d7391bdba0c97e49db83daffa0d64999906cb7977598c056ce8e05ce044f5",
+      "CHATGPT_CHART_TRUTH_AUDIT.json": "ab5c56b0917d7bc3247d1eed627b79b2a6f880c0b57c8e176375d485d3668e37",
+      "browser-1440.json": "bb195d5791384038df809cb93da25e92d59464e204adc2a91f121f293417ec25",
+      "before.log": "538df10c371be3dc74bbce8eaae4ac24a774405838f92fcd8827c5367233beb7",
+      "guards.log": "1dfc8ca10adca3c6e1c6c1f5193a4b5da35070db5cf5a953fda00d22238127f3",
+      "after.log": "944e9984808e0543a37638f239b752a6825b646a0211b1d1e51113f1557c50a7",
+      "build.log": "c90a2a8fa7eef6d4fc72b3c84aebb2f4d2364e9d3a3921e07fad2a08088b9a38"
+    }
+  },
+  "chatgptCrosscheck": {
+    "reviewUrl": "https://chatgpt.com/c/6ae734b8-4634-83ec-ac21-5c96378342ed",
+    "method": "User-authorized ChatGPT web second opinion on sanitized synthetic OHLC and exact UI labels, followed by source review and regressions.",
+    "imageUpload": "Blocked by Chrome extension file-URL permission; no settings changed. ChatGPT did not receive the screenshot or full candle series.",
+    "findings": [
+      "Unavailable calendar is not verified no-risk or checked-empty calendar.",
+      "Unavailable-analysis placeholders must not appear as measured confidence/trend/volatility."
+    ],
+    "independentArithmetic": {
+      "candleRange": 0.0006,
+      "body": 0.0001,
+      "upperShadow": 0.0003,
+      "lowerShadow": 0.0002,
+      "bodyRangeRatio": 0.16666666666666666,
+      "interpretation": "Matches stated spinning-top geometry; does not predict reversal.",
+      "time": "11:45 UTC M15 open corresponds to 06:45 EST; close at 07:00 EST, not live-feed proof."
+    },
+    "notIndependentlyVerified": [
+      "Screenshot/image appearance",
+      "Full175bar change/lower-third calculations (provided root summaries only)",
+      "Developing double-top algorithm",
+      "Source code, test suite or live/provider correctness"
+    ],
+    "rootAdditionalFinding": "Future-only UI event filtering initially removed five-minutes-ago release from shared scorer; fixed47cbb89a with real-loader regression.",
+    "limitations": [
+      "Agreement from a model is not proof. Actual source, deterministic tests and intercepted actual-Scanner checks are separate evidence.",
+      "This is an offline generated EURUSD fixture, not a synthetic-market instrument and not real-account data."
+    ]
+  },
+  "releaseStatus": "NOT GREEN; root-cwd guard findings and coverage discrepancy unresolved; no full CI/provider/remote acceptance",
+  "combinedDevelopmentHead": "8bbf5e3d54231d485cf7ca5cefc5357d70105a8a"
+}
