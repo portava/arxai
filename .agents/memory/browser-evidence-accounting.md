@@ -50,3 +50,31 @@ success also leaves those failures without visual evidence.
 run. Persist source/runtime identity, stage, DOM, screenshots and network/error
 records in failure cleanup as well as on success. Keep corrected programs and
 attempts separate; an interrupted flow stays incomplete, not a feature pass.
+
+When extending an accepted synthetic fixture, preserve its complete evidence
+envelope and validate the tool's qualification contract before browser launch.
+Exact installed candles alone do not prove that local analysis is qualified.
+Fresh-reply detection must also observe refusals, not wait only for success text.
+
+**Why:** A replacement ownership fixture omitted the source from its evidence
+envelope while preserving prices and identity. The application correctly refused
+analysis, but a success-only reply predicate reported that refusal as a timeout.
+Changing viewport or fitting history could not repair the missing evidence.
+
+**How to apply:** Diagnose retained reply/DOM evidence before another attempt.
+Separate "a fresh reply arrived" from "the reply accepted the request"; preserve
+the failed attempts and correct the fixture rather than weakening source gates.
+
+Use standalone acceptance modules rather than nested string-replacement
+correction wrappers. Exercise the actual parser and observer-shape adapter in
+offline self-checks before launching the browser.
+
+**Why:** Nested wrappers repeatedly failed on escaped replacement anchors and
+directory rewrites before reaching the intended flow. A materialized program
+made the fixture and pixel-versus-price contract inspectable, and completed the
+same acceptance without changing application behavior.
+
+**How to apply:** Keep old programs immutable, write a new standalone program,
+pin its bytes in the receipt, and separate numeric price precision from rendered
+pixel alignment tolerance. Do not repair a failing geometry check by accepting
+receipt wording alone.
