@@ -1,6 +1,6 @@
 # Smart Chart requirements census — 1 November 2026
 
-Scope: the owner's Smart Chart/backtesting document supplied on this date. The initial census inspected `d535c3f3`; this update records accepted application `4ad8a5aceb82483fdb35cf9fd747768e55aabf2e` and the exact-source receipts in `SMART_CHART_AI_TRUTH_INTEGRATION_2026_11_01.md` and `CHART_RESEARCH_WORKBENCH_2026_11_01.md`. It is not a deployment receipt, completion percentage or competitor-parity claim. The same chart, assistant, Truth and historical engines remain the authorities. Replit development import/validation is tracked separately; the API runtime has not been activated.
+Scope: the owner's Smart Chart/backtesting document supplied on this date. Latest accepted application: `f6e64fbe`, documented in `SMART_CHART_VOLUME_PROFILE_2026_11_01.md`; the earlier update entries below retain their historical scope. The initial census inspected `d535c3f3`; this update records accepted application `4ad8a5aceb82483fdb35cf9fd747768e55aabf2e` and the exact-source receipts in `SMART_CHART_AI_TRUTH_INTEGRATION_2026_11_01.md` and `CHART_RESEARCH_WORKBENCH_2026_11_01.md`. It is not a deployment receipt, completion percentage or competitor-parity claim. The same chart, assistant, Truth and historical engines remain the authorities. Replit development import/validation is tracked separately; the API runtime has not been activated.
 
 ## Source-evidence correction after this census
 
@@ -28,6 +28,10 @@ Application `677241aa` adds source-qualified Common Stock quantities, anchored V
 
 Application `9982b545` closes the stock reachability gap through the existing **analysis-only comparison picker** and explicit selected-pane assistant. Positive actual Scanner VWAP/trade-volume use now passes with the exact synthetic normalized AAPL source, independent arithmetic and unchanged primary trading context. Source loss/unmount withdraws the assistant owner; late remote/voice requests cannot carry context across selections. See `SMART_CHART_ANALYSIS_SELECTION_2026_11_01.md` for 3,219 frontend passes/11 skips, 513 targeted backend passes and139 repeated browser assertions. This supersedes the previous reachability status, not its historical receipt or broader remaining gaps. Volume Profile and precise saved-anchor clock-label alignment remain open.
 
+## Estimated Volume Profile update
+
+Application `f6e64fbe` adds the missing bounded Volume Profile through the existing calculator, native primitive, settings and assistant. Final actual Scanner checks cover source-correct price-bin geometry, original quantities, all styles/scales, withdrawal, saved ranges, phone rendering and PNG export; exact saved-anchor clock wording is aligned. See `SMART_CHART_VOLUME_PROFILE_2026_11_01.md`. Lower-timeframe/full-session profiles, order flow, broader AI language and end-to-end navigation speed remain open. This is not a parity or architecture-completion claim.
+
 ## Thirteen requested chart tools
 
 Paths in this section are relative to `artifacts/trading-dashboard/src/`.
@@ -40,15 +44,15 @@ Paths in this section are relative to `artifacts/trading-dashboard/src/`.
 | Trendlines / channels | `lib/chart-engine/chartWorkspace.ts`, `chartDrawingPrimitive.ts`, `structureLines.ts` | Manual trend/ray/extended/channel objects, exact anchors and editing exist; server-resolved trendlines/channel rails are separate automatic evidence. Do not rebuild them. |
 | SMA / EMA | `lib/chart-engine/chartStudies.ts`, `chartAnalysisRenderer.ts` | Both calculate and render as overlays, with configurable period, input price and appearance. |
 | Volume bars | `chartVolume.ts`, `chartStudies.ts`, existing study renderer; optional API volume evidence | Source-qualified MT5 tick counts render in a separate synchronized histogram. Observed zero stays zero; absent or invalid evidence stays unavailable. Tick counts are labelled, never exchanged-traded size. Qualified Common Stock provider trade units now render through an analysis-only comparison on the actual Scanner, accepted offline on9982b545. The primary Focus/trading universe is unchanged; real provider availability remains unverified. |
-| VWAP | Existing `chartStudies.ts`, `chartVwapAnchor.ts`, renderer/settings/assistant | Actual cumulative original applied-price × qualified trade quantity / quantity from an exact source-bound observed bar. Missing or mismatched volume holds the suffix. **Conditional calculation and actual Scanner comparison rendering accepted offline on9982b545.** Manual/AI points, volume corrections and source withdrawal agree; saved-anchor clock wording still needs exact-bound alignment. No inferred session start or tick substitution. |
+| VWAP | Existing `chartStudies.ts`, `chartVwapAnchor.ts`, renderer/settings/assistant | Actual cumulative original applied-price × qualified trade quantity / quantity from an exact source-bound observed bar. Missing or mismatched volume holds the suffix. **Conditional calculation and actual Scanner comparison rendering accepted offline on9982b545.** Manual/AI points, volume corrections and source withdrawal agree; exact-bound saved-anchor clock alignment is accepted offline on f6e64fbe. No inferred session start or tick substitution. |
 | RSI | `lib/chart-engine/chartStudies.ts`, `chartAnalysisRenderer.ts` | Calculates Wilder RSI with a synchronized oscillator pane, configurable period/source, levels and appearance. |
 | MACD | Same study authority | Fast/slow EMAs, selectable signal smoothing and actual histogram render in a pane. |
 | Bollinger Bands | Same study authority | Basis and population-deviation bands calculate/render; period and multiplier are editable. |
 | Fibonacci retracement | `lib/chart-engine/chartWorkspace.ts`, `chartDrawingPrimitive.ts`, `chartDrawingEditor.ts` | Real manually anchored retracement geometry, direction-aware labels and editable anchors exist. Application203df87e adds one frozen, source-qualified span2 confirmed-swing preview, exact anchors/confirmation explanation, and explicit Keep/edit through existing manual ownership/undo. Span remains fixed; there is no general automatic swing optimizer. |
 | ATR | `lib/chart-engine/chartStudies.ts`, `chartAnalysisRenderer.ts` | True range and configurable smoothing render in a pane. This is not a position-sizing or execution permission. |
-| Volume profile | No profile calculator/renderer in current chart-engine path | **Missing.** OHLC plus one bar-volume total cannot establish actual volume-at-price. A future approximation must disclose its allocation method and provenance; never present it as measured order flow. |
+| Volume Profile | Existing study calculator, renderer/settings/assistant; `chartVolumeProfile.ts` | Bounded estimated fixed-range profile accepted offline on f6e64fbe: qualified original trade units/UTC/closed bars, configurable bins/value area, POC, frozen exact endpoints, manual/AI parity and actual Scanner geometry. No tick substitution, lower-timeframe completeness, measured trade-at-price or order-flow claim. |
 
-`STUDY_CATALOG` has 22 calculation/rendering entries (the earlier 20 plus conditional anchored VWAP and Trade volume); the requirement is not to replace that library. The six requested study families above are subsets of it.
+`STUDY_CATALOG` has 23 calculation/rendering entries (the earlier 20 plus conditional anchored VWAP, Trade volume and Estimated Volume Profile); the requirement is not to replace that library. The requested study families above are subsets of it.
 
 ## Interaction, explanation and data scope
 
