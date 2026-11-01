@@ -1,3 +1,4 @@
+import { formatSourceChartTime } from "./chartClockEvidence";
 import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyLabel, studyId, formatStudyNumber, type ChartStudy, type StudyKind } from "./chartStudies";
 import type { ChartEngineAdapter } from "./types";
 
@@ -43,9 +44,10 @@ export interface StudyAssistantContext {
   adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"> | null;
   studies: ChartStudy[];
   symbol:string; timeframe:string; feedLabel:string;
+  utcClockQualified?:boolean;
   save:(studies:ChartStudy[])=>void;
 }
-const time=(seconds:number)=>{const date=new Date(seconds*1000);return Number.isFinite(date.getTime())?date.toISOString():"unavailable timestamp";};
+const observationTime=(seconds:number,qualified:boolean)=>{const date=new Date(seconds*1000);return Number.isFinite(date.getTime())?formatSourceChartTime(seconds,qualified,"UTC",{seconds:true}):"unavailable timestamp";};
 /** One renderer transaction for a complete requested collection. Restoration
  * is best-effort: an exception never becomes a claim that nothing changed. */
 function applyStudyCollection(context:StudyAssistantContext,updated:ChartStudy[]):string|null {
@@ -60,6 +62,7 @@ function applyStudyCollection(context:StudyAssistantContext,updated:ChartStudy[]
 }
 function executeAverageComparison(request:AverageComparisonRequest,context:StudyAssistantContext):string {
   const {adapter,studies,symbol,timeframe,feedLabel}=context;
+  const time=(seconds:number)=>observationTime(seconds,context.utcClockQualified===true);
   const visible=adapter?.getVisibleCandles?.()??[];
   if(!adapter?.setStudies||!adapter.getStudyValues||!visible.length)return "Comparison not applied: the current chart has no ready renderer and visible candle window yet. Wait for candles, then retry.";
   const matches=request.studies.map(selection=>studies.filter(s=>s.kind===selection.kind&&s.period===selection.period));
@@ -100,6 +103,7 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
   if ("error" in request) return request.error;
   if(request.action==="compare")return executeAverageComparison(request,context);
   const {adapter,studies,symbol,timeframe,feedLabel}=context;
+  const time=(seconds:number)=>observationTime(seconds,context.utcClockQualified===true);
   const visible=adapter?.getVisibleCandles?.() ?? [];
   if (!adapter?.setStudies || !adapter.getStudyValues || !visible.length) return "Study not applied: the current chart has no ready renderer and visible candle window yet. Wait for candles, then retry.";
   const matches=studies.filter(s=>s.kind===request.kind);

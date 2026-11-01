@@ -1,3 +1,4 @@
+import { originalUtcAuthority } from "./chartClockEvidence";
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import type { ChartEngineCandle } from "./types";
 import { captureSmartChartBars } from "./smartChartCapture";
@@ -25,7 +26,8 @@ export interface ResearchWindow {
   toExclusiveMs: number;
 }
 export interface ChartResearchSnapshot {
-  version: 2;
+  version: 3;
+  timeBasisEvidence: {kind:"original_utc";basis:"UTC";authority:string;reason:null};
   priceBasisEvidence: {kind:"producer_declared";basis:"BID"|"MID";reason:null};
   contextKey: string;
   sourceMode: "live" | "demo";
@@ -197,6 +199,7 @@ export function captureChartResearchWindow(args: {
       previousClose = fromInclusiveMs,
       gapCount = 0,
       missingIntervals = 0;
+    let clockAuthority: string | null = null;
     let sourceMode: "live" | "demo" | null = null;
     const bars: ChartResearchBar[] = [];
     for (const bar of selected) {
@@ -224,6 +227,12 @@ export function captureChartResearchWindow(args: {
         bar.low > Math.min(bar.open, bar.close)
       )
         return unavailable("Historical candle prices are malformed.");
+      const authority = originalUtcAuthority(record(original)?.timeBasisEvidence);
+      if (!authority)
+        return unavailable("Historical research requires qualified original UTC candle times. These source-clock coordinates have no verified historical UTC mapping; a Z label or current broker offset is insufficient.");
+      if (clockAuthority && clockAuthority !== authority)
+        return unavailable("The requested candles mix different original UTC clock authorities.");
+      clockAuthority = authority;
       if (original.priceBasis !== "BID" && original.priceBasis !== "MID")
         return unavailable(
           "Historical testing currently supports original BID or MID prices only; this source basis is unsupported.",
@@ -266,7 +275,8 @@ export function captureChartResearchWindow(args: {
       bars,
     };
     const snapshot: ChartResearchSnapshot = {
-      version: 2,
+      version: 3,
+      timeBasisEvidence: {kind:"original_utc",basis:"UTC",authority:clockAuthority!,reason:null},
       priceBasisEvidence: {kind:"producer_declared",basis:basis!,reason:null},
       sourceMode: sourceMode!,
       contextKey: chartResearchContextKey(
@@ -365,7 +375,9 @@ export function bindChartResearchResult(
     reason,
   });
   try {
-    if (snapshot.version !== 2 || snapshot.priceBasisEvidence?.kind !== "producer_declared"
+    if (snapshot.version !== 3 || !originalUtcAuthority(snapshot.timeBasisEvidence))
+      return no("This historical snapshot lacks qualified original UTC clock evidence; its chart markers are withheld. Older snapshots are not upgraded.");
+    if ( snapshot.priceBasisEvidence?.kind !== "producer_declared"
       || snapshot.priceBasisEvidence.basis !== snapshot.researchInput.priceBasis || snapshot.priceBasisEvidence.reason !== null)
       return no("This historical snapshot lacks original price-basis evidence; its chart markers are withheld.");
     if (current.contextKey !== snapshot.contextKey)
@@ -389,6 +401,7 @@ export function bindChartResearchResult(
       qualified.status !== "ready" ||
       qualified.snapshot.contextKey !== snapshot.contextKey ||
       qualified.snapshot.sourceMode !== snapshot.sourceMode ||
+      stable(qualified.snapshot.timeBasisEvidence) !== stable(snapshot.timeBasisEvidence) ||
       qualified.snapshot.researchInput.priceBasis !==
         snapshot.researchInput.priceBasis ||
       stable(qualified.snapshot.researchInput.bars) !==

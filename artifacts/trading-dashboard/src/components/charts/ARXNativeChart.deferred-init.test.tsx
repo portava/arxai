@@ -92,7 +92,7 @@ let streams: { url: string; onmessage: ((event: { data: string }) => void) | nul
 let documentHidden = false;
 const OPEN_MS = 1_700_000_000_000;
 function liveResponse(symbol: string, timeframe: string) {
-  const candle = (openMs: number, close: number) => ({ symbol, displaySymbol: symbol, timeframe, openTime: new Date(openMs).toISOString(),
+  const candle = (openMs: number, close: number) => ({ timeBasisEvidence: {kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null}, symbol, displaySymbol: symbol, timeframe, openTime: new Date(openMs).toISOString(),
     closeTime: new Date(openMs + 3_600_000).toISOString(), open: close, high: close + 0.001, low: close - 0.001, close, source: "mt5_broker", isComplete: true });
   return { symbol, timeframe, candles: [candle(OPEN_MS - 3_600_000, 1.1), candle(OPEN_MS, 1.101)],
     feedStatus: { symbol, source: "mt5_broker", isLive: true, stale: false, quality: "clean", aiUsable: true, warning: null }, warning: null };
@@ -790,6 +790,7 @@ describe("deferred comparison engine init", () => {
   });
 
   it("gives a deferred comparison the primary's stored display zone in its build, before the next frame", () => {
+    candleResponse=liveResponse("EURUSD","H1");
     localStorage.setItem("arx.chart.preferences.v1", JSON.stringify({ style: "candles", scale: "linear", studies: [], timeZone: "Asia/Tokyo" }));
     render(<ARXNativeChart workspaceId="comparison" symbol="EURUSD" timeframe="H1" showFeedStatus overlays={NO_OVERLAYS} />);
     runFrame();
@@ -810,6 +811,7 @@ describe("deferred comparison engine init", () => {
   });
 
   it("relabels an inspected candle's legend on a zone change without another crosshair move", () => {
+    candleResponse=liveResponse("EURUSD","H1");
     render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS} />);
     const engine = created[0]!;
     const legend = engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar: unknown) => void;
@@ -822,6 +824,7 @@ describe("deferred comparison engine init", () => {
     expect(inspector.textContent).toBe("2023-11-15 07:13 GMT+9  ·  O 1.10100  H 1.10300  L 1.10000  C 1.10200");
     // Daily bars keep UTC whatever the stored zone.
     cleanup();
+    candleResponse=liveResponse("EURUSD","D1");
     render(<ARXNativeChart symbol="EURUSD" timeframe="D1" showFeedStatus={false} overlays={NO_OVERLAYS} />);
     const daily = created.at(-1)!;
     expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).value).toBe("Asia/Tokyo");
@@ -905,4 +908,23 @@ describe("native source-bound automatic Fibonacci",()=>{
     expect(engine.setDrawings.mock.calls.at(-1)![0]).toEqual([]);
     expect(screen.queryByRole("button",{name:"Keep and edit Fibonacci"})).toBeNull();
   });
+});
+
+
+describe("original candle clock disclosure",()=>{
+ it("keeps candles visible but withdraws zone conversion and UTC legend after evidence disappears",()=>{
+  candleResponse=liveResponse("EURUSD","H1");
+  localStorage.setItem("arx.chart.preferences.v1",JSON.stringify({style:"candles",scale:"linear",studies:[],timeZone:"Asia/Tokyo"}));
+  const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+  const engine=created[0]!;
+  act(()=>(engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void)({time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102}));
+  candleResponse=structuredClone(candleResponse);(candleResponse as any).candles.forEach((c:any)=>delete c.timeBasisEvidence);
+  view.rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+  expect(screen.getByTestId("chart-clock-authority").textContent).toContain("UTC mapping unverified");
+  expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).disabled).toBe(true);
+  expect(engine.setDisplayTimeZone).toHaveBeenLastCalledWith("UTC");
+  expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("source clock (UTC unverified)");
+  expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("O 1.10100");
+  expect(engine.setCandles).toHaveBeenCalled();expect(engine.destroy).not.toHaveBeenCalled();
+ });
 });

@@ -1,3 +1,4 @@
+import type { CandleTimeBasisEvidence } from "./candleTimeBasisEvidence.js";
 import type { CandlePriceBasisEvidence } from "./candlePriceBasisEvidence.js";
 import type { CandleVolumeEvidence } from "./candleVolumeEvidence.js";
 // Type-only import: erased at compile time, so the runtime dependency graph of
@@ -6,6 +7,8 @@ import type { ProvenanceSource } from "../provenance/index.js";
 
 export interface Candle {
   time: string;
+  /** Optional original clock provenance; ISO syntax alone is never UTC authority. */
+  timeBasisEvidence?: CandleTimeBasisEvidence;
   open: number;
   high: number;
   low: number;

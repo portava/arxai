@@ -1,12 +1,13 @@
 import { registerChartFibonacciAssistant } from "@/lib/chart-engine/chartFibonacciAssistant";
 import { explainFibonacciProposal, explainSelectedFibonacci } from "@/lib/chart-engine/chartFibonacciExplanation";
+import { formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
 import { fibonacciProposalDrawing, type ChartFibonacciRead, type ChartFibonacciProposal } from "@/lib/chart-engine/chartAutoFibonacci";
 import { useEffect, useLayoutEffect, useMemo, useId, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 import { studyId, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
 import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
-import { CHART_TIME_ZONES, captureLabel, convertWallClock, effectiveDisplayZone, formatChartTime, parseWallClockInZone, resolveTimeZone, zoneShortLabel, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
+import { CHART_TIME_ZONES, captureLabel, convertWallClock, effectiveDisplayZone, parseWallClockInZone, resolveTimeZone, zoneShortLabel, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
 import { CHART_STYLES, CHART_STYLE_NAMES, DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, validateDrawings, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type ChartStyle, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut } from "lucide-react";
@@ -31,6 +32,8 @@ interface Props {
   drawingKey?: string;
   /** Private replay annotations never persist or synchronize across sessions. */
   ephemeralDrawings?: boolean;
+  /** Only normalized original UTC evidence may permit timezone conversion. */
+  utcClockQualified?: boolean;
   /** Replay has no further history read beyond its frozen window. */
   historyWindowOnly?: boolean;
   /** Native mounts its browser-local library outside source-keyed drawing state. */
@@ -42,7 +45,7 @@ interface Props {
   /** Only the current primary Native chart owns assistant drawing commands. */
   assistantPrimary?: boolean;
 }
-export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,assistantPrimary=false}: Props) {
+export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,assistantPrimary=false}: Props) {
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;
@@ -144,15 +147,18 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     resizeFocus.current=null;
   },[compact]);
   // Display-only zone; daily bars keep UTC. Typed go-to values follow a switch.
-  const selectedZone: ChartTimeZone = preferences.timeZone ?? "UTC";
+  const selectedZone: ChartTimeZone = utcClockQualified ? preferences.timeZone ?? "UTC" : "UTC";
   const zone = effectiveDisplayZone(selectedZone, timeframe);
-  const zoneText = zoneShortLabel(zone);
+  const zoneText = utcClockQualified ? zoneShortLabel(zone) : "source-clock";
+  const chartTime=(time:number,_zone:ChartTimeZone,options:{seconds?:boolean}={})=>formatSourceChartTime(time,utcClockQualified,zone,options);
   const previousZone = useRef(zone);
+  const previousClockQualified = useRef(utcClockQualified);
   useLayoutEffect(()=>{
     const from = previousZone.current;
     previousZone.current = zone;
-    if (from !== zone) setGoToDate(value=>value && convertWallClock(value,from,zone,false));
-  },[zone]);
+    if(previousClockQualified.current !== utcClockQualified){previousClockQualified.current=utcClockQualified;setGoToDate("");return;}
+    if (from !== zone) setGoToDate(value=>utcClockQualified ? value && convertWallClock(value,from,zone,false) : "");
+  },[zone,utcClockQualified]);
   useLayoutEffect(()=>{
     adapter?.setNavigationMode?.(panOnly ? "pan" : "inspect");
     return ()=>adapter?.setNavigationMode?.("inspect");
@@ -309,7 +315,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         const canvas = document.createElement("canvas");
         const ctx=canvas.getContext("2d");if(!ctx) return;
         ctx.font="12px sans-serif";
-        const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel,style:preferences.style,studies:preferences.studies,fibonacciPreview:!!fibonacciPreview&&!hidden});
+        const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,fibonacciPreview:!!fibonacciPreview&&!hidden});
         const lines:string[]=[];
         for(const label of labels) {
           let line="";
@@ -347,10 +353,11 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
         {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
       </select></label>
-      <label className="flex items-center gap-2" title="Display only. Candle times, drawings, links and data requests stay in UTC. No zone here represents broker server time.">Time zone <select className={field} aria-label="Display time zone" value={selectedZone} onChange={e=>{const value=e.target.value as ChartTimeZone;onPreferences(p=>{const next={...p};if(value==="UTC")delete next.timeZone;else next.timeZone=value;return next;});}}>
-        {CHART_TIME_ZONES.map(option=><option key={option} value={option}>{option==="local" ? `Browser local (${resolveTimeZone("local")})` : option}</option>)}
+      <label className="flex items-center gap-2" title={utcClockQualified ? "Display conversion uses qualified original UTC coordinates. Broker server timezone is not guessed." : SOURCE_CLOCK_NOTE}>Time zone <select className={field} aria-label="Display time zone" disabled={!utcClockQualified} value={selectedZone} onChange={e=>{if(!utcClockQualified)return;const value=e.target.value as ChartTimeZone;onPreferences(p=>{const next={...p};if(value==="UTC")delete next.timeZone;else next.timeZone=value;return next;});}}>
+        {CHART_TIME_ZONES.map(option=><option key={option} value={option}>{!utcClockQualified && option==="UTC" ? "Source clock (UTC unverified)" : option==="local" ? `Browser local (${resolveTimeZone("local")})` : option}</option>)}
       </select></label>
-      {zone !== selectedZone && resolveTimeZone(selectedZone) !== "UTC" && <span className="text-[11px] text-zinc-500" data-testid="chart-daily-zone-note">Daily bars keep UTC day labels.</span>}
+      {!utcClockQualified && <span className="text-[11px] text-amber-300" data-testid="chart-source-clock-note">{SOURCE_CLOCK_NOTE}</span>}
+      {utcClockQualified && zone !== selectedZone && resolveTimeZone(selectedZone) !== "UTC" && <span className="text-[11px] text-zinc-500" data-testid="chart-daily-zone-note">Daily bars keep UTC day labels.</span>}
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "studies"} onClick={()=>setPanel(p=>p === "studies" ? null : "studies")}>Studies ({preferences.studies.length})</Button>
       <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{if(e.target.value==="auto_fibonacci"){requestFibonacci();return;}setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setChannelEnd(null);setNoteText("");setHidden(false);setMessage("");}}>
         <option value="">Select / crosshair / pan</option>{getFibonacciProposal&&<option value="auto_fibonacci">Automatic Fibonacci preview</option>}{Object.entries(names).map(([kind,name])=><option key={kind} value={kind}>{name}</option>)}
@@ -390,7 +397,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       {listedDrawings.map(({d,index})=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
         <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} disabled={hidden || d.hidden} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}{d.hidden ? " · Hidden" : ""}</button>
         <Button size="sm" variant="outline" className="h-8 text-xs" aria-label={`Go to drawing ${index+1} start`} disabled={!hasCandles || !adapter?.goToTime} onClick={()=>goToDrawing(d,index)}>Go to start</Button>
-        {(["start","end","offset"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{formatChartTime(d[name]!.time,zone)}</span></label>)}
+        {(["start","end","offset"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{chartTime(d[name]!.time,zone)}</span></label>)}
         {d.kind === "measure" && d.end && <output aria-label={`Drawing ${index+1} measurement`} className="basis-full text-zinc-300">{measurementLabels(d.start,d.end).join(" · ")}<span className="block text-zinc-500">From your first point to your second. Elapsed calendar time includes market closures; this is not profit, pips or a count of bars.</span></output>}
         <input type="color" aria-label={`Drawing ${index+1} color`} className="h-7 w-8 bg-transparent" value={d.color} onChange={e=>change(drawings.map(item=>item.id===d.id ? {...item,color:e.target.value} : item))}/>
         {d.kind !== "text" && <><select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>
@@ -398,7 +405,8 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.locked ? "Unlock" : "Lock"} drawing ${index+1}`} aria-pressed={!!d.locked} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,locked:!item.locked} : item))}>{d.locked ? "Unlock" : "Lock"}</Button>
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.hidden ? "Show" : "Hide"} drawing ${index+1}`} aria-pressed={!d.hidden} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,hidden:!item.hidden} : item))}>{d.hidden ? "Show" : "Hide"}</Button>
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>change(drawings.filter(item=>item.id!==d.id))}>Delete</Button>
-        {d.fibonacciOrigin&&<p className="basis-full text-[11px] text-zinc-400">Original automatic proposal · {d.fibonacciOrigin.symbol} {d.fibonacciOrigin.timeframe} · source {d.fibonacciOrigin.source}, identity {d.fibonacciOrigin.sourceIdentity.slice(0,12)} · two-bar confirmed pivots · original anchors {d.fibonacciOrigin.start.price} at {formatChartTime(d.fibonacciOrigin.start.time,zone,{seconds:true})} → {d.fibonacciOrigin.end.price} at {formatChartTime(d.fibonacciOrigin.end.time,zone,{seconds:true})}, confirmed {formatChartTime(d.fibonacciOrigin.confirmedAt,zone,{seconds:true})}. Current editable anchors above are yours; this origin is not revalidated as live advice.</p>}
+        {/* Archived origins predate clock evidence; the current feed cannot qualify their original timestamps. */}
+        {d.fibonacciOrigin&&<p className="basis-full text-[11px] text-zinc-400">Original automatic proposal · {d.fibonacciOrigin.symbol} {d.fibonacciOrigin.timeframe} · source {d.fibonacciOrigin.source}, identity {d.fibonacciOrigin.sourceIdentity.slice(0,12)} · two-bar confirmed pivots · original anchors {d.fibonacciOrigin.start.price} at {formatSourceChartTime(d.fibonacciOrigin.start.time,false,"UTC",{seconds:true})} → {d.fibonacciOrigin.end.price} at {formatSourceChartTime(d.fibonacciOrigin.end.time,false,"UTC",{seconds:true})}, confirmed {formatSourceChartTime(d.fibonacciOrigin.confirmedAt,false,"UTC",{seconds:true})}. Current editable anchors above are yours; this origin is not revalidated as live advice.</p>}
         {d.kind === "text" && <NoteTextEditor label={`Drawing ${index+1} note text`} value={d.text!} locked={d.locked === true} onSave={text=>change(drawings.map(item=>item.id===d.id ? {...item,text} : item))} />}
         {d.kind === "channel" && <div className="flex basis-full flex-wrap gap-x-4 gap-y-2">
           {([['extendLeft','Extend left','extend left'],['extendRight','Extend right','extend right'],['middleLine','Middle line','middle line']] as const).map(([property,label,accessible])=><label key={property} className="flex min-h-8 items-center gap-2"><input type="checkbox" aria-label={`Drawing ${index+1} ${accessible}`} checked={d[property] === true} disabled={d.locked === true} onChange={event=>{if(!d.locked)change(drawings.map(item=>item.id===d.id?{...item,[property]:event.target.checked}:item));}} />{label}</label>)}
@@ -410,8 +418,8 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     </div>
     {visiblePreview&&<div className="mt-2 space-y-1 rounded border border-amber-800/60 p-2" role="region" aria-label="Automatic Fibonacci preview">
       <p className="font-medium text-amber-200">Unaccepted Fibonacci preview · {hidden?"hidden":"shown"}</p>
-      <p>0% at {visiblePreview.origin.start.price} ({formatChartTime(visiblePreview.origin.start.time,zone,{seconds:true})}) → 100% at {visiblePreview.origin.end.price} ({formatChartTime(visiblePreview.origin.end.time,zone,{seconds:true})}). Percentages interpolate from the first anchor to the second; they are not reversal probabilities.</p>
-      <p>Confirmed {formatChartTime(visiblePreview.origin.confirmedAt,zone,{seconds:true})}. {visiblePreview.note}</p>
+      <p>0% at {visiblePreview.origin.start.price} ({chartTime(visiblePreview.origin.start.time,zone,{seconds:true})}) → 100% at {visiblePreview.origin.end.price} ({chartTime(visiblePreview.origin.end.time,zone,{seconds:true})}). Percentages interpolate from the first anchor to the second; they are not reversal probabilities.</p>
+      <p>Confirmed {chartTime(visiblePreview.origin.confirmedAt,zone,{seconds:true})}. {visiblePreview.note}</p>
       <Button size="sm" variant="outline" className="mr-2 h-8 text-xs" onClick={keepFibonacci}>Keep and edit Fibonacci</Button><Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{setFibonacciPreview(null);setMessage("Preview dismissed. Your drawings were not changed.");}}>Dismiss preview</Button>
     </div>}
     {styleNote && <p id={styleNoteId} data-testid="chart-style-note" className="mt-2 text-[11px] leading-relaxed text-zinc-400">{styleNote}</p>}

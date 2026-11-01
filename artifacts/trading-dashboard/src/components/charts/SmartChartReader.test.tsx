@@ -18,7 +18,7 @@ vi.mock("@/lib/chart-engine/chartDescriptiveAnalysis",async importOriginal=>{
 });
 const START=Date.parse("2026-10-25T10:00:00Z"),NOW=START+100*300_000;
 function fixture(timeframe="M5",start=START,step=300_000){
-  const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe,source:"deriv_public",sourceMode:"live",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
+  const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe,source:"deriv_public",sourceMode:"live",timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
   const data={symbol:"V75",timeframe,source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public"},marketEvidence:{symbol:"V75",timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
   let visible:ChartEngineCandle[]=candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}));
   const all=visible;let listener:(()=>void)|undefined;
@@ -274,4 +274,16 @@ describe("Replay analysis duplicate notifications",()=>{
     expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-status')).toBe('unavailable');
     expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
   });
+});
+
+
+it("keeps source-coordinate reading times and omits false UTC machine timestamps after evidence withdrawal",()=>{
+ const f=fixture(), view=render(<SmartChartReader {...f.props} view={{style:"candles",scale:"linear",timeZone:"Asia/Tokyo"}}/>);
+ const data=structuredClone(f.data);data.candles.forEach(c=>delete (c as any).timeBasisEvidence);
+ view.rerender(<SmartChartReader {...f.props} data={data} view={{style:"candles",scale:"linear",timeZone:"Asia/Tokyo"}}/>);
+ const reader=screen.getByTestId("smart-chart-reader");
+ expect(screen.getByTestId("chart-reader-clock-authority").textContent).toContain("UTC mapping unverified");
+ expect(reader.textContent).toContain("source clock (UTC unverified)");
+ expect(reader.textContent).not.toContain("GMT+9");
+ for(const time of reader.querySelectorAll("time"))expect(time.hasAttribute("datetime")).toBe(false);
 });

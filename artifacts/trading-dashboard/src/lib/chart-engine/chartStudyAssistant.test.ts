@@ -27,7 +27,8 @@ describe("existing assistant to current chart study action",()=>{
     expect(f.adapter.setStudies).toHaveBeenCalledOnce(); expect(f.studies()).toHaveLength(1);
     expect(response).toContain("RSI (14)"); expect(response).toContain("RSI: 100");
     expect(response).toContain("V75 · M1"); expect(response).toContain("Not live-confirmed");
-    expect(response).toContain(new Date((1700000000+34*60)*1000).toISOString());
+    expect(response).toContain("2023-11-14 22:47:20 source clock (UTC unverified)");
+    expect(response).not.toContain("2023-11-14T22:47:20.000Z");
     expect(response).toContain("not a buy/sell instruction");
   });
   it("manual settings survive curiosity, period edits use that same instance, and remove is real",()=>{

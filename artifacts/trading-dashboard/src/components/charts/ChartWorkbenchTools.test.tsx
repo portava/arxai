@@ -10,7 +10,7 @@ import type { ChartEngineAdapter } from "@/lib/chart-engine";
 let click: ((anchor:ChartAnchor)=>void) | null;
 const drawings=vi.fn();
 const adapter={setDrawings:drawings,setDrawingHandler:(handler:typeof click)=>{click=handler;}} as unknown as ChartEngineAdapter;
-const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkbenchTools key={`${symbol}:${timeframe}`} adapter={engine} epoch={1} symbol={symbol} timeframe={timeframe} preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline fixture"/>);
+const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkbenchTools utcClockQualified key={`${symbol}:${timeframe}`} adapter={engine} epoch={1} symbol={symbol} timeframe={timeframe} preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline fixture"/>);
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
 describe("object navigation",()=>{
@@ -36,7 +36,7 @@ describe("object navigation",()=>{
   it("closes Objects and returns focus to this chart only after successful navigation",()=>{
     seed();const chartTarget=createRef<HTMLDivElement>(), scroll=vi.fn(), goToTime=vi.fn(()=>false);
     const engine={...adapter,goToTime} as unknown as ChartEngineAdapter;
-    render(<><ChartWorkbenchTools chartTarget={chartTarget} adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline"/><div ref={chartTarget} tabIndex={0}/></>);
+    render(<><ChartWorkbenchTools utcClockQualified chartTarget={chartTarget} adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles feedLabel="Offline"/><div ref={chartTarget} tabIndex={0}/></>);
     chartTarget.current!.scrollIntoView=scroll;
     fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
     fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start"}));
@@ -73,7 +73,7 @@ describe("object navigation",()=>{
     expect(drawings.mock.calls.at(-1)![0]).toEqual([]);
   });
   it("disables navigation while candles or its engine are unavailable",()=>{
-    seed();const view=render(<ChartWorkbenchTools adapter={null} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles={false} feedLabel="Unavailable"/>);
+    seed();const view=render(<ChartWorkbenchTools utcClockQualified adapter={null} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles={false} feedLabel="Unavailable"/>);
     fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
     expect(screen.getByRole("button",{name:"Go to drawing 1 start"}).hasAttribute("disabled")).toBe(true);
     view.unmount();mount();fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
@@ -82,7 +82,7 @@ describe("object navigation",()=>{
   it("keeps replay navigation inside the revealed window without requesting history",()=>{
     seed();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
     const engine={...adapter,goToTime:vi.fn(()=>false)} as unknown as ChartEngineAdapter;
-    render(<ChartWorkbenchTools adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles historyWindowOnly feedLabel="Replay"/>);
+    render(<ChartWorkbenchTools utcClockQualified adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={DEFAULT_PREFERENCES} onPreferences={vi.fn()} hasCandles historyWindowOnly feedLabel="Replay"/>);
     fireEvent.click(screen.getByRole("button",{name:"Objects (2)",exact:true}));
     fireEvent.click(screen.getByRole("button",{name:"Go to drawing 1 start"}));
     expect(screen.getByText(/Drawing 1 starts outside the revealed replay window/)).toBeTruthy();
@@ -206,7 +206,7 @@ describe("drawing workspace controls",()=>{
     expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)[0].start.price).toBe(1.2);
   });
   it("explains transformed styles beside the controls and associates each view with its own explanation",()=>{
-    function View(){const [preferences,onPreferences]=useState(DEFAULT_PREFERENCES);return <ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={onPreferences} hasCandles feedLabel="Offline fixture"/>;}
+    function View(){const [preferences,onPreferences]=useState(DEFAULT_PREFERENCES);return <ChartWorkbenchTools utcClockQualified adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={onPreferences} hasCandles feedLabel="Offline fixture"/>;}
     const first=render(<View/>), second=render(<View/>);
     const a=within(first.container), b=within(second.container);
     expect(a.queryByTestId("chart-style-note")).toBeNull();
@@ -293,7 +293,7 @@ describe("display time zone controls",()=>{
   let latest:ChartPreferences;
   function Harness({initial,timeframe="M15",engine}:{initial:ChartPreferences;timeframe?:string;engine:ChartEngineAdapter}) {
     const [preferences,setPreferences]=useState(initial);latest=preferences;
-    return <ChartWorkbenchTools adapter={engine} epoch={1} symbol="EURUSD" timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles feedLabel="Offline fixture"/>;
+    return <ChartWorkbenchTools utcClockQualified adapter={engine} epoch={1} symbol="EURUSD" timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles feedLabel="Offline fixture"/>;
   }
   const goToEngine=(goToTime=vi.fn(()=>true))=>({...adapter,goToTime} as unknown as ChartEngineAdapter & {goToTime:typeof goToTime});
   const show=(initial:Partial<ChartPreferences>={},timeframe="M15",engine=goToEngine())=>{render(<Harness initial={{...DEFAULT_PREFERENCES,...initial}} timeframe={timeframe} engine={engine}/>);return engine;};
@@ -399,7 +399,7 @@ describe("chart style picker and PNG labels",()=>{
     let latest=DEFAULT_PREFERENCES;
     function Harness() {
       const [preferences,setPreferences]=useState(DEFAULT_PREFERENCES);latest=preferences;
-      return <ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={setPreferences} hasCandles feedLabel="Offline fixture"/>;
+      return <ChartWorkbenchTools utcClockQualified adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={setPreferences} hasCandles feedLabel="Offline fixture"/>;
     }
     render(<Harness/>);
     const select=screen.getByLabelText("Chart style") as HTMLSelectElement;
@@ -420,10 +420,10 @@ describe("chart style picker and PNG labels",()=>{
 
 it("offers a reversible price-only scale control without altering other preferences",()=>{
  const changed=vi.fn();const initial={...DEFAULT_PREFERENCES,inverted:true};
- const view=render(<ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={initial} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
+ const view=render(<ChartWorkbenchTools utcClockQualified adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={initial} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
  const button=screen.getByRole("button",{name:"Scale price only",exact:true});expect(button.getAttribute("aria-pressed")).toBe("false");
  fireEvent.click(button);const enabled=changed.mock.calls[0][0](initial);expect(enabled).toEqual({...initial,priceOnlyScale:true});
- view.rerender(<ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={enabled} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
+ view.rerender(<ChartWorkbenchTools utcClockQualified adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={enabled} onPreferences={changed} hasCandles feedLabel="Offline fixture"/>);
  expect(button.getAttribute("aria-pressed")).toBe("true");fireEvent.click(button);expect(changed.mock.calls[1][0](enabled)).toEqual({...initial,priceOnlyScale:false});
 });
 
@@ -492,7 +492,7 @@ describe("individual drawing visibility and search",()=>{
 describe("focused controls during first candle layout",()=>{
   it.each(["outside","visible","foreign","keyboard"] as const)("scrolls only a focused out-of-view workbench control: %s", scenario=>{
     const props={adapter,epoch:1,symbol:"EURUSD",timeframe:"M15",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),feedLabel:"Offline"};
-    const view=render(<ChartWorkbenchTools {...props} hasCandles={false}/>);
+    const view=render(<ChartWorkbenchTools utcClockQualified {...props} hasCandles={false}/>);
     fireEvent.click(screen.getByRole("button",{name:"Studies (0)",exact:true}));
     const input=screen.getByLabelText("Search studies") as HTMLInputElement;
     input.focus();
@@ -503,11 +503,11 @@ describe("focused controls during first candle layout",()=>{
     const shouldScroll=scenario==="outside"||scenario==="keyboard";
     if(scenario==="foreign"){document.body.append(other);other.focus();}
     try{
-      view.rerender(<ChartWorkbenchTools {...props} hasCandles/>);
+      view.rerender(<ChartWorkbenchTools utcClockQualified {...props} hasCandles/>);
       if(shouldScroll)expect(scroll).toHaveBeenCalledExactlyOnceWith({block:"center",inline:"nearest",behavior:"instant"});
       else expect(scroll).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(scenario==="foreign"?other:input);
-      view.rerender(<ChartWorkbenchTools {...props} hasCandles/>);
+      view.rerender(<ChartWorkbenchTools utcClockQualified {...props} hasCandles/>);
       expect(scroll).toHaveBeenCalledTimes(shouldScroll?1:0);
       if(scenario==="foreign")expect(rectSpy).not.toHaveBeenCalled();
     }finally{other.remove();vi.unstubAllGlobals();}
@@ -553,4 +553,18 @@ describe("range ruler workflow",()=>{
     expect(click).toBeNull();expect(screen.getByRole("button",{name:"Objects (0)",exact:true})).toBeTruthy();
     expect(localStorage.getItem(drawingStorageKey("EURUSD","M15"))).toBeNull();
   });
+});
+
+describe("source-clock coordinate controls",()=>{
+ it("clears an entered UTC date when authority is withdrawn even if both effective zones stay UTC",()=>{
+  const engine={...adapter,goToTime:vi.fn(()=>true)} as unknown as ChartEngineAdapter;
+  const props={adapter:engine,epoch:1,symbol:"EURUSD",timeframe:"M1",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:"Controlled clock fixture"};
+  const view=render(<ChartWorkbenchTools {...props} utcClockQualified/>);
+  fireEvent.change(screen.getByLabelText("Go to UTC date and time"),{target:{value:"2026-11-01T12:00"}});
+  view.rerender(<ChartWorkbenchTools {...props} utcClockQualified={false}/>);
+  expect((screen.getByLabelText("Go to source-clock date and time") as HTMLInputElement).value).toBe("");
+  expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).disabled).toBe(true);
+  expect(engine.goToTime).not.toHaveBeenCalled();
+  expect(screen.getByTestId("chart-source-clock-note").textContent).toContain("UTC mapping unverified");
+ });
 });
