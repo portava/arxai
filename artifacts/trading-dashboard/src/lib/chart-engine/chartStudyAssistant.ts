@@ -15,7 +15,8 @@ export function parseStudyRequest(text:string): StudyRequest | null {
     if (/\b(vwap|volume profile)\b/.test(input)) return {error:"Chart not changed. This assistant cannot apply VWAP or volume profile yet. No calculated overlay has been added."};
     return null;
   }
-  if (new Set(found.map(a=>a.kind)).size !== 1) return {error:help};
+  // Prefer a full catalogue name over its embedded alias (DEMA includes EMA's
+  // full name). The complete grammar below still refuses multiple tools.
   const alias=found.sort((a,b)=>b.name.length-a.name.length)[0]!;
   const name=alias.name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
   const simple=input.match(new RegExp(`^(?:(add|show|apply|hide|remove|explain) )?${name}(?: (\\d+))?(?: (?:to|on) (?:this|the current) chart)?$`));
