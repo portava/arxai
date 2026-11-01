@@ -17,11 +17,15 @@ async page => {
   }
  }
 
+ // Optional offline-only data extensions share this single network boundary.
+ const hooks=typeof SCANNER_QA_HOOKS==='undefined'?{}:SCANNER_QA_HOOKS;
+ if(!hooks||typeof hooks!=='object')throw Error('Offline fixture hooks must be an object');
  const requests=[],unknown=[],blocked=[],errors=[],consoleErrors=[],candleResponses=[];
  const origin=typeof SCANNER_QA_BASE_URL==='string'?SCANNER_QA_BASE_URL:'http://127.0.0.1:4199';
  if(new URL(origin).hostname!=='127.0.0.1')throw Error('Offline fixture requires loopback');
  if(page.context().serviceWorkers().length)throw Error('Use a fresh browser session without service workers');
- let fixtureSource='offline_fixture',fixtureIdentity='synthetic-history-A';
+ let fixtureSource=hooks.initialSource??'offline_fixture',fixtureIdentity=hooks.initialIdentity??'synthetic-history-A';
+ if(hooks.install)await hooks.install(page);
  await page.exposeFunction('__fixtureSwitchSource', config => {fixtureSource=config.source;fixtureIdentity=config.identity;return true;});
  page.on('pageerror',e=>errors.push(e.message));
  page.on('console',m=>{if(m.type()==='error') consoleErrors.push(m.text());});
@@ -43,10 +47,12 @@ async page => {
   const request=route.request(),url=new URL(request.url());
   if(url.origin!==origin){blocked.push({kind:'external',url:request.url()});return route.abort();}
   if(!url.pathname.startsWith('/api/')){if(request.method()!=='GET'){blocked.push({kind:'mutation',path:url.pathname,method:request.method(),status:503});return route.fulfill({status:503,contentType:'application/json',body:'{\"error\":\"OFFLINE_MUTATION_BLOCKED\"}'});}return route.continue();}
-  const item={path:url.pathname,query:url.search,method:request.method(),started:Date.now(),ended:null,status:200};requests.push(item);
+  const item={id:requests.length+1,path:url.pathname,query:url.search,method:request.method(),started:Date.now(),ended:null,status:200};requests.push(item);
   let payload,status=200,delay=20;
   const p=url.pathname,symbol=url.searchParams.get('symbol')??'EURUSD',tf=url.searchParams.get('timeframe')??'M15';
+  const readOverride=request.method()==='GET'?hooks.readResponse?.({path:p,symbol,timeframe:tf}):undefined;
   if(request.method()!=='GET'){status=503;payload={ok:false,error:'OFFLINE_MUTATION_BLOCKED'};blocked.push({kind:'mutation',path:p,method:request.method(),status:503});}
+  else if(readOverride!==undefined)payload=readOverride;
   else if(p==='/api/me')payload={user:{id:900007,email:'offline@example.invalid',name:'Offline QA',role:fixtureRole,lastLoginAt:null,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-01T00:00:00Z'}};
   else if(p==='/api/me/account-mode')payload=mode;
   else if(p==='/api/me/assistant-settings')payload={displayName:'Eleanor',isDefault:true};
@@ -56,7 +62,11 @@ async page => {
   else if(p==='/api/market-scanner/status')payload={running:false,universe:'all',lastScanAt:null,feedNote:'OFFLINE QA — no live feed'};
   else if(p==='/api/market-scanner/opportunities')payload={opportunities:[],universe:'all',universeSymbols:symbols,generatedAt:'2026-01-02T12:00:01Z',dataSource:'AWAITING_FEED'};
   else if(p==='/api/market-scanner/selected-market'){payload=selected(symbol,tf);delay=450;}
-  else if(p==='/api/chart/candles'){payload=candles(symbol,tf,Number(url.searchParams.get('limit')??200));delay=80;candleResponses.push({symbol,timeframe:tf,requestPath:p,requestQuery:url.search,source:fixtureSource,sourceIdentity:fixtureIdentity,canonical:payload.candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}))});}
+  else if(p==='/api/chart/candles'){
+   const limit=Number(url.searchParams.get('limit')??200),fallback=candles(symbol,tf,limit);
+   payload=hooks.candleResponse?.({symbol,timeframe:tf,limit,fallback})??fallback;delay=80;
+   candleResponses.push({...hooks.candleMetadata?.(),symbol,timeframe:tf,requestPath:p,requestQuery:url.search,requestId:item.id,requestStarted:item.started,source:payload.source,sourceIdentity:payload.marketEvidence?.sourceIdentity??null,canonical:payload.candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}))});
+  }
   else if(p==='/api/chart/history')payload={ok:true,source:fixtureSource,candles:[],status:'unavailable',returnedCount:0,oldest:null,newest:null,hasMoreHistory:false,nextBefore:null,providerLimitReached:true,limitationReason:'Offline fixture',cacheHit:false};
   else if(p==='/api/market-data/deriv/status')payload={configured:false,connected:false,status:'OFFLINE_FIXTURE'};
   else if(p==='/api/me/opportunity-map'){const cats=['READY_NOW','FORMING_SOON','WATCH_AFTER_NEWS','TOO_LATE','AVOID','NO_CLEAN_SETUP'];const rows=symbols.map(symbol=>({symbol,displayName:symbol,direction:'NEUTRAL',recommendedAction:'WAIT',setupType:'Offline fixture',edgeScore:0,entryQuality:0,executionQuality:0,newsRisk:'unknown',hasLiveData:false,isLate:false,reason:'Offline fixture: no live analysis.',category:'NO_CLEAN_SETUP',kind:'NONE',bestAction:'WAIT',stageLabel:'Unavailable'}));payload={universe:'all',timeframe:tf,generatedAt:new Date().toISOString(),universeCount:rows.length,map:{rows,categories:Object.fromEntries(cats.map(c=>[c,c==='NO_CLEAN_SETUP'?rows:[]])),best:{bestScalp:null,bestMomentum:null,bestRetest:null,bestReversal:null},scannedCount:rows.length,liveCount:0},bestVsSelected:{selectedSymbol:url.searchParams.get('selectedSymbol'),hasCleanerAlternative:false,best:null,message:'Offline fixture'},skippedSymbols:[],dataNote:'OFFLINE FIXTURE — no market assessment'};delay=url.searchParams.has('selectedSymbol')?450:20;}
@@ -69,7 +79,7 @@ async page => {
   else {unknown.push({path:p,query:url.search});status=503;payload={ok:false,error:'OFFLINE_FIXTURE_UNAVAILABLE',message:'Unavailable in offline QA'};}
   await new Promise(resolve=>setTimeout(resolve,delay));
   item.ended=Date.now();item.status=status;
-  try{await route.fulfill({status,contentType:'application/json',body:JSON.stringify(payload)});}catch{item.cancelled=true;}
+  try{await route.fulfill({status,contentType:'application/json',body:JSON.stringify(payload)});item.fulfilledAt=Date.now();}catch{item.cancelled=true;}
  });
  await page.setViewportSize({width:1440,height:1100});
  await page.goto(origin+'/market-scanner');
