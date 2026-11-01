@@ -7,18 +7,18 @@ async page => {
  const snap=()=>page.evaluate(()=>window.__arxChartQa.snapshot());
  const ready=()=>page.waitForFunction(()=>{const s=window.__arxChartQa.snapshot();return s?.barCount>0&&s.state.status==='ready'&&!s.state.pendingPaint&&window.__arxChartQa.configuration().analysisFocus.verified;});
  const text=()=>page.locator('canvas[data-arx-native-viewport]').first().evaluate(canvas=>canvas.__qaPaintedText??[]);
- const sourceLabels=async()=>{const labels=await text();check(labels.some(l=>/source/.test(l.text)),'Completed canvas contains explicit source-clock label');check(!labels.some(l=>/ UTC$|GMT[+-]/.test(l.text)),'Unqualified canvas does not claim UTC or converted zone');return labels;};
+ const sourceLabels=async()=>{const labels=await text();check(labels.some(l=>/source/.test(l.text)),'Completed canvas contains explicit source-clock label');check(!labels.some(l=>/ UTC$|GMT[+-]| EST$| EDT$/.test(l.text)),'Unqualified canvas does not claim UTC or converted zone');return labels;};
  try{
   result.build=await page.evaluate(async()=>{const r=await fetch('/arx-scanner-qa-build-info.json');return r.json();});
   check(result.build.nativeEngine&&result.build.qaOnlyDefaultEngineOverride&&result.build.productionRuntimeChecked&&result.build.sourceUnchanged&&!result.build.source.status,'Clean exact-source native QA build');
   check(await page.evaluate(()=>window.__arxScannerQaBuildId)===result.build.buildId,'Executed Scanner entry matches immutable build identity');
   await ready();const chart=page.getByTestId('arx-native-chart').first();
-  const tools=chart.getByRole('button',{name:'Chart tools',exact:true});if(await tools.getAttribute('aria-expanded')!=='true')await tools.click();
+  const tools=chart.getByRole('button',{name:'Chart tools',exact:true});if(await tools.isVisible()&&await tools.getAttribute('aria-expanded')!=='true')await tools.click();
   const canonical=await page.evaluate(()=>window.__arxChartQa.data().canonical),initial=await snap();
   check(initial.state.utcClockQualified===true,'Synthetic original-UTC contract is forwarded to real native engine');
   await chart.getByLabel('Display time zone',{exact:true}).selectOption('America/New_York');await page.waitForFunction(()=>window.__arxChartQa.snapshot()?.state.effectiveTimeZone==='America/New_York');await ready();
   check((await snap()).state.effectiveTimeZone==='America/New_York','Qualified chart accepts selected New York display zone');
-  check((await text()).some(l=>/GMT-5/.test(l.text)),'Actual January axis paint uses New York offset');
+  check((await text()).some(l=>/(?:GMT-5|EST)$/.test(l.text)),'Actual January axis paint uses New York offset');
   await page.evaluate(()=>window.__fixtureSetClockQualified(false));
   await page.waitForFunction(()=>{const s=window.__arxChartQa.snapshot();return s?.state.utcClockQualified===false&&!s.state.pendingPaint&&window.__arxChartQa.configuration().analysisFocus.verified;},null,{timeout:20000});
   check((await snap()).adapterId===initial.adapterId,'Evidence withdrawal retains adapter');

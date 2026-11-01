@@ -8,15 +8,18 @@ A feature count alone cannot establish professional quality.
 ## Native renderer checkpoint — 1 November 2026
 
 The newer explicit `arx-native` adapter is integrated into the existing shared
-chart interface; Lightweight Charts remains the default. On application commit
-`8b65ac6b`, the actual-app offline native fixture passed 21 linked-view,
-replay-prefix and export assertions, with 4,462 frontend tests passing. This
-extends correctness evidence, not performance or full-platform acceptance.
-Visual review found native axes incorrectly labeling unqualified source time as
-UTC, including in PNG output; that blocks default-native activation. The position
-mini-chart still directly uses Lightweight Charts. See the exact
-[consumer and account-deadline report](NATIVE_CONSUMERS_AND_ACCOUNT_DEADLINES_2026_11_01.md)
-for receipts, failures, source boundaries and remaining gaps. Earlier checklist
+chart interface; Lightweight Charts remains the default. Application commit
+`1ca81030` fixes the source-clock/UTC visual defect found on `8b65ac6b`, including
+compact axes and PNG output, and migrates PositionMiniChart to the shared adapter.
+The exact source passes 4,512 frontend tests and 26 synthetic browser assertions.
+Quiet native position-update measurements have p95 66.8–67.1 ms at normal and
+4× software CPU settings (80-bar isolated component); this is neither Scanner
+first-navigation nor broker/competitor timing. A non-quiet run and all outliers
+are retained. Default-native and all-route acceptance remain open, as does the
+global account-mode `LIVE` wording visible with offline chart data. See the
+[clock and position report](NATIVE_CLOCK_AND_POSITION_DISPLAY_2026_11_01.md) for
+exact evidence and limits. Earlier linked/replay evidence belongs to `8b65ac6b`,
+not a fresh combined replay acceptance on this newer head. Earlier checklist
 claims do not automatically establish acceptance on the native renderer.
 
 ## Products and evidence boundaries
