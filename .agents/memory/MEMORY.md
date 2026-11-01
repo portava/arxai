@@ -16,3 +16,4 @@
 - [Held chart experiments](held-chart-experiments.md) — toolbar layout, supporting-panel containment and other held performance work need separate authorization.
 - [Chart volume evidence](chart-volume-evidence.md) — a corrected zero-volume advisory is not proof of real traded volume or permission to enable volume analytics.
 - [Browser evidence accounting](browser-evidence-accounting.md) — audit coverage and rendered state; corrected raw receipts outrank stale summaries and wrong-state screenshots.
+- [Chart research boundaries](chart-research-boundaries.md) — extend existing authorities; keep API activation deferred and missing optional evidence unavailable.
