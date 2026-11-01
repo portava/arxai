@@ -11,7 +11,7 @@ function fixture() {
   const start=Date.parse("2026-01-01T00:00:00Z"), step=60_000;
   const candles=Array.from({length:160},(_,i)=>{
     const close=100+Math.sin(i/5)*4;
-    return {symbol:"EURUSD",timeframe:"M1",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:close-.1,high:close+.3,low:close-.3,close,source:"mt5_broker",sourceMode:"live",priceBasis:"BID",priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null},isComplete:true,isFinal:true,isForming:false,qualityFlags:[]};
+    return {symbol:"EURUSD",timeframe:"M1",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:close-.1,high:close+.3,low:close-.3,close,source:"mt5_broker",sourceMode:"live",priceBasis:"BID",priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null},timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},isComplete:true,isFinal:true,isForming:false,qualityFlags:[]};
   });
   const data={symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",quality:"clean",candles,feedStatus:{source:"mt5_broker"},marketEvidence:{symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as ChartCandlesResponse;
   const canonicalBars=candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}));
@@ -70,4 +70,23 @@ describe("real engine chart research orchestration",()=>{
     expect(screen.queryByTestId('chart-research-result')).toBeNull();
     const before=h.cancel.mock.calls.length;view.unmount();expect(h.cancel.mock.calls.length).toBeGreaterThan(before);
   });
+});
+
+
+describe("historical clock authority",()=>{
+ it("does not run source-clock candles merely because their ISO strings end in Z",()=>{
+  const props=fixture();props.data.candles.forEach(c=>delete (c as any).timeBasisEvidence);
+  render(<ChartResearchWorkbench {...props}/>);
+  expect(screen.queryByRole('button',{name:'Run historical test'})).toBeNull();
+  expect(screen.getByRole('status').textContent).toMatch(/UTC|source-clock/i);expect(h.run).not.toHaveBeenCalled();
+ });
+ it("withdraws selected overlays and explanation when clock authority disappears",()=>{
+  const props=fixture(),view=render(<ChartResearchWorkbench {...props}/>);
+  fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));finish();
+  fireEvent.click(screen.getByRole('button',{name:'Trade 1',exact:true}));
+  const data=structuredClone(props.data);delete (data.candles[0] as any).timeBasisEvidence;
+  view.rerender(<ChartResearchWorkbench {...props} data={data}/>);
+  expect(props.onOverlays.mock.calls.at(-1)![0]).toEqual([]);expect(props.onExplanation.mock.calls.at(-1)![0]).toBeNull();
+  expect(screen.queryByTestId('chart-research-trade-detail')).toBeNull();
+ });
 });

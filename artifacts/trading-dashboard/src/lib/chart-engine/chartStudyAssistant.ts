@@ -1,3 +1,4 @@
+import { formatSourceChartTime } from "./chartClockEvidence";
 import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyLabel, studyId, formatStudyNumber, type ChartStudy, type StudyKind } from "./chartStudies";
 import type { ChartEngineAdapter } from "./types";
 
@@ -34,12 +35,14 @@ export interface StudyAssistantContext {
   adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"> | null;
   studies: ChartStudy[];
   symbol:string; timeframe:string; feedLabel:string;
+  utcClockQualified?:boolean;
   save:(studies:ChartStudy[])=>void;
 }
-const time=(seconds:number)=>new Date(seconds*1000).toISOString();
+
 export function executeStudyRequest(request:StudyRequest,context:StudyAssistantContext):string {
   if ("error" in request) return request.error;
   const {adapter,studies,symbol,timeframe,feedLabel,save}=context;
+  const time=(seconds:number)=>formatSourceChartTime(seconds,context.utcClockQualified===true,"UTC",{seconds:true});
   const visible=adapter?.getVisibleCandles?.() ?? [];
   if (!adapter?.setStudies || !adapter.getStudyValues || !visible.length) return "Study not applied: the current chart has no ready renderer and visible candle window yet. Wait for candles, then retry.";
   const matches=studies.filter(s=>s.kind===request.kind);

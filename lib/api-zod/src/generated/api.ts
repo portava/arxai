@@ -5407,6 +5407,17 @@ export const GetChartCandlesResponse = zod.object({
           .describe(
             "Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.",
           ),
+        timeBasisEvidence: zod
+          .object({
+            kind: zod.enum(["original_utc", "unavailable"]),
+            basis: zod.enum(["UTC", "BROKER_SERVER"]).nullable(),
+            authority: zod.string().nullable(),
+            reason: zod.string().nullable(),
+          })
+          .optional()
+          .describe(
+            "Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
+          ),
         priceBasis: zod
           .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])
           .describe(
@@ -5727,6 +5738,7 @@ export const GetChartCandlesResponse = zod.object({
             .object({
               dataMode: zod.string(),
               priceBasisNote: zod.string(),
+              timeBasisNote: zod.string().optional(),
               updateMethod: zod.string(),
               freshnessNote: zod.string(),
               supportedTimeframes: zod.array(zod.string()),
@@ -6356,6 +6368,17 @@ export const GetMeChartIntelligenceResponse = zod.object({
               .describe(
                 "Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.",
               ),
+            timeBasisEvidence: zod
+              .object({
+                kind: zod.enum(["original_utc", "unavailable"]),
+                basis: zod.enum(["UTC", "BROKER_SERVER"]).nullable(),
+                authority: zod.string().nullable(),
+                reason: zod.string().nullable(),
+              })
+              .optional()
+              .describe(
+                "Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
+              ),
             priceBasis: zod
               .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])
               .describe(
@@ -6491,6 +6514,17 @@ export const GetMeChartIntelligenceResponse = zod.object({
               .optional()
               .describe(
                 "Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.",
+              ),
+            timeBasisEvidence: zod
+              .object({
+                kind: zod.enum(["original_utc", "unavailable"]),
+                basis: zod.enum(["UTC", "BROKER_SERVER"]).nullable(),
+                authority: zod.string().nullable(),
+                reason: zod.string().nullable(),
+              })
+              .optional()
+              .describe(
+                "Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
               ),
             priceBasis: zod
               .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])

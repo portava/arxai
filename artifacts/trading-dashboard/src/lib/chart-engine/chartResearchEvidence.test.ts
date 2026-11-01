@@ -25,6 +25,8 @@ function fixture() {
     sourceMode: "live",
     priceBasis: "BID",
     priceBasisEvidence: {kind:"producer_declared",basis:"BID",reason:null},
+    // Controlled normalized fixture, not a claim about a shipped MT5 adapter.
+    timeBasisEvidence: {kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},
     isComplete: true,
     isFinal: true,
     isForming: false,
@@ -471,7 +473,7 @@ describe("original declared quote-basis evidence",()=>{
     expect(captureChartResearchWindow(f).status).toBe("unavailable");
   });
   it("records the explicit declaration authority in the immutable snapshot",()=>{
-    const s=capture();expect(s).toMatchObject({version:2,priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null}});
+    const s=capture();expect(s).toMatchObject({version:3,priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null}});
   });
   it("withdraws existing markers when declaration metadata disappears with identical prices",()=>{
     const s=capture(),c=current(s);delete (c.data!.candles[0] as any).priceBasisEvidence;
@@ -483,5 +485,33 @@ describe("original declared quote-basis evidence",()=>{
     if(scenario==="missing_evidence") delete (s as any).priceBasisEvidence;
     if(scenario==="changed_evidence") s.priceBasisEvidence.basis="MID";
     expect(bindChartResearchResult(s,result(s),current(s),config).status).toBe("unavailable");
+  });
+});
+
+
+describe("original UTC research authority", () => {
+  it.each([undefined, {kind:"unavailable",basis:"BROKER_SERVER",authority:null,reason:"Broker clock"}, {kind:"original_utc",basis:"UTC",authority:"",reason:null}])("holds raw ISO Z coordinates without qualified original UTC evidence: %j", evidence => {
+    const input=fixture();
+    (input.data.candles[0] as any).timeBasisEvidence=evidence;
+    const read=captureChartResearchWindow(input);
+    expect(read.status).toBe("unavailable");
+    expect(read.reason).toMatch(/UTC|clock/i);
+  });
+  it("refuses mixed clock authorities even when prices/timestamps match", () => {
+    const input=fixture();
+    (input.data.candles[1] as any).timeBasisEvidence.authority="offline:other-clock";
+    expect(captureChartResearchWindow(input).status).toBe("unavailable");
+  });
+  it("withdraws a completed result after original UTC evidence disappears", () => {
+    const input=fixture(), snapshot=captureChartResearchWindow(input).snapshot!;
+    delete (input.data.candles[0] as any).timeBasisEvidence;
+    const bound=bindChartResearchResult(snapshot,result(snapshot),{contextKey:snapshot.contextKey,bars:input.visibleBars,data:input.data,asOfMs:NOW},config);
+    expect(bound.status).toBe("unavailable");expect(bound.trades).toEqual([]);
+  });
+  it("rejects prior version2 snapshots rather than minting missing time authority", () => {
+    const input=fixture(), snapshot=captureChartResearchWindow(input).snapshot!;
+    const old={...snapshot,version:2};
+    const bound=bindChartResearchResult(old as ChartResearchSnapshot,result(snapshot),{contextKey:snapshot.contextKey,bars:input.visibleBars,data:input.data,asOfMs:NOW},config);
+    expect(bound.status).toBe("unavailable");
   });
 });

@@ -103,3 +103,16 @@ it("restores kept geometry when Strict Mode replays parent layout initialization
   function Parent(){useLayoutEffect(()=>{canvas=[];},[]);return <ChartWorkbenchTools {...props}/>;}
   render(<StrictMode><Parent/></StrictMode>);expect(canvas).toEqual([manual]);
 });
+
+it("does not promote archived Fibonacci origin clocks using the current qualified feed",()=>{
+  const manual={id:"kept",kind:"fibonacci",start:{time:1000,price:10},end:{time:1300,price:20},fibonacciOrigin:origin,color:"#fbbf24",locked:false};
+  localStorage.setItem(drawingStorageKey("EURUSD","M1"),JSON.stringify([manual]));
+  render(<ChartWorkbenchTools {...props} utcClockQualified preferences={{...DEFAULT_PREFERENCES,timeZone:"America/New_York"}}/>);
+  fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));
+  const provenance=screen.getByText(/Original automatic proposal/).textContent;
+  expect(provenance).toContain("1970-01-01 00:16:40 source clock (UTC unverified)");
+  expect(provenance).toContain("1970-01-01 00:21:40 source clock (UTC unverified)");
+  expect(provenance).toContain("1970-01-01 00:24:40 source clock (UTC unverified)");
+  expect(provenance).not.toContain("EST");
+  expect(provenance).not.toContain("1969-12-31");
+});

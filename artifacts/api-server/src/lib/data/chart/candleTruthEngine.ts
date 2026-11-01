@@ -1,3 +1,4 @@
+import { unavailableCandleTimeBasis } from "../candleTimeBasisEvidence.js";
 // ARX Candle Truth Engine (Phase 1)
 //
 // The single entry point that wraps the existing chartDataService/
@@ -179,6 +180,7 @@ export interface TimeframeTruthResult {
   sourceDocumentation: {
     dataMode: string;
     priceBasisNote: string;
+    timeBasisNote?: string;
     updateMethod: string;
     freshnessNote: string;
     supportedTimeframes: string[];
@@ -447,7 +449,7 @@ export function runCandleTruth(
   // must not borrow a profile's midpoint or last-price assumption.
   const bases = new Set(candles.map(c => c.priceBasis));
   const priceBasis: PriceBasis = bases.size === 1 ? candles[0]!.priceBasis : "UNKNOWN";
-  const sourceDocumentation = getSourceDocumentation(assetClass);
+  const sourceDocumentation = {...getSourceDocumentation(assetClass), timeBasisNote: unavailableCandleTimeBasis(source).reason!};
   sourceDocumentation.priceBasisNote = source === "mt5_broker"
     ? priceBasis === "UNKNOWN"
       ? "UNKNOWN — original MT5 price-basis declaration is missing, inconsistent or mixed; no BID/MID/LAST basis is inferred."

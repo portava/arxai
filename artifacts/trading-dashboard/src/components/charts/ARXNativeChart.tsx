@@ -1,3 +1,4 @@
+import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
 import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
@@ -47,7 +48,7 @@ import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { SmartChartReader } from "./SmartChartReader";
 import { AssistantDockSlot } from "@/components/help/AssistantDock";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
-import { effectiveDisplayZone, formatChartTime, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
+import { effectiveDisplayZone, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
@@ -362,6 +363,7 @@ export function ARXNativeChart({
   // The display zone the legend formats in. Assigned only by the zone layout
   // effect below, immediately before it relabels the engine and the legend.
   const timeZoneRef = useRef<ChartTimeZone>("UTC");
+  const utcClockRef = useRef(false);
   const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
     const bar = candle;
     inspectedCandleRef.current = bar;
@@ -372,7 +374,7 @@ export function ARXNativeChart({
     // caller shows the same text.
     const ha = bar ? adapterRef.current?.getDisplayCandle?.(bar.time) ?? null : null;
     legendRef.current.textContent = bar
-      ? `${formatChartTime(bar.time, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}${ha ? `  ·  HA O ${ha.open.toFixed(digits)}  H ${ha.high.toFixed(digits)}  L ${ha.low.toFixed(digits)}  C ${ha.close.toFixed(digits)}` : ""}`
+      ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}${ha ? `  ·  HA O ${ha.open.toFixed(digits)}  H ${ha.high.toFixed(digits)}  L ${ha.low.toFixed(digits)}  C ${ha.close.toFixed(digits)}` : ""}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
@@ -417,7 +419,7 @@ export function ARXNativeChart({
   const timeframe = controlledTf ?? internalTf;
   const supportedTimeframe = isChartInterval(timeframe);
   // Per-view display zone; daily bars keep UTC labels. Display only.
-  const displayZone = effectiveDisplayZone(preferences.timeZone, timeframe);
+
   const [researchOpen,setResearchOpen] = useState(false);
   const [researchRequest,setResearchRequest] = useState<{id:number;text:string;context:string}|null>(null);
   const researchSequence = useRef(0);
@@ -496,6 +498,8 @@ export function ARXNativeChart({
     hasCandles ? JSON.stringify([data?.feedStatus?.source ?? null, evidenceIdentity]) : null);
   const deepHistory = useChartDeepHistory(resolvedSymbol, timeframe, hasCandles,
     data?.feedStatus?.source ?? null, evidenceIdentity, true);
+  const utcClockQualified = deepHistory.olderCandles.length === 0 && chartUtcClockQualified(candles);
+  const displayZone = utcClockQualified ? effectiveDisplayZone(preferences.timeZone, timeframe) : "UTC";
 
   // ── Live-price affordance honesty (shared rule, Task #351) ──────────────────
   // The candlestick last-value label and the dashed "Last" price line are
@@ -768,9 +772,10 @@ export function ARXNativeChart({
   // the open legend are relabelled in the same commit (no separate ref effect).
   useLayoutEffect(() => {
     timeZoneRef.current = displayZone;
+    utcClockRef.current = utcClockQualified;
     adapterRef.current?.setDisplayTimeZone?.(displayZone);
     updateLegend(inspectedCandleRef.current);
-  }, [displayZone, chartEpoch, updateLegend]);
+  }, [displayZone, utcClockQualified, chartEpoch, updateLegend]);
 
   useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
@@ -790,7 +795,7 @@ export function ARXNativeChart({
     let currentStudies = preferences.studies;
     return registerChartStudyAssistant(request => executeStudyRequest(request, {
       adapter: hasCandles && activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapterRef.current ? adapterRef.current : null,
-      studies: currentStudies, symbol: resolvedSymbol, timeframe,
+      studies: currentStudies, symbol: resolvedSymbol, timeframe, utcClockQualified,
       feedLabel: `${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"}`,
       save: studies => {
         currentStudies = studies;
@@ -798,7 +803,7 @@ export function ARXNativeChart({
         updateLegend(inspectedCandleRef.current);
       },
     }));
-  }, [workspaceId, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend]);
+  }, [workspaceId, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend, utcClockQualified]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
@@ -1370,7 +1375,8 @@ export function ARXNativeChart({
         </div>
         {!mobileLayout && fullscreenToggle}
       </div>
-      <ChartWorkbenchTools getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
+      <ChartWorkbenchTools utcClockQualified={utcClockQualified} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
