@@ -1,16 +1,20 @@
+import {formatSourceChartTime} from "./chartClockEvidence";
 import { advanceStudyAverage, chartTrueRange, type SeededAverageState } from "@workspace/domain/chart-indicator-math";
-import { observedTickVolume } from "./chartVolume";
+import { observedTickVolume, observedTradeVolume } from "./chartVolume";
 import type { ChartEngineCandle } from "./types";
 import { ChartRangeWindow, scanChartRange } from "./chartRangeWindow";
 
 export type StudyKind =
-  | "tick_volume" | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
+  | "vwap" | "trade_volume" | "tick_volume" | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
   | "rsi" | "macd" | "atr" | "cci" | "stochastic" | "williams"
   | "stddev" | "envelopes" | "momentum" | "roc" | "donchian" | "dmi";
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
 export type AverageMethod = "sma" | "ema" | "smma" | "wma";
 export interface StudyLineStyle { color?: string; width?: 1 | 2 | 3; style?: "solid" | "dashed" | "dotted"; visible?: boolean }
+export interface VwapAnchor { kind:"observed_bar"; time:number; seriesIdentity:string }
 export interface ChartStudy {
+  /** Frozen exact observed-bar anchor; source changes must not borrow it. */
+  vwapAnchor?: VwapAnchor;
   /** Old workspaces used kind as identity. Explicit IDs allow repeated studies. */
   id?: string;
   kind: StudyKind;
@@ -25,7 +29,7 @@ export interface ChartStudy {
   smoothing?: number;
   lineStyles?: StudyLineStyle[];
 }
-export interface StudyPoint { time: number; values: (number | null)[] }
+export interface StudyPoint { time: number; values: (number | null)[]; reason?:string }
 export interface StudyDefinition {
   name: string;
   group: "Trend" | "Momentum" | "Volatility" | "Volume";
@@ -59,6 +63,8 @@ export const STUDY_CATALOG: StudyDefinition[] = [
   { name: "Donchian Channels", group: "Volatility", description: "Highest high, lowest low and their midpoint over the selected bars, including the forming bar. Requires a full window; channel contact alone is not a breakout signal.", defaults: { kind: "donchian", period: 20, color: "#38bdf8" }, channels: ["Midpoint", "Upper", "Lower"], pane: false, appliedPrice: false },
   { name: "Directional movement (DMI / ADX)", group: "Trend", description: "Wilder-smoothed +DI and −DI show directional movement; ADX measures strength, not direction or confidence. Separate DI and ADX lengths; tied moves count as zero. Not a trade signal.", defaults: { kind: "dmi", period: 14, signal: 14, color: "#38bdf8" }, channels: ["+DI", "−DI", "ADX"], pane: true, appliedPrice: false, range: [0, 100] },
   { name: "Tick volume", group: "Volume", description: "Explicit MT5 per-bar tick counts, not traded size. Only source-qualified observations are plotted; missing or partial streaming evidence stays blank, never zero-filled. No real traded-volume data is inferred.", defaults: { kind: "tick_volume", period: 1, color: "#38bdf8" }, channels: ["Ticks"], pane: true, appliedPrice: false },
+  { name:"Anchored VWAP",group:"Volume",description:"Cumulative original bar price × provider-reported trade units / cumulative trade units, from an exact observed bar. HLC3 by default. Loaded observations only, not a full session or trade-by-trade average. Missing/zero/unqualified volume holds the remaining interval; no tick proxy.",defaults:{kind:"vwap",period:1,source:"hlc3",color:"#fbbf24"},channels:["VWAP"],pane:false,appliedPrice:true },
+  { name:"Trade volume",group:"Volume",description:"Qualified provider-reported trade units per original closed bar. These are not tick counts, proven shares or consolidated-market volume. Missing/zero/unqualified quantities stay blank.",defaults:{kind:"trade_volume",period:1,color:"#34d399"},channels:["Trade units"],pane:true,appliedPrice:false },
 ];
 /** Preserve the original starter collection and saved templates. */
 export const STUDY_DEFAULTS = (["sma", "ema", "bollinger", "rsi", "macd"] as const).map(kind => STUDY_CATALOG.find(item => item.defaults.kind === kind)!.defaults);
@@ -71,9 +77,11 @@ export function studyChannelColor(config: ChartStudy, channel: number): string {
 /** Match the existing legend precision for continuous values; observed integer
  * counts must remain exact (no 8-significant-digit rounding of large counts). */
 export function formatStudyNumber(value:number,channel:string):string {
-  return channel === "Ticks" || channel === "Ticks (hidden)" ? String(value) : String(Number(value.toPrecision(8)));
+  return ["Ticks","Ticks (hidden)","Trade units","Trade units (hidden)"].includes(channel) ? String(value) : String(Number(value.toPrecision(8)));
 }
 export function studyLabel(study: ChartStudy): string {
+  if(study.kind === "trade_volume")return "Trade volume · provider-reported trade units";
+  if(study.kind === "vwap")return `VWAP · ${study.source ?? "hlc3"} · observed-bar anchor ${study.vwapAnchor ? formatSourceChartTime(study.vwapAnchor.time,false,"UTC",{seconds:true}) : "not selected"}`;
   if (study.kind === "tick_volume") return "Tick volume · ticks (not traded size)";
   const parameters = [study.period];
   if (study.kind === "macd") parameters.push(study.slow ?? 26, study.signal ?? 9);
@@ -96,7 +104,7 @@ export function appliedPrice(bar: ChartEngineCandle, source: AppliedPrice = "clo
 }
 
 type AverageState = SeededAverageState;
-interface State { price: number; averages: Record<string, AverageState> }
+interface State { price: number; averages: Record<string, AverageState>; vwap?:{numerator:number;denominator:number;reason?:string} }
 
 /** One checkpoint per bar. A revised forming bar replaces its checkpoint;
  * appends never compound a previous revision, and replay never reads the future.
@@ -164,11 +172,12 @@ export class StudyCalculator {
     };
     for (i = from; i < bars.length; i++) {
       const bar = bars[i]!;
-      const price = appliedPrice(bar, c.source ?? (c.kind === "cci" ? "hlc3" : "close"));
+      const price = appliedPrice(bar, c.source ?? (c.kind === "cci" || c.kind === "vwap" ? "hlc3" : "close"));
       prices[i] = price;
       state = { price, averages: {} };
       previous = this.states[i - 1];
       let values: (number | null)[];
+      let reason:string|undefined;
       switch (c.kind) {
         case "sma": case "ema": case "smma": case "wma":
           values = [average("basis", price, p, c.kind)];
@@ -271,6 +280,24 @@ export class StudyCalculator {
           values = [ratio == null ? null : c.kind === "momentum" ? 100 * ratio : 100 * (ratio - 1)];
           break;
         }
+        case "vwap": {
+          const anchor=c.vwapAnchor;
+          const prior=previous?.vwap;
+          const starts=anchor != null && bar.time === anchor.time;
+          if(!anchor || bar.time < anchor.time || (!starts && !prior)) {
+            values=[null];reason="Exact observed-bar anchor is not present at or before this bar.";break;
+          }
+          const volume=observedTradeVolume(bar.volumeEvidence);
+          const next=starts ? {numerator:0,denominator:0,reason:undefined as string|undefined} : {...prior!};
+          if(!next.reason && (!volume || volume.seriesIdentity !== anchor.seriesIdentity))next.reason="Trade-volume evidence is missing, zero, unqualified or belongs to another source series; cumulative VWAP is held from this bar.";
+          if(!next.reason && volume) {
+            next.numerator+=price*volume.quantity;next.denominator+=volume.quantity;
+            if(!Number.isFinite(next.numerator)||!Number.isSafeInteger(next.denominator)||next.denominator<=0)next.reason="Cumulative volume or weighted price exceeds the supported numerical range.";
+          }
+          state.vwap=next;reason=next.reason;
+          values=[reason ? null : next.numerator/next.denominator];break;
+        }
+        case "trade_volume": values=[observedTradeVolume(bar.volumeEvidence)?.quantity ?? null];if(values[0]==null)reason="No qualified positive provider-reported trade quantity for this bar.";break;
         case "tick_volume": values = [observedTickVolume(bar.volumeEvidence)]; break;
         default: values = [null];
       }
@@ -280,7 +307,7 @@ export class StudyCalculator {
         const value = values[channel];
         if (value == null || !Number.isFinite(value)) values[channel] = null;
       }
-      const point = { time: bar.time, values };
+      const point:StudyPoint = { time: bar.time, values, ...(reason ? {reason} : {}) };
       this.points.push(point);
       if (collectChanges) changed.push(point);
     }

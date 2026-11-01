@@ -51,7 +51,7 @@ describe("independent study configuration", () => {
     expect(add.hasAttribute("disabled")).toBe(false);
     fireEvent.click(add);
     expect(settings().studies).toHaveLength(12);
-    expect(within(screen.getByLabelText("Available studies")).getAllByRole("button")).toHaveLength(20);
+    expect(within(screen.getByLabelText("Available studies")).getAllByRole("button")).toHaveLength(22);
   });
 });
 
@@ -88,4 +88,39 @@ it("exposes MACD histogram visibility without a misleading single sign-color con
  fireEvent.click(screen.getByLabelText("MACD 1 Histogram visible"));
  expect(settings().studies[0].lineStyles[2]).toEqual({visible:false});
  expect(screen.queryByLabelText("MACD 1 Histogram color")).toBeNull();
+});
+
+it('adds, adjusts and hides genuine VWAP in the same saved settings; refuses invalid anchors without losing preferences',()=>{
+ const identity='a'.repeat(64);
+ let bars:any[]=[10,20,30].map((price,index)=>({time:1700000000+index*60,open:price,high:price,low:price,close:price,volumeEvidence:{kind:'real_volume',unit:'provider_trade_units',quantity:index+1,reason:null,authority:'twelve-data:time-series:common-stock:regular-unadjusted:v1',seriesIdentity:identity}}));
+ const adapter={getVisibleCandles:()=>bars} as any;
+ function Test(){const [preferences,setPreferences]=useState<ChartPreferences>(DEFAULT_PREFERENCES);return <><ChartStudySettings preferences={preferences} onPreferences={setPreferences} adapter={adapter}/><output data-testid="preferences">{JSON.stringify(preferences)}</output></>;}
+ render(<Test/>);
+ fireEvent.click(screen.getByRole('button',{name:'Add Anchored VWAP'}));
+ expect(settings().studies[0].vwapAnchor).toEqual({kind:'observed_bar',time:bars[0].time,seriesIdentity:identity});
+ expect(screen.queryByLabelText('VWAP 1 Period')).toBeNull();
+ fireEvent.change(screen.getByLabelText('VWAP 1 Source'),{target:{value:'hl2'}});
+ fireEvent.focus(screen.getByLabelText('VWAP 1 Observed-bar anchor'));
+ fireEvent.change(screen.getByLabelText('VWAP 1 Observed-bar anchor'),{target:{value:String(bars[1].time)}});
+ expect(settings().studies[0]).toMatchObject({source:'hl2',vwapAnchor:{time:bars[1].time}});
+ fireEvent.click(screen.getByLabelText('VWAP 1 VWAP visible'));expect(settings().studies[0].lineStyles[0].visible).toBe(false);
+ const before=settings();bars=[{...bars[0],volumeEvidence:undefined},...bars.slice(1)];
+ fireEvent.click(screen.getByRole('button',{name:'Re-anchor to first visible bar'}));expect(settings()).toEqual(before);expect(screen.getByText(/The first visible bar was not skipped/)).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Add Anchored VWAP'}));expect(settings()).toEqual(before);
+});
+
+it('bounds anchor options and does no viewport subscription, while distant visible bars remain searchable',()=>{
+ const identity='a'.repeat(64),evidence={kind:'real_volume',unit:'provider_trade_units',quantity:2,reason:null,authority:'twelve-data:time-series:common-stock:regular-unadjusted:v1',seriesIdentity:identity};
+ const bars=Array.from({length:50000},(_,i)=>({time:1700000000+i*60,open:1,high:1,low:1,close:1,volumeEvidence:evidence}));
+ let reads=0,subscriptions=0;
+ const adapter={getVisibleCandles:()=>{reads++;return bars;},subscribeViewport:()=>{subscriptions++;return()=>{};}} as any;
+ function Test(){const [preferences,setPreferences]=useState<ChartPreferences>({...DEFAULT_PREFERENCES,studies:[{kind:'vwap',period:1,color:'#ffffff',source:'hlc3',vwapAnchor:{kind:'observed_bar',time:bars[0]!.time,seriesIdentity:identity}}]});return <><ChartStudySettings preferences={preferences} onPreferences={setPreferences} adapter={adapter}/><output data-testid="preferences">{JSON.stringify(preferences)}</output></>;}
+ render(<Test/>);expect(subscriptions).toBe(0);expect(reads).toBe(0);
+ fireEvent.focus(screen.getByLabelText('VWAP 1 Observed-bar anchor'));expect(reads).toBe(1);
+ expect(within(screen.getByLabelText('VWAP 1 Observed-bar anchor')).getAllByRole('option')).toHaveLength(100);
+ fireEvent.change(screen.getByLabelText('VWAP 1 Color'),{target:{value:'#123456'}});expect(reads).toBe(1);
+ const target=bars[49999]!;const query=new Date(target.time*1000).toISOString().slice(0,19).replace('T',' ');
+ fireEvent.change(screen.getByLabelText('VWAP 1 Find visible anchor bar'),{target:{value:query}});
+ const selector=screen.getByLabelText('VWAP 1 Observed-bar anchor');expect(within(selector).getAllByRole('option')).toHaveLength(2);
+ fireEvent.change(selector,{target:{value:String(target.time)}});expect(settings().studies[0].vwapAnchor.time).toBe(target.time);
 });
