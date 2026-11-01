@@ -5,15 +5,21 @@ import { LightweightChartsAdapter } from "../../../artifacts/trading-dashboard/s
 import { installChartQaWitnesses } from "../../chart-qa/witness";
 import { installCandleTimeline } from "./candleTimeline";
 import { installReactProfile } from "./reactProfile";
+import "../../../artifacts/trading-dashboard/src/index.css";
+import { installFeedReconciliationProbe } from "./feedReconciliation";
 
 declare const __ARX_SCANNER_QA_BUILD_ID__: string;
 declare const __ARX_SCANNER_QA_REACT_PROFILE__: boolean;
+declare const __ARX_FEED_RECONCILIATION__: boolean;
 // Vite replaces this literal for each build. Unlike fetched metadata, it proves
 // which fixture entry actually executed in this page and cannot be overwritten.
 Object.defineProperty(window, "__arxScannerQaBuildId", {
   value: __ARX_SCANNER_QA_BUILD_ID__, writable: false, configurable: false,
 });
-installChartQaWitnesses(LightweightChartsAdapter);
-if(__ARX_SCANNER_QA_REACT_PROFILE__) { installReactProfile(); installCandleTimeline(LightweightChartsAdapter); }
-// Dynamic import guarantees the observer exists before the real app mounts.
-void import("../../../artifacts/trading-dashboard/src/main");
+if (__ARX_FEED_RECONCILIATION__) installFeedReconciliationProbe(LightweightChartsAdapter);
+else {
+  installChartQaWitnesses(LightweightChartsAdapter);
+  if(__ARX_SCANNER_QA_REACT_PROFILE__) { installReactProfile(); installCandleTimeline(LightweightChartsAdapter); }
+  // Dynamic import guarantees the observer exists before the real app mounts.
+  void import("../../../artifacts/trading-dashboard/src/main");
+}
