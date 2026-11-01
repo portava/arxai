@@ -1,3 +1,4 @@
+import { isOriginalPolygonEvidence, type OriginalCandleContext } from "../assistant/polygonFxCandles.js";
 /** Original producer declaration, not a symbol-family guess or broker fill
  * attestation. Optional on legacy candles; never reconstructed from a cache. */
 export interface CandlePriceBasisEvidence {
@@ -35,7 +36,9 @@ export function mt5PriceBasisEvidence(
 export function resolveCandlePriceBasisEvidence(
   evidence: unknown,
   source: string | null,
+  context?: OriginalCandleContext,
 ): CandlePriceBasisEvidence {
+  if(isOriginalPolygonEvidence(evidence,source,context,"price"))return {kind:"producer_declared",basis:"BID",reason:null};
   if (source !== "mt5_broker")
     return unavailableCandlePriceBasis(
       "This source has no qualified original producer price-basis declaration; any compatibility label is not evidence for historical execution modeling.",

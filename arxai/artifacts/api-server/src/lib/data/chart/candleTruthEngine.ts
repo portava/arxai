@@ -449,11 +449,16 @@ export function runCandleTruth(
   // must not borrow a profile's midpoint or last-price assumption.
   const bases = new Set(candles.map(c => c.priceBasis));
   const priceBasis: PriceBasis = bases.size === 1 ? candles[0]!.priceBasis : "UNKNOWN";
-  const sourceDocumentation = {...getSourceDocumentation(assetClass), timeBasisNote: unavailableCandleTimeBasis(source).reason!};
+  const qualifiedClock = candles.length > 0 && candles.every(c => c.timeBasisEvidence?.kind === "original_utc" && c.timeBasisEvidence.authority === candles[0]!.timeBasisEvidence?.authority);
+  const sourceDocumentation = {...getSourceDocumentation(assetClass), timeBasisNote: qualifiedClock
+    ? `Original UTC coordinates from ${candles[0]!.timeBasisEvidence!.authority}; historical observations, not live entitlement or complete requested-history coverage.`
+    : unavailableCandleTimeBasis(source).reason!};
   sourceDocumentation.priceBasisNote = source === "mt5_broker"
     ? priceBasis === "UNKNOWN"
       ? "UNKNOWN — original MT5 price-basis declaration is missing, inconsistent or mixed; no BID/MID/LAST basis is inferred."
       : `${priceBasis} — original MT5 producer declaration, not independently verified broker execution evidence.`
+    : source === "assistant_real:polygon" && candles.length > 0 && candles.every(c => c.priceBasisEvidence?.kind === "producer_declared")
+      ? `${priceBasis} — audited forex custom-bars bid quotes, not traded prices, broker execution or live entitlement.`
     : `${priceBasis} — compatibility/source classification; no qualified original producer declaration is available for historical execution modeling.`;
 
   // OHLC source type — derived from the provider's known behavior

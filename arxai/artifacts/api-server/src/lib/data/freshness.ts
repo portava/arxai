@@ -20,7 +20,7 @@
 // CACHE-FRESHNESS vs AI-USABILITY: a cached response that is technically still
 // within its cache TTL may STILL not be AI-usable. The cache TTLs below only
 // govern "may I reuse this without re-fetching"; AI-usability is derived purely
-// from the observed candle freshness/quality (aiUsable === quality "clean").
+// from observed candle freshness/quality and explicit provider delay (aiUsable === quality "clean").
 
 // ── Trailing-interval thresholds (candle freshness) ──────────────────────────
 //
@@ -183,6 +183,8 @@ export interface FeedQualityInputs {
   candleCount: number;
   /** Trailing-interval gap (null when there are no candles). */
   trailingIntervals: number | null;
+  /** Explicit original provider delay/unverified real-time entitlement. Recent bar times cannot remove it. */
+  providerDelayed?: boolean;
   /** Synthetic feed with history but no confirmed live tick yet. */
   syntheticAwaitingTick?: boolean;
   /** Mock/dev data was detected in a live context. */
@@ -237,6 +239,7 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
     candleCount,
     trailingIntervals,
     syntheticAwaitingTick = false,
+    providerDelayed = false,
     mockDataDetected = false,
     invalidOhlcCount = 0,
     missingCandleCount = 0,
@@ -294,6 +297,12 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
     warning = null;
   }
 
+  // Keep the established integrity/stale precedence. Known source delay is a
+  // floor only for an otherwise-clean observation, including a fresh tip.
+  if (quality === "clean" && providerDelayed) {
+    quality = "delayed";
+    warning = "Provider history is delayed or not confirmed real-time; recent bar times do not establish live entitlement.";
+  }
   const aiUsable = quality === "clean";
   return { quality, stale, aiUsable, trailingIntervals, warning, completenessReason };
 }

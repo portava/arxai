@@ -188,7 +188,7 @@ export interface ChartEngineAdapter {
   setDisplayTimeZone?(zone: ChartTimeZone): void;
   goToTime?(time: number): boolean;
   showRecentRange?(seconds: number): { complete: boolean } | null;
-  getStudyValues?(time: number): { label: string; color: string; values: { name: string; value: number | null }[] }[];
+  getStudyValues?(time: number): { label: string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
   /** Transformed display bar (Heikin Ashi only) at this time; null in other
    * styles. Legend text only. Never used for studies, drawings or orders. */
   getDisplayCandle?(time: number): ChartEngineCandle | null;

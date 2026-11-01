@@ -1,4 +1,4 @@
-import { observedTickVolume } from "./chartVolume";
+import { volumeInputQuantity, observedTradeVolumeIdentity } from "./chartVolume";
 import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "lightweight-charts";
 import type { ChartEngineCandle } from "./types";
 import { StudyCalculator, studyChannelColor, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
@@ -22,8 +22,9 @@ export class ChartAnalysisRenderer {
   private pending: { candles: ChartEngineCandle[]; from: number } | null = null;
   private displayWindow: { from: number; to: number } | null = null;
   private rendering = false;
-  /** time, open, high, low, close, qualified tick count of every bar the calculators consumed. */
+  /** Numeric OHLC/time and qualified quantity of every consumed bar; source identity stays separate. */
   private inputs: number[] = [];
+  private inputVolumeIdentities:(string|null)[]=[];
   private onViewport = () => {
     if (this.rendering || !this.studies.length) return;
     const window = this.nextWindow();
@@ -191,16 +192,18 @@ export class ChartAnalysisRenderer {
     const start = Math.max(0, Math.min(from, this.inputs.length / INPUT_STRIDE, candles.length));
     const inputs = this.inputs;
     inputs.length = candles.length * INPUT_STRIDE;
+    this.inputVolumeIdentities.length=candles.length;
     for (let i = start, k = start * INPUT_STRIDE; i < candles.length; i++, k += INPUT_STRIDE) {
       const bar = candles[i]!;
-      inputs[k] = bar.time; inputs[k + 1] = bar.open; inputs[k + 2] = bar.high; inputs[k + 3] = bar.low; inputs[k + 4] = bar.close; inputs[k + 5] = observedTickVolume(bar.volumeEvidence) ?? -1;
+      inputs[k] = bar.time; inputs[k + 1] = bar.open; inputs[k + 2] = bar.high; inputs[k + 3] = bar.low; inputs[k + 4] = bar.close; inputs[k + 5] = volumeInputQuantity(bar.volumeEvidence);
+      this.inputVolumeIdentities[i]=observedTradeVolumeIdentity(bar.volumeEvidence);
     }
   }
   private firstInputChange(candles: ChartEngineCandle[]): number {
     const inputs = this.inputs, count = Math.min(inputs.length / INPUT_STRIDE, candles.length);
     for (let i = 0, k = 0; i < count; i++, k += INPUT_STRIDE) {
       const bar = candles[i]!;
-      if (bar.time !== inputs[k] || bar.open !== inputs[k + 1] || bar.high !== inputs[k + 2] || bar.low !== inputs[k + 3] || bar.close !== inputs[k + 4] || (observedTickVolume(bar.volumeEvidence) ?? -1) !== inputs[k + 5]) return i;
+      if (bar.time !== inputs[k] || bar.open !== inputs[k + 1] || bar.high !== inputs[k + 2] || bar.low !== inputs[k + 3] || bar.close !== inputs[k + 4] || volumeInputQuantity(bar.volumeEvidence) !== inputs[k + 5] || observedTradeVolumeIdentity(bar.volumeEvidence) !== this.inputVolumeIdentities[i]) return i;
     }
     return count;
   }
@@ -296,19 +299,20 @@ export class ChartAnalysisRenderer {
     this.pending = null;
   }
   destroy(): void { this.cancelPending(); this.chart.timeScale().unsubscribeVisibleLogicalRangeChange?.(this.onViewport); }
-  inspect(time: number): { label: string; color: string; values: { name: string; value: number | null }[] }[] {
+  inspect(time: number): { label: string; color: string; reason?:string; values: { name: string; value: number | null }[] }[] {
     this.flushPending();
     return this.studies.map(({ calculator }) => {
       let lo = 0, hi = calculator.points.length - 1;
       let values: (number | null)[] = [];
+      let reason:string|undefined;
       while (lo <= hi) {
         const mid = (lo + hi) >>> 1;
         const point = calculator.points[mid]!;
-        if (point.time === time) { values = point.values; break; }
+        if (point.time === time) { values = point.values; reason=point.reason; break; }
         if (point.time < time) lo = mid + 1; else hi = mid - 1;
       }
       return {
-        label: studyLabel(calculator.config), color: calculator.config.color,
+        label: studyLabel(calculator.config), color: calculator.config.color, ...(reason ? {reason} : {}),
         values: studyDefinition(calculator.config.kind).channels.map((name, index) => ({ name: calculator.config.lineStyles?.[index]?.visible === false ? `${name} (hidden)` : name, value: values[index] ?? null })),
       };
     });
@@ -363,8 +367,8 @@ function studySeriesOptions(config: ChartStudy, channel: number):
   const definition = studyDefinition(config.kind);
   const style = config.lineStyles?.[channel];
   const visible = style?.visible !== false;
-  if (config.kind === "tick_volume") {
-    return {histogram:true,options:{visible,color:studyChannelColor(config,channel),priceLineVisible:false,lastValueVisible:false,title:"Tick volume · ticks (not traded size)",priceFormat:{type:"price",precision:0,minMove:1}}};
+  if (config.kind === "tick_volume" || config.kind === "trade_volume") {
+    return {histogram:true,options:{visible,color:studyChannelColor(config,channel),priceLineVisible:false,lastValueVisible:false,title:studyLabel(config),priceFormat:{type:"price",precision:0,minMove:1}}};
   }
   if (config.kind === "macd" && channel === 2) {
     return {histogram:true,options:{visible,color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}};

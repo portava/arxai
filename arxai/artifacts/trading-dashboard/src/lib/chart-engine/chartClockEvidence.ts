@@ -1,6 +1,6 @@
 import { formatChartTime, type ChartTimeZone } from "./chartTimeZone";
 /** This consumes normalized server evidence, not wire client claims. The
- * server currently registers no qualified live UTC clock adapter. */
+ * historical source evidence grants no live quote or broker authority. */
 export function originalUtcAuthority(value: unknown): string | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const e=value as Record<string,unknown>;

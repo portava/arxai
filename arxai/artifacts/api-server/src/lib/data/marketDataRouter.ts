@@ -480,6 +480,10 @@ async function tryAssistantCandles(symbol: string, timeframe: string, limit: num
       low: c.l,
       close: c.c,
       volume: c.v,
+      volumeEvidence: c.volumeEvidence,
+      originalVolumeSeriesIdentity: c.originalVolumeSeriesIdentity,
+      timeBasisEvidence: c.timeBasisEvidence,
+      priceBasisEvidence: c.priceBasisEvidence,
     }));
     // Name the ACTUAL winning sub-provider (r.source) — not the composite
     // descriptor — so the feed-confidence chip can truthfully say which

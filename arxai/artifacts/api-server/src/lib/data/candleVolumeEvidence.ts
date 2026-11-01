@@ -1,10 +1,14 @@
+import { isOriginalTwelveDataStockEvidence } from "../assistant/twelveDataCandles.js";
+import type { OriginalCandleContext } from "../assistant/polygonFxCandles.js";
 /** Additive candle metadata. The legacy numeric volume field is ambiguous and
  * cannot establish either observed quantity or units. This is display evidence,
  * never liquidity, order-flow, execution size or trading permission. */
 export interface CandleVolumeEvidence {
   kind: "tick_count" | "real_volume" | "unavailable";
   quantity: number | null;
-  unit: "ticks" | "broker_units" | null;
+  unit: "ticks" | "broker_units" | "provider_trade_units" | null;
+  authority?: string | null;
+  seriesIdentity?: string | null;
   reason: string | null;
 }
 export const unavailableCandleVolume = (reason: string): CandleVolumeEvidence => ({
@@ -19,10 +23,11 @@ export function mt5TickVolumeEvidence(tickVolume: unknown): CandleVolumeEvidence
     : unavailableCandleVolume("The broker did not provide a valid explicit tick count for this candle.");
 }
 /** The normalizer qualifies evidence for its actual served source. Other sources
- * and real-volume support remain withheld until their producer semantics are
+ * other than the audited stock endpoint remain withheld until their producer semantics are
  * positively established. In particular, MT5 real_volume=0 is not proof of zero
  * traded volume, and synthetic/mock data cannot borrow a broker's declaration. */
-export function resolveCandleVolumeEvidence(evidence: unknown, source: string | null | undefined): CandleVolumeEvidence {
+export function resolveCandleVolumeEvidence(evidence: unknown, source: string | null | undefined, context?: OriginalCandleContext & {candle:OriginalCandleContext["candle"] & {volume?:number;originalVolumeSeriesIdentity?:string}}): CandleVolumeEvidence {
+  if(isOriginalTwelveDataStockEvidence(evidence,source,context,"volume"))return {...evidence as CandleVolumeEvidence};
   if (source !== "mt5_broker") return unavailableCandleVolume("Volume semantics are not qualified for this candle source.");
   if (evidence == null || typeof evidence !== "object") return unavailableCandleVolume("This candle has no original volume evidence; its legacy volume value is not a measured quantity.");
   const e = evidence as Partial<CandleVolumeEvidence>;

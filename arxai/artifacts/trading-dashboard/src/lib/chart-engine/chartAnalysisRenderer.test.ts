@@ -147,9 +147,11 @@ describe("study viewport rendering and streaming", () => {
 
 
 describe("exact study tail reconciliation",()=>{
-  for(const {defaults:config} of STUDY_CATALOG) it(`${config.kind}: all rendered channels equal a full calculation through replay and corrections`,()=>{
+  for(const {defaults} of STUDY_CATALOG) it(`${defaults.kind}: all rendered channels equal a full calculation through replay and corrections`,()=>{
+    const config:ChartStudy=defaults.kind === "vwap" ? {...defaults,vwapAnchor:{kind:"observed_bar",time:100,seriesIdentity:"a".repeat(64)}} : defaults;
     const f=fixture(320);let bars=f.candles;
     if(config.kind === "tick_volume") bars=bars.map((bar,index)=>({...bar,volumeEvidence:{kind:"tick_count" as const,quantity:index,unit:"ticks" as const,reason:null}}));
+    if(["vwap","trade_volume"].includes(config.kind))bars=bars.map((bar,index)=>({...bar,volumeEvidence:{kind:"real_volume" as const,quantity:index+1,unit:"provider_trade_units" as const,reason:null,authority:"twelve-data:time-series:common-stock:regular-unadjusted:v1",seriesIdentity:"a".repeat(64)}}));
     f.renderer.setStudies([config],bars);
     const verify=()=>{
       const expected=new StudyCalculator(config).calculate(bars);
@@ -176,7 +178,7 @@ describe("exact study tail reconciliation",()=>{
     bars=original;f.renderer.refresh(bars,0,true);verify();
     // A changed period/config recalculates that study from scratch and replaces
     // its rendered data on the existing series (no stale values remain).
-    const altered=config.kind === "tick_volume" ? {...config,color:"#ff0000"} : {...config,period:Math.max(2,config.period+1)};
+    const altered=["tick_volume","trade_volume","vwap"].includes(config.kind) ? {...config,color:"#ff0000"} : {...config,period:Math.max(2,config.period+1)};
     const series=f.chart.addSeries.mock.calls.length;
     f.renderer.setStudies([altered],bars);
     expect(f.chart.addSeries).toHaveBeenCalledTimes(series); // edited in place
@@ -275,7 +277,7 @@ describe("incremental study changes equal a full rebuild", () => {
         expect(results[0]!.removed).toHaveLength(channels(k));
         expect(live.panes).toHaveLength(2);
       });
-      if(k.kind !== "tick_volume") it("period change recalculates in place", () => {
+      if(!["tick_volume","trade_volume","vwap"].includes(k.kind)) it("period change recalculates in place", () => {
         const { results } = compare([[OTHER.sma, k, OTHER.rsi], [OTHER.sma, { ...k, period: k.period + 1 }, OTHER.rsi]]);
         expect(results[0]).toMatchObject({ added: 0, removed: [] });
         // Oscillator titles carry the period; overlays have no title.
@@ -847,4 +849,23 @@ describe("qualified tick-volume histogram",()=>{
     f.renderer.setStudies([config,STUDY_DEFAULTS[0]!],bars);
     expect(f.renderer.inspect(bars[1]!.time)[0]!.values[0]!.value).toBe(9);
   });
+});
+
+describe('anchored VWAP and trade-volume actual series',()=>{
+ it('plots original bar VWAP on price pane and positive trade units in own histogram; source withdrawal removes suffix',()=>{
+   const f=fixture(3),identity='a'.repeat(64);
+   const evidence=(quantity:number)=>({kind:'real_volume',unit:'provider_trade_units',quantity,reason:null,authority:'twelve-data:time-series:common-stock:regular-unadjusted:v1',seriesIdentity:identity});
+   const bars:any[]=[10,20,30].map((price,index)=>({...f.candles[index],open:price,high:price,low:price,close:price,volumeEvidence:evidence(index+1)}));
+   const config:ChartStudy={...STUDY_CATALOG.find(d=>d.defaults.kind==='vwap')!.defaults,vwapAnchor:{kind:'observed_bar',time:bars[0].time,seriesIdentity:identity}};
+   f.renderer.setStudies([config,STUDY_CATALOG.find(d=>d.defaults.kind==='trade_volume')!.defaults],bars);
+   expect(f.panes[0]!.series).toContain(f.handles[0]);expect(f.panes[1]!.series).toEqual([f.handles[1]]);expect(f.handles[1].definition).toBe(HistogramSeries);
+   expect(f.handles[0].data.map((p:any)=>p.value)).toEqual([10,50/3,140/6]);expect(f.handles[1].data.map((p:any)=>p.value)).toEqual([1,2,3]);
+   bars[1]={...bars[1],volumeEvidence:undefined};
+   // Adding another study must notice evidence-only revision even without an explicit dirty index.
+   f.renderer.setStudies([config,STUDY_CATALOG.find(d=>d.defaults.kind==='trade_volume')!.defaults,STUDY_DEFAULTS[0]!],bars);
+   expect(f.handles[0].data.map((p:any)=>p.value)).toEqual([10,undefined,undefined]);
+   expect(f.renderer.inspect(bars[2].time)[0]!.reason).toContain('held');
+   f.renderer.setStudies([{...config,lineStyles:[{visible:false}]}],bars);
+   expect(f.handles[0].options.visible).toBe(false);f.renderer.destroy();
+ });
 });

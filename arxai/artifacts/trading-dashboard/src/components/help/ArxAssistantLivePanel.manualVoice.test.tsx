@@ -3,7 +3,7 @@ import { registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssist
 import {
   describe, it, expect, beforeEach, afterEach, vi,
 } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { act, render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 /**
@@ -218,4 +218,239 @@ describe("ArxAssistantLivePanel — manual press-to-record only", () => {
     expect(mic.disabled).toBe(true);
     expect(mic.getAttribute("title")).toContain("Eleanor is speaking");
   });
+});
+
+function renderChartPanel(chart=true){
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const App=({showChart}:{showChart:boolean})=><QueryClientProvider client={client}><AssistantDockProvider>{showChart&&<div data-testid="arx-native-chart"><AssistantDockSlot/><div data-testid="arx-native-canvas"/><button data-testid="chart-control">Inspect chart</button></div>}<ArxAssistantLivePanel/></AssistantDockProvider></QueryClientProvider>;
+ return {...render(<App showChart={chart}/>),App};
+}
+describe("mobile chart conversation layout",()=>{
+ it("starts compact only for a narrow chart and preserves draft, history and explicit expansion",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);
+  const release=registerChartStudyAssistant(()=>"Actual chart study receipt");
+  try{
+   renderChartPanel();const panel=screen.getByTestId("arx-assistant-panel"),input=screen.getByTestId("arx-input") as HTMLInputElement;
+   expect(panel.getAttribute("data-chart-layout")).toBe("compact");expect(parseFloat(panel.style.height)).toBeLessThanOrEqual(340);
+   fireEvent.change(input,{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));
+   expect(screen.getByText("Actual chart study receipt")).toBeTruthy();expect(screen.getByText("show RSI").closest('[data-chart-chat-hidden]')?.getAttribute('hidden')).toBe('');
+   fireEvent.change(input,{target:{value:"unsent draft"}});const expand=screen.getByRole("button",{name:"Expand conversation"});expand.focus();fireEvent.click(expand);
+   expect(screen.getByTestId("arx-input")).toBe(input);expect(input.value).toBe("unsent draft");expect(document.activeElement).toBe(expand);expect(panel.getAttribute("data-chart-layout")).toBe("expanded");
+   expect(screen.getByText("show RSI").closest('[hidden]')).toBeNull();
+   fireEvent.change(input,{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));expect(panel.getAttribute("data-chart-layout")).toBe("expanded");
+   fireEvent.click(screen.getByRole("button",{name:"Keep chart visible"}));expect(panel.getAttribute("data-chart-layout")).toBe("compact");
+  }finally{release();}
+ });
+ it("bounds keyboard resizing without losing the active input or hiding speaking Stop",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);h.ttsState="speaking";
+  const viewport=Object.assign(new EventTarget(),{width:390,height:844,offsetTop:0,offsetLeft:0});vi.stubGlobal("visualViewport",viewport);
+  renderChartPanel();const panel=screen.getByTestId("arx-assistant-panel"),input=screen.getByTestId("arx-input") as HTMLInputElement;
+  input.focus();fireEvent.change(input,{target:{value:"kept while resizing"}});
+  Object.assign(viewport,{height:280,offsetTop:72});act(()=>viewport.dispatchEvent(new Event("resize")));
+  expect(parseFloat(panel.style.top)).toBeGreaterThanOrEqual(72);expect(parseFloat(panel.style.top)+parseFloat(panel.style.height)).toBeLessThanOrEqual(352);
+  expect(document.activeElement).toBe(input);expect(input.value).toBe("kept while resizing");expect(screen.getByRole("button",{name:"Stop speaking"})).toBeTruthy();expect(screen.getByRole("button",{name:"Close",exact:true})).toBeTruthy();
+ });
+ it("permits chart interaction alongside the compact panel and Escape returns focus to its launcher",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);renderChartPanel();
+  fireEvent.mouseDown(screen.getByTestId("chart-control"));expect(screen.getByTestId("arx-assistant-panel")).toBeTruthy();
+  fireEvent.keyDown(screen.getByTestId("arx-input"),{key:"Escape"});expect(screen.queryByTestId("arx-assistant-panel")).toBeNull();expect(document.activeElement).toBe(screen.getByTestId("arx-assistant-trigger"));
+ });
+ it("leaves desktop and undocked layouts unchanged, and preserves input across chart docking",()=>{
+  vi.stubGlobal("innerWidth",1024);vi.stubGlobal("innerHeight",900);const view=renderChartPanel();const panel=screen.getByTestId("arx-assistant-panel"),input=screen.getByTestId("arx-input") as HTMLInputElement;
+  expect(panel.getAttribute("data-chart-layout")).toBe("standard");expect(screen.queryByRole("button",{name:"Expand conversation"})).toBeNull();
+  fireEvent.change(input,{target:{value:"draft survives"}});vi.stubGlobal("innerWidth",390);fireEvent(window,new Event("resize"));expect(panel.getAttribute("data-chart-layout")).toBe("compact");
+  view.rerender(<view.App showChart={false}/>);expect(screen.getByTestId("arx-assistant-panel")).toBe(panel);expect(panel.getAttribute("data-chart-layout")).toBe("standard");expect(input.value).toBe("draft survives");
+ });
+ it("moves focus to expansion when optional voice controls disappear during narrow resize",()=>{
+  vi.stubGlobal("innerWidth",1024);vi.stubGlobal("innerHeight",900);renderChartPanel();screen.getByRole("button",{name:"Choose voice"}).focus();
+  vi.stubGlobal("innerWidth",390);act(()=>{window.dispatchEvent(new Event("resize"));(document.activeElement as HTMLElement).blur();});expect(document.activeElement).toBe(screen.getByRole("button",{name:"Expand conversation"}));
+ });
+ it("delayed open focus never steals an already focused input",()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);
+  try{renderChartPanel();const input=screen.getByTestId("arx-input");input.focus();fireEvent.change(input,{target:{value:"already typing"}});act(()=>vi.advanceTimersByTime(150));expect(document.activeElement).toBe(input);expect((input as HTMLInputElement).value).toBe("already typing");}finally{vi.useRealTimers();}
+ });
+
+ it("keeps normal outside dismissal for the explicitly expanded chart conversation",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);renderChartPanel();fireEvent.click(screen.getByRole("button",{name:"Expand conversation"}));fireEvent.mouseDown(screen.getByTestId("chart-control"));expect(screen.queryByTestId("arx-assistant-panel")).toBeNull();
+ });
+
+ it("recovers focus when a new compact receipt hides the formerly focused message",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);const release=registerChartStudyAssistant(()=>"Actual rendered study observation. ".repeat(30));
+  try{renderChartPanel();fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));screen.getByRole("button",{name:"Show more",exact:true}).focus();fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));expect(document.activeElement).toBe(screen.getByRole("button",{name:"Expand conversation"}));}finally{release();}
+ });
+
+ it("reveals an obscured primary plot once on deliberate compact opening, not on replies or viewport changes",()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);sessionStorage.setItem("arx.assistant.open.v2","0");
+  const original=HTMLElement.prototype.getBoundingClientRect;
+  const rect=vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(){const id=this.getAttribute("data-testid");return id==="arx-native-canvas"?{top:484,bottom:844,left:0,right:390,width:390,height:360} as DOMRect:id==="arx-assistant-panel"?{top:426,bottom:764,left:8,right:382,width:374,height:338} as DOMRect:original.call(this);});
+  const release=registerChartStudyAssistant(()=>"Rendered RSI receipt");
+  try{renderChartPanel();const plot=screen.getByTestId("arx-native-canvas"),reveal=vi.fn();plot.scrollIntoView=reveal;
+   fireEvent.click(screen.getByTestId("arx-assistant-trigger"));act(()=>vi.advanceTimersByTime(30));expect(reveal).toHaveBeenCalledOnce();expect(reveal).toHaveBeenCalledWith({block:"center",inline:"nearest",behavior:"instant"});
+   fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));fireEvent(window,new Event("resize"));act(()=>vi.advanceTimersByTime(30));expect(reveal).toHaveBeenCalledOnce();
+   fireEvent.click(screen.getByRole("button",{name:"Expand conversation"}));fireEvent.click(screen.getByRole("button",{name:"Keep chart visible"}));act(()=>vi.advanceTimersByTime(30));expect(reveal).toHaveBeenCalledTimes(2);
+  }finally{release();rect.mockRestore();vi.useRealTimers();}
+ });
+ for(const scenario of ["already visible","short viewport","restored session"] as const)it(`does not move chart for ${scenario}`,()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",scenario==="short viewport"?280:844);sessionStorage.setItem("arx.assistant.open.v2",scenario==="restored session"?"1":"0");
+  const rect=vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(){return this.getAttribute("data-testid")==="arx-native-canvas"?{top:scenario==="already visible"?80:484,bottom:844,left:0,right:390,width:390,height:360} as DOMRect:{top:426,bottom:764,left:8,right:382,width:374,height:338} as DOMRect;});
+  try{renderChartPanel();const reveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=reveal;if(scenario!=="restored session")fireEvent.click(screen.getByTestId("arx-assistant-trigger"));act(()=>vi.advanceTimersByTime(30));expect(reveal).not.toHaveBeenCalled();}finally{rect.mockRestore();vi.useRealTimers();}
+ });
+
+ it("cancels a queued reveal when the selected chart undocks before the next frame",()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);sessionStorage.setItem("arx.assistant.open.v2","0");
+  try{const view=renderChartPanel();const reveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=reveal;fireEvent.click(screen.getByTestId("arx-assistant-trigger"));view.rerender(<view.App showChart={false}/>);act(()=>vi.advanceTimersByTime(30));expect(reveal).not.toHaveBeenCalled();view.rerender(<view.App showChart={true}/>);const nextReveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=nextReveal;act(()=>vi.advanceTimersByTime(30));expect(nextReveal).not.toHaveBeenCalled();}finally{vi.useRealTimers();}
+ });
+
+ it("uses the current narrow viewport when opening after a closed desktop-to-phone resize",()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",1024);vi.stubGlobal("innerHeight",844);
+  const rect=vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(){return this.getAttribute("data-testid")==="arx-native-canvas"?{top:484,bottom:844,left:0,right:390,width:390,height:360} as DOMRect:{top:426,bottom:764,left:8,right:382,width:374,height:338} as DOMRect;});
+  try{renderChartPanel();fireEvent.click(screen.getByRole("button",{name:"Close",exact:true}));vi.stubGlobal("innerWidth",390);fireEvent(window,new Event("resize"));const reveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=reveal;fireEvent.click(screen.getByTestId("arx-assistant-trigger"));act(()=>vi.advanceTimersByTime(30));expect(screen.getByTestId("arx-assistant-panel").getAttribute("data-chart-layout")).toBe("compact");expect(reveal).toHaveBeenCalledOnce();}finally{rect.mockRestore();vi.useRealTimers();}
+ });
+
+});
+
+function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>{resolve=done;});return {promise,resolve};}
+describe("initial history versus immediate local chart turns",()=>{
+ it("merges deferred history once without replacing a current local chart turn",async()=>{
+  const body=deferred<any>(),bodyStarted=vi.fn();
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/conversations')&&!init?.method)return Response.json({conversations:[{id:7,title:'Saved'}]});
+   if(String(url).endsWith('/conversations/7'))return {ok:true,json:()=>{bodyStarted();return body.promise;}} as Response;
+   return Response.json({});
+  });
+  const release=registerChartStudyAssistant(()=>"Actual immediate RSI observation");
+  try{renderPanel();await act(async()=>{});expect(bodyStarted).toHaveBeenCalledOnce();
+   fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'show RSI'}});fireEvent.click(screen.getByTestId('arx-send'));
+   expect(screen.getByText('Actual immediate RSI observation')).toBeTruthy();
+   await act(async()=>body.resolve({conversation:{id:7,title:'Saved'},messages:[{id:40,role:'user',content:'Earlier saved question'},{id:40,role:'user',content:'Earlier saved question'}]}));
+   expect(screen.getAllByText('Actual immediate RSI observation')).toHaveLength(1);expect(screen.getAllByText('show RSI')).toHaveLength(1);expect(screen.getAllByText('Earlier saved question')).toHaveLength(1);
+   expect(vi.mocked(fetch).mock.calls.some(([url,init])=>String(url).endsWith('/messages')&&init?.method==='POST')).toBe(false);
+  }finally{release();}
+ });
+ for(const phase of ['list','detail'] as const)it(`ignores a stale ${phase} JSON body after New chat has selected another conversation`,async()=>{
+  const body=deferred<any>(),bodyStarted=vi.fn();
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   const path=String(url);
+   if(path.endsWith('/conversations')&&init?.method==='POST')return Response.json({conversation:{id:21,title:'New'}});
+   if(path.endsWith('/conversations')&&!init?.method)return phase==='list'?{ok:true,json:()=>{bodyStarted();return body.promise;}} as Response:Response.json({conversations:[{id:7,title:'Old'}]});
+   if(path.endsWith('/conversations/7'))return {ok:true,json:()=>{bodyStarted();return body.promise;}} as Response;
+   if(path.endsWith('/messages'))return new Response('',{status:503});
+   return Response.json({});
+  });
+  renderPanel();await act(async()=>{});expect(bodyStarted).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByTestId('arx-menu-button'));await act(async()=>fireEvent.click(screen.getByTestId('arx-menu-new-chat')));
+  await act(async()=>body.resolve(phase==='list'?{conversations:[{id:7,title:'Old'}]}:{conversation:{id:7,title:'Old'},messages:[{id:8,role:'assistant',content:'Stale other conversation'}]}));
+  expect(screen.queryByText('Stale other conversation')).toBeNull();
+  if(phase==='list')expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).endsWith('/conversations/7'))).toBe(false);
+  fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'Hello assistant'}});await act(async()=>fireEvent.click(screen.getByTestId('arx-send')));
+  expect(vi.mocked(fetch).mock.calls.filter(([url,init])=>String(url).endsWith('/messages')&&init?.method==='POST').map(([url])=>String(url))).toEqual(['/api/me/assistant/conversations/21/messages']);
+ });
+ it("invalidates old hydration as soon as New chat is requested, before its POST resolves",async()=>{
+  const oldBody=deferred<any>(),newChat=deferred<Response>();
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/conversations')&&init?.method==='POST')return newChat.promise;
+   if(String(url).endsWith('/conversations'))return Response.json({conversations:[{id:7,title:'Old'}]});
+   if(String(url).endsWith('/conversations/7'))return {ok:true,json:()=>oldBody.promise} as Response;
+   return Response.json({});
+  });
+  renderPanel();await act(async()=>{});fireEvent.click(screen.getByTestId('arx-menu-button'));fireEvent.click(screen.getByTestId('arx-menu-new-chat'));
+  await act(async()=>oldBody.resolve({conversation:{id:7,title:'Old'},messages:[{id:8,role:'assistant',content:'Wrong pending history'}]}));
+  expect(screen.queryByText('Wrong pending history')).toBeNull();
+  await act(async()=>newChat.resolve(Response.json({conversation:{id:21,title:'New'}})));
+ });
+ it("retries unfinished history after reopen without a fallback POST and discards the old body",async()=>{
+  const oldBody=deferred<any>();let lists=0;
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/conversations')&&!init?.method)return Response.json({conversations:[{id:++lists===1?7:9,title:'Saved'}]});
+   if(String(url).endsWith('/conversations/7'))return {ok:true,json:()=>oldBody.promise} as Response;
+   if(String(url).endsWith('/conversations/9'))return Response.json({conversation:{id:9,title:'Current saved'},messages:[{id:19,role:'assistant',content:'Current saved history'}]});
+   return Response.json({});
+  });
+  const release=registerChartStudyAssistant(()=>"Current reopened RSI receipt");
+  try{renderPanel();await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'Close',exact:true}));await act(async()=>fireEvent.click(screen.getByTestId('arx-assistant-trigger')));
+   fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'show RSI'}});fireEvent.click(screen.getByTestId('arx-send'));
+   await act(async()=>oldBody.resolve({conversation:{id:7,title:'Old'},messages:[{id:8,role:'assistant',content:'Closed session history'}]}));
+   expect(screen.queryByText('Closed session history')).toBeNull();expect(screen.getAllByText('Current reopened RSI receipt')).toHaveLength(1);expect(screen.getAllByText('Current saved history')).toHaveLength(1);
+   expect(lists).toBe(2);expect(vi.mocked(fetch).mock.calls.some(([url,init])=>String(url).endsWith('/conversations')&&init?.method==='POST')).toBe(false);
+  }finally{release();}
+ });
+ it("keeps remote sends gated on conversation readiness and uses the resumed identity after hydration",async()=>{
+  const body=deferred<any>();
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/conversations')&&!init?.method)return Response.json({conversations:[{id:7,title:'Saved'}]});
+   if(String(url).endsWith('/conversations/7'))return {ok:true,json:()=>body.promise} as Response;
+   if(String(url).endsWith('/messages'))return new Response('',{status:503});
+   return Response.json({});
+  });
+  renderPanel();await act(async()=>{});fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'Hello assistant'}});fireEvent.click(screen.getByTestId('arx-send'));
+  expect(screen.getByText(/Chat session not ready yet/)).toBeTruthy();expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).endsWith('/messages'))).toBe(false);
+  await act(async()=>body.resolve({conversation:{id:7,title:'Saved'},messages:[]}));await act(async()=>fireEvent.click(screen.getByTestId('arx-send')));
+  expect(vi.mocked(fetch).mock.calls.filter(([url,init])=>String(url).endsWith('/messages')&&init?.method==='POST').map(([url])=>String(url))).toEqual(['/api/me/assistant/conversations/7/messages']);
+ });
+
+ it("does not bootstrap over a pending New chat after reopen and keeps post-intent local turns",async()=>{
+  const oldBody=deferred<any>(),newChat=deferred<Response>();
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/conversations')&&init?.method==='POST')return newChat.promise;
+   if(String(url).endsWith('/conversations'))return Response.json({conversations:[{id:7,title:'Old'}]});
+   if(String(url).endsWith('/conversations/7'))return {ok:true,json:()=>oldBody.promise} as Response;
+   return Response.json({});
+  });
+  const release=registerChartStudyAssistant(()=>"New intent RSI receipt");
+  try{renderPanel();await act(async()=>{});fireEvent.click(screen.getByTestId('arx-menu-button'));fireEvent.click(screen.getByTestId('arx-menu-new-chat'));
+   fireEvent.click(screen.getByRole('button',{name:'Close',exact:true}));await act(async()=>fireEvent.click(screen.getByTestId('arx-assistant-trigger')));
+   fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'show RSI'}});fireEvent.click(screen.getByTestId('arx-send'));
+   expect(vi.mocked(fetch).mock.calls.filter(([url,init])=>String(url).endsWith('/conversations')&&init?.method==='POST')).toHaveLength(1);
+   await act(async()=>newChat.resolve(Response.json({conversation:{id:21,title:'New'}})));
+   expect(screen.getAllByText('New intent RSI receipt')).toHaveLength(1);
+   await act(async()=>oldBody.resolve({conversation:{id:7,title:'Old'},messages:[{id:8,role:'assistant',content:'Wrong pending history'}]}));expect(screen.queryByText('Wrong pending history')).toBeNull();
+  }finally{release();}
+ });
+
+ it("retains new local turns across same-millisecond chat replacement without keeping old turns",async()=>{
+  const replacement=deferred<Response>(),briefing=deferred<Response>(),clock=vi.spyOn(Date,'now').mockReturnValue(1770000000000);let calls=0;
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/conversations')&&init?.method==='POST')return replacement.promise;
+   if(String(url).includes('/briefing?'))return briefing.promise;
+   if(String(url).endsWith('/conversations'))return Response.json({conversations:[{id:7,title:'Saved'}]});
+   if(String(url).endsWith('/conversations/7'))return Response.json({conversation:{id:7,title:'Saved'},messages:[]});
+   return Response.json({});
+  });
+  const release=registerChartStudyAssistant(()=>++calls===1?'Old local observation':'New local observation');
+  try{renderPanel();await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'Refresh briefing'}));fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'show RSI'}});fireEvent.click(screen.getByTestId('arx-send'));
+   fireEvent.click(screen.getByTestId('arx-menu-button'));fireEvent.click(screen.getByTestId('arx-menu-new-chat'));
+   fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'show RSI'}});fireEvent.click(screen.getByTestId('arx-send'));
+   await act(async()=>briefing.resolve(Response.json({briefing:{headline:'Late old briefing',lines:[],suggestions:[],updatedAt:'2026-01-01'}})));expect(screen.getByText('Late old briefing')).toBeTruthy();
+   await act(async()=>replacement.resolve(Response.json({conversation:{id:21,title:'New'}})));
+   expect(screen.queryByText('Late old briefing')).toBeNull();
+   expect(screen.queryByText('Old local observation')).toBeNull();expect(screen.getAllByText('New local observation')).toHaveLength(1);
+  }finally{release();clock.mockRestore();}
+ });
+ it("failed New chat preserves current turns and the previous remote conversation",async()=>{
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/conversations')&&init?.method==='POST')return Response.json({error:'unavailable'},{status:503});
+   if(String(url).endsWith('/conversations'))return Response.json({conversations:[{id:7,title:'Saved'}]});
+   if(String(url).endsWith('/conversations/7'))return Response.json({conversation:{id:7,title:'Saved'},messages:[{id:9,role:'assistant',content:'Retained saved turn'}]});
+   if(String(url).endsWith('/messages'))return new Response('',{status:503});return Response.json({});
+  });
+  renderPanel();await act(async()=>{});fireEvent.click(screen.getByTestId('arx-menu-button'));await act(async()=>fireEvent.click(screen.getByTestId('arx-menu-new-chat')));
+  expect(screen.getByText('Could not start a new chat. Please try again.')).toBeTruthy();expect(screen.getByText('Retained saved turn')).toBeTruthy();
+  fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'Hello assistant'}});await act(async()=>fireEvent.click(screen.getByTestId('arx-send')));
+  expect(vi.mocked(fetch).mock.calls.filter(([url,init])=>String(url).endsWith('/messages')&&init?.method==='POST').map(([url])=>String(url))).toEqual(['/api/me/assistant/conversations/7/messages']);
+ });
+
+ it("shares one pending fallback creation across close and reopen when no history exists",async()=>{
+  const created=deferred<Response>();
+  vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/conversations')&&init?.method==='POST')return created.promise;
+   if(String(url).endsWith('/conversations'))return Response.json({conversations:[]});
+   if(String(url).endsWith('/messages'))return new Response('',{status:503});return Response.json({});
+  });
+  renderPanel();await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'Close',exact:true}));await act(async()=>fireEvent.click(screen.getByTestId('arx-assistant-trigger')));
+  expect(vi.mocked(fetch).mock.calls.filter(([url,init])=>String(url).endsWith('/conversations')&&init?.method==='POST')).toHaveLength(1);
+  await act(async()=>created.resolve(Response.json({conversation:{id:31,title:'Live chat'}})));
+  fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'Hello assistant'}});await act(async()=>fireEvent.click(screen.getByTestId('arx-send')));
+  expect(vi.mocked(fetch).mock.calls.filter(([url,init])=>String(url).endsWith('/messages')&&init?.method==='POST').map(([url])=>String(url))).toEqual(['/api/me/assistant/conversations/31/messages']);
+ });
+
 });

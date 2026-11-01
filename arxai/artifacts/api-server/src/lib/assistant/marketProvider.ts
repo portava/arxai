@@ -1,3 +1,8 @@
+import { findMarketByStandardSymbol } from "@workspace/markets";
+import type { CandleVolumeEvidence } from "../data/candleVolumeEvidence.js";
+import { parsePolygonFxCustomBars, POLYGON_FX_INTERVALS } from "./polygonFxCandles.js";
+import type { CandleTimeBasisEvidence } from "../data/candleTimeBasisEvidence.js";
+import type { CandlePriceBasisEvidence } from "../data/candlePriceBasisEvidence.js";
 // Market data provider adapter for ARX AI assistant.
 //
 // Phase 22E: real adapters for Polygon, Finnhub, Alpha Vantage, NewsAPI.
@@ -15,6 +20,7 @@
 import { logger } from "../logger.js";
 import { marketHttpJson as httpJson, providerFailureCode, resetMarketHttpObservations } from "./marketHttp.js";
 import { alphaFxPair, FX_INTERVALS, parseAlphaFxQuote, parseAlphaFxCandles } from "./alphaVantageFx.js";
+import { parseTwelveDataIntradayCandles, twelveDataIntradayMs } from "./twelveDataCandles.js";
 import {
   getEconomicCalendarResult,
   isEconomicCalendarConfigured,
@@ -95,7 +101,12 @@ export interface CurrentEventsResult {
 
 // Phase 22O — OHLC candle for live scanner ranking. Provider-agnostic.
 export interface Candle {
-  t: string; // ISO timestamp of bar close
+  t: string; // Provider candle timestamp; Polygon custom-bars and Twelve Data time_series use bar OPEN.
+  volumeEvidence?: CandleVolumeEvidence;
+  /** Internal original listing context; never sufficient evidence by itself. */
+  originalVolumeSeriesIdentity?: string;
+  timeBasisEvidence?: CandleTimeBasisEvidence;
+  priceBasisEvidence?: CandlePriceBasisEvidence;
   o: number;
   h: number;
   l: number;
@@ -202,15 +213,7 @@ function polygonForexPair(sym: string): { base: string; quote: string; ticker: s
   return { base: p[0]!, quote: p[1]!, ticker: `C:${p[0]}${p[1]}` };
 }
 // Polygon aggregate timeframe mapper.
-const POLYGON_TF: Record<string, { multiplier: number; timespan: string; barSeconds: number }> = {
-  M1:  { multiplier: 1,  timespan: "minute", barSeconds: 60 },
-  M5:  { multiplier: 5,  timespan: "minute", barSeconds: 300 },
-  M15: { multiplier: 15, timespan: "minute", barSeconds: 900 },
-  M30: { multiplier: 30, timespan: "minute", barSeconds: 1800 },
-  H1:  { multiplier: 1,  timespan: "hour",   barSeconds: 3600 },
-  H4:  { multiplier: 4,  timespan: "hour",   barSeconds: 14400 },
-  D1:  { multiplier: 1,  timespan: "day",    barSeconds: 86400 },
-};
+const POLYGON_TF = POLYGON_FX_INTERVALS;
 
 // Phase 22O — TwelveData symbol + interval mapping for the scanner universe.
 // TwelveData free tier: 800 req/day, 8 req/min. Covers forex+crypto+stocks.
@@ -415,34 +418,25 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
       const tf = (timeframe || "M15").toUpperCase();
       const interval = TWELVEDATA_INTERVAL[tf];
       const tdSym = twelveDataMapSymbol(rawSymbol);
-      if (!interval || !tdSym) {
-        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: !interval ? `Unsupported timeframe ${tf}` : `Unsupported symbol mapping for ${rawSymbol}` };
+      if (!interval || !tdSym || !twelveDataIntradayMs(interval)) {
+        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: !tdSym ? `Unsupported symbol mapping for ${rawSymbol}` : `Twelve Data UTC candles support intraday intervals only; ${tf} is unavailable because daily timezone conversion is not guaranteed.` };
       }
-      const safeLimit = Math.max(10, Math.min(200, limit));
-      const url = `${base}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${encodeURIComponent(interval)}&outputsize=${safeLimit}&apikey=${encodeURIComponent(apiKey)}`;
+      const safeLimit = Math.max(10, Math.min(200, Number.isFinite(limit) ? Math.floor(limit) : 30));
+      const stockScope = findMarketByStandardSymbol(tdSym)?.assetClass === "stock" ? { type: "Common Stock", adjust: "none", prepost: false } as const : {};
+      const request = { symbol: tdSym, interval, limit: safeLimit, timezone: "UTC", order: "desc", ...stockScope } as const;
+      const stockQuery = request.type ? `&type=${encodeURIComponent(request.type)}&adjust=none&prepost=false` : "";
+      const url = `${base}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${encodeURIComponent(interval)}&outputsize=${safeLimit}&timezone=${request.timezone}&order=${request.order}${stockQuery}&apikey=${encodeURIComponent(apiKey)}`;
       markChecked();
-      const j = (await httpJson(url).catch(() => null)) as { status?: string; values?: Array<{ datetime: string; open: string; high: string; low: string; close: string; volume?: string }>; message?: string; code?: number } | null;
-      if (!j || j.status === "error" || !Array.isArray(j.values) || j.values.length === 0) {
-        const reason = providerFailureCode(j) ?? "NO_DATA";
+      const payload = await httpJson(url).catch(() => null);
+      const parsed = parseTwelveDataIntradayCandles(payload, request);
+      if (!parsed.ok) {
+        const reason = providerFailureCode(payload) ?? parsed.reason;
         markError(`candles ${tdSym}@${interval}: ${reason}`);
-        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data returned no candle data for ${tdSym} @ ${interval}: ${reason}` };
+        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data candles unavailable for ${tdSym} @ ${interval}: ${reason}` };
       }
-      // TwelveData returns newest-first; reverse to chronological for scoring
-      const ordered = [...j.values].reverse();
-      const candles: Candle[] = [];
-      for (const r of ordered) {
-        const o = Number(r.open), h = Number(r.high), l = Number(r.low), c = Number(r.close), v = Number(r.volume ?? 0);
-        if (![o, h, l, c].every(Number.isFinite)) continue;
-        // datetime is "YYYY-MM-DD HH:MM:SS" in UTC
-        const iso = r.datetime.includes("T") ? r.datetime : r.datetime.replace(" ", "T") + "Z";
-        candles.push({ t: iso, o, h, l, c, v: Number.isFinite(v) ? v : 0 });
-      }
-      if (candles.length === 0) {
-        markError(`candles ${tdSym}@${interval}: zero parsed numeric rows`);
-        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data returned values for ${tdSym} but none parsed as numeric.` };
-      }
-      markSuccess({ freshness: "REALTIME", source: "twelve_data" });
-      return { connected: true, source: "twelve_data", symbol: tdSym, timeframe: tf, candles, freshness: "REALTIME", asOf: candles[candles.length - 1]!.t };
+      markSuccess({ freshness: parsed.freshness, source: "twelve_data" });
+      return { connected: true, source: "twelve_data", symbol: tdSym, timeframe: tf, candles: parsed.candles, freshness: parsed.freshness, asOf: parsed.candles.at(-1)!.t,
+        notes: "Explicit UTC intraday output; original bar-open times preserved. Exchange timezone metadata is distinct from requested output timezone. Historical candles do not verify real-time entitlement or a current quote. Only explicitly requested unadjusted regular-session common stocks may carry original UTC and provider trade-unit evidence. Returned listing coverage is not a consolidated tape; zero/missing volume is withheld. Historical research price basis remains unqualified." };
     },
     async getLiveQuote(rawSymbol) {
       const symbol = validateSymbol(rawSymbol);
@@ -513,38 +507,24 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
       if (!fx) {
         return { connected: true, source: "polygon", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Polygon adapter currently maps only the supported forex universe; ${rawSymbol} not recognised.` };
       }
-      const safeLimit = Math.max(10, Math.min(200, limit));
-      // Pad the window 6x for weekends/closed sessions; Polygon caps `limit` server-side.
+      const safeLimit = Number.isFinite(limit) ? Math.max(10, Math.min(200, Math.floor(limit))) : 30;
       const nowMs = Date.now();
-      const fromMs = nowMs - tfDef.barSeconds * 1000 * safeLimit * 6;
-      const fmt = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-      // sort=desc + limit=N → server returns the MOST RECENT N bars in the
-      // window. We then reverse to chronological (oldest → newest) for the
-      // scanner / ATR consumers. Using sort=asc here would return the OLDEST
-      // N bars (i.e. the start of the padded window), producing stale data.
-      const url = `${base}/v2/aggs/ticker/${encodeURIComponent(fx.ticker)}/range/${tfDef.multiplier}/${tfDef.timespan}/${fmt(fromMs)}/${fmt(nowMs)}?adjusted=true&sort=desc&limit=${safeLimit}&apiKey=${encodeURIComponent(apiKey)}`;
+      // UTC date bounds retain the existing padded request. Limit is BASE minute
+      // (or day) aggregates, not output bars; neither padding nor limit proves coverage.
+      const fromMs = Math.floor((nowMs - tfDef.barSeconds * 1000 * safeLimit * 6) / 86_400_000) * 86_400_000;
+      const toMs = Math.floor(nowMs / 86_400_000) * 86_400_000 + 86_400_000 - 1;
+      const baseLimit = Math.min(50_000, safeLimit * (tfDef.timespan === "day" ? 1 : tfDef.barSeconds / 60));
+      const url = `${base}/v2/aggs/ticker/${encodeURIComponent(fx.ticker)}/range/${tfDef.multiplier}/${tfDef.timespan}/${fromMs}/${toMs}?adjusted=true&sort=desc&limit=${baseLimit}&apiKey=${encodeURIComponent(apiKey)}`;
       markChecked();
-      const j = (await httpJson(url).catch(() => null)) as { status?: string; results?: Array<{ t: number; o: number; h: number; l: number; c: number; v?: number }>; resultsCount?: number; error?: string; message?: string } | null;
-      if (!j || !Array.isArray(j.results) || j.results.length === 0) {
-        const reason = providerFailureCode(j) ?? "NO_DATA";
-        markError(`polygon candles ${fx.ticker}@${tf}: ${reason}`);
-        return { connected: true, source: "polygon", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Polygon returned no candle data for ${fx.ticker} @ ${tf}: ${reason}` };
+      const parsed = parsePolygonFxCustomBars(await httpJson(url).catch(() => null), {ticker:fx.ticker,timeframe:tf,fromMs,toMs,nowMs,maxBars:safeLimit});
+      if (!parsed.ok) {
+        markError(`polygon candles ${fx.ticker}@${tf}: ${parsed.reason}`);
+        return {connected:true,source:"polygon",symbol:rawSymbol,timeframe:tf,candles:[],freshness:"UNAVAILABLE",asOf:null,notes:`Polygon custom-bars unavailable: ${parsed.reason}`};
       }
-      const ordered = [...j.results].reverse(); // desc → asc (chronological)
-      const candles: Candle[] = [];
-      for (const r of ordered) {
-        if (![r.o, r.h, r.l, r.c].every((x) => typeof x === "number" && Number.isFinite(x))) continue;
-        candles.push({ t: new Date(r.t).toISOString(), o: r.o, h: r.h, l: r.l, c: r.c, v: typeof r.v === "number" ? r.v : 0 });
-      }
-      if (candles.length === 0) {
-        markError(`polygon candles ${fx.ticker}@${tf}: zero parsed rows`);
-        return { connected: true, source: "polygon", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Polygon returned aggregate rows for ${fx.ticker} but none parsed as numeric.` };
-      }
-      // Polygon free tier D1 bars are the latest closed daily bar — current
-      // for end-of-day analysis. Intraday timeframes are usually empty/1-bar
-      // and surface upstream as insufficient (the consumer decides).
-      markSuccess({ freshness: "REALTIME", source: "polygon" });
-      return { connected: true, source: "polygon", symbol: fx.ticker, timeframe: tf, candles, freshness: "REALTIME", asOf: candles[candles.length - 1]!.t };
+      // Conservative historical classification: an OK aggregate response does
+      // not establish plan entitlement or a current executable quote.
+      markSuccess({freshness:"DELAYED",source:"polygon"});
+      return {connected:true,source:"polygon",symbol:fx.ticker,timeframe:tf,candles:parsed.candles,freshness:"DELAYED",asOf:parsed.candles.at(-1)!.t,notes:parsed.notes};
     },
     async getLiveQuote(rawSymbol) {
       const symbol = validateSymbol(rawSymbol);

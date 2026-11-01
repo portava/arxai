@@ -223,6 +223,7 @@ function providerSymbolFrom(source: string | null, symbol: string): string | nul
 /** Whether the raw router `time` should be read as the bar open or close. */
 function timeBasis(source: string | null): "open" | "close" {
   if (!source) return "open";
+  if (source === "assistant_real:polygon" || source === "assistant_real:twelve_data") return "open";
   if (source.startsWith("assistant_real")) return "close";
   return "open"; // deriv / mt5_broker / unknown → epoch is bar open
 }
@@ -452,9 +453,9 @@ export function normalizeCandles(
       open: c.open, high: c.high, low: c.low, close: c.close,
       volume: typeof c.volume === "number" && Number.isFinite(c.volume) ? c.volume : 0,
       volumeReportedAsZero: c.volume === 0,
-      volumeEvidence: resolveCandleVolumeEvidence(c.volumeEvidence, source),
-      priceBasisEvidence: resolveCandlePriceBasisEvidence(c.priceBasisEvidence, source),
-      timeBasisEvidence: resolveCandleTimeBasisEvidence(c.timeBasisEvidence, source),
+      volumeEvidence: resolveCandleVolumeEvidence(c.volumeEvidence, source, {candle:c,symbol,timeframe}),
+      priceBasisEvidence: resolveCandlePriceBasisEvidence(c.priceBasisEvidence, source, {candle:c,symbol,timeframe}),
+      timeBasisEvidence: resolveCandleTimeBasisEvidence(c.timeBasisEvidence, source, {candle:c,symbol,timeframe}),
       isComplete: closeMs <= now,
       openTime: new Date(openMs).toISOString(),
     });
@@ -663,7 +664,7 @@ export function normalizeCandles(
       volumeEvidence: c.volumeEvidence,
       source: sourceLabel,
       sourceMode,
-      priceBasis: source === "mt5_broker" ? c.priceBasisEvidence.basis ?? "UNKNOWN" : compatibilityPriceBasis,
+      priceBasis: source === "mt5_broker" || source === "assistant_real:polygon" ? c.priceBasisEvidence.basis ?? "UNKNOWN" : compatibilityPriceBasis,
       priceBasisEvidence: c.priceBasisEvidence,
       timeBasisEvidence: c.timeBasisEvidence,
       providerSymbol: providerSym,

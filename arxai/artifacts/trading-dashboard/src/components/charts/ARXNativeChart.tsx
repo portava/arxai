@@ -2,7 +2,7 @@ import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from
 import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
-import { chartVolumeEvidence, observedTickVolume } from "@/lib/chart-engine/chartVolume";
+import { chartVolumeEvidence, observedTickVolume, observedTradeVolume } from "@/lib/chart-engine/chartVolume";
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import { registerChartResearchAssistant } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
@@ -386,7 +386,7 @@ export function ARXNativeChart({
         label.textContent = row.label;
         label.style.color = row.color;
         const values = document.createElement("span");
-        values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? (item.name === "Ticks" || item.name === "Ticks (hidden)" ? "— (no qualified tick count)" : "— (warm-up / unavailable)") : formatStudyNumber(item.value,item.name)}`).join(" · ");
+        values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? (row.reason ? `— (${row.reason})` : item.name === "Ticks" || item.name === "Ticks (hidden)" ? "— (no qualified tick count)" : "— (warm-up / unavailable)") : formatStudyNumber(item.value,item.name)}`).join(" · ");
         line.append(label, values);
         fragment.append(line);
       }
@@ -858,6 +858,8 @@ export function ARXNativeChart({
   }, [deepHistory.olderCandles, engineCandles]);
 
   const hasQualifiedTickVolume = useMemo(() => mergedEngineCandles.some(candle => observedTickVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
+  const hasQualifiedTradeVolume = useMemo(() => mergedEngineCandles.some(candle => observedTradeVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
+  const tradeVolumeSelected = preferences.studies.some(study => ["trade_volume","vwap"].includes(study.kind) && study.lineStyles?.[0]?.visible !== false);
   const tickVolumeSelected = preferences.studies.some(study => study.kind === "tick_volume" && study.lineStyles?.[0]?.visible !== false);
 
   // Oldest bar currently on screen as an ISO string — the cursor seed the
@@ -1476,6 +1478,7 @@ export function ARXNativeChart({
       </CardHeader>
 
       {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
+      {tradeVolumeSelected && hasCandles && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{hasQualifiedTradeVolume ? "Trade volume and VWAP use qualified provider-reported trade units on original closed bars, not tick counts or proven shares. Only loaded observations are covered; missing, zero or partial volume stays blank and holds later cumulative VWAP. Saved anchors stay bound to their original series." : "Trade volume / VWAP unavailable: no qualified positive traded quantities for these loaded candles. Tick counts and missing or zero volume are not substituted."}</p>}
       {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className="px-3 pb-2 text-xs text-amber-300" role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
       {!supportedTimeframe && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 

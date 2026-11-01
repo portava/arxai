@@ -5370,12 +5370,21 @@ export const GetChartCandlesResponse = zod.object({
               .number()
               .min(getChartCandlesResponseCandlesItemVolumeEvidenceQuantityMin)
               .nullable(),
-            unit: zod.enum(["ticks", "broker_units"]).nullable(),
+            unit: zod
+              .enum(["ticks", "broker_units", "provider_trade_units"])
+              .nullable(),
             reason: zod.string().nullable(),
+            authority: zod.string().nullish(),
+            seriesIdentity: zod
+              .string()
+              .nullish()
+              .describe(
+                "Opaque original instrument, venue, currency, interval, session and adjustment identity.",
+              ),
           })
           .optional()
           .describe(
-            "Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.",
+            "Explicit source-qualified volume semantics, separate from legacy numeric volume. Provider trade units require the audited authority and consistent series identity; they do not claim shares, consolidated coverage or order flow.",
           ),
         tickVolume: zod
           .number()
@@ -5416,7 +5425,7 @@ export const GetChartCandlesResponse = zod.object({
           })
           .optional()
           .describe(
-            "Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
+            "Original candle clock authority, separate from ISO formatting. Only audited endpoint-specific original observations qualify UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
           ),
         priceBasis: zod
           .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])
@@ -6331,12 +6340,21 @@ export const GetMeChartIntelligenceResponse = zod.object({
                     getMeChartIntelligenceResponseStateCurrentCandleOneVolumeEvidenceQuantityMin,
                   )
                   .nullable(),
-                unit: zod.enum(["ticks", "broker_units"]).nullable(),
+                unit: zod
+                  .enum(["ticks", "broker_units", "provider_trade_units"])
+                  .nullable(),
                 reason: zod.string().nullable(),
+                authority: zod.string().nullish(),
+                seriesIdentity: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Opaque original instrument, venue, currency, interval, session and adjustment identity.",
+                  ),
               })
               .optional()
               .describe(
-                "Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.",
+                "Explicit source-qualified volume semantics, separate from legacy numeric volume. Provider trade units require the audited authority and consistent series identity; they do not claim shares, consolidated coverage or order flow.",
               ),
             tickVolume: zod
               .number()
@@ -6377,7 +6395,7 @@ export const GetMeChartIntelligenceResponse = zod.object({
               })
               .optional()
               .describe(
-                "Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
+                "Original candle clock authority, separate from ISO formatting. Only audited endpoint-specific original observations qualify UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
               ),
             priceBasis: zod
               .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])
@@ -6478,12 +6496,21 @@ export const GetMeChartIntelligenceResponse = zod.object({
                     getMeChartIntelligenceResponseStateLatestClosedCandleOneVolumeEvidenceQuantityMin,
                   )
                   .nullable(),
-                unit: zod.enum(["ticks", "broker_units"]).nullable(),
+                unit: zod
+                  .enum(["ticks", "broker_units", "provider_trade_units"])
+                  .nullable(),
                 reason: zod.string().nullable(),
+                authority: zod.string().nullish(),
+                seriesIdentity: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Opaque original instrument, venue, currency, interval, session and adjustment identity.",
+                  ),
               })
               .optional()
               .describe(
-                "Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.",
+                "Explicit source-qualified volume semantics, separate from legacy numeric volume. Provider trade units require the audited authority and consistent series identity; they do not claim shares, consolidated coverage or order flow.",
               ),
             tickVolume: zod
               .number()
@@ -6524,7 +6551,7 @@ export const GetMeChartIntelligenceResponse = zod.object({
               })
               .optional()
               .describe(
-                "Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
+                "Original candle clock authority, separate from ISO formatting. Only audited endpoint-specific original observations qualify UTC; broker\/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.",
               ),
             priceBasis: zod
               .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])
