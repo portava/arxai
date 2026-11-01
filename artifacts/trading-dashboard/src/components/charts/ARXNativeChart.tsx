@@ -6,7 +6,7 @@ import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
 import { chartVolumeEvidence, observedTickVolume, observedTradeVolume } from "@/lib/chart-engine/chartVolume";
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
-import { registerChartResearchAssistant } from "@/lib/chart-research/chartResearchAssistant";
+import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLibraryCredit } from "./ChartLibraryCredit";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
@@ -433,7 +433,7 @@ export function ARXNativeChart({
   const [researchOpen,setResearchOpen] = useState(false);
   const [researchRequest,setResearchRequest] = useState<{id:number;text:string;context:string}|null>(null);
   const researchSequence = useRef(0);
-  const researchExplanation = useRef<{context:string;text:string}|null>(null);
+  const researchExplanation = useRef<{context:string;evidence:ChartResearchExplanation}|null>(null);
   const [researchLayer,setResearchLayer] = useState<{context:string;rows:ChartOverlay[]}|null>(null);
 
   // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
@@ -583,7 +583,7 @@ export function ARXNativeChart({
     overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
   [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
   const acceptResearchOverlays = useCallback((rows:ChartOverlay[])=>setResearchLayer(rows.length?{context:chartContext,rows}:null),[chartContext]);
-  const acceptResearchExplanation = useCallback((text:string|null)=>{if(text)researchExplanation.current={context:chartContext,text};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
+  const acceptResearchExplanation = useCallback((evidence:ChartResearchExplanation|null)=>{if(evidence)researchExplanation.current={context:chartContext,evidence};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
   const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
   const getFibonacciProposal = useCallback(()=>{
     const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.olderCandles,deepHistory.analysisEvidence,now);
@@ -597,7 +597,8 @@ export function ARXNativeChart({
     return registerChartResearchAssistant(text=>{
       if(!assistantPane.isCurrent()||!hasCandles||activeChartContext.current?.key!==chartContext||activeChartContext.current.adapter!==adapterRef.current)return "The selected chart source or renderer is no longer ready. Select the current chart again. No historical test was prepared or run.";
       setResearchOpen(true);
-      if(/^\s*explain\s+(?:the\s+)?(?:last\s+)?(?:test|historical)\s+trade[.!?]?\s*$/i.test(text))return researchExplanation.current?.context===chartContext?researchExplanation.current.text:"Select a completed simulated trade in Test an idea to inspect its exact signal, entry, exit, stop, target and costs. No historical trade has been inferred from a chart pattern.";
+      const followup=answerChartResearchFollowup(text,researchExplanation.current?.context===chartContext?researchExplanation.current.evidence:null);
+      if(followup!==null)return followup;
       setResearchRequest({id:++researchSequence.current,text,context:chartContext});
       return "Opened Test an idea on the current chart. Your request will be checked against the supported rules and available closed history. Review the editable rules and assumptions there before running; no calculation or order has been sent.";
     });

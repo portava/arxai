@@ -6,6 +6,7 @@ import type { ResearchV2Config, ResearchV2Input } from "@workspace/domain/backte
 const h=vi.hoisted(()=>({run:vi.fn(),cancel:vi.fn()}));
 vi.mock("@/lib/chart-research/researchRunner",()=>({createBrowserResearchRunner:()=>h}));
 import ChartResearchWorkbench from "./ChartResearchWorkbench";
+import { answerChartResearchFollowup, registerChartResearchAssistant, requestChartResearch } from "@/lib/chart-research/chartResearchAssistant";
 
 function fixture() {
   const start=Date.parse("2026-01-01T00:00:00Z"), step=60_000;
@@ -38,7 +39,7 @@ describe("real engine chart research orchestration",()=>{
     expect(overlays[0].startTime).toBe(trade.entryTimeMs/1000);
     expect(overlays[1].startTime).toBe(result.inputSnapshot.bars[trade.exitIndex]!.openTimeMs/1000);
     expect(screen.getByTestId('chart-research-trade-detail').textContent).toContain('ledger-derived simulation');
-    expect(props.onExplanation.mock.calls.at(-1)![0]).toContain(result.fingerprints.result.slice(0,12));
+    expect(props.onExplanation.mock.calls.at(-1)![0].text).toContain(result.fingerprints.result.slice(0,12));
   });
   it("withdraws markers and explanations when metadata is revoked without a price change",()=>{
     const props=fixture(),view=render(<ChartResearchWorkbench {...props}/>);
@@ -48,7 +49,7 @@ describe("real engine chart research orchestration",()=>{
     delete (data.candles[0] as any).priceBasisEvidence;
     view.rerender(<ChartResearchWorkbench {...props} data={data}/>);
     expect(props.onOverlays.mock.calls.at(-1)![0]).toEqual([]);
-    expect(props.onExplanation.mock.calls.at(-1)![0]).toBeNull();
+    expect(props.onExplanation.mock.calls.at(-1)![0].status).toBe("unavailable");
     expect(screen.queryByTestId('chart-research-trade-detail')).toBeNull();
   });
   it("refuses missing requested years instead of running a smaller sample",()=>{
@@ -115,7 +116,7 @@ describe("historical clock authority",()=>{
   fireEvent.click(screen.getByRole('button',{name:'Trade 1',exact:true}));
   const data=structuredClone(props.data);delete (data.candles[0] as any).timeBasisEvidence;
   view.rerender(<ChartResearchWorkbench {...props} data={data}/>);
-  expect(props.onOverlays.mock.calls.at(-1)![0]).toEqual([]);expect(props.onExplanation.mock.calls.at(-1)![0]).toBeNull();
+  expect(props.onOverlays.mock.calls.at(-1)![0]).toEqual([]);expect(props.onExplanation.mock.calls.at(-1)![0].status).toBe("unavailable");
   expect(screen.queryByTestId('chart-research-trade-detail')).toBeNull();
   expect(screen.getByRole('alert').textContent).toMatch(/frozen result remains inspectable/i);
   const frozen=screen.getByTestId('chart-research-result').textContent;
@@ -126,4 +127,41 @@ describe("historical clock authority",()=>{
   expect(screen.getByRole('alert').textContent).toMatch(/frozen result remains inspectable/i);
   expect(screen.getByTestId('chart-research-result').textContent).toBe(frozen);
  });
+});
+
+describe("loss follow-ups use the selected frozen ledger only",()=>{
+  it("distinguishes no result, no selection, exact selected loss and cleared selection without rerunning",()=>{
+    const props=fixture();render(<ChartResearchWorkbench {...props}/>);
+    const release=registerChartResearchAssistant(text=>answerChartResearchFollowup(text,props.onExplanation.mock.calls.at(-1)?.[0]??null)!);
+    try {
+      expect(requestChartResearch("Why did this trade lose?")).toContain("No completed historical test");
+      expect(h.run).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));const result=finish();
+      expect(requestChartResearch("Why did this trade lose?")).toContain("Select one completed simulated trade");
+      const trades=result.partitions.flatMap(p=>p.trades),lossIndex=trades.findIndex(t=>t.netPriceUnits<0);
+      expect(lossIndex).toBeGreaterThanOrEqual(0);expect(lossIndex).toBeLessThan(20);
+      fireEvent.click(screen.getByRole('button',{name:`Trade ${lossIndex+1}`,exact:true}));
+      const receipt=props.onExplanation.mock.calls.at(-1)![0];
+      expect(receipt.status).toBe("ready");expect(receipt.netPriceUnits).toBe(trades[lossIndex]!.netPriceUnits);
+      const reply=requestChartResearch("Why did this trade lose?");
+      expect(reply).toContain("lost source price units");expect(reply).toContain(receipt.text);
+      expect(reply).toContain(result.fingerprints.result.slice(0,12));expect(reply).toContain("does not establish why the market moved");
+      expect(requestChartResearch("Please explain the last test trade!")).toBe(receipt.text);
+      expect(h.run).toHaveBeenCalledTimes(1);expect(screen.getByTestId('chart-research-result')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button',{name:`Trade ${lossIndex+1}`,exact:true}));
+      expect(requestChartResearch("Why did this trade lose?")).toContain("No last, worst or live trade was substituted");
+      expect(h.run).toHaveBeenCalledTimes(1);
+    } finally { release(); }
+  });
+  it("revokes follow-up evidence on source withdrawal and manual rule edits",()=>{
+    const props=fixture(),view=render(<ChartResearchWorkbench {...props}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));finish();
+    fireEvent.click(screen.getByRole('button',{name:'Trade 1',exact:true}));
+    const data=structuredClone(props.data);delete (data.candles[0] as any).timeBasisEvidence;
+    view.rerender(<ChartResearchWorkbench {...props} data={data}/>);
+    expect(answerChartResearchFollowup("Why did this trade lose?",props.onExplanation.mock.calls.at(-1)![0])).toContain("no longer matches the current chart evidence");
+    fireEvent.change(screen.getByLabelText('Fast EMA'),{target:{value:'10'}});
+    expect(answerChartResearchFollowup("Why did this trade lose?",props.onExplanation.mock.calls.at(-1)![0])).toContain("No completed historical test");
+    expect(h.run).toHaveBeenCalledTimes(1);
+  });
 });
