@@ -1,4 +1,4 @@
-import { detectChartPatterns, findSwings, scanCandlestickCatalogue, isObservedDoji, CANDLE_DEFINITIONS, CANDLE_CRITERIA_VERSION, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
+import { detectChartPatterns, findSwings, round, scanCandlestickCatalogue, isObservedDoji, CANDLE_DEFINITIONS, CANDLE_CRITERIA_VERSION, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
 import { resolveShootingStarTruth, detectEngulfing, resolveStructureBreakTruth, type DetectedPattern } from "@workspace/domain/market";
 import { chartIntervalSeconds, chartIntervalLimitation } from "./chartIntervals";
 
@@ -197,7 +197,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
     const prev = rows.get(finding.id);
     if (!prev || finding.asOf >= prev.finding.asOf) rows.set(finding.id, { finding, observedAt, scale });
   };
-  // The shared API detector is reused unchanged. H&S is checked at causal
+  // The shared API detector is reused. H&S is checked at causal
   // prefixes so a later swing cannot move its first knowable confirmation back.
   for (let end = Math.max(20, bars.length - SHAPE_LOOKBACK + 1); end <= bars.length; end++) {
     const prefix = bars.slice(0, end);
@@ -362,19 +362,59 @@ function catalogFinding(raw: DetectedPattern, bars: SmartChartAnalysisBar[], not
       || (lifecycle.confirmedIndex!=null&&(!index(lifecycle.confirmedIndex)||lifecycle.retestIndex==null||lifecycle.confirmedIndex<lifecycle.retestIndex))
       || (lifecycle.failedIndex!=null&&(!index(lifecycle.failedIndex)||lifecycle.failedIndex<=lifecycle.breakIndex||lifecycle.confirmedIndex!=null&&lifecycle.failedIndex<=lifecycle.confirmedIndex))) return null;
   }
-  const confirmationTime=lifecycle ? lifecycle.confirmedIndex!=null?bars[lifecycle.confirmedIndex]!.closeTime:undefined : status==="confirmed"?last.closeTime:undefined;
-  const identity=lifecycle?[...lifecycle.formationIndexes,lifecycle.breakIndex].map(index=>bars[index]!.time):points.map(p=>bars[p.index]!.time);
-  const levels = [{ price: raw.levels.confirmation, label: "Confirmation level" }, { price: raw.levels.invalidation, label: "Invalidation level" }].filter((v): v is { price: number; label: string } => v.price != null && positive(v.price));
+  const reversal = raw.id === "double_top" || raw.id === "double_bottom" ? raw.doubleReversalLifecycle : undefined;
+  let reversalPoints:SmartChartFinding["anchors"]|null=null;
+  if (raw.id === "double_top" || raw.id === "double_bottom") {
+    const index = (value:number|null|undefined):value is number => value != null && Number.isInteger(value) && value >= 0 && value < bars.length;
+    if (!reversal || reversal.version !== "causal-double-reversal-v1" || reversal.formationIndexes.length !== 3
+      || reversal.formationIndexes.some((value,i,all)=>!index(value)||(i>0&&value<=all[i-1]!))
+      || !index(reversal.formationKnownAtIndex) || reversal.formationKnownAtIndex < 23
+      || reversal.formationKnownAtIndex < reversal.formationIndexes[2]! + 2
+      || ![reversal.frozenAtr,reversal.referenceLevel,reversal.invalidationLevel].every(positive)
+      || (reversal.confirmedIndex!=null&&(!index(reversal.confirmedIndex)||reversal.confirmedIndex<=reversal.formationKnownAtIndex))
+      || (reversal.failedIndex!=null&&(!index(reversal.failedIndex)||reversal.failedIndex<=reversal.formationKnownAtIndex
+        ||reversal.confirmedIndex!=null&&reversal.failedIndex<=reversal.confirmedIndex))
+      || ((raw.status==="confirmed"||raw.status==="exhausted")&&reversal.confirmedIndex==null)
+      || (raw.status==="forming"&&reversal.confirmedIndex!=null)
+      || ((raw.status==="invalidated"||raw.status==="failed")!==(reversal.failedIndex!=null))) return null;
+    const top=raw.id==="double_top",[first,middle,second]=reversal.formationIndexes;
+    const roles=top?["first_top","neckline","second_top"]:["first_bottom","neckline","second_bottom"];
+    const prices=[top?bars[first]!.high:bars[first]!.low,top?bars[middle]!.low:bars[middle]!.high,top?bars[second]!.high:bars[second]!.low];
+    const knownClose=bars[reversal.formationKnownAtIndex]!.close;
+    const decimals=knownClose>=1000?1:knownClose>=100?2:knownClose>=1?4:5;
+    // Bind legacy rounded catalogue fields to the same source formation, then
+    // draw actual OHLC extremes. Do not connect mismatched identity/geometry.
+    if (reversal.formationKnownAtIndex!==Math.max(second+2,23)||points.length!==3
+      || points.some((p,i)=>p.index!==reversal.formationIndexes[i]||p.role!==roles[i]||p.price!==round(prices[i]!,decimals))
+      || reversal.referenceLevel!==prices[1]||reversal.invalidationLevel!==(top?Math.max(prices[0]!,prices[2]!):Math.min(prices[0]!,prices[2]!))
+      || raw.levels.confirmation!==round(reversal.referenceLevel,decimals)||raw.levels.invalidation!==round(reversal.invalidationLevel,decimals)) return null;
+    // Validate claimed events against source closes, without rediscovering the
+    // pattern or changing its frozen levels. First crossing and first failure
+    // must match; an in-range timestamp alone is insufficient evidence.
+    let confirmed:number|null=null,failed:number|null=null;
+    for(let i=second+1;i<bars.length;i++){
+      const close=bars[i]!.close,prior=bars[i-1]!.close;
+      if(top?close>reversal.invalidationLevel:close<reversal.invalidationLevel){failed=i;break;}
+      if(i>reversal.formationKnownAtIndex&&confirmed==null&&(top?prior>=reversal.referenceLevel&&close<reversal.referenceLevel:prior<=reversal.referenceLevel&&close>reversal.referenceLevel))confirmed=i;
+    }
+    if(confirmed!==reversal.confirmedIndex||failed!==reversal.failedIndex)return null;
+    reversalPoints=reversal.formationIndexes.map((index,i)=>({time:bars[index]!.time,price:prices[i]!,role:roles[i]!}));
+  }
+  const confirmationIndex=lifecycle?.confirmedIndex??reversal?.confirmedIndex;
+  const confirmationTime=lifecycle||reversal ? confirmationIndex!=null?bars[confirmationIndex]!.closeTime:undefined : status==="confirmed"?last.closeTime:undefined;
+  const identity=lifecycle?[...lifecycle.formationIndexes,lifecycle.breakIndex].map(index=>bars[index]!.time)
+    :reversal?reversal.formationIndexes.map(index=>bars[index]!.time):points.map(p=>bars[p.index]!.time);
+  const levels = [{ price: reversal?.referenceLevel??raw.levels.confirmation, label: "Confirmation level" }, { price: reversal?.invalidationLevel??raw.levels.invalidation, label: "Invalidation level" }].filter((v): v is { price: number; label: string } => v.price != null && positive(v.price));
   // Legacy pin-bar geometry overlaps the new named candle variants. Retain
   // its distinct lifecycle in details without granting an extra summary vote.
   const candleFamily = raw.id === "bullish_pin_bar" || raw.id === "bearish_pin_bar"
     ? isObservedDoji(last) ? "doji" : "long_shadow" : undefined;
   return { id: `${raw.id}:${identity.join(":")}`, title: raw.name, ...(candleFamily ? { family: candleFamily } : {}), status,
-    // Breakout evidence carries its actual first confirmation even after later
-    // exhaustion/failure. Other legacy shapes report only this observation.
+    // Versioned lifecycle evidence retains its actual first confirmation after
+    // later exhaustion/failure. Other legacy shapes report this observation only.
     ...(confirmationTime != null ? { confirmedAt: confirmationTime } : {}), asOf: last.closeTime,
-    explanation: `${(raw.rationale[0] ?? "Observed price geometry.").replace(" (stop run)", "")}${levels[0] ? ` The measured ${levels[0].label.toLowerCase()} is ${price(levels[0].price)}.` : ""} ${status === "developing" ? "The shape is still developing." : status === "invalidated" ? "Its confirmation conditions no longer hold." : raw.status === "exhausted" ? "Price has extended beyond the measured objective; an earlier confirmation is historical context, not a fresh entry." : "This describes the observed shape, not its future outcome."}${lifecycle ? ` The reference level ${price(lifecycle.referenceLevel)} and ATR ${price(lifecycle.frozenAtr)} were fixed from candles known before the break; later volatility does not rewrite them.` : ""}`,
-    anchors: points.map(p => ({ time: bars[p.index]!.time, price: p.price, role: p.role })), levels,
+    explanation: `${(raw.rationale[0] ?? "Observed price geometry.").replace(" (stop run)", "")}${levels[0] ? ` The measured ${levels[0].label.toLowerCase()} is ${price(levels[0].price)}.` : ""} ${status === "developing" ? "The shape is still developing." : status === "invalidated" ? "Its confirmation conditions no longer hold." : raw.status === "exhausted" ? "Price has extended beyond the measured objective; an earlier confirmation is historical context, not a fresh entry." : "This describes the observed shape, not its future outcome."}${reversal ? ` The neckline ${price(reversal.referenceLevel)} and formation tolerance were fixed once the pivots were knowable and minimum history was available; a later closed crossing confirms the shape, not its future outcome.` : ""}${lifecycle ? ` The reference level ${price(lifecycle.referenceLevel)} and ATR ${price(lifecycle.frozenAtr)} were fixed from candles known before the break; later volatility does not rewrite them.` : ""}`,
+    anchors: reversalPoints??points.map(p => ({ time: bars[p.index]!.time, price: p.price, role: p.role })), levels,
     ...(raw.category === "breakout_retest" ? { connectAnchors: false } : {}),
-    invalidation: raw.failureModes[0] ?? null, caveat: note };
+    invalidation: raw.failureModes[0] ?? null, caveat: reversal ? `${note} Double-reversal discovery uses up to 600 closed candles and the latest 12 consecutive pivot pairs per direction; pivots require two observations on each side. Earlier formations outside this search are not reconstructed.` : note };
 }

@@ -261,3 +261,31 @@ it.each([false,true])("does not backdate H&S first qualification when later ATR 
  expect(find(input([...all,next]),id)?.confirmedAt).toBe(all[33]!.closeTime);
  const cutoff=all[32]!.closeTime;expect(find(input(all,{replayCutoff:cutoff}),id)).toBeUndefined();
 });
+
+
+function doubleTopBars():SmartChartAnalysisBar[]{
+ const points=[[0,90],[8,96],[12,105],[20,99],[28,105],[30,102],[31,98],[32,97]];
+ return bars(rows(Array.from({length:33},(_,i)=>{const right=points.findIndex(p=>p[0]!>=i);if(right===0)return points[0]![1]!;const a=points[right-1]!,b=points[right]!;return a[1]!+(b[1]!-a[1]!)*(i-a[0]!)/(b[0]!-a[0]!);})));}
+
+it.each([false,true])("keeps double reversal first confirmation and chronological geometry (inverse=%s)",inverse=>{
+ const source=inverse?inverted(doubleTopBars()):doubleTopBars(),id=inverse?"double_bottom":"double_top";
+ const developing=find(input(source.slice(0,31)),id),confirmed=find(input(source),id);
+ expect(developing?.status).toBe("developing");expect(confirmed?.status).toBe("confirmed");
+ expect(confirmed?.id).toBe(developing?.id);expect(confirmed?.confirmedAt).toBe(source[31]!.closeTime);
+ expect(confirmed?.anchors.map(a=>a.time)).toEqual([source[12]!.time,source[20]!.time,source[28]!.time]);
+ expect(find(input(source,{replayCutoff:source[30]!.closeTime}),id)?.confirmedAt).toBeUndefined();
+ expect(find(input(source,{replayCutoff:source[31]!.closeTime}),id)?.confirmedAt).toBe(source[31]!.closeTime);
+ const extended=bars([...doubleTopBars(),...rows([96,95])]);const more=inverse?inverted(extended):extended;
+ expect(find(input(more),id)?.confirmedAt).toBe(source[31]!.closeTime);
+});
+it.each([false,true])("retains historical double reversal confirmation after invalidation (inverse=%s)",inverse=>{
+ const base=doubleTopBars(),source=bars([...base,...rows([108,98])]),all=inverse?inverted(source):source,id=inverse?"double_bottom":"double_top";
+ const f=find(input(all),id);expect(f?.status).toBe("invalidated");expect(f?.confirmedAt).toBe(all[31]!.closeTime);
+});
+
+it.each([false,true])("uses actual double-reversal pivot prices instead of rounded catalogue points (inverse=%s)",inverse=>{
+ const raw=doubleTopBars().map(b=>({...b,open:b.open*1.000123,high:b.high*1.000123,low:b.low*1.000123,close:b.close*1.000123}));
+ const b=inverse?inverted(raw):raw,f=find(input(b),inverse?"double_bottom":"double_top");expect(f).toBeDefined();
+ expect(f?.anchors.map(a=>a.price)).toEqual([inverse?b[12]!.low:b[12]!.high,inverse?b[20]!.high:b[20]!.low,inverse?b[28]!.low:b[28]!.high]);
+ expect(f?.levels[0]?.price).toBe(inverse?b[20]!.high:b[20]!.low);
+});

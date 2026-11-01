@@ -121,6 +121,20 @@ export interface DetectedPattern {
     breakBuffer: number;
     retestTolerance: number;
   };
+  /** Causal double-reversal evidence, indexed into the filtered closed window.
+   * Formation geometry/ATR freeze when the second 2/2 pivot is knowable and
+   * minimum history is satisfied. These are observed-bar indexes, not clocks. */
+  doubleReversalLifecycle?: {
+    version: "causal-double-reversal-v1";
+    formationIndexes: [number, number, number];
+    formationKnownAtIndex: number;
+    confirmedIndex: number | null;
+    failedIndex: number | null;
+    frozenAtr: number;
+    referenceLevel: number;
+    invalidationLevel: number;
+    priorTrend: { fromIndex: number; toIndex: number; closeChange: number; alignedSteps: number };
+  };
   /** Measurable conditions that were satisfied (for explanation + audit). */
   rationale: string[];
   /** Known ways this pattern fails (surfaced as honest warnings). */

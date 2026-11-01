@@ -259,113 +259,94 @@ function detectHeadAndShoulders(ctx: DetectorContext): DetectedPattern | null {
 
 // ── Double top / double bottom — reversal ────────────────────────────────────
 
+/** ARX convention (not another platform's algorithm): strict 2/2 pivots,
+ * adjacent same-kind pairs, deepest intermediate opposite pivot, 0.5 frozen ATR
+ * equality, and the higher top/lower bottom as invalidation. Search the latest
+ * 600 observed bars and newest 12 pairs per direction. Newest eligible formation
+ * wins; equal formation times prefer the top. No recursive prefix detection.
+ * The five-close preceding-trend geometry matches the candle catalogue, but
+ * this input has no timestamps: continuity/clock qualification belongs upstream.
+ */
 function detectDoubleReversal(ctx: DetectorContext): DetectedPattern | null {
-  const { closed, swings, atr: atrVal, last, decimals } = ctx;
+  const { closed, swings, last } = ctx;
   const MIN = 24;
   if (closed.length < MIN) return null;
-
-  const hs = highs(swings);
-  const ls = lows(swings);
-
-  // Double top (bearish): two near-equal highs with a trough between.
-  if (hs.length >= 2 && ls.length >= 1) {
-    const [a, b] = lastTwo(hs);
-    if (a && b && near(a.price, b.price, atrVal, 0.5)) {
-      const trough = ls
-        .filter((t) => t.index > a.index && t.index < b.index)
-        .sort((x, y) => x.price - y.price)[0];
-      if (trough) {
-        const neckline = trough.price;
-        const height = Math.max(a.price, b.price) - neckline;
-        if (height > 0) {
-          const broke = last.close < neckline;
-          const status: PatternStatus = broke
-            ? extensionExhausted(last.close, neckline, height, "down")
-              ? "exhausted"
-              : "confirmed"
-            : last.close > Math.max(a.price, b.price)
-              ? "invalidated"
-              : "forming";
-          const score = symmetryScore(a.price, b.price, atrVal);
-          return {
-            id: "double_top",
-            name: "Double Top",
-            category: "reversal",
-            bias: "bearish",
-            status,
-            confidence: clamp(score),
-            quality: qualityFromScore(score),
-            levels: {
-              confirmation: r(neckline, decimals),
-              invalidation: r(Math.max(a.price, b.price), decimals),
-              targets: [r(neckline - height, decimals)],
-            },
-            keyPoints: [
-              { index: a.index, price: r(a.price, decimals), role: "first_top" },
-              { index: b.index, price: r(b.price, decimals), role: "second_top" },
-              { index: trough.index, price: r(neckline, decimals), role: "neckline" },
-            ],
-            rationale: ["Two highs at a similar level rejected the same resistance."],
-            failureModes: ["A close above the higher top invalidates the top."],
-            minCandles: MIN,
-            entryTiming: timingForBreak(status),
-            falseBreakoutRisk: breakoutRisk(status, 1),
-          };
-        }
+  const windowStart = Math.max(0, closed.length - 600);
+  const hs = highs(swings).filter(p => p.index >= windowStart + SWING_SPAN);
+  const ls = lows(swings).filter(p => p.index >= windowStart + SWING_SPAN);
+  let chosen: DetectedPattern | null = null;
+  let chosenKnown = -1, chosenSecond = -1;
+  for (const top of [true, false]) {
+    const same = top ? hs : ls, opposite = top ? ls : hs;
+    for (let pair = Math.max(1, same.length - 12); pair < same.length; pair++) {
+      const a = same[pair - 1]!, b = same[pair]!;
+      const known = Math.max(b.index + SWING_SPAN, MIN - 1);
+      if (known >= closed.length || known - 14 < windowStart || a.index - 5 < windowStart) continue;
+      const from = a.index - 5, to = a.index - 1;
+      const change = closed[to]!.close - closed[from]!.close;
+      let aligned = 0, averageRange = 0;
+      for (let i = from; i <= to; i++) {
+        averageRange += (closed[i]!.high - closed[i]!.low) / 5;
+        if (i > from && (top ? closed[i]!.close > closed[i - 1]!.close : closed[i]!.close < closed[i - 1]!.close)) aligned++;
+      }
+      if (averageRange <= 0 || aligned < 3 || Math.abs(change) < averageRange * .5 || (top ? change <= 0 : change >= 0)) continue;
+      // At most 15 bars: this ATR cannot be rewritten by an appended candle.
+      const frozenAtr = atr(closed.slice(known - 14, known + 1), 14);
+      if (!(frozenAtr != null && frozenAtr > 0) || !near(a.price, b.price, frozenAtr, .5)) continue;
+      let middle: Swing | undefined;
+      for (const p of opposite) {
+        if (p.index <= a.index || p.index >= b.index) continue;
+        if (!middle || (top ? p.price < middle.price : p.price > middle.price)) middle = p;
+      }
+      if (!middle) continue;
+      const neckline = middle.price;
+      const invalidation = top ? Math.max(a.price, b.price) : Math.min(a.price, b.price);
+      const height = top ? invalidation - neckline : neckline - invalidation;
+      if (!(height > 0)) continue;
+      const invalid = (price: number) => top ? price > invalidation : price < invalidation;
+      // A shape already invalidated before minimum history was available is
+      // not newly created at bar 24. No backdated lifecycle event is emitted.
+      let alreadyInvalid = false;
+      for (let i = b.index + 1; i <= known; i++) if (invalid(closed[i]!.close)) { alreadyInvalid = true; break; }
+      if (alreadyInvalid) continue;
+      let confirmedIndex: number | null = null, failedIndex: number | null = null;
+      for (let i = known + 1; i < closed.length; i++) {
+        const price = closed[i]!.close, previous = closed[i - 1]!.close;
+        if (invalid(price)) { failedIndex = i; break; }
+        if (confirmedIndex === null && (top ? previous >= neckline && price < neckline : previous <= neckline && price > neckline)) confirmedIndex = i;
+      }
+      const status: PatternStatus = failedIndex !== null ? "invalidated"
+        : confirmedIndex === null ? "forming"
+        : extensionExhausted(last.close, neckline, height, top ? "down" : "up") ? "exhausted" : "confirmed";
+      const decimals = decimalsFor(closed[known]!.close);
+      const score = symmetryScore(a.price, b.price, frozenAtr);
+      // Stable geometry and quality belong to the formation, not latest ATR.
+      const result: DetectedPattern = {
+        id: top ? "double_top" : "double_bottom", name: top ? "Double Top" : "Double Bottom",
+        category: "reversal", bias: top ? "bearish" : "bullish", status,
+        confidence: clamp(score), quality: qualityFromScore(score),
+        levels: { confirmation: r(neckline, decimals), invalidation: r(invalidation, decimals), targets: [r(neckline + (top ? -height : height), decimals)] },
+        keyPoints: [
+          { index: a.index, price: r(a.price, decimals), role: top ? "first_top" : "first_bottom" },
+          { index: middle.index, price: r(neckline, decimals), role: "neckline" },
+          { index: b.index, price: r(b.price, decimals), role: top ? "second_top" : "second_bottom" },
+        ],
+        doubleReversalLifecycle: {
+          version: "causal-double-reversal-v1", formationIndexes: [a.index, middle.index, b.index],
+          formationKnownAtIndex: known, confirmedIndex, failedIndex, frozenAtr,
+          referenceLevel: neckline, invalidationLevel: invalidation,
+          priorTrend: { fromIndex: from, toIndex: to, closeChange: change, alignedSteps: aligned },
+        },
+        rationale: [top ? "Two highs at a similar level followed a preceding rise." : "Two lows at a similar level followed a preceding decline."],
+        failureModes: [top ? "A close above the higher top invalidates the top." : "A close below the lower bottom invalidates the bottom."],
+        minCandles: MIN, entryTiming: timingForBreak(status), falseBreakoutRisk: breakoutRisk(status, 1),
+      };
+      if (known > chosenKnown || (known === chosenKnown && b.index > chosenSecond)) {
+        chosen = result; chosenKnown = known; chosenSecond = b.index;
       }
     }
   }
-
-  // Double bottom (bullish): two near-equal lows with a peak between.
-  if (ls.length >= 2 && hs.length >= 1) {
-    const [a, b] = lastTwo(ls);
-    if (a && b && near(a.price, b.price, atrVal, 0.5)) {
-      const peak = hs
-        .filter((t) => t.index > a.index && t.index < b.index)
-        .sort((x, y) => y.price - x.price)[0];
-      if (peak) {
-        const neckline = peak.price;
-        const height = neckline - Math.min(a.price, b.price);
-        if (height > 0) {
-          const broke = last.close > neckline;
-          const status: PatternStatus = broke
-            ? extensionExhausted(last.close, neckline, height, "up")
-              ? "exhausted"
-              : "confirmed"
-            : last.close < Math.min(a.price, b.price)
-              ? "invalidated"
-              : "forming";
-          const score = symmetryScore(a.price, b.price, atrVal);
-          return {
-            id: "double_bottom",
-            name: "Double Bottom",
-            category: "reversal",
-            bias: "bullish",
-            status,
-            confidence: clamp(score),
-            quality: qualityFromScore(score),
-            levels: {
-              confirmation: r(neckline, decimals),
-              invalidation: r(Math.min(a.price, b.price), decimals),
-              targets: [r(neckline + height, decimals)],
-            },
-            keyPoints: [
-              { index: a.index, price: r(a.price, decimals), role: "first_bottom" },
-              { index: b.index, price: r(b.price, decimals), role: "second_bottom" },
-              { index: peak.index, price: r(neckline, decimals), role: "neckline" },
-            ],
-            rationale: ["Two lows at a similar level held the same support."],
-            failureModes: ["A close below the lower bottom invalidates the bottom."],
-            minCandles: MIN,
-            entryTiming: timingForBreak(status),
-            falseBreakoutRisk: breakoutRisk(status, 1),
-          };
-        }
-      }
-    }
-  }
-
-  return null;
+  return chosen;
 }
 
 // ── Bull / bear flag — continuation ──────────────────────────────────────────
