@@ -103,7 +103,7 @@ export function nativeTimeTicks(frame: NativePriceFrame, options: { timeZone?: C
 
 /** Grid plus labels. Does not clear candles, draw last-price badges or attest
  * source-clock quality. The caller's feed/truth state remains authoritative. */
-export function paintNativeAxes(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, options: { timeZone?: ChartTimeZone; priceDigits?: number } = {}): void {
+export function paintNativeAxes(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, options: { timeZone?: ChartTimeZone; priceDigits?: number; timeAxisBottom?: number } = {}): void {
   const { left, top, width, height } = frame.plot, right = left + width, bottom = top + height;
   const prices = nativePriceTicks(frame, options), times = nativeTimeTicks(frame, options);
   ctx.save();
@@ -129,7 +129,7 @@ export function paintNativeAxes(ctx: CanvasRenderingContext2D, frame: NativePric
       const measured = ctx.measureText(label).width;
       const x = Math.max(left, Math.min(right - measured, tick.x - measured / 2));
       if (measured > width || x < previousRight + 12) continue;
-      ctx.fillText(label, x, bottom + 8); previousRight = x + measured;
+      ctx.fillText(label, x, (Number.isFinite(options.timeAxisBottom) ? options.timeAxisBottom! : bottom) + 8); previousRight = x + measured;
     }
   } finally { ctx.restore(); }
 }

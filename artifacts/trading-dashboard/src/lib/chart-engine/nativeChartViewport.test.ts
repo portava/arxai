@@ -3,6 +3,7 @@ import { NativeChartViewport } from "./nativeChartViewport";
 import { CHART_STYLES } from "./chartWorkspace";
 import * as renderer from "./nativePriceRenderer";
 import type { ChartEngineCandle } from "./types";
+import { StudyCalculator, STUDY_DEFAULTS } from "./chartStudies";
 
 const candles = (start = 0, count = 200): ChartEngineCandle[] => Array.from({length:count}, (_,i) => ({time:1_700_000_000+(start+i)*60,open:100+start+i,high:103+start+i,low:99+start+i,close:102+start+i}));
 let container:HTMLDivElement, viewport:NativeChartViewport, canvas:HTMLCanvasElement, ctx:any;
@@ -41,6 +42,63 @@ beforeEach(()=>{
   container=document.createElement('div');document.body.append(container);
 });
 afterEach(()=>{viewport?.destroy();container.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
+
+describe('native study viewport integration',()=>{
+  it('lays out independent oscillator panes while preserving the price history window',()=>{
+    create();const range=viewport.getRange();viewport.setStudies(STUDY_DEFAULTS);flush();
+    expect(viewport.getState()).toMatchObject({status:'ready',paneCount:2});
+    expect(viewport.getRange()).toEqual(range);
+    const layout=viewport.getPaneLayout()!;
+    expect(layout.price.height).toBeGreaterThan(layout.panes[0]!.height);
+    expect(layout.panes[0]!.top).toBeGreaterThanOrEqual(layout.price.top+layout.price.height);
+    expect(layout.panes[1]!.top).toBeGreaterThanOrEqual(layout.panes[0]!.top+layout.panes[0]!.height);
+    expect(ctx.fillText.mock.calls.some((args:any[])=>String(args[0]).includes('RSI'))).toBe(true);
+  });
+  it('uses canonical study values across HA, log and inverted price rendering',()=>{
+    create();viewport.setStudies(STUDY_DEFAULTS);const time=candles().at(-1)!.time;
+    const expected=viewport.getStudyValues(time);
+    viewport.setStyle('heikinAshi');viewport.setScale('log',true);flush();
+    expect(viewport.getState().status).toBe('ready');expect(viewport.getStudyValues(time)).toEqual(expected);
+    const rsi=new StudyCalculator(STUDY_DEFAULTS.find(s=>s.kind==='rsi')!);rsi.calculate(candles());
+    expect(expected.find(s=>s.label.startsWith('RSI'))!.values[0]!.value).toBe(rsi.points.at(-1)!.values[0]);
+  });
+  it('allows navigation and canonical crosshair in a pane without treating oscillator units as price',()=>{
+    const onCrosshair=vi.fn();create({onCrosshair});viewport.setStudies([STUDY_DEFAULTS.find(s=>s.kind==='rsi')!]);flush();
+    const pane=viewport.getPaneLayout()!.panes[0]!,y=pane.top+pane.height/2;
+    pointer('pointermove',200,y);expect(onCrosshair).toHaveBeenLastCalledWith(expect.objectContaining({price:null,candle:expect.objectContaining({open:expect.any(Number)})}));
+    const before=viewport.getRange()!;wheel(200,y,-100);flush();expect(viewport.getRange()!.to-viewport.getRange()!.from).toBeLessThan(before.to-before.from);
+  });
+  it('reports inadequate pane space instead of silently dropping selected studies',()=>{
+    create();viewport.setStudies(Array.from({length:12},(_,i)=>({...STUDY_DEFAULTS.find(s=>s.kind==='rsi')!,id:'rsi-'+i})));flush();
+    expect(viewport.getState()).toMatchObject({status:'unavailable',paneCount:12,error:'INSUFFICIENT_PANE_SPACE_OR_UNSUPPORTED_DIMENSIONS'});
+    viewport.resize(800,1000);flush();expect(viewport.getState()).toMatchObject({status:'ready',paneCount:12});
+  });
+  it('keeps missing volume blank and carries exact tick evidence, including a real zero',()=>{
+    create();viewport.setStudies([{kind:'tick_volume',period:1,color:'#38bdf8'}]);const data=candles();
+    data.at(-1)!.volumeEvidence={kind:'tick_count',quantity:0,unit:'ticks',reason:null};viewport.setCandles(data);flush();
+    expect(viewport.getStudyValues(data.at(-1)!.time)[0]!.values[0]!.value).toBe(0);
+    expect(viewport.getStudyValues(data.at(-2)!.time)[0]!.values[0]!.value).toBeNull();
+    delete data.at(-1)!.volumeEvidence;viewport.setCandles(data);flush();
+    expect(viewport.getStudyValues(data.at(-1)!.time)[0]!.values[0]!.value).toBeNull();
+  });
+  it('context reset removes old study values and replay truncation removes future points',()=>{
+    create();viewport.setStudies(STUDY_DEFAULTS);const data=candles(),future=data.at(-1)!.time;
+    viewport.setCandles(data.slice(0,50));flush();expect(viewport.getStudyValues(future).every(s=>s.values.every(v=>v.value===null))).toBe(true);
+    viewport.resetContext();flush();expect(viewport.getStudyValues(data[20]!.time).every(s=>s.values.every(v=>v.value===null))).toBe(true);
+    expect(viewport.getState().barCount).toBe(0);
+  });
+  it('withdraws old hover coordinates and gestures when study autoscale changes',()=>{
+    const onCrosshair=vi.fn();create({onCrosshair});viewport.setStudies([{kind:'sma',period:200,color:'#fff'}]);viewport.setRange({from:180,to:199});flush();
+    pointer('pointermove',200,100);expect(onCrosshair.mock.calls.at(-1)![0]).not.toBeNull();
+    viewport.setPriceOnlyScale(true);expect(onCrosshair).toHaveBeenLastCalledWith(null);
+    pointer('pointerdown',200,100);viewport.setPriceOnlyScale(false);const before=viewport.getRange();pointer('pointermove',300,100);expect(viewport.getRange()).toEqual(before);
+  });
+  it('a reentrant price-only toggle supersedes an older context mutation',()=>{
+    create({onCrosshair:value=>{if(value===null)viewport.setPriceOnlyScale(true);}});pointer('pointermove',200,100);
+    const old=viewport.getFrame()!.series.candles;viewport.setCandles(candles(400));
+    expect(viewport.getState().priceOnlyScale).toBe(true);expect(viewport.getFrame()!.series.candles).toBe(old);
+  });
+});
 
 describe('native Canvas viewport lifecycle and source ownership',()=>{
   it('owns one Canvas and coalesces data, style and view changes into one paint',()=>{

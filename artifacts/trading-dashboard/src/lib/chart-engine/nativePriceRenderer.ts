@@ -16,8 +16,11 @@ export interface NativePriceSeries {
 }
 
 export function prepareNativePriceSeries(input: readonly ChartEngineCandle[]): NativePriceSeries {
-  const candles = sanitizeCandlestickData(input).map(({ time, open, high, low, close }) =>
-    Object.freeze({ time, open, high, low, close }));
+  const candles = sanitizeCandlestickData(input).map(({ time, open, high, low, close, volumeEvidence, profileEvidence }) =>
+    Object.freeze({ time, open, high, low, close,
+      ...(volumeEvidence ? {volumeEvidence:Object.freeze({...volumeEvidence})} : {}),
+      ...(profileEvidence ? {profileEvidence:Object.freeze({...profileEvidence})} : {}),
+    }));
   return Object.freeze({
     candles: Object.freeze(candles),
     heikinAshi: Object.freeze(heikinAshi(candles).map(bar => Object.freeze(bar))),
@@ -56,6 +59,8 @@ const bodyWidth = (spacing: number) => Math.max(1, Math.min(24, spacing * 0.7));
 export function createNativePriceFrame(series: NativePriceSeries, options: {
   plot: NativePlot; range: LogicalWindow; style: ChartStyle; scale?: ChartScaleMode;
   inverted?: boolean; referencePrice?: number;
+  /** Already-qualified visible overlay values, in original price units. */
+  additionalPriceValues?: readonly number[];
 }): NativeFrameResult {
   const { style } = options;
   const scale = options.scale ?? "linear";
@@ -107,6 +112,11 @@ export function createNativePriceFrame(series: NativePriceSeries, options: {
   }
   if (style === "baseline" && !Number.isFinite(transform(series.candles[0]!.close)))
     return { ok: false, reason: "INVALID_SCALE" };
+  for (const price of options.additionalPriceValues ?? []) {
+    const value = transform(price);
+    if (!Number.isFinite(value)) return {ok:false,reason:"INVALID_SCALE"};
+    low = Math.min(low,value); high = Math.max(high,value);
+  }
   // Normalize before subtracting: finite opposite-sign extremes must not
   // overflow into an infinite range. Flat/zero values get display padding,
   // never synthetic source highs/lows or an inferred instrument tick size.

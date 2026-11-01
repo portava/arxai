@@ -5,6 +5,8 @@ import { candleDisplayPrecision, historyRangeShift } from "./candleReconciliatio
 import { CHART_STYLES, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import { effectiveDisplayZone, isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 import type { ChartEngineCandle } from "./types";
+import type { ChartStudy } from "./chartStudies";
+import { NativeChartStudies, layoutNativeStudyPanes, paintNativeStudies } from "./nativeChartStudies";
 
 export interface NativeCrosshair {
   readonly candle: Readonly<ChartEngineCandle>;
@@ -31,14 +33,15 @@ interface Gesture { center: Point; distance: number }
 const MAX_CSS_SIDE = 16_384, MAX_BACKING_SIDE = 8_192, MAX_BACKING_PIXELS = 16_777_216;
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
-/** Independent DOM controller for the ARX price layer. Deliberately not an
- * engine adapter: studies, drawings, panes, trading overlays and replay are not
- * implemented here and the registered application engine is unchanged. */
+/** Independent DOM controller. Still not a complete engine adapter: drawings,
+ * trading overlays and replay are pending; the registered app is unchanged. */
 export class NativeChartViewport {
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
   private readonly options: NativeChartViewportOptions;
   private series = prepareNativePriceSeries([]);
+  private readonly studies = new NativeChartStudies();
+  private priceOnlyScale = false;
   private range: LogicalWindow | null = null;
   private frame: NativePriceFrame | null = null;
   private referencePrice: number | null = null;
@@ -153,6 +156,7 @@ export class NativeChartViewport {
     const previous = this.series.candles;
     const next = prepareNativePriceSeries(candles);
     this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.series = next;
+    this.studies.setCandles(next.candles);
     if (!this.referenceSet && next.candles.length) {
       // Preserve the exact first canonical close, including invalid-for-percent
       // zero/negative references. Never substitute a later positive observation.
@@ -181,15 +185,36 @@ export class NativeChartViewport {
     return panChartWindow({ from: count + 1 - width, to: count + 1 }, 0, count);
   }
   getRange(): Readonly<LogicalWindow> | null { return this.range ? Object.freeze({ ...this.range }) : null; }
+  getPaneLayout() {
+    const full = nativePlotLayout(this.width, this.height);
+    return full ? layoutNativeStudyPanes(full, this.studies.paneCount) : null;
+  }
+  setStudies(configs: ChartStudy[]): void {
+    if (this.destroyed) return;
+    const revision = ++this.mutationRevision;
+    this.cancelGesture();this.clearHover();if(this.destroyed || revision!==this.mutationRevision)return;
+    this.studies.setStudies(configs, this.series.candles);this.invalidate();
+  }
+  getStudyValues(time: number) { return this.studies.getValues(time); }
+  getVolumeProfiles() { return this.studies.getProfiles(); }
+  setPriceOnlyScale(enabled: boolean): void {
+    if(this.destroyed || this.priceOnlyScale===enabled)return;
+    const revision=++this.mutationRevision;
+    this.cancelGesture();this.clearHover();if(this.destroyed||revision!==this.mutationRevision)return;
+    this.priceOnlyScale=enabled;this.invalidate();
+  }
   getFrame(): NativePriceFrame | null {
     if (this.destroyed || this.paintError || !this.range) {
       this.frameIssue = this.destroyed ? "DESTROYED" : this.paintError ? "PAINT_FAILED" : "NO_DATA";return null;
     }
     if (this.frame) return this.frame;
-    const plot = nativePlotLayout(this.width, this.height);
-    if (!plot) { this.frameIssue = "ZERO_SIZE_OR_UNSUPPORTED_DIMENSIONS";return null; }
+    if (!nativePlotLayout(this.width,this.height)) {this.frameIssue="ZERO_SIZE_OR_UNSUPPORTED_DIMENSIONS";return null;}
+    const layout = this.getPaneLayout();
+    if (!layout) { this.frameIssue = "INSUFFICIENT_PANE_SPACE_OR_UNSUPPORTED_DIMENSIONS";return null; }
+    const plot = layout.price;
     const result = createNativePriceFrame(this.series, { plot, range: this.range, style: this.style, scale: this.scale,
-      inverted: this.inverted, referencePrice: this.referencePrice ?? undefined });
+      inverted: this.inverted, referencePrice: this.referencePrice ?? undefined,
+      additionalPriceValues: this.priceOnlyScale ? [] : this.studies.getPriceBounds(this.range, this.scale) });
     this.frame = result.ok ? result.frame : null;
     this.frameIssue = result.ok ? null : result.reason;
     return this.frame;
@@ -200,6 +225,7 @@ export class NativeChartViewport {
       error: this.paintError ?? this.frameIssue, callbackError: this.callbackError, referencePrice: this.referencePrice, style: this.style, scale: this.scale, inverted: this.inverted,
       timeZone: this.timeZone, effectiveTimeZone: effectiveDisplayZone(this.timeZone, this.timeframe), timeframe: this.timeframe,
       barCount: this.series.candles.length, discarded: this.series.discarded, range: this.getRange(), followingLatest: this.followingLatest,
+      paneCount: this.studies.paneCount, priceOnlyScale: this.priceOnlyScale,
       width: this.width, height: this.height, pixelRatio: this.pixelRatio, pendingPaint: this.raf != null, drawCount: this.drawCount, paintCount: this.drawCount });
   }
   setRange(range: LogicalWindow): void {
@@ -238,6 +264,7 @@ export class NativeChartViewport {
     this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.generation++;
     if (this.raf != null) cancelAnimationFrame(this.raf); this.raf = null;
     this.series = prepareNativePriceSeries([]); this.range = null; this.referencePrice = null; this.referenceSet = false;
+    this.studies.reset();
     this.followingLatest = true; this.invalidate();
   }
   private invalidate() { this.frame = null; this.paintError = null; this.schedule(); }
@@ -258,14 +285,17 @@ export class NativeChartViewport {
       ctx.clearRect(0, 0, this.width, this.height);
       const frame = this.getFrame();
       if (frame) {
-        paintNativeAxes(ctx, frame, { timeZone: effectiveDisplayZone(this.timeZone, this.timeframe), priceDigits: this.priceDigits });
+        const layout = this.getPaneLayout()!, last = layout.panes.at(-1) ?? layout.price;
+        const chartBottom = last.top + last.height;
+        paintNativeAxes(ctx, frame, { timeZone: effectiveDisplayZone(this.timeZone, this.timeframe), priceDigits: this.priceDigits, timeAxisBottom:chartBottom });
         paintNativePriceLayer(ctx, frame);
+        paintNativeStudies(ctx, frame, layout.panes, this.studies);
         if (this.hover) {
           ctx.save();
           try {
-            ctx.beginPath(); ctx.rect(frame.plot.left, frame.plot.top, frame.plot.width, frame.plot.height); ctx.clip();
+            ctx.beginPath(); ctx.rect(frame.plot.left, frame.plot.top, frame.plot.width, chartBottom-frame.plot.top); ctx.clip();
             ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-            ctx.beginPath();ctx.moveTo(this.hover.x, frame.plot.top);ctx.lineTo(this.hover.x, frame.plot.top + frame.plot.height);
+            ctx.beginPath();ctx.moveTo(this.hover.x, frame.plot.top);ctx.lineTo(this.hover.x, chartBottom);
             ctx.moveTo(frame.plot.left, this.hover.y);ctx.lineTo(frame.plot.left + frame.plot.width, this.hover.y);ctx.stroke();
           } finally { ctx.restore(); }
         }
@@ -296,8 +326,9 @@ export class NativeChartViewport {
     return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
   }
   private inside(point: Point, frame = this.getFrame()): boolean {
-    return !!frame && point.x >= frame.plot.left && point.x <= frame.plot.left + frame.plot.width
-      && point.y >= frame.plot.top && point.y <= frame.plot.top + frame.plot.height;
+    const layout = frame ? this.getPaneLayout() : null;
+    return !!layout && [layout.price,...layout.panes].some(plot=>point.x >= plot.left && point.x <= plot.left + plot.width
+      && point.y >= plot.top && point.y <= plot.top + plot.height);
   }
   private clearHover() { if (this.hover) { this.hover = null; this.notify("crosshair", () => this.options.onCrosshair?.(null)); this.schedule(); } }
   private updateHover(point: Point) {
@@ -305,7 +336,8 @@ export class NativeChartViewport {
     if (!frame || !candle) { this.clearHover(); return; }
     const x = frame.timeToX(candle.time);
     if (x == null) { this.clearHover(); return; }
-    this.hover = Object.freeze({ candle, x, y: point.y, price: frame.yToPrice(point.y) });
+    this.hover = Object.freeze({ candle, x, y: point.y,
+      price: point.y>=frame.plot.top&&point.y<=frame.plot.top+frame.plot.height ? frame.yToPrice(point.y) : null });
     this.notify("crosshair", () => this.options.onCrosshair?.(this.hover)); this.schedule();
   }
   private gestureState(): Gesture | null {
@@ -404,6 +436,6 @@ export class NativeChartViewport {
     if (this.raf != null) cancelAnimationFrame(this.raf);this.raf = null;
     this.observer?.disconnect();this.observer = null;this.media?.removeEventListener("change", this.onDprChange);this.media = null;
     this.listeners.forEach(remove => remove());this.listeners = [];
-    this.frame = null;this.range = null;this.series = prepareNativePriceSeries([]);this.referencePrice = null;this.referenceSet = false;this.canvas.remove();
+    this.frame = null;this.range = null;this.series = prepareNativePriceSeries([]);this.studies.setStudies([],[]);this.referencePrice = null;this.referenceSet = false;this.canvas.remove();
   }
 }

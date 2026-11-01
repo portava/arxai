@@ -33,6 +33,27 @@ function canvas() {
 }
 
 describe("ARX native source and coordinate foundation", () => {
+  it("retains immutable original volume and clock evidence for study calculation", () => {
+    const source = bars(2);
+    source[0]!.volumeEvidence = {kind:'tick_count',quantity:42,unit:'ticks',reason:null};
+    source[0]!.profileEvidence = {finality:'closed',clockAuthority:'fixture'};
+    const series = prepareNativePriceSeries(source);
+    expect(series.candles[0]!.volumeEvidence?.quantity).toBe(42);
+    expect(series.candles[0]!.profileEvidence?.finality).toBe('closed');
+    source[0]!.volumeEvidence.quantity = 999;
+    source[0]!.profileEvidence.finality = 'forming';
+    expect(series.candles[0]!.volumeEvidence?.quantity).toBe(42);
+    expect(series.candles[0]!.profileEvidence?.finality).toBe('closed');
+    expect(series.candles[1]!.volumeEvidence).toBeUndefined();
+  });
+  it("fits supplied visible study price bounds without changing candle coordinates or source", () => {
+    const series = prepareNativePriceSeries(bars(3));
+    const result = createNativePriceFrame(series, {plot,range:{from:0,to:2},style:'candles',additionalPriceValues:[50,200]});
+    expect(result.ok).toBe(true); if (!result.ok) return;
+    for (const price of [50,200]) expect(result.frame.priceToY(price)).toBeGreaterThanOrEqual(plot.top);
+    expect(result.frame.priceToY(50)).toBeLessThanOrEqual(plot.top+plot.height);
+    expect(result.frame.series).toBe(series);
+  });
   it("uses the existing sanitizer, preserves OHLC, reports rejects and owns immutable observations", () => {
     const source = bars(3);
     const duplicate = { ...source[1]!, close: 102.25 };
