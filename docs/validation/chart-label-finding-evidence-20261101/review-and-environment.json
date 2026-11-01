@@ -1,0 +1,22 @@
+{
+  "reviewers": [
+    {
+      "agent": "screenshot_status_review",
+      "scope": "Selected-finding ownership, manual/typed routing, source changes, retained callbacks, local-only delivery, and removal of pane Last title",
+      "outcome": "No concrete blocker. Read-only review; browser/performance acceptance separate."
+    },
+    {
+      "agent": "simplify_truth_review",
+      "scope": "QA baseline source policy, exact canonical line observation and symmetric counters",
+      "outcome": "Two witness/metadata evidence gaps fixed before acceptance. First identity fix was wrong because priceLines returns fresh wrappers; actual library source inspected, witness/counters now use underlying options identity. Failed browser run retained."
+    }
+  ],
+  "sourceBase": "b3bee175f368a31f003aa9f7f13b7ebbc68e180a",
+  "applicationCommit": "f079af0af7b460e51aa5afdf1f56b2809c890997",
+  "qaCommit": "fea74f36006071f405f1aa4f9fffdc2fa8538522",
+  "environment": {
+    "os": "macOS 26.6.2 (25G83)",
+    "hardwareMetadata": "sysctl unavailable under current permissions; hardware not characterized",
+    "timingWindow": "No concurrent task tests/builds or second active test browser during timings; unrelated machine workloads not controlled."
+  }
+}

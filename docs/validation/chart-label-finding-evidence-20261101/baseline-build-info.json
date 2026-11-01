@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "buildId": "3b75ba251df352d7",
+  "builtAt": "2026-11-01T15:20:44.962Z",
+  "source": {
+    "head": "fea74f36006071f405f1aa4f9fffdc2fa8538522",
+    "status": "",
+    "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "sourceUnchanged": true,
+  "minified": true,
+  "productionRuntimeChecked": true,
+  "diagnosticOnly": false,
+  "reactProfiling": false,
+  "candleTimeline": false,
+  "entry": "Isolated actual chart adapter; no React app, navigation or API",
+  "fixtureOnlyObserver": "scripts/chart-qa/witness.ts",
+  "feedReconciliation": {
+    "mode": "label-baseline",
+    "adapterPath": "artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.ts",
+    "adapterSourceSha256": "d33a64b081af30e4faa8fb34c5213538997136bf455e810c00bd6aef4b2e22e0",
+    "workingAdapterSha256": "f40b5ec24a2de5172452890b4c7db5cdda76fd74fc9b1bd57283bb416944f7da",
+    "baselineCommit": "b3bee175f368a31f003aa9f7f13b7ebbc68e180a",
+    "comparisonScope": "Only adapter source is pinned; all other modules use the recorded working tree. Not a historical full-app build.",
+    "qaOnlySourceOverride": true
+  },
+  "volumeProfileProbe": false,
+  "dashboardUtilityCss": {
+    "source": "artifacts/trading-dashboard/src",
+    "selectors": [
+      "flex",
+      "hidden",
+      "h-8",
+      "rounded-2xl",
+      "border-zinc-800"
+    ]
+  },
+  "hashes": {
+    "assets/index-BDZv1TyB.css": "991de14652e0d5e21d586480e633cca2ce4f33e6c49c0c6f7812cc3b7f83c466",
+    "assets/index-k87llwJK.js": "dc291844185ff6fa74a3bc8482c994335bb9d04daf1d5f1f855fd733830aaf5e",
+    "index.html": "f43bfb5673470a5c8553fbdbd4f1a3627ed259462f47c5aa586ad9df8dbf22fb"
+  },
+  "limitations": [
+    "Isolated Vite configuration; this is not the deployable dashboard bundle.",
+    "Offline synthetic data and unavailable reader truth; no production or broker validation.",
+    "No hardware paint or competitor performance measurement."
+  ]
+}
