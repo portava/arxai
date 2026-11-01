@@ -1368,6 +1368,10 @@ export function ARXNativeChart({
             )}
           </div>);
   const chartControls = <Fragment key="chart-controls">
+    <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 px-3 py-2">
+            <button type="button" className="min-h-11 rounded border border-zinc-700 px-2 text-xs text-cyan-300 disabled:opacity-50" aria-pressed={assistantPane.active} disabled={!hasCandles||query.isError||!adapterRef.current} onClick={()=>assistantPane.activate()} data-testid="chart-assistant-activate">{assistantPane.active?"Assistant selected":"Use chart with assistant"}</button>
+            <span className="text-[11px] text-zinc-400" data-testid="chart-assistant-pane-context">{assistantPane.active?"Selected for local chart tools: ":"Select to use local chart tools: "}{resolvedSymbol} · {timeframe} · {data?.feedStatus?.source??"Unknown source"}{workspaceId!=="primary"?" · analysis only; primary trading unchanged":" · primary chart"}</span>
+    </div>
     {mobileLayout && <div className="px-3 py-2">{timeframeControls}</div>}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2" role="toolbar" aria-label="Chart view controls">
         <div className="flex flex-wrap items-center gap-1">
@@ -1380,9 +1384,8 @@ export function ARXNativeChart({
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>
-        {!mobileLayout && fullscreenToggle}
       </div>
-      {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
+
       <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
@@ -1400,9 +1403,7 @@ export function ARXNativeChart({
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
             {workspaceId === "primary" ? <AssistantDockSlot assistantEnabled={assistantPane.active}/> : assistantPane.active ? <AssistantDockSlot assistantOnly/> : null}
-            <button type="button" className="min-h-11 rounded border border-zinc-700 px-2 text-xs text-cyan-300 disabled:opacity-50" aria-pressed={assistantPane.active} disabled={!hasCandles||query.isError||!adapterRef.current} onClick={()=>assistantPane.activate()} data-testid="chart-assistant-activate">{assistantPane.active?"Assistant selected":"Use chart with assistant"}</button>
-            <span className="text-[11px] text-zinc-400" data-testid="chart-assistant-pane-context">{assistantPane.active?"Selected for local chart tools: ":"Select to use local chart tools: "}{resolvedSymbol} · {timeframe} · {data?.feedStatus?.source??"Unknown source"}{workspaceId!=="primary"?" · analysis only; primary trading unchanged":" · primary chart"}</span>
-            {mobileLayout && fullscreenToggle}
+            {fullscreenToggle}
             <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
               {resolvedSymbol}
             </span>
@@ -1559,7 +1560,7 @@ export function ARXNativeChart({
         </span>
       </div>
 
-      {!mobileLayout && chartControls}
+      {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
 
       {/* Persistent notices stay in normal flow so they cannot obscure candles,
           user notes or projected position controls. The relative canvas/overlay
@@ -1716,7 +1717,9 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
-      {mobileLayout && chartControls}
+      {/* Detailed tools stay mounted after the plot on every viewport. Source
+          and safety notices above it remain visible before any candle. */}
+      {chartControls}
       {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>

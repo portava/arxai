@@ -863,7 +863,7 @@ describe("Scanner shared Smart Chart ownership", () => {
   });
 });
 
-describe("mobile chart-first layout", () => {
+describe("chart-first layout", () => {
   it("keeps safety notices before the plot and keyboard controls after it on phones", () => {
     const width = window.innerWidth;
     try {
@@ -877,16 +877,23 @@ describe("mobile chart-first layout", () => {
       expect(precedes(plot, view.getByRole("button", { name: "M1 timeframe" }))).toBe(true);
       expect(precedes(plot, view.getByRole("toolbar", { name: "Chart view controls" }))).toBe(true);
       expect(precedes(plot, view.getByRole("group", { name: "Zoom and pan" }))).toBe(true);
+      expect(precedes(plot, view.getByTestId("chart-assistant-activate"))).toBe(true);
+      expect(precedes(plot, view.getByTestId("chart-assistant-pane-context"))).toBe(true);
     } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }
   });
-  it("reorders controls at the breakpoint without replacing the chart engine or canvas", () => {
+  it("keeps detailed tools after the plot at both breakpoints without replacing engine, controls or canvas", () => {
     const width = window.innerWidth;
     try {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
       const view = renderChart();
       const plot = view.getByTestId("arx-native-canvas"), controls = view.getByRole("group", { name: "Zoom and pan" });
       const mounts = adapterSpies.init.mock.calls.length;
-      expect(Boolean(controls.compareDocumentPosition(plot) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      for (const before of [view.getByTestId("chart-clock-authority"), view.getByRole("button", {name:"Fullscreen"})]) {
+        expect(Boolean(before.compareDocumentPosition(plot) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      }
+      expect(view.getAllByTestId("chart-assistant-activate")).toHaveLength(1);
+      expect(view.getAllByTestId("chart-workbench-tools")).toHaveLength(1);
+      expect(Boolean(plot.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
       Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
       act(() => window.dispatchEvent(new Event("resize")));
       expect(view.getByTestId("arx-native-canvas")).toBe(plot);
@@ -897,7 +904,7 @@ describe("mobile chart-first layout", () => {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
       act(() => window.dispatchEvent(new Event("resize")));
       expect(view.getByTestId("arx-native-canvas")).toBe(plot);
-      expect(Boolean(controls.compareDocumentPosition(plot) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      expect(Boolean(plot.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
       expect(adapterSpies.init).toHaveBeenCalledTimes(mounts);
     } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }
   });
