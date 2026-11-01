@@ -1,0 +1,128 @@
+{
+  "applicationSource": "38285b29b6978247f971d69c05100653674463c3",
+  "branch": "codex/chart-provider-alignment-20261101",
+  "comparisonBase": "dc5f6d18a256f022847cfc723e7c7e3af274351e",
+  "previousPendingReplitSource": "532ce696811554776ad9c6efb08fb02a17ace3bf",
+  "scope": "Source-only additive development integration; preserve Replit setup/sign-out fixes and concurrent work",
+  "validationReport": "docs/SMART_CHART_PROVIDER_ALIGNMENT_2026_11_01.md",
+  "fixture": "9bbcc197ecc49882",
+  "qualifiedHistoryAdapter": "Supported Polygon FX custom-bars subset, original UTC/BID only; no live availability claim",
+  "boundaries": [
+    "No main merge/publish/deployment",
+    "No API restart, activation or running-bundle replacement",
+    "No existing database changes/migrations",
+    "No operational workers, emails, model requests, terminal installation or broker/trading tests"
+  ],
+  "files": [
+    {
+      "path": "artifacts/api-server/package.json",
+      "action": "M",
+      "sha256": "603c59b77e62779f44f36e638b292474886d03fb0da4efe3f2f5f49abee0b70e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/assistant/__qa__/polygonFxCandles.test.ts",
+      "action": "A",
+      "sha256": "f4c79267600354bd71c424bec1cada724c64b18a3a32ddf4557d364449121c1a"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/assistant/__qa__/polygonFxResearchPipeline.test.ts",
+      "action": "A",
+      "sha256": "0e68357a5099ea9d4c6f29b69ded334be90f7da0b8deabbc8d975e3d8aea9667"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/assistant/__qa__/twelveDataUtc.test.ts",
+      "action": "A",
+      "sha256": "dbfc276a0c0d5531a6601ac53d1dad213f68055d7c318a0cd32d170e91cced75"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/assistant/marketProvider.ts",
+      "action": "M",
+      "sha256": "34172fb0ce024b5db0b8210442acb9fae300aead09a0c369d872aa2bc735c3cf"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/assistant/polygonFxCandles.ts",
+      "action": "A",
+      "sha256": "5a1c71e34a27af1f59e4a78b01213b8f5d65db2b0fe15d27b7c66500b2601075"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/assistant/twelveDataCandles.ts",
+      "action": "A",
+      "sha256": "f8b16f6650cedbcd8742467ab2b118a639aa0181ec27d7e8ce963e7ecb6132fb"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/data/candlePriceBasisEvidence.ts",
+      "action": "M",
+      "sha256": "8bab53e740eecff17f9ae5028253704991ec183665779664dc62f4a435610e3a"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/data/candleTimeBasisEvidence.ts",
+      "action": "M",
+      "sha256": "1fa91ee1309bd16fcd1abf7bb2227e869dbc5033007d3b0e85c78d6fb623c962"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/data/chart/candleNormalization.ts",
+      "action": "M",
+      "sha256": "169fe92cc133e870a4ca3da2b85ef286ff99d772510519fbf016eb3bc3318c9a"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/data/chart/candleTruthEngine.ts",
+      "action": "M",
+      "sha256": "5bdfc96c2aec44d59fd57bd60a67f0d9e0587e34e2412bb95003d99a7713bdf4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/data/marketDataRouter.ts",
+      "action": "M",
+      "sha256": "19c742ef9a3de5a640e8fcc0a74b6e61d3f9b26be3089b67ab856ce6a71c2517"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.fibonacci-actions.test.tsx",
+      "action": "A",
+      "sha256": "6a961509e1add8a6483c987ba0e095a354ef2ab025e93f2fbe58ddb5590bfa75"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.fibonacci-language.test.tsx",
+      "action": "M",
+      "sha256": "552d415ee904c04f7ab7d2580d76f29d446648600867a2dc98f3d2334196e4af"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.tsx",
+      "action": "M",
+      "sha256": "d221af1928528c2666d6911370da17fa195b88c8918b56734c8a0e173990c1da"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartClockEvidence.ts",
+      "action": "M",
+      "sha256": "b9fccc3ada57f557a69b7045a621bd2eb47376a4e27ad1a97d58bb651366f896"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartFibonacciAssistant.test.ts",
+      "action": "M",
+      "sha256": "488eb385bd8dab33f12f80e96d0007dff2473bf3539a867356323e661a2b38b8"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartFibonacciAssistant.ts",
+      "action": "M",
+      "sha256": "70ac23e95bd01215dde9fe29a70aefc8a6aa1087d08e5565b91d5e7141dac17a"
+    },
+    {
+      "path": "docs/ORIGINAL_CANDLE_CLOCK_EVIDENCE_2026_11_01.md",
+      "action": "M",
+      "sha256": "3bcdc8e7d00fec3036b7b85d36070c9575838e175148a08a493dbbc9199c11e7"
+    },
+    {
+      "path": "docs/POLYGON_FX_ORIGINAL_CANDLE_EVIDENCE_2026_11_01.md",
+      "action": "A",
+      "sha256": "a628bf6a7d51e3863075a9bbf449e5275b9f78d2b8cea2b2f2e871e34cdfeca0"
+    },
+    {
+      "path": "docs/SMART_CHART_FIBONACCI_LANGUAGE_2026_11_01.md",
+      "action": "M",
+      "sha256": "b6adfa08d241ab39e7bb88ca3048033d55248acfa48e939404e8e655dc66f9d5"
+    },
+    {
+      "path": "docs/TWELVE_DATA_INTRADAY_CLOCK_2026_11_01.md",
+      "action": "A",
+      "sha256": "13f134c608993ecadbc029c8ab9eef73838f8a641536d2a912fc3b72861c0d15"
+    }
+  ]
+}
