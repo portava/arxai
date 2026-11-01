@@ -21,11 +21,11 @@ function ComparisonInstrument({primary, view, onSymbol}: {primary:string;view:Co
 
 /** Primary view stays mounted and alone supplies intelligence / ticket context.
  * Comparisons never publish to the shared symbol bus or inherit trade overlays. */
-export function SmartChartLayout({symbol,children}: {symbol:string;children:ReactNode}) {
-  const [layout,setLayout] = useState(() => validateChartLayout(readChartStorage(CHART_LAYOUT_KEY) ?? readChartStorage("arx.chart.layout.v1")));
+export function SmartChartLayout({symbol,children,storageKey=CHART_LAYOUT_KEY}: {symbol:string;children:ReactNode;storageKey?:string}) {
+  const [layout,setLayout] = useState(() => validateChartLayout(readChartStorage(storageKey) ?? (storageKey === CHART_LAYOUT_KEY ? readChartStorage("arx.chart.layout.v1") : null)));
   const [saved,setSaved] = useState(true);
   const [links] = useState(() => new ChartViewLink());
-  useEffect(() => {setSaved(writeChartStorage(CHART_LAYOUT_KEY,layout));},[layout]);
+  useEffect(() => {setSaved(writeChartStorage(storageKey,layout));},[layout,storageKey]);
   useEffect(() => {links.configure({crosshair:layout.count > 1 && layout.crosshair,range:layout.count > 1 && layout.range});},[links,layout.count,layout.crosshair,layout.range]);
   const changeView = (index:number, patch:Partial<ComparisonView>) => setLayout(previous => ({...previous,comparisons:previous.comparisons.map((view,i) => i === index ? {...view,...patch} : view)}));
   return <ChartLinkContext.Provider value={links}><div className="min-w-0 space-y-3" data-testid="smart-chart-layout">

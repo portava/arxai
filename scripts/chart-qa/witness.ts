@@ -56,6 +56,9 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         symbol:adapter.symbol,intervalSeconds:adapter.intervalSeconds,style:adapter.style,
         feed:{source:adapter.feedState.source,livePriceAffordance:adapter.feedState.livePriceAffordance},
         range:range ? {from:range.from,to:range.to} : null,
+        visibleTimeRange:adapter.chart.timeScale().getVisibleRange(),
+        linkedView:{requestedRange:adapter.linkedRange ? {...adapter.linkedRange} : null,
+          requestedCursor:adapter.linkedCursor ?? null,hoveredCandle:bar(adapter.hoveredCandle)},
         bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
       };
     },

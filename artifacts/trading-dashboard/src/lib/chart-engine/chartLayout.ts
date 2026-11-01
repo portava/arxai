@@ -2,6 +2,7 @@ import { resolveSymbol } from "@/lib/symbolRegistry";
 import { restoreChartInterval, type ChartInterval, type ChartRequestedInterval } from "./chartIntervals";
 export { CHART_INTERVALS, isChartInterval, type ChartInterval } from "./chartIntervals";
 
+export const SCANNER_CHART_LAYOUT_KEY = "arx.scanner.chart.layout.v1";
 export const CHART_LAYOUT_KEY = "arx.chart.layout.v2";
 export interface ComparisonView { symbol: string | null; timeframe: ChartRequestedInterval }
 export interface ChartLayoutState {

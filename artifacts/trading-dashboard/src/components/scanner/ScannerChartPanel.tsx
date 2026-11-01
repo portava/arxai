@@ -1,4 +1,6 @@
 import { TickingTime } from "@/components/ui/TickingTime";
+import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
+import { SCANNER_CHART_LAYOUT_KEY } from "@/lib/chart-engine/chartLayout";
 import { ARXNativeChart, type ArxTimeframe } from "@/components/charts/ARXNativeChart";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { isChartInterval, parseChartInterval } from "@/lib/chart-engine/chartIntervals";
@@ -1930,6 +1932,7 @@ export function ScannerChartPanel() {
       </CardHeader>
       </details>
       <CardContent className="px-2 sm:px-6">
+        <SmartChartLayout symbol={symbol} storageKey={SCANNER_CHART_LAYOUT_KEY}>
         <ARXNativeChart symbol={symbol} timeframe={apiTf as ArxTimeframe}
           onTimeframeChange={tf => setTimeframe(normalizeChartTimeframe(tf))}
           limit={200} height={520} mobileHeight={360}
@@ -2081,6 +2084,7 @@ export function ScannerChartPanel() {
               )}
           </>}
         />
+        </SmartChartLayout>
         {hasCandles && (
           <div className="mt-3 space-y-3">
 

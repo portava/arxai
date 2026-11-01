@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("./ARXNativeChart",()=>({ARXNativeChart:(props:any)=><button data-testid="secondary" data-workspace={props.workspaceId} onClick={()=>props.onTimeframeChange("H4")}>{props.symbol}:{props.timeframe}:{String(!!props.onChartContextChange)}</button>}));
 vi.mock("@/components/scanner/SymbolExplorer",()=>({SymbolExplorer:(props:any)=><button onClick={()=>props.onSelect("GBPUSD")}>Select GBPUSD</button>}));
 import { SmartChartLayout } from "./SmartChartLayout";
-import { CHART_LAYOUT_KEY, validateChartLayout } from "@/lib/chart-engine/chartLayout";
+import { CHART_LAYOUT_KEY, SCANNER_CHART_LAYOUT_KEY, validateChartLayout } from "@/lib/chart-engine/chartLayout";
 beforeEach(()=>localStorage.clear());afterEach(()=>{cleanup();vi.restoreAllMocks();});
 it("keeps the primary mounted while adding an independent read-only comparison and remembers layout",()=>{
   const view=render(<SmartChartLayout symbol="EURUSD"><input aria-label="Primary state" defaultValue="kept"/></SmartChartLayout>);
@@ -40,4 +40,21 @@ it("shows storage refusal instead of promising persistence",()=>{
   vi.spyOn(Storage.prototype,"setItem").mockImplementation(()=>{throw new Error("quota");});
   render(<SmartChartLayout symbol="EURUSD"><div>Primary</div></SmartChartLayout>);
   expect(screen.getByRole("alert").textContent).toContain("will reset");
+});
+
+it("keeps Scanner layout choices separate from the Live Chart and legacy layouts",()=>{
+  const live={count:4,comparisons:[{symbol:"GBPUSD",timeframe:"H4"}],crosshair:true,range:true};
+  localStorage.setItem(CHART_LAYOUT_KEY,JSON.stringify(live));
+  localStorage.setItem("arx.chart.layout.v1",JSON.stringify({count:2,timeframe:"M30"}));
+  const view=render(<SmartChartLayout symbol="EURUSD" storageKey={SCANNER_CHART_LAYOUT_KEY}><input aria-label="Primary state" /></SmartChartLayout>);
+  expect(screen.queryByTestId("secondary")).toBeNull();
+  const primary=screen.getByLabelText("Primary state");
+  fireEvent.click(screen.getByRole("button",{name:"Two charts"}));
+  expect(screen.getByLabelText("Primary state")).toBe(primary);
+  expect(screen.getByTestId("secondary").textContent).toBe("EURUSD:H1:false");
+  expect(JSON.parse(localStorage.getItem(CHART_LAYOUT_KEY)!)).toEqual(live);
+  expect(JSON.parse(localStorage.getItem(SCANNER_CHART_LAYOUT_KEY)!).count).toBe(2);
+  view.unmount();
+  render(<SmartChartLayout symbol="EURUSD" storageKey={SCANNER_CHART_LAYOUT_KEY}><div>Primary</div></SmartChartLayout>);
+  expect(screen.getByTestId("secondary").textContent).toBe("EURUSD:H1:false");
 });
