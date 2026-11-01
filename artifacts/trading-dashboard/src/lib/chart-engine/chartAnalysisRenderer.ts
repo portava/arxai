@@ -327,7 +327,7 @@ export class ChartAnalysisRenderer {
         if (point.time < time) lo = mid + 1; else hi = mid - 1;
       }
       return {
-        label: studyLabel(calculator.config), ...(calculator.config.kind==='vwap'&&calculator.config.vwapAnchor?{displayLabel:`VWAP (${(calculator.config.source??'hlc3').toUpperCase()}) · anchored ${formatSourceChartTime(calculator.config.vwapAnchor.time,anchorEvidence?.(calculator.config.vwapAnchor).utcQualified??false)}`} : {}), color: calculator.config.color, ...(reason ? {reason} : {}),
+        label: studyLabel(calculator.config), ...(calculator.config.kind==='vwap'&&calculator.config.vwapAnchor?{displayLabel:`VWAP · ${calculator.config.source??'hlc3'} · observed-bar anchor ${formatSourceChartTime(calculator.config.vwapAnchor.time,anchorEvidence?.(calculator.config.vwapAnchor).utcQualified??false,'UTC',{seconds:true})}`} : {}), color: calculator.config.color, ...(reason ? {reason} : {}),
         values: studyDefinition(calculator.config.kind).channels.map((name, index) => ({ name: calculator.config.lineStyles?.[index]?.visible === false ? `${name} (hidden)` : name, value: values[index] ?? null })),
       };
     });
