@@ -1,0 +1,230 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NativeChartViewport } from "./nativeChartViewport";
+import { CHART_STYLES } from "./chartWorkspace";
+import * as renderer from "./nativePriceRenderer";
+import type { ChartEngineCandle } from "./types";
+
+const candles = (start = 0, count = 200): ChartEngineCandle[] => Array.from({length:count}, (_,i) => ({time:1_700_000_000+(start+i)*60,open:100+start+i,high:103+start+i,low:99+start+i,close:102+start+i}));
+let container:HTMLDivElement, viewport:NativeChartViewport, canvas:HTMLCanvasElement, ctx:any;
+let width=800,height=400,nextRaf=1;
+let queue:Map<number,FrameRequestCallback>, allCallbacks:FrameRequestCallback[];
+let observers:Array<{callback:ResizeObserverCallback;disconnect:ReturnType<typeof vi.fn>}>;
+let media:Array<{callback:((event:any)=>void)|null;removeEventListener:ReturnType<typeof vi.fn>}>;
+function flush() { const callbacks=[...queue.values()];queue.clear();callbacks.forEach(callback=>callback(1)); }
+function create(options:ConstructorParameters<typeof NativeChartViewport>[1]={}) {
+  viewport=new NativeChartViewport(container,options);canvas=container.querySelector('canvas')!;
+  canvas.setPointerCapture=vi.fn();canvas.releasePointerCapture=vi.fn();viewport.setCandles(candles());flush();return viewport;
+}
+function pointer(type:string,x:number,y:number,id=1,pointerType='mouse') {
+  const event=new MouseEvent(type,{bubbles:true,cancelable:true,clientX:x+10,clientY:y+20,button:0});
+  Object.defineProperties(event,{pointerId:{value:id},pointerType:{value:pointerType}});canvas.dispatchEvent(event);return event;
+}
+function wheel(x:number,y:number,deltaY:number,deltaMode=0,deltaX=0) {
+  const event=new WheelEvent('wheel',{bubbles:true,cancelable:true,clientX:x+10,clientY:y+20,deltaY,deltaX,deltaMode});canvas.dispatchEvent(event);return event;
+}
+function key(value:string,target:HTMLElement=canvas,options:KeyboardEventInit={}) {const e=new KeyboardEvent('keydown',{bubbles:true,cancelable:true,key:value,...options});target.dispatchEvent(e);return e;}
+beforeEach(()=>{
+  width=800;height=400;nextRaf=1;queue=new Map();allCallbacks=[];observers=[];media=[];
+  ctx=new Proxy({measureText:vi.fn((text:string)=>({width:text.length*6}))} as any,{get:(target,key)=>{if(!(key in target))target[key]=vi.fn();return target[key];},set:(target,key,value)=>{target[key]=value;return true;}});
+  vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(ctx);
+  vi.spyOn(HTMLCanvasElement.prototype,'toDataURL').mockReturnValue('data:image/png;base64,fixture');
+  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){
+    const w=this instanceof HTMLCanvasElement?parseFloat(this.style.width):width;
+    const h=this instanceof HTMLCanvasElement?parseFloat(this.style.height):height;
+    return {x:10,y:20,left:10,top:20,right:10+w,bottom:20+h,width:w,height:h,toJSON(){}};
+  });
+  vi.stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{const id=nextRaf++;queue.set(id,callback);allCallbacks.push(callback);return id;});
+  vi.stubGlobal('cancelAnimationFrame',(id:number)=>queue.delete(id));
+  vi.stubGlobal('ResizeObserver',class{callback:ResizeObserverCallback;disconnect=vi.fn();constructor(callback:ResizeObserverCallback){this.callback=callback;observers.push(this);}observe(){}});
+  vi.stubGlobal('matchMedia',vi.fn(()=>{const value={callback:null as ((event:any)=>void)|null,addEventListener:vi.fn((_name:string,callback:(event:any)=>void)=>{value.callback=callback;}),removeEventListener:vi.fn()};media.push(value);return value;}));
+  vi.stubGlobal('devicePixelRatio',2);
+  container=document.createElement('div');document.body.append(container);
+});
+afterEach(()=>{viewport?.destroy();container.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
+
+describe('native Canvas viewport lifecycle and source ownership',()=>{
+  it('owns one Canvas and coalesces data, style and view changes into one paint',()=>{
+    viewport=new NativeChartViewport(container);canvas=container.querySelector('canvas')!;
+    viewport.setCandles(candles());viewport.setStyle('line');viewport.setRange({from:20,to:80});
+    expect(container.querySelectorAll('canvas')).toHaveLength(1);expect(queue.size).toBe(1);expect(viewport.getState().paintCount).toBe(0);
+    flush();expect(viewport.getState().paintCount).toBe(1);expect(queue.size).toBe(0);
+    expect(canvas.width).toBe(1600);expect(canvas.height).toBe(800);expect(ctx.setTransform).toHaveBeenCalledWith(2,0,0,2,0,0);
+    expect(viewport.getFrame()!.range).toEqual({from:20,to:80});
+  });
+  it.each(CHART_STYLES)('renders %s without modifying canonical observations',style=>{
+    create();const input=candles(),original=structuredClone(input);viewport.setCandles(input);viewport.setStyle(style);flush();
+    expect(viewport.getFrame()!.style).toBe(style);expect(viewport.getFrame()!.series.candles).toEqual(original);expect(input).toEqual(original);
+    input[0]!.close=999;expect(viewport.getFrame()!.series.candles[0]!.close).toBe(original[0]!.close);
+  });
+  it('crosshair returns real canonical OHLC even for HA and does not reprepare history',()=>{
+    const notify=vi.fn();create({onCrosshair:notify});viewport.setStyle('heikinAshi');flush();
+    const spy=vi.spyOn(renderer,'prepareNativePriceSeries');const frame=viewport.getFrame()!,bar=frame.series.candles[150]!;
+    const x=frame.timeToX(bar.time)!;pointer('pointermove',x,100);flush();
+    expect(notify.mock.calls.at(-1)![0].candle).toEqual(bar);expect(notify.mock.calls.at(-1)![0].candle.close).not.toBe(frame.series.heikinAshi[150]!.close);
+    for(let i=0;i<20;i++)pointer('pointermove',x,110+i);flush();expect(spy).not.toHaveBeenCalled();
+    pointer('pointerleave',x,100);expect(notify).toHaveBeenLastCalledWith(null);
+  });
+  it('preserves real timestamp position through prepend and rolling history while panned',()=>{
+    create();viewport.setRange({from:30,to:90});const anchor=candles()[60]!.time;const x=viewport.getFrame()!.timeToX(anchor);
+    viewport.setCandles(candles(-40,240));expect(viewport.getRange()).toEqual({from:70,to:130});expect(viewport.getFrame()!.timeToX(anchor)).toBeCloseTo(x!);
+    viewport.setCandles(candles(20,200));expect(viewport.getRange()).toEqual({from:10,to:70});expect(viewport.getFrame()!.timeToX(anchor)).toBeCloseTo(x!);
+    viewport.setCandles(candles(20,201));expect(viewport.getRange()).toEqual({from:10,to:70});
+  });
+  it('only follows appended latest bars when following latest was explicitly retained',()=>{
+    create();const span=viewport.getRange()!.to-viewport.getRange()!.from;const before=viewport.getRange()!;
+    viewport.setCandles(candles(0,201));expect(viewport.getRange()!.from).toBe(before.from+1);
+    viewport.setRange({from:20,to:60});viewport.setCandles(candles(0,202));expect(viewport.getRange()).toEqual({from:20,to:60});
+    viewport.goLatest();expect(viewport.getState().followingLatest).toBe(true);expect(viewport.getRange()!.to).toBe(203);expect(span).toBe(100);
+  });
+  it('keeps percentage/indexed reference fixed through pan, prepend and refresh until context reset',()=>{
+    create();const reference=candles()[0]!.close;viewport.setScale('percent');viewport.setRange({from:25,to:85});
+    viewport.setCandles(candles(-50,250));expect(viewport.getState().referencePrice).toBe(reference);expect(viewport.getFrame()!.axisValue(reference)).toBe(0);
+    viewport.setScale('indexed');expect(viewport.getFrame()!.axisValue(reference)).toBe(100);
+    viewport.resetContext();expect(viewport.getState().referencePrice).toBeNull();viewport.setCandles(candles(500,50));expect(viewport.getState().referencePrice).toBe(candles(500,50)[0]!.close);
+  });
+  it('does not substitute a positive later close for a zero first reference',()=>{
+    create();viewport.resetContext();viewport.setCandles([{time:1,open:0,high:1,low:-1,close:0},{time:2,open:1,high:3,low:1,close:2}]);viewport.setScale('percent');flush();
+    expect(viewport.getState().referencePrice).toBe(0);expect(viewport.getState()).toMatchObject({status:'unavailable',error:'INVALID_SCALE'});expect(viewport.exportImage()).toBeNull();
+  });
+  it('daily display stays UTC without changing source timestamps',()=>{
+    create();const time=viewport.getFrame()!.series.candles[0]!.time;viewport.setDisplayTimeZone('America/New_York','D1');
+    expect(viewport.getState().effectiveTimeZone).toBe('UTC');viewport.setDisplayTimeZone('America/New_York','M5');expect(viewport.getState().effectiveTimeZone).toBe('America/New_York');expect(viewport.getFrame()!.series.candles[0]!.time).toBe(time);
+  });
+  it('zero/invalid sizes safely withhold frames and resize restores current source',()=>{
+    create();viewport.resize(0,0);flush();expect(viewport.getState()).toMatchObject({status:'unavailable',error:'ZERO_SIZE_OR_UNSUPPORTED_DIMENSIONS'});
+    viewport.resize(Infinity,400);expect(viewport.getFrame()).toBeNull();viewport.resize(800,400);flush();expect(viewport.getState().status).toBe('ready');
+  });
+  it('bounds untrusted backing allocations and exposes clamped effective DPR',()=>{
+    create();vi.stubGlobal('devicePixelRatio',1e100);viewport.resize(800,400);
+    expect(canvas.width).toBeLessThanOrEqual(8192);expect(canvas.height).toBeLessThanOrEqual(8192);expect(canvas.width*canvas.height).toBeLessThanOrEqual(16_777_216);
+    expect(viewport.getState().pixelRatio).toBeLessThan(1e100);viewport.resize(1e100,1e100);expect(canvas.width*canvas.height).toBe(0);expect(viewport.getFrame()).toBeNull();
+  });
+  it('reacts to ResizeObserver and DPR changes, then disconnects every retained callback',()=>{
+    create();const observer=observers[0]!,oldMedia=media.at(-1)!,oldRaf=[...allCallbacks];
+    width=600;height=300;observer.callback([],observer as unknown as ResizeObserver);flush();expect(viewport.getState().width).toBe(600);
+    vi.stubGlobal('devicePixelRatio',3);oldMedia.callback?.({});flush();expect(canvas.width).toBe(1800);
+    const paints=viewport.getState().paintCount;viewport.destroy();expect(observer.disconnect).toHaveBeenCalledOnce();expect(media.at(-1)!.removeEventListener).toHaveBeenCalled();expect(container.querySelector('canvas')).toBeNull();
+    observer.callback([],observer as unknown as ResizeObserver);oldMedia.callback?.({});oldRaf.forEach(callback=>callback(1));flush();
+    expect(viewport.getState().paintCount).toBe(paints);expect(viewport.getFrame()).toBeNull();expect(queue.size).toBe(0);
+  });
+  it('reset invalidates old scheduled callbacks and export flushes one current paint',()=>{
+    create();viewport.setStyle('line');const old=allCallbacks.at(-1)!;viewport.resetContext();viewport.setCandles(candles(400,50));
+    old(1);expect(viewport.exportImage()).toBe('data:image/png;base64,fixture');expect(queue.size).toBe(0);expect(viewport.getFrame()!.series.candles[0]!.time).toBe(candles(400,50)[0]!.time);
+  });
+  it('caller callback failures cannot clear valid paint or interrupt cleanup',()=>{
+    create({onCrosshair:()=>{throw Error('consumer failed');},onViewportChange:()=>{throw Error('observer failed');}});
+    expect(viewport.getState().status).toBe('ready');expect(viewport.getState().callbackError).toContain('observer failed');
+    pointer('pointermove',200,100);expect(()=>viewport.resetContext()).not.toThrow();viewport.setCandles(candles());flush();pointer('pointermove',200,100);
+    expect(()=>viewport.destroy()).not.toThrow();expect(observers[0]!.disconnect).toHaveBeenCalledOnce();expect(queue.size).toBe(0);
+  });
+});
+
+describe('native chart pointer, wheel and keyboard navigation',()=>{
+  beforeEach(()=>{create();viewport.setRange({from:40,to:100});flush();});
+  it('pans a real window using captured pointer coordinates and cancels on resize',()=>{
+    const before=viewport.getRange()!,spacing=viewport.getFrame()!.spacing;
+    pointer('pointerdown',300,100);pointer('pointermove',300+spacing*5,100);expect(viewport.getRange()!.from).toBeCloseTo(before.from-5);
+    viewport.resize(700,400);const resized=viewport.getRange();pointer('pointermove',600,100);expect(viewport.getRange()).toEqual(resized);
+  });
+  it('anchors wheel zoom to the same logical observation and honors line delta mode',()=>{
+    const frame=viewport.getFrame()!,x=frame.plot.width*.25,anchor=frame.xToLogical(x)!;
+    const event=wheel(x,100,-3,1);expect(event.defaultPrevented).toBe(true);expect(viewport.getFrame()!.xToLogical(x)).toBeCloseTo(anchor,10);
+    expect(viewport.getRange()!.to-viewport.getRange()!.from).toBeLessThan(60);
+  });
+  it('horizontal wheel pans without zoom and outside-plot wheel leaves page scroll alone',()=>{
+    const frame=viewport.getFrame()!,before=viewport.getRange()!;wheel(200,100,0,0,frame.spacing*4);
+    expect(viewport.getRange()!.from).toBeCloseTo(before.from+4);expect(viewport.getRange()!.to-viewport.getRange()!.from).toBe(60);
+    const prior=viewport.getRange();expect(wheel(790,100,-100).defaultPrevented).toBe(false);expect(viewport.getRange()).toEqual(prior);
+  });
+  it('two-pointer pinch zooms about its moving midpoint without fabricating timestamps',()=>{
+    const frame=viewport.getFrame()!,anchor=frame.xToLogical(300)!;
+    pointer('pointerdown',200,100,1,'touch');pointer('pointerdown',400,100,2,'touch');
+    pointer('pointermove',450,100,2,'touch');expect(viewport.getFrame()!.xToLogical(325)).toBeCloseTo(anchor,10);
+    expect(viewport.getRange()!.to-viewport.getRange()!.from).toBeCloseTo(48);
+    pointer('pointerup',450,100,2,'touch');const before=viewport.getRange()!;
+    pointer('pointermove',220,100,1,'touch');expect(viewport.getRange()!.from).toBeLessThan(before.from);
+    expect(viewport.getFrame()!.series.candles).toEqual(candles());
+  });
+  it.each(['pointercancel','lostpointercapture'])('%s ends gesture and prevents stale movement',event=>{
+    pointer('pointerdown',200,100);pointer(event,200,100);const before=viewport.getRange();pointer('pointermove',400,100);expect(viewport.getRange()).toEqual(before);
+  });
+  it('prepended history rebases an active drag without ending it',()=>{
+    const spacing=viewport.getFrame()!.spacing;pointer('pointerdown',200,100);viewport.setCandles(candles(-20,220));const before=viewport.getRange()!;
+    pointer('pointermove',200+spacing*3,100);expect(viewport.getRange()!.from).toBeCloseTo(before.from-3);expect(canvas.releasePointerCapture).not.toHaveBeenCalled();
+  });
+  it('keyboard owns only the focused canvas and keeps bounds/ARX Home-End convention',()=>{
+    const input=document.createElement('input');container.append(input);input.focus();const before=viewport.getRange();key('ArrowLeft',input);expect(viewport.getRange()).toEqual(before);
+    canvas.focus();key('ArrowLeft');expect(viewport.getRange()!.from).toBe(28);key('+');expect(viewport.getRange()!.to-viewport.getRange()!.from).toBe(48);
+    const current=viewport.getRange();expect(key('ArrowRight',canvas,{ctrlKey:true}).defaultPrevented).toBe(false);expect(viewport.getRange()).toEqual(current);
+    key('Home');expect(viewport.getRange()!.from).toBeLessThanOrEqual(0);expect(viewport.getRange()!.to).toBeGreaterThanOrEqual(199);
+    key('End');expect(viewport.getState().followingLatest).toBe(true);
+    for(let i=0;i<100;i++)key('ArrowLeft');expect(viewport.getRange()!.from).toBeGreaterThanOrEqual(-3);
+  });
+  it('ignores queued input and commands after destruction',()=>{
+    const before=viewport.getState().paintCount;viewport.destroy();pointer('pointerdown',100,100);wheel(100,100,-20);key('End');viewport.setCandles(candles());viewport.resize(800,400);viewport.goLatest();viewport.fit();flush();
+    expect(viewport.getState()).toMatchObject({status:'destroyed',paintCount:before});expect(viewport.exportImage()).toBeNull();
+  });
+});
+
+it('initial zero size has no default300x150 backing and can later become visible',()=>{
+  width=height=0;create();expect(canvas.width).toBe(0);expect(canvas.height).toBe(0);expect(viewport.getFrame()).toBeNull();
+  width=800;height=400;viewport.resize();flush();expect(viewport.getState().status).toBe('ready');
+});
+it('editable canvas and secondary pointer buttons do not steal input',()=>{
+  create();viewport.setRange({from:40,to:100});canvas.focus();canvas.setAttribute('contenteditable','true');const before=viewport.getRange();
+  expect(key('ArrowLeft').defaultPrevented).toBe(false);expect(viewport.getRange()).toEqual(before);
+  const e=new MouseEvent('pointerdown',{clientX:210,clientY:120,button:2,cancelable:true});Object.defineProperties(e,{pointerId:{value:1},pointerType:{value:'pen'}});canvas.dispatchEvent(e);
+  expect(e.defaultPrevented).toBe(false);pointer('pointermove',400,100);expect(viewport.getRange()).toEqual(before);
+});
+it('a callback destroying during hover withdrawal cannot restart resize or source ownership',()=>{
+  create({onCrosshair:value=>{if(value===null)viewport.destroy();}});pointer('pointermove',200,100);const widthBefore=canvas.width;
+  viewport.resize(700,300);expect(viewport.getState().status).toBe('destroyed');expect(canvas.width).toBe(widthBefore);expect(queue.size).toBe(0);
+});
+
+it.each(['prices','append','rolling'])('active drag survives same-context %s refresh',kind=>{
+  create();viewport.setRange({from:40,to:100});const spacing=viewport.getFrame()!.spacing;
+  pointer('pointerdown',200,100);pointer('pointermove',200+spacing*2,100);
+  const refreshed=kind==='append'?candles(0,201):kind==='rolling'?candles(1,200):candles();refreshed[refreshed.length-1]!.close+=.25;
+  viewport.setCandles(refreshed);const before=viewport.getRange()!;pointer('pointermove',200+spacing*5,100);
+  expect(viewport.getRange()!.from).toBeCloseTo(before.from-3);expect(canvas.releasePointerCapture).not.toHaveBeenCalled();
+});
+it('active pinch survives a refreshed OHLC window and prepend with the same anchor under its fingers',()=>{
+  create();viewport.setRange({from:40,to:100});pointer('pointerdown',200,100,1,'touch');pointer('pointerdown',400,100,2,'touch');
+  pointer('pointermove',450,100,2,'touch');const anchor=viewport.getFrame()!.xToLogical(325)!;
+  const next=candles(-20,220);next[next.length-1]!.close+=.25;viewport.setCandles(next);
+  expect(viewport.getFrame()!.xToLogical(325)).toBeCloseTo(anchor+20);
+  pointer('pointermove',500,100,2,'touch');expect(viewport.getFrame()!.xToLogical(350)).toBeCloseTo(anchor+20);
+  expect(canvas.releasePointerCapture).not.toHaveBeenCalled();
+});
+it('disjoint same-context history explicitly cancels an unanchorable gesture',()=>{
+  create();pointer('pointerdown',200,100);viewport.setCandles(candles(500,200));const before=viewport.getRange();pointer('pointermove',400,100);expect(viewport.getRange()).toEqual(before);expect(canvas.releasePointerCapture).toHaveBeenCalled();
+});
+it.each(['reset','replace','range','style'])('reentrant %s during hover withdrawal wins over an older data mutation',action=>{
+  let armed=false;create({onCrosshair:value=>{if(value!==null||!armed)return;armed=false;
+    if(action==='reset')viewport.resetContext();if(action==='replace')viewport.setCandles(candles(500,100));if(action==='range')viewport.setRange({from:10,to:30});if(action==='style')viewport.setStyle('line');
+  }});
+  pointer('pointermove',200,100);armed=true;viewport.setCandles(candles(0,201));
+  if(action==='reset')expect(viewport.getState().barCount).toBe(0);
+  if(action==='replace')expect(viewport.getFrame()!.series.candles[0]!.time).toBe(candles(500,100)[0]!.time);
+  if(action==='range')expect(viewport.getRange()).toEqual({from:10,to:30});
+  if(action==='style')expect(viewport.getState().style).toBe('line');
+  if(action==='range'||action==='style')expect(viewport.getState().barCount).toBe(200);
+});
+
+function outsidePointer(type:string,x:number,y:number,id=1) {
+  const event=new MouseEvent(type,{bubbles:true,cancelable:true,clientX:x+10,clientY:y+20,button:0});
+  Object.defineProperty(event,'pointerId',{value:id});document.body.dispatchEvent(event);return event;
+}
+it('capture failure still moves and releases only the owned pointer outside the canvas',()=>{
+  create();viewport.setRange({from:40,to:100});canvas.setPointerCapture=vi.fn(()=>{throw Error('capture unavailable');});
+  const spacing=viewport.getFrame()!.spacing;pointer('pointerdown',200,100);const before=viewport.getRange()!;
+  expect(outsidePointer('pointermove',200+spacing*3,100,99).defaultPrevented).toBe(false);expect(viewport.getRange()).toEqual(before);
+  outsidePointer('pointermove',200+spacing*3,100);expect(viewport.getRange()!.from).toBeCloseTo(before.from-3);
+  outsidePointer('pointerup',200+spacing*3,100);const released=viewport.getRange();pointer('pointermove',400,100);expect(viewport.getRange()).toEqual(released);
+});
+it.each(['pointercancel','blur'])('outside %s clears captured gestures and never revives them',type=>{
+  create();viewport.setRange({from:40,to:100});pointer('pointerdown',200,100);
+  if(type==='blur')window.dispatchEvent(new Event('blur'));else outsidePointer(type,200,100);
+  const before=viewport.getRange();pointer('pointermove',400,100);expect(viewport.getRange()).toEqual(before);
+  viewport.destroy();outsidePointer('pointermove',500,100);window.dispatchEvent(new Event('blur'));flush();expect(queue.size).toBe(0);
+});
