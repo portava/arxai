@@ -1,3 +1,4 @@
+import { selectedAnalysisAvailable, selectedNewsDisplay } from "./selectedMarketEvidence";
 // Ruby Reasoning Block — ONE standardized, always-visible reasoning contract
 // shared by every Ruby decision surface (Scalp Builder, Scanner card, Opportunity
 // Map detail, Ruby Chat, Ruby Chart Read, Trade Setup card, Auto-bot review).
@@ -630,6 +631,8 @@ export interface OppMapReasoningInput {
   dataState?: string | null;
   dataSourceLabel?: string | null;
   newsRiskLevel?: string | null;
+  newsCalendarAvailable?: boolean;
+  newsApplicability?: "applicable" | "not_applicable";
 }
 
 export function buildReasoningFromOppMap(
@@ -642,7 +645,8 @@ export function buildReasoningFromOppMap(
   const feedDegraded = ds === "STALE" || ds === "UNAVAILABLE";
   const withheld = input.levelsWithheld === true || input.entryZone == null || feedDegraded;
   const lowConf = /low|weak|uncertain/i.test(clean(input.confidenceLabel));
-  const newsLabel = clean(input.newsRiskLevel);
+  const analysisAvailable = selectedAnalysisAvailable(input.dataState);
+  const news = selectedNewsDisplay({ riskLevel: input.newsRiskLevel, calendarAvailable: input.newsCalendarAvailable, applicability: input.newsApplicability });
 
   // ── Decision ──────────────────────────────────────────────────────────────
   let decision: string;
@@ -659,11 +663,13 @@ export function buildReasoningFromOppMap(
   }
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(
+  const structure = !analysisAvailable ? "Trend unavailable — price analysis is not available." : orElse(
     clean(input.trendState) ? `Trend ${input.trendState}. ${clean(exp.hedge)}`.trim() : exp.hedge,
     NOT_ENOUGH,
   );
-  const momentum = `Confidence ${orElse(input.confidenceLabel, "—")}; volatility ${orElse(input.volatilityLabel, "—")}.`;
+  const momentum = analysisAvailable
+    ? `Confidence ${orElse(input.confidenceLabel, "—")}; volatility ${orElse(input.volatilityLabel, "—")}.`
+    : "Confidence unavailable; volatility unavailable.";
   const pattern = orElse(exp.whyItMatters, "No specific pattern called out.");
   const trendline = withheld
     ? "Trendline read withheld until a confirmed live feed."
@@ -693,9 +699,7 @@ export function buildReasoningFromOppMap(
   }
 
   const riskBase = orElse(exp.risk, "Manage risk to your plan.");
-  const evidenceRisk = newsLabel
-    ? `${riskBase} News risk ${newsLabel}.`
-    : `${riskBase} ${NEWS_UNAVAILABLE_NOTE}`;
+  const evidenceRisk = `${riskBase} ${news.sentence}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   const confirmation = dir

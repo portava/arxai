@@ -80,10 +80,11 @@ const FRESH_FS: Partial<ChartFeedStatus> = {
 
 // Honest-empty economic-events loader. Injecting it keeps these unit tests fully
 // deterministic and off the network: the builder never reaches the real
-// `economic_events` DB query, which is the one variable round-trip in this path.
+// connected-calendar authority. Availability is explicit, even for empty lists.
 const noEvents: SelectedMarketDeps["loadEventsFn"] = async () => ({
   events: [],
   scorerInput: [],
+  calendarAvailable: true,
 });
 
 // 1) SIMULATOR NEVER REACHED + EMPTY → honest WAITING envelope.
@@ -362,4 +363,72 @@ test("controlled latency probe: one 75ms source read serves 32 readers; warm rea
   warmMs.sort((a, b) => a - b);
   assert.equal(sourceCalls, 1); assert.equal(newsCalls, 1);
   t.diagnostic(JSON.stringify({ kind: "offline-controlled-latency-not-production-SLA", syntheticSourceDelayMs: 75, concurrentReaders: 32, sourceCalls, newsCalls, coldBatchMs, warmReads: 500, warmP50Ms: warmMs[250], warmP95Ms: warmMs[475] }));
+});
+
+
+test("news availability survives the selected-market envelope independently of candles", async () => {
+  for (const bars of [[], bullishBars(60, 1.15, 0.0005)]) {
+    for (const available of [true, false, undefined]) {
+      clearSelectedMarketCache();
+      let calls = 0;
+      const env = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, {
+        getChartCandlesFn: (async () => makeChart(bars, FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"],
+        loadEventsFn: async () => { calls++; return { events: [], scorerInput: [], calendarAvailable: available }; },
+      });
+      assert.ok(env.ok);
+      assert.equal(calls, 1, "price absence must not skip independently checked news");
+      assert.equal(env.newsRisk.calendarAvailable, available === true);
+      assert.equal(env.newsRisk.applicability, "applicable");
+    }
+  }
+});
+test("calendar failure keeps price analysis available without a clear-news claim", async () => {
+  clearSelectedMarketCache();
+  const env = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, {
+    getChartCandlesFn: (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"],
+    loadEventsFn: async () => { throw new Error("calendar failed"); },
+  });
+  assert.ok(env.ok);
+  assert.equal(env.dataState, "LIVE_CONFIRMED");
+  assert.equal(env.newsRisk.calendarAvailable, false);
+  assert.match(env.newsRisk.summary, /unavailable/i);
+});
+
+
+test("synthetic aliases keep macro non-applicability without a calendar lookup", async () => {
+  for (const symbolRaw of ["V75", "R_75", "Volatility 75 Index"]) {
+    clearSelectedMarketCache();
+    let calls = 0;
+    const env = await getSelectedMarketSnapshot({ symbolRaw, refresh: true }, {
+      getChartCandlesFn: (async () => makeChart([], { source: null, quality: "empty" })) as SelectedMarketDeps["getChartCandlesFn"],
+      loadEventsFn: async () => { calls++; throw new Error("must not look up macro news"); },
+    });
+    assert.ok(env.ok);
+    assert.equal(calls, 0);
+    assert.equal(env.newsRisk.applicability, "not_applicable");
+    assert.equal(env.newsRisk.calendarAvailable, true);
+    assert.match(env.newsRisk.summary, /not applicable/);
+  }
+});
+test("checked high news risk survives missing candles and cached rereads", async () => {
+  clearSelectedMarketCache();
+  const eventTime = new Date(Date.now() + 10 * 60_000).toISOString();
+  const deps: SelectedMarketDeps = {
+    getChartCandlesFn: (async () => makeChart([], { source: null, quality: "empty" })) as SelectedMarketDeps["getChartCandlesFn"],
+    loadEventsFn: async () => ({ calendarAvailable: true,
+      scorerInput: [{ id: "known", title: "Known event", currency: "USD", country: "US", impact: "high", eventTime, source: "test", actual: null, forecast: null, previous: null, affectedMarkets: ["EURUSD"] }],
+      events: [{ externalId: "known", title: "Known event", currency: "USD", impactLevel: "HIGH", eventTime, minutesUntil: 10 }],
+    }),
+  };
+  const first = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, deps);
+  assert.ok(first.ok);
+  assert.equal(first.dataState, "UNAVAILABLE");
+  assert.equal(first.newsRisk.calendarAvailable, true);
+  assert.equal(first.newsRisk.riskLevel, "high");
+  assert.equal(first.upcomingEvents[0].externalId, "known");
+  const cached = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD" }, deps);
+  assert.ok(cached.ok);
+  assert.equal(cached.cacheHit, true);
+  assert.deepEqual(cached.newsRisk, first.newsRisk);
+  assert.deepEqual(cached.upcomingEvents, first.upcomingEvents);
 });
