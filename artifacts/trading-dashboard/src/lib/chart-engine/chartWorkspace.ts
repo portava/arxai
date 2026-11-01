@@ -97,7 +97,7 @@ function validateFibonacciOrigin(value: unknown): FibonacciOrigin | null {
   const interval=chartIntervalSeconds(p?.timeframe);
   if(!p||!interval||p.method!=="confirmed-swings-v1"||p.span!==2||![p.symbol,p.timeframe,p.source].every(v=>typeof v==="string"&&v.length>0&&v.length<=120)
     ||typeof p.sourceIdentity!=="string"||!/^[a-f\d]{64}$/i.test(p.sourceIdentity)||!anchor(p.start)||!anchor(p.end)||p.start.time>=p.end.time||p.start.price===p.end.price
-    ||!Number.isFinite(p.confirmedAt)||!Number.isFinite(p.windowFrom)||!Number.isFinite(p.windowTo)||p.windowFrom!<=0||p.start.time-p.windowFrom!<2*interval||p.end.time-p.start.time<interval||p.confirmedAt!-p.end.time<3*interval||p.windowTo!<p.confirmedAt!
+    ||![p.confirmedAt,p.windowFrom,p.windowTo].every(value=>typeof value==="number"&&Number.isFinite(value)&&value>0&&value<1e11)||p.start.time-p.windowFrom!<2*interval||p.end.time-p.start.time<interval||p.confirmedAt!-p.end.time<3*interval||p.windowTo!<p.confirmedAt!
     ||!Number.isInteger(p.closedBars)||p.closedBars!<6||p.closedBars!>600)return null;
   return {method:"confirmed-swings-v1",span:2,symbol:p.symbol!,timeframe:p.timeframe!,source:p.source!,sourceIdentity:p.sourceIdentity,start:{...p.start!},end:{...p.end!},confirmedAt:p.confirmedAt!,windowFrom:p.windowFrom!,windowTo:p.windowTo!,closedBars:p.closedBars!};
 }

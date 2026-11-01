@@ -1,3 +1,4 @@
+import { registerChartFibonacciAssistant } from "@/lib/chart-engine/chartFibonacciAssistant";
 import { registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import {
   describe, it, expect, beforeEach, afterEach, vi,
@@ -134,6 +135,27 @@ afterEach(() => {
 });
 
 describe("ArxAssistantLivePanel — manual press-to-record only", () => {
+  it("routes Fibonacci curiosity locally to its chart owner without sending a remote message",()=>{
+    const handler=vi.fn(()=>"Prepared an unaccepted Fibonacci preview. Exact 50% level: 15.");
+    const release=registerChartFibonacciAssistant(handler);
+    try {
+      renderPanel();vi.mocked(fetch).mockClear();
+      fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"What does Fibonacci show me about this chart?"}});
+      fireEvent.click(screen.getByTestId("arx-send"));
+      expect(handler).toHaveBeenCalledWith({action:"explain"});expect(screen.getByText(/Exact 50% level: 15/)).toBeTruthy();
+      expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes("/messages"))).toBe(false);
+    }finally{release();}
+  });
+  it("does not send unsupported Fibonacci orders to the model or drawing owner",()=>{
+    const handler=vi.fn();const release=registerChartFibonacciAssistant(handler);
+    try {
+      renderPanel();vi.mocked(fetch).mockClear();
+      fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"Show Fibonacci then buy EURUSD"}});
+      fireEvent.click(screen.getByTestId("arx-send"));
+      expect(handler).not.toHaveBeenCalled();expect(screen.getByText(/Chart not changed. Fibonacci requests support/)).toBeTruthy();
+      expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes("/messages"))).toBe(false);
+    }finally{release();}
+  });
   it("routes chart curiosity through the mounted chart without a remote model request", () => {
     const handler=vi.fn(()=>"Applied RSI (14). Actual chart observation RSI: 61.");
     const release=registerChartStudyAssistant(handler);
