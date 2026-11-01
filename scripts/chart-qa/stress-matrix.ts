@@ -44,11 +44,21 @@ export async function runStressMatrixCase({bars:barCount,views,frames:frameCount
     const expected=Array.from({length:barCount},(_,i)=>bar(i));expected[barCount-1]!.close+=((frameCount-1+9)%10)*.00001;
     const canonical=(rows:any[])=>rows.map(({time,open,high,low,close})=>({time,open,high,low,close}));
     const expectedJson=JSON.stringify(expected),correctness:any[]=[];
-    const fullPoints=configs.map(config=>{const calculator=new StudyCalculator(config);calculator.calculate(expected,0,false);return JSON.stringify(calculator.points);});
+    const fullPoints=configs.map(config=>{const calculator=new StudyCalculator(config);calculator.calculate(expected,0,false);return calculator.points;});
     for(const adapter of adapters){
-      const internal=adapter as any,analysis=internal.analysis;
+      const internal=adapter as any,analysis=internal.analysis,logical=internal.chart.timeScale().getVisibleLogicalRange();
+      const from=Math.max(0,Math.ceil(logical.from)),to=Math.min(barCount-1,Math.floor(logical.to));
+      const renderedStudies=analysis.studies.every((handle:any,index:number)=>handle.lines.every((line:any,channel:number)=>{
+        const rows=line.data(),times=new Set(rows.map((row:any)=>row.time));
+        if(rows.length!==times.size || rows.length===0)return false;
+        for(let i=from;i<=to;i++)if(!times.has(expected[i]!.time))return false;
+        return rows.every((row:any)=>{const i=(row.time-1700000000)/60,point=Number.isInteger(i)?fullPoints[index]?.[i]:null;
+          if(!point || point.time!==row.time)return false;const value=point.values[channel];
+          return value==null || !Number.isFinite(value) ? row.value===undefined : row.value===value;
+        });
+      }));
       correctness.push({canonical:JSON.stringify(canonical(internal.candles))===expectedJson,display:JSON.stringify(canonical(internal.series.data()))===expectedJson,
-        studies:analysis.studies.length===configs.length&&analysis.studies.every((handle:any,index:number)=>JSON.stringify(handle.calculator.points)===fullPoints[index]),
+        renderedStudies,studies:analysis.studies.length===configs.length&&analysis.studies.every((handle:any,index:number)=>JSON.stringify(handle.calculator.points)===JSON.stringify(fullPoints[index])),
         drawings:analysis.drawings.length===40,rulerCount:analysis.drawings.filter((d:any)=>d.kind==="measure").length,range:internal.chart.timeScale().getVisibleRange()});
     }
     const rangeAligned=correctness.every(c=>JSON.stringify(c.range)===JSON.stringify(correctness[0].range));
@@ -56,7 +66,7 @@ export async function runStressMatrixCase({bars:barCount,views,frames:frameCount
     const intervalP95Ms=p(samples.map(s=>s.intervalMs),.95);
     return{workload:{bars:barCount,views,frames:frameCount,ticksPerFramePerView:10,studies:configs,drawingsPerView:{fibonacci:20,ruler:20}},
       setupToThreeFramesMs,setupStart,streamStart,measuredEnd,acceptedUpdates,expectedUpdates:views*frameCount*10,visibility,rangeAligned,correctness,
-      valid:visibility.every(Boolean)&&rangeAligned&&acceptedUpdates===views*frameCount*10&&correctness.every(c=>c.canonical&&c.display&&c.studies&&c.drawings&&c.rulerCount===20),
+      valid:visibility.every(Boolean)&&rangeAligned&&acceptedUpdates===views*frameCount*10&&correctness.every(c=>c.canonical&&c.display&&c.studies&&c.renderedStudies&&c.drawings&&c.rulerCount===20),
       frameIntervalP50Ms:p(samples.map(s=>s.intervalMs),.5),frameIntervalP95Ms:intervalP95Ms,frameIntervalMaxMs:Math.max(...samples.map(s=>s.intervalMs)),
       meetsFrameProxy:intervalP95Ms<=16.7+1e-6,frameProxyBudgetMs:16.7,ingestionPlusStudyP95Ms:p(samples.map(s=>s.ingestionMs+s.studyMs),.95),
       samples,longTaskSupported,longTasks,limits:["Renderer-only synthetic workload; not Scanner navigation or trusted pointer latency","rAF spacing is not physical paint or proof of sustained60fps","Full study oracle shares the calculator; tests independently establish formulas","No competitor runtime measurement"]};
