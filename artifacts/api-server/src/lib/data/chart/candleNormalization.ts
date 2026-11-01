@@ -47,7 +47,8 @@ import { resolveCandleVolumeEvidence, type CandleVolumeEvidence } from "../candl
 // ── Timestamp convention ────────────────────────────────────────────────────
 //   - Deriv / MT5 candle `time` is the bar OPEN epoch → openTime = time,
 //     closeTime = openTime + interval.
-//   - Assistant-real candle `time` is the bar CLOSE timestamp → closeTime =
+//   - Audited Polygon FX and Twelve Data stock endpoints supply bar OPEN time.
+//   - Other legacy assistant-real candle `time` is the bar CLOSE timestamp → closeTime =
 //     time, openTime = closeTime - interval.
 //   - Unknown defaults to open-based.
 // In all cases closeTime - openTime === one timeframe interval.
@@ -221,7 +222,7 @@ function providerSymbolFrom(source: string | null, symbol: string): string | nul
 }
 
 /** Whether the raw router `time` should be read as the bar open or close. */
-function timeBasis(source: string | null): "open" | "close" {
+export function candleTimestampConvention(source: string | null): "open" | "close" {
   if (!source) return "open";
   if (source === "assistant_real:polygon" || source === "assistant_real:twelve_data") return "open";
   if (source.startsWith("assistant_real")) return "close";
@@ -415,7 +416,7 @@ export function normalizeCandles(
   const now = opts.now ?? Date.now();
   const receivedAt = opts.receivedAt ?? new Date(now).toISOString();
   const intervalMs = timeframeMs(timeframe);
-  const basis = timeBasis(source);
+  const basis = candleTimestampConvention(source);
   const sourceLabel = source ?? "unknown";
 
   const sourceMode = sourceModeFromProvider(source);
@@ -727,7 +728,7 @@ export function trailingIntervalGap(
  * elsewhere. Returns null when no candle has a parseable timestamp.
  *
  * Equivalence to the chart path: `normalizeCandles` sorts ascending and derives
- * each `openTime` from the raw `time` via `timeBasis(source)`, then
+ * each `openTime` from the raw `time` via `candleTimestampConvention(source)`, then
  * `trailingIntervalGap` reads the LAST (latest) bar. Taking the MAX open-ms over
  * the raw bars here yields the same latest-bar open, so the gap matches by
  * construction. (The forming-tip display path is intentionally NOT applied — the
@@ -742,7 +743,7 @@ export function rawTrailingIntervalGap(
 ): number | null {
   if (raw.length === 0) return null;
   const intervalMs = timeframeMs(timeframe);
-  const basis = timeBasis(source);
+  const basis = candleTimestampConvention(source);
   let latestOpenMs: number | null = null;
   for (const c of raw) {
     const t = Date.parse(c.time);

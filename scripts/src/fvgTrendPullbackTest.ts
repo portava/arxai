@@ -512,8 +512,8 @@ function makeBearishFvgCandles(basePrice: number, count: number): FvgCandle[] {
     fiveMinState: "Pullback reclaimed the MAs; price inside a bullish FVG.",
     pullbackActive: true,
     maReclaimed: true,
-    activeFvg: null,
-    fvgNote: "Bullish fair value gap active.",
+    activeFvg: { low: 1.082, high: 1.0835, midpoint: 1.08275, direction: "bullish", formationBarIndex: 65, isMitigated: false },
+    fvgNote: "Fresh FVG at 1.08200–1.08350.",
     entryMin: 1.082,
     entryMax: 1.0835,
     suggestedEntry: 1.0828,
@@ -525,10 +525,9 @@ function makeBearishFvgCandles(basePrice: number, count: number): FvgCandle[] {
     score: 82,
     grade: "A",
     headline: "HTF-aligned bullish FVG pullback.",
-    explanation: "4H/1H up; 5M pulled back and reclaimed the MAs into a fair value gap.",
-    tags: ["HTF_ALIGNED", "FVG_ACTIVE"],
-    // Test fixture: the exact `truth` shape is irrelevant here (withholdFvgLevels
-    // preserves it untouched), so we cast through unknown.
+    explanation: "Entry: 1.0828, SL: 1.079, TP1: 1.087.",
+    tags: ["HTF_ALIGNED", "FVG_ACTIVE", "SIGNAL_ACTIVE", "ENTRY_ZONE"],
+    // Partial truth fixture; withholding must restrict its signal flag.
     truth: { canAnalyze: true, canSignal: true, missingTimeframes: [] } as unknown as FvgStrategyReadBlock["truth"],
     note: "HTF Trend FVG Pullback is display / decision-support only — it explains and highlights, never authorises a trade.",
   };
@@ -546,14 +545,23 @@ function makeBearishFvgCandles(basePrice: number, count: number): FvgCandle[] {
   assert.strictEqual(withheld.invalidationLevel, null, "T21: invalidationLevel must be withheld");
   assert.strictEqual(withheld.levelsWithheld, true, "T21: levelsWithheld must be true");
 
-  // Direction + structure narrative are PRESERVED.
-  assert.strictEqual(withheld.direction, "BUY", "T21: direction preserved");
-  assert.strictEqual(withheld.stage, "FVG_ENTRY_ZONE", "T21: stage preserved");
+  // Structure is preserved while signal/entry language is withheld.
+  assert.strictEqual(withheld.direction, "WAIT", "T21: withheld setup cannot retain BUY signal");
+  assert.strictEqual(withheld.truth.canSignal, false);
+  assert.strictEqual(withheld.activeFvg, null);
+  assert.ok(!JSON.stringify(withheld).includes("1.082"), "T21: price zone and prose must not leak");
+  assert.strictEqual(withheld.stage, "WITHHELD", "T21: positive entry stage must be withdrawn");
+  assert.strictEqual(withheld.score, null, "T21: withheld setup has no displayed grade score");
   assert.strictEqual(withheld.h4Trend, "strong_up", "T21: h4Trend preserved");
   assert.strictEqual(withheld.htfNote, syntheticBlock.htfNote, "T21: htfNote preserved");
-  assert.strictEqual(withheld.headline, syntheticBlock.headline, "T21: headline preserved");
-  assert.strictEqual(withheld.explanation, syntheticBlock.explanation, "T21: explanation preserved");
+  assert.ok(withheld.headline.includes("withheld"));
+  assert.ok(withheld.explanation.includes("withheld"));
   assert.ok(withheld.note.includes("withheld"), "T21: note explains that levels are withheld");
+
+  assert.ok(!withheld.tags.includes("SIGNAL_ACTIVE"));
+  assert.ok(!withheld.tags.includes("ENTRY_ZONE"));
+  assert.strictEqual(withheld.grade, "no_trade");
+  assert.deepEqual(withholdFvgLevels(withheld), withheld, "withholding is idempotent");
 
   // Purity: the input block is NOT mutated.
   assert.strictEqual(syntheticBlock.entryMin, 1.082, "T21: withholdFvgLevels must not mutate its input");

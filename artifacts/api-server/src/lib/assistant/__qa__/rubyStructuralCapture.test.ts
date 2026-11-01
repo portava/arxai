@@ -15,6 +15,7 @@ mock.module("../../data/chart/rubyChartContext.js", { namedExports: {
   buildStructuralReadTrustLine: () => "Closed candles; live setup withheld",
 } });
 mock.module("../../data/chart/chartDataService.js", { namedExports: {
+  getChartCandles: async () => { throw Error("No secondary data in primary-capture test"); },
   getChartFeedStatus: async () => { independentProbeCalls++; return { aiUsable: true }; },
 } });
 mock.module("../../data/dataManager.js", { namedExports: {

@@ -25,6 +25,9 @@ export interface TruthReadEvidence {
   timeframe: string;
   source: string;
   sourceIdentity: string;
+  /** Provider/bridge provenance digest without the interval-specific sourceId.
+   * Allows cross-interval source comparison; not proof of freshness or ownership. */
+  venueIdentity?: string;
   lastClosedCandleAt: string;
   /** User whose account-dependent inputs were evaluated; absent for market-only reads. */
   userId?: number;

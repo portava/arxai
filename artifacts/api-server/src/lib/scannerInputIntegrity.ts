@@ -2,14 +2,15 @@ import { createHash } from "node:crypto";
 import { resolveArxMarket } from "@workspace/domain/market";
 import type { MarketCandlesResult, MarketQuoteResult } from "./data/marketDataRouter.js";
 import type { Candle } from "./data/types.js";
-import { normalizeCandles, sourceModeFromProvider } from "./data/chart/candleNormalization.js";
+import { normalizeCandles, sourceModeFromProvider, candleTimestampConvention } from "./data/chart/candleNormalization.js";
 import { normalizeChartTimeframe, timeframeMs } from "./data/chart/timeframes.js";
 import { classifyQuoteFreshness } from "./data/freshness.js";
 
 // Symbol properties survive object-spread decorators, while JSON.stringify
 // omits them. The value is an opaque digest, never raw account/bridge IDs.
 const sourceBinding: unique symbol = Symbol("scannerSourceBinding");
-type SourceBound = { [sourceBinding]?: string };
+const venueBinding: unique symbol = Symbol("scannerVenueBinding");
+type SourceBound = { [sourceBinding]?: string; [venueBinding]?: string };
 
 export function scannerSourceIdentity(result: Pick<MarketCandlesResult, "primaryProvider" | "provenance">): string {
   const p = result.provenance;
@@ -19,8 +20,23 @@ export function scannerSourceIdentity(result: Pick<MarketCandlesResult, "primary
   ])).digest("hex");
 }
 
-export function bindScannerSource<T extends object>(row: T, identity: string): T {
+/** Only use after prepareScannerCandles validates the interval-specific sourceId.
+ * Retain provider, bridge, user, environment and broker-symbol distinctions. */
+export function scannerVenueIdentity(result: Pick<MarketCandlesResult, "primaryProvider" | "provenance">): string {
+  const p = result.provenance;
+  return createHash("sha256").update(JSON.stringify([result.primaryProvider,
+    p?.providerId ?? null, p?.subProviderId ?? null,
+    p?.bridgeConnectionId ?? null, p?.userId ?? null, p?.environment ?? "unknown", p?.brokerSymbol ?? null,
+  ])).digest("hex");
+}
+
+export function scannerRowVenueIdentity(row: object): string | null {
+  return (row as SourceBound)[venueBinding] ?? null;
+}
+
+export function bindScannerSource<T extends object>(row: T, identity: string, venueIdentity?: string): T {
   Object.defineProperty(row, sourceBinding, { value: identity, enumerable: true });
+  if (venueIdentity) Object.defineProperty(row, venueBinding, { value: venueIdentity, enumerable: true });
   return row;
 }
 
@@ -78,7 +94,7 @@ export function prepareScannerCandles(
     time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume,
   });
   return {
-    rawClosed: closed.map((bar) => toCandle(bar, source.startsWith("assistant_real") ? bar.closeTime : bar.openTime)),
+    rawClosed: closed.map((bar) => toCandle(bar, candleTimestampConvention(source) === "close" ? bar.closeTime : bar.openTime)),
     openClosed: closed.map((bar) => toCandle(bar, bar.openTime)),
     // Anchor to the actual accepted provider bar, including session opens such
     // as :30. UTC flooring can falsely age an H1 bar before its next bar closes.

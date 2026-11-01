@@ -21,7 +21,7 @@ export interface FvgStrategyReadBlock {
   active: true;
   strategy: "HTF_TREND_FVG_PULLBACK";
   direction: "BUY" | "SELL" | "WAIT";
-  stage: FvgSetupStage;
+  stage: FvgSetupStage | "WITHHELD";
   h4Trend: HtfTrendDir;
   h1Trend: HtfTrendDir;
   htfAligned: boolean;
@@ -39,7 +39,7 @@ export interface FvgStrategyReadBlock {
   suggestedTP2: number | null;
   suggestedTP3: number | null;
   invalidationLevel: number | null;
-  score: number;
+  score: number | null;
   grade: string;
   headline: string;
   explanation: string;
@@ -68,6 +68,7 @@ export function buildFvgStrategyRead(args: {
   h4Candles: Candle[];
   isSimulator?: boolean;
   staleTimeframes?: string[];
+  unconfirmedTimeframes?: string[];
 }): FvgStrategyReadBlock | null {
   // Adapt the Candle shape (has string `time`) to the FvgCandle shape (OHLC only)
   const adapt = (cs: Candle[]) =>
@@ -80,6 +81,7 @@ export function buildFvgStrategyRead(args: {
     m5Candles: adapt(args.m5Candles),
     isSimulator: args.isSimulator,
     staleTimeframes: args.staleTimeframes,
+    unconfirmedTimeframes: args.unconfirmedTimeframes,
   });
 
   // Return null when no useful read is possible (e.g. completely no data)
@@ -120,19 +122,24 @@ export function buildFvgStrategyRead(args: {
   };
 }
 
-/**
- * Downgrade-only: strip every numeric level from an FVG strategy block for a
- * feed-unconfirmed (STRUCTURAL_ONLY) read. The FVG engine's staleness check is
- * INDEPENDENT of the primary read's feed verdict, so a structural read whose
- * live feed is unconfirmed could otherwise still ship concrete entry/SL/TP
- * numbers to the assistant. This nulls entry/stop/target/invalidation levels
- * and marks them withheld, while PRESERVING the directional/structural
- * narrative (direction, stage, trend, notes). Never invents or alters
- * direction — display-only, additive, fail-closed.
- */
+/** Withhold all price-bearing fields and entry language, including nested zone
+ * prices and generated prose. Retain observed trends as structural context,
+ * but never a positive signal. Pure and idempotent; not an execution gate. */
 export function withholdFvgLevels(block: FvgStrategyReadBlock): FvgStrategyReadBlock {
+  const limitation = "Exact FVG entry, stop, target and zone levels are withheld until the chart read qualifies; structure only.";
   return {
     ...block,
+    direction: "WAIT",
+    stage: "WITHHELD",
+    score: null,
+    grade: "no_trade",
+    fiveMinState: "FVG setup withheld — structural context only",
+    tags: [...block.tags.filter(tag => !["SIGNAL_ACTIVE", "ENTRY_ZONE", "INSIDE_FVG", "LEVELS_WITHHELD"].includes(tag)), "LEVELS_WITHHELD"],
+    truth: { ...block.truth, canSignal: false },
+    activeFvg: null,
+    fvgNote: "FVG price zone withheld; review the chart-read limitation.",
+    headline: "FVG structure only — exact setup withheld.",
+    explanation: limitation,
     entryMin: null,
     entryMax: null,
     suggestedEntry: null,
@@ -142,8 +149,6 @@ export function withholdFvgLevels(block: FvgStrategyReadBlock): FvgStrategyReadB
     suggestedTP3: null,
     invalidationLevel: null,
     levelsWithheld: true,
-    note:
-      block.note +
-      " Exact FVG entry, stop, and target levels are withheld until the live feed confirms — direction and structure only.",
+    note: limitation,
   };
 }

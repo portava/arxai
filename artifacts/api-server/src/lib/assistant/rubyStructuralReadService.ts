@@ -49,6 +49,7 @@ import { applyTrendlineLearning } from "./trendlineLearningRuntime.js";
 import { buildMarketIntelligenceSnapshot } from "../data/chart/marketIntelligenceService.js";
 import { buildGoldStrategyRead } from "./goldStrategyRead.js";
 import { buildFvgStrategyRead, withholdFvgLevels } from "./fvgStrategyRead.js";
+import { captureFvgChartInputs } from "../data/chart/fvgChartContext.js";
 import type { Candle } from "../data/types.js";
 
 /**
@@ -470,52 +471,16 @@ export async function buildRubyStructuralRead(
   const goldBlock = goldRead ? { goldStrategyRead: goldRead } : {};
 
   // ── HTF TREND FVG PULLBACK (Task #675) — ADDITIVE, DISPLAY-ONLY child input ──
-  // Fetches H4 + H1 + M5 candles (fail-open) and runs the pure FVG engine.
-  // The block carries advisory explanation + chart overlay descriptors only; it can
-  // DESCRIBE/WARN/HIGHLIGHT but never grants a trade affordance, never produces
-  // READY_NOW, and never weakens any feed/sufficiency/Trade-Health/live gate.
-  // Absent (null) when the symbol has no multi-TF candle data.
-  let fvgH4Candles: Candle[] = [];
-  let fvgH1Candles: Candle[] = [];
-  let fvgM5Candles: Candle[] = [];
-  let fvgIsSimulator = false;
-  const fvgStaleTimeframes: string[] = [];
-  try {
-    const { routeCandles: rcFvg } = await import("../data/marketDataRouter.js");
-    const [h4r, h1r, m5r] = await Promise.allSettled([
-      rcFvg(symbol, "H4", 220),
-      rcFvg(symbol, "H1", 220),
-      rcFvg(symbol, "M5", 100),
-    ]);
-    const isMockProvider = (p: string | null) =>
-      p != null && (p === "assistant_real:mock" || p.endsWith(":mock") || p === "mock");
-    const hasStaleAttempt = (v: { attempts: { reason: string | null }[] }) =>
-      v.attempts.some((a) => a.reason?.includes("STALE"));
-    // Detect simulator: mock provider returns ok=true with candles but is never live.
-    if (h4r.status === "fulfilled" && h4r.value.ok && isMockProvider(h4r.value.primaryProvider)) fvgIsSimulator = true;
-    if (h1r.status === "fulfilled" && h1r.value.ok && isMockProvider(h1r.value.primaryProvider)) fvgIsSimulator = true;
-    if (m5r.status === "fulfilled" && m5r.value.ok && isMockProvider(m5r.value.primaryProvider)) fvgIsSimulator = true;
-    // Detect stale: any provider attempt reported a STALE reason — flag the TF.
-    if (h4r.status === "fulfilled" && hasStaleAttempt(h4r.value)) fvgStaleTimeframes.push("H4");
-    if (h1r.status === "fulfilled" && hasStaleAttempt(h1r.value)) fvgStaleTimeframes.push("H1");
-    if (m5r.status === "fulfilled" && hasStaleAttempt(m5r.value)) fvgStaleTimeframes.push("M5");
-    fvgH4Candles = h4r.status === "fulfilled" && h4r.value.ok ? h4r.value.candles : [];
-    fvgH1Candles = h1r.status === "fulfilled" && h1r.value.ok ? h1r.value.candles : [];
-    fvgM5Candles = m5r.status === "fulfilled" && m5r.value.ok ? m5r.value.candles : [];
-  } catch { /* fail-open: fvg block absent */ }
-  const fvgRead = buildFvgStrategyRead({
-    symbol,
-    m5Candles: fvgM5Candles,
-    h1Candles: fvgH1Candles,
-    h4Candles: fvgH4Candles,
-    isSimulator: fvgIsSimulator,
-    staleTimeframes: fvgStaleTimeframes,
-  });
+  // Independently capture normalized H4/H1/M5 observations. Their source must
+  // match this primary assessment; no atomic cross-timeframe capture is claimed.
+  // The child can only describe/restrict, never upgrade the primary read.
+  const fvgInputs = await captureFvgChartInputs(symbol, rubyCtx.marketEvidence);
+  const fvgRead = buildFvgStrategyRead({ symbol, ...fvgInputs });
   const fvgBlock = fvgRead ? { fvgStrategyRead: fvgRead } : {};
   // Feed-unconfirmed (STRUCTURAL_ONLY) variant: the FVG engine's staleness check
   // is INDEPENDENT of the primary read's feed verdict, so strip its numeric
   // levels before they can ship on a structural read (downgrade-only display
-  // filter — never alters direction, never touches a gate).
+  // filter — withdraws entry signals too, never touches an execution gate).
   const fvgBlockWithheld = fvgRead
     ? { fvgStrategyRead: withholdFvgLevels(fvgRead) }
     : {};

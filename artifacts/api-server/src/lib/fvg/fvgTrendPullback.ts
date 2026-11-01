@@ -81,6 +81,8 @@ export interface FvgTruthBlock {
   usingSimulator: boolean;
   missingTimeframes: string[];
   staleTimeframes: string[];
+  /** Missing or contradictory source/clock evidence, distinct from known staleness. */
+  unconfirmedTimeframes?: string[];
   reasonIfNotReady: string | null;
 }
 
@@ -718,12 +720,14 @@ export interface FvgAnalysisInput {
   isSimulator?: boolean;
   /** Stale timeframe labels reported by the caller. */
   staleTimeframes?: string[];
+  unconfirmedTimeframes?: string[];
 }
 
 export function analyzeFvgTrendPullback(input: FvgAnalysisInput): FvgTrendPullbackResult {
   const { symbol, h4Candles, h1Candles, m5Candles } = input;
   const isSimulator = input.isSimulator === true;
   const staleTimeframes = input.staleTimeframes ?? [];
+  const unconfirmedTimeframes = input.unconfirmedTimeframes ?? [];
 
   // ── Truth / data-readiness ───────────────────────────────────────────────
   const h4Ok = h4Candles.length >= MIN_H4_BARS;
@@ -735,13 +739,14 @@ export function analyzeFvgTrendPullback(input: FvgAnalysisInput): FvgTrendPullba
   if (!m5Ok) missing.push("M5");
 
   // Stale timeframes prevent analysis: stale data can produce false trend reads.
-  const canAnalyze = h4Ok && h1Ok && m5Ok && !isSimulator && staleTimeframes.length === 0;
+  const canAnalyze = h4Ok && h1Ok && m5Ok && !isSimulator && staleTimeframes.length === 0 && unconfirmedTimeframes.length === 0;
   const noData = !canAnalyze;
 
   const reasonIfNotReady =
     isSimulator ? "Data is simulator-sourced — FVG analysis requires a live feed." :
     missing.length > 0 ? `Missing or insufficient candle data for: ${missing.join(", ")}.` :
     staleTimeframes.length > 0 ? `Stale feed on: ${staleTimeframes.join(", ")} — canSignal blocked until data is live.` :
+    unconfirmedTimeframes.length > 0 ? `Source or candle evidence is unconfirmed for: ${unconfirmedTimeframes.join(", ")} — FVG analysis withheld.` :
     null;
 
   const baseTruth: FvgTruthBlock = {
@@ -755,6 +760,7 @@ export function analyzeFvgTrendPullback(input: FvgAnalysisInput): FvgTrendPullba
     usingSimulator: isSimulator,
     missingTimeframes: missing,
     staleTimeframes,
+    unconfirmedTimeframes,
     reasonIfNotReady,
   };
 
