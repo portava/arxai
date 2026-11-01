@@ -487,3 +487,17 @@ it("does not promote legacy calendar events without their availability evidence"
   expect(text).toContain("News risk: unverified");
   expect(text).not.toContain("Unverified old event");
 });
+
+
+it("distinguishes an empty future calendar from active post-event risk", () => {
+  const data = degradedOkSnapshot();
+  Object.assign(data.newsRisk, { riskLevel: "high", calendarAvailable: true, applicability: "applicable", summary: "HIGH impact Known event 5m ago — trading blocked for EURUSD." });
+  mockSnapshotQuery.mockReturnValue(hookState({ data }));
+  render(<SelectedMarketPanel />);
+  const text = screen.getByTestId("selected-market-panel").textContent!;
+  expect(text).toContain("News risk: high");
+  expect(text).toContain("News risk high.");
+  expect(text).toContain("No medium/high impact events in the next 24h.");
+  expect(text).toContain("Recently released events may still affect current news risk.");
+  expect(text).toContain("5m ago");
+});

@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import {
   getSelectedMarketSnapshot,
   clearSelectedMarketCache,
+  loadEventRows,
 } from "../selectedMarket.js";
 import type { SelectedMarketDeps } from "../selectedMarket.js";
 import type { ChartCandlesResponse, ChartFeedStatus } from "../../data/chart/chartDataService.js";
@@ -431,4 +432,27 @@ test("checked high news risk survives missing candles and cached rereads", async
   assert.equal(cached.cacheHit, true);
   assert.deepEqual(cached.newsRisk, first.newsRisk);
   assert.deepEqual(cached.upcomingEvents, first.upcomingEvents);
+});
+
+
+test("real calendar loader preserves post-event risk while listing only future events", async () => {
+  clearSelectedMarketCache();
+  const eventTime = new Date(Date.now() - 5 * 60_000).toISOString();
+  const released = { id: "released", title: "Just-released event", currency: "USD", country: "US", impact: "high" as const, eventTime, source: "test", actual: null, forecast: null, previous: null, affectedMarkets: ["EURUSD"] };
+  const resolved = { available: true, events: [released], reason: "Connected test calendar", provider: "test" };
+  // Exercise the actual loader mapping; do not pre-shape its scorerInput.
+  const loadEventsFn: SelectedMarketDeps["loadEventsFn"] = (symbol, hints) => loadEventRows(symbol, hints, async () => resolved);
+  const loaded = await loadEventsFn("EURUSD", ["EUR", "USD"]);
+  assert.deepEqual(loaded.events, [], "a released event is not an upcoming event");
+  assert.deepEqual(loaded.scorerInput, [released], "shared scorer owns its post-event window");
+  const env = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, {
+    getChartCandlesFn: (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"],
+    loadEventsFn,
+  });
+  assert.ok(env.ok);
+  assert.deepEqual(env.upcomingEvents, []);
+  assert.equal(env.newsRisk.calendarAvailable, true);
+  assert.equal(env.newsRisk.riskLevel, "high");
+  assert.equal(env.newsRisk.blockTrading, true);
+  assert.match(env.newsRisk.summary, /5m ago/);
 });

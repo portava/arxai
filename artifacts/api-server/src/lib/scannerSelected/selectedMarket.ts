@@ -236,13 +236,16 @@ function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: 
 
 // Availability comes from the existing connected-calendar authority, not from
 // a successful query of an empty/stale economic_events table.
-async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
+export async function loadEventRows(
+  symbol: string, currencyHints: string[],
+  resolveEvents: typeof resolveNewsRiskEvents = resolveNewsRiskEvents,
+): Promise<{
   events: SelectedMarketEvent[];
   scorerInput: EconomicEvent[];
   calendarAvailable?: boolean;
   reason?: string;
 }> {
-  const resolved = await resolveNewsRiskEvents({ daysAhead: 2 });
+  const resolved = await resolveEvents({ daysAhead: 2 });
   if (!resolved.available) return { events: [], scorerInput: [], calendarAvailable: false, reason: resolved.reason };
   const now = Date.now();
   const until = now + 24 * 3600 * 1000;
@@ -254,7 +257,8 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
   return {
     calendarAvailable: true,
     reason: resolved.reason,
-    scorerInput: sorted,
+    // Preserve recent releases too: only the shared scorer owns risk windows.
+    scorerInput: resolved.events,
     events: sorted.slice(0, 8).map((e) => ({
       externalId: e.id, title: e.title, currency: e.currency,
       impactLevel: e.impact.toUpperCase() as SelectedMarketEvent["impactLevel"],

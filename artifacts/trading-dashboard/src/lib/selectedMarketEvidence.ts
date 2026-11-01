@@ -13,7 +13,7 @@ export function selectedNewsDisplay(news?: SelectedNewsEvidence | null) {
   const level = news?.riskLevel?.toLowerCase();
   if (news?.calendarAvailable === true && level && ["none", "low", "medium", "high"].includes(level)) return {
     label: level, sentence: `News risk ${level}.`,
-    eventsMessage: "No medium/high impact events in the next 24h.", showEvents: true,
+    eventsMessage: "No medium/high impact events in the next 24h. Recently released events may still affect current news risk.", showEvents: true,
   };
   const label = news?.calendarAvailable === false ? "unavailable" : "unverified";
   return { label, sentence: `News risk ${label} — calendar evidence is not confirmed.`,
