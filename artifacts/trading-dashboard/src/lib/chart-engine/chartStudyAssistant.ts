@@ -4,12 +4,21 @@ import type { ChartEngineAdapter } from "./types";
 // A local display action in the existing assistant, not an AI score or a trade
 // tool. Only this small complete grammar may mutate the current chart. Extra
 // instructions (another asset, timeframe, source, negation, etc.) fail closed.
-export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; preserveVisibility?: boolean } | { error: string };
+export type AverageSelection = { kind: "sma" | "ema"; period: number };
+export type AverageComparisonRequest = { action: "compare"; studies: [AverageSelection, AverageSelection] };
+export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; preserveVisibility?: boolean } | AverageComparisonRequest | { error: string };
 const help = 'Chart not changed. Try “show RSI”, “set RSI period to 21”, “hide RSI” or “remove RSI”. Other settings and repeated instances are editable in Studies.';
 const aliases = STUDY_CATALOG.flatMap(d=>[{name:d.defaults.kind,kind:d.defaults.kind},{name:d.name.toLowerCase(),kind:d.defaults.kind}])
   .concat([{name:"bollinger bands",kind:"bollinger"},{name:"adx",kind:"dmi"}]);
 export function parseStudyRequest(text:string): StudyRequest | null {
   const input=text.trim().toLowerCase().replace(/[?!.]+$/g,"").replace(/^please\s+/,"");
+  const comparison=input.match(/^compare (?:the )?(\d+) (sma|ema) (?:and|with|vs\.?) (?:the )?(\d+) (sma|ema)(?: (?:on|for) (?:this|the current) chart)?$/);
+  if(comparison) {
+    const first={kind:comparison[2] as "sma"|"ema",period:Number(comparison[1])};
+    const second={kind:comparison[4] as "sma"|"ema",period:Number(comparison[3])};
+    if([first,second].some(s=>!Number.isInteger(s.period)||s.period<1||s.period>1000)||(first.kind===second.kind&&first.period===second.period))return {error:'Chart not changed. Compare two different SMA/EMA selections, each with a whole-number period from 1 to 1000; for example “compare the 20 EMA and 50 EMA”.'};
+    return {action:"compare",studies:[first,second]};
+  }
   const found=aliases.filter(a=>new RegExp(`(?:^|\\W)${a.name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?=\\W|$)`).test(input));
   if (!found.length) {
     if (/\b(vwap|volume profile)\b/.test(input)) return {error:"Chart not changed. This assistant cannot apply VWAP or volume profile yet. No calculated overlay has been added."};
@@ -36,10 +45,61 @@ export interface StudyAssistantContext {
   symbol:string; timeframe:string; feedLabel:string;
   save:(studies:ChartStudy[])=>void;
 }
-const time=(seconds:number)=>new Date(seconds*1000).toISOString();
+const time=(seconds:number)=>{const date=new Date(seconds*1000);return Number.isFinite(date.getTime())?date.toISOString():"unavailable timestamp";};
+/** One renderer transaction for a complete requested collection. Restoration
+ * is best-effort: an exception never becomes a claim that nothing changed. */
+function applyStudyCollection(context:StudyAssistantContext,updated:ChartStudy[]):string|null {
+  try {
+    context.adapter!.setStudies!(updated);
+    context.save(updated);
+    return null;
+  } catch {
+    try {context.adapter!.setStudies!(context.studies);} catch { /* uncertainty is reported */ }
+    return "Chart change could not be verified. Settings may be incomplete. Check the chart and Studies before retrying.";
+  }
+}
+function executeAverageComparison(request:AverageComparisonRequest,context:StudyAssistantContext):string {
+  const {adapter,studies,symbol,timeframe,feedLabel}=context;
+  const visible=adapter?.getVisibleCandles?.()??[];
+  if(!adapter?.setStudies||!adapter.getStudyValues||!visible.length)return "Comparison not applied: the current chart has no ready renderer and visible candle window yet. Wait for candles, then retry.";
+  const matches=request.studies.map(selection=>studies.filter(s=>s.kind===selection.kind&&s.period===selection.period));
+  if(matches.some(rows=>rows.length>1))return "Chart not changed: multiple matching manual averages exist. Select the intended instances in Studies; no existing settings were guessed or overwritten.";
+  if(studies.length+matches.filter(rows=>!rows.length).length>MAX_STUDIES)return "Chart not changed: the study limit would be exceeded by this comparison. Remove a study in Studies first; neither average was partially added.";
+  const updated=[...studies],ids=new Set(studies.map(studyId));
+  const usedColors=new Set(matches.flat().map(s=>(s.lineStyles?.[0]?.color??s.color).toLowerCase()));
+  const pair=request.studies.map((selection,index)=>{
+    const existing=matches[index]![0];
+    const next:ChartStudy={...(existing??studyDefinition(selection.kind).defaults),period:selection.period};
+    if(!existing){
+      let suffix=1;while(ids.has(`assistant-${selection.kind}-${suffix}`))suffix++;
+      next.id=`assistant-${selection.kind}-${suffix}`;ids.add(next.id);
+      next.color=["#38bdf8","#fbbf24","#4ade80","#f472b6"].find(color=>!usedColors.has(color))??next.color;
+      usedColors.add(next.color.toLowerCase());
+    }
+    next.lineStyles=studyDefinition(next.kind).channels.map((_,i)=>({...next.lineStyles?.[i],visible:true}));
+    if(existing)updated[studies.indexOf(existing)]=next;else updated.push(next);
+    return next;
+  });
+  const failed=applyStudyCollection(context,updated);if(failed)return failed;
+  const last=visible.at(-1)!;
+  let rendered:ReturnType<NonNullable<ChartEngineAdapter["getStudyValues"]>>=[];
+  try{rendered=adapter.getStudyValues(last.time);}catch{ /* no invented fallback calculation */ }
+  const values=pair.map(study=>{
+    const value=rendered.find(row=>row.label===studyLabel(study))?.values.find(v=>v.name===study.kind.toUpperCase())?.value;
+    return typeof value==="number"&&Number.isFinite(value)?value:null;
+  });
+  const observed=pair.map((study,index)=>`${studyLabel(study)}: ${values[index]===null?"unavailable / warming up":formatStudyNumber(values[index]!,study.kind.toUpperCase())}`).join("; ");
+  const [a,b]=values;
+  const relation=a!=null&&b!=null
+    ?`${studyLabel(pair[0]!)} is ${a>b?"above":a<b?"below":"equal to"} ${studyLabel(pair[1]!)}${a===b?"":Number.isFinite(a-b)?` by ${formatStudyNumber(Math.abs(a-b),"Price")} source price units`:"; the difference is outside the supported numerical range"}. This is a current-bar comparison, not a crossover or a forecast.`
+    :"A numerical comparison is unavailable until both rendered averages have finite values. No missing value was replaced with zero.";
+  const inputs=(pair[0]!.source??"close")===(pair[1]!.source??"close")?"Both use the same applied-price input.":"The existing applied-price inputs differ; this comparison preserves and names them rather than silently changing your settings.";
+  return `Applied the average comparison on ${symbol} · ${timeframe} · ${feedLabel}. Existing calculation/style settings retained; new averages use catalogue defaults apart from the requested periods and distinct colors. The requested averages are both enabled for display; other tools are unchanged.\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Actual renderer observation at bar open ${time(last.time)}: ${observed}. Times identify source bar coordinates; ISO formatting does not independently prove UTC. ${inputs}\nCalculated observation: ${relation} The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles; loaded bars before this window may supply warmup. Feed status describes this request, not historical liveness. This is not a buy/sell instruction or a confidence score. Edit, hide or remove either average in Studies; manual settings use the same renderer. No order was sent.`;
+}
 export function executeStudyRequest(request:StudyRequest,context:StudyAssistantContext):string {
   if ("error" in request) return request.error;
-  const {adapter,studies,symbol,timeframe,feedLabel,save}=context;
+  if(request.action==="compare")return executeAverageComparison(request,context);
+  const {adapter,studies,symbol,timeframe,feedLabel}=context;
   const visible=adapter?.getVisibleCandles?.() ?? [];
   if (!adapter?.setStudies || !adapter.getStudyValues || !visible.length) return "Study not applied: the current chart has no ready renderer and visible candle window yet. Wait for candles, then retry.";
   const matches=studies.filter(s=>s.kind===request.kind);
@@ -61,13 +121,7 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
     : existing ? studies.map(s=>s===existing ? next : s) : [...studies,next];
   // The same synchronous renderer used by manual settings supplies the receipt.
   // Never substitute a separately calculated or model-generated study value.
-  try { adapter.setStudies(updated); } catch {
-    // An exception may follow a partial renderer change. Restore the prior
-    // collection when possible; never claim a failed write certainly did nothing.
-    try { adapter.setStudies(studies); } catch { /* report uncertainty below */ }
-    return "Chart change could not be verified. No settings were saved. Check the chart and Studies before retrying.";
-  }
-  save(updated);
+  const failed=applyStudyCollection(context,updated);if(failed)return failed;
   const title=`${symbol} · ${timeframe} · ${feedLabel}`;
   if (request.action!=="show") return `${request.action==="hide" ? "Hidden" : "Removed"} ${studyLabel(next)} on ${title}. You can change this in Studies. Display only; no order was sent.`;
   const last=visible[visible.length-1]!;
