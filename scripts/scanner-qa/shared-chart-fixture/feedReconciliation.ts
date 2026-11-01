@@ -3,7 +3,10 @@ import type { ChartEngineCandle } from "../../../artifacts/trading-dashboard/src
 import type { ChartStyle } from "../../../artifacts/trading-dashboard/src/lib/chart-engine/chartWorkspace";
 const STYLES: ChartStyle[] = ["candles", "hollow", "bars", "line", "area", "baseline", "heikinAshi"];
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
-const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+const frame = () => new Promise<void>((resolve,reject) => {
+  const timeout=setTimeout(()=>{cancelAnimationFrame(id);reject(Error("Rendering opportunity exceeded 2 seconds"));},2000);
+  const id=requestAnimationFrame(()=>{clearTimeout(timeout);resolve();});
+});
 const ohlc = (bar: any) => ({time:bar.time,open:bar.open,high:bar.high,low:bar.low,close:bar.close});
 function expectedDisplay(bars: ChartEngineCandle[], style: ChartStyle) {
   if (["line", "area", "baseline"].includes(style)) return bars.map(bar=>({time:bar.time,value:bar.close}));
@@ -23,8 +26,8 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
   Object.defineProperty(window,"__arxFeedReconciliationQa",{value:{schemaVersion:1,async run(){
     assert(!running,"Probe already running"); running=true;
     const report:any={passed:false,samples:[],warmups:[],checks:[],failure:null,styles:STYLES,
-      workload:{bars:500,warmupCycles:2,measuredCycles:12,operationsPerSample:1,order:["identical","tail","stale","live"]},
-      limitations:["Isolated adapter, not actual Scanner navigation or app polling.","Synthetic OHLC; feed live flag is fixture-controlled, not verified market provenance.","CPU duration includes method counters; frame duration is two rendering opportunities, not physical paint.","12 samples per scenario/style/rate; p95 is not a stable production estimate.","No vendor transforms, external API, trading or worker."]};
+      workload:{bars:500,warmupCycles:2,measuredCycles:12,operationsPerSample:1,order:["identical","tail","stale","live"],maximumRunMs:60000},
+      limitations:["Isolated adapter, not actual Scanner navigation or app polling.","Synthetic OHLC; feed live flag is fixture-controlled, not verified market provenance.","CPU duration includes method counters; frame duration includes immediate validation and two rendering opportunities, not physical paint.","12 samples per scenario/style/rate; p95 is not a stable production estimate.","No vendor transforms, external API, trading or worker."]};
     const container=document.createElement("div");container.dataset.testid="feed-reconciliation-canvas";
     Object.assign(container.style,{width:"100%",height:"600px",margin:"12px 0"});
     const title=document.createElement("h1");title.textContent="ARX offline feed reconciliation — synthetic prices";
@@ -57,8 +60,9 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
         priceLineVisible:options.priceLineVisible,lastLine:lines[0]?.options().price??null,displayLast:display.at(-1)??null,
         visibleCanvas:true,canonicalAndDisplayMatched:true};
     };
+    const runStart=performance.now();
     try {
-      adapter.init({container,height:600});adapter.setSymbol("EURUSD");
+      adapter.init({container,height:600});adapter.setSymbol("EURUSD");adapter.setTimeframe("M1");
       let bars:ChartEngineCandle[]=Array.from({length:500},(_,i)=>({time:1700000000+i*60,open:1.1+i*.00001,high:1.102+i*.00001,low:1.098+i*.00001,close:1.101+i*.00001}));
       adapter.setFeedState({source:"offline_fixture_A",livePriceAffordance:true});adapter.setCandles(clone(bars));
       await frame();await frame();
@@ -72,6 +76,7 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
         for(const line of series.priceLines())if(line.options().title==="Last")instrumentLine(line);
         report.checks.push(inspect(bars,style,true,"offline_fixture_A"));
         for(let cycle=0;cycle<14;cycle++)for(const scenario of ["identical","tail","stale","live"]){
+          assert(performance.now()-runStart<60000,"Probe exceeded declared 60 second bound");
           if(scenario==="tail"){bars=clone(bars);bars[bars.length-1]!.close+=.000001;}
           const input=clone(bars),live=scenario!=="stale";
           const counts={seriesApplyOptions:0,labelApplyOptions:0,lastLineApplyOptions:0,createLast:0,removeLast:0};
@@ -87,7 +92,13 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
           (cycle<2?report.warmups:report.samples).push(sample);
         }
         // Correctness-only source change and empty/refill; never timed as speed.
-        const streamed={...bars.at(-1)!,close:bars.at(-1)!.close+.00001};adapter.updateActiveCandle(streamed);
+        // An external options edit cannot be hidden by an adapter-side cache.
+        series.applyOptions({lastValueVisible:style==="heikinAshi",priceLineVisible:style==="heikinAshi"});
+        adapter.setFeedState({source:"offline_fixture_A",livePriceAffordance:true});
+        report.checks.push(inspect(bars,style,true,"offline_fixture_A"));
+        const streamed={...bars.at(-1)!,time:bars.at(-1)!.time+60,close:bars.at(-1)!.close+.00001};adapter.updateActiveCandle(streamed);
+        adapter.setFeedState({source:"offline_fixture_A",livePriceAffordance:true});adapter.setCandles(clone(bars));
+        report.checks.push(inspect([...bars,streamed],style,true,"offline_fixture_A"));
         adapter.setFeedState({source:"offline_fixture_B",livePriceAffordance:false});adapter.setCandles(clone(bars));
         report.checks.push(inspect(bars,style,false,"offline_fixture_B"));
         adapter.setFeedState({source:"offline_fixture_B",livePriceAffordance:true});adapter.setCandles([]);
