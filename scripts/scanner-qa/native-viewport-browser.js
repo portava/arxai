@@ -68,10 +68,12 @@ async page => {
  assert(afterRefreshPinch.to-afterRefreshPinch.from<beforeRefreshPinch.to-beforeRefreshPinch.from,'live update interrupted pinch '+JSON.stringify({box,beforePinch,afterPinch,beforeRefreshPinch,afterRefreshPinch,events:await page.evaluate(()=>window.__nativePointerLog)}));
  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
  checks.push('DPR2 mobile layout and touch pinch survives refresh');
- await page.screenshot({path:'native-viewport-mobile.png',fullPage:true});
- assert((await state()).width<390,'mobile screenshot changed canvas width');
+ // Capture through the same CDP session: Playwright screenshot resets externally
+ // emulated device scale to its context default. Retain raw PNG in the result.
+ const mobileCapture=await cdp.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+ assert((await state()).width<390&&(await state()).pixelRatio===2,'mobile screenshot changed canvas dimensions or DPR');
  const teardown=await page.evaluate(async()=>{const q=window.__arxNativeViewportQa,v=q.viewport;v.resetContext();const afterReset=v.getState();q.replace(q.makeData(100));await q.waitPaint(v.getState().paintCount);const ready=v.getState();v.destroy();const count=v.getState().paintCount;v.setCandles(q.makeData(200));v.resize();await new Promise(requestAnimationFrame);return {afterReset,ready,destroyed:v.getState(),count,canvases:document.querySelectorAll('canvas').length};});
  assert(teardown.afterReset.barCount===0&&teardown.afterReset.referencePrice===null&&teardown.ready.barCount===100&&teardown.destroyed.status==='destroyed'&&teardown.count===teardown.destroyed.paintCount&&teardown.canvases===0,'reset/destroy');checks.push('reset and teardown');
  assert(!errors.length,errors.join('\n'));
- return {checks,errors,history,teardown,initial};
+ return {checks,errors,history,teardown,initial,mobilePngBase64:mobileCapture.data};
 }
