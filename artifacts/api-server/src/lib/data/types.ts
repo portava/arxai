@@ -16,6 +16,8 @@ export interface Candle {
   volume?: number;
   /** Original volume semantics; never inferred from numeric volume. */
   volumeEvidence?: CandleVolumeEvidence;
+  /** Internal original listing context; never sufficient evidence by itself. */
+  originalVolumeSeriesIdentity?: string;
   /** Original authenticated producer declaration; never a symbol-profile inference. */
   priceBasisEvidence?: CandlePriceBasisEvidence;
 }

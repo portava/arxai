@@ -9,7 +9,7 @@ import type { CandleVolumeEvidenceKind } from "./candleVolumeEvidenceKind";
 import type { CandleVolumeEvidenceUnit } from "./candleVolumeEvidenceUnit";
 
 /**
- * Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.
+ * Explicit source-qualified volume semantics, separate from legacy numeric volume. Provider trade units require the audited authority and consistent series identity; they do not claim shares, consolidated coverage or order flow.
  */
 export interface CandleVolumeEvidence {
   kind: CandleVolumeEvidenceKind;
@@ -17,4 +17,7 @@ export interface CandleVolumeEvidence {
   quantity: number | null;
   unit: CandleVolumeEvidenceUnit;
   reason: string | null;
+  authority?: string | null;
+  /** Opaque original instrument, venue, currency, interval, session and adjustment identity. */
+  seriesIdentity?: string | null;
 }

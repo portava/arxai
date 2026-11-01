@@ -1,3 +1,4 @@
+import { isOriginalTwelveDataStockEvidence, TWELVE_DATA_STOCK_AUTHORITY } from "../assistant/twelveDataCandles.js";
 import { isOriginalPolygonEvidence, POLYGON_FX_AUTHORITY, type OriginalCandleContext } from "../assistant/polygonFxCandles.js";
 /** Original clock authority, separate from a syntactically valid ISO string.
  * A current broker offset, transport receipt time or appended Z is not a
@@ -22,5 +23,6 @@ export function unavailableCandleTimeBasis(source: string | null): CandleTimeBas
  * JSON rehydration and provider names alone never qualify historical UTC. */
 export function resolveCandleTimeBasisEvidence(evidence: unknown, source: string | null, context?: OriginalCandleContext): CandleTimeBasisEvidence {
   if(isOriginalPolygonEvidence(evidence,source,context,"time"))return {kind:"original_utc",basis:"UTC",authority:POLYGON_FX_AUTHORITY,reason:null};
+  if(isOriginalTwelveDataStockEvidence(evidence,source,context,"time"))return {kind:"original_utc",basis:"UTC",authority:TWELVE_DATA_STOCK_AUTHORITY,reason:null};
   return unavailableCandleTimeBasis(source);
 }

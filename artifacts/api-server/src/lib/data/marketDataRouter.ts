@@ -480,6 +480,8 @@ async function tryAssistantCandles(symbol: string, timeframe: string, limit: num
       low: c.l,
       close: c.c,
       volume: c.v,
+      volumeEvidence: c.volumeEvidence,
+      originalVolumeSeriesIdentity: c.originalVolumeSeriesIdentity,
       timeBasisEvidence: c.timeBasisEvidence,
       priceBasisEvidence: c.priceBasisEvidence,
     }));

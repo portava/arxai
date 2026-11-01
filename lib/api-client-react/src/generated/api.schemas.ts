@@ -3264,10 +3264,11 @@ export type CandleVolumeEvidenceUnit =
 export const CandleVolumeEvidenceUnit = {
   ticks: "ticks",
   broker_units: "broker_units",
+  provider_trade_units: "provider_trade_units",
 } as const;
 
 /**
- * Explicit source-qualified volume semantics, separate from legacy numeric volume. Real volume is reserved and not currently attested.
+ * Explicit source-qualified volume semantics, separate from legacy numeric volume. Provider trade units require the audited authority and consistent series identity; they do not claim shares, consolidated coverage or order flow.
  */
 export interface CandleVolumeEvidence {
   kind: CandleVolumeEvidenceKind;
@@ -3275,6 +3276,9 @@ export interface CandleVolumeEvidence {
   quantity: number | null;
   unit: CandleVolumeEvidenceUnit;
   reason: string | null;
+  authority?: string | null;
+  /** Opaque original instrument, venue, currency, interval, session and adjustment identity. */
+  seriesIdentity?: string | null;
 }
 
 export type CandleTimeBasisEvidenceKind =
@@ -3295,7 +3299,7 @@ export const CandleTimeBasisEvidenceBasis = {
 } as const;
 
 /**
- * Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.
+ * Original candle clock authority, separate from ISO formatting. Only audited endpoint-specific original observations qualify UTC; broker/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.
  */
 export interface CandleTimeBasisEvidence {
   kind: CandleTimeBasisEvidenceKind;
