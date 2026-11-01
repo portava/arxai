@@ -561,154 +561,116 @@ function sweepPattern(args: {
 // ── Breakout + retest — horizontal level reclaimed/rejected ──────────────────
 
 function detectBreakoutRetest(ctx: DetectorContext): DetectedPattern | null {
-  const { closed, swings, atr: atrVal, last, decimals } = ctx;
-  const MIN = 24;
-  if (closed.length < MIN) return null;
-  if (!atrVal || atrVal <= 0) return null;
-
-  // A level qualifies when ≥2 prior swings of one kind cluster near it (tested).
-  const resistance = clusteredLevel(highs(swings), atrVal);
-  const support = clusteredLevel(lows(swings), atrVal);
-
-  // Bullish: a decisive close ABOVE a tested resistance, then a pullback that
-  // retested the level and is holding above it now.
-  if (resistance) {
-    const out = breakoutRetestFor({
-      level: resistance.price,
-      touches: resistance.touches,
-      breakAbove: true,
-      closed,
-      atrVal,
-      last,
-      decimals,
-    });
-    if (out) return out;
-  }
-  // Bearish: a decisive close BELOW a tested support, then a retest from below.
-  if (support) {
-    const out = breakoutRetestFor({
-      level: support.price,
-      touches: support.touches,
-      breakAbove: false,
-      closed,
-      atrVal,
-      last,
-      decimals,
-    });
-    if (out) return out;
-  }
-  return null;
-}
-
-/** A horizontal level with the count of swings that cluster near it (≥2). */
-function clusteredLevel(
-  pts: Swing[],
-  atrVal: number,
-): { price: number; touches: number } | null {
-  if (pts.length < 2) return null;
-  let best: { price: number; touches: number } | null = null;
-  for (const anchor of pts) {
-    const cluster = pts.filter((p) => near(p.price, anchor.price, atrVal, 0.4));
-    if (cluster.length >= 2) {
-      const price = mean(cluster.map((p) => p.price));
-      // Prefer the most-tested level; tie-break on the more recent anchor.
-      if (!best || cluster.length > best.touches) {
-        best = { price, touches: cluster.length };
-      }
+  const { closed, swings } = ctx;
+  if (closed.length < 24) return null;
+  // Sort once. Filtering by knowledge time preserves price ordering, allowing
+  // linear sliding cluster windows for each of at most 12 candidate closes.
+  const byPrice = (a: Swing, b: Swing) => a.price - b.price || a.index - b.index;
+  const resistance = highs(swings).sort(byPrice), support = lows(swings).sort(byPrice);
+  let selected: DetectedPattern | null = null;
+  for (let index = Math.max(23, closed.length - 12); index < closed.length; index++) {
+    const failure = selected?.breakoutLifecycle?.failedIndex;
+    // An active event owns its frozen level. A later event requires a fresh
+    // crossing after failure, never a rewrite/resurrection of the old event.
+    // We do not assume intrabar ordering on the failure candle itself.
+    if (selected && (failure == null || index <= failure)) continue;
+    const prior = closed.slice(Math.max(0, index - 15), index);
+    const frozenAtr = atr(prior, Math.min(14, prior.length - 1));
+    if (!frozenAtr || !Number.isFinite(frozenAtr) || frozenAtr <= 0) continue;
+    for (const breakAbove of [true, false]) {
+      // A span-two pivot requires two later CLOSED observations, both strictly
+      // before the candidate crossing. Future pivots cannot invent its level.
+      const eligible = (breakAbove ? resistance : support).filter(p => p.index + SWING_SPAN < index);
+      const cluster = clusteredLevel(eligible, frozenAtr);
+      if (!cluster) continue;
+      const threshold = cluster.price + (breakAbove ? 1 : -1) * 0.3 * frozenAtr;
+      const previous = closed[index - 1]!.close, now = closed[index]!.close;
+      const crossed = breakAbove ? previous <= threshold && now > threshold : previous >= threshold && now < threshold;
+      if (!crossed) continue;
+      selected = breakoutRetestFor({ ...cluster, breakAbove, closed, atrVal: frozenAtr, breakIdx: index });
+      break; // deterministic direction tie: bullish first, never emit both.
     }
   }
-  return best;
+  return selected;
+}
+
+/** Input is price-sorted. Most touches wins, then most recently confirmed
+ * formation, then most recent cluster anchor. Equal-price ties are index-sorted.
+ * Every eligible swing is prior-only; no swing-count truncation changes levels. */
+function clusteredLevel(pts: Swing[], atrVal: number): { price: number; touches: number; formationIndexes: number[] } | null {
+  if (pts.length < 2) return null;
+  const tolerance = 0.4 * atrVal;
+  let left = 0, right = 0, sum = 0, head = 0;
+  const latest: number[] = [];
+  let best: { from: number; to: number; price: number; known: number; anchor: number } | null = null;
+  for (const anchor of pts) {
+    while (right < pts.length && pts[right]!.price <= anchor.price + tolerance) {
+      sum += pts[right]!.price;
+      while (latest.length > head && pts[latest[latest.length - 1]!]!.index <= pts[right]!.index) latest.pop();
+      latest.push(right++);
+    }
+    while (left < right && pts[left]!.price < anchor.price - tolerance) {
+      sum -= pts[left]!.price;
+      if (latest[head] === left) head++;
+      left++;
+    }
+    const count = right - left;
+    if (count < 2) continue;
+    const known = pts[latest[head]!]!.index;
+    const bestCount: number = best ? best.to - best.from : 0;
+    if (!best || count > bestCount || count === bestCount && (known > best.known || known === best.known && anchor.index > best.anchor)) {
+      best = { from: left, to: right, price: sum / count, known, anchor: anchor.index };
+    }
+  }
+  return best ? { price: best.price, touches: best.to - best.from, formationIndexes: pts.slice(best.from, best.to).map(p => p.index).sort((a, b) => a - b) } : null;
 }
 
 function breakoutRetestFor(args: {
-  level: number;
-  touches: number;
-  breakAbove: boolean;
-  closed: ChartPatternCandle[];
-  atrVal: number;
-  last: ChartPatternCandle;
-  decimals: number;
-}): DetectedPattern | null {
-  const { level, touches, breakAbove, closed, atrVal, last, decimals } = args;
-  const buffer = 0.3 * atrVal;
-  // Find the breakout bar: a close decisively beyond the level.
-  let breakIdx = -1;
-  for (let i = Math.max(1, closed.length - 12); i < closed.length; i++) {
-    const c = closed[i]!;
-    if (breakAbove ? c.close > level + buffer : c.close < level - buffer) {
-      breakIdx = i;
-      break;
-    }
+  price: number; touches: number; formationIndexes: number[]; breakAbove: boolean;
+  closed: ChartPatternCandle[]; atrVal: number; breakIdx: number;
+}): DetectedPattern {
+  const { price: level, touches, formationIndexes, breakAbove, closed, atrVal, breakIdx } = args;
+  const last = closed[closed.length - 1]!, decimals = decimalsFor(closed[breakIdx]!.close);
+  const buffer = 0.3 * atrVal, tolerance = 0.5 * atrVal;
+  let retestIdx: number | null = null, confirmedIdx: number | null = null, failedIdx: number | null = null;
+  for (let index = breakIdx + 1; index < closed.length; index++) {
+    const candle = closed[index]!;
+    const touched = candle.low <= level + tolerance && candle.high >= level - tolerance;
+    if (retestIdx === null && touched) retestIdx = index;
+    // Failure precedes confirmation on the same OHLC observation. We cannot
+    // infer a successful hold earlier within a bar that closed beyond failure.
+    if (breakAbove ? candle.close < level - buffer : candle.close > level + buffer) { failedIdx = index; break; }
+    if (confirmedIdx === null && retestIdx !== null && (breakAbove ? candle.close > level : candle.close < level)) confirmedIdx = index;
   }
-  if (breakIdx < 0) return null;
-
-  // After the break, did price pull back to RETEST the level (within ~0.5 ATR)?
-  // The candle range must intersect the level's tolerance band. A candle
-  // entirely on the wrong side is not a touch, and a later continuation close
-  // must never replace the actual first retest's time/price anchor.
-  let retestIdx = -1;
-  for (let i = breakIdx + 1; i < closed.length; i++) {
-    const c = closed[i]!;
-    if (c.low <= level + 0.5 * atrVal && c.high >= level - 0.5 * atrVal) {
-      retestIdx = i;
-      break;
-    }
-  }
-  const retested = retestIdx >= 0;
-  const retestCandle = retested ? closed[retestIdx]! : null;
-
-  const holding = breakAbove ? last.close > level : last.close < level;
-  const failed = breakAbove ? last.close < level - buffer : last.close > level + buffer;
-
+  const retestCandle = retestIdx === null ? null : closed[retestIdx]!;
   const height = atrVal * 2;
   const confirmation = r(level, decimals);
-  const invalidation = breakAbove
-    ? r(level - buffer, decimals)
-    : r(level + buffer, decimals);
-  const target = breakAbove
-    ? r(level + height, decimals)
-    : r(level - height, decimals);
-
-  const status: PatternStatus = failed
-    ? "failed"
-    : holding && retested
-      ? extensionExhausted(last.close, level, height, breakAbove ? "up" : "down")
-        ? "exhausted"
-        : "confirmed"
-      : "forming";
-
-  const score = 45 + (touches >= 3 ? 15 : 8) + (retested ? 12 : 0);
-
+  const invalidation = r(level + (breakAbove ? -buffer : buffer), decimals);
+  const target = r(level + (breakAbove ? height : -height), decimals);
+  const status: PatternStatus = failedIdx !== null ? "failed" : confirmedIdx !== null
+    ? extensionExhausted(last.close, level, height, breakAbove ? "up" : "down") ? "exhausted" : "confirmed" : "forming";
+  const score = 45 + (touches >= 3 ? 15 : 8) + (retestIdx !== null ? 12 : 0);
   return {
     id: breakAbove ? "breakout_retest_up" : "breakout_retest_down",
     name: breakAbove ? "Resistance Breakout & Retest" : "Support Breakdown & Retest",
-    category: "breakout_retest",
-    bias: breakAbove ? "bullish" : "bearish",
-    status,
-    confidence: clamp(score),
-    quality: qualityFromScore(score),
+    category: "breakout_retest", bias: breakAbove ? "bullish" : "bearish", status,
+    confidence: clamp(score), quality: qualityFromScore(score),
     levels: { confirmation, invalidation, targets: [target] },
-    keyPoints: [
-      { index: breakIdx, price: confirmation, role: "broken_level" },
-      ...(retestCandle ? [{ index: retestIdx,
-        // Use the reference if it was traded; otherwise the nearest observed
-        // wick inside the tolerance band. Do not invent a touched price.
-        price: Math.max(retestCandle.low, Math.min(retestCandle.high, level)), role: "retest" }] : []),
-    ],
+    keyPoints: [{ index: breakIdx, price: confirmation, role: "broken_level" },
+      ...(retestCandle && retestIdx !== null ? [{ index: retestIdx, price: Math.max(retestCandle.low, Math.min(retestCandle.high, level)), role: "retest" }] : [])],
+    breakoutLifecycle: {
+      version: "causal-breakout-v1", formationIndexes,
+      levelKnownAtIndex: Math.max(...formationIndexes) + SWING_SPAN,
+      breakIndex: breakIdx, retestIndex: retestIdx, confirmedIndex: confirmedIdx, failedIndex: failedIdx,
+      frozenAtr: atrVal, referenceLevel: level, breakBuffer: buffer, retestTolerance: tolerance,
+    },
     rationale: [
-      `Tested ${breakAbove ? "resistance" : "support"} (${touches} touches) broke and ${
-        retested ? "retested" : "has not retested yet"
-      }.`,
-      "Measured-move target projects roughly two ATR from the broken level.",
+      `Tested ${breakAbove ? "resistance" : "support"} (${touches} prior confirmed touches) broke and ${retestIdx !== null ? "retested" : failedIdx !== null ? "failed before a retest" : "has not retested yet"}.`,
+      "Level, touches and ATR are frozen before the crossing; the target projects two of that frozen ATR from the level.",
+      "Discovery uses the latest 12 closes, with at least 24 observations at crossing. The earliest active event is retained; only a new crossing after failure replaces it. Cluster ties prefer the most-tested then most-recent formation; a direction tie prefers bullish.",
     ],
-    failureModes: [
-      `A close back ${breakAbove ? "below" : "above"} the level marks a failed ${
-        breakAbove ? "breakout (bull trap)" : "breakdown (bear trap)"
-      }.`,
-    ],
-    minCandles: 24,
-    entryTiming: timingForBreak(status),
-    falseBreakoutRisk: breakoutRisk(status, retested ? 2 : 1),
+    failureModes: [`A close ${breakAbove ? "below" : "above"} the level by more than 0.3 of the frozen ATR marks failure; later recovery does not revive the same event.`],
+    minCandles: 24, entryTiming: timingForBreak(status), falseBreakoutRisk: breakoutRisk(status, retestIdx !== null ? 2 : 1),
   };
 }
 

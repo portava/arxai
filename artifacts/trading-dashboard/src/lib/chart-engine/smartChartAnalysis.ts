@@ -203,8 +203,10 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
     const prefix = bars.slice(0, end);
     for (const raw of detectChartPatterns(prefix).patterns) {
       if (raw.id === "head_and_shoulders" || raw.id === "inverse_head_and_shoulders") {
-        const finding = headAndShoulders(raw, bars, note);
-        if (finding) add(finding, Math.max(...finding.anchors.map(a => a.time)), 3);
+        const finding = headAndShoulders(raw, bars, note, end - 1);
+        // The first qualifying inspected prefix owns this shape. A later ATR
+        // change cannot backdate or replace its first observable confirmation.
+        if (finding && !rows.has(finding.id)) add(finding, Math.max(...finding.anchors.map(a => a.time)), 3);
       } else if (end === bars.length && !["bullish_engulfing", "bearish_engulfing"].includes(raw.id)) {
         const finding = catalogFinding(raw, bars, note);
         if (finding) add(finding, Math.max(...finding.anchors.map(a => a.time)), 2);
@@ -301,7 +303,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
       note:"Explicit ARX candle-shape conventions; related variants are not independent confirmations. The complete owner catalogue remains in progress."} };
 }
 
-function headAndShoulders(raw: DetectedPattern, bars: SmartChartAnalysisBar[], note: string): SmartChartFinding | null {
+function headAndShoulders(raw: DetectedPattern, bars: SmartChartAnalysisBar[], note: string, discoveryIndex: number): SmartChartFinding | null {
   const inverse = raw.id === "inverse_head_and_shoulders";
   const left = raw.keyPoints.find(p => p.role === "left_shoulder"), head = raw.keyPoints.find(p => p.role === "head"), right = raw.keyPoints.find(p => p.role === "right_shoulder");
   if (!left || !head || !right || left.index < 5 || !(left.index < head.index && head.index < right.index) || right.index + 2 >= bars.length) return null;
@@ -315,13 +317,13 @@ function headAndShoulders(raw: DetectedPattern, bars: SmartChartAnalysisBar[], n
   // Require one real intervening opposite pivot on EACH side of the head.
   // The legacy catalog allowed one shared trough and a horizontal mean; the
   // displayed neckline instead joins the two observed pivot prices.
-  const swings = findSwings(bars, 2).filter(s => s.kind === (inverse ? "high" : "low"));
+  const swings = findSwings(bars.slice(0, discoveryIndex + 1), 2).filter(s => s.kind === (inverse ? "high" : "low"));
   const first = swings.filter(s => s.index > left.index && s.index < head.index).at(-1);
   const second = swings.find(s => s.index > head.index && s.index < right.index);
   if (!first || !second) return null;
   const neckline = (i: number) => first.price + (second.price - first.price) * (i - first.index) / (second.index - first.index);
   let confirmedAt: number | undefined, invalidated = false;
-  for (let i = right.index + 2; i < bars.length; i++) {
+  for (let i = Math.max(right.index + 2, discoveryIndex); i < bars.length; i++) {
     const close = bars[i]!.close, line = neckline(i);
     if (inverse ? close < headPrice : close > headPrice) { invalidated = true; break; }
     const beyond = inverse ? close > line : close < line;
@@ -333,7 +335,7 @@ function headAndShoulders(raw: DetectedPattern, bars: SmartChartAnalysisBar[], n
   const status = invalidated ? "invalidated" : confirmedAt != null ? "confirmed" : "developing";
   return { id: `${raw.id}:${bars[left.index]!.time}:${bars[head.index]!.time}:${bars[right.index]!.time}`, title: raw.name, status,
     ...(confirmedAt != null ? { confirmedAt } : {}), asOf: last.closeTime,
-    explanation: `Two ${inverse ? "higher lows" : "lower peaks"} surround a ${inverse ? "lower" : "higher"} head at ${price(headPrice)}. The neckline joins ${price(first.price)} and ${price(second.price)} and is now near ${price(line)}. ${invalidated ? "A later close broke the reversal's conditions." : confirmedAt != null ? `A candle closed ${inverse ? "above" : "below"} that line after the right shoulder was observable.` : `A close ${inverse ? "above" : "below"} the neckline is still needed; the shape is developing.`}`,
+    explanation: `Two ${inverse ? "higher lows" : "lower peaks"} surround a ${inverse ? "lower" : "higher"} head at ${price(headPrice)}. The neckline joins ${price(first.price)} and ${price(second.price)} and is now near ${price(line)}. ${invalidated ? "A later close broke the reversal's conditions." : confirmedAt != null ? `A candle closed ${inverse ? "above" : "below"} that line after the complete shape qualified on the available candles.` : `A close ${inverse ? "above" : "below"} the neckline is still needed; the shape is developing.`}`,
     anchors: [
       { time: bars[left.index]!.time, price: leftPrice, role: "left_shoulder" },
       { time: bars[first.index]!.time, price: first.price, role: "neckline_left" },
@@ -341,7 +343,7 @@ function headAndShoulders(raw: DetectedPattern, bars: SmartChartAnalysisBar[], n
       { time: bars[second.index]!.time, price: second.price, role: "neckline_right" },
       { time: bars[right.index]!.time, price: rightPrice, role: "right_shoulder" },
     ], levels: [{ price: line, label: "Projected neckline" }, { price: headPrice, label: "Head invalidation" }],
-    invalidation: `A close ${inverse ? "below" : "above"} the head at ${price(headPrice)}, or back through the neckline after confirmation, invalidates this reading.`, caveat: note };
+    invalidation: `A close ${inverse ? "below" : "above"} the head at ${price(headPrice)}, or back through the neckline after confirmation, invalidates this reading.`, caveat: `${note} Shape discovery checks the latest ${SHAPE_LOOKBACK} closed-candle prefixes; an earlier onset outside that search is not reconstructed.` };
 }
 
 function catalogFinding(raw: DetectedPattern, bars: SmartChartAnalysisBar[], note: string): SmartChartFinding | null {
@@ -349,16 +351,29 @@ function catalogFinding(raw: DetectedPattern, bars: SmartChartAnalysisBar[], not
   if (points.length === 0 || points.length !== raw.keyPoints.length) return null;
   const status: SmartChartFinding["status"] = raw.status === "confirmed" ? "confirmed" : raw.status === "invalidated" || raw.status === "failed" ? "invalidated" : raw.status === "forming" ? "developing" : "observed";
   const last = bars[bars.length - 1]!;
+  const lifecycle = raw.category === "breakout_retest" ? raw.breakoutLifecycle : undefined;
+  if (raw.category === "breakout_retest") {
+    const index = (value: number | null | undefined): value is number => value != null && Number.isInteger(value) && value >= 0 && value < bars.length;
+    if (!lifecycle || lifecycle.version !== "causal-breakout-v1" || !index(lifecycle.breakIndex) || !index(lifecycle.levelKnownAtIndex)
+      || lifecycle.levelKnownAtIndex >= lifecycle.breakIndex || lifecycle.formationIndexes.length < 2
+      || lifecycle.formationIndexes.some((value,i,all)=>!index(value)||value+2>lifecycle.levelKnownAtIndex||(i>0&&value<=all[i-1]!))
+      || ![lifecycle.referenceLevel,lifecycle.frozenAtr,lifecycle.breakBuffer,lifecycle.retestTolerance].every(positive)
+      || (lifecycle.retestIndex!=null&&(!index(lifecycle.retestIndex)||lifecycle.retestIndex<=lifecycle.breakIndex))
+      || (lifecycle.confirmedIndex!=null&&(!index(lifecycle.confirmedIndex)||lifecycle.retestIndex==null||lifecycle.confirmedIndex<lifecycle.retestIndex))
+      || (lifecycle.failedIndex!=null&&(!index(lifecycle.failedIndex)||lifecycle.failedIndex<=lifecycle.breakIndex||lifecycle.confirmedIndex!=null&&lifecycle.failedIndex<=lifecycle.confirmedIndex))) return null;
+  }
+  const confirmationTime=lifecycle ? lifecycle.confirmedIndex!=null?bars[lifecycle.confirmedIndex]!.closeTime:undefined : status==="confirmed"?last.closeTime:undefined;
+  const identity=lifecycle?[...lifecycle.formationIndexes,lifecycle.breakIndex].map(index=>bars[index]!.time):points.map(p=>bars[p.index]!.time);
   const levels = [{ price: raw.levels.confirmation, label: "Confirmation level" }, { price: raw.levels.invalidation, label: "Invalidation level" }].filter((v): v is { price: number; label: string } => v.price != null && positive(v.price));
   // Legacy pin-bar geometry overlaps the new named candle variants. Retain
   // its distinct lifecycle in details without granting an extra summary vote.
   const candleFamily = raw.id === "bullish_pin_bar" || raw.id === "bearish_pin_bar"
     ? isObservedDoji(last) ? "doji" : "long_shadow" : undefined;
-  return { id: `${raw.id}:${points.map(p => bars[p.index]!.time).join(":")}`, title: raw.name, ...(candleFamily ? { family: candleFamily } : {}), status,
-    // Legacy catalog does not expose earliest causal confirmation; report this
-    // observation time, never backdate a discovery to a swing's own bar.
-    ...(status === "confirmed" ? { confirmedAt: last.closeTime } : {}), asOf: last.closeTime,
-    explanation: `${(raw.rationale[0] ?? "Observed price geometry.").replace(" (stop run)", "")}${levels[0] ? ` The measured ${levels[0].label.toLowerCase()} is ${price(levels[0].price)}.` : ""} ${status === "developing" ? "The shape is still developing." : status === "invalidated" ? "Its confirmation conditions no longer hold." : "This describes the observed shape, not its future outcome."}`,
+  return { id: `${raw.id}:${identity.join(":")}`, title: raw.name, ...(candleFamily ? { family: candleFamily } : {}), status,
+    // Breakout evidence carries its actual first confirmation even after later
+    // exhaustion/failure. Other legacy shapes report only this observation.
+    ...(confirmationTime != null ? { confirmedAt: confirmationTime } : {}), asOf: last.closeTime,
+    explanation: `${(raw.rationale[0] ?? "Observed price geometry.").replace(" (stop run)", "")}${levels[0] ? ` The measured ${levels[0].label.toLowerCase()} is ${price(levels[0].price)}.` : ""} ${status === "developing" ? "The shape is still developing." : status === "invalidated" ? "Its confirmation conditions no longer hold." : raw.status === "exhausted" ? "Price has extended beyond the measured objective; an earlier confirmation is historical context, not a fresh entry." : "This describes the observed shape, not its future outcome."}${lifecycle ? ` The reference level ${price(lifecycle.referenceLevel)} and ATR ${price(lifecycle.frozenAtr)} were fixed from candles known before the break; later volatility does not rewrite them.` : ""}`,
     anchors: points.map(p => ({ time: bars[p.index]!.time, price: p.price, role: p.role })), levels,
     ...(raw.category === "breakout_retest" ? { connectAnchors: false } : {}),
     invalidation: raw.failureModes[0] ?? null, caveat: note };

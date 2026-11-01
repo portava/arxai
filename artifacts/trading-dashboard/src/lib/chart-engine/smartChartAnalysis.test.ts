@@ -239,7 +239,25 @@ it("carries breakout/retest event geometry without claiming a connecting price p
  ].map(([open,high,low,close])=>({open:open!,high:high!,low:low!,close:close!}))]);
  const finding=find(input(source),"breakout_retest_up");
  expect(finding).toMatchObject({connectAnchors:false});
+ expect(finding?.confirmedAt).toBe(source[26]!.closeTime);
+ const forming=find(input(source.slice(0,26)),"breakout_retest_up");expect(forming?.status).toBe("developing");expect(forming?.id).toBe(finding?.id);
+ expect(find(input(source,{replayCutoff:source[25]!.closeTime}),"breakout_retest_up")?.confirmedAt).toBeUndefined();
+ expect(find(input(source,{replayCutoff:source[26]!.closeTime}),"breakout_retest_up")?.confirmedAt).toBe(source[26]!.closeTime);
  expect(finding?.anchors.find(a=>a.role==="retest")).toEqual({time:source[26]!.time,price:101,role:"retest"});
  const withoutTouch=bars([...source.slice(0,26),{open:102,high:103,low:102,close:102.8},{open:102.8,high:104,low:102.8,close:103.8}]);
  expect(find(input(withoutTouch),"breakout_retest_up")?.anchors.map(a=>a.role)).toEqual(["broken_level"]);
+});
+
+// The same swing geometry may only qualify after later volatility changes.
+// Confirmation cannot be assigned to a prefix that did not contain the finding.
+it.each([false,true])("does not backdate H&S first qualification when later ATR expands (inverse=%s)",inverse=>{
+ const source=hs();
+ for(let i=25;i<=30;i++){const close=i<=28?99+(107-99)*(i-24)/4:107+(102-107)*(i-28)/2;source[i]={...source[i]!,open:close-.05,high:close+.2,low:close-.2,close};}
+ const appended={...source.at(-1)!,time:START+33*300,closeTime:START+34*300,open:97,high:110,low:50,close:96};
+ const all=inverse?inverted([...source,appended]):[...source,appended];const id=inverse?"inverse_head_and_shoulders":"head_and_shoulders";
+ for(let end=30;end<=33;end++)expect(find(input(all.slice(0,end)),id)).toBeUndefined();
+ const finding=find(input(all),id);expect(finding).toBeDefined();expect(finding?.status).toBe("confirmed");expect(finding?.confirmedAt).toBe(all[33]!.closeTime);
+ const next={...all.at(-1)!,time:START+34*300,closeTime:START+35*300,open:inverse?124:96,high:inverse?125:96.5,low:inverse?123.5:95,close:inverse?124.5:95.5};
+ expect(find(input([...all,next]),id)?.confirmedAt).toBe(all[33]!.closeTime);
+ const cutoff=all[32]!.closeTime;expect(find(input(all,{replayCutoff:cutoff}),id)).toBeUndefined();
 });

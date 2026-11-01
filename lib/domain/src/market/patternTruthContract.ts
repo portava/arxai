@@ -106,6 +106,21 @@ export interface DetectedPattern {
   quality: PatternQuality;
   levels: PatternLevels;
   keyPoints: DetectedPatternKeyPoint[];
+  /** Optional causal breakout evidence. Indexes address the filtered closed
+   * window; formation, volatility and trigger are frozen before the crossing. */
+  breakoutLifecycle?: {
+    version: "causal-breakout-v1";
+    formationIndexes: number[];
+    levelKnownAtIndex: number;
+    breakIndex: number;
+    retestIndex: number | null;
+    confirmedIndex: number | null;
+    failedIndex: number | null;
+    frozenAtr: number;
+    referenceLevel: number;
+    breakBuffer: number;
+    retestTolerance: number;
+  };
   /** Measurable conditions that were satisfied (for explanation + audit). */
   rationale: string[];
   /** Known ways this pattern fails (surfaced as honest warnings). */
