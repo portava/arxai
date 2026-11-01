@@ -731,3 +731,29 @@ describe("trade-health readiness — shared floor + direct Ruby↔Scanner parity
     }
   });
 });
+
+
+describe("broker source note follows the same resolved display state", () => {
+  it.each([
+    ["stale", { feedStatus: feed({ source: "mt5_broker", quality: "stale", stale: true, isLive: false }) }, "STALE", /last-known/i],
+    ["delayed", { feedStatus: feed({ source: "mt5_broker", quality: "delayed", isLive: false }) }, "FALLBACK_COMPOSITE", /delayed/i],
+    ["insufficient", { candleCount: 40 }, "ANALYSIS_ONLY", /context only/i],
+    ["invalid", { feedStatus: feed({ source: "mt5_broker", quality: "invalid" }) }, "ANALYSIS_ONLY", /context only/i],
+    ["header hold", { headerOk: false }, "ANALYSIS_ONLY", /context only/i],
+    ["missing time", { lastTime: null }, "ANALYSIS_ONLY", /context only/i],
+    ["unavailable", { candleCount: 0, lastTime: null, lastClose: null }, "UNAVAILABLE", /unavailable/i],
+  ] as const)("never claims live broker bars when %s", (_name, over, display, wording) => {
+    const truth = resolveScannerTruth(inputs({ feedStatus: feed({ source: "mt5_broker" }), ...over }));
+    expect(truth.displayStatus).toBe(display);
+    expect(truth.isLivePrice).toBe(false);
+    expect(truth.brokerFeedActive).toBe(true); // Source-tier contract is unchanged.
+    expect(truth.dataHealth.sourceNote).not.toMatch(/Live bars are coming/i);
+    expect(truth.dataHealth.sourceNote).toMatch(wording);
+    expect(truth.dataHealth.lines[0]).toBe(truth.dataHealth.sourceNote);
+  });
+  it("keeps live wording only when all existing live-display gates pass", () => {
+    const truth = resolveScannerTruth(inputs({ feedStatus: feed({ source: "mt5_broker" }) }));
+    expect(truth.displayStatus).toBe("LIVE");
+    expect(truth.dataHealth.sourceNote).toBe("Live bars are coming from your broker feed.");
+  });
+});
