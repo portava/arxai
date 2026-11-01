@@ -1932,7 +1932,7 @@ export function ScannerChartPanel() {
       </CardHeader>
       </details>
       <CardContent className="px-2 sm:px-6">
-        <SmartChartLayout symbol={symbol} storageKey={SCANNER_CHART_LAYOUT_KEY} controlsBelowSingleChart>
+        <SmartChartLayout symbol={symbol} primaryTimeframe={apiTf as ArxTimeframe} storageKey={SCANNER_CHART_LAYOUT_KEY} controlsBelowSingleChart>
         <ARXNativeChart symbol={symbol} timeframe={apiTf as ArxTimeframe}
           onTimeframeChange={tf => setTimeframe(normalizeChartTimeframe(tf))}
           limit={200} height={520} mobileHeight={360}
