@@ -26,7 +26,8 @@ import { unavailableCandleVolume } from "../candleVolumeEvidence.js";
 //
 // "delayed" / "stale" are derived from OBSERVABLE data (how many timeframe
 // intervals the newest bar trails the current bar, plus — for synthetics — a
-// confirmed recent live tick), not from any hidden provider flag.
+// confirmed recent live tick), with an explicit provider delay retained as a
+// minimum delayed verdict. Recent bar times never erase known source delay.
 
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
@@ -191,6 +192,7 @@ async function buildChartFeed(
 
   const result = await routeCandles(symbol, timeframe, limit);
   const source = result.primaryProvider;
+  const providerDelayed = result.provenance?.delayed === true;
 
   // Latency: the winning provider's measured ms, else total probe cost.
   const okAttempt = result.attempts.find((a) => a.ok);
@@ -226,6 +228,11 @@ async function buildChartFeed(
     });
     candles = tr.verifiedCandles;
     truthResult = tr.truthResult;
+    if (providerDelayed) truthResult = {...truthResult, sourceDocumentation: {
+      ...truthResult.sourceDocumentation,
+      dataMode: "HISTORICAL — source delayed or real-time entitlement unverified",
+      freshnessNote: "Provider history is delayed or not confirmed real-time. Recent candle timestamps do not prove a live feed.",
+    }};
   } else {
     candles = [];
     truthResult = null;
@@ -335,6 +342,7 @@ async function buildChartFeed(
     candleCount: candles.length,
     trailingIntervals: trailing,
     syntheticAwaitingTick: derivBacked && !hasLiveTick,
+    providerDelayed,
     mockDataDetected: truthResult?.mockDataDetected ?? false,
     invalidOhlcCount: anomalies.invalidOhlcCount,
     missingCandleCount: anomalies.missingCandleCount,
@@ -355,9 +363,9 @@ async function buildChartFeed(
   // liveness — a frozen tip (>15s silent) reads NOT live even though a closed
   // bar still trails by only one interval.
   const reachable = source != null && candles.length > 0;
-  const isLive = formingTipPresent
+  const isLive = !providerDelayed && (formingTipPresent
     ? reachable && !verdict.stale
-    : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick);
+    : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick));
 
   const message = buildMessage(quality, source, displaySymbol);
 
