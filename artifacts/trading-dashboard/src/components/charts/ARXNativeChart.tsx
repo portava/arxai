@@ -1,3 +1,4 @@
+import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLibraryCredit } from "./ChartLibraryCredit";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
@@ -751,6 +752,23 @@ export function ARXNativeChart({
     adapterRef.current?.setStudies?.(preferences.studies);
     updateLegend(inspectedCandleRef.current);
   }, [preferences.studies, chartEpoch, updateLegend]);
+
+  // Bind only the primary mounted chart. Each request reads the committed
+  // chart context and actual renderer values; comparison panes never steal it.
+  useLayoutEffect(() => {
+    if (workspaceId !== "primary") return;
+    let currentStudies = preferences.studies;
+    return registerChartStudyAssistant(request => executeStudyRequest(request, {
+      adapter: hasCandles && activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapterRef.current ? adapterRef.current : null,
+      studies: currentStudies, symbol: resolvedSymbol, timeframe,
+      feedLabel: `${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"}`,
+      save: studies => {
+        currentStudies = studies;
+        setPreferences(previous => ({ ...previous, studies }));
+        updateLegend(inspectedCandleRef.current);
+      },
+    }));
+  }, [workspaceId, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
