@@ -1,0 +1,13 @@
+# Smart Chart: qualified tick-volume bars
+
+The existing chart-study path now has **Tick volume** in its searchable catalogue and bounded assistant (`show tick volume`). It uses the existing `StudyCalculator`, `ChartAnalysisRenderer`, manual study settings, saved preferences and data window. No separate chart/indicator engine exists.
+
+This is the count of ticks explicitly reported for an MT5 broker candle, **not traded size, order flow, liquidity or real traded volume**. Only `volumeEvidence` with `kind: tick_count`, `unit: ticks`, a safe non-negative integer quantity and null refusal reason is accepted at an `mt5_broker` boundary. Generic `volume`, legacy `tickVolume` and zero defaults are not evidence. Observed zero remains zero; missing/malformed/other-unit evidence leaves a whitespace gap. Real-volume support, VWAP and volume profile remain absent.
+
+Each tick-volume instance occupies a synchronized independent histogram pane labelled in ticks; no broker-unit series is mixed into its scale. The period control is absent because it is a per-bar count. Existing hide/remove/color controls remain available. Full integer counts are shown exactly in the data window and assistant; they are not rounded to eight significant digits. When selected and all loaded candles lack qualified counts, the chart explains why the pane is blank.
+
+Historical scanner/deep-history observations preserve only explicitly qualified volume metadata. Native history forwards it to the renderer. A same-bar streaming price update that has no volume evidence replaces and clears the previous count. A later authoritative history observation can restore it. Source/context reset cannot retain prior volume. Volume-only corrections invalidate both candle reconciliation and the renderer's consumed-input record, including historical corrections and removing a previously plotted value.
+
+The backend evidence companion is a separate commit from the Truth lane; this frontend cannot manufacture producer evidence. Legacy database/cache rows that have already lost original volume semantics stay blank. No database migration is included. Browser acceptance on the combined exact source remains necessary; offline mocked-library tests prove data/series values and actual adapter lifecycle, not real broker behaviour or performance parity.
+
+Validation receipts: `/Users/areyouok/arx-tier1-release/chart-volume-bars-20261101/`. The initial regression run fails on the base for missing catalogue capability, zero/positive calculation, metadata forwarding and volume-only change detection. Focused coverage also checks histogram type/pane/units/rows, invalid and other-unit gaps, stream withdrawal, native forwarding, no-data messaging, and equal manual-versus-assistant renderer values.

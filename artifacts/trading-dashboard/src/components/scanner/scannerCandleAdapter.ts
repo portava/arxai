@@ -1,3 +1,4 @@
+import { chartVolumeEvidence, type CandleVolumeEvidence } from "@/lib/chart-engine/chartVolume";
 // Pure candle adapter for the Scanner chart.
 //
 // GET /api/chart/candles returns NormalizedChartCandle bars whose time lives in
@@ -11,7 +12,7 @@
 // parsed to NaN and was filtered out, so a healthy backend still showed
 // "No live candles". `scannerCandleAdapter.test.ts` locks both shapes in.
 
-export type Candle = { time: number; open: number; high: number; low: number; close: number };
+export type Candle = { volumeEvidence?: CandleVolumeEvidence; time: number; open: number; high: number; low: number; close: number };
 
 /**
  * Map raw candle objects (from /api/chart/candles, in either the
@@ -21,7 +22,9 @@ export type Candle = { time: number; open: number; high: number; low: number; cl
  */
 export function adaptChartCandles(arr: ReadonlyArray<Record<string, unknown>>): Candle[] {
   return arr
-    .map((c) => ({
+    .map((c) => {
+      const volumeEvidence=chartVolumeEvidence(c.volumeEvidence,c.source);
+      return ({
       // NormalizedChartCandle carries the ISO `openTime` (with `closeTime` as
       // the close); older/bare shapes may carry a numeric `time` (ms) or
       // `timestamp`. Resolve all of them to epoch MILLISECONDS.
@@ -33,6 +36,7 @@ export function adaptChartCandles(arr: ReadonlyArray<Record<string, unknown>>): 
       high: Number(c.high ?? 0),
       low: Number(c.low ?? 0),
       close: Number(c.close ?? 0),
-    }))
+      ...(volumeEvidence ? {volumeEvidence} : {}),
+    });})
     .filter((c) => Number.isFinite(c.time) && c.open > 0);
 }

@@ -49,6 +49,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
   const sources = ["close", "open", "high", "low", "hl2", "hlc3", "hlcc4", "ohlc4"];
   for (const s of Array.isArray(v.studies) ? v.studies.slice(0, MAX_STUDIES) : []) {
     if (!s || !kinds.has(s.kind) || !period(s.period) || !color(s.color)) continue;
+    if (s.kind === "tick_volume" && s.period !== 1) continue;
     if (s.id != null && (typeof s.id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(s.id))) continue;
     const id = studyId(s);
     if (seen.has(id)) continue;

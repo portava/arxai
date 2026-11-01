@@ -871,3 +871,23 @@ describe("current chart assistant binding",()=>{
     view.unmount();
   });
 });
+
+
+describe("qualified volume handoff to native renderer",()=>{
+  it("explains a selected but unavailable tick-volume pane without inventing zeros",()=>{
+    candleResponse=liveResponse("EURUSD","H1");
+    localStorage.setItem("arx.chart.preferences.v1",JSON.stringify({studies:[{kind:"tick_volume",period:1,color:"#38bdf8"}]}));
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    expect(screen.getByText(/Tick volume unavailable for these loaded candles/)).toBeTruthy();
+  });
+  it("preserves explicit source-qualified historical counts and never promotes partial ticks",()=>{
+    const data=liveResponse("EURUSD","H1");
+    const volumeEvidence={kind:"tick_count",quantity:42,unit:"ticks",reason:null};
+    candleResponse={...data,candles:data.candles.map(bar=>({...bar,volumeEvidence}))};
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    const engine=created[0]!;
+    expect(engine.setCandles.mock.calls.at(-1)![0].at(-1).volumeEvidence).toEqual(volumeEvidence);
+    act(()=>{streams[0]!.onmessage?.(formingBar(1.102));});
+    expect(engine.updateActiveCandle.mock.calls.at(-1)![0].volumeEvidence).toBeUndefined();
+  });
+});

@@ -1,3 +1,4 @@
+import type { CandleVolumeEvidence } from "./chartVolume";
 import type { ScannerChartSurface } from "./scannerChartSurface";
 import type { DrawingInteraction } from "./chartDrawingEditor";
 import type { SmartChartAnnotation } from "./smartChartAnnotation";
@@ -29,6 +30,8 @@ export type ChartEngineId = "lightweight-charts" | "tradingview-advanced";
 
 /** A single OHLC bar, normalized to Unix SECONDS (engine-agnostic). */
 export interface ChartEngineCandle {
+  /** Qualified source observation only; omitted on unproven streaming tips. */
+  volumeEvidence?: CandleVolumeEvidence;
   /** Bar open time, Unix seconds (UTC). */
   time: number;
   open: number;

@@ -1,3 +1,5 @@
+import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
+import { chartVolumeEvidence, observedTickVolume } from "@/lib/chart-engine/chartVolume";
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLibraryCredit } from "./ChartLibraryCredit";
@@ -377,7 +379,7 @@ export function ARXNativeChart({
         label.textContent = row.label;
         label.style.color = row.color;
         const values = document.createElement("span");
-        values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? "— (warm-up / unavailable)" : Number(item.value.toPrecision(8))}`).join(" · ");
+        values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? (item.name === "Ticks" || item.name === "Ticks (hidden)" ? "— (no qualified tick count)" : "— (warm-up / unavailable)") : formatStudyNumber(item.value,item.name)}`).join(" · ");
         line.append(label, values);
         fragment.append(line);
       }
@@ -786,6 +788,7 @@ export function ARXNativeChart({
           high: c.high,
           low: c.low,
           close: c.close,
+          volumeEvidence: chartVolumeEvidence(c.volumeEvidence,c.source),
         }))
         .filter(
           (c) =>
@@ -814,12 +817,15 @@ export function ARXNativeChart({
         Number.isFinite(c.low) &&
         Number.isFinite(c.close)
       ) {
-        byTime.set(time, { time, open: c.open, high: c.high, low: c.low, close: c.close });
+        byTime.set(time, { time, open: c.open, high: c.high, low: c.low, close: c.close, volumeEvidence: c.volumeEvidence });
       }
     }
     for (const c of engineCandles) byTime.set(c.time, c); // live window wins
     return [...byTime.values()].sort((a, b) => a.time - b.time);
   }, [deepHistory.olderCandles, engineCandles]);
+
+  const hasQualifiedTickVolume = useMemo(() => mergedEngineCandles.some(candle => observedTickVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
+  const tickVolumeSelected = preferences.studies.some(study => study.kind === "tick_volume" && study.lineStyles?.[0]?.visible !== false);
 
   // Oldest bar currently on screen as an ISO string — the cursor seed the
   // reach-start handler pages behind. Held in a ref so the (stable) handler
@@ -1435,6 +1441,7 @@ export function ARXNativeChart({
       </CardHeader>
 
       {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
+      {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className="px-3 pb-2 text-xs text-amber-300" role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
       {!supportedTimeframe && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
       {/* Phase 2 — Chart Mirror Layer.

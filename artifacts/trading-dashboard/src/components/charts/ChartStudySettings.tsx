@@ -51,7 +51,7 @@ export function ChartStudySettings({ preferences, onPreferences }: Props) {
           <legend className="px-1 font-medium" style={{ color: config.color }}>{index + 1}. {studyLabel(config)}</legend>
           <p className="mb-2 text-[11px] text-zinc-500">{definition.description}{config.kind === "dmi" ? " Default colors: +DI green, −DI rose; the main Color changes ADX. Individual overrides are in Line appearance. Each stage waits for its full window. Loading older candles can change seeded values." : ""}</p>
           <div className="flex flex-wrap items-center gap-3">
-            {number("period", config.kind === "macd" ? "Fast" : config.kind === "dmi" ? "DI period" : "Period", 1, config.kind === "macd" ? (config.slow ?? 26) - 1 : 1000)}
+            {config.kind !== "tick_volume" && number("period", config.kind === "macd" ? "Fast" : config.kind === "dmi" ? "DI period" : "Period", 1, config.kind === "macd" ? (config.slow ?? 26) - 1 : 1000)}
             {config.kind === "macd" && <>{number("slow", "Slow", config.period + 1)}{number("signal", "Signal")}
               <label className="flex items-center gap-2">Signal method<select aria-label={`${label} Signal method`} className={field} value={config.signalMethod ?? "ema"} onChange={event => update(id, { signalMethod: event.target.value as ChartStudy["signalMethod"] })}><option value="ema">EMA</option><option value="sma">SMA (MT5)</option></select></label>
             </>}
@@ -71,7 +71,7 @@ export function ChartStudySettings({ preferences, onPreferences }: Props) {
             <div className="mt-2 space-y-2">
               {definition.channels.map((name,channel)=>{
                 const style=config.lineStyles?.[channel] ?? {};
-                const histogram=config.kind === "macd" && channel === 2;
+                const histogram=config.kind === "tick_volume" || config.kind === "macd" && channel === 2;
                 const change=(patch:Partial<NonNullable<ChartStudy["lineStyles"]>[number]>)=>update(id,{lineStyles:Array.from({length:definition.channels.length},(_,i)=>i === channel ? {...(config.lineStyles?.[i] ?? {}),...patch} : {...(config.lineStyles?.[i] ?? {})})});
                 const prefix=`${label} ${name}`;
                 return <div key={name} className="flex flex-wrap items-center gap-3">

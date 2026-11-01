@@ -1,3 +1,4 @@
+import { observedTickVolume } from "./chartVolume";
 import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "lightweight-charts";
 import type { ChartEngineCandle } from "./types";
 import { StudyCalculator, studyChannelColor, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
@@ -21,7 +22,7 @@ export class ChartAnalysisRenderer {
   private pending: { candles: ChartEngineCandle[]; from: number } | null = null;
   private displayWindow: { from: number; to: number } | null = null;
   private rendering = false;
-  /** time, open, high, low, close of every bar the calculators consumed. */
+  /** time, open, high, low, close, qualified tick count of every bar the calculators consumed. */
   private inputs: number[] = [];
   private onViewport = () => {
     if (this.rendering || !this.studies.length) return;
@@ -192,14 +193,14 @@ export class ChartAnalysisRenderer {
     inputs.length = candles.length * INPUT_STRIDE;
     for (let i = start, k = start * INPUT_STRIDE; i < candles.length; i++, k += INPUT_STRIDE) {
       const bar = candles[i]!;
-      inputs[k] = bar.time; inputs[k + 1] = bar.open; inputs[k + 2] = bar.high; inputs[k + 3] = bar.low; inputs[k + 4] = bar.close;
+      inputs[k] = bar.time; inputs[k + 1] = bar.open; inputs[k + 2] = bar.high; inputs[k + 3] = bar.low; inputs[k + 4] = bar.close; inputs[k + 5] = observedTickVolume(bar.volumeEvidence) ?? -1;
     }
   }
   private firstInputChange(candles: ChartEngineCandle[]): number {
     const inputs = this.inputs, count = Math.min(inputs.length / INPUT_STRIDE, candles.length);
     for (let i = 0, k = 0; i < count; i++, k += INPUT_STRIDE) {
       const bar = candles[i]!;
-      if (bar.time !== inputs[k] || bar.open !== inputs[k + 1] || bar.high !== inputs[k + 2] || bar.low !== inputs[k + 3] || bar.close !== inputs[k + 4]) return i;
+      if (bar.time !== inputs[k] || bar.open !== inputs[k + 1] || bar.high !== inputs[k + 2] || bar.low !== inputs[k + 3] || bar.close !== inputs[k + 4] || (observedTickVolume(bar.volumeEvidence) ?? -1) !== inputs[k + 5]) return i;
     }
     return count;
   }
@@ -362,6 +363,9 @@ function studySeriesOptions(config: ChartStudy, channel: number):
   const definition = studyDefinition(config.kind);
   const style = config.lineStyles?.[channel];
   const visible = style?.visible !== false;
+  if (config.kind === "tick_volume") {
+    return {histogram:true,options:{visible,color:studyChannelColor(config,channel),priceLineVisible:false,lastValueVisible:false,title:"Tick volume · ticks (not traded size)",priceFormat:{type:"price",precision:0,minMove:1}}};
+  }
   if (config.kind === "macd" && channel === 2) {
     return {histogram:true,options:{visible,color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}};
   }
@@ -398,7 +402,7 @@ function sameSeries(a: readonly unknown[], b: readonly unknown[]): boolean {
 function samePoints(a: StudyPoint[], b: StudyPoint[]): boolean {
   return a.length === b.length && a.every((point, i) => sameStudyPoint(point, b[i]!));
 }
-const INPUT_STRIDE = 5;
+const INPUT_STRIDE = 6;
 
 function sameStudyPoint(a: StudyPoint, b: StudyPoint): boolean {
   return a === b || a.time === b.time && a.values.length === b.values.length &&

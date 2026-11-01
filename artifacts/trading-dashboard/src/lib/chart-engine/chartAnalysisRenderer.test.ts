@@ -149,6 +149,7 @@ describe("study viewport rendering and streaming", () => {
 describe("exact study tail reconciliation",()=>{
   for(const {defaults:config} of STUDY_CATALOG) it(`${config.kind}: all rendered channels equal a full calculation through replay and corrections`,()=>{
     const f=fixture(320);let bars=f.candles;
+    if(config.kind === "tick_volume") bars=bars.map((bar,index)=>({...bar,volumeEvidence:{kind:"tick_count" as const,quantity:index,unit:"ticks" as const,reason:null}}));
     f.renderer.setStudies([config],bars);
     const verify=()=>{
       const expected=new StudyCalculator(config).calculate(bars);
@@ -175,7 +176,7 @@ describe("exact study tail reconciliation",()=>{
     bars=original;f.renderer.refresh(bars,0,true);verify();
     // A changed period/config recalculates that study from scratch and replaces
     // its rendered data on the existing series (no stale values remain).
-    const altered={...config,period:Math.max(2,config.period+1)};
+    const altered=config.kind === "tick_volume" ? {...config,color:"#ff0000"} : {...config,period:Math.max(2,config.period+1)};
     const series=f.chart.addSeries.mock.calls.length;
     f.renderer.setStudies([altered],bars);
     expect(f.chart.addSeries).toHaveBeenCalledTimes(series); // edited in place
@@ -274,7 +275,7 @@ describe("incremental study changes equal a full rebuild", () => {
         expect(results[0]!.removed).toHaveLength(channels(k));
         expect(live.panes).toHaveLength(2);
       });
-      it("period change recalculates in place", () => {
+      if(k.kind !== "tick_volume") it("period change recalculates in place", () => {
         const { results } = compare([[OTHER.sma, k, OTHER.rsi], [OTHER.sma, { ...k, period: k.period + 1 }, OTHER.rsi]]);
         expect(results[0]).toMatchObject({ added: 0, removed: [] });
         // Oscillator titles carry the period; overlays have no title.
@@ -685,14 +686,14 @@ describe("incremental study changes equal a full rebuild", () => {
     expect(f.chart.addSeries).toHaveBeenCalledTimes(2);
     expect(f.chart.removeSeries).not.toHaveBeenCalled();
   });
-  /** Wraps the renderer's record of consumed bar inputs (5 numbers per bar)
+  /** Wraps the renderer's record of consumed bar inputs (6 numbers per bar, including qualified tick count)
    * and collects the bar index of every recorded value it writes. */
   function watchRecordedInputs(renderer: ChartAnalysisRenderer) {
     const target = (renderer as any).inputs as number[];
     expect(Array.isArray(target)).toBe(true);
     const written = new Set<number>();
     (renderer as any).inputs = new Proxy(target, { set: (array, key, value, receiver) => {
-      if (typeof key === "string" && /^\d+$/.test(key)) written.add(Math.floor(Number(key) / 5));
+      if (typeof key === "string" && /^\d+$/.test(key)) written.add(Math.floor(Number(key) / 6));
       return Reflect.set(array, key, value, receiver);
     } });
     return { written: () => [...written].sort((a, b) => a - b) };
@@ -816,4 +817,34 @@ describe("study channel presentation",()=>{
   expect(f.handles[2].data).toEqual(histogram);expect(f.handles.every(h=>h.options.visible)).toBe(true);
   expect(f.panes).toHaveLength(2);f.renderer.destroy();
  });
+});
+
+
+describe("qualified tick-volume histogram",()=>{
+  it("renders explicit zero, real counts and missing gaps in a separate labeled pane",()=>{
+    const f=fixture(3);
+    const evidence=(quantity:number)=>({kind:"tick_count" as const,quantity,unit:"ticks" as const,reason:null});
+    const bars=f.candles.map((bar,index)=>({...bar,volumeEvidence:index<2 ? evidence(index*7) : undefined}));
+    const config=STUDY_CATALOG.find(d=>d.defaults.kind === "tick_volume")!.defaults;
+    f.renderer.setStudies([config],bars);
+    const series=f.handles[0];
+    expect(series.definition).toBe(HistogramSeries); expect(f.panes[1]!.series).toEqual([series]);
+    expect(series.options.title).toContain("ticks (not traded size)");
+    expect(series.data).toEqual([{time:bars[0]!.time,value:0},{time:bars[1]!.time,value:7},{time:bars[2]!.time}]);
+    bars[1]={...bars[1]!,volumeEvidence:evidence(12)};
+    f.renderer.refresh(bars,1,false);
+    expect(series.data[1]).toEqual({time:bars[1]!.time,value:12});
+    bars[1]={...bars[1]!,volumeEvidence:undefined};
+    f.renderer.refresh(bars,1,false);
+    expect(series.data[1]).toEqual({time:bars[1]!.time});
+    expect(f.renderer.inspect(bars[1]!.time)[0]!.values[0]).toEqual({name:"Ticks",value:null});
+  });
+  it("patching another study detects changed volume-only input",()=>{
+    const f=fixture(3);const config=STUDY_CATALOG.find(d=>d.defaults.kind === "tick_volume")!.defaults;
+    const bars=f.candles.map(bar=>({...bar,volumeEvidence:{kind:"tick_count" as const,quantity:5,unit:"ticks" as const,reason:null}}));
+    f.renderer.setStudies([config],bars);
+    bars[1]={...bars[1]!,volumeEvidence:{...bars[1]!.volumeEvidence,quantity:9}};
+    f.renderer.setStudies([config,STUDY_DEFAULTS[0]!],bars);
+    expect(f.renderer.inspect(bars[1]!.time)[0]!.values[0]!.value).toBe(9);
+  });
 });
