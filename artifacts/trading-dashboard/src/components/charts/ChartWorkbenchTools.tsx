@@ -74,6 +74,9 @@ export function ChartWorkbenchTools({analysisFocused=false,onRestoreAnalysis,ada
   },[adapter,displayRevision,needsStudyEvidence]);
   const studyDisplayAdapter=needsStudyEvidence&&studyEvidenceActive.current&&committedStudyEvidence?.adapter===adapter&&committedStudyEvidence.revision===displayRevision?adapter:null;
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
+  // Stable only for this mounted chart/data namespace. Controlled selection
+  // rerenders must not interrupt a drag; a new adapter/context revokes it.
+  const drawingOwner = useMemo(() => ({}), [adapter,epoch,key]);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;
   const styleNote = preferences.style === "heikinAshi"
@@ -284,7 +287,7 @@ export function ChartWorkbenchTools({analysisFocused=false,onRestoreAnalysis,ada
     installedDrawings.current={adapter,epoch,rows:renderedDrawings,preview:!!previewDrawing||levelDrawings.length>0};
   },[adapter,epoch,renderedDrawings,previewDrawing,levelDrawings]);
   useEffect(()=>{
-    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:id=>setSelectedId(id===previewId||id?.startsWith(levelPrefix)?null:id),onCommit:next=>{const owned=next.filter(d=>d.id!==previewId&&!d.id.startsWith(levelPrefix));change(owned);setMessage(owned.length < drawings.length ? "Drawing deleted. Undo restores it." : "Drawing updated. Undo restores the previous edit.");},
+    adapter?.setDrawingInteraction?.(hidden ? null : {owner:drawingOwner,selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:id=>setSelectedId(id===previewId||id?.startsWith(levelPrefix)?null:id),onCommit:next=>{const owned=next.filter(d=>d.id!==previewId&&!d.id.startsWith(levelPrefix));change(owned);setMessage(owned.length < drawings.length ? "Drawing deleted. Undo restores it." : "Drawing updated. Undo restores the previous edit.");},
       ...(history.past.length ? {onUndo:()=>undo()} : {}),
       ...(history.future.length ? {onRedo:()=>undo(true)} : {})});
   });

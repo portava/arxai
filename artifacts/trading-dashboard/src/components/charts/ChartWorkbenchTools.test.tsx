@@ -645,3 +645,16 @@ describe('anchor display marker only runs for an actual consumer',()=>{
   expect(screen.getByLabelText('Study settings').textContent).toContain('source clock (UTC unverified)');
  });
 });
+
+it("keeps the drawing owner across controlled selection and renews it at context boundaries",()=>{
+ const setDrawingInteraction=vi.fn();const engine={...adapter,setDrawingInteraction} as unknown as ChartEngineAdapter;
+ const props={adapter:engine,epoch:1,symbol:"EURUSD",timeframe:"M15",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:"Offline fixture"};
+ localStorage.setItem(drawingStorageKey("EURUSD","M15"),JSON.stringify([{id:"pick",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"}]));
+ const view=render(<ChartWorkbenchTools {...props}/>);
+ const initial=setDrawingInteraction.mock.calls.at(-1)![0];expect(initial.owner).toBeTruthy();
+ act(()=>initial.onSelect("pick"));
+ const selected=setDrawingInteraction.mock.calls.at(-1)![0];expect(selected.selectedId).toBe("pick");expect(selected.owner).toBe(initial.owner);
+ view.rerender(<ChartWorkbenchTools {...props} feedLabel="Refreshed fixture"/>);expect(setDrawingInteraction.mock.calls.at(-1)![0].owner).toBe(initial.owner);
+ view.rerender(<ChartWorkbenchTools {...props} epoch={2}/>);const next=setDrawingInteraction.mock.calls.at(-1)![0].owner;expect(next).not.toBe(initial.owner);
+ view.rerender(<ChartWorkbenchTools {...props} epoch={2} drawingKey="new-source"/>);expect(setDrawingInteraction.mock.calls.at(-1)![0].owner).not.toBe(next);
+});

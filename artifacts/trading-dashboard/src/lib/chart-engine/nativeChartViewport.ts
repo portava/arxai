@@ -2,11 +2,14 @@ import { prepareNativePriceSeries, createNativePriceFrame, paintNativePriceLayer
 import { nativePlotLayout, paintNativeAxes } from "./nativeChartAxes";
 import { panChartWindow, zoomChartWindow, type LogicalWindow } from "./chartNavigation";
 import { candleDisplayPrecision, historyRangeShift } from "./candleReconciliation";
-import { CHART_STYLES, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
+import { CHART_STYLES, validateDrawings, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import { effectiveDisplayZone, isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 import type { ChartEngineCandle } from "./types";
 import type { ChartStudy } from "./chartStudies";
 import { NativeChartStudies, layoutNativeStudyPanes, paintNativeStudies } from "./nativeChartStudies";
+
+import { ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
+import { drawingStrokes, drawingNotes, drawingHandles, paintChartDrawings, type PixelPoint } from "./chartDrawingCanvas";
 
 export interface NativeCrosshair {
   readonly candle: Readonly<ChartEngineCandle>;
@@ -33,7 +36,7 @@ interface Gesture { center: Point; distance: number }
 const MAX_CSS_SIDE = 16_384, MAX_BACKING_SIDE = 8_192, MAX_BACKING_PIXELS = 16_777_216;
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
-/** Independent DOM controller. Still not a complete engine adapter: drawings,
+/** Independent DOM controller. Still not a complete engine adapter:
  * trading overlays and replay are pending; the registered app is unchanged. */
 export class NativeChartViewport {
   private readonly canvas: HTMLCanvasElement;
@@ -42,6 +45,15 @@ export class NativeChartViewport {
   private series = prepareNativePriceSeries([]);
   private readonly studies = new NativeChartStudies();
   private priceOnlyScale = false;
+  private drawingEditor: ChartDrawingEditor;
+  private drawings: ChartDrawing[] = [];
+  private selectedDrawing: string | null = null;
+  private drawingInteraction: DrawingInteraction | null = null;
+  private drawingHandler: ((anchor: ChartAnchor) => void) | null = null;
+  private drawingNavigationMode: "inspect" | "pan" = "inspect";
+  private frozenDrawingFrame: NativePriceFrame | null = null;
+  private editAnchorTimes: number[] = [];
+
   private range: LogicalWindow | null = null;
   private frame: NativePriceFrame | null = null;
   private referencePrice: number | null = null;
@@ -91,6 +103,28 @@ export class NativeChartViewport {
     if (!context) throw new Error("Canvas 2D is unavailable");
     this.context = context;
     container.appendChild(this.canvas);
+    this.drawingEditor = new ChartDrawingEditor(this.canvas, {
+      candles: () => this.series.candles as ChartEngineCandle[],
+      project: (anchor, priceOnly) => this.projectDrawing(anchor, priceOnly),
+      anchor: (point, snap) => this.drawingAnchor(point, snap),
+      price: y => { const frame = this.getFrame(); return frame?.yToPrice(y + frame.plot.top) ?? null; },
+      size: () => { const plot = this.getFrame()?.plot; return { width: plot?.width ?? 0, height: plot?.height ?? 0 }; },
+      eventPoint: event => {
+        const point = this.point(event), plot = this.getFrame()?.plot;
+        return point && plot ? {x: point.x - plot.left, y: point.y - plot.top} : null;
+      },
+      render: drawings => { if (!this.destroyed) { this.drawings = this.cloneDrawings(drawings); this.schedule(); } },
+      select: id => { if (!this.destroyed) { this.selectedDrawing = id; this.schedule(); } },
+      freeze: active => {
+        if (active) {
+          this.cancelGesture(); this.frozenDrawingFrame = this.getFrame();
+          const drawing = this.drawings.find(row=>row.id===this.selectedDrawing);
+          this.editAnchorTimes = drawing && drawing.kind!=="horizontal"
+            ? [drawing.start, ...(drawing.end?[drawing.end]:[]), ...(drawing.offset?[drawing.offset]:[])].map(anchor=>anchor.time) : [];
+          this.clearHover();
+        } else { this.frozenDrawingFrame = null; this.editAnchorTimes=[]; this.invalidate(); }
+      },
+    });
     const listen = (type: string, handler: EventListener, options?: AddEventListenerOptions) => {
       this.canvas.addEventListener(type, handler, options);
       this.listeners.push(() => this.canvas.removeEventListener(type, handler, options));
@@ -140,7 +174,7 @@ export class NativeChartViewport {
     const nextWidth = valid ? w : 0, nextHeight = valid ? h : 0;
     const ratio = valid ? Math.min(requestedRatio, MAX_BACKING_SIDE / w, MAX_BACKING_SIDE / h, Math.sqrt(MAX_BACKING_PIXELS / (w * h))) : 1;
     if (nextWidth !== this.width || nextHeight !== this.height || ratio !== this.pixelRatio) {
-      this.cancelGesture(); this.clearHover();
+      this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover();
       if (this.destroyed || revision !== this.mutationRevision) return;
       this.width = nextWidth; this.height = nextHeight; this.pixelRatio = ratio;
       this.canvas.width = Math.floor(this.width * ratio); this.canvas.height = Math.floor(this.height * ratio);
@@ -155,6 +189,11 @@ export class NativeChartViewport {
     const revision = ++this.mutationRevision;
     const previous = this.series.candles;
     const next = prepareNativePriceSeries(candles);
+    const times = new Set(next.candles.map(candle => candle.time));
+    const overlap = previous.some(candle => times.has(candle.time));
+    const selected = this.drawings.find(drawing => drawing.id === this.selectedDrawing);
+    const anchors = selected ? [selected.start, ...(selected.end ? [selected.end] : []), ...(selected.offset ? [selected.offset] : [])] : [];
+    if (!next.candles.length || (previous.length && !overlap) || (selected?.kind !== "horizontal" && anchors.some(anchor => !times.has(anchor.time))) || this.editAnchorTimes.some(time=>!times.has(time))) this.drawingEditor.cancelGesture();
     this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.series = next;
     this.studies.setCandles(next.candles);
     if (!this.referenceSet && next.candles.length) {
@@ -164,17 +203,20 @@ export class NativeChartViewport {
     }
     this.priceDigits = Number.isInteger(this.options.priceDigits) && this.options.priceDigits! >= 0 && this.options.priceDigits! <= 16
       ? this.options.priceDigits! : candleDisplayPrecision(next.candles);
-    const times = new Set(next.candles.map(candle => candle.time));
-    const overlap = previous.some(candle => times.has(candle.time));
     // A refresh, append, prepend or rolling window retains the CSS pointer
     // baseline: historyRangeShift rebases its logical observation below. Empty
     // or disjoint history has no shared anchor and explicitly ends the gesture.
     if (!next.candles.length || (previous.length && !overlap)) this.cancelGesture();
     if (!next.candles.length) this.range = null;
-    else if (this.followingLatest || !this.range || !overlap) this.range = this.latestRange(this.range ? this.range.to - this.range.from : undefined);
+    else if ((this.followingLatest && !this.frozenDrawingFrame) || !this.range || !overlap) this.range = this.latestRange(this.range ? this.range.to - this.range.from : undefined);
     else {
       const shift = historyRangeShift(previous, next.candles);
-      this.range = panChartWindow({ from: this.range.from + shift, to: this.range.to + shift }, 0, next.candles.length);
+      const desired = {from:this.range.from+shift,to:this.range.to+shift};
+      const bounded = panChartWindow(desired,0,next.candles.length);
+      // A bounded history trim can move X even when selected anchors survive.
+      // Cancel rather than committing an edit against a shifted origin pixel.
+      if (this.frozenDrawingFrame && (!bounded || Math.abs(bounded.from-desired.from)>1e-9 || Math.abs(bounded.to-desired.to)>1e-9)) this.drawingEditor.cancelGesture();
+      this.range = bounded;
     }
     this.invalidate();
   }
@@ -184,6 +226,94 @@ export class NativeChartViewport {
     const width = Number.isFinite(span) && span > 0 ? span : 100;
     return panChartWindow({ from: count + 1 - width, to: count + 1 }, 0, count);
   }
+  private cloneDrawings(drawings: readonly ChartDrawing[]): ChartDrawing[] {
+    const seen = new Set<string>();
+    // Preserve unsaved previews beyond the saved-object limit, as the current
+    // registered adapter does. Validation clones anchors and source evidence.
+    return drawings.flatMap(row => validateDrawings([row])).filter(row => {
+      if (seen.has(row.id)) return false; seen.add(row.id); return true;
+    });
+  }
+  setDrawings(drawings: readonly ChartDrawing[]): void {
+    if (this.destroyed) return;
+    this.drawingEditor.cancelGesture();
+    this.drawings = this.cloneDrawings(drawings);
+    this.drawingEditor.setDrawings(this.drawings); this.schedule();
+  }
+  getDrawings(): ChartDrawing[] { return this.cloneDrawings(this.drawings); }
+  setDrawingInteraction(config: DrawingInteraction | null): void {
+    if (this.destroyed) return;
+    this.drawingInteraction = config ? {...config,
+      onSelect: id => this.notify("drawing selection", () => config.onSelect(id)),
+      onCommit: next => {
+        this.drawings = this.cloneDrawings(next);this.schedule();
+        this.notify("drawing commit", () => config.onCommit(this.cloneDrawings(next)));
+      },
+    } : null;
+    this.drawingEditor.configure(this.drawingNavigationMode === "pan" ? null : this.drawingInteraction);
+  }
+  setDrawingHandler(handler: ((anchor: ChartAnchor) => void) | null): void {
+    if (this.destroyed) return;
+    this.drawingHandler = handler;this.applyDrawingPlacement();
+  }
+  setNavigationMode(mode: "inspect" | "pan"): void {
+    if (this.destroyed || (mode !== "inspect" && mode !== "pan")) return;
+    this.drawingNavigationMode = mode;
+    this.drawingEditor.configure(mode === "pan" ? null : this.drawingInteraction);
+    this.applyDrawingPlacement();
+  }
+  private activeDrawingPlacement() { return this.drawingNavigationMode !== "pan" && this.drawingHandler !== null; }
+  private applyDrawingPlacement() {
+    this.cancelGesture();this.clearHover();
+    const handler = this.activeDrawingPlacement() ? this.drawingHandler : null;
+    this.drawingEditor.setPlacement(handler ? anchor => this.notify("drawing placement", () => handler(anchor)) : null);
+    this.canvas.style.cursor = this.drawingNavigationMode === "pan" ? "grab" : handler ? "crosshair" : "";
+  }
+  private projectDrawing(anchor: ChartAnchor, priceOnly = false): PixelPoint | null {
+    const frame = this.getFrame(); if (!frame) return null;
+    const x = priceOnly ? frame.plot.left : frame.timeToX(anchor.time), y = frame.priceToY(anchor.price);
+    return x == null || y == null ? null : { x: x - frame.plot.left, y: y - frame.plot.top };
+  }
+  private drawingAnchor(point: PixelPoint, snap: boolean): ChartAnchor | null {
+    const frame = this.getFrame(); if (!frame || point.x < 0 || point.y < 0 || point.x > frame.plot.width || point.y > frame.plot.height) return null;
+    const x = point.x + frame.plot.left, y = point.y + frame.plot.top, candle = frame.barAtX(x);
+    let price = frame.yToPrice(y);
+    if (!candle || price == null || price <= 0 || !Number.isFinite(price)) return null;
+    if (snap) price = [candle.open,candle.high,candle.low,candle.close].reduce((best,value) => {
+      const a = frame.priceToY(value), b = frame.priceToY(best);
+      return a != null && b != null && Math.abs(a-y) < Math.abs(b-y) ? value : best;
+    });
+    return {time:candle.time,price};
+  }
+  private paintDrawings(ctx: CanvasRenderingContext2D, frame: NativePriceFrame) {
+    if (!this.drawings.length) return;
+    const {width,height,left,top} = frame.plot;
+    const project = (anchor: ChartAnchor, priceOnly?: boolean) => this.projectDrawing(anchor,priceOnly);
+    const strokes = drawingStrokes(this.drawings,project,width,height);
+    const notes = drawingNotes(this.drawings,project,width,height);
+    const selected = this.drawings.find(drawing => drawing.id === this.selectedDrawing && !drawing.hidden && !drawing.locked);
+    const handles = selected ? drawingHandles(selected,project,width,height).map(handle => handle.point) : [];
+    ctx.save();
+    try { ctx.translate(left,top);paintChartDrawings(ctx,{width,height},strokes,notes,handles); }
+    finally { ctx.restore(); }
+    // Price-only levels retain their raw price label, including on percent or
+    // indexed axes. The gutter is clipped so labels cannot cover another pane.
+    ctx.save();
+    try {
+      ctx.beginPath();ctx.rect(left+width,top,this.width-left-width,height);ctx.clip();
+      ctx.font="10px sans-serif";ctx.textBaseline="middle";ctx.textAlign="left";
+      for (const drawing of this.drawings) {
+        if (drawing.hidden || drawing.kind!=="horizontal") continue;
+        const y=frame.priceToY(drawing.start.price);
+        if(y==null||y<top||y>top+height)continue;
+        ctx.fillStyle=drawing.color;ctx.fillRect(left+width,y-8,this.width-left-width,16);
+        ctx.fillStyle="#09090b";
+        let label=drawing.start.price.toFixed(this.priceDigits);
+        if(Number(label)===0&&drawing.start.price!==0)label=String(drawing.start.price);
+        ctx.fillText(label,left+width+3,y,this.width-left-width-6);
+      }
+    } finally {ctx.restore();}
+  }
   getRange(): Readonly<LogicalWindow> | null { return this.range ? Object.freeze({ ...this.range }) : null; }
   getPaneLayout() {
     const full = nativePlotLayout(this.width, this.height);
@@ -192,7 +322,7 @@ export class NativeChartViewport {
   setStudies(configs: ChartStudy[]): void {
     if (this.destroyed) return;
     const revision = ++this.mutationRevision;
-    this.cancelGesture();this.clearHover();if(this.destroyed || revision!==this.mutationRevision)return;
+    this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();if(this.destroyed || revision!==this.mutationRevision)return;
     this.studies.setStudies(configs, this.series.candles);this.invalidate();
   }
   getStudyValues(time: number) { return this.studies.getValues(time); }
@@ -200,7 +330,7 @@ export class NativeChartViewport {
   setPriceOnlyScale(enabled: boolean): void {
     if(this.destroyed || this.priceOnlyScale===enabled)return;
     const revision=++this.mutationRevision;
-    this.cancelGesture();this.clearHover();if(this.destroyed||revision!==this.mutationRevision)return;
+    this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();if(this.destroyed||revision!==this.mutationRevision)return;
     this.priceOnlyScale=enabled;this.invalidate();
   }
   getFrame(): NativePriceFrame | null {
@@ -216,6 +346,11 @@ export class NativeChartViewport {
       inverted: this.inverted, referencePrice: this.referencePrice ?? undefined,
       additionalPriceValues: this.priceOnlyScale ? [] : this.studies.getPriceBounds(this.range, this.scale) });
     this.frame = result.ok ? result.frame : null;
+    // Incoming observations remain current during an edit, but the price axis
+    // stays where the pointer gesture began. Time mapping rebases on actual
+    // timestamps when history is prepended; no invented weekend bars.
+    if (this.frame && this.frozenDrawingFrame) this.frame = Object.freeze({ ...this.frame,
+      priceToY: this.frozenDrawingFrame.priceToY, yToPrice: this.frozenDrawingFrame.yToPrice });
     this.frameIssue = result.ok ? null : result.reason;
     return this.frame;
   }
@@ -225,6 +360,7 @@ export class NativeChartViewport {
       error: this.paintError ?? this.frameIssue, callbackError: this.callbackError, referencePrice: this.referencePrice, style: this.style, scale: this.scale, inverted: this.inverted,
       timeZone: this.timeZone, effectiveTimeZone: effectiveDisplayZone(this.timeZone, this.timeframe), timeframe: this.timeframe,
       barCount: this.series.candles.length, discarded: this.series.discarded, range: this.getRange(), followingLatest: this.followingLatest,
+      drawingCount: this.drawings.length, selectedDrawing: this.selectedDrawing, editingDrawing: this.frozenDrawingFrame !== null,
       paneCount: this.studies.paneCount, priceOnlyScale: this.priceOnlyScale,
       width: this.width, height: this.height, pixelRatio: this.pixelRatio, pendingPaint: this.raf != null, drawCount: this.drawCount, paintCount: this.drawCount });
   }
@@ -233,25 +369,25 @@ export class NativeChartViewport {
     const bounded = panChartWindow(range, 0, this.series.candles.length);
     if (!bounded) return;
     const revision = ++this.mutationRevision;
-    this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.range = bounded; this.followingLatest = false; this.invalidate();
+    this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.range = bounded; this.followingLatest = false; this.invalidate();
   }
   fit(): void { if (!this.destroyed) this.setRange({ from: -1, to: this.series.candles.length }); }
   goLatest(): void {
     if (this.destroyed) return;
     const revision = ++this.mutationRevision;
-    this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.range = this.latestRange(this.range ? this.range.to - this.range.from : undefined);
+    this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.range = this.latestRange(this.range ? this.range.to - this.range.from : undefined);
     this.followingLatest = true; this.invalidate();
   }
   setStyle(style: ChartStyle): void {
     if (!this.destroyed && CHART_STYLES.includes(style) && style !== this.style) {
       const revision = ++this.mutationRevision;
-      this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.style = style; this.invalidate();
+      this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.style = style; this.invalidate();
     }
   }
   setScale(scale: ChartScaleMode, inverted = this.inverted): void {
     if (this.destroyed || !["linear", "log", "percent", "indexed"].includes(scale)) return;
     const revision = ++this.mutationRevision;
-    this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.scale = scale; this.inverted = inverted; this.invalidate();
+    this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.scale = scale; this.inverted = inverted; this.invalidate();
   }
   setDisplayTimeZone(zone: ChartTimeZone, timeframe = this.timeframe): void {
     if (this.destroyed || !isChartTimeZone(zone)) return;
@@ -261,9 +397,12 @@ export class NativeChartViewport {
   resetContext(): void {
     if (this.destroyed) return;
     const revision = ++this.mutationRevision;
-    this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.generation++;
+    this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.generation++;
     if (this.raf != null) cancelAnimationFrame(this.raf); this.raf = null;
     this.series = prepareNativePriceSeries([]); this.range = null; this.referencePrice = null; this.referenceSet = false;
+    this.drawingEditor.configure(null); this.drawingEditor.setPlacement(null); this.drawingEditor.setDrawings([]);
+    this.drawings = []; this.selectedDrawing = null; this.drawingInteraction = null; this.drawingHandler = null;
+    this.frozenDrawingFrame = null;this.editAnchorTimes=[];
     this.studies.reset();
     this.followingLatest = true; this.invalidate();
   }
@@ -290,6 +429,7 @@ export class NativeChartViewport {
         paintNativeAxes(ctx, frame, { timeZone: effectiveDisplayZone(this.timeZone, this.timeframe), priceDigits: this.priceDigits, timeAxisBottom:chartBottom });
         paintNativePriceLayer(ctx, frame);
         paintNativeStudies(ctx, frame, layout.panes, this.studies);
+        this.paintDrawings(ctx, frame);
         if (this.hover) {
           ctx.save();
           try {
@@ -352,7 +492,7 @@ export class NativeChartViewport {
     for (const id of ids) { try { this.canvas.releasePointerCapture(id); } catch { /* unavailable or already lost */ } }
   }
   private onPointerDown = (event: PointerEvent) => {
-    if (this.destroyed || event.button !== 0 || this.pointers.size >= 2) return;
+    if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || event.defaultPrevented || event.button !== 0 || this.pointers.size >= 2) return;
     const point = this.point(event); if (!point || !this.inside(point)) return;
     event.preventDefault(); this.canvas.focus({ preventScroll: true });
     this.pointers.set(event.pointerId, point); this.gesture = this.gestureState();
@@ -403,7 +543,7 @@ export class NativeChartViewport {
   private onPointerCancel = () => { if (!this.destroyed) { this.cancelGesture();this.clearHover(); } };
   private onLostCapture = (event: PointerEvent) => { if (!this.destroyed && this.pointers.has(event.pointerId)) this.cancelGesture(); };
   private onWheel = (event: WheelEvent) => {
-    if (this.destroyed) return;
+    if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || event.defaultPrevented) return;
     const point = this.point(event), frame = this.getFrame();
     if (!point || !this.inside(point, frame) || !Number.isFinite(event.deltaY) || !Number.isFinite(event.deltaX)
       || (event.deltaY === 0 && event.deltaX === 0)) return;
@@ -418,7 +558,7 @@ export class NativeChartViewport {
     } else this.zoomAt(Math.exp(clamp(pixels * .002, -.65, .65)), point.x);
   };
   private onKeyDown = (event: KeyboardEvent) => {
-    if (this.destroyed || event.target !== this.canvas || this.canvas.ownerDocument.activeElement !== this.canvas
+    if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || event.defaultPrevented || event.target !== this.canvas || this.canvas.ownerDocument.activeElement !== this.canvas
       || this.canvas.isContentEditable || this.canvas.getAttribute("contenteditable") === "true"
       || event.ctrlKey || event.metaKey || event.altKey || !this.range) return;
     if (event.key === "Home") this.fit();
@@ -432,6 +572,7 @@ export class NativeChartViewport {
   };
   destroy(): void {
     if (this.destroyed) return;
+    this.drawingEditor.destroy();this.drawings=[];this.drawingInteraction=null;this.drawingHandler=null;this.selectedDrawing=null;this.frozenDrawingFrame=null;this.editAnchorTimes=[];
     this.destroyed = true;this.generation++;this.mutationRevision++;this.cancelGesture();this.clearHover();
     if (this.raf != null) cancelAnimationFrame(this.raf);this.raf = null;
     this.observer?.disconnect();this.observer = null;this.media?.removeEventListener("change", this.onDprChange);this.media = null;

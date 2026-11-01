@@ -15,10 +15,10 @@ const projection: DrawingProjection = {
 };
 const editors: ChartDrawingEditor[]=[];
 afterEach(()=>{editors.splice(0).forEach(editor=>editor.destroy());document.body.innerHTML="";});
-function fixture(drawings=[trend]) {
+function fixture(drawings=[trend], overrides:Partial<DrawingProjection>={}) {
   const container=document.createElement("div"),canvas=document.createElement("canvas");container.tabIndex=0;container.append(canvas);document.body.append(container);
   const render=vi.fn(),select=vi.fn(),freeze=vi.fn(),onSelect=vi.fn(),onCommit=vi.fn();
-  const editor=new ChartDrawingEditor(container,{...projection,render,select,freeze});editors.push(editor);
+  const editor=new ChartDrawingEditor(container,{...projection,...overrides,render,select,freeze});editors.push(editor);
   editor.setDrawings(drawings);editor.configure({selectedId:"trend",snap:false,onSelect,onCommit});
   const pointer=(kind:string,x:number,y:number,id=1,target:EventTarget=canvas)=>{
     const event=new MouseEvent(kind,{bubbles:true,cancelable:true,clientX:x,clientY:y,button:0});
@@ -36,7 +36,7 @@ describe("analysis-only drawing editing",()=>{
     expect(moveDrawing({...note,start:{time:1,price:10}},"body",{x:50,y:90},{x:100,y:80},projection,false)).toBeNull();
   });
   it("commits a note drag once and keeps a locked note selected without moving it",()=>{
-    vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue({measureText:(text:string)=>({width:text.length*6})} as any);
+    vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue({measureText:(text:string)=>({width:text.length*6})});
     const note:ChartDrawing={id:"note",kind:"text",start:{time:160,price:10},color:"#ffffff",text:"My observation"};
     const f=fixture([note]);
     f.editor.configure({selectedId:null,snap:false,onSelect:f.onSelect,onCommit:f.onCommit});
@@ -212,4 +212,103 @@ describe("focused chart drawing shortcuts",()=>{
     f.editor.destroy();press(f.container,"Delete");press(f.container,"z",{ctrlKey:true});
     expect(f.onCommit).not.toHaveBeenCalled();expect(onUndo).toHaveBeenCalledTimes(2);
   });
+});
+
+
+describe("native projection and lifecycle boundaries",()=>{
+  it("uses a CSS-scaled price-plot-local event projection for drag and placement",()=>{
+    const f=fixture([trend],{eventPoint:({clientX,clientY})=>({x:(clientX-20)/2-8,y:(clientY-30)/2-8})});
+    f.pointer("pointerdown",236,216);f.pointer("pointermove",336,196);f.pointer("pointerup",336,196);
+    expect(f.onCommit).toHaveBeenCalledExactlyOnceWith([{...trend,start:{time:220,price:20},end:{time:1060,price:30}}]);
+    const place=vi.fn();f.editor.setPlacement(place);f.pointer("pointerdown",236,216);f.pointer("pointerup",236,216);
+    expect(place).toHaveBeenCalledExactlyOnceWith({time:220,price:15});
+  });
+  it("rejects null projections including release outside the price pane",()=>{
+    let accepted=false;const f=fixture([trend],{eventPoint:({clientX,clientY})=>accepted?{x:clientX,y:clientY}:null});
+    f.pointer("pointerdown",100,85);expect(f.onSelect).not.toHaveBeenCalled();expect(f.freeze).not.toHaveBeenCalled();
+    accepted=true;f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);accepted=false;f.pointer("pointerup",150,65);
+    expect(f.onCommit).not.toHaveBeenCalled();expect(f.render).toHaveBeenLastCalledWith([trend]);expect(f.freeze).toHaveBeenLastCalledWith(false);
+    const place=vi.fn();f.editor.setPlacement(place);f.pointer("pointerdown",100,85);f.pointer("pointerup",100,85);expect(place).not.toHaveBeenCalled();
+  });
+  it("public cancellation restores preview and prevents a later up committing it",()=>{
+    const f=fixture();f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);
+    f.editor.cancelGesture();f.pointer("pointerup",150,65);
+    expect(f.render).toHaveBeenLastCalledWith([trend]);expect(f.onCommit).not.toHaveBeenCalled();
+  });
+  it.each(["destroy","reconfigure","replace"])("onSelect %s cannot continue an old drag",action=>{
+    const f=fixture(),nextCommit=vi.fn();f.select.mockClear();
+    f.onSelect.mockImplementation(()=>{if(action==="destroy")f.editor.destroy();else if(action==="replace")f.editor.setDrawings([]);else f.editor.configure({selectedId:null,snap:false,onSelect:vi.fn(),onCommit:nextCommit});});
+    f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);f.pointer("pointerup",150,65);
+    expect(f.freeze).not.toHaveBeenCalledWith(true);expect(f.onCommit).not.toHaveBeenCalled();expect(nextCommit).not.toHaveBeenCalled();
+  });
+  it("reconfiguring an active edit cancels rather than sending old geometry to new callbacks",()=>{
+    const f=fixture(),nextCommit=vi.fn();f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);
+    f.editor.configure({selectedId:"trend",snap:false,onSelect:vi.fn(),onCommit:nextCommit});f.pointer("pointerup",150,65);
+    expect(f.onCommit).not.toHaveBeenCalled();expect(nextCommit).not.toHaveBeenCalled();expect(f.render).toHaveBeenLastCalledWith([trend]);
+  });
+  it("Delete callback replacement cannot commit through a new context",()=>{
+    const f=fixture(),nextCommit=vi.fn();f.container.focus();
+    f.onSelect.mockImplementation(()=>f.editor.configure({selectedId:null,snap:false,onSelect:vi.fn(),onCommit:nextCommit}));
+    f.container.dispatchEvent(new KeyboardEvent("keydown",{key:"Delete",bubbles:true,cancelable:true}));
+    expect(nextCommit).not.toHaveBeenCalled();expect(f.onCommit).not.toHaveBeenCalled();
+  });
+  it("caller mutation of supplied drawings and commit payload does not mutate retained geometry",()=>{
+    const input=[{...trend,start:{...trend.start},end:{...trend.end!}}],f=fixture(input);
+    input[0]!.start.price=99;input.push({...trend,id:"injected"});
+    f.onCommit.mockImplementation((rows:ChartDrawing[])=>{rows[0]!.start.price=999;rows.push({...trend,id:"callback"});});
+    f.pointer("pointerdown",100,85);f.pointer("pointermove",150,75);f.pointer("pointerup",150,75);
+    f.onCommit.mockImplementation(()=>{});f.container.focus();f.container.dispatchEvent(new KeyboardEvent("keydown",{key:"Delete",bubbles:true,cancelable:true}));
+    expect(f.onCommit).toHaveBeenLastCalledWith([]);
+  });
+  it("reentrant preview replacement during pointer up cannot commit stale geometry",()=>{
+    const f=fixture();f.pointer("pointerdown",100,85);
+    f.render.mockImplementationOnce(()=>f.editor.setDrawings([]));
+    f.pointer("pointerup",150,65);expect(f.onCommit).not.toHaveBeenCalled();
+  });
+  it("cancellation clears its gesture before callbacks can re-enter",()=>{
+    const f=fixture();f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);
+    f.render.mockImplementationOnce(()=>f.editor.destroy());
+    f.editor.cancelGesture();expect(f.onCommit).not.toHaveBeenCalled();
+    f.pointer("pointerup",150,65);expect(f.onCommit).not.toHaveBeenCalled();
+  });
+  it("retains hit selection for Delete without an owner reconfiguration",()=>{
+    const f=fixture();f.editor.configure({selectedId:null,snap:false,onSelect:f.onSelect,onCommit:f.onCommit});
+    f.pointer("pointerdown",100,85);f.pointer("pointerup",100,85);
+    f.container.dispatchEvent(new KeyboardEvent("keydown",{key:"Delete",bubbles:true,cancelable:true}));
+    expect(f.onCommit).toHaveBeenCalledExactlyOnceWith([]);
+  });
+  it("lost pointer capture restores the unfinished preview without a commit",()=>{
+    const f=fixture();f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);
+    f.pointer("lostpointercapture",150,65,1,f.container);f.pointer("pointerup",150,65);
+    expect(f.render).toHaveBeenLastCalledWith([trend]);expect(f.freeze).toHaveBeenLastCalledWith(false);expect(f.onCommit).not.toHaveBeenCalled();
+  });
+  it("a replacement placement installed during pointer release cannot receive the old tap",()=>{
+    const f=fixture(),oldPlace=vi.fn(),newPlace=vi.fn();f.editor.setPlacement(oldPlace);
+    f.container.releasePointerCapture=()=>f.editor.setPlacement(newPlace);
+    f.pointer("pointerdown",100,85);f.pointer("pointerup",100,85);
+    expect(oldPlace).not.toHaveBeenCalled();expect(newPlace).not.toHaveBeenCalled();
+  });
+  it("a reset from unfreezing prevents the old completed drag from committing",()=>{
+    const f=fixture(),nextCommit=vi.fn();f.pointer("pointerdown",100,85);f.pointer("pointermove",150,65);
+    f.freeze.mockImplementation((active:boolean)=>{if(!active)f.editor.configure({selectedId:null,snap:false,onSelect:vi.fn(),onCommit:nextCommit});});
+    f.pointer("pointerup",150,65);expect(f.onCommit).not.toHaveBeenCalled();expect(nextCommit).not.toHaveBeenCalled();
+  });
+
+  it("preserves a controlled selection refresh from the same explicit owner",()=>{
+    const f=fixture(),owner={},updatedCommit=vi.fn();
+    f.editor.configure({owner,selectedId:null,snap:false,onSelect:f.onSelect,onCommit:f.onCommit});
+    f.pointer("pointerdown",100,85);
+    f.editor.configure({owner,selectedId:"trend",snap:false,onSelect:vi.fn(),onCommit:updatedCommit});
+    f.pointer("pointermove",150,75);f.pointer("pointerup",150,75);
+    expect(f.onCommit).toHaveBeenCalledExactlyOnceWith([{...trend,start:{time:220,price:20},end:{time:1060,price:30}}]);
+    expect(updatedCommit).not.toHaveBeenCalled();
+  });
+  it.each(["different owner","null reset","snap change","selection change"])("cancels explicit-owner drag on %s",change=>{
+    const f=fixture(),owner={},updatedCommit=vi.fn();
+    f.editor.configure({owner,selectedId:null,snap:false,onSelect:f.onSelect,onCommit:f.onCommit});
+    f.pointer("pointerdown",100,85);f.pointer("pointermove",150,75);
+    f.editor.configure(change==="null reset"?null:{owner:change==="different owner"?{}:owner,selectedId:change==="selection change"?null:"trend",snap:change==="snap change",onSelect:vi.fn(),onCommit:updatedCommit});
+    f.pointer("pointerup",150,75);expect(f.onCommit).not.toHaveBeenCalled();expect(updatedCommit).not.toHaveBeenCalled();
+  });
+
 });
