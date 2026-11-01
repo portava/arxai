@@ -270,3 +270,8 @@ On `831e958d`, the existing horizontal-object owner renders two confirmed-pivot 
 ## Study assistant settings — 1 November 2026
 
 Application `35fd2aa2` exposes existing MACD periods and signal method plus Bollinger deviation through the same manual validator. Independent calculations match actual Scanner series; manual and assistant settings agree. This is not general-language or matched-platform acceptance. TradingView oscillator-type selection remains a gap; phone MACD label crowding and slower-device loading remain open. See [verified references and exact acceptance](SMART_CHART_STUDY_EXPLANATIONS_2026_11_01.md).
+
+
+## Assessment identity followup — 1 November 2026
+
+Application `adc7a76f` makes Scanner/scalp interval aliases share assessment state and requires response market/interval echoes to match the request. Full frontend 3,860 pass/11 skipped; typecheck/build pass; 85/87 guards with unchanged violations. Account/source/window/time and draft binding remain open. This is a correctness increment, not competitor parity or browser latency evidence. See [exact validation and limits](SMART_CHART_READ_MARKET_IDENTITY_2026_11_01.md).

@@ -1,0 +1,67 @@
+{
+  "applicationCommit": "adc7a76fbb42932a08997ada2ce15de482fc455b",
+  "scope": "Offline selected-market/interval response identity and shared consumer validation; not source/account/window/age proof or browser/performance acceptance",
+  "archiveSha256": "0b0e23c1e73fb7a6335734b4418f1cb2e7626c2e02224e6dc34ef05cff19293b",
+  "files": [
+    {
+      "name": "before.log",
+      "bytes": 6252,
+      "sha256": "8becc2f85ad1c6c7ca286cde6deb26083abfd228c463a24b43cf7aff94d78343"
+    },
+    {
+      "name": "build.log",
+      "bytes": 28238,
+      "sha256": "763e2cf382c75c24e76a2c08b46b71c71bb6e841aa5aae60ef68bf6751bf8d99"
+    },
+    {
+      "name": "frontend.log",
+      "bytes": 495,
+      "sha256": "9a1c352b0090fb116d8af893c650ea00041c13b11d8fd51985987a784acfd20c"
+    },
+    {
+      "name": "guard-baseline-comparison.json",
+      "bytes": 163,
+      "sha256": "ea1f5e205655e334890aa99df55e22da2dc91b38f40dcdd0aa624b309f8ce27b"
+    },
+    {
+      "name": "guards.log",
+      "bytes": 24913,
+      "sha256": "a6bfd3f580c0b0cc91e359d27cb14d034d89bfe20e206ba6d12e0e11bee7eb1c"
+    },
+    {
+      "name": "independent-review.txt",
+      "bytes": 4142,
+      "sha256": "b2702a84c6ef6c597930b11ba69c629008ea455d3cb520783a5942793f7c5e2e"
+    },
+    {
+      "name": "next-source-coherence-audit.json",
+      "bytes": 998,
+      "sha256": "fa0093c0aabcd91f05c6204b91569971e6c42579ed823251eda4980d25f8c7d9"
+    },
+    {
+      "name": "targeted-complete.log",
+      "bytes": 271,
+      "sha256": "e178c5f4ec9966b530be7af2df269892af6a342c0fc8b9cd2e304f358b5e40ef"
+    },
+    {
+      "name": "targeted.log",
+      "bytes": 1728,
+      "sha256": "5beb9aa8e4dd26e7129b8f23e6e92456486f53253216e2ed33796b519b16c661"
+    },
+    {
+      "name": "typecheck.log",
+      "bytes": 163,
+      "sha256": "7381f6fe872efab37d9e07d437cfa0f8d8773f2dcc6cfc35d6f4c7928739b496"
+    },
+    {
+      "name": "validation.json",
+      "bytes": 1581,
+      "sha256": "be30e871d53c49ada210649baaac2e07e588850dccaf6aeb75031b8887ea337b"
+    },
+    {
+      "name": "wire-intervals.log",
+      "bytes": 268,
+      "sha256": "2cb32eb1819d800878c5b7e272e9369776781200e9d015406bbf0ebbdb95e476"
+    }
+  ]
+}
