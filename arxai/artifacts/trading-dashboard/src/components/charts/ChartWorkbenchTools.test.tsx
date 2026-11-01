@@ -534,3 +534,23 @@ it("routes keyboard history through the same persisted undo/redo as toolbar edit
  act(()=>window.dispatchEvent(new StorageEvent("storage",{key})));
  expect(config().onUndo).toBeUndefined();expect(config().onRedo).toBeUndefined();
 });
+
+describe("range ruler workflow",()=>{
+  it("places two points on the same candle, persists, edits and undoes a measurement",()=>{
+    mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"measure"}});
+    act(()=>click!({time:100,price:100}));act(()=>click!({time:100,price:110}));
+    fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));
+    expect(screen.getByLabelText("Drawing 1 measurement").textContent).toContain("Price +10 (+10%) · 0s elapsed");
+    const input=screen.getByLabelText("Drawing 1 end price");fireEvent.blur(input,{target:{value:"90"}});
+    expect(screen.getByLabelText("Drawing 1 measurement").textContent).toContain("Price -10 (-10%)");
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(screen.getByLabelText("Drawing 1 measurement").textContent).toContain("Price +10 (+10%)");
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)[0].end.price).toBe(110);
+  });
+  it("cancels a partial ruler without saving an object",()=>{
+    mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"measure"}});
+    act(()=>click!({time:100,price:100}));fireEvent.keyDown(window,{key:"Escape"});
+    expect(click).toBeNull();expect(screen.getByRole("button",{name:"Objects (0)",exact:true})).toBeTruthy();
+    expect(localStorage.getItem(drawingStorageKey("EURUSD","M15"))).toBeNull();
+  });
+});

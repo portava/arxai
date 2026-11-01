@@ -1,10 +1,11 @@
 import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, ISeriesPrimitiveAxisView, SeriesAttachedParameter, UTCTimestamp } from "lightweight-charts";
 import { drawingSegments, type ChartAnchor, type ChartDrawing } from "./chartWorkspace";
+import { measurementLabels } from "./chartRangeMeasurement";
 import type { ChartEngineCandle } from "./types";
 import { layoutTextNote, NOTE_FONT, NOTE_HEADER_HEIGHT, NOTE_LINE_HEIGHT, NOTE_PADDING, type MeasureNoteText, type NoteLayout } from "./chartTextNote";
 
 export interface PixelPoint { x: number; y: number }
-export interface DrawingStroke { id: string; start: PixelPoint; end: PixelPoint; color: string; dashed: boolean; width: number; label?: string }
+export interface DrawingStroke { id: string; start: PixelPoint; end: PixelPoint; color: string; dashed: boolean; width: number; label?: string; measurement?: string[] }
 export type ProjectAnchor = (anchor: ChartAnchor, priceOnly?: boolean) => PixelPoint | null;
 export interface DrawingNote extends NoteLayout { id: string; anchor: PixelPoint; x: number; y: number; color: string; truncated: boolean; compact: boolean }
 
@@ -49,6 +50,14 @@ export function drawingStrokes(drawings: ChartDrawing[], project: ProjectAnchor,
     if (drawing.kind === "vertical") {
       const point = project(drawing.start);
       if (point) strokes.push({ ...style, start: { x: point.x, y: 0 }, end: { x: point.x, y: height } });
+      continue;
+    }
+    if (drawing.kind === "measure") {
+      const start=project(drawing.start), end=drawing.end && project(drawing.end);
+      if (!start || !end || !drawing.end) continue;
+      const corner={x:end.x,y:start.y};
+      strokes.push({...style,start,end,measurement:measurementLabels(drawing.start,drawing.end)},
+        {...style,dashed:true,start,end:corner},{...style,dashed:true,start:corner,end});
       continue;
     }
     if (drawing.kind === "channel") {
@@ -151,6 +160,17 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
           ctx.strokeStyle = stroke.color; ctx.fillStyle = stroke.color;
           ctx.lineWidth = stroke.width; ctx.setLineDash(stroke.dashed ? [4, 4] : []);
           ctx.beginPath(); ctx.moveTo(stroke.start.x, stroke.start.y); ctx.lineTo(stroke.end.x, stroke.end.y); ctx.stroke();
+          if (stroke.measurement?.length && mediaSize.width >= 100 && mediaSize.height >= 44) {
+            // Keep the compact readout inside the plot. Objects retains the full
+            // values when a very narrow pane cannot show a readable label.
+            const width=Math.min(mediaSize.width-8,Math.max(...stroke.measurement.map(line=>ctx.measureText(line).width))+12);
+            const height=stroke.measurement.length*14+8;
+            const x=Math.max(4,Math.min(stroke.end.x+8,mediaSize.width-width-4));
+            const y=Math.max(4,Math.min(stroke.end.y+8,mediaSize.height-height-4));
+            ctx.save();ctx.fillStyle="#09090bee";ctx.fillRect(x,y,width,height);
+            ctx.beginPath();ctx.rect(x,y,width,height);ctx.clip();ctx.fillStyle=stroke.color;
+            stroke.measurement.forEach((line,index)=>ctx.fillText(line,x+6,y+14+index*14));ctx.restore();
+          }
           if (stroke.label) {
             const left = stroke.start.x < stroke.end.x ? stroke.start : stroke.end;
             ctx.fillText(stroke.label, Math.max(3, left.x + 3), left.y - 3);

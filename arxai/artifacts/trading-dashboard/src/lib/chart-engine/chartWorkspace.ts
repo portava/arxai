@@ -23,8 +23,8 @@ export function describeChartStyle(style: ChartStyle): { name: string; note: str
   const known: ChartStyle = (CHART_STYLES as readonly string[]).includes(style) ? style : "candles";
   return { name: CHART_STYLE_NAMES[known], note: STYLE_NOTES[known] };
 }
-export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci" | "text" | "channel";
-export const DRAWING_NAMES: Record<DrawingKind, string> = { channel: "Parallel channel", horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
+export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci" | "text" | "channel" | "measure";
+export const DRAWING_NAMES: Record<DrawingKind, string> = { measure: "Price and time ruler", channel: "Parallel channel", horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
 export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical" || kind === "text"; }
 export interface ChartAnchor { time: number; price: number }
 export interface ChartDrawing { id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; offset?: ChartAnchor; color: string; locked?: boolean; hidden?: boolean; width?: 1 | 2 | 3; dashed?: boolean; text?: string; extendLeft?: boolean; extendRight?: boolean; middleLine?: boolean }
@@ -93,7 +93,7 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
   const seen = new Set<string>();
   return (Array.isArray(value) ? value.slice(0, MAX_DRAWINGS) : []).flatMap((d: any) => {
     if (!d || typeof d.id !== "string" || d.id.length > 80 || seen.has(d.id) || !Object.hasOwn(DRAWING_NAMES, d.kind) || !anchor(d.start) || !color(d.color)) return [];
-    if (!singleAnchorDrawing(d.kind) && (!anchor(d.end) || d.end.time === d.start.time)) return [];
+    if (!singleAnchorDrawing(d.kind) && (!anchor(d.end) || (d.kind !== "measure" && d.end.time === d.start.time))) return [];
     if (d.kind === "channel" && !anchor(d.offset)) return [];
     if (d.kind === "channel" && [d.extendLeft,d.extendRight,d.middleLine].some(v=>v != null && typeof v !== "boolean")) return [];
     const text = d.kind === "text" ? normalizeNoteText(d.text) : null;
