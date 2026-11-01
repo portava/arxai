@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut } from "lucide-react";
 import { MAX_NOTE_LENGTH, MAX_NOTE_PARAGRAPHS, normalizeNoteText } from "@/lib/chart-engine/chartTextNote";
 
+import { measurementLabels } from "@/lib/chart-engine/chartRangeMeasurement";
+
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
 /** PNG header lines: instrument, interval, capture time, feed verdict, display
  * style and studies. Heikin Ashi is marked as averaged, not traded, prices. */
@@ -173,7 +175,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     adapter?.setDrawingHandler?.(tool && hasCandles && (tool !== "text" || normalizeNoteText(noteText) != null) ? point=>{
       if (drawings.length >= MAX_DRAWINGS) {setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first.`);setTool(null);return;}
       if (!singleAnchorDrawing(tool) && !anchor) {setAnchor(point);return;}
-      if (anchor && !channelEnd && point.time === anchor.time) {setMessage("Choose a different candle for the second anchor.");return;}
+      if (tool !== "measure" && anchor && !channelEnd && point.time === anchor.time) {setMessage("Choose a different candle for the second anchor.");return;}
       if (tool === "channel" && !channelEnd) {setChannelEnd(point);return;}
       const id = crypto.randomUUID();
       change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:channelEnd ?? point} : {}),...(tool === "channel" ? {offset:point} : {}),color:"#fbbf24",...(tool === "text" ? {text:normalizeNoteText(noteText)!} : {})}]);
@@ -299,6 +301,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} disabled={hidden || d.hidden} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}{d.hidden ? " · Hidden" : ""}</button>
         <Button size="sm" variant="outline" className="h-8 text-xs" aria-label={`Go to drawing ${index+1} start`} disabled={!hasCandles || !adapter?.goToTime} onClick={()=>goToDrawing(d,index)}>Go to start</Button>
         {(["start","end","offset"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{formatChartTime(d[name]!.time,zone)}</span></label>)}
+        {d.kind === "measure" && d.end && <output aria-label={`Drawing ${index+1} measurement`} className="basis-full text-zinc-300">{measurementLabels(d.start,d.end).join(" · ")}<span className="block text-zinc-500">From your first point to your second. Elapsed calendar time includes market closures; this is not profit, pips or a count of bars.</span></output>}
         <input type="color" aria-label={`Drawing ${index+1} color`} className="h-7 w-8 bg-transparent" value={d.color} onChange={e=>change(drawings.map(item=>item.id===d.id ? {...item,color:e.target.value} : item))}/>
         {d.kind !== "text" && <><select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>
         <select className={field} aria-label={`Drawing ${index+1} line style`} value={(d.dashed ?? ["horizontal","fibonacci"].includes(d.kind)) ? "dashed" : "solid"} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,dashed:event.target.value==="dashed"} : item))}><option value="solid">Solid</option><option value="dashed">Dashed</option></select></>}
