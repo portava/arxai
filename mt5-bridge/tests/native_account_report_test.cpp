@@ -79,6 +79,7 @@ int main(){
  check(QueueNativeAccountReport(),"reserved native sequence slot survives maximum market streams");check(V2NextSequence("ACCOUNT_SNAPSHOT","ACCOUNT_NATIVE_V1")==1,"native sequence advances independently after market capacity");
  check(V2NextSequence("CANDLE","0|0")==1,"existing market sequence unchanged");
 
+ reset();V2NextSequence("ACCOUNT_SNAPSHOT","ACCOUNT_NATIVE_V1");v2SeqNext[0]=2147483647;check(QueueNativeAccountReport(),"int4 maximum native sequence accepted");string sequenceAtCap;NativeJsonField(nativeAccountEnvelope,"sequence",sequenceAtCap);check(sequenceAtCap=="2147483647","maximum native sequence preserved");ClearNativeAccountPending();check(!QueueNativeAccountReport(),"above int4 native sequence withheld");check(nativeAccountEnvelope.empty(),"sequence overflow does not create envelope");
  for(int d:{0,2,3,16}){reset();digits=d;check(CaptureNativeAccountReport(p,b,f),"capture requested native precision");std::cout<<"{\"digits\":"<<d<<",\"payload\":"<<p<<"}\n";}
  for(int property:{ACCOUNT_LOGIN,ACCOUNT_SERVER,ACCOUNT_CURRENCY_DIGITS,ACCOUNT_CURRENCY,TERMINAL_CONNECTED,ACCOUNT_BALANCE,ACCOUNT_EQUITY,ACCOUNT_PROFIT,ACCOUNT_CREDIT,ACCOUNT_MARGIN,ACCOUNT_MARGIN_FREE}){reset();failProperty=property;check(!CaptureNativeAccountReport(p,b,f),"property error cannot become data");check(p.empty(),"failed capture has no payload");}
  for(int d:{-1,17}){reset();digits=d;check(!CaptureNativeAccountReport(p,b,f),"unsupported currency precision refused");}

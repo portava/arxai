@@ -2176,7 +2176,8 @@ bool QueueNativeAccountReport()
       && fingerprint == nativeAccountAcknowledgedFingerprint
       && GetTickCount64() - nativeAccountLastAcknowledgedMs < 15000) return false;
    long sequence = V2NextSequence("ACCOUNT_SNAPSHOT", "ACCOUNT_NATIVE_V1");
-   if(sequence < 0 || sequence > 9007199254740991) return false;
+   // Native receipt gap_size is int4; refuse before a new envelope can overflow it.
+   if(sequence < 0 || sequence > 2147483647) return false;
    nativeAccountReportCounter++;
    nativeAccountIdempotency = "account-" + nativeAccountInstance + "-" + (string)nativeAccountReportCounter;
    long createdSeconds = (long)TimeGMT();
