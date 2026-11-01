@@ -379,8 +379,8 @@ describe("live-price settings on repeated reconciliation",()=>{
   adapter.setFeedState({livePriceAffordance:true,source:"fixture"});adapter.setCandles([bar(100)]);
   mocks.series.applyOptions.mockClear();mocks.series.removePriceLine.mockClear();
   adapter.setFeedState({livePriceAffordance:false,source:"fixture"});adapter.setFeedState({livePriceAffordance:false,source:"fixture"});
-  expect(mocks.series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(mocks.series.applyOptions).toHaveBeenCalledTimes(1);expect(mocks.series.removePriceLine).toHaveBeenCalledTimes(1);
-  adapter.setFeedState({livePriceAffordance:true,source:"fixture"});expect(mocks.series.options()).toMatchObject({priceLineVisible:true,lastValueVisible:true});expect(mocks.line.options().price).toBe(1.15);
+  expect(mocks.series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(mocks.series.applyOptions).not.toHaveBeenCalled();expect(mocks.series.removePriceLine).toHaveBeenCalledTimes(1);
+  adapter.setFeedState({livePriceAffordance:true,source:"fixture"});expect(mocks.series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(mocks.line.options()).toMatchObject({price:1.15,title:"",axisLabelVisible:true});
  });
  it("still updates canonical Last when only the candle price changes",()=>{
   adapter.setFeedState({livePriceAffordance:true,source:"fixture"});adapter.setCandles([bar(100)]);mocks.line.applyOptions.mockClear();mocks.series.applyOptions.mockClear();
@@ -391,7 +391,7 @@ describe("live-price settings on repeated reconciliation",()=>{
  it("repairs either actual label setting and Last price if changed elsewhere",()=>{
   adapter.setFeedState({livePriceAffordance:true,source:"fixture"});adapter.setCandles([bar(100)]);
   for(const key of ['priceLineVisible','lastValueVisible']){
-   mocks.series.applyOptions({[key]:false});mocks.series.applyOptions.mockClear();adapter.setFeedState({livePriceAffordance:true,source:"fixture"});expect(mocks.series.applyOptions).toHaveBeenCalledExactlyOnceWith({priceLineVisible:true,lastValueVisible:true});
+   mocks.series.applyOptions({[key]:true});mocks.series.applyOptions.mockClear();adapter.setFeedState({livePriceAffordance:true,source:"fixture"});expect(mocks.series.applyOptions).toHaveBeenCalledExactlyOnceWith({priceLineVisible:false,lastValueVisible:false});
   }
   mocks.line.applyOptions({price:999});adapter.setFeedState({livePriceAffordance:true,source:"fixture"});expect(mocks.line.options().price).toBe(1.15);
  });

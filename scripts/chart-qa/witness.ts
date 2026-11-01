@@ -84,6 +84,22 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
       const low = Math.min(...visible.map((c: any) => c.low)), high = Math.max(...visible.map((c: any) => c.high));
       return {low,high,lowY:adapter.series.priceToCoordinate(low),highY:adapter.series.priceToCoordinate(high),paneHeight:adapter.chart.panes()[0].getHeight()};
     },
+    priceAnnotationState(index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const {adapter} = found, options = adapter.series.options();
+      const lastLine = adapter.lastPriceLine?.options();
+      const attachedLines = adapter.series.priceLines();
+      return {
+        canonicalLastLineAttached: !!adapter.lastPriceLine && attachedLines.includes(adapter.lastPriceLine),
+        attachedPriceLines: attachedLines.map((line: any) => {const o=line.options();return {price:o.price,title:o.title,axisLabelVisible:o.axisLabelVisible,canonical:line===adapter.lastPriceLine};}),
+        nativeLastValueVisible: options.lastValueVisible,
+        nativePriceLineVisible: options.priceLineVisible,
+        canonicalLastLine: lastLine ? {price:lastLine.price,title:lastLine.title,axisLabelVisible:lastLine.axisLabelVisible} : null,
+        selectedAnnotation: adapter.smartAnnotation == null ? null : JSON.parse(JSON.stringify(adapter.smartAnnotation)),
+        secondaryStructureSeries: adapter.structureSeries.length,
+        secondaryStructureMarkersPresent: adapter.structureMarkersApi != null,
+      };
+    },
     configuration(index = 0) {
       const found = adapterFor(index); if (!found) return null;
       const scale = found.adapter.series.priceScale().options();

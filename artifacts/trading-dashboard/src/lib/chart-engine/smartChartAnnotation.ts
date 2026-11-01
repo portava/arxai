@@ -45,17 +45,34 @@ export class SmartChartAnnotationPrimitive implements ISeriesPrimitive {
           ctx.setLineDash([3,5]);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
         }
       }
-      ctx.setLineDash([]);ctx.font="11px sans-serif";
+      ctx.setLineDash([]);ctx.font="11px sans-serif";ctx.textAlign="left";ctx.textBaseline="alphabetic";
       const labels:{x:number;y:number;width:number}[]=[];
       for(const point of p){
         if(point.x<0||point.x>mediaSize.width||point.y<0||point.y>mediaSize.height)continue;
         ctx.beginPath();ctx.arc(point.x,point.y,3,0,Math.PI*2);ctx.fill();
         if(labels.length>=3||!point.label)continue;
-        const label=point.label.slice(0,30),width=ctx.measureText(label).width+10;
-        const x=Math.max(2,Math.min(mediaSize.width-width-2,point.x-width/2)),y=Math.max(15,point.y-12);
-        if(labels.some(previous=>Math.abs(previous.y-y)<18&&x<previous.x+previous.width+4&&x+width>previous.x-4))continue;
-        labels.push({x,y,width});ctx.fillStyle="#09090be8";ctx.fillRect(x,y-12,width,16);
-        ctx.fillStyle=a.color;ctx.fillText(label,x+5,y);
+        // Bound text to the plot, not the price scale. Try nearby positions
+        // above/below/beside the point before dropping a crowded label. Only
+        // text moves: candle anchors and pattern geometry remain untouched.
+        const margin=4,height=16,maxWidth=mediaSize.width-2*margin;
+        let label=point.label.slice(0,30);
+        if(point.label.length>30)label=label.slice(0,-1)+"…";
+        while(label&&ctx.measureText(label).width+10>maxWidth){
+          const body=label.endsWith("…")?label.slice(0,-1):label;
+          label=body.length>1?body.slice(0,-1)+"…":"";
+        }
+        if(!label||mediaSize.height<height+2*margin)continue;
+        const width=ctx.measureText(label).width+10;
+        const centeredX=Math.max(margin,Math.min(mediaSize.width-margin-width,point.x-width/2));
+        const candidates=[{x:centeredX,y:point.y-24},{x:centeredX,y:point.y+12},
+          {x:point.x-width-8,y:point.y-height/2},{x:point.x+8,y:point.y-height/2}];
+        const box=candidates.find(box=>box.x>=margin&&box.y>=margin
+          &&box.x+width<=mediaSize.width-margin&&box.y+height<=mediaSize.height-margin
+          &&!labels.some(other=>box.x<other.x+other.width+4&&box.x+width>other.x-4&&box.y<other.y+height+4&&box.y+height>other.y-4)
+          &&!p.some(anchor=>box.x<anchor.x+5&&box.x+width>anchor.x-5&&box.y<anchor.y+5&&box.y+height>anchor.y-5));
+        if(!box)continue;
+        labels.push({...box,width});ctx.fillStyle="#09090be8";ctx.fillRect(box.x,box.y,width,height);
+        ctx.fillStyle=a.color;ctx.fillText(label,box.x+5,box.y+12);
       }
     } finally {ctx.restore();}
   })};

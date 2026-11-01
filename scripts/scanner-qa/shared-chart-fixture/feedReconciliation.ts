@@ -1,6 +1,7 @@
 // QA-only entry. Real production adapter and renderer; no application/API mount.
 import type { ChartEngineCandle } from "../../../artifacts/trading-dashboard/src/lib/chart-engine/types";
 import type { ChartStyle } from "../../../artifacts/trading-dashboard/src/lib/chart-engine/chartWorkspace";
+declare const __ARX_FEED_LABEL_POLICY__: "legacy_dual" | "canonical_only";
 const STYLES: ChartStyle[] = ["candles", "hollow", "bars", "line", "area", "baseline", "heikinAshi"];
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const frame = () => new Promise<void>((resolve,reject) => {
@@ -25,7 +26,7 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
   let running=false;
   Object.defineProperty(window,"__arxFeedReconciliationQa",{value:{schemaVersion:1,async run(){
     assert(!running,"Probe already running"); running=true;
-    const report:any={passed:false,samples:[],warmups:[],checks:[],failure:null,styles:STYLES,
+    const report:any={labelPolicy:__ARX_FEED_LABEL_POLICY__,passed:false,samples:[],warmups:[],checks:[],failure:null,styles:STYLES,
       workload:{bars:500,warmupCycles:2,measuredCycles:12,operationsPerSample:1,order:["identical","tail","stale","live"],maximumRunMs:60000},
       limitations:["Isolated adapter, not actual Scanner navigation or app polling.","Synthetic OHLC; feed live flag is fixture-controlled, not verified market provenance.","CPU duration includes method counters; frame duration includes immediate validation and two rendering opportunities, not physical paint.","12 samples per scenario/style/rate; p95 is not a stable production estimate.","No vendor transforms, external API, trading or worker."]};
     const container=document.createElement("div");container.dataset.testid="feed-reconciliation-canvas";
@@ -44,14 +45,14 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
       patch(line,"applyOptions",(original,args)=>{if(activeCounts)activeCounts.lastLineApplyOptions++;return original(...args);});
     };
     const inspect=(bars:ChartEngineCandle[],style:ChartStyle,live:boolean,source:string)=>{
-      const series=adapter.series,options=series.options(),lines=series.priceLines().filter((line:any)=>line.options().title==="Last");
+      const series=adapter.series,options=series.options(),lines=series.priceLines();
       assert(JSON.stringify(adapter.candles.map(ohlc))===JSON.stringify(bars.map(ohlc)),"Canonical candle mismatch");
       const display=series.data().map((bar:any)=>["line","area","baseline"].includes(style)?{time:bar.time,value:bar.value}:ohlc(bar));
       assert(JSON.stringify(display)===JSON.stringify(expectedDisplay(bars,style)),"Actual series data mismatch");
-      const expectedLabel=live&&style!=="heikinAshi";
+      const expectedLabel=__ARX_FEED_LABEL_POLICY__==="legacy_dual"&&live&&style!=="heikinAshi";
       assert(options.lastValueVisible===expectedLabel&&options.priceLineVisible===expectedLabel,"Actual label flags mismatch");
       assert(lines.length===(live&&bars.length?1:0),"Actual Last line count mismatch");
-      if(lines.length){assert(lines[0].options().price===bars.at(-1)!.close,"Last line price is not canonical close");assert(lines[0].options().axisLabelVisible===true,"Last axis label hidden");}
+      if(lines.length){assert(lines[0]===adapter.lastPriceLine,"Price line is not the owned canonical handle");assert(lines[0].options().title===(__ARX_FEED_LABEL_POLICY__==="legacy_dual"?"Last":""),"Unexpected pane title");assert(lines[0].options().price===bars.at(-1)!.close,"Last line price is not canonical close");assert(lines[0].options().axisLabelVisible===true,"Last axis label hidden");}
       assert(adapter.feedState.source===source&&adapter.feedState.livePriceAffordance===live,"Feed context mismatch");
       const box=container.getBoundingClientRect();
       const visible=box.width>=100&&box.height>=100&&box.bottom>0&&box.top<innerHeight;
@@ -71,9 +72,9 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
         await frame();await frame();
         const series=adapter.series;
         patch(series,"applyOptions",(original,args)=>{if(activeCounts){activeCounts.seriesApplyOptions++;if("lastValueVisible"in args[0]||"priceLineVisible"in args[0])activeCounts.labelApplyOptions++;}return original(...args);});
-        patch(series,"createPriceLine",(original,args)=>{const line=original(...args);if(args[0].title==="Last"){if(activeCounts)activeCounts.createLast++;instrumentLine(line);}return line;});
-        patch(series,"removePriceLine",(original,args)=>{if(activeCounts&&args[0].options().title==="Last")activeCounts.removeLast++;return original(...args);});
-        for(const line of series.priceLines())if(line.options().title==="Last")instrumentLine(line);
+        patch(series,"createPriceLine",(original,args)=>{const line=original(...args);if(activeCounts)activeCounts.createLast++;instrumentLine(line);return line;});
+        patch(series,"removePriceLine",(original,args)=>{if(activeCounts)activeCounts.removeLast++;return original(...args);});
+        for(const line of series.priceLines())instrumentLine(line);
         report.checks.push(inspect(bars,style,true,"offline_fixture_A"));
         for(let cycle=0;cycle<14;cycle++)for(const scenario of ["identical","tail","stale","live"]){
           assert(performance.now()-runStart<60000,"Probe exceeded declared 60 second bound");
@@ -93,7 +94,8 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
         }
         // Correctness-only source change and empty/refill; never timed as speed.
         // An external options edit cannot be hidden by an adapter-side cache.
-        series.applyOptions({lastValueVisible:style==="heikinAshi",priceLineVisible:style==="heikinAshi"});
+        const invalidLabel= !(__ARX_FEED_LABEL_POLICY__==="legacy_dual"&&style!=="heikinAshi");
+        series.applyOptions({lastValueVisible:invalidLabel,priceLineVisible:invalidLabel});
         adapter.setFeedState({source:"offline_fixture_A",livePriceAffordance:true});
         report.checks.push(inspect(bars,style,true,"offline_fixture_A"));
         const streamed={...bars.at(-1)!,time:bars.at(-1)!.time+60,close:bars.at(-1)!.close+.00001};adapter.updateActiveCandle(streamed);

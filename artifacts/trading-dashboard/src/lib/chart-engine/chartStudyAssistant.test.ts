@@ -18,6 +18,23 @@ function fixture(qualifiedTrade=false) {
 }
 
 describe("existing assistant to current chart study action",()=>{
+  it("routes selected pattern explanations through the existing chart owner without mutation",()=>{
+    const f=fixture(),explainFinding=vi.fn(()=>"V75 M1: observed doji");
+    const parsed=parseStudyRequest("Please explain this pattern?");
+    expect(parsed).toEqual({action:"explain_finding"});
+    expect(executeStudyRequest(parsed!,{...f.context(),explainFinding})).toContain("observed doji");
+    expect(explainFinding).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();expect(f.adapter.setStudies).not.toHaveBeenCalled();
+  });
+  it("holds selected finding requests when pane ownership is unavailable",()=>{
+    const f=fixture(),explainFinding=vi.fn(()=>"old pane");
+    const parsed=parseStudyRequest("explain the selected finding");
+    expect(parsed).toEqual({action:"explain_finding"});
+    expect(executeStudyRequest(parsed!,{...f.context(),adapter:null,explainFinding})).not.toContain("old pane");
+    expect(explainFinding).not.toHaveBeenCalled();
+  });
+  it.each(["explain this pattern and buy now","explain this pattern on EURUSD","explain the selected finding then change timeframe"])("holds compound finding request %s",text=>{
+    expect(parseStudyRequest(text)).toHaveProperty("error");
+  });
   it.each(STUDY_CATALOG.map(d=>[d.defaults.kind] as const))("applies existing catalogue kind %s without introducing a calculation",kind=>{
     const f=fixture(kind === "vwap" || kind === "volume_profile"); expect(executeStudyRequest(parseStudyRequest(`show ${kind}`)!,f.context())).toContain("Applied");
     expect(f.studies()[0].kind).toBe(kind);

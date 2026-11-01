@@ -440,6 +440,7 @@ export function ARXNativeChart({
   const [researchRequest,setResearchRequest] = useState<{id:number;text:string;context:string}|null>(null);
   const researchSequence = useRef(0);
   const researchExplanation = useRef<{context:string;evidence:ChartResearchExplanation}|null>(null);
+  const findingExplanation = useRef<{context:string;read:()=>string}|null>(null);
   const [researchLayer,setResearchLayer] = useState<{context:string;rows:ChartOverlay[]}|null>(null);
 
   // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
@@ -615,6 +616,7 @@ export function ARXNativeChart({
   [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
   const acceptResearchOverlays = useCallback((rows:ChartOverlay[])=>setResearchLayer(rows.length?{context:chartContext,rows}:null),[chartContext]);
   const acceptResearchExplanation = useCallback((evidence:ChartResearchExplanation|null)=>{if(evidence)researchExplanation.current={context:chartContext,evidence};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
+  const acceptFindingExplanation = useCallback((read:(()=>string)|null)=>{if(read)findingExplanation.current={context:chartContext,read};else if(findingExplanation.current?.context===chartContext)findingExplanation.current=null;},[chartContext]);
   const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
   const getSupportResistanceProposal = useCallback(()=>{
     const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.olderCandles,deepHistory.analysisEvidence,now);
@@ -628,6 +630,10 @@ export function ARXNativeChart({
   },[data,resolvedSymbol,timeframe,deepHistory.olderCandles,deepHistory.analysisEvidence,researchVisibleBars]);
   const assistantPaneKey=useMemo(()=>chartAssistantPaneContext(data,resolvedSymbol,timeframe,engineGeneration),[data,resolvedSymbol,timeframe,engineGeneration]);
   const assistantPane=useAssistantChartPane({contextKey:assistantPaneKey,symbol:resolvedSymbol,timeframe,source:data?.feedStatus?.source??"Unknown source",analysisOnly:workspaceId!=="primary",ready:hasCandles&&!query.isError&&!!adapterRef.current});
+  const explainCurrentFinding=useCallback(()=>{
+    if(!assistantPane.isCurrent()||!hasCandles||activeChartContext.current?.key!==chartContext||activeChartContext.current.adapter!==adapterRef.current||findingExplanation.current?.context!==chartContext)return "The selected chart source or finding is no longer ready. Select the current chart and finding again; no other pattern was substituted.";
+    return findingExplanation.current.read();
+  },[assistantPane.isCurrent,hasCandles,chartContext]);
   useLayoutEffect(()=>{
     if(!assistantPane.active)return;
     return registerChartResearchAssistant(text=>{
@@ -845,6 +851,7 @@ export function ARXNativeChart({
     return registerChartStudyAssistant(request => executeStudyRequest(request, {
       adapter: assistantPane.isCurrent() && hasCandles && activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapterRef.current ? adapterRef.current : null,
       studies: currentStudies, symbol: resolvedSymbol, timeframe, utcClockQualified, onAnalysisFocus,
+      explainFinding:explainCurrentFinding,
       feedLabel: `${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"}`,
       save: studies => {
         currentStudies = studies;
@@ -852,7 +859,7 @@ export function ARXNativeChart({
         updateLegend(inspectedCandleRef.current);
       },
     }));
-  }, [assistantPane.active,assistantPane.isCurrent, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend, utcClockQualified, onAnalysisFocus]);
+  }, [assistantPane.active,assistantPane.isCurrent, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend, utcClockQualified, onAnalysisFocus,explainCurrentFinding]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
@@ -1797,7 +1804,7 @@ export function ARXNativeChart({
           and safety notices above it remain visible before any candle. */}
       {chartControls}
       {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
-      <SmartChartReader presentationUnverified={!analysisVerified} presentationHidden={analysisFocused} key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+      <SmartChartReader onFindingExplanation={acceptFindingExplanation} onExplainFinding={()=>assistantPane.explainFinding(explainCurrentFinding)} presentationUnverified={!analysisVerified} presentationHidden={analysisFocused} key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
         <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
         <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>

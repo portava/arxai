@@ -2,7 +2,7 @@ import {registerChartLevelAssistant,requestChartLevels} from "@/lib/chart-engine
 import {StrictMode,useLayoutEffect} from 'react';
 import {render,screen,fireEvent,cleanup} from '@testing-library/react';
 import {afterEach,describe,it,expect,vi} from 'vitest';
-import {AssistantDockProvider,AssistantDockSlot,useAssistantChartPane,useAssistantChartSelection,useChartActionDockTarget} from './AssistantDock';
+import {AssistantDockProvider,AssistantDockSlot,useAssistantChartPane,useAssistantChartSelection,useChartActionDockTarget,useLocalChartAssistantReceiver} from './AssistantDock';
 import {registerChartStudyAssistant,requestChartStudy} from '@/lib/chart-engine/chartStudyAssistant';
 import {registerChartResearchAssistant,requestChartResearch} from '@/lib/chart-research/chartResearchAssistant';
 import {registerChartFibonacciAssistant,requestChartFibonacci} from '@/lib/chart-engine/chartFibonacciAssistant';
@@ -16,6 +16,15 @@ function Pane({symbol,keyValue,ready=true,primary=false}:{symbol:string;keyValue
 function Status(){const state=useAssistantChartSelection(),a=useChartActionDockTarget('assistant'),q=useChartActionDockTarget('quickActions'),s=useChartActionDockTarget('search');return <output data-testid="status">{state.selected?.symbol??'none'}|{String(state.remoteBlocked)}|{a?.closest('section')?.getAttribute('data-testid')}|{q?.closest('section')?.getAttribute('data-testid')}|{s?.closest('section')?.getAttribute('data-testid')}</output>;}
 function App({keyValue='stock-a',stock=true,ready=true}:{keyValue?:string;stock?:boolean;ready?:boolean}){return <AssistantDockProvider><Pane symbol="EURUSD" keyValue="primary" primary/>{stock&&<Pane symbol="AAPL" keyValue={keyValue} ready={ready}/>}<Status/></AssistantDockProvider>;}
 describe('explicit existing assistant pane ownership',()=>{
+ it('delivers manual finding evidence only from its exact mounted pane and never falls back when receiver is absent',()=>{
+  const delivered=vi.fn(()=>true),reads=vi.fn((key:string)=>`finding from ${key}`),senders:Array<()=>boolean>=[];
+  function Receiver(){useLocalChartAssistantReceiver(delivered);return null;}
+  function Manual({keyValue}:{keyValue:string}){const pane=useAssistantChartPane({symbol:'AAPL',timeframe:'M30',source:'fixture',contextKey:keyValue,analysisOnly:true,ready:true});const send=()=>pane.explainFinding(()=>reads(keyValue));senders.push(send);return <button onClick={send}>Explain manual finding</button>;}
+  const app=(key:string,receiver=true)=><AssistantDockProvider><Manual keyValue={key}/>{receiver&&<Receiver/>}</AssistantDockProvider>;
+  const view=render(app('source-a'));fireEvent.click(screen.getByText('Explain manual finding'));expect(delivered).toHaveBeenLastCalledWith('Explain this finding','finding from source-a');const old=senders.at(-1)!;
+  view.rerender(app('source-b'));delivered.mockClear();reads.mockClear();expect(old()).toBe(false);expect(delivered).not.toHaveBeenCalled();expect(reads).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Explain manual finding'));expect(delivered).toHaveBeenLastCalledWith('Explain this finding','finding from source-b');
+  view.rerender(app('source-b',false));delivered.mockClear();reads.mockClear();fireEvent.click(screen.getByText('Explain manual finding'));expect(delivered).not.toHaveBeenCalled();expect(reads).not.toHaveBeenCalled();const removed=senders.at(-1)!;view.unmount();expect(removed()).toBe(false);
+ });
  it('defaults only the initial primary and routes all local owners to explicit comparison with separated docks',()=>{
   render(<StrictMode><App/></StrictMode>);expect(screen.getByTestId('status').textContent).toBe('EURUSD|false|EURUSD|EURUSD|EURUSD');
   expect(requestChartStudy('show RSI')).toBe('EURUSD');called.mockClear();const old=retained.at(-1)!;

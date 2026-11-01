@@ -1109,12 +1109,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (!series) return;
     const live = this.feedState.livePriceAffordance;
 
-    // Suppress the candlestick last-value / price-line label unless the feed is
-    // genuinely LIVE — a frozen, delayed or composite feed must never imply a
-    // live last price (shared honesty rule). A Heikin Ashi series' own label
-    // would show the averaged close, so it stays hidden; the dashed "Last"
-    // line below always carries the canonical last close.
-    const seriesLabel = live && this.displayMode !== "heikinAshi";
+    // One canonical price affordance across every style: the explicit Last
+    // line below uses the actual candle close. The native series label/line
+    // would duplicate it (or show an averaged Heikin Ashi close), so both stay
+    // hidden. The explicit line still requires a genuinely live feed.
+    const seriesLabel = false;
     // applyOptions invalidates the renderer even when values are identical.
     // Read its actual state so poll reconciliation can skip redundant work
     // without caching away a live/stale transition or a new series instance.
@@ -1132,7 +1131,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     } else {
       this.lastPriceLine = series.createPriceLine({
         price: last.close, color: "#60a5fa", lineWidth: 1,
-        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Last",
+        // Empty title avoids a second library label inside the plot.
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "",
       });
     }
   }

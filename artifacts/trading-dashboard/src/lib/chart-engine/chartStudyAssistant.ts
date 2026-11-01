@@ -12,13 +12,15 @@ import type { ChartEngineAdapter } from "./types";
 // instructions (another asset, timeframe, source, negation, etc.) fail closed.
 export type AverageSelection = { kind: "sma" | "ema"; period: number };
 export type AverageComparisonRequest = { action: "compare"; studies: [AverageSelection, AverageSelection] };
-export type ReadabilityRequest = {action:"simplify"} | {action:"restore"};
+export type ReadabilityRequest = {action:"simplify"} | {action:"restore"} | {action:"explain_finding"};
 export type StudyRequest = ReadabilityRequest | { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; slow?: number; signal?: number; signalMethod?: "sma"|"ema"; multiplier?:number; preserveVisibility?: boolean; reanchor?:boolean; profileRows?:number; profileValueAreaPercent?:number; refreezeProfile?:boolean } | AverageComparisonRequest | { error: string };
 const help = 'Chart not changed. Try “show RSI”, “set RSI period to 21”, “hide RSI” or “remove RSI”. Other settings and repeated instances are editable in Studies.';
 const aliases = STUDY_CATALOG.flatMap(d=>[{name:d.defaults.kind,kind:d.defaults.kind},{name:d.name.toLowerCase(),kind:d.defaults.kind}])
   .concat([{name:"bollinger bands",kind:"bollinger"},{name:"adx",kind:"dmi"},{name:"volume bars",kind:"trade_volume"},{name:"traded volume",kind:"trade_volume"},{name:"volume",kind:"trade_volume"}]);
 export function parseStudyRequest(text:string): StudyRequest | null {
   const input=text.trim().toLowerCase().replace(/[?!.]+$/g,"").replace(/^please\s+/,"");
+  if(/^(?:explain (?:this|the selected|selected) (?:pattern|finding)|what does (?:this|the selected) (?:pattern|finding) mean)$/.test(input))return {action:"explain_finding"};
+  if(/^(?:explain (?:this|the selected|selected) (?:pattern|finding)|what does (?:this|the selected) (?:pattern|finding)\b)/.test(input))return {error:'Use “explain this pattern” for the selected chart finding. Extra actions or another market were not applied.'};
   if (/^(?:simplify (?:this |the )?chart|make this chart easier to understand|focus on price)$/.test(input))return {action:"simplify"};
   if (/^(?:restore (?:my |the )?(?:chosen |chart )?tools|restore this chart)$/.test(input))return {action:"restore"};
   if (/\bsimplify\b|\brestore.*\b(?:chart|tools)\b|easier to understand|focus on price/.test(input))return {error:'Chart not changed. Use “make this chart easier to understand” or “restore chosen tools” for the selected pane. This temporarily hides analysis layers, preserving settings and trade/risk overlays; compound instructions are unsupported.'};
@@ -77,6 +79,7 @@ export interface StudyAssistantContext {
   utcClockQualified?:boolean;
   save:(studies:ChartStudy[])=>void;
   onAnalysisFocus?:(focused:boolean)=>void;
+  explainFinding?:()=>string;
 }
 const observationTime=(seconds:number,qualified:boolean)=>{const date=new Date(seconds*1000);return Number.isFinite(date.getTime())?formatSourceChartTime(seconds,qualified,"UTC",{seconds:true}):"unavailable timestamp";};
 /** One renderer transaction for a complete requested collection. Restoration
@@ -141,6 +144,8 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
 }
 function executeStudyRequestCore(request:StudyRequest,context:StudyAssistantContext):string {
   if ("error" in request) return request.error;
+  if(request.action==="explain_finding")return context.adapter&&context.explainFinding
+    ?context.explainFinding():"Select a ready Smart Chart and a finding first. No other pane or pattern was substituted.";
   if(request.action==="simplify"||request.action==="restore") {
     const adapter=context.adapter;
     if(!adapter?.setAnalysisFocus||!adapter.isAnalysisFocused||!adapter.getVisibleCandles?.().length)return "Chart view not changed: select a ready chart with visible candles first. No other pane was substituted.";

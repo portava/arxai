@@ -13,7 +13,7 @@ import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistan
 // - Market provider connectivity surfaced in-panel
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { useAssistantDockTarget, useAssistantChartSelection } from "./AssistantDock";
+import { useAssistantDockTarget, useAssistantChartSelection, useLocalChartAssistantReceiver } from "./AssistantDock";
 import { useGetTimingBrain, getGetTimingBrainQueryKey } from "@workspace/api-client-react";
 import { Mic, MicOff, Send, X, Sparkles, Loader2, ChevronDown, ChevronUp, ShieldCheck, Wrench, AlertCircle, Wifi, WifiOff, Radio, Square, VolumeX, Volume2, MoreHorizontal, Plus, Trash2, Eraser, Download, Brain, BrainCircuit, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -811,21 +811,21 @@ export function ArxAssistantLivePanel() {
   useEffect(() => () => { if (recordTimeoutRef.current) clearTimeout(recordTimeoutRef.current); }, []);
 
   // ── streaming text send ─────────────────────────────────────────────
+  const acceptLocalChartReply=useCallback((text:string,chartReply:string)=>{
+    abortRef.current?.abort();tts.stop();setErrorBanner(null);setInput("");setStatus("idle");setOpen(true);
+    const turn=++localChartTurnSequence.current;
+    setMessages(current=>[...current.map(message=>message.pending?{...message,pending:false,content:message.content||"Previous reply stopped."}:message),
+      {id:`local-chart-u-${turn}`,role:"user",content:text},{id:`local-chart-a-${turn}`,role:"assistant",content:chartReply}]);
+    return true;
+  },[tts.stop]);
+  useLocalChartAssistantReceiver(acceptLocalChartReply);
   const sendText = useCallback(async (text: string) => {
     if (!text.trim()) return;
     const chartReply = requestChartLevels(text) ?? requestChartFibonacci(text) ?? requestChartResearch(text) ?? requestChartStudy(text);
     if (chartReply !== null) {
       // Existing chat surface, deterministic local display action. It needs no
       // remote conversation and makes no model request or trading call.
-      abortRef.current?.abort();
-      tts.stop();
-      setErrorBanner(null);
-      setInput("");
-      setStatus("idle");
-      const turn=++localChartTurnSequence.current;
-      setMessages(current => [...current.map(message => message.pending ? { ...message, pending: false, content: message.content || "Previous reply stopped." } : message),
-        { id: `local-chart-u-${turn}`, role: "user", content: text },
-        { id: `local-chart-a-${turn}`, role: "assistant", content: chartReply }]);
+      acceptLocalChartReply(text,chartReply);
       return;
     }
     if(remoteChartBlockedRef.current){setErrorBanner(analysisOnlyNotice);return;}
@@ -1138,7 +1138,7 @@ export function ArxAssistantLivePanel() {
     // the action doesn't leak as "still running" in the ring buffer.
     // markActionEnd is idempotent (returns null on the second call).
     markActionEnd(rubyPid);
-  }, [conversation]);
+  }, [conversation,acceptLocalChartReply]);
 
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void sendText(input); };
 

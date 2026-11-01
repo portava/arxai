@@ -2,7 +2,7 @@ import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistan
 import { runCausalResearchV2 } from "@workspace/domain/backtest/research";
 const researchRunner=vi.hoisted(()=>({run:vi.fn(),cancel:vi.fn()}));
 vi.mock("@/lib/chart-research/researchRunner",()=>({createBrowserResearchRunner:()=>researchRunner}));
-import {AssistantDockProvider} from "@/components/help/AssistantDock";
+import {AssistantDockProvider,useLocalChartAssistantReceiver} from "@/components/help/AssistantDock";
 import { requestChartStudy } from "@/lib/chart-engine/chartStudyAssistant";
 // P2 — comparison chart cards mount in the click commit, but each new
 // comparison's chart engine (lightweight-charts init + its own first paint)
@@ -1131,6 +1131,19 @@ describe("explicit native comparison chart assistant",()=>{
 });
 
 describe("native selected historical follow-up routing",()=>{
+ it("uses the same displayed finding for typed and manual assistant explanations and holds after source replacement",()=>{
+  const step=1_800_000,start=OPEN_MS-60*step;
+  const candles=Array.from({length:60},(_,i)=>({symbol:"EURUSD",timeframe:"M30",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:i===59?101:99.9,high:101,low:99,close:i===59?99:100,source:"mt5_broker",sourceMode:"live",timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
+  const response=(identity:string)=>({symbol:"EURUSD",timeframe:"M30",source:"mt5_broker",quality:"clean",candles,feedStatus:{symbol:"EURUSD",source:"mt5_broker",stale:false},marketEvidence:{symbol:"EURUSD",timeframe:"M30",source:"mt5_broker",sourceIdentity:identity,lastClosedCandleAt:candles.at(-1)!.closeTime}});
+  const delivered=vi.fn(()=>true);function Receiver(){useLocalChartAssistantReceiver(delivered);return null;}
+  candleResponse=response('a'.repeat(64));const app=()=> <AssistantDockProvider><ARXNativeChart symbol="EURUSD" timeframe="M30"/><Receiver/></AssistantDockProvider>;const view=render(app());
+  created[0]!.getVisibleCandles=vi.fn(()=>candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close})));
+  candleResponse=response('a'.repeat(64));view.rerender(app());
+  const finding=screen.getAllByRole('button',{name:/bearish marubozu/i,hidden:true})[0]!;fireEvent.click(finding);
+  const reply=requestChartStudy('explain this pattern');expect(reply).toContain('EURUSD M30');expect(reply).toMatch(/bearish marubozu/i);expect(reply).toContain('mt5 broker');expect(reply).toContain('Anchors:');
+  fireEvent.click(screen.getByRole('button',{name:'Explain this finding'}));expect(delivered).toHaveBeenLastCalledWith('Explain this finding',reply);
+  candleResponse=response('b'.repeat(64));view.rerender(app());expect(requestChartStudy('explain this pattern')).toContain('Select a ready');view.unmount();expect(requestChartStudy('explain this pattern')).toContain('Select a ready');
+ });
  it("preserves frozen results and edited rules for polite explanations, loss questions and unsupported compound actions",async()=>{
   const start=Date.parse("2026-01-01T00:00:00Z"),step=60_000;
   const candles=Array.from({length:160},(_,i)=>{const close=100+Math.sin(i/5)*4;return {symbol:"EURUSD",timeframe:"M1",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:close-.1,high:close+.3,low:close-.3,close,source:"mt5_broker",sourceMode:"live",priceBasis:"BID",priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null},timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},isComplete:true,isFinal:true,isForming:false,qualityFlags:[]};});

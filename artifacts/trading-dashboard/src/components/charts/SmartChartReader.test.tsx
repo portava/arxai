@@ -30,6 +30,44 @@ function fixture(timeframe="M5",start=START,step=300_000){
 beforeEach(()=>{vi.mocked(describeSmartChartWindow).mockClear();vi.mocked(analyzeSmartChart).mockClear();vi.spyOn(Date,"now").mockReturnValue(NOW);});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 describe("embedded chart reader follows applied candles",()=>{
+  it("publishes the displayed finding's source, observed geometry and caveats for the local assistant",()=>{
+    const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
+    const getter=onFindingExplanation.mock.lastCall?.[0];expect(typeof getter).toBe("function");
+    const reply=getter();expect(reply).toContain("V75");expect(reply).toContain("M5");expect(reply).toContain("deriv public");expect(reply).toContain("Observed shape");expect(reply).toContain("Anchors");expect(reply).toContain("not a forecast");
+    expect(reply).toContain("UTC");
+  });
+  it("rejects retained finding readers after a source switch or unmount",()=>{
+    const f=fixture(),onFindingExplanation=vi.fn();const view=render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
+    const old=onFindingExplanation.mock.lastCall?.[0];expect(typeof old).toBe("function");
+    view.rerender(<SmartChartReader {...f.props} data={{...f.data,marketEvidence:{...f.data.marketEvidence,sourceIdentity:"b".repeat(64)}} as ChartCandlesResponse} onFindingExplanation={onFindingExplanation}/>);
+    expect(old()).toMatch(/changed|no longer|unavailable/i);view.unmount();expect(onFindingExplanation.mock.lastCall?.[0]).toBeNull();expect(old()).toMatch(/changed|no longer|unavailable/i);
+  });
+  it("states when the selected finding's geometry is hidden",()=>{
+    const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} presentationHidden onFindingExplanation={onFindingExplanation}/>);
+    const getter=onFindingExplanation.mock.lastCall?.[0];expect(typeof getter).toBe("function");expect(getter()).toMatch(/annotation.*hidden/i);
+  });
+  it("does not substitute another finding after an explicitly selected observation leaves the viewport",()=>{
+    const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
+    const more=within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true});fireEvent.click(more.at(-1)!);
+    const old=onFindingExplanation.mock.lastCall![0];f.show(f.all.slice(0,8));
+    expect(old()).toMatch(/changed|no longer/);expect(onFindingExplanation.mock.lastCall![0]()).toMatch(/No current selected finding/);
+    expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("no other pattern was substituted");
+    expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
+  });
+  it("rechecks actual applied OHLC at the instant of the question",()=>{
+    const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
+    const getter=onFindingExplanation.mock.lastCall![0];f.all[0].close+=.01;
+    expect(getter()).toContain("displayed candles changed");
+  });
+  it("shows a fallback notice when the existing assistant cannot receive the manual explanation",()=>{
+    const f=fixture(),onExplainFinding=vi.fn(()=>false);render(<SmartChartReader {...f.props} onExplainFinding={onExplainFinding}/>);
+    fireEvent.click(screen.getByRole("button",{name:"Explain this finding"}));expect(onExplainFinding).toHaveBeenCalledOnce();expect(screen.getByRole("status").textContent).toContain("assistant is unavailable");expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("nearly equal");
+  });
+  it("preserves unverified-clock and stale-feed caveats in the assistant explanation",()=>{
+    const f=fixture(),onFindingExplanation=vi.fn();const data={...f.data,candles:f.data.candles!.map(bar=>({...bar,timeBasisEvidence:undefined})),feedStatus:{...f.data.feedStatus,stale:true,quality:'stale'}} as ChartCandlesResponse;
+    render(<SmartChartReader {...f.props} data={data} liveConfirmed={false} onFindingExplanation={onFindingExplanation}/>);
+    const reply=onFindingExplanation.mock.lastCall![0]();expect(reply).toContain('feed is stale');expect(reply).toMatch(/clock.*unverified|not.*UTC|UTC.*not/i);expect(reply).not.toContain('Live feed confirmed');
+  });
   it("automatically explains closed patterns, exposes every detail and shows one annotation",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);
     expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("are nearly equal");

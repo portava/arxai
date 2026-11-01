@@ -23,7 +23,7 @@ const sha = data => createHash('sha256').update(data).digest('hex');
 const git = args => execFileSync('git', args, {cwd:repo, encoding:'utf8'}).trim();
 const state = () => ({head:git(['rev-parse','HEAD']), status:git(['status','--porcelain','--untracked-files=all']), diffSha256:sha(git(['diff','HEAD','--']))});
 const args = process.argv.slice(2);
-if (args.length > 1 || (args[0] && args[0]!=='--react-profile' && args[0]!=='--volume-profile' && !/^--feed=(baseline|candidate)$/.test(args[0]) && !/^--serve=[a-f0-9]{16}$/.test(args[0]))) throw Error('Use --react-profile, --volume-profile, --feed=baseline|candidate, or --serve=<build-id>');
+if (args.length > 1 || (args[0] && args[0]!=='--react-profile' && args[0]!=='--volume-profile' && !/^--feed=(baseline|label-baseline|candidate)$/.test(args[0]) && !/^--serve=[a-f0-9]{16}$/.test(args[0]))) throw Error('Use --react-profile, --volume-profile, --feed=baseline|label-baseline|candidate, or --serve=<build-id>');
 const profile=args[0]==='--react-profile';
 const volumeProfileProbe=args[0]==='--volume-profile';
 const feedMode=args[0]?.startsWith('--feed=')?args[0].slice(7):null;
@@ -50,13 +50,14 @@ if (!serve) {
   const {default:react} = await import(require.resolve('@vitejs/plugin-react'));
   const {default:tailwind} = await import(require.resolve('@tailwindcss/vite'));
   const adapterPath='artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.ts';
-  const baselineCommit='da62c7a5595f63be526362c3327a27366da6dc68';
+  const isBaseline=feedMode==='baseline'||feedMode==='label-baseline';
+  const baselineCommit=feedMode==='label-baseline'?'b3bee175f368a31f003aa9f7f13b7ebbc68e180a':'da62c7a5595f63be526362c3327a27366da6dc68';
   const adapterCurrent=await readFile(path.join(repo,adapterPath),'utf8');
-  const adapterBaseline=feedMode==='baseline'?execFileSync('git',['show',`${baselineCommit}:${adapterPath}`],{cwd:repo,encoding:'utf8'}):null;
-  const feedReconciliation=feedMode?{mode:feedMode,adapterPath,adapterSourceSha256:sha(adapterBaseline??adapterCurrent),workingAdapterSha256:sha(adapterCurrent),baselineCommit:git(['rev-parse',baselineCommit]),qaOnlySourceOverride:feedMode==='baseline'}:null;
+  const adapterBaseline=isBaseline?execFileSync('git',['show',`${baselineCommit}:${adapterPath}`],{cwd:repo,encoding:'utf8'}):null;
+  const feedReconciliation=feedMode?{mode:feedMode,adapterPath,adapterSourceSha256:sha(adapterBaseline??adapterCurrent),workingAdapterSha256:sha(adapterCurrent),baselineCommit:isBaseline?git(['rev-parse',baselineCommit]):null,comparisonScope:'Only adapter source is pinned; all other modules use the recorded working tree. Not a historical full-app build.',qaOnlySourceOverride:isBaseline}:null;
   let baselineApplied=false;
   const baselinePlugin={name:'qa-exact-baseline-adapter',enforce:'pre',load(file){if(adapterBaseline&&file===path.join(repo,adapterPath)){baselineApplied=true;return adapterBaseline;}return null;}};
-  await build({root,configFile:false,base:'/',define:{__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_SCANNER_QA_REACT_PROFILE__:JSON.stringify(profile),__ARX_FEED_RECONCILIATION__:JSON.stringify(Boolean(feedMode)),__ARX_VOLUME_PROFILE_PROBE__:JSON.stringify(volumeProfileProbe)},esbuild:{keepNames:profile},plugins:[...(adapterBaseline?[baselinePlugin]:[]),...(profile?[candleTimelinePlugin(repo)]:[]),dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
+  await build({root,configFile:false,base:'/',define:{__ARX_FEED_LABEL_POLICY__:JSON.stringify(isBaseline?'legacy_dual':'canonical_only'),__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_SCANNER_QA_REACT_PROFILE__:JSON.stringify(profile),__ARX_FEED_RECONCILIATION__:JSON.stringify(Boolean(feedMode)),__ARX_VOLUME_PROFILE_PROBE__:JSON.stringify(volumeProfileProbe)},esbuild:{keepNames:profile},plugins:[...(adapterBaseline?[baselinePlugin]:[]),...(profile?[candleTimelinePlugin(repo)]:[]),dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
     ...(profile?[{find:'react-dom/client',replacement:require.resolve('react-dom/profiling')}]:[]),
     {find:'react',replacement:path.dirname(require.resolve('react/package.json'))},
     {find:'react-dom',replacement:path.dirname(require.resolve('react-dom/package.json'))},
@@ -80,7 +81,7 @@ if (!serve) {
 } else {
   const info = JSON.parse(await readFile(path.join(out,metadataFile),'utf8'));
   if(info.buildId!==id || info.schemaVersion!==1) throw Error('Wrong build metadata');
-  const port=info.volumeProfileProbe?4209:info.feedReconciliation?(info.feedReconciliation.mode==='baseline'?4207:4208):info.reactProfiling?4299:4199;
+  const port=info.volumeProfileProbe?4209:info.feedReconciliation?(info.feedReconciliation.mode==='candidate'?4208:4207):info.reactProfiling?4299:4199;
   for (const [relative,expected] of Object.entries(info.hashes)) {
     if (path.isAbsolute(relative) || relative.split('/').includes('..')) throw Error('Invalid manifest path');
     if(sha(await readFile(path.join(out,relative)))!==expected) throw Error('Asset changed: '+relative);

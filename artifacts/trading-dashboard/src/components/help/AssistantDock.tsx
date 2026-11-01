@@ -10,7 +10,8 @@ export interface AssistantChartPane {
   analysisOnly:boolean; ready:boolean;
 }
 type PaneSelection={selected:AssistantChartPane|null;lastAnalysisOnly:boolean};
-type PaneOwner=PaneSelection & {register:(pane:AssistantChartPane)=>()=>void;activate:(id:string,key:string)=>boolean;isCurrent:(pane:AssistantChartPane)=>boolean};
+type LocalChartReceiver=(prompt:string,answer:string)=>boolean;
+type PaneOwner=PaneSelection & {register:(pane:AssistantChartPane)=>()=>void;activate:(id:string,key:string)=>boolean;isCurrent:(pane:AssistantChartPane)=>boolean;registerLocalReceiver:(receiver:LocalChartReceiver)=>()=>void;deliverFinding:(pane:AssistantChartPane,read:()=>string)=>boolean};
 const PaneContext=createContext<PaneOwner|null>(null);
 
 /** One existing assistant, with explicit local-chart ownership. Trading/search
@@ -35,9 +36,15 @@ export function AssistantDockProvider({ children }: { children: ReactNode }) {
   },[select]);
   const activate=useCallback((id:string,key:string)=>{const pane=panes.current.get(id);if(!pane?.ready||pane.contextKey!==key)return false;explicitChoice.current=true;select(pane);return true;},[select]);
   const isCurrent=useCallback((pane:AssistantChartPane)=>pane.ready&&panes.current.get(pane.id)===pane&&active.current?.id===pane.id&&active.current.contextKey===pane.contextKey,[]);
+  const localReceiver=useRef<LocalChartReceiver|null>(null);
+  const registerLocalReceiver=useCallback((receiver:LocalChartReceiver)=>{localReceiver.current=receiver;return()=>{if(localReceiver.current===receiver)localReceiver.current=null;};},[]);
+  const deliverFinding=useCallback((pane:AssistantChartPane,read:()=>string)=>{
+    if(!isCurrent(pane)||!localReceiver.current)return false;
+    try{const answer=read();if(!isCurrent(pane)||!localReceiver.current)return false;return localReceiver.current("Explain this finding",answer);}catch{return false;}
+  },[isCurrent]);
   const selectedTargets=useMemo(()=>Object.fromEntries((["assistant","quickActions","search"] as const).map(kind=>[kind,[...targets].reverse().find(target=>target[kind])?.[kind]])),[targets]);
   return <RegisterContext.Provider value={register}><TargetContext.Provider value={selectedTargets}>
-    <PaneContext.Provider value={{...selection,register:registerPane,activate,isCurrent}}>{children}</PaneContext.Provider>
+    <PaneContext.Provider value={{...selection,register:registerPane,activate,isCurrent,registerLocalReceiver,deliverFinding}}>{children}</PaneContext.Provider>
   </TargetContext.Provider></RegisterContext.Provider>;
 }
 export function useAssistantChartSelection(){
@@ -48,11 +55,18 @@ export function useAssistantChartPane(info:Omit<AssistantChartPane,"id">){
   const owner=useContext(PaneContext),id=useId();
   const pane=useMemo(()=>({...info,id}),[id,info.contextKey,info.symbol,info.timeframe,info.source,info.analysisOnly,info.ready]);
   const latest=useRef(pane);latest.current=pane;
-  const register=owner?.register,check=owner?.isCurrent,activate=owner?.activate;
+  const register=owner?.register,check=owner?.isCurrent,activate=owner?.activate,deliverFinding=owner?.deliverFinding;
   useLayoutEffect(()=>register?.(pane),[register,pane]);
   const isCurrent=useCallback(()=>check?.(latest.current)??false,[check]);
   return {active:owner?.selected?.id===id&&owner.selected.contextKey===pane.contextKey&&pane.ready,isCurrent,
-    activate:()=>activate?.(id,latest.current.contextKey)??false};
+    activate:()=>activate?.(id,latest.current.contextKey)??false,
+    explainFinding:(read:()=>string)=>latest.current===pane&&activate?.(id,pane.contextKey)?deliverFinding?.(pane,read)??false:false};
+}
+/** The existing assistant panel receives a validated local answer; this cannot
+ * invoke its remote send path or invent a fallback when the panel is absent. */
+export function useLocalChartAssistantReceiver(receiver:LocalChartReceiver){
+  const register=useContext(PaneContext)?.registerLocalReceiver;
+  useLayoutEffect(()=>register?.(receiver),[register,receiver]);
 }
 export function useAssistantDockTarget(): HTMLElement | null {return useChartActionDockTarget("assistant");}
 export function useChartActionDockTarget(kind: DockKind): HTMLElement | null {return useContext(TargetContext)?.[kind] ?? null;}
