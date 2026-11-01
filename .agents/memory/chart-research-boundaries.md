@@ -26,13 +26,26 @@ declarations must remain unavailable.
 Report source/runtime mismatch and obtain separate authorization before
 refreshing the API or claiming its new source is active.
 
-The shipped MT5 feed lacks an original candle-price-basis declaration.
-Historical cost research must remain unavailable until original evidence is
-supplied; do not infer BID/MID from the provider or an asset profile.
+Original candle-price-basis evidence must come from the producer's observation,
+not a provider name or asset profile. Importing EA source that observes chart
+mode does not establish that the running producer has been installed or verified.
 
-**Why:** The owner explicitly identified the missing producer declaration and
-prohibited manufacturing it or treating synthetic fixtures as broker acceptance.
+**Why:** The owner prohibited manufacturing declarations or treating synthetic
+fixtures/source imports as broker acceptance; EA installation is separately
+restricted.
 
 **How to apply:** Keep candles visible, qualify only original evidence, withdraw
 current research markers/explanations when it disappears, and treat any producer
 upgrade or real-provider acceptance as separately authorized work.
+
+No current production adapter qualifies original historical UTC. ISO formatting
+and today's broker offset cannot establish past UTC mapping. Keep prices visible
+while historical research and timezone conversion remain held without authority.
+
+**Why:** The owner explicitly identified broker-clock chart coordinates and
+required original authority rather than inferred UTC.
+
+**How to apply:** Preserve source-coordinate disclosures across chart, reader,
+replay and archived analysis. An audited adapter and its original evidence path
+require separate qualification; client claims or EA price-basis declarations
+cannot supply clock authority.

@@ -73,10 +73,12 @@ the owner explicitly excluded every held performance experiment.
 from startup/layout experiments, and preserve partial-visibility limitations
 rather than implying this feature resolves them.
 
-Automatic Fibonacci work is separate and not yet accepted.
+The reviewed Fibonacci preview, explicit Keep/edit and chart-owned assistant
+explanation batch is now authorized. Other unfinished Fibonacci branches remain
+separate from accepted source imports.
 
-**Why:** The owner explicitly excluded unfinished Fibonacci branches from the
-chart/research evidence correction.
+**Why:** The owner explicitly accepted the reviewed chart/assistant/Truth
+alignment batch after previously holding unfinished Fibonacci work.
 
-**How to apply:** Do not import that work through shared ancestry or an unrelated
-feature inventory without separate acceptance.
+**How to apply:** Preserve the accepted drawing-owner behavior without treating
+it as permission for speculative branches or held layout/performance work.
