@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Loader2, RefreshCw, MessageCircle, Crosshair, ShieldAlert } from "lucide-react";
@@ -10,7 +11,7 @@ import {
   type ChartRead,
 } from "@/lib/rubyReadPanelState";
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
-import { rubyChartReadContext } from "@/lib/rubyChartReadContext";
+import { rubyChartReadContext, rubyChartReadKey, rubyChartDraftKey } from "@/lib/rubyChartReadContext";
 import { useAssistantName } from "@/lib/assistant-name";
 import {
   actionabilityDisplayUi,
@@ -91,14 +92,20 @@ export function RubyChartRead({
    */
   canonicalReadId?: string;
 }) {
-  // The server read is lifted to a page-level store keyed by symbol+timeframe
-  // (Task #600) so the header strip's Ruby cell shares the SAME read and the two
-  // can never disagree. Switching symbol/timeframe reads a different key (an
-  // empty key = honest pre-read state). Loading/errors share that same key.
   const { name } = useAssistantName();
   const store = useRubyReadStore();
-  const read = store.get(symbol, timeframe);
-  const { loading, error: err } = store.requestState(symbol, timeframe);
+  const owner = useRef(Symbol("RubyChartRead plan consumer")).current;
+  const marketKey = rubyChartReadKey(symbol, timeframe);
+  const draftKey = rubyChartDraftKey(draft);
+  const { registerPlan, unregisterPlan } = store;
+  // Layout registration updates the shared header restriction before paint.
+  // Object recreation with identical values cannot invalidate another panel.
+  useLayoutEffect(() => {
+    registerPlan(owner, symbol, timeframe, draft);
+  }, [registerPlan, owner, marketKey, draftKey]);
+  useLayoutEffect(() => () => unregisterPlan(owner), [unregisterPlan, owner]);
+  const read = store.getPlan(symbol, timeframe, draft);
+  const { loading, error: err } = store.planRequestState(symbol, timeframe, draft);
 
   // Resolve the SHARED scanner truth for this exact symbol/timeframe so the
   // panel can warn the user BEFORE Ruby reads a stale or invalid feed — and so
@@ -136,13 +143,14 @@ export function RubyChartRead({
   );
 
   const ask = async () => {
-    await store.request(symbol, timeframe, async signal => {
+    const requestedDraft = draft === null ? null : { ...draft };
+    await store.requestPlan(symbol, timeframe, requestedDraft, async signal => {
       const body = {
         // Send the canonical interval too: 1M means month in the chart picker,
         // whereas the legacy endpoint's alias parser treats raw 1M as minute.
         ...rubyChartReadContext(symbol, timeframe),
         ...(reportedAiUsable != null ? { aiUsable: reportedAiUsable } : {}),
-        ...(draft ? { draft } : {}),
+        ...(requestedDraft ? { draft: requestedDraft } : {}),
       };
       const r = await fetch(`${BASE}/api/me/assistant/read-chart`, {
         method: "POST",
@@ -171,7 +179,7 @@ export function RubyChartRead({
           size="sm"
           variant="outline"
           className="ml-auto h-8 gap-1.5 px-3 text-xs"
-          disabled={loading}
+          disabled={loading || draftKey === null}
           onClick={() => void ask()}
           data-testid="ruby-chart-read-ask"
         >

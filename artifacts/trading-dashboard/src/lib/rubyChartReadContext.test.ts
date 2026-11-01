@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { CHART_INTERVALS, chartIntervalDisplayId } from "./chart-engine/chartIntervals";
-import { rubyChartReadContext, rubyChartReadKey } from "./rubyChartReadContext";
+import { rubyChartReadContext, rubyChartReadKey, rubyChartReadPlanKey, rubyChartDraftKey } from "./rubyChartReadContext";
 import { validateRubyChartRead } from "./rubyChartReadResponse";
 
 const full = (symbol: unknown, timeframe: unknown) => ({ symbol, timeframe, gated: false, readLayer: "FULL", bias: "Bullish", liveSetupWithheld: false, canShowLiveTradeSetup: true });
 
 describe("chart assessment market identity", () => {
+  it("a plan key cannot collide with a chart-only market containing serialized values",()=>{
+    const draft={side:"BUY" as const,entry:100,sl:99,tp:102};
+    const market=rubyChartReadKey("EURUSD","M5"),plan=rubyChartDraftKey(draft)!;
+    expect(rubyChartReadPlanKey("EURUSD","M5",draft)).not.toBe(rubyChartReadKey(market,plan));
+    expect(rubyChartReadPlanKey("EURUSD","M5",null)).toBe(rubyChartReadKey("EURUSD","M5"));
+    expect(rubyChartReadPlanKey(" eurusd ","5m",{...draft})).toBe(rubyChartReadPlanKey("EURUSD","M5",draft));
+  });
   it.each([...CHART_INTERVALS, "W1", "MN1"] as const)("recognizes the existing display and API interval %s without resampling", interval => {
     const display = chartIntervalDisplayId(interval);
     expect(rubyChartReadKey("EURUSD", display)).toBe(rubyChartReadKey("EURUSD", interval));
