@@ -2,7 +2,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { AccountSnapshotCard, OpenPositionsCard } from './CockpitCards';
 const h=vi.hoisted(()=>({summary:{} as any,positions:{} as any,live:{} as any,mode:{} as any}));
-vi.mock('@workspace/api-client-react',()=>({useGetMeSharedAccountSummary:()=>h.summary,getGetMeSharedAccountSummaryQueryKey:()=>['summary'],useGetMeSharedAccountPositions:()=>h.positions,getGetMeSharedAccountPositionsQueryKey:()=>['positions']}));
+vi.mock('@workspace/api-client-react',()=>({useGetMt5Status:()=>({data:null,isError:false}),getGetMt5StatusQueryKey:()=>['/api/mt5/status'],useGetMeSharedAccountSummary:()=>h.summary,getGetMeSharedAccountSummaryQueryKey:()=>['summary'],useGetMeSharedAccountPositions:()=>h.positions,getGetMeSharedAccountPositionsQueryKey:()=>['positions']}));
 vi.mock('@/hooks/useLiveAccountSnapshotContext',()=>({useLiveAccountSnapshotCtx:()=>h.live}));
 vi.mock('@/hooks/useTradingMode',()=>({useTradingMode:()=>h.mode}));
 vi.mock('@/lib/symbol-context',()=>({useActiveSymbol:()=>['EURUSD']}));
@@ -10,11 +10,12 @@ vi.mock('@/lib/assistant-name',()=>({useAssistantName:()=>({name:'Eleanor'})}));
 vi.mock('wouter',()=>({Link:({href,children}:any)=><a href={href}>{children}</a>}));
 beforeEach(()=>{h.summary={isLoading:false,isError:true};h.positions={isLoading:false,isError:true};h.live={snapshot:null,isUnavailable:true,freshness:'unavailable',lastUpdatedMs:null,isEstimate:false};h.mode={isLiveShared:true}});afterEach(cleanup);
 const snapshot=(extra:Record<string,unknown>={})=>({accountMode:'LIVE_SHARED',balance:1000,equity:990,openPL:-10,openPositionsCount:0,positions:[],freshness:'fresh',...extra});
-it('missing summary and snapshot show no fabricated zero or Active',()=>{render(<AccountSnapshotCard/>);expect(screen.queryByText('$0.00')).toBeNull();expect(screen.queryByText('Active')).toBeNull();expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4)});
+it('missing summary and snapshot show no fabricated zero or Active',()=>{render(<AccountSnapshotCard/>);expect(screen.queryByText('$0.00')).toBeNull();expect(screen.queryByText('Active')).toBeNull();expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3)});
 it('empty account array does not prove zero holdings',()=>{h.summary={data:{accounts:[]},isError:false};render(<AccountSnapshotCard/>);expect(screen.queryByText('$0.00')).toBeNull()});
 it('static virtual balance cannot substitute for missing canonical available headroom',()=>{h.summary={data:{accounts:[{virtualBalance:1000,virtualEquity:900,virtualPnl:-100,openAttributions:1}]}};render(<AccountSnapshotCard/>);expect(within(screen.getByText('Available').parentElement!).getByText('—')).toBeTruthy()});
-it('real zero master values remain zero',()=>{h.summary={data:{masterAccess:true,accounts:[],masterMt5:{arxAllocated:0,mt5Equity:0,mt5OpenPnl:null,openPositions:0,accountCurrency:'USD',snapshotStatus:'FRESH',syncStatus:'LIVE',lastMt5SnapshotAt:new Date().toISOString(),snapshotAgeMs:0}}};render(<AccountSnapshotCard/>);expect(screen.getByText(/ARX allocation: \$0.00/)).toBeTruthy();expect(screen.getByTestId('native-money-equity').textContent).toBe('—');expect(screen.queryByText('Active')).toBeNull()});
-it('retained broker values stay last-known on unavailable freshness',()=>{h.live.snapshot=snapshot();render(<AccountSnapshotCard/>);expect(screen.getByText('$990.00')).toBeTruthy();expect(screen.getByText(/Last-known account figures/)).toBeTruthy()});
+it('real zero master values remain zero',()=>{h.summary={data:{masterAccess:true,accounts:[],masterMt5:{arxAllocated:0,mt5Equity:0,mt5OpenPnl:null,openPositions:0,accountCurrency:'USD',snapshotStatus:'FRESH',syncStatus:'LIVE',lastMt5SnapshotAt:new Date().toISOString(),snapshotAgeMs:0}}};render(<AccountSnapshotCard/>);expect(screen.getByText(/ARX allocation: 0 \(currency unverified\)/)).toBeTruthy();expect(screen.getByTestId('native-money-equity').textContent).toBe('—');expect(screen.queryByText('Active')).toBeNull()});
+// Legacy SSE scalars no longer represent the selected personal broker report.
+it('retained legacy broker values cannot substitute for a selected native report',()=>{h.live.snapshot=snapshot();render(<AccountSnapshotCard/>);expect(screen.queryByText('$990.00')).toBeNull();expect(screen.getByText(/Last-known allocation and position figures/)).toBeTruthy()});
 it('a mode mismatch cannot reuse prior live broker values',()=>{h.live.snapshot=snapshot({accountMode:'UNKNOWN'});render(<AccountSnapshotCard/>);expect(screen.queryByText('$990.00')).toBeNull()});
 it('non-finite evidence never renders NaN or Infinity',()=>{h.live.snapshot=snapshot({balance:NaN,equity:Infinity,openPL:NaN,openPositionsCount:NaN});render(<AccountSnapshotCard/>);expect(screen.queryByText(/NaN|Infinity/)).toBeNull()});
 it('failed positions read without snapshot stays unknown',()=>{render(<OpenPositionsCard/>);expect(screen.getByText(/Position data unavailable/)).toBeTruthy();expect(screen.queryByText('No open positions')).toBeNull();expect(screen.queryByText('0')).toBeNull()});
@@ -91,7 +92,7 @@ it.each([undefined,null,{status:"unavailable",amounts:null}])("native report %j 
 
 function nativeReport(){return {status:'reported',reason:'CLOCK_AND_CONTINUITY_UNVERIFIED',currentVerified:false,observedAt:new Date(Date.now()-2000).toISOString(),receivedAt:new Date(Date.now()-1000).toISOString(),currency:'EUR',currencyDigits:2,amounts:{balance:'1000.00',equity:'900.00',profit:'-120.00',credit:'20.00',margin:'0.00',freeMargin:'900.00'}};}
 it('ordinary account cannot display an accidentally supplied master report',()=>{
- h.summary={data:{masterAccess:false,masterMt5:master({nativeAccountReport:nativeReport()}),accounts:[]},isError:false};render(<AccountSnapshotCard/>);expect(screen.queryByTestId('native-account-report')).toBeNull();expect(screen.queryByText('EUR 900.00')).toBeNull();
+ h.summary={data:{masterAccess:false,masterMt5:master({nativeAccountReport:nativeReport()}),accounts:[]},isError:false};render(<AccountSnapshotCard/>);expect(screen.getByTestId('native-money-equity').textContent).toBe('—');expect(screen.queryByText('EUR 900.00')).toBeNull();
 });
 it('cached native report is withheld when summary reload fails',()=>{
  h.summary={data:{masterAccess:true,masterMt5:master({nativeAccountReport:nativeReport()}),accounts:[]},isError:true};render(<AccountSnapshotCard/>);expect(screen.getByTestId('native-money-equity').textContent).toBe('—');
