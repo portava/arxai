@@ -21,15 +21,15 @@ function ComparisonInstrument({primary, view, onSymbol}: {primary:string;view:Co
 
 /** Primary view stays mounted and alone supplies intelligence / ticket context.
  * Comparisons never publish to the shared symbol bus or inherit trade overlays. */
-export function SmartChartLayout({symbol,children,storageKey=CHART_LAYOUT_KEY}: {symbol:string;children:ReactNode;storageKey?:string}) {
+export function SmartChartLayout({symbol,children,storageKey=CHART_LAYOUT_KEY,controlsBelowSingleChart=false}: {symbol:string;children:ReactNode;storageKey?:string;controlsBelowSingleChart?:boolean}) {
   const [layout,setLayout] = useState(() => validateChartLayout(readChartStorage(storageKey) ?? (storageKey === CHART_LAYOUT_KEY ? readChartStorage("arx.chart.layout.v1") : null)));
   const [saved,setSaved] = useState(true);
   const [links] = useState(() => new ChartViewLink());
   useEffect(() => {setSaved(writeChartStorage(storageKey,layout));},[layout,storageKey]);
   useEffect(() => {links.configure({crosshair:layout.count > 1 && layout.crosshair,range:layout.count > 1 && layout.range});},[links,layout.count,layout.crosshair,layout.range]);
   const changeView = (index:number, patch:Partial<ComparisonView>) => setLayout(previous => ({...previous,comparisons:previous.comparisons.map((view,i) => i === index ? {...view,...patch} : view)}));
-  return <ChartLinkContext.Provider value={links}><div className="min-w-0 space-y-3" data-testid="smart-chart-layout">
-    <div className="flex flex-wrap items-center justify-between gap-2">
+  return <ChartLinkContext.Provider value={links}><div className="flex min-w-0 flex-col gap-3" data-testid="smart-chart-layout">
+    <div className={`flex flex-wrap items-center justify-between gap-2 ${controlsBelowSingleChart && layout.count === 1 ? "order-1" : ""}`}>
       <div className="flex items-center gap-1" role="group" aria-label="Chart layout">
         {([[1,"One chart"],[2,"Two charts"],[4,"Four charts"]] as const).map(([count,label]) => <Button key={count} size="sm" variant={layout.count === count ? "secondary" : "ghost"} aria-pressed={layout.count === count} onClick={() => setLayout(previous => ({...previous,count}))}>{label}</Button>)}
       </div>
