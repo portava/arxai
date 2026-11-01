@@ -88,10 +88,11 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
       const found = adapterFor(index); if (!found) return null;
       const {adapter} = found, options = adapter.series.options();
       const lastLine = adapter.lastPriceLine?.options();
+      // priceLines() returns fresh wrappers; options() identifies the underlying line.
       const attachedLines = adapter.series.priceLines();
       return {
-        canonicalLastLineAttached: !!adapter.lastPriceLine && attachedLines.includes(adapter.lastPriceLine),
-        attachedPriceLines: attachedLines.map((line: any) => {const o=line.options();return {price:o.price,title:o.title,axisLabelVisible:o.axisLabelVisible,canonical:line===adapter.lastPriceLine};}),
+        canonicalLastLineAttached: !!adapter.lastPriceLine && attachedLines.some((line: any)=>line.options()===lastLine),
+        attachedPriceLines: attachedLines.map((line: any) => {const o=line.options();return {price:o.price,title:o.title,axisLabelVisible:o.axisLabelVisible,canonical:o===lastLine};}),
         nativeLastValueVisible: options.lastValueVisible,
         nativePriceLineVisible: options.priceLineVisible,
         canonicalLastLine: lastLine ? {price:lastLine.price,title:lastLine.title,axisLabelVisible:lastLine.axisLabelVisible} : null,

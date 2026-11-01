@@ -52,7 +52,7 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
       const expectedLabel=__ARX_FEED_LABEL_POLICY__==="legacy_dual"&&live&&style!=="heikinAshi";
       assert(options.lastValueVisible===expectedLabel&&options.priceLineVisible===expectedLabel,"Actual label flags mismatch");
       assert(lines.length===(live&&bars.length?1:0),"Actual Last line count mismatch");
-      if(lines.length){assert(lines[0]===adapter.lastPriceLine,"Price line is not the owned canonical handle");assert(lines[0].options().title===(__ARX_FEED_LABEL_POLICY__==="legacy_dual"?"Last":""),"Unexpected pane title");assert(lines[0].options().price===bars.at(-1)!.close,"Last line price is not canonical close");assert(lines[0].options().axisLabelVisible===true,"Last axis label hidden");}
+      if(lines.length){assert(lines[0].options()===adapter.lastPriceLine?.options(),"Price line is not the owned canonical handle");assert(lines[0].options().title===(__ARX_FEED_LABEL_POLICY__==="legacy_dual"?"Last":""),"Unexpected pane title");assert(lines[0].options().price===bars.at(-1)!.close,"Last line price is not canonical close");assert(lines[0].options().axisLabelVisible===true,"Last axis label hidden");}
       assert(adapter.feedState.source===source&&adapter.feedState.livePriceAffordance===live,"Feed context mismatch");
       const box=container.getBoundingClientRect();
       const visible=box.width>=100&&box.height>=100&&box.bottom>0&&box.top<innerHeight;
@@ -74,7 +74,7 @@ export function installFeedReconciliationProbe(Adapter: new()=>any) {
         patch(series,"applyOptions",(original,args)=>{if(activeCounts){activeCounts.seriesApplyOptions++;if("lastValueVisible"in args[0]||"priceLineVisible"in args[0])activeCounts.labelApplyOptions++;}return original(...args);});
         patch(series,"createPriceLine",(original,args)=>{const line=original(...args);if(activeCounts)activeCounts.createLast++;instrumentLine(line);return line;});
         patch(series,"removePriceLine",(original,args)=>{if(activeCounts)activeCounts.removeLast++;return original(...args);});
-        for(const line of series.priceLines())instrumentLine(line);
+        if(adapter.lastPriceLine)instrumentLine(adapter.lastPriceLine);
         report.checks.push(inspect(bars,style,true,"offline_fixture_A"));
         for(let cycle=0;cycle<14;cycle++)for(const scenario of ["identical","tail","stale","live"]){
           assert(performance.now()-runStart<60000,"Probe exceeded declared 60 second bound");
