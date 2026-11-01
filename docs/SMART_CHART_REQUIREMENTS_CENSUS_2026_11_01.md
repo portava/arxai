@@ -124,3 +124,8 @@ All other entries and unfinished owner requirements above remain active.
 ## Compact evidence and source-bound stream followup — 1 November 2026
 
 Application31a45ff9 keeps restriction names visible, exposes full explanations by keyboard-accessible disclosure, removes false reconnect warnings from nonstream sources, and skips unused anchor-evidence updates. Actual Scanner22Truth+275desktop+35phone stock assertions pass;frontend3319pass/11skip. Normal firstclick10/10within100ms;4xCPU0/10. No broadspeed,provider,parity orcompletionclaim. See [exact source and limitations](SMART_CHART_COMPACT_EVIDENCE_2026_11_01.md). Existing strategy sizing/equity/benchmark and broader natural tool commands remain open; separate frozen-result followup work is not included in this receipt.
+
+
+## Selected historical outcome followup — 1 November 2026
+
+Applicationf85d1c03 extends the existing selected frozen-ledger explanation with “Why did this trade lose?” and fixes polite requests clearing the prior result. Current binding and explicit selection remain mandatory; positive/zero results are not described as losses. Combined3332frontendpass/11skip,87guards,7bindings,typecheck,ordinarybuild and36actualScanner browser assertions pass. This does not add capital/sizing/equity/benchmark or general strategy language. Replit importb3029eb8 excludes this newer increment. See [receipt and limitations](SMART_CHART_FROZEN_TRADE_FOLLOWUPS_2026_11_01.md).
