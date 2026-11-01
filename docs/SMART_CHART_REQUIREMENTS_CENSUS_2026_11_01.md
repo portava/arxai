@@ -104,3 +104,18 @@ No stored run was rewritten. New simulations and metric recomputation use the co
 Validation: three new regressions failed against the inspected implementation. After the correction, the existing evidence, chart-series, causal-research and Profit Mission consumer suites passed **130 tests, 0 failures, 0 skipped** in the isolated worktree; a narrow strict domain typecheck passed. This is not a full application build or browser test. Raw before/after logs are retained under `/Users/areyouok/arx-tier1-release/backtest-ledger-metrics-20261101/`. The clean prior backtest-review worktree at `20e17ea0` was inspected read-only. Fresh `git ls-remote` failed DNS in the restricted shell; no claim of freshly verified remote head coverage is made here.
 
 Automatic Fibonacci combined acceptance at203df87e is recorded in `SMART_CHART_AUTO_FIBONACCI_2026_11_01.md`: 2,986 frontend pass /11 skipped, four typecheck units, dashboard build,87 guards,7 bindings, and44 repeated actual Scanner browser assertions. The lifecycle regression and insufficient-window harness attempts are retained. No general assistant drawing command, price-volume study, performance parity or release completion is implied.
+
+### First-view and shared-owner validation — 1 November 2026
+
+Application `43ff8bb6` keeps the existing chart, tools, Truth contract and selected-pane
+assistant. Detailed controls now follow the plot; warning/clock qualification and
+fullscreen access remain above it. Cached mobile charts initialize at the proper
+responsive height. The portable actual-Scanner profile/assistant journey passes
+275 desktop and 35 phone assertions; the original provider fixture and source
+withdrawal checks remain intact. This extends existing owners, not a new system.
+
+Normal immediate first-click checks pass 10/10 at desktop/390px; 4x CPU still fails
+the 100ms target in all 10 attempts. Very narrow phones and later reconnect-warning
+stacks remain first-view gaps. Remote app latency and competitor parity remain
+unproven. See [exact-source report](SCANNER_FIRST_VIEW_ALIGNMENT_2026_11_01.md).
+All other entries and unfinished owner requirements above remain active.

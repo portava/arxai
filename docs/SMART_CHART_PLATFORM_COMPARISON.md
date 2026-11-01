@@ -234,3 +234,19 @@ The separately licensed Trading Platform library documents indexed charts and an
 MT5 documents chart-scoped controls and distinguishes Forex tick volume from exchange trade volume. The current ARX validation retains that distinction without claiming matched terminal calculations or speed. [Official MT5 chart management](https://www.metatrader5.com/en/terminal/help/charts_advanced/charts_manage/)
 
 Current offline evidence and limitations: [9982b545 selected-pane acceptance](SMART_CHART_ANALYSIS_SELECTION_2026_11_01.md). Research responses are retained in the raw validation directory; no broker or competitor benchmark was performed.
+
+### Scanner first-view evidence — 1 November 2026
+
+`43ff8bb6`, actual Scanner offline build `6e228bd25378ed10`: source-correct visible
+first-click completion passes 10/10 normal-speed attempts (desktop median56.0ms,
+max62.3ms;390px phone median51.8ms,max53.5ms). Controlled4x CPU still misses100ms
+in all10 attempts (desktop median271.8ms,max377.1ms;phone median262.5ms,max296.5ms).
+These synthetic-history, prepared-browser, two-frame observations are not physical
+paint, published-app/provider timing or TradingView/MT5 comparison. Very narrow
+and later-warning layout gaps remain. Earlier failed attempts and host contention
+are retained in [the exact-source report](SCANNER_FIRST_VIEW_ALIGNMENT_2026_11_01.md).
+No parity, superiority or completion percentage is inferred.
+
+The final normal candle requests began108.6–128.6ms before clicking through the
+existing app warmup; these are post-click display timings, not click-initiated
+fetch-plus-render. Mock preparation completion is not browser receipt.

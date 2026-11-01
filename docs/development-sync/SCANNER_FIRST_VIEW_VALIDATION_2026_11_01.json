@@ -1,0 +1,558 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-01T10:19:14.850214+00:00",
+  "applicationCommit": "43ff8bb685e07bec51b0b4f737ce33587dbe5f3b",
+  "baseSavedCommit": "f419a37b235ad7f7b9d83ac6e7d96fad674251f1",
+  "worktree": "/Users/areyouok/arx-scanner-first-navigation-20261101",
+  "branch": "codex/scanner-first-navigation-20261101",
+  "buildId": "6e228bd25378ed10",
+  "navigation": {
+    "baseline-1": {
+      "source": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa",
+      "buildId": "861459da19da2027",
+      "cpuThrottle": 1,
+      "passed": false,
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 0,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": null,
+          "maxMs": null,
+          "failedIndices": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 0,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": null,
+          "maxMs": null,
+          "failedIndices": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      ],
+      "allVisibleTimesMs": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "errors": [
+        {
+          "viewport": "desktop",
+          "index": 0,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "desktop",
+          "index": 1,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "desktop",
+          "index": 2,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "desktop",
+          "index": 3,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "desktop",
+          "index": 4,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 0,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 1,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Click outside declared readiness/dwell window",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 2,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 3,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 4,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        }
+      ]
+    },
+    "candidate-1": {
+      "source": "ae52dd3fc99468a004eb39e9467466129068d0ec",
+      "buildId": "e3dbdd783be9ffc1",
+      "cpuThrottle": 1,
+      "passed": false,
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 61.09999990463257,
+          "maxMs": 75.2000002861023,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 0,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": null,
+          "maxMs": null,
+          "failedIndices": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      ],
+      "allVisibleTimesMs": [
+        75.2000002861023,
+        61.09999990463257,
+        61.09999990463257,
+        58.69999980926514,
+        60.90000009536743,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "errors": [
+        {
+          "viewport": "mobile",
+          "index": 0,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 1,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 2,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 3,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "index": 4,
+          "errors": [
+            "Source-correct visible completion deadline exceeded",
+            "Source-correct visible completion not proven"
+          ]
+        }
+      ]
+    },
+    "final-1": {
+      "source": "48a9afbb870babf52111571a930104ee6b1465f3",
+      "buildId": "72dc1af43cf652e0",
+      "cpuThrottle": 1,
+      "passed": true,
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 80.80000019073486,
+          "maxMs": 92.59999990463257,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 56.5,
+          "maxMs": 62.90000009536743,
+          "failedIndices": []
+        }
+      ],
+      "allVisibleTimesMs": [
+        80.80000019073486,
+        83.59999990463257,
+        71.09999990463257,
+        92.59999990463257,
+        71.09999990463257,
+        59.30000019073486,
+        56.5,
+        62.90000009536743,
+        55.700000286102295,
+        54.5
+      ],
+      "errors": []
+    },
+    "final-4": {
+      "source": "48a9afbb870babf52111571a930104ee6b1465f3",
+      "buildId": "72dc1af43cf652e0",
+      "cpuThrottle": 4,
+      "passed": false,
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 279.2999997138977,
+          "maxMs": 321.90000009536743,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 261.19999980926514,
+          "maxMs": 359.7999997138977,
+          "failedIndices": []
+        }
+      ],
+      "allVisibleTimesMs": [
+        290.5,
+        321.90000009536743,
+        276.09999990463257,
+        279.2999997138977,
+        267,
+        268.69999980926514,
+        259.80000019073486,
+        359.7999997138977,
+        258.59999990463257,
+        261.19999980926514
+      ],
+      "errors": []
+    },
+    "accepted-1": {
+      "source": "43ff8bb685e07bec51b0b4f737ce33587dbe5f3b",
+      "buildId": "6e228bd25378ed10",
+      "cpuThrottle": 1,
+      "passed": true,
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 56,
+          "maxMs": 62.30000019073486,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 5,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 51.799999713897705,
+          "maxMs": 53.5,
+          "failedIndices": []
+        }
+      ],
+      "allVisibleTimesMs": [
+        62.30000019073486,
+        55.19999980926514,
+        59.200000286102295,
+        56,
+        55.30000019073486,
+        53.5,
+        51.799999713897705,
+        50.5,
+        50.80000019073486,
+        52.30000019073486
+      ],
+      "errors": []
+    },
+    "accepted-4": {
+      "source": "43ff8bb685e07bec51b0b4f737ce33587dbe5f3b",
+      "buildId": "6e228bd25378ed10",
+      "cpuThrottle": 4,
+      "passed": false,
+      "summary": [
+        {
+          "viewport": "desktop",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 271.80000019073486,
+          "maxMs": 377.09999990463257,
+          "failedIndices": []
+        },
+        {
+          "viewport": "mobile",
+          "planned": 5,
+          "recorded": 5,
+          "valid": 5,
+          "meets100ms": 0,
+          "successfulTimingDistributionOnly": true,
+          "medianMs": 262.5,
+          "maxMs": 296.5,
+          "failedIndices": []
+        }
+      ],
+      "allVisibleTimesMs": [
+        271.80000019073486,
+        265.90000009536743,
+        377.09999990463257,
+        312,
+        263.5,
+        296.5,
+        259.59999990463257,
+        271,
+        262.5,
+        250.90000009536743
+      ],
+      "errors": []
+    }
+  },
+  "portableBrowser": {
+    "desktop": {
+      "source": "43ff8bb685e07bec51b0b4f737ce33587dbe5f3b",
+      "buildId": "6e228bd25378ed10",
+      "assertions": 275,
+      "failed": 0,
+      "network": {
+        "requests": 294,
+        "unknown": 178,
+        "blocked": 9,
+        "errors": 0
+      },
+      "visualReview": "Manual screenshot and actual exported PNG inspected"
+    },
+    "mobile": {
+      "source": "43ff8bb685e07bec51b0b4f737ce33587dbe5f3b",
+      "buildId": "6e228bd25378ed10",
+      "assertions": 35,
+      "failed": 0,
+      "network": {
+        "requests": 64,
+        "unknown": 40,
+        "blocked": 3,
+        "errors": 0
+      },
+      "visualReview": "Phone profile and selected-pane assistant screenshot inspected"
+    }
+  },
+  "checks": {
+    "exactFinalSource": {
+      "targetedChartAndTruth": {
+        "pass": 144,
+        "fail": 0,
+        "skip": 0
+      },
+      "tooling": {
+        "pass": 30,
+        "fail": 0
+      },
+      "guards": {
+        "pass": 87,
+        "fail": 0
+      },
+      "bindings": {
+        "pass": 7,
+        "fail": 0
+      },
+      "isolatedProductionFixtureBuild": "passed"
+    },
+    "earlierApplication_ae52dd3fc99468a004eb39e9467466129068d0ec": {
+      "frontend": {
+        "pass": 3304,
+        "fail": 0,
+        "skip": 11,
+        "filesPass": 207,
+        "filesSkip": 1
+      },
+      "dashboardTypecheck": "passed",
+      "declarations": "passed"
+    },
+    "reasonNotRerunFullSuite": "Later production changes were responsive CSS in ScannerHeaderSummary only; final144 chart/Truth checks, guarded source and frozen actual app build cover that change. Backend source unchanged."
+  },
+  "visual": {
+    "results": [
+      {
+        "width": 320,
+        "bounds": {
+          "x": 22,
+          "y": 792.28125,
+          "width": 276,
+          "height": 360
+        },
+        "overflow": false,
+        "truthColumns": "146px 146px",
+        "labels": [
+          "DataHistorical only",
+          "EleanorLimited read",
+          "TradingBlocked",
+          "ActionFeed limited"
+        ]
+      },
+      {
+        "width": 390,
+        "bounds": {
+          "x": 22,
+          "y": 704.5,
+          "width": 346,
+          "height": 360
+        },
+        "overflow": false,
+        "truthColumns": "88.5px 88.5px 88.5px 88.5px",
+        "labels": [
+          "DataHistorical only",
+          "EleanorLimited read",
+          "TradingBlocked",
+          "ActionFeed limited"
+        ]
+      },
+      {
+        "width": 1440,
+        "bounds": {
+          "x": 290,
+          "y": 761.53125,
+          "width": 1100,
+          "height": 520
+        },
+        "overflow": false,
+        "truthColumns": "282px 282px 282px 282px",
+        "labels": [
+          "DataHistorical only",
+          "EleanorLimited read",
+          "TradingBlocked",
+          "ActionFeed limited"
+        ]
+      }
+    ],
+    "diagnosticDoubleText": {
+      "explicitlySubstitutedLongLabels": true,
+      "notBrowserZoom": true,
+      "detailsExpanded": "true",
+      "horizontalOverflow": false
+    }
+  },
+  "failedEvidence": [
+    "baseline10 source-correct but invisible",
+    "first candidate desktop5 pass,phone5 invisible",
+    "all4xCPU attempts over100ms target",
+    "guard runner initial EPERM local IPC; authorized local retry87/87+7binding passed",
+    "original mobile height4 fail before130pass after",
+    "layout2 fail before122pass after"
+  ],
+  "limitations": [
+    "Overall Scanner instant-navigation target remains NOT COMPLETE:4xCPU0/10<=100ms on finalsource.",
+    "320px retains readable2columns but first plot remains below fixed bottomnav; extra reconnect notices can reduce390px visibleplot below100px afterinitialacceptance.",
+    "Enlarged-label diagnostic used substituted labels and doubled CSS text; no horizontaloverflow or hidden values, but wordwrap remains awkward. Not physicaldevice/browserzoom acceptance.",
+    "Fixed80ms offline synthetic history; full-document reload afterpreparedresources; sourcecorrectvisible two-framecompletion nothardwarepaint, coldprocess, realprovider or publishedapp.",
+    "In all ten final normal-speed attempts the candle GET started 108.6\u2013128.6ms before the trusted click, and mock response preparation ended before the click. Ready-to-click was101.1\u2013118.9ms within the150ms gate. These are post-click display timings with existing production idle/intent warmup already underway, not fetch-plus-render initiated at click. Mock preparation ending is not browser receipt, JSON parsing or query-cache readiness.",
+    "Agents and owned heavychecks quiescent for navigation, but unrelatedhostprocess observed129percentCPU; machine not fullyisolated. No causalperformance or competitorparityclaim.",
+    "Replit source-only f419update stillbusy; statusquestionnotqueued; currentupdatesnotyetimportedoractivated.",
+    "No mainmerge/deployment/existingDBmigration/APIorfrontendrestart/worker/email/trading/model/provider/broker action."
+  ],
+  "nextSteps": [
+    "Read-only observe pendingReplit update; record exactsource/checkpoint/results; then queue incremental development source-onlysync.",
+    "Measure/profile finalsource4xCPU criticalpath while retaining rejectedexperiments; no weakenedcompletiongates.",
+    "Improve320px and reconnect-warning first-view geometry without hidingtruth or narrowingtextunreadably.",
+    "Continue original SmartChartAI/Scanner/Truth/selftrading/ProfitMission ownerbrief and competitivegap census; notarchitecturecompletion."
+  ],
+  "navigationInterpretation": "In all ten final normal-speed attempts the candle GET started 108.6\u2013128.6ms before the trusted click, and mock response preparation ended before the click. Ready-to-click was101.1\u2013118.9ms within the150ms gate. These are post-click display timings with existing production idle/intent warmup already underway, not fetch-plus-render initiated at click. Mock preparation ending is not browser receipt, JSON parsing or query-cache readiness."
+}
