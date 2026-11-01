@@ -34,6 +34,8 @@ export interface UseScannerTruthResult {
    * without an independent feed-status poll that could diverge from the truth.
    */
   feedStatus: ChartFeedStatus | null;
+  /** Observed source identity from the same chart query, never reconstructed. */
+  sourceIdentity: string | null;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -128,6 +130,7 @@ export function useScannerTruth(
   return {
     truth,
     feedStatus,
+    sourceIdentity: candlesQ.data?.marketEvidence?.sourceIdentity ?? null,
     isLoading: candlesQ.isLoading || mode.isLoading,
     isError: candlesQ.isError,
     refetch: () => void candlesQ.refetch(),

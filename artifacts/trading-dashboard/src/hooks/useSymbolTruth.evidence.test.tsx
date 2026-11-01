@@ -19,15 +19,16 @@ function snapshot(): MarketTruthResponse {
   const component = { present: true, alignment: "BULLISH" as const, label: "Bullish", asOf: CLOSE };
   return {
     symbol: "EURUSD", displaySymbol: "EUR/USD", timeframe: "M1", generatedAt: new Date(NOW).toISOString(),
-    data: { state: "LIVE_CONFIRMED", source: "mt5_broker", sourceLabel: "Live broker feed", price: 1.1, lastCandleAt: CLOSE, lastTickAt: CLOSE },
+    data: { state: "LIVE_CONFIRMED", source: "mt5_broker", sourceIdentity: "a".repeat(64), sourceLabel: "Live broker feed", price: 1.1, lastCandleAt: CLOSE, lastTickAt: CLOSE },
     components: { scanner: component, flame: component, scalp: component, timing: component },
     news: { providerConnected: true, events: [], riskLabel: "No high impact window", highImpactWindowActive: false, disclaimer: null },
     levels: { entryFrom: 1.1, entryTo: 1.11, stopLoss: 1.09, invalidation: 1.09, takeProfit: [1.12], withheld: false, withheldReason: null },
     verdict: { stage: "ALIGNED", bias: "BULLISH", headline: "Bullish", evidenceFor: ["Scanner is bullish"], evidenceAgainst: [], bestAction: "BUY", bestActionText: "Buy", invalidation: { price: 1.09, side: "BELOW" } },
   };
 }
-function candlePayload() {
+function candlePayload(timeframe = "M1") {
   return {
+    marketEvidence: { symbol: "EURUSD", timeframe, source: "mt5_broker", sourceIdentity: "a".repeat(64), lastClosedCandleAt: CLOSE },
     candles: Array.from({ length: 200 }, (_, index) => ({ openTime: new Date(Date.parse(CLOSE) - (200 - index) * 60_000).toISOString(), closeTime: new Date(Date.parse(CLOSE) - (199 - index) * 60_000).toISOString(), open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false, lastCandleTime: CLOSE },
   };
@@ -116,7 +117,7 @@ it("expires cached advice after two normal polls even while coarse candle eviden
   vi.useFakeTimers(); vi.setSystemTime(NOW);
   const value = snapshot(); value.timeframe = "M15";
   client.setQueryData([...getGetMeMarketTruthQueryKey("EURUSD", { tf: "M15" }), { userId: 7 }], value);
-  const payload = candlePayload();
+  const payload = candlePayload("M15");
   // The query cache stores adapted candles, as fetchChartCandles does.
   client.setQueryData(chartCandlesQueryKey("EURUSD", "M15", 200), {
     ...payload, candles: payload.candles.map((c) => ({ ...c, time: Date.parse(c.openTime) })),
@@ -138,7 +139,7 @@ it("expires cached advice after two normal polls even while coarse candle eviden
 function seedDeadlineSnapshot(validUntil: string) {
   const value = { ...snapshot(), timeframe: "M15", validUntil };
   client.setQueryData([...getGetMeMarketTruthQueryKey("EURUSD", { tf: "M15" }), { userId: 7 }], value);
-  const payload = candlePayload();
+  const payload = candlePayload("M15");
   client.setQueryData(chartCandlesQueryKey("EURUSD", "M15", 200), { ...payload, candles: payload.candles.map(c => ({ ...c, time: Date.parse(c.openTime) })) });
   client.setQueryData(selectedMarketQueryOptions(7, "EURUSD", "M15").queryKey, { ok: true, symbol: "EURUSD", timeframe: "M15", highlights: {}, explanation: {} });
 }
@@ -164,4 +165,18 @@ it("focus rechecks a server deadline after the browser clock jumps forward", asy
   act(() => { vi.setSystemTime(NOW + 3000); window.dispatchEvent(new Event("focus")); });
   expect(result.current.snapshot).toBeNull();
   expect(requests).toHaveLength(0);
+});
+
+
+it("withdraws cached advice when the chart changes original source within the same provider and candle", async () => {
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M1"), { wrapper });
+  await loadCurrent();
+  await waitFor(() => expect(result.current.verdict?.bestAction).toBe("BUY"));
+  act(() => client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), (old: any) => ({
+    ...old, marketEvidence: { ...old.marketEvidence, sourceIdentity: "b".repeat(64) },
+  })));
+  await waitFor(() => expect(result.current.actionCapped).toBe(true));
+  expect(result.current.verdict?.bestAction).toBe("WATCH_ONLY");
+  expect(result.current.levels?.withheld).toBe(true);
+  expect(result.current.scannerTruth?.actionable).toBe(true);
 });

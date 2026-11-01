@@ -15352,6 +15352,11 @@ components:
           type: string
           enum: [LIVE_CONFIRMED, SYNCING, STALE, UNAVAILABLE]
         source: { type: string, nullable: true }
+        sourceIdentity:
+          type: string
+          nullable: true
+          pattern: '^[a-f0-9]{64}$'
+          description: Original chart source identity; absent on older servers, never inferred from provider name.
         sourceLabel: { type: string, nullable: true }
         price: { type: number, nullable: true }
         lastCandleAt: { type: string, nullable: true }

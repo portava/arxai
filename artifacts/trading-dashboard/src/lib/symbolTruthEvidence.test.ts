@@ -9,7 +9,7 @@ function input(): Parameters<typeof resolveSymbolTruthEvidence>[0] {
   const component = { present: true, alignment: "BULLISH" as const, label: "Bullish", asOf: CLOSE };
   const snapshot: MarketTruthResponse = {
     symbol: "EURUSD", displaySymbol: "EUR/USD", timeframe: "M1", generatedAt: new Date(NOW).toISOString(),
-    data: { state: "LIVE_CONFIRMED", source: "mt5_broker", sourceLabel: "Live broker feed", price: 1.1, lastCandleAt: CLOSE, lastTickAt: CLOSE },
+    data: { state: "LIVE_CONFIRMED", source: "mt5_broker", sourceIdentity: "a".repeat(64), sourceLabel: "Live broker feed", price: 1.1, lastCandleAt: CLOSE, lastTickAt: CLOSE },
     components: { scanner: component, flame: component, scalp: component, timing: component },
     news: { providerConnected: true, events: [], riskLabel: "No high impact window", highImpactWindowActive: false, disclaimer: null },
     levels: { entryFrom: 1.1, entryTo: 1.11, stopLoss: 1.09, invalidation: 1.09, takeProfit: [1.12], withheld: false, withheldReason: null },
@@ -19,7 +19,7 @@ function input(): Parameters<typeof resolveSymbolTruthEvidence>[0] {
     actionable: true, symbolInternal: "EURUSD", timeframe: "1m",
     // Chart coordinates use OPEN time; the wire evidence uses CLOSE time.
     candles: { source: "mt5_broker", lastTime: "2026-10-26T13:59:00.000Z", status: "live" },
-  } as ScannerTruth, scannerLastCandleAt: CLOSE, scannerError: false, snapshotError: false, nowMs: NOW };
+  } as ScannerTruth, scannerSourceIdentity: "a".repeat(64), scannerLastCandleAt: CLOSE, scannerError: false, snapshotError: false, nowMs: NOW };
 }
 
 describe("composed truth evidence", () => {
@@ -94,5 +94,22 @@ describe("server component deadline", () => {
     const value = input(); expect(symbolTruthDeadline(value.snapshot)).toBe(NOW + SYMBOL_TRUTH_MAX_AGE_MS + 1);
     Object.assign(value.snapshot!, { validUntil: null });
     expect(symbolTruthDeadline(value.snapshot)).toBe(NOW + SYMBOL_TRUTH_MAX_AGE_MS + 1);
+  });
+});
+
+
+describe("original source identity binding", () => {
+  it.each([null, undefined, "", "malformed", "b".repeat(64)])("withholds a provider-matching read with unproven chart identity %s", scannerSourceIdentity => {
+    const value = input();
+    Object.assign(value, { scannerSourceIdentity });
+    const result = resolveSymbolTruthEvidence(value);
+    expect(result.actionCapped).toBe(true);
+    expect(result.snapshot?.levels.withheld).toBe(true);
+    expect(result.snapshot?.verdict.bestAction).toBe("WATCH_ONLY");
+  });
+  it.each([null, undefined, "", "malformed", "b".repeat(64)])("withholds a provider-matching read with unproven snapshot identity %s", sourceIdentity => {
+    const value = input();
+    Object.assign(value.snapshot!.data, { sourceIdentity });
+    expect(resolveSymbolTruthEvidence(value).actionCapped).toBe(true);
   });
 });
