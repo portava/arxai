@@ -15,6 +15,7 @@
 import { logger } from "../logger.js";
 import { marketHttpJson as httpJson, providerFailureCode, resetMarketHttpObservations } from "./marketHttp.js";
 import { alphaFxPair, FX_INTERVALS, parseAlphaFxQuote, parseAlphaFxCandles } from "./alphaVantageFx.js";
+import { parseTwelveDataIntradayCandles, twelveDataIntradayMs } from "./twelveDataCandles.js";
 import {
   getEconomicCalendarResult,
   isEconomicCalendarConfigured,
@@ -415,34 +416,23 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
       const tf = (timeframe || "M15").toUpperCase();
       const interval = TWELVEDATA_INTERVAL[tf];
       const tdSym = twelveDataMapSymbol(rawSymbol);
-      if (!interval || !tdSym) {
-        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: !interval ? `Unsupported timeframe ${tf}` : `Unsupported symbol mapping for ${rawSymbol}` };
+      if (!interval || !tdSym || !twelveDataIntradayMs(interval)) {
+        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: !tdSym ? `Unsupported symbol mapping for ${rawSymbol}` : `Twelve Data UTC candles support intraday intervals only; ${tf} is unavailable because daily timezone conversion is not guaranteed.` };
       }
-      const safeLimit = Math.max(10, Math.min(200, limit));
-      const url = `${base}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${encodeURIComponent(interval)}&outputsize=${safeLimit}&apikey=${encodeURIComponent(apiKey)}`;
+      const safeLimit = Math.max(10, Math.min(200, Number.isFinite(limit) ? Math.floor(limit) : 30));
+      const request = { symbol: tdSym, interval, limit: safeLimit, timezone: "UTC", order: "desc" } as const;
+      const url = `${base}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${encodeURIComponent(interval)}&outputsize=${safeLimit}&timezone=${request.timezone}&order=${request.order}&apikey=${encodeURIComponent(apiKey)}`;
       markChecked();
-      const j = (await httpJson(url).catch(() => null)) as { status?: string; values?: Array<{ datetime: string; open: string; high: string; low: string; close: string; volume?: string }>; message?: string; code?: number } | null;
-      if (!j || j.status === "error" || !Array.isArray(j.values) || j.values.length === 0) {
-        const reason = providerFailureCode(j) ?? "NO_DATA";
+      const payload = await httpJson(url).catch(() => null);
+      const parsed = parseTwelveDataIntradayCandles(payload, request);
+      if (!parsed.ok) {
+        const reason = providerFailureCode(payload) ?? parsed.reason;
         markError(`candles ${tdSym}@${interval}: ${reason}`);
-        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data returned no candle data for ${tdSym} @ ${interval}: ${reason}` };
+        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data candles unavailable for ${tdSym} @ ${interval}: ${reason}` };
       }
-      // TwelveData returns newest-first; reverse to chronological for scoring
-      const ordered = [...j.values].reverse();
-      const candles: Candle[] = [];
-      for (const r of ordered) {
-        const o = Number(r.open), h = Number(r.high), l = Number(r.low), c = Number(r.close), v = Number(r.volume ?? 0);
-        if (![o, h, l, c].every(Number.isFinite)) continue;
-        // datetime is "YYYY-MM-DD HH:MM:SS" in UTC
-        const iso = r.datetime.includes("T") ? r.datetime : r.datetime.replace(" ", "T") + "Z";
-        candles.push({ t: iso, o, h, l, c, v: Number.isFinite(v) ? v : 0 });
-      }
-      if (candles.length === 0) {
-        markError(`candles ${tdSym}@${interval}: zero parsed numeric rows`);
-        return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data returned values for ${tdSym} but none parsed as numeric.` };
-      }
-      markSuccess({ freshness: "REALTIME", source: "twelve_data" });
-      return { connected: true, source: "twelve_data", symbol: tdSym, timeframe: tf, candles, freshness: "REALTIME", asOf: candles[candles.length - 1]!.t };
+      markSuccess({ freshness: parsed.freshness, source: "twelve_data" });
+      return { connected: true, source: "twelve_data", symbol: tdSym, timeframe: tf, candles: parsed.candles, freshness: parsed.freshness, asOf: parsed.candles.at(-1)!.t,
+        notes: "Explicit UTC intraday output; original bar-open times preserved. Exchange timezone metadata is distinct from requested output timezone. Historical research price/clock authority remains unqualified." };
     },
     async getLiveQuote(rawSymbol) {
       const symbol = validateSymbol(rawSymbol);
