@@ -9,7 +9,7 @@ import type { CandleTimeBasisEvidenceBasis } from "./candleTimeBasisEvidenceBasi
 import type { CandleTimeBasisEvidenceKind } from "./candleTimeBasisEvidenceKind";
 
 /**
- * Original candle clock authority, separate from ISO formatting. No shipped adapter currently qualifies UTC; broker/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.
+ * Original candle clock authority, separate from ISO formatting. Only audited endpoint-specific original observations qualify UTC; broker/source-clock history remains visible but unavailable for UTC historical research. Current offsets never attest historical mapping.
  */
 export interface CandleTimeBasisEvidence {
   kind: CandleTimeBasisEvidenceKind;

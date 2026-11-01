@@ -1,3 +1,5 @@
+> Follow-up: the later [stock volume/clock evidence slice](TWELVE_DATA_STOCK_VOLUME_EVIDENCE_2026_11_01.md) qualifies original UTC only for explicitly requested regular-session unadjusted approved Common Stocks. The generic FX/crypto/ETF paths remain unqualified, and stock research price basis remains unavailable. Statements below describe the earlier adapter checkpoint.
+
 # Twelve Data intraday clock correction
 
 The existing Twelve Data `time_series` adapter omitted a timezone request and appended `Z` to returned wall-clock strings. It also did not check the returned instrument or interval. This could label a different source clock as UTC.

@@ -1,3 +1,5 @@
+> Follow-up: [Twelve Data stock volume evidence](TWELVE_DATA_STOCK_VOLUME_EVIDENCE_2026_11_01.md) adds positive original provider trade units for a bounded regular-session unadjusted Common Stock path. Existing MT5 tick semantics and unavailable broker real-volume meaning below are unchanged; the original checkpoint below had no traded-volume producer.
+
 # Source-qualified candle volume — 1 November 2026
 
 Base: `e50035efee42e804a6aad3c9b27aa49c8c678a99` (Truth source-identity fix). This is a bounded development contract addition, not a release or feature-parity claim.

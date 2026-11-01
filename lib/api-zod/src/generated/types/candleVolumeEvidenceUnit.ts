@@ -13,4 +13,5 @@ export type CandleVolumeEvidenceUnit =
 export const CandleVolumeEvidenceUnit = {
   ticks: "ticks",
   broker_units: "broker_units",
+  provider_trade_units: "provider_trade_units",
 } as const;
