@@ -1,6 +1,6 @@
 ---
 name: Browser evidence accounting
-description: Avoid inflated coverage counts when adapting upstream multi-viewport browser probes.
+description: Browser coverage accounting, observer/locator preflight and durable failure evidence.
 ---
 
 Inspect an imported probe's internal viewport matrix before wrapping it. Run
@@ -37,3 +37,16 @@ repeatedly stopped browser probes before their intended acceptance cases.
 replies by stable message identity or role-qualified freshness, not a phrase
 anywhere in old history. Preserve assertion counts separately from failed
 steps and unstarted cases, and capture full error messages incrementally.
+
+Preflight generated probes against the existing observer contract and rendered
+markup. Compare numeric presentation semantically at its disclosed precision,
+without weakening expected geometry, source or visibility requirements.
+
+**Why:** Contract, locator-scope and formatting assumptions can stop acceptance
+before the intended behavior is exercised. Capturing screenshots only after
+success also leaves those failures without visual evidence.
+
+**How to apply:** Inspect the actual reader/markup/formatter before a bounded
+run. Persist source/runtime identity, stage, DOM, screenshots and network/error
+records in failure cleanup as well as on success. Keep corrected programs and
+attempts separate; an interrupted flow stays incomplete, not a feature pass.
