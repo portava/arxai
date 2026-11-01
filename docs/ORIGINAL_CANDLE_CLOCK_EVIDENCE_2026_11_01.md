@@ -1,3 +1,5 @@
+> Additional follow-up: the [Twelve Data stock slice](TWELVE_DATA_STOCK_VOLUME_EVIDENCE_2026_11_01.md) also qualifies original UTC for its audited explicit stock request. It does not establish historical BID/MID execution prices. Generic other-provider and rehydrated cache clocks remain withheld.
+
 > Follow-up: the audited existing Polygon/Massive forex custom-bars adapter now has a narrow original UTC/BID path. See [its contract and limitations](POLYGON_FX_ORIGINAL_CANDLE_EVIDENCE_2026_11_01.md). Statements below about no registered adapter describe this document’s original clock-gate checkpoint, not the later combined source. Other provider and legacy/cache clocks remain withheld.
 
 # Original candle clock evidence: interim research hold

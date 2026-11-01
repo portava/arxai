@@ -1,3 +1,5 @@
+import { findMarketByStandardSymbol } from "@workspace/markets";
+import type { CandleVolumeEvidence } from "../data/candleVolumeEvidence.js";
 import { parsePolygonFxCustomBars, POLYGON_FX_INTERVALS } from "./polygonFxCandles.js";
 import type { CandleTimeBasisEvidence } from "../data/candleTimeBasisEvidence.js";
 import type { CandlePriceBasisEvidence } from "../data/candlePriceBasisEvidence.js";
@@ -100,6 +102,9 @@ export interface CurrentEventsResult {
 // Phase 22O — OHLC candle for live scanner ranking. Provider-agnostic.
 export interface Candle {
   t: string; // Provider candle timestamp; Polygon custom-bars and Twelve Data time_series use bar OPEN.
+  volumeEvidence?: CandleVolumeEvidence;
+  /** Internal original listing context; never sufficient evidence by itself. */
+  originalVolumeSeriesIdentity?: string;
   timeBasisEvidence?: CandleTimeBasisEvidence;
   priceBasisEvidence?: CandlePriceBasisEvidence;
   o: number;
@@ -417,8 +422,10 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
         return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: !tdSym ? `Unsupported symbol mapping for ${rawSymbol}` : `Twelve Data UTC candles support intraday intervals only; ${tf} is unavailable because daily timezone conversion is not guaranteed.` };
       }
       const safeLimit = Math.max(10, Math.min(200, Number.isFinite(limit) ? Math.floor(limit) : 30));
-      const request = { symbol: tdSym, interval, limit: safeLimit, timezone: "UTC", order: "desc" } as const;
-      const url = `${base}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${encodeURIComponent(interval)}&outputsize=${safeLimit}&timezone=${request.timezone}&order=${request.order}&apikey=${encodeURIComponent(apiKey)}`;
+      const stockScope = findMarketByStandardSymbol(tdSym)?.assetClass === "stock" ? { type: "Common Stock", adjust: "none", prepost: false } as const : {};
+      const request = { symbol: tdSym, interval, limit: safeLimit, timezone: "UTC", order: "desc", ...stockScope } as const;
+      const stockQuery = request.type ? `&type=${encodeURIComponent(request.type)}&adjust=none&prepost=false` : "";
+      const url = `${base}/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${encodeURIComponent(interval)}&outputsize=${safeLimit}&timezone=${request.timezone}&order=${request.order}${stockQuery}&apikey=${encodeURIComponent(apiKey)}`;
       markChecked();
       const payload = await httpJson(url).catch(() => null);
       const parsed = parseTwelveDataIntradayCandles(payload, request);
@@ -429,7 +436,7 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
       }
       markSuccess({ freshness: parsed.freshness, source: "twelve_data" });
       return { connected: true, source: "twelve_data", symbol: tdSym, timeframe: tf, candles: parsed.candles, freshness: parsed.freshness, asOf: parsed.candles.at(-1)!.t,
-        notes: "Explicit UTC intraday output; original bar-open times preserved. Exchange timezone metadata is distinct from requested output timezone. Historical candles do not verify real-time entitlement or a current quote. Historical research price/clock authority remains unqualified." };
+        notes: "Explicit UTC intraday output; original bar-open times preserved. Exchange timezone metadata is distinct from requested output timezone. Historical candles do not verify real-time entitlement or a current quote. Only explicitly requested unadjusted regular-session common stocks may carry original UTC and provider trade-unit evidence. Returned listing coverage is not a consolidated tape; zero/missing volume is withheld. Historical research price basis remains unqualified." };
     },
     async getLiveQuote(rawSymbol) {
       const symbol = validateSymbol(rawSymbol);

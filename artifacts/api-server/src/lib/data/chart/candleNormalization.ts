@@ -453,7 +453,7 @@ export function normalizeCandles(
       open: c.open, high: c.high, low: c.low, close: c.close,
       volume: typeof c.volume === "number" && Number.isFinite(c.volume) ? c.volume : 0,
       volumeReportedAsZero: c.volume === 0,
-      volumeEvidence: resolveCandleVolumeEvidence(c.volumeEvidence, source),
+      volumeEvidence: resolveCandleVolumeEvidence(c.volumeEvidence, source, {candle:c,symbol,timeframe}),
       priceBasisEvidence: resolveCandlePriceBasisEvidence(c.priceBasisEvidence, source, {candle:c,symbol,timeframe}),
       timeBasisEvidence: resolveCandleTimeBasisEvidence(c.timeBasisEvidence, source, {candle:c,symbol,timeframe}),
       isComplete: closeMs <= now,
