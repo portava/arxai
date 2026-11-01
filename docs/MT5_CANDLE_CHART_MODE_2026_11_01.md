@@ -41,7 +41,7 @@ That stream mirror therefore remains unavailable as original price-basis evidenc
 
 The new `mt5-bridge/tests/run_candle_chart_mode.py` extracts the actual MQL producer functions and executes them against `candle_chart_mode_test.cpp`'s deterministic fake terminal. Array declarations are mechanically translated to C++ vectors and one existing string conditional receives an explicit C++ string conversion; no price-basis algorithm is reimplemented. Fixtures cover BID, LAST, failed reads before/after, unsupported values, changing mode in both directions, mixed symbols, separate live/backfill modes, failed CopyRates, exact query ordering, original OHLC/tick counts/account/symbol fields, and existing transport names. It is wired into the existing `test:mt5-demo-ea` offline lane.
 
-This harness is not MetaEditor compilation. Native MQL compilation, terminal compatibility, account-specific runtime feeds and live/demo broker testing remain unverified and were not attempted. No existing binaries or prior compile hashes apply to these changed EA sources.
+This harness is not MetaEditor compilation. At the initial offline-source checkpoint, native MQL compilation had not been attempted. The parent compile-only follow-up below closes the Mac/Wine compilation gap for exact source77a4b829; terminal compatibility, account-specific runtime feeds and live/demo broker testing remain unverified. No prior binary or compile hash is reused.
 
 ### Receipt summary
 
@@ -52,3 +52,20 @@ Source baseline: `77359a70`. Receipts: `/Users/areyouok/arx-tier1-release/mt5-ca
 - Six semantic mutations are caught: failed query's zero accepted as BID; LAST mislabeled BID; changed before/after mode accepted; backfill reuses live basis; query uses a fixed symbol; stream declaration omitted. Each final mutation is caught at runtime, not by a compiler error.
 - Existing offline harnesses: 56 DEMO-core, 105 management-handler, 674 terminal-result assertions pass. These are fake-terminal assertions, not broker tests.
 - Three initial C++ harness adaptation errors (existing literal-string concatenation and unused symbols across variants) were corrected and retained in failure logs. One initial wrong-symbol mutation triggered an unused-parameter compile error; the mutation was adjusted without changing production source and then caught at runtime. These are not counted as native compile evidence.
+
+## Parent MetaEditor compile-only follow-up
+
+Exact source `77a4b829bc55520c8a157f093879818082a73fbe` was compiled with the installed MetaEditor5.0.0.6230 under bundled Wine10.0 on macOS. All four raw UTF-16 compiler logs report **0 errors,0 warnings**, and fresh nonempty EX5 files were generated under an isolated task directory. All four compiler subprocesses returned **exit code1**; this is preserved and is not represented as a clean process exit. The bounded compile verdict relies on reviewed compiler logs, exact source/include hashes and fresh binary artifacts, not exit status alone.
+
+Eight parent guard checks pass: exact Git/source manifests, process inventory error/timeout refusal, running terminal/editor refusal, verified absence, wrong commit/hash refusal and unsafe argument path refusal. The runner starts only the compiler, checks for terminal/editor processes, bounds each invocation and signals only its own process group on timeout. No terminal was launched or EA installed by this work. All source/log/binary outputs remain outside the terminal installation.
+
+Independent read-only review verified six source/include files against Git,24 copied job source files,263 standard-library hashes, compiler/runtime hashes, source/include paths in the logs, fresh binary timestamps/hashes/sizes and12 before/after process guards. Four incidental Wine-prefix files changed: MetaEditor's log and Wine's three registry files. This was recorded; no claim of zero prefix writes is made. The during-compile process file retains only the latest poll, and the prefix inventory compares size/mtime rather than file contents.
+
+| EA | New EX5 bytes | New EX5 SHA-256 |
+| --- | ---: | --- |
+| v151 |172918|`b168e83239123e7797adbb9a26275190599a598e340717ed24d765fb3b60756b`|
+| v152 |191154|`e11c5937ca6aeee3532eabdf5bc32f57f01396b8c31366476b3c81706011dee9`|
+| v154 |206700|`a7face6c21761eb8138e056a6b8399f0c0185c31a2640a07d55556ddc5eb5c87`|
+| Beta Kernel |103758|`64c602ccbdd9d13bf26fdfd0c5433f4d2761e204b960482d24eb0957b652b864`|
+
+Raw compiler evidence and independent review: `/Users/areyouok/arx-tier1-release/mt5-candle-chart-mode-20261101/compile-package-77a4b829/raw-20261101T060017Z/`. The source-only candidate is backed up on `codex/mt5-candle-chart-mode-20261101`. This is MetaEditor compilation under Mac/Wine, not a Windows run, broker test, producer installation, API activation or release-green result. The v2 consumer metadata limitation remains open.
