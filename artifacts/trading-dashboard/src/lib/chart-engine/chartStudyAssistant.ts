@@ -4,7 +4,7 @@ import type { ChartEngineAdapter } from "./types";
 // A local display action in the existing assistant, not an AI score or a trade
 // tool. Only this small complete grammar may mutate the current chart. Extra
 // instructions (another asset, timeframe, source, negation, etc.) fail closed.
-export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number } | { error: string };
+export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; preserveVisibility?: boolean } | { error: string };
 const help = 'Chart not changed. Try “show RSI”, “set RSI period to 21”, “hide RSI” or “remove RSI”. Other settings and repeated instances are editable in Studies.';
 const aliases = STUDY_CATALOG.flatMap(d=>[{name:d.defaults.kind,kind:d.defaults.kind},{name:d.name.toLowerCase(),kind:d.defaults.kind}])
   .concat([{name:"bollinger bands",kind:"bollinger"},{name:"adx",kind:"dmi"}]);
@@ -28,7 +28,7 @@ export function parseStudyRequest(text:string): StudyRequest | null {
   // MACD fast/slow relationship and multi-input tools remain in the existing
   // settings editor. Do not guess what a bare MACD number meant.
   if (period!=null && (!Number.isInteger(period) || period<1 || period>1000 || alias.kind==="macd" || action!=="show")) return {error:help};
-  return {kind:alias.kind,action,period};
+  return {kind:alias.kind,action,period,...(edit ? {preserveVisibility:true} : {})};
 }
 export interface StudyAssistantContext {
   adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"> | null;
@@ -56,7 +56,8 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
     next.id=`assistant-${request.kind}-${suffix}`;
   }
   if (request.period!=null) next.period=request.period;
-  next.lineStyles=definition.channels.map((_,i)=>({...next.lineStyles?.[i],visible:request.action!=="hide"}));
+  const preserveVisibility=existing != null && request.preserveVisibility === true;
+  if (!preserveVisibility) next.lineStyles=definition.channels.map((_,i)=>({...next.lineStyles?.[i],visible:request.action!=="hide"}));
   const updated=request.action==="remove" ? studies.filter(s=>s!==existing)
     : existing ? studies.map(s=>s===existing ? next : s) : [...studies,next];
   // The same synchronous renderer used by manual settings supplies the receipt.
@@ -74,22 +75,23 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
   let result:ReturnType<NonNullable<ChartEngineAdapter["getStudyValues"]>>[number] | undefined;
   try { result=adapter.getStudyValues(last.time).find(row=>row.label===studyLabel(next)); } catch { /* Applied, but observation remains unavailable. */ }
   const values=definition.channels.map(name=>{
-    const value=result?.values.find(v=>v.name===name)?.value;
-    return `${name}: ${typeof value==="number" && Number.isFinite(value) ? number(value) : "unavailable / warming up"}`;
+    const channel=result?.values.find(v=>v.name===name || v.name===`${name} (hidden)`);
+    const value=channel?.value;
+    return `${channel?.name ?? name}: ${typeof value==="number" && Number.isFinite(value) ? number(value) : "unavailable / warming up"}`;
   }).join("; ");
   const firstValue=result?.values[0]?.value;
   const finiteFirst=typeof firstValue==="number" && Number.isFinite(firstValue);
   const observed=request.kind==="rsi" && finiteFirst
-    ? firstValue>=70 ? "The displayed RSI is at or above 70, a commonly used high-momentum reference; it does not prove the price must fall. "
-      : firstValue<=30 ? "The displayed RSI is at or below 30, a commonly used low-momentum reference; it does not prove the price must rise. "
-      : "The displayed RSI is between the common 30 and 70 references. "
+    ? firstValue>=70 ? "The calculated RSI is at or above 70, a commonly used high-momentum reference; it does not prove the price must fall. "
+      : firstValue<=30 ? "The calculated RSI is at or below 30, a commonly used low-momentum reference; it does not prove the price must rise. "
+      : "The calculated RSI is between the common 30 and 70 references. "
     : ["sma","ema","smma","wma","dema","tema"].includes(request.kind) && finiteFirst
-      ? `The visible candle close is ${last.close>firstValue ? "above" : last.close<firstValue ? "below" : "equal to"} this average. ` : "";
+      ? `The underlying source candle close is ${last.close>firstValue ? "above" : last.close<firstValue ? "below" : "equal to"} this average. ` : "";
   const caveat=request.kind==="rsi" ? "RSI describes recent gains relative to losses; even an extreme reading does not establish a reversal."
     : request.kind==="atr" ? "ATR describes price-range volatility, not direction."
     : request.kind==="macd" ? "MACD compares fast and slow averages; its signal and histogram describe momentum, not a forecast."
     : definition.description;
-  return `Applied ${studyLabel(next)} to the current chart (${existing ? "existing settings retained unless explicitly changed" : "catalogue defaults, except any requested period"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
+  return `Applied ${studyLabel(next)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except any requested period"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
 }
 
 type Handler=(request:StudyRequest)=>string;
