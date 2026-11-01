@@ -119,3 +119,8 @@ the 100ms target in all 10 attempts. Very narrow phones and later reconnect-warn
 stacks remain first-view gaps. Remote app latency and competitor parity remain
 unproven. See [exact-source report](SCANNER_FIRST_VIEW_ALIGNMENT_2026_11_01.md).
 All other entries and unfinished owner requirements above remain active.
+
+
+## Compact evidence and source-bound stream followup — 1 November 2026
+
+Application31a45ff9 keeps restriction names visible, exposes full explanations by keyboard-accessible disclosure, removes false reconnect warnings from nonstream sources, and skips unused anchor-evidence updates. Actual Scanner22Truth+275desktop+35phone stock assertions pass;frontend3319pass/11skip. Normal firstclick10/10within100ms;4xCPU0/10. No broadspeed,provider,parity orcompletionclaim. See [exact source and limitations](SMART_CHART_COMPACT_EVIDENCE_2026_11_01.md). Existing strategy sizing/equity/benchmark and broader natural tool commands remain open; separate frozen-result followup work is not included in this receipt.

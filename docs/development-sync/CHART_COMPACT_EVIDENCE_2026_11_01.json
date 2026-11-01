@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "f419a37b235ad7f7b9d83ac6e7d96fad674251f1",
+  "applicationCommit": "31a45ff99bbd4385b1c5f4ad56b0df2cc29a297b",
+  "branch": "codex/chart-compact-evidence-integration-20261101",
+  "purpose": "Incremental source-only development import, preserve runtime and concurrent changes",
+  "files": [
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.deferred-init.test.tsx",
+      "sha256": "3ecb557bca8b75ae400a47fa0da73fb0dec0afbfd5f501e775fc04536ec141e6"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tick-stream.test.tsx",
+      "sha256": "ac9b3e26bcb248e55ceb90eb23ac76bdc9419b2a3c5db8b960330b79bddc5a34"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx",
+      "sha256": "652b0844d6edc3b703d2dfae86ccfd6e7436be05dcab7d2765b70c5e39cd402f"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.test.tsx",
+      "sha256": "fd09d483ce5ef348e477c6d9f5e952d688670ad3fa2ce1fbbce8a7bae14abcac"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.tsx",
+      "sha256": "99f54dd7f7e600829cc9828291a4f9834a68dbcce24d56ec2227bcf35253d1c0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/useTickStreamWatchdog.test.ts",
+      "sha256": "4b7922ad5f1b75041077629a3b82db12965239a938950fefdbe8fc32bc061bca"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/useTickStreamWatchdog.ts",
+      "sha256": "dc0b672d2b13791c6fca4f16582a69338983ab27b61213f4d049cedbc70fca9b"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/scanner/ScannerHeaderSummary.tsx",
+      "sha256": "efcd282b5f0dbbee57c26d34e47356f7997a505f787070c29ae85550831b9390"
+    },
+    {
+      "path": "scripts/scanner-qa/STOCK_PROFILE_ACCEPTANCE.md",
+      "sha256": "615016788e9f063d8cc551cc2b6b4f9fbce46b5b2f7c1061cd9e735720a39dad"
+    },
+    {
+      "path": "scripts/scanner-qa/fixtures/stock-normalized-20261101.json",
+      "sha256": "47431eb58f1a539aa84a66461dccd8b95e05cb001186565bfa27c976cb0735df"
+    },
+    {
+      "path": "scripts/scanner-qa/prepare-stock-profile-acceptance.mjs",
+      "sha256": "a81d4a29ba5ead3d7559c747130db358958e7a56cf21480d56fd7c63f8121dd1"
+    },
+    {
+      "path": "scripts/scanner-qa/shared-chart-setup.js",
+      "sha256": "2da6efde889d39b4edae1378da141adb025452bf987f20009054aedbf193a78d"
+    },
+    {
+      "path": "scripts/scanner-qa/shared-chart-stock-profile-acceptance.mjs",
+      "sha256": "2e02f8a1584ac79ba124495e2548d4cfeb1e6c0998f9af044c2b6ef08e0a7e86"
+    },
+    {
+      "path": "scripts/scanner-qa/stock-profile-fixture.mjs",
+      "sha256": "70b294fb91d4cc51dbf7083c15d8c8b0adb1324732d80063f2d391ad65bb09e7"
+    },
+    {
+      "path": "scripts/scanner-qa/stock-profile-fixture.test.mjs",
+      "sha256": "6c08aa0528814ee2ad52bd674a736d42ab3d781cd2a2b016d33e1b5bd85af24f"
+    }
+  ],
+  "validationReceipt": "docs/development-sync/CHART_COMPACT_EVIDENCE_VALIDATION_2026_11_01.json",
+  "report": "docs/SMART_CHART_COMPACT_EVIDENCE_2026_11_01.md",
+  "boundaries": [
+    "No mainmerge/deploy/existingDBchange/runtimeactivation/worker/email/trading/broker/provider/model action."
+  ]
+}
