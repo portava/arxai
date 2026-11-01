@@ -624,7 +624,15 @@ export function resolveScannerTruth(
   // we say so plainly and data-driven (never hardcoded to "broker dormant").
   const sourceNote =
     provider.tier === "broker"
-      ? "Live bars are coming from your broker feed."
+      ? resolvedDisplayStatus === "LIVE"
+        ? "Live bars are coming from your broker feed."
+        : resolvedDisplayStatus === "STALE"
+          ? "These are last-known broker bars; the feed is stale."
+          : resolvedDisplayStatus === "FALLBACK_COMPOSITE"
+            ? "Broker market data is delayed or limited; a live read is not confirmed."
+            : resolvedDisplayStatus === "ANALYSIS_ONLY"
+              ? "Broker bars are available as context only; a live read is not confirmed."
+              : "Broker chart data is unavailable or unconfirmed right now."
       : provider.tier === "synthetic"
         ? "These are synthetic-market bars (algorithmic volatility index), not your broker's bars."
         : provider.tier === "thirdParty"
