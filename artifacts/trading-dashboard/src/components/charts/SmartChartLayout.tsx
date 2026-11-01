@@ -4,17 +4,22 @@ import { readChartStorage, writeChartStorage } from "@/lib/chart-engine/chartWor
 import { CHART_LAYOUT_KEY, validateChartLayout, isChartInterval, comparisonInterval, type ComparisonView, type ChartRequestedInterval } from "@/lib/chart-engine/chartLayout";
 import { ChartViewLink } from "@/lib/chart-engine/chartViewLink";
 import { ChartLinkContext } from "./ChartLinkContext";
+import { bareSymbol } from "@/lib/use-chart-symbol";
+import { exactChartSymbol } from "@/lib/chart-engine/chartAnalysisCatalogue";
 import { SymbolExplorer } from "@/components/scanner/SymbolExplorer";
 import { Button } from "@/components/ui/button";
 
 function ComparisonInstrument({primary, view, onSymbol}: {primary:string;view:ComparisonView;onSymbol:(symbol:string|null)=>void}) {
   const details = useRef<HTMLDetailsElement>(null);
+  // Only this trusted primary-follow action removes a display prefix. Saved
+  // comparison values and freeform analysis targets remain exact canonical.
+  const primaryCanonical=exactChartSymbol(bareSymbol(primary).toUpperCase(),"focus")?.canonicalSymbol;
   return <details ref={details} className="mb-2 rounded border border-zinc-800 px-3 py-2 text-xs">
     <summary className="cursor-pointer text-zinc-300">Instrument: {view.symbol ?? primary}{view.symbol === null ? " · follows primary" : " · independent"}</summary>
     <div className="mt-3 space-y-3">
-      <label className="flex items-center gap-2"><input type="checkbox" checked={view.symbol === null} onChange={event => onSymbol(event.target.checked ? null : primary)} />Follow primary instrument</label>
-      <SymbolExplorer activeSymbol={view.symbol ?? primary} showDiagnostics={false} onSelect={symbol => {onSymbol(symbol); if (details.current) details.current.open = false;}} />
-      <p className="text-zinc-400">Changes this comparison only. Available history depends on its feed.</p>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={view.symbol === null} disabled={view.symbol === null && !primaryCanonical} onChange={event => {if(event.target.checked)onSymbol(null);else if(primaryCanonical)onSymbol(primaryCanonical);}} />Follow primary instrument</label>
+      <SymbolExplorer scope="chart-analysis" activeSymbol={view.symbol ?? primary} showDiagnostics={false} onSelect={symbol => {onSymbol(symbol); if (details.current) details.current.open = false;}} />
+      <p className="text-zinc-400">Analysis only: changes this comparison, never the primary setup or trade ticket. Catalogue membership does not confirm a data feed, live prices or trading availability.</p>
     </div>
   </details>;
 }
@@ -27,7 +32,11 @@ export function SmartChartLayout({symbol,children,primaryTimeframe,storageKey=CH
   const [links] = useState(() => new ChartViewLink());
   useEffect(() => {setSaved(writeChartStorage(storageKey,layout));},[layout,storageKey]);
   useEffect(() => {links.configure({crosshair:layout.count > 1 && layout.crosshair,range:layout.count > 1 && layout.range});},[links,layout.count,layout.crosshair,layout.range]);
-  const changeView = (index:number, patch:Partial<ComparisonView>) => setLayout(previous => ({...previous,comparisons:previous.comparisons.map((view,i) => i === index ? {...view,...patch} : view)}));
+  const changeView = (index:number, patch:Partial<ComparisonView>) => {
+    // UI callbacks are rechecked at the owner boundary, not trusted as a new universe.
+    if (patch.symbol !== undefined && patch.symbol !== null && !exactChartSymbol(patch.symbol,"chart-analysis")) return;
+    setLayout(previous => ({...previous,comparisons:previous.comparisons.map((view,i) => i === index ? {...view,...patch} : view)}));
+  };
   return <ChartLinkContext.Provider value={links}><div className="flex min-w-0 flex-col gap-3" data-testid="smart-chart-layout">
     <div className={`flex flex-wrap items-center justify-between gap-2 ${controlsBelowSingleChart && layout.count === 1 ? "order-1" : ""}`}>
       <div className="flex items-center gap-1" role="group" aria-label="Chart layout">
@@ -38,7 +47,7 @@ export function SmartChartLayout({symbol,children,primaryTimeframe,storageKey=CH
         <label className="flex items-center gap-2"><input type="checkbox" checked={layout.range} onChange={event => setLayout(previous => ({...previous,range:event.target.checked}))}/>Link time range</label>
       </div>}
     </div>
-    {layout.count > 1 && <p className="text-xs text-zinc-400">Independent instruments and intervals · primary chart supplies setup context. Linked views follow the chart you navigate, within loaded history; crosshairs use each view’s candle close.</p>}
+    {layout.count > 1 && <p className="text-xs text-zinc-400">Primary setup and trade-ticket context: {symbol}{primaryTimeframe ? ` · ${primaryTimeframe}` : ""}. Comparison charts are analysis only. Linked views follow the chart you navigate, within loaded history; crosshairs use each view’s candle close.</p>}
     {!saved && <p role="alert" className="text-xs text-amber-300">Browser storage is unavailable. This layout will reset when you close the page.</p>}
     <div className={layout.count > 1 ? "grid min-w-0 gap-3 2xl:grid-cols-2" : "min-w-0"}>
       <div className="min-w-0">{layout.count > 1 && <p className="mb-2 text-xs text-zinc-400">Primary chart</p>}{children}</div>
