@@ -1,3 +1,4 @@
+import { sharedAccountSummaryReadOptions } from "@/hooks/readSharedAccountSummary";
 import { NativeAccountReport } from "@/components/sharedAccount/NativeAccountReport";
 // ARX 5.0 Cockpit cards.
 //
@@ -90,7 +91,7 @@ export function AccountSnapshotCard() {
   // three surfaces always show the same open P/L and position count.
   const liveCtx = useLiveAccountSnapshotCtx();
   const summaryQ = useGetMeSharedAccountSummary({
-    query: { queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
+    query: { ...sharedAccountSummaryReadOptions, queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
   });
 
   const summary = summaryQ.data;

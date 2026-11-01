@@ -1,3 +1,4 @@
+import { sharedAccountSummaryReadOptions } from "@/hooks/readSharedAccountSummary";
 // Trade Command Room — redesigned, mobile-first trade control room.
 //
 // UI/UX refactor only. ALL existing wiring preserved:
@@ -74,7 +75,7 @@ export default function TradeCommandRoom() {
   const [, setAlertCount] = useState(0);
 
   // Connection card data — existing shared master summary (no fake data).
-  const summaryQ = useGetMeSharedAccountSummary({ query: { queryKey: getGetMeSharedAccountSummaryQueryKey() } });
+  const summaryQ = useGetMeSharedAccountSummary({ query: { ...sharedAccountSummaryReadOptions, queryKey: getGetMeSharedAccountSummaryQueryKey() } });
   const master = summaryQ.data?.masterMt5 ?? null;
   const broker = master?.brokerName ?? summaryQ.data?.accounts?.[0]?.masterBrokerName ?? "—";
   const account = master?.accountNumberMasked ?? summaryQ.data?.accounts?.[0]?.masterAccountNumberMasked ?? "—";

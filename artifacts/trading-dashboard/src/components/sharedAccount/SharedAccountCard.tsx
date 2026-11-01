@@ -1,3 +1,4 @@
+import { sharedAccountSummaryReadOptions } from "@/hooks/readSharedAccountSummary";
 import { NativeAccountReport } from "./NativeAccountReport";
 // User-facing Shared Master Account card.
 //
@@ -61,6 +62,7 @@ export function SharedAccountCard({ className }: { className?: string }) {
 
   const summaryQ = useGetMeSharedAccountSummary({
     query: {
+      ...sharedAccountSummaryReadOptions,
       queryKey: getGetMeSharedAccountSummaryQueryKey(),
       refetchInterval: visible ? POLL_MS : false,
       refetchIntervalInBackground: false,

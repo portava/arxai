@@ -1,3 +1,4 @@
+import { sharedAccountSummaryReadOptions } from "@/hooks/readSharedAccountSummary";
 import { useMemo } from "react";
 import {
   useGetMt5Status,
@@ -118,7 +119,7 @@ export default function MT5BridgePage() {
   const { name } = useAssistantName();
 
   const status = useGetMt5Status({ query: { queryKey: getGetMt5StatusQueryKey(), refetchInterval: 5000 } });
-  const acctSummary = useGetMeSharedAccountSummary({ query: { queryKey: getGetMeSharedAccountSummaryQueryKey() } } as any);
+  const acctSummary = useGetMeSharedAccountSummary({ query: { ...sharedAccountSummaryReadOptions, queryKey: getGetMeSharedAccountSummaryQueryKey() } } as any);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: getGetMt5StatusQueryKey() });

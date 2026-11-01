@@ -1,3 +1,4 @@
+import { sharedAccountSummaryReadOptions } from "@/hooks/readSharedAccountSummary";
 // Phase 22V — Switch-based Live Shared cockpit (no typed phrases anywhere).
 //   - Friendly labels in the main view (raw backend names are hidden behind
 //     a collapsible "Technical details (advanced)" disclosure).
@@ -902,7 +903,7 @@ type PoolSnapshot = {
 };
 export function SharedBridgePoolCard() {
   const qc = useQueryClient();
-  const summaryQ = useGetMeSharedAccountSummary({ query: {
+  const summaryQ = useGetMeSharedAccountSummary({ query: { ...sharedAccountSummaryReadOptions,
     queryKey: getGetMeSharedAccountSummaryQueryKey(),
     refetchInterval: 3000,
     refetchIntervalInBackground: false,

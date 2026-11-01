@@ -1,3 +1,4 @@
+import { sharedAccountSummaryReadOptions } from "@/hooks/readSharedAccountSummary";
 // Account Analytics — the user's account control room. Full redesign to the
 // ARX dashboard direction with five tabs: Overview, Calendar P/L, Risk,
 // Allocation, Timeline. UI/UX + analytics presentation pass ONLY.
@@ -14,7 +15,7 @@ import React, { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import {
   useGetPerformanceSummary, useGetDailyPerformance, useGetStrategies,
-  useGetMeSharedAccountSummary, useGetMeSharedAccountPositions,
+  useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey, useGetMeSharedAccountPositions,
 } from "@workspace/api-client-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -60,7 +61,7 @@ export default function Analytics() {
   const { data: summary, isLoading: loadingSummary } = useGetPerformanceSummary();
   const { data: dailyPerf, isLoading: loadingDaily } = useGetDailyPerformance({ days: 30 });
   const { data: strategies } = useGetStrategies();
-  const acctQ = useGetMeSharedAccountSummary();
+  const acctQ = useGetMeSharedAccountSummary({ query: { ...sharedAccountSummaryReadOptions, queryKey: getGetMeSharedAccountSummaryQueryKey() } });
   const posQ = useGetMeSharedAccountPositions();
 
   const acct = acctQ.data as { balance?: number; equity?: number; pnl?: number } | undefined;
