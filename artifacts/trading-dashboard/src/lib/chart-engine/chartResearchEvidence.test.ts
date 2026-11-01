@@ -24,6 +24,7 @@ function fixture() {
     source: "mt5_broker",
     sourceMode: "live",
     priceBasis: "BID",
+    priceBasisEvidence: {kind:"producer_declared",basis:"BID",reason:null},
     isComplete: true,
     isFinal: true,
     isForming: false,
@@ -128,7 +129,7 @@ describe("historical chart capture qualification", () => {
   });
   it("accepts MID and stale historical data without requiring current quote freshness", () => {
     const input = fixture();
-    input.data.candles.forEach((c) => (c.priceBasis = "MID"));
+    input.data.candles.forEach((c) => {c.priceBasis = "MID"; (c as any).priceBasisEvidence.basis="MID";});
     input.data.quality = "stale";
     expect(
       captureChartResearchWindow(input).snapshot?.researchInput.priceBasis,
@@ -450,5 +451,37 @@ describe("historical ledger binds to captured chart bars", () => {
     expect(bindChartResearchResult(s, r, current(s), config).status).toBe(
       "unavailable",
     );
+  });
+});
+
+
+describe("original declared quote-basis evidence",()=>{
+  it("refuses the legacy MT5 profile-MID payload without original declaration evidence",()=>{
+    const f=fixture();for(const bar of f.data.candles){bar.priceBasis="MID";delete (bar as any).priceBasisEvidence;}
+    expect(captureChartResearchWindow(f).status).toBe("unavailable");
+  });
+  it.each([
+    undefined,
+    {kind:"unavailable",basis:null,reason:"Profile inference is not producer evidence"},
+    {kind:"profile_inferred",basis:"BID",reason:null},
+    {kind:"producer_declared",basis:"MID",reason:null},
+    {kind:"producer_declared",basis:"BID",reason:"Declaration withheld"},
+  ])("holds missing or contradictory basis authority %j",evidence=>{
+    const f=fixture();(f.data.candles[0] as any).priceBasisEvidence=evidence;
+    expect(captureChartResearchWindow(f).status).toBe("unavailable");
+  });
+  it("records the explicit declaration authority in the immutable snapshot",()=>{
+    const s=capture();expect(s).toMatchObject({version:2,priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null}});
+  });
+  it("withdraws existing markers when declaration metadata disappears with identical prices",()=>{
+    const s=capture(),c=current(s);delete (c.data!.candles[0] as any).priceBasisEvidence;
+    expect(bindChartResearchResult(s,result(s),c,config).status).toBe("unavailable");
+  });
+  it.each(["legacy_version","missing_evidence","changed_evidence"])("refuses unsupported snapshot authority %s",scenario=>{
+    const s=structuredClone(capture());
+    if(scenario==="legacy_version") (s as any).version=1;
+    if(scenario==="missing_evidence") delete (s as any).priceBasisEvidence;
+    if(scenario==="changed_evidence") s.priceBasisEvidence.basis="MID";
+    expect(bindChartResearchResult(s,result(s),current(s),config).status).toBe("unavailable");
   });
 });
