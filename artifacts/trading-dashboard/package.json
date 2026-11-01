@@ -41,7 +41,7 @@
     "test:news-risk-page": "vitest run src/pages/news-risk.page.test.tsx",
     "test:scalp-ticket-fidelity": "vitest run src/components/scanner/scalpTicketFidelity.test.ts",
     "test:chart-structure-lines": "vitest run src/lib/chart-engine/structureLines.test.ts",
-    "test:live-account-snapshot": "vitest run src/hooks/useLiveAccountSnapshot.test.ts src/hooks/useLiveAccountSnapshot.sharedAccount.test.tsx",
+    "test:live-account-snapshot": "vitest run src/hooks/useLiveAccountSnapshot.test.ts src/hooks/useLiveAccountSnapshot.sharedAccount.test.tsx src/components/admin/LiveSharedAccountPanel.money.test.tsx",
     "test:live-bridge-refresh": "vitest run src/hooks/useLiveBridgeRefresh.test.ts",
     "test:chart-live-affordance": "vitest run src/lib/chart-live-affordance-guard.test.ts",
     "test:scanner-scan-feedback": "vitest run src/pages/market-scanner.scan-feedback.test.ts",
