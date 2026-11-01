@@ -9,7 +9,14 @@ results, semantic numeric/geometry gates and remaining limits. The original
 attempts and counts below remain unchanged; this does not upgrade the historical
 trade attempts, strict network allowlist or omitted-observation browser coverage.
 
-The scoped source integration and automated offline validation are complete. **Actual-browser acceptance is incomplete.** Three bounded desktop attempts stopped on generated harness problems; the two distinct mobile feature journeys were not started. No application defect was established by those harness failures, and no release/readiness/performance/parity claim is made.
+**Later historical-only acceptance:** see
+`ARX_HISTORICAL_FOLLOWUP_ACCEPTANCE.md`. The new desktop and phone-sized
+historical journeys completed with 37 checks each. Original failure records
+below remain unchanged as historical evidence; the separate Fibonacci
+ownership results are documented above. Conversation bootstrap writes were investigated and blocked, not
+added to the original strict background allowlist.
+
+**Original terminal outcome (preserved):** The scoped source integration and automated offline validation are complete. **Actual-browser acceptance is incomplete.** Three bounded desktop attempts stopped on generated harness problems; the two distinct mobile feature journeys were not started. No application defect was established by those harness failures, and no release/readiness/performance/parity claim is made.
 
 ## Exact source and recovery
 

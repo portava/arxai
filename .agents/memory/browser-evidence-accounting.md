@@ -78,3 +78,16 @@ same acceptance without changing application behavior.
 pin its bytes in the receipt, and separate numeric price precision from rendered
 pixel alignment tolerance. Do not repair a failing geometry check by accepting
 receipt wording alone.
+
+For outcome-sign acceptance, construct an exact-zero cost scenario from the
+full-precision exported ledger, never from rounded table text or a tolerance.
+Keep incidental assistant bootstrap writes distinct from local answer traffic;
+diagnosing a blocked write does not make it approved background traffic.
+
+**Why:** Rounded displayed P&L left a genuinely positive residual that the
+assistant correctly called positive. Opening the panel also attempted remote
+conversation creation even though the historical reply itself was local.
+
+**How to apply:** Assert zero exactly on the calculated result, preserve
+failed sign assumptions, and report strict allowlist failure separately from
+successful offline containment. Never broaden the allowlist to obtain a pass.
