@@ -1,6 +1,6 @@
 # Smart Chart requirements census — 1 November 2026
 
-Scope: the owner's Smart Chart/backtesting document supplied on this date. Latest accepted application: `f6e64fbe`, documented in `SMART_CHART_VOLUME_PROFILE_2026_11_01.md`; the earlier update entries below retain their historical scope. The initial census inspected `d535c3f3`; this update records accepted application `4ad8a5aceb82483fdb35cf9fd747768e55aabf2e` and the exact-source receipts in `SMART_CHART_AI_TRUTH_INTEGRATION_2026_11_01.md` and `CHART_RESEARCH_WORKBENCH_2026_11_01.md`. It is not a deployment receipt, completion percentage or competitor-parity claim. The same chart, assistant, Truth and historical engines remain the authorities. Replit development import/validation is tracked separately; the API runtime has not been activated.
+Scope: the owner's Smart Chart/backtesting document supplied on this date. Latest locally checked application: `831e958d`, documented in `SMART_CHART_SUPPORT_RESISTANCE_2026_11_01.md`; the earlier update entries below retain their historical scope. The initial census inspected `d535c3f3`; this update records accepted application `4ad8a5aceb82483fdb35cf9fd747768e55aabf2e` and the exact-source receipts in `SMART_CHART_AI_TRUTH_INTEGRATION_2026_11_01.md` and `CHART_RESEARCH_WORKBENCH_2026_11_01.md`. It is not a deployment receipt, completion percentage or competitor-parity claim. The same chart, assistant, Truth and historical engines remain the authorities. Replit development import/validation is tracked separately; the API runtime has not been activated.
 
 ## Source-evidence correction after this census
 
@@ -39,7 +39,7 @@ Paths in this section are relative to `artifacts/trading-dashboard/src/`.
 | Tool | Existing calculation / rendering authority | Actual coverage and gap at the inspected commit |
 | --- | --- | --- |
 | Price action / candles | `lib/chart-engine/lightweightChartsAdapter.ts`, `smartChartAnalysis.ts`; `components/charts/SmartChartReader.tsx` | Original OHLC rendering, calculated candle/chart patterns, bounded automatic annotations and explanations exist. Not every named pattern is automatically visible at once. A pattern is not an execution signal. |
-| Support / resistance | `lib/chart-engine/chartWorkspace.ts`, `chartDrawingPrimitive.ts`, `smartChartAnalysis.ts`, `structureLines.ts` | Manual horizontal levels and calculated pattern confirmation/invalidation/neckline levels render. This does not prove a complete standalone automatic support/resistance-zone tool with adjustable discovery method. |
+| Support / resistance | `lib/chart-engine/chartWorkspace.ts`, `chartDrawingPrimitive.ts`, `smartChartAnalysis.ts`, `structureLines.ts` | Manual horizontal levels and pattern levels render. On 831e958d, selected-chart manual/assistant support-resistance candidates render, can be kept and edited with archived provenance, and pass 56 actual Scanner browser assertions. Fixed latest strict two-neighbor pivots are not full zones or adjustable discovery methods. |
 | Market structure | `lib/chart-engine/smartChartAnalysis.ts`, `structureLines.ts`; `components/charts/ARXNativeChart.tsx` | Fitted boundary breaks and server-owned structure geometry render, subject to feed/evidence gates. A complete editable swing/BOS/CHoCH workspace is not established by this census. |
 | Trendlines / channels | `lib/chart-engine/chartWorkspace.ts`, `chartDrawingPrimitive.ts`, `structureLines.ts` | Manual trend/ray/extended/channel objects, exact anchors and editing exist; server-resolved trendlines/channel rails are separate automatic evidence. Do not rebuild them. |
 | SMA / EMA | `lib/chart-engine/chartStudies.ts`, `chartAnalysisRenderer.ts` | Both calculate and render as overlays, with configurable period, input price and appearance. |
@@ -134,3 +134,8 @@ Applicationf85d1c03 extends the existing selected frozen-ledger explanation with
 ## Selected pane and complete applied window — 1 November 2026
 
 Applicationc9c74fce corrects Fibonacci owner wording and rejects silently omitted original closed observations.41focused tests,87guards,7bindings,typecheck,ordinarybuild and9actualScanner browser assertions pass. Isolatedaf64be44 stages causal support/resistance calculations only; naturalcommands,drawingcontrols,editableprovenance and acceptance remain unfinished and are excluded from this application. Helperagents stoppedforusage;rootpreservedwork. See [exact evidence and verified competitor distinctions](SMART_CHART_APPLIED_WINDOW_2026_11_01.md).
+
+
+## Support/resistance controls and explanations
+
+Application `831e958d` completes the previously staged candidate preview, manual/assistant routing and editable saved-origin workflow through existing owners. Frontend 3,357 pass/11 skip, guards 87/87, bindings 7/7, typecheck, build and 56 actual Scanner browser assertions pass. Normal first clicks meet 100ms in 10/10 attempts; 4x CPU misses in 10/10. Final independent review and broader requirements remain open. See [exact source, failures and limits](SMART_CHART_SUPPORT_RESISTANCE_2026_11_01.md).

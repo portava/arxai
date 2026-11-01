@@ -260,3 +260,8 @@ Application31a45ff9 keeps restriction names visible, exposes full explanations b
 ## Selected historical outcome followup — 1 November 2026
 
 Applicationf85d1c03 extends the existing selected frozen-ledger explanation with “Why did this trade lose?” and fixes polite requests clearing the prior result. Current binding and explicit selection remain mandatory; positive/zero results are not described as losses. Combined3332frontendpass/11skip,87guards,7bindings,typecheck,ordinarybuild and36actualScanner browser assertions pass. This does not add capital/sizing/equity/benchmark or general strategy language. Replit importb3029eb8 excludes this newer increment. See [receipt and limitations](SMART_CHART_FROZEN_TRADE_FOLLOWUPS_2026_11_01.md).
+
+
+## Source-bound support/resistance increment — 1 November 2026
+
+On `831e958d`, the existing horizontal-object owner renders two confirmed-pivot candidates through manual controls or the selected-chart assistant. Keep/edit preserves original evidence separately from manual anchors. 56 actual Scanner browser assertions pass. Fixed strict two-neighbor pivots are not Standard Pivot Points, full zone discovery, or matched competitor output. Normal first-click 10/10 meets 100ms; 4x CPU 0/10. No speed superiority or platform parity follows. See [the exact-source receipt](SMART_CHART_SUPPORT_RESISTANCE_2026_11_01.md).
