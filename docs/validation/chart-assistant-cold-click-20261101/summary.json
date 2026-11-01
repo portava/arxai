@@ -1,0 +1,74 @@
+{
+  "applicationCommit": "3a4407185e35f5bfe5ecff5c5d5b885f4d4276ad",
+  "base": "0deaebec1ae9f42abe650d8e3b49843f379f1a38",
+  "fixture": "dc51b70d2e95b0f7",
+  "frontend": {
+    "passed": 3590,
+    "failed": 0,
+    "skipped": 11
+  },
+  "guards": {
+    "passed": 85,
+    "total": 87,
+    "exactPreviousFailureBlocks": true
+  },
+  "typecheck": "passed",
+  "build": "passed with retained sourcemap and chunk-size diagnostics",
+  "browser": {
+    "delivery": {
+      "passed": 5,
+      "failed": 0
+    },
+    "cancellation": {
+      "passed": 4,
+      "failed": 0
+    },
+    "firstCancellation": "Timeout waiting for nonexistent snapshot.timeframe; retained; corrected to intervalSeconds===1800"
+  },
+  "performance": {
+    "browser": "156.0.8078.79",
+    "samples": 96,
+    "warmups": 12,
+    "allRepliesMatchSelectedFinding": true,
+    "groups": [
+      {
+        "width": 1440,
+        "rate": 1,
+        "n": 24,
+        "p50": 29.09999990463257,
+        "p95": 30,
+        "p99": 30.09999990463257,
+        "max": 30.09999990463257
+      },
+      {
+        "width": 1440,
+        "rate": 4,
+        "n": 24,
+        "p50": 58.80000019073486,
+        "p95": 70.7000002861023,
+        "p99": 76.40000009536743,
+        "max": 76.40000009536743
+      },
+      {
+        "width": 390,
+        "rate": 1,
+        "n": 24,
+        "p50": 30.5,
+        "p95": 31.799999713897705,
+        "p99": 31.799999713897705,
+        "max": 31.799999713897705
+      },
+      {
+        "width": 390,
+        "rate": 4,
+        "n": 24,
+        "p50": 26.90000009536743,
+        "p95": 27.800000190734863,
+        "p99": 28,
+        "max": 28
+      }
+    ],
+    "limits": "Event capture to new local answer DOM, then two animation frames; not physical paint, model latency, network latency or first navigation."
+  },
+  "cleanup": "Dedicated test browsers closed; fixture server stopped; port4199 has no listener"
+}
