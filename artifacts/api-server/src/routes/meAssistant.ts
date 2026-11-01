@@ -723,7 +723,7 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   }
 
   const candles = rubyCtx?.candles ?? [];
-  let htfBias: StructureBias = "No clear edge";
+  let htfBias: StructureBias | null = null;
   if ((rubyCtx?.htfCandles.length ?? 0) >= 10) htfBias = quickTrend(rubyCtx!.htfCandles);
   const read = analyzeChartStructure(candles, { htfBias, draft: draft ?? null });
   if (clientFeedUnconfirmed) {

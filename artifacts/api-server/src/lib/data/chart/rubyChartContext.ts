@@ -5,18 +5,20 @@
 // BrokerPriceAlignment) and the already-built ChartIntelligenceState. Ruby
 // reads THIS structure rather than raw chart/candle component state.
 //
-// Phase 4 final: also fetches and owns the raw Candle[] so the read-chart
-// endpoint uses this as its sole data source (no split-source divergence).
+// Owns the primary normalized observation used by intelligence. Higher-timeframe
+// input is a separately captured observation, not an atomic multi-timeframe read.
 //
 // SAFETY: READ-ONLY. Never places, modifies, or closes a trade. Never an
 // execution gate. Never weakens the 16-gate live pipeline.
 
-import { buildChartIntelligenceState, type ChartIntelligenceState } from "./chartIntelligence.js";
+import { buildChartIntelligenceContext, type ChartIntelligenceState } from "./chartIntelligence.js";
+import { getChartCandles, type ChartFeedStatus } from "./chartDataService.js";
+import { capturedAnalysisCandles } from "./capturedAnalysisCandles.js";
+import type { TruthReadEvidence } from "@workspace/domain/truth";
 import type { ChartGateOutput } from "./chartGateOutput.js";
 import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
-import type { ChartTimeframe } from "./timeframes.js";
+import { isChartTimeframe, type ChartTimeframe } from "./timeframes.js";
 import { buildChartHandshake, type ChartHandshakeVerdict } from "./chartHandshake.js";
-import { getMarketData } from "../../data/dataManager.js";
 import { hasRecentDerivTickFor } from "../providers/derivProvider.js";
 import { higherTimeframeOf } from "../../assistant/chartStructure.js";
 import type { Candle } from "../../data/types.js";
@@ -99,12 +101,18 @@ export interface RubyChartContext {
    * the read-chart endpoint must NOT fetch candles separately; use these.
    */
   candles: Candle[];
+  /** Primary status/evidence captured with the exact analyzed candles. */
+  feedStatus: ChartFeedStatus;
+  marketEvidence: TruthReadEvidence | null;
 
   /**
    * Higher-timeframe candles for HTF bias, or [] when no HTF applies.
-   * Same source as candles above.
+   * Separately observed; not proof of the same source/account or capture time.
    */
   htfCandles: Candle[];
+  htfTimeframe: ChartTimeframe | null;
+  htfFeedStatus: ChartFeedStatus | null;
+  htfMarketEvidence: TruthReadEvidence | null;
 }
 
 export function buildTrustLine(
@@ -250,12 +258,20 @@ export async function buildRubyChartContext(
   limit = 300,
   opts: { userId?: number | null } = {},
 ): Promise<RubyChartContext> {
-  let state = await buildChartIntelligenceState(symbol, timeframe, limit);
+  const nextTimeframe = higherTimeframeOf(timeframe);
+  const htf = nextTimeframe && isChartTimeframe(nextTimeframe) ? nextTimeframe : null;
+  // Capture independent HTF work concurrently; do not add its provider wait
+  // after the primary build and broker quote. It still carries its own verdict.
+  const higherPromise = htf
+    ? getChartCandles(symbol, htf, 120).then(value => structuredClone(value)).catch(() => null)
+    : Promise.resolve(null);
+  const captured = await buildChartIntelligenceContext(symbol, timeframe, limit);
+  let state = captured.state;
   // A VERIFIED read needs a measured broker comparison; only the requesting
   // user's own EA quote can supply one. Without it the mirror stays unmeasured.
   if (opts.userId != null) {
     try {
-      state = await enrichStateWithUserBrokerQuote(state, { userId: opts.userId, symbol, timeframe, limit });
+      state = await enrichStateWithUserBrokerQuote(state, { userId: opts.userId, symbol, timeframe, limit, context: captured });
     } catch {
       // fail-open to the unenriched state: mirror remains unmeasured
     }
@@ -293,15 +309,14 @@ export async function buildRubyChartContext(
     blockReason = sufficiency.humanReason;
   }
 
-  // Fetch candles from the same provider chain. The intelligence state was
-  // built from the same chain (3s-cached), so this is a single coherent
-  // source. Both primary and HTF are fetched here so the endpoint never needs
-  // a separate getMarketData call.
-  const htf = higherTimeframeOf(timeframe);
-  const [candles, htfCandles] = await Promise.all([
-    getMarketData(symbol, timeframe, limit).catch(() => [] as Candle[]),
-    htf ? getMarketData(symbol, htf, 120).catch(() => [] as Candle[]) : Promise.resolve([] as Candle[]),
-  ]);
+  // Primary OHLC and its quality judgment come from the same captured build.
+  // HTF is deliberately separate and carries its own status/evidence.
+  const higher = await higherPromise;
+  const candles = capturedAnalysisCandles(captured.candles);
+  // Downstream bias/confirmation consumers have no separate limited-HTF tier.
+  // Withhold their input if this independently captured feed is unconfirmed.
+  const htfCandles = higher?.feedStatus.aiUsable === true && !higher.feedStatus.stale
+    ? capturedAnalysisCandles(higher.candles) : [];
 
   return {
     symbol: state.symbol,
@@ -320,6 +335,11 @@ export async function buildRubyChartContext(
     gateOutput: gate,
     state,
     candles,
+    feedStatus: captured.feedStatus,
+    marketEvidence: captured.marketEvidence,
     htfCandles,
+    htfTimeframe: htf,
+    htfFeedStatus: higher?.feedStatus ?? null,
+    htfMarketEvidence: higher?.marketEvidence ?? null,
   };
 }

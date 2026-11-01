@@ -2,8 +2,8 @@
 //
 // THE single structural-read pipeline. Both the Scanner "Ruby Chart Read" panel
 // (POST /me/assistant/read-chart) AND Ruby CHAT (the `readChartStructure` tool)
-// call this one function, so the two surfaces can never disagree: same symbol +
-// same timeframe ⇒ byte-identical `chartRead` payload and `readLayer`.
+// call this one function. Equal captured inputs and caller restrictions use the
+// same rules; separate calls may observe different data or account context.
 //
 // Before this extraction the chat path collapsed to a weak market-context answer
 // ("no primary timeframe / key levels not available"), while the panel produced
@@ -34,7 +34,6 @@ import {
   buildGatedTrustLine,
   buildStructuralReadTrustLine,
 } from "../data/chart/rubyChartContext.js";
-import { getChartFeedStatus } from "../data/chart/chartDataService.js";
 import { deriveRubyReadLayers, resolveFeedUnconfirmed, type RubyReadLayer } from "./rubyReadLayers.js";
 import { scrubUserCopyDeep } from "@workspace/domain/security";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
@@ -352,35 +351,19 @@ export async function buildRubyStructuralRead(
   // intelligence state, runs the truth + freshness + mirror gate checks, and
   // classifies into a basis. A throw is a fail-safe → treated as INSUFFICIENT.
   //
-  // SERVER-AUTHORITATIVE FEED VERDICT: in parallel we resolve the SAME
-  // ChartFeedStatus the Scanner chart header badge renders (getChartFeedStatus
-  // with the live forming tip, exactly like GET /api/chart/candles) and derive
-  // feed-confirmation from its `aiUsable` (true ONLY when quality === "clean").
-  // The Scanner PANEL passes its observed feed verdict via `clientFeedUnconfirmed`,
-  // but Ruby CHAT never does (the LLM has no feed observation) — so without this
-  // the chat read would reach a FULL "Verified · Live feed · AACI verified"
-  // footer while the panel/header honestly show "Historical only · Feed not
-  // confirmed · Limited read". Computing the verdict here makes the two surfaces
-  // agree regardless of what the caller passed. DISPLAY-ONLY — never execution.
+  // Use the feed verdict captured with the primary analysis candles. A separate
+  // display-tip probe can observe another source/window and cannot upgrade this
+  // assessment. The client's negative observation still restricts the result.
   let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
-  let feedStatus: Awaited<ReturnType<typeof getChartFeedStatus>> | null = null;
   try {
-    [rubyCtx, feedStatus] = await Promise.all([
-      buildRubyChartContext(symbol, tf, 200, { userId: params.userId }),
-      // The SAME getChartFeedStatus(symbol, tf, true) the chart header badge
-      // renders. Independently fail-safe: a thrown probe resolves to null and
-      // resolveFeedUnconfirmed treats null as UNCONFIRMED (fail-closed).
-      getChartFeedStatus(symbol, tf, true).catch(() => null),
-    ]);
+    rubyCtx = await buildRubyChartContext(symbol, tf, 200, { userId: params.userId });
   } catch {
-    // fail-safe — rubyCtx stays null (INSUFFICIENT branch below); feedStatus
-    // stays null ⇒ resolveFeedUnconfirmed treats the feed as unconfirmed.
+    // Fail-safe: no context means no captured feed verdict or structural read.
   }
 
-  // Downgrade-only OR of the client's observation and the server-authoritative
-  // ChartFeedStatus verdict (the SAME signal the Scanner header badge renders),
-  // so Ruby CHAT and the Scanner panel can never disagree on the feed verdict.
-  const feedUnconfirmed = resolveFeedUnconfirmed(clientFeedUnconfirmed, feedStatus);
+  // Either the captured server verdict or the client's observation can withhold
+  // the live setup. A newer display-tip observation cannot upgrade this capture.
+  const feedUnconfirmed = resolveFeedUnconfirmed(clientFeedUnconfirmed, rubyCtx?.feedStatus ?? null);
 
   // Derive the three DISPLAY-ONLY read layers from the shared chart-context
   // signals. `readLayer` is the PRIMARY wire signal; the booleans are for
@@ -462,7 +445,7 @@ export async function buildRubyStructuralRead(
   // Enough closed history to read structure. Use candles already owned by
   // RubyChartContext — no separate provider fetch; rubyCtx is the sole source.
   const candles = rubyCtx.candles;
-  let htfBias: StructureBias = "No clear edge";
+  let htfBias: StructureBias | null = null;
   if (rubyCtx.htfCandles.length >= 10) htfBias = quickTrend(rubyCtx.htfCandles);
 
   // ── MARKET INTELLIGENCE (Task #652) — ADDITIVE, DISPLAY-ONLY child input ─────

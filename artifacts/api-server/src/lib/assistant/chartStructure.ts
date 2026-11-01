@@ -17,6 +17,7 @@
 
 import type { Candle } from "../data/types.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import { normalizeChartTimeframe, type ChartTimeframe } from "../data/chart/timeframes.js";
 
 export type StructureBias =
   | "Bullish"
@@ -37,7 +38,7 @@ export type ChartReadResult = {
   sellCondition: string;
   invalidation: string;
   riskNote: string;
-  htfBias: StructureBias;
+  htfBias: StructureBias | "Not assessed";
   dataQuality: "ok" | "insufficient";
   cautions: string[];
 };
@@ -135,9 +136,9 @@ export const STRUCTURE_MIN_CLOSED_BARS = 20;
 // ── main analyzer ─────────────────────────────────────────────────────────
 export function analyzeChartStructure(
   rawCandles: Candle[],
-  opts: { htfBias?: StructureBias; draft?: DraftPlan; assistantName?: string } = {},
+  opts: { htfBias?: StructureBias | null; draft?: DraftPlan; assistantName?: string } = {},
 ): ChartReadResult {
-  const htfBias: StructureBias = opts.htfBias ?? "No clear edge";
+  const htfBias = opts.htfBias === null ? "Not assessed" : opts.htfBias ?? "No clear edge";
   const draft = opts.draft ?? null;
   const assistantName = opts.assistantName ?? DEFAULT_ASSISTANT_NAME;
 
@@ -263,7 +264,9 @@ export function analyzeChartStructure(
       : "with recent downside momentum"
     : "with momentum cooling";
   const htfWord =
-    htfBias === "No clear edge"
+    htfBias === "Not assessed"
+      ? "Higher-timeframe bias was not assessed from a confirmed candle observation"
+      : htfBias === "No clear edge"
       ? "Higher-timeframe bias is unclear"
       : `Higher-timeframe bias leans ${htfBias.toLowerCase()}`;
 
@@ -335,17 +338,18 @@ export function analyzeChartStructure(
 }
 
 // Map a chart timeframe to a sensible higher timeframe for bias context.
-export function higherTimeframeOf(timeframe: string): string | null {
-  const tf = timeframe.trim().toLowerCase();
-  const map: Record<string, string> = {
-    "1m": "15m",
-    "5m": "1h",
-    "15m": "1h",
-    "30m": "4h",
-    "1h": "4h",
-    "4h": "1d",
-    "1d": "1w",
-    "1w": "1w",
+export function higherTimeframeOf(timeframe: string): ChartTimeframe | null {
+  const tf = normalizeChartTimeframe(timeframe);
+  // Keep the established comparison intervals. Canonical request codes must
+  // resolve too; an unsupported mapping must not relabel the same interval HTF.
+  const map: Partial<Record<ChartTimeframe, ChartTimeframe>> = {
+    M1: "M15",
+    M5: "H1",
+    M15: "H1",
+    M30: "H4",
+    H1: "H4",
+    H4: "D1",
+    D1: "W1",
   };
-  return map[tf] ?? null;
+  return tf ? map[tf] ?? null : null;
 }

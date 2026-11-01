@@ -149,21 +149,25 @@ function regimeToPhase(regime: string): MarketPhase {
   }
 }
 
-/** The prior CLOSED higher-timeframe period for classic pivots, or null. */
-function htfPriorPeriod(htf: Candle[]): PivotPriorPeriod | null {
-  // Classic pivots use the PRIOR period; the last HTF bar may be the current
-  // (forming) period, so take the one before it. Null when there isn't enough.
-  if (htf.length < 2) return null;
-  const prior = htf[htf.length - 2];
+/** Daily/weekly/monthly pivots require that actual captured interval. An H1
+ * comparison is not a daily period. Context candles are already closed-only. */
+export function capturedHigherTimeframePivot(ctx: Pick<RubyChartContext, "htfCandles" | "htfTimeframe" | "htfFeedStatus">): {
+  prior: PivotPriorPeriod | null; pivotSourceTimeframe: PivotSourceTimeframe;
+} {
+  const pivotSourceTimeframe: PivotSourceTimeframe | null = ctx.htfTimeframe === "D1" ? "daily"
+    : ctx.htfTimeframe === "W1" ? "weekly" : ctx.htfTimeframe === "MN1" ? "monthly" : null;
+  const unavailable = { prior: null, pivotSourceTimeframe: pivotSourceTimeframe ?? "session" } as const;
+  if (!pivotSourceTimeframe || ctx.htfFeedStatus?.aiUsable !== true || ctx.htfFeedStatus.stale) return unavailable;
+  const prior = ctx.htfCandles.at(-1);
   if (
     !prior ||
     !Number.isFinite(prior.high) ||
     !Number.isFinite(prior.low) ||
     !Number.isFinite(prior.close)
   ) {
-    return null;
+    return unavailable;
   }
-  return { high: prior.high, low: prior.low, close: prior.close };
+  return { prior: { high: prior.high, low: prior.low, close: prior.close }, pivotSourceTimeframe };
 }
 
 /**
@@ -267,10 +271,7 @@ export function buildMarketIntelligenceSnapshot(
     });
 
     // ── Pivot Truth ───────────────────────────────────────────────────────────
-    const prior = htfPriorPeriod(ctx.htfCandles);
-    const pivotSourceTimeframe: PivotSourceTimeframe = ctx.htfCandles.length
-      ? "daily"
-      : "session";
+    const { prior, pivotSourceTimeframe } = capturedHigherTimeframePivot(ctx);
     const pivot = resolvePivotTruth(
       {
         pivotSourceTimeframe,

@@ -9,7 +9,8 @@
 // Known gap: the spec row's quote age and account provenance are not checked
 // here (see docs/CHART_TRUTH_EVIDENCE_COVERAGE.md).
 //
-// SAFETY: READ-ONLY. Fail-open to the unenriched state on any lookup error.
+// SAFETY: READ-ONLY. Missing quotes retain the original state. Lookup errors
+// propagate to callers, which retain their existing fail-safe behavior.
 
 import { eq, and } from "drizzle-orm";
 import { db, arxSymbolSpecsTable } from "@workspace/db";
@@ -17,6 +18,7 @@ import {
   getCachedIntelligenceContext,
   enrichStateWithBrokerAlignment,
   type ChartIntelligenceState,
+  type ChartIntelligenceContext,
 } from "./chartIntelligence.js";
 import type { ChartTimeframe } from "./timeframes.js";
 
@@ -34,8 +36,12 @@ export function deriveChartPriceBasis(assetClass: string): string {
 
 export async function enrichStateWithUserBrokerQuote(
   state: ChartIntelligenceState,
-  args: { userId: number; symbol: string; timeframe: ChartTimeframe; limit: number },
+  args: { userId: number; symbol: string; timeframe: ChartTimeframe; limit: number; context?: ChartIntelligenceContext },
 ): Promise<ChartIntelligenceState> {
+  const ctx = args.context ?? getCachedIntelligenceContext(args.symbol, args.timeframe, args.limit);
+  // Capture before awaiting the quote. Never borrow a different request's
+  // state or gates if the shared cache has already changed or expired.
+  if (!ctx || ctx.state !== state) return state;
   const specRow = await db
     .select({
       bid: arxSymbolSpecsTable.bid,
@@ -51,9 +57,7 @@ export async function enrichStateWithUserBrokerQuote(
     .then((rows) => rows[0] ?? null);
 
   if (specRow?.bid == null || specRow.ask == null) return state;
-  const ctx = getCachedIntelligenceContext(args.symbol, args.timeframe, args.limit);
-  if (!ctx) return state;
-  return enrichStateWithBrokerAlignment(ctx.state, ctx.truthResult, ctx.feedStatus, {
+  return enrichStateWithBrokerAlignment(state, ctx.truthResult, ctx.feedStatus, {
     chartPrice: state.latestClosedCandle?.close ?? null,
     chartPriceBasis: deriveChartPriceBasis(state.assetClass),
     assetClass: state.assetClass,

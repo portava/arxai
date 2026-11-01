@@ -88,10 +88,9 @@ export function deriveRubyReadLayers(input: RubyReadLayerInput): RubyReadLayers 
  * Ruby CHAT's tool call never does — the LLM has no feed observation. So the chat
  * read used to reach a FULL "Verified · Live feed · AACI verified" footer while
  * the panel/header honestly showed "Historical only · Feed not confirmed ·
- * Limited read" for the SAME symbol/timeframe. Recomputing the verdict here from
- * the SAME signal the header badge renders (`ChartFeedStatus.aiUsable`, true ONLY
- * when feed quality === "clean") makes both surfaces agree regardless of what the
- * caller passed.
+ * Limited read" for the SAME symbol/timeframe. Use `ChartFeedStatus.aiUsable`
+ * from the analyzed observation, not an independent newer fetch. A header may
+ * describe another capture or a display tip; that must not upgrade this read.
  *
  * Downgrade-only: EITHER source can mark the feed unconfirmed; neither can
  * upgrade the other. A null/unknown feed status is FAIL-CLOSED (treated as
