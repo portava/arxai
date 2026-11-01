@@ -296,3 +296,8 @@ Application `27a4605f` withdraws assessments after plan changes and isolates dif
 The owner’s own-renderer/no-branding requirement remains open. Scanner overlays now use an ARX-owned revocable interface; a staged native Canvas price layer independently renders all seven existing styles with canonical-price coordinates. It is not registered as an app engine. The default remains Lightweight Charts until the existing studies, drawings, gestures, history, replay and all chart surfaces are migrated and accepted.
 
 Full dashboard validation: 3,996 passed / 11 skipped; typecheck and build passed; guards 85/87 with unchanged findings. Seven actual Scanner offline draft checks pass for the facade. The separate native laboratory has 67 unit checks, 7 caught mutations and synthetic desktop/narrow browser checks. Its small Canvas submission timings are not app first-click latency, hardware presentation or competitor evidence. Original slower-device failures and TradingView/MT5 feature/performance gaps remain. See [exact evidence and migration requirements](SMART_CHART_NATIVE_RENDERER_2026_11_01.md).
+
+
+## 1 November 2026 — independent viewport (5f734e30)
+
+The staged ARX renderer now has axes, pointer/wheel/touch navigation, canonical crosshair, history anchoring and export. Thirteen synthetic desktop/mobile browser groups pass; it is still not the Scanner engine. The native full-refresh measurement retains a 26.9ms outlier under 4x CPU. No actual-app speedup or competitor parity is claimed. Axis dragging, full adapter/study/drawing migration and all-surface acceptance remain open; the default external renderer and credit remain. See [exact source, metrics and comparison boundaries](SMART_CHART_NATIVE_VIEWPORT_2026_11_01.md).
