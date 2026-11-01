@@ -1,0 +1,69 @@
+{
+  "auditedCommit": "837b28a6de3d4af595636cdfaa98bd3e279a6d02",
+  "worktree": "/Users/areyouok/arx-chart-compact-evidence-integration-20261101",
+  "worktreeStatus": "clean",
+  "method": "Fresh independent arithmetic and source review of preserved actual-Scanner frames, not a new app/browser acceptance run. No application source edited.",
+  "numeric": {
+    "pass": 31,
+    "fail": 0,
+    "scope": "23 rounded reader statistics, 6 last-rendered MACD/Bollinger channel values, canonical/display identity, synthetic generator correspondence",
+    "method": "Python standard library only, no imports of application calculations",
+    "additionalObservedGeometry": "Spinning-top geometry and four strict two-neighbor pivots independently computed. Double-top high difference within stated half-ATR tolerance; final close has not broken neckline."
+  },
+  "evidenceProvenance": {
+    "numericFrameCommit": "def4025124864e843e4cc7b96b4c4aa19df04dae",
+    "feedFrameCommit": "b11a66326dffc9a62ab33bbb6f97d2cf3029df1d",
+    "currentAppAndLibTreesEqualFeedFrame": true,
+    "descriptiveMathAdapterAndPatternMathUnchangedFromNumericFrame": true,
+    "smartChartAnalysisChangesSinceNumericFrame": "Feed-state caveats and feedReadFailed authority only; reviewed exact diff; pattern/statistic calculations retained.",
+    "allFourFeedVariantCandleArraysEqualNumericFrame": true,
+    "sourceIdentity": "Fixture-declared 64 a characters, not real provider proof",
+    "imagePersonallyInspected": "chart-compact-study-labels-20261101/truth-audit-chart.png",
+    "newFixtureBrowserRun": false
+  },
+  "results": [
+    {
+      "id": "NUMERIC",
+      "status": "corroborated",
+      "detail": "Reader 175-bar statistics agree at displayed precision; rendered MACD5/17 signal6 EMA and Bollinger20 multiplier1.5 final values agree within1e-9."
+    },
+    {
+      "id": "PATTERN",
+      "status": "corroborated within defined fixture geometry",
+      "detail": "Observed spinning top and developing double top consistent with declared rules. No predictive reliability or real-provider finality claim."
+    },
+    {
+      "id": "TRUTH",
+      "status": "accepted evidence corroborated; no new defect",
+      "detail": "Reviewed stale/unconfirmed/delayed/unavailable captures on identical current application trees. Original calendar/default-grade findings resolved; not counted again."
+    }
+  ],
+  "chatgpt": {
+    "url": "https://chatgpt.com/c/6ae734b8-4634-83ec-ac21-5c96378342ed",
+    "status": "completed text-only cross-check",
+    "transmitted": "Synthetic mathematical generator, synthetic candle prices, quoted labels and summary of local observations; no private code, account details, credentials or image",
+    "recovery": "Initial extension interaction timeouts; existing tab selected through native Chrome CUA, prompt pasted and submitted successfully. No permission/settings changes.",
+    "responseEvidence": "Visible final Response complete after Worked for22s; transcribed response saved. ChatGPT reports independent regenerated data/indicator checks. Its answer remains advisory, not authoritative validation.",
+    "confirmedCorrection": "Earlier ChatGPT response conflated min-max range position with empirical midrank. New answer explicitly corrects its interpretation; application midrank is correct.",
+    "wordingCaveat": "RSI14 visible seed refers to initialization scope, not initial-seed output. Existing scope text explicitly explains RSI/ATR start from this window; no new confirmed defect."
+  },
+  "limits": [
+    "No new actual-Scanner execution, deployed app inspection, live API/provider/calendar/broker validation or latency measurement.",
+    "Historical synthetic fixture source metadata cannot establish real MT5 provenance, market reliability, confidence calibration, forecast accuracy, or trading readiness.",
+    "ChatGPT saw no screenshot or private source; its freshness/contract review is based on supplied labels. Local agent inspected saved chart image and underlying data.",
+    "This bounded audit does not validate every chart/Truth state, source switch, instrument, pattern, or output. Global guard failures and broader readiness gaps remain unchanged.",
+    "No merge, push, deployment, DB changes, workers or live/demo trading actions."
+  ],
+  "files": {
+    "chatgpt-response.txt": "b9377bbbcd93fa3161e10b123d12907c6e5dc55736647480717c56e6ed062449",
+    "recompute.log": "acd632251683c31735d42d794d18675753a6d3fa36782c90c0f8814a026fb395",
+    "source-provenance.json": "e3d5f3f7968c5272702bf5e5501e0b79e511210f39f2d08b59a70c5310a41594",
+    "chatgpt-prompt.txt": "c2413ae11552965ed69966afa5098e70279b51ee084b56521778a4cd47238f0e",
+    "recompute.py": "2d6fa05667e77a5aaba4052de74ea423ed21338fa99fa9f9b4c15b45165875fa",
+    "numerical-review.json": "f52d3a95105cee1e60467bb9cd918982f2c68285268aebe4be3b477e575c604f",
+    "chart-compact-study-labels-20261101/audit-capture.json": "9c5864eaf3bf00fc26e25c09a718d8e794d86f5ff14e3bf523afb47fa2a719ea",
+    "chart-compact-study-labels-20261101/truth-audit-chart.png": "e657aff4109b3b421288463f57d6a32b19cdf25df4547c8ad449acea99e34a9a",
+    "chart-reader-feed-evidence-20261101/browser.json": "9e56d26beef9974f8f8303ea7c2b9d14850359213a92960e2064f29e39234edd",
+    "selected-market-evidence-truth-20261101/browser-final.json": "d731bf1bc1740d9408624069d9d4adb793eeacb161a582547dcd249c8c199c0a"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "baseCommit": "78f7721f102cf382795417528fd6094b734e9abb",
+  "applicationCommit": "edd97a425f4d95b491730f07623e0e7bdfb3b9d2",
+  "branch": "codex/chart-simplify-restore-20261101",
+  "purpose": "Cumulative development backup ONLY into a separate unserved directory/worktree. NOT authorized for watched app source or runtime activation. No request dispatched.",
+  "reason": "Previous source-only sync modified a directory watched by running Vite; HMR/runtime preservation unverified.",
+  "files": [
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.deferred-init.test.tsx",
+      "sha256": "37ae5ffbb5b8742d64e8debb7ea69b3a01164ff42ec1e6a444539e8d4600dc78"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx",
+      "sha256": "bb4b6c2ab278d9b0ce47851f01be778714f1786701ba7ced23fff4ac1b9e7dc5"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.levels.test.tsx",
+      "sha256": "a1c2f9f9395aca69491b3e61593615fdb6b369f4442d8d2d66ec1df2ecce1090"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.tsx",
+      "sha256": "22a150fe4fb8964426fe14b40cbe1f5d92c892eb7e28967eb262f40944ee4562"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartReader.test.tsx",
+      "sha256": "9e9c4723843c94d4c7c17399fb650bc38b5dad85cc8da476437afb03a7432c3f"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartReader.tsx",
+      "sha256": "724efa47d9abd97fcfd0aedae3eb7e72864261695e4ab2eb08d0698054d71a57"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyAssistant.test.ts",
+      "sha256": "627642f62bec313d1c30458bdfbe5dcd9d5d6c3702adec852590bfa44fcb8682"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyAssistant.ts",
+      "sha256": "8d94d1c27894b36a69beeba3402b798fc545c32243a8dbc6f551a4d60ec64ef1"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.ts",
+      "sha256": "d33a64b081af30e4faa8fb34c5213538997136bf455e810c00bd6aef4b2e22e0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.workbench.test.ts",
+      "sha256": "6c335895d5d13d0bc497928eb5689691bf10b3bfb1616205df7f779478563af8"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/smartChartAnalysis.ts",
+      "sha256": "c58b2c16e7162abb4c71787a8f881d8bf41d74e6f79b7df92f6912942255fe33"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/smartChartReadCache.test.ts",
+      "sha256": "322b9192b93a13d4018664a440388964cd19b916360382b1c4613eca1f6fd79d"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/smartChartReadCache.ts",
+      "sha256": "0806121eccdd8f9ae0f587032ac73767a41a8ae99b310862a1497d1e3a90ed86"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/types.ts",
+      "sha256": "71720754a950f30b20583cc94fce774c2387aeee90a81ea54c40b93f7da63265"
+    },
+    {
+      "path": "docs/SMART_CHART_READER_FEED_EVIDENCE_2026_11_01.md",
+      "sha256": "7a0ca484821293ac9287d2ad3ff5d30d762ddda4ac781ba08ac077dc51cb5593"
+    },
+    {
+      "path": "docs/SMART_CHART_REQUIREMENTS_CENSUS_2026_11_01.md",
+      "sha256": "7f8d37a28f18d230d18c728d50a6d4df6eb3f88f3eed8bf596984f4467394e01"
+    },
+    {
+      "path": "docs/development-sync/CHART_READER_FEED_EVIDENCE_2026_11_01.json",
+      "sha256": "ba3a09c6d200952d637ec8640fb1af8cff16492f0d8be6f6bc8b6b1eb70bf136"
+    },
+    {
+      "path": "docs/development-sync/CHART_READER_FEED_EVIDENCE_VALIDATION_2026_11_01.json",
+      "sha256": "939de60d8d3e454e86090bd2a989da77f1bf69d29f7446d7f92dc31624c57db0"
+    },
+    {
+      "path": "scripts/chart-qa/witness.ts",
+      "sha256": "ec32613ef50ab1a809841f271fa75bb52c242f98dfea49ee7ed5cbdd25b6326a"
+    },
+    {
+      "path": "scripts/package.json",
+      "sha256": "e6d71da93b1797ed3304727e8a4a2ad8505b011012e6f4903f56355af777714c"
+    },
+    {
+      "path": "scripts/src/ci/check-investor-no-guaranteed-return.ts",
+      "sha256": "af87316334bff86a0d80a8e79b6ea2672e15be2326b3454456c773515974cb67"
+    },
+    {
+      "path": "scripts/src/ci/check-no-internal-names-user-ui.test.ts",
+      "sha256": "73c076c43f258a71f4559226d072bbe81c72a4f1dfeb37363d9157bc346e018a"
+    },
+    {
+      "path": "scripts/src/ci/check-no-internal-names-user-ui.ts",
+      "sha256": "7966fcabfbbf8580b47f0cd8dce79c6abfc61cdb77d1b4567550cf1298f440f4"
+    },
+    {
+      "path": "scripts/src/ci/check-risky-wording-frontend.ts",
+      "sha256": "8d2db468a2aad61a946913e3b8955becc7f457c25d32b17e84803a0aef557920"
+    },
+    {
+      "path": "scripts/src/ci/wording-source.test.ts",
+      "sha256": "302c27f974dffa11710eaf86a980ebb09bb08de35da724b769591b489a091a48"
+    },
+    {
+      "path": "scripts/src/ci/wording-source.ts",
+      "sha256": "e1efb2ae86031e802cfd1cef844da32ffbf8936632aea05d4c1072222ccac409"
+    }
+  ],
+  "boundaries": [
+    "Preserve current app sources, processes, dist, compiler metadata and concurrent edits",
+    "No main merge/deploy/publish, existing databases, workers/emails or broker/model/provider tests",
+    "Validate isolated output only; do not attribute old receipts to a new merged tree"
+  ]
+}
