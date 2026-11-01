@@ -1,3 +1,4 @@
+import { chartAssistantBounds, type AssistantViewport } from "./chartAssistantLayout";
 import { requestChartFibonacci } from "@/lib/chart-engine/chartFibonacciAssistant";
 import { requestChartStudy } from "@/lib/chart-engine/chartStudyAssistant";
 import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistant";
@@ -9,7 +10,7 @@ import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistan
 // - Click-outside closes panel and stops mic
 // - Suggestion chips collapsible
 // - Market provider connectivity surfaced in-panel
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useAssistantDockTarget } from "./AssistantDock";
 import { useGetTimingBrain, getGetTimingBrainQueryKey } from "@workspace/api-client-react";
@@ -168,6 +169,27 @@ export function ArxAssistantLivePanel() {
     if (typeof sessionStorage === "undefined") return false;
     return sessionStorage.getItem(STORAGE_OPEN_KEY) === "1";
   });
+  const readViewport=():AssistantViewport=>({width:typeof window==="undefined"?1024:window.visualViewport?.width??window.innerWidth,height:typeof window==="undefined"?768:window.visualViewport?.height??window.innerHeight,offsetLeft:typeof window==="undefined"?0:window.visualViewport?.offsetLeft??0,offsetTop:typeof window==="undefined"?0:window.visualViewport?.offsetTop??0,layoutHeight:typeof window==="undefined"?768:window.innerHeight});
+  const [chartViewport,setChartViewport]=useState(readViewport);
+  const [narrowScreen,setNarrowScreen]=useState(()=>typeof window!=="undefined"&&window.innerWidth<768);
+  const [conversationExpanded,setConversationExpanded]=useState(false);
+  const mobileChart=!!dockTarget&&narrowScreen;
+  const chartCompact=mobileChart&&!conversationExpanded;
+  const mobileChartRef=useRef(mobileChart);mobileChartRef.current=mobileChart;
+  const shortChartViewport=mobileChart&&chartViewport.height<360;
+  const recoverChartFocus=useRef(false);
+  useLayoutEffect(()=>{
+    if(!dockTarget||!open)return;
+    const measure=()=>{
+      // Capture BEFORE responsive rendering hides a focused optional control;
+      // browsers can move focus to body before a later layout effect sees it.
+      const active=document.activeElement;
+      if(window.innerWidth<768&&!conversationExpanded&&active instanceof HTMLElement&&(optionalVoiceRef.current?.contains(active)||suggestionsRef.current?.contains(active)))recoverChartFocus.current=true;
+      setNarrowScreen(window.innerWidth<768);const next=readViewport();setChartViewport(previous=>Object.keys(next).every(key=>next[key as keyof AssistantViewport]===previous[key as keyof AssistantViewport])?previous:next);};
+    measure();window.addEventListener("resize",measure);window.visualViewport?.addEventListener("resize",measure);window.visualViewport?.addEventListener("scroll",measure);
+    return()=>{window.removeEventListener("resize",measure);window.visualViewport?.removeEventListener("resize",measure);window.visualViewport?.removeEventListener("scroll",measure);};
+  },[dockTarget,open,conversationExpanded]);
+  useEffect(()=>{setConversationExpanded(false);},[dockTarget,pathname,open]);
   const [chipsOpen, setChipsOpen] = useState<boolean>(() => {
     if (typeof localStorage === "undefined") return true;
     return localStorage.getItem(STORAGE_CHIPS_KEY) !== "0";
@@ -219,6 +241,15 @@ export function ArxAssistantLivePanel() {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const expandRef=useRef<HTMLButtonElement|null>(null);
+  const suggestionsRef=useRef<HTMLDivElement|null>(null);
+  const optionalVoiceRef=useRef<HTMLDivElement|null>(null);
+  const lastPanelFocus=useRef<HTMLElement|null>(null);
+  useLayoutEffect(()=>{
+    if(!chartCompact)return;
+    const active=document.activeElement;
+    if(recoverChartFocus.current||active===document.body&&lastPanelFocus.current?.closest('[data-chart-chat-hidden="true"]')||active instanceof HTMLElement&&(suggestionsRef.current?.contains(active)||optionalVoiceRef.current?.contains(active)||active.closest('[data-chart-chat-hidden="true"]'))){recoverChartFocus.current=false;expandRef.current?.focus({preventScroll:true});}
+  },[chartCompact,messages]);
   const abortRef = useRef<AbortController | null>(null);
   // Tracks the live mic MediaStream so we can fully release it on stop/close.
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -412,11 +443,12 @@ export function ArxAssistantLivePanel() {
       const target = e.target as Node;
       if (panelRef.current?.contains(target)) return;
       if (triggerRef.current?.contains(target)) return;
+      if(chartCompact&&dockTarget?.closest('[data-testid="arx-native-chart"]')?.contains(target))return;
       void closePanel();
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open,chartCompact,dockTarget]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure conversation + load market status when opened.
   // Ruby rehydration: on first open per session, try to resume the user's
@@ -506,11 +538,11 @@ export function ArxAssistantLivePanel() {
     return () => { cancelled = true; };
   }, [open, conversation]);
 
-  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 120); }, [open]);
+  useEffect(() => { if(!open)return;const timer=setTimeout(()=>{const active=document.activeElement;if(panelRef.current?.contains(active)||active!==document.body&&active!==triggerRef.current)return;if(mobileChartRef.current)panelRef.current?.focus({preventScroll:true});else inputRef.current?.focus();},120);return()=>clearTimeout(timer); }, [open]); // Retain current focus on viewport/mode changes; mobile does not summon the keyboard on open.
   useEffect(() => {
     if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, status]);
+    scrollRef.current.scrollTop = chartCompact ? 0 : scrollRef.current.scrollHeight;
+  }, [messages, status,chartCompact]);
 
   const closePanel = useCallback(async () => {
     setOpen(false);
@@ -1056,27 +1088,34 @@ export function ArxAssistantLivePanel() {
       {open && (
         <div
           ref={panelRef}
+          tabIndex={-1}
+          onFocusCapture={event=>{if(event.target instanceof HTMLElement)lastPanelFocus.current=event.target;}}
+          style={mobileChart?{...chartAssistantBounds(chartViewport,conversationExpanded),right:"auto",bottom:"auto"}:undefined}
+          data-chart-layout={mobileChart?(chartCompact?"compact":"expanded"):"standard"}
+          onKeyDown={event=>{if(event.key==="Escape"&&!event.defaultPrevented){event.preventDefault();void closePanel();triggerRef.current?.focus({preventScroll:true});}}}
           className={cn(
             "fixed z-50 flex flex-col overflow-hidden rounded-2xl border shadow-2xl",
             "bottom-20 right-2 md:bottom-20 md:right-6",
             "w-[min(440px,calc(100vw-1rem))] h-[min(760px,calc(100vh-6rem))]",
             "bg-card/95 backdrop-blur border-border text-foreground",
+            shortChartViewport&&"overflow-y-auto overscroll-contain",
           )}
           role="dialog"
           aria-label={`${name} — ARX Live Assistant`}
           data-testid="arx-assistant-panel"
         >
-          <div className="flex items-center justify-between border-b border-border px-3 py-2">
-            <div className="flex items-center gap-2.5">
+          <div className={cn("flex shrink-0 items-center justify-between border-b border-border px-3 py-2",shortChartViewport&&"sticky top-0 z-10 bg-card")}>
+            <div className="flex min-w-0 items-center gap-2.5">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-ruby/15 text-ruby ring-1 ring-ruby/30">
                 <Brain className="h-4 w-4" />
               </span>
-              <div>
-                <div className="text-sm font-semibold leading-tight">{name}</div>
-                <div className="text-[11px] text-txt-secondary">ARX trading assistant</div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold leading-tight">{name}</div>
+                <div className="truncate text-[11px] text-txt-secondary">ARX trading assistant</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
+              {mobileChart&&<button ref={expandRef} type="button" className="min-h-11 rounded px-2 text-xs text-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400" aria-expanded={conversationExpanded} aria-controls="arx-assistant-messages" aria-label={conversationExpanded?"Keep chart visible":"Expand conversation"} onClick={()=>setConversationExpanded(value=>!value)}>{conversationExpanded?"Chart view":"Expand"}</button>}
               {/* Phase 22K — memory controls menu (new chat / clear chat / clear all memory) */}
               <div className="relative">
                 <button
@@ -1279,8 +1318,9 @@ export function ArxAssistantLivePanel() {
           })()}
 
           {/* Messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-            {messages.length === 0 && (
+          <div id="arx-assistant-messages" ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-3",shortChartViewport&&"min-h-16 flex-none")}>
+            {messages.length===0&&chartCompact&&<p className="text-sm text-txt-secondary">Ask about the current chart, for example “show RSI”. Expand for conversation history and voice settings.</p>}
+            {messages.length === 0 && !chartCompact && (
               <div className="rounded-2xl border border-border bg-secondary/60 p-3.5 text-sm text-foreground">
                 <div className="font-semibold mb-1 flex items-center gap-2">
                   <span className="grid h-6 w-6 place-items-center rounded-full bg-ruby/15 text-ruby"><Brain className="h-3.5 w-3.5" /></span>
@@ -1317,7 +1357,7 @@ export function ArxAssistantLivePanel() {
                 )}
               </div>
             )}
-            {messages.map((m) => (<MessageBubble key={m.id} m={m} />))}
+            {messages.map((m,index) => (<div key={m.id} hidden={chartCompact&&index!==messages.length-1} data-chart-chat-hidden={chartCompact&&index!==messages.length-1?"true":undefined}><MessageBubble m={m} /></div>))}
             {errorBanner && (
               <div className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/15 px-3 py-2 text-xs text-danger">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5" />
@@ -1327,7 +1367,7 @@ export function ArxAssistantLivePanel() {
           </div>
 
           {/* Suggestion chips */}
-          <div className="border-t border-border px-4 py-2">
+          <div ref={suggestionsRef} hidden={chartCompact} className={cn("shrink-0 overflow-y-auto border-t border-border px-4 py-2",mobileChart&&"max-h-28")}>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <button
@@ -1379,7 +1419,8 @@ export function ArxAssistantLivePanel() {
           </div>
 
           {/* Input row */}
-          <form onSubmit={onSubmit} className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+          <form onSubmit={onSubmit} className={cn("flex shrink-0 items-center gap-2 border-t border-border px-3 py-2.5",mobileChart&&"flex-wrap",shortChartViewport&&"sticky bottom-0 z-10 bg-card")}>
+            <div ref={optionalVoiceRef} style={{display:chartCompact?"none":"contents"}}>
             {/* Speak responses toggle */}
             <button
               type="button"
@@ -1409,6 +1450,7 @@ export function ArxAssistantLivePanel() {
               >
                 <Radio className="h-4 w-4" />
               </button>
+            </div>
             </div>
             {/* Realtime (true WebRTC) controls — only when key is configured server-side */}
             {voiceMode?.realtimeConfigured && !realtimeEngaged && (
@@ -1490,7 +1532,8 @@ export function ArxAssistantLivePanel() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={status === "recording" ? "Recording… tap mic to send" : `Ask ${name} about the market…`}
-              className="flex-1 bg-card border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              className={cn("min-w-0 flex-1 bg-card border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary",mobileChart&&"min-w-24")}
+              aria-label="Message the assistant"
               disabled={status === "thinking" || status === "streaming" || status === "recording" || status === "listening"}
               data-testid="arx-input"
             />
@@ -1498,6 +1541,7 @@ export function ArxAssistantLivePanel() {
               type="submit"
               disabled={!input.trim() || status === "thinking" || status === "streaming" || status === "recording" || status === "listening"}
               className="h-9 px-3 bg-cyan-500 text-zinc-950 hover:bg-cyan-400"
+              aria-label="Send message"
               data-testid="arx-send"
             >
               {status === "thinking" || status === "streaming"

@@ -3,7 +3,7 @@ import { registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssist
 import {
   describe, it, expect, beforeEach, afterEach, vi,
 } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { act, render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 /**
@@ -218,4 +218,65 @@ describe("ArxAssistantLivePanel — manual press-to-record only", () => {
     expect(mic.disabled).toBe(true);
     expect(mic.getAttribute("title")).toContain("Eleanor is speaking");
   });
+});
+
+function renderChartPanel(chart=true){
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const App=({showChart}:{showChart:boolean})=><QueryClientProvider client={client}><AssistantDockProvider>{showChart&&<div data-testid="arx-native-chart"><AssistantDockSlot/><button data-testid="chart-control">Inspect chart</button></div>}<ArxAssistantLivePanel/></AssistantDockProvider></QueryClientProvider>;
+ return {...render(<App showChart={chart}/>),App};
+}
+describe("mobile chart conversation layout",()=>{
+ it("starts compact only for a narrow chart and preserves draft, history and explicit expansion",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);
+  const release=registerChartStudyAssistant(()=>"Actual chart study receipt");
+  try{
+   renderChartPanel();const panel=screen.getByTestId("arx-assistant-panel"),input=screen.getByTestId("arx-input") as HTMLInputElement;
+   expect(panel.getAttribute("data-chart-layout")).toBe("compact");expect(parseFloat(panel.style.height)).toBeLessThanOrEqual(340);
+   fireEvent.change(input,{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));
+   expect(screen.getByText("Actual chart study receipt")).toBeTruthy();expect(screen.getByText("show RSI").closest('[data-chart-chat-hidden]')?.getAttribute('hidden')).toBe('');
+   fireEvent.change(input,{target:{value:"unsent draft"}});const expand=screen.getByRole("button",{name:"Expand conversation"});expand.focus();fireEvent.click(expand);
+   expect(screen.getByTestId("arx-input")).toBe(input);expect(input.value).toBe("unsent draft");expect(document.activeElement).toBe(expand);expect(panel.getAttribute("data-chart-layout")).toBe("expanded");
+   expect(screen.getByText("show RSI").closest('[hidden]')).toBeNull();
+   fireEvent.change(input,{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));expect(panel.getAttribute("data-chart-layout")).toBe("expanded");
+   fireEvent.click(screen.getByRole("button",{name:"Keep chart visible"}));expect(panel.getAttribute("data-chart-layout")).toBe("compact");
+  }finally{release();}
+ });
+ it("bounds keyboard resizing without losing the active input or hiding speaking Stop",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);h.ttsState="speaking";
+  const viewport=Object.assign(new EventTarget(),{width:390,height:844,offsetTop:0,offsetLeft:0});vi.stubGlobal("visualViewport",viewport);
+  renderChartPanel();const panel=screen.getByTestId("arx-assistant-panel"),input=screen.getByTestId("arx-input") as HTMLInputElement;
+  input.focus();fireEvent.change(input,{target:{value:"kept while resizing"}});
+  Object.assign(viewport,{height:280,offsetTop:72});act(()=>viewport.dispatchEvent(new Event("resize")));
+  expect(parseFloat(panel.style.top)).toBeGreaterThanOrEqual(72);expect(parseFloat(panel.style.top)+parseFloat(panel.style.height)).toBeLessThanOrEqual(352);
+  expect(document.activeElement).toBe(input);expect(input.value).toBe("kept while resizing");expect(screen.getByRole("button",{name:"Stop speaking"})).toBeTruthy();expect(screen.getByRole("button",{name:"Close",exact:true})).toBeTruthy();
+ });
+ it("permits chart interaction alongside the compact panel and Escape returns focus to its launcher",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);renderChartPanel();
+  fireEvent.mouseDown(screen.getByTestId("chart-control"));expect(screen.getByTestId("arx-assistant-panel")).toBeTruthy();
+  fireEvent.keyDown(screen.getByTestId("arx-input"),{key:"Escape"});expect(screen.queryByTestId("arx-assistant-panel")).toBeNull();expect(document.activeElement).toBe(screen.getByTestId("arx-assistant-trigger"));
+ });
+ it("leaves desktop and undocked layouts unchanged, and preserves input across chart docking",()=>{
+  vi.stubGlobal("innerWidth",1024);vi.stubGlobal("innerHeight",900);const view=renderChartPanel();const panel=screen.getByTestId("arx-assistant-panel"),input=screen.getByTestId("arx-input") as HTMLInputElement;
+  expect(panel.getAttribute("data-chart-layout")).toBe("standard");expect(screen.queryByRole("button",{name:"Expand conversation"})).toBeNull();
+  fireEvent.change(input,{target:{value:"draft survives"}});vi.stubGlobal("innerWidth",390);fireEvent(window,new Event("resize"));expect(panel.getAttribute("data-chart-layout")).toBe("compact");
+  view.rerender(<view.App showChart={false}/>);expect(screen.getByTestId("arx-assistant-panel")).toBe(panel);expect(panel.getAttribute("data-chart-layout")).toBe("standard");expect(input.value).toBe("draft survives");
+ });
+ it("moves focus to expansion when optional voice controls disappear during narrow resize",()=>{
+  vi.stubGlobal("innerWidth",1024);vi.stubGlobal("innerHeight",900);renderChartPanel();screen.getByRole("button",{name:"Choose voice"}).focus();
+  vi.stubGlobal("innerWidth",390);act(()=>{window.dispatchEvent(new Event("resize"));(document.activeElement as HTMLElement).blur();});expect(document.activeElement).toBe(screen.getByRole("button",{name:"Expand conversation"}));
+ });
+ it("delayed open focus never steals an already focused input",()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);
+  try{renderChartPanel();const input=screen.getByTestId("arx-input");input.focus();fireEvent.change(input,{target:{value:"already typing"}});act(()=>vi.advanceTimersByTime(150));expect(document.activeElement).toBe(input);expect((input as HTMLInputElement).value).toBe("already typing");}finally{vi.useRealTimers();}
+ });
+
+ it("keeps normal outside dismissal for the explicitly expanded chart conversation",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);renderChartPanel();fireEvent.click(screen.getByRole("button",{name:"Expand conversation"}));fireEvent.mouseDown(screen.getByTestId("chart-control"));expect(screen.queryByTestId("arx-assistant-panel")).toBeNull();
+ });
+
+ it("recovers focus when a new compact receipt hides the formerly focused message",()=>{
+  vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);const release=registerChartStudyAssistant(()=>"Actual rendered study observation. ".repeat(30));
+  try{renderChartPanel();fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));screen.getByRole("button",{name:"Show more",exact:true}).focus();fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));expect(document.activeElement).toBe(screen.getByRole("button",{name:"Expand conversation"}));}finally{release();}
+ });
+
 });
