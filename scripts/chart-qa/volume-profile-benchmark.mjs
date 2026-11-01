@@ -35,14 +35,18 @@ export async function measureVolumeProfile(page, { samples = 30, warmups = 5 } =
           for (const operation of ['show', 'hide', 'pan-without-profile', 'pan-with-profile', 'quantity-correction', 'rows-edit']) {
            const timings = [], group = { operation, timings }; groups.push(group);
            try {
-            probe.show(operation !== 'pan-without-profile'); await frame();
+            probe.show(operation !== 'pan-without-profile');
+            const viewMode = operation.startsWith('pan-') ? 'wide-pan' : 'full';
+            probe.view(viewMode); await frame();
             const before = qa.volumeProfiles(), retained = operation === 'pan-with-profile' ? before.profiles[0].resultId : null;
             const initialRange = qa.snapshot().range;
             const companionIds = qa.configuration().studies.filter(s => s.config.kind !== 'volume_profile').map(s => ({id:s.config.id,lines:s.lineIds,calculator:s.calculatorId}));
+            Object.assign(group, {viewMode, initialRange, initiallyVisibleBars:Math.max(0,Math.min(count-1,Math.floor(initialRange.to))-Math.max(0,Math.ceil(initialRange.from))+1)});
             let moved = false;
             for (let i = 0; i < samples + warmups; i++) {
               if (operation === 'show') { probe.show(false); await frame(); }
               if (operation === 'hide') { probe.hide(false); await frame(); }
+              const previousRange = operation.startsWith('pan-') ? qa.snapshot().range : null;
               const start = performance.now();
               if (operation === 'show') probe.show(true);
               else if (operation === 'hide') probe.hide(true);
@@ -51,10 +55,15 @@ export async function measureVolumeProfile(page, { samples = 30, warmups = 5 } =
               else probe.changeRows(i % 2 ? rows : rows === 32 ? 128 : 32);
               const syncMs = performance.now() - start;
               await frame();
-              timings.push({ warmup: i < warmups, syncMs, secondRafMs: performance.now() - start });
-              if (operation.startsWith('pan-') && JSON.stringify(qa.snapshot().range) !== JSON.stringify(initialRange)) moved = true;
+              timings.push({ warmup: i < warmups, syncMs, secondRafMs: performance.now() - start, ...(operation==='rows-edit'?{destinationRows:i%2?rows:rows===32?128:32}:{}) });
+              if (operation.startsWith('pan-')) {
+                const changed = JSON.stringify(qa.snapshot().range) !== JSON.stringify(previousRange);
+                if(!changed) throw Error('Pan attempt did not change actual viewport');
+                moved = true;
+              }
             }
             const after = qa.volumeProfiles(), finalRange = qa.snapshot().range;
+            if(operation!=='pan-without-profile'&&(after.profiles[0]?.result.status!=='ready'||after.profiles[0].result.barCount!==count||after.profiles[0].result.requestedRowCount!==probe.inspect().rows))throw Error('Aggregate did not include every configured bar or requested rows');
             if (operation === 'pan-with-profile' && (after.profiles[0].resultId !== retained || !moved)) throw Error('Pan recomputed aggregate or did not move');
             if (operation === 'quantity-correction' && (after.profiles[0].resultId === before.profiles[0].resultId || after.profiles[0].result.totalTradeUnits - before.profiles[0].result.totalTradeUnits !== samples + warmups)) throw Error('Quantity correction not installed');
             if (!['pan-without-profile', 'hide'].includes(operation) && (after.profiles[0]?.result.status !== 'ready' || !after.profiles[0].geometry.length || after.profiles[0].dirty)) throw Error('Missing real calculated/rendered profile');
@@ -64,7 +73,7 @@ export async function measureVolumeProfile(page, { samples = 30, warmups = 5 } =
             Object.assign(group,{ beforeIds: before.profiles.map(p => p.resultId), afterIds: after.profiles.map(p => p.resultId), finalRange, geometryRows: after.profiles[0]?.geometry.length ?? 0, companionIds, afterCompanions });
            } catch(error) { failure={operation,error:String(error?.stack??error)};break; }
           }
-          return { count, rows, companions: 4, view: 'full-history', initial, groups, failure };
+          return { count, rows, companions: 4, view: 'Fit history command; wide-pan adds 0.9 zoom. Actual visible bar counts recorded per operation.', initial, groups, failure };
         }, { count, rows, samples, warmups });
         for (const group of result.groups) {
           const summarize = key => {
@@ -86,7 +95,7 @@ export async function measureVolumeProfile(page, { samples = 30, warmups = 5 } =
   return { build, samples, warmups, results, errors, blocked, outerFailure, cleanupErrors, pass:correctnessPass, correctnessPass, performanceTargetPass, limitations: [
     'Constructed candles and evidence through the actual adapter; no provider qualification, real Scanner navigation or network measurement.',
     'Feature-off and feature-on workloads on the same candidate source, with four existing studies. No before/after release or competitor comparison.',
-    'Second requestAnimationFrame is a completion proxy, not a physical paint measurement. Full-history view explicitly includes all configured candles.',
+    'Second requestAnimationFrame is a completion proxy, not a physical paint measurement. The profile calculates all configured bars; Fit history can cap the visible price series around 2,000 bars. Actual visible bar counts are recorded. Pan uses 0.9 zoom to leave room and every timed pan must move.',
     'All warmups, failures, tails and outliers must be retained. Local 100 ms goal is not a production guarantee.',
   ] };
 }

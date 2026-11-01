@@ -48,7 +48,7 @@ export function installVolumeProfileProbe(Adapter: new () => any) {
     show(on:boolean) {if(!bars.length)throw Error("Configure first");adapter.setStudies(on?[...companions,config()]:companions);},
     hide(hidden:boolean) {adapter.setStudies([...companions,{...config(),lineStyles:[{visible:!hidden}]}]);},
     changeRows(rowCount:number) {if(![32,128].includes(rowCount))throw Error("Unsupported row count");rows=rowCount;adapter.setStudies([...companions,config()]);},
-    view(mode:"latest"|"full") {if(mode==="full")adapter.fitHistory();else if(mode==="latest")adapter.resetScale();else throw Error("Unsupported view");},
+    view(mode:"latest"|"full"|"wide-pan") {if(mode==="full")adapter.fitHistory();else if(mode==="wide-pan"){adapter.fitHistory();adapter.zoomBy(.9);}else if(mode==="latest")adapter.resetScale();else throw Error("Unsupported view");},
     pan(direction:number) {if(direction!==-1&&direction!==1)throw Error("Direction required");adapter.panBy(direction*.05);},
     correctQuantity() {
       if(!bars.length)throw Error("Configure first");
