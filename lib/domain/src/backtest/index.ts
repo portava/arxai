@@ -57,10 +57,10 @@ export interface BacktestRunMetrics {
   winningTrades: number;
   losingTrades: number;
   netProfitLoss: number;
-  maxDrawdown: number;
+  maxDrawdown: number;        // realized gross price-unit peak-to-trough loss; excludes intratrade marks
   winRate: number;            // 0..1
   averageRr: number;
-  expectancy: number;         // (winRate × avgWin) − (lossRate × avgLoss)
+  expectancy: number;         // mean gross price-unit P/L over ALL completed trades (including flat outcomes)
   profitFactor: number;       // grossWins / |grossLosses| (Infinity if no losses)
   equityCurve: number[];
 }
@@ -174,7 +174,7 @@ export function simulateBacktest(
 
 export function computeMetrics(
   trades: BacktestSimTrade[],
-  initialBalance: number,
+  _initialBalance: number,
   equityCurve: number[],
 ): BacktestRunMetrics {
   const totalTrades = trades.length;
@@ -187,19 +187,25 @@ export function computeMetrics(
   const grossWin = wins.reduce((s, t) => s + t.profitLoss, 0);
   const grossLoss = Math.abs(losses.reduce((s, t) => s + t.profitLoss, 0));
   const profitFactor = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? Infinity : 0);
-  const avgWin  = winningTrades > 0 ? grossWin / winningTrades : 0;
-  const avgLoss = losingTrades  > 0 ? grossLoss / losingTrades : 0;
-  const expectancy = (winRate * avgWin) - ((1 - winRate) * avgLoss);
+  // A flat completed outcome occupies one observation, but is not a loss.
+  // Averaging the canonical ledger also keeps this metric identical to the
+  // displayed gross total divided by the displayed trade count.
+  const expectancy = totalTrades > 0 ? netProfitLoss / totalTrades : 0;
   const averageRr = totalTrades > 0
     ? trades.reduce((s, t) => s + t.rewardToRisk, 0) / totalTrades
     : 0;
 
-  // Max drawdown over equity curve.
-  let peak = equityCurve[0] ?? initialBalance;
+  // Realized gross price-unit drawdown, not currency or intratrade drawdown.
+  // Derive from the same zero-origin ledger as the chart-series authority:
+  // subtracting account-like plotting offsets can erase tiny FX changes.
+  // Keep the caller's legacy equity curve in the response for compatibility.
+  let cumulative = 0;
+  let peak = 0;
   let maxDrawdown = 0;
-  for (const eq of equityCurve) {
-    if (eq > peak) peak = eq;
-    const dd = peak - eq;
+  for (const trade of trades) {
+    cumulative += trade.profitLoss;
+    if (cumulative > peak) peak = cumulative;
+    const dd = peak - cumulative;
     if (dd > maxDrawdown) maxDrawdown = dd;
   }
 
