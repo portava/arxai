@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createRef, useState } from "react";
+import { createRef, useState, useLayoutEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChartWorkbenchTools, exportLabels } from "./ChartWorkbenchTools";
 import type { ChartAnchor, ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
@@ -567,4 +567,40 @@ describe("source-clock coordinate controls",()=>{
   expect(engine.goToTime).not.toHaveBeenCalled();
   expect(screen.getByLabelText("Display time zone").closest("label")?.title).toContain("UTC mapping unverified");
  });
+});
+
+describe('source-bound study display labels and frozen PNG metadata',()=>{
+ it('refreshes the active strip from exact anchor evidence and freezes its PNG label before image decoding',()=>{
+  let qualified=true,decode:(()=>void)|null=null;const texts:string[]=[];
+  const study={kind:'vwap' as const,period:1,color:'#ffffff',vwapAnchor:{kind:'observed_bar' as const,time:1700000000,seriesIdentity:'a'.repeat(64)}};
+  const preferences={...DEFAULT_PREFERENCES,studies:[study]};
+  const engine={...adapter,getVwapAnchorEvidence:()=>({utcQualified:qualified,reason:qualified?null:'withdrawn'}),exportImage:()=> 'data:image/png;base64,'} as ChartEngineAdapter;
+  vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue({font:'',fillStyle:'',measureText:()=>({width:10}),fillRect(){},fillText:(text:string)=>texts.push(text),drawImage(){}} as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype,'toDataURL').mockReturnValue('data:image/png;base64,');vi.spyOn(HTMLAnchorElement.prototype,'click').mockImplementation(()=>{});
+  vi.stubGlobal('Image',class{width=800;height=400;onload:(()=>void)|null=null;set src(_value:string){decode=()=>this.onload?.();}});
+  const app=(epoch:number)=><ChartWorkbenchTools utcClockQualified adapter={engine} epoch={epoch} symbol="AAPL" timeframe="M15" preferences={preferences} onPreferences={vi.fn()} hasCandles feedLabel="Delayed offline fixture"/>;
+  const view=render(app(1));expect(screen.getByLabelText('Active studies').textContent).toContain('2023-11-14 22:13:20 UTC');expect(screen.getByLabelText('Active studies').textContent).not.toContain('unverified');
+  fireEvent.click(screen.getByRole('button',{name:'Export PNG'}));qualified=false;view.rerender(app(2));expect(screen.getByLabelText('Active studies').textContent).toContain('source clock (UTC unverified)');
+  decode!();expect(texts.join('\n')).toContain('observed-bar anchor 2023-11-14 22:13:20 UTC');expect(texts.join('\n')).not.toContain('unverified');
+ });
+});
+
+it('revokes anchor wording before parent engine layout commit and recovers only after that commit without pane selection',()=>{
+ let installed=true;const precommit:string[]=[];
+ const engine={...adapter,getVwapAnchorEvidence:()=>({utcQualified:installed,reason:installed?null:'clock withdrawn'})};
+ const preferences={...DEFAULT_PREFERENCES,studies:[{kind:'vwap' as const,period:1,color:'#ffffff',vwapAnchor:{kind:'observed_bar' as const,time:1700000000,seriesIdentity:'a'.repeat(64)}}]};
+ function Parent({revision,qualified}:{revision:object;qualified:boolean}){
+  useLayoutEffect(()=>{precommit.push(screen.getByLabelText('Active studies').textContent??'');installed=qualified;},[revision,qualified]);
+  return <ChartWorkbenchTools adapter={engine} epoch="same-source" studyEvidenceRevision={revision} symbol="AAPL" timeframe="M15" preferences={preferences} onPreferences={vi.fn()} hasCandles feedLabel="Delayed" assistantActive={false}/>;
+ }
+ const first={},withdrawn={},recovered={};const view=render(<Parent revision={first} qualified/>);
+ expect(screen.getByLabelText('Active studies').textContent).toContain('22:13:20 UTC');
+ fireEvent.click(screen.getByRole('button',{name:'Studies (1)'}));
+ view.rerender(<Parent revision={withdrawn} qualified={false}/>);
+ expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
+ expect(screen.getByLabelText('Active studies').textContent).toContain('source clock (UTC unverified)');
+ expect(screen.getByLabelText('Study settings').querySelector('legend')?.textContent).toContain('source clock (UTC unverified)');
+ view.rerender(<Parent revision={recovered} qualified/>);
+ expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
+ expect(screen.getByLabelText('Active studies').textContent).toContain('22:13:20 UTC');
 });

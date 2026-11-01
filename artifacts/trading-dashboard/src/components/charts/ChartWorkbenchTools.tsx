@@ -1,3 +1,4 @@
+import {studyDisplayLabel} from "@/lib/chart-engine/chartStudyDisplay";
 import { registerChartFibonacciAssistant } from "@/lib/chart-engine/chartFibonacciAssistant";
 import { explainFibonacciProposal, explainSelectedFibonacci } from "@/lib/chart-engine/chartFibonacciExplanation";
 import { formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
@@ -18,14 +19,16 @@ import { measurementLabels } from "@/lib/chart-engine/chartRangeMeasurement";
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
 /** PNG header lines: instrument, interval, capture time, feed verdict, display
  * style and studies. Heikin Ashi is marked as averaged, not traded, prices. */
-export function exportLabels({symbol,timeframe,capture,feedLabel,style,studies,fibonacciPreview}: {symbol:string;timeframe:string;capture:string;feedLabel:string;style:ChartStyle;studies:readonly ChartStudy[];fibonacciPreview?:boolean}): string[] {
+export function exportLabels({symbol,timeframe,capture,feedLabel,style,studies,studyDisplayLabels,fibonacciPreview}: {symbol:string;timeframe:string;capture:string;feedLabel:string;style:ChartStyle;studies:readonly ChartStudy[];studyDisplayLabels?:readonly string[];fibonacciPreview?:boolean}): string[] {
   return [`ARX · ${symbol} ${timeframe}`, capture, feedLabel,
     `Style ${CHART_STYLE_NAMES[style] ?? CHART_STYLE_NAMES.candles}${style === "heikinAshi" ? " (averaged bodies, not traded prices)" : ""}`,
-    studies.map(studyLabel).join(" · "), fibonacciPreview ? "UNACCEPTED automatic Fibonacci preview · historical geometry, not a trade signal" : ""].filter(Boolean);
+    (studyDisplayLabels??studies.map(studyLabel)).join(" · "), fibonacciPreview ? "UNACCEPTED automatic Fibonacci preview · historical geometry, not a trade signal" : ""].filter(Boolean);
 }
 const names = DRAWING_NAMES;
 interface Props {
   adapter: ChartEngineAdapter | null; epoch: number | string; symbol: string; timeframe: string;
+  /** Parent candle commit identity; labels stay unqualified until that layout commit completes. */
+  studyEvidenceRevision?: unknown;
   preferences: ChartPreferences; onPreferences: Dispatch<SetStateAction<ChartPreferences>>;
   hasCandles: boolean; feedLabel: string;
   /** Optional private analysis namespace; live charts keep their existing key. */
@@ -46,7 +49,15 @@ interface Props {
   assistantActive?:boolean;
   assistantIsCurrent?:()=>boolean;
 }
-export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,assistantActive=false,assistantIsCurrent}: Props) {
+export function ChartWorkbenchTools({adapter,epoch,studyEvidenceRevision,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,assistantActive=false,assistantIsCurrent}: Props) {
+  const displayRevision=studyEvidenceRevision??epoch;
+  const [committedStudyEvidence,setCommittedStudyEvidence]=useState<{adapter:ChartEngineAdapter|null;revision:unknown}|null>(null);
+  // Child renders/layout effects precede Native's candle installation. Never
+  // reuse previous-row UTC proof while a new parent snapshot is committing.
+  // A passive marker runs after parent layout work; it clones no history and
+  // subscribes to neither pan nor ticks. Exact anchor proof is still the engine's.
+  useEffect(()=>{setCommittedStudyEvidence(previous=>previous?.adapter===adapter&&previous.revision===displayRevision?previous:{adapter,revision:displayRevision});},[adapter,displayRevision]);
+  const studyDisplayAdapter=committedStudyEvidence?.adapter===adapter&&committedStudyEvidence.revision===displayRevision?adapter:null;
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;
@@ -344,6 +355,8 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const exportImage = () => {
     try {
       if(fibonacciPreview){const read=getFibonacciProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==fibonacciPreview.comparisonKey){withdrawPreview(read?.reason??"Source or window changed before export.");return;}}
+      // Freeze display proof with this image, before asynchronous image decoding.
+      const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,studyDisplayLabels:preferences.studies.map(study=>studyDisplayLabel(study,studyDisplayAdapter,true)),fibonacciPreview:!!fibonacciPreview&&!hidden});
       const url = adapter?.exportImage?.(); if(!url) return;
       // Include instrument, timeframe, capture time (display zone with its
       // abbreviation, plus the UTC ISO time when not UTC) and feed verdict. A
@@ -352,7 +365,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         const canvas = document.createElement("canvas");
         const ctx=canvas.getContext("2d");if(!ctx) return;
         ctx.font="12px sans-serif";
-        const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,fibonacciPreview:!!fibonacciPreview&&!hidden});
+
         const lines:string[]=[];
         for(const label of labels) {
           let line="";
@@ -418,8 +431,8 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles || !goToDate} type="submit">{`Go to ${zoneText}`}</Button>
       </form>
     </div>
-    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyLabel(study)}</span>)}</div>}
-    {panel === "studies" && <div className="basis-full"><ChartStudySettings preferences={preferences} onPreferences={onPreferences} adapter={adapter} /></div>}
+    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyDisplayLabel(study,studyDisplayAdapter)}</span>)}</div>}
+    {panel === "studies" && <div className="basis-full"><ChartStudySettings preferences={preferences} onPreferences={onPreferences} adapter={adapter} anchorDisplayAdapter={studyDisplayAdapter} /></div>}
     {panel === "objects" && <div className="basis-full mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
       <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Objects outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>setHidden(h=>!h)}>{hidden ? "Show drawings" : "Hide drawings"}</Button></div>
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}
