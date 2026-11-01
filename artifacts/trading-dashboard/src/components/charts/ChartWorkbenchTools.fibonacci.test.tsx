@@ -1,3 +1,4 @@
+import {StrictMode,useLayoutEffect} from "react";
 import {act,cleanup,fireEvent,render,screen} from "@testing-library/react";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {ChartWorkbenchTools,exportLabels} from "./ChartWorkbenchTools";
@@ -64,5 +65,41 @@ it("keeps manual undo and template snapshots free of the preview",()=>{
   expect(screen.getByRole("button",{name:"Undo",exact:true}).hasAttribute("disabled")).toBe(true);
   expect(screen.getByRole("button",{name:"Objects (0)",exact:true})).toBeTruthy();
   expect(localStorage.length).toBe(0);
-  fireEvent.click(screen.getByRole("button",{name:"Dismiss preview"}));expect(setDrawings.mock.calls.at(-1)![0]).toEqual([]);
+  setDrawings.mockClear();fireEvent.click(screen.getByRole("button",{name:"Dismiss preview"}));expect(setDrawings.mock.calls.at(-1)![0]).toEqual([]);expect(setDrawings).toHaveBeenCalledTimes(1);
+});
+
+it("restores kept manual geometry after the parent resets context later in the layout phase",()=>{
+  const manual={id:"kept",kind:"fibonacci",start:{time:1000,price:10},end:{time:1300,price:21},fibonacciOrigin:origin,color:"#fbbf24",locked:false};
+  localStorage.setItem(drawingStorageKey("EURUSD","M1"),JSON.stringify([manual]));
+  let canvas:ChartDrawing[]=[];
+  setDrawings.mockImplementation((rows:ChartDrawing[])=>{canvas=rows;});
+  function Parent({epoch}:{epoch:number}) {
+    useLayoutEffect(()=>{canvas=[];},[epoch]); // Native resetDataContext runs after child layout effects.
+    return <ChartWorkbenchTools {...props} epoch={epoch}/>;
+  }
+  const view=render(<Parent epoch={1}/>);
+  // Simulate current visible kept geometry before a source change, so the
+  // regression specifically covers reset/reinstallation rather than storage.
+  canvas=saved();
+  fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"auto_fibonacci"}});
+  expect(canvas).toHaveLength(2);
+  read={status:"unavailable",proposal:null,reason:"Different source identity"};
+  view.rerender(<Parent epoch={2}/>);
+  expect(canvas).toEqual([manual]);expect(saved()).toEqual([manual]);
+  expect(screen.queryByRole("button",{name:"Keep and edit Fibonacci"})).toBeNull();
+});
+it("installs saved drawings after parent initialization without a duplicate ordinary install",()=>{
+  const manual={id:"manual",kind:"horizontal",start:{time:1000,price:12},color:"#ffffff"};
+  localStorage.setItem(drawingStorageKey("EURUSD","M1"),JSON.stringify([manual]));
+  let canvas:ChartDrawing[]=[];setDrawings.mockImplementation((rows:ChartDrawing[])=>{canvas=rows;});
+  function Parent(){useLayoutEffect(()=>{canvas=[];},[]);return <ChartWorkbenchTools {...props}/>;}
+  render(<Parent/>);expect(canvas).toEqual([manual]);expect(setDrawings).toHaveBeenCalledTimes(1);
+});
+
+it("restores kept geometry when Strict Mode replays parent layout initialization",()=>{
+  const manual={id:"manual",kind:"horizontal",start:{time:1000,price:12},color:"#ffffff"};
+  localStorage.setItem(drawingStorageKey("EURUSD","M1"),JSON.stringify([manual]));
+  let canvas:ChartDrawing[]=[];setDrawings.mockImplementation((rows:ChartDrawing[])=>{canvas=rows;});
+  function Parent(){useLayoutEffect(()=>{canvas=[];},[]);return <ChartWorkbenchTools {...props}/>;}
+  render(<StrictMode><Parent/></StrictMode>);expect(canvas).toEqual([manual]);
 });

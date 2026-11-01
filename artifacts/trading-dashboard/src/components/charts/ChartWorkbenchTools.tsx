@@ -183,7 +183,29 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     setHistory(h=>({past:[...h.past.slice(-19),h.present],present:valid,future:[]}));
     persist(valid);
   };
-  useLayoutEffect(()=>{adapter?.setDrawings?.(hidden ? [] : [...drawings,...(previewDrawing?[previewDrawing]:[])]);},[adapter,epoch,hidden,drawings,previewDrawing]);
+  const renderedDrawings=useMemo(()=>hidden?[]:[...drawings,...(previewDrawing?[previewDrawing]:[])],[hidden,drawings,previewDrawing]);
+  const installedDrawings=useRef<{adapter:ChartEngineAdapter|null;epoch:number|string;rows:ChartDrawing[];preview:boolean}|null>(null);
+  // A Strict Mode effect replay can reset the parent engine without changing
+  // epoch. Invalidate the installation record on adapter cleanup as well.
+  useEffect(()=>()=>{installedDrawings.current=null;},[adapter]);
+  useLayoutEffect(()=>{
+    const previous=installedDrawings.current;
+    // Only stale-preview withdrawal belongs before paint. Native's parent
+    // layout effect can reset the engine AFTER this child, so ordinary/manual
+    // installation must still run in the passive phase below.
+    if(previous?.adapter===adapter&&previous.preview&&!previewDrawing){
+      adapter?.setDrawings?.(renderedDrawings);
+      // Same-epoch removal needs no duplicate write; an epoch change must
+      // reinstall after the parent's reset even if the rows are identical.
+      if(previous.epoch===epoch)installedDrawings.current={adapter,epoch,rows:renderedDrawings,preview:false};
+    }
+  },[adapter,epoch,renderedDrawings,previewDrawing]);
+  useEffect(()=>{
+    const previous=installedDrawings.current;
+    if(previous?.adapter===adapter&&previous.epoch===epoch&&previous.rows===renderedDrawings)return;
+    adapter?.setDrawings?.(renderedDrawings);
+    installedDrawings.current={adapter,epoch,rows:renderedDrawings,preview:!!previewDrawing};
+  },[adapter,epoch,renderedDrawings,previewDrawing]);
   useEffect(()=>{
     adapter?.setDrawingInteraction?.(hidden ? null : {selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:id=>setSelectedId(id===previewId?null:id),onCommit:next=>{const owned=next.filter(d=>d.id!==previewId);change(owned);setMessage(owned.length < drawings.length ? "Drawing deleted. Undo restores it." : "Drawing updated. Undo restores the previous edit.");},
       ...(history.past.length ? {onUndo:()=>undo()} : {}),

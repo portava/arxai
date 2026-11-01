@@ -24,3 +24,9 @@ Preview objects never enter stored drawing history or templates, and are filtere
 ## Limits
 
 The pivot span is fixed and disclosed at two observed bars. Automatic selection operates only on source-qualified visible history, with existing 600-bar coverage disclosure; it does not fetch hidden history, claim complete sessions, score swing significance or identify a preferred trading opportunity. Missing scheduled intervals are not inferred from elapsed gaps. This slice has no assistant natural-language drawing command, automatic SR zone integration, VWAP or volume profile. Existing source data limitations remain. No deployment, API activation, existing database changes or broker tests were performed.
+
+## Parent-reset lifecycle correction
+
+Actual Scanner browser acceptance of the first integrated implementation found a real regression: a source-context reset removed kept drawings from the canvas while their edited objects remained correctly saved. Moving all drawing installation into a child layout effect let the parent's later `resetDataContext()` clear them. Two new component regressions reproduced this ordering, including initial saved drawings; an additional Strict Mode regression caught effect-replay reset handling.
+
+Ordinary drawing installation is again passive, after parent context resets. Only withdrawal of a previously installed invalid preview is immediate in layout. Installation tracking avoids a duplicate same-epoch withdrawal write, while epoch changes and adapter effect replay force reinstallation. Render/action-time evidence checks remain intact. Kept original provenance and stored manual edits are unchanged. The four affected component suites pass 140 checks; the parent owns the renewed exact-source browser acceptance.
