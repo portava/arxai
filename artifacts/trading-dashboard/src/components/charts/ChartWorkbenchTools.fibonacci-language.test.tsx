@@ -20,6 +20,7 @@ it("manual and text preview share exact owner geometry and never auto-keep",()=>
  const reply=ask("show automatic Fibonacci on this chart");
  expect(reply).toContain("Prepared an unaccepted Fibonacci preview");expect(draw.mock.calls.at(-1)![0]).toEqual(manual);
  expect(reply).toContain("23.6%: 12.36");expect(reply).toContain("EURUSD M1");expect(saved()).toEqual([]);
+ expect(reply).toContain("source clock (UTC unverified)");expect(reply).not.toContain(new Date(origin.start.time*1000).toISOString());
 });
 it("curiosity prepares a real preview while unsupported additions do nothing",()=>{
  render(<ChartWorkbenchTools {...props}/>);const reply=ask("what does Fibonacci show me about this chart?");

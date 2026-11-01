@@ -1,3 +1,4 @@
+import {formatSourceChartTime} from "./chartClockEvidence";
 import {describe,it,expect,vi} from "vitest";
 import {StudyCalculator,studyDefinition,studyLabel,type ChartStudy} from "./chartStudies";
 import {executeStudyRequest,parseStudyRequest} from "./chartStudyAssistant";
@@ -16,7 +17,7 @@ describe("current chart average comparison",()=>{
   expect(f.adapter.setStudies).toHaveBeenCalledTimes(1);expect(f.save).toHaveBeenCalledTimes(1);
   expect(f.studies().map(s=>[s.kind,s.period])).toEqual([["ema",20],["ema",50]]);expect(new Set(f.studies().map(s=>s.color)).size).toBe(2);
   const last=f.candles[109];for(const s of f.studies()){const expected=new StudyCalculator(s).calculate(f.candles).find(p=>p.time===last.time)!.values[0]!;expect(reply).toContain(String(Number(expected.toPrecision(8))));}
-  expect(reply).toContain(new Date(last.time*1000).toISOString());expect(reply).toContain("EURUSD · M1");expect(reply).toContain("above");expect(reply).toContain("not a crossover");expect(reply).toContain("forming");
+  expect(reply).toContain(formatSourceChartTime(last.time,false,"UTC",{seconds:true}));expect(reply).toContain("EURUSD · M1");expect(reply).toContain("above");expect(reply).toContain("not a crossover");expect(reply).toContain("forming");
  });
  it("preserves existing calculation, style and other tools; explicit comparison reveals the pair",()=>{
   const original:ChartStudy={...studyDefinition("ema").defaults,id:"my-20",period:20,source:"open",color:"#123456",lineStyles:[{visible:false,width:3}]};

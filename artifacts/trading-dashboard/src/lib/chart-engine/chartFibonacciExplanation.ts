@@ -1,8 +1,11 @@
 import { drawingSegments, type ChartDrawing } from "./chartWorkspace";
 import { fibonacciProposalDrawing, type ChartFibonacciProposal } from "./chartAutoFibonacci";
 import { chartNumber } from "./chartDescriptiveStats";
+import { formatSourceChartTime } from "./chartClockEvidence";
 
-const time=(seconds:number)=>{const date=new Date(seconds*1000);return Number.isFinite(date.getTime())?date.toISOString():"unavailable timestamp";};
+// Neither a proposal nor archived drawing stores qualified original UTC
+// evidence. Do not borrow today's chart authority for these source anchors.
+const time=(seconds:number)=>{const date=new Date(seconds*1000);return Number.isFinite(date.getTime())?formatSourceChartTime(seconds,false,"UTC",{seconds:true}):"unavailable timestamp";};
 function geometry(drawing:ChartDrawing):string {
   const start=drawing.start,end=drawing.end!;
   return `The range ${end.price>start.price?"rises":end.price<start.price?"falls":"is flat"} from ${chartNumber(start.price)} at ${time(start.time)} to ${chartNumber(end.price)} at ${time(end.time)}. 0% is the first anchor and 100% is the second. ${drawingSegments(drawing).map(level=>`${level.label.replace("Fib ","")}: ${chartNumber(level.start.price)}`).join("; ")}. Prices use the chart reader’s rounded display formatting. These are measured distances between the anchors, not reversal probabilities or price targets.`;

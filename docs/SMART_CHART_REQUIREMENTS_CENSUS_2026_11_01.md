@@ -6,6 +6,14 @@ Scope: the owner's Smart Chart/backtesting document supplied on this date. The i
 
 Application `5507f148` and test-only `4cbd6169` correct the producer-basis gap in the earlier4ad8a5ac acceptance: a symbol profile or legacy MT5 provider label does not prove BID/MID. Historical research now requires matching original per-bar producer declarations and version2 snapshots. Shipped EAs omit those declarations, so their candles display but research holds; no actual broker research qualification is claimed. See `CHART_PRICE_BASIS_EVIDENCE_2026_11_01.md` for exact-source combined checks and remaining limits. This adds to the existing owners; it does not add another chart or engine.
 
+## Current alignment increment (combined validation pending)
+
+The existing assistant now compares two SMA/EMA selections (including “Compare the 20 EMA and 50 EMA”) using the manual renderer, and previews/explains Fibonacci through the existing drawing owner. Explicit Keep/edit remains required; these commands create no second chart or calculation engine. Their isolated acceptance reports are `SMART_CHART_AVERAGE_COMPARISON_2026_11_01.md` and `SMART_CHART_FIBONACCI_LANGUAGE_2026_11_01.md`. General language, other automatic drawing families, VWAP/profile, capital/sizing/benchmarks and performance parity are still open.
+
+The later original-clock audit supersedes any earlier implication that original price basis alone qualifies historical research. ISO formatting cannot establish UTC for MT5 broker-clock history. `ORIGINAL_CANDLE_CLOCK_EVIDENCE_2026_11_01.md` records version3 snapshots, original UTC capture/rebinding gates, and source-clock disclosure across chart, reader, replay and assistant. No production adapter currently qualifies UTC: chart prices remain visible, but timezone conversion and UTC-window research are held. Older receipts remain useful engine/UI tests on synthetic inputs; they are not broker UTC evidence. The separately compiled EA chart-mode changes establish price basis only and have not been installed in a terminal.
+
+V2 ingest now retains explicit original price-basis declarations and the authenticated connection partition; source identity is no longer discarded into an unattributed candle cache. This fixes transport/isolation consistency, not historical timezone conversion. Final combined validation must be tied to its actual source commit; no release-green or completion claim follows from the isolated checks.
+
 ## Thirteen requested chart tools
 
 Paths in this section are relative to `artifacts/trading-dashboard/src/`.
