@@ -1,4 +1,4 @@
-import {createChart,LineSeries,AreaSeries,BaselineSeries,HistogramSeries,CandlestickSeries,BarSeries,type UTCTimestamp} from 'lightweight-charts';
+import {createChart,LineSeries,AreaSeries,BaselineSeries,HistogramSeries,CandlestickSeries,BarSeries,type UTCTimestamp,type Time} from 'lightweight-charts';
 
 /** Synthetic native-canvas comparison. This does not measure the Scanner route. */
 export async function runStudyRowVisualProbe(){
@@ -10,7 +10,7 @@ export async function runStudyRowVisualProbe(){
  try{
   for(const [type,definition] of Object.entries({Line:LineSeries,Area:AreaSeries,Baseline:BaselineSeries,Histogram:HistogramSeries,Candlestick:CandlestickSeries,Bar:BarSeries})){
    for(const overrides of [false,true])for(const conflation of [false,true])for(const mode of [0,1,2,3] as const){
-    const chart=createChart(host,{width:720,height:420,layout:{background:{type:'solid' as any,color:'#111827'},textColor:'#d1d5db',fontFamily:'Arial',fontSize:12},rightPriceScale:{mode},localization:{locale:'en-US',timeFormatter:t=>String(t)},timeScale:{enableConflation:conflation,conflationThresholdFactor:4,minBarSpacing:.05,timeVisible:true,tickMarkFormatter:t=>String(t).slice(-4)}});
+    const chart=createChart(host,{width:720,height:420,layout:{background:{type:'solid' as any,color:'#111827'},textColor:'#d1d5db',fontFamily:'Arial',fontSize:12},rightPriceScale:{mode},localization:{locale:'en-US',timeFormatter:(t:Time)=>String(t)},timeScale:{enableConflation:conflation,conflationThresholdFactor:4,minBarSpacing:.05,timeVisible:true,tickMarkFormatter:(t:Time)=>String(t).slice(-4)}});
     try{
      const options={color:'#60a5fa',lineColor:'#60a5fa',topColor:'#14532d',bottomColor:'#1e3a8a',baseValue:{type:'price',price:100},topLineColor:'#34d399',bottomLineColor:'#f87171',topFillColor1:'#14532d',topFillColor2:'#052e16',bottomFillColor1:'#7f1d1d',bottomFillColor2:'#450a0a',upColor:'#34d399',downColor:'#f87171',wickUpColor:'#6ee7b7',wickDownColor:'#fca5a5',borderUpColor:'#a7f3d0',borderDownColor:'#fecaca',priceLineVisible:false,lastValueVisible:false};
      const series=chart.addSeries(definition as any,options as any);
