@@ -22,7 +22,7 @@
 //   reconnect re-opens the same URL; every honesty gate on the frames that then
 //   arrive is unchanged.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 /** Two missed 15s server heartbeats. */
 export const STREAM_SILENCE_MS = 30_000;
@@ -30,6 +30,10 @@ export const STREAM_SILENCE_MS = 30_000;
 export const STREAM_WATCHDOG_TICK_MS = 5_000;
 
 export interface TickStreamWatchdogOptions {
+  /** Only monitor a source that can actually subscribe to this transport. */
+  enabled?: boolean;
+  /** Source-bound subscription identity; changes start a fresh silence window. */
+  streamKey?: string;
   /** Silence tolerated before forcing a reconnect. */
   silenceMs?: number;
   /** Watchdog check cadence. */
@@ -60,8 +64,7 @@ export interface TickStreamWatchdog {
 /**
  * Watch an SSE stream for silence and ask for a reconnect when it stops.
  *
- * The interval is mount-scoped and deliberately independent of the stream it
- * guards: a watchdog that triggers a reconnect must not be torn down and
+ * The interval is source-scoped and independent of the retry epoch: a watchdog that triggers a reconnect must not be torn down and
  * rebuilt by that same reconnect, which would reset its own clock and let a
  * dead stream retry once per check instead of once per window.
  */
@@ -71,39 +74,56 @@ export function useTickStreamWatchdog(
   const silenceMs = opts.silenceMs ?? STREAM_SILENCE_MS;
   const tickMs = opts.tickMs ?? STREAM_WATCHDOG_TICK_MS;
 
+  const enabled = opts.enabled ?? true;
+  const streamKey = opts.streamKey ?? "default";
+  const binding = useMemo(() => ({ enabled, streamKey }), [enabled, streamKey]);
+  const bindingRef = useRef(binding);
+  useLayoutEffect(() => { bindingRef.current = binding; }, [binding]);
   const [epoch, setEpoch] = useState(0);
-  const [stalled, setStalled] = useState(false);
+  const [status, setStatus] = useState({ binding, stalled: false });
   const lastFrameAtRef = useRef<number>(Date.now());
 
   const noteFrame = useCallback(() => {
+    const current = bindingRef.current;
+    if (!current.enabled) return;
     lastFrameAtRef.current = Date.now();
     // Only clear when actually set, so a healthy stream does not re-render on
     // every frame (a chatty feed delivers several per second).
-    setStalled((prev) => (prev ? false : prev));
+    setStatus(prev => prev.binding === current && !prev.stalled ? prev : {binding: current, stalled: false});
   }, []);
 
   const noteError = useCallback(() => {
-    setStalled(true);
+    const current = bindingRef.current;
+    if (!current.enabled) return;
+    setStatus(prev => prev.binding === current && prev.stalled ? prev : {binding: current, stalled: true});
   }, []);
 
   const noteStreamOpened = useCallback(() => {
+    const current = bindingRef.current;
+    if (!current.enabled) return;
     // A fresh stream starts its own silence clock; any prior stall verdict
     // belonged to the connection it replaced.
     lastFrameAtRef.current = Date.now();
-    setStalled((prev) => (prev ? false : prev));
+    setStatus(prev => prev.binding === current && !prev.stalled ? prev : {binding: current, stalled: false});
   }, []);
 
   useEffect(() => {
+    if (!binding.enabled) return;
+    lastFrameAtRef.current = Date.now();
     const timer = setInterval(() => {
+      if (bindingRef.current !== binding) return;
       if (Date.now() - lastFrameAtRef.current < silenceMs) return;
       // Reset the clock AT the decision, so a stream that stays dead retries
       // once per silence window rather than once per watchdog tick.
       lastFrameAtRef.current = Date.now();
-      setStalled(true);
+      setStatus({binding, stalled: true});
       setEpoch((n) => n + 1);
     }, tickMs);
     return () => clearInterval(timer);
-  }, [silenceMs, tickMs]);
+  }, [binding, silenceMs, tickMs]);
 
+  // A replacement source must never render the previous source's warning,
+  // including the first render before passive subscription cleanup runs.
+  const stalled = enabled && status.binding === binding && status.stalled;
   return { epoch, stalled, noteFrame, noteError, noteStreamOpened };
 }

@@ -545,7 +545,10 @@ export function ARXNativeChart({
   // the chart sat frozen indefinitely while still presenting as live. The hook
   // owns silence detection and the reconnect signal; see its own file for the
   // detection rationale and timings.
-  const streamWatchdog = useTickStreamWatchdog();
+  const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
+  const tickSource = chartTickSource(data?.feedStatus?.source);
+  const streamEnabled = resolvedSymbol.length > 0 && tickSource !== null && typeof EventSource === "function";
+  const streamWatchdog = useTickStreamWatchdog({enabled: streamEnabled, streamKey: chartContext});
 
   // Chart Brain v2 (Task 1) — centralized Chart Intelligence State. This is a
   // SEPARATE, non-blocking fetch from the candle query above: candles render
@@ -576,7 +579,6 @@ export function ARXNativeChart({
   // #373). This component owns React state, data, feed-status and UI; the
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
-  const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
   const overlays = useMemo(() => [...suppliedOverlays,...(researchOpen&&researchLayer?.context===chartContext?researchLayer.rows:[])].filter(overlay =>
     overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
   [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
@@ -925,8 +927,6 @@ export function ARXNativeChart({
     newestBarSecRef.current = pending.bar.time;
   }, [chartEpoch, chartContext]);
 
-  const tickSource = chartTickSource(data?.feedStatus?.source);
-
   // ── Real-time forming-tip (Task #501). Subscribe to the SAME server SSE
   //    tick-stream the Scanner chart uses (Task #496) for the current
   //    (symbol, timeframe) and apply each forming bar through the chart-engine
@@ -957,7 +957,7 @@ export function ARXNativeChart({
     // tick yet emits no feed_status, so a stale badge would otherwise linger.
     setMarketFrozen(null);
     setFormingCloseMs(null);
-    if (resolvedSymbol.length === 0 || !tickSource) return;
+    if (!streamEnabled || !tickSource) return;
     const url = u(
       `/api/chart/tick-stream?symbol=${encodeURIComponent(resolvedSymbol)}&timeframe=${encodeURIComponent(timeframe)}&source=${encodeURIComponent(tickSource)}`,
     );
@@ -971,7 +971,10 @@ export function ARXNativeChart({
     try {
       es = new EventSource(url, { withCredentials: true });
     } catch {
-      return; // EventSource unavailable — the 8s poll still keeps the tip fresh.
+      // An eligible constructor can fail transiently. Preserve bounded recovery
+      // instead of permanently disabling this source; polling remains available.
+      streamWatchdog.noteError();
+      return;
     }
     streamWatchdog.noteStreamOpened();
     // A context bound without an engine (a deferred comparison) belongs to
@@ -1077,7 +1080,7 @@ export function ARXNativeChart({
     // The watchdog's callbacks are stable; `epoch` is the reconnect signal and
     // this effect's cleanup closes the dead stream before the replacement opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedSymbol, timeframe, streamWatchdog.epoch, tickSource, chartContext]);
+  }, [resolvedSymbol, timeframe, streamWatchdog.epoch, tickSource, chartContext, streamEnabled]);
 
   // ── Deep-history scroll-back wiring. Register a stable handler with the engine
   //    that fires when the user pans near the oldest loaded bar; it asks the
