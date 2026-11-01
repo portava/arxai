@@ -432,7 +432,7 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
       }
       markSuccess({ freshness: parsed.freshness, source: "twelve_data" });
       return { connected: true, source: "twelve_data", symbol: tdSym, timeframe: tf, candles: parsed.candles, freshness: parsed.freshness, asOf: parsed.candles.at(-1)!.t,
-        notes: "Explicit UTC intraday output; original bar-open times preserved. Exchange timezone metadata is distinct from requested output timezone. Historical research price/clock authority remains unqualified." };
+        notes: "Explicit UTC intraday output; original bar-open times preserved. Exchange timezone metadata is distinct from requested output timezone. Historical candles do not verify real-time entitlement or a current quote. Historical research price/clock authority remains unqualified." };
     },
     async getLiveQuote(rawSymbol) {
       const symbol = validateSymbol(rawSymbol);

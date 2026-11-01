@@ -25,7 +25,7 @@ function originalUtcOpen(value:unknown,now:number):string|null {
   const iso=value.replace(" ","T")+".000Z",ms=Date.parse(iso);
   return Number.isSafeInteger(ms) && ms>0 && ms<=now && new Date(ms).toISOString()===iso ? iso : null;
 }
-export type TwelveDataCandleRead = {ok:true;candles:Candle[];freshness:"REALTIME"|"DELAYED"} | {ok:false;reason:string};
+export type TwelveDataCandleRead = {ok:true;candles:Candle[];freshness:"DELAYED"} | {ok:false;reason:string};
 /** Only call for this adapter's explicit timezone=UTC, order=desc request.
  * No timezone conversion, partial salvage, synthetic rows or research authority.
  * Dates name ORIGINAL BAR OPENS (not closes); daily local dates are unsupported.
@@ -51,5 +51,7 @@ export function parseTwelveDataIntradayCandles(payload:unknown,request:{symbol:s
     previous=Date.parse(t);candles.push({t,o,h,l,c,v});
   }
   candles.reverse();
-  return {ok:true,candles,freshness:now-Date.parse(candles.at(-1)!.t)<=2*intervalMs?"REALTIME":"DELAYED"};
+  // A bar opening recently (especially H4) proves neither current observation
+  // nor real-time plan entitlement. Preserve history without upgrading liveness.
+  return {ok:true,candles,freshness:"DELAYED"};
 }
