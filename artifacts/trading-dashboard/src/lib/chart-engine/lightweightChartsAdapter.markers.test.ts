@@ -26,14 +26,17 @@ const { createSeriesMarkersMock } = vi.hoisted(() => ({
 
 vi.mock("lightweight-charts", () => {
   const makeLineSeries = () => ({ setData: vi.fn() });
-  const makeCandleSeries = () => ({
+  const makeCandleSeries = () => {
+    const state: Record<string, unknown> = {priceLineVisible:true,lastValueVisible:true};
+    return ({
     setData: vi.fn(),
     update: vi.fn(),
-    applyOptions: vi.fn(),
-    createPriceLine: vi.fn(() => ({ applyOptions: vi.fn() })),
+    options: () => ({...state}),
+    applyOptions: vi.fn(change => Object.assign(state,change)),
+    createPriceLine: vi.fn(options => {const state={...options};return {options:()=>({...state}),applyOptions:vi.fn(change=>Object.assign(state,change))};}),
     removePriceLine: vi.fn(),
     priceToCoordinate: vi.fn(() => 0),
-  });
+  });};
   const CandlestickSeries = { __kind: "CandlestickSeries" };
   const LineSeries = { __kind: "LineSeries" };
   const createChart = vi.fn(() => ({

@@ -994,7 +994,9 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       // still belongs to the reader, never to this streamed display update.
       this.queueViewportUpdate();
       this.queueLegendUpdate();
-      if (this.lastPriceLine && this.feedState.livePriceAffordance) this.lastPriceLine.applyOptions({ price: candle.close });
+      if (this.lastPriceLine && this.feedState.livePriceAffordance && this.lastPriceLine.options().price !== candle.close) {
+        this.lastPriceLine.applyOptions({ price: candle.close });
+      }
     } catch { /* ignore a bad streaming update */ }
   }
 
@@ -1029,14 +1031,20 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // would show the averaged close, so it stays hidden; the dashed "Last"
     // line below always carries the canonical last close.
     const seriesLabel = live && this.displayMode !== "heikinAshi";
-    series.applyOptions({ priceLineVisible: seriesLabel, lastValueVisible: seriesLabel });
+    // applyOptions invalidates the renderer even when values are identical.
+    // Read its actual state so poll reconciliation can skip redundant work
+    // without caching away a live/stale transition or a new series instance.
+    const current = series.options();
+    if (current.priceLineVisible !== seriesLabel || current.lastValueVisible !== seriesLabel) {
+      series.applyOptions({ priceLineVisible: seriesLabel, lastValueVisible: seriesLabel });
+    }
 
     const last = this.candles.at(-1);
     if (!live || !last) {
       if (this.lastPriceLine) series.removePriceLine(this.lastPriceLine);
       this.lastPriceLine = null;
     } else if (this.lastPriceLine) {
-      this.lastPriceLine.applyOptions({ price: last.close });
+      if (this.lastPriceLine.options().price !== last.close) this.lastPriceLine.applyOptions({ price: last.close });
     } else {
       this.lastPriceLine = series.createPriceLine({
         price: last.close, color: "#60a5fa", lineWidth: 1,
