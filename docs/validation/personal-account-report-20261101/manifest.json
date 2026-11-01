@@ -1,0 +1,155 @@
+{
+  "applicationCommit": "4d95fb3348bee9c51e7aaf7bdb13457178e7e227",
+  "files": [
+    {
+      "path": "account-snapshot-commit.log",
+      "sha256": "2fccb2a3a948c23fd59bb45db21a69d76e54b718a99789210ce74869d1f87ee7"
+    },
+    {
+      "path": "account-snapshot-lane.log",
+      "sha256": "8f566f951881150a4d5d58c5c3752fa3d1fabdbdd39a4820dd11173c17cca039"
+    },
+    {
+      "path": "api-build-commit.log",
+      "sha256": "0371632b51f143f97d3aa4be6932ad3846758e1f6fd1a2b0df68026b2e6ff941"
+    },
+    {
+      "path": "api-typecheck-commit.log",
+      "sha256": "b179ef367090cd17be9ebc3a4edf1fd11d6a9b8e87da9bc6b6aa1784b8c268fe"
+    },
+    {
+      "path": "api-typecheck-local.log",
+      "sha256": "b179ef367090cd17be9ebc3a4edf1fd11d6a9b8e87da9bc6b6aa1784b8c268fe"
+    },
+    {
+      "path": "dashboard-build-commit.log",
+      "sha256": "e31b2cf929f783a7a59316ec9a8721c2095c455beeb2a932183e1d837e50dcae"
+    },
+    {
+      "path": "dashboard-typecheck-commit.log",
+      "sha256": "63ed1959f72b25cc1f8f015f4ce32550ae8908f4c1a9356695bbec3a676ba842"
+    },
+    {
+      "path": "dashboard-typecheck-local.log",
+      "sha256": "42b6886cfcb43da1ed504153f9139750a1a833ee2483ff69ff9219a1817af72e"
+    },
+    {
+      "path": "dashboard-typecheck-ready.log",
+      "sha256": "63ed1959f72b25cc1f8f015f4ce32550ae8908f4c1a9356695bbec3a676ba842"
+    },
+    {
+      "path": "dashboard-typecheck.log",
+      "sha256": "4cc84f25ab39025a6adf9bc949e20029b381f9f8072b1ec07a5c695c9fed3307"
+    },
+    {
+      "path": "declarations-complete.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "declarations-local.log",
+      "sha256": "9cf62404284bd13c1ea5065e49d89fa0e7cdc18836901d60ece80331a741ebf8"
+    },
+    {
+      "path": "declarations.log",
+      "sha256": "49cd932b79437bafbbb70428ac2dede95b49e224312caf5cf22709142bd8642c"
+    },
+    {
+      "path": "frontend-after.log",
+      "sha256": "09a8050d3e81479bff7fbbe3a39fc6b61896e05de03803f5da4165893d7de61f"
+    },
+    {
+      "path": "frontend-before.log",
+      "sha256": "a8feb7e64b1ea3a51d8de311f680d51934a0d9e57fb6104cd0cd35d2f19912e0"
+    },
+    {
+      "path": "frontend-commit.log",
+      "sha256": "90900f7569b860403d6831fe55eb3f15225fd7d0b56e23e4465ce2c4605ff306"
+    },
+    {
+      "path": "frontend-expanded.log",
+      "sha256": "04e2f20207077bfe0cfcd9a6edb1aa03f680719288ef7535e68a14e7e7008701"
+    },
+    {
+      "path": "frontend-final.log",
+      "sha256": "1ee5e5d54027ba5c04f7a58536b2036e7b750c86896216dac3a558d834cc507e"
+    },
+    {
+      "path": "guard-baseline-comparison.json",
+      "sha256": "e66ebb9ed15c7d3978385ff5e68bf45463cbf968dc052d69114c8c99f82d60a1"
+    },
+    {
+      "path": "guard-baseline-diff.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "guard-binding-commit-ready.log",
+      "sha256": "65e631cd46a507b53842547998e9817e4b8ee5344a04d83c2ccaa5b46b67ec05"
+    },
+    {
+      "path": "guard-binding-commit.log",
+      "sha256": "8a478950d3b88b24f64424f83c1121d78c0db2dbe924d7c988f56bffdc5802fd"
+    },
+    {
+      "path": "guard-failure-comparison.json",
+      "sha256": "3187bdbf81c019e36e75877f90cd492df184a1995c5c4069dd5433e010766da0"
+    },
+    {
+      "path": "guard-scanner-commit-ready.log",
+      "sha256": "0698cb0fcd8d78fe93d39af6d6e38cf31cf7ad3e7747171f16df92f177586870"
+    },
+    {
+      "path": "guard-scanner-commit.log",
+      "sha256": "8a478950d3b88b24f64424f83c1121d78c0db2dbe924d7c988f56bffdc5802fd"
+    },
+    {
+      "path": "guard-wording-tests-commit-ready.log",
+      "sha256": "ea52afd33b844ff83ab98ce59ddb49f2e2adfa51aa733b6ed9b95d7b40e7875f"
+    },
+    {
+      "path": "guard-wording-tests-commit.log",
+      "sha256": "8a478950d3b88b24f64424f83c1121d78c0db2dbe924d7c988f56bffdc5802fd"
+    },
+    {
+      "path": "guards-commit.log",
+      "sha256": "ce5f28da46f110d5fe9f52066dc8b88db63a249b628a82675a5d0cec3038a479"
+    },
+    {
+      "path": "guards-root-commit-ready.log",
+      "sha256": "9e38c02126f628a6e94624a04d80b594499740cf0207c2f4551c9bbe0912be77"
+    },
+    {
+      "path": "guards-root-direct-commit.log",
+      "sha256": "8a478950d3b88b24f64424f83c1121d78c0db2dbe924d7c988f56bffdc5802fd"
+    },
+    {
+      "path": "independent-review.txt",
+      "sha256": "7941678808fda95e4c4c978124634bac6f5f4eac67540aa969b8b9fde1198dd2"
+    },
+    {
+      "path": "react-declarations.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "route-after.log",
+      "sha256": "b26588fca3c6afd15ed93c2f707553554c9611b64b746964bfd90cb3846cb843"
+    },
+    {
+      "path": "route-before.log",
+      "sha256": "a84138a1fbb6d038ebade6ff53f05d608e12b500d13664b117d3cb3128ad5294"
+    },
+    {
+      "path": "route-expanded.log",
+      "sha256": "df3c9562a43e911b7c200acda25a5deba8d2c3b53d97d18cd31808853f801a3c"
+    },
+    {
+      "path": "route-final.log",
+      "sha256": "a2a7eb238d754decef3be280b0b0aa71812a5baefa8aebb744370256986ce6bf"
+    },
+    {
+      "path": "validation-receipt.json",
+      "sha256": "a0a4657ae9f8a035e1b0baa31abf5d93243d1772f8f1d72f37b3f09b16970ee5"
+    }
+  ],
+  "archiveSha256": "b8ecd55973df838649c1aba0a9d3055a458df7c3c1cd37ba49ea2daf576d296b",
+  "limits": "Offline source/DOM checks only; no broker latency or universal monetary equality claim."
+}
