@@ -62,3 +62,13 @@ exclude held performance experiments.
 **How to apply:** Preserve the Scanner-specific layout and independent comparison
 contexts without treating this acceptance as permission for held toolbar-phase,
 resize-dedup, containment or mount-budget work.
+
+The failed compact-initial startup experiment also remains held when importing
+the accepted price/calendar-time ruler.
+
+**Why:** The ruler's source-linked report identifies that excluded experiment;
+the owner explicitly excluded every held performance experiment.
+
+**How to apply:** Keep ruler geometry, arithmetic and drawing controls separate
+from startup/layout experiments, and preserve partial-visibility limitations
+rather than implying this feature resolves them.
