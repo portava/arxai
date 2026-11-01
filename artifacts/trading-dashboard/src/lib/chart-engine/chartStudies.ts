@@ -1,3 +1,4 @@
+import { calculateVolumeProfile, type VolumeProfileRange, type VolumeProfileResult } from "./chartVolumeProfile";
 import {formatSourceChartTime} from "./chartClockEvidence";
 import { advanceStudyAverage, chartTrueRange, type SeededAverageState } from "@workspace/domain/chart-indicator-math";
 import { observedTickVolume, observedTradeVolume } from "./chartVolume";
@@ -5,7 +6,7 @@ import type { ChartEngineCandle } from "./types";
 import { ChartRangeWindow, scanChartRange } from "./chartRangeWindow";
 
 export type StudyKind =
-  | "vwap" | "trade_volume" | "tick_volume" | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
+  | "volume_profile" | "vwap" | "trade_volume" | "tick_volume" | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
   | "rsi" | "macd" | "atr" | "cci" | "stochastic" | "williams"
   | "stddev" | "envelopes" | "momentum" | "roc" | "donchian" | "dmi";
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
@@ -15,6 +16,9 @@ export interface VwapAnchor { kind:"observed_bar"; time:number; seriesIdentity:s
 export interface ChartStudy {
   /** Frozen exact observed-bar anchor; source changes must not borrow it. */
   vwapAnchor?: VwapAnchor;
+  profileRange?: VolumeProfileRange;
+  profileRows?: number;
+  profileValueAreaPercent?: number;
   /** Old workspaces used kind as identity. Explicit IDs allow repeated studies. */
   id?: string;
   kind: StudyKind;
@@ -65,6 +69,7 @@ export const STUDY_CATALOG: StudyDefinition[] = [
   { name: "Tick volume", group: "Volume", description: "Explicit MT5 per-bar tick counts, not traded size. Only source-qualified observations are plotted; missing or partial streaming evidence stays blank, never zero-filled. No real traded-volume data is inferred.", defaults: { kind: "tick_volume", period: 1, color: "#38bdf8" }, channels: ["Ticks"], pane: true, appliedPrice: false },
   { name:"Anchored VWAP",group:"Volume",description:"Cumulative original bar price × provider-reported trade units / cumulative trade units, from an exact observed bar. HLC3 by default. Loaded observations only, not a full session or trade-by-trade average. Missing/zero/unqualified volume holds the remaining interval; no tick proxy.",defaults:{kind:"vwap",period:1,source:"hlc3",color:"#fbbf24"},channels:["VWAP"],pane:false,appliedPrice:true },
   { name:"Trade volume",group:"Volume",description:"Qualified provider-reported trade units per original closed bar. These are not tick counts, proven shares or consolidated-market volume. Missing/zero/unqualified quantities stay blank.",defaults:{kind:"trade_volume",period:1,color:"#34d399"},channels:["Trade units"],pane:true,appliedPrice:false },
+  {name:"Estimated volume profile",group:"Volume",description:"Fixed-range price bins estimate uniform volume across original candle ranges. Qualified provider trade units only; no tick substitute, observed executions-at-price or complete-session claim.",defaults:{kind:"volume_profile",period:1,color:"#a78bfa",profileRows:32,profileValueAreaPercent:70},channels:["Estimated trade units"],pane:false,appliedPrice:false},
 ];
 /** Preserve the original starter collection and saved templates. */
 export const STUDY_DEFAULTS = (["sma", "ema", "bollinger", "rsi", "macd"] as const).map(kind => STUDY_CATALOG.find(item => item.defaults.kind === kind)!.defaults);
@@ -80,6 +85,7 @@ export function formatStudyNumber(value:number,channel:string):string {
   return ["Ticks","Ticks (hidden)","Trade units","Trade units (hidden)"].includes(channel) ? String(value) : String(Number(value.toPrecision(8)));
 }
 export function studyLabel(study: ChartStudy): string {
+  if(study.kind === "volume_profile")return "Estimated volume profile · provider trade units";
   if(study.kind === "trade_volume")return "Trade volume · provider-reported trade units";
   if(study.kind === "vwap")return `VWAP · ${study.source ?? "hlc3"} · observed-bar anchor ${study.vwapAnchor ? formatSourceChartTime(study.vwapAnchor.time,false,"UTC",{seconds:true}) : "not selected"}`;
   if (study.kind === "tick_volume") return "Tick volume · ticks (not traded size)";
@@ -113,6 +119,8 @@ interface State { price: number; averages: Record<string, AverageState>; vwap?:{
  * See docs/SMART_CHART_STUDY_CONVENTIONS.md for seeds and flat-market choices. */
 export class StudyCalculator {
   private states: State[] = [];
+  private profile:VolumeProfileResult|undefined;
+  get profileResult():VolumeProfileResult|undefined{return this.profile;}
   /** prices[i] === states[i].price for every i < states.length. The O(n*p)
    * deviation loops read this contiguous buffer instead of State objects.
    * It persists across calls: entries at index >= states.length are stale and
@@ -133,6 +141,10 @@ export class StudyCalculator {
    * Default callers still receive every changed point in its original order. */
   calculate(bars: ChartEngineCandle[], from = 0, collectChanges = true): StudyPoint[] {
     const c = this.config;
+    if(c.kind === "volume_profile") {
+      this.profile=calculateVolumeProfile(bars,c.profileRange,c.profileRows??32,c.profileValueAreaPercent??70);
+      this.points.length=0;this.states.length=0;return [];
+    }
     const p = c.period;
     from = Math.max(0, Math.min(from, this.states.length, bars.length));
     this.states.length = from;

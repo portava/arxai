@@ -105,7 +105,7 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
     adapter.setStudies([]);
     expect(adapter.getStudyValues(bars[40]!.time)).toEqual([]);
   });
-  it.each(STUDY_CATALOG)("$name retains only correct causal state across replay and corrections", definition => {
+  it.each(STUDY_CATALOG.filter(d=>d.defaults.kind!=="volume_profile"))("$name retains only correct causal state across replay and corrections", definition => {
     const config = definition.defaults;
     adapter.setStudies([config]);
     const renderedStudies=m.handles.slice(1);
@@ -432,4 +432,15 @@ it("manual and assistant average comparisons use identical rendered values acros
   adapter.resetDataContext();save.mockClear();
   expect(executeStudyRequest(parseStudyRequest('Compare the 20 EMA and 50 EMA')!,{adapter,studies:[],symbol:'GBPUSD',timeframe:'M5',feedLabel:'Unknown',save})).toContain('not applied');
   expect(save).not.toHaveBeenCalled();
+});
+
+it('keeps estimated profile on original OHLC under Heikin Ashi and withdraws metadata-only evidence',()=>{
+ const authority='twelve-data:time-series:common-stock:regular-unadjusted:v1',identity='a'.repeat(64);
+ const original:ChartEngineCandle[]=bars.map((b,i)=>({...b,volumeEvidence:{kind:'real_volume',unit:'provider_trade_units',quantity:100+i,reason:null,authority,seriesIdentity:identity},profileEvidence:{finality:'closed',clockAuthority:authority}}));adapter.setCandles(original);
+ adapter.setStudies([{kind:'volume_profile',period:1,color:'#aaaaaa',profileRows:8,profileRange:{kind:'observed_range',fromTime:original[0]!.time,toTime:original.at(-1)!.time,seriesIdentity:identity,clockAuthority:authority}}]);
+ const result=adapter.getVolumeProfiles()[0]!.result;expect(result.status).toBe('ready');adapter.setChartStyle('heikinAshi');expect(adapter.getVolumeProfiles()[0]!.result).toBe(result);expect((adapter as any).candles).toEqual(original);expect((adapter as any).haBars).not.toEqual(original);
+ expect(()=>{(adapter.getVolumeProfiles()[0]!.result as any).rows[0].estimatedTradeUnits=0;}).toThrow();expect(adapter.getVolumeProfiles()[0]!.result).toBe(result);
+ const anchor={kind:'observed_bar' as const,time:original[0]!.time,seriesIdentity:identity};expect(adapter.getVwapAnchorEvidence(anchor).utcQualified).toBe(true);
+ adapter.setCandles(original.map(b=>({...b,profileEvidence:{...b.profileEvidence!,clockAuthority:null}})));expect(adapter.getVolumeProfiles()[0]!.result.status).toBe('held');expect(adapter.getVwapAnchorEvidence(anchor).utcQualified).toBe(false);
+ adapter.setStudies([{kind:'vwap',period:1,color:'#aaaaaa',vwapAnchor:anchor}]);expect(adapter.getStudyValues(original[0]!.time)[0]!.displayLabel).toContain('unverified');adapter.setCandles(original);expect(adapter.getStudyValues(original[0]!.time)[0]!.displayLabel).not.toContain('unverified');expect(adapter.getStudyValues(original[0]!.time)[0]!.label).toContain('unverified');
 });
