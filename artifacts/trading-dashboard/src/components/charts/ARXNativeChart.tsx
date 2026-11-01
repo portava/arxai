@@ -321,6 +321,14 @@ export interface ARXNativeChartProps {
   mirrorLockDefault?: boolean;
 }
 
+/** The first canvas and later viewport changes use the same sizing policy. */
+function viewportChartHeight(height:number,mobileHeight:number|undefined,expanded:boolean):number {
+  if(typeof window === "undefined")return height;
+  if(expanded)return Math.max(240,window.innerHeight-240);
+  if(window.innerWidth<768)return mobileHeight??Math.max(320,Math.min(height,380));
+  return height;
+}
+
 export function ARXNativeChart({
   workspaceId = "primary",
   symbol,
@@ -626,23 +634,15 @@ export function ARXNativeChart({
 
   // Phase 2 — responsive chart height. On narrow viewports the default 520px
   // height leaves too little room when panels stack below the canvas. We
-  // honour `mobileHeight` when provided; otherwise cap at 320px on mobile so
+  // honour `mobileHeight` when provided; otherwise use 320–380px on mobile so
   // the chart is always readable without crushing the rest of the page.
-  const [effectiveHeight, setEffectiveHeight] = useState(height);
+  const [effectiveHeight, setEffectiveHeight] = useState(()=>viewportChartHeight(height,mobileHeight,expanded));
   const [mobileLayout, setMobileLayout] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
     const update = () => {
       const isMobile = window.innerWidth < 768;
       setMobileLayout(isMobile);
-      if (expanded) {
-        setEffectiveHeight(Math.max(240, window.innerHeight - 240));
-      } else if (isMobile && mobileHeight != null) {
-        setEffectiveHeight(mobileHeight);
-      } else if (isMobile) {
-        setEffectiveHeight(Math.max(320, Math.min(height, 380)));
-      } else {
-        setEffectiveHeight(height);
-      }
+      setEffectiveHeight(viewportChartHeight(height,mobileHeight,expanded));
     };
     update();
     window.addEventListener("resize", update);

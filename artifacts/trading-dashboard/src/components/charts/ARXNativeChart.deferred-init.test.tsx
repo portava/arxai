@@ -164,6 +164,58 @@ afterEach(() => {
   delete (document as unknown as { hidden?: boolean }).hidden;
 });
 
+describe("initial mobile chart height", () => {
+  it.each([
+    {width:390,height:520,mobileHeight:360,expected:360},
+    {width:767,height:520,mobileHeight:360,expected:360},
+    {width:768,height:520,mobileHeight:360,expected:520},
+    {width:390,height:280,mobileHeight:undefined,expected:320},
+    {width:390,height:520,mobileHeight:undefined,expected:380},
+    {width:1440,height:640,mobileHeight:undefined,expected:640},
+  ])("initializes cached candles at $expected px for width $width and height $height", ({width,height,mobileHeight,expected}) => {
+    vi.stubGlobal("innerWidth",width);
+    candleResponse=liveResponse("EURUSD","H1");
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" height={height} mobileHeight={mobileHeight} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(created).toHaveLength(1);
+    const engine=created[0]!;
+    expect(engine.init).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({height:expected}));
+    expect(screen.getByTestId("arx-native-canvas").style.height).toBe(`${expected}px`);
+    expect(engine.resize.mock.calls.every(call=>call[1]===expected)).toBe(true);
+    expect(engine.setCandles).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({time:OPEN_MS/1000,close:1.101})]));
+    expect(engine.destroy).not.toHaveBeenCalled();
+  });
+
+  it("retains the engine and candles through prop, breakpoint and fullscreen height changes", () => {
+    vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);
+    candleResponse=liveResponse("EURUSD","H1");
+    const app=(height:number,mobileHeight:number)=><ARXNativeChart symbol="EURUSD" timeframe="H1" height={height} mobileHeight={mobileHeight} showFeedStatus={false} overlays={NO_OVERLAYS}/>;
+    const view=render(app(520,360)),engine=created[0]!,canvas=screen.getByTestId("arx-native-canvas");
+    const assertHeight=(expected:number)=>{
+      expect(canvas.style.height).toBe(`${expected}px`);
+      expect(engine.resize).toHaveBeenLastCalledWith(undefined,expected);
+      expect(created).toHaveLength(1);expect(engine.init).toHaveBeenCalledTimes(1);
+      expect(engine.destroy).not.toHaveBeenCalled();expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
+      expect(engine.setCandles).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({time:OPEN_MS/1000,close:1.101})]));
+    };
+    assertHeight(360);view.rerender(app(700,420));assertHeight(420);
+    vi.stubGlobal("innerWidth",768);act(()=>window.dispatchEvent(new Event("resize")));assertHeight(700);
+    vi.stubGlobal("innerHeight",400);fireEvent.click(screen.getByRole("button",{name:"Fullscreen",exact:true}));assertHeight(240);
+    vi.stubGlobal("innerHeight",800);act(()=>window.dispatchEvent(new Event("resize")));assertHeight(560);
+    fireEvent.click(screen.getByRole("button",{name:"Exit fullscreen",exact:true}));assertHeight(700);
+    vi.stubGlobal("innerWidth",390);act(()=>window.dispatchEvent(new Event("resize")));assertHeight(420);
+  });
+
+  it("uses the latest viewport when a deferred comparison engine starts",()=>{
+    vi.stubGlobal("innerWidth",390);candleResponse=liveResponse("EURUSD","H1");
+    render(<ARXNativeChart workspaceId="comparison" symbol="EURUSD" timeframe="H1" height={520} mobileHeight={360} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(created).toHaveLength(0);expect(screen.getByTestId("arx-native-canvas").style.height).toBe("360px");
+    vi.stubGlobal("innerWidth",1440);act(()=>window.dispatchEvent(new Event("resize")));
+    runFrame();runTasks();
+    expect(created).toHaveLength(1);expect(created[0]!.init).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({height:520}));
+    expect(screen.getByTestId("arx-native-canvas").style.height).toBe("520px");
+  });
+});
+
 describe("persistent chart notices do not cover candles or user notes", () => {
   const noticeIds = ["arx-native-safe-mode", "arx-native-line-mode", "arx-native-feed-banner"];
   const assertNoticeBeforeCanvas = (id: string) => {
