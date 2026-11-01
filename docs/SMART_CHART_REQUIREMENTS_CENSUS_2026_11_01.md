@@ -2,6 +2,10 @@
 
 Scope: the owner's Smart Chart/backtesting document supplied on this date. The initial census inspected `d535c3f3`; this update records accepted application `4ad8a5aceb82483fdb35cf9fd747768e55aabf2e` and the exact-source receipts in `SMART_CHART_AI_TRUTH_INTEGRATION_2026_11_01.md` and `CHART_RESEARCH_WORKBENCH_2026_11_01.md`. It is not a deployment receipt, completion percentage or competitor-parity claim. The same chart, assistant, Truth and historical engines remain the authorities. Replit development import/validation is tracked separately; the API runtime has not been activated.
 
+## Source-evidence correction after this census
+
+Application `5507f148` and test-only `4cbd6169` correct the producer-basis gap in the earlier4ad8a5ac acceptance: a symbol profile or legacy MT5 provider label does not prove BID/MID. Historical research now requires matching original per-bar producer declarations and version2 snapshots. Shipped EAs omit those declarations, so their candles display but research holds; no actual broker research qualification is claimed. See `CHART_PRICE_BASIS_EVIDENCE_2026_11_01.md` for exact-source combined checks and remaining limits. This adds to the existing owners; it does not add another chart or engine.
+
 ## Thirteen requested chart tools
 
 Paths in this section are relative to `artifacts/trading-dashboard/src/`.
