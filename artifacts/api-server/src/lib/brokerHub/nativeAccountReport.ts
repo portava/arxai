@@ -1,5 +1,5 @@
 // Read-only native account report projection. Never an execution/risk authority.
-import { createHash } from 'node:crypto';
+import { hash } from 'node:crypto';
 import { bridgeV2 } from '@workspace/domain';
 export interface NativeAccountConnection {
     readonly id: number;
@@ -47,7 +47,7 @@ export function nativeAccountBinding(login: string | null | undefined, server: s
     const canonical = BigInt(login);
     if (canonical <= 0n)
         return null;
-    return createHash('sha256').update('ARX_ACCOUNT_V1\n' + canonical.toString() + '\n' + server, 'utf8').digest('hex');
+    return hash('sha256', 'ARX_ACCOUNT_V1\n' + canonical.toString() + '\n' + server, 'hex');
 }
 const validId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 const validTime = (value: unknown): value is number => validId(value) && value <= 8640000000000000;
