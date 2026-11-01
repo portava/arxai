@@ -98,3 +98,13 @@ it("uses explicit left/alphabetic text alignment regardless of inherited canvas 
  f.primitive.setData(annotation,candles);f.draw();
  expect(states).toHaveLength(3);expect(states.every(s=>s.align==="left"&&s.baseline==="alphabetic")).toBe(true);
 });
+
+it("snapshots caller-owned nested annotation evidence before later mutation",()=>{
+ const f=fixture(),input=structuredClone({...annotation,segments,guide:{from:{time:190,price:10},to:{time:460,price:14}},level:{price:15,label:"Reference"}});
+ f.primitive.setData(input,candles);
+ input.anchors[0]!.price=999;input.anchors[0]!.label="MUTATED";input.segments[0]!.from.price=999;input.guide.to.price=999;input.level.price=999;input.color="#ff0000";
+ f.draw();expect(f.priceToCoordinate).not.toHaveBeenCalledWith(999);expect(f.context.fillText.mock.calls.flat()).not.toContain("MUTATED");expect(f.context.moveTo).toHaveBeenCalledWith(100,85);
+});
+it.each([{anchors:undefined},{anchors:[null]},{anchors:[{time:100,price:15}]},{guide:{from:null,to:{time:190,price:15}}},{segments:[null]}])("malformed annotation shape withholds without throwing: %j",patch=>{
+ const f=fixture();expect(()=>f.primitive.setData({...annotation,...patch} as any,candles)).not.toThrow();expect(()=>f.draw()).not.toThrow();expect(f.context.stroke).not.toHaveBeenCalled();
+});

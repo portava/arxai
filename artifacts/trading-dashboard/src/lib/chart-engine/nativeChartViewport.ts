@@ -4,7 +4,11 @@ import { panChartWindow, zoomChartWindow, type LogicalWindow } from "./chartNavi
 import { candleDisplayPrecision, historyRangeShift } from "./candleReconciliation";
 import { CHART_STYLES, validateDrawings, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import { effectiveDisplayZone, isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
-import type { ChartEngineCandle } from "./types";
+import type { ChartEngineCandle, ChartStructureLine, ChartStructureMarker } from "./types";
+import type { ChartOverlay } from "../chart-overlays";
+import type { SmartChartAnnotation } from "./smartChartAnnotationCanvas";
+import { NativeScannerOverlays } from "./nativeScannerOverlays";
+import { NativeChartOverlayLayers } from "./nativeChartOverlayLayers";
 import type { ChartStudy } from "./chartStudies";
 import { NativeChartStudies, layoutNativeStudyPanes, paintNativeStudies } from "./nativeChartStudies";
 
@@ -45,6 +49,9 @@ export class NativeChartViewport {
   private series = prepareNativePriceSeries([]);
   private readonly studies = new NativeChartStudies();
   private priceOnlyScale = false;
+  private analysisFocused = false;
+  private readonly overlayLayers = new NativeChartOverlayLayers();
+  private readonly scannerOverlays: NativeScannerOverlays;
   private drawingEditor: ChartDrawingEditor;
   private drawings: ChartDrawing[] = [];
   private selectedDrawing: string | null = null;
@@ -73,6 +80,10 @@ export class NativeChartViewport {
   private mutationRevision = 0;
   private raf: number | null = null;
   private drawCount = 0;
+  // Presentation proof belongs to a completed paint of the latest request,
+  // never merely a queued focus change. This does not qualify source evidence.
+  private paintRevision = 0;
+  private paintedRevision = -1;
   private paintError: string | null = null;
   private frameIssue: string | null = null;
   private callbackError: string | null = null;
@@ -103,6 +114,8 @@ export class NativeChartViewport {
     if (!context) throw new Error("Canvas 2D is unavailable");
     this.context = context;
     container.appendChild(this.canvas);
+    this.scannerOverlays = new NativeScannerOverlays({container:this.canvas,
+      getFrame:()=>this.getFrame(),getSize:()=>({width:this.width,height:this.height}),invalidate:()=>this.schedule()});
     this.drawingEditor = new ChartDrawingEditor(this.canvas, {
       candles: () => this.series.candles as ChartEngineCandle[],
       project: (anchor, priceOnly) => this.projectDrawing(anchor, priceOnly),
@@ -250,7 +263,7 @@ export class NativeChartViewport {
         this.notify("drawing commit", () => config.onCommit(this.cloneDrawings(next)));
       },
     } : null;
-    this.drawingEditor.configure(this.drawingNavigationMode === "pan" ? null : this.drawingInteraction);
+    this.drawingEditor.configure(this.analysisFocused || this.drawingNavigationMode === "pan" ? null : this.drawingInteraction);
   }
   setDrawingHandler(handler: ((anchor: ChartAnchor) => void) | null): void {
     if (this.destroyed) return;
@@ -259,10 +272,10 @@ export class NativeChartViewport {
   setNavigationMode(mode: "inspect" | "pan"): void {
     if (this.destroyed || (mode !== "inspect" && mode !== "pan")) return;
     this.drawingNavigationMode = mode;
-    this.drawingEditor.configure(mode === "pan" ? null : this.drawingInteraction);
+    this.drawingEditor.configure(this.analysisFocused || mode === "pan" ? null : this.drawingInteraction);
     this.applyDrawingPlacement();
   }
-  private activeDrawingPlacement() { return this.drawingNavigationMode !== "pan" && this.drawingHandler !== null; }
+  private activeDrawingPlacement() { return !this.analysisFocused && this.drawingNavigationMode !== "pan" && this.drawingHandler !== null; }
   private applyDrawingPlacement() {
     this.cancelGesture();this.clearHover();
     const handler = this.activeDrawingPlacement() ? this.drawingHandler : null;
@@ -314,10 +327,37 @@ export class NativeChartViewport {
       }
     } finally {ctx.restore();}
   }
+  setStructureLines(lines: readonly ChartStructureLine[], markers: readonly ChartStructureMarker[]): void {
+    if (this.destroyed) return;
+    this.overlayLayers.setStructureLines(lines,markers);this.schedule();
+  }
+  setSmartAnnotation(annotation: SmartChartAnnotation | null): void {
+    if (this.destroyed) return;
+    this.overlayLayers.setSmartAnnotation(annotation);this.schedule();
+  }
+  setOverlays(overlays: readonly ChartOverlay[], latestBarTime: number | null): void {
+    if (this.destroyed) return;
+    this.overlayLayers.setOverlays(overlays,latestBarTime);this.schedule();
+  }
+  getScannerOverlaySurface() { return this.destroyed ? null : this.scannerOverlays.getSurface(); }
+  isAnalysisFocused(): boolean { return this.analysisFocused; }
+  isAnalysisFocusVerified(): boolean {
+    return !this.destroyed && !this.paintError && this.raf === null
+      && this.paintedRevision === this.paintRevision;
+  }
+  setAnalysisFocus(enabled: boolean): void {
+    if (this.destroyed || this.analysisFocused===enabled) return;
+    const revision=++this.mutationRevision;
+    this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
+    if(this.destroyed||revision!==this.mutationRevision)return;
+    this.analysisFocused=enabled;
+    this.drawingEditor.configure(enabled || this.drawingNavigationMode==="pan" ? null : this.drawingInteraction);
+    this.applyDrawingPlacement();this.invalidate();
+  }
   getRange(): Readonly<LogicalWindow> | null { return this.range ? Object.freeze({ ...this.range }) : null; }
   getPaneLayout() {
     const full = nativePlotLayout(this.width, this.height);
-    return full ? layoutNativeStudyPanes(full, this.studies.paneCount) : null;
+    return full ? layoutNativeStudyPanes(full, this.analysisFocused ? 0 : this.studies.paneCount) : null;
   }
   setStudies(configs: ChartStudy[]): void {
     if (this.destroyed) return;
@@ -325,8 +365,8 @@ export class NativeChartViewport {
     this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();if(this.destroyed || revision!==this.mutationRevision)return;
     this.studies.setStudies(configs, this.series.candles);this.invalidate();
   }
-  getStudyValues(time: number) { return this.studies.getValues(time); }
-  getVolumeProfiles() { return this.studies.getProfiles(); }
+  getStudyValues(time: number) { return this.analysisFocused ? [] : this.studies.getValues(time); }
+  getVolumeProfiles() { return this.analysisFocused ? [] : this.studies.getProfiles(); }
   setPriceOnlyScale(enabled: boolean): void {
     if(this.destroyed || this.priceOnlyScale===enabled)return;
     const revision=++this.mutationRevision;
@@ -344,7 +384,7 @@ export class NativeChartViewport {
     const plot = layout.price;
     const result = createNativePriceFrame(this.series, { plot, range: this.range, style: this.style, scale: this.scale,
       inverted: this.inverted, referencePrice: this.referencePrice ?? undefined,
-      additionalPriceValues: this.priceOnlyScale ? [] : this.studies.getPriceBounds(this.range, this.scale) });
+      additionalPriceValues: this.priceOnlyScale || this.analysisFocused ? [] : this.studies.getPriceBounds(this.range, this.scale) });
     this.frame = result.ok ? result.frame : null;
     // Incoming observations remain current during an edit, but the price axis
     // stays where the pointer gesture began. Time mapping rebases on actual
@@ -361,7 +401,8 @@ export class NativeChartViewport {
       timeZone: this.timeZone, effectiveTimeZone: effectiveDisplayZone(this.timeZone, this.timeframe), timeframe: this.timeframe,
       barCount: this.series.candles.length, discarded: this.series.discarded, range: this.getRange(), followingLatest: this.followingLatest,
       drawingCount: this.drawings.length, selectedDrawing: this.selectedDrawing, editingDrawing: this.frozenDrawingFrame !== null,
-      paneCount: this.studies.paneCount, priceOnlyScale: this.priceOnlyScale,
+      analysisFocused: this.analysisFocused, overlayLayers: this.overlayLayers.getState(), scannerOverlays: this.scannerOverlays.getState(),
+      paneCount: this.analysisFocused ? 0 : this.studies.paneCount, priceOnlyScale: this.priceOnlyScale,
       width: this.width, height: this.height, pixelRatio: this.pixelRatio, pendingPaint: this.raf != null, drawCount: this.drawCount, paintCount: this.drawCount });
   }
   setRange(range: LogicalWindow): void {
@@ -381,7 +422,7 @@ export class NativeChartViewport {
   setStyle(style: ChartStyle): void {
     if (!this.destroyed && CHART_STYLES.includes(style) && style !== this.style) {
       const revision = ++this.mutationRevision;
-      this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.style = style; this.invalidate();
+      this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.scannerOverlays.reset(); this.style = style; this.invalidate();
     }
   }
   setScale(scale: ChartScaleMode, inverted = this.inverted): void {
@@ -403,12 +444,15 @@ export class NativeChartViewport {
     this.drawingEditor.configure(null); this.drawingEditor.setPlacement(null); this.drawingEditor.setDrawings([]);
     this.drawings = []; this.selectedDrawing = null; this.drawingInteraction = null; this.drawingHandler = null;
     this.frozenDrawingFrame = null;this.editAnchorTimes=[];
+    this.overlayLayers.reset();this.scannerOverlays.reset();
     this.studies.reset();
     this.followingLatest = true; this.invalidate();
   }
   private invalidate() { this.frame = null; this.paintError = null; this.schedule(); }
   private schedule() {
-    if (this.destroyed || this.raf != null) return;
+    if (this.destroyed) return;
+    ++this.paintRevision;
+    if (this.raf != null) return;
     const generation = this.generation;
     const id = requestAnimationFrame(() => {
       if (this.destroyed || generation !== this.generation || this.raf !== id) return;
@@ -418,6 +462,7 @@ export class NativeChartViewport {
   }
   private paint() {
     if (this.destroyed) return;
+    const revision = this.paintRevision;
     try {
       const ctx = this.context;
       ctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
@@ -428,8 +473,12 @@ export class NativeChartViewport {
         const chartBottom = last.top + last.height;
         paintNativeAxes(ctx, frame, { timeZone: effectiveDisplayZone(this.timeZone, this.timeframe), priceDigits: this.priceDigits, timeAxisBottom:chartBottom });
         paintNativePriceLayer(ctx, frame);
-        paintNativeStudies(ctx, frame, layout.panes, this.studies);
-        this.paintDrawings(ctx, frame);
+        if (!this.analysisFocused) {
+          paintNativeStudies(ctx, frame, layout.panes, this.studies);
+          this.paintDrawings(ctx, frame);
+        }
+        this.overlayLayers.paint(ctx,frame,this.width,this.analysisFocused);
+        this.scannerOverlays.paint(ctx);
         if (this.hover) {
           ctx.save();
           try {
@@ -441,8 +490,12 @@ export class NativeChartViewport {
         }
       }
       this.drawCount++;
+      // Publish before callbacks: a callback may enqueue another request or
+      // reset this context, which must immediately revoke this paint's proof.
+      this.paintedRevision = frame ? revision : -1;
       this.notify("viewport", () => this.options.onViewportChange?.());
     } catch (error) {
+      this.paintedRevision = -1;
       this.frame = null; this.paintError = error instanceof Error ? error.message : "Price layer paint failed";
       try { this.context.clearRect(0, 0, this.width, this.height); } catch { /* preserve the original paint failure */ }
     }
@@ -573,6 +626,7 @@ export class NativeChartViewport {
   destroy(): void {
     if (this.destroyed) return;
     this.drawingEditor.destroy();this.drawings=[];this.drawingInteraction=null;this.drawingHandler=null;this.selectedDrawing=null;this.frozenDrawingFrame=null;this.editAnchorTimes=[];
+    this.scannerOverlays.destroy();this.overlayLayers.reset();
     this.destroyed = true;this.generation++;this.mutationRevision++;this.cancelGesture();this.clearHover();
     if (this.raf != null) cancelAnimationFrame(this.raf);this.raf = null;
     this.observer?.disconnect();this.observer = null;this.media?.removeEventListener("change", this.onDprChange);this.media = null;
