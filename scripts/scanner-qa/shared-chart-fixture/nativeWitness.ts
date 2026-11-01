@@ -14,11 +14,12 @@ export function installNativeChartWitness(Adapter: { prototype: any }): () => vo
   };
   prototype.destroy=function(...args:any[]) {const container=containers.get(this);try{return original.destroy.apply(this,args);}finally{if(container&&registry.get(container)===this)registry.delete(container);containers.delete(this);}};
   for(const method of ['setCandles','updateActiveCandle'] as const)prototype[method]=function(...args:any[]){revisions.set(this,(revisions.get(this)??0)+1);return original[method].apply(this,args);};
-  const find=(index=0)=>{const container=document.querySelectorAll<HTMLElement>('[data-testid="arx-native-canvas"]')[index];const adapter=container&&registry.get(container);return adapter?.viewport?{container,adapter,viewport:adapter.viewport}:null;};
+  const find=(index=0)=>{const container=document.querySelectorAll<HTMLElement>('[data-chart-engine="arx-native"]')[index];const adapter=container&&registry.get(container);return adapter?.viewport?{container,adapter,viewport:adapter.viewport}:null;};
   const api={
-    schemaVersion:2,engine:'arx-native',
+    schemaVersion:3,engine:'arx-native',
+    count(){return [...registry.keys()].filter(container=>container.isConnected).length;},
     snapshot(index=0){const found=find(index);if(!found)return null;const {container,adapter,viewport}=found,frame=viewport.getFrame(),state=viewport.getState(),candles=viewport.getCandles(),range=viewport.getRange(),bounds=container.getBoundingClientRect();
-      return {adapterId:id(adapter),containerId:id(container),chartId:id(viewport),canvasIds:[...container.querySelectorAll('canvas')].map(id),dataRevision:revisions.get(adapter)??0,
+      return {testId:container.dataset.testid??null,adapterId:id(adapter),containerId:id(container),chartId:id(viewport),canvasIds:[...container.querySelectorAll('canvas')].map(id),dataRevision:revisions.get(adapter)??0,
         barCount:candles.length,first:bar(candles[0]),last:bar(candles.at(-1)),range:range?{...range}:null,state,
         symbol:adapter.symbol,intervalSeconds:adapter.interval,feed:adapter.feed?{...adapter.feed}:null,
         visibleTimeRange:frame?{from:candles[frame.first]?.time,to:candles[frame.last]?.time}:null,

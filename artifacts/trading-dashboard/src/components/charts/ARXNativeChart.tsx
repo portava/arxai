@@ -10,7 +10,7 @@ import { chartVolumeEvidence, observedTickVolume, observedTradeVolume } from "@/
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
-import { ChartLibraryCredit } from "./ChartLibraryCredit";
+import { ChartEngineCredit } from "./ChartLibraryCredit";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds } from "@/lib/chart-engine/chartIntervals";
@@ -1826,8 +1826,7 @@ export function ARXNativeChart({
         <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
         <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
       </details>
-      {adapterRef.current?.capabilities?.id === "lightweight-charts" && <ChartLibraryCredit />}
-      {adapterRef.current?.capabilities?.id === "arx-native" && <p className="px-3 py-2 text-[10px] text-zinc-400" data-testid="chart-native-credit">Rendering engine: ARX Native Chart</p>}
+      <ChartEngineCredit engineId={adapterRef.current?.capabilities?.id} />
     </Card>
   );
 }

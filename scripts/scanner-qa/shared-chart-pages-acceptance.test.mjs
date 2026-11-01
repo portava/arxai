@@ -30,8 +30,8 @@ test('visible intersection and clipped document cannot hide an overflowing canva
 
 test('static server admits exactly the four extra chart routes, not API, nested or arbitrary pages',()=>{
   assert.deepEqual(SHARED_CHART_PAGE_PATHS,['/live-chart','/live-manual','/live-ai-assist','/live-ai-auto-test']);
-  for(const path of ['/', '/market-scanner',...SHARED_CHART_PAGE_PATHS])assert.equal(isOfflineChartPagePath(path),true,path);
-  for(const path of ['/api/live-chart','/live-chart/execute','/live-chart/','/orders','/admin','/LIVE-CHART','//live-chart','/live-chart?execute=true',null,undefined])assert.equal(isOfflineChartPagePath(path),false,String(path));
+  for(const path of ['/', '/market-scanner','/chart-replay',...SHARED_CHART_PAGE_PATHS])assert.equal(isOfflineChartPagePath(path),true,path);
+  for(const path of ['/api/chart-replay','/chart-replay/execute','/chart-replay/','/api/live-chart','/live-chart/execute','/live-chart/','/orders','/admin','/LIVE-CHART','//live-chart','/live-chart?execute=true',null,undefined])assert.equal(isOfflineChartPagePath(path),false,String(path));
   assert.throws(()=>SHARED_CHART_PAGE_PATHS.push('/other'));
 });
 test('server keeps API and write rejection ahead of the expanded static route map',()=>{

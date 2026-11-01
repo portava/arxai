@@ -88,7 +88,9 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   const viewport=this.viewport;if(!viewport)return;
   this.epoch++;if(this.frame!=null)cancelAnimationFrame(this.frame);this.frame=null;
   this.tip=null;this.feed={livePriceAffordance:false,source:null};this.pendingCursor=undefined;this.hoveredTime=null;this.linkedCursor=undefined;this.linkedRange=null;this.ownsRange=false;this.lastRangeKey='';this.lastReachKey='';this.cursorDirty=true;
-  viewport.resetContext();viewport.setLivePriceAffordance(false);viewport.setNavigationMode('inspect');
+  // Clearing a data context is not a user moving/leaving the crosshair.
+  this.mutedLinks++;try{viewport.resetContext();}finally{this.mutedLinks--;}
+  viewport.setLivePriceAffordance(false);viewport.setNavigationMode('inspect');
   if(this.container)this.container.dataset.chartNavigation='inspect';this.queue();
  }
  setCandles(input:ChartEngineCandle[],view?:{revealLatest?:boolean}):void {
@@ -98,7 +100,11 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   if(view?.revealLatest)this.tip=null;
   if(next.length&&this.tip&&this.tip.time>next.at(-1)!.time)next=[...next,clone(this.tip)];else this.tip=null;
   const previous=viewport.getCandles();
-  if(next.length!==previous.length||next.some((bar,i)=>!sameCandle(bar,previous[i]!)))viewport.setCandles(next);
+  if(next.length!==previous.length||next.some((bar,i)=>!sameCandle(bar,previous[i]!))){
+   // Reconciliation may withdraw local hover, but must not send a synthetic
+   // pointer-leave event to every other chart in the linked workspace.
+   this.mutedLinks++;try{viewport.setCandles(next);}finally{this.mutedLinks--;}
+  }
   if(!this.current(viewport,epoch))return;
   if(view?.revealLatest&&next.length){this.takeRangeOwnership();if(!this.current(viewport,epoch))return;viewport.goLatest();}
   if(this.linkedRange)this.applyLinkedRange(this.linkedRange);
@@ -129,7 +135,7 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
    for(const listener of [...this.listeners]){if(!this.listeners.has(listener))continue;this.notify(listener);if(!this.current(viewport,epoch))return;}
    const range=viewport.getRange(),bars=viewport.getCandles();
    const reachKey=range&&bars.length?`${range.from}:${range.to}:${bars[0]!.time}:${bars.length}`:'';
-   if(range&&range.from<this.threshold&&bars.length&&reachKey!==this.lastReachKey){this.lastReachKey=reachKey;this.notify(()=>this.reachStart?.());}
+   if(!this.linkedRange&&range&&range.from<this.threshold&&bars.length&&reachKey!==this.lastReachKey){this.lastReachKey=reachKey;this.notify(()=>this.reachStart?.());}
   });this.frame=id;
  }
  private takeRangeOwnership(){this.ownsRange=true;this.linkedRange=null;this.notify(()=>this.linkStatus?.(''));}

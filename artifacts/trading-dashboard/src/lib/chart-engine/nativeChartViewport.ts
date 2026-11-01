@@ -1,7 +1,7 @@
 import { updateNativePriceSeries, prepareNativePriceSeries, createNativePriceFrame, paintNativePriceLayer, type NativePriceFrame } from "./nativePriceRenderer";
 import { nativePlotLayout, paintNativeAxes } from "./nativeChartAxes";
 import { panChartWindow, zoomChartWindow, type LogicalWindow } from "./chartNavigation";
-import { candleDisplayPrecision, historyRangeShift } from "./candleReconciliation";
+import { candleDisplayPrecision, historyRangeShift, sameCandle } from "./candleReconciliation";
 import { CHART_STYLES, validateDrawings, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import { effectiveDisplayZone, isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 import type { ChartEngineCandle, ChartStructureLine, ChartStructureMarker } from "./types";
@@ -206,13 +206,17 @@ export class NativeChartViewport {
     if (this.destroyed) return;
     const revision = ++this.mutationRevision;
     const previous = this.series.candles;
+    let previousHover = this.hover;
     const next = prepareNativePriceSeries(candles);
     const times = new Set(next.candles.map(candle => candle.time));
     const overlap = previous.some(candle => times.has(candle.time));
     const selected = this.drawings.find(drawing => drawing.id === this.selectedDrawing);
     const anchors = selected ? [selected.start, ...(selected.end ? [selected.end] : []), ...(selected.offset ? [selected.offset] : [])] : [];
     if (!next.candles.length || (previous.length && !overlap) || (selected?.kind !== "horizontal" && anchors.some(anchor => !times.has(anchor.time))) || this.editAnchorTimes.some(time=>!times.has(time))) this.drawingEditor.cancelGesture();
-    this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.series = next;
+    // Withdrawal precedes replacement so a callback that changes context or
+    // display state can supersede this old source mutation.
+    if (previousHover && !times.has(previousHover.candle.time)) { this.clearHover(); previousHover = null; }
+    if (this.destroyed || revision !== this.mutationRevision) return; this.series = next;
     this.studies.setCandles(next.candles);
     if (!this.referenceSet && next.candles.length) {
       // Preserve the exact first canonical close, including invalid-for-percent
@@ -237,6 +241,7 @@ export class NativeChartViewport {
       this.range = bounded;
     }
     this.invalidate();
+    this.remapHover(previousHover);
   }
 
   /** Immutable applied source snapshot. No parallel adapter candle cache. */
@@ -293,17 +298,22 @@ export class NativeChartViewport {
       ?this.options.priceDigits!:candleDisplayPrecision(next.candles,this.symbol);
     if(!this.range||(this.followingLatest&&!this.frozenDrawingFrame))this.range=this.latestRange(this.range?this.range.to-this.range.from:undefined);
     this.invalidate();
-    if(previousHover){
-      // A routine tick is not a pointer-leave event. Preserve the inspected
-      // timestamp; only a changed inspected row needs a legend notification.
-      const frame=this.getFrame(),index=candleIndex(next.candles as ChartEngineCandle[],previousHover.candle.time);
-      const candle=index<0?null:next.candles[index]!,x=candle&&frame?frame.timeToX(candle.time):null;
-      if(frame&&candle&&x!==null&&x>=frame.plot.left&&x<=frame.plot.left+frame.plot.width){
-        this.hover=Object.freeze({candle,x,y:previousHover.y,price:previousHover.y>=frame.plot.top&&previousHover.y<=frame.plot.top+frame.plot.height?frame.yToPrice(previousHover.y):null});
-        if(candle!==previousHover.candle)this.notify("crosshair",()=>this.options.onCrosshair?.(this.hover));
-      }else this.clearHover();
-    }
+    this.remapHover(previousHover);
     return !this.destroyed&&revision===this.mutationRevision;
+  }
+
+  private remapHover(previousHover: NativeCrosshair | null): void {
+    if (!previousHover || this.destroyed) return;
+    // Data reconciliation is not a pointer leave. Preserve only the exact
+    // observed timestamp; never move inspection to a neighboring bar.
+    const frame = this.getFrame(), index = candleIndex(this.series.candles as ChartEngineCandle[], previousHover.candle.time);
+    const candle = index < 0 ? null : this.series.candles[index]!, x = candle && frame ? frame.timeToX(candle.time) : null;
+    if (frame && candle && x !== null && x >= frame.plot.left && x <= frame.plot.left + frame.plot.width) {
+      this.hover = Object.freeze({candle, x, y: previousHover.y, price: previousHover.y >= frame.plot.top && previousHover.y <= frame.plot.top + frame.plot.height ? frame.yToPrice(previousHover.y) : null});
+      // Full source snapshots clone rows. Reference inequality alone must not
+      // broadcast a new user inspection when the canonical evidence is equal.
+      if (!sameCandle(candle, previousHover.candle)) this.notify("crosshair", () => this.options.onCrosshair?.(this.hover));
+    } else this.clearHover();
   }
 
   private latestRange(span = this.options.visibleBars ?? 100): LogicalWindow | null {
@@ -584,7 +594,9 @@ export class NativeChartViewport {
   exportImage(): string | null {
     if (this.destroyed) return null;
     if (this.raf != null) { cancelAnimationFrame(this.raf); this.raf = null; this.paint(); }
-    if (!this.getFrame() || this.paintError) return null;
+    // A completion listener may synchronously replace the context or request
+    // a different view. Never encode pixels from the superseded revision.
+    if (!this.isAnalysisFocusVerified() || !this.getFrame()) return null;
     try { return this.canvas.toDataURL("image/png"); } catch { return null; }
   }
 

@@ -261,7 +261,7 @@ it.each(['reset','replace','range','style'])('reentrant %s during hover withdraw
   let armed=false;create({onCrosshair:value=>{if(value!==null||!armed)return;armed=false;
     if(action==='reset')viewport.resetContext();if(action==='replace')viewport.setCandles(candles(500,100));if(action==='range')viewport.setRange({from:10,to:30});if(action==='style')viewport.setStyle('line');
   }});
-  pointer('pointermove',200,100);armed=true;viewport.setCandles(candles(0,201));
+  pointer('pointermove',200,100);armed=true;viewport.setCandles(candles(500,201));
   if(action==='reset')expect(viewport.getState().barCount).toBe(0);
   if(action==='replace')expect(viewport.getFrame()!.series.candles[0]!.time).toBe(candles(500,100)[0]!.time);
   if(action==='range')expect(viewport.getRange()).toEqual({from:10,to:30});

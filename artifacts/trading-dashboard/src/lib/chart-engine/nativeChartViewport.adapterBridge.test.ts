@@ -78,4 +78,18 @@ describe('native adapter viewport bridge',()=>{
   flush();expect(proofs).toEqual([false,false,true]);expect(v.isAnalysisFocusVerified()).toBe(true);expect(queue.size).toBe(0);
  });
 
+ it.each(['refresh','prepend'])('full %s preserves exact timestamp-owned hover without synthetic leave events',kind=>{
+  const onCrosshair=vi.fn();mount({onCrosshair});const inspected=bars()[150]!,x=v.getFrame()!.timeToX(inspected.time)!;pointer('pointermove',x,150);onCrosshair.mockClear();
+  const next=bars();next.at(-1)!.high=10000;if(kind==='prepend')next.unshift(...bars(20).map(bar=>({...bar,time:bar.time-1200})));
+  v.setCandles(next);ops=[];flush();expect(onCrosshair).not.toHaveBeenCalled();expect(ops.some(o=>o.stroke==='#94a3b8'&&o.name==='stroke')).toBe(true);expect(v.getFrame()!.timeToX(inspected.time)).toBeCloseTo(x);
+ });
+ it('full refresh updates the exact inspected canonical bar and lets callback context replacement win',()=>{
+  let reset=false;const seen:any[]=[];mount({onCrosshair:row=>{seen.push(row);if(reset&&row){reset=false;v.resetContext();v.setCandles(bars(10).map(bar=>({...bar,time:bar.time+50000})));}}});
+  const inspected=bars()[150]!;pointer('pointermove',v.getFrame()!.timeToX(inspected.time)!,150);seen.length=0;const next=bars();next[150]!.close=253;reset=true;v.setCandles(next);
+  expect(seen[0]?.candle).toMatchObject({time:inspected.time,close:253});expect(v.getCandles()).toHaveLength(10);expect(v.getCandles()[0]!.time).toBe(bars()[0]!.time+50000);ops=[];flush();expect(ops.some(o=>o.stroke==='#94a3b8'&&o.name==='stroke')).toBe(false);
+ });
+ it('full refresh withdraws an inspected timestamp removed from source rather than snapping to another row',()=>{
+  const onCrosshair=vi.fn();mount({onCrosshair});pointer('pointermove',v.getFrame()!.timeToX(bars()[150]!.time)!,150);onCrosshair.mockClear();v.setCandles(bars().filter((_,i)=>i!==150));flush();expect(onCrosshair).toHaveBeenCalledOnce();expect(onCrosshair).toHaveBeenCalledWith(null);
+ });
+
 });

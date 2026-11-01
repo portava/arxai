@@ -37,4 +37,11 @@ describe("native focus presentation proof",()=>{
  it("export can complete pending paint, but destruction revokes proof",()=>{
   mount();viewport.setAnalysisFocus(true);expect(viewport.isAnalysisFocusVerified()).toBe(false);expect(viewport.exportImage()).toBe("data:image/png;base64,fixture");expect(viewport.isAnalysisFocusVerified()).toBe(true);viewport.destroy();expect(viewport.isAnalysisFocusVerified()).toBe(false);
  });
+ it.each(['context','range','style'])('export refuses a %s change requested during completion rather than returning obsolete pixels',change=>{
+  let replace=false;mount(()=>{if(!replace)return;replace=false;if(change==='context'){viewport.resetContext();viewport.setCandles(bars.map(bar=>({...bar,time:bar.time+10000})));}else if(change==='range')viewport.setRange({from:5,to:20});else viewport.setStyle('area');});flush();
+  replace=true;viewport.setAnalysisFocus(true);const encode=vi.mocked(HTMLCanvasElement.prototype.toDataURL);encode.mockClear();
+  expect(viewport.exportImage()).toBeNull();expect(encode).not.toHaveBeenCalled();expect(viewport.isAnalysisFocusVerified()).toBe(false);expect(queue.size).toBe(1);
+  flush();expect(viewport.exportImage()).toBe('data:image/png;base64,fixture');expect(viewport.isAnalysisFocusVerified()).toBe(true);expect(encode).toHaveBeenCalledOnce();
+ });
+
 });

@@ -56,4 +56,37 @@ describe('native ChartEngineAdapter contract',()=>{
 
  it('discloses a linked range expanded by the existing minimum navigation span',()=>{const f=setup(),status=vi.fn();f.adapter.setCandles(bars());f.adapter.setViewLinkStatusHandler(status);f.adapter.setLinkedTimeRange({from:bars(50,1)[0]!.time,to:bars(50,1)[0]!.time+30});flush();expect(status).toHaveBeenLastCalledWith('Linked time range is adjusted to this view’s loaded history and navigation limits.');});
 
+ it('a linked follower near loaded-history start does not request independent deep history',()=>{
+  const f=setup(),reach=vi.fn();f.adapter.setCandles(bars());flush();f.adapter.setReachStartHandler(reach,20);
+  f.adapter.setLinkedTimeRange({from:bars(2,1)[0]!.time,to:bars(12,1)[0]!.time});flush();expect(reach).not.toHaveBeenCalled();
+  f.adapter.panBy(-.1);flush();expect(reach).toHaveBeenCalledOnce();
+ });
+ it.each(['refresh','trimmed refresh','context reset'] as const)('%s cannot publish a synthetic user crosshair-clear to linked peers',mode=>{
+  const f=setup(),events=vi.fn();f.adapter.setCandles(bars());f.adapter.setViewLinkHandler(events);flush();
+  const frame=f.viewport().getFrame()!,bar=f.adapter.getVisibleCandles()[3]!;pointer(f.canvas(),frame.timeToX(bar.time)!,frame.priceToY(bar.close)!);flush();
+  expect(events).toHaveBeenLastCalledWith({kind:'crosshair',time:bar.time});events.mockClear();
+  if(mode==='refresh')f.adapter.setCandles(bars(0,201));else if(mode==='trimmed refresh')f.adapter.setCandles(bars(180,40));else f.adapter.resetDataContext();
+  flush();expect(events).not.toHaveBeenCalled();
+  if(mode==='context reset')expect(f.adapter.getVisibleCandles()).toEqual([]);
+ });
+ it('replay backward seeks recalculate studies and HA only from the revealed prefix',()=>{
+  const f=setup(),reference=setup(),all=bars(0,220);f.adapter.setStudies([{kind:'sma',period:3,color:'#38bdf8'}]);reference.adapter.setStudies([{kind:'sma',period:3,color:'#38bdf8'}]);
+  f.adapter.setChartStyle('heikinAshi');reference.adapter.setChartStyle('heikinAshi');
+  f.adapter.setCandles(all,{revealLatest:true});f.adapter.setCandles(all.slice(0,30),{revealLatest:true});reference.adapter.setCandles(all.slice(0,30),{revealLatest:true});flush();
+  expect(f.adapter.getStudyValues(all[29]!.time)).toEqual(reference.adapter.getStudyValues(all[29]!.time));
+  expect(f.adapter.getDisplayCandle(all[29]!.time)).toEqual(reference.adapter.getDisplayCandle(all[29]!.time));
+  expect(f.adapter.getDisplayCandle(all[30]!.time)).toBeNull();expect(f.adapter.getStudyValues(all[30]!.time).flatMap(row=>row.values).every(value=>value.value===null)).toBe(true);
+  f.adapter.setCandles(all.slice(0,1),{revealLatest:true});flush();expect(f.adapter.getVisibleCandles()).toEqual(all.slice(0,1));expect(f.adapter.getStudyValues(all[0]!.time)[0]!.values[0]!.value).toBeNull();
+ });
+ it('a comparison arriving late maps the last linked UTC range to its own interval and prices',()=>{
+  const a=setup(),b=setup(),links=new ChartViewLink();a.adapter.setTimeframe('M1');a.adapter.setCandles(bars());flush();
+  links.configure({crosshair:true,range:true});const offA=links.register('primary',a.adapter);a.adapter.showRecentRange(1800);flush();
+  const own=bars().filter((_,i)=>i%5===0).map(c=>({...c,open:c.open+500,high:c.high+500,low:c.low+500,close:c.close+500}));
+  b.adapter.setTimeframe('M5');const status=vi.fn();b.adapter.setViewLinkStatusHandler(status);const offB=links.register('comparison',b.adapter);
+  expect(status).toHaveBeenLastCalledWith('Linked time range is waiting for candles.');b.adapter.setCandles(own);flush();
+  expect(b.adapter.getVisibleCandles().every(c=>own.some(o=>o.time===c.time&&o.close===c.close))).toBe(true);
+  const handler=vi.fn();b.adapter.setCrosshairHandler(handler);b.adapter.setLinkedCrosshair(bars(172,1)[0]!.time);flush();expect(handler).toHaveBeenLastCalledWith(expect.objectContaining({time:bars(170,1)[0]!.time,close:bars(170,1)[0]!.close+500}));
+  offA();offB();
+ });
+
 });

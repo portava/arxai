@@ -84,3 +84,38 @@ it.each([null, new Error("offline")])("rejects the original failure and clears i
   expect(outcome).toEqual({ ok: false, error: failure });
   expect(vi.getTimerCount()).toBe(0);
 });
+
+
+it.each(["headers", "body"])("rejects overdue %s completion before a delayed timeout callback can run", async stage => {
+  let clock=100, resolveOld!: (value:any)=>void;
+  const monotonic=vi.spyOn(performance,"now").mockImplementation(()=>clock);
+  const pending=new Promise<any>(resolve=>{resolveOld=resolve;});
+  const fetcher=vi.fn().mockImplementationOnce(()=>stage==="headers"?pending:Promise.resolve({
+    ok:true,status:200,headers:new Headers({"content-type":"application/json"}),text:()=>pending,
+  })).mockResolvedValue(response(report("1200.000")));
+  vi.stubGlobal("fetch",fetcher);
+  try {
+    const result=readSharedAccountSummary({signal:new AbortController().signal}).then(value=>({ok:true,value}),error=>({ok:false,error}));
+    // The transport continuation can be queued before a busy event loop runs
+    // its overdue timeout task. Advance only the monotonic clock, not timers.
+    await Promise.resolve();clock+=ACCOUNT_SUMMARY_READ_TIMEOUT_MS;
+    resolveOld(stage==="headers"?response(report("900.000")):JSON.stringify(report("900.000")));
+    const settled=await result;
+    expect(settled.ok).toBe(false);expect("error" in settled && settled.error).toEqual(new Error("Account update timed out. Waiting for a new report."));
+    expect(fetcher.mock.calls[0]![1].signal.aborted).toBe(true);expect(vi.getTimerCount()).toBe(0);
+    // A later canonical read is independent and can recover immediately.
+    expect(await readSharedAccountSummary({signal:new AbortController().signal})).toEqual(report("1200.000"));
+    expect(fetcher).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
+  } finally {monotonic.mockRestore();}
+});
+
+it('accepts completed decoding just before the monotonic deadline',async()=>{
+ let clock=100,resolve!: (value:Response)=>void;const now=vi.spyOn(performance,'now').mockImplementation(()=>clock);
+ vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(done=>{resolve=done;})));
+ try{const result=readSharedAccountSummary({signal:new AbortController().signal});clock+=ACCOUNT_SUMMARY_READ_TIMEOUT_MS-1;resolve(response(report('1234.567')));expect(await result).toEqual(report('1234.567'));expect(vi.getTimerCount()).toBe(0);}finally{now.mockRestore();}
+});
+it('preserves an original failure even when its timer callback has been delayed',async()=>{
+ let clock=100,reject!: (value:unknown)=>void;const now=vi.spyOn(performance,'now').mockImplementation(()=>clock),failure=new Error('Transport failed');
+ vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>((_done,fail)=>{reject=fail;})));
+ try{const result=readSharedAccountSummary({signal:new AbortController().signal}).catch(error=>error);clock+=ACCOUNT_SUMMARY_READ_TIMEOUT_MS;reject(failure);expect(await result).toBe(failure);expect(vi.getTimerCount()).toBe(0);}finally{now.mockRestore();}
+});
