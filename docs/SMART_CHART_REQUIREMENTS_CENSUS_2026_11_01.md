@@ -144,3 +144,8 @@ Application `831e958d` completes the previously staged candidate preview, manual
 ## Manual-equivalent study settings and observations
 
 Application `35fd2aa2` connects existing MACD periods/signal method and Bollinger deviation to bounded assistant commands, using the manual validator and preserving visibility. Named renderer values support current-bar comparisons without crossover or forecast claims. Frontend 3,390 pass/11 skip, 87 guards, seven bindings, typecheck/build and 62 actual Scanner browser assertions pass. Independent rendered-series arithmetic and manual/assistant equivalence are checked. Broader language, automatic drawing families, historical money/equity/benchmark, phone label crowding and slower-device speed remain open. See [source-specific receipt](SMART_CHART_STUDY_EXPLANATIONS_2026_11_01.md).
+
+
+## Chart / Truth audit and compact study labels
+
+Independent agent review plus a limited ChatGPT numeric/text second opinion confirmed missing-calendar false assurance and unavailable-analysis grades. Application47cbb89a corrects the existing shared evidence path and preserves recent-event risk. Actual Scanner19checks, frontend3403pass/11skip and backend18pass; guard8bbf5e3d enforces shared authority and catches14 mutations. Root-cwd84/87 exposes3unchanged wording-guard failures and a cwd coverage gap; release remains notgreen. Compact-title source def40251 passed40desktop/41phone checks and independent review. This closes specific label inaccuracies, not live-provider acceptance, broad mobile quality, double-top correctness or competitor parity. See [source, retained failures and limitations](SMART_CHART_TRUTH_CROSSCHECK_2026_11_01.md).

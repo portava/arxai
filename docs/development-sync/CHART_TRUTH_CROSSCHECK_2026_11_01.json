@@ -1,0 +1,129 @@
+{
+  "baseCommit": "0e95a1623a7c3b1236cdf7531efe3696cd8fd045",
+  "applicationCommit": "8bbf5e3d54231d485cf7ca5cefc5357d70105a8a",
+  "validatedApplicationSource": "47cbb89a77f4d3dc1d9d63c7893969b23eb9aa7c",
+  "branch": "codex/chart-compact-study-labels-20261101",
+  "purpose": "Cumulative source-only development sync: support/resistance, bounded study settings, compact titles and selected-market Truth corrections, extending existing owners. Preserve runtime and original outputs.",
+  "files": [
+    {
+      "path": "artifacts/api-server/src/lib/scannerSelected/__qa__/selectedMarket.test.ts",
+      "sha256": "bfdce0bb99611bff31e8e0dfa65f7479251ddcdd07478526c39d51f6c33bb438"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/scannerSelected/selectedMarket.ts",
+      "sha256": "6e2a73f1dcb87db13557884baeb24e634b7714892bba0f1e0fe4962f25d333a1"
+    },
+    {
+      "path": "artifacts/trading-dashboard/package.json",
+      "sha256": "40b747ce9ed1b9f5882992863c570659bc20d1576c57c28fa764c594a18ae357"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx",
+      "sha256": "60b17234cbcb0118d6d2cbb0b9f68e4a9f84853fc2d7a873f3f6c00654ece9b4"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.levels.test.tsx",
+      "sha256": "b3580975de358bca29d77fe1b2976e09136e3a48b4600925a83ed39c91a9bb6f"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.tsx",
+      "sha256": "4459577591485e025c638f32c685596784c9ccc5cfdd7b1d3d1da7710ae0b4d5"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/ArxAssistantLivePanel.tsx",
+      "sha256": "ba028eff19ba0e0a140ee1c38c9867d36452aa2f1c9a7b05613b611a25ea7a67"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/AssistantDock.panes.test.tsx",
+      "sha256": "5ea03847b7b46981c6e94b082bbf7d0191e6fe2ac1663e6c4a083ffd0e3acca0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/scanner/SelectedMarketPanel.test.tsx",
+      "sha256": "f40014f0bde19d7ba1ac4c677875febbf45ba87658f55c8834023c424b3f8c24"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/scanner/SelectedMarketPanel.tsx",
+      "sha256": "ddf8b9786413a2b1abf8da2a7085129659b5fea05771ade367a08a162ff4455b"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAnalysisRenderer.test.ts",
+      "sha256": "34ce51e4654f14da065e972f19c615b95a136918b7a3270a589d5446fdfb06b4"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAnalysisRenderer.ts",
+      "sha256": "78e183ae824c8611454e653852b4862c3eab14b8b1871df8383ef2aa516794b6"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartLevelAssistant.test.ts",
+      "sha256": "fd073c188c93b8f6024cc84a81a7211734bf36a83a1d94eca9d7fc92f19e1694"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartLevelAssistant.ts",
+      "sha256": "17ac7624d411a7714cab4b75c0132b255688bac1c3b5ae28c16fb686de5db019"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyAssistant.test.ts",
+      "sha256": "ec93418b40b1a8f15f04be7ea58f44439b2b67d43e002911380f8df669eaeeda"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyAssistant.ts",
+      "sha256": "17f595c0b07292579c09bbb3f28a728f2e2d065d52596c0f104fac404a4d17b8"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartSupportResistance.test.ts",
+      "sha256": "e34bb8aa21526aeb180130df9c7dcb964881bd729f650b6871505c8660504868"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartSupportResistance.ts",
+      "sha256": "0edcbd8f5ef5fdbe138ea7c2c788f55a458f5115279a8e76f0046d71c7b18f65"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartWorkspace.ts",
+      "sha256": "98fd66108e1964a7c899b7c89aac6c737f73c202ca53d9d6539056ff62178a91"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.ts",
+      "sha256": "473b580c17eacb43c6cfc447eddebfba3fa20c5db673fb282b9e8483f347a08e"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.workbench.test.ts",
+      "sha256": "285d0d7164b2df5a0711cd9a8209f07861b5cad04128807d6c3a90d9bbb5efb8"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/rubyReasoningBlock.ts",
+      "sha256": "60c54cba43887a137d87218760d0f27e93b214f63525d5d600ce0c26a64351b0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/selectedMarketEvidence.ts",
+      "sha256": "d58b777d24a7eb29dc297ddcea627a5637c49b6dc2ad01707277ae473fe36314"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/selectedMarketQuery.ts",
+      "sha256": "ab8fe6472283edcf6a91d99abde811b50836d73d341faa9592e3ae3ae4b0c7bd"
+    },
+    {
+      "path": "scripts/chart-qa/witness.ts",
+      "sha256": "9d0d84e7c4e5e832995fb8127133fb7b16fad9df28b8b3cce9f3018a6c04c2e8"
+    },
+    {
+      "path": "scripts/package.json",
+      "sha256": "28bf6e01fa6118c3ad469f98a8330461d9530fdf10aea9bff7a822fc3f3f5a9b"
+    },
+    {
+      "path": "scripts/src/ci/check-scanner-selected-market.test.ts",
+      "sha256": "3d422d274c3e794e5157a8d941b7505fc1f2fba628bfe9370e66404c7e6c1dea"
+    },
+    {
+      "path": "scripts/src/ci/check-scanner-selected-market.ts",
+      "sha256": "a6570d5d59839c81140b7b74f37e380e953122f8488830f411400cbd89661a10"
+    }
+  ],
+  "reports": [
+    "docs/SMART_CHART_TRUTH_CROSSCHECK_2026_11_01.md",
+    "docs/SMART_CHART_SUPPORT_RESISTANCE_2026_11_01.md",
+    "docs/SMART_CHART_STUDY_EXPLANATIONS_2026_11_01.md"
+  ],
+  "validationReceipt": "docs/development-sync/CHART_TRUTH_CROSSCHECK_VALIDATION_2026_11_01.json",
+  "knownOpen": "Root-cwd guard84/87 versus scripts-cwd false passes; retain diagnostics and inspect scope without silently bypassing. Prior Replit browser acceptance incomplete. No full release-green claim.",
+  "boundaries": "No main merge, runtime activation/restart/bundle replacement, deployment, existing database changes, workers/emails or live/demo/model/provider/broker calls."
+}
