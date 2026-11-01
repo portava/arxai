@@ -214,6 +214,12 @@ for (const duplicate of [
   'const { value: MT5_ACCOUNT_SNAPSHOT_FRESH_MS } = values;',
   'const [ACCOUNT_SNAPSHOT_LIVE_MS] = values;',
   'function MT5_ACCOUNT_SNAPSHOT_FRESH_MS() {}',
+  `import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from './wrong-policy'; export const accountWindow = MT5_ACCOUNT_SNAPSHOT_FRESH_MS;`,
+  `import { other as MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from './wrong-policy';`,
+  `import MT5_ACCOUNT_SNAPSHOT_FRESH_MS from './wrong-policy';`,
+  `import * as MT5_ACCOUNT_SNAPSHOT_FRESH_MS from './wrong-policy';`,
+  `import MT5_ACCOUNT_SNAPSHOT_FRESH_MS = require('./wrong-policy');`,
+  `import { ACCOUNT_SNAPSHOT_LIVE_MS } from '@workspace/domain/broker-health';`,
   accountExports,
 ]) assert.ok(checkAuthorityShape(() => `${goodAuthority}\n${duplicate}`, readPolicies).length > 0, duplicate);
 assert.deepEqual(checkAuthorityShape(() => `${goodAuthority}\n// const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 1;`, readPolicies), []);

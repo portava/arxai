@@ -348,6 +348,18 @@ export function checkAuthorityShape(read: (key: string) => string | null, readRe
   const visitAuthority = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node)) checkBinding(node.name);
     if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node)) && node.name) checkBinding(node.name);
+    // An approved re-export does not constrain a separate local import of the
+    // same name. Such a binding could derive a second threshold in this authority.
+    if (ts.isImportDeclaration(node) && node.importClause && !node.importClause.isTypeOnly) {
+      const clause = node.importClause;
+      if (clause.name) checkBinding(clause.name);
+      const bindings = clause.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings)) checkBinding(bindings.name);
+      else if (bindings && ts.isNamedImports(bindings)) for (const element of bindings.elements) {
+        if (!element.isTypeOnly) checkBinding(element.name);
+      }
+    }
+    if (ts.isImportEqualsDeclaration(node) && !node.isTypeOnly) checkBinding(node.name);
     ts.forEachChild(node, visitAuthority);
   };
   visitAuthority(authorityAst);
