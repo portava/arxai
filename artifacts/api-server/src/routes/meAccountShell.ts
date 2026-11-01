@@ -266,7 +266,7 @@ export async function computeAccountShell(
       : shellBalance;
     const allocatedEquity = hasAlloc
       ? allocatedBalance
-      : (shellEquity || shellBalance);
+      : shellEquity;
     const availableCapacity = hasAlloc
       ? Math.max(0, round2(totalAlloc - allocatedMargin))
       : null;
@@ -456,7 +456,8 @@ export async function computeAccountShell(
           ? round2(totalAlloc)
           : (vAccounts.length > 0 ? allocatedBalance : null),
         currentBalance: allocatedBalance,
-        equity: allocatedEquity || allocatedBalance,
+        // Zero equity is a valid ledger value, not a missing observation.
+        equity: allocatedEquity,
         marginUsed: allocatedMargin,
         totalAllocation: hasAlloc ? round2(totalAlloc) : null,
         manualAllocation: hasAlloc ? round2(manualAlloc) : null,
