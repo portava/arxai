@@ -232,6 +232,13 @@
       "bytes": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "archiveSha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "original": "replit-completion.json",
+      "archive": "replit-completion.json.gz",
+      "bytes": 6767,
+      "sha256": "21e1a47395d9f077dc07a9b259f391b4ab66a12f9a00eb62b2facd793365eaf3",
+      "archiveSha256": "660b10a767eaacf6ec776257bccfa7533d06aae32bee63797d5e516e5764cea2"
     }
   ]
 }
