@@ -1,0 +1,50 @@
+{
+  "applicationCommit": "35fd2aa28a66bd1309559a757468de6af9f213b2",
+  "buildId": "7e42e9536aee27f0",
+  "dateUTC": "2026-11-01T12:15:23.907891+00:00",
+  "frontend": {
+    "pass": 3390,
+    "skip": 11,
+    "fail": 0,
+    "filesPassed": 211,
+    "filesSkipped": 1
+  },
+  "focused": {
+    "pass": 177,
+    "fail": 0,
+    "files": 5
+  },
+  "baselineNewAssertions": {
+    "pass": 80,
+    "fail": 18,
+    "total": 98,
+    "source": "489ed90b with new tests only; before.log"
+  },
+  "typecheck": "pass",
+  "ordinaryBuild": "pass",
+  "guards": {
+    "pass": 87,
+    "fail": 0,
+    "bindingAssertions": 7
+  },
+  "actualScannerBrowser": {
+    "desktop": {
+      "pass": 31,
+      "fail": 0
+    },
+    "phone390": {
+      "pass": 31,
+      "fail": 0
+    },
+    "verified": "Actual complete rendered series versus independent SMA/EMA and population-deviation reference; manual/assistant equivalence, visibility, refusal, source loss and reload."
+  },
+  "review": "Root reviewed; helper agents remain unavailable at usage limit. No final independent review claimed.",
+  "limitations": [
+    "Synthetic original candle source; no provider, model, broker or deployment acceptance.",
+    "Phone viewport emulated, not physical device. MACD value labels still crowded in the inspected phone screenshot.",
+    "No timing rerun for this settings/receipt-only change. Prior 831e958d timings remain separate, including 4x CPU failure.",
+    "Bounded local grammar, not a general language model tool planner.",
+    "MACD fast/slow averages remain EMA; only signal method selects SMA/EMA. No full TradingView MACD settings/output parity."
+  ],
+  "rawDirectory": "/Users/areyouok/arx-tier1-release/chart-study-explanations-20261101"
+}

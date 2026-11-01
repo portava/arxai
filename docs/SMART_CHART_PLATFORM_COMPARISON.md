@@ -265,3 +265,8 @@ Applicationf85d1c03 extends the existing selected frozen-ledger explanation with
 ## Source-bound support/resistance increment — 1 November 2026
 
 On `831e958d`, the existing horizontal-object owner renders two confirmed-pivot candidates through manual controls or the selected-chart assistant. Keep/edit preserves original evidence separately from manual anchors. 56 actual Scanner browser assertions pass. Fixed strict two-neighbor pivots are not Standard Pivot Points, full zone discovery, or matched competitor output. Normal first-click 10/10 meets 100ms; 4x CPU 0/10. No speed superiority or platform parity follows. See [the exact-source receipt](SMART_CHART_SUPPORT_RESISTANCE_2026_11_01.md).
+
+
+## Study assistant settings — 1 November 2026
+
+Application `35fd2aa2` exposes existing MACD periods and signal method plus Bollinger deviation through the same manual validator. Independent calculations match actual Scanner series; manual and assistant settings agree. This is not general-language or matched-platform acceptance. TradingView oscillator-type selection remains a gap; phone MACD label crowding and slower-device loading remain open. See [verified references and exact acceptance](SMART_CHART_STUDY_EXPLANATIONS_2026_11_01.md).

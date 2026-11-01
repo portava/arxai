@@ -1,6 +1,6 @@
 # Smart Chart requirements census — 1 November 2026
 
-Scope: the owner's Smart Chart/backtesting document supplied on this date. Latest locally checked application: `831e958d`, documented in `SMART_CHART_SUPPORT_RESISTANCE_2026_11_01.md`; the earlier update entries below retain their historical scope. The initial census inspected `d535c3f3`; this update records accepted application `4ad8a5aceb82483fdb35cf9fd747768e55aabf2e` and the exact-source receipts in `SMART_CHART_AI_TRUTH_INTEGRATION_2026_11_01.md` and `CHART_RESEARCH_WORKBENCH_2026_11_01.md`. It is not a deployment receipt, completion percentage or competitor-parity claim. The same chart, assistant, Truth and historical engines remain the authorities. Replit development import/validation is tracked separately; the API runtime has not been activated.
+Scope: the owner's Smart Chart/backtesting document supplied on this date. Latest locally checked application: `35fd2aa2`, documented in `SMART_CHART_STUDY_EXPLANATIONS_2026_11_01.md`; the earlier update entries below retain their historical scope. The initial census inspected `d535c3f3`; this update records accepted application `4ad8a5aceb82483fdb35cf9fd747768e55aabf2e` and the exact-source receipts in `SMART_CHART_AI_TRUTH_INTEGRATION_2026_11_01.md` and `CHART_RESEARCH_WORKBENCH_2026_11_01.md`. It is not a deployment receipt, completion percentage or competitor-parity claim. The same chart, assistant, Truth and historical engines remain the authorities. Replit development import/validation is tracked separately; the API runtime has not been activated.
 
 ## Source-evidence correction after this census
 
@@ -139,3 +139,8 @@ Applicationc9c74fce corrects Fibonacci owner wording and rejects silently omitte
 ## Support/resistance controls and explanations
 
 Application `831e958d` completes the previously staged candidate preview, manual/assistant routing and editable saved-origin workflow through existing owners. Frontend 3,357 pass/11 skip, guards 87/87, bindings 7/7, typecheck, build and 56 actual Scanner browser assertions pass. Normal first clicks meet 100ms in 10/10 attempts; 4x CPU misses in 10/10. Final independent review and broader requirements remain open. See [exact source, failures and limits](SMART_CHART_SUPPORT_RESISTANCE_2026_11_01.md).
+
+
+## Manual-equivalent study settings and observations
+
+Application `35fd2aa2` connects existing MACD periods/signal method and Bollinger deviation to bounded assistant commands, using the manual validator and preserving visibility. Named renderer values support current-bar comparisons without crossover or forecast claims. Frontend 3,390 pass/11 skip, 87 guards, seven bindings, typecheck/build and 62 actual Scanner browser assertions pass. Independent rendered-series arithmetic and manual/assistant equivalence are checked. Broader language, automatic drawing families, historical money/equity/benchmark, phone label crowding and slower-device speed remain open. See [source-specific receipt](SMART_CHART_STUDY_EXPLANATIONS_2026_11_01.md).
