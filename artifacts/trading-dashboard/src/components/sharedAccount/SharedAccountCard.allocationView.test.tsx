@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, within, fireEvent, waitFor } from "@testing-library/react";
 import { SharedAccountCard } from "./SharedAccountCard";
 
 // Render-proof for the live-allocation source-of-truth fix. A normal (non
@@ -28,6 +28,7 @@ type SummaryShape = {
 
 const h = vi.hoisted(() => ({
   summary: null as SummaryShape | null,
+  refresh: vi.fn<() => Promise<{ok:boolean;error?:string}>>(async()=>({ok:true})),
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
@@ -45,8 +46,8 @@ vi.mock("@workspace/api-client-react", () => ({
     refetch: () => {},
   }),
   getGetMeSharedAccountPositionsQueryKey: () => ["positions"],
-  useGetMeSharedAccountAttributions: () => ({ data: { rows: [] } }),
-  useRefreshMeSharedAccountSnapshot: () => ({ isPending: false, mutateAsync: async () => ({}) }),
+  useGetMeSharedAccountAttributions: () => ({ data: { rows: [] }, refetch: () => {} }),
+  useRefreshMeSharedAccountSnapshot: () => ({ isPending: false, mutateAsync: h.refresh }),
 }));
 
 function normalUser(over: Partial<SummaryShape["allocationView"]> = {}) {
@@ -78,6 +79,7 @@ function normalUser(over: Partial<SummaryShape["allocationView"]> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.refresh.mockReset().mockResolvedValue({ok:true});
   normalUser();
 });
 afterEach(() => cleanup());
@@ -111,4 +113,46 @@ describe("SharedAccountCard — canonical allocationView", () => {
     expect(screen.queryByTestId("arx-no-allocation-note")).toBeNull();
     expect(screen.queryByTestId("arx-allocation-exhausted-note")).toBeNull();
   });
+});
+
+const masterFixture=(extra:Record<string,unknown>={})=>({mt5Balance:null,mt5Equity:null,mt5UsedMargin:null,mt5FreeMargin:null,mt5OpenPnl:null,openPositions:null,arxAllocated:200,arxAvailable:190,arxReserved:10,realizedPnl7d:0,unattributedCount:0,isOverAllocated:false,snapshotStatus:'MISSING',syncStatus:'UNAVAILABLE',accountObservationScope:'LATEST_ACCOUNT_UPDATE',amountsCoherent:false,lastMt5SnapshotAt:null,snapshotAgeMs:null,...extra});
+it('unknown master monetary fields render safely without fabricated zero or null text',()=>{
+ h.summary={ok:true,userId:4,masterAccess:true,accounts:[],masterMt5:masterFixture()};render(<SharedAccountCard/>);
+ const section=screen.getByTestId('master-mt5-section');expect(section.textContent).not.toContain('$0.00');expect(section.textContent).not.toContain('null');expect(section.textContent).toContain('—');
+});
+it('recent account update is not a live coherent-funds claim',()=>{
+ h.summary={ok:true,userId:4,masterAccess:true,accounts:[],masterMt5:masterFixture({mt5Balance:1000,mt5Equity:900,mt5OpenPnl:0,snapshotStatus:'FRESH',syncStatus:'LIVE',accountCurrency:'EUR',lastMt5SnapshotAt:new Date().toISOString(),snapshotAgeMs:0})};render(<SharedAccountCard/>);
+ expect(screen.getByTestId('shared-account-sync-badge').textContent).toBe('Stored values');expect(screen.getByText(/Value freshness unverified/)).toBeTruthy();expect(screen.getByText('€900.00')).toBeTruthy();expect(screen.getByText(/Last account update:/)).toBeTruthy();
+});
+
+it.each([false,true])('owner missing master does not substitute user allocation or zero (empty rows=%s)',empty=>{
+ h.summary={...h.summary!,masterAccess:true,masterMt5:null,...(empty?{accounts:[],allocationView:null}:{})};
+ render(<SharedAccountCard/>);
+ expect(screen.getByTestId('arx-master-allocation-unavailable').textContent).toContain('Master allocation figures unavailable');
+ expect(screen.queryByTestId('arx-allocation-section')).toBeNull();
+ expect(screen.queryByText('$181.58')).toBeNull();expect(screen.queryByText('$0.00')).toBeNull();
+ expect(screen.queryByTestId('shared-account-row-1')).toBeNull();
+});
+it.each([null,undefined])('missing canonical allocation %s leaves all three headroom fields unknown',allocationView=>{
+ h.summary={...h.summary!,allocationView};render(<SharedAccountCard/>);
+ const section=screen.getByTestId('arx-allocation-section');
+ for(const label of ['Allocated','Available','Reserved']){
+  const tile=within(section).getByText(label).parentElement!;
+  expect(within(tile).getByText('—')).toBeTruthy();expect(tile.textContent).not.toContain('$');
+ }
+ expect(screen.getByTestId('shared-account-row-1').textContent).toContain('$181.58');
+ expect(screen.queryByTestId('arx-allocation-exhausted-note')).toBeNull();
+});
+it('canonical zero is retained for allocated, available and reserved funds',()=>{
+ normalUser({assignedAllocation:0,availableAllocation:0,reservedRisk:0});render(<SharedAccountCard/>);
+ const section=screen.getByTestId('arx-allocation-section');
+ for(const label of ['Allocated','Available','Reserved'])expect(within(within(section).getByText(label).parentElement!).getByText('$0.00')).toBeTruthy();
+});
+it.each(['missing','failed','exception'])('stored refresh %s never diagnoses broker connectivity',async kind=>{
+ h.summary={...h.summary!,masterAccess:true,masterMt5:null};
+ if(kind==='exception')h.refresh.mockRejectedValueOnce(new Error('local refresh failure'));
+ else h.refresh.mockResolvedValueOnce({ok:false,error:kind==='missing'?'MASTER_BRIDGE_NOT_AVAILABLE':'REFRESH_FAILED'});
+ render(<SharedAccountCard/>);fireEvent.click(screen.getByRole('button',{name:'Refresh'}));
+ await waitFor(()=>expect(screen.getByTestId('shared-account-refresh-error').textContent).toMatch(/stored/i));
+ expect(screen.getByTestId('shared-account-refresh-error').textContent).not.toMatch(/offline|connected|sync/i);
 });

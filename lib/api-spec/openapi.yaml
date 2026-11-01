@@ -21334,19 +21334,31 @@ components:
       type: object
       description: >
         Real MT5 master-account snapshot, owner/admin only. Sourced from the
-        EA heartbeat (arx_master_bridge_pool + mt5_connection). Never includes
-        tokens, IPs, or the unmasked account number. Null for normal users.
+        pinned mt5_connection account update. Amounts are stored values that may
+        include never-observed database defaults after a partial update.
+        accountSyncedAt proves some account data arrived, not that each amount
+        was observed or that all amounts arrived together. No derived open P/L
+        is supplied without paired evidence. Never includes tokens, IPs,
+        or the unmasked account number. Null for normal users.
       required:
         [mt5Balance, mt5Equity, mt5UsedMargin, mt5FreeMargin, mt5OpenPnl,
          openPositions, arxAllocated, arxAvailable, arxReserved, realizedPnl7d,
-         snapshotStatus, isOverAllocated, unattributedCount, syncStatus]
+         snapshotStatus, isOverAllocated, unattributedCount, syncStatus,
+         accountObservationScope, amountsCoherent]
       properties:
-        mt5Balance: { type: number }
-        mt5Equity: { type: number }
-        mt5UsedMargin: { type: number }
-        mt5FreeMargin: { type: number }
-        mt5OpenPnl: { type: number }
-        openPositions: { type: integer }
+        mt5Balance: { type: number, nullable: true }
+        mt5Equity: { type: number, nullable: true }
+        mt5UsedMargin: { type: number, nullable: true }
+        mt5FreeMargin: { type: number, nullable: true }
+        mt5OpenPnl: { type: number, nullable: true }
+        openPositions: { type: integer, nullable: true }
+        accountObservationScope:
+          type: string
+          enum: [LATEST_ACCOUNT_UPDATE]
+          description: Timestamp proves some account data arrived; it does not establish that each stored amount was ever observed or when.
+        amountsCoherent:
+          type: boolean
+          description: False while individual observations and a coherent pair are unverified. Stored amounts may include never-observed database defaults after a partial update; a recent heartbeat or account update cannot prove otherwise.
         accountCurrency: { type: string, nullable: true }
         brokerName: { type: string, nullable: true }
         serverName: { type: string, nullable: true }
@@ -21364,7 +21376,7 @@ components:
         syncStatus:
           type: string
           enum: [LIVE, STALE, UNAVAILABLE]
-          description: Derived health for the card sync badge.
+          description: Freshness of the last account update only; does not establish freshness or coherence of every amount.
 
     MeSharedAccountAllocationView:
       type: object

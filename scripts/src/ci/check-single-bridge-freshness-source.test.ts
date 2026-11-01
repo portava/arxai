@@ -122,7 +122,8 @@ assert.deepEqual(
 );
 
 // ── authority, allowlist, staleness ─────────────────────────────────────────
-// The authority and the shared policy may name literals.
+// Per-file scanning defers the authority to checkAuthorityShape below; it now
+// rejects a local account cutoff even though unrelated authority literals remain.
 assert.deepEqual(scanFile(AUTHORITY, `export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;`), []);
 assert.deepEqual(scanFile(POLICY, `export const MT5_HEARTBEAT_FRESH_BELOW_MS = 15_000; const x = ageMs < MT5_HEARTBEAT_FRESH_BELOW_MS;`), []);
 
@@ -140,20 +141,27 @@ assert.match(staleEntries(() => null)[0]!, /no longer exists/);
 assert.match(staleEntries((k) => (k === allowKey ? `export const x = 1;` : null)).find((s) => s.startsWith(allowKey))!, /remove the entry/);
 assert.deepEqual(staleEntries((k) => (k === allowKey ? one : null)).filter((s) => s.startsWith(allowKey)), []);
 
-// The server authority must re-export the policy, keep its snapshot threshold
+// The server authority must re-export the policies, keep their snapshot thresholds
 // and define no heartbeat threshold of its own; the policy keeps the owner's
 // bounds, its classifiers and stays import-free.
-const goodAuthority = `export { classifyHeartbeatAgeMs } from "@workspace/domain/broker-health/heartbeatPolicy";\nexport const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;`;
+const displayPolicy = `export const ACCOUNT_SNAPSHOT_LIVE_MS = 5_000;
+export const ACCOUNT_SNAPSHOT_FRESH_MS = 30_000;
+export const ACCOUNT_SNAPSHOT_DELAYED_MS = 120_000;
+export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;`;
+const accountExports = `export { ACCOUNT_SNAPSHOT_LIVE_MS, ACCOUNT_SNAPSHOT_FRESH_MS, ACCOUNT_SNAPSHOT_DELAYED_MS, MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from "@workspace/domain/broker-health";`;
+const goodAuthority = `export { classifyHeartbeatAgeMs } from "@workspace/domain/broker-health/heartbeatPolicy";\n${accountExports}`;
 const goodPolicy = `export const MT5_HEARTBEAT_FRESH_BELOW_MS = 15_000;\nexport const MT5_HEARTBEAT_OFFLINE_AT_MS = 60_000;\nexport function classifyHeartbeatAgeMs(a) {}\nexport function classifyHeartbeatAgeSeconds(a) {}\nexport function heartbeatAllowsExecution(f) {}`;
+const readPolicies = (key: string) => key === DISPLAY_POLICY ? displayPolicy : key === POLICY ? goodPolicy : null;
+const alteredHeartbeat = (policy: string) => (key: string) => key === POLICY ? policy : readPolicies(key);
 assert.match(checkAuthorityShape(() => null)[0]!, /missing/);
-assert.deepEqual(checkAuthorityShape(() => goodAuthority, () => goodPolicy), []);
+assert.deepEqual(checkAuthorityShape(() => goodAuthority, readPolicies), []);
 assert.ok(checkAuthorityShape(() => goodAuthority, () => null).some((s) => /shared heartbeat policy/.test(s)));
-assert.ok(checkAuthorityShape(() => `${goodAuthority}\nexport const EA_HEARTBEAT_FRESH_MS = 15_000;`, () => goodPolicy).some((s) => /defines its own heartbeat/.test(s)));
-assert.ok(checkAuthorityShape(() => `export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;`, () => goodPolicy).some((s) => /re-export/.test(s)));
-assert.ok(checkAuthorityShape(() => goodAuthority, () => goodPolicy.replace("15_000", "20_000")).some((s) => /owner decision 17/.test(s)));
-assert.ok(checkAuthorityShape(() => goodAuthority, () => goodPolicy.replace("60_000", "120_000")).some((s) => /owner decision 17/.test(s)));
-assert.ok(checkAuthorityShape(() => goodAuthority, () => `import x from "y";\n${goodPolicy}`).some((s) => /pure/.test(s)));
-assert.ok(checkAuthorityShape(() => goodAuthority, () => goodPolicy.replace("heartbeatAllowsExecution", "x")).some((s) => /heartbeatAllowsExecution/.test(s)));
+assert.ok(checkAuthorityShape(() => `${goodAuthority}\nexport const EA_HEARTBEAT_FRESH_MS = 15_000;`, readPolicies).some((s) => /defines its own heartbeat/.test(s)));
+assert.ok(checkAuthorityShape(() => `export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;`, readPolicies).some((s) => /re-export/.test(s)));
+assert.ok(checkAuthorityShape(() => goodAuthority, alteredHeartbeat(goodPolicy.replace("15_000", "20_000"))).some((s) => /owner decision 17/.test(s)));
+assert.ok(checkAuthorityShape(() => goodAuthority, alteredHeartbeat(goodPolicy.replace("60_000", "120_000"))).some((s) => /owner decision 17/.test(s)));
+assert.ok(checkAuthorityShape(() => goodAuthority, alteredHeartbeat(`import x from "y";\n${goodPolicy}`)).some((s) => /pure/.test(s)));
+assert.ok(checkAuthorityShape(() => goodAuthority, alteredHeartbeat(goodPolicy.replace("heartbeatAllowsExecution", "x"))).some((s) => /heartbeatAllowsExecution/.test(s)));
 
 // Name helpers.
 assert.equal(isThresholdName("HEARTBEAT_FRESH_WINDOW_MS"), true);
@@ -167,9 +175,6 @@ assert.equal(isAgeIdentifier("quoteAgeMs"), false);
 console.log("check-single-bridge-freshness-source fixtures: ok");
 
 // Moving display bands to a shared pure module must not create a blanket escape.
-const displayPolicy = `export const ACCOUNT_SNAPSHOT_LIVE_MS = 5_000;
-export const ACCOUNT_SNAPSHOT_FRESH_MS = 30_000;
-export const ACCOUNT_SNAPSHOT_DELAYED_MS = 120_000;`;
 assert.deepEqual(scanSource(DISPLAY_POLICY, displayPolicy), []);
 for (const changed of [
   displayPolicy.replace('5_000', '6_000'),
@@ -178,6 +183,39 @@ for (const changed of [
   displayPolicy + '\nfetch("https://example.com");',
   displayPolicy + '\nexport const ACCOUNT_SNAPSHOT_LIVE_MS = 5_000;',
   displayPolicy.replace('const ACCOUNT_SNAPSHOT_LIVE_MS', 'let ACCOUNT_SNAPSHOT_LIVE_MS'),
+  displayPolicy.replace('60_000', '61_000'),
+  displayPolicy.replace('export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;', ''),
+  displayPolicy + '\nexport const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;',
+  displayPolicy + '\nimport "side-effect";',
+  displayPolicy + '\nexport function helper() {}',
+  displayPolicy.replace('export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS', 'export declare const MT5_ACCOUNT_SNAPSHOT_FRESH_MS'),
 ]) assert.ok(scanSource(DISPLAY_POLICY, changed).length > 0, changed);
 assert.ok(scanSource('lib/domain/src/broker-health/duplicate.ts', displayPolicy).length > 0);
-console.log('shared account display policy negative fixtures: 8 passed');
+assert.ok(checkAuthorityShape(() => goodAuthority, key => key === DISPLAY_POLICY ? null : readPolicies(key)).some(s => s.includes(DISPLAY_POLICY) && /missing/.test(s)));
+assert.ok(checkAuthorityShape(() => goodAuthority, key => key === DISPLAY_POLICY ? displayPolicy.replace('60_000','61_000') : readPolicies(key)).length > 0);
+
+// Real named value exports only: comments, strings, wrong modules, aliases,
+// type-only exports and wildcard exports cannot satisfy shared authority.
+for (const replacement of [
+  `// ${accountExports}`,
+  `const pretend = ${JSON.stringify(accountExports)};`,
+  accountExports.replace('@workspace/domain/broker-health', './wrong-policy'),
+  accountExports.replace('MT5_ACCOUNT_SNAPSHOT_FRESH_MS', 'OTHER_THRESHOLD as MT5_ACCOUNT_SNAPSHOT_FRESH_MS'),
+  accountExports.replace('MT5_ACCOUNT_SNAPSHOT_FRESH_MS', 'MT5_ACCOUNT_SNAPSHOT_FRESH_MS as OTHER_THRESHOLD'),
+  accountExports.replace('export {', 'export type {'),
+  accountExports.replace('MT5_ACCOUNT_SNAPSHOT_FRESH_MS', 'type MT5_ACCOUNT_SNAPSHOT_FRESH_MS'),
+  'export * from "@workspace/domain/broker-health";',
+  accountExports.replace(', MT5_ACCOUNT_SNAPSHOT_FRESH_MS', ''),
+]) assert.ok(checkAuthorityShape(() => goodAuthority.replace(accountExports, replacement), readPolicies).length > 0, replacement);
+for (const duplicate of [
+  'const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;',
+  'let MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;',
+  'const unrelated = 1, MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;',
+  'const { value: MT5_ACCOUNT_SNAPSHOT_FRESH_MS } = values;',
+  'const [ACCOUNT_SNAPSHOT_LIVE_MS] = values;',
+  'function MT5_ACCOUNT_SNAPSHOT_FRESH_MS() {}',
+  accountExports,
+]) assert.ok(checkAuthorityShape(() => `${goodAuthority}\n${duplicate}`, readPolicies).length > 0, duplicate);
+assert.deepEqual(checkAuthorityShape(() => `${goodAuthority}\n// const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 1;`, readPolicies), []);
+assert.deepEqual(checkAuthorityShape(() => goodAuthority.replace(accountExports, `export { MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from '@workspace/domain/broker-health';\n${accountExports.replace(', MT5_ACCOUNT_SNAPSHOT_FRESH_MS', '')}`), readPolicies), []);
+console.log('shared account policy exact-value and AST export negative fixtures: ok');

@@ -31,7 +31,8 @@ import {
   useGetEconomicCalendar,
 } from "@workspace/api-client-react";
 import { useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
-import type { SnapshotReconciliation } from "@/hooks/useLiveAccountSnapshot";
+import { useMasterAccountEvidence } from "@/hooks/useMasterAccountEvidence";
+import { MASTER_VALUE_LIMITATION, masterAccountMoney, masterAccountUpdateText } from "@/lib/masterAccountPresentation";
 import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
 import {
   Wallet,
@@ -97,6 +98,8 @@ export function AccountSnapshotCard() {
   const accounts = Array.isArray(summary?.accounts) ? summary.accounts : [];
   const master = summary?.masterMt5 ?? null;
   const isOwnerAdmin = Boolean(summary?.masterAccess);
+  const masterEvidence = useMasterAccountEvidence(isOwnerAdmin ? master : null, Boolean(summaryQ.isError));
+  const masterAmountsKnown = masterEvidence.observedAtMs != null && masterEvidence.ageMs != null;
   // Canonical per-user allocation — the SAME source the live gate/preflight use.
   // Display surfaces must read availableAllocation from here, never the static
   // virtual_balance, which drifts from the headroom the gate actually enforces.
@@ -120,13 +123,13 @@ export function AccountSnapshotCard() {
     ? liveCtx.snapshot
     : null;
 
-  // Owner/admin with a live master snapshot read the real numbers; everyone
+  // Owner/admin retain the master allocation; everyone
   // else reads the canonical per-user AVAILABLE allocation (allocationView) —
   // the SAME headroom the live gate enforces — never the static virtual_balance,
   // which double-counts reserved risk + open floating loss and so drifts above
   // what the gate will actually allow (the bug this fixes). Never fabricated.
-  const allocation = isOwnerAdmin && master
-    ? finite(master.arxAllocated)
+  const allocation = isOwnerAdmin
+    ? finite(master?.arxAllocated)
     : finite(canonicalAvailable);
   // Prefer the user's OWN EA-synced balance/equity from the live snapshot when
   // present. liveSnap is scoped to the caller's own connection (null for pure
@@ -139,51 +142,22 @@ export function AccountSnapshotCard() {
   const liveBalance = finite(liveSnap?.balance);
   const balanceLabel = liveBalance != null
     ? "Balance"
-    : isOwnerAdmin && master ? "Allocation" : "Available";
+    : isOwnerAdmin ? "Allocation" : "Available";
   const balanceValue = liveBalance ?? allocation;
-  const equity = liveSnap ? finite(liveSnap.equity) : finite(isOwnerAdmin && master ? master.mt5Equity : alloc.equity);
-  const openPnl = liveSnap ? finite(liveSnap.openPL) : finite(isOwnerAdmin && master ? master.mt5OpenPnl : alloc.pnl);
-  const openCount = liveSnap ? (liveSnap.positionCountKnown === false ? null : knownCount(liveSnap.openPositionsCount)) : knownCount(isOwnerAdmin && master ? master.openPositions : alloc.open);
-  const lastKnown = liveSnap ? !["live", "fresh"].includes(liveCtx.freshness) : Boolean(summary && summaryQ.isError);
+  const equity = liveSnap ? finite(liveSnap.equity) : isOwnerAdmin ? (masterAmountsKnown ? finite(master?.mt5Equity) : null) : finite(alloc.equity);
+  const openPnl = liveSnap ? finite(liveSnap.openPL) : isOwnerAdmin ? null : finite(alloc.pnl);
+  const openCount = liveSnap ? (liveSnap.positionCountKnown === false ? null : knownCount(liveSnap.openPositionsCount)) : knownCount(isOwnerAdmin ? master?.openPositions : alloc.open);
+  const lastKnown = !isOwnerAdmin && (liveSnap ? !["live", "fresh"].includes(liveCtx.freshness) : Boolean(summary && summaryQ.isError));
 
-  // Reconciliation — unified contract for ALL paths.
-  //
-  // Non-admin: reconciliation comes from the live snapshot adapter which has
-  //   run broker-absent exclusion and equity−balance comparison.
-  //
-  // Owner/admin: compute reconciliation from the actual master EA figures.
-  // master.mt5OpenPnl is what the EA reports as open P/L; independently derive
-  // equity−balance from the raw equity/balance fields and compare them. In
-  // normal operation the difference is ~0 (the EA computes both from the same
-  // account state), but if they diverge by more than 1 USD something is wrong
-  // even on the master path and exceedsThreshold will surface it.
-  const masterReconciliation: SnapshotReconciliation | null = (() => {
-    if (!isOwnerAdmin || master == null) return null;
-    const snapshotPL = master.mt5OpenPnl != null ? Number(master.mt5OpenPnl) : null;
-    const eqMinusBal =
-      master.mt5Equity != null && master.mt5Balance != null
-        ? Number(master.mt5Equity) - Number(master.mt5Balance)
-        : null;
-    const disc =
-      snapshotPL != null && eqMinusBal != null
-        ? Math.abs(snapshotPL - eqMinusBal)
-        : null;
-    return {
-      snapshotSummedPL: snapshotPL,
-      equityMinusBalancePL: eqMinusBal,
-      discrepancy: disc,
-      exceedsThreshold: disc != null && disc > 1.0,
-      excludedCount: 0,
-      brokerAbsentExcludedCount: 0,
-      stalePLCount: 0,
-    };
-  })();
-  const reconciliation = liveSnap?.reconciliation ?? masterReconciliation;
+  // Master scalar fields can come from different account updates. The stored
+  // marker cannot prove a coherent balance/equity pair, so do not manufacture
+  // open P/L or a reconciliation-success claim from their difference.
+  const reconciliation = liveSnap?.reconciliation ?? null;
   const plUnderReview = Boolean(reconciliation?.exceedsThreshold);
 
   // Flag estimated P/L — when the live snapshot is present but positions are
   // stale/estimated (not fresh broker-confirmed). Only relevant on the live-
-  // snapshot path; the master path (admin) is always the best available figure.
+  // snapshot path; the master path cannot prove a coherent P/L pair.
   const plIsEstimate = liveSnap != null && liveCtx.isEstimate;
 
   // Admin diagnostic disclosure — full numeric reconciliation breakdown.
@@ -208,8 +182,8 @@ export function AccountSnapshotCard() {
       : `${Math.floor(equityAgeMs / 60_000)}m`;
 
   // Broker line — prefer the master snapshot, else the first allocation row.
-  const broker = master?.brokerName ?? accounts[0]?.masterBrokerName ?? "—";
-  const masked = master?.accountNumberMasked ?? accounts[0]?.masterAccountNumberMasked ?? null;
+  const broker = isOwnerAdmin ? master?.brokerName ?? "—" : accounts[0]?.masterBrokerName ?? "—";
+  const masked = isOwnerAdmin ? master?.accountNumberMasked ?? null : accounts[0]?.masterAccountNumberMasked ?? null;
   const liveLabel = mode.isLiveShared ? "LIVE" : mode.isDemo ? "DEMO" : "SIM";
   const reportedStatus = !summaryQ.isError ? (accounts[0]?.status ?? master?.syncStatus ?? "").toString().toLowerCase() : "";
   const isActive = ["active", "live"].includes(reportedStatus);
@@ -238,7 +212,7 @@ export function AccountSnapshotCard() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label={balanceLabel} value={money(balanceValue)} />
-        <StatTile label="Equity" value={money(equity)} />
+        <StatTile label={isOwnerAdmin ? "Equity (unverified)" : "Equity"} value={isOwnerAdmin ? masterAccountMoney(equity, master?.accountCurrency) : money(equity)} />
         {/* Open P/L:
             - reconciliation flag fires → "Under review" (warning color)
             - live snapshot figures are estimated/stale → tilde prefix + muted
@@ -258,10 +232,14 @@ export function AccountSnapshotCard() {
           }
           data-testid="cockpit-open-pnl"
         />
-        <StatTile label="Open Trades" value={openCount == null ? "—" : String(openCount)} />
+        <StatTile label={isOwnerAdmin ? "Recorded trades" : "Open Trades"} value={openCount == null ? "—" : String(openCount)} />
       </div>
 
       {lastKnown && <p className="mt-2 text-xs text-warning">Last-known account figures — current values have not been confirmed.</p>}
+      {isOwnerAdmin && master && <div className="mt-2 text-xs text-warning" data-testid="master-account-evidence">
+        <p>{MASTER_VALUE_LIMITATION}</p>
+        <p>{masterAccountUpdateText(masterEvidence)}</p>
+      </div>}
       {balanceValue == null && equity == null && openPnl == null && <p className="mt-2 text-xs text-txt-muted">Account figures unavailable.</p>}
       {equityStale && (
         <p
@@ -338,15 +316,15 @@ export function AccountSnapshotCard() {
           <span className={cn("font-semibold", mode.isLiveShared ? "text-success" : "text-primary")}>{liveLabel}</span>
         </div>
         <div className="flex items-center gap-2">
-          {mode.isLiveShared && (
+          {mode.isLiveShared && !isOwnerAdmin && (
             <FreshnessBadge
-              freshness={liveCtx.freshness}
-              lastUpdatedMs={liveCtx.lastUpdatedMs}
-              isEstimate={liveCtx.isEstimate}
+              freshness={liveSnap ? liveCtx.freshness : "unavailable"}
+              lastUpdatedMs={liveSnap ? liveCtx.lastUpdatedMs : null}
+              isEstimate={liveSnap ? liveCtx.isEstimate : false}
               compact
             />
           )}
-          <Pill tone={isActive ? "success" : "muted"}>{!statusKnown ? "Status unknown" : isActive ? "Active" : "Inactive"}</Pill>
+          {!isOwnerAdmin && <Pill tone={isActive ? "success" : "muted"}>{!statusKnown ? "Status unknown" : isActive ? "Active" : "Inactive"}</Pill>}
         </div>
       </div>
     </CockpitCard>

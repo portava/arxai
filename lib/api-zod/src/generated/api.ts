@@ -15518,12 +15518,14 @@ export const GetMeSharedAccountSummaryResponse = zod.object({
     .union([
       zod
         .object({
-          mt5Balance: zod.number(),
-          mt5Equity: zod.number(),
-          mt5UsedMargin: zod.number(),
-          mt5FreeMargin: zod.number(),
-          mt5OpenPnl: zod.number(),
-          openPositions: zod.number(),
+          mt5Balance: zod.number().nullable(),
+          mt5Equity: zod.number().nullable(),
+          mt5UsedMargin: zod.number().nullable(),
+          mt5FreeMargin: zod.number().nullable(),
+          mt5OpenPnl: zod.number().nullable(),
+          openPositions: zod.number().nullable(),
+          accountObservationScope: zod.literal("LATEST_ACCOUNT_UPDATE"),
+          amountsCoherent: zod.boolean(),
           accountCurrency: zod.string().nullish(),
           brokerName: zod.string().nullish(),
           serverName: zod.string().nullish(),
@@ -15540,10 +15542,10 @@ export const GetMeSharedAccountSummaryResponse = zod.object({
           unattributedCount: zod.number(),
           syncStatus: zod
             .enum(["LIVE", "STALE", "UNAVAILABLE"])
-            .describe("Derived health for the card sync badge."),
+            .describe("Freshness of the latest account update only, not of every amount."),
         })
         .describe(
-          "Real MT5 master-account snapshot, owner\/admin only. Sourced from the EA heartbeat (arx_master_bridge_pool + mt5_connection). Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
+          "Real MT5 master-account snapshot, owner\/admin only. Sourced from the pinned connection account update. Amounts are stored values that may include never-observed database defaults after a partial update; individual observations and simultaneity are unverified. Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
         ),
       zod.null(),
     ])
@@ -15568,12 +15570,14 @@ export const RefreshMeSharedAccountSnapshotResponse = zod.object({
     .union([
       zod
         .object({
-          mt5Balance: zod.number(),
-          mt5Equity: zod.number(),
-          mt5UsedMargin: zod.number(),
-          mt5FreeMargin: zod.number(),
-          mt5OpenPnl: zod.number(),
-          openPositions: zod.number(),
+          mt5Balance: zod.number().nullable(),
+          mt5Equity: zod.number().nullable(),
+          mt5UsedMargin: zod.number().nullable(),
+          mt5FreeMargin: zod.number().nullable(),
+          mt5OpenPnl: zod.number().nullable(),
+          openPositions: zod.number().nullable(),
+          accountObservationScope: zod.literal("LATEST_ACCOUNT_UPDATE"),
+          amountsCoherent: zod.boolean(),
           accountCurrency: zod.string().nullish(),
           brokerName: zod.string().nullish(),
           serverName: zod.string().nullish(),
@@ -15590,10 +15594,10 @@ export const RefreshMeSharedAccountSnapshotResponse = zod.object({
           unattributedCount: zod.number(),
           syncStatus: zod
             .enum(["LIVE", "STALE", "UNAVAILABLE"])
-            .describe("Derived health for the card sync badge."),
+            .describe("Freshness of the latest account update only, not of every amount."),
         })
         .describe(
-          "Real MT5 master-account snapshot, owner\/admin only. Sourced from the EA heartbeat (arx_master_bridge_pool + mt5_connection). Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
+          "Real MT5 master-account snapshot, owner\/admin only. Sourced from the pinned connection account update. Amounts are stored values that may include never-observed database defaults after a partial update; individual observations and simultaneity are unverified. Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
         ),
       zod.null(),
     ])

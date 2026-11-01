@@ -4,13 +4,11 @@
 //   useGetMeSharedAccountSummary       — includes owner/admin-only masterMt5
 //   useGetMeSharedAccountPositions     — open attributed positions
 //   useGetMeSharedAccountAttributions  — attribution history
-//   useRefreshMeSharedAccountSnapshot  — owner/admin real MT5 resync
+//   useRefreshMeSharedAccountSnapshot  — owner/admin stored-pool recomputation
 //
-// Owner/admin see the REAL MT5 master account (from the EA heartbeat snapshot)
-// clearly separated from the ARX virtual allocation. Normal users see the ARX
-// allocation only. Shows real backend data only — never placeholder balances or
-// fabricated trades. Honest staleness via syncStatus. Near-real-time polling,
-// paused on hidden tabs.
+// Owner/admin see stored master-account values with explicit observation limits,
+// separated from ARX virtual allocation. Normal users see allocation only.
+// Polling does not prove a new broker observation; it pauses on hidden tabs.
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -39,8 +37,12 @@ import {
 } from "lucide-react";
 import { formatPnl, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useMasterAccountEvidence } from "@/hooks/useMasterAccountEvidence";
+import { MASTER_VALUE_LIMITATION, masterAccountMoney, masterAccountUpdateText } from "@/lib/masterAccountPresentation";
 
 const POLL_MS = 3000;
+const allocationAmount = (value: number | null | undefined): string =>
+  typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(2)}` : "—";
 
 function useTabVisible(): boolean {
   const [visible, setVisible] = useState(
@@ -54,15 +56,6 @@ function useTabVisible(): boolean {
   return visible;
 }
 
-function ageLabel(ms: number | null | undefined): string {
-  if (ms == null) return "unknown";
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  return `${h}h ago`;
-}
 
 export function SharedAccountCard({ className }: { className?: string }) {
   const visible = useTabVisible();
@@ -98,9 +91,11 @@ export function SharedAccountCard({ className }: { className?: string }) {
   const attributions = attributionsQ.data?.rows ?? [];
 
   // Capability flag from the backend — true for owner/admin even when the
-  // snapshot is null (bridge unpinned/offline), so a real resync stays
+  // snapshot is null (bridge unpinned/offline), so a stored-state refresh stays
   // available. Never inferred from `master != null`.
   const isOwnerAdmin = Boolean(summary?.masterAccess);
+  const masterEvidence = useMasterAccountEvidence(isOwnerAdmin ? master : null, Boolean(summaryQ.error));
+  const masterAmount = (n: number | null) => masterAccountMoney(masterEvidence.observedAtMs != null && masterEvidence.ageMs != null ? n : null, master?.accountCurrency);
 
   const reloadAll = () => {
     void summaryQ.refetch();
@@ -108,8 +103,8 @@ export function SharedAccountCard({ className }: { className?: string }) {
     void attributionsQ.refetch();
   };
 
-  // Real MT5 resync (owner/admin): recompute the pool from the freshest EA
-  // heartbeat server-side, then pull the fresh snapshot back.
+  // Recompute from existing stored data, then reload. This endpoint does not
+  // request a new terminal observation or prove the stored amounts are current.
   const doRefresh = async () => {
     setRefreshError(null);
     if (isOwnerAdmin) {
@@ -118,12 +113,12 @@ export function SharedAccountCard({ className }: { className?: string }) {
         if (!resp?.ok) {
           setRefreshError(
             resp?.error === "MASTER_BRIDGE_NOT_AVAILABLE"
-              ? "No master bridge is connected to sync."
-              : "Sync failed. The bridge may be offline.",
+              ? "Stored master account data is unavailable. Please try reloading again."
+              : "Could not refresh stored account data. Please try again.",
           );
         }
       } catch {
-        setRefreshError("Sync failed. The bridge may be offline.");
+        setRefreshError("Could not refresh stored account data. Please try again.");
       }
     }
     reloadAll();
@@ -203,14 +198,9 @@ export function SharedAccountCard({ className }: { className?: string }) {
     r => String(r.status).toLowerCase() !== "open",
   );
 
-  const sync = master?.syncStatus ?? "UNAVAILABLE";
-  const badge = refreshing
-    ? { text: "Refreshing", cls: "bg-amber-500/10 text-amber-400 border-amber-500/30" }
-    : sync === "LIVE"
-      ? { text: "Live", cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" }
-      : sync === "STALE"
-        ? { text: "Stale", cls: "bg-amber-500/10 text-amber-400 border-amber-500/30" }
-        : { text: "Unavailable", cls: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30" };
+  const badge = isOwnerAdmin && master
+    ? { text: "Stored values", cls: "bg-amber-500/10 text-amber-400 border-amber-500/30" }
+    : { text: "Unavailable", cls: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30" };
 
   return (
     <Card className={cn("w-full overflow-hidden", className)} data-testid="shared-account-card">
@@ -239,8 +229,7 @@ export function SharedAccountCard({ className }: { className?: string }) {
         </div>
         {isOwnerAdmin && (
           <p className="text-[11px] text-zinc-500 mt-1">
-            MT5 synced {ageLabel(master?.snapshotAgeMs)}
-            {master?.lastMt5SnapshotAt ? ` · ${formatDate(master.lastMt5SnapshotAt)}` : ""}
+            {masterAccountUpdateText(masterEvidence)}
           </p>
         )}
         {refreshError && (
@@ -253,21 +242,21 @@ export function SharedAccountCard({ className }: { className?: string }) {
         {isOwnerAdmin && !master && (
           <section data-testid="master-mt5-unavailable" className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="text-[11px] uppercase tracking-wide text-zinc-400 flex items-center gap-1.5 font-medium mb-1">
-              <Server className="h-3.5 w-3.5" /> MT5 Real Account
+              <Server className="h-3.5 w-3.5" /> MT5 master account
             </div>
             <p className="text-xs text-zinc-500">
-              No master bridge snapshot is available. Connect the MT5 bridge, then
-              use Refresh to pull the live account state. No data is fabricated.
+              No stored master account view is available. Refresh reloads stored
+              data; it does not request a new broker observation.
             </p>
           </section>
         )}
 
-        {/* ── Owner/admin: REAL MT5 master account ─────────────────────── */}
+        {/* ── Owner/admin: stored MT5 master values ───────────────────── */}
         {isOwnerAdmin && master && (
-          <section data-testid="master-mt5-section" className="rounded-lg border border-emerald-900/40 bg-emerald-500/[0.03] p-3">
+          <section data-testid="master-mt5-section" className="rounded-lg border border-amber-900/40 bg-amber-500/[0.03] p-3">
             <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-              <div className="text-[11px] uppercase tracking-wide text-emerald-400/90 flex items-center gap-1.5 font-medium">
-                <Server className="h-3.5 w-3.5" /> MT5 Real Account
+              <div className="text-[11px] uppercase tracking-wide text-amber-400/90 flex items-center gap-1.5 font-medium">
+                <Server className="h-3.5 w-3.5" /> MT5 master account
               </div>
               <div className="text-[10px] text-zinc-500 truncate">
                 {[master.brokerName, master.serverName].filter(Boolean).join(" · ") || "—"}
@@ -279,17 +268,15 @@ export function SharedAccountCard({ className }: { className?: string }) {
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-              <Stat label={`Balance${master.accountCurrency ? ` (${master.accountCurrency})` : ""}`}
-                value={`$${master.mt5Balance.toFixed(2)}`} icon={<Wallet className="h-3 w-3" />} />
-              <Stat label="Equity" value={`$${master.mt5Equity.toFixed(2)}`} icon={<Shield className="h-3 w-3" />} />
-              <Stat label="Open P/L"
-                value={formatPnl(master.mt5OpenPnl)}
-                valueClass={master.mt5OpenPnl > 0 ? "text-emerald-400" : master.mt5OpenPnl < 0 ? "text-red-400" : ""}
-                icon={master.mt5OpenPnl >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />} />
-              <Stat label="Used Margin" value={`$${master.mt5UsedMargin.toFixed(2)}`} />
-              <Stat label="Free Margin" value={`$${master.mt5FreeMargin.toFixed(2)}`} />
-              <Stat label="Open Positions" value={String(master.openPositions)} icon={<Activity className="h-3 w-3" />} />
+              <Stat label={`Balance (unverified)${master.accountCurrency ? ` (${master.accountCurrency})` : ""}`}
+                value={masterAmount(master.mt5Balance)} icon={<Wallet className="h-3 w-3" />} />
+              <Stat label="Equity (unverified)" value={masterAmount(master.mt5Equity)} icon={<Shield className="h-3 w-3" />} />
+              <Stat label="Open P/L" value="—" />
+              <Stat label="Used Margin (unverified)" value={masterAmount(master.mt5UsedMargin)} />
+              <Stat label="Free Margin (unverified)" value={masterAmount(master.mt5FreeMargin)} />
+              <Stat label="Recorded trades" value={Number.isSafeInteger(master.openPositions) && master.openPositions! >= 0 ? String(master.openPositions) : "—"} icon={<Activity className="h-3 w-3" />} />
             </div>
+            <p className="mt-2 text-xs text-amber-400">{MASTER_VALUE_LIMITATION}</p>
             {master.unattributedCount > 0 && (
               <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-400" data-testid="master-unattributed">
                 <AlertTriangle className="h-3 w-3" />
@@ -300,7 +287,14 @@ export function SharedAccountCard({ className }: { className?: string }) {
         )}
 
         {/* ── ARX virtual allocation (everyone with an allocation) ──────── */}
-        {isOwnerAdmin && master ? (
+        {isOwnerAdmin && !master ? (
+          <section data-testid="arx-master-allocation-unavailable">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-2 flex items-center gap-1.5">
+              <Shield className="h-3.5 w-3.5" /> ARX Allocation
+            </div>
+            <p className="text-xs text-zinc-500">Master allocation figures unavailable.</p>
+          </section>
+        ) : isOwnerAdmin && master ? (
           <section data-testid="arx-allocation-section">
             <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-2 flex items-center gap-1.5">
               <Shield className="h-3.5 w-3.5" /> ARX Allocation
@@ -330,16 +324,16 @@ export function SharedAccountCard({ className }: { className?: string }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
               <Stat
                 label="Allocated"
-                value={`$${(allocationView?.assignedAllocation ?? allocTotals.balance).toFixed(2)}`}
+                value={allocationAmount(allocationView?.assignedAllocation)}
                 icon={<Wallet className="h-3 w-3" />} />
               <Stat
                 label="Available"
-                value={`$${(allocationView?.availableAllocation ?? allocTotals.balance).toFixed(2)}`}
+                value={allocationAmount(allocationView?.availableAllocation)}
                 valueClass={allocationView != null && allocationView.availableAllocation <= 0 ? "text-red-400" : ""}
                 icon={<Shield className="h-3 w-3" />} />
               <Stat
                 label="Reserved"
-                value={`$${(allocationView?.reservedRisk ?? 0).toFixed(2)}`}
+                value={allocationAmount(allocationView?.reservedRisk)}
                 icon={<Shield className="h-3 w-3" />} />
               <Stat label="Open P/L"
                 value={formatPnl(allocTotals.pnl)}
