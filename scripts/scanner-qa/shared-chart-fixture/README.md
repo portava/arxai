@@ -1,5 +1,40 @@
 # Actual Scanner / shared Smart Chart acceptance
 
+## Isolated feed-reconciliation probe
+
+This is separate from actual Scanner acceptance. `--feed=candidate` mounts only
+the real chart adapter with synthetic OHLC. `--feed=baseline` substitutes only
+the exact pinned `da62c7a5595f63be526362c3327a27366da6dc68` adapter file through a
+QA-only loader; its application file and all vendor packages stay unchanged.
+The manifest records the source override and both adapter hashes. Builds are
+served on loopback ports 4208 and 4207 respectively.
+
+```sh
+node scripts/scanner-qa/shared-chart-fixture/build.mjs --feed=candidate
+node scripts/scanner-qa/shared-chart-fixture/build.mjs --feed=baseline
+node scripts/scanner-qa/shared-chart-fixture/build.mjs --serve=BUILD_ID
+playwright-cli -s=feed-candidate open 'http://127.0.0.1:4208/?cpu=1' --browser=chrome
+playwright-cli -s=feed-candidate --raw run-code --filename=scripts/scanner-qa/shared-chart-feed-reconciliation.js
+playwright-cli -s=feed-candidate close
+```
+
+Use fresh sessions and reference/candidate/candidate/reference order separately
+at `cpu=1` and `cpu=4`, with a coordinated quiet window. Save every raw output,
+including failed/partial runs. Each invocation is bounded at sixty seconds;
+correctness failure returns partial evidence and `passed:false`. The runner
+blocks external/API/writing/WebSocket attempts and checks the executing build.
+It compares all canonical/displayed bars and actual price-line flags/prices
+before and after rendering opportunities, across seven styles. Counters observe
+actual renderer settings calls. Counts, CPU time and frame opportunities are
+different evidence; none proves actual Scanner click latency or hardware paint.
+
+The narrow probe typecheck is
+`tsc -p scripts/scanner-qa/shared-chart-fixture/tsconfig.feed.json`.
+See `docs/CHART_FEED_RECONCILIATION_EVIDENCE_2026_11_01.md` for the measured source
+commits, hashes, repeated native-browser results and explicit limitations.
+
+## Actual page fixture
+
 This fixture imports the real dashboard `src/main.tsx`, including its App,
 routes, authentication gate and providers. It adds the fixture-only adapter
 observer before mounting. It does not replace the Scanner, chart, API hooks or
