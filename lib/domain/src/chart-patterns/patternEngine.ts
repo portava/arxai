@@ -40,9 +40,12 @@ const SWING_SPAN = 2;
  * Detect chart patterns on a window of CLOSED, normalized candles. Forming bars
  * must be filtered by the caller (we still defensively drop a trailing forming
  * candle). Returns an empty pattern set when the window is too short.
+ * The narrow scope shares the same detector/context and is for causal H&S
+ * prefix discovery. Default callers still receive the complete catalogue.
  */
 export function detectChartPatterns(
   candles: ChartPatternCandle[],
+  scope: "all" | "head-and-shoulders" = "all",
 ): PatternEngineResult {
   const closed = candles.filter((c) => c.isComplete && !c.isForming);
   if (closed.length < GLOBAL_MIN_CANDLES) {
@@ -57,7 +60,7 @@ export function detectChartPatterns(
   const ctx: DetectorContext = { closed, swings, atr: atrVal, last, decimals };
 
   const patterns: DetectedPattern[] = [];
-  for (const detector of DETECTORS) {
+  for (const detector of scope === "head-and-shoulders" ? HEAD_AND_SHOULDERS_DETECTORS : DETECTORS) {
     const found = detector(ctx);
     if (found) patterns.push(found);
   }
@@ -972,3 +975,5 @@ const DETECTORS: Detector[] = [
   detectPinBar,
   detectScalpFlare,
 ];
+
+const HEAD_AND_SHOULDERS_DETECTORS: readonly Detector[] = [detectHeadAndShoulders];

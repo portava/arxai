@@ -201,7 +201,9 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
   // prefixes so a later swing cannot move its first knowable confirmation back.
   for (let end = Math.max(20, bars.length - SHAPE_LOOKBACK + 1); end <= bars.length; end++) {
     const prefix = bars.slice(0, end);
-    for (const raw of detectChartPatterns(prefix).patterns) {
+    // Earlier prefixes only contribute H&S evidence. Run the other families
+    // once at the selected endpoint, preserving their complete final result.
+    for (const raw of detectChartPatterns(prefix, end === bars.length ? "all" : "head-and-shoulders").patterns) {
       if (raw.id === "head_and_shoulders" || raw.id === "inverse_head_and_shoulders") {
         const finding = headAndShoulders(raw, bars, note, end - 1);
         // The first qualifying inspected prefix owns this shape. A later ATR

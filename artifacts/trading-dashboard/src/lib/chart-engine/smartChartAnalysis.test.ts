@@ -34,6 +34,39 @@ const uptrend = [1, 1.01, 1.02, 1.03, 1.04].map(close => ({ open: close - 0.001,
 const star = { open: 1.04, high: 1.06, low: 1.0395, close: 1.041 };
 const find = (data: SmartChartAnalysisInput, prefix: string) => analyzeSmartChart(data).allFindings.find(f => f.id.startsWith(prefix));
 
+describe("bounded head-and-shoulders discovery scope", () => {
+  it("matches full-catalogue H&S evidence at every prefix without returning other families", () => {
+    let seed = 307;
+    const dense = bars(Array.from({ length: 600 }, () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      const close = 100 + seed / 4294967296 * 10;
+      return { open: close - .1, close, high: close + .5, low: close - .5 };
+    }));
+    let matched = 0, excluded = 0;
+    for (const candles of [hs(), inverted(hs()), dense]) {
+      for (let end = 0; end <= candles.length; end++) {
+        const prefix = candles.slice(0, end);
+        const all = detectChartPatterns(prefix);
+        const selected = detectChartPatterns(prefix, "head-and-shoulders");
+        const expected = all.patterns.filter(p => p.id === "head_and_shoulders" || p.id === "inverse_head_and_shoulders");
+        expect(selected).toEqual({ ...all, patterns: expected });
+        matched += expected.length;
+        excluded += all.patterns.length - expected.length;
+      }
+    }
+    expect(matched).toBeGreaterThan(0);
+    expect(excluded).toBeGreaterThan(0);
+  });
+  it("retains forming-tail filtering and short-window metadata in the narrow scope", () => {
+    const closed = hs();
+    const forming = { ...closed.at(-1)!, close: 150, high: 151, isComplete: false, isForming: true };
+    expect(detectChartPatterns([...closed, forming], "head-and-shoulders"))
+      .toEqual(detectChartPatterns(closed, "head-and-shoulders"));
+    expect(detectChartPatterns(closed.slice(0, 19), "head-and-shoulders"))
+      .toEqual({ patterns: [], candlesConsidered: 19, insufficient: true });
+  });
+});
+
 describe("source and observation boundaries", () => {
   it.each(["symbol", "timeframe", "source", "sourceIdentity"] as const)("refuses a batch from another %s", key => {
     const changed = { ...CONTEXT, [key]: key === "timeframe" ? "M15" : key === "sourceIdentity" ? "b".repeat(64) : "different" };
