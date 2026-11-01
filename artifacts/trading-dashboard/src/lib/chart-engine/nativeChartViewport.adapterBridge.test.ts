@@ -66,4 +66,8 @@ describe('native adapter viewport bridge',()=>{
   mount();v.setSymbol('EURUSD');expect(v.getPricePrecision()).toBe(5);v.setCandles(bars());expect(v.getPricePrecision()).toBe(5);v.updateActiveCandle({...bars().at(-1)!,close:302,high:305});expect(v.getPricePrecision()).toBe(5);v.setSymbol('USDJPY');expect(v.getPricePrecision()).toBe(3);v.destroy();mount({priceDigits:7});v.setSymbol('EURUSD');expect(v.getPricePrecision()).toBe(7);
  });
 
+ it('notifies subscribers once when paint fails without scheduling a retry loop',()=>{
+  const proofs:boolean[]=[];mount({onViewportChange:()=>proofs.push(v.isAnalysisFocusVerified())});expect(proofs.at(-1)).toBe(true);proofs.length=0;ctx.stroke.mockImplementation(()=>{throw Error('renderer failure');});v.setScale('log');flush();expect(v.getState().status).toBe('error');expect(proofs).toEqual([false]);expect(queue.size).toBe(0);flush();expect(proofs).toEqual([false]);ctx.stroke.mockReset();v.setScale('linear');flush();expect(proofs).toEqual([false,true]);
+ });
+
 });

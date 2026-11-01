@@ -584,7 +584,7 @@ export function ARXNativeChart({
   const containerRef = useRef<HTMLDivElement | null>(null);
   // The chart RENDERER lives behind the swappable chart-engine adapter (Task
   // #373). This component owns React state, data, feed-status and UI; the
-  // imperative engine (lightweight-charts v5) is driven only through the adapter.
+  // active imperative renderer is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
   const onAnalysisFocus = useCallback((focused: boolean) => {
     analysisFocusRef.current = focused;
@@ -714,6 +714,8 @@ export function ARXNativeChart({
     if (!el) return;
 
     let adapter: ChartEngineAdapter | null = null;
+    let disposed = false;
+    let unsubscribePaint: (() => void) | undefined;
     // The engine whose setup is still running (destroyed if that setup throws).
     let building: ChartEngineAdapter | null = null;
     const build = () => {
@@ -737,7 +739,16 @@ export function ARXNativeChart({
       building = null;
       adapter = engine;
       adapterRef.current = engine;
-      setAnalysisVerified(engine.isAnalysisFocusVerified?.()!==false);
+      const refreshPaintProof = () => {
+        // A queued callback from a retired renderer must never qualify the
+        // replacement. Read the engine's completed-latest-paint proof; a
+        // viewport notification alone is not evidence that rendering passed.
+        if (disposed || adapterRef.current !== engine) return;
+        setAnalysisVerified(engine.isAnalysisFocusVerified?.() !== false);
+        engineInputsRef.current.updateLegend(inspectedCandleRef.current);
+      };
+      unsubscribePaint = engine.subscribeViewport?.(refreshPaintProof);
+      refreshPaintProof();
       setEngineGeneration(++builtEngineGeneration.current);
     };
     let cancelDeferred: (() => void) | undefined;
@@ -759,6 +770,8 @@ export function ARXNativeChart({
     });
 
     return () => {
+      disposed = true;
+      unsubscribePaint?.();
       cancelDeferred?.();
       if (requestPrimaryEngine.current === build) requestPrimaryEngine.current = null;
       adapter?.destroy();
@@ -1447,7 +1460,7 @@ export function ARXNativeChart({
         </div>
       </div>
 
-      {!analysisVerified && <p role="alert" className="px-3 py-2 text-xs text-amber-200">Chart layer visibility is unverified after a rendering failure. Reload the chart before changing tools or exporting.</p>}
+      {!analysisVerified && <p role="alert" className="px-3 py-2 text-xs text-amber-200">Chart layer visibility is unverified. Wait for the chart to finish drawing; if this persists, reload before changing tools or exporting.</p>}
       {analysisVerified && analysisFocused && <p className="px-3 py-2 text-xs text-sky-200" data-testid="chart-simplified-view">Simplified view: studies, drawings and automatic chart annotations are temporarily hidden. Your chosen settings are retained. Prices, trade/risk overlays, research layers and source warnings remain visible.</p>}
       {analysisFocusNotice && <p role="status" className="px-3 text-xs text-zinc-400">{analysisFocusNotice}</p>}
       <ChartWorkbenchTools analysisFocused={analysisFocused} onRestoreAnalysis={restoreAnalysis} studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
@@ -1813,7 +1826,8 @@ export function ARXNativeChart({
         <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
         <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
       </details>
-      <ChartLibraryCredit />
+      {adapterRef.current?.capabilities?.id === "lightweight-charts" && <ChartLibraryCredit />}
+      {adapterRef.current?.capabilities?.id === "arx-native" && <p className="px-3 py-2 text-[10px] text-zinc-400" data-testid="chart-native-credit">Rendering engine: ARX Native Chart</p>}
     </Card>
   );
 }

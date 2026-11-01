@@ -576,6 +576,9 @@ export class NativeChartViewport {
       this.paintedRevision = -1;
       this.frame = null; this.paintError = error instanceof Error ? error.message : "Price layer paint failed";
       try { this.context.clearRect(0, 0, this.width, this.height); } catch { /* preserve the original paint failure */ }
+      // Notify presentation subscribers of withdrawal just as on completion.
+      // This emits state only: it must not schedule an automatic retry loop.
+      this.notify("viewport", () => this.options.onViewportChange?.());
     }
   }
   exportImage(): string | null {
