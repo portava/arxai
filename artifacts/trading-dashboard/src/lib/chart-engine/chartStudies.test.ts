@@ -455,3 +455,25 @@ describe("presentation-only checkpoint reuse",()=>{
   expect(calc.updatePresentation({...config,[key]:value})).toBe(false);expect(calc.config).toBe(config);
  });
 });
+
+// Historical strategy reads the same numeric authority as the visible studies.
+import { prepareCausalResearchV2, type ResearchV2Config, type ResearchV2Input } from "@workspace/domain/backtest/research-core";
+it("research EMA/ATR signal evidence equals the actual chart calculations at the signal candle",()=>{
+  const source:ResearchV2Input={symbol:"TEST",priceBasis:"BID",intervalMs:60000,asOfMs:300*60000,
+    source:{kind:"generated",reference:"shared-chart-research-parity"},bars:Array.from({length:300},(_,i)=>{
+      const close=100+Math.sin(i/7)*3;return{openTimeMs:i*60000,open:close,high:close+.3,low:close-.3,close};
+    })};
+  const config:ResearchV2Config={strategy:{version:"ema-cross-atr-v1",fastPeriod:3,slowPeriod:7,atrPeriod:5,stopAtrMultiple:2,targetR:2,maxHoldingBars:2,direction:"both"},
+    costs:{fullSpreadPriceUnits:0,adverseSlippagePerFillPriceUnits:0,feePerFillPriceUnits:0},maxEntryGapMs:0,splits:{trainEndExclusive:180,validationEndExclusive:240}};
+  const chart=source.bars.map(bar=>({...bar,time:bar.openTimeMs/1000}));
+  const fast=new StudyCalculator({kind:"ema",period:3,color:"#fff"}).calculate(chart);
+  const slow=new StudyCalculator({kind:"ema",period:7,color:"#fff"}).calculate(chart);
+  const atr=new StudyCalculator({kind:"atr",period:5,method:"smma",color:"#fff"}).calculate(chart);
+  const decisions=prepareCausalResearchV2(source,config).body.partitions.flatMap(p=>p.decisions);
+  expect(decisions.length).toBeGreaterThan(10);
+  for(const {signalIndex:i,signal} of decisions){
+    expect(signal.fastEma).toBe(fast[i]!.values[0]);expect(signal.previousFastEma).toBe(fast[i-1]!.values[0]);
+    expect(signal.slowEma).toBe(slow[i]!.values[0]);expect(signal.previousSlowEma).toBe(slow[i-1]!.values[0]);
+    expect(signal.atr).toBe(atr[i]!.values[0]);
+  }
+});

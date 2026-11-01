@@ -1,6 +1,7 @@
 import { prepareCausalResearch, finalizeCausalResearch, RESEARCH_ENGINE_VERSION, ResearchInputError, type ResearchInput, type ResearchConfig } from "./researchCore.js";
 /** WebCrypto hashing; no Node imports, I/O, model, clock or broker access. */
 export async function fingerprintResearch(value: unknown): Promise<string> {
+  if (!globalThis.crypto?.subtle) throw new ResearchInputError("WEBCRYPTO_UNAVAILABLE");
   const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -21,4 +22,17 @@ export async function runCausalResearchWeb(raw: ResearchInput, config: ResearchC
   ]);
   const result = await fingerprintResearch([input, configuration, strategy, prepared.body]);
   return finalizeCausalResearch(prepared, { algorithm: "sha256", input, configuration, strategy, result });
+}
+
+import { prepareCausalResearchV2, finalizeCausalResearchV2, RESEARCH_V2_ENGINE_VERSION, type ResearchV2Input, type ResearchV2Config } from "./researchCore.js";
+export async function runCausalResearchV2Web(raw: ResearchV2Input, config: ResearchV2Config) {
+  requireWorker();
+  const prepared = prepareCausalResearchV2(raw, config);
+  const [strategy, input, configuration] = await Promise.all([
+    fingerprintResearch([RESEARCH_V2_ENGINE_VERSION, prepared.config.strategy]),
+    fingerprintResearch([RESEARCH_V2_ENGINE_VERSION, prepared.input]),
+    fingerprintResearch([RESEARCH_V2_ENGINE_VERSION, prepared.config]),
+  ]);
+  const result = await fingerprintResearch([input, configuration, strategy, prepared.body]);
+  return finalizeCausalResearchV2(prepared, { algorithm: "sha256", input, configuration, strategy, result });
 }
