@@ -42,3 +42,9 @@ The first candidate `f5bed074` exposed a genuine lifecycle regression in the bro
 Two phone harness attempts expected a proposal too early: the first had insufficient visible swings, and the second requested before the fitted range reached the chart. Both correctly withheld anchors; the final check waits for observed range application and verifies the withholding explicitly. No product evidence gate was relaxed to pass a test.
 
 Raw evidence: `/Users/areyouok/arx-tier1-release/chart-auto-fibonacci-20261101/`, including initial source checks, browser failures, component failures, final receipts and screenshots. No new click-latency or first-navigation benchmark is claimed by this increment; previous first-visit and large-chart performance gaps remain open. Replit import/acceptance is tracked separately. Nothing was merged to main, deployed, enabled or broker-tested.
+
+## Combined MT5 source checkpoint
+
+Combined source `eeb77d0bd563943562f4819f66c33eaf0dd4f519` also includes the reviewed original chart-mode producer source and compiler report. The dashboard, domain and generated API source trees are byte-identical to tested203df87e; no later browser result is inferred for a changed frontend. Four EA source hashes match compiled77a4b829 exactly. At this combined head the existing offline lane passes56 fake-DEMO-core +105 management +60 original-basis payload assertions, bridge packaging5/5 and87 guards. These named offline DEMO checks make no terminal/broker calls. The separate674 terminal-result receipt belongs to77a4b829 and is not relabelled as a new combined run.
+
+The Mac/Wine compile-only receipt independently verifies all four new EX5 artifacts and0errors/0warnings, while retaining process exit1 for each. No binaries were installed or published. Runtime, v2 declaration preservation, Replit final acceptance, first-navigation performance and remaining owner-document capabilities stay open.

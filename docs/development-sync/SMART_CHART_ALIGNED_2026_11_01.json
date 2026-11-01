@@ -1,0 +1,37 @@
+{
+  "required_base": "77359a70a61dcaf465fb19f917dbfed635ecd011",
+  "combined_source": "eeb77d0bd563943562f4819f66c33eaf0dd4f519",
+  "frontend_tested": "203df87e2e6d42fd435d9c2e0b6dffaea580cedd",
+  "frontend_fixture": "8a320ae32b0b6ea2",
+  "compiled_mt5_source": "77a4b829bc55520c8a157f093879818082a73fbe",
+  "files": [
+    "artifacts/api-server/package.json",
+    "artifacts/trading-dashboard/src/components/chart-replay/ChartReplayPlayer.test.tsx",
+    "artifacts/trading-dashboard/src/components/chart-replay/ChartReplayPlayer.tsx",
+    "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.deferred-init.test.tsx",
+    "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx",
+    "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.fibonacci.test.tsx",
+    "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.tsx",
+    "artifacts/trading-dashboard/src/lib/chart-engine/chartAutoFibonacci.test.ts",
+    "artifacts/trading-dashboard/src/lib/chart-engine/chartAutoFibonacci.ts",
+    "artifacts/trading-dashboard/src/lib/chart-engine/chartWorkspace.ts",
+    "docs/MT5_CANDLE_CHART_MODE_2026_11_01.md",
+    "docs/SMART_CHART_AUTO_FIBONACCI_2026_11_01.md",
+    "docs/SMART_CHART_REQUIREMENTS_CENSUS_2026_11_01.md",
+    "mt5-bridge/ARX_AI_Bridge_v2_Beta_Kernel.mq5",
+    "mt5-bridge/ARX_AI_Universal_Agent_v151.mq5",
+    "mt5-bridge/ARX_AI_Universal_Agent_v152.mq5",
+    "mt5-bridge/ARX_AI_Universal_Agent_v154.mq5",
+    "mt5-bridge/tests/candle_chart_mode_test.cpp",
+    "mt5-bridge/tests/run_candle_chart_mode.py"
+  ],
+  "patch_sha256": "75dc21421d482b00539a5474fee4f7c3809b7a186eef001396ffee1594bb6117",
+  "replit_status": "Not submitted; preceding original-basis import still busy",
+  "constraints": [
+    "Preserve confirmed Replit checkpoint and concurrent local changes",
+    "Development source only, no API activation or writes into running build",
+    "No EA install, terminal launch, broker test, database changes, publish or main merge",
+    "Native source compilation is not account-specific runtime acceptance",
+    "Keep v2 metadata stripping and prior performance/browser failures explicit"
+  ]
+}
