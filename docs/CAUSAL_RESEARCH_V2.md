@@ -56,3 +56,18 @@ Seven mutation checks deliberately broke future-bar selection, signal-time ATR f
 ## Comparison boundaries
 
 [TradingView's strategy documentation](https://www.tradingview.com/pine-script-docs/concepts/strategies/) and [MT5's tester documentation](https://www.metatrader5.com/en/terminal/help/algotrading/testing) describe broader strategy-testing and optimization capabilities. This bounded fixed-rule OHLC extension does not match their full tester, scripting, tick modeling, multi-asset or optimization capabilities. No competitor speed, return or execution-parity claim is made.
+
+## Bounded completion timing receipt
+
+On 2026-11-01, engine commit `f3ff08d3e98b6ffeecb639518ae716d1e9ce1b9a` was measured on 5,000 generated bars with explicit 9/21 EMA, ATR 14, 2×ATR stop, 2R target and nonzero modeled costs. The checked-in `causalResearchV2.benchmark.ts` runs the real Node and WebCrypto wrappers with identical input/configuration, alternating their order, then reverses BID/MID order in a second round. Every invocation checks the expected result fingerprint; full output equality is checked before each batch. Each batch retains five warmup pairs and 50 measured pairs, including every outlier.
+
+| Round / basis | Node p95 | WebCrypto in Node p95 | Largest measured pair member |
+| --- | ---: | ---: | ---: |
+| 1 / BID | 7.575 ms | 8.273 ms | 8.602 ms |
+| 1 / MID | 7.473 ms | 8.424 ms | 10.100 ms |
+| 2 / MID | 6.880 ms | 8.232 ms | 8.552 ms |
+| 2 / BID | 6.829 ms | 8.223 ms | 11.777 ms |
+
+All eight p95 values meet the existing declared 100 ms calculation budget for 5,000 bars. These are **full engine-completion times in Node**, including validation/copies, indicator and simulation calculations, SHA-256 hashes and recursive freezing. They are not browser Worker, paint, provider, navigation, scanner or broker timing. They cannot establish instant page loads, competitor parity or market performance. Host/runtime details, source hashes, exact configuration, result fingerprints and all 440 invocation samples are in `/Users/areyouok/arx-tier1-release/research-portable-v2-20261101/v2-benchmark.json`. A final registered engine test run on the same commit passes 61/61 with no skips; the independent chart arithmetic suite passed 130/130. Integrated UI/Worker acceptance remains a separate task.
+
+To reproduce from `artifacts/api-server`, run `node --import tsx src/lib/backtest/__qa__/causalResearchV2.benchmark.ts /absolute/path/to/receipt.json` with installed workspace dependencies. The command sets a failing exit code if either wrapper's p95 exceeds the declared budget; warmups and outliers remain in the receipt even on failure.
