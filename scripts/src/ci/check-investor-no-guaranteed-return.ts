@@ -9,7 +9,7 @@
 // guaranteed, or implied") are required and intentionally NOT matched, because
 // the patterns target the promise constructions, not the bare word "guaranteed".
 
-import { execSync } from "node:child_process";
+import { readWordingSources, scanCopyPatterns, coverageFailure, type WordingScanOptions } from "./wording-source.js";
 import { type CheckResult } from "./_lib.js";
 
 const NAME = "investor-no-guaranteed-return";
@@ -38,39 +38,29 @@ const PATTERNS: string[] = [
   "\\d+\\s*%\\s*(per\\s+month|monthly|a\\s+month|per\\s+year|per\\s+annum|annually|guaranteed)",
 ];
 
-export function checkInvestorNoGuaranteedReturn(): CheckResult {
+export function checkInvestorNoGuaranteedReturn(options: WordingScanOptions = {}): CheckResult {
   const violations: string[] = [];
-  // Only scan paths that exist (lib/investor is a dir; others are files).
-  const existing = SCAN_PATHS.join(" ");
-  for (const pat of PATTERNS) {
-    let out = "";
-    try {
-      out = execSync(
-        `rg -n -i --no-heading -e '${pat}' ${existing} || true`,
-        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-      );
-    } catch {
-      out = "";
+  let scanned = 0;
+  try {
+    const sources = readWordingSources(SCAN_PATHS, options); scanned = sources.length;
+    for (const source of sources) for (const hit of scanCopyPatterns(source, PATTERNS, true)) {
+      violations.push(`[${hit.pattern}] ${hit.location}: ${hit.text}`);
     }
-    for (const line of out.split("\n")) {
-      if (!line.trim()) continue;
-      violations.push(`[${pat}] ${line}`);
-    }
-  }
+  } catch (error) { violations.push(coverageFailure(error)); }
   if (violations.length === 0) {
     return {
       name: NAME,
       ok: true,
       violations: [],
       notes: [
-        `0 return-promise matches across ${SCAN_PATHS.length} investor surface(s) / ${PATTERNS.length} pattern(s)`,
+        `0 return-promise matches across ${scanned} investor product source file(s) / ${PATTERNS.length} pattern(s)`,
       ],
     };
   }
   return {
     name: NAME,
     ok: false,
-    violations: violations.slice(0, 50),
+    violations,
   };
 }
 

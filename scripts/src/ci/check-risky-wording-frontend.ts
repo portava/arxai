@@ -4,7 +4,7 @@
 // or that users deposit / withdraw real money. Tokens are matched
 // case-insensitively as whole words where applicable.
 
-import { execSync } from "node:child_process";
+import { readWordingSources, scanCopyPatterns, coverageFailure, type WordingScanOptions, type WordingSource } from "./wording-source.js";
 import { type CheckResult } from "./_lib.js";
 
 const NAME = "risky-wording-frontend";
@@ -58,33 +58,23 @@ const MONEY_HANDLING_ALLOWLIST = [
   "/pages/admin/investors.tsx",
 ];
 
-function scanGroup(patterns: string[], moneyHandling: boolean): string[] {
+function scanGroup(sources: WordingSource[], patterns: string[], moneyHandling: boolean): string[] {
   const found: string[] = [];
-  for (const pat of patterns) {
-    let out = "";
-    try {
-      out = execSync(
-        `rg -n -i --no-heading -e '${pat}' ${SCAN_PATHS.join(" ")} || true`,
-        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-      );
-    } catch {
-      out = "";
-    }
-    for (const line of out.split("\n")) {
-      if (!line.trim()) continue;
-      if (ALLOWLIST_FILE_PATTERNS.some((p) => line.includes(p))) continue;
-      // Money-handling tokens are permitted on the investor surfaces only.
-      if (moneyHandling && MONEY_HANDLING_ALLOWLIST.some((p) => line.includes(p))) continue;
-      found.push(`[${pat}] ${line}`);
-    }
+  for (const source of sources) {
+    if (ALLOWLIST_FILE_PATTERNS.some(p => source.path.includes(p))) continue;
+    if (moneyHandling && MONEY_HANDLING_ALLOWLIST.some(p => source.path.includes(p))) continue;
+    for (const hit of scanCopyPatterns(source, patterns, true)) found.push(`[${hit.pattern}] ${hit.location}: ${hit.text}`);
   }
   return found;
 }
 
-export function checkRiskyWordingFrontend(): CheckResult {
+export function checkRiskyWordingFrontend(options: WordingScanOptions = {}): CheckResult {
+  let sources: WordingSource[];
+  try { sources = readWordingSources(SCAN_PATHS, options); }
+  catch (error) { return { name: NAME, ok: false, violations: [coverageFailure(error)] }; }
   const violations = [
-    ...scanGroup(MONEY_HANDLING_PATTERNS, true),
-    ...scanGroup(ALWAYS_FORBIDDEN_PATTERNS, false),
+    ...scanGroup(sources, MONEY_HANDLING_PATTERNS, true),
+    ...scanGroup(sources, ALWAYS_FORBIDDEN_PATTERNS, false),
   ];
   const totalPatterns = MONEY_HANDLING_PATTERNS.length + ALWAYS_FORBIDDEN_PATTERNS.length;
   if (violations.length === 0) {
@@ -93,14 +83,14 @@ export function checkRiskyWordingFrontend(): CheckResult {
       ok: true,
       violations: [],
       notes: [
-        `0 forbidden wording matches across ${SCAN_PATHS.length} path(s) / ${totalPatterns} pattern(s)`,
+        `0 forbidden wording matches across ${sources.length} product source files / ${totalPatterns} pattern(s)`,
       ],
     };
   }
   return {
     name: NAME,
     ok: false,
-    violations: violations.slice(0, 50),
+    violations,
   };
 }
 

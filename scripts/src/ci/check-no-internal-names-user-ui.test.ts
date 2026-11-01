@@ -54,7 +54,7 @@ console.log("\nno-internal-names-user-ui guard — assistant-name regression sui
 
 // 1. Pure-function leak detection.
 for (const c of leakCases) {
-  const hits = findAssistantNameLeaksInSource("synthetic.ts", c.src);
+  const hits = findAssistantNameLeaksInSource("synthetic.tsx", c.src);
   const ok = hits.length === c.expected;
   record(
     c.name,
