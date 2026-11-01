@@ -245,6 +245,33 @@ export function ArxAssistantLivePanel() {
   const suggestionsRef=useRef<HTMLDivElement|null>(null);
   const optionalVoiceRef=useRef<HTMLDivElement|null>(null);
   const lastPanelFocus=useRef<HTMLElement|null>(null);
+  const revealChartOnCompactOpen=useRef<HTMLElement|null>(null);
+  useLayoutEffect(()=>{
+    if(!open){revealChartOnCompactOpen.current=null;return;}
+    if(!chartCompact||!revealChartOnCompactOpen.current)return;
+    if(revealChartOnCompactOpen.current!==dockTarget){revealChartOnCompactOpen.current=null;return;}
+    const frame=requestAnimationFrame(()=>{
+      revealChartOnCompactOpen.current=null;
+      const chart=dockTarget?.closest('[data-testid="arx-native-chart"]');
+      const plot=chart?.querySelector<HTMLElement>('[data-testid="arx-native-canvas"]');
+      const panel=panelRef.current;
+      if(!plot?.isConnected||!panel)return;
+      const viewport=readViewport();
+      // A keyboard-short viewport prioritizes reachable input/Stop/Close.
+      // This is one deliberate reveal, never a response/resize scroll loop.
+      if(viewport.height<360)return;
+      const bounds=plot.getBoundingClientRect(),panelBounds=panel.getBoundingClientRect();
+      const usableTop=viewport.offsetTop,usableBottom=Math.min(viewport.offsetTop+viewport.height,panelBounds.top);
+      const visibleHeight=Math.max(0,Math.min(bounds.bottom,usableBottom)-Math.max(bounds.top,usableTop));
+      const minimum=Math.min(160,bounds.height,Math.max(0,usableBottom-usableTop));
+      if(minimum>=80&&visibleHeight<minimum){
+        // Native scrolling follows the plot's existing nested/fullscreen scroll
+        // owners. It does not change the chart's time or price viewport.
+        plot.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});
+      }
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[open,chartCompact,dockTarget]);
   useLayoutEffect(()=>{
     if(!chartCompact)return;
     const active=document.activeElement;
@@ -1065,7 +1092,7 @@ export function ArxAssistantLivePanel() {
   const trigger = <button
         ref={triggerRef}
         type="button"
-        onClick={() => { if (open) { void closePanel(); } else { setOpen(true); } }}
+        onClick={() => { if (open) { void closePanel(); } else { revealChartOnCompactOpen.current=mobileChart?dockTarget:null; setOpen(true); } }}
         className={cn(
           "rounded-full shadow-lg transition-colors flex items-center justify-center",
           dockTarget ? "h-11 w-11" : "fixed z-50 bottom-20 right-4 md:bottom-6 md:right-6 h-14 w-14",
@@ -1115,7 +1142,7 @@ export function ArxAssistantLivePanel() {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {mobileChart&&<button ref={expandRef} type="button" className="min-h-11 rounded px-2 text-xs text-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400" aria-expanded={conversationExpanded} aria-controls="arx-assistant-messages" aria-label={conversationExpanded?"Keep chart visible":"Expand conversation"} onClick={()=>setConversationExpanded(value=>!value)}>{conversationExpanded?"Chart view":"Expand"}</button>}
+              {mobileChart&&<button ref={expandRef} type="button" className="min-h-11 rounded px-2 text-xs text-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400" aria-expanded={conversationExpanded} aria-controls="arx-assistant-messages" aria-label={conversationExpanded?"Keep chart visible":"Expand conversation"} onClick={()=>{if(conversationExpanded)revealChartOnCompactOpen.current=dockTarget;setConversationExpanded(value=>!value);}}>{conversationExpanded?"Chart view":"Expand"}</button>}
               {/* Phase 22K — memory controls menu (new chat / clear chat / clear all memory) */}
               <div className="relative">
                 <button
