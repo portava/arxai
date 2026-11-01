@@ -285,3 +285,7 @@ Application `5648453f` prevents primary assessment inputs and broker enrichment 
 ## FVG source and output followup — 1 November 2026
 
 Application `a01817bb` shares normalized, source-bound FVG inputs across the assessment and Scanner, fully withholds entry signals/price prose when restricted, and fixes Scanner provider timestamp preservation. 59 capture/FVG tests, 46 provenance/Truth tests, 21 FVG script checks, all four typechecks and both builds pass; frontend 3,861 pass/11 skipped. Guards remain 85/87 with unchanged findings. MT5/Deriv without original UTC evidence stay withheld; no latency or competitor parity claim follows. Draft binding and broader comparison gaps remain open. See [exact source, evidence and limits](SMART_CHART_FVG_EVIDENCE_2026_11_01.md).
+
+## Exact draft assessment binding — 1 November 2026
+
+Application `27a4605f` withdraws assessments after plan changes and isolates different chart/scalp plans while retaining exact-plan sharing. Focused 132 pass, full dashboard 3,904 pass/11 skipped, all four typechecks and production dashboard build pass. Seven actual Scanner browser checks pass with synthetic history and restricted replies; guards remain 85/87 with identical baseline failures. This proves local request-plan handling, not account/source/window/expiry authority or competitor performance. The ordinary build still shows a TradingView rendering-library credit; the owner's no-TradingView requirement remains open. See [exact evidence and limits](SMART_CHART_DRAFT_BINDING_2026_11_01.md).
