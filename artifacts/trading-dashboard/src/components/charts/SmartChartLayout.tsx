@@ -7,14 +7,12 @@ import { ChartLinkContext } from "./ChartLinkContext";
 import { SymbolExplorer } from "@/components/scanner/SymbolExplorer";
 import { Button } from "@/components/ui/button";
 
-function ComparisonInstrument({primary, view, onSymbol, primaryTimeframe, onFollowInterval}: {primary:string;view:ComparisonView;onSymbol:(symbol:string|null)=>void;primaryTimeframe?:ChartRequestedInterval;onFollowInterval:(follow:boolean)=>void}) {
+function ComparisonInstrument({primary, view, onSymbol}: {primary:string;view:ComparisonView;onSymbol:(symbol:string|null)=>void}) {
   const details = useRef<HTMLDetailsElement>(null);
   return <details ref={details} className="mb-2 rounded border border-zinc-800 px-3 py-2 text-xs">
     <summary className="cursor-pointer text-zinc-300">Instrument: {view.symbol ?? primary}{view.symbol === null ? " · follows primary" : " · independent"}</summary>
     <div className="mt-3 space-y-3">
       <label className="flex items-center gap-2"><input type="checkbox" checked={view.symbol === null} onChange={event => onSymbol(event.target.checked ? null : primary)} />Follow primary instrument</label>
-      {primaryTimeframe !== undefined && <label className="flex items-center gap-2"><input type="checkbox" checked={view.followPrimaryInterval === true} onChange={event => onFollowInterval(event.target.checked)} />Follow primary interval</label>}
-      {view.followPrimaryInterval && primaryTimeframe !== undefined && <p className="text-zinc-400">Following {primaryTimeframe}. Choosing an interval on this comparison makes it independent.</p>}
       <SymbolExplorer activeSymbol={view.symbol ?? primary} showDiagnostics={false} onSelect={symbol => {onSymbol(symbol); if (details.current) details.current.open = false;}} />
       <p className="text-zinc-400">Changes this comparison only. Available history depends on its feed.</p>
     </div>
@@ -46,7 +44,8 @@ export function SmartChartLayout({symbol,children,primaryTimeframe,storageKey=CH
       <div className="min-w-0">{layout.count > 1 && <p className="mb-2 text-xs text-zinc-400">Primary chart</p>}{children}</div>
       {layout.comparisons.slice(0,layout.count - 1).map((view,index) => <section key={index} className="min-w-0" aria-label={`Comparison chart ${index + 1}`} data-testid="comparison-chart">
         <p className="mb-2 text-xs text-zinc-400">Comparison chart {index + 1} · {comparisonInterval(view,primaryTimeframe)}{view.followPrimaryInterval && primaryTimeframe !== undefined ? " · follows primary interval" : " · independent interval"} · analysis only</p>
-        <ComparisonInstrument primary={symbol} view={view} primaryTimeframe={primaryTimeframe} onSymbol={symbol => changeView(index,{symbol})} onFollowInterval={follow => changeView(index,{followPrimaryInterval:follow,timeframe:comparisonInterval(view,primaryTimeframe)})} />
+        {primaryTimeframe !== undefined && <label className="mb-2 flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={view.followPrimaryInterval === true} onChange={event => changeView(index,{followPrimaryInterval:event.target.checked,timeframe:comparisonInterval(view,primaryTimeframe)})} />Follow primary interval</label>}
+        <ComparisonInstrument primary={symbol} view={view} onSymbol={symbol => changeView(index,{symbol})} />
         <ARXNativeChart workspaceId={index === 0 ? "comparison" : index === 1 ? "comparison-2" : "comparison-3"} symbol={view.symbol ?? symbol} timeframe={comparisonInterval(view,primaryTimeframe)} onTimeframeChange={(timeframe:ArxTimeframe) => {if (isChartInterval(timeframe)) changeView(index,{timeframe,followPrimaryInterval:false});}} height={520} showFeedStatus />
       </section>)}
     </div>
