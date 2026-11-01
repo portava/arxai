@@ -11,6 +11,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import ts from "typescript";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -34,8 +35,18 @@ function formingTipBlock(src: string): string {
 describe("C3.2 — the append gate supports both live providers", () => {
   it("does not require source === 'mt5_broker' to append a tip", () => {
     const block = formingTipBlock(serviceSource());
+    // Inspect actual append guards, not metadata expressions inside candle
+    // objects (a provider-specific UNKNOWN label must not disable Deriv tips).
+    const ast = ts.createSourceFile("forming-tip.ts", block, ts.ScriptTarget.Latest, true);
+    const conditions: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isIfStatement(node)) conditions.push(node.expression.getText(ast));
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    assert.ok(conditions.length > 0, "the append conditions must be inspected");
     assert.ok(
-      !/source\s*===\s*["']mt5_broker["']/.test(block),
+      !conditions.some(condition => /source\s*===\s*["']mt5_broker["']/.test(condition)),
       "a broker-only append gate freezes every Deriv-fed chart between closed candles",
     );
   });
