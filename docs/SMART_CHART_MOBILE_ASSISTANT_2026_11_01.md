@@ -1,0 +1,13 @@
+# Mobile Smart Chart conversation visibility
+
+Base `38703611`. This adjusts the existing assistant panel only when its launcher is docked to a chart and the layout viewport is narrower than 768px. It does not add another assistant, chart, calculation or execution path.
+
+The default compact view shows the latest response above the existing input. Older messages remain mounted and are available with **Expand conversation**. Explicit expansion survives new replies; **Chart view** restores compact mode. Draft text, chat history, suggestion preferences and chosen chart tools are retained. Optional voice settings and suggestions remain available in expanded mode; active recording/realtime controls and speaking Stop are retained.
+
+Normal phone viewports reserve space above the compact panel. The panel uses the actual visual viewport bounds, including keyboard offsets. Short keyboard viewports use the available height, scrollable overflow and sticky header/input controls instead of claiming that a useful chart and conversation always fit together. Desktop and undocked layouts retain their existing sizing. Only compact chart mode permits interaction with its own chart without outside-click dismissal; other dismissal behavior remains unchanged.
+
+Focus is retained across mode/viewport changes. Mobile opening does not automatically summon the keyboard. The delayed open-focus callback never overrides an already focused panel control or deliberate outside focus. Resize captures optional-control focus before responsive hiding. If a new compact response hides the previously focused bubble, focus moves to the expansion control. Escape closes the panel and returns focus to its launcher. The text input and Send now have explicit accessible names.
+
+Validation: five new mobile behaviors failed on the original panel. Independent review additionally exposed hidden-message focus loss; its failing regression is retained. Final bounded validation is 25 tests across four files, plus fresh local declaration builds and dashboard typecheck. Parent owns combined actual-browser acceptance, including rectangle/hit tests, visual review and real keyboard behavior. Unit viewport bounds alone do not prove pixel visibility or touch accessibility.
+
+Remaining limits: very short or heavily zoomed viewports may require scrolling and cannot guarantee simultaneous chart/response/control visibility. Browser emulation is not a physical phone keyboard. Wide phone landscape layout follows the existing desktop-width breakpoint. There is no first-navigation, broker, performance or competitor-parity claim. No API, model, voice, trading, worker or deployment was activated for this change.
