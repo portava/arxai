@@ -298,7 +298,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
       {/* ONE truth strip — Data / Ruby / Trading / Action (single source). All
           four cells derive from the SAME shared contract, so they can never
           disagree with each other or with a card's badge. */}
-      <div id={statusDetailsId} className={cn("grid gap-1 md:grid-cols-4 md:gap-2", statusDetailsOpen ? "grid-cols-2" : "grid-cols-4")} data-testid="scanner-header-strip">
+      <div id={statusDetailsId} className={cn("grid gap-1 md:grid-cols-4 md:gap-2", statusDetailsOpen ? "grid-cols-2" : "grid-cols-2 min-[360px]:grid-cols-4")} data-testid="scanner-header-strip">
         <TruthPill showDetail={statusDetailsOpen} label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
         <TruthPill showDetail={statusDetailsOpen} label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
         <TruthPill showDetail={statusDetailsOpen} label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
