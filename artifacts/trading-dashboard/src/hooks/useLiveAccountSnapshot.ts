@@ -18,7 +18,9 @@
 //   Per-user isolation lives on the server — the hook only forwards what the
 //   authenticated session returns.
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useContext } from "react";
+import { QueryClientContext } from "@tanstack/react-query";
+import { createSharedAccountChangeRefresh } from "./sharedAccountChangeRefresh";
 import { useAgedAccountSnapshot } from "./useAgedAccountSnapshot";
 import { useAccountRefreshPreference } from "./useAccountRefreshPreference";
 
@@ -184,6 +186,10 @@ function isServerUnavailable(snap: LiveAccountSnapshot): boolean {
  * numbers sourced from the same SSE stream / polling fallback.
  */
 export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
+  // Snapshot-only consumers may be standalone; dashboard consumers share the
+  // application QueryClient with both master-account cards.
+  const queryClient = useContext(QueryClientContext);
+  const sharedAccountRefreshRef = useRef<ReturnType<typeof createSharedAccountChangeRefresh> | null>(null);
   const [snapshot, setSnapshot] = useState<LiveAccountSnapshot | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
   const [reloadAt, setReloadAt] = useState(0);
@@ -360,6 +366,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
 
   // ── SSE connection ─────────────────────────────────────────────────────────
   const stopSSE = useCallback(() => {
+    sharedAccountRefreshRef.current?.dispose();
+    sharedAccountRefreshRef.current = null;
     if (streamWaitRef.current != null) { clearTimeout(streamWaitRef.current); streamWaitRef.current = null; }
     setIsRefreshing(false);
     if (esRef.current) { esRef.current.close(); esRef.current = null; }
@@ -380,6 +388,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     setIsRefreshing(true);
     const es = new EventSource(u("/api/me/live/account-stream"), { withCredentials: true });
     esRef.current = es;
+    sharedAccountRefreshRef.current = queryClient ? createSharedAccountChangeRefresh(queryClient) : null;
     // A socket that stays open without delivering data must not disable the
     // refresh button forever. Keep it eligible to recover while polling.
     streamWaitRef.current = setTimeout(() => {
@@ -393,6 +402,12 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         const raw: unknown = JSON.parse(ev.data as string);
         const r = raw as Record<string, unknown>;
 
+        if (r["type"] === "shared_account_changed") {
+          if (enabledRef.current && !document.hidden) sharedAccountRefreshRef.current?.notify();
+          // Advisory only: do not renew freshness, change money, or treat this
+          // as an account snapshot that can stop fallback reads.
+          return;
+        }
         if (r["type"] === "heartbeat") {
           backoffIdxRef.current = 0;
           setConnectionStatus((prev) => prev === "connecting" ? "live" : prev);
@@ -426,6 +441,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
 
     es.onerror = () => {
       if (!mountedRef.current || esRef.current !== es) return;
+      sharedAccountRefreshRef.current?.dispose();
+      sharedAccountRefreshRef.current = null;
       es.close();
       esRef.current = null;
       if (streamWaitRef.current != null) { clearTimeout(streamWaitRef.current); streamWaitRef.current = null; }
@@ -439,7 +456,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         if (mountedRef.current && enabledRef.current && !document.hidden) connectSSE();
       }, delay);
     };
-  }, [stopSSE, stopPolling, startPolling]);
+  }, [stopSSE, stopPolling, startPolling, queryClient]);
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -477,7 +494,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     };
     // reloadAt intentionally in deps to force re-mount on reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reloadAt, autoRefreshEnabled]);
+  }, [reloadAt, autoRefreshEnabled, queryClient]);
 
   const reload = useCallback(() => {
     backoffIdxRef.current = 0;

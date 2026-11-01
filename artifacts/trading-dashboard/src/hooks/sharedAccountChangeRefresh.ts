@@ -1,0 +1,64 @@
+import type { Query, QueryClient } from "@tanstack/react-query";
+import { getGetMeSharedAccountSummaryQueryKey } from "@workspace/api-client-react";
+
+/** Hints carry no evidence: only the canonical HTTP reader may update amounts
+ * or observation times. One controller belongs to one existing SSE connection. */
+export function createSharedAccountChangeRefresh(client: QueryClient) {
+  const queryKey = getGetMeSharedAccountSummaryQueryKey();
+  const filters = { queryKey, exact: true } as const;
+  let disposed = false;
+  let dirty = false;
+  let running = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let observedQuery: Query | undefined;
+  let unsubscribe = () => {};
+
+  function dispose() {
+    disposed = true;
+    dirty = false;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    unsubscribe();
+    // Do not abort a canonical read also owned by other mounted surfaces.
+  }
+
+  function scheduleTrailing() {
+    if (disposed || !dirty || running || timer !== null) return;
+    // Fixed window, not reset by incoming events: a busy feed cannot starve it.
+    timer = setTimeout(() => { timer = null; pump(); }, 25);
+  }
+
+  function pump() {
+    if (disposed || !dirty || running) return;
+    const query = client.getQueryCache().find(filters);
+    if (query) observedQuery = query;
+    // An already-running read can predate the hint. Joining its promise would
+    // silently consume the change. Keep dirty until it settles (or is cancelled),
+    // then start a new read; never cancel other readers to accelerate a hint.
+    if (query && query.state.fetchStatus !== "idle") return;
+    dirty = false;
+    running = true;
+    void client.invalidateQueries({ ...filters, refetchType: "active" }, { cancelRefetch: false })
+      .catch(() => { /* Keep existing evidence; normal query error/retry policy applies. */ })
+      .finally(() => {
+        running = false;
+        scheduleTrailing();
+      });
+  }
+
+  unsubscribe = client.getQueryCache().subscribe(event => {
+    // A logout/cache reset must not leave a waiter that refreshes under the next
+    // session. A subsequent SSE connection creates its own controller.
+    if (event.type === "removed" && event.query === observedQuery) { dispose(); return; }
+    if (dirty && !running && event.query === observedQuery && event.query.state.fetchStatus === "idle") scheduleTrailing();
+  });
+
+  return {
+    notify() {
+      if (disposed) return;
+      dirty = true;
+      if (timer === null) pump();
+    },
+    dispose,
+  };
+}

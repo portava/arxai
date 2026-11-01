@@ -42,6 +42,20 @@ class LiveAccountEventBus {
     this.emitter.off(this.key(userId), listener);
   }
 
+  /** Connection channels are internal only; SSE must authorize before hints. */
+  onConnection(connectionId: number, listener: () => void): void {
+    this.emitter.on(`connection-account:${connectionId}`, listener);
+  }
+
+  offConnection(connectionId: number, listener: () => void): void {
+    this.emitter.off(`connection-account:${connectionId}`, listener);
+  }
+
+  emitConnection(connectionId: number | null | undefined): void {
+    if (!Number.isSafeInteger(connectionId) || connectionId! <= 0) return;
+    this.emitKey(`connection-account:${connectionId}`);
+  }
+
   /**
    * Signal that user `userId`'s live account state may have changed. Best-effort:
    * a misbehaving listener is swallowed so the producer (an EA write route) is
@@ -49,10 +63,14 @@ class LiveAccountEventBus {
    */
   emit(userId: number | string | null | undefined): void {
     if (userId == null) return;
+    this.emitKey(this.key(userId));
+  }
+
+  private emitKey(key: string): void {
     // EventEmitter.emit stops at the first throw. Snapshot the listeners so a
     // disconnected viewer cannot starve healthy viewers of this notification.
     // Subscription changes during dispatch retain EventEmitter's semantics.
-    for (const listener of this.emitter.listeners(this.key(userId))) {
+    for (const listener of this.emitter.listeners(key)) {
       try {
         listener.call(this.emitter);
       } catch {
@@ -68,4 +86,9 @@ export const liveAccountEventBus = new LiveAccountEventBus();
 /** Convenience wrapper: emit a live-account change for a user (best-effort). */
 export function emitLiveAccountChanged(userId: number | string | null | undefined): void {
   liveAccountEventBus.emit(userId);
+}
+
+/** After a persisted connection account write, never before it. */
+export function emitConnectionAccountChanged(connectionId: number | null | undefined): void {
+  liveAccountEventBus.emitConnection(connectionId);
 }

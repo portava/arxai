@@ -291,7 +291,7 @@
     "benchmark:causal-research": "node --import tsx src/lib/backtest/__qa__/causalResearch.benchmark.ts",
     "test:research-evidence-postgres": "node src/lib/backtest/__qa__/runResearchEvidencePostgres.mjs",
     "test:chart-truth-evidence": "node --import tsx --test src/lib/data/chart/__qa__/chartTruthEvidence.test.ts",
-    "test:account-stream-scheduling": "node --import tsx --test src/lib/live/__qa__/accountSnapshotScheduler.test.ts src/lib/live/__qa__/accountStreamScheduling.test.ts src/lib/live/__qa__/liveAccountEventBus.test.ts"
+    "test:account-stream-scheduling": "node --import tsx --test src/lib/live/__qa__/accountSnapshotScheduler.test.ts src/lib/live/__qa__/accountStreamScheduling.test.ts src/lib/live/__qa__/liveAccountEventBus.test.ts src/lib/live/__qa__/sharedAccountChangeStream.test.ts src/lib/live/__qa__/accountChangeProducers.test.ts src/lib/auth/__qa__/userSessionReadOnly.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

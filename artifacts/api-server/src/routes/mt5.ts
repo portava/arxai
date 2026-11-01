@@ -44,7 +44,7 @@ import { evaluateClockDrift, normalizeEaEpochToMs } from "@workspace/domain/safe
 import { recordSecurityEvent } from "../lib/security/events.js";
 import { anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
-import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
+import { emitLiveAccountChanged, emitConnectionAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
@@ -454,7 +454,7 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
       }
       // Phase 3C — also write to the per-user connection record.
       // Phase TU — also persist capability disclosure.
-      await updateConnection(userConn.id, {
+      const persistedAccount = await updateConnection(userConn.id, {
         status: "connected",
         accountNumber: body.account ?? userConn.accountNumber,
         brokerName: body.broker ?? userConn.brokerName,
@@ -500,6 +500,7 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
         lastHeartbeat: new Date(),
         updatedAt: new Date(),
       });
+      if (persistedAccount) emitConnectionAccountChanged(persistedAccount.id);
       if (drift.severity === "SEVERE") {
         req.log.warn({ event: "mt5_clock_drift_severe", connectionId: userConn.id, driftSeconds: drift.driftSeconds, flags: drift.flags }, "EA host clock drift is SEVERE");
       }
@@ -550,11 +551,12 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
     void (async () => {
       try {
         const { recomputeMasterPool } = await import("../lib/live/masterBridgePool.js");
-        await recomputeMasterPool();
+        const recomputedPool = await recomputeMasterPool();
         // Auto-reduce settled allocations to the freshest real balance when the
         // master is over-allocated. Open-trade users are always protected.
         const { autoReconcileSettledAllocations } = await import("./adminAllocations.js");
         await autoReconcileSettledAllocations();
+        if (recomputedPool.ok) emitConnectionAccountChanged(recomputedPool.masterConnectionId);
       } catch (err) {
         req.log.warn({ err }, "Master bridge pool recompute after heartbeat failed");
       }
@@ -1382,7 +1384,8 @@ router.post("/mt5/sync-account", bridgeAuthPerUserOnly, async (req, res) => {
       // body.account is the broker account number — only fill if the per-
       // user row hasn't captured it yet.
       if (!userConn.accountNumber && body.account) patch.accountNumber = body.account;
-      await updateConnection(userConn.id, patch);
+      const persistedAccount = await updateConnection(userConn.id, patch);
+      if (persistedAccount) emitConnectionAccountChanged(persistedAccount.id);
       accountChangedUserId = userConn.userId ?? null;
     }
     // Task #1 — pool snapshot must follow every balance/equity write.
@@ -1390,11 +1393,12 @@ router.post("/mt5/sync-account", bridgeAuthPerUserOnly, async (req, res) => {
     void (async () => {
       try {
         const { recomputeMasterPool } = await import("../lib/live/masterBridgePool.js");
-        await recomputeMasterPool();
+        const recomputedPool = await recomputeMasterPool();
         // Auto-reduce settled allocations to the new real balance if the
         // master is now over-allocated. Never touches users with open trades.
         const { autoReconcileSettledAllocations } = await import("./adminAllocations.js");
         await autoReconcileSettledAllocations();
+        if (recomputedPool.ok) emitConnectionAccountChanged(recomputedPool.masterConnectionId);
       } catch (err) {
         req.log.warn({ err }, "Master pool recompute after sync-account failed");
       }

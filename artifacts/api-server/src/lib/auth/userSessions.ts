@@ -36,7 +36,7 @@ export async function createUserSession(opts: {
   return { rawToken, expiresAt };
 }
 
-export async function findUserBySessionToken(rawToken: string): Promise<User | null> {
+export async function findUserBySessionToken(rawToken: string, options: { readOnly?: boolean } = {}): Promise<User | null> {
   if (!rawToken) return null;
   const tokenHash = hashToken(rawToken);
   const rows = await db
@@ -48,15 +48,16 @@ export async function findUserBySessionToken(rawToken: string): Promise<User | n
   const row = rows[0];
   if (!row) return null;
   if (row.session.expiresAt.getTime() <= Date.now()) {
-    // Lazily clean expired session.
-    await db
+    // Stream revalidation must not turn every advisory hint into a write.
+    // Normal request callers retain the existing lazy cleanup.
+    if (!options.readOnly) await db
       .delete(authUserSessionsTable)
       .where(eq(authUserSessionsTable.tokenHash, tokenHash))
       .catch(() => {});
     return null;
   }
   // Touch lastSeenAt without blocking the request.
-  void db
+  if (!options.readOnly) void db
     .update(authUserSessionsTable)
     .set({ lastSeenAt: new Date() })
     .where(eq(authUserSessionsTable.tokenHash, tokenHash))
