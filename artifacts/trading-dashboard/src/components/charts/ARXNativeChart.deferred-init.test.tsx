@@ -216,6 +216,57 @@ describe("initial mobile chart height", () => {
   });
 });
 
+describe("source-bound stream warning", () => {
+  const responseFor = (source:string) => {
+    const response=liveResponse("EURUSD","H1");
+    return {...response,candles:response.candles.map(c=>({...c,source})),feedStatus:{...response.feedStatus,source}};
+  };
+  const clock = () => {vi.useFakeTimers({toFake:["setTimeout","clearTimeout","setInterval","clearInterval","Date"]});};
+  it.each(["offline_fixture","twelve_data"])("never reconnects nonexistent %s streams after multiple silence windows", source => {
+    clock();candleResponse=responseFor(source);const interval=vi.spyOn(globalThis,"setInterval");
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    act(()=>vi.advanceTimersByTime(95_000));
+    const scheduled=interval.mock.calls.length;interval.mockRestore();
+    expect(streams).toHaveLength(0);expect(scheduled).toBe(0);
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+  });
+  it("removes a stalled MT5 warning on nonstream replacement and gives a returning MT5 source a full deadline", () => {
+    clock();candleResponse=responseFor("mt5_broker");
+    const chart=<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>;const view=render(chart);
+    act(()=>streams[0]!.onerror!());expect(screen.getByTestId("arx-native-stream-reconnecting")).toBeTruthy();
+    candleResponse=responseFor("offline_fixture");view.rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    expect(streams[0]!.closed).toBe(true);expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    act(()=>{streams[0]!.onerror!();streams[0]!.onmessage!(heartbeat);});
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    act(()=>vi.advanceTimersByTime(95_000));expect(streams).toHaveLength(1);expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    candleResponse=responseFor("mt5_broker");view.rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    expect(streams).toHaveLength(2);act(()=>vi.advanceTimersByTime(29_999));expect(streams).toHaveLength(2);
+    // Late frames/errors from the first MT5 connection cannot contaminate or
+    // postpone this new MT5 connection, even though their source key is equal.
+    act(()=>{streams[0]!.onerror!();streams[0]!.onmessage!(heartbeat);});
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    act(()=>vi.advanceTimersByTime(1));expect(streams).toHaveLength(3);expect(streams[1]!.closed).toBe(true);
+  });
+  it("does not invent retries when EventSource is unsupported", () => {
+    clock();candleResponse=responseFor("mt5_broker");vi.stubGlobal("EventSource",undefined);
+    const interval=vi.spyOn(globalThis,"setInterval");render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    act(()=>vi.advanceTimersByTime(95_000));
+    const scheduled=interval.mock.calls.length;interval.mockRestore();
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();expect(scheduled).toBe(0);
+  });
+  it("retries a transient constructor failure on the bounded deadline and then recovers", () => {
+    clock();candleResponse=responseFor("mt5_broker");const WorkingEventSource=globalThis.EventSource;let attempts=0;
+    vi.stubGlobal("EventSource",class extends WorkingEventSource {constructor(url:string){attempts++;if(attempts===1)throw Error("Transient construction failure");super(url);}});
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    expect(attempts).toBe(1);expect(streams).toHaveLength(0);
+    act(()=>vi.advanceTimersByTime(29_999));expect(attempts).toBe(1);
+    act(()=>vi.advanceTimersByTime(1));expect(attempts).toBe(2);expect(streams).toHaveLength(1);
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    act(()=>streams[0]!.onmessage!(heartbeat));act(()=>vi.advanceTimersByTime(29_999));expect(attempts).toBe(2);
+  });
+
+});
+
 describe("compact chart evidence", () => {
   it("names simultaneous restrictions before disclosure and retains their full explanations", () => {
     const response = liveResponse("EURUSD", "H1");
