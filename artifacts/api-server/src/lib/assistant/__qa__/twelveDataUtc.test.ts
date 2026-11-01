@@ -78,3 +78,15 @@ test("cached observations retain original times without making an additional req
 });
 
 test("declared interval cannot contain overlapping candle windows",()=>{const p=fixture();p.meta.interval="5min";assert.equal(parseTwelveDataIntradayCandles(p,{...request,interval:"5min"},NOW).ok,false);});
+
+for(const [timeframe,interval,lastOpen] of [
+ ["M1","1min","2026-11-01 12:00:00"],
+ ["H4","4h","2026-11-01 08:00:00"],
+ ["H4","4h","2026-11-01 12:00:00"],
+] as const){test(`${timeframe} bar open ${lastOpen} cannot prove real-time entitlement`,async()=>{
+ const p=fixture();p.meta.interval=interval;p.values=p.values.slice(0,1);p.values[0]!.datetime=lastOpen;
+ globalThis.fetch=async()=>Response.json(p);
+ const result=await getMarketProvider().getCandles("EURUSD",timeframe,10);
+ assert.equal(result.candles.length,1);assert.equal(result.freshness,"DELAYED");
+ assert.equal(result.asOf,lastOpen.replace(" ","T")+".000Z");
+});}
