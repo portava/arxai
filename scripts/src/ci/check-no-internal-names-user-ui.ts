@@ -32,8 +32,8 @@
 // stylistic enforcer — the goal is to fail loudly when a leak of the
 // shape we just sanitized re-appears.
 
-import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import ts from "typescript";
+import { readWordingSources, parseWordingSource, isNonCopyJsxAttribute, scanCopyPatterns, wordingLocation, coverageFailure, type WordingSource, type WordingScanOptions } from "./wording-source.js";
 import { type CheckResult } from "./_lib.js";
 
 const NAME = "no-internal-names-user-ui";
@@ -202,22 +202,6 @@ export function isAssistantScanExcluded(file: string): boolean {
   return ASSISTANT_SCAN_EXCLUDE.some((frag) => file.includes(frag));
 }
 
-// Test/spec/story files exercise internal names deliberately.
-function isTestFile(file: string): boolean {
-  return (
-    /\.(test|spec)\.[cm]?tsx?$/.test(file) ||
-    file.includes("/__tests__/") ||
-    file.includes("/__qa__/") ||
-    file.includes(".stories.")
-  );
-}
-
-// A deliberate name-swap line (e.g. `.replace(/Ruby/g, name)`) is the
-// mechanism that fixes leaks, not a leak itself.
-function isNameSwapLine(rawLine: string): boolean {
-  return rawLine.includes(".replace(/Ruby/") || rawLine.includes("/Ruby/g");
-}
-
 /**
  * Replace every comment character with a space (newlines preserved) so
  * that line and column numbers of the surviving code/string characters
@@ -268,101 +252,60 @@ export function stripComments(src: string): string {
  * source text, does no IO. Exported for the regression test.
  */
 export function findAssistantNameLeaksInSource(path: string, src: string): string[] {
-  const stripped = stripComments(src);
-  const strippedLines = stripped.split("\n");
-  const rawLines = src.split("\n");
+  const input = parseWordingSource(path, src);
+  return scanCopyPatterns(input, ["\\bRuby\\b"]).map(hit => `${hit.location}: ${hit.text}`);
+}
+
+/** Check concrete JSX display syntax instead of matching arbitrary code/comments.
+ * Existing admin/operator path exceptions are applied by the caller. */
+export function findInternalDisplayLeaks(input: WordingSource): string[] {
   const hits: string[] = [];
-  for (let i = 0; i < strippedLines.length; i++) {
-    const rawLine = rawLines[i] ?? "";
-    if (isNameSwapLine(rawLine)) continue;
-    const re = /\bRuby\b/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(strippedLines[i])) !== null) {
-      hits.push(`${path}:${i + 1}:${m.index + 1}: ${rawLine.trim().slice(0, 160)}`);
+  const add = (id: string, node: ts.Node, reason: string) => hits.push(`[${id}] ${reason} — ${wordingLocation(input, node.getStart(input.file))}: ${node.getText(input.file).slice(0, 160)}`);
+  const visit = (node: ts.Node, displayExpression = false): void => {
+    if (ts.isJsxAttribute(node) && isNonCopyJsxAttribute(node, input.file)) return;
+    if (ts.isJsxExpression(node)) displayExpression = true;
+    if (displayExpression && ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.expression.getText(input.file) === "JSON" && node.expression.name.text === "stringify") {
+      add("json-stringify-in-jsx", node, "JSON.stringify rendered in JSX");
     }
-  }
-  return hits;
-}
-
-// Candidate files: only those that contain the word at all (paths only —
-// ripgrep -l output is not subject to the content-mangling that -n dumps
-// can hit in this sandbox).
-function listCandidateFiles(root: string): string[] {
-  try {
-    const out = execSync(
-      `rg -l --no-heading -g'*.{ts,tsx}' -e '\\bRuby\\b' ${root} || true`,
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    );
-    return out.split("\n").map((s) => s.trim()).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function scanAssistantNameLeaks(): string[] {
-  const violations: string[] = [];
-  for (const root of ASSISTANT_SCAN_ROOTS) {
-    for (const file of listCandidateFiles(root)) {
-      if (isAssistantScanExcluded(file)) continue;
-      if (isTestFile(file)) continue;
-      let src = "";
-      try {
-        src = readFileSync(file, "utf8");
-      } catch {
-        continue;
+    if (ts.isJsxElement(node)) {
+      if (node.openingElement.tagName.getText(input.file) === "code") {
+        const text = node.children.map(child => ts.isJsxText(child) ? child.text
+          : ts.isJsxExpression(child) && child.expression && ts.isStringLiteralLike(child.expression) ? child.expression.text : "").join("").trim();
+        if (text.startsWith("/api/")) add("code-tag-api-path", node, "raw /api/ path rendered as code text");
       }
-      for (const hit of findAssistantNameLeaksInSource(file, src)) {
-        violations.push(
-          `[assistant-name-user-copy] raw internal assistant name "Ruby" in user-facing copy — ` +
-            `route it through the name resolver (frontend useAssistantName().name / backend getAssistantDisplayName) — ${hit}`,
-        );
-      }
+      // Match the existing typed-phrase-with-markup rule against actual JSX,
+      // including multiline tags; comments cannot create these elements.
+      const text = node.children.map(child => ts.isJsxText(child) ? child.text
+        : ts.isJsxElement(child) ? child.children.filter(ts.isJsxText).map(c => c.text).join("") : "").join(" ");
+      if (/[Tt]ype\s+(?:EXECUTE LIVE SHARED|QUEUE MICRO LIVE TEST|ENABLE LIVE TRADING)\s+to/.test(text)) add("typed-phrase-prompt", node, "operator-style typed-phrase prompt rendered to a normal user");
     }
-  }
-  return violations;
-}
-
-export function checkNoInternalNamesUserUi(): CheckResult {
-  const violations: string[] = [];
-  for (const pat of PATTERNS) {
-    let out = "";
-    try {
-      out = execSync(
-        `rg -n --no-heading -g'*.{ts,tsx}' -e '${pat.regex.replace(/'/g, "\\'")}' ${SCAN_ROOT} || true`,
-        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-      );
-    } catch {
-      out = "";
-    }
-    for (const line of out.split("\n")) {
-      if (!line.trim()) continue;
-      if (isAdminExcluded(line)) continue;
-      if (isBenign(line)) continue;
-      violations.push(`[${pat.id}] ${pat.reason} — ${line}`);
-    }
-  }
-
-  // Task #809: comment/string-aware assistant-name leak scan.
-  violations.push(...scanAssistantNameLeaks());
-
-  if (violations.length === 0) {
-    return {
-      name: NAME,
-      ok: true,
-      violations: [],
-      notes: [
-        `0 internal-name leaks in user-facing UI (${PATTERNS.length} regex patterns over ${SCAN_ROOT}, ` +
-          `plus a comment/string-aware "Ruby" scan over ${ASSISTANT_SCAN_ROOTS.join(" + ")}; ` +
-          `${ADMIN_DEV_EXCLUDE.length} admin/dev frontend paths + backend admin/operator/dev routes + ` +
-          `${ASSISTANT_LIB_INTERNAL_ALLOWLIST.length} admin/operator/dev library files excluded)`,
-      ],
-    };
-  }
-  return {
-    name: NAME,
-    ok: false,
-    violations: violations.slice(0, 50),
+    ts.forEachChild(node, child => visit(child, displayExpression));
   };
+  visit(input.file);
+  const literalPatterns = PATTERNS.filter(p => ["ruby-tool-name-literal", "typed-phrase-prompt-plain"].includes(p.id));
+  for (const pattern of literalPatterns) for (const hit of scanCopyPatterns(input, [pattern.regex])) {
+    hits.push(`[${pattern.id}] ${pattern.reason} — ${hit.location}: ${hit.text}`);
+  }
+  return [...new Set(hits)];
+}
+
+export function checkNoInternalNamesUserUi(options: WordingScanOptions = {}): CheckResult {
+  const violations: string[] = [];
+  let scanned = 0;
+  try {
+    const sources = readWordingSources(ASSISTANT_SCAN_ROOTS, options); scanned = sources.length;
+    for (const source of sources) {
+      if (source.path.startsWith(SCAN_ROOT + "/") && !isAdminExcluded(source.path) && !isBenign(source.path)) {
+        violations.push(...findInternalDisplayLeaks(source));
+      }
+      if (!isAssistantScanExcluded(source.path)) for (const hit of findAssistantNameLeaksInSource(source.path, source.source)) {
+        violations.push(`[assistant-name-user-copy] raw internal assistant name "Ruby" in user-facing copy — route it through the name resolver — ${hit}`);
+      }
+    }
+  } catch (error) { violations.push(coverageFailure(error)); }
+  return { name: NAME, ok: violations.length === 0, violations,
+    notes: [`Scanned ${scanned} product source files; existing admin/operator exceptions retained. Comments, tests and non-copy syntax excluded.`] };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
