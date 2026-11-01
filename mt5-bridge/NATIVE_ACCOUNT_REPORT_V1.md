@@ -20,6 +20,8 @@ There is one pending immutable envelope. Retries reuse its exact sequence, idemp
 
 The response must be valid bounded JSON with exactly one matching result: message type, stream key, sequence and idempotency key all match. Only `ACCEPTED`, or `DUPLICATE` with `exactReplay:true`, retires the report. A generic HTTP 200, malformed response, sequence duplicate or conflicting idempotency key does not. The backend must implement this correlated receipt contract before deployment.
 
+Native account sequence values are limited to 0–2147483647 to fit the existing receipt gap counter. Exhaustion withholds new native reports; it does not reset or wrap the shared sequence authority.
+
 A dedicated sequence-registry slot is reserved for the native account stream. Existing market symbol/timeframe caps and bar/tick registry capacities remain unchanged.
 
 ## Offline checks and limits
