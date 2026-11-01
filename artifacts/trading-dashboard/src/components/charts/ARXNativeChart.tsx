@@ -1,3 +1,4 @@
+import {proposeChartSupportResistance} from "@/lib/chart-engine/chartSupportResistance";
 import {profileCandleEvidence} from "@/lib/chart-engine/chartVolumeProfile";
 import { chartAssistantPaneContext } from "@/lib/chart-engine/chartAssistantPaneContext";
 import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
@@ -585,6 +586,11 @@ export function ARXNativeChart({
   const acceptResearchOverlays = useCallback((rows:ChartOverlay[])=>setResearchLayer(rows.length?{context:chartContext,rows}:null),[chartContext]);
   const acceptResearchExplanation = useCallback((evidence:ChartResearchExplanation|null)=>{if(evidence)researchExplanation.current={context:chartContext,evidence};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
   const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
+  const getSupportResistanceProposal = useCallback(()=>{
+    const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.olderCandles,deepHistory.analysisEvidence,now);
+    if(bound.status!=="ready")return {status:"unavailable" as const,proposal:null,reason:bound.reason??"Original source evidence unavailable."};
+    return proposeChartSupportResistance({...bound.context,bars:bound.bars,asOfMs:now},researchVisibleBars());
+  },[data,resolvedSymbol,timeframe,deepHistory.olderCandles,deepHistory.analysisEvidence,researchVisibleBars]);
   const getFibonacciProposal = useCallback(()=>{
     const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.olderCandles,deepHistory.analysisEvidence,now);
     if(bound.status!=="ready")return {status:"unavailable" as const,proposal:null,reason:bound.reason??"Original source evidence unavailable."};
@@ -1390,7 +1396,7 @@ export function ARXNativeChart({
         </div>
       </div>
 
-      <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">

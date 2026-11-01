@@ -45,3 +45,8 @@ export function proposeChartSupportResistance(input:SmartChartAnalysisInput,actu
   return {status:"ready",reason:null,proposal:{comparisonKey:applied.comparisonKey,method:"latest-confirmed-pivots-v1",span:2,symbol:input.symbol,timeframe:input.timeframe,source:input.source!,sourceIdentity:input.sourceIdentity!,windowFrom:bars[0]!.time,windowTo:last.closeTime,closedBars:bars.length,referenceClose:{time:last.closeTime,price:last.close},levels:[level(low,"support"),level(high,"resistance")],
     note:`${applied.selected.coverage.note??`${bars.length} visible closed observations analyzed.`} On each side of the last closed price, select the most recent strict pivot with two observed closed bars on either side. Equal highs/lows are not pivots. A pivot is knowable only at its confirmation close, not its earlier anchor. These are historical reference levels, not zones, unbroken-level claims, predictions or trade instructions. Gaps need not represent adjacent market intervals. No ordering within a candle is inferred.`}};
 }
+
+/** Existing horizontal object format, with immutable archived provenance after keep. */
+export function levelProposalDrawings(p:ChartSupportResistanceProposal,prefix:string,preview:boolean):import("./chartWorkspace").ChartDrawing[] {
+ return p.levels.map(level=>({id:`${prefix}-${level.side}`,kind:"horizontal",start:{time:level.pivotTime,price:level.price},color:level.side==="support"?"#38bdf8":"#fbbf24",dashed:true,locked:preview,...(!preview?{pivotLevelOrigin:{method:p.method,span:p.span,symbol:p.symbol,timeframe:p.timeframe,source:p.source,sourceIdentity:p.sourceIdentity,windowFrom:p.windowFrom,windowTo:p.windowTo,closedBars:p.closedBars,referenceClose:{...p.referenceClose},level:{...level}}}:{})}));
+}

@@ -1,3 +1,4 @@
+import {requestChartLevels} from "@/lib/chart-engine/chartLevelAssistant";
 import { chartAssistantBounds, type AssistantViewport } from "./chartAssistantLayout";
 import { requestChartFibonacci } from "@/lib/chart-engine/chartFibonacciAssistant";
 import { requestChartStudy } from "@/lib/chart-engine/chartStudyAssistant";
@@ -812,7 +813,7 @@ export function ArxAssistantLivePanel() {
   // ── streaming text send ─────────────────────────────────────────────
   const sendText = useCallback(async (text: string) => {
     if (!text.trim()) return;
-    const chartReply = requestChartFibonacci(text) ?? requestChartResearch(text) ?? requestChartStudy(text);
+    const chartReply = requestChartLevels(text) ?? requestChartFibonacci(text) ?? requestChartResearch(text) ?? requestChartStudy(text);
     if (chartReply !== null) {
       // Existing chat surface, deterministic local display action. It needs no
       // remote conversation and makes no model request or trading call.
