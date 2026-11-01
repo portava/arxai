@@ -112,3 +112,8 @@ let stressOnly=false;
  if(!stressOnly){root.unmount();removeQaWitnesses();stressOnly=true;await new Promise(requestAnimationFrame);}
  const {runStressMatrixCase}=await import("./stress-matrix.ts");return runStressMatrixCase(options);
 };
+
+(window as any).runStudyRowVisualProbe=async()=>{
+ if(!stressOnly){root.unmount();removeQaWitnesses();stressOnly=true;await new Promise(requestAnimationFrame);}
+ const {runStudyRowVisualProbe}=await import('./study-row-visual-probe.ts');return runStudyRowVisualProbe();
+};

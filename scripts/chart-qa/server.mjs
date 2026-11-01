@@ -14,6 +14,7 @@ const { default: tailwind } = await import(require.resolve("@tailwindcss/vite"))
 const cacheDir = path.join(repo, "scripts/node_modules/.vite-chart-qa");
 const server = await createServer({ root, cacheDir, configFile: false, plugins: [react(), tailwind()],
  resolve: { alias: [
+ {find:"lightweight-charts", replacement:path.join(path.dirname(require.resolve("lightweight-charts/package.json")),"dist/lightweight-charts.development.mjs")},
  {find:"react", replacement:path.dirname(require.resolve("react/package.json"))},
  {find:"react-dom", replacement:path.dirname(require.resolve("react-dom/package.json"))},
  {find:"@/hooks/useScannerTruth", replacement:path.join(root,"truth.ts")},

@@ -18,6 +18,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, linkSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
+import { studyRowReuseExperiment } from "./study-row-reuse-experiment.mjs";
 import net from "node:net";
 import path from "node:path";
 // A launcher that sets NODE_ENV=test (or development) would otherwise make Vite resolve
@@ -32,7 +33,7 @@ const fail = (message, code = 1) => { console.error(`prod-server: ${message}`); 
 
 const args = process.argv.slice(2);
 const flag = name => args.includes(`--${name}`);
-const unknown = args.filter(a => !/^--(unminified|no-build|build-only|check|out=.+)$/.test(a));
+const unknown = args.filter(a => !/^--(unminified|study-row-reuse-experiment|no-build|build-only|check|out=.+)$/.test(a));
 const modes = ["no-build", "build-only", "check"].filter(flag);
 if (unknown.length) fail(`unknown arguments: ${unknown.join(" ")}`, 2);
 if (modes.length > 1) fail(`conflicting arguments: ${modes.map(m => `--${m}`).join(" with ")}`, 2);
@@ -40,6 +41,7 @@ const build = !flag("no-build") && !flag("check");
 // --unminified only applies to a build; a served or checked bundle is labelled from its build info.
 if (!build && flag("unminified")) fail(`--unminified applies only to a build, not to --${modes[0]}`, 2);
 const minified = !flag("unminified");
+if (!build && flag("study-row-reuse-experiment")) fail("experiment flag applies only while building", 2);
 
 // ---- Output directory -------------------------------------------------------------------
 // The build empties outDir, so it must be a directory this script owns: inside
@@ -292,12 +294,14 @@ if (build) {
   // after it, so a build that raced an edit in this shared checkout says so.
   const buildStartedAt = new Date().toISOString();
   const gitBefore = await gitState();
+  const studyReuse = flag("study-row-reuse-experiment") ? studyRowReuseExperiment() : null;
   try {
     await vite.build({ root, configFile: false, mode: "production", logLevel: "warn",
       // Separate from server.mjs's dev dependency cache so dev and prod never re-optimize each other.
       cacheDir: path.join(repo, "scripts/node_modules/.vite-chart-qa-build"),
-      plugins: [react(), tailwind()],
+      plugins: [react(), tailwind(), ...(studyReuse ? [studyReuse.plugin] : [])],
       resolve: { alias: [
+ {find:"lightweight-charts", replacement:path.join(path.dirname(require.resolve("lightweight-charts/package.json")),"dist/lightweight-charts.production.mjs")},
         {find:"react", replacement:path.dirname(require.resolve("react/package.json"))},
         {find:"react-dom", replacement:path.dirname(require.resolve("react-dom/package.json"))},
         {find:"@/hooks/useScannerTruth", replacement:path.join(root,"truth.ts")},
@@ -317,6 +321,7 @@ if (build) {
   info = { writer: WRITER, buildId: randomBytes(8).toString("hex"), buildStartedAt, builtAt: new Date().toISOString(),
     minified, sourcemap: !minified, label: label(minified), vite: vite.version,
     git: { ...gitBefore, treeChangedDuringBuild, ...(treeChangedDuringBuild !== false && { after: gitAfter }) },
+    studyRowReuseExperiment: studyReuse?.receipt() ?? null,
     guard: { devMarkersAbsent: DEV_MARKERS, prodMarkersPresent: PROD_MARKERS } };
   await writeFile(path.join(outDir, BUILD_INFO), `${JSON.stringify(info, null, 2)}\n`);
   console.log(`Built ${outDir} build=${info.buildId} (${info.label}, ${describeGit(info.git)})`);
