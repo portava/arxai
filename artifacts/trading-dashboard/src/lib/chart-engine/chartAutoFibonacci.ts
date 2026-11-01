@@ -1,5 +1,6 @@
 import { findSwings } from "@workspace/domain/chart-patterns";
-import { selectSmartChartWindow, type SmartChartAnalysisInput } from "./smartChartAnalysis";
+import { type SmartChartAnalysisInput } from "./smartChartAnalysis";
+import { selectAppliedSmartChartWindow } from "./chartAppliedWindow";
 import type { ChartEngineCandle } from "./types";
 import type { ChartDrawing, FibonacciOrigin } from "./chartWorkspace";
 
@@ -14,23 +15,9 @@ const unavailable=(reason:string):ChartFibonacciRead=>({status:"unavailable",pro
 /** One causal proposal over the actual, source-matched visible closed window.
  * It observes fractal pivots; it neither forecasts a reversal nor grants entry. */
 export function proposeChartFibonacci(input:SmartChartAnalysisInput,actual:readonly ChartEngineCandle[]):ChartFibonacciRead {
-  if(!actual.length)return unavailable("Load visible source candles before previewing Fibonacci.");
-  const byTime=new Map(input.bars.map(bar=>[bar.time,bar]));
-  for(const [index,bar] of actual.entries()) {
-    if(!Number.isFinite(bar.time)||index>0&&bar.time<=actual[index-1]!.time)return unavailable("The applied chart window is not chronological.");
-    const original=byTime.get(bar.time);
-    if(!original) {
-      // The renderer may have one streaming tip beyond the closed history.
-      if(input.replayCutoff==null&&index===actual.length-1&&bar.time>=(input.bars.at(-1)?.closeTime??Infinity))continue;
-      return unavailable("Visible candles lack matching original source evidence.");
-    }
-    if(input.replayCutoff!=null&&original.closeTime>input.replayCutoff)return unavailable("The applied chart extends beyond the revealed replay boundary.");
-    if((["open","high","low","close"] as const).some(key=>original[key]!==bar[key]))return unavailable("The displayed source prices are updating; Fibonacci is withheld.");
-  }
-  const selected=selectSmartChartWindow({...input,visibleRange:{from:actual[0]!.time,to:actual.at(-1)!.time}});
-  if(selected.status!=="ready")return unavailable(selected.reason!);
-  const bars=selected.bars;
-  if(bars.some((bar,i)=>i>0&&bar.time<bars[i-1]!.closeTime))return unavailable("Overlapping candle intervals cannot confirm a Fibonacci swing.");
+  const applied=selectAppliedSmartChartWindow(input,actual,"Fibonacci");
+  if(applied.status!=="ready")return unavailable(applied.reason);
+  const {selected}=applied,bars=selected.bars;
   const swings=findSwings(bars,2);
   const latest=swings.at(-1);
   if(!latest)return unavailable("Two opposite confirmed swings are needed. Each needs two closed bars on either side.");
@@ -48,7 +35,7 @@ export function proposeChartFibonacci(input:SmartChartAnalysisInput,actual:reado
     start:{time:bars[first.index]!.time,price:first.price},end:{time:bars[latest.index]!.time,price:latest.price},confirmedAt:bars[latest.index+2]!.closeTime,
     windowFrom:bars[0]!.time,windowTo:bars.at(-1)!.closeTime,closedBars:bars.length};
   return {status:"ready",reason:null,proposal:{origin,
-    comparisonKey:JSON.stringify([selected.contextKey,actual[0]!.time,actual.at(-1)!.time,bars]),
+    comparisonKey:applied.comparisonKey,
     note:`${selected.coverage.note??`${bars.length} visible closed candles analyzed.`} Two observed closed bars on each side confirm each strict pivot; equal highs/lows are not pivots. This is historical geometry, not a trade signal.`}};
 }
 /** The same existing Fibonacci geometry owns preview and editable kept object. */
