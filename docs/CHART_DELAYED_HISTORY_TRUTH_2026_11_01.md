@@ -1,0 +1,11 @@
+# Preserve known provider delay in chart truth — 1 November 2026
+
+The stock fixture produced through the actual provider/router/Truth path exposed a display contradiction: router provenance marked the source delayed, but recent closed-bar timestamps made `getChartCandles` return `clean`, `isLive=true`, `aiUsable=true`, and “Live feed active”. The original full response is retained in the chart volume browser receipts; it is a synthetic offline fixture, not an observation from a real provider.
+
+The existing shared feed-quality evaluator now receives the router's explicit `delayed === true` fact. It sets a delayed floor only when the observation would otherwise be clean, including when a fresh forming tip exists. Unavailable, empty, invalid, partial and stale precedence remains unchanged. Unknown/missing entitlement is not reinterpreted by this narrow correction. Both chart response endpoints use the same existing evaluator.
+
+Known delay now also keeps `isLive` false, and the response's source documentation says historical/delayed or real-time unverified. `aiUsable` follows its existing contract (`quality === clean`); no new AI policy, entry gate, execution routing or worker behavior is introduced. Historical OHLC, original UTC/volume evidence, chart studies and manual tools remain present. The existing frontend display resolver maps the delayed response to its fallback/history display rather than LIVE. Stock research remains separately held by unavailable original execution-price basis.
+
+Validation uses the actual mocked Twelve Data request, real router, both real chart-response methods and the frontend display resolver; database cache/session seams are replaced, and all external requests are intercepted. Two tests failed before the fix: full recent delayed response and fresh-forming-tip delay retention. Worse-quality precedence and existing non-delayed/default paths are tested separately. Raw logs and receipts are retained under `/Users/areyouok/arx-tier1-release/chart-delayed-history-truth-20261101/`.
+
+Final registered candle-shape validation passes 155/155 with zero skips; API typecheck passes. The adjacent forming-source isolation and scanner/chart freshness checks also pass. Independent read-only AI review found no blocker. No runtime or deployment activation occurred.
