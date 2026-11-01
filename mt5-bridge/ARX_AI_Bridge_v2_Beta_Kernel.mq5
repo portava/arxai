@@ -397,10 +397,32 @@ void PushTick(const string symbol)
 //+------------------------------------------------------------------+
 //|  CANDLE — only the just-closed bar (index 1).                   |
 //+------------------------------------------------------------------+
+// CopyRates bar basis is a per-symbol terminal property, not the quote side.
+// Bool overload matters: a failed query's numeric zero must not become BID.
+string ReadCandleChartBasis(const string symbol)
+{
+   long mode = -1;
+   if(!SymbolInfoInteger(symbol, SYMBOL_CHART_MODE, mode)) return "";
+   if(mode == SYMBOL_CHART_MODE_BID) return "bid";
+   if(mode == SYMBOL_CHART_MODE_LAST) return "last";
+   return "";
+}
+
+// Bracket each CopyRates call; a changed/failed observation withholds metadata.
+// This is a producer declaration, not independent historical attestation.
+string ConfirmCandleChartBasis(const string symbol, const string before)
+{
+   string after = ReadCandleChartBasis(symbol);
+   if(before == "" || before != after) return "";
+   return before;
+}
+
 void PushClosedCandle(const string symbol, ENUM_TIMEFRAMES tf)
 {
    MqlRates r[];
+   string basisBefore = ReadCandleChartBasis(symbol);
    if(CopyRates(symbol, tf, 1, 1, r) != 1) return; // index 1 = last CLOSED bar
+   string priceBasis = ConfirmCandleChartBasis(symbol, basisBefore);
    if(r[0].open <= 0 || r[0].high <= 0 || r[0].low <= 0 || r[0].close <= 0) return;
 
    string tfName = TimeframeName(tf);
@@ -413,6 +435,7 @@ void PushClosedCandle(const string symbol, ENUM_TIMEFRAMES tf)
    payload += "\"low\":"   + SafeF(r[0].low, 5) + ",";
    payload += "\"close\":" + SafeF(r[0].close, 5) + ",";
    payload += "\"volume\":"+ (string)(long)r[0].tick_volume + ",";
+   if(priceBasis != "") payload += "\"priceBasis\":\"" + priceBasis + "\",";
    payload += "\"isClosed\":true";
    payload += "}";
    PostV2("CANDLE", StringSubstr(symbol, 0, 32) + "|" + tfName, payload);
