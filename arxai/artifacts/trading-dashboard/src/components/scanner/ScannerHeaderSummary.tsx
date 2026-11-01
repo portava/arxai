@@ -232,7 +232,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   const whyCode = truth?.consolidated.internalReasonCode ?? "";
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2 md:space-y-3">
       {/* Hero */}
       <div className="flex items-start gap-3">
         <span className="mt-0.5 hidden md:grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 ring-1 ring-primary/25">
@@ -298,7 +298,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
       {/* ONE truth strip — Data / Ruby / Trading / Action (single source). All
           four cells derive from the SAME shared contract, so they can never
           disagree with each other or with a card's badge. */}
-      <div id={statusDetailsId} className="grid grid-cols-2 gap-2 md:grid-cols-4" data-testid="scanner-header-strip">
+      <div id={statusDetailsId} className={cn("grid gap-1 md:grid-cols-4 md:gap-2", statusDetailsOpen ? "grid-cols-2" : "grid-cols-2 min-[360px]:grid-cols-4")} data-testid="scanner-header-strip">
         <TruthPill showDetail={statusDetailsOpen} label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
         <TruthPill showDetail={statusDetailsOpen} label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
         <TruthPill showDetail={statusDetailsOpen} label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
@@ -364,14 +364,15 @@ function TruthPill({ label, verdict, tone, detail, testId, prominent, showDetail
   return (
     <div
       className={cn(
-        "flex h-full flex-col rounded-xl border px-3 py-2",
+        "flex h-full min-w-0 flex-col rounded-xl border",
+        showDetail ? "px-3 py-2" : "px-1.5 py-1.5 md:px-3 md:py-2",
         prominent ? "border-primary/40 bg-primary/5 ring-1 ring-primary/15" : "border-border bg-card",
       )}
       data-testid={testId}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs uppercase tracking-wide text-txt-muted">{label}</span>
-        <span className={cn("text-sm font-semibold", tone)}>{verdict}</span>
+      <div className={cn("flex min-w-0 md:flex-row md:items-center md:justify-between md:gap-2", showDetail ? "items-center justify-between gap-2" : "flex-col items-start gap-0.5")}>
+        <span className={cn("max-w-full break-words uppercase tracking-wide text-txt-muted md:text-xs", showDetail ? "text-xs" : "text-[10px]")}>{label}</span>
+        <span className={cn("max-w-full break-words font-semibold md:text-sm", showDetail ? "text-sm" : "text-xs leading-4 md:leading-5", tone)}>{verdict}</span>
       </div>
       {detail && <p className={cn("mt-0.5 line-clamp-2 text-[11px] leading-snug text-txt-secondary", !showDetail && "hidden md:block")}>{detail}</p>}
     </div>

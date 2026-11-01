@@ -13,7 +13,7 @@
 //     `stalled`.
 //   - Any frame of any type resets the clock, so a healthy stream never churns.
 //   - A stream that stays dead retries ONCE PER WINDOW, not once per check.
-//   - The timer is mount-scoped: it must not be rebuilt by the reconnect it
+//   - The timer is source-scoped: it must not be rebuilt by the reconnect it
 //     triggers, which would reset its own clock.
 //
 // The hook is tested directly rather than through ARXNativeChart: the logic is
@@ -175,9 +175,8 @@ describe("C3.4 — stream lifecycle signals", () => {
   });
 });
 
-// A hook nothing calls protects nothing. The chart's SSE effect cannot be
-// driven under a faked clock (rendering the full chart with fake timers hangs),
-// so the wiring itself is pinned at the source level instead.
+// Lightweight wiring checks supplement the actual fake-clock Native lifecycle
+// regressions in ARXNativeChart.deferred-init.test.tsx.
 describe("C3.4 — ARXNativeChart is wired to the watchdog", () => {
   const chartSrc = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), "./ARXNativeChart.tsx"),
@@ -206,8 +205,44 @@ describe("C3.4 — ARXNativeChart is wired to the watchdog", () => {
 
   it("rebuilds the EventSource when the watchdog bumps the epoch", () => {
     expect(chartSrc).toMatch(
-      /\[resolvedSymbol,\s*timeframe,\s*streamWatchdog\.epoch,\s*tickSource,\s*chartContext\]/,
+      /\[resolvedSymbol,\s*timeframe,\s*streamWatchdog\.epoch,\s*tickSource,\s*chartContext,\s*streamEnabled\]/,
       "the reconnect signal and source context must be dependencies of the subscribe effect",
     );
   });
+});
+
+
+describe("source-bound watchdog lifecycle", () => {
+  it("does not schedule or accept lifecycle signals while disabled", async () => {
+    const {result} = renderHook(() => useTickStreamWatchdog({...OPTS,enabled:false,streamKey:"offline"}));
+    expect(vi.getTimerCount()).toBe(0);
+    act(()=>{result.current.noteError();result.current.noteStreamOpened();result.current.noteFrame();});
+    await act(async()=>{await wait(SILENCE_MS*3);});
+    expect(result.current.stalled).toBe(false);expect(result.current.epoch).toBe(0);expect(vi.getTimerCount()).toBe(0);
+  });
+  it("does not expose an old stall even on the first render of another enabled source", async () => {
+    const renders:boolean[]=[];
+    const {result,rerender}=renderHook(({key})=>{
+      const value=useTickStreamWatchdog({...OPTS,streamKey:key});renders.push(value.stalled);return value;
+    },{initialProps:{key:"mt5:A"}});
+    const noteError=result.current.noteError;
+    act(()=>result.current.noteError());expect(result.current.stalled).toBe(true);
+    renders.length=0;rerender({key:"deriv:B"});expect(renders.every(value=>!value)).toBe(true);
+    expect(result.current.noteError).toBe(noteError);
+    await act(async()=>{await wait(SILENCE_MS-1);});expect(result.current.epoch).toBe(0);
+    await act(async()=>{await wait(1);});expect(result.current.epoch).toBe(1);
+  });
+  it("drops old warnings immediately and starts a full deadline for a newly enabled context", async () => {
+    const renders:boolean[]=[];
+    const {result,rerender} = renderHook(({enabled,key})=>{
+      const value=useTickStreamWatchdog({...OPTS,enabled,streamKey:key});renders.push(value.stalled);return value;
+    },{initialProps:{enabled:true,key:"mt5:A"}});
+    act(()=>result.current.noteError());expect(result.current.stalled).toBe(true);
+    renders.length=0;rerender({enabled:false,key:"offline"});expect(renders.every(value=>!value)).toBe(true);expect(vi.getTimerCount()).toBe(0);
+    await act(async()=>{await wait(SILENCE_MS*4);});
+    const epoch=result.current.epoch;renders.length=0;rerender({enabled:true,key:"mt5:B"});expect(renders.every(value=>!value)).toBe(true);
+    await act(async()=>{await wait(SILENCE_MS-1);});expect(result.current.epoch).toBe(epoch);
+    await act(async()=>{await wait(1);});expect(result.current.epoch).toBe(epoch+1);
+  });
+
 });

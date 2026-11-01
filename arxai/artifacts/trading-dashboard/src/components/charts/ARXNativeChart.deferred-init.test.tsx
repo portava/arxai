@@ -164,6 +164,178 @@ afterEach(() => {
   delete (document as unknown as { hidden?: boolean }).hidden;
 });
 
+describe("initial mobile chart height", () => {
+  it.each([
+    {width:390,height:520,mobileHeight:360,expected:360},
+    {width:767,height:520,mobileHeight:360,expected:360},
+    {width:768,height:520,mobileHeight:360,expected:520},
+    {width:390,height:280,mobileHeight:undefined,expected:320},
+    {width:390,height:520,mobileHeight:undefined,expected:380},
+    {width:1440,height:640,mobileHeight:undefined,expected:640},
+  ])("initializes cached candles at $expected px for width $width and height $height", ({width,height,mobileHeight,expected}) => {
+    vi.stubGlobal("innerWidth",width);
+    candleResponse=liveResponse("EURUSD","H1");
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" height={height} mobileHeight={mobileHeight} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(created).toHaveLength(1);
+    const engine=created[0]!;
+    expect(engine.init).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({height:expected}));
+    expect(screen.getByTestId("arx-native-canvas").style.height).toBe(`${expected}px`);
+    expect(engine.resize.mock.calls.every(call=>call[1]===expected)).toBe(true);
+    expect(engine.setCandles).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({time:OPEN_MS/1000,close:1.101})]));
+    expect(engine.destroy).not.toHaveBeenCalled();
+  });
+
+  it("retains the engine and candles through prop, breakpoint and fullscreen height changes", () => {
+    vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);
+    candleResponse=liveResponse("EURUSD","H1");
+    const app=(height:number,mobileHeight:number)=><ARXNativeChart symbol="EURUSD" timeframe="H1" height={height} mobileHeight={mobileHeight} showFeedStatus={false} overlays={NO_OVERLAYS}/>;
+    const view=render(app(520,360)),engine=created[0]!,canvas=screen.getByTestId("arx-native-canvas");
+    const assertHeight=(expected:number)=>{
+      expect(canvas.style.height).toBe(`${expected}px`);
+      expect(engine.resize).toHaveBeenLastCalledWith(undefined,expected);
+      expect(created).toHaveLength(1);expect(engine.init).toHaveBeenCalledTimes(1);
+      expect(engine.destroy).not.toHaveBeenCalled();expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
+      expect(engine.setCandles).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({time:OPEN_MS/1000,close:1.101})]));
+    };
+    assertHeight(360);view.rerender(app(700,420));assertHeight(420);
+    vi.stubGlobal("innerWidth",768);act(()=>window.dispatchEvent(new Event("resize")));assertHeight(700);
+    vi.stubGlobal("innerHeight",400);fireEvent.click(screen.getByRole("button",{name:"Fullscreen",exact:true}));assertHeight(240);
+    vi.stubGlobal("innerHeight",800);act(()=>window.dispatchEvent(new Event("resize")));assertHeight(560);
+    fireEvent.click(screen.getByRole("button",{name:"Exit fullscreen",exact:true}));assertHeight(700);
+    vi.stubGlobal("innerWidth",390);act(()=>window.dispatchEvent(new Event("resize")));assertHeight(420);
+  });
+
+  it("uses the latest viewport when a deferred comparison engine starts",()=>{
+    vi.stubGlobal("innerWidth",390);candleResponse=liveResponse("EURUSD","H1");
+    render(<ARXNativeChart workspaceId="comparison" symbol="EURUSD" timeframe="H1" height={520} mobileHeight={360} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(created).toHaveLength(0);expect(screen.getByTestId("arx-native-canvas").style.height).toBe("360px");
+    vi.stubGlobal("innerWidth",1440);act(()=>window.dispatchEvent(new Event("resize")));
+    runFrame();runTasks();
+    expect(created).toHaveLength(1);expect(created[0]!.init).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({height:520}));
+    expect(screen.getByTestId("arx-native-canvas").style.height).toBe("520px");
+  });
+});
+
+describe("source-bound stream warning", () => {
+  const responseFor = (source:string) => {
+    const response=liveResponse("EURUSD","H1");
+    return {...response,candles:response.candles.map(c=>({...c,source})),feedStatus:{...response.feedStatus,source}};
+  };
+  const clock = () => {vi.useFakeTimers({toFake:["setTimeout","clearTimeout","setInterval","clearInterval","Date"]});};
+  it.each(["offline_fixture","twelve_data"])("never reconnects nonexistent %s streams after multiple silence windows", source => {
+    clock();candleResponse=responseFor(source);const interval=vi.spyOn(globalThis,"setInterval");
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    act(()=>vi.advanceTimersByTime(95_000));
+    const scheduled=interval.mock.calls.length;interval.mockRestore();
+    expect(streams).toHaveLength(0);expect(scheduled).toBe(0);
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+  });
+  it("removes a stalled MT5 warning on nonstream replacement and gives a returning MT5 source a full deadline", () => {
+    clock();candleResponse=responseFor("mt5_broker");
+    const chart=<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>;const view=render(chart);
+    act(()=>streams[0]!.onerror!());expect(screen.getByTestId("arx-native-stream-reconnecting")).toBeTruthy();
+    candleResponse=responseFor("offline_fixture");view.rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    expect(streams[0]!.closed).toBe(true);expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    act(()=>{streams[0]!.onerror!();streams[0]!.onmessage!(heartbeat);});
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    act(()=>vi.advanceTimersByTime(95_000));expect(streams).toHaveLength(1);expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    candleResponse=responseFor("mt5_broker");view.rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    expect(streams).toHaveLength(2);act(()=>vi.advanceTimersByTime(29_999));expect(streams).toHaveLength(2);
+    // Late frames/errors from the first MT5 connection cannot contaminate or
+    // postpone this new MT5 connection, even though their source key is equal.
+    act(()=>{streams[0]!.onerror!();streams[0]!.onmessage!(heartbeat);});
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    act(()=>vi.advanceTimersByTime(1));expect(streams).toHaveLength(3);expect(streams[1]!.closed).toBe(true);
+  });
+  it("does not invent retries when EventSource is unsupported", () => {
+    clock();candleResponse=responseFor("mt5_broker");vi.stubGlobal("EventSource",undefined);
+    const interval=vi.spyOn(globalThis,"setInterval");render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    act(()=>vi.advanceTimersByTime(95_000));
+    const scheduled=interval.mock.calls.length;interval.mockRestore();
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();expect(scheduled).toBe(0);
+  });
+  it("retries a transient constructor failure on the bounded deadline and then recovers", () => {
+    clock();candleResponse=responseFor("mt5_broker");const WorkingEventSource=globalThis.EventSource;let attempts=0;
+    vi.stubGlobal("EventSource",class extends WorkingEventSource {constructor(url:string){attempts++;if(attempts===1)throw Error("Transient construction failure");super(url);}});
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    expect(attempts).toBe(1);expect(streams).toHaveLength(0);
+    act(()=>vi.advanceTimersByTime(29_999));expect(attempts).toBe(1);
+    act(()=>vi.advanceTimersByTime(1));expect(attempts).toBe(2);expect(streams).toHaveLength(1);
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    act(()=>streams[0]!.onmessage!(heartbeat));act(()=>vi.advanceTimersByTime(29_999));expect(attempts).toBe(2);
+  });
+
+});
+
+describe("compact chart evidence", () => {
+  it("names simultaneous restrictions before disclosure and retains their full explanations", () => {
+    const response = liveResponse("EURUSD", "H1");
+    candleResponse = {...response, candles: [0, 1, 2].map(index => ({...response.candles[0]!, timeBasisEvidence: undefined,
+      openTime: new Date(OPEN_MS + index * 3_600_000).toISOString(),
+      closeTime: new Date(OPEN_MS + (index + 1) * 3_600_000).toISOString(),
+      open: 1.1, high: 1.1, low: 1.1, close: 1.1})),
+      feedStatus: {...response.feedStatus, quality: "delayed", aiUsable: false, message: "Provider delayed with an exact source explanation"}};
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    const restrictions = screen.getByTestId("chart-evidence-restrictions");
+    expect(restrictions.textContent).toContain("UTC mapping unverified");
+    expect(restrictions.textContent).toContain("OHLC candles are flat");
+    expect(restrictions.textContent).toContain("Not AI-confirmed");
+    expect(restrictions.textContent).toContain("feed");
+    expect(restrictions.closest("details")).toBeNull();
+    const details = screen.getByTestId("chart-evidence-details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    const summary = within(details).getByText("Chart evidence details").closest("summary")!;
+    summary.focus(); expect(document.activeElement).toBe(summary);
+    fireEvent.click(summary); expect(details.open).toBe(true);
+    expect(details.textContent).toContain("Provider delayed with an exact source explanation");
+    expect(details.textContent).toContain("timezone conversion and UTC historical tests are unavailable");
+    expect(details.textContent).toContain("Price action shown, no spread");
+    fireEvent.click(summary); expect(details.open).toBe(false);
+    expect(restrictions.textContent).toContain("Not AI-confirmed");
+  });
+
+  it("keeps reconnect and frozen-market truth visible outside the closed disclosure on the same canvas", () => {
+    candleResponse = liveResponse("EURUSD", "H1");
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    const canvas = screen.getByTestId("arx-native-canvas");
+    const details = screen.getByTestId("chart-evidence-details") as HTMLDetailsElement;
+    act(() => streams[0]!.onerror!());
+    const reconnect = screen.getByTestId("arx-native-stream-reconnecting");
+    expect(reconnect.textContent).toContain("Reconnecting — prices delayed");
+    expect(reconnect.closest("details")).toBeNull(); expect(details.open).toBe(false);
+    act(() => streams[0]!.onmessage!(feedStatus(true)));
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    expect(screen.getByTestId("arx-native-market-closed").closest("details")).toBeNull();
+    act(() => streams[0]!.onmessage!(feedStatus(false)));
+    expect(screen.queryByTestId("arx-native-market-closed")).toBeNull();
+    expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
+    expect(created).toHaveLength(1); expect(created[0]!.init).toHaveBeenCalledTimes(1); expect(created[0]!.destroy).not.toHaveBeenCalled();
+  });
+
+  it("keeps mandatory integrity and clock warnings with optional feed badges off, without replacing the engine", () => {
+    const response = liveResponse("EURUSD", "H1");
+    candleResponse = {...response, candles: response.candles.map(c => ({...c, timeBasisEvidence: undefined})),
+      warning: "Original provider integrity reason", feedStatus: {...response.feedStatus, quality: "invalid", aiUsable: false}};
+    const view = render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const restrictions = screen.getByTestId("chart-evidence-restrictions"), canvas = screen.getByTestId("arx-native-canvas");
+    expect(restrictions.textContent).toContain("Data validation failed — AI analysis paused");
+    expect(restrictions.textContent).toContain("UTC mapping unverified");
+    const details = screen.getByTestId("chart-evidence-details") as HTMLDetailsElement;
+    const summary = within(details).getByText("Chart evidence details").closest("summary")!;
+    fireEvent.click(summary);
+    expect(details.textContent).toContain("Original provider integrity reason");
+    fireEvent.click(screen.getByTestId("arx-mirror-lock"));
+    expect(screen.getByTestId("chart-evidence-inspection").closest("details")).toBeNull();
+    fireEvent.click(summary);
+    vi.stubGlobal("innerWidth",320);act(()=>window.dispatchEvent(new Event("resize")));
+    expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
+    expect(created).toHaveLength(1);expect(created[0]!.init).toHaveBeenCalledTimes(1);expect(created[0]!.destroy).not.toHaveBeenCalled();
+    view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(screen.queryByText("Original provider integrity reason")).toBeNull();
+    expect(screen.queryByTestId("chart-evidence-restrictions")).toBeNull();
+  });
+});
+
 describe("persistent chart notices do not cover candles or user notes", () => {
   const noticeIds = ["arx-native-safe-mode", "arx-native-line-mode", "arx-native-feed-banner"];
   const assertNoticeBeforeCanvas = (id: string) => {

@@ -321,6 +321,14 @@ export interface ARXNativeChartProps {
   mirrorLockDefault?: boolean;
 }
 
+/** The first canvas and later viewport changes use the same sizing policy. */
+function viewportChartHeight(height:number,mobileHeight:number|undefined,expanded:boolean):number {
+  if(typeof window === "undefined")return height;
+  if(expanded)return Math.max(240,window.innerHeight-240);
+  if(window.innerWidth<768)return mobileHeight??Math.max(320,Math.min(height,380));
+  return height;
+}
+
 export function ARXNativeChart({
   workspaceId = "primary",
   symbol,
@@ -537,7 +545,10 @@ export function ARXNativeChart({
   // the chart sat frozen indefinitely while still presenting as live. The hook
   // owns silence detection and the reconnect signal; see its own file for the
   // detection rationale and timings.
-  const streamWatchdog = useTickStreamWatchdog();
+  const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
+  const tickSource = chartTickSource(data?.feedStatus?.source);
+  const streamEnabled = resolvedSymbol.length > 0 && tickSource !== null && typeof EventSource === "function";
+  const streamWatchdog = useTickStreamWatchdog({enabled: streamEnabled, streamKey: chartContext});
 
   // Chart Brain v2 (Task 1) — centralized Chart Intelligence State. This is a
   // SEPARATE, non-blocking fetch from the candle query above: candles render
@@ -568,7 +579,6 @@ export function ARXNativeChart({
   // #373). This component owns React state, data, feed-status and UI; the
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
-  const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
   const overlays = useMemo(() => [...suppliedOverlays,...(researchOpen&&researchLayer?.context===chartContext?researchLayer.rows:[])].filter(overlay =>
     overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
   [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
@@ -626,23 +636,15 @@ export function ARXNativeChart({
 
   // Phase 2 — responsive chart height. On narrow viewports the default 520px
   // height leaves too little room when panels stack below the canvas. We
-  // honour `mobileHeight` when provided; otherwise cap at 320px on mobile so
+  // honour `mobileHeight` when provided; otherwise use 320–380px on mobile so
   // the chart is always readable without crushing the rest of the page.
-  const [effectiveHeight, setEffectiveHeight] = useState(height);
+  const [effectiveHeight, setEffectiveHeight] = useState(()=>viewportChartHeight(height,mobileHeight,expanded));
   const [mobileLayout, setMobileLayout] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
     const update = () => {
       const isMobile = window.innerWidth < 768;
       setMobileLayout(isMobile);
-      if (expanded) {
-        setEffectiveHeight(Math.max(240, window.innerHeight - 240));
-      } else if (isMobile && mobileHeight != null) {
-        setEffectiveHeight(mobileHeight);
-      } else if (isMobile) {
-        setEffectiveHeight(Math.max(320, Math.min(height, 380)));
-      } else {
-        setEffectiveHeight(height);
-      }
+      setEffectiveHeight(viewportChartHeight(height,mobileHeight,expanded));
     };
     update();
     window.addEventListener("resize", update);
@@ -925,8 +927,6 @@ export function ARXNativeChart({
     newestBarSecRef.current = pending.bar.time;
   }, [chartEpoch, chartContext]);
 
-  const tickSource = chartTickSource(data?.feedStatus?.source);
-
   // ── Real-time forming-tip (Task #501). Subscribe to the SAME server SSE
   //    tick-stream the Scanner chart uses (Task #496) for the current
   //    (symbol, timeframe) and apply each forming bar through the chart-engine
@@ -957,7 +957,7 @@ export function ARXNativeChart({
     // tick yet emits no feed_status, so a stale badge would otherwise linger.
     setMarketFrozen(null);
     setFormingCloseMs(null);
-    if (resolvedSymbol.length === 0 || !tickSource) return;
+    if (!streamEnabled || !tickSource) return;
     const url = u(
       `/api/chart/tick-stream?symbol=${encodeURIComponent(resolvedSymbol)}&timeframe=${encodeURIComponent(timeframe)}&source=${encodeURIComponent(tickSource)}`,
     );
@@ -971,7 +971,10 @@ export function ARXNativeChart({
     try {
       es = new EventSource(url, { withCredentials: true });
     } catch {
-      return; // EventSource unavailable — the 8s poll still keeps the tip fresh.
+      // An eligible constructor can fail transiently. Preserve bounded recovery
+      // instead of permanently disabling this source; polling remains available.
+      streamWatchdog.noteError();
+      return;
     }
     streamWatchdog.noteStreamOpened();
     // A context bound without an engine (a deferred comparison) belongs to
@@ -1077,7 +1080,7 @@ export function ARXNativeChart({
     // The watchdog's callbacks are stable; `epoch` is the reconnect signal and
     // this effect's cleanup closes the dead stream before the replacement opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedSymbol, timeframe, streamWatchdog.epoch, tickSource, chartContext]);
+  }, [resolvedSymbol, timeframe, streamWatchdog.epoch, tickSource, chartContext, streamEnabled]);
 
   // ── Deep-history scroll-back wiring. Register a stable handler with the engine
   //    that fires when the user pans near the oldest loaded bar; it asks the
@@ -1368,6 +1371,10 @@ export function ARXNativeChart({
             )}
           </div>);
   const chartControls = <Fragment key="chart-controls">
+    <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 px-3 py-2">
+            <button type="button" className="min-h-11 rounded border border-zinc-700 px-2 text-xs text-cyan-300 disabled:opacity-50" aria-pressed={assistantPane.active} disabled={!hasCandles||query.isError||!adapterRef.current} onClick={()=>assistantPane.activate()} data-testid="chart-assistant-activate">{assistantPane.active?"Assistant selected":"Use chart with assistant"}</button>
+            <span className="text-[11px] text-zinc-400" data-testid="chart-assistant-pane-context">{assistantPane.active?"Selected for local chart tools: ":"Select to use local chart tools: "}{resolvedSymbol} · {timeframe} · {data?.feedStatus?.source??"Unknown source"}{workspaceId!=="primary"?" · analysis only; primary trading unchanged":" · primary chart"}</span>
+    </div>
     {mobileLayout && <div className="px-3 py-2">{timeframeControls}</div>}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2" role="toolbar" aria-label="Chart view controls">
         <div className="flex flex-wrap items-center gap-1">
@@ -1380,9 +1387,8 @@ export function ARXNativeChart({
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>
-        {!mobileLayout && fullscreenToggle}
       </div>
-      {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
+
       <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
@@ -1400,9 +1406,7 @@ export function ARXNativeChart({
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
             {workspaceId === "primary" ? <AssistantDockSlot assistantEnabled={assistantPane.active}/> : assistantPane.active ? <AssistantDockSlot assistantOnly/> : null}
-            <button type="button" className="min-h-11 rounded border border-zinc-700 px-2 text-xs text-cyan-300 disabled:opacity-50" aria-pressed={assistantPane.active} disabled={!hasCandles||query.isError||!adapterRef.current} onClick={()=>assistantPane.activate()} data-testid="chart-assistant-activate">{assistantPane.active?"Assistant selected":"Use chart with assistant"}</button>
-            <span className="text-[11px] text-zinc-400" data-testid="chart-assistant-pane-context">{assistantPane.active?"Selected for local chart tools: ":"Select to use local chart tools: "}{resolvedSymbol} · {timeframe} · {data?.feedStatus?.source??"Unknown source"}{workspaceId!=="primary"?" · analysis only; primary trading unchanged":" · primary chart"}</span>
-            {mobileLayout && fullscreenToggle}
+            {fullscreenToggle}
             <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
               {resolvedSymbol}
             </span>
@@ -1489,6 +1493,26 @@ export function ARXNativeChart({
       {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className="px-3 pb-2 text-xs text-amber-300" role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
       {!supportedTimeframe && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
+      {/* This is a presentation of the existing owners, not another verdict.
+          Every active restriction stays outside the disclosure. Full original
+          explanations and the informational mirror control remain mounted in
+          normal flow, separate from the canvas/position coordinate origin. */}
+      <section aria-label="Chart evidence" className="border-b border-zinc-800/60">
+        {(isSafeMode || mirrorStatus === "Conflict" || (!utcClockQualified && hasCandles) ||
+          (hasCandles && !ohlcAvailable && !isSafeMode) || showPoorBanner || showNotAiConfirmed) && (
+          <div className="flex flex-wrap gap-x-2 gap-y-1 px-3 pt-1 text-xs leading-4" data-testid="chart-evidence-restrictions">
+            {(isSafeMode || mirrorStatus === "Conflict") && <span className="font-semibold text-red-200">Data validation failed — AI analysis paused</span>}
+            {!utcClockQualified && hasCandles && <span className="text-amber-300">Source clock: UTC mapping unverified</span>}
+            {hasCandles && !ohlcAvailable && !isSafeMode && <span className="text-amber-200">Line mode — OHLC candles are flat</span>}
+            {showPoorBanner && <span className={conf.severity === "danger" ? "text-red-200" : "text-amber-200"}>{conf.statusLabel} feed</span>}
+            {showNotAiConfirmed && <span className="text-amber-200">Not AI-confirmed</span>}
+          </div>
+        )}
+        {!mirrorLocked && <p className="px-3 pt-1 text-xs text-amber-200" data-testid="chart-evidence-inspection">Inspection mode — Mirror Lock OFF</p>}
+        <details data-testid="chart-evidence-details">
+          <summary className="cursor-pointer px-3 py-1.5 text-xs leading-4 text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            <span>Chart evidence details</span><span className="ml-2 text-zinc-400">{mirrorStatus} · {timeframe}</span>
+          </summary>
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the
           mirror state (Mirrored / Syncing / Stale / Conflict / Refreshing),
@@ -1559,7 +1583,7 @@ export function ARXNativeChart({
         </span>
       </div>
 
-      {!mobileLayout && chartControls}
+      {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
 
       {/* Persistent notices stay in normal flow so they cannot obscure candles,
           user notes or projected position controls. The relative canvas/overlay
@@ -1619,7 +1643,7 @@ export function ARXNativeChart({
         >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           <span className="font-semibold">{conf.statusLabel} feed</span>
-          <span className="min-w-0 flex-1 truncate text-[11px] opacity-90">
+          <span className="min-w-0 flex-1 break-words text-xs opacity-90">
             {conf.message}
           </span>
           {query.isFetching && !query.isLoading && (
@@ -1627,6 +1651,9 @@ export function ARXNativeChart({
           )}
         </div>
       )}
+
+        </details>
+      </section>
 
       <CardContent key="plot" className="relative p-0">
         {/* The chart canvas is always mounted so the v5 series handle is stable;
@@ -1716,7 +1743,9 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
-      {mobileLayout && chartControls}
+      {/* Detailed tools stay mounted after the plot on every viewport. Source
+          and safety notices above it remain visible before any candle. */}
+      {chartControls}
       {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
