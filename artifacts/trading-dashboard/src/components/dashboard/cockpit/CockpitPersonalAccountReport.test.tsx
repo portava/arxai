@@ -20,3 +20,15 @@ it('selected connection removal clears its report rather than reviving old SSE a
 it.each(['owner','preview','admin','unknownAccess','modeError','paper'] as const)('does not expose cached personal data outside ordinary personal scope: %s',scope=>{if(scope==='owner')h.summary.data={masterAccess:true,masterMt5:{arxAllocated:0,nativeAccountReport:null},accounts:[]};if(scope==='preview')h.mode.isAdminPreviewingUserMode=true;if(scope==='admin')h.mode.isAdmin=true;if(scope==='unknownAccess')delete h.summary.data.masterAccess;if(scope==='modeError')h.mode.isError=true;if(scope==='paper')h.mode.isLiveShared=false;render(<AccountSnapshotCard/>);expect(h.options.query.enabled).toBe(false);expect(screen.queryByRole('region',{name:'Your selected MT5 account'})).toBeNull();expect(screen.queryByText(/9,007,199|Personal broker/)).toBeNull();});
 it('personal account shell may show own report outside shared mode',()=>{h.mode.isLiveShared=false;h.mode.envelope={accountShellStatus:{accountMode:'PERSONAL_MT5'}};render(<AccountSnapshotCard/>);expect(h.options.query.enabled).toBe(true);expect(screen.getByTestId('native-money-equity').textContent).toBe('KWD 0.000');});
 it('allocation records do not invent a dollar denomination or broker equity',()=>{render(<AccountSnapshotCard/>);expect(screen.getByText(/Recorded ARX allocation/)).toBeTruthy();expect(screen.getByText('50 (currency unverified)')).toBeTruthy();expect(screen.queryByText('$50.00')).toBeNull();expect(screen.queryByText('Equity',{selector:'[data-testid="stat-label"]'})).toBeNull();});
+it.each(['preview','user','error','loading','unknownRole'] as const)('withdraws cached master money, allocation and identity when current mode becomes %s',transition=>{
+ h.mode={...h.mode,isAdmin:true};
+ h.summary.data={masterAccess:true,masterMt5:{arxAllocated:7654321,brokerName:'Private master broker',accountNumberMasked:'••••8888',nativeAccountReport:report()},accounts:[{masterBrokerName:'Private cached fallback',masterAccountNumberMasked:'••••9999',openAttributions:99}],allocationView:{availableAllocation:456789,hasAllocation:true}};
+ const view=render(<AccountSnapshotCard/>);expect(screen.getByTestId('native-money-balance').textContent).toContain('9,007,199');expect(screen.getByText(/Private master broker/)).toBeTruthy();
+ if(transition==='preview')h.mode.isAdminPreviewingUserMode=true;
+ if(transition==='user')h.mode.isAdmin=false;
+ if(transition==='error')h.mode.isError=true;
+ if(transition==='loading')h.mode.isLoading=true;
+ if(transition==='unknownRole')delete h.mode.isAdmin;
+ view.rerender(<AccountSnapshotCard/>);
+ expect(screen.queryByTestId('native-account-report')).toBeNull();expect(screen.queryByText(/9,007,199|7654321|456789|Private master|Private cached|8888|9999/)).toBeNull();expect(screen.queryByText('Pinned master:')).toBeNull();expect(screen.queryByRole('region',{name:'Your selected MT5 account'})).toBeNull();expect(h.options.query.enabled).toBe(false);
+});

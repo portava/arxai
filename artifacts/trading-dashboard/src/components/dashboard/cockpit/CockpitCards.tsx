@@ -95,9 +95,13 @@ export function AccountSnapshotCard() {
   });
 
   const summary = summaryQ.data;
-  const accounts = Array.isArray(summary?.accounts) ? summary.accounts : [];
-  const master = summary?.masterMt5 ?? null;
-  const isOwnerAdmin = summary?.masterAccess === true;
+  const isOwnerAdmin = summary?.masterAccess === true && mode.isAdmin === true
+    && !mode.isAdminPreviewingUserMode && !mode.isLoading && !mode.isError;
+  // A retained privileged response is not ordinary-user allocation evidence.
+  // Withdraw its whole presentation as soon as current capability changes.
+  const displaySummary = summary?.masterAccess === true && !isOwnerAdmin ? undefined : summary;
+  const accounts = Array.isArray(displaySummary?.accounts) ? displaySummary.accounts : [];
+  const master = isOwnerAdmin ? displaySummary?.masterMt5 ?? null : null;
   // Reuse the personal status authority and canonical query. The existing page
   // stream invalidates this key; do not open a second account stream here.
   const personalScope = summary?.masterAccess === false && !mode.isAdmin && !mode.isAdminPreviewingUserMode
@@ -112,7 +116,7 @@ export function AccountSnapshotCard() {
   // Canonical per-user allocation — the SAME source the live gate/preflight use.
   // Display surfaces must read availableAllocation from here, never the static
   // virtual_balance, which drifts from the headroom the gate actually enforces.
-  const allocationView = summary?.allocationView ?? null;
+  const allocationView = displaySummary?.allocationView ?? null;
   const canonicalAvailable = allocationView?.availableAllocation ?? null;
   const hasAllocation = allocationView?.hasAllocation ?? false;
 
