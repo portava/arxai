@@ -315,7 +315,7 @@ export class ChartAnalysisRenderer {
     return this.studies.map(({ calculator }) => {
       if(calculator.config.kind === "volume_profile") {
         const result=calculator.profileResult;
-        return {label:studyLabel(calculator.config),color:calculator.config.color,...(result?.status==='held'?{reason:result.reason}:{}),values:[{name:'Frozen-range total trade units',value:result?.status==='ready'?result.totalTradeUnits:null}]};
+        return {label:studyLabel(calculator.config),color:calculator.config.color,...(result?.status==='held'?{reason:result.reason}:{}),values:[{name:calculator.config.lineStyles?.[0]?.visible===false?'Frozen-range total trade units (hidden)':'Frozen-range total trade units',value:result?.status==='ready'?result.totalTradeUnits:null}]};
       }
       let lo = 0, hi = calculator.points.length - 1;
       let values: (number | null)[] = [];
