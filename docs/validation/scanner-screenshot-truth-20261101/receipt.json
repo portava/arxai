@@ -1,0 +1,115 @@
+{
+  "createdUtc": "2026-11-01T15:01:41.933083+00:00",
+  "applicationCommit": "fbbdb44c352cc1cdadd64f232fb1d9f3cbd51d14",
+  "base": "395d450e33e231e72f911b6fdbf2bff1badfcfb2",
+  "branch": "codex/scanner-screenshot-truth-20261101",
+  "verdict": "Bounded offline screenshot fixes validated; RELEASE NOT GREEN; no Replit sync",
+  "changes": [
+    "Shared candle clock qualification and selected-market/source ownership",
+    "Explicit server withholding and insufficient result caps",
+    "Downgrade-only parent analysis hint",
+    "Evidence-backed pattern/trendline notes; confidence no longer masquerades as momentum or edge",
+    "Hard-restricted metrics/risk commentary suppressed; historical context retains separate feed limitation",
+    "Retest points use an actual observed touch; no fake connector between distinct events",
+    "Single native structural overlay owner",
+    "One sticky header stack; status cards fit container width"
+  ],
+  "validation": {
+    "dashboard": {
+      "pass": 3560,
+      "fail": 0,
+      "skip": 11,
+      "filesPassed": 217,
+      "filesSkipped": 1,
+      "log": "frontend-combined.log",
+      "sourceNote": "Run on identical application source immediately before commit; fixture build confirms clean committed source"
+    },
+    "catalogueAndRetest": {
+      "pass": 406,
+      "fail": 0,
+      "skip": 0,
+      "log": "domain-catalogue.log"
+    },
+    "backendConfidenceCopy": {
+      "pass": 11,
+      "fail": 0,
+      "skip": 0,
+      "log": "backend-copy-final.log"
+    },
+    "typechecks": {
+      "dashboard": "PASS typecheck-committed.log",
+      "api": "PASS api-typecheck-final.log"
+    },
+    "build": "PASS dashboard-build-final.log; existing sourcemap-location warnings and large chunks retained",
+    "guards": {
+      "pass": 85,
+      "fail": 2,
+      "log": "guards-final.log",
+      "remaining": "risky-wording-frontend38 matches; no-internal-names-user-ui3 JSON displays. Same open guard classes/counts as prior checkpoint; these are scanner heuristics requiring context review."
+    },
+    "browser": {
+      "application": "fbbdb44c352cc1cdadd64f232fb1d9f3cbd51d14",
+      "build": "85cb9da65dd848a5",
+      "pass": 21,
+      "fail": 0,
+      "widths": [
+        1440,
+        790,
+        390
+      ],
+      "sourceCleanAndUnchanged": true,
+      "receipt": "browser-candidate.json",
+      "baseline": {
+        "application": "76cd4bd634e6b5af5188c5bb0d823b95e7aeb44e",
+        "build": "e7b2b265cb5d18bb",
+        "pass": 11,
+        "fail": 10,
+        "receipt": "browser-baseline-final.json"
+      },
+      "scope": "Actual Scanner app, generated candles and intercepted read response, frozen trading permissions; no external/provider/model/broker API forwarded. Expected503 unavailable auxiliary endpoints retained. No page exceptions."
+    },
+    "independentReview": "Two review/fix rounds; reviewer verified metrics/risk bypass closure, structural context limitations, child-note contract and status caps. Separate agent implemented annotation/renderer repair; root reviewed diffs. Browser acceptance root-owned."
+  },
+  "preservedFailures": [
+    "Initial direct vitest start missing native Rollup; offline dependency wrapper used without installation",
+    "Initial14 dashboard failures during concurrent implementation retained; subsequent5 were incomplete ownership fixtures and fixed to represent actual normalized responses",
+    "New clock/withholding, reasoning, retest and rendering regressions failed before fixes; logs retained",
+    "Reviewer found raw metric and risk-commentary bypasses;8 additional regressions failed before correction",
+    "First browser attempt used aligned last-closed open beyond freshness budget and stalled; stopped browser, retained output; bounded fresh generated fixture used for final comparison",
+    "Prior baseline10/21 checks failed; same final script candidate21/21 passes"
+  ],
+  "limits": [
+    "No raw candles or same-read snapshot from owner screenshots; price939791.40 below prior support939893.3 does not prove a closed-candle breakout",
+    "Pattern retest repaired, but broader swing selection still uses all detected pivots and breakout search uses first beyond-level close; no causal-pattern completeness claim",
+    "Narrative child notes and visible annotations may originate in distinct analyses; missing notes now explicit, not invented parity",
+    "Clock qualification is declared producer evidence and selection consistency, not independent provider authentication",
+    "Current-feed status describes recent candles; expanded history clock separately limited",
+    "No real Replit/provider data or latency measurement; no competitor parity",
+    "Full root CI and broker/terminal lanes not run for this UI/domain change; guards remain not green",
+    "No new ChatGPT crosscheck of these screenshots; prior sanitized audit is separate older evidence"
+  ],
+  "boundaries": [
+    "No main merge",
+    "No Replit running-source update or runtime restart",
+    "No publishing/deployment",
+    "No existing database changes",
+    "No workers/trading/email/settlement enabled",
+    "No live/demo broker tests"
+  ],
+  "ownerFollowupM30": {
+    "captured": "2026-11-01 10:01:43\u201310:02:17 America/New_York",
+    "source": "Owner screenshots of Replit preview; not a replay of committed fixes",
+    "observations": [
+      "Same clock-unverified versus full/live-read mismatch",
+      "Chart bearish-marubozu and Break annotations not addressed in explanation",
+      "Last-price labels crowd/overlap annotations at chart right edge",
+      "M30 support937821.4\u2013939265.4 contains displayed937992.62; unlike earlier M15 screenshot, this image alone does not show price below that support zone",
+      "Actual pattern validity and candle finality require underlying OHLC/read timestamp; screenshot cannot prove either"
+    ],
+    "stillOpen": [
+      "Chart/right-axis label collision and duplicate-price affordance source review",
+      "Explain the selected candle/break finding in Eleanor without inventing agreement between different detector owners",
+      "Actual Replit source/clock evidence validation and controlled source sync remain separate"
+    ]
+  }
+}
