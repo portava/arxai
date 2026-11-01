@@ -93,12 +93,12 @@ export default function ChartResearchWorkbench({ data, symbol, timeframe, canoni
     setMessage(`Selected ${captured.snapshot.coverage.closedBars} visible closed bars. ${captured.snapshot.coverage.excludedFormingBars} forming bar(s) excluded. No broader calendar coverage is claimed.`);
   }
   function run() {
-    invalidate();
     if(!draft||draft.kind!=="draft"){setMessage(draft?.message??"Load a source-qualified closed chart window first.");return;}
     const captured=captureChartResearchWindow({data,expected:{symbol,timeframe},visibleBars:getVisibleBars(),asOfMs:Date.now(),requestedWindow:draft.draft.requestedWindow});
     if(captured.status!=="ready"){setMessage(captured.reason);return;}
     const finalized=finalizeChartResearchConfig(draft.draft,captured.snapshot.researchInput.bars.length);
     if(!finalized.ok){setMessage(finalized.message);return;}
+    invalidate();
     const revision=generation.current;
     setBusy(true);setMessage("Calculating the captured historical scenario in the background. The chart remains available.");
     runner.run(captured.snapshot.researchInput,finalized.config,outcome=>{

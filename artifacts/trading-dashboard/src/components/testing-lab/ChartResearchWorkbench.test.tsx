@@ -70,6 +70,35 @@ describe("real engine chart research orchestration",()=>{
     expect(screen.queryByTestId('chart-research-result')).toBeNull();
     const before=h.cancel.mock.calls.length;view.unmount();expect(h.cancel.mock.calls.length).toBeGreaterThan(before);
   });
+  it("a valid rerun clears the old receipt and ignores the superseded callback",()=>{
+    const props=fixture();render(<ChartResearchWorkbench {...props}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));
+    const previous=h.run.mock.calls[0]![2];const oldResult=finish();
+    fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));
+    expect(h.run).toHaveBeenCalledTimes(2);expect(screen.queryByTestId('chart-research-result')).toBeNull();
+    act(()=>previous({status:'complete',result:oldResult}));
+    expect(screen.queryByTestId('chart-research-result')).toBeNull();
+    finish();expect(screen.getByTestId('chart-research-result')).toBeTruthy();
+  });
+  it("invalid draft edits still clear old results and never dispatch another calculation",()=>{
+    const props=fixture();render(<ChartResearchWorkbench {...props}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));finish();
+    fireEvent.change(screen.getByLabelText('Fast EMA'),{target:{value:'60'}});
+    expect(screen.queryByTestId('chart-research-result')).toBeNull();
+    expect((screen.getByRole('button',{name:'Run historical test'}) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));expect(h.run).toHaveBeenCalledTimes(1);
+  });
+  it("insufficient warmup at config finalization does not dispatch a replacement worker",()=>{
+    const props=fixture();render(<ChartResearchWorkbench {...props}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));finish();
+    fireEvent.change(screen.getByLabelText('Slow EMA'),{target:{value:'1000'}});
+    expect(screen.queryByTestId('chart-research-result')).toBeNull();
+    const cancels=h.cancel.mock.calls.length;
+    fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));
+    expect(h.run).toHaveBeenCalledTimes(1);expect(h.cancel).toHaveBeenCalledTimes(cancels);
+    expect(screen.getByRole('status').textContent).toMatch(/insufficient|warm.up|bars/i);
+  });
+
 });
 
 
@@ -88,5 +117,13 @@ describe("historical clock authority",()=>{
   view.rerender(<ChartResearchWorkbench {...props} data={data}/>);
   expect(props.onOverlays.mock.calls.at(-1)![0]).toEqual([]);expect(props.onExplanation.mock.calls.at(-1)![0]).toBeNull();
   expect(screen.queryByTestId('chart-research-trade-detail')).toBeNull();
+  expect(screen.getByRole('alert').textContent).toMatch(/frozen result remains inspectable/i);
+  const frozen=screen.getByTestId('chart-research-result').textContent;
+  const cancels=h.cancel.mock.calls.length;
+  fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));
+  expect(h.run).toHaveBeenCalledTimes(1);expect(h.cancel).toHaveBeenCalledTimes(cancels);
+  expect(screen.getByRole('status').textContent).toMatch(/qualified original UTC/i);
+  expect(screen.getByRole('alert').textContent).toMatch(/frozen result remains inspectable/i);
+  expect(screen.getByTestId('chart-research-result').textContent).toBe(frozen);
  });
 });
