@@ -144,6 +144,18 @@ describe("independent chart cash-account evidence",()=>{
   account.benchmark.lastEquity=account.curve.at(-1)!.benchmarkEquity;account.benchmark.totalReturnPercent=(account.benchmark.lastEquity-initial)/initial*100;
   expect(verifyChartResearchCash(input,config,p)).toBe(false);
  });
+ it("accepts the exact nonzero-cost browser EURUSD scenario despite fill-price cancellation",()=>{
+  // Same generated 192-bar window as failed-cost-worker.json; no market or
+  // broker dependency. Prices and trade below reproduce the observed failure.
+  const input:ResearchV2Input={symbol:"EURUSD",priceBasis:"BID",intervalMs:900000,asOfMs:1793542533581,source:{kind:"historical_unattested",reference:"chart:"+"a".repeat(64)+":M15"},bars:Array.from({length:192},(_,i)=>{const close=1+Math.sin((i+8)/17)*.003;return{openTimeMs:1767182400000+i*900000,open:close-.0001,high:close+.0003,low:close-.0003,close};})};
+  const config:ResearchV2Config={strategy:{version:"ema-cross-atr-v1",fastPeriod:20,slowPeriod:50,atrPeriod:14,stopAtrMultiple:2,targetR:2,maxHoldingBars:5,direction:"long_only"},costs:{fullSpreadPriceUnits:.0002,adverseSlippagePerFillPriceUnits:.00005,feePerFillPriceUnits:.00003},maxEntryGapMs:0,splits:{trainEndExclusive:115,validationEndExclusive:153},cash:{version:"cash-fixed-units-v1",initialCapital:10000,fixedQuantity:1000,pointValue:1,unitLabel:"scenario units",benchmark:"same_quantity_buy_hold"}};
+  const partitions=run(input,config),trade=partitions[0].trades[0];expect(trade.entryPrice).toBe(1.0003590979372683);expect(trade.exitPrice).toBe(1.0009176903792314);expect(trade.netPriceUnits).toBe(.0004985924419631016);
+  // Different valid operation order differs by 1.8897643866422342e-16.
+  const decomposed=trade.grossPriceUnits-trade.spreadCostPriceUnits-trade.slippageCostPriceUnits-trade.feeCostPriceUnits;expect(Math.abs(decomposed-trade.netPriceUnits)).toBeGreaterThan(1e-16);
+  for(const p of partitions)expect(verifyChartResearchCash(input,config,p)).toBe(true);
+  const bad=writable(partitions[0]);bad.trades[0].netPriceUnits+=1e-10;expect(verifyChartResearchCash(input,config,bad)).toBe(false);
+  const fee=writable(partitions[0]);fee.trades[0].feeCostPriceUnits+=1e-10;expect(verifyChartResearchCash(input,config,fee)).toBe(false);
+ });
  it("rejects malformed unknown objects without throwing",()=>{
   const {input,config}=fixture();for(const bad of [null,{},[],{cash:{}},undefined])expect(verifyChartResearchCash(input,config,bad as any)).toBe(false);
  });

@@ -51,3 +51,11 @@ it.each([{initialCapital:1e20},{fixedQuantity:1e308,pointValue:1e308},{fixedQuan
 it('rejects tiny nonzero costs or results that disappear when converted to accounting units',()=>{
  const c=config() as any;c.cash.initialCapital=1e-320;c.cash.fixedQuantity=Number.MIN_VALUE;c.cash.pointValue=1;expect(()=>runCausalResearchV2(input(),c)).toThrow(/ACCOUNT_PRECISION_LOSS/);
 });
+it.each([false,true])('uses settled proceeds, not the starting budget, for the next signal (first trade gain=%s)',gain=>{
+ const prices=[10,10,9,11,11,gain?12:10,9,11,gain?11.5:11,11,11,11,11,11];
+ const a=input();a.bars=prices.map((price,i)=>({openTimeMs:i*STEP,open:price,high:price+.1,low:price-.1,close:price}));a.asOfMs=prices.length*STEP;
+ const c=config();c.cash!.initialCapital=(11.25+.03)*6;c.splits={trainEndExclusive:11,validationEndExclusive:12};
+ const p=runCausalResearchV2(a,c).partitions[0];expect(p.decisions.map(d=>[d.signalIndex,d.disposition])).toEqual([[3,'filled'],[7,gain?'filled':'insufficient_capital']]);
+ expect(p.cash!.curve[7].cash).toBeCloseTo(gain?71.52:59.52,10);expect(p.trades).toHaveLength(gain?2:1);
+ if(gain)expect((p.trades[1].entryPrice+.03)*6).toBeGreaterThan(c.cash!.initialCapital);
+});

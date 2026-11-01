@@ -13,10 +13,14 @@ const integer = (value: unknown): value is number => finite(value) && Number.isS
 // Only arithmetic-rounding tolerance, never display rounding or a percentage of capital.
 const equal = (actual: unknown, expected: number): boolean => finite(actual) && finite(expected)
   && Math.abs(actual - expected) <= 32 * Number.EPSILON * Math.max(Number.MIN_VALUE, Math.abs(actual), Math.abs(expected));
-const equalDecomposition = (net: number, gross: number, spread: number, slip: number, fee: number): boolean => {
+// Gross and net subtract nearby source/fill prices. Their final P&L can be
+// orders of magnitude smaller than those operands, so only this redundant
+// decomposition uses the arithmetic operands' ULP scale. Every source price,
+// fill, cost and directly calculated net is still verified separately above.
+const equalDecomposition = (net: number, gross: number, spread: number, slip: number, fee: number, priceOperands: readonly number[]): boolean => {
   const decomposed=gross-spread-slip-fee;
-  return [net,gross,spread,slip,fee,decomposed].every(finite)
-    && Math.abs(net-decomposed)<=32*Number.EPSILON*Math.max(Number.MIN_VALUE,Math.abs(gross),Math.abs(spread),Math.abs(slip),Math.abs(fee),Math.abs(net));
+  return [net,gross,spread,slip,fee,decomposed,...priceOperands].every(finite)
+    && Math.abs(net-decomposed)<=32*Number.EPSILON*Math.max(Number.MIN_VALUE,Math.abs(gross),Math.abs(spread),Math.abs(slip),Math.abs(fee),Math.abs(net),...priceOperands.map(Math.abs));
 };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const yearMs = 365.25 * 86400000;
@@ -161,7 +165,7 @@ function verify(input: DeepReadonly<ResearchV2Input>, config: DeepReadonly<Resea
           || active.ambiguousStopAndTarget!==(reason==="stop"&&targetTouched)
           || !equal(active.grossPriceUnits,reference-active.entryReferencePrice) || !equal(active.spreadCostPriceUnits,cost.fullSpreadPriceUnits)
           || !equal(active.slippageCostPriceUnits,2*cost.adverseSlippagePerFillPriceUnits) || !equal(active.feeCostPriceUnits,2*cost.feePerFillPriceUnits)
-          || !equal(active.netPriceUnits,net) || !equalDecomposition(net,active.grossPriceUnits,active.spreadCostPriceUnits,active.slippageCostPriceUnits,active.feeCostPriceUnits)) return false;
+          || !equal(active.netPriceUnits,net) || !equalDecomposition(net,active.grossPriceUnits,active.spreadCostPriceUnits,active.slippageCostPriceUnits,active.feeCostPriceUnits,[active.entryReferencePrice,reference,active.entryPrice,fill])) return false;
         completedNet+=net;
         if(net>0){wins++;grossWins+=net;}else if(net<0)grossLosses-=net;
         completedCosts=completedCosts+cost.fullSpreadPriceUnits+2*cost.adverseSlippagePerFillPriceUnits+2*cost.feePerFillPriceUnits;
