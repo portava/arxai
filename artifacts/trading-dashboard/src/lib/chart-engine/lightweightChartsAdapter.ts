@@ -40,7 +40,7 @@ import { candleDisplayPrecision, incrementalCandles, historyRangeShift, unchange
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
 import { ChartAnalysisRenderer, type PriceSeries } from "./chartAnalysisRenderer";
 import type { ChartStudy } from "./chartStudies";
-import { closeOnlyStyle, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
+import { validatePreferences, validateDrawings, closeOnlyStyle, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import { heikinAshiBar, heikinAshiSuffix, hollowPoint } from "./heikinAshi";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
 import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
@@ -110,6 +110,10 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   // first loaded close), or null when none has been applied.
   private baselineValue: number | null = null;
   private analysis: ChartAnalysisRenderer | null = null;
+  private analysisFocused = false;
+  private analysisFocusValid = true;
+  private studiesRaw: ChartStudy[] = [];
+  private drawingsRaw: ChartDrawing[] = [];
   private drawingEditor: ChartDrawingEditor | null = null;
   private drawingHandler: ((anchor: ChartAnchor) => void) | null = null;
   private drawingInteraction: DrawingInteraction | null = null;
@@ -319,7 +323,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       anchor: anchorAt,
       price: y => this.series?.coordinateToPrice(y) ?? null,
       size: () => ({width:chart.timeScale().width(),height:chart.panes()[0]?.getHeight() ?? 0}),
-      render: drawings => this.analysis?.setDrawings(drawings, this.candles),
+      render: drawings => this.analysis?.setDrawings(this.analysisFocused ? [] : drawings, this.candles),
       select: id => this.analysis?.selectDrawing(id),
       freeze: active => {
         if (active && !frozenOptions) {
@@ -365,6 +369,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.viewportFrame = null;
     this.viewportListeners.clear();
     this.navigationMode = "inspect";
+    this.analysisFocused = false; this.analysisFocusValid = true; this.studiesRaw = []; this.drawingsRaw = [];
     this.smartAnnotation = null;
     this.smartAnnotationKey = "null";
     this.smartAnnotationPrimitive = null;
@@ -482,7 +487,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const bulk = updates != null && updates.length > 32;
     this.candles = sanitized;
     this.syncDisplay(unchanged);
-    this.smartAnnotationPrimitive?.setData(this.smartAnnotation, this.candles);
+    this.smartAnnotationPrimitive?.setData(this.analysisFocused ? null : this.smartAnnotation, this.candles);
     this.newestSeriesTime = sanitized.at(-1)?.time ?? null;
     if (this.overlaysRaw.some(o => o.source === "research" && o.type === "marker")
       && (previous.length !== sanitized.length || previous.some((bar, i) => bar.time !== sanitized[i]?.time))) {
@@ -648,7 +653,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (!chart || !series) return;
     // A focused smart explanation owns the visual structure budget. Keep raw
     // server geometry available, but do not draw competing pattern stories.
-    if (this.smartAnnotation) { this.clearStructureOverlays(); return; }
+    if (this.analysisFocused || this.smartAnnotation) { this.clearStructureOverlays(); return; }
 
     const lines = this.structureLinesRaw;
     const rawMarkers = this.structureMarkersRaw;
@@ -744,7 +749,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   setNavigationMode(mode: "inspect" | "pan"): void {
     if (mode === this.navigationMode) return;
     this.navigationMode = mode;
-    this.drawingEditor?.configure(mode === "pan" ? null : this.drawingInteraction);
+    this.drawingEditor?.configure(this.analysisFocused || mode === "pan" ? null : this.drawingInteraction);
     this.applyDrawingPlacement();
     if (this.container) this.container.dataset.chartNavigation = mode;
   }
@@ -757,7 +762,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       this.smartAnnotationPrimitive=new SmartChartAnnotationPrimitive();
       this.series.attachPrimitive(this.smartAnnotationPrimitive);
     }
-    this.smartAnnotationPrimitive?.setData(annotation,this.candles);
+    this.smartAnnotationPrimitive?.setData(this.analysisFocused ? null : annotation,this.candles);
     this.applyStructureFromRaw(true);
   }
   fitHistory(): void {
@@ -938,7 +943,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (this.smartAnnotationPrimitive) {
       previous.detachPrimitive(this.smartAnnotationPrimitive);
       next.attachPrimitive(this.smartAnnotationPrimitive);
-      this.smartAnnotationPrimitive.setData(this.smartAnnotation,this.candles);
+      this.smartAnnotationPrimitive.setData(this.analysisFocused ? null : this.smartAnnotation,this.candles);
     }
     chart.removeSeries(previous);
     this.lastPriceLine = null; this.overlayLines = []; this.precision = -1;
@@ -951,18 +956,63 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // Heikin Ashi suffix appears or disappears with the style.
     this.queueLegendUpdate();
   }
-  setStudies(studies: ChartStudy[]): void { this.analysis?.setStudies(studies, this.candles); }
-  setDrawings(drawings: ChartDrawing[]): void { this.drawingEditor?.setDrawings(drawings); this.analysis?.setDrawings(drawings, this.candles); }
+  isAnalysisFocused(): boolean { return this.analysisFocused; }
+  isAnalysisFocusVerified(): boolean { return this.analysisFocusValid; }
+  setAnalysisFocus(enabled: boolean): void {
+    if (!this.analysisFocusValid) throw new Error("Chart presentation unverified; reload the chart");
+    if (enabled === this.analysisFocused) return;
+    if (!this.chart || !this.analysis) throw new Error("Chart renderer unavailable");
+    const previous = this.analysisFocused;
+    this.analysisFocused = enabled;
+    this.analysisFocusValid = false;
+    try { this.applyAnalysisFocus(); this.analysisFocusValid = true; }
+    catch (error) {
+      this.analysisFocused = previous;
+      try { this.applyAnalysisFocus(); } catch { /* Best effort only; partially allocated renderer handles require recreation. */ }
+      throw error;
+    }
+  }
+  private applyAnalysisFocus(): void {
+    this.analysis?.setStudies(this.analysisFocused ? [] : this.studiesRaw, this.candles);
+    this.analysis?.setDrawings(this.analysisFocused ? [] : this.drawingsRaw, this.candles);
+    this.drawingEditor?.configure(this.analysisFocused || this.navigationMode === "pan" ? null : this.drawingInteraction);
+    this.applyDrawingPlacement();
+    this.smartAnnotationPrimitive?.setData(this.analysisFocused ? null : this.smartAnnotation, this.candles);
+    this.applyStructureFromRaw(true);
+    this.queueLegendUpdate();
+  }
+  setStudies(studies: ChartStudy[]): void {
+    this.studiesRaw = validatePreferences({studies}).studies;
+    this.analysis?.setStudies(this.analysisFocused ? [] : this.studiesRaw, this.candles);
+  }
+  private cloneRenderedDrawings(drawings: ChartDrawing[]): ChartDrawing[] {
+    // Storage limits owned objects; render rows also include unsaved previews.
+    // Validate/clone every row without truncating a second preview at that limit.
+    const seen = new Set<string>();
+    return drawings.flatMap(row=>validateDrawings([row])).filter(row=>{
+      if(seen.has(row.id))return false;seen.add(row.id);return true;
+    });
+  }
+  setDrawings(drawings: ChartDrawing[]): void {
+    this.drawingsRaw = this.cloneRenderedDrawings(drawings);
+    this.drawingEditor?.setDrawings(this.drawingsRaw);
+    this.analysis?.setDrawings(this.analysisFocused ? [] : this.drawingsRaw, this.candles);
+  }
   setDrawingInteraction(config: DrawingInteraction | null): void {
-    this.drawingInteraction = config;
-    this.drawingEditor?.configure(this.navigationMode === "pan" ? null : config);
+    this.drawingInteraction = config ? {...config,onCommit:next=>{
+      // Commit cache before the owner schedules React; focus/restore in the
+      // same event must not resurrect the geometry from the preceding frame.
+      this.drawingsRaw = this.cloneRenderedDrawings(next);
+      config.onCommit(next);
+    }} : null;
+    this.drawingEditor?.configure(this.analysisFocused || this.navigationMode === "pan" ? null : this.drawingInteraction);
   }
   setDrawingHandler(handler: ((anchor: ChartAnchor) => void) | null): void {
     this.drawingHandler = handler;
     this.applyDrawingPlacement();
   }
   private applyDrawingPlacement(): void {
-    const handler = this.navigationMode === "pan" ? null : this.drawingHandler;
+    const handler = this.analysisFocused || this.navigationMode === "pan" ? null : this.drawingHandler;
     this.drawingEditor?.setPlacement(handler);
     this.chart?.applyOptions({handleScroll:!handler});
     if (this.container) this.container.style.cursor = this.navigationMode === "pan" ? "grab" : handler ? "crosshair" : "";

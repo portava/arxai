@@ -88,6 +88,7 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
       const found = adapterFor(index); if (!found) return null;
       const scale = found.adapter.series.priceScale().options();
       return {
+        analysisFocus: {enabled:found.adapter.isAnalysisFocused?.()??false,verified:found.adapter.isAnalysisFocusVerified?.()??true},
         scale: { mode: scale.mode, inverted: scale.invertScale },
         studies: (found.adapter.analysis?.studies ?? []).map((study: any) => ({
           config: JSON.parse(JSON.stringify(study.calculator.config)),

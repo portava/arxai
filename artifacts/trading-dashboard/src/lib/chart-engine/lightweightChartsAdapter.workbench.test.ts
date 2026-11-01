@@ -455,3 +455,56 @@ describe("compact study labels follow actual chart width",()=>{
   try{local.init({container:el,height:400});local.setCandles(bars);const start=m.handles.length;local.setStudies([{kind:"macd",period:5,slow:17,signal:4,color:"#2dd4bf"}]);const studies=m.handles.slice(start);expect(studies.map(s=>s.options().title)).toEqual(["","",""]);width=800;callback?.();expect(studies.map(s=>s.options().title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);}finally{local.destroy();}
  });
 });
+
+
+describe("temporary simplified chart view",()=>{
+  it("hides analysis only and restores exact chosen settings, data and risk overlays",()=>{
+    const studies=STUDY_DEFAULTS.map((s,i)=>({...s,lineStyles:[{visible:i!==0}]}));
+    const drawings=[{id:"mine",kind:"horizontal" as const,start:{time:100,price:1.2},color:"#ffffff",hidden:true}];
+    adapter.setStudies(studies);adapter.setDrawings(drawings);
+    adapter.setSmartAnnotation({id:"shape",anchors:[{time:100,price:1.2,label:"shape"}],color:"#ffffff",dashed:true});
+    adapter.setOverlays([{id:"entry",type:"line",symbol:"EURUSD",price:1.2,label:"Entry",source:"position"}],bars.at(-1)!.time);
+    const a=adapter as any,price=m.handles[0],before=adapter.getStudyValues(bars[50]!.time),raw=structuredClone(a.candles),lines=[...a.overlayLines];
+    const values=price.setData.mock.calls.length;adapter.setAnalysisFocus(true);
+    expect(adapter.isAnalysisFocused()).toBe(true);expect(a.analysis.studies).toEqual([]);expect(a.analysis.drawings).toEqual([]);expect(a.structureSeries).toEqual([]);
+    expect(a.overlayLines).toEqual(lines);expect(a.candles).toEqual(raw);expect(price.setData.mock.calls.length).toBe(values);
+    adapter.setAnalysisFocus(false);expect(adapter.getStudyValues(bars[50]!.time)).toEqual(before);expect(a.analysis.drawings).toEqual(drawings);expect(a.overlayLines).toEqual(lines);
+  });
+  it("keeps incoming settings and annotations hidden, disables hit targets, and restores latest evidence",()=>{
+    const a=adapter as any,configure=vi.spyOn(a.drawingEditor,"configure"),placement=vi.spyOn(a.drawingEditor,"setPlacement");
+    adapter.setAnalysisFocus(true);
+    adapter.setStudies(STUDY_DEFAULTS);adapter.setDrawings([{id:"new",kind:"horizontal",start:{time:100,price:1.3},color:"#ffffff"}]);
+    const interaction={selectedId:"new",snap:true,onSelect:vi.fn(),onCommit:vi.fn()};adapter.setDrawingInteraction(interaction);adapter.setDrawingHandler(vi.fn());adapter.setNavigationMode("inspect");
+    adapter.setSmartAnnotation(null);adapter.setStructureLines([{id:"server",start:{time:100,price:1.2},end:{time:160,price:1.3},color:"#ffffff",width:1}],[]);
+    expect(configure).toHaveBeenLastCalledWith(null);expect(placement).toHaveBeenLastCalledWith(null);expect(a.analysis.studies).toEqual([]);expect(a.analysis.drawings).toEqual([]);expect(a.structureSeries).toEqual([]);
+    adapter.setChartStyle("line");adapter.setCandles(bars.slice(0,80));expect(a.analysis.studies).toEqual([]);expect(a.analysis.drawings).toEqual([]);
+    adapter.setAnalysisFocus(false);expect(a.analysis.studies.length).toBe(STUDY_DEFAULTS.length);expect(a.analysis.drawings[0].id).toBe("new");expect(configure).toHaveBeenLastCalledWith(expect.objectContaining({...interaction,onCommit:expect.any(Function)}));
+  });
+  it("cannot resurrect source-owned geometry after a context reset",()=>{
+    const a=adapter as any;adapter.setDrawings([{id:"old",kind:"horizontal",start:{time:100,price:1.3},color:"#ffffff"}]);adapter.setAnalysisFocus(true);adapter.resetDataContext();adapter.setCandles(bars);adapter.setAnalysisFocus(false);expect(a.analysis.drawings).toEqual([]);expect(a.smartAnnotation).toBeNull();expect(a.structureLinesRaw).toEqual([]);
+  });
+});
+
+it("focus cancels an in-progress drag and placement without committing",()=>{
+ const a=adapter as any,editor=a.drawingEditor,original=[{id:"drag",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"}],commit=vi.fn(),place=vi.fn();
+ adapter.setDrawings(original);adapter.setDrawingInteraction({selectedId:"drag",snap:false,onSelect:vi.fn(),onCommit:commit});
+ editor.gesture={pointerId:1,original,preview:[{...original[0],start:{time:100,price:1.5}}],changed:true};
+ adapter.setAnalysisFocus(true);expect(editor.gesture).toBeNull();expect(commit).not.toHaveBeenCalled();expect(a.analysis.drawings).toEqual([]);
+ adapter.setAnalysisFocus(false);expect(a.analysis.drawings).toEqual(original);adapter.setDrawingHandler(place);editor.tap={id:2,point:{x:5,y:5}};adapter.setAnalysisFocus(true);expect(editor.tap).toBeNull();expect(place).not.toHaveBeenCalled();
+});
+it("a committed drag followed by focus in the same turn retains the edited geometry",()=>{
+ const a=adapter as any,original=[{id:"drag",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"}],edited=[{...original[0],start:{time:100,price:1.5}}],commit=vi.fn();
+ adapter.setDrawings(original);adapter.setDrawingInteraction({selectedId:"drag",snap:false,onSelect:vi.fn(),onCommit:commit});a.drawingEditor.config.onCommit(edited);
+ adapter.setAnalysisFocus(true);adapter.setAnalysisFocus(false);expect(a.analysis.drawings).toEqual(edited);expect(commit).toHaveBeenCalledExactlyOnceWith(edited);
+});
+it("a renderer failure rolls back focus and never claims a completed change",()=>{
+ const a=adapter as any;adapter.setStudies(STUDY_DEFAULTS);const before=adapter.getStudyValues(bars[50].time);vi.spyOn(a.analysis,"setDrawings").mockImplementationOnce(()=>{throw Error("renderer failed");});
+ expect(()=>adapter.setAnalysisFocus(true)).toThrow("renderer failed");expect(adapter.isAnalysisFocused()).toBe(false);expect(adapter.getStudyValues(bars[50].time)).toEqual(before);
+});
+
+it("requires recreation after a renderer failure rather than trusting partially rebuilt handles",()=>{
+ const a=adapter as any;adapter.setStudies(STUDY_DEFAULTS);adapter.setAnalysisFocus(true);
+ const study=vi.spyOn(a.analysis,"setStudies");const drawings=vi.spyOn(a.analysis,"setDrawings");drawings.mockImplementationOnce(()=>{study.mockImplementationOnce(()=>{throw Error("rollback failed");});throw Error("drawings failed");});
+ expect(()=>adapter.setAnalysisFocus(false)).toThrow("drawings failed");expect(adapter.isAnalysisFocused()).toBe(true);expect(a.analysis.studies.length).toBe(STUDY_DEFAULTS.length);
+ expect(()=>adapter.setAnalysisFocus(true)).toThrow("reload the chart");expect(adapter.isAnalysisFocusVerified()).toBe(false);
+});

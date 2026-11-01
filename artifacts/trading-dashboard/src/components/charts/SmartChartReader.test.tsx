@@ -315,3 +315,9 @@ it("keeps source-coordinate reading times and omits false UTC machine timestamps
  expect(reader.textContent).not.toContain("GMT+9");
  for(const time of reader.querySelectorAll("time"))expect(time.hasAttribute("datetime")).toBe(false);
 });
+
+it("labels temporarily suppressed annotations without changing saved annotation choice or recalculating",()=>{
+ const f=fixture();const view=render(<SmartChartReader {...f.props}/>);const count=vi.mocked(analyzeSmartChart).mock.calls.length;
+ view.rerender(<SmartChartReader {...f.props} presentationHidden/>);expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).textContent).toContain("hidden (saved on)");expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).getAttribute("aria-description")).toContain("temporarily hidden");expect(vi.mocked(analyzeSmartChart).mock.calls.length).toBe(count);
+ fireEvent.click(screen.getByRole("button",{name:"Show automatic chart annotations"}));view.rerender(<SmartChartReader {...f.props}/>);expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).textContent).toContain("Annotations off");
+});

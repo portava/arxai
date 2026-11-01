@@ -174,3 +174,35 @@ describe("data-based MACD and Bollinger explanations",()=>{
     const text=observation("rsi",[{name:"unrelated",value:100},{name:"RSI",value:40}]);expect(text).toContain("between the common 30 and 70");expect(text).not.toContain("at or above 70");
   });
 });
+
+describe("temporary chart readability through the existing assistant",()=>{
+  function focusedFixture(){
+    const f=fixture();let focused=false;
+    const adapter={...f.adapter,isAnalysisFocused:()=>focused,setAnalysisFocus:vi.fn((next:boolean)=>{focused=next;})};
+    const notify=vi.fn();return {...f,adapter,notify,context:()=>({...f.context(),adapter,onAnalysisFocus:notify})};
+  }
+  it.each(["simplify chart","simplify this chart","make this chart easier to understand","focus on price"])("recognizes one bounded command: %s",text=>expect(parseStudyRequest(text)).toEqual({action:"simplify"}));
+  it.each(["restore chosen tools","restore my tools","restore this chart"])("recognizes restoration: %s",text=>expect(parseStudyRequest(text)).toEqual({action:"restore"}));
+  it.each(["do not simplify chart","simplify chart and buy EURUSD","restore tools and add RSI"])("rejects compound or negated requests: %s",text=>expect(parseStudyRequest(text)).toHaveProperty("error"));
+  it("changes only presentation; repeated commands preserve exact choices and never save",()=>{
+    const f=focusedFixture();const chosen=[{...studyDefinition("rsi").defaults,id:"mine",period:21,lineStyles:[{visible:false}]}];const c={...f.context(),studies:chosen};
+    expect(executeStudyRequest({action:"simplify"},c)).toContain("temporarily hidden");
+    expect(f.adapter.isAnalysisFocused()).toBe(true);expect(f.notify).toHaveBeenLastCalledWith(true);
+    expect(executeStudyRequest({action:"restore"},c)).toContain("Individually hidden tools stay hidden");
+    expect(f.adapter.isAnalysisFocused()).toBe(false);expect(f.adapter.setStudies).not.toHaveBeenCalled();expect(f.save).not.toHaveBeenCalled();expect(c.studies).toEqual(chosen);
+  });
+  it("a valid show restores, but invalid settings and unavailable evidence do not",()=>{
+    const f=focusedFixture();executeStudyRequest({action:"simplify"},f.context());
+    expect(executeStudyRequest(parseStudyRequest("add RSI 0")!,f.context())).toMatch(/not changed/i);expect(f.adapter.isAnalysisFocused()).toBe(true);
+    expect(executeStudyRequest(parseStudyRequest("show VWAP")!,f.context())).toContain("not changed");expect(f.adapter.isAnalysisFocused()).toBe(true);
+    expect(executeStudyRequest(parseStudyRequest("show RSI")!,f.context())).toContain("Restored your chosen analysis layers");expect(f.adapter.isAnalysisFocused()).toBe(false);expect(f.studies()[0].period).toBe(14);
+  });
+  it("unavailable or unconfirmed renderers cannot claim simplification or restoration",()=>{
+    const f=focusedFixture();expect(executeStudyRequest({action:"simplify"},{...f.context(),adapter:null})).toContain("not changed");
+    f.adapter.setAnalysisFocus.mockImplementation(()=>{});expect(executeStudyRequest({action:"simplify"},f.context())).toContain("could not be verified");expect(f.notify).toHaveBeenLastCalledWith(false);expect(f.save).not.toHaveBeenCalled();
+  });
+  it("failed restore cannot save or claim a shown study",()=>{
+    const f=focusedFixture();executeStudyRequest({action:"simplify"},f.context());f.adapter.setAnalysisFocus.mockImplementation(()=>{});
+    expect(executeStudyRequest(parseStudyRequest("show RSI")!,f.context())).toContain("could not be verified");expect(f.save).not.toHaveBeenCalled();expect(f.adapter.isAnalysisFocused()).toBe(true);expect(f.adapter.setStudies).toHaveBeenLastCalledWith([]);
+  });
+});

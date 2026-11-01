@@ -18,7 +18,7 @@ import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotati
 import { Button } from "@/components/ui/button";
 import { resolveDisplayStatus } from "@/lib/chart-display-status";
 
-interface Props {adapter:ChartEngineAdapter|null;epoch:number|string;symbol:string;timeframe:string;data:ChartCandlesResponse|undefined;
+interface Props {presentationUnverified?:boolean;presentationHidden?:boolean;adapter:ChartEngineAdapter|null;epoch:number|string;symbol:string;timeframe:string;data:ChartCandlesResponse|undefined;
   older:readonly Candle[];historyEvidence:ChartHistoryPage["historyEvidence"];liveConfirmed:boolean;readFailed:boolean;view?:Pick<ChartPreferences,"style"|"scale"|"inverted"|"timeZone">;replay?:ChartReplayReadWindow}
 const EMPTY:readonly Candle[]=[];
 const metricNumber=(metric:ObservedMetric<number>|undefined,suffix="")=>metric?.status==="available"?`${chartNumber(metric.value)}${suffix}`:"Unavailable";
@@ -33,7 +33,7 @@ export function findingAnnotation(finding:SmartChartFinding|null):SmartChartAnno
 
 /** Explanations live inside the chart frame. A single selected shape owns the
  * automatic annotation layer; detailed readings stay collapsed by default. */
-export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay}:Props) {
+export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay,presentationHidden=false,presentationUnverified=false}:Props) {
   // Display-only: the zone relabels times and is deliberately not in readKey,
   // so a zone change never re-runs the analysis.
   const utcClockQualified=!replay && older.length===0 && chartUtcClockQualified(data?.candles??[]);
@@ -105,7 +105,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
       <Sparkles className="h-3.5 w-3.5 text-sky-300"/><span className="font-semibold text-zinc-100">What the chart is doing</span>
       <span className="text-[10px] text-zinc-400">{replay?"Historical replay · closed candles only":<>{current?.historical?"Historical window · ":""}{feedCaveat?"Stored candles · feed not live-confirmed":"Closed candles only"}</>}</span>
       {view?.inverted&&<span className="text-[10px] text-amber-300">Inverted scale · higher prices appear lower</span>}
-      <Button size="sm" variant="ghost" className="ml-auto h-7 gap-1.5 text-[11px]" aria-pressed={annotations} aria-label="Show automatic chart annotations" onClick={()=>setAnnotations(value=>!value)}>{annotations?<Eye className="h-3 w-3"/>:<EyeOff className="h-3 w-3"/>}{annotations?"Annotations on":"Annotations off"}</Button>
+      <Button size="sm" variant="ghost" className="ml-auto h-7 gap-1.5 text-[11px]" aria-pressed={annotations} aria-label="Show automatic chart annotations" aria-description={presentationUnverified?"Annotation visibility is unverified after a rendering failure. Reload the chart.":presentationHidden?"Automatic annotations are temporarily hidden by simplified view. This button changes your saved annotation choice; restore tools to reveal it.":undefined} onClick={()=>setAnnotations(value=>!value)}>{annotations?<Eye className="h-3 w-3"/>:<EyeOff className="h-3 w-3"/>}{annotations?(presentationUnverified?"Annotation visibility unverified":presentationHidden?"Annotations hidden (saved on)":"Annotations on"):"Annotations off"}</Button>
     </div>
     {result?.findings.length? <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Relevant chart patterns">{result.findings.map(finding=><button type="button" key={finding.id} className={`rounded border px-2 py-1 text-[11px] ${chosen?.id===finding.id?"border-sky-500/50 bg-sky-500/10 text-sky-200":"border-zinc-700 text-zinc-300 hover:bg-zinc-800"}`} aria-pressed={chosen?.id===finding.id} onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}</button>)}</div>:null}
     <p className="mt-2 max-w-[110ch] leading-relaxed text-zinc-200" data-testid="chart-reader-explanation">{narrative}</p>

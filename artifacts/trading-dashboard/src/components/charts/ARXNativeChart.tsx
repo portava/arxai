@@ -13,7 +13,7 @@ import { ChartLibraryCredit } from "./ChartLibraryCredit";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds } from "@/lib/chart-engine/chartIntervals";
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, type Dispatch, type SetStateAction, Fragment } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "../scanner/useDerivedOverlayContext";
@@ -362,9 +362,13 @@ export function ARXNativeChart({
   const linkStatusRef = useRef<HTMLOutputElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const preferencesKey = workspaceId === "primary" ? PREFERENCES_KEY : `${PREFERENCES_KEY}:${workspaceId}`;
-  const [preferences, setPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
+  const [preferences, setStoredPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
   const [preferencesSaved, setPreferencesSaved] = useState(true);
   const scaleMode = preferences.scale;
+  const [analysisFocused, setAnalysisFocused] = useState(false);
+  const [analysisVerified,setAnalysisVerified] = useState(true);
+  const analysisFocusRef = useRef(false);
+  const [analysisFocusNotice, setAnalysisFocusNotice] = useState("");
 
   useEffect(()=>{setPreferencesSaved(writeChartStorage(preferencesKey,preferences));},[preferences,preferencesKey]);
   const legendRef = useRef<HTMLOutputElement | null>(null);
@@ -388,7 +392,7 @@ export function ARXNativeChart({
       ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}${ha ? `  ·  HA O ${ha.open.toFixed(digits)}  H ${ha.high.toFixed(digits)}  L ${ha.low.toFixed(digits)}  C ${ha.close.toFixed(digits)}` : ""}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
-      const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
+      const rows = !analysisFocusRef.current && adapterRef.current?.isAnalysisFocusVerified?.()!==false && bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
       const fragment = document.createDocumentFragment();
       for (const row of rows) {
         const line = document.createElement("div");
@@ -401,7 +405,7 @@ export function ARXNativeChart({
         line.append(label, values);
         fragment.append(line);
       }
-      if (!rows.length) fragment.append(document.createTextNode("Add a study to inspect its values."));
+      if (!rows.length) fragment.append(document.createTextNode(adapterRef.current?.isAnalysisFocusVerified?.()===false ? "Chart layer visibility is unverified. Reload before inspecting study values." : analysisFocusRef.current ? "Study values are temporarily hidden in simplified view. Restore tools to inspect them; your settings are retained." : "Add a study to inspect its values."));
       studyInspectorRef.current.replaceChildren(fragment);
     }
   }, [symbol]);
@@ -580,6 +584,31 @@ export function ARXNativeChart({
   // #373). This component owns React state, data, feed-status and UI; the
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
+  const onAnalysisFocus = useCallback((focused: boolean) => {
+    analysisFocusRef.current = focused;
+    setAnalysisFocused(focused);
+    setAnalysisVerified(adapterRef.current?.isAnalysisFocusVerified?.()!==false);
+    updateLegend(inspectedCandleRef.current);
+  }, [updateLegend]);
+  const restoreAnalysis = useCallback(() => {
+    if (!analysisFocusRef.current && !adapterRef.current?.isAnalysisFocused?.() && adapterRef.current?.isAnalysisFocusVerified?.()!==false) return true;
+    try {
+      const adapter = adapterRef.current;
+      if (!adapter?.setAnalysisFocus || !adapter.isAnalysisFocused) throw new Error("Chart unavailable");
+      adapter.setAnalysisFocus(false);
+      if (adapter.isAnalysisFocused()) throw new Error("Restore not confirmed");
+      onAnalysisFocus(false);
+      setAnalysisFocusNotice("Restored your chosen analysis layers before applying this change.");
+      return true;
+    } catch {
+      setAnalysisVerified(adapterRef.current?.isAnalysisFocusVerified?.()!==false);
+      setAnalysisFocusNotice("Chart restore could not be verified. Your requested change was not applied; reload the chart before changing tools.");
+      return false;
+    }
+  }, [onAnalysisFocus]);
+  const setPreferences: Dispatch<SetStateAction<typeof preferences>> = useCallback(update => {
+    if (restoreAnalysis()) setStoredPreferences(update);
+  }, [restoreAnalysis]);
   const overlays = useMemo(() => [...suppliedOverlays,...(researchOpen&&researchLayer?.context===chartContext?researchLayer.rows:[])].filter(overlay =>
     overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
   [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
@@ -689,6 +718,11 @@ export function ARXNativeChart({
       engine.setSymbol?.(inputs.resolvedSymbol);
       engine.setTimeframe?.(inputs.timeframe);
       engine.setCrosshairHandler?.(inputs.updateLegend);
+      // Temporary view state survives renderer recreation, never browser storage.
+      if (analysisFocusRef.current) {
+        try { engine.setAnalysisFocus?.(true); if (!engine.isAnalysisFocused?.()) throw new Error("Focus unavailable"); }
+        catch { analysisFocusRef.current=false; setAnalysisFocused(false); setAnalysisFocusNotice("Simplified view could not be restored on the new renderer. Check the visible layers before continuing."); }
+      }
       engine.setViewLinkStatusHandler?.(message => {if (linkStatusRef.current) linkStatusRef.current.textContent = message;});
       // A deferred comparison never paints UTC ticks before its zone arrives.
       engine.setDisplayTimeZone?.(inputs.displayZone);
@@ -696,6 +730,7 @@ export function ARXNativeChart({
       building = null;
       adapter = engine;
       adapterRef.current = engine;
+      setAnalysisVerified(engine.isAnalysisFocusVerified?.()!==false);
       setEngineGeneration(++builtEngineGeneration.current);
     };
     let cancelDeferred: (() => void) | undefined;
@@ -808,15 +843,15 @@ export function ARXNativeChart({
     let currentStudies = preferences.studies;
     return registerChartStudyAssistant(request => executeStudyRequest(request, {
       adapter: assistantPane.isCurrent() && hasCandles && activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapterRef.current ? adapterRef.current : null,
-      studies: currentStudies, symbol: resolvedSymbol, timeframe, utcClockQualified,
+      studies: currentStudies, symbol: resolvedSymbol, timeframe, utcClockQualified, onAnalysisFocus,
       feedLabel: `${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"}`,
       save: studies => {
         currentStudies = studies;
-        setPreferences(previous => ({ ...previous, studies }));
+        setStoredPreferences(previous => ({ ...previous, studies }));
         updateLegend(inspectedCandleRef.current);
       },
     }));
-  }, [assistantPane.active,assistantPane.isCurrent, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend, utcClockQualified]);
+  }, [assistantPane.active,assistantPane.isCurrent, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend, utcClockQualified, onAnalysisFocus]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
@@ -1390,13 +1425,20 @@ export function ARXNativeChart({
           </Button>
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
           {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
+          <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={analysisFocused} disabled={!hasCandles || query.isError || !adapterRef.current?.setAnalysisFocus} onClick={() => {
+            const adapter = activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapterRef.current ? adapterRef.current : null;
+            setAnalysisFocusNotice(executeStudyRequest({action:adapter?.isAnalysisFocused?.()?"restore":"simplify"},{adapter,studies:preferences.studies,symbol:resolvedSymbol,timeframe,utcClockQualified,feedLabel:data?.feedStatus?.source??"Unknown source",save:studies=>setStoredPreferences(previous=>({...previous,studies})),onAnalysisFocus}));
+          }}>{analysisFocused ? "Restore tools" : "Simplify chart"}</Button>
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>
       </div>
 
-      <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      {!analysisVerified && <p role="alert" className="px-3 py-2 text-xs text-amber-200">Chart layer visibility is unverified after a rendering failure. Reload the chart before changing tools or exporting.</p>}
+      {analysisVerified && analysisFocused && <p className="px-3 py-2 text-xs text-sky-200" data-testid="chart-simplified-view">Simplified view: studies, drawings and automatic chart annotations are temporarily hidden. Your chosen settings are retained. Prices, trade/risk overlays, research layers and source warnings remain visible.</p>}
+      {analysisFocusNotice && <p role="status" className="px-3 text-xs text-zinc-400">{analysisFocusNotice}</p>}
+      <ChartWorkbenchTools analysisFocused={analysisFocused} onRestoreAnalysis={restoreAnalysis} studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
@@ -1754,7 +1796,7 @@ export function ARXNativeChart({
           and safety notices above it remain visible before any candle. */}
       {chartControls}
       {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
-      <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+      <SmartChartReader presentationUnverified={!analysisVerified} presentationHidden={analysisFocused} key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
         <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
         <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>

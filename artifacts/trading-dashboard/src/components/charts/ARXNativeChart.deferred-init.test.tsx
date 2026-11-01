@@ -32,7 +32,10 @@ function failIfDue(at: string) {
 function makeAdapter(): FakeAdapter {
   const id = created.length + 1;
   const track = (name: string) => vi.fn(() => { calls.push(`${id}:${name}`); failIfDue(name); return undefined; });
+  let focused=false;
   const adapter = {
+    setAnalysisFocus:vi.fn((next:boolean)=>{focused=next;}),
+    isAnalysisFocused:vi.fn(()=>focused),
     id,
     init: track("init"),
     destroy: track("destroy"),
@@ -1169,4 +1172,12 @@ describe("native selected historical follow-up routing",()=>{
   expect(researchRunner.run).toHaveBeenCalledTimes(2);
   view.unmount();expect(requestChartResearch("Why did this trade lose?")).toContain("Select a ready Smart Chart");
  });
+});
+
+it("manual and assistant simplify share the selected renderer and preserve saved choices",()=>{
+ candleResponse=liveResponse("EURUSD","H1");render(<AssistantDockProvider><ARXNativeChart symbol="EURUSD" timeframe="H1"/></AssistantDockProvider>);
+ const engine=created[0]!;engine.getVisibleCandles=vi.fn(()=>[{time:1700000000,open:1.1,high:1.2,low:1,close:1.15}]);engine.getStudyValues=vi.fn(()=>[]);
+ const saved=localStorage.getItem("arx.chart.preferences.v1");fireEvent.click(screen.getByRole("button",{name:"Simplify chart",exact:true}));expect(engine.isAnalysisFocused()).toBe(true);expect(screen.getByTestId("chart-simplified-view")).toBeTruthy();expect(localStorage.getItem("arx.chart.preferences.v1")).toBe(saved);
+ let reply:string|null=null;act(()=>{reply=requestChartStudy("restore chosen tools");});expect(reply).toContain("Restored chosen");expect(engine.isAnalysisFocused()).toBe(false);expect(screen.queryByTestId("chart-simplified-view")).toBeNull();
+ act(()=>{requestChartStudy("make this chart easier to understand");});expect(engine.isAnalysisFocused()).toBe(true);fireEvent.change(screen.getByLabelText("Chart style"),{target:{value:"line"}});expect(engine.isAnalysisFocused()).toBe(false);expect(localStorage.getItem("arx.chart.preferences.v1")).toContain('"style":"line"');
 });

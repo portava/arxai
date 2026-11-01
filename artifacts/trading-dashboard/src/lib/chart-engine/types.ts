@@ -205,6 +205,10 @@ export interface ChartEngineAdapter {
   setLinkedTimeRange?(range: ChartTimeRange | null): void;
   setViewLinkStatusHandler?(handler: ((message: string) => void) | null): void;
   setChartStyle?(style: ChartStyle): void;
+  /** Temporary presentation only. Preserves chosen settings and execution overlays. */
+  setAnalysisFocus?(enabled: boolean): void;
+  isAnalysisFocused?(): boolean;
+  isAnalysisFocusVerified?(): boolean;
   setStudies?(studies: ChartStudy[]): void;
   setDrawings?(drawings: ChartDrawing[]): void;
   setDrawingInteraction?(config: DrawingInteraction | null): void;

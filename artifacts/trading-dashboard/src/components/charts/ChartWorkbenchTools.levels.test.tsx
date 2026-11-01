@@ -49,3 +49,27 @@ it('strips impossible archived provenance while retaining the user annotation',(
  const r=ready();if(r.status!=='ready')throw Error('fixture');const d=levelProposalDrawings(r.proposal,'kept',false)[0];expect(validateDrawings([d])[0]).toEqual(d);
  const bad={...d,pivotLevelOrigin:{...d.pivotLevelOrigin!,level:{...d.pivotLevelOrigin!.level,confirmedAt:start}}};expect(validateDrawings([bad])[0].pivotLevelOrigin).toBeUndefined();expect(validateDrawings([bad])[0].start).toEqual(d.start);
 });
+
+it('does not call focused installed previews visible or keep them; valid show restores without losing hidden choices',()=>{
+ let focus=false;const focusedEngine={...engine,isAnalysisFocused:()=>focus};const restore=vi.fn(()=>{focus=false;return true;});localStorage.setItem(key,JSON.stringify([{...manual,hidden:true}]));
+ const view=render(<ChartWorkbenchTools {...props} adapter={focusedEngine} onRestoreAnalysis={restore}/>);ask('show support and resistance');focus=true;view.rerender(<ChartWorkbenchTools {...props} adapter={focusedEngine} analysisFocused onRestoreAnalysis={restore}/>);
+ expect(screen.getByRole('region',{name:'Support and resistance preview'}).textContent).toContain('candidates · hidden');expect(ask('explain support and resistance')).toContain('hidden');expect(ask('keep support and resistance')).toContain('not visibly installed');expect(saved()).toEqual([{...manual,hidden:true}]);
+ ask('show support and resistance');expect(restore).toHaveBeenCalledOnce();expect(focus).toBe(false);expect(saved()[0].hidden).toBe(true);
+});
+it('does not restore on unavailable source or a failed restore',()=>{
+ const focusedEngine={...engine,isAnalysisFocused:()=>true};const restore=vi.fn(()=>false);render(<ChartWorkbenchTools {...props} adapter={focusedEngine} analysisFocused onRestoreAnalysis={restore}/>);
+ read={status:'unavailable',proposal:null,reason:'No qualified source'};expect(ask('show support and resistance')).toContain('unavailable');expect(restore).not.toHaveBeenCalled();read=ready();expect(ask('show support and resistance')).toContain('Restore tools');expect(saved()).toEqual([]);
+});
+
+it('counts both previews against the renderer limit and never sends overflowing rows after storage updates',()=>{
+ const origin={method:"confirmed-swings-v1" as const,span:2 as const,symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",sourceIdentity:"a".repeat(64),start:{time:1000,price:10},end:{time:1300,price:20},confirmedAt:1480,windowFrom:880,windowTo:1600,closedBars:12};
+ const fib=()=>({status:"ready" as const,reason:null,proposal:{comparisonKey:"sample",origin,note:"Offline"}});
+ const owned=Array.from({length:38},(_,i)=>({...manual,id:`mine-${i}`}));localStorage.setItem(key,JSON.stringify(owned));render(<ChartWorkbenchTools {...props} getFibonacciProposal={fib}/>);
+ fireEvent.change(screen.getByLabelText('Drawing tool'),{target:{value:'auto_fibonacci'}});expect(ask('show support and resistance')).toContain('including other previews');expect(draw.mock.calls.every(([rows])=>rows.length<=40)).toBe(true);
+ fireEvent.click(screen.getByText('Dismiss preview'));ask('show support and resistance');expect(draw.mock.calls.at(-1)![0]).toHaveLength(40);draw.mockClear();
+ localStorage.setItem(key,JSON.stringify([...owned,{...manual,id:'last'}]));act(()=>window.dispatchEvent(new StorageEvent('storage',{key})));expect(draw.mock.calls.every(([rows])=>rows.length<=40)).toBe(true);expect(screen.queryByRole('region',{name:'Support and resistance preview'})).toBeNull();expect(saved()).toHaveLength(39);
+});
+it('unverified presentation blocks preview acceptance and export without saving',()=>{
+ let verified=true;const localEngine={...engine,isAnalysisFocusVerified:()=>verified};const view=render(<ChartWorkbenchTools {...props} adapter={localEngine}/>);ask('show support and resistance');verified=false;view.rerender(<ChartWorkbenchTools {...props} adapter={localEngine}/>);
+ expect(ask('explain support and resistance')).toContain('visibility is unverified');expect(ask('keep support and resistance')).toContain('visibility is unverified');fireEvent.click(screen.getByRole('button',{name:'Export PNG',exact:true}));expect(exportImage).not.toHaveBeenCalled();expect(saved()).toEqual([]);
+});

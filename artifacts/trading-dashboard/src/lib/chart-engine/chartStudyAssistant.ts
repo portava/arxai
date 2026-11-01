@@ -12,12 +12,16 @@ import type { ChartEngineAdapter } from "./types";
 // instructions (another asset, timeframe, source, negation, etc.) fail closed.
 export type AverageSelection = { kind: "sma" | "ema"; period: number };
 export type AverageComparisonRequest = { action: "compare"; studies: [AverageSelection, AverageSelection] };
-export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; slow?: number; signal?: number; signalMethod?: "sma"|"ema"; multiplier?:number; preserveVisibility?: boolean; reanchor?:boolean; profileRows?:number; profileValueAreaPercent?:number; refreezeProfile?:boolean } | AverageComparisonRequest | { error: string };
+export type ReadabilityRequest = {action:"simplify"} | {action:"restore"};
+export type StudyRequest = ReadabilityRequest | { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; slow?: number; signal?: number; signalMethod?: "sma"|"ema"; multiplier?:number; preserveVisibility?: boolean; reanchor?:boolean; profileRows?:number; profileValueAreaPercent?:number; refreezeProfile?:boolean } | AverageComparisonRequest | { error: string };
 const help = 'Chart not changed. Try “show RSI”, “set RSI period to 21”, “hide RSI” or “remove RSI”. Other settings and repeated instances are editable in Studies.';
 const aliases = STUDY_CATALOG.flatMap(d=>[{name:d.defaults.kind,kind:d.defaults.kind},{name:d.name.toLowerCase(),kind:d.defaults.kind}])
   .concat([{name:"bollinger bands",kind:"bollinger"},{name:"adx",kind:"dmi"},{name:"volume bars",kind:"trade_volume"},{name:"traded volume",kind:"trade_volume"},{name:"volume",kind:"trade_volume"}]);
 export function parseStudyRequest(text:string): StudyRequest | null {
   const input=text.trim().toLowerCase().replace(/[?!.]+$/g,"").replace(/^please\s+/,"");
+  if (/^(?:simplify (?:this |the )?chart|make this chart easier to understand|focus on price)$/.test(input))return {action:"simplify"};
+  if (/^(?:restore (?:my |the )?(?:chosen |chart )?tools|restore this chart)$/.test(input))return {action:"restore"};
+  if (/\bsimplify\b|\brestore.*\b(?:chart|tools)\b|easier to understand|focus on price/.test(input))return {error:'Chart not changed. Use “make this chart easier to understand” or “restore chosen tools” for the selected pane. This temporarily hides analysis layers, preserving settings and trade/risk overlays; compound instructions are unsupported.'};
   const macdTuple=input.match(/^(?:set|change|adjust) macd periods(?: to)? (\d+),\s*(\d+),\s*(\d+)$/);
   if(macdTuple)return {kind:"macd",action:"show",period:Number(macdTuple[1]),slow:Number(macdTuple[2]),signal:Number(macdTuple[3]),preserveVisibility:true};
   const macdPeriod=input.match(/^(?:set|change|adjust) macd (fast|slow|signal)(?: period)?(?: to)? (\d+)$/);
@@ -67,22 +71,26 @@ export function parseStudyRequest(text:string): StudyRequest | null {
   return {kind:alias.kind,action,period,...(edit ? {preserveVisibility:true} : {})};
 }
 export interface StudyAssistantContext {
-  adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"|"getVolumeProfiles"|"getVwapAnchorEvidence"> | null;
+  adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"|"getVolumeProfiles"|"getVwapAnchorEvidence"|"setAnalysisFocus"|"isAnalysisFocused"|"isAnalysisFocusVerified"> | null;
   studies: ChartStudy[];
   symbol:string; timeframe:string; feedLabel:string;
   utcClockQualified?:boolean;
   save:(studies:ChartStudy[])=>void;
+  onAnalysisFocus?:(focused:boolean)=>void;
 }
 const observationTime=(seconds:number,qualified:boolean)=>{const date=new Date(seconds*1000);return Number.isFinite(date.getTime())?formatSourceChartTime(seconds,qualified,"UTC",{seconds:true}):"unavailable timestamp";};
 /** One renderer transaction for a complete requested collection. Restoration
  * is best-effort: an exception never becomes a claim that nothing changed. */
 function applyStudyCollection(context:StudyAssistantContext,updated:ChartStudy[]):string|null {
+  const focused=context.adapter?.isAnalysisFocused?.()===true;
   try {
     context.adapter!.setStudies!(updated);
+    if(focused){context.adapter!.setAnalysisFocus!(false);if(context.adapter!.isAnalysisFocused?.()!==false)throw Error("Restore not confirmed");context.onAnalysisFocus?.(false);}
     context.save(updated);
     return null;
   } catch {
-    try {context.adapter!.setStudies!(context.studies);} catch { /* uncertainty is reported */ }
+    try {context.adapter!.setStudies!(context.studies);if(focused){context.adapter!.setAnalysisFocus!(true);context.onAnalysisFocus?.(true);}} catch { /* uncertainty is reported */ }
+    context.onAnalysisFocus?.(context.adapter?.isAnalysisFocused?.()===true);
     return "Chart change could not be verified. Settings may be incomplete. Check the chart and Studies before retrying.";
   }
 }
@@ -126,7 +134,23 @@ function executeAverageComparison(request:AverageComparisonRequest,context:Study
   return `Applied the average comparison on ${symbol} · ${timeframe} · ${feedLabel}. Existing calculation/style settings retained; new averages use catalogue defaults apart from the requested periods and distinct colors. The requested averages are both enabled for display; other tools are unchanged.\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Actual renderer observation at bar open ${time(last.time)}: ${observed}. Times identify source bar coordinates; ISO formatting does not independently prove UTC. ${inputs}\nCalculated observation: ${relation} The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles; loaded bars before this window may supply warmup. Feed status describes this request, not historical liveness. This is not a buy/sell instruction or a confidence score. Edit, hide or remove either average in Studies; manual settings use the same renderer. No order was sent.`;
 }
 export function executeStudyRequest(request:StudyRequest,context:StudyAssistantContext):string {
+  const focused=context.adapter?.isAnalysisFocused?.()===true;
+  const result=executeStudyRequestCore(request,context);
+  return focused && context.adapter?.isAnalysisFocused?.()===false && !("action" in request&&request.action==="restore")
+    ? `Restored your chosen analysis layers before applying this request. ${result}` : result;
+}
+function executeStudyRequestCore(request:StudyRequest,context:StudyAssistantContext):string {
   if ("error" in request) return request.error;
+  if(request.action==="simplify"||request.action==="restore") {
+    const adapter=context.adapter;
+    if(!adapter?.setAnalysisFocus||!adapter.isAnalysisFocused||!adapter.getVisibleCandles?.().length)return "Chart view not changed: select a ready chart with visible candles first. No other pane was substituted.";
+    const focused=request.action==="simplify";
+    try {adapter.setAnalysisFocus(focused);if(adapter.isAnalysisFocused()!==focused)throw Error("Unconfirmed presentation");context.onAnalysisFocus?.(focused);}
+    catch{context.onAnalysisFocus?.(adapter.isAnalysisFocused());return "Chart view change could not be verified. Reload the chart before changing tools; visible layers are unverified. No order was sent.";}
+    return focused ? `Simplified ${context.symbol} · ${context.timeframe}: studies, drawings and automatic pattern annotations are temporarily hidden. Your chosen settings and hidden/locked choices are preserved. Prices, trade/risk overlays, research results and feed warnings remain. Use “restore chosen tools” or the Restore tools button. Asking to show a tool restores the view before applying it. This temporary view resets on reload; it does not improve confidence or trade readiness. No order was sent.`
+      : `Restored chosen analysis layers on ${context.symbol} · ${context.timeframe} with their current settings. Individually hidden tools stay hidden; no removed or old-source objects were resurrected. No order was sent.`;
+  }
+  if(context.adapter?.isAnalysisFocusVerified?.()===false)return "Chart visibility is unverified after a renderer failure. Reload the chart before changing studies.";
   if(request.action==="compare")return executeAverageComparison(request,context);
   const {adapter,studies,symbol,timeframe,feedLabel}=context;
   const time=(seconds:number)=>observationTime(seconds,context.utcClockQualified===true);
