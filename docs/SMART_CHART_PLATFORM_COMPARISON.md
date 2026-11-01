@@ -306,3 +306,8 @@ The staged ARX renderer now has axes, pointer/wheel/touch navigation, canonical 
 ## Native studies foundation — 1 November 2026
 
 Application `650c4728` migrates the existing 23-kind calculator catalogue into native Canvas overlays/panes without new indicator math. 199 focused tests, 4,137 full frontend tests, seven study browser groups and 13 viewport groups pass; typecheck/build pass, guards remain 85/87 unchanged. This is not yet the Scanner adapter. Five-study initial setup takes 152–157 ms at 4x CPU; full-history preparation p95 34.7–35.1 ms remains a frame-budget gap. No instantaneous loading or competitor parity follows. See [exact receipts and limits](SMART_CHART_NATIVE_STUDIES_2026_11_01.md).
+
+
+## Native drawing/editing foundation — 1 November 2026
+
+Application `d09c82eb` reuses the existing ten-kind ARX drawing geometry/editor in the native Canvas viewport. Trusted mouse/touch edits, canonical anchors and controlled ownership pass; the existing external primitive shares the same painter. Full frontend 4,230 pass/12 skipped, typecheck/build pass, guards remain 85/87 with the same findings (line numbers change). Seven drawing, 13 viewport and seven study browser groups pass. With 40 objects and five studies, local range-to-RAF p95 is 18.3–18.8 ms; slower-CPU full-history updates reach 42.4 ms measured and 50.2 ms in retained warmups. The native renderer is still not installed on Scanner. Automatic overlays, complete adapter/replay/all-surface migration, axis interaction and actual-app/competitor performance remain open. See [exact scope, failures and evidence](SMART_CHART_NATIVE_DRAWINGS_2026_11_01.md).
