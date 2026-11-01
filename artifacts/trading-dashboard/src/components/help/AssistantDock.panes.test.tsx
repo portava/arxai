@@ -28,6 +28,11 @@ describe('explicit existing assistant pane ownership',()=>{
   expect(screen.getByTestId('status').textContent).toBe('none|true||EURUSD|EURUSD');expect(old()).toBe('held');called.mockClear();expect(requestChartStudy('show RSI')).toMatch(/Select a ready/);expect(requestChartResearch('Backtest EMA cross')).toMatch(/Select a ready/);expect(requestChartFibonacci('preview Fibonacci')).toMatch(/Select a ready/);expect(called).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('Select EURUSD'));expect(requestChartStudy('show RSI')).toBe('EURUSD');expect(screen.getByTestId('status').textContent).toContain('EURUSD|false');
  });
+ it('routes profile requests only to the explicitly selected pane and holds after its source changes',()=>{
+  const view=render(<App/>);fireEvent.click(screen.getByText('Select AAPL'));const old=retained.at(-1)!;
+  expect(requestChartStudy('show volume profile')).toBe('AAPL');expect(called.mock.calls).toEqual([['AAPL']]);
+  view.rerender(<App keyValue="another-listing"/>);called.mockClear();expect(old()).toBe('held');expect(requestChartStudy('set volume profile rows to 48')).toContain('Select a ready');expect(called).not.toHaveBeenCalled();
+ });
  it('does not automatically reselect the initially selected primary after readiness is withdrawn and restored',()=>{
   const app=(ready:boolean)=><AssistantDockProvider><Pane symbol="EURUSD" keyValue="primary" primary ready={ready}/><Status/></AssistantDockProvider>;
   const view=render(app(true));expect(requestChartStudy('show RSI')).toBe('EURUSD');view.rerender(app(false));view.rerender(app(true));expect(requestChartStudy('show RSI')).toContain('Select a ready');fireEvent.click(screen.getByText('Select EURUSD'));expect(requestChartStudy('show RSI')).toBe('EURUSD');

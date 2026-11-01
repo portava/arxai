@@ -1,3 +1,6 @@
+import {prepareVolumeProfileStudy} from "./chartVolumeProfile";
+import {describeVolumeProfile,readMatchingVolumeProfile} from "./chartVolumeProfileDescription";
+import {formatSavedVwapAnchor,studyDisplayLabel} from "./chartStudyDisplay";
 import {prepareVwapStudy} from "./chartVwapAnchor";
 import { formatSourceChartTime } from "./chartClockEvidence";
 import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyLabel, studyId, formatStudyNumber, type ChartStudy, type StudyKind } from "./chartStudies";
@@ -8,7 +11,7 @@ import type { ChartEngineAdapter } from "./types";
 // instructions (another asset, timeframe, source, negation, etc.) fail closed.
 export type AverageSelection = { kind: "sma" | "ema"; period: number };
 export type AverageComparisonRequest = { action: "compare"; studies: [AverageSelection, AverageSelection] };
-export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; preserveVisibility?: boolean; reanchor?:boolean } | AverageComparisonRequest | { error: string };
+export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; preserveVisibility?: boolean; reanchor?:boolean; profileRows?:number; profileValueAreaPercent?:number; refreezeProfile?:boolean } | AverageComparisonRequest | { error: string };
 const help = 'Chart not changed. Try “show RSI”, “set RSI period to 21”, “hide RSI” or “remove RSI”. Other settings and repeated instances are editable in Studies.';
 const aliases = STUDY_CATALOG.flatMap(d=>[{name:d.defaults.kind,kind:d.defaults.kind},{name:d.name.toLowerCase(),kind:d.defaults.kind}])
   .concat([{name:"bollinger bands",kind:"bollinger"},{name:"adx",kind:"dmi"},{name:"volume bars",kind:"trade_volume"},{name:"traded volume",kind:"trade_volume"},{name:"volume",kind:"trade_volume"}]);
@@ -22,7 +25,19 @@ export function parseStudyRequest(text:string): StudyRequest | null {
     if([first,second].some(s=>!Number.isInteger(s.period)||s.period<1||s.period>1000)||(first.kind===second.kind&&first.period===second.period))return {error:'Chart not changed. Compare two different SMA/EMA selections, each with a whole-number period from 1 to 1000; for example “compare the 20 EMA and 50 EMA”.'};
     return {action:"compare",studies:[first,second]};
   }
-  if (/\bvolume profile\b/.test(input)) return {error:"Chart not changed. Volume profile has no calculated overlay yet. Anchored VWAP and trade-volume bars are separate tools; no profile has been added."};
+  if (/\b(?:volume profile|volume_profile)\b/.test(input)) {
+    const profileInput=input.replace(/volume_profile/g,"volume profile");
+    const simple=profileInput.match(/^(?:(add|show|apply|hide|remove|explain) )?(?:estimated )?volume profile(?: (?:to|on) (?:this|the current) chart)?$/);
+    const curiosity=/^(?:what does (?:estimated )?volume profile (?:tell|show) me about this chart|what is (?:estimated )?volume profile)$/.test(profileInput);
+    const rows=profileInput.match(/^(?:set|change|adjust) volume profile rows(?: to)? (\d+)$/);
+    const area=profileInput.match(/^(?:set|change|adjust) volume profile value area(?: to)? (\d+)(?: percent|%)$/);
+    const refreeze=/^(?:freeze|refreeze) volume profile to (?:the )?visible range$/.test(profileInput);
+    if(rows && Number(rows[1])>=8 && Number(rows[1])<=128)return {kind:"volume_profile",action:"show",profileRows:Number(rows[1]),preserveVisibility:true};
+    if(area && Number(area[1])>=1 && Number(area[1])<=100)return {kind:"volume_profile",action:"show",profileValueAreaPercent:Number(area[1]),preserveVisibility:true};
+    if(refreeze)return {kind:"volume_profile",action:"show",refreezeProfile:true,preserveVisibility:true};
+    if(simple||curiosity)return {kind:"volume_profile",action:simple?.[1]==="hide"?"hide":simple?.[1]==="remove"?"remove":"show"};
+    return {error:'Chart not changed. Use “show volume profile”, “set volume profile rows to 32” (8–128), “set volume profile value area to 70 percent” (1–100), “freeze volume profile to visible range”, “hide volume profile” or “remove volume profile”. Exact observed endpoints are editable in Studies. Other assets, timeframes, session rules and compound instructions are unsupported.'};
+  }
   const found=aliases.filter(a=>new RegExp(`(?:^|\\W)${a.name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?=\\W|$)`).test(input));
   if (!found.length) {
     return null;
@@ -43,7 +58,7 @@ export function parseStudyRequest(text:string): StudyRequest | null {
   return {kind:alias.kind,action,period,...(edit ? {preserveVisibility:true} : {})};
 }
 export interface StudyAssistantContext {
-  adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"> | null;
+  adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"|"getVolumeProfiles"|"getVwapAnchorEvidence"> | null;
   studies: ChartStudy[];
   symbol:string; timeframe:string; feedLabel:string;
   utcClockQualified?:boolean;
@@ -88,7 +103,7 @@ function executeAverageComparison(request:AverageComparisonRequest,context:Study
   const failed=applyStudyCollection(context,updated);if(failed)return failed;
   const last=visible.at(-1)!;
   let rendered:ReturnType<NonNullable<ChartEngineAdapter["getStudyValues"]>>=[];
-  try{rendered=adapter.getStudyValues(last.time);}catch{ /* no invented fallback calculation */ }
+  try{rendered=adapter.getStudyValues!(last.time);}catch{ /* no invented fallback calculation */ }
   const values=pair.map(study=>{
     const value=rendered.find(row=>row.label===studyLabel(study))?.values.find(v=>v.name===study.kind.toUpperCase())?.value;
     return typeof value==="number"&&Number.isFinite(value)?value:null;
@@ -107,7 +122,7 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
   const {adapter,studies,symbol,timeframe,feedLabel}=context;
   const time=(seconds:number)=>observationTime(seconds,context.utcClockQualified===true);
   const visible=adapter?.getVisibleCandles?.() ?? [];
-  if (!adapter?.setStudies || !adapter.getStudyValues || !visible.length) return "Study not applied: the current chart has no ready renderer and visible candle window yet. Wait for candles, then retry.";
+  if (!adapter?.setStudies || (request.kind === "volume_profile" ? !adapter.getVolumeProfiles : !adapter.getStudyValues) || !visible.length) return "Study not applied: the current chart has no ready renderer and visible candle window yet. Wait for candles, then retry.";
   const matches=studies.filter(s=>s.kind===request.kind);
   if (matches.length>1) return "Chart not changed: multiple instances of this study exist. Choose the instance in Studies so your manual settings are preserved.";
   const existing=matches[0];
@@ -116,6 +131,14 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
   const definition=studyDefinition(request.kind);
   let next:ChartStudy={...(existing ?? definition.defaults)};
   if(request.reanchor)next.vwapAnchor=undefined;
+  if(request.profileRows!=null)next.profileRows=request.profileRows;
+  if(request.profileValueAreaPercent!=null)next.profileValueAreaPercent=request.profileValueAreaPercent;
+  if(request.refreezeProfile)next.profileRange=undefined;
+  if(request.action === "show" && request.kind === "volume_profile") {
+    const prepared=prepareVolumeProfileStudy(next,visible);
+    if(!prepared.study)return prepared.reason;
+    next=prepared.study;
+  }
   if(request.action === "show" && request.kind === "vwap") {
     const prepared=prepareVwapStudy(next,visible);
     if(!prepared.study)return prepared.reason;
@@ -136,9 +159,13 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
   const failed=applyStudyCollection(context,updated);if(failed)return failed;
   const title=`${symbol} · ${timeframe} · ${feedLabel}`;
   if (request.action!=="show") return `${request.action==="hide" ? "Hidden" : "Removed"} ${studyLabel(next)} on ${title}. You can change this in Studies. Display only; no order was sent.`;
+  if(request.kind === "volume_profile") {
+    const aggregate=readMatchingVolumeProfile(adapter,next);
+    return `Applied ${studyDisplayLabel(next,adapter)} on ${title}. ${existing ? "Existing settings retained unless explicitly changed" : "Editable defaults: 32 rows and a 70% value-area target unless explicitly requested otherwise"}; ${preserveVisibility ? "visibility retained" : "profile enabled for display"}.\n${describeVolumeProfile(aggregate,next)}\nThe range is frozen to exact observed bars; panning does not move it. Default selection excludes only a forming tail and never skips an unqualified closed bar. Change rows, value area or exact endpoints in Studies; say “freeze volume profile to visible range” to deliberately replace the range. This is a local display tool, not a buy/sell instruction or confidence score. No order was sent.`;
+  }
   const last=visible[visible.length-1]!;
   let result:ReturnType<NonNullable<ChartEngineAdapter["getStudyValues"]>>[number] | undefined;
-  try { result=adapter.getStudyValues(last.time).find(row=>row.label===studyLabel(next)); } catch { /* Applied, but observation remains unavailable. */ }
+  try { result=adapter.getStudyValues!(last.time).find(row=>row.label===studyLabel(next)); } catch { /* Applied, but observation remains unavailable. */ }
   const values=definition.channels.map(name=>{
     const channel=result?.values.find(v=>v.name===name || v.name===`${name} (hidden)`);
     const value=channel?.value;
@@ -152,12 +179,12 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
       : "The calculated RSI is between the common 30 and 70 references. "
     : ["sma","ema","smma","wma","dema","tema"].includes(request.kind) && finiteFirst
       ? `The underlying source candle close is ${last.close>firstValue ? "above" : last.close<firstValue ? "below" : "equal to"} this average. ` : "";
-  const anchorNote=next.kind === "vwap" && next.vwapAnchor ? `Frozen observed-bar anchor: ${observationTime(next.vwapAnchor.time,false)}. Uses only loaded observations from that exact bar, with the captured source series. Panning and loading older history do not move it. Missing volume holds the cumulative suffix; zero quantities are not qualified by the current provider. This is not a complete-session claim. Say “reanchor VWAP to first visible bar” or select an observed bar in Studies to change it. ` : "";
+  const anchorNote=next.kind === "vwap" && next.vwapAnchor ? `Frozen observed-bar anchor: ${formatSavedVwapAnchor(next.vwapAnchor,adapter)}. Uses only loaded observations from that exact bar, with the captured source series. Panning and loading older history do not move it. Missing volume holds the cumulative suffix; zero quantities are not qualified by the current provider. This is not a complete-session claim. Say “reanchor VWAP to first visible bar” or select an observed bar in Studies to change it. ` : "";
   const caveat=request.kind==="rsi" ? "RSI describes recent gains relative to losses; even an extreme reading does not establish a reversal."
     : request.kind==="atr" ? "ATR describes price-range volatility, not direction."
     : request.kind==="macd" ? "MACD compares fast and slow averages; its signal and histogram describe momentum, not a forecast."
     : definition.description;
-  return `Applied ${studyLabel(next)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except any requested period"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${anchorNote}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
+  return `Applied ${studyDisplayLabel(next,adapter)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except any requested period"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${anchorNote}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
 }
 
 type Handler=(request:StudyRequest)=>string;
