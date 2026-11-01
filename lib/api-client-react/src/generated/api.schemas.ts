@@ -12922,7 +12922,7 @@ export const MasterMt5SnapshotSyncStatus = {
 } as const;
 
 /**
- * Real MT5 master-account snapshot, owner/admin only. Sourced from the pinned connection account update. Amounts are stored values that may include never-observed database defaults after a partial update; individual observations and simultaneity are unverified; open P/L is unavailable without paired evidence. Never includes tokens, IPs, or the unmasked account number. Null for normal users.
+ * Real MT5 master-account snapshot, owner/admin only. Sourced from the pinned connection account update. Amounts are stored values that may include never-observed database defaults after a partial update; individual observations and simultaneity are unverified; open P/L is unavailable without a verified broker profit report. Never includes tokens, IPs, or the unmasked account number. Null for normal users.
 
  */
 export interface MasterMt5Snapshot {

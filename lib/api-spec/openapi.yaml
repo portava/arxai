@@ -21337,8 +21337,8 @@ components:
         pinned mt5_connection account update. Amounts are stored values that may
         include never-observed database defaults after a partial update.
         accountSyncedAt proves some account data arrived, not that each amount
-        was observed or that all amounts arrived together. No derived open P/L
-        is supplied without paired evidence. Never includes tokens, IPs,
+        was observed or that all amounts arrived together. Direct broker account profit is not persisted by this view,
+        so open P/L is withheld rather than derived from equity minus balance. Never includes tokens, IPs,
         or the unmasked account number. Null for normal users.
       required:
         [mt5Balance, mt5Equity, mt5UsedMargin, mt5FreeMargin, mt5OpenPnl,

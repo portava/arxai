@@ -1,7 +1,7 @@
 // Read-only projection. Broker Hub owns connection identity and the account
 // update marker. Stored values may include never-observed database defaults
-// after a partial update; neither individual observations nor a paired snapshot
-// are proven. This adapter never substitutes pool money or heartbeat freshness.
+// after a partial update; observation times for every field and a coherent
+// full account report are not proven. This adapter never substitutes pool money or heartbeat freshness.
 import { connectionAccountSnapshot, type ConnectionAccountFacts } from '../brokerHub/accountSnapshot.js';
 import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from '../brokerHub/freshness.js';
 
@@ -33,11 +33,11 @@ export function projectPinnedMasterAccount(input: MasterAccountDisplayInput) {
     mt5Equity,
     mt5UsedMargin: validTime ? money(snapshot.margin) : null,
     mt5FreeMargin: validTime ? money(snapshot.freeMargin) : null,
-    // Heartbeat may update balance OR equity, and sync-account can retain old
-    // margins or never-observed database defaults. The marker proves some
-    // account data arrived, not that each scalar was observed. No per-field
-    // timestamp/pair receipt proves individual observations or simultaneity.
-    // Do not manufacture floating P/L from these unverified stored values.
+    // Current heartbeat and sync-account schemas require balance AND equity;
+    // optional margins can still retain older values or database defaults.
+    // The stored marker does not date each field. Direct broker account profit
+    // is absent from this view; equity minus balance is not a verified report
+    // of ACCOUNT_PROFIT. Keep P/L unavailable rather than substitute it.
     mt5OpenPnl: null,
     accountCurrency: validTime ? snapshot.currency : null,
     accountObservationScope: 'LATEST_ACCOUNT_UPDATE' as const,
