@@ -1,5 +1,7 @@
+import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
+import { captureReplayAnalysisPrefix } from "@/lib/chart-engine/chartReplayAnalysis";
 import { ChartLibraryCredit } from "@/components/charts/ChartLibraryCredit";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChartWorkbenchTools } from "@/components/charts/ChartWorkbenchTools";
 import { SmartChartReader } from "@/components/charts/SmartChartReader";
@@ -23,6 +25,11 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
   const container=useRef<HTMLDivElement>(null);
   const adapter=useRef<ChartEngineAdapter|null>(null);
   const replayRead=useMemo(()=>({snapshot,installedCount:installed}),[snapshot,installed]);
+  const getFibonacciProposal=useCallback(()=>{
+    const bound=captureReplayAnalysisPrefix(replayRead,{symbol:snapshot.symbol,timeframe:snapshot.timeframe});
+    if(bound.status!=="ready")return {status:"unavailable" as const,proposal:null,reason:bound.reason??"Replay evidence unavailable."};
+    return proposeChartFibonacci({...bound.context,bars:bound.bars,asOfMs:bound.asOfMs??NaN,replayCutoff:bound.replayCutoff??undefined},adapter.current?.getVisibleCandles?.()??[]);
+  },[replayRead,snapshot]);
   const current=snapshot.bars[count-1]!;
   const seek=(next:number)=>{setPlaying(false);setCount(replayCount(next,snapshot.bars.length));setMessage("");};
   // Display-only zone (UTC by default, always UTC on daily bars). The seek still
@@ -118,7 +125,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
     </section>
     <div className="mt-3 overflow-hidden rounded border border-zinc-800">
 
-      <ChartWorkbenchTools key={snapshot.id} chartTarget={container} adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
+      <ChartWorkbenchTools getFibonacciProposal={getFibonacciProposal} key={snapshot.id} chartTarget={container} adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
         preferences={preferences} onPreferences={setPreferences} hasCandles={installed>0}
         drawingKey={replayDrawingKey(snapshot)} ephemeralDrawings historyWindowOnly feedLabel={`HISTORICAL REPLAY · ${snapshot.source} · through ${fmt(current.closeTime)} · not live or tradable`}/>
       <div ref={container} className="w-full" style={{height:600}} data-testid="replay-canvas"

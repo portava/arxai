@@ -1,3 +1,4 @@
+import { chartIntervalSeconds } from "./chartIntervals";
 import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy, type StudyLineStyle } from "./chartStudies";
 import { isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 import { normalizeNoteText } from "./chartTextNote";
@@ -27,7 +28,8 @@ export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extende
 export const DRAWING_NAMES: Record<DrawingKind, string> = { measure: "Price and time ruler", channel: "Parallel channel", horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
 export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical" || kind === "text"; }
 export interface ChartAnchor { time: number; price: number }
-export interface ChartDrawing { id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; offset?: ChartAnchor; color: string; locked?: boolean; hidden?: boolean; width?: 1 | 2 | 3; dashed?: boolean; text?: string; extendLeft?: boolean; extendRight?: boolean; middleLine?: boolean }
+export interface FibonacciOrigin { method:"confirmed-swings-v1"; span:2; symbol:string; timeframe:string; source:string; sourceIdentity:string; start:ChartAnchor; end:ChartAnchor; confirmedAt:number; windowFrom:number; windowTo:number; closedBars:number }
+export interface ChartDrawing { fibonacciOrigin?:FibonacciOrigin; id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; offset?: ChartAnchor; color: string; locked?: boolean; hidden?: boolean; width?: 1 | 2 | 3; dashed?: boolean; text?: string; extendLeft?: boolean; extendRight?: boolean; middleLine?: boolean }
 /**
  * Per chart view (each workspace view has its own stored preferences).
  * `timeZone` is display-only and optional: a missing value means UTC, and it is
@@ -90,6 +92,15 @@ export function validatePreferences(value: unknown): ChartPreferences {
   }
   return { style: (CHART_STYLES as readonly unknown[]).includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), ...(v.priceOnlyScale === true ? {priceOnlyScale:true} : {}), studies, ...(isChartTimeZone(v.timeZone) && v.timeZone !== "UTC" ? {timeZone:v.timeZone} : {}) };
 }
+function validateFibonacciOrigin(value: unknown): FibonacciOrigin | null {
+  const p=value as Partial<FibonacciOrigin>|null;
+  const interval=chartIntervalSeconds(p?.timeframe);
+  if(!p||!interval||p.method!=="confirmed-swings-v1"||p.span!==2||![p.symbol,p.timeframe,p.source].every(v=>typeof v==="string"&&v.length>0&&v.length<=120)
+    ||typeof p.sourceIdentity!=="string"||!/^[a-f\d]{64}$/i.test(p.sourceIdentity)||!anchor(p.start)||!anchor(p.end)||p.start.time>=p.end.time||p.start.price===p.end.price
+    ||!Number.isFinite(p.confirmedAt)||!Number.isFinite(p.windowFrom)||!Number.isFinite(p.windowTo)||p.windowFrom!<=0||p.start.time-p.windowFrom!<2*interval||p.end.time-p.start.time<interval||p.confirmedAt!-p.end.time<3*interval||p.windowTo!<p.confirmedAt!
+    ||!Number.isInteger(p.closedBars)||p.closedBars!<6||p.closedBars!>600)return null;
+  return {method:"confirmed-swings-v1",span:2,symbol:p.symbol!,timeframe:p.timeframe!,source:p.source!,sourceIdentity:p.sourceIdentity,start:{...p.start!},end:{...p.end!},confirmedAt:p.confirmedAt!,windowFrom:p.windowFrom!,windowTo:p.windowTo!,closedBars:p.closedBars!};
+}
 export function validateDrawings(value: unknown): ChartDrawing[] {
   const seen = new Set<string>();
   return (Array.isArray(value) ? value.slice(0, MAX_DRAWINGS) : []).flatMap((d: any) => {
@@ -102,12 +113,14 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
     if (d.width != null && ![1, 2, 3].includes(d.width)) return [];
     if (d.hidden != null && typeof d.hidden !== "boolean") return [];
     if (d.locked != null && typeof d.locked !== "boolean" || d.dashed != null && typeof d.dashed !== "boolean") return [];
+    const fibonacciOrigin=d.kind==="fibonacci"?validateFibonacciOrigin(d.fibonacciOrigin):null;
     seen.add(d.id);
-    return [{ id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(d.kind === "channel" ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.hidden === true ? {hidden:true} : {}), ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
+    return [{ ...(fibonacciOrigin?{fibonacciOrigin}:{}),id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(d.kind === "channel" ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.hidden === true ? {hidden:true} : {}), ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
   });
 }
-/** Local device preferences only. No account, positions, credentials or feed
- * data are stored. Separate symbol/timeframe keys prevent cross-chart leakage. */
+/** Local device preferences only. No account, positions or credentials are stored. Kept auto drawings retain their original source hash
+ * and anchor summary, not full candle history. Separate symbol/timeframe keys
+ * prevent cross-chart leakage. */
 export function drawingStorageKey(symbol: string, timeframe: string): string { return `arx.chart.drawings.v1:${encodeURIComponent(symbol)}:${encodeURIComponent(timeframe)}`; }
 export function readChartStorage(key: string): unknown {
   try { const raw = localStorage.getItem(key); return raw && raw.length < 100_000 ? JSON.parse(raw) : null; } catch { return null; }

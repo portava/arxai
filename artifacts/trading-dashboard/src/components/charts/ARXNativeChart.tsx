@@ -1,3 +1,5 @@
+import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
+import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
 import { chartVolumeEvidence, observedTickVolume } from "@/lib/chart-engine/chartVolume";
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
@@ -567,6 +569,11 @@ export function ARXNativeChart({
   const acceptResearchOverlays = useCallback((rows:ChartOverlay[])=>setResearchLayer(rows.length?{context:chartContext,rows}:null),[chartContext]);
   const acceptResearchExplanation = useCallback((text:string|null)=>{if(text)researchExplanation.current={context:chartContext,text};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
   const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
+  const getFibonacciProposal = useCallback(()=>{
+    const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.olderCandles,deepHistory.analysisEvidence,now);
+    if(bound.status!=="ready")return {status:"unavailable" as const,proposal:null,reason:bound.reason??"Original source evidence unavailable."};
+    return proposeChartFibonacci({...bound.context,bars:bound.bars,asOfMs:now},researchVisibleBars());
+  },[data,resolvedSymbol,timeframe,deepHistory.olderCandles,deepHistory.analysisEvidence,researchVisibleBars]);
   useLayoutEffect(()=>{
     if(workspaceId!=="primary")return;
     return registerChartResearchAssistant(text=>{
@@ -1363,7 +1370,7 @@ export function ARXNativeChart({
         </div>
         {!mobileLayout && fullscreenToggle}
       </div>
-      <ChartWorkbenchTools key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">

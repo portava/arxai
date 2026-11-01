@@ -891,3 +891,18 @@ describe("qualified volume handoff to native renderer",()=>{
     expect(engine.updateActiveCandle.mock.calls.at(-1)![0].volumeEvidence).toBeUndefined();
   });
 });
+
+describe("native source-bound automatic Fibonacci",()=>{
+  it("uses the applied Scanner chart and withdraws a preview when original evidence is revoked",()=>{
+    const values=[10,11,15,12,11,7,10,11,16,12,11],start=OPEN_MS-24*3_600_000;
+    const candles=values.map((p,i)=>({symbol:"EURUSD",timeframe:"H1",openTime:new Date(start+i*3_600_000).toISOString(),closeTime:new Date(start+(i+1)*3_600_000).toISOString(),open:p,high:p+1,low:p-1,close:p,source:"mt5_broker",sourceMode:"live",isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
+    const data={symbol:"EURUSD",timeframe:"H1",source:"mt5_broker",quality:"clean",candles,feedStatus:{symbol:"EURUSD",source:"mt5_broker",isLive:false,stale:true,warning:"Historical fixture"},marketEvidence:{symbol:"EURUSD",timeframe:"H1",source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}};
+    candleResponse=data;const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    const engine=created[0]!;engine.getVisibleCandles=vi.fn(()=>candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close})));engine.setDrawings=vi.fn();
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"auto_fibonacci"}});
+    expect(engine.setDrawings.mock.calls.at(-1)![0]).toEqual([expect.objectContaining({kind:"fibonacci",start:{time:(start+5*3_600_000)/1000,price:6},end:{time:(start+8*3_600_000)/1000,price:17},locked:true})]);
+    candleResponse={...data,marketEvidence:undefined};view.rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    expect(engine.setDrawings.mock.calls.at(-1)![0]).toEqual([]);
+    expect(screen.queryByRole("button",{name:"Keep and edit Fibonacci"})).toBeNull();
+  });
+});

@@ -166,3 +166,18 @@ it("restores price-only fitting in replay and changes it without advancing the r
  expect(engine.setPriceOnlyScale).toHaveBeenLastCalledWith(false);expect(engine.setCandles).toHaveBeenCalledTimes(writes);
  expect(fetch).not.toHaveBeenCalled();expect(EventSource).not.toHaveBeenCalled();
 });
+
+it("proposes only revealed pivots and withdraws its preview on replay seek",()=>{
+ const data=snapshot(),values=[10,11,15,12,11,7,10,11,16,12,11];
+ data.bars=data.bars.slice(0,values.length).map((b,i)=>({...b,open:values[i],high:values[i]+1,low:values[i]-1,close:values[i]}));data.lastClosedAt=data.bars.at(-1)!.closeTime;
+ const owned=engine as typeof engine&{getVisibleCandles?:()=>unknown[]};owned.getVisibleCandles=()=>engine.setCandles.mock.lastCall?.[0]??[];
+ try {
+  render(<ChartReplayPlayer snapshot={data} onExit={vi.fn()}/>);
+  fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"auto_fibonacci"}});
+  expect(engine.setDrawings.mock.lastCall?.[0]).toEqual([expect.objectContaining({kind:"fibonacci",locked:true,start:{time:data.bars[5].time,price:6},end:{time:data.bars[8].time,price:17}})]);
+  fireEvent.change(screen.getByLabelText("Replay position"),{target:{value:"8"}});
+  expect(engine.setDrawings.mock.lastCall?.[0]).toEqual([]);
+  expect(screen.queryByRole("button",{name:"Keep and edit Fibonacci"})).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+ }finally{delete owned.getVisibleCandles;}
+});
