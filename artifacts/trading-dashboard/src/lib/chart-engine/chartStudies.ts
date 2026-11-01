@@ -82,7 +82,7 @@ export function studyChannelColor(config: ChartStudy, channel: number): string {
 /** Match the existing legend precision for continuous values; observed integer
  * counts must remain exact (no 8-significant-digit rounding of large counts). */
 export function formatStudyNumber(value:number,channel:string):string {
-  return ["Ticks","Ticks (hidden)","Trade units","Trade units (hidden)"].includes(channel) ? String(value) : String(Number(value.toPrecision(8)));
+  return ["Ticks","Ticks (hidden)","Trade units","Trade units (hidden)","Frozen-range total trade units","Frozen-range total trade units (hidden)"].includes(channel) ? String(value) : String(Number(value.toPrecision(8)));
 }
 export function studyLabel(study: ChartStudy): string {
   if(study.kind === "volume_profile")return "Estimated volume profile · provider trade units";
