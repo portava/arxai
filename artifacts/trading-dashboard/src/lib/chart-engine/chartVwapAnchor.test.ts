@@ -1,0 +1,32 @@
+import {describe,it,expect,vi} from 'vitest';
+import {prepareVwapStudy,selectVwapAnchor} from './chartVwapAnchor';
+import {StudyCalculator,studyDefinition,studyLabel,type ChartStudy} from './chartStudies';
+import {parseStudyRequest,executeStudyRequest} from './chartStudyAssistant';
+import {validatePreferences} from './chartWorkspace';
+const identity='a'.repeat(64);
+const evidence=(quantity=2)=>({kind:'real_volume' as const,unit:'provider_trade_units' as const,quantity,reason:null,authority:'twelve-data:time-series:common-stock:regular-unadjusted:v1',seriesIdentity:identity});
+const bars=[10,20,30].map((price,i)=>({time:1700000000+i*60,open:price,high:price,low:price,close:price,volumeEvidence:evidence(i+1)}));
+const defaultStudy=studyDefinition('vwap').defaults;
+describe('shared manual and assistant VWAP anchor authority',()=>{
+ it('chooses exactly first visible observed bar and freezes it across later view changes',()=>{const first=prepareVwapStudy(defaultStudy,bars as any);expect(first.study?.vwapAnchor).toEqual({kind:'observed_bar',time:bars[0]!.time,seriesIdentity:identity});expect(prepareVwapStudy(first.study!,bars.slice(1) as any)).toEqual(first);});
+ it('does not skip a first missing-volume bar to find a convenient anchor',()=>{const missing=[{...bars[0],volumeEvidence:undefined},bars[1]!];expect(prepareVwapStudy(defaultStudy,missing as any).reason).toContain('not skipped');expect(selectVwapAnchor(missing as any,bars[1]!.time).anchor?.time).toBe(bars[1]!.time);});
+ it.each([undefined,0,-1,1700000001,Infinity,NaN])('refuses absent/invalid observed anchor %s',time=>{expect(selectVwapAnchor([],time).reason).toBeTruthy();});
+ it('keeps valid frozen source anchor in templates and refuses malformed anchors without reanchoring',()=>{const config=prepareVwapStudy(defaultStudy,bars as any).study!;expect(validatePreferences({studies:[config]}).studies[0]).toEqual(config);for(const anchor of [{...config.vwapAnchor,kind:'session'},{...config.vwapAnchor,time:NaN},{...config.vwapAnchor,seriesIdentity:'new-source'}])expect(validatePreferences({studies:[{...config,vwapAnchor:anchor}]}).studies).toEqual([]);});
+ it('produces identical manual and curiosity results with actual existing calculator',()=>{
+   const manual=prepareVwapStudy(defaultStudy,bars as any).study!;let saved:ChartStudy[]=[];
+   const adapter={getVisibleCandles:()=>bars as any,setStudies:vi.fn((rows:ChartStudy[])=>{saved=rows;}),getStudyValues:(time:number)=>saved.map(s=>{const p=new StudyCalculator(s).calculate(bars as any).find(p=>p.time===time)!;return {label:studyLabel(s),color:s.color,reason:p.reason,values:[{name:'VWAP',value:p.values[0]!}]};})};
+   const context=()=>({adapter,studies:saved,symbol:'AAPL',timeframe:'M1',feedLabel:'assistant_real:twelve_data · Delayed',save:(rows:ChartStudy[])=>{saved=rows;}});
+   const response=executeStudyRequest(parseStudyRequest('What does VWAP tell me about this chart?')!,context());
+   expect(response).toContain('VWAP: 23.333333');expect(response).toContain('Frozen observed-bar anchor');expect(response).toContain('not a complete-session claim');
+   expect(new StudyCalculator(saved[0]!).calculate(bars as any)).toEqual(new StudyCalculator(manual).calculate(bars as any));
+   saved[0]={...saved[0]!,source:'high',lineStyles:[{visible:false}]};executeStudyRequest(parseStudyRequest('explain VWAP')!,context());expect(saved[0]!.source).toBe('high');
+   adapter.getVisibleCandles=()=>bars.slice(1) as any;executeStudyRequest(parseStudyRequest('show VWAP')!,context());expect(saved[0]!.vwapAnchor?.time).toBe(bars[0]!.time);
+   executeStudyRequest(parseStudyRequest('reanchor VWAP to first visible bar')!,context());expect(saved[0]!.vwapAnchor?.time).toBe(bars[1]!.time);
+   executeStudyRequest(parseStudyRequest('hide VWAP')!,context());expect(saved[0]!.lineStyles?.[0]?.visible).toBe(false);
+   executeStudyRequest(parseStudyRequest('remove VWAP')!,context());expect(saved).toEqual([]);
+ });
+ it('invalid first anchor causes no renderer or preference transaction',()=>{const adapter={getVisibleCandles:()=>bars.map(b=>({...b,volumeEvidence:undefined})),setStudies:vi.fn(),getStudyValues:()=>[]};const save=vi.fn();expect(executeStudyRequest(parseStudyRequest('show VWAP')!,{adapter,studies:[],symbol:'AAPL',timeframe:'M1',feedLabel:'Delayed',save})).toContain('not changed');expect(adapter.setStudies).not.toHaveBeenCalled();expect(save).not.toHaveBeenCalled();});
+ it.each(['show volume','show volume bars','what does traded volume tell me about this chart?'])('maps genuine volume requests to trade units, never a silent tick proxy: %s',request=>{expect(parseStudyRequest(request)).toMatchObject({kind:'trade_volume',action:'show'});expect(parseStudyRequest('show tick volume')).toMatchObject({kind:'tick_volume',action:'show'});});
+ it('does not claim VWAP is missing when refusing a volume profile',()=>{const result=parseStudyRequest('show volume profile');expect(result).toHaveProperty('error');expect((result as {error:string}).error).toContain('Volume profile has no calculated overlay');expect((result as {error:string}).error).not.toContain('cannot apply VWAP');});
+ it.each(['set VWAP period to 20','show VWAP 20','show VWAP and RSI','show volume profile','show VWAP on EURUSD'])('does not guess unsupported settings or change another chart: %s',request=>{expect(parseStudyRequest(request)).toHaveProperty('error');});
+});

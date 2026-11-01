@@ -174,3 +174,72 @@ DMI adds three Wilder-smoothed channels, +DI / −DI / ADX. Both lengths default
 Seed TR, positive and negative movement with the arithmetic mean of the first DI-length transitions, then update each by previous + (input − previous)/length. DI = 100 × smoothed movement / smoothed TR. A zero smoothed TR maps both DI values to zero. DX = 100 × |+DI−−DI|/(+DI+−DI), or zero when the denominator is zero. Seed ADX with the first full window of DX, then apply the same Wilder recurrence with its own length. With zero-based bars, first DI is at `period`; first ADX is at `period+signal−1`. Earlier values are blank. History seeding and forming-candle revisions can change values; no future candles are read.
 
 Green is +DI, rose is −DI and the configurable color is ADX. ADX measures strength without direction; none of these values is calibrated confidence or entry permission. No threshold generates orders or AI approval. Platform seed, flat-market and smoothing conventions can differ; see the [DMI evidence and comparison](SMART_CHART_DMI_2026_10_31.md).
+
+## Anchored VWAP and genuine trade-volume bars — 1 November 2026
+
+This additive slice reuses `StudyCalculator`, `ChartAnalysisRenderer`, the saved
+study editor and the existing local assistant. It adds two searchable studies,
+not another chart engine or a trading route. The catalogue now has 22 types.
+
+`VWAP_i = sum(source_j * traded_quantity_j) / sum(traded_quantity_j)` from the
+exact chosen original bar through `i`. Default source is HLC3. Other existing
+applied-price choices use the same authority. This is a **bar-based** average;
+it is neither a trade-by-trade price nor a complete session average. Original
+OHLC supplies the inputs even when Heikin Ashi is the display style.
+
+The first visible original bar is the disclosed default anchor. If it lacks
+qualified trade volume, the action refuses rather than skipping it. Manual Add
+and assistant curiosity use one constructor. Users can select another actual
+visible bar, explicitly re-anchor, change the applied price, hide/remove the line
+or save its settings. The exact timestamp and series identity remain frozen:
+panning, older backfill and applying a template never silently move the anchor.
+An absent anchor or changed source leaves the line unavailable. Source timestamps
+are displayed as source coordinates; a stored anchor does not borrow the current
+chart's UTC qualification.
+
+The current source contract is the existing Twelve Data Common Stock intraday
+adapter, explicitly unadjusted and regular-session, with source-qualified positive
+whole provider trade units. They are not asserted to be shares or consolidated
+market volume. No tick count, FX quote count, numeric legacy volume or zero-filled
+missing field substitutes for traded quantity. The current producer does not
+prove zero-volume semantics, so zero is unavailable. A present missing, forming,
+partial or mismatched-volume bar holds that bar and the remaining cumulative
+suffix. Revisions rebuild the affected suffix from the prior checkpoint. Infinite
+weighted sums and cumulative quantities outside safe-integer range are held.
+Observed gaps are not proof of complete history or closed-market intervals;
+corporate actions may break an unadjusted price series.
+
+Trade volume is an independently controlled histogram in its own synchronized
+pane. VWAP uses the main price pane. Actual renderer values and held reasons feed
+the data window and assistant; no second calculation supplies narrative numbers.
+Quantity/source/authority withdrawal invalidates unchanged-price bars. The hot
+reconciliation path keeps numeric snapshots plus original identity-string
+references; anchor choices read history only on explicit interaction and render
+at most 100 search matches. There is no speed or competitor-parity claim.
+
+### Primary comparator evidence and remaining profile gap
+
+[TradingView's VWAP documentation](https://www.tradingview.com/support/solutions/43000502018-volume-weighted-average-price-vwap/)
+describes cumulative typical-price × bar volume divided by cumulative volume,
+with configurable source and resets. Its [anchored tool](https://www.tradingview.com/support/solutions/43000669764-anchored-vwap-drawing-tool/)
+starts at a user-selected chart point. Therefore bar-based VWAP is a legitimate
+standard calculation without claiming tick-exact transaction weighting. These
+pages do not fully specify missing/zero-bar policy; the holds above are explicit
+ARX policy, not an assertion of identical competitor behavior.
+
+[TradingView volume profile](https://www.tradingview.com/support/solutions/43000502040-volume-profile-indicators-basic-concepts/)
+uses lower-timeframe bars, distinguishes trade/tick/base-or-quote volume by asset,
+and classifies up/down by candle direction rather than observed aggressor side.
+Its [fixed-range profile](https://www.tradingview.com/support/solutions/43000480324-fixed-range-volume-profile-indicator/)
+can fall back to chart-resolution bars when old lower-timeframe data is absent.
+The consulted documents do not fully specify within-bar price allocation. A future
+ARX profile must name its resolution/allocation approximation and range coverage;
+OHLC bars alone cannot establish exact traded volume at every price. No profile
+calculation or rendering is implemented in this slice.
+
+[MT5's built-in volume catalogue](https://www.metatrader5.com/en/terminal/help/indicators/volume_indicators)
+lists A/D, MFI, OBV and Volumes; it does not provide a universal built-in VWAP/profile
+formula. [MQL volume constants](https://www.mql5.com/en/docs/constants/indicatorconstants/prices)
+separate tick volume from trade volume. Custom indicators can differ. This work
+does not establish MT5/TradingView parity, availability on every ARX market, or
+completion of the owner's entire 13-tool and historical-testing brief.

@@ -1,8 +1,8 @@
-import { observedTickVolume } from "./chartVolume";
+import { sameVolumeInput } from "./chartVolume";
 import type { ChartEngineCandle } from "./types";
 
 export function sameCandle(a: ChartEngineCandle, b: ChartEngineCandle): boolean {
-  return a.time === b.time && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close && observedTickVolume(a.volumeEvidence) === observedTickVolume(b.volumeEvidence);
+  return a.time === b.time && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close && sameVolumeInput(a.volumeEvidence,b.volumeEvidence);
 }
 
 /** Number of observed candles whose OHLC, qualified tick count and timestamp are unchanged. Study

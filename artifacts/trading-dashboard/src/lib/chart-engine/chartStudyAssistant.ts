@@ -1,3 +1,4 @@
+import {prepareVwapStudy} from "./chartVwapAnchor";
 import { formatSourceChartTime } from "./chartClockEvidence";
 import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyLabel, studyId, formatStudyNumber, type ChartStudy, type StudyKind } from "./chartStudies";
 import type { ChartEngineAdapter } from "./types";
@@ -7,12 +8,13 @@ import type { ChartEngineAdapter } from "./types";
 // instructions (another asset, timeframe, source, negation, etc.) fail closed.
 export type AverageSelection = { kind: "sma" | "ema"; period: number };
 export type AverageComparisonRequest = { action: "compare"; studies: [AverageSelection, AverageSelection] };
-export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; preserveVisibility?: boolean } | AverageComparisonRequest | { error: string };
+export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; preserveVisibility?: boolean; reanchor?:boolean } | AverageComparisonRequest | { error: string };
 const help = 'Chart not changed. Try “show RSI”, “set RSI period to 21”, “hide RSI” or “remove RSI”. Other settings and repeated instances are editable in Studies.';
 const aliases = STUDY_CATALOG.flatMap(d=>[{name:d.defaults.kind,kind:d.defaults.kind},{name:d.name.toLowerCase(),kind:d.defaults.kind}])
-  .concat([{name:"bollinger bands",kind:"bollinger"},{name:"adx",kind:"dmi"}]);
+  .concat([{name:"bollinger bands",kind:"bollinger"},{name:"adx",kind:"dmi"},{name:"volume bars",kind:"trade_volume"},{name:"traded volume",kind:"trade_volume"},{name:"volume",kind:"trade_volume"}]);
 export function parseStudyRequest(text:string): StudyRequest | null {
   const input=text.trim().toLowerCase().replace(/[?!.]+$/g,"").replace(/^please\s+/,"");
+  if(/^(?:reanchor|anchor) (?:the )?vwap to (?:the )?first visible bar$/.test(input))return {kind:"vwap",action:"show",reanchor:true};
   const comparison=input.match(/^compare (?:the )?(\d+) (sma|ema) (?:and|with|vs\.?) (?:the )?(\d+) (sma|ema)(?: (?:on|for) (?:this|the current) chart)?$/);
   if(comparison) {
     const first={kind:comparison[2] as "sma"|"ema",period:Number(comparison[1])};
@@ -20,9 +22,9 @@ export function parseStudyRequest(text:string): StudyRequest | null {
     if([first,second].some(s=>!Number.isInteger(s.period)||s.period<1||s.period>1000)||(first.kind===second.kind&&first.period===second.period))return {error:'Chart not changed. Compare two different SMA/EMA selections, each with a whole-number period from 1 to 1000; for example “compare the 20 EMA and 50 EMA”.'};
     return {action:"compare",studies:[first,second]};
   }
+  if (/\bvolume profile\b/.test(input)) return {error:"Chart not changed. Volume profile has no calculated overlay yet. Anchored VWAP and trade-volume bars are separate tools; no profile has been added."};
   const found=aliases.filter(a=>new RegExp(`(?:^|\\W)${a.name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?=\\W|$)`).test(input));
   if (!found.length) {
-    if (/\b(vwap|volume profile)\b/.test(input)) return {error:"Chart not changed. This assistant cannot apply VWAP or volume profile yet. No calculated overlay has been added."};
     return null;
   }
   // Prefer a full catalogue name over its embedded alias (DEMA includes EMA's
@@ -37,7 +39,7 @@ export function parseStudyRequest(text:string): StudyRequest | null {
   const action=simple?.[1]==="hide" ? "hide" : simple?.[1]==="remove" ? "remove" : "show";
   // MACD fast/slow relationship and multi-input tools remain in the existing
   // settings editor. Do not guess what a bare MACD number meant.
-  if (period!=null && (!Number.isInteger(period) || period<1 || period>1000 || (alias.kind==="macd" || alias.kind==="tick_volume") || action!=="show")) return {error:help};
+  if (period!=null && (!Number.isInteger(period) || period<1 || period>1000 || (["macd","tick_volume","trade_volume","vwap"].includes(alias.kind)) || action!=="show")) return {error:help};
   return {kind:alias.kind,action,period,...(edit ? {preserveVisibility:true} : {})};
 }
 export interface StudyAssistantContext {
@@ -112,7 +114,13 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
   if (!existing && request.action!=="show") return `Chart not changed: ${request.kind.toUpperCase()} is not on this chart.`;
   if (!existing && studies.length>=MAX_STUDIES) return "Chart not changed: the study limit is reached. Remove a study in Studies first.";
   const definition=studyDefinition(request.kind);
-  const next:ChartStudy={...(existing ?? definition.defaults)};
+  let next:ChartStudy={...(existing ?? definition.defaults)};
+  if(request.reanchor)next.vwapAnchor=undefined;
+  if(request.action === "show" && request.kind === "vwap") {
+    const prepared=prepareVwapStudy(next,visible);
+    if(!prepared.study)return prepared.reason;
+    next=prepared.study;
+  }
   if (!existing) {
     let suffix=1;
     while (studies.some(study=>studyId(study)===`assistant-${request.kind}-${suffix}`)) suffix++;
@@ -134,7 +142,7 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
   const values=definition.channels.map(name=>{
     const channel=result?.values.find(v=>v.name===name || v.name===`${name} (hidden)`);
     const value=channel?.value;
-    return `${channel?.name ?? name}: ${typeof value==="number" && Number.isFinite(value) ? formatStudyNumber(value,name) : (request.kind==="tick_volume" ? "unavailable: no qualified per-bar tick count" : "unavailable / warming up")}`;
+    return `${channel?.name ?? name}: ${typeof value==="number" && Number.isFinite(value) ? formatStudyNumber(value,name) : (result?.reason ?? (request.kind==="tick_volume" ? "unavailable: no qualified per-bar tick count" : "unavailable / warming up"))}`;
   }).join("; ");
   const firstValue=result?.values[0]?.value;
   const finiteFirst=typeof firstValue==="number" && Number.isFinite(firstValue);
@@ -144,11 +152,12 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
       : "The calculated RSI is between the common 30 and 70 references. "
     : ["sma","ema","smma","wma","dema","tema"].includes(request.kind) && finiteFirst
       ? `The underlying source candle close is ${last.close>firstValue ? "above" : last.close<firstValue ? "below" : "equal to"} this average. ` : "";
+  const anchorNote=next.kind === "vwap" && next.vwapAnchor ? `Frozen observed-bar anchor: ${observationTime(next.vwapAnchor.time,false)}. Uses only loaded observations from that exact bar, with the captured source series. Panning and loading older history do not move it. Missing volume holds the cumulative suffix; zero quantities are not qualified by the current provider. This is not a complete-session claim. Say “reanchor VWAP to first visible bar” or select an observed bar in Studies to change it. ` : "";
   const caveat=request.kind==="rsi" ? "RSI describes recent gains relative to losses; even an extreme reading does not establish a reversal."
     : request.kind==="atr" ? "ATR describes price-range volatility, not direction."
     : request.kind==="macd" ? "MACD compares fast and slow averages; its signal and histogram describe momentum, not a forecast."
     : definition.description;
-  return `Applied ${studyLabel(next)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except any requested period"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
+  return `Applied ${studyLabel(next)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except any requested period"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${anchorNote}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
 }
 
 type Handler=(request:StudyRequest)=>string;
