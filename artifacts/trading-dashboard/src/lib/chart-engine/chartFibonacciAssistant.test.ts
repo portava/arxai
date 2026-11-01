@@ -13,6 +13,6 @@ describe("bounded current-chart Fibonacci grammar",()=>{
  });
  it("leaves unrelated tools to existing routes and releases replaced owners safely",()=>{
   expect(requestChartFibonacci("show RSI")).toBeNull();const a=vi.fn(()=>"first"),b=vi.fn(()=>"second");const stopA=registerChartFibonacciAssistant(a),stopB=registerChartFibonacciAssistant(b);
-  stopA();expect(requestChartFibonacci("show Fib")).toBe("second");stopB();expect(requestChartFibonacci("show Fib")).toContain("Open the primary");expect(a).not.toHaveBeenCalled();
+  stopA();expect(requestChartFibonacci("show Fib")).toBe("second");stopB();expect(requestChartFibonacci("show Fib")).toContain("Select a ready");expect(a).not.toHaveBeenCalled();
  });
 });

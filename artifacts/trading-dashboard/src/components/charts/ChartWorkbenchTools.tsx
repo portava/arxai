@@ -42,10 +42,11 @@ interface Props {
   chartTarget?: RefObject<HTMLDivElement | null>;
   /** Pull current source-qualified proposal; never an imperative drawing write. */
   getFibonacciProposal?: () => ChartFibonacciRead;
-  /** Only the current primary Native chart owns assistant drawing commands. */
-  assistantPrimary?: boolean;
+  /** Explicit selected pane owns commands; retained handlers recheck its token. */
+  assistantActive?:boolean;
+  assistantIsCurrent?:()=>boolean;
 }
-export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,assistantPrimary=false}: Props) {
+export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,assistantActive=false,assistantIsCurrent}: Props) {
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;
@@ -306,9 +307,10 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     setMessage(text);return text;
   };
   useLayoutEffect(()=>{
-    if(!assistantPrimary||ephemeralDrawings)return;
+    if(!assistantActive||ephemeralDrawings)return;
     return registerChartFibonacciAssistant(request=>{
-      if(!hasCandles||!adapter?.setDrawings||!getFibonacciProposal)return "Fibonacci not changed: the primary chart renderer and source candles are not ready. No drawing was saved or order sent.";
+      if(assistantIsCurrent&&!assistantIsCurrent())return "The selected chart source changed. Select the current chart again before changing Fibonacci. No drawing was changed or order sent.";
+      if(!hasCandles||!adapter?.setDrawings||!getFibonacciProposal)return "Fibonacci not changed: the selected chart renderer and source candles are not ready. No drawing was saved or order sent.";
       if(request.action==="keep")return keepFibonacci();
       if(request.action==="hide_selected"||request.action==="show_selected"||request.action==="remove_selected"){
         const selected=historyRef.current.present.find(d=>d.id===selectedRef.current&&d.kind==="fibonacci");
@@ -338,7 +340,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       if(request.action==="explain_preview")return "There is no current Fibonacci preview. Ask to preview automatic Fibonacci first; your kept drawings were not changed.";
       return prepare();
     });
-  },[assistantPrimary,ephemeralDrawings,hasCandles,adapter,epoch,getFibonacciProposal,fibonacciPreview,hidden,drawings,selectedId,previewId,symbol,timeframe]);
+  },[assistantActive,assistantIsCurrent,ephemeralDrawings,hasCandles,adapter,epoch,getFibonacciProposal,fibonacciPreview,hidden,drawings,selectedId,previewId,symbol,timeframe]);
   const exportImage = () => {
     try {
       if(fibonacciPreview){const read=getFibonacciProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==fibonacciPreview.comparisonKey){withdrawPreview(read?.reason??"Source or window changed before export.");return;}}

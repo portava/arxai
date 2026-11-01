@@ -171,5 +171,5 @@ export function requestChartStudy(text:string):string | null {
   const request=parseStudyRequest(text);
   if (!request) return null;
   if ("error" in request) return request.error;
-  return current ? current(request) : "Open the current Smart Chart before applying a study. No chart was changed.";
+  return current ? current(request) : "Select a ready Smart Chart with “Use chart with assistant” before applying a study. No other pane was substituted. No chart was changed.";
 }

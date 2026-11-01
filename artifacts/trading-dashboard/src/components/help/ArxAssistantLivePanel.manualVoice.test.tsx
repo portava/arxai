@@ -1,3 +1,4 @@
+import {useLayoutEffect} from "react";
 import { registerChartFibonacciAssistant } from "@/lib/chart-engine/chartFibonacciAssistant";
 import { registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import {
@@ -26,19 +27,20 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const h = vi.hoisted(() => ({
   ttsState: "idle" as "idle" | "speaking",
+  voiceStream:vi.fn(async()=>{}),voiceCallbacks:null as any,ttsStop:vi.fn(),streamReset:vi.fn(),streamPush:vi.fn(),streamFlush:vi.fn(),cancelVoice:vi.fn(),recordStart:vi.fn(async()=>{}),recordStop:vi.fn(async()=>new Blob()),realtimeStart:vi.fn(),realtimeStop:vi.fn(),speak:vi.fn(),
 }));
 
 vi.mock("@workspace/integrations-openai-ai-react/audio", () => ({
-  useVoiceStream: () => ({ streamVoiceResponse: vi.fn() }),
-  useVoiceRecorder: () => ({ startRecording: vi.fn(), stopRecording: vi.fn() }),
+  useVoiceStream: (callbacks:any) => {h.voiceCallbacks=callbacks;return { streamVoiceResponse:h.voiceStream,cancelVoiceResponse:h.cancelVoice };},
+  useVoiceRecorder: () => ({ startRecording:h.recordStart, stopRecording:h.recordStop }),
 }));
 
 vi.mock("./useRealtimeVoice", () => ({
   useRealtimeVoice: () => ({
     state: "idle",
     isMuted: false,
-    start: vi.fn(),
-    stop: vi.fn(),
+    start: h.realtimeStart,
+    stop: h.realtimeStop,
     toggleMute: vi.fn(),
   }),
 }));
@@ -47,9 +49,11 @@ vi.mock("./useSpeakResponses", () => ({
   useSpeakResponses: () => ({
     state: h.ttsState,
     enabled: true,
+    speak:h.speak,
     supported: true,
     setEnabled: vi.fn(),
-    stop: vi.fn(),
+    stop: h.ttsStop,
+    speakStreamReset:h.streamReset,speakStreamPush:h.streamPush,speakStreamFlush:h.streamFlush,
   }),
   getAvailableVoices: () => [],
   saveVoiceName: vi.fn(),
@@ -97,7 +101,7 @@ vi.mock("wouter", () => ({
 }));
 
 import { ArxAssistantLivePanel } from "./ArxAssistantLivePanel";
-import { AssistantDockProvider, AssistantDockSlot } from "./AssistantDock";
+import { AssistantDockProvider, AssistantDockSlot, useAssistantChartPane } from "./AssistantDock";
 
 // The panel renders react-query-backed children (RubyTimingChip →
 // useGetTimingBrain, useScannerTruth). They must run inside a
@@ -114,7 +118,7 @@ function renderPanel() {
 }
 
 beforeEach(() => {
-  h.ttsState = "idle";
+  h.ttsState = "idle";h.cancelVoice.mockClear();h.voiceStream.mockReset();h.voiceStream.mockResolvedValue(undefined);h.recordStart.mockReset();h.recordStart.mockResolvedValue(undefined);h.recordStop.mockReset();h.recordStop.mockResolvedValue(new Blob());h.realtimeStart.mockClear();h.realtimeStop.mockClear();h.speak.mockClear();h.ttsStop.mockClear();h.streamReset.mockClear();h.streamPush.mockClear();h.streamFlush.mockClear();
   sessionStorage.setItem("arx.assistant.open.v2", "1");
   // Mount fetches (briefing/conversation) are fired on open; keep them inert.
   vi.stubGlobal(
@@ -451,6 +455,80 @@ describe("initial history versus immediate local chart turns",()=>{
   await act(async()=>created.resolve(Response.json({conversation:{id:31,title:'Live chat'}})));
   fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'Hello assistant'}});await act(async()=>fireEvent.click(screen.getByTestId('arx-send')));
   expect(vi.mocked(fetch).mock.calls.filter(([url,init])=>String(url).endsWith('/messages')&&init?.method==='POST').map(([url])=>String(url))).toEqual(['/api/me/assistant/conversations/31/messages']);
+ });
+
+});
+
+function ScopedPane({symbol,primary=false}:{symbol:string;primary?:boolean}){
+ const pane=useAssistantChartPane({symbol,timeframe:'M15',source:'offline-source',contextKey:symbol,ready:true,analysisOnly:!primary});
+ useLayoutEffect(()=>pane.active?registerChartStudyAssistant(()=>pane.isCurrent()?`Local ${symbol} observation`:'held'):undefined,[pane.active,pane.isCurrent,symbol]);
+ return <section data-testid={`pane-${symbol}`}><button onClick={pane.activate}>Activate {symbol}</button>{primary?<AssistantDockSlot assistantEnabled={pane.active}/>:pane.active?<AssistantDockSlot assistantOnly/>:null}</section>;
+}
+function renderScopedPanel(){const client=new QueryClient({defaultOptions:{queries:{retry:false}}});return render(<QueryClientProvider client={client}><AssistantDockProvider><ScopedPane symbol="EURUSD" primary/><ScopedPane symbol="AAPL"/><ArxAssistantLivePanel/></AssistantDockProvider></QueryClientProvider>);}
+describe('analysis comparison assistant boundaries',()=>{
+ it('applies local tools to selected comparison but holds general text, microphone, realtime and briefing',async()=>{
+  vi.useFakeTimers();vi.mocked(fetch).mockImplementation(async(url,init)=>String(url).endsWith('/voice-status')?Response.json({realtimeConfigured:true}):String(url).endsWith('/conversations')&&init?.method==='POST'?Response.json({conversation:{id:7,title:'Chat'}}):Response.json({}));
+  try{renderScopedPanel();await act(async()=>{});fireEvent.click(screen.getByText('Activate AAPL'));await act(async()=>vi.advanceTimersByTime(650));
+   expect(screen.getByTestId('assistant-selected-chart').textContent).toContain('AAPL · M15');expect((screen.getByTestId('arx-mic-toggle') as HTMLButtonElement).disabled).toBe(true);expect((screen.getByTestId('arx-realtime-start') as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:'Refresh briefing'}) as HTMLButtonElement).disabled).toBe(true);
+   fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'show RSI'}});fireEvent.click(screen.getByTestId('arx-send'));expect(screen.getByText('Local AAPL observation')).toBeTruthy();
+   fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'Tell me what to trade'}});fireEvent.click(screen.getByTestId('arx-send'));expect(screen.getByText(/selected analysis chart supports local chart tools only/)).toBeTruthy();
+   expect(vi.mocked(fetch).mock.calls.some(([url])=>/\/messages$|\/voice$|\/realtime\/session$|\/briefing\?/.test(String(url)))).toBe(false);expect(h.cancelVoice).toHaveBeenCalled();expect(h.realtimeStop).toHaveBeenCalled();expect(h.speak).not.toHaveBeenCalled();
+  }finally{vi.useRealTimers();}
+ });
+ it('drops a deferred primary briefing body after the comparison becomes selected',async()=>{
+  const body=deferred<any>();vi.mocked(fetch).mockImplementation(async(url,init)=>String(url).includes('/briefing?')?{ok:true,json:()=>body.promise} as Response:String(url).endsWith('/conversations')&&init?.method==='POST'?Response.json({conversation:{id:7,title:'Chat'}}):Response.json({}));
+  renderScopedPanel();await act(async()=>{});fireEvent.click(screen.getByRole('button',{name:'Refresh briefing'}));fireEvent.click(screen.getByText('Activate AAPL'));
+  await act(async()=>body.resolve({briefing:{headline:'Wrong EURUSD briefing',lines:[],suggestions:[],updatedAt:'2026-01-01'}}));expect(screen.queryByText('Wrong EURUSD briefing')).toBeNull();expect(h.speak).not.toHaveBeenCalled();
+ });
+ it('drops microphone permission resolved after selecting the comparison without starting recorder',async()=>{
+  const permission=deferred<MediaStream>(),stop=vi.fn();const original=Object.getOwnPropertyDescriptor(navigator,'mediaDevices');Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn(()=>permission.promise)}});
+  try{renderScopedPanel();fireEvent.click(screen.getByTestId('arx-mic-toggle'));fireEvent.click(screen.getByText('Activate AAPL'));await act(async()=>permission.resolve({getTracks:()=>[{stop}]} as unknown as MediaStream));expect(stop).toHaveBeenCalledOnce();expect(h.recordStart).not.toHaveBeenCalled();}finally{if(original)Object.defineProperty(navigator,'mediaDevices',original);else delete (navigator as any).mediaDevices;}
+ });
+ it('stops active primary speech and discards late SSE content/done while allowing immediate local tools',async()=>{
+  let stream!:ReadableStreamDefaultController<Uint8Array>;const encoder=new TextEncoder();const body=new ReadableStream<Uint8Array>({start(controller){stream=controller;}});
+  vi.mocked(fetch).mockImplementation(async(url,init)=>String(url).endsWith('/messages')?new Response(body):String(url).endsWith('/conversations')&&init?.method==='POST'?Response.json({conversation:{id:7,title:'Chat'}}):Response.json({}));
+  renderScopedPanel();await act(async()=>{});fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'General primary question'}});await act(async()=>fireEvent.click(screen.getByTestId('arx-send')));
+  await act(async()=>stream.enqueue(encoder.encode('data: {"type":"content","content":"Primary reply started."}\n\n')));expect(h.streamPush).toHaveBeenCalledWith('Primary reply started.');const stops=h.ttsStop.mock.calls.length;
+  fireEvent.click(screen.getByText('Activate AAPL'));expect(h.ttsStop.mock.calls.length).toBeGreaterThan(stops);
+  fireEvent.change(screen.getByTestId('arx-input'),{target:{value:'show RSI'}});expect((screen.getByTestId('arx-send') as HTMLButtonElement).disabled).toBe(false);fireEvent.click(screen.getByTestId('arx-send'));expect(screen.getByText('Local AAPL observation')).toBeTruthy();
+  await act(async()=>stream.enqueue(encoder.encode('data: {"type":"content","content":"Wrong late primary reply"}\n\ndata: {"type":"done"}\n\n')));
+  expect(screen.queryByText(/Wrong late primary reply/)).toBeNull();expect(h.streamFlush).not.toHaveBeenCalled();expect(h.speak).not.toHaveBeenCalled();expect(screen.getByText('Local AAPL observation')).toBeTruthy();
+ });
+
+ it('old recorder-stop completion cannot release the new primary microphone or reset recording',async()=>{
+  const pendingStop=deferred<Blob>(),oldStop=vi.fn(),newStop=vi.fn();const original=Object.getOwnPropertyDescriptor(navigator,'mediaDevices');
+  Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn().mockResolvedValueOnce({getTracks:()=>[{stop:oldStop}]}).mockResolvedValueOnce({getTracks:()=>[{stop:newStop}]})}});
+  try{renderScopedPanel();await act(async()=>{});await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));h.recordStop.mockImplementationOnce(()=>pendingStop.promise);
+   fireEvent.click(screen.getByText('Activate AAPL'));expect(oldStop).toHaveBeenCalledOnce();await act(async()=>fireEvent.click(screen.getByText('Activate EURUSD')));await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));
+   expect(screen.getByRole('button',{name:'Stop and send voice message'})).toBeTruthy();await act(async()=>pendingStop.resolve(new Blob()));expect(newStop).not.toHaveBeenCalled();expect(screen.getByRole('button',{name:'Stop and send voice message'})).toBeTruthy();
+  }finally{if(original)Object.defineProperty(navigator,'mediaDevices',original);else delete (navigator as any).mediaDevices;}
+ });
+ it('late canceled upload completion does not clear a newer primary upload lock',async()=>{
+  const oldUpload=deferred<void>(),newUpload=deferred<void>();h.voiceStream.mockImplementationOnce(()=>oldUpload.promise).mockImplementationOnce(()=>newUpload.promise);h.recordStop.mockResolvedValue(new Blob(['voice']));
+  const original=Object.getOwnPropertyDescriptor(navigator,'mediaDevices');Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn(async()=>({getTracks:()=>[{stop:vi.fn()}]}))}});
+  vi.mocked(fetch).mockImplementation(async(url,init)=>String(url).endsWith('/conversations')&&init?.method==='POST'?Response.json({conversation:{id:7,title:'Chat'}}):Response.json({}));
+  try{renderScopedPanel();await act(async()=>{});await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));expect(h.voiceStream).toHaveBeenCalledTimes(1);
+   await act(async()=>fireEvent.click(screen.getByText('Activate AAPL')));await act(async()=>fireEvent.click(screen.getByText('Activate EURUSD')));await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));expect(h.voiceStream).toHaveBeenCalledTimes(2);
+   act(()=>h.voiceCallbacks.onComplete());expect((screen.getByTestId('arx-mic-toggle') as HTMLButtonElement).disabled).toBe(true);
+   await act(async()=>oldUpload.resolve());expect((screen.getByTestId('arx-mic-toggle') as HTMLButtonElement).disabled).toBe(true);
+   await act(async()=>newUpload.resolve());expect((screen.getByTestId('arx-mic-toggle') as HTMLButtonElement).disabled).toBe(false);
+  }finally{if(original)Object.defineProperty(navigator,'mediaDevices',original);else delete (navigator as any).mediaDevices;}
+ });
+
+ it('a pending stop-and-send cannot upload into a newly selected scope or release its microphone',async()=>{
+  const stopping=deferred<Blob>(),newMicStop=vi.fn();const original=Object.getOwnPropertyDescriptor(navigator,'mediaDevices');Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn().mockResolvedValueOnce({getTracks:()=>[{stop:vi.fn()}]}).mockResolvedValueOnce({getTracks:()=>[{stop:newMicStop}]})}});
+  vi.mocked(fetch).mockImplementation(async(url,init)=>String(url).endsWith('/conversations')&&init?.method==='POST'?Response.json({conversation:{id:7,title:'Chat'}}):Response.json({}));
+  try{renderScopedPanel();await act(async()=>{});await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));h.recordStop.mockImplementationOnce(()=>stopping.promise);fireEvent.click(screen.getByTestId('arx-mic-toggle'));
+   await act(async()=>fireEvent.click(screen.getByText('Activate AAPL')));await act(async()=>fireEvent.click(screen.getByText('Activate EURUSD')));await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));
+   await act(async()=>stopping.resolve(new Blob(['old clip'])));expect(h.voiceStream).not.toHaveBeenCalled();expect(newMicStop).not.toHaveBeenCalled();expect(screen.getByRole('button',{name:'Stop and send voice message'})).toBeTruthy();
+  }finally{if(original)Object.defineProperty(navigator,'mediaDevices',original);else delete (navigator as any).mediaDevices;}
+ });
+
+ it('clears the old recording deadline instead of stopping a newer pending primary permission',async()=>{
+  vi.useFakeTimers();const nextPermission=deferred<MediaStream>();const original=Object.getOwnPropertyDescriptor(navigator,'mediaDevices');Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn().mockResolvedValueOnce({getTracks:()=>[{stop:vi.fn()}]}).mockImplementationOnce(()=>nextPermission.promise)}});
+  try{renderScopedPanel();await act(async()=>{});await act(async()=>fireEvent.click(screen.getByTestId('arx-mic-toggle')));await act(async()=>vi.advanceTimersByTime(5000));await act(async()=>fireEvent.click(screen.getByText('Activate AAPL')));await act(async()=>fireEvent.click(screen.getByText('Activate EURUSD')));fireEvent.click(screen.getByTestId('arx-mic-toggle'));const stops=h.recordStop.mock.calls.length;
+   await act(async()=>vi.advanceTimersByTime(16000));expect(h.recordStop).toHaveBeenCalledTimes(stops);await act(async()=>nextPermission.resolve({getTracks:()=>[{stop:vi.fn()}]} as unknown as MediaStream));
+  }finally{if(original)Object.defineProperty(navigator,'mediaDevices',original);else delete (navigator as any).mediaDevices;vi.useRealTimers();}
  });
 
 });

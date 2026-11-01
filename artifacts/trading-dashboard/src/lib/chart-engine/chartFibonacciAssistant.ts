@@ -23,5 +23,5 @@ export function registerChartFibonacciAssistant(handler:Handler):()=>void {
 }
 export function requestChartFibonacci(text:string):string|null {
   const request=parseFibonacciRequest(text);if(!request)return null;if("error" in request)return request.error;
-  return current?current(request):"Open the primary Smart Chart to preview or explain Fibonacci. Comparison and private replay charts do not own this assistant command. No drawing was saved or order sent.";
+  return current?current(request):"Select a ready Smart Chart with “Use chart with assistant” to preview or explain Fibonacci. No other pane was substituted. No drawing was saved or order sent.";
 }

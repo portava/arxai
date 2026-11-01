@@ -191,11 +191,12 @@ export function useVoiceStream({ workletPath, ...callbacks }: StreamCallbacks) {
 
   const activeRequestRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    return () => {
-      activeRequestRef.current?.abort();
-    };
-  }, []);
+  const cancelVoiceResponse=useCallback(()=>{
+    activeRequestRef.current?.abort();
+    activeRequestRef.current=null;
+    playbackRef.current.clear();
+  },[]);
+  useEffect(()=>cancelVoiceResponse,[cancelVoiceResponse]);
 
   const streamVoiceResponse = useCallback(
     async (url: string, audioBlob: Blob): Promise<void> => {
@@ -344,7 +345,7 @@ export function useVoiceStream({ workletPath, ...callbacks }: StreamCallbacks) {
       } catch (error) {
         const err = toError(error);
 
-        if (err.name === "AbortError") {
+        if (err.name === "AbortError" || abortController.signal.aborted || activeRequestRef.current !== abortController) {
           return;
         }
 
@@ -359,5 +360,5 @@ export function useVoiceStream({ workletPath, ...callbacks }: StreamCallbacks) {
     []
   );
 
-  return { streamVoiceResponse, playbackState: playback.state };
+  return { streamVoiceResponse, cancelVoiceResponse, playbackState: playback.state };
 }

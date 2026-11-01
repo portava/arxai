@@ -12,7 +12,7 @@ import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistan
 // - Market provider connectivity surfaced in-panel
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { useAssistantDockTarget } from "./AssistantDock";
+import { useAssistantDockTarget, useAssistantChartSelection } from "./AssistantDock";
 import { useGetTimingBrain, getGetTimingBrainQueryKey } from "@workspace/api-client-react";
 import { Mic, MicOff, Send, X, Sparkles, Loader2, ChevronDown, ChevronUp, ShieldCheck, Wrench, AlertCircle, Wifi, WifiOff, Radio, Square, VolumeX, Volume2, MoreHorizontal, Plus, Trash2, Eraser, Download, Brain, BrainCircuit, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -158,6 +158,14 @@ interface Conversation { id: number; title: string }
 
 export function ArxAssistantLivePanel() {
   const dockTarget = useAssistantDockTarget();
+  const chartSelection=useAssistantChartSelection();
+  const remoteChartBlocked=chartSelection.remoteBlocked;
+  const remoteChartBlockedRef=useRef(remoteChartBlocked);remoteChartBlockedRef.current=remoteChartBlocked;
+  const selectedChartKey=JSON.stringify([chartSelection.selected?.id??null,chartSelection.selected?.contextKey??null,remoteChartBlocked]);
+  const selectedChartKeyRef=useRef(selectedChartKey);
+  const selectedChartRevision=useRef(0);
+  if(selectedChartKeyRef.current!==selectedChartKey){selectedChartKeyRef.current=selectedChartKey;selectedChartRevision.current++;}
+  const analysisOnlyNotice="This selected analysis chart supports local chart tools only. Select the primary chart for general chat or voice. No remote request or trade was sent.";
   const { name } = useAssistantName();
   const [pathname] = useLocation();
   const tradingMode = useTradingMode();
@@ -222,6 +230,7 @@ export function ArxAssistantLivePanel() {
   const [status, setStatus] = useState<Status>("idle");
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [isVoiceUploading, setIsVoiceUploading] = useState(false);
+  const voiceUploadGeneration=useRef(0);
   const recordTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Silence-detection (auto-send when the user stops talking) refs.
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -318,7 +327,7 @@ export function ArxAssistantLivePanel() {
   // Voice plumbing
   const workletPath = `${BASE}/audio-playback-worklet.js`;
   const recorder = useVoiceRecorder();
-  const { streamVoiceResponse } = useVoiceStream({
+  const { streamVoiceResponse, cancelVoiceResponse } = useVoiceStream({
     workletPath,
     onUserTranscript: (chunk) => {
       // Show what Ruby heard as a user bubble. If we already placed an
@@ -419,16 +428,44 @@ export function ArxAssistantLivePanel() {
   }, []);
 
   const stopVoiceFully = useCallback(async () => {
-    try { await recorder.stopRecording(); } catch { /* noop */ }
+    if(recordTimeoutRef.current){clearTimeout(recordTimeoutRef.current);recordTimeoutRef.current=null;}
+    // Release only the currently owned mic before yielding. A late recorder
+    // stop must never release a new context's mic or reset its status.
+    let stopped:Promise<unknown>|undefined;
+    try { stopped=recorder.stopRecording(); } catch { /* noop */ }
     releaseMic();
     if (status === "recording" || status === "listening" || status === "speaking") setStatus("idle");
+    try{await stopped;}catch{/* already stopped */}
   }, [recorder, releaseMic, status]);
+
+  // Comparison panes never borrow the primary remote/trading context. Stop
+  // active remote input when selection changes; independent TTS Stop stays usable.
+  const stoppedChartScope=useRef(selectedChartKey);
+  useEffect(()=>{
+    if(!remoteChartBlocked&&stoppedChartScope.current===selectedChartKey)return;
+    stoppedChartScope.current=selectedChartKey;
+    abortRef.current?.abort();
+    cancelVoiceResponse?.();
+    activeTTS.stop();
+    setStatus("idle");
+    voiceUploadGeneration.current++;
+    setIsVoiceUploading(false);
+    setMessages(current=>current.map(message=>message.pending?{...message,pending:false,content:message.content||"Previous reply stopped when the selected chart changed."}:message));
+    void stopVoiceFully();
+    void realtime.stop();
+    // Only the selection transition owns this stop, not every chat render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[remoteChartBlocked,selectedChartKey]);
 
   // ── T023: context-aware briefing (replaces the static greeting) ───────────
   // Fetches a state-derived briefing from the server (real live/market/account
   // state only — never fabricated) and renders it as Ruby's opening message
   // plus contextual suggestions. Used on open and by the Refresh button.
   const loadBriefing = useCallback(async (opts?: { refresh?: boolean }) => {
+    if(remoteChartBlockedRef.current)return;
+    const requestedChartKey=selectedChartKeyRef.current;
+    const requestedChartRevision=selectedChartRevision.current;
+    const obsolete=()=>remoteChartBlockedRef.current||selectedChartKeyRef.current!==requestedChartKey||selectedChartRevision.current!==requestedChartRevision;
     setBriefingLoading(true);
     try {
       const page = encodeURIComponent(pageContextRef.current.pathname || "/");
@@ -436,6 +473,7 @@ export function ArxAssistantLivePanel() {
       const r = await fetch(`${BASE}/api/me/assistant/briefing?page=${page}${symQs}`, { credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = (await r.json()) as { briefing: RubyBriefing };
+      if(obsolete())return;
       const b = data.briefing;
       const parts: string[] = [b.headline];
       if (b.lines.length) parts.push("", ...b.lines.map((l) => `• ${l}`));
@@ -449,6 +487,7 @@ export function ArxAssistantLivePanel() {
       setBriefingUpdatedAt(b.updatedAt);
       if (!opts?.refresh && activeTTS.enabled) activeTTS.speak(b.headline);
     } catch {
+      if(obsolete())return;
       // Honest, non-fabricated fallback so the panel always opens cleanly.
       setMessages((cur) => {
         if (cur.some((m) => m.id === "ruby-briefing")) return cur;
@@ -601,12 +640,13 @@ export function ArxAssistantLivePanel() {
     setOpen(false);
     abortRef.current?.abort();
     abortRef.current = null;
+    cancelVoiceResponse?.();
     await stopVoiceFully();
     await realtime.stop();
     setRealtimeMode(null);
     tts.stop();
     setStatus("idle");
-  }, [stopVoiceFully, realtime, tts]);
+  }, [stopVoiceFully, realtime, tts,cancelVoiceResponse]);
 
   // ── Silence detection — auto-send when the user stops talking ─────────
   // Watches the live mic stream's volume; once the user has spoken and then
@@ -654,17 +694,23 @@ export function ArxAssistantLivePanel() {
 
   // ── voice: explicit permission, record, then stream to /voice ──────
   const startVoiceRecord = useCallback(async () => {
+    if(remoteChartBlockedRef.current){setErrorBanner(analysisOnlyNotice);return;}
+    const requestedChartKey=selectedChartKeyRef.current;
+    const requestedChartRevision=selectedChartRevision.current;
     setErrorBanner(null);
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      if(selectedChartRevision.current!==requestedChartRevision)return;
       setErrorBanner("Microphone access denied. Voice mode unavailable — text chat still works.");
       return;
     }
+    if(remoteChartBlockedRef.current||selectedChartKeyRef.current!==requestedChartKey||selectedChartRevision.current!==requestedChartRevision){stream.getTracks().forEach(track=>track.stop());setErrorBanner(analysisOnlyNotice);return;}
     micStreamRef.current = stream;
     try {
       await recorder.startRecording();
+      if(remoteChartBlockedRef.current||selectedChartKeyRef.current!==requestedChartKey||selectedChartRevision.current!==requestedChartRevision)return;
       setStatus("recording");
       // Auto-send when the user stops talking (silence detection on the live
       // mic stream). The MAX_RECORD_MS timer below remains as a hard cap.
@@ -674,13 +720,14 @@ export function ArxAssistantLivePanel() {
       // through a ref (set right after this callback).
       if (recordTimeoutRef.current) clearTimeout(recordTimeoutRef.current);
       recordTimeoutRef.current = setTimeout(() => {
-        stopAndSendRef.current?.();
+        if(selectedChartRevision.current===requestedChartRevision&&!remoteChartBlockedRef.current)stopAndSendRef.current?.();
       }, MAX_RECORD_MS);
-    } catch {
+    } catch (error) {
+      if((error as {name?:string}).name==="AbortError"||selectedChartRevision.current!==requestedChartRevision)return;
       releaseMic();
       setErrorBanner("Couldn't start recording.");
     }
-  }, [recorder, releaseMic, startSilenceMonitor]);
+  }, [recorder, releaseMic, startSilenceMonitor,stopVoiceFully]);
 
   // Forward ref so the auto-stop timer (created inside startVoiceRecord)
   // can call the latest stopVoiceAndSend without a circular dep.
@@ -689,6 +736,7 @@ export function ArxAssistantLivePanel() {
   // Phase 22E — extracted so both the manual mic button and the auto-listen
   // hook can stream the same blob through the same upload pipeline.
   const uploadVoiceBlob = useCallback(async (blob: Blob): Promise<void> => {
+    if(remoteChartBlockedRef.current){setStatus("idle");setErrorBanner(analysisOnlyNotice);return;}
     if (isVoiceUploading) return;
     if (!conversation) return;
     if (!blob || blob.size === 0) return;
@@ -697,6 +745,9 @@ export function ArxAssistantLivePanel() {
       setErrorBanner("Voice clip is too long. Please try a shorter message.");
       return;
     }
+    const uploadGeneration=++voiceUploadGeneration.current;
+    const uploadScope=selectedChartRevision.current;
+    const ownsUpload=()=>voiceUploadGeneration.current===uploadGeneration&&selectedChartRevision.current===uploadScope;
     setStatus("listening");
     setIsVoiceUploading(true);
     // Optimistic user bubble so the spoken message is represented in the chat
@@ -705,12 +756,13 @@ export function ArxAssistantLivePanel() {
     try {
       await streamVoiceResponse(`${BASE}/api/me/assistant/conversations/${conversation.id}/voice`, blob);
     } catch (e) {
+      if(!ownsUpload())return;
       setStatus("error");
       setErrorBanner(friendlyError(e, undefined, name));
       // Drop the optimistic placeholder if no transcript ever arrived.
       setMessages((cur) => cur.filter((m) => !(m.role === "user" && m.voicePending)));
     } finally {
-      setIsVoiceUploading(false);
+      if(ownsUpload())setIsVoiceUploading(false);
     }
   }, [conversation, isVoiceUploading, streamVoiceResponse]);
 
@@ -718,10 +770,14 @@ export function ArxAssistantLivePanel() {
     if (recordTimeoutRef.current) { clearTimeout(recordTimeoutRef.current); recordTimeoutRef.current = null; }
     if (isVoiceUploading) return; // prevent double-tap
     if (!conversation) { await stopVoiceFully(); return; }
-    let blob: Blob;
-    try { blob = await recorder.stopRecording(); }
-    catch { releaseMic(); setStatus("idle"); return; }
+    const stopScope=selectedChartRevision.current;
+    let stopping:Promise<Blob>;
+    try { stopping=recorder.stopRecording(); }
+    catch { releaseMic();setStatus("idle");return; }
     releaseMic();
+    let blob:Blob;
+    try{blob=await stopping;}catch{if(selectedChartRevision.current===stopScope)setStatus("idle");return;}
+    if(selectedChartRevision.current!==stopScope||remoteChartBlockedRef.current)return;
     if (!blob || blob.size === 0) { setStatus("idle"); return; }
     await uploadVoiceBlob(blob);
   }, [conversation, recorder, releaseMic, uploadVoiceBlob, isVoiceUploading, stopVoiceFully]);
@@ -771,6 +827,7 @@ export function ArxAssistantLivePanel() {
         { id: `local-chart-a-${turn}`, role: "assistant", content: chartReply }]);
       return;
     }
+    if(remoteChartBlockedRef.current){setErrorBanner(analysisOnlyNotice);return;}
     if (!conversation || conversationChangePending.current) { setErrorBanner("Chat session not ready yet. One moment…"); return; }
     // PART 8 — Ruby first-text timing. Three distinct moments matter:
     //   send (T0) → "thinking" indicator visible (T1, sub-100ms)
@@ -795,6 +852,9 @@ export function ArxAssistantLivePanel() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const requestedChartKey=selectedChartKeyRef.current;
+    const requestedChartRevision=selectedChartRevision.current;
+    const staleScope=()=>controller.signal.aborted||abortRef.current!==controller||remoteChartBlockedRef.current||selectedChartKeyRef.current!==requestedChartKey||selectedChartRevision.current!==requestedChartRevision;
     markApiStart(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
 
     let res: Response;
@@ -807,11 +867,13 @@ export function ArxAssistantLivePanel() {
       });
     } catch (e) {
       markApiEnd(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
+      if(staleScope()){markActionEnd(rubyPid);return;}
       if ((e as { name?: string }).name === "AbortError") { setStatus("idle"); markActionEnd(rubyPid); return; }
       setStatus("error"); setErrorBanner("Connection lost. Please try again.");
       markActionEnd(rubyPid, { bottleneck: "network" });
       return;
     }
+    if(staleScope()){void res.body?.cancel().catch(()=>{});markApiEnd(rubyPid,"POST /api/me/assistant/conversations/:id/messages");markActionEnd(rubyPid);return;}
     if (!res.ok || !res.body) {
       markApiEnd(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
       setStatus("error");
@@ -839,6 +901,7 @@ export function ArxAssistantLivePanel() {
     while (true) {
       let chunk: ReadableStreamReadResult<Uint8Array>;
       try { chunk = await reader.read(); } catch { break; }
+      if(staleScope()){try{await reader.cancel();}catch{/* already closed */}markApiEnd(rubyPid,"POST /api/me/assistant/conversations/:id/messages");markActionEnd(rubyPid);return;}
       if (chunk.done) break;
       buffer += decoder.decode(chunk.value, { stream: true });
       const events = buffer.split("\n\n");
@@ -1067,6 +1130,7 @@ export function ArxAssistantLivePanel() {
         }
       }
     }
+    if(staleScope()){markActionEnd(rubyPid);return;}
     setStatus((s) => (s === "streaming" || s === "tool" || s === "thinking" ? "idle" : s));
     // Safety net — if the stream ended without a `done` event (network
     // hang-up, server crash mid-stream), close the perf row anyway so
@@ -1388,6 +1452,7 @@ export function ArxAssistantLivePanel() {
 
           {/* Messages */}
           <div id="arx-assistant-messages" ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-3",shortChartViewport&&"min-h-16 flex-none")}>
+            <p className="mb-2 text-xs text-cyan-300" data-testid="assistant-selected-chart">{chartSelection.selected?`Local chart tools: ${chartSelection.selected.symbol} · ${chartSelection.selected.timeframe} · ${chartSelection.selected.source}${chartSelection.selected.analysisOnly?" · analysis only":" · primary"}`:"No chart selected. Choose Use chart with assistant on a ready chart; no other pane will be substituted."}{remoteChartBlocked?" General chat and voice are held here; primary trading controls are unchanged.":""}</p>
             {messages.length===0&&chartCompact&&<p className="text-sm text-txt-secondary">Ask about the current chart, for example “show RSI”. Expand for conversation history and voice settings.</p>}
             {messages.length === 0 && !chartCompact && (
               <div className="rounded-2xl border border-border bg-secondary/60 p-3.5 text-sm text-foreground">
@@ -1448,7 +1513,7 @@ export function ArxAssistantLivePanel() {
                   Quick suggestions
                 </button>
                 {/* Phase 3 — advisory timing chip for active chart symbol */}
-                <RubyTimingChip symbol={chartSymbol ?? "EURUSD"} />
+                {!remoteChartBlocked&&<RubyTimingChip symbol={chartSymbol ?? "EURUSD"} />}
               </div>
               <div className="flex items-center gap-2">
                 {briefingUpdatedAt && (
@@ -1458,7 +1523,7 @@ export function ArxAssistantLivePanel() {
                 )}
                 <button
                   onClick={() => void loadBriefing({ refresh: true })}
-                  disabled={briefingLoading}
+                  disabled={remoteChartBlocked||briefingLoading}
                   className="flex items-center gap-1 text-[10px] text-txt-secondary hover:text-cyan-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Refresh briefing"
                   title="Refresh briefing"
@@ -1525,11 +1590,11 @@ export function ArxAssistantLivePanel() {
             {voiceMode?.realtimeConfigured && !realtimeEngaged && (
               <button
                 type="button"
-                onClick={() => { void realtime.start(); }}
+                onClick={() => { if(remoteChartBlockedRef.current){setErrorBanner(analysisOnlyNotice);return;}void realtime.start(); }}
                 className="h-9 w-9 rounded-full flex items-center justify-center border border-ruby/50 bg-ruby/15 text-ruby hover:border-ruby hover:text-ruby"
                 aria-label="Start Realtime voice (WebRTC)"
                 data-testid="arx-realtime-start"
-                disabled={micActive || status === "thinking" || status === "streaming"}
+                disabled={remoteChartBlocked || micActive || status === "thinking" || status === "streaming"}
                 title="Start live voice conversation (WebRTC)"
               >
                 <Radio className="h-4 w-4" />
@@ -1585,7 +1650,7 @@ export function ArxAssistantLivePanel() {
               )}
               aria-label={status === "recording" ? "Stop and send voice message" : "Record voice message"}
               data-testid="arx-mic-toggle"
-              disabled={realtimeEngaged || isVoiceUploading || rubySpeaking || status === "thinking" || status === "streaming" || status === "listening"}
+              disabled={remoteChartBlocked&&status!=="recording" || realtimeEngaged || isVoiceUploading || rubySpeaking || status === "thinking" || status === "streaming" || status === "listening"}
               title={
                 rubySpeaking
                   ? `${name} is speaking — let her finish or tap Stop first`

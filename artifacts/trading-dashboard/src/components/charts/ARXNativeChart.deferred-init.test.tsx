@@ -1,3 +1,4 @@
+import {AssistantDockProvider} from "@/components/help/AssistantDock";
 import { requestChartStudy } from "@/lib/chart-engine/chartStudyAssistant";
 // P2 — comparison chart cards mount in the click commit, but each new
 // comparison's chart engine (lightweight-charts init + its own first paint)
@@ -9,7 +10,7 @@ import { requestChartStudy } from "@/lib/chart-engine/chartStudyAssistant";
 
 import { Component, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup, act, screen, fireEvent } from "@testing-library/react";
+import { render, cleanup, act, screen, fireEvent, within } from "@testing-library/react";
 
 type Spy = ReturnType<typeof vi.fn>;
 type FakeAdapter = Record<string, Spy> & { id: number };
@@ -839,7 +840,7 @@ describe("deferred comparison engine init", () => {
 describe("current chart assistant binding",()=>{
   it("applies to primary only, updates saved manual settings and releases on unmount",()=>{
     candleResponse=liveResponse("EURUSD","H1");
-    const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    const view=render(<AssistantDockProvider><ARXNativeChart symbol="EURUSD" timeframe="H1"/></AssistantDockProvider>);
     const primary=created[0]!;
     primary.getVisibleCandles=vi.fn(()=>[{time:1700000000,open:1.1,high:1.2,low:1,close:1.15}]);
     primary.getStudyValues=vi.fn(()=>[{label:"RSI (14) · close",color:"#fff",values:[{name:"RSI",value:63.25}]}]);
@@ -850,23 +851,23 @@ describe("current chart assistant binding",()=>{
     expect(primary.setStudies).toHaveBeenLastCalledWith([expect.objectContaining({kind:"rsi",period:14})]);
     expect(localStorage.getItem("arx.chart.preferences.v1")).toContain('"rsi"');
     view.unmount();
-    expect(requestChartStudy("show RSI")).toContain("Open");
+    expect(requestChartStudy("show RSI")).toContain("Select a ready");
   });
   it("does not apply retained old data while the next asset has no matching response",()=>{
     candleResponse=liveResponse("EURUSD","H1");
-    const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+    const view=render(<AssistantDockProvider><ARXNativeChart symbol="EURUSD" timeframe="H1"/></AssistantDockProvider>);
     const adapter=created[0]!;
     adapter.getVisibleCandles=vi.fn(()=>[{time:1700000000,open:1.1,high:1.2,low:1,close:1.15}]);
     adapter.getStudyValues=vi.fn(()=>[]);
-    view.rerender(<ARXNativeChart symbol="USDJPY" timeframe="M5"/>);
+    view.rerender(<AssistantDockProvider><ARXNativeChart symbol="USDJPY" timeframe="M5"/></AssistantDockProvider>);
     adapter.setStudies.mockClear();
-    expect(requestChartStudy("show RSI")).toContain("not applied");
+    expect(requestChartStudy("show RSI")).toContain("Select a ready");
     expect(adapter.setStudies).not.toHaveBeenCalled();
     view.unmount();
   });
   it("a comparison does not hijack the chart assistant",()=>{
     candleResponse=liveResponse("EURUSD","H1");
-    const view=render(<><ARXNativeChart symbol="EURUSD" timeframe="H1"/><ARXNativeChart symbol="USDJPY" timeframe="M5" workspaceId="comparison"/></>);
+    const view=render(<AssistantDockProvider><ARXNativeChart symbol="EURUSD" timeframe="H1"/><ARXNativeChart symbol="USDJPY" timeframe="M5" workspaceId="comparison"/></AssistantDockProvider>);
     created[0]!.getVisibleCandles=vi.fn(()=>[{time:1700000000,open:1.1,high:1.2,low:1,close:1.15}]);
     created[0]!.getStudyValues=vi.fn(()=>[]);
     let reply:string|null=null; act(()=>{reply=requestChartStudy("show RSI");});
@@ -926,5 +927,26 @@ describe("original candle clock disclosure",()=>{
   expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("source clock (UTC unverified)");
   expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("O 1.10100");
   expect(engine.setCandles).toHaveBeenCalled();expect(engine.destroy).not.toHaveBeenCalled();
+ });
+});
+
+
+describe("explicit native comparison chart assistant",()=>{
+ it("applies to selected stock only and withdraws on listing identity replacement without price changes",()=>{
+  const primary=liveResponse('EURUSD','H1');
+  const stock=(identity:string)=>{const response=liveResponse('AAPL','H1');return {...response,source:'assistant_real:twelve_data',marketEvidence:null,feedStatus:{...response.feedStatus,source:'assistant_real:twelve_data',isLive:false,quality:'delayed',aiUsable:false},candles:response.candles.map(bar=>({...bar,source:'assistant_real:twelve_data',volumeEvidence:{kind:'real_volume',unit:'provider_trade_units',quantity:200,authority:'twelve-data:time-series:common-stock:regular-unadjusted:v1',seriesIdentity:identity,reason:null}}))};};
+  const app=(identity:string)=><AssistantDockProvider><ARXNativeChart symbol="EURUSD" timeframe="H1" externalFeed={{data:primary,isLoading:false,isError:false,isFetching:false} as any}/><ARXNativeChart symbol="AAPL" timeframe="H1" workspaceId="comparison" externalFeed={{data:stock(identity),isLoading:false,isError:false,isFetching:false} as any}/></AssistantDockProvider>;
+  const view=render(app('a'.repeat(64)));runFrame();runTasks();
+  expect(created).toHaveLength(2);const eur=created[0]!,aapl=created[1]!;
+  for(const adapter of created){adapter.getVisibleCandles=vi.fn(()=>[{time:1700000000,open:100,high:110,low:90,close:101}]);adapter.getStudyValues=vi.fn(()=>[{label:'RSI (14) · close',color:'#fff',values:[{name:'RSI',value:63.25}]}]);adapter.setStudies.mockClear();}
+  const stockCard=screen.getAllByTestId('arx-native-chart')[1]!;
+  fireEvent.click(within(stockCard).getByTestId('chart-assistant-activate'));
+  let reply:string|null=null;act(()=>{reply=requestChartStudy('show RSI');});
+  expect(reply).toContain('AAPL · H1');expect(reply).toContain('63.25');expect(aapl.setStudies).toHaveBeenLastCalledWith([expect.objectContaining({kind:'rsi'})]);expect(eur.setStudies).not.toHaveBeenCalled();
+  expect(localStorage.getItem('arx.chart.preferences.v1:comparison')).toContain('rsi');expect(localStorage.getItem('arx.chart.preferences.v1')??'').not.toContain('rsi');
+  view.rerender(app('b'.repeat(64)));eur.setStudies.mockClear();aapl.setStudies.mockClear();
+  expect(requestChartStudy('show RSI')).toContain('Select a ready');expect(eur.setStudies).not.toHaveBeenCalled();expect(aapl.setStudies).not.toHaveBeenCalled();
+  fireEvent.click(within(screen.getAllByTestId('arx-native-chart')[1]!).getByTestId('chart-assistant-activate'));
+  act(()=>{reply=requestChartStudy('show RSI');});expect(reply).toContain('AAPL · H1');
  });
 });
