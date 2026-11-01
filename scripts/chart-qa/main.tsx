@@ -108,7 +108,7 @@ if(import.meta.hot) import.meta.hot.dispose(()=>{root.unmount();removeQaWitnesse
 // Stress matrix removes the acceptance workbench and observer wrappers first,
 // so background React/chart work is not silently mixed into renderer timings.
 let stressOnly=false;
-(window as any).runChartStressMatrixCase=async (options:Parameters<typeof import("./stress-matrix").runStressMatrixCase>[0])=>{
+(window as any).runChartStressMatrixCase=async (options:Parameters<typeof import("./stress-matrix.ts").runStressMatrixCase>[0])=>{
  if(!stressOnly){root.unmount();removeQaWitnesses();stressOnly=true;await new Promise(requestAnimationFrame);}
- const {runStressMatrixCase}=await import("./stress-matrix");return runStressMatrixCase(options);
+ const {runStressMatrixCase}=await import("./stress-matrix.ts");return runStressMatrixCase(options);
 };
