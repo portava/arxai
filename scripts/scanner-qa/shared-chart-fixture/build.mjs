@@ -23,9 +23,10 @@ const sha = data => createHash('sha256').update(data).digest('hex');
 const git = args => execFileSync('git', args, {cwd:repo, encoding:'utf8'}).trim();
 const state = () => ({head:git(['rev-parse','HEAD']), status:git(['status','--porcelain','--untracked-files=all']), diffSha256:sha(git(['diff','HEAD','--']))});
 const args = process.argv.slice(2);
-if (args.length > 1 || (args[0] && args[0]!=='--react-profile' && args[0]!=='--volume-profile' && !/^--feed=(baseline|label-baseline|candidate)$/.test(args[0]) && !/^--serve=[a-f0-9]{16}$/.test(args[0]))) throw Error('Use --react-profile, --volume-profile, --feed=baseline|label-baseline|candidate, or --serve=<build-id>');
+if (args.length > 1 || (args[0] && args[0]!=='--react-profile' && args[0]!=='--volume-profile' && args[0]!=='--flag-lifecycle' && !/^--feed=(baseline|label-baseline|candidate)$/.test(args[0]) && !/^--serve=[a-f0-9]{16}$/.test(args[0]))) throw Error('Use --react-profile, --volume-profile, --flag-lifecycle, --feed=baseline|label-baseline|candidate, or --serve=<build-id>');
 const profile=args[0]==='--react-profile';
 const volumeProfileProbe=args[0]==='--volume-profile';
+const flagLifecycleProbe=args[0]==='--flag-lifecycle';
 const feedMode=args[0]?.startsWith('--feed=')?args[0].slice(7):null;
 const serve = args[0]?.startsWith('--serve=')?args[0].slice(8):undefined;
 const id = serve ?? randomBytes(8).toString('hex');
@@ -57,7 +58,7 @@ if (!serve) {
   const feedReconciliation=feedMode?{mode:feedMode,adapterPath,adapterSourceSha256:sha(adapterBaseline??adapterCurrent),workingAdapterSha256:sha(adapterCurrent),baselineCommit:isBaseline?git(['rev-parse',baselineCommit]):null,comparisonScope:'Only adapter source is pinned; all other modules use the recorded working tree. Not a historical full-app build.',qaOnlySourceOverride:isBaseline}:null;
   let baselineApplied=false;
   const baselinePlugin={name:'qa-exact-baseline-adapter',enforce:'pre',load(file){if(adapterBaseline&&file===path.join(repo,adapterPath)){baselineApplied=true;return adapterBaseline;}return null;}};
-  await build({root,configFile:false,base:'/',define:{__ARX_FEED_LABEL_POLICY__:JSON.stringify(isBaseline?'legacy_dual':'canonical_only'),__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_SCANNER_QA_REACT_PROFILE__:JSON.stringify(profile),__ARX_FEED_RECONCILIATION__:JSON.stringify(Boolean(feedMode)),__ARX_VOLUME_PROFILE_PROBE__:JSON.stringify(volumeProfileProbe)},esbuild:{keepNames:profile},plugins:[...(adapterBaseline?[baselinePlugin]:[]),...(profile?[candleTimelinePlugin(repo)]:[]),dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
+  await build({root,configFile:false,base:'/',define:{__ARX_FEED_LABEL_POLICY__:JSON.stringify(isBaseline?'legacy_dual':'canonical_only'),__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_SCANNER_QA_REACT_PROFILE__:JSON.stringify(profile),__ARX_FEED_RECONCILIATION__:JSON.stringify(Boolean(feedMode)),__ARX_VOLUME_PROFILE_PROBE__:JSON.stringify(volumeProfileProbe),__ARX_FLAG_LIFECYCLE_PROBE__:JSON.stringify(flagLifecycleProbe)},esbuild:{keepNames:profile},plugins:[...(adapterBaseline?[baselinePlugin]:[]),...(profile?[candleTimelinePlugin(repo)]:[]),dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
     ...(profile?[{find:'react-dom/client',replacement:require.resolve('react-dom/profiling')}]:[]),
     {find:'react',replacement:path.dirname(require.resolve('react/package.json'))},
     {find:'react-dom',replacement:path.dirname(require.resolve('react-dom/package.json'))},
@@ -72,16 +73,16 @@ if (!serve) {
   const dashboardUtilityCss=assertDashboardUtilityCss(await Promise.all(entries.filter(f=>f.endsWith('.css')).map(f=>readFile(f,'utf8'))));
   const dev = ['react-stack-bottom-frame','data must be asc ordered by time','series item data value must be'];
   if (dev.some(marker=>sources.some(s=>s.includes(marker)))) throw Error('Development runtime found');
-  if (!((feedMode||volumeProfileProbe)?['tv-lightweight-charts']:['Minified React error #','tv-lightweight-charts']).every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
+  if (!((feedMode||volumeProfileProbe||flagLifecycleProbe)?['tv-lightweight-charts']:['Minified React error #','tv-lightweight-charts']).every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
   const metadata = {schemaVersion:1,buildId:id,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:!profile,diagnosticOnly:profile,reactProfiling:profile,candleTimeline:profile,
-    entry:(feedMode||volumeProfileProbe)?'Isolated actual chart adapter; no React app, navigation or API':'Actual dashboard src/main.tsx; observer installed before mount',fixtureOnlyObserver:'scripts/chart-qa/witness.ts',feedReconciliation,volumeProfileProbe,dashboardUtilityCss,hashes,
+    entry:(feedMode||volumeProfileProbe||flagLifecycleProbe)?'Isolated actual chart adapter; no React app, navigation or API':'Actual dashboard src/main.tsx; observer installed before mount',fixtureOnlyObserver:flagLifecycleProbe?null:'scripts/chart-qa/witness.ts',feedReconciliation,volumeProfileProbe,flagLifecycleProbe,dashboardUtilityCss,hashes,
     limitations:['Isolated Vite configuration; this is not the deployable dashboard bundle.','Offline synthetic data and unavailable reader truth; no production or broker validation.','No hardware paint or competitor performance measurement.']};
   await writeFile(path.join(out,metadataFile),JSON.stringify(metadata,null,2)+'\n');
   console.log(JSON.stringify({buildId:id,out,source:before,sourceUnchanged:metadata.sourceUnchanged,serve:`node scripts/scanner-qa/shared-chart-fixture/build.mjs --serve=${id}`},null,2));
 } else {
   const info = JSON.parse(await readFile(path.join(out,metadataFile),'utf8'));
   if(info.buildId!==id || info.schemaVersion!==1) throw Error('Wrong build metadata');
-  const port=info.volumeProfileProbe?4209:info.feedReconciliation?(info.feedReconciliation.mode==='candidate'?4208:4207):info.reactProfiling?4299:4199;
+  const port=info.flagLifecycleProbe?4210:info.volumeProfileProbe?4209:info.feedReconciliation?(info.feedReconciliation.mode==='candidate'?4208:4207):info.reactProfiling?4299:4199;
   for (const [relative,expected] of Object.entries(info.hashes)) {
     if (path.isAbsolute(relative) || relative.split('/').includes('..')) throw Error('Invalid manifest path');
     if(sha(await readFile(path.join(out,relative)))!==expected) throw Error('Asset changed: '+relative);
@@ -90,6 +91,7 @@ if (!serve) {
   const journalDirectory=path.join(parent,id+'-navigation-receipts');
   const journal=createNavigationJournal({directory:journalDirectory,buildId:id,sourceHead:info.source.head});
   const server=http.createServer(async(req,res)=>{
+    if(info.flagLifecycleProbe)res.setHeader('Content-Security-Policy',"default-src 'self'; connect-src 'none'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:");
     if(await journal(req,res))return;
     const pathname=new URL(req.url,'http://127.0.0.1:4199').pathname;
     if(req.method!=='GET' || pathname.startsWith('/api/')) {res.writeHead(503,{'content-type':'application/json'});res.end('{"error":"OFFLINE_API_NOT_INTERCEPTED"}');return;}

@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { SmartChartAnnotationPrimitive, type SmartChartAnnotation } from "./smartChartAnnotation";
 const candles=Array.from({length:8},(_,i)=>({time:100+i*90,open:10,high:20,low:9,close:15}));
 const annotation:SmartChartAnnotation={id:"pattern",anchors:candles.map(c=>({time:c.time,price:15,label:"Observed pivot"})),color:"#38bdf8",dashed:false};
+const segments = [
+ {from:{time:100,price:10},to:{time:190,price:18}},
+ {from:{time:280,price:18},to:{time:460,price:16}},
+ {from:{time:280,price:16},to:{time:460,price:14}},
+];
 function fixture(){
   const timeToCoordinate=vi.fn((time:number)=>time),priceToCoordinate=vi.fn((price:number)=>100-price);
   const requestUpdate=vi.fn(),primitive=new SmartChartAnnotationPrimitive();
@@ -32,6 +37,22 @@ describe("one focused automatic annotation",()=>{
     f.primitive.setData(annotation,candles);f.primitive.detached();f.draw();
     expect(f.context.stroke).not.toHaveBeenCalled();
   });
+});
+
+it("draws a pole and two channel edges as separate paths without diagonal bridges",()=>{
+ const f=fixture();f.primitive.setData({...annotation,connectAnchors:false,segments},candles);f.draw();
+ expect(f.context.moveTo.mock.calls).toEqual([[100,90],[280,82],[280,84]]);
+ expect(f.context.lineTo.mock.calls).toEqual([[190,82],[460,84],[460,86]]);
+ expect(f.context.stroke).toHaveBeenCalledTimes(3);
+});
+it.each(["missing time","negative price","reversed time","too many"])("withholds malformed or unavailable segment geometry: %s",kind=>{
+ const f=fixture(),bad=structuredClone(segments);
+ if(kind==="missing time")bad[0]!.from.time=101;
+ if(kind==="negative price")bad[0]!.to.price=-1;
+ if(kind==="reversed time")bad[0]!.from.time=280;
+ if(kind==="too many")bad.push(...segments);
+ f.primitive.setData({...annotation,connectAnchors:false,segments:bad},candles);f.draw();
+ expect(f.context.stroke).not.toHaveBeenCalled();expect(f.context.arc).not.toHaveBeenCalled();
 });
 
 it("keeps event anchors and reference levels without inventing a diagonal connecting path",()=>{

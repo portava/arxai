@@ -7,6 +7,11 @@ import { captureChartReplay } from "@/lib/chart-engine/chartReplay";
 import { DEFAULT_PREFERENCES } from "@/lib/chart-engine/chartWorkspace";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { analyzeSmartChart, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
+it("preserves independent flag-channel segments without adding a horizontal trigger line",()=>{
+ const segments=[{from:{time:1,price:100},to:{time:2,price:110}},{from:{time:3,price:109},to:{time:4,price:108}},{from:{time:3,price:107},to:{time:4,price:106}}];
+ const finding={id:"flag",title:"Bull Flag",status:"developing",connectAnchors:false,segments,anchors:[{time:1,price:100,role:"flagpole_start"},{time:2,price:110,role:"flagpole_end"}],levels:[{price:108,label:"Projected trigger"}]} as SmartChartFinding;
+ expect(findingAnnotation(finding)).toMatchObject({connectAnchors:false,segments});expect(findingAnnotation(finding)).not.toHaveProperty("level");
+});
 vi.mock("@/lib/chart-engine/smartChartAnalysis",async importOriginal=>{
   const actual=await importOriginal<typeof import("@/lib/chart-engine/smartChartAnalysis")>();
   return {...actual,analyzeSmartChart:vi.fn(actual.analyzeSmartChart)};

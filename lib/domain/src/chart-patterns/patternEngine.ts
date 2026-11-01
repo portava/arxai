@@ -354,85 +354,113 @@ function detectDoubleReversal(ctx: DetectorContext): DetectedPattern | null {
 
 // ── Bull / bear flag — continuation ──────────────────────────────────────────
 
+/** ARX fixed-window convention, not platform parity: 8 pole bars, then 6
+ * flag bars in a parallel counter-trend channel, with minimum 20 observations.
+ * Inspect at most the latest 600 closed bars. The first qualifying formation
+ * owns its bars; overlapping rolling windows cannot replace/rewrite it. A new
+ * qualifying formation may replace it only when its pole starts after the old
+ * formation ends. The fit, ATR, precision and geometric score freeze at known.
+ */
 function detectFlag(ctx: DetectorContext): DetectedPattern | null {
-  const { closed, atr: atrVal, last, decimals } = ctx;
-  const MIN = 20;
+  const { closed } = ctx;
+  const MIN = 20, POLE = 8, FLAG = 6;
   if (closed.length < MIN) return null;
-
-  // Flagpole = recent strong impulse; flag = shallow counter-trend drift.
-  const poleLen = Math.min(8, Math.floor(closed.length / 3));
-  const flagLen = Math.min(6, Math.floor(closed.length / 4));
-  if (poleLen < 3 || flagLen < 3) return null;
-
-  const poleStart = closed.length - flagLen - poleLen;
-  const poleEnd = closed.length - flagLen;
-  if (poleStart < 0) return null;
-
-  const pole = closed.slice(poleStart, poleEnd);
-  const flag = closed.slice(poleEnd);
-  const poleMove = pole[pole.length - 1]!.close - pole[0]!.close;
-  const poleRange = Math.max(...pole.map((c) => c.high)) - Math.min(...pole.map((c) => c.low));
-  if (poleRange <= 0) return null;
-
-  const flagCloses = flag.map((c) => c.close);
-  const flagSlope = slope(flagCloses);
-  const flagRange = Math.max(...flag.map((c) => c.high)) - Math.min(...flag.map((c) => c.low));
-
-  // Pole must be a clear impulse (≥ ~2 ATR move) and flag a shallow pullback.
-  const impulseOk = atrVal ? Math.abs(poleMove) >= 2 * atrVal : Math.abs(poleMove) >= poleRange * 0.6;
-  const shallowOk = flagRange <= poleRange * 0.6;
-  if (!impulseOk || !shallowOk) return null;
-
-  const bullish = poleMove > 0;
-  // Counter-trend drift confirms a flag (bull flag drifts down, bear flag up).
-  const drifts = bullish ? flagSlope <= 0 : flagSlope >= 0;
-  if (!drifts) return null;
-
-  const flagHigh = Math.max(...flag.map((c) => c.high));
-  const flagLow = Math.min(...flag.map((c) => c.low));
-  const confirmation = bullish ? flagHigh : flagLow;
-  const invalidation = bullish ? flagLow : flagHigh;
-  const target = bullish ? confirmation + Math.abs(poleMove) : confirmation - Math.abs(poleMove);
-
-  const broke = bullish ? last.close > flagHigh : last.close < flagLow;
-  const height = Math.abs(poleMove);
-  const status: PatternStatus = broke
-    ? extensionExhausted(last.close, confirmation, height, bullish ? "up" : "down")
-      ? "exhausted"
-      : "confirmed"
-    : (bullish ? last.close < flagLow : last.close > flagHigh)
-      ? "invalidated"
-      : "forming";
-
-  const score = 50 + (atrVal ? clamp((Math.abs(poleMove) / atrVal) * 6, 0, 25) : 10);
-  const bias: PatternBias = bullish ? "bullish" : "bearish";
-
+  const windowStart = Math.max(0, closed.length - 600);
+  type Formation = { poleStart: number; poleEnd: number; flagStart: number; known: number; bullish: boolean; poleMove: number; frozenAtr: number; channelSlope: number; upper: number; lower: number };
+  // Subtract the local price origin before covariance. Raw-price sums lose
+  // slope precision on high-priced instruments or small FX movements.
+  const centeredFlagSlope = (values: number[]) => slope(values.map(value => value - values[0]!));
+  let formation: Formation | null = null;
+  for (let known = Math.max(MIN - 1, windowStart + 14); known < closed.length; known++) {
+    const poleStart = known - POLE - FLAG + 1, poleEnd = poleStart + POLE - 1, flagStart = poleEnd + 1;
+    if (formation && poleStart <= formation.known) continue;
+    const pole = closed.slice(poleStart, poleEnd + 1), flag = closed.slice(flagStart, known + 1);
+    const poleMove = pole[POLE - 1]!.close - pole[0]!.close;
+    const bullish = poleMove > 0;
+    const poleRange = Math.max(...pole.map(c => c.high)) - Math.min(...pole.map(c => c.low));
+    const frozenAtr = atr(closed.slice(known - 14, known + 1), 14);
+    if (!(frozenAtr != null && frozenAtr > 0) || Math.abs(poleMove) < 2 * frozenAtr || poleRange <= 0) continue;
+    // A single gap is not a sustained pole: at least five of seven close steps
+    // must align with the measured impulse. No calibrated probability implied.
+    let aligned = 0;
+    for (let i = 1; i < POLE; i++) if (bullish ? pole[i]!.close > pole[i - 1]!.close : pole[i]!.close < pole[i - 1]!.close) aligned++;
+    if (aligned < 5) continue;
+    const flagHigh = Math.max(...flag.map(c => c.high)), flagLow = Math.min(...flag.map(c => c.low));
+    const depth = bullish ? pole[POLE - 1]!.close - flagLow : flagHigh - pole[POLE - 1]!.close;
+    if (flagHigh - flagLow > poleRange * .6 || depth > Math.abs(poleMove) * .6) continue;
+    // Price gaps between the pole and flag, or inside it, are not a continuous
+    // consolidation channel. Clock/session continuity remains caller-owned.
+    let gap = false;
+    for (let i = flagStart; i <= known; i++) if (closed[i]!.low > closed[i - 1]!.high || closed[i]!.high < closed[i - 1]!.low) { gap = true; break; }
+    if (gap) continue;
+    const channelSlope = centeredFlagSlope(flag.map(c => c.close));
+    if (bullish ? channelSlope > 0 : channelSlope < 0) continue;
+    const upper = Math.max(...flag.map((c, i) => c.high - channelSlope * i));
+    const lower = Math.min(...flag.map((c, i) => c.low - channelSlope * i));
+    const width = upper - lower;
+    // Independently fitted high/low trends must remain approximately parallel:
+    // divergence over the 5 intervals <= 1/4 channel width and <= 1/2 ATR.
+    const divergence = Math.abs(centeredFlagSlope(flag.map(c => c.high)) - centeredFlagSlope(flag.map(c => c.low))) * (FLAG - 1);
+    if (!(width > 0) || divergence > Math.min(width * .25, frozenAtr * .5)) continue;
+    formation = { poleStart, poleEnd, flagStart, known, bullish, poleMove, frozenAtr, channelSlope, upper, lower };
+  }
+  if (!formation) return null;
+  const f = formation;
+  const upperAt = (index: number) => f.upper + f.channelSlope * (index - f.flagStart);
+  const lowerAt = (index: number) => f.lower + f.channelSlope * (index - f.flagStart);
+  const triggerAt = (index: number) => f.bullish ? upperAt(index) : lowerAt(index);
+  const oppositeAt = (index: number) => f.bullish ? lowerAt(index) : upperAt(index);
+  const targetAt = (index: number): number | null => {
+    const projected = triggerAt(index) + f.poleMove;
+    return Number.isFinite(projected) && projected > 0 ? projected : null;
+  };
+  let confirmedIndex: number | null = null, failedIndex: number | null = null, targetReachedIndex: number | null = null;
+  for (let i = f.known + 1; i < closed.length; i++) {
+    const price = closed[i]!.close;
+    const invalidation = oppositeAt(confirmedIndex ?? i);
+    if (f.bullish ? price < invalidation : price > invalidation) { failedIndex = i; break; }
+    if (confirmedIndex === null) {
+      const previous = closed[i - 1]!.close;
+      if (f.bullish ? previous <= triggerAt(i - 1) && price > triggerAt(i) : previous >= triggerAt(i - 1) && price < triggerAt(i)) confirmedIndex = i;
+    }
+    if (confirmedIndex !== null && targetReachedIndex === null) {
+      const target = targetAt(confirmedIndex);
+      if (target !== null && (f.bullish ? price >= target : price <= target)) targetReachedIndex = i;
+    }
+  }
+  const levelAtIndex = confirmedIndex ?? failedIndex ?? closed.length - 1;
+  const confirmation = triggerAt(levelAtIndex), invalidation = oppositeAt(levelAtIndex), target = targetAt(levelAtIndex);
+  const status: PatternStatus = failedIndex !== null ? "invalidated" : targetReachedIndex !== null ? "exhausted" : confirmedIndex !== null ? "confirmed" : "forming";
+  const decimals = decimalsFor(closed[f.known]!.close);
+  // A valid observed shape may have no positive measured target. The channel
+  // itself still needs usable reference prices, including display precision.
+  if (![confirmation, invalidation, r(confirmation, decimals), r(invalidation, decimals)].every(price => Number.isFinite(price) && price > 0)) return null;
+  if (target !== null && (!Number.isFinite(r(target, decimals)) || r(target, decimals) <= 0)) return null;
+  const score = 50 + clamp(Math.abs(f.poleMove) / f.frozenAtr * 6, 0, 25);
+  const keyPoints = [
+    { index: f.poleStart, price: r(closed[f.poleStart]!.close, decimals), role: "flagpole_start" },
+    { index: f.poleEnd, price: r(closed[f.poleEnd]!.close, decimals), role: "flagpole_end" },
+    { index: f.flagStart, price: r(closed[f.flagStart]!.close, decimals), role: "flag_start" },
+    { index: f.known, price: r(closed[f.known]!.close, decimals), role: "flag_end" },
+  ];
+  if (confirmedIndex !== null) keyPoints.push({ index: confirmedIndex, price: r(closed[confirmedIndex]!.close, decimals), role: "flag_break" });
+  if (failedIndex !== null) keyPoints.push({ index: failedIndex, price: r(closed[failedIndex]!.close, decimals), role: "flag_failure" });
   return {
-    id: bullish ? "bull_flag" : "bear_flag",
-    name: bullish ? "Bull Flag" : "Bear Flag",
-    category: "continuation",
-    bias,
-    status,
-    confidence: clamp(score),
-    quality: qualityFromScore(score),
-    levels: {
-      confirmation: r(confirmation, decimals),
-      invalidation: r(invalidation, decimals),
-      targets: [r(target, decimals)],
-    },
-    keyPoints: [
-      { index: poleStart, price: r(pole[0]!.close, decimals), role: "flagpole_start" },
-      { index: poleEnd - 1, price: r(pole[pole.length - 1]!.close, decimals), role: "flagpole_end" },
-      { index: closed.length - 1, price: r(last.close, decimals), role: "flag_break" },
-    ],
+    id: f.bullish ? "bull_flag" : "bear_flag", name: f.bullish ? "Bull Flag" : "Bear Flag", category: "continuation", bias: f.bullish ? "bullish" : "bearish", status,
+    confidence: clamp(score), quality: qualityFromScore(score),
+    levels: { confirmation: r(confirmation, decimals), invalidation: r(invalidation, decimals), targets: target === null ? [] : [r(target, decimals)] },
+    keyPoints,
+    flagLifecycle: { version: "causal-flag-v1", poleStartIndex: f.poleStart, poleEndIndex: f.poleEnd, flagStartIndex: f.flagStart, formationKnownAtIndex: f.known, channelSlope: f.channelSlope, upperAtStart: f.upper, lowerAtStart: f.lower, frozenAtr: f.frozenAtr, confirmedIndex, failedIndex, targetReachedIndex, levelAtIndex, targetLevel: target, confirmationLevel: confirmation, invalidationLevel: invalidation },
     rationale: [
-      `Strong ${bullish ? "up" : "down"} impulse (flagpole) followed by a shallow ${bullish ? "down" : "up"} drift.`,
-      "Measured-move target projects the flagpole from the breakout.",
+      `A measured ${f.bullish ? "rise" : "decline"} was followed by a shallow parallel counter-trend channel.`,
+      ...(target === null ? ["No positive-price measured target is available for this formation."] : []),
+      failedIndex !== null ? "A later closed price invalidated this formation; a price recovery does not restore it."
+        : targetReachedIndex !== null ? "A closed price reached the measured-move projection after the channel break. This does not establish a profitable trade."
+        : confirmedIndex !== null ? "A later closed price crossed the frozen channel. This observation does not establish what price will do next."
+        : "The channel is developing; no later closed-price breakout is confirmed. Its projected boundaries move with the frozen slope.",
     ],
-    failureModes: ["A deep pullback through the flag invalidates the continuation."],
-    minCandles: MIN,
-    entryTiming: timingForBreak(status),
-    falseBreakoutRisk: breakoutRisk(status, 1),
+    failureModes: ["A close through the opposite channel boundary invalidates the formation; after a break, that boundary is fixed at the breakout bar."],
+    minCandles: MIN, entryTiming: timingForBreak(status), falseBreakoutRisk: breakoutRisk(status, 1),
   };
 }
 

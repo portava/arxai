@@ -267,6 +267,27 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.getByTestId("ruby-market-read-missing")).toBeTruthy();
   });
 
+  it.each([90, 92, 78, 74, 66, 60, 45])(
+    "preserves the no-trade reason without turning rule weight %s into certainty",
+    (confidence) => {
+      const reason = "There isn't enough confirming evidence yet to justify the risk.";
+      mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp({
+        explanation: explanation({
+          actionable: false,
+          bestAction: "Wait for confirming evidence.",
+          noTrade: { isNoTrade: true, confidence, reason },
+        }),
+      }) }));
+      render(<RubyMarketReadCard symbol="EURUSD" timeframe="M5" />);
+      const noTrade = screen.getByTestId("ruby-market-read-no-trade");
+      expect(noTrade.textContent).toContain(reason);
+      expect(noTrade.textContent).toContain("Why sitting out is the trade");
+      expect(noTrade.textContent).not.toMatch(/\d|%|sure|confidence|probability/i);
+      expect(screen.getByTestId("ruby-market-read-best-action").textContent).toContain("Wait for confirming evidence.");
+      expect(screen.queryByText("Levels")).toBeNull();
+    },
+  );
+
   it("downgrades actionable content when the shared scanner truth is not full", () => {
     // The signal itself is a confident, actionable live read — but the ONE shared
     // truth says the feed is delayed/limited. The card must NOT present that

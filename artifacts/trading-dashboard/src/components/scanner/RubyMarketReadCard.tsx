@@ -449,12 +449,12 @@ export function RubyMarketReadCard({
                 </Collapsible>
               )}
 
-              {/* No-trade intelligence */}
+              {/* No-trade reasons are evidence, not calibrated probabilities.
+                  The internal confidence field is a fixed rule weight. */}
               {explanation.noTrade.isNoTrade && (
                 <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-no-trade">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">Why sitting out is the trade</span>
-                    <span className="ml-auto text-xs text-txt-muted">{Math.round(explanation.noTrade.confidence)}% sure</span>
                   </div>
                   {explanation.noTrade.reason && (
                     <p className="mt-1 text-sm leading-snug text-txt-secondary">{explanation.noTrade.reason}</p>

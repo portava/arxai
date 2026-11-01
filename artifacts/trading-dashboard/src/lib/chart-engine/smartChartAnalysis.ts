@@ -1,4 +1,5 @@
 import { detectChartPatterns, findSwings, round, scanCandlestickCatalogue, isObservedDoji, CANDLE_DEFINITIONS, CANDLE_CRITERIA_VERSION, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
+import { smartChartFlagFinding } from "./smartChartFlagFinding";
 import { resolveShootingStarTruth, detectEngulfing, resolveStructureBreakTruth, type DetectedPattern } from "@workspace/domain/market";
 import { chartIntervalSeconds, chartIntervalLimitation } from "./chartIntervals";
 
@@ -49,6 +50,8 @@ export interface SmartChartFinding {
   anchors: { time: number; price: number; role: string }[];
   /** Separate event anchors do not describe a connecting price path. */
   connectAnchors?: boolean;
+  /** Separate measured lines; never join channel edges into a price path. */
+  segments?: {from:{time:number;price:number};to:{time:number;price:number}}[];
   levels: { price: number; label: string }[];
   invalidation: string | null;
   caveat: string;
@@ -349,6 +352,7 @@ function headAndShoulders(raw: DetectedPattern, bars: SmartChartAnalysisBar[], n
 }
 
 function catalogFinding(raw: DetectedPattern, bars: SmartChartAnalysisBar[], note: string): SmartChartFinding | null {
+  if(raw.id==="bull_flag"||raw.id==="bear_flag")return smartChartFlagFinding(raw,bars,note);
   const points = raw.keyPoints.filter(p => Number.isInteger(p.index) && p.index >= 0 && p.index < bars.length && positive(p.price));
   if (points.length === 0 || points.length !== raw.keyPoints.length) return null;
   const status: SmartChartFinding["status"] = raw.status === "confirmed" ? "confirmed" : raw.status === "invalidated" || raw.status === "failed" ? "invalidated" : raw.status === "forming" ? "developing" : "observed";
