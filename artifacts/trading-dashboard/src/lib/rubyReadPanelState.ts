@@ -49,6 +49,8 @@ export interface RubyReadServerState {
   readLayer?: RubyReadLayer;
   /** The exact live trade setup is withheld (true on a STRUCTURAL_ONLY read). */
   liveSetupWithheld?: boolean;
+  /** Explicit server refusal; cannot be upgraded by provider flags. */
+  canShowLiveTradeSetup?: boolean;
 }
 
 /**
@@ -59,6 +61,8 @@ export interface RubyReadServerState {
  * component module.
  */
 export interface ChartRead extends RubyReadServerState {
+  patternRead?: {patternNote?: string;patternStatus?: string;patternConditional?: boolean;patternContextOnly?: boolean};
+  trendlineRead?: {trendlineNote?: string;trendlineStatus?: string;trendlineConditional?: boolean;trendlineContextOnly?: boolean};
   bias?: string;
   confidence?: string;
   why?: string;
@@ -112,7 +116,9 @@ export function resolveCappedRubyReadStatus(
     !!read &&
     (read.gated === true ||
       read.dataQuality === "insufficient" ||
-      read.readLayer === "STRUCTURAL_ONLY");
+      read.readLayer === "STRUCTURAL_ONLY" ||
+      read.readLayer === "INSUFFICIENT" ||
+      read.liveSetupWithheld === true || read.canShowLiveTradeSetup === false);
   const serverReason = readDowngraded
     ? read?.blockedReason ?? read?.headline ?? null
     : null;
@@ -123,7 +129,9 @@ export function resolveCappedRubyReadStatus(
         status: "LIMITED_READ",
         reason:
           serverReason ??
-          `The live feed isn't fully confirmed — ${assistantName} reads with caution.`,
+          (read?.liveSetupWithheld === true || read?.canShowLiveTradeSetup === false
+            ? "The returned chart read withholds the exact setup; it is a limited structural assessment."
+            : `The live feed isn't fully confirmed — ${assistantName} reads with caution.`),
       };
     }
     return { status: "FULL_READ", reason: null };
@@ -164,6 +172,8 @@ export interface RubyReadPanelState {
    * downgrade, so the header and reason can never contradict each other.
    */
   reason: string | null;
+  /** Independent shared-data limitation retained alongside structural context. */
+  feedLimitation?: string | null;
   /**
    * What the badge may claim: `true` → clean/AI allowed, `false` → never
    * clean/AI, `null` → unknown (verdict not yet resolved).
@@ -186,25 +196,28 @@ export function resolveRubyReadPanelState(
   // downgrade (limited / historical_only / blocked) means feed-not-confirmed.
   const truthActionable = truthLevel === "full";
 
-  // A parent override wins; otherwise use the resolved shared truth. We only
+  // A negative parent hint can restrict; a positive hint cannot upgrade known
+  // downgraded shared truth. We only
   // know a verdict once the truth is resolved (or a parent supplies one).
   const effectiveAiUsable: boolean | null =
-    aiUsableProp != null ? aiUsableProp : truthKnown ? truthActionable : null;
+    aiUsableProp === false ? false : truthKnown ? truthActionable : aiUsableProp ?? null;
 
   // Once a read has run, the server marks unconfirmed/gated reads insufficient —
   // this is authoritative for the body, so it must also drive the badge/banner.
   const readInsufficient =
-    !!read && (read.gated === true || read.dataQuality === "insufficient");
+    !!read && (read.gated === true || read.dataQuality === "insufficient" || read.readLayer === "INSUFFICIENT");
   // A STRUCTURAL_ONLY read (Task #602) is its OWN verdict: a directional read IS
   // available, but the exact live setup is withheld. It takes precedence over a
   // generic "not confirmed" (it's the more specific, more honest state) and over
   // "confirmed" (the badge must never claim clean/AI while the setup is withheld).
-  const structuralOnly = read?.readLayer === "STRUCTURAL_ONLY";
+  const structuralOnly = read?.readLayer === "STRUCTURAL_ONLY" || read?.liveSetupWithheld === true || read?.canShowLiveTradeSetup === false;
 
   let verdict: RubyReadVerdict;
-  if (structuralOnly) {
+  if (readInsufficient) {
+    verdict = "not_confirmed";
+  } else if (structuralOnly) {
     verdict = "structural_only";
-  } else if (readInsufficient || effectiveAiUsable === false) {
+  } else if (effectiveAiUsable === false) {
     verdict = "not_confirmed";
   } else if (effectiveAiUsable === true) {
     verdict = "confirmed";
@@ -222,7 +235,7 @@ export function resolveRubyReadPanelState(
   let reason: string | null = null;
   if (verdict === "structural_only") {
     // The withheld-setup reason the server supplied is the authoritative driver.
-    reason = read?.blockedReason ?? read?.headline ?? null;
+    reason = read?.blockedReason ?? read?.headline ?? "The returned chart read withholds the exact setup; its market structure is context only.";
   } else if (feedNotConfirmed) {
     if (truthKnown && !truthActionable) {
       reason = truthReason;
@@ -231,10 +244,10 @@ export function resolveRubyReadPanelState(
     }
   }
 
-  // What we tell the endpoint: prefer an explicit override, else the resolved
+  // What we tell the endpoint: preserve the same downgrade-only rule, using the
   // verdict. This is read-independent (sent before any read has run).
   const reportedAiUsable: boolean | undefined =
-    aiUsableProp != null ? aiUsableProp : truthKnown ? truthActionable : undefined;
+    aiUsableProp === false ? false : truthKnown ? truthActionable : aiUsableProp;
 
   // The badge may claim clean/AI only on a fully-confirmed read. A
   // structural-only read is a downgrade → never clean/AI.
@@ -245,7 +258,15 @@ export function resolveRubyReadPanelState(
         ? false
         : null;
 
-  return { verdict, feedNotConfirmed, reason, badgeAiUsable, reportedAiUsable };
+  const feedLimitation = verdict === "structural_only"
+    ? truthKnown && !truthActionable
+      ? truthReason?.trim() || "Shared chart data is limited; check the chart's feed status."
+      : aiUsableProp === false
+        ? "The current chart context is not cleared for a live assessment."
+        : null
+    : null;
+
+  return { verdict, feedNotConfirmed, reason, feedLimitation, badgeAiUsable, reportedAiUsable };
 }
 
 /**

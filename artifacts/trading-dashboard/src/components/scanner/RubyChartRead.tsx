@@ -119,7 +119,7 @@ export function RubyChartRead({
   });
   const feedNotConfirmed = panel.feedNotConfirmed;
   // Task #602 — a directional STRUCTURAL read is available, but the exact live
-  // setup (entry/stop/target) is withheld until the feed confirms. This is a
+  // setup (entry/stop/target) is withheld by the stated restriction. This is a
   // distinct, more-informative state than a bare "feed not confirmed" block.
   const structuralOnly = panel.verdict === "structural_only";
   const reportedAiUsable = panel.reportedAiUsable;
@@ -197,16 +197,16 @@ export function RubyChartRead({
         >
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Feed not confirmed — {name} may have limited visibility on {symbol} {timeframe}.
+            Chart read restricted — review the limitation for {symbol} {timeframe}.
             {panel.reason ? ` ${panel.reason}` : ""}
           </span>
         </div>
       )}
 
-      {/* Structural-read notice (Task #602) — a directional read IS available,
-          but the exact entry/stop/target are withheld until the feed confirms.
+      {/* Structural-read notice (Task #602) — contextual structure is available,
+          but the exact entry/stop/target are withheld by the stated restriction.
           Distinct from the hard "feed not confirmed" block above so the user
-          knows the structure below is real and only the live setup is pending. */}
+          can distinguish reported structural context from an actionable setup. */}
       {structuralOnly && (
         <div
           className="mt-3 flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-primary"
@@ -214,10 +214,16 @@ export function RubyChartRead({
         >
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Structural read available — exact entry, stop, and target are withheld until {symbol} {timeframe} confirms.
+            Structural context available — exact entry, stop, and target are withheld.
             {panel.reason ? ` ${panel.reason}` : ""}
           </span>
         </div>
+      )}
+
+      {structuralOnly && panel.feedLimitation && (
+        <p className="mt-2 text-xs text-warning" data-testid="ruby-chart-read-feed-limitation">
+          Data limitation: {panel.feedLimitation}
+        </p>
       )}
 
       {err && <div className="mt-2 text-sm text-danger" data-testid="ruby-chart-read-err">{name} couldn't read this chart ({err}).</div>}
@@ -226,12 +232,11 @@ export function RubyChartRead({
         <p className="mt-3 text-sm text-txt-secondary">Tap “Read this chart” and {name} will break down bias, conditions, levels, and risk for {symbol} {timeframe}.</p>
       )}
 
-      {/* Gated read — the server could not verify the feed, so there is no
+      {/* Gated read — the server restricted the assessment, so there is no
           directional structure to show. Surface the honest reason instead. */}
       {read && read.gated && (
         <div className="mt-3 space-y-2" data-testid="ruby-chart-read-gated">
-          {read.headline && <p className="text-sm text-txt-secondary">{read.headline}</p>}
-          {read.blockedReason && <p className="text-xs text-txt-muted">{read.blockedReason}</p>}
+          <p className="text-sm text-txt-secondary">{panel.reason ?? "The chart read is restricted; directional details are withheld."}</p>
           {read.disclaimer && <p className="text-[10px] italic text-txt-muted">{read.disclaimer}</p>}
         </div>
       )}
@@ -239,11 +244,11 @@ export function RubyChartRead({
       {read && !read.gated && (
         <div className="mt-3 space-y-3" data-testid="ruby-chart-read-body">
           {/* Bias / Confidence / HTF row */}
-          <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
+          {!feedNotConfirmed && <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
             <Metric label="Bias" value={read.bias ?? "—"} className={biasTone(read.bias ?? "")} testid="ruby-chart-read-bias" />
             <Metric label="Confidence" value={read.confidence ?? "—"} className={confTone(read.confidence ?? "")} />
             <Metric label="HTF Bias" value={read.htfBias ?? "—"} className={biasTone(read.htfBias ?? "")} />
-          </div>
+          </div>}
 
           {/* Ruby's full reasoning — ALWAYS visible (no accordion). Honesty flags
               from the ONE panel verdict flow into the builder, so a structural-only
@@ -257,6 +262,7 @@ export function RubyChartRead({
               structuralOnly,
               feedNotConfirmed,
               reason: panel.reason,
+              feedLimitation: panel.feedLimitation,
             }, name)}
             testid="ruby-chart-read-reasoning"
           />

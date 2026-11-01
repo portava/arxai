@@ -228,3 +228,18 @@ describe("existing geometry, causal confirmation and plain English", () => {
     expect(staleWindow.caveat).toContain("feed is stale");
   });
 });
+
+it("carries breakout/retest event geometry without claiming a connecting price path",()=>{
+ const source=bars([...flat(16),...[
+ [100,100.2,99.8,100.1],[100.1,100.4,100,100.3],[100.3,101,100.2,100.6],
+ [100.4,100.5,100,100.2],[100.2,100.4,99.9,100.1],[100.1,100.6,100,100.4],
+ [100.4,101,100.3,100.6],[100.6,100.7,100.1,100.3],[100.3,100.6,100,100.2],
+ [100.2,102.2,100.1,102],[102,102.1,100.9,101.3],[101.3,101.7,101,101.5],
+ [101.5,103,101.5,102.8]
+ ].map(([open,high,low,close])=>({open:open!,high:high!,low:low!,close:close!}))]);
+ const finding=find(input(source),"breakout_retest_up");
+ expect(finding).toMatchObject({connectAnchors:false});
+ expect(finding?.anchors.find(a=>a.role==="retest")).toEqual({time:source[26]!.time,price:101,role:"retest"});
+ const withoutTouch=bars([...source.slice(0,26),{open:102,high:103,low:102,close:102.8},{open:102.8,high:104,low:102.8,close:103.8}]);
+ expect(find(input(withoutTouch),"breakout_retest_up")?.anchors.map(a=>a.role)).toEqual(["broken_level"]);
+});

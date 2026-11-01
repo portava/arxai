@@ -33,3 +33,14 @@ describe("one focused automatic annotation",()=>{
     expect(f.context.stroke).not.toHaveBeenCalled();
   });
 });
+
+it("keeps event anchors and reference levels without inventing a diagonal connecting path",()=>{
+ const f=fixture();f.primitive.setData({...annotation,connectAnchors:false,anchors:[{time:100,price:15,label:"broken level"},{time:280,price:14,label:"retest"}],level:{price:15,label:"Broken level"}},candles);f.draw();
+ expect(f.context.arc).toHaveBeenCalledTimes(2);expect(f.context.fillText).toHaveBeenCalledTimes(2);
+ expect(f.context.lineTo.mock.calls).toEqual([[280,85]]);
+ expect(f.context.stroke).toHaveBeenCalledTimes(1);
+});
+it("refuses malformed connection semantics instead of guessing",()=>{
+ const f=fixture();f.primitive.setData({...annotation,connectAnchors:"false" as any},candles);f.draw();
+ expect(f.context.stroke).not.toHaveBeenCalled();
+});

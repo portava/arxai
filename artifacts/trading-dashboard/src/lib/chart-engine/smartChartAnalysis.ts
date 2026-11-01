@@ -47,6 +47,8 @@ export interface SmartChartFinding {
   confirmedAt?: number;
   asOf: number;
   anchors: { time: number; price: number; role: string }[];
+  /** Separate event anchors do not describe a connecting price path. */
+  connectAnchors?: boolean;
   levels: { price: number; label: string }[];
   invalidation: string | null;
   caveat: string;
@@ -358,5 +360,6 @@ function catalogFinding(raw: DetectedPattern, bars: SmartChartAnalysisBar[], not
     ...(status === "confirmed" ? { confirmedAt: last.closeTime } : {}), asOf: last.closeTime,
     explanation: `${(raw.rationale[0] ?? "Observed price geometry.").replace(" (stop run)", "")}${levels[0] ? ` The measured ${levels[0].label.toLowerCase()} is ${price(levels[0].price)}.` : ""} ${status === "developing" ? "The shape is still developing." : status === "invalidated" ? "Its confirmation conditions no longer hold." : "This describes the observed shape, not its future outcome."}`,
     anchors: points.map(p => ({ time: bars[p.index]!.time, price: p.price, role: p.role })), levels,
+    ...(raw.category === "breakout_retest" ? { connectAnchors: false } : {}),
     invalidation: raw.failureModes[0] ?? null, caveat: note };
 }

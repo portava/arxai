@@ -1134,7 +1134,7 @@ describe("native selected historical follow-up routing",()=>{
  it("preserves frozen results and edited rules for polite explanations, loss questions and unsupported compound actions",async()=>{
   const start=Date.parse("2026-01-01T00:00:00Z"),step=60_000;
   const candles=Array.from({length:160},(_,i)=>{const close=100+Math.sin(i/5)*4;return {symbol:"EURUSD",timeframe:"M1",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:close-.1,high:close+.3,low:close-.3,close,source:"mt5_broker",sourceMode:"live",priceBasis:"BID",priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null},timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},isComplete:true,isFinal:true,isForming:false,qualityFlags:[]};});
-  candleResponse={symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",quality:"clean",candles,feedStatus:{source:"mt5_broker"},marketEvidence:{symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}};
+  candleResponse={symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",quality:"clean",candles,feedStatus:{symbol:"EURUSD",source:"mt5_broker"},marketEvidence:{symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}};
   researchRunner.run.mockReset();researchRunner.cancel.mockReset();
   researchRunner.run.mockImplementation((input,config,receive)=>receive({status:"complete",result:runCausalResearchV2(input,config)}));
   const view=render(<AssistantDockProvider><ARXNativeChart symbol="EURUSD" timeframe="M1"/></AssistantDockProvider>);
@@ -1162,7 +1162,7 @@ describe("native selected historical follow-up routing",()=>{
   act(()=>{reply=requestChartResearch("Why did this trade lose?");});
   expect(reply).toContain("ledger-derived simulation");
   const previous=candleResponse as any;
-  candleResponse={...previous,symbol:"AAPL",candles:previous.candles.map((c:any)=>({...c,symbol:"AAPL"})),marketEvidence:{...previous.marketEvidence,symbol:"AAPL",sourceIdentity:"b".repeat(64)}};
+  candleResponse={...previous,symbol:"AAPL",feedStatus:{...previous.feedStatus,symbol:"AAPL"},candles:previous.candles.map((c:any)=>({...c,symbol:"AAPL"})),marketEvidence:{...previous.marketEvidence,symbol:"AAPL",sourceIdentity:"b".repeat(64)}};
   view.rerender(<AssistantDockProvider><ARXNativeChart symbol="AAPL" timeframe="M1"/></AssistantDockProvider>);
   act(()=>{reply=requestChartResearch("Why did this trade lose?");});
   expect(reply).toContain("No other pane was substituted");expect(reply).not.toContain("ledger-derived simulation");

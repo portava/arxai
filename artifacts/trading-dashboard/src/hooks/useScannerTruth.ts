@@ -108,6 +108,7 @@ export function useScannerTruth(
         symbolInternal: symbol,
         timeframe: chartTimeframe,
         feedStatus,
+        sourceClockQualified: candlesQ.data.sourceClockQualified === true,
         candleCount: candles.length,
         requestedCount: limit,
         firstTime: candleTimeIso(first?.time),

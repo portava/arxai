@@ -321,3 +321,9 @@ it("labels temporarily suppressed annotations without changing saved annotation 
  view.rerender(<SmartChartReader {...f.props} presentationHidden/>);expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).textContent).toContain("hidden (saved on)");expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).getAttribute("aria-description")).toContain("temporarily hidden");expect(vi.mocked(analyzeSmartChart).mock.calls.length).toBe(count);
  fireEvent.click(screen.getByRole("button",{name:"Show automatic chart annotations"}));view.rerender(<SmartChartReader {...f.props}/>);expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).textContent).toContain("Annotations off");
 });
+
+it("preserves explicit disconnected event semantics without inferring them from names",()=>{
+ const finding={id:"arbitrary",title:"Any name",status:"confirmed",connectAnchors:false,anchors:[{time:1,price:100,role:"broken_level"},{time:2,price:99.9,role:"retest"}],levels:[{price:100,label:"Reference"}]} as SmartChartFinding;
+ expect(findingAnnotation(finding)).toMatchObject({connectAnchors:false,level:{price:100,label:"Reference"}});
+ expect(findingAnnotation({...finding,connectAnchors:undefined})).not.toMatchObject({connectAnchors:false});
+});

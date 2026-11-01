@@ -1,3 +1,5 @@
+import { matchesChartCandleOwner } from "./chartCandleOwner";
+import { chartUtcClockQualified } from "./chart-engine/chartClockEvidence";
 // Shared GET /api/chart/candles query — the ONE honest market source for the
 // scanner (Task #391). Both ScannerChartPanel and useScannerTruth use this same
 // query key so React Query dedupes to a single network call and every surface
@@ -77,6 +79,7 @@ export function normalizeChartTimeframe(tf: string | null | undefined): string {
 }
 
 export interface ChartCandlesResult {
+  sourceClockQualified: boolean;
   /** Exact transport response, before the legacy display adapter drops fields.
    * This is unverified input: consumers must validate original source identity,
    * close bounds and finality. Never reconstruct that evidence from Candle[]. */
@@ -110,16 +113,17 @@ export async function fetchChartCandles(
   const data: unknown = await res.json();
   const obj = data as Record<string, unknown> | null;
   const arr = Array.isArray(data) ? data : (obj?.candles as unknown[] | undefined) ?? [];
-  const candles = adaptChartCandles(arr as Array<Record<string, unknown>>);
+  const ownerMatches = matchesChartCandleOwner(data, symbol, apiTf);
+  const candles = ownerMatches ? adaptChartCandles(arr as Array<Record<string, unknown>>) : [];
   const feedStatus = (obj?.feedStatus as ChartFeedStatus | undefined) ?? null;
   const evidence = obj?.marketEvidence as Partial<NonNullable<ChartCandlesResult["marketEvidence"]>> | null | undefined;
-  const marketEvidence = evidence && evidence.symbol === symbol && evidence.timeframe === apiTf && typeof evidence.source === "string"
+  const marketEvidence = ownerMatches && evidence && evidence.symbol === symbol && evidence.timeframe === apiTf && typeof evidence.source === "string"
     && evidence.source === feedStatus?.source && typeof evidence.sourceIdentity === "string"
     && evidence.sourceIdentity.length > 0
     ? { symbol, timeframe: apiTf, source: evidence.source, sourceIdentity: evidence.sourceIdentity,
         lastClosedCandleAt: typeof evidence.lastClosedCandleAt === "string" ? evidence.lastClosedCandleAt : null }
     : null;
-  return { candles, feedStatus, originalResponse: data, ...(marketEvidence ? { marketEvidence } : {}) };
+  return { candles, feedStatus, sourceClockQualified: ownerMatches && chartUtcClockQualified(arr as {timeBasisEvidence?:unknown}[]), originalResponse: data, ...(marketEvidence ? { marketEvidence } : {}) };
 }
 
 // ── Deep history (Task #438) ────────────────────────────────────────────────

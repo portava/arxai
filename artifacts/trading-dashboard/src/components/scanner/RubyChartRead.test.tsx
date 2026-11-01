@@ -75,6 +75,36 @@ vi.mock("@/components/scanner/rubyReadStore", () => ({
 // Imported AFTER the mocks (vi.mock is hoisted) so the component binds the stubs.
 import { RubyChartRead } from "./RubyChartRead";
 
+describe("restricted read metrics and independent clock context", () => {
+  it.each([{dataQuality:"insufficient" as const},{readLayer:"INSUFFICIENT" as const},{gated:true}])("hides old metrics for server restriction %j", flags => {
+    mockStoredRead = {...flags,bias:"Bullish",confidence:"High",htfBias:"Bullish",blockedReason:"Insufficient closed observations"} as RubyReadServerState;
+    mockUseScannerTruth.mockReturnValue(hookState({truth:truthAt("full")}));
+    render(<RubyChartRead symbol="V25_1S" timeframe="M1" draft={null}/>);
+    expect(screen.queryByTestId("ruby-chart-read-bias")).toBeNull();
+    expect(screen.getByTestId("ruby-chart-read-feed-warning").textContent).toContain("Chart read restricted");
+    expect(screen.getByTestId("ruby-chart-read-feed-warning").textContent).not.toContain("Feed not confirmed");
+  });
+  it("hides old metrics for a hard shared feed restriction", () => {
+    mockStoredRead = {readLayer:"FULL",bias:"Bullish",confidence:"High",htfBias:"Bullish"} as RubyReadServerState;
+    mockUseScannerTruth.mockReturnValue(hookState({truth:truthAt("blocked","UTC clock unverified")}));
+    render(<RubyChartRead symbol="V25_1S" timeframe="M1" draft={null}/>);
+    expect(screen.queryByTestId("ruby-chart-read-bias")).toBeNull();
+  });
+  it("shows UTC limitation alongside structural context without promising a feed-only remedy", () => {
+    mockStoredRead = {readLayer:"STRUCTURAL_ONLY",liveSetupWithheld:true,bias:"Bullish",confidence:"Medium",htfBias:"Bullish",blockedReason:"Owner setup policy pending"} as RubyReadServerState;
+    mockUseScannerTruth.mockReturnValue(hookState({truth:truthAt("limited","UTC clock unverified")}));
+    render(<RubyChartRead symbol="V25_1S" timeframe="M1" draft={null}/>);
+    expect(screen.getByTestId("ruby-chart-read-bias").textContent).toContain("Bullish");
+    expect(screen.queryByTestId("ruby-chart-read-feed-warning")).toBeNull();
+    const notice=screen.getByTestId("ruby-chart-read-structural-notice");
+    expect(notice.textContent).toContain("Structural context available — exact entry, stop, and target are withheld.");
+    expect(notice.textContent).toContain("Owner setup policy pending");
+    expect(screen.getByTestId("ruby-chart-read-feed-limitation").textContent).toContain("UTC clock unverified");
+    expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent).toContain("UTC clock unverified");
+    expect(notice.textContent).not.toMatch(/until.*confirms/i);
+  });
+});
+
 // Minimal ScannerTruth — the component only reads analysis.level/analysis.reason.
 // Cast a partial shape to keep the test focused on the gating contract.
 function truthAt(
@@ -536,7 +566,7 @@ describe("RubyChartRead — never a live/verified trust label on a degraded feed
     // …and the honest degraded wording IS rendered.
     expect(
       screen.getByTestId("ruby-chart-read-feed-warning").textContent,
-    ).toContain("Feed not confirmed");
+    ).toContain("Chart read restricted");
     // …with NO affirmative live/verified/execution-ready trust token anywhere.
     for (const token of FORBIDDEN_TRUST_TOKENS) {
       expect(container.textContent).not.toContain(token);
@@ -566,7 +596,7 @@ describe("RubyChartRead — never a live/verified trust label on a degraded feed
     ).not.toBe("true");
     expect(
       screen.getByTestId("ruby-chart-read-feed-warning").textContent,
-    ).toContain("Feed not confirmed");
+    ).toContain("Chart read restricted");
     for (const token of FORBIDDEN_TRUST_TOKENS) {
       expect(container.textContent).not.toContain(token);
     }
@@ -592,7 +622,7 @@ describe("RubyChartRead — never a live/verified trust label on a degraded feed
     // …with the honest structural notice (NOT the hard not-confirmed block)…
     expect(
       screen.getByTestId("ruby-chart-read-structural-notice").textContent,
-    ).toContain("Structural read available");
+    ).toContain("Structural context available");
     expect(screen.queryByTestId("ruby-chart-read-feed-warning")).toBeNull();
     // …and the trust chip still never claims a live/AI-confirmed feed.
     expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);

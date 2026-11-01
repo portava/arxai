@@ -613,6 +613,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Main column */}
       <div className="flex-1 min-w-0 flex flex-col">
         {!hideGlobalHeader && (
+        <div className="sticky top-0 z-40 shrink-0" data-testid="app-header-stack">
         <Topbar
           onMobileMenu={
             <MobileMenuTrigger>
@@ -620,21 +621,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </MobileMenuTrigger>
           }
         />
-        )}
         {/* T025 — single compact status row: one LIVE chip (left) + alerts
             bell (right). The full-width billboard banner (mode label + user
             message + "Real money risk") was removed; live mode and any
             blocked/kill-switch state now surface only through the compact
             LiveModeBadge chip, whose tooltip carries the longer detail. */}
-        {!hideGlobalHeader && (
         <div className="flex items-center justify-between gap-2 px-4 py-1 border-b border-zinc-900 bg-zinc-950/60">
           <LiveModeBadge />
           <NotificationCenter />
         </div>
-        )}
         {/* Legacy SS safety header — kept for operator-facing context until
             Phase 3 ships and the broker placement layer replaces it. */}
-        {!hideGlobalHeader && <SafetyHeader />}
+        <SafetyHeader />
+        </div>
+        )}
         <main id="main-content" className="flex-1 min-w-0 overflow-y-auto overflow-x-clip pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]" tabIndex={-1}>
           <div className="min-w-0 p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full">
             <RouteAccessGuard>{children}</RouteAccessGuard>

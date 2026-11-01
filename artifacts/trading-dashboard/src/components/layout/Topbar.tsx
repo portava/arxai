@@ -54,7 +54,7 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   const ModeIcon = modeMeta.icon;
 
   return (
-    <header className="sticky top-0 z-30 h-14 border-b border-border bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+    <header className="relative h-14 border-b border-border bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
       <div className="h-full px-3 md:px-6 flex items-center gap-3">
         {onMobileMenu}
         <div className="md:hidden flex items-center gap-2 mr-1" data-testid="topbar-mobile-brand">

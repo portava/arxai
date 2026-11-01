@@ -24,13 +24,6 @@ import {
   resolveEventMarkerSec,
 } from "@/components/scanner/scannerChartFormat";
 import { RubyChartRead } from "@/components/scanner/RubyChartRead";
-import {
-  applyStructureLines,
-  clearStructureLines,
-  EMPTY_STRUCTURE_HANDLES,
-  type StructureLinesHandles,
-} from "@/lib/chart-engine/structureLines";
-import type { ChartStructureLine, ChartStructureMarker } from "@/lib/chart-engine";
 import { sanitizeCandlestickData } from "@/lib/chart-engine/candleSanitize";
 import { snapSecToCandle } from "@/components/scanner/scannerChartFormat";
 import { useAssistantName } from "@/lib/assistant-name";
@@ -496,13 +489,9 @@ export function ScannerChartPanel() {
 
   const [reloadAt, setReloadAt] = useState(0);
 
-  // ── Structural trendline overlay (Task #670). SAME source as the ARX native
-  //    chart: the backend Chart Intelligence `trendlineOverlay` verdict, already
-  //    honesty-folded server-side (visible:false unless feed-confirmed + a real
-  //    trendline was detected). NON-BLOCKING + contained: candles render
-  //    regardless, and any error here never throws into render. We never compute
-  //    geometry here — we only DRAW the server's already-decided lines/markers,
-  //    re-gated below on the panel's own live-feed verdict.
+  // Retain intelligence provenance for the Scanner's source-status notice.
+  // ARXNativeChart owns structural rendering through its adapter, including
+  // selected-pattern/simplified-view suppression and source transitions.
   const intelligenceQuery = useGetMeChartIntelligence(
     { symbol, timeframe: apiTf as GetMeChartIntelligenceTimeframe, limit: 200 },
     {
@@ -515,10 +504,6 @@ export function ScannerChartPanel() {
     },
   );
   const structureEvidenceMissing = overlayRequiresEvidence && !hasMatchingOverlayEvidence(candlesQuery.data?.marketEvidence, intelligenceQuery.data);
-  const intelligenceState = intelligenceQuery.data?.state;
-  const trendlineOverlay = structureEvidenceMissing || !isChartInterval(apiTf)
-    || intelligenceState?.symbol !== symbol || intelligenceState.timeframe !== apiTf
-    ? null : intelligenceState.trendlineOverlay ?? null;
 
   const [positions, setPositions] = useState<ChartPosition[]>([]);
   const [pending, setPending] = useState<ChartPending[]>([]);
@@ -538,13 +523,6 @@ export function ScannerChartPanel() {
   // series.setMarkers() was removed). We keep the plugin handle so events can be
   // re-drawn without recreating the chart, and detach it on rebuild.
   const newsMarkersApiRef = useRef<ReturnType<typeof createSeriesMarkers> | null>(null);
-  // Structural trendline overlay handles (Task #670). Detected trendlines /
-  // channel rails draw on their OWN diagonal line series + a marker channel,
-  // kept here so they can be cleared/redrawn without recreating the chart and
-  // detached on rebuild (symbol/timeframe switch) so structure from instrument A
-  // never bleeds onto B. Drawn through the SHARED applyStructureLines routine so
-  // it can never diverge from the ARX native chart's structure path.
-  const structureHandlesRef = useRef<StructureLinesHandles>(EMPTY_STRUCTURE_HANDLES);
   // Bumped each time the chart is (re)created so the overlay effect re-draws
   // its price lines onto the fresh series after a candle/symbol rebuild.
   const [chartEpoch, setChartEpoch] = useState(0);
@@ -1143,8 +1121,6 @@ export function ScannerChartPanel() {
     smartLayerLinesRef.current = [];
     try { newsMarkersApiRef.current?.detach(); } catch { /* released */ }
     newsMarkersApiRef.current = null;
-    try { clearStructureLines(chartApiRef.current, structureHandlesRef.current); } catch { /* released */ }
-    structureHandlesRef.current = EMPTY_STRUCTURE_HANDLES;
     chartApiRef.current = surface?.chart ?? null;
     lineSeriesRef.current = surface?.series ?? null;
     seriesRef.current = surface?.series ?? null;
@@ -1351,112 +1327,6 @@ export function ScannerChartPanel() {
       if (newsMarkersApiRef.current === markerLayer) newsMarkersApiRef.current = null;
     };
   }, [news, layerToggles.news, candles, displayStatus, chartEpoch, chartContext]);
-
-  // ── Structural trendline overlay (Task #670). Mirrors the ARX native chart's
-  //    structure effect 1:1 so users see the SAME detected trendlines / channel
-  //    rails on the Scanner page where they spend most analysis time. The lines
-  //    come from the backend Chart Intelligence `trendlineOverlay` verdict
-  //    (already honesty-folded server-side) and are DOUBLE-GATED here:
-  //      (1) overlay.visible — the server confirmed a real trendline on a
-  //          confirmed feed; and
-  //      (2) isLiveDisplay — the panel's own resolved feed verdict says the
-  //          chart is showing live/affordable prices.
-  //    When either gate is false we CLEAR the structural channel (also covers
-  //    symbol/timeframe switch via chartEpoch, so structure from instrument A
-  //    never bleeds onto B). Drawn through the SHARED applyStructureLines routine
-  //    — the exact same drawing path the adapter uses — so the two charts can
-  //    never diverge. Display-only: adds no trade affordance, no execution path.
-  useEffect(() => {
-    const chart = chartApiRef.current;
-    const series = lineSeriesRef.current;
-    if (!chart || !series) return;
-
-    const overlay = trendlineOverlay;
-    const mayDraw = overlay != null && overlay.visible && isLiveDisplay;
-
-    if (!mayDraw || !overlay) {
-      clearStructureLines(chart, structureHandlesRef.current);
-      structureHandlesRef.current = EMPTY_STRUCTURE_HANDLES;
-      return;
-    }
-
-    const lineColor = (bias: string): string =>
-      bias === "bullish" ? "#22c55e" : bias === "bearish" ? "#ef4444" : "#94a3b8";
-    const markerColor = (kind: string): string =>
-      kind === "break"
-        ? "#ef4444"
-        : kind === "reclaim"
-          ? "#22c55e"
-          : kind === "retest"
-            ? "#f59e0b"
-            : "#94a3b8";
-
-    const lines: ChartStructureLine[] = overlay.lines.map((ln) => ({
-      id: ln.id,
-      start: { time: ln.start.time, price: ln.start.price },
-      end: { time: ln.end.time, price: ln.end.price },
-      color: lineColor(ln.bias),
-      // Channel rails (id suffixed ":rail") draw dashed so they read as the
-      // parallel boundary, not a second primary trendline.
-      dashed: ln.id.endsWith(":rail"),
-      width: ln.dominant ? 2 : 1,
-    }));
-
-    // Snap every structure marker onto a real bar present in the series. The
-    // engine intends bar-anchored times, but a marker whose time doesn't EXACTLY
-    // match a loaded bar makes lightweight-charts' findBar() return null and the
-    // candlestick colorer throw "Value is null" on repaint — so we enforce
-    // bar-membership here against the SAME sanitized open-times fed to setData,
-    // rather than trusting the upstream alignment.
-    const structureCandleSecs = sanitizeCandlestickData(
-      candles.map((c) => ({
-        time: Math.floor(c.time / 1000),
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    ).map((c) => c.time as number);
-    const markers: ChartStructureMarker[] = structureCandleSecs.length === 0
-      ? []
-      : overlay.markers.flatMap((m) => {
-          const snapped = snapSecToCandle(m.time, structureCandleSecs);
-          if (snapped == null) return [];
-          return [{
-            time: snapped,
-            // Anchor side by bias (support breaks below, resistance above); the
-            // dot sits on the bar — never at an arbitrary price (engine rule).
-            position: m.bias === "bullish" ? "belowBar" : "aboveBar",
-            color: markerColor(m.kind),
-            label: m.label,
-          } satisfies ChartStructureMarker];
-        });
-
-    const handles = applyStructureLines(
-      chart,
-      series,
-      lines,
-      markers,
-      structureHandlesRef.current,
-    );
-    structureHandlesRef.current = handles;
-    // Deterministic teardown: clear the structural overlay on unmount / re-run so
-    // its series + marker layer never outlive the chart they were drawn onto.
-    return () => {
-      try { clearStructureLines(chart, handles); } catch { /* chart released */ }
-      if (structureHandlesRef.current === handles) structureHandlesRef.current = EMPTY_STRUCTURE_HANDLES;
-    };
-    // isLiveDisplay carries the panel's resolved feed verdict; chartEpoch re-runs
-    // this after a chart rebuild so structure is redrawn onto the fresh series
-    // and cleared across a symbol/timeframe switch. `candles` MUST be a dep: the
-    // markers above are snapped onto the bars in the series at draw time, and the
-    // poll's setData slides the fixed-size window forward (oldest bars roll off) —
-    // a marker left anchored to a dropped bar makes lightweight-charts' findBar()
-    // return null and the candlestick colorer throw "Value is null" on the next
-    // repaint (uncatchable here), which crashed the Scanner page when the chart
-    // sat open across candle refreshes. Re-running on every candle window keeps
-    // every anchor on a real bar.
-  }, [trendlineOverlay, isLiveDisplay, chartEpoch, candles, chartContext]);
 
   // News alert routing — Critical/High events that are imminent or live AND
   // affect this symbol raise a toast (Critical = destructive). Medium/Low stay

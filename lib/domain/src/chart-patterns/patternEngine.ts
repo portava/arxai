@@ -643,14 +643,19 @@ function breakoutRetestFor(args: {
   if (breakIdx < 0) return null;
 
   // After the break, did price pull back to RETEST the level (within ~0.5 ATR)?
-  let retested = false;
+  // The candle range must intersect the level's tolerance band. A candle
+  // entirely on the wrong side is not a touch, and a later continuation close
+  // must never replace the actual first retest's time/price anchor.
+  let retestIdx = -1;
   for (let i = breakIdx + 1; i < closed.length; i++) {
     const c = closed[i]!;
-    const touchedLevel = breakAbove
-      ? c.low <= level + 0.5 * atrVal
-      : c.high >= level - 0.5 * atrVal;
-    if (touchedLevel) retested = true;
+    if (c.low <= level + 0.5 * atrVal && c.high >= level - 0.5 * atrVal) {
+      retestIdx = i;
+      break;
+    }
   }
+  const retested = retestIdx >= 0;
+  const retestCandle = retested ? closed[retestIdx]! : null;
 
   const holding = breakAbove ? last.close > level : last.close < level;
   const failed = breakAbove ? last.close < level - buffer : last.close > level + buffer;
@@ -685,7 +690,10 @@ function breakoutRetestFor(args: {
     levels: { confirmation, invalidation, targets: [target] },
     keyPoints: [
       { index: breakIdx, price: confirmation, role: "broken_level" },
-      { index: closed.length - 1, price: r(last.close, decimals), role: "retest" },
+      ...(retestCandle ? [{ index: retestIdx,
+        // Use the reference if it was traded; otherwise the nearest observed
+        // wick inside the tolerance band. Do not invent a touched price.
+        price: Math.max(retestCandle.low, Math.min(retestCandle.high, level)), role: "retest" }] : []),
     ],
     rationale: [
       `Tested ${breakAbove ? "resistance" : "support"} (${touches} touches) broke and ${

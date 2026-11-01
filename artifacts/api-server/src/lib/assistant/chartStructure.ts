@@ -313,10 +313,10 @@ export function analyzeChartStructure(
 
   const riskNote =
     confidence === "High"
-      ? "Even on a clean read, only risk what your plan allows and keep a defined stop. Structure can fail."
+      ? "Structural confidence is high. Structure can still fail; keep a defined stop and stay within your risk plan."
       : confidence === "Medium"
-      ? "Edge is moderate — keep size conservative and require the trigger condition before acting."
-      : "Edge is weak. Protect capital: the highest-probability action is often to wait for a clearer structure.";
+      ? "Structural confidence is medium. Wait for the stated trigger and stay within your risk plan."
+      : "Structural confidence is low. Waiting for clearer structure is an option; this assessment does not estimate the chance of a profitable trade.";
 
   return {
     bias,

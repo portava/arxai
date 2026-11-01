@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("chart history identity transport", () => {
   const evidence = { symbol: "V75", timeframe: "M15", source: "mt5_broker", sourceIdentity: "opaque-account-one", lastClosedCandleAt: "2026-10-26T18:00:00Z" };
   function reply(marketEvidence: unknown) {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ candles: [], feedStatus: { source: "mt5_broker" }, marketEvidence }) })));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ symbol:"V75",timeframe:"M15",candles: [], feedStatus: { symbol:"V75",source: "mt5_broker" }, marketEvidence }) })));
   }
   it("preserves matching opaque evidence without deriving an account ID", async () => {
     reply(evidence);
@@ -57,7 +57,7 @@ describe("original candle evidence retention", () => {
       open:100,high:110,low:90,close:105,volume:42,tickVolume:82,
       isComplete:true,isFinal:true,isForming:false,qualityFlags:["SOURCE_OBSERVATION"],
       sourceMode:"demo",priceBasis:"BID",brokerSymbol:"Volatility75",receivedAt:"2026-10-27T12:01:00Z"};
-    const original = {symbol:"V75",timeframe:"H12",source:"mt5_broker",candles:[bar],feedStatus:{source:"mt5_broker"},
+    const original = {symbol:"V75",timeframe:"H12",source:"mt5_broker",candles:[bar],feedStatus:{symbol:"V75",source:"mt5_broker"},
       marketEvidence:{symbol:"V75",timeframe:"H12",source:"mt5_broker",sourceIdentity:"a".repeat(64),
         lastClosedCandleAt:bar.closeTime,userId:7},additionalProviderEvidence:{clock:"observed"}};
     reply(original);

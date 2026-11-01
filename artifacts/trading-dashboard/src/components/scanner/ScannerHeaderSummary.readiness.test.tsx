@@ -136,7 +136,7 @@ describe("ScannerHeaderSummary — Trade-Health readiness chip (B7, display-only
     expect(screen.getByTestId("scanner-header-readiness-trust").textContent).toBe(
       currentReadiness.userFacingTrustLine,
     );
-    expect(chip.textContent).toContain("Trade Health");
+    expect(chip.textContent).toContain("Current feed");
   });
 
   it("LIVE_CONFIRMED earns the emphasised success (green + ring) treatment", () => {

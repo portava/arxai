@@ -22,6 +22,7 @@ afterEach(() => { cleanup(); client.clear(); vi.useRealTimers(); vi.unstubAllGlo
 it("expires stationary candle truth at its deadline without another render or request", async () => {
   const lastOpen = NOW - 89_000;
   client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), {
+    sourceClockQualified: true, // Cached normalized-query clock evidence.
     candles: Array.from({ length: 200 }, (_, index) => ({ time: lastOpen - (199 - index) * 60_000, open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false },
   });
@@ -49,6 +50,7 @@ it("rechecks evidence after a suspended tab resumes even before throttled timers
 
 it("keeps out-of-range timestamps unconfirmed without crashing the scanner", () => {
   client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), {
+    sourceClockQualified: true, // Cached normalized-query clock evidence.
     candles: Array.from({ length: 200 }, () => ({ time: 1e20, open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false },
   });
@@ -60,6 +62,7 @@ it("keeps out-of-range timestamps unconfirmed without crashing the scanner", () 
 
 it("withdraws live truth after a failed refresh while retaining the historical candle context", async () => {
   client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), {
+    sourceClockQualified: true, // Cached normalized-query clock evidence.
     candles: Array.from({ length: 200 }, (_, index) => ({ time: NOW - (200 - index) * 60_000, open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false },
   });
@@ -85,4 +88,15 @@ it("replaces and cleans up deadlines, including long timeframes without a fast t
   rerender({ deadline: NOW + 20_000 });
   expect(vi.getTimerCount()).toBe(1);
   unmount(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it('does not promote recent green provider flags when the normalized candle clock is unqualified',()=>{
+ client.setQueryData(chartCandlesQueryKey('V25_1S','M15',200),{
+  sourceClockQualified:false,
+  candles:Array.from({length:200},(_,index)=>({time:NOW-(200-index)*900000,open:940000,high:941000,low:939000,close:939791.4})),
+  feedStatus:{symbol:'V25_1S',source:'deriv_public',quality:'clean',isLive:true,aiUsable:true,stale:false},
+ });
+ const wrapper=({children}:{children:ReactNode})=><QueryClientProvider client={client}>{children}</QueryClientProvider>;
+ const {result}=renderHook(()=>useScannerTruth('V25_1S','15m'),{wrapper});
+ expect(result.current.truth?.candles.lastClose).toBe(939791.4);expect(result.current.truth?.isLivePrice).toBe(false);expect(result.current.truth?.candles.reason).toMatch(/UTC mapping unverified/);expect(result.current.truth?.consolidated.rubyReadStatus).not.toBe('FULL_READ');expect(result.current.truth?.readiness.dataFreshness).not.toBe('LIVE_CONFIRMED');
 });

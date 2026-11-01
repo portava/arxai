@@ -27,7 +27,7 @@ export function findingAnnotation(finding:SmartChartFinding|null):SmartChartAnno
   if(!finding?.anchors.length)return null;
   const anchors=finding.anchors.slice(0,8).sort((a,b)=>a.time-b.time);
   const neckline=anchors.filter(anchor=>anchor.role.startsWith("neckline_"));
-  return {id:finding.id,anchors:anchors.map(anchor=>({time:anchor.time,price:anchor.price,label:anchor.role.replaceAll("_"," ")})),
+  return {id:finding.id,connectAnchors:finding.connectAnchors,anchors:anchors.map(anchor=>({time:anchor.time,price:anchor.price,label:anchor.role.replaceAll("_"," ")})),
     ...(neckline.length===2?{guide:{from:neckline[0]!,to:neckline[1]!}}:finding.levels[0]?{level:finding.levels[0]}:{}),color:finding.status==="invalidated"?"#a1a1aa":finding.status==="developing"?"#fbbf24":"#38bdf8",dashed:finding.status!=="confirmed"};
 }
 

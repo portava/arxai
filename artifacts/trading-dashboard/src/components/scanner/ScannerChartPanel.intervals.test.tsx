@@ -67,19 +67,20 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it("requests and renders exact H8 intelligence while the seven-interval smart-layer service remains disabled", async () => {
+it("requests exact H8 intelligence but delegates structural rendering exclusively to the Native chart", async () => {
   render(<ScannerChartPanel />);
-  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[0]).toMatchObject({ symbol: "EURUSD", timeframe: "H8" });
   expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
   expect(h.layersHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
-  expect(h.applyStructure.mock.calls.at(-1)?.[2]).toEqual([expect.objectContaining({ id: "trend" })]);
+  expect(h.applyStructure).not.toHaveBeenCalled();
+  expect(screen.getByTestId("native-chart").getAttribute("data-external")).toBe("true");
   expect(screen.getByTestId("scanner-overlay-interval-unavailable").textContent).toContain("Smart layers, saved notes and receipts");
 });
 
 it("retains the source-change evidence hold before H8 structure can return", async () => {
   const view = render(<ScannerChartPanel />);
-  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
   const old = h.intelligence;
   fixture("H8", "source-B"); h.intelligence = old; h.applyStructure.mockClear();
   view.rerender(<ScannerChartPanel />);
@@ -88,7 +89,7 @@ it("retains the source-change evidence hold before H8 structure can return", asy
   expect(screen.getByTestId("scanner-overlay-source-pending")).toBeTruthy();
   h.intelligence = { ...old, marketEvidence: h.candles.marketEvidence };
   view.rerender(<ScannerChartPanel />);
-  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
+  expect(h.applyStructure).not.toHaveBeenCalled();
 });
 
 it.each([["1w", "W1"], ["1mo", "MN1"]])("withholds cached calendar intelligence on %s", async (display, api) => {

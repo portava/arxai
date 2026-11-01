@@ -1,3 +1,4 @@
+import { matchesChartCandleOwner } from "@/lib/chartCandleOwner";
 import {proposeChartSupportResistance} from "@/lib/chart-engine/chartSupportResistance";
 import {profileCandleEvidence} from "@/lib/chart-engine/chartVolumeProfile";
 import { chartAssistantPaneContext } from "@/lib/chart-engine/chartAssistantPaneContext";
@@ -494,9 +495,7 @@ export function ARXNativeChart({
   const replay = useContext(ChartReplayContext);
   const [replayError,setReplayError] = useState<string | null>(null);
   const response: ChartCandlesResponse | undefined = query.data;
-  const data = useMemo(() => supportedTimeframe && response?.symbol === resolvedSymbol && response.timeframe === timeframe
-    && response.candles.every(candle => candle.symbol === resolvedSymbol
-      && candle.timeframe === timeframe && candle.source === response.feedStatus?.source)
+  const data = useMemo(() => supportedTimeframe && matchesChartCandleOwner(response, resolvedSymbol, timeframe)
     ? response : undefined, [response, resolvedSymbol, timeframe, supportedTimeframe]);
   const candles = data?.candles ?? [];
   const hasCandles = candles.length > 0;
@@ -513,7 +512,9 @@ export function ARXNativeChart({
     hasCandles ? JSON.stringify([data?.feedStatus?.source ?? null, evidenceIdentity]) : null);
   const deepHistory = useChartDeepHistory(resolvedSymbol, timeframe, hasCandles,
     data?.feedStatus?.source ?? null, evidenceIdentity, true);
-  const utcClockQualified = deepHistory.olderCandles.length === 0 && chartUtcClockQualified(candles);
+  const recentClockQualified = chartUtcClockQualified(candles);
+  const utcClockQualified = deepHistory.olderCandles.length === 0 && recentClockQualified;
+  const clockScope = recentClockQualified && deepHistory.olderCandles.length > 0 ? "Loaded history" : "Source clock";
   const displayZone = utcClockQualified ? effectiveDisplayZone(preferences.timeZone, timeframe) : "UTC";
 
   // ── Live-price affordance honesty (shared rule, Task #351) ──────────────────
@@ -1551,7 +1552,7 @@ export function ARXNativeChart({
           (hasCandles && !ohlcAvailable && !isSafeMode) || showPoorBanner || showNotAiConfirmed) && (
           <div className="flex flex-wrap gap-x-2 gap-y-1 px-3 pt-1 text-xs leading-4" data-testid="chart-evidence-restrictions">
             {(isSafeMode || mirrorStatus === "Conflict") && <span className="font-semibold text-red-200">Data validation failed — AI analysis paused</span>}
-            {!utcClockQualified && hasCandles && <span className="text-amber-300">Source clock: UTC mapping unverified</span>}
+            {!utcClockQualified && hasCandles && <span className="text-amber-300">{clockScope}: UTC mapping unverified</span>}
             {hasCandles && !ohlcAvailable && !isSafeMode && <span className="text-amber-200">Line mode — OHLC candles are flat</span>}
             {showPoorBanner && <span className={conf.severity === "danger" ? "text-red-200" : "text-amber-200"}>{conf.statusLabel} feed</span>}
             {showNotAiConfirmed && <span className="text-amber-200">Not AI-confirmed</span>}
@@ -1632,7 +1633,7 @@ export function ARXNativeChart({
         </span>
       </div>
 
-      {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
+      {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{clockScope === "Loaded history" ? "Loaded history has no qualified UTC mapping. Current-feed status describes the recent candle window only; timezone conversion and UTC historical tests remain unavailable for this expanded chart." : SOURCE_CLOCK_NOTE}</p>}
 
       {/* Persistent notices stay in normal flow so they cannot obscure candles,
           user notes or projected position controls. The relative canvas/overlay

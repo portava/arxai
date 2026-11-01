@@ -1,3 +1,4 @@
+import { chartUtcClockQualified } from "@/lib/chart-engine/chartClockEvidence";
 // Scanner chart feed-status badge ↔ live API agreement (Task #510).
 //
 // WHAT THIS LOCKS
@@ -148,6 +149,7 @@ function inputsFor(
     lastTime: new Date(NOW - 10_000).toISOString(),
     lastClose: 1.10501,
     quote: null,
+    sourceClockQualified: true, // Explicit qualified clock in this pure-contract fixture.
     headerOk: null,
     mode: mode(),
     nowMs: NOW,
@@ -366,6 +368,7 @@ liveLeg("Scanner chart feed badge ↔ LIVE GET /api/chart/candles (authenticated
         const input = inputsFor(body.feedStatus ?? null, {
           symbolDisplay: symbol,
           symbolInternal: symbol,
+          sourceClockQualified: chartUtcClockQualified(candles),
           candleCount: candles.length,
           firstTime: toIso(first),
           lastTime: toIso(last),

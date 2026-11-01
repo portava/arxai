@@ -4,6 +4,8 @@ import type { ChartEngineCandle } from "./types";
 export interface SmartChartAnnotation {
   id: string;
   anchors: {time:number;price:number;label:string}[];
+  /** False for separate events, which do not define a connecting price path. */
+  connectAnchors?: boolean;
   level?: {price:number;label:string};
   guide?: {from:{time:number;price:number};to:{time:number;price:number}};
   color: string;
@@ -31,7 +33,7 @@ export class SmartChartAnnotationPrimitive implements ISeriesPrimitive {
     try {
       ctx.beginPath();ctx.rect(0,0,mediaSize.width,mediaSize.height);ctx.clip();
       ctx.strokeStyle=a.color;ctx.fillStyle=a.color;ctx.lineWidth=1.5;ctx.setLineDash(a.dashed?[4,4]:[]);
-      ctx.beginPath();p.forEach((point,i)=>i?ctx.lineTo(point.x,point.y):ctx.moveTo(point.x,point.y));ctx.stroke();
+      if(a.connectAnchors!==false){ctx.beginPath();p.forEach((point,i)=>i?ctx.lineTo(point.x,point.y):ctx.moveTo(point.x,point.y));ctx.stroke();}
       if(a.level&&p.length>1){
         const y=host.series.priceToCoordinate(a.level.price);
         if(y!=null&&Number.isFinite(y)){ctx.setLineDash([3,5]);ctx.beginPath();ctx.moveTo(p[0]!.x,y);ctx.lineTo(p.at(-1)!.x,y);ctx.stroke();}
@@ -63,6 +65,7 @@ export class SmartChartAnnotationPrimitive implements ISeriesPrimitive {
   updateAllViews():void {}
   setData(annotation:SmartChartAnnotation|null,candles:readonly ChartEngineCandle[]):void {
     this.annotation=annotation&&/^#[a-f\d]{6}$/i.test(annotation.color)&&annotation.anchors.length<=8
+      &&(annotation.connectAnchors===undefined||typeof annotation.connectAnchors==="boolean")
       &&annotation.anchors.every(p=>Number.isFinite(p.time)&&p.time>0&&Number.isFinite(p.price)&&p.price>0)
       &&(!annotation.guide||[annotation.guide.from,annotation.guide.to].every(p=>Number.isFinite(p.time)&&p.time>0&&Number.isFinite(p.price)&&p.price>0))
       &&(!annotation.level||Number.isFinite(annotation.level.price)&&annotation.level.price>0)?annotation:null;
