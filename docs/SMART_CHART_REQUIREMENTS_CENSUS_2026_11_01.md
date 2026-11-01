@@ -129,3 +129,8 @@ Application31a45ff9 keeps restriction names visible, exposes full explanations b
 ## Selected historical outcome followup — 1 November 2026
 
 Applicationf85d1c03 extends the existing selected frozen-ledger explanation with “Why did this trade lose?” and fixes polite requests clearing the prior result. Current binding and explicit selection remain mandatory; positive/zero results are not described as losses. Combined3332frontendpass/11skip,87guards,7bindings,typecheck,ordinarybuild and36actualScanner browser assertions pass. This does not add capital/sizing/equity/benchmark or general strategy language. Replit importb3029eb8 excludes this newer increment. See [receipt and limitations](SMART_CHART_FROZEN_TRADE_FOLLOWUPS_2026_11_01.md).
+
+
+## Selected pane and complete applied window — 1 November 2026
+
+Applicationc9c74fce corrects Fibonacci owner wording and rejects silently omitted original closed observations.41focused tests,87guards,7bindings,typecheck,ordinarybuild and9actualScanner browser assertions pass. Isolatedaf64be44 stages causal support/resistance calculations only; naturalcommands,drawingcontrols,editableprovenance and acceptance remain unfinished and are excluded from this application. Helperagents stoppedforusage;rootpreservedwork. See [exact evidence and verified competitor distinctions](SMART_CHART_APPLIED_WINDOW_2026_11_01.md).
