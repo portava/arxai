@@ -37,7 +37,17 @@ it('normalizes actual provider forming shape and excludes exactly one declared t
  const forming=profileCandleEvidence({isFinal:false,isComplete:false,isForming:false,qualityFlags:['FORMING_BAR']});expect(forming.finality).toBe('forming');
  const bars=[profileBar(60),{...profileBar(120),profileEvidence:forming}],p=prepareVolumeProfileStudy(config,bars);if(!p.study)throw Error(p.reason);expect(p.study.profileRange?.toTime).toBe(60);expect(calculateVolumeProfile(bars,p.study.profileRange,8,70)).toMatchObject({status:'ready',omittedFormingTail:1});bars.push({...profileBar(180),profileEvidence:forming});expect(prepareVolumeProfileStudy(config,bars)).toHaveProperty('reason');
 });
-it.each(['OHLC_INVALID','TIMESTAMP_INVALID','DUPLICATE_BUCKET','STALE_FROM_PREV_TF'])('withdraws original corruption flag %s before canonical sanitization',flag=>{expect(profileCandleEvidence({isFinal:true,isComplete:true,isForming:false,qualityFlags:[flag]}).finality).toBe('unqualified');});
+it.each(['OHLC_INVALID','TIMESTAMP_INVALID','DUPLICATE_BUCKET'])('withdraws original corruption flag %s before canonical sanitization',flag=>{expect(profileCandleEvidence({isFinal:true,isComplete:true,isForming:false,qualityFlags:[flag]}).finality).toBe('unqualified');});
+it('keeps original closed observations across an advisory session gap without claiming complete coverage',()=>{
+ const evidence=profileCandleEvidence({isFinal:true,isComplete:true,isForming:false,timeBasisEvidence:{kind:'original_utc',basis:'UTC',reason:null,authority:TRADE_VOLUME_AUTHORITY},qualityFlags:['STALE_FROM_PREV_TF']});
+ // The normalizer attaches this advisory whenever steps > 2, including known
+ // closed-market slots. It does not establish a wrong symbol or timeframe.
+ const bars=[profileBar(1792698300),{...profileBar(1792762200),profileEvidence:evidence}];
+ const result=calculateVolumeProfile(bars,range(bars),8,70);
+ expect(result).toMatchObject({status:'ready',barCount:2});
+ if(result.status==='ready')expect(result.limitations.join(' ')).toContain('time gaps are not zero-volume proof');
+ expect(calculateVolumeProfile([{...bars[0]!,profileEvidence:{...evidence,clockAuthority:null}},bars[1]!],range(bars),8,70).status).toBe('held');
+});
 it('holds unsafe total, collapsed IEEE price bins and overlarge range',()=>{
  let bars=[profileBar(60,1,9,Number.MAX_SAFE_INTEGER),profileBar(120)];expect(calculateVolumeProfile(bars,range(bars),8,70).status).toBe('held');bars=[profileBar(60,1e16,1e16+2)];expect(calculateVolumeProfile(bars,range(bars),128,70).status).toBe('held');bars=Array.from({length:5001},(_,i)=>profileBar(60+i*60));expect(calculateVolumeProfile(bars,range(bars),8,70).status).toBe('held');
 });

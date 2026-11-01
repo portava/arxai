@@ -13,7 +13,10 @@ export type VolumeProfileResult={status:'held';method:typeof VOLUME_PROFILE_METH
 };
 export interface VolumeProfileInspection {id:string;label:string;visible:boolean;result:VolumeProfileResult}
 export function profileCandleEvidence(bar:{isFinal?:unknown;isComplete?:unknown;isForming?:unknown;timeBasisEvidence?:unknown;qualityFlags?:unknown}):ProfileCandleEvidence {
- const invalid=Array.isArray(bar.qualityFlags)&&bar.qualityFlags.some(flag=>['OHLC_INVALID','TIMESTAMP_INVALID','DUPLICATE_BUCKET','ZERO_VOLUME_GHOST','MOCK_DATA','STALE_FROM_PREV_TF'].includes(String(flag)));
+ // STALE_FROM_PREV_TF is the producer's advisory for any >2-interval gap,
+ // including closed stock sessions. Context is bound by the caller; a gap
+ // alone cannot prove cross-timeframe contamination or absent traded volume.
+ const invalid=Array.isArray(bar.qualityFlags)&&bar.qualityFlags.some(flag=>['OHLC_INVALID','TIMESTAMP_INVALID','DUPLICATE_BUCKET','ZERO_VOLUME_GHOST','MOCK_DATA'].includes(String(flag)));
  if(invalid||(Array.isArray(bar.qualityFlags)&&bar.qualityFlags.includes('FORMING_BAR')&&(bar.isFinal===true||bar.isComplete===true)))return {finality:'unqualified',clockAuthority:null};
  return {finality:bar.isFinal===true&&bar.isComplete===true&&bar.isForming===false?'closed':bar.isFinal===false&&bar.isComplete===false&&typeof bar.isForming==='boolean'?'forming':'unqualified',clockAuthority:originalUtcAuthority(bar.timeBasisEvidence)};
 }
