@@ -275,3 +275,8 @@ Application `35fd2aa2` exposes existing MACD periods and signal method plus Boll
 ## Assessment identity followup — 1 November 2026
 
 Application `adc7a76f` makes Scanner/scalp interval aliases share assessment state and requires response market/interval echoes to match the request. Full frontend 3,860 pass/11 skipped; typecheck/build pass; 85/87 guards with unchanged violations. Account/source/window/time and draft binding remain open. This is a correctness increment, not competitor parity or browser latency evidence. See [exact validation and limits](SMART_CHART_READ_MARKET_IDENTITY_2026_11_01.md).
+
+
+## Captured assessment followup — 1 November 2026
+
+Application `5648453f` prevents primary assessment inputs and broker enrichment from switching observations across awaits, restores canonical higher-timeframe mapping, and uses the actual pivot period/latest closed bar. New suite 40 pass; existing backend 145 pass; structure 9/9; frontend 3,861 pass/11 skipped. Builds/typechecks pass; guards remain 85/87 with unchanged findings. A counterbalanced offline 200-bar builder comparison measured approximately **0.45 ms added cost**, not a speedup. Cross-surface source/account/window/age binding, slower-device loading and platform parity remain open. See [exact source, receipts and limits](SMART_CHART_CAPTURED_ASSESSMENT_2026_11_01.md).
