@@ -1,3 +1,4 @@
+import type { CandleVolumeEvidence } from "./candleVolumeEvidence.js";
 // Type-only import: erased at compile time, so the runtime dependency graph of
 // this wire-type module is unchanged and lib/provenance stays import-free.
 import type { ProvenanceSource } from "../provenance/index.js";
@@ -9,6 +10,8 @@ export interface Candle {
   low: number;
   close: number;
   volume?: number;
+  /** Original volume semantics; never inferred from numeric volume. */
+  volumeEvidence?: CandleVolumeEvidence;
 }
 
 /** Venue family that produced a served series/quote. */
