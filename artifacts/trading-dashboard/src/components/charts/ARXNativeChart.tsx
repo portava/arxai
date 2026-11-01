@@ -1490,6 +1490,26 @@ export function ARXNativeChart({
       {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className="px-3 pb-2 text-xs text-amber-300" role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
       {!supportedTimeframe && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
+      {/* This is a presentation of the existing owners, not another verdict.
+          Every active restriction stays outside the disclosure. Full original
+          explanations and the informational mirror control remain mounted in
+          normal flow, separate from the canvas/position coordinate origin. */}
+      <section aria-label="Chart evidence" className="border-b border-zinc-800/60">
+        {(isSafeMode || mirrorStatus === "Conflict" || (!utcClockQualified && hasCandles) ||
+          (hasCandles && !ohlcAvailable && !isSafeMode) || showPoorBanner || showNotAiConfirmed) && (
+          <div className="flex flex-wrap gap-x-2 gap-y-1 px-3 pt-1 text-xs leading-4" data-testid="chart-evidence-restrictions">
+            {(isSafeMode || mirrorStatus === "Conflict") && <span className="font-semibold text-red-200">Data validation failed — AI analysis paused</span>}
+            {!utcClockQualified && hasCandles && <span className="text-amber-300">Source clock: UTC mapping unverified</span>}
+            {hasCandles && !ohlcAvailable && !isSafeMode && <span className="text-amber-200">Line mode — OHLC candles are flat</span>}
+            {showPoorBanner && <span className={conf.severity === "danger" ? "text-red-200" : "text-amber-200"}>{conf.statusLabel} feed</span>}
+            {showNotAiConfirmed && <span className="text-amber-200">Not AI-confirmed</span>}
+          </div>
+        )}
+        {!mirrorLocked && <p className="px-3 pt-1 text-xs text-amber-200" data-testid="chart-evidence-inspection">Inspection mode — Mirror Lock OFF</p>}
+        <details data-testid="chart-evidence-details">
+          <summary className="cursor-pointer px-3 py-1.5 text-xs leading-4 text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            <span>Chart evidence details</span><span className="ml-2 text-zinc-400">{mirrorStatus} · {resolvedSymbol} · {timeframe}</span>
+          </summary>
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the
           mirror state (Mirrored / Syncing / Stale / Conflict / Refreshing),
@@ -1620,7 +1640,7 @@ export function ARXNativeChart({
         >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           <span className="font-semibold">{conf.statusLabel} feed</span>
-          <span className="min-w-0 flex-1 truncate text-[11px] opacity-90">
+          <span className="min-w-0 flex-1 break-words text-xs opacity-90">
             {conf.message}
           </span>
           {query.isFetching && !query.isLoading && (
@@ -1628,6 +1648,9 @@ export function ARXNativeChart({
           )}
         </div>
       )}
+
+        </details>
+      </section>
 
       <CardContent key="plot" className="relative p-0">
         {/* The chart canvas is always mounted so the v5 series handle is stable;

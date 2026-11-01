@@ -216,6 +216,75 @@ describe("initial mobile chart height", () => {
   });
 });
 
+describe("compact chart evidence", () => {
+  it("names simultaneous restrictions before disclosure and retains their full explanations", () => {
+    const response = liveResponse("EURUSD", "H1");
+    candleResponse = {...response, candles: [0, 1, 2].map(index => ({...response.candles[0]!, timeBasisEvidence: undefined,
+      openTime: new Date(OPEN_MS + index * 3_600_000).toISOString(),
+      closeTime: new Date(OPEN_MS + (index + 1) * 3_600_000).toISOString(),
+      open: 1.1, high: 1.1, low: 1.1, close: 1.1})),
+      feedStatus: {...response.feedStatus, quality: "delayed", aiUsable: false, message: "Provider delayed with an exact source explanation"}};
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    const restrictions = screen.getByTestId("chart-evidence-restrictions");
+    expect(restrictions.textContent).toContain("UTC mapping unverified");
+    expect(restrictions.textContent).toContain("OHLC candles are flat");
+    expect(restrictions.textContent).toContain("Not AI-confirmed");
+    expect(restrictions.textContent).toContain("feed");
+    expect(restrictions.closest("details")).toBeNull();
+    const details = screen.getByTestId("chart-evidence-details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    const summary = within(details).getByText("Chart evidence details").closest("summary")!;
+    summary.focus(); expect(document.activeElement).toBe(summary);
+    fireEvent.click(summary); expect(details.open).toBe(true);
+    expect(details.textContent).toContain("Provider delayed with an exact source explanation");
+    expect(details.textContent).toContain("timezone conversion and UTC historical tests are unavailable");
+    expect(details.textContent).toContain("Price action shown, no spread");
+    fireEvent.click(summary); expect(details.open).toBe(false);
+    expect(restrictions.textContent).toContain("Not AI-confirmed");
+  });
+
+  it("keeps reconnect and frozen-market truth visible outside the closed disclosure on the same canvas", () => {
+    candleResponse = liveResponse("EURUSD", "H1");
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>);
+    const canvas = screen.getByTestId("arx-native-canvas");
+    const details = screen.getByTestId("chart-evidence-details") as HTMLDetailsElement;
+    act(() => streams[0]!.onerror!());
+    const reconnect = screen.getByTestId("arx-native-stream-reconnecting");
+    expect(reconnect.textContent).toContain("Reconnecting — prices delayed");
+    expect(reconnect.closest("details")).toBeNull(); expect(details.open).toBe(false);
+    act(() => streams[0]!.onmessage!(feedStatus(true)));
+    expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
+    expect(screen.getByTestId("arx-native-market-closed").closest("details")).toBeNull();
+    act(() => streams[0]!.onmessage!(feedStatus(false)));
+    expect(screen.queryByTestId("arx-native-market-closed")).toBeNull();
+    expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
+    expect(created).toHaveLength(1); expect(created[0]!.init).toHaveBeenCalledTimes(1); expect(created[0]!.destroy).not.toHaveBeenCalled();
+  });
+
+  it("keeps mandatory integrity and clock warnings with optional feed badges off, without replacing the engine", () => {
+    const response = liveResponse("EURUSD", "H1");
+    candleResponse = {...response, candles: response.candles.map(c => ({...c, timeBasisEvidence: undefined})),
+      warning: "Original provider integrity reason", feedStatus: {...response.feedStatus, quality: "invalid", aiUsable: false}};
+    const view = render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const restrictions = screen.getByTestId("chart-evidence-restrictions"), canvas = screen.getByTestId("arx-native-canvas");
+    expect(restrictions.textContent).toContain("Data validation failed — AI analysis paused");
+    expect(restrictions.textContent).toContain("UTC mapping unverified");
+    const details = screen.getByTestId("chart-evidence-details") as HTMLDetailsElement;
+    const summary = within(details).getByText("Chart evidence details").closest("summary")!;
+    fireEvent.click(summary);
+    expect(details.textContent).toContain("Original provider integrity reason");
+    fireEvent.click(screen.getByTestId("arx-mirror-lock"));
+    expect(screen.getByTestId("chart-evidence-inspection").closest("details")).toBeNull();
+    fireEvent.click(summary);
+    vi.stubGlobal("innerWidth",320);act(()=>window.dispatchEvent(new Event("resize")));
+    expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
+    expect(created).toHaveLength(1);expect(created[0]!.init).toHaveBeenCalledTimes(1);expect(created[0]!.destroy).not.toHaveBeenCalled();
+    view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(screen.queryByText("Original provider integrity reason")).toBeNull();
+    expect(screen.queryByTestId("chart-evidence-restrictions")).toBeNull();
+  });
+});
+
 describe("persistent chart notices do not cover candles or user notes", () => {
   const noticeIds = ["arx-native-safe-mode", "arx-native-line-mode", "arx-native-feed-banner"];
   const assertNoticeBeforeCanvas = (id: string) => {
