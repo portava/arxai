@@ -5,7 +5,6 @@ import { LightweightChartsAdapter } from "../../../artifacts/trading-dashboard/s
 import { installChartQaWitnesses } from "../../chart-qa/witness";
 import { installCandleTimeline } from "./candleTimeline";
 import { installReactProfile } from "./reactProfile";
-import "../../../artifacts/trading-dashboard/src/index.css";
 import { installFeedReconciliationProbe } from "./feedReconciliation";
 
 declare const __ARX_SCANNER_QA_BUILD_ID__: string;
@@ -16,7 +15,10 @@ declare const __ARX_FEED_RECONCILIATION__: boolean;
 Object.defineProperty(window, "__arxScannerQaBuildId", {
   value: __ARX_SCANNER_QA_BUILD_ID__, writable: false, configurable: false,
 });
-if (__ARX_FEED_RECONCILIATION__) installFeedReconciliationProbe(LightweightChartsAdapter);
+if (__ARX_FEED_RECONCILIATION__) {
+  // Keep the normal Scanner fixture's stylesheet loading order unchanged.
+  void import("../../../artifacts/trading-dashboard/src/index.css").then(()=>installFeedReconciliationProbe(LightweightChartsAdapter));
+}
 else {
   installChartQaWitnesses(LightweightChartsAdapter);
   if(__ARX_SCANNER_QA_REACT_PROFILE__) { installReactProfile(); installCandleTimeline(LightweightChartsAdapter); }
