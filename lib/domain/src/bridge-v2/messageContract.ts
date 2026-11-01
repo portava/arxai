@@ -162,6 +162,9 @@ export const tickPayloadSchema = z.object({
 });
 
 export const candlePayloadSchema = z.object({
+  // Original optional producer declaration; same wire vocabulary as batch candles.
+  // Missing/ASK never establishes a supported chart price basis.
+  priceBasis: z.enum(["bid", "ask", "mid", "last"]).optional(),
   symbol: z.string().min(1).max(32),
   timeframe: z.string().min(1).max(8), // "M1" | "M5" | "H1" | "D1" …
   openTimeEpochMs: z.number().int().positive(),
