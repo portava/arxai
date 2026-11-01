@@ -1,6 +1,7 @@
+import { isOriginalPolygonEvidence, POLYGON_FX_AUTHORITY, type OriginalCandleContext } from "../assistant/polygonFxCandles.js";
 /** Original clock authority, separate from a syntactically valid ISO string.
  * A current broker offset, transport receipt time or appended Z is not a
- * historical UTC conversion. No shipped adapter currently qualifies UTC. */
+ * historical UTC conversion. Only reviewed endpoint-specific original evidence may qualify UTC. */
 export interface CandleTimeBasisEvidence {
   kind: "original_utc" | "unavailable";
   basis: "UTC" | "BROKER_SERVER" | null;
@@ -17,10 +18,9 @@ export function unavailableCandleTimeBasis(source: string | null): CandleTimeBas
       : "The original candle clock has no qualified UTC authority. ISO formatting and provider names do not establish historical UTC mapping.",
   };
 }
-/** Deliberately no UTC allowlist yet. An audited original adapter must be
- * implemented and reviewed before any authority can be registered here.
- * Merely copying a client-supplied evidence object must never mint authority.
- * Keep the input seam so future adapters do not need another candle contract. */
-export function resolveCandleTimeBasisEvidence(_evidence: unknown, source: string | null): CandleTimeBasisEvidence {
+/** Only the audited endpoint can issue bar-bound runtime evidence. Raw claims,
+ * JSON rehydration and provider names alone never qualify historical UTC. */
+export function resolveCandleTimeBasisEvidence(evidence: unknown, source: string | null, context?: OriginalCandleContext): CandleTimeBasisEvidence {
+  if(isOriginalPolygonEvidence(evidence,source,context,"time"))return {kind:"original_utc",basis:"UTC",authority:POLYGON_FX_AUTHORITY,reason:null};
   return unavailableCandleTimeBasis(source);
 }
