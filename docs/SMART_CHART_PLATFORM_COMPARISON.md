@@ -289,3 +289,10 @@ Application `a01817bb` shares normalized, source-bound FVG inputs across the ass
 ## Exact draft assessment binding — 1 November 2026
 
 Application `27a4605f` withdraws assessments after plan changes and isolates different chart/scalp plans while retaining exact-plan sharing. Focused 132 pass, full dashboard 3,904 pass/11 skipped, all four typechecks and production dashboard build pass. Seven actual Scanner browser checks pass with synthetic history and restricted replies; guards remain 85/87 with identical baseline failures. This proves local request-plan handling, not account/source/window/expiry authority or competitor performance. The ordinary build still shows a TradingView rendering-library credit; the owner's no-TradingView requirement remains open. See [exact evidence and limits](SMART_CHART_DRAFT_BINDING_2026_11_01.md).
+
+
+## 1 November 2026 — independent renderer foundation (50b3adaf)
+
+The owner’s own-renderer/no-branding requirement remains open. Scanner overlays now use an ARX-owned revocable interface; a staged native Canvas price layer independently renders all seven existing styles with canonical-price coordinates. It is not registered as an app engine. The default remains Lightweight Charts until the existing studies, drawings, gestures, history, replay and all chart surfaces are migrated and accepted.
+
+Full dashboard validation: 3,996 passed / 11 skipped; typecheck and build passed; guards 85/87 with unchanged findings. Seven actual Scanner offline draft checks pass for the facade. The separate native laboratory has 67 unit checks, 7 caught mutations and synthetic desktop/narrow browser checks. Its small Canvas submission timings are not app first-click latency, hardware presentation or competitor evidence. Original slower-device failures and TradingView/MT5 feature/performance gaps remain. See [exact evidence and migration requirements](SMART_CHART_NATIVE_RENDERER_2026_11_01.md).
