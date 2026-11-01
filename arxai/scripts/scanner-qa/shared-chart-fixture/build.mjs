@@ -59,15 +59,17 @@ if (!serve) {
   const dashboardUtilityCss=assertDashboardUtilityCss(await Promise.all(entries.filter(f=>f.endsWith('.css')).map(f=>readFile(f,'utf8'))));
   const dev = ['react-stack-bottom-frame','data must be asc ordered by time','series item data value must be'];
   if (dev.some(marker=>sources.some(s=>s.includes(marker)))) throw Error('Development runtime found');
-  if (!['Minified React error #','tv-lightweight-charts'].every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
+  const expectedRuntime = volumeProfileProbe ? ['tv-lightweight-charts'] : ['Minified React error #','tv-lightweight-charts'];
+  if (!expectedRuntime.every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
   const metadata = {schemaVersion:1,buildId:id,volumeProfileProbe,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:true,
-    entry:'Actual dashboard src/main.tsx; observer installed before mount',fixtureOnlyObserver:'scripts/chart-qa/witness.ts',dashboardUtilityCss,hashes,
+    entry:volumeProfileProbe?'Isolated actual chart adapter; no React app, navigation or API':'Actual dashboard src/main.tsx; observer installed before mount',fixtureOnlyObserver:'scripts/chart-qa/witness.ts',dashboardUtilityCss,hashes,
     limitations:['Isolated Vite configuration; this is not the deployable dashboard bundle.','Offline synthetic data and unavailable reader truth; no production or broker validation.','No hardware paint or competitor performance measurement.']};
   await writeFile(path.join(out,metadataFile),JSON.stringify(metadata,null,2)+'\n');
   console.log(JSON.stringify({buildId:id,out,source:before,sourceUnchanged:metadata.sourceUnchanged,serve:`node scripts/scanner-qa/shared-chart-fixture/build.mjs --serve=${id}`},null,2));
 } else {
   const info = JSON.parse(await readFile(path.join(out,metadataFile),'utf8'));
   if(info.buildId!==id || info.schemaVersion!==1) throw Error('Wrong build metadata');
+  const port = info.volumeProfileProbe ? 4209 : 4199;
   for (const [relative,expected] of Object.entries(info.hashes)) {
     if (path.isAbsolute(relative) || relative.split('/').includes('..')) throw Error('Invalid manifest path');
     if(sha(await readFile(path.join(out,relative)))!==expected) throw Error('Asset changed: '+relative);
@@ -77,13 +79,13 @@ if (!serve) {
   const journal=createNavigationJournal({directory:journalDirectory,buildId:id,sourceHead:info.source.head});
   const server=http.createServer(async(req,res)=>{
     if(await journal(req,res))return;
-    const pathname=new URL(req.url,'http://127.0.0.1:4199').pathname;
+    const pathname=new URL(req.url,`http://127.0.0.1:${port}`).pathname;
     if(req.method!=='GET' || pathname.startsWith('/api/')) {res.writeHead(503,{'content-type':'application/json'});res.end('{"error":"OFFLINE_API_NOT_INTERCEPTED"}');return;}
     const relative=pathname===`/${metadataFile}`?metadataFile:(isOfflineChartPagePath(pathname)?'index.html':pathname.slice(1));
     if(relative!==metadataFile && !(relative in info.hashes)){res.writeHead(404);res.end();return;}
     try {const data=await readFile(path.join(out,relative));res.writeHead(200,{'content-type':relative===metadataFile?'application/json':types[path.extname(relative)]??'application/octet-stream','cache-control':'no-store'});res.end(data);}
     catch {res.writeHead(500);res.end();}
   });
-  server.listen(4199,'127.0.0.1',()=>console.log('Actual Scanner offline QA on http://127.0.0.1:4199; build '+id+'; navigation receipts '+journalDirectory));
+  server.listen(port,'127.0.0.1',()=>console.log('Offline chart QA on http://127.0.0.1:'+port+'; build '+id+'; navigation receipts '+journalDirectory));
   for(const signal of ['SIGINT','SIGTERM']) process.once(signal,()=>server.close(()=>process.exit(0)));
 }
