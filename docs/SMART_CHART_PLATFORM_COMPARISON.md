@@ -301,3 +301,8 @@ Full dashboard validation: 3,996 passed / 11 skipped; typecheck and build passed
 ## 1 November 2026 — independent viewport (5f734e30)
 
 The staged ARX renderer now has axes, pointer/wheel/touch navigation, canonical crosshair, history anchoring and export. Thirteen synthetic desktop/mobile browser groups pass; it is still not the Scanner engine. The native full-refresh measurement retains a 26.9ms outlier under 4x CPU. No actual-app speedup or competitor parity is claimed. Axis dragging, full adapter/study/drawing migration and all-surface acceptance remain open; the default external renderer and credit remain. See [exact source, metrics and comparison boundaries](SMART_CHART_NATIVE_VIEWPORT_2026_11_01.md).
+
+
+## Native studies foundation — 1 November 2026
+
+Application `650c4728` migrates the existing 23-kind calculator catalogue into native Canvas overlays/panes without new indicator math. 199 focused tests, 4,137 full frontend tests, seven study browser groups and 13 viewport groups pass; typecheck/build pass, guards remain 85/87 unchanged. This is not yet the Scanner adapter. Five-study initial setup takes 152–157 ms at 4x CPU; full-history preparation p95 34.7–35.1 ms remains a frame-budget gap. No instantaneous loading or competitor parity follows. See [exact receipts and limits](SMART_CHART_NATIVE_STUDIES_2026_11_01.md).

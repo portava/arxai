@@ -1,0 +1,199 @@
+{
+  "applicationCommit": "650c472801b02cfa7ae296c00e5daabcec271585",
+  "files": [
+    {
+      "path": "browser-close-final.log",
+      "sha256": "43ffffe45a7f4844806c021aee2e2a2f2a94cfd70814e110f1fcef778a9beb1e"
+    },
+    {
+      "path": "browser-final-worktree.log",
+      "sha256": "506eebc6a923482c761909d9e829616a7801cb9f571ba579b9b335c886a8ecff"
+    },
+    {
+      "path": "browser-final.log",
+      "sha256": "f75179b7367131e0868233f1fd9a51d7aaa21edeffbb3ab4845183c5b71700d1"
+    },
+    {
+      "path": "browser-first.json",
+      "sha256": "bf37074404355679a36e28675ff3dde19131987d5973dfbe008dbb2af9942e6c"
+    },
+    {
+      "path": "browser-first.log",
+      "sha256": "a4ecfaef34225402f795d21c8ee4f2e318b05653b477002372e17995df9048ed"
+    },
+    {
+      "path": "browser-launch-retry.log",
+      "sha256": "d067f2d5b9dbf24c4ad2dac338ecaa8b2a68d9a27f1fb9352ace62d9a0c1d0ce"
+    },
+    {
+      "path": "browser-session-list.log",
+      "sha256": "a5d5d8153a4f8202d1fc735d8a375073dd0969e3dcfc70c956eff5cb28b86061"
+    },
+    {
+      "path": "browser-studies-final-result.json",
+      "sha256": "892746e42f7f8e19e566fbe330253a270ba8f8ceedd304ccacf288b63093e507"
+    },
+    {
+      "path": "browser-studies-final-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "browser-studies-final-summary.json",
+      "sha256": "8059ffbb0af73078eedd3eb474204efba8e7a0a10d5a117782ed351b41ecb561"
+    },
+    {
+      "path": "browser-timing-receipt.json",
+      "sha256": "689a66b8ab766148dd0613b35af6b9dfc62ae721f28131e76beec9002751b074"
+    },
+    {
+      "path": "browser-viewport-final-result.json",
+      "sha256": "cbabde4a9b885e00546152829f713082154a45986e8ed7dfb462a4024e126e48"
+    },
+    {
+      "path": "browser-viewport-final-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "browser-viewport-final-summary.json",
+      "sha256": "6c91ab53874e25729057ac6e83d86125155bee1ed326d5cc2266d961b34f2ee2"
+    },
+    {
+      "path": "build-final.log",
+      "sha256": "9a91b39bcaecc4f5ce121821d3035558f852d5770f3ac51e7ea006ebb10f1452"
+    },
+    {
+      "path": "bundle-audit.json",
+      "sha256": "e3f48e2d04091047fe2652220f62c749d4ec4bbb30e97e7dd14380515830c38d"
+    },
+    {
+      "path": "dashboard-full.log",
+      "sha256": "4f9fec93dd2a95c1623f565c9781a0deef385cf63de22dcf70667edad60ed9e7"
+    },
+    {
+      "path": "declarations.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "focused-final.log",
+      "sha256": "86929982d1486ac0d46eeefff65f449a844d59ce4623cf98dd451a931ee1f259"
+    },
+    {
+      "path": "guard-baseline-comparison.json",
+      "sha256": "80a7e27c3c8b3b584c1f2801421beb230b697e75c2234ef2d8ba9076ea12da17"
+    },
+    {
+      "path": "guard-baseline-diff.txt",
+      "sha256": "1236a91045309b9a52e6f4e6482772ed5b1bffe8ddacb55a4acce4917f95cf4b"
+    },
+    {
+      "path": "guards-final.log",
+      "sha256": "3a788b7aa493e6c6dd304d7ca9eca88403c6976a43c6af3ec2eae84eda15a39f"
+    },
+    {
+      "path": "independent-review.txt",
+      "sha256": "43dede03b9aaf9660bf98cb9b1a32eb4ec7af9c272c288bc19e0a813181fbe49"
+    },
+    {
+      "path": "integration-first.log",
+      "sha256": "1861fd7b6a5d95e608a968e75a7f134b059bc6d835f24057252cff26160d7831"
+    },
+    {
+      "path": "integration-second.log",
+      "sha256": "bd62212860c80f4076457b1e789a207250b03fff9d74e2acb89aa88ff2b02dc3"
+    },
+    {
+      "path": "lab-metafile.json",
+      "sha256": "d1d27a867029018ca47bc959fd7a4f51a32c04601cacda3d5974efef9a424e41"
+    },
+    {
+      "path": "mobile-first.png",
+      "sha256": "6b73eca94f254ba45241e866c89c4d0c1b1b9d861669fd1db50c48d88671c495"
+    },
+    {
+      "path": "native-studies-desktop.png",
+      "sha256": "ad120bdb9433107830165eec95780568c973bfdeef03bde80e1720a467ef1196"
+    },
+    {
+      "path": "native-studies-mobile-final.png",
+      "sha256": "44ed2f95c3a142382bd328b754cbd98ff45596b16039a314d7371ad8c5e5bd00"
+    },
+    {
+      "path": "native-studies-timing-final-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "native-studies-timing-final.json",
+      "sha256": "7545761feeaf92904447baf69cff17cc9330cfa175701b7280e4a8a2bf2b3ba9"
+    },
+    {
+      "path": "native-studies-timing-summary.json",
+      "sha256": "c119214cd37925740b65fdcf400490841166a470cd006fe977a8a80cccc84001"
+    },
+    {
+      "path": "native-studies-volume.png",
+      "sha256": "1545aaf7835bc8354f5bfc2d88d457ea861050f213f3e23f09f8db5c5aeae1af"
+    },
+    {
+      "path": "native-viewport-desktop.png",
+      "sha256": "8c59c45861a8a88ed81a60ba52835c28d45fe5982bc050effc9f7efd20d22278"
+    },
+    {
+      "path": "native-viewport-mobile-final.png",
+      "sha256": "fa47e1a6c1b9876eb32eabf265e68ef5b3d4a5fc3ac91a186496235b1097a02d"
+    },
+    {
+      "path": "price-before.log",
+      "sha256": "a08eb0b2e6ee0c9adb17c62cb01e230c313f0650cc2a8c1297946c93cb932594"
+    },
+    {
+      "path": "price-scale-lifecycle-before.log",
+      "sha256": "a9da3ab60347132200151ee5411deb34cc6657cc643d7a6130cf907d5000e966"
+    },
+    {
+      "path": "studies-first.log",
+      "sha256": "36dfeb2de96f3b46a064f2a5825309be11a5adebd2f4b7fb0e4c631938707818"
+    },
+    {
+      "path": "studies-implementation-receipt.json",
+      "sha256": "ba2c9bf47afc17dd257ca1ac6187106a2596c04c9ddd05f4a08fe5de0528bd23"
+    },
+    {
+      "path": "studies-label-followup.log",
+      "sha256": "d7617767d3589c4dea98c06441749ec7d255a25da3e308fc095336778c207fd4"
+    },
+    {
+      "path": "studies-large-bounds-after.log",
+      "sha256": "0d2c22c8dac1efbd1c3f9c309cabcba00b1e2d48f2afb336c3e2c4a9a023168c"
+    },
+    {
+      "path": "studies-large-bounds-before.log",
+      "sha256": "82eabdce63444853d1faa26ef695b867e82fee170719d9873a470670350f0759"
+    },
+    {
+      "path": "studies-prefix-reuse.log",
+      "sha256": "77e2c1e09293e109674e5251cb87b3ad59282fe9cc194943fcac32caaa523204"
+    },
+    {
+      "path": "studies-scale-after.log",
+      "sha256": "b8f91c2a0aff256be91ef2c2b3b38f2889cd077afb4d59921a238d9863bc2ac3"
+    },
+    {
+      "path": "studies-scale-before.log",
+      "sha256": "a7b8c1ca10bbf2b301a1a19eb899ccb266b089a1f86126faa66fb22a1e075187"
+    },
+    {
+      "path": "studies-scale-final.log",
+      "sha256": "8d7544f73ff0b062a071ec223cd4a8bda4095d8cd7fc43a728849fb70504b77b"
+    },
+    {
+      "path": "typecheck-final.log",
+      "sha256": "1159c762326fcc64978e75526298c2ab51d457d31269ebe87d09de63497900e0"
+    },
+    {
+      "path": "typecheck-first.log",
+      "sha256": "1159c762326fcc64978e75526298c2ab51d457d31269ebe87d09de63497900e0"
+    }
+  ],
+  "archiveSha256": "dea2405564eed988e51fd40073a77685e9f2d0ceedbf97c4d264564cf826df0a",
+  "limits": "Synthetic renderer only; no app/broker/competitor parity; existing guard failures retained."
+}
