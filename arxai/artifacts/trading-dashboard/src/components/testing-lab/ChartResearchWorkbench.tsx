@@ -7,6 +7,7 @@ import { createChartResearchDraft, defaultChartResearchSettings, describeChartRe
 import type { ChartEngineCandle } from "@/lib/chart-engine";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 import { createBrowserResearchRunner } from "@/lib/chart-research/researchRunner";
+import type { ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -16,7 +17,7 @@ interface Props {
   getVisibleBars: () => ChartEngineCandle[];
   request: { id: number; text: string } | null;
   onOverlays: (overlays: ChartOverlay[]) => void;
-  onExplanation: (text: string | null) => void;
+  onExplanation: (evidence: ChartResearchExplanation | null) => void;
   onClose: () => void;
 }
 type Completed = { snapshot: ChartResearchSnapshot; config: ResearchV2Config; result: DeepReadonly<ResearchV2Result> };
@@ -68,7 +69,14 @@ export default function ChartResearchWorkbench({ data, symbol, timeframe, canoni
     const s=decision.signal;
     return `${symbol} ${timeframe}, selected ${selectedTrade.partition} historical trade (result ${completed.result.fingerprints.result.slice(0,12)}). At signal close ${stamp(decision.knownThroughMs)}, fast/slow EMA changed from ${number(s.previousFastEma)}/${number(s.previousSlowEma)} to ${number(s.fastEma)}/${number(s.slowEma)}. ATR was ${number(s.atr)}; the frozen stop distance was ${number(s.stopDistancePriceUnits)}. The ${selectedTrade.side} entry was modeled at the next observed open, ${stamp(selectedTrade.entry.barOpenMs)}, price ${number(selectedTrade.entry.price)}. Stop ${number(selectedTrade.stopPrice)}; target ${number(selectedTrade.targetPrice)}. Exit ${number(selectedTrade.exit.price)}: ${label(selectedTrade.reason)}, ${selectedTrade.exit.fillTime.precision==='open'?'modeled at open':'somewhere in the OHLC interval'} ${stamp(selectedTrade.exit.fillTime.earliestMs)}${selectedTrade.exit.fillTime.precision==='bar_interval'?' to '+stamp(selectedTrade.exit.fillTime.latestMs):''}. ${selectedTrade.ambiguousStopAndTarget?'Both stop and target touched; conservative stop-first ordering was used. ':''}Gross ${number(selectedLedger.grossPriceUnits)} minus spread ${number(selectedLedger.spreadCostPriceUnits)}, slippage ${number(selectedLedger.slippageCostPriceUnits)} and fees ${number(selectedLedger.feeCostPriceUnits)} gives net ${number(selectedLedger.netPriceUnits)} price units per unit. This is a ledger-derived simulation, not a broker fill, account-currency return, confidence score or forecast.`;
   },[selectedTrade,selectedLedger,completed,symbol,timeframe]);
-  useLayoutEffect(()=>{onExplanation(explanation);return()=>onExplanation(null);},[explanation,onExplanation]);
+  const explanationEvidence = useMemo<ChartResearchExplanation>(()=>{
+    if (!completed) return {status:"no_result",reason:"No completed historical test is available on this chart. Run a supported historical test before selecting a simulated trade. No trade was inferred and no order was sent."};
+    if (binding?.status!=="ready") return {status:"unavailable",reason:`The historical result no longer matches the current chart evidence. ${binding?.reason??"Current source binding is unavailable."} Select a source-qualified result before asking about a trade; no other trade was substituted.`};
+    if (selected === null) return {status:"no_selection",reason:"Select one completed simulated trade in Test an idea before asking about its outcome. No last, worst or live trade was substituted."};
+    if (!selectedTrade || !selectedLedger || !explanation) return {status:"unavailable",reason:"The selected historical trade has incomplete ledger evidence. Its outcome cannot be explained; no other trade was substituted."};
+    return {status:"ready",text:explanation,netPriceUnits:selectedLedger.netPriceUnits};
+  },[completed,binding,selected,selectedTrade,selectedLedger,explanation]);
+  useLayoutEffect(()=>{onExplanation(explanationEvidence);return()=>onExplanation(null);},[explanationEvidence,onExplanation]);
   const overlays=useMemo<ChartOverlay[]>(()=>{
     if(!selectedTrade)return [];
     const t=selectedTrade,prefix=`research:${completed!.result.fingerprints.result}:${t.partition}:${t.tradeIndex}`;

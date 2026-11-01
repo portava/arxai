@@ -1,3 +1,7 @@
+import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistant";
+import { runCausalResearchV2 } from "@workspace/domain/backtest/research";
+const researchRunner=vi.hoisted(()=>({run:vi.fn(),cancel:vi.fn()}));
+vi.mock("@/lib/chart-research/researchRunner",()=>({createBrowserResearchRunner:()=>researchRunner}));
 import {AssistantDockProvider} from "@/components/help/AssistantDock";
 import { requestChartStudy } from "@/lib/chart-engine/chartStudyAssistant";
 // P2 — comparison chart cards mount in the click commit, but each new
@@ -1120,5 +1124,49 @@ describe("explicit native comparison chart assistant",()=>{
   expect(requestChartStudy('show RSI')).toContain('Select a ready');expect(eur.setStudies).not.toHaveBeenCalled();expect(aapl.setStudies).not.toHaveBeenCalled();
   fireEvent.click(within(screen.getAllByTestId('arx-native-chart')[1]!).getByTestId('chart-assistant-activate'));
   act(()=>{reply=requestChartStudy('show RSI');});expect(reply).toContain('AAPL · H1');
+ });
+});
+
+describe("native selected historical follow-up routing",()=>{
+ it("preserves frozen results and edited rules for polite explanations, loss questions and unsupported compound actions",async()=>{
+  const start=Date.parse("2026-01-01T00:00:00Z"),step=60_000;
+  const candles=Array.from({length:160},(_,i)=>{const close=100+Math.sin(i/5)*4;return {symbol:"EURUSD",timeframe:"M1",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:close-.1,high:close+.3,low:close-.3,close,source:"mt5_broker",sourceMode:"live",priceBasis:"BID",priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null},timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},isComplete:true,isFinal:true,isForming:false,qualityFlags:[]};});
+  candleResponse={symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",quality:"clean",candles,feedStatus:{source:"mt5_broker"},marketEvidence:{symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}};
+  researchRunner.run.mockReset();researchRunner.cancel.mockReset();
+  researchRunner.run.mockImplementation((input,config,receive)=>receive({status:"complete",result:runCausalResearchV2(input,config)}));
+  const view=render(<AssistantDockProvider><ARXNativeChart symbol="EURUSD" timeframe="M1"/></AssistantDockProvider>);
+  created[0]!.getVisibleCandles=vi.fn(()=>candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close})));
+  await import("../testing-lab/ChartResearchWorkbench");
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Test an idea"}));});
+  fireEvent.change(screen.getByLabelText("Fast EMA"),{target:{value:"12"}});
+  fireEvent.click(screen.getByRole("button",{name:"Run historical test"}));
+  fireEvent.click(screen.getByRole("button",{name:"Trade 1",exact:true}));
+  const result=screen.getByTestId("chart-research-result"),before=result.textContent;
+  for(const prompt of ["Please explain the last test trade!","Why did this trade lose?","explain the last test trade and buy"]){
+   let reply:string|null=null;act(()=>{reply=requestChartResearch(prompt);});
+   expect(reply).toMatch(/ledger-derived simulation|Additional actions or ambiguous/);
+   expect(screen.getByTestId("chart-research-result")).toBe(result);expect(result.textContent).toBe(before);
+   expect((screen.getByLabelText("Fast EMA") as HTMLInputElement).value).toBe("12");
+  }
+  expect(researchRunner.run).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button",{name:"Close historical test"}));
+  let reply:string|null=null;act(()=>{reply=requestChartResearch("Why did this trade lose?");});
+  expect(reply).toContain("No current selected historical result");expect(reply).not.toContain("ledger-derived simulation");
+  // Recreate a selected receipt after the close check, then switch directly
+  // while it is mounted: cleanup must not be the reason this assertion passes.
+  fireEvent.click(screen.getByRole("button",{name:"Run historical test"}));
+  fireEvent.click(screen.getByRole("button",{name:"Trade 1",exact:true}));
+  act(()=>{reply=requestChartResearch("Why did this trade lose?");});
+  expect(reply).toContain("ledger-derived simulation");
+  const previous=candleResponse as any;
+  candleResponse={...previous,symbol:"AAPL",candles:previous.candles.map((c:any)=>({...c,symbol:"AAPL"})),marketEvidence:{...previous.marketEvidence,symbol:"AAPL",sourceIdentity:"b".repeat(64)}};
+  view.rerender(<AssistantDockProvider><ARXNativeChart symbol="AAPL" timeframe="M1"/></AssistantDockProvider>);
+  act(()=>{reply=requestChartResearch("Why did this trade lose?");});
+  expect(reply).toContain("No other pane was substituted");expect(reply).not.toContain("ledger-derived simulation");
+  fireEvent.click(screen.getByTestId("chart-assistant-activate"));
+  act(()=>{reply=requestChartResearch("Why did this trade lose?");});
+  expect(reply).not.toContain("ledger-derived simulation");expect(reply).toMatch(/No completed historical test|No current selected historical result/);
+  expect(researchRunner.run).toHaveBeenCalledTimes(2);
+  view.unmount();expect(requestChartResearch("Why did this trade lose?")).toContain("Select a ready Smart Chart");
  });
 });

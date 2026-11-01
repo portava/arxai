@@ -33,6 +33,12 @@ describe('explicit existing assistant pane ownership',()=>{
   expect(requestChartStudy('show volume profile')).toBe('AAPL');expect(called.mock.calls).toEqual([['AAPL']]);
   view.rerender(<App keyValue="another-listing"/>);called.mockClear();expect(old()).toBe('held');expect(requestChartStudy('set volume profile rows to 48')).toContain('Select a ready');expect(called).not.toHaveBeenCalled();
  });
+ it('holds loss followups after selected-pane source withdrawal instead of choosing primary',()=>{
+  const view=render(<App/>);fireEvent.click(screen.getByText('Select AAPL'));
+  expect(requestChartResearch('Why did this trade lose?')).toBe('AAPL');
+  view.rerender(<App keyValue="another-listing"/>);called.mockClear();
+  expect(requestChartResearch('Why did this trade lose?')).toContain('No other pane was substituted');expect(called).not.toHaveBeenCalled();
+ });
  it('does not automatically reselect the initially selected primary after readiness is withdrawn and restored',()=>{
   const app=(ready:boolean)=><AssistantDockProvider><Pane symbol="EURUSD" keyValue="primary" primary ready={ready}/><Status/></AssistantDockProvider>;
   const view=render(app(true));expect(requestChartStudy('show RSI')).toBe('EURUSD');view.rerender(app(false));view.rerender(app(true));expect(requestChartStudy('show RSI')).toContain('Select a ready');fireEvent.click(screen.getByText('Select EURUSD'));expect(requestChartStudy('show RSI')).toBe('EURUSD');
