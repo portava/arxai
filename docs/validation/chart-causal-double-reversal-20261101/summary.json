@@ -1,0 +1,293 @@
+{
+  "base": "44643857b3e4f891a6529ee6ffd2883be86fd308",
+  "applicationCommit": "7a52a180ba0498c052f755d5a9d2c0b3ede5fda9",
+  "workingDifference": "Only MT5 object-count documentation correction; application/test trees equal commit. Patch retained.",
+  "validation": {
+    "domain": {
+      "passed": 455,
+      "failed": 0,
+      "skipped": 0,
+      "beforeCorrectedDoubleOnly": "24 failed /4 passed"
+    },
+    "frontendFocused": 178,
+    "frontendFull": {
+      "passed": 3614,
+      "failed": 0,
+      "skipped": 11
+    },
+    "backendPatternTruth": 26,
+    "domainBuild": "pass before commit, same domain source",
+    "finalTypechecks": "dashboard/API passed on application commit",
+    "productionBuild": "pass; sourcemap andchunk-sizewarnings retained",
+    "guards": "85/87 exact same previous2failureblocks",
+    "browser": {
+      "passed": 19,
+      "failed": 0,
+      "fixture": "dd91e3f0bfdc8025",
+      "firstAttempt": "17pass2fail; assertions expected internalinvalidated, product correctly saysNo longer valid"
+    }
+  },
+  "reviews": [
+    "Domain read-only review clear",
+    "Frontend2evidence gaps found thenfixed;8newmutation regressions failedbefore/passafter"
+  ],
+  "performance": {
+    "order": [
+      "base-2",
+      "candidate-1",
+      "candidate-2",
+      "base-3"
+    ],
+    "runs": {
+      "base-2": {
+        "source": {
+          "head": "44643857b3e4f891a6529ee6ffd2883be86fd308",
+          "status": "",
+          "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "sourceUnchanged": true,
+        "node": "v24.16.0",
+        "metrics": {
+          "raw_catalog_600": {
+            "n": 500,
+            "p50": 0.031833000000005995,
+            "p95": 0.038082999999915046,
+            "p99": 0.048500000000331056,
+            "max": 0.06787500000064028
+          },
+          "complete_analysis_5000": {
+            "n": 500,
+            "p50": 0.9387499999997999,
+            "p95": 1.1490420000000086,
+            "p99": 1.2343329999998787,
+            "max": 1.7398329999998623
+          },
+          "binding_and_analysis_5000": {
+            "n": 500,
+            "p50": 1.3703749999995125,
+            "p95": 1.7547079999999369,
+            "p99": 1.8587090000000899,
+            "max": 3.2582910000000993
+          },
+          "dense_analysis_600": {
+            "n": 500,
+            "p50": 5.889541999999892,
+            "p95": 6.533374999999978,
+            "p99": 6.889708000000155,
+            "max": 8.953875000000153
+          }
+        },
+        "acceptance": {
+          "complete_analysis_5000": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          },
+          "binding_and_analysis_5000": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          },
+          "dense_analysis_600": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          }
+        },
+        "limitations": [
+          "Pure computation, not browser/physical paint/provider/model/broker latency.",
+          "Generated data; dense case deterministic seed307.",
+          "Raw catalogue has fewer responsibilities; compare baseline/candidate within each identical workload only.",
+          "All samples and warmups retained; no outlier removal."
+        ]
+      },
+      "candidate-1": {
+        "source": {
+          "head": "7a52a180ba0498c052f755d5a9d2c0b3ede5fda9",
+          "status": "M docs/SMART_CHART_PLATFORM_COMPARISON.md",
+          "diffSha256": "cd9389ae970f77d6337ca1b89d239a718af4b6a1cc6b96768ceaf3f41f96828a"
+        },
+        "sourceUnchanged": true,
+        "node": "v24.16.0",
+        "metrics": {
+          "raw_catalog_600": {
+            "n": 500,
+            "p50": 0.04258299999992232,
+            "p95": 0.04825000000005275,
+            "p99": 0.062084000000140804,
+            "max": 0.26670800000010786
+          },
+          "complete_analysis_5000": {
+            "n": 500,
+            "p50": 1.1917080000002898,
+            "p95": 1.4070420000000468,
+            "p99": 1.6217499999997926,
+            "max": 7.383000000000266
+          },
+          "binding_and_analysis_5000": {
+            "n": 500,
+            "p50": 1.6233339999998861,
+            "p95": 2.002542000000176,
+            "p99": 2.165124999999989,
+            "max": 3.8602500000001783
+          },
+          "dense_analysis_600": {
+            "n": 500,
+            "p50": 5.92816700000003,
+            "p95": 6.656084000000192,
+            "p99": 7.8381249999997635,
+            "max": 8.691416000000117
+          }
+        },
+        "acceptance": {
+          "complete_analysis_5000": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          },
+          "binding_and_analysis_5000": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          },
+          "dense_analysis_600": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          }
+        },
+        "limitations": [
+          "Pure computation, not browser/physical paint/provider/model/broker latency.",
+          "Generated data; dense case deterministic seed307.",
+          "Raw catalogue has fewer responsibilities; compare baseline/candidate within each identical workload only.",
+          "All samples and warmups retained; no outlier removal."
+        ]
+      },
+      "candidate-2": {
+        "source": {
+          "head": "7a52a180ba0498c052f755d5a9d2c0b3ede5fda9",
+          "status": "M docs/SMART_CHART_PLATFORM_COMPARISON.md",
+          "diffSha256": "cd9389ae970f77d6337ca1b89d239a718af4b6a1cc6b96768ceaf3f41f96828a"
+        },
+        "sourceUnchanged": true,
+        "node": "v24.16.0",
+        "metrics": {
+          "raw_catalog_600": {
+            "n": 500,
+            "p50": 0.042334000000209926,
+            "p95": 0.049500000000080036,
+            "p99": 0.062124999999468855,
+            "max": 0.2176249999997708
+          },
+          "complete_analysis_5000": {
+            "n": 500,
+            "p50": 1.1809159999997974,
+            "p95": 1.393833000000086,
+            "p99": 1.5148750000000746,
+            "max": 2.403874999999971
+          },
+          "binding_and_analysis_5000": {
+            "n": 500,
+            "p50": 1.6107499999998254,
+            "p95": 1.9877080000001115,
+            "p99": 2.142457999999806,
+            "max": 4.330707999999959
+          },
+          "dense_analysis_600": {
+            "n": 500,
+            "p50": 5.9482090000001335,
+            "p95": 6.556332999999995,
+            "p99": 6.945666000000074,
+            "max": 7.956749999999829
+          }
+        },
+        "acceptance": {
+          "complete_analysis_5000": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          },
+          "binding_and_analysis_5000": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          },
+          "dense_analysis_600": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          }
+        },
+        "limitations": [
+          "Pure computation, not browser/physical paint/provider/model/broker latency.",
+          "Generated data; dense case deterministic seed307.",
+          "Raw catalogue has fewer responsibilities; compare baseline/candidate within each identical workload only.",
+          "All samples and warmups retained; no outlier removal."
+        ]
+      },
+      "base-3": {
+        "source": {
+          "head": "44643857b3e4f891a6529ee6ffd2883be86fd308",
+          "status": "",
+          "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "sourceUnchanged": true,
+        "node": "v24.16.0",
+        "metrics": {
+          "raw_catalog_600": {
+            "n": 500,
+            "p50": 0.031541000000061103,
+            "p95": 0.037083000000166066,
+            "p99": 0.04179099999987557,
+            "max": 0.06037500000002183
+          },
+          "complete_analysis_5000": {
+            "n": 500,
+            "p50": 0.9336670000002414,
+            "p95": 1.1354999999998654,
+            "p99": 1.2221250000000055,
+            "max": 1.6172919999999067
+          },
+          "binding_and_analysis_5000": {
+            "n": 500,
+            "p50": 1.3785419999999249,
+            "p95": 1.7488750000002256,
+            "p99": 1.8745000000003529,
+            "max": 3.504791999999725
+          },
+          "dense_analysis_600": {
+            "n": 500,
+            "p50": 5.864500000000135,
+            "p95": 6.569041999999627,
+            "p99": 7.274417000000085,
+            "max": 9.854707999999846
+          }
+        },
+        "acceptance": {
+          "complete_analysis_5000": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          },
+          "binding_and_analysis_5000": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          },
+          "dense_analysis_600": {
+            "p95Under10ms": true,
+            "p99Under20ms": true
+          }
+        },
+        "limitations": [
+          "Pure computation, not browser/physical paint/provider/model/broker latency.",
+          "Generated data; dense case deterministic seed307.",
+          "Raw catalogue has fewer responsibilities; compare baseline/candidate within each identical workload only.",
+          "All samples and warmups retained; no outlier removal."
+        ]
+      }
+    },
+    "measuredSamples": 8000,
+    "warmups": 1280,
+    "exploratoryBaseline": "base-1 retained separately; run while implementation was ongoing; not in quiet comparison",
+    "conditions": "No task browser/tests/builds during four comparison runs; unrelated machine workloads uncontrolled"
+  },
+  "limits": [
+    "ARX2/2pivots,0.5frozenATR tolerance andprior5close convention differfromTradingView5/5pivots/configurableinputs",
+    "No vendor performance or predictiveaccuracy evidence",
+    "Backendlearningstillgeometry-onlyidentity",
+    "Otherpatternfamilies inclflaglifecycle remainunaudited",
+    "Replitruntimeunchanged",
+    "Sparse35bar fixture chart retainslargeemptyspace andstickyheadercanoverlapcapture; broadlayoutacceptance notclaimed"
+  ],
+  "cleanup": "Test browsers closed; server stopped; port4199 no listener"
+}

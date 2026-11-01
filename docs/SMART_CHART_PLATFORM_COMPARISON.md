@@ -26,7 +26,7 @@ MT5. Reference: [official demo](https://charting-library.tradingview-widget.com/
 
 MT5's help documents up to 100 simultaneously open charts. Its marketing material
 also uses broader wording, so this comparison uses the explicit help limit.
-MT5 documents 21 timeframes, 38 built-in indicators and 44 analytical objects.
+MT5 documents 21 timeframes and 38 built-in indicators. Its analytical-object help currently lists 46 tools (checked 2026-11-01), while older marketing material cited 44; this comparison uses the specific [object help](https://www.metatrader5.com/en/terminal/help/charts_analysis/objects).
 ARX's 17 study types include four separately listed moving-average methods;
 these counts must not be treated as equivalent catalog coverage.
 [MT5 charts](https://www.metatrader5.com/en/terminal/help/charts_analysis/charts),
