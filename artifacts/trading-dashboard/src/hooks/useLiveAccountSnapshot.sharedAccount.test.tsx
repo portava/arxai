@@ -1,10 +1,12 @@
 import React, { type ReactNode } from "react";
-import { act, cleanup, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
+import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider, QueryObserver, useQuery } from "@tanstack/react-query";
 import { getGetMeSharedAccountSummaryQueryKey } from "@workspace/api-client-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLiveAccountSnapshot } from "./useLiveAccountSnapshot";
 import { LiveAccountSnapshotProvider, useLiveAccountSnapshotCtx } from "./useLiveAccountSnapshotContext";
+import { NativeAccountReport } from "../components/sharedAccount/NativeAccountReport";
+import { createSharedAccountChangeStream } from "../../../api-server/src/lib/live/sharedAccountChangeStream";
 
 class Stream {
   static OPEN = 1;
@@ -56,6 +58,47 @@ function setup() {
 async function settle() { await act(async () => { await vi.advanceTimersByTimeAsync(30); }); }
 
 describe("shared-account advisory hints on the existing account stream", () => {
+  it("recovers a missed account event in both rendered monetary views using the same canonical report", async () => {
+    const now = Date.now();
+    const original = {
+      status: "reported" as const, currentVerified: false as const,
+      observedAt: new Date(now - 2000).toISOString(), receivedAt: new Date(now - 1000).toISOString(),
+      currency: "KWD", currencyDigits: 3,
+      amounts: { balance: "1000.123", equity: "1001.234", profit: "1.111", credit: "0.000", margin: "20.000", freeMargin: "981.234" },
+    };
+    let persisted = original;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(key, original);
+    const read = vi.fn(async () => persisted);
+    function MoneyView() {
+      const result = useQuery({ queryKey: key, queryFn: read });
+      return <NativeAccountReport report={result.data ?? null} failed={result.isError} />;
+    }
+    render(<QueryClientProvider client={client}><LiveAccountSnapshotProvider><MoneyView /><MoneyView /></LiveAccountSnapshotProvider></QueryClientProvider>);
+    const server = createSharedAccountChangeStream({
+      // No local notifications: simulate a committed report on another process.
+      bus: { onConnection() {}, offConnection() {} }, readScope: async () => 81,
+      sendHint: () => Stream.instances[0]!.emit(hint), schedulerOptions: { minGapMs: 0 },
+    });
+    try {
+      await act(async () => { server.request(); await vi.advanceTimersByTimeAsync(30); });
+      expect(read).toHaveBeenCalledTimes(1);
+      persisted = { ...original, amounts: { balance: "1100.123", equity: "1090.234", profit: "-9.889", credit: "2.000", margin: "30.000", freeMargin: "1060.234" } };
+      // A connection or heartbeat alone is not money evidence.
+      act(() => Stream.instances[0]!.emit({ type: "heartbeat" }));
+      expect(screen.getAllByTestId("native-money-balance").map(node => node.textContent)).toEqual(["KWD 1,000.123", "KWD 1,000.123"]);
+      await act(async () => { server.request(); await vi.advanceTimersByTimeAsync(30); });
+      expect(read).toHaveBeenCalledTimes(2);
+      for (const [field, expected] of Object.entries({ balance: "1,100.123", equity: "1,090.234", profit: "-9.889", credit: "2.000", margin: "30.000", freeMargin: "1,060.234" })) {
+        expect(screen.getAllByTestId(`native-money-${field}`).map(node => node.textContent)).toEqual([`KWD ${expected}`, `KWD ${expected}`]);
+      }
+      expect(screen.getAllByText(/current state unverified/)).toHaveLength(2);
+      expect(screen.getAllByText(`Terminal-reported observation: ${original.observedAt}. Received by ARX: ${original.receivedAt}.`)).toHaveLength(2);
+      expect(Stream.instances).toHaveLength(1);
+    } finally { server.stop(); }
+  });
+
   it("refreshes the canonical summary immediately without promoting stream or money freshness", async () => {
     const { client, requests, queryFn, hook, stream } = setup();
     const before = client.getQueryState(key)!;

@@ -148,6 +148,21 @@ test('failed current session lookup closes whole stream and removes shared subsc
  const count=h.writes.length;h.release();await flush();assert.equal(h.writes.length,count);
 });
 
+test('actual route fallback tick requests a canonical summary reread without a local account event', async () => {
+  const h = harness(false, false, 81);
+  await flush();
+  const hints = () => h.writes.map(x => JSON.parse(x.slice(6))).filter(x => x.type === 'shared_account_changed');
+  try {
+    assert.equal(hints().length, 1);
+    h.intervals.get(3000)!(); await flush();
+    assert.deepEqual(hints(), [{ type: 'shared_account_changed' }, { type: 'shared_account_changed' }]);
+    h.allocation(false);
+    h.intervals.get(3000)!(); await flush();
+    assert.equal(hints().length, 2);
+    assert.equal(h.bus.listenerCount('c:81'), 0);
+  } finally { h.req.emit('close'); h.release(); await flush(); }
+});
+
 for(const revoke of [true,false]){
  test(`LIVE monetary result rechecks authorization after final awaited read (${revoke?'logout':'downgrade'})`,async()=>{
   const h=harness(false,true,null,true);await flush();assert.equal(h.reads(),1);

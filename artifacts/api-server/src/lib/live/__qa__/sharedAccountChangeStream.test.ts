@@ -63,3 +63,66 @@ test('logout during awaited pin read is checked before scope returns', async () 
   let session:typeof user|null=user;
   assert.equal(await resolveSharedAccountChangeScope(7,false,{readSession:async()=>session,readView:async()=>({pool:{masterConnectionId:81},hasAllocation:true}),readPin:async()=>{session=null;return 81;}}),null);
 });
+
+test('periodic reconciliation recovers a missed connection event without inventing account data', async () => {
+  let hints = 0;
+  const stream = createSharedAccountChangeStream({ bus, readScope: async () => 81,
+    sendHint: () => { hints++; }, schedulerOptions: { minGapMs: 0 } });
+  try {
+    stream.request(); await flush(); assert.equal(hints, 1);
+    // A write committed on another API process cannot reach this local bus.
+    // The route's existing periodic request must still ask for a canonical read.
+    stream.request(); await flush(); assert.equal(hints, 2);
+    stream.request(); await flush(); assert.equal(hints, 3);
+  } finally { stream.stop(); }
+});
+
+test('a reconciliation tick during an older scope read earns one serialized trailing hint', async () => {
+  let hints = 0, calls = 0, active = 0, max = 0;
+  let hold = false;
+  let release!: () => void;
+  const stream = createSharedAccountChangeStream({ bus, readScope: async () => {
+    calls++; active++; max = Math.max(max, active);
+    if (hold) await new Promise<void>(resolve => { release = resolve; });
+    active--; return 81;
+  }, sendHint: () => { hints++; }, schedulerOptions: { minGapMs: 0 } });
+  try {
+    stream.request(); await flush();
+    hold = true; bus.emitConnection(81); await flush();
+    for (let i = 0; i < 100; i++) stream.request();
+    assert.equal(calls, 2);
+    hold = false; release(); await flush();
+    assert.equal(max, 1); assert.equal(calls, 3);
+    assert.equal(hints, 3);
+  } finally { stream.stop(); }
+});
+
+test('periodic reconciliation cannot bypass revocation, scope errors or close', async () => {
+  let scope: number | null = 81, fail = false, hints = 0;
+  const stream = createSharedAccountChangeStream({ bus,
+    readScope: async () => { if (fail) throw Error('unavailable'); return scope; },
+    sendHint: () => { hints++; }, schedulerOptions: { minGapMs: 0 } });
+  try {
+    stream.request(); await flush();
+    scope = null; stream.request(); await flush(); assert.equal(hints, 1);
+    scope = 81; fail = true; stream.request(); await flush(); assert.equal(hints, 1);
+    fail = false; stream.request(); await flush(); assert.equal(hints, 2);
+    stream.stop(); stream.request(); bus.emitConnection(81); await flush(); assert.equal(hints, 2);
+  } finally { stream.stop(); }
+});
+
+test('a tick arriving during a failed scope read survives for the successful trailing read', async () => {
+  let hints = 0, calls = 0;
+  let reject!: (error: Error) => void;
+  const stream = createSharedAccountChangeStream({ bus, readScope: async () => {
+    calls++;
+    if (calls === 2) return new Promise<number>((_resolve, fail) => { reject = fail; });
+    return 81;
+  }, sendHint: () => { hints++; }, schedulerOptions: { minGapMs: 0 } });
+  try {
+    stream.request(); await flush(); assert.equal(hints, 1);
+    stream.request(); await flush();
+    stream.request(); reject(Error('temporary lookup failure')); await flush();
+    assert.equal(calls, 3); assert.equal(hints, 2);
+  } finally { stream.stop(); }
+});

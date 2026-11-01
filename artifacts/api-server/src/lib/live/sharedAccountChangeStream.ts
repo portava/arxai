@@ -51,6 +51,10 @@ type ConnectionBus = {
 /** Same-process invalidation hints only: no funds, identifiers or freshness.
  * Binding precedes its first hint (and thus the client's initial refetch).
  * Bursts and events arriving during checks earn one serialized trailing check.
+ * The existing route timer requests reconciliation even without a local event:
+ * a missed notification or a write on another API process must not leave the
+ * canonical summary waiting for another balance change. This is periodic
+ * recovery, not cross-process push or a broker-to-screen latency guarantee.
  */
 export function createSharedAccountChangeStream(options: {
   bus: ConnectionBus;
@@ -61,6 +65,7 @@ export function createSharedAccountChangeStream(options: {
   let stopped = false;
   let bound: { id: number; listener: () => void } | null = null;
   let pending = new Set<number>();
+  let reconcilePending = false;
   const unbind = () => {
     if (bound) options.bus.offConnection(bound.id, bound.listener);
     bound = null;
@@ -68,6 +73,10 @@ export function createSharedAccountChangeStream(options: {
   const scheduler = createAccountSnapshotScheduler(async () => {
     const events = pending;
     pending = new Set();
+    // Consume only work present at read start. A timer tick during an awaited
+    // authorization read earns a trailing read rather than being lost.
+    const reconcile = reconcilePending;
+    reconcilePending = false;
     let id: number | null;
     try { id = await options.readScope(); }
     catch { if (!stopped) unbind(); return; }
@@ -84,10 +93,14 @@ export function createSharedAccountChangeStream(options: {
       bound = { id, listener };
       options.bus.onConnection(id, listener);
     }
-    if (changed || events.has(id)) options.sendHint();
+    if (changed || reconcile || events.has(id)) options.sendHint();
   }, options.schedulerOptions);
   return {
-    request: () => scheduler.request(),
-    stop() { stopped = true; scheduler.stop(); pending.clear(); unbind(); },
+    request() {
+      if (stopped) return;
+      reconcilePending = true;
+      scheduler.request();
+    },
+    stop() { stopped = true; scheduler.stop(); pending.clear(); reconcilePending = false; unbind(); },
   };
 }
