@@ -1,0 +1,3 @@
+Independent review: profile_truth_review found misplaced V2 disclosures, representability and downsampling/display gaps; root and helper corrected them. Final review found no additional cash/display blocker, but required a precise limitation that EMA/ATR selection still trusts engine output.
+Agent simplify_truth_review independently implemented the source/fill/cash verifier, hardened refusal/metrics/subnormal checks and reproduced/fixed the browser cost-cancellation error. Root reviewed code changes, sequential funding and final browser evidence.
+No agent claimed real-provider, source-authentication, strategy parity or broker proof. Raw test logs retained.
