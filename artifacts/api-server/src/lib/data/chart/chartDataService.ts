@@ -1,3 +1,4 @@
+import { unavailableCandleVolume } from "../candleVolumeEvidence.js";
 // ARX Native Chart — Level 1: candle data truth service.
 // Phase 1 hardening: full VerifiedCandle shape + TimeframeTruthResult.
 //
@@ -151,6 +152,7 @@ function buildFormingTipCandle(
     close: forming.close,
     volume: 0,
     tickVolume: forming.tickCount,
+    volumeEvidence: unavailableCandleVolume("The forming candle contains partial observed ticks, not a complete broker candle count."),
     isComplete: false,
     isFinal: false,
     isForming: true,
@@ -295,6 +297,7 @@ async function buildChartFeed(
           low: Math.min(lastCandle.low, forming.low),
           close: forming.close,
           tickVolume: forming.tickCount,
+          volumeEvidence: unavailableCandleVolume("The forming candle contains partial observed ticks, not a complete broker candle count."),
           isComplete: false,
           isFinal: false,
           isForming: true,

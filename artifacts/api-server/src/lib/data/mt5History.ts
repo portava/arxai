@@ -1,3 +1,4 @@
+import { mt5TickVolumeEvidence } from "./candleVolumeEvidence.js";
 // ── MT5 candle-history contract (Task #432) ──────────────────────────────────
 //
 // Server-side request/response contract for the MT5 EA to stream deep candle
@@ -153,6 +154,7 @@ export async function ingestMt5CandleHistory(
       high: b.high,
       low: b.low,
       close: b.close,
+      volumeEvidence: mt5TickVolumeEvidence(b.tickVolume),
       ...(b.tickVolume ?? b.volume) != null ? { volume: b.tickVolume ?? b.volume } : {},
     });
   }

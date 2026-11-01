@@ -1,3 +1,4 @@
+import { resolveCandleVolumeEvidence, type CandleVolumeEvidence } from "../candleVolumeEvidence.js";
 // ARX Native Chart — Level 1: candle normalization + sequence validation.
 // Phase 1 extension: VerifiedCandle shape, quality flags, outlier detection.
 //
@@ -94,6 +95,7 @@ export interface NormalizedChartCandle {
   close: number;
   volume: number;         // 0 when provider does not supply volume
   tickVolume: number | null; // verified tick count or null
+  volumeEvidence?: CandleVolumeEvidence; // optional on legacy wire responses
 
   // ── Source & mode ──────────────────────────────────────────────────────
   source: string;          // provider id (e.g. "deriv", "assistant_real:twelve_data")
@@ -270,6 +272,7 @@ interface IntermediateCandle extends Pick<NormalizedChartCandle, "open" | "high"
   openTime: string;
   /** Preserve input evidence before the numeric compatibility fallback to zero. */
   volumeReportedAsZero: boolean;
+  volumeEvidence: CandleVolumeEvidence;
 }
 
 /**
@@ -443,6 +446,7 @@ export function normalizeCandles(
       open: c.open, high: c.high, low: c.low, close: c.close,
       volume: typeof c.volume === "number" && Number.isFinite(c.volume) ? c.volume : 0,
       volumeReportedAsZero: c.volume === 0,
+      volumeEvidence: resolveCandleVolumeEvidence(c.volumeEvidence, source),
       isComplete: closeMs <= now,
       openTime: new Date(openMs).toISOString(),
     });
@@ -647,7 +651,8 @@ export function normalizeCandles(
       low: c.low,
       close: c.close,
       volume: c.volume,
-      tickVolume: null,
+      tickVolume: c.volumeEvidence.kind === "tick_count" ? c.volumeEvidence.quantity : null,
+      volumeEvidence: c.volumeEvidence,
       source: sourceLabel,
       sourceMode,
       priceBasis,

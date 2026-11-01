@@ -1,3 +1,4 @@
+import { mt5TickVolumeEvidence, type CandleVolumeEvidence } from "./candleVolumeEvidence.js";
 // ── Broker-native candle store + backfill state machine (Task #469, Phase A) ──
 //
 // The server-side service behind the EA-facing batch ingest endpoint
@@ -328,6 +329,7 @@ interface NormalizedBar {
   high: number;
   low: number;
   close: number;
+  volumeEvidence: CandleVolumeEvidence;
   tickVolume: number | null;
   realVolume: number | null;
   spread: number | null;
@@ -422,6 +424,7 @@ export async function ingestBrokerCandles(
       high: b.high,
       low: b.low,
       close: b.close,
+      volumeEvidence: mt5TickVolumeEvidence(b.tickVolume),
       tickVolume: b.tickVolume ?? b.volume ?? null,
       realVolume: b.realVolume ?? null,
       spread: b.spread ?? null,
@@ -545,6 +548,7 @@ export async function ingestBrokerCandles(
         high: bar.high,
         low: bar.low,
         close: bar.close,
+        volumeEvidence: bar.volumeEvidence,
         ...(bar.tickVolume != null ? { volume: bar.tickVolume } : {}),
       });
     }

@@ -9,6 +9,7 @@ let historySource = "mt5_broker";
 const bars = Array.from({ length: 60 }, (_, i) => ({
   time: new Date(currentOpen - (60 - i) * interval).toISOString(),
   open: 1000 + i, high: 1002 + i, low: 999 + i, close: 1001 + i, volume: 100,
+  volumeEvidence: { kind: "tick_count", quantity: 100, unit: "ticks", reason: null },
 }));
 mock.module("../../marketDataRouter.js", { namedExports: {
   classifySymbol: () => "synthetic",
@@ -42,6 +43,8 @@ for (const history of sources) {
       assert.equal(accepted.candles.at(-1)?.close, 1200);
       assert.equal(accepted.candles.at(-1)?.isForming, true);
       assert.equal(accepted.candles.at(-1)?.source, history);
+      assert.equal(accepted.candles.at(-1)?.volumeEvidence?.kind, "unavailable");
+      assert.equal(accepted.candles.at(-1)?.volumeEvidence?.quantity, null);
       const analysis = await getChartCandles("V75", "M5", 60);
       assert.equal(analysis.candles.some((bar) => bar.isForming), false);
     } finally { Date.now = oldNow; }
@@ -105,4 +108,19 @@ test("injected public bridge keeps public and legacy Deriv ticks separate", () =
   assert.equal(getFormingBar("V75", "M5", Date.now(), "deriv_public")?.close, 1200);
   assert.equal(getFormingBar("V75", "M5", Date.now(), "deriv"), null);
   __stopDerivFormingBridgeForTests();
+});
+
+
+test("same-bar forming update clears the provider count instead of reusing stale evidence", async () => {
+  historySource = "mt5_broker";
+  const oldNow = Date.now, last = bars.at(-1)!, priorTime = last.time;
+  Date.now = () => now;
+  last.time = new Date(currentOpen).toISOString();
+  try {
+    foldFormingTick("R_75", 1200, now, now, "mt5_broker");
+    const current = await getChartCandles("V75", "M5", 60, true);
+    assert.equal(current.candles.at(-1)?.isForming, true);
+    assert.equal(current.candles.at(-1)?.volumeEvidence?.kind, "unavailable");
+    assert.equal(current.candles.at(-1)?.volumeEvidence?.quantity, null);
+  } finally { Date.now = oldNow; last.time = priorTime; }
 });
