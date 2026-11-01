@@ -1,0 +1,356 @@
+{
+  "applicationCommit": "aadecaa9fab3243c28aec4385bb43a276ec03900",
+  "capturedUtc": "2026-11-01T22:23:05.608327+00:00",
+  "workingApplicationMatchesCommit": true,
+  "sourceHashes": {
+    "artifacts/trading-dashboard/src/components/dashboard/cockpit/CockpitAccountTruth.test.tsx": "9b89791600b6858405b8b73b1f7b09c38e19bd9e2b5a00d6fa5e25156193348b",
+    "artifacts/trading-dashboard/src/components/dashboard/cockpit/CockpitCards.tsx": "88c388cb7aaa2b58fdac967ec01f28248f3daa1437211a08532ae639e2a42618",
+    "artifacts/trading-dashboard/src/components/dashboard/cockpit/CockpitPersonalAccountReport.test.tsx": "fb1cc99ea65d9d749d6d00764b9c4b68bf88c63a5766d9c51a14a8762f1dc21b",
+    "artifacts/trading-dashboard/src/components/dashboard/cockpit/CockpitPersonalRefresh.integration.test.tsx": "7873ed42ea92e54e09bb348f86a309bbc354f6a8b510ef24d028bb36e33111e8",
+    "artifacts/trading-dashboard/src/lib/chart-engine/nativeChartFocusProof.test.ts": "5a73493806e5c10c0e2606b31636192dad98e9c42725b04a9dace8183e1bf9ca",
+    "artifacts/trading-dashboard/src/lib/chart-engine/nativeChartOverlayLayers.ts": "9c223dc0374555bb665170671c511dc64d7eb5f2a2f436c719b8cc741947d352",
+    "artifacts/trading-dashboard/src/lib/chart-engine/nativeChartOverlays.test.ts": "41cff1f2e8564ae2dd629b2d478268f83f8642409721820a88875dd964c4986b",
+    "artifacts/trading-dashboard/src/lib/chart-engine/nativeChartViewport.ts": "9a88a7bb39f612423bb46cb953ae109f74736d9d8c6e0ebc9d385e40bd9c397d",
+    "artifacts/trading-dashboard/src/lib/chart-engine/nativeScannerOverlays.test.ts": "bfb3ad316fbdcf3c01ab14d4488e66e2e399c6be7cb4f0b0b39747ee508c569e",
+    "artifacts/trading-dashboard/src/lib/chart-engine/nativeScannerOverlays.ts": "3a638419a5e7a1e6026d8a901e5987944b5627e27948f3f401dd32a53fd4c1f3",
+    "artifacts/trading-dashboard/src/lib/chart-engine/smartChartAnnotation.test.ts": "ee30d2d2f364c81c98b66a8404bec313bc990190841fd443b69bc201861b3032",
+    "artifacts/trading-dashboard/src/lib/chart-engine/smartChartAnnotation.ts": "c08fcd6b821e767b54a92caf7af7bf20c9707ec7f61057ff2ea1746c30d8f3a7",
+    "artifacts/trading-dashboard/src/lib/chart-engine/smartChartAnnotationCanvas.test.ts": "2ef911a413343bf771fcae709ca1c84b0cd2bc06bea8af7c7d68087e4f42fe12",
+    "artifacts/trading-dashboard/src/lib/chart-engine/smartChartAnnotationCanvas.ts": "da12ef20866a06811b38c7cc6deb9b14f0c6a9563fe6b7659de57165843981ba",
+    "scripts/scanner-qa/native-overlays-browser.js": "f480c2148dda567d485c506bfa0d9b87a4b038c7ce4977b3a3d3300e90c72ae8"
+  },
+  "validation": {
+    "frontend": {
+      "passed": 4338,
+      "failed": 0,
+      "skipped": 12,
+      "passingFiles": 249,
+      "skippedFiles": 2
+    },
+    "dashboardTypecheck": "pass",
+    "dashboardBuild": "pass; existing chunk warnings retained",
+    "guards": {
+      "passed": 85,
+      "total": 87,
+      "sameBaselineFindings": true,
+      "remaining": [
+        "38 risky wording findings",
+        "3 internal name findings"
+      ]
+    },
+    "browser": {
+      "groupsPassed": 9,
+      "pageErrors": 0,
+      "externalRequests": 0,
+      "sourceCommit": "c9466fada0a00e9cd6c4cdbecab9e11d9bd07a8e",
+      "chartSourcesUnchangedAtFinal": true,
+      "syntheticOnly": true
+    },
+    "apiRootDatabaseBroker": "not run; no backend/EA source changes"
+  },
+  "limits": [
+    "Not deployed or installed in Replit",
+    "No MT5 terminal-to-screen latency measurement",
+    "Native account clock/continuity unverified",
+    "Process-local change bus; fallback delays remain",
+    "Native chart not registered Scanner engine",
+    "No new performance or competitor parity claim"
+  ],
+  "ownedRuntimeJobs": "none; all root jobs terminal and agent browser/server closed",
+  "receipts": {
+    "annotation-before-retry.log": {
+      "sha256": "4c69f38bb06250836a7cbadaa3644c193673cd93ac254e8b28958439c4d3f629",
+      "bytes": 3742
+    },
+    "annotation-before.log": {
+      "sha256": "5427e9e38d3de7cd6b091ff82cb5a5a1449f6bcb16885ba64805e0d0efa2a26d",
+      "bytes": 158
+    },
+    "annotation-extraction-receipt.json": {
+      "sha256": "793b1fd39f5dbff793a594d312acc8375ce3a44b8da074f5545a04fbde968b9e",
+      "bytes": 3440
+    },
+    "annotation-extraction.log": {
+      "sha256": "8a87221b73b694efb242122436b81c4e384da6d8b817187d897f857bb8d42fa9",
+      "bytes": 264
+    },
+    "annotation-metafile.json": {
+      "sha256": "416f58de59b95a914692617bfdf9cd7035aa241795548e5d1750ff8125a9a4cf",
+      "bytes": 698
+    },
+    "annotation-standalone.log": {
+      "sha256": "e51d39e225aeffee82a0689b807e20030a0d145daa4cf5885c1e6cbbfa546a82",
+      "bytes": 552
+    },
+    "browser-bundle-repro.log": {
+      "sha256": "4cd47456550bed1b44604e600182ea9bc2025cd6dc9412472e78798ab6560d3b",
+      "bytes": 110
+    },
+    "browser-close-mobile.log": {
+      "sha256": "172f5c0a452fb7fcfd6304e62edff11b6a083f03ce1de95192f14040a7698133",
+      "bytes": 38
+    },
+    "browser-close.log": {
+      "sha256": "172f5c0a452fb7fcfd6304e62edff11b6a083f03ce1de95192f14040a7698133",
+      "bytes": 38
+    },
+    "browser-lab-build.log": {
+      "sha256": "fa5d017f78f19751b9379caa23efe2738dd6ef699be3eb91fe4027ace66385a6",
+      "bytes": 4598
+    },
+    "browser-open-mobile-retry.log": {
+      "sha256": "e1e7464da799f3763ad51d46be75592896855483f8a756d693dc074c30178079",
+      "bytes": 233
+    },
+    "browser-open-retry.log": {
+      "sha256": "03e8a7b798c86dab8a6bfa3c378faccc1216934540b6d5803bd5685cbd6717c4",
+      "bytes": 233
+    },
+    "browser-open.log": {
+      "sha256": "e0c3365236a74ddd79fbf73cd350f32d97775da367c04ba9c25cfd6269c8f3d6",
+      "bytes": 7553
+    },
+    "browser-overlay-receipt-first-dpr1.json": {
+      "sha256": "448309ea3e9ee39e4cdb7ebd7e20594d52c741b4cb954f0252fdf896eea2b532",
+      "bytes": 8242
+    },
+    "browser-overlay-receipt.json": {
+      "sha256": "56cb27562d508ea793621c0ef60c9c63e7ae3b171ae82dbd0263922a82d9d1ef",
+      "bytes": 10268
+    },
+    "browser-overlays-mobile-corrected.log": {
+      "sha256": "480ca9c8090976a0c2fe87f8463afea9de100ba07493fda06b688e84d4eb528a",
+      "bytes": 317283
+    },
+    "browser-overlays-result-mobile-corrected.json": {
+      "sha256": "3927fd88ad3a9b43a14bc13286fa6ea204e4392691a36f0466c92879946a27f5",
+      "bytes": 3832
+    },
+    "browser-overlays-result.json": {
+      "sha256": "7d490f2f470c48a95b1b372f8ff30c3450fa9f9d30a177009185760badf6533e",
+      "bytes": 3520
+    },
+    "browser-overlays.log": {
+      "sha256": "9a5eebbde8a566b03f6e10766dad14e2eb84aa91090042dd678cb1431e9599ee",
+      "bytes": 13033
+    },
+    "browser-server-retry.log": {
+      "sha256": "2e19d9209956739e2d26058b56369f16c4faa6d2e477ad7a70137808b4e93d14",
+      "bytes": 230
+    },
+    "browser-server.log": {
+      "sha256": "51851e2970fa8d4fbc71105c93dcd0d7a6b7b667957e86cd8182fc631e5609d9",
+      "bytes": 230
+    },
+    "build-final.log": {
+      "sha256": "9cf45fd6b79e5a576f4c8eeece15b2664351298aa0a67ac2070a4b815e8a625c",
+      "bytes": 28235
+    },
+    "build.log": {
+      "sha256": "925eaa4eda283080a11bda557abea1d8642f0822ce1208a6c96929988df111fc",
+      "bytes": 28235
+    },
+    "cockpit-master-transition-before.log": {
+      "sha256": "648cbe22158587c6abf977c896bb8f9f51ffa9f2a8653ca79b6481212fa6892b",
+      "bytes": 14841
+    },
+    "cockpit-master-transition-final.log": {
+      "sha256": "dfabcdcc2474be5c06c95adeaf9f32581feb506c853ffa1252eecb1289809d6c",
+      "bytes": 266
+    },
+    "cockpit-master-transition-validation.json": {
+      "sha256": "e8303508274cea3e34e77251e6ff959f95b39040ad7c66eee2af7d78e79506f4",
+      "bytes": 2250
+    },
+    "cockpit-personal-after.log": {
+      "sha256": "6510757d13b32f5997b2ba644aeae97aba1a15e2aaafca5d1c147b64770a1ebd",
+      "bytes": 266
+    },
+    "cockpit-personal-before.log": {
+      "sha256": "97df5352386d17d3ff958018055e1a813152a94d79133dfe1aec18c1699a5946",
+      "bytes": 81409
+    },
+    "cockpit-personal-focused.log": {
+      "sha256": "63158e1b57017c39b565587d9ba0427ef78815d4cc188c222d11eafbca22d98c",
+      "bytes": 268
+    },
+    "cockpit-personal-validation.json": {
+      "sha256": "e58a8d2f514de8c7b0d30c1a419686d710e366e9a442fd1f3120effe7660ae16",
+      "bytes": 3254
+    },
+    "cockpit-personal.diff": {
+      "sha256": "4ba60b8c7801e682641b1ae0a4f9f1e0aa00321141889d30c0f8f5fe7580945b",
+      "bytes": 22801
+    },
+    "cockpit-refresh-after.log": {
+      "sha256": "3e7ace8184aff1c751744479c7da31cd18f3643be20fdf72c25e5c60e31d740e",
+      "bytes": 263
+    },
+    "cockpit-refresh-before.log": {
+      "sha256": "2adab6ed806abbd3de6763bf5221f0392b1a2b4afc9b7143250200ab1d1848f3",
+      "bytes": 17517
+    },
+    "declarations.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "final-validation.json": {
+      "sha256": "aa619d13df6ae8c37925c55364c22de9d8240371fdfa590dfabb896fca82a2b7",
+      "bytes": 3680
+    },
+    "focus-proof-after.log": {
+      "sha256": "de7741aa42de662cd6975a37d551ff51aed5330b4cf9678a8e25578ecc06d093",
+      "bytes": 266
+    },
+    "focus-proof-before-retry.log": {
+      "sha256": "19c81dd2c70ce3746bc01efe5a6d2e24a4afb2e3f19043d764852afa7fc57929",
+      "bytes": 4698
+    },
+    "focus-proof-before.log": {
+      "sha256": "ef2e92518f55a8e79c2c8620e407ea418aada11b53ea2f7ffa827069ba46f8d5",
+      "bytes": 269
+    },
+    "focus-proof-receipt.json": {
+      "sha256": "440c9579b3a5449ef100af1746f9f516f0893b19931f418b405f360fc6b6abc9",
+      "bytes": 2595
+    },
+    "frontend-final.log": {
+      "sha256": "85cb1a170a17c4c8077c71b972e941e3d52e502c6138ac6963e27861d8265a2f",
+      "bytes": 491
+    },
+    "frontend-full.log": {
+      "sha256": "2b185bb87cce191a7d1e8002d1c9452ac3dba4bd8b129e0a2b812c6aadab7ac6",
+      "bytes": 491
+    },
+    "guard-baseline-comparison.json": {
+      "sha256": "ea3b41f776e3420970480f9bd7f2ee630df87d654c638e2dcff3fc9e404a28b3",
+      "bytes": 238
+    },
+    "guard-baseline-diff.txt": {
+      "sha256": "06fbda39ed2aa698ec4f76688acf202b39a03f5e7c7f06f4877c0184e209737d",
+      "bytes": 825
+    },
+    "guard-final-comparison.json": {
+      "sha256": "08d92f62207e375b5becdcea20200fd23be4772c78b62c190a9aa6971fe9a9ab",
+      "bytes": 238
+    },
+    "guards-final.log": {
+      "sha256": "4dc08fcab23f68bf89b771dd34a6c543f565d69f1734fb9b39756a6aac2a6835",
+      "bytes": 24913
+    },
+    "guards.log": {
+      "sha256": "5300f16085710713b2028b0106a59050973bb94a28f1be72a5124a1b9ad3ce93",
+      "bytes": 24913
+    },
+    "independent-cockpit-transition-after.log": {
+      "sha256": "cc57bfe4c37506ab9b588194baf71dca96563c137787e430ec5126b454094560",
+      "bytes": 266
+    },
+    "independent-contract-audit.txt": {
+      "sha256": "296169a52fb983797ea20b4023a184971554011d651f6805f90defa6977a242e",
+      "bytes": 3366
+    },
+    "independent-focus-cockpit-review.txt": {
+      "sha256": "393c72879a8a611a59fa3a50d0b9645108fd2057c176745a43bf730258910a54",
+      "bytes": 5324
+    },
+    "independent-focus-cockpit.log": {
+      "sha256": "0b10f1d2821b5a80abc2e493e673e02daa0a4ed377068fef2d91c1fda392a513",
+      "bytes": 266
+    },
+    "independent-overlay-review.txt": {
+      "sha256": "4626850c8d3ca12292ac1fc7735991082716edceb27ed3d9c01ee38d1685fed5",
+      "bytes": 5503
+    },
+    "independent-review.txt": {
+      "sha256": "d1a4b87e5cf67edff7802277a726fab3c70e8f7f7379b196f9604dad937dfb3d",
+      "bytes": 4045
+    },
+    "lab/index.html": {
+      "sha256": "c1d919756825e480b5f66e22d9b33d1e3b13772912ba35e083eef7c06d2dfb41",
+      "bytes": 386
+    },
+    "lab/lab.js": {
+      "sha256": "313c8ad1e6f6c51a158d88e68f4bbb715f3510d307dc95befdc431f5abd00ad6",
+      "bytes": 107256
+    },
+    "lab/metafile.json": {
+      "sha256": "704a6c7386e99beb9bb6f3844e296c49c64a988b95fb58c7f46882ce21ddd33f",
+      "bytes": 17325
+    },
+    "money-followup-audit.txt": {
+      "sha256": "04c6ed1103df959b97f0186c10ebc134f48912f29f254e27b0f3e6e403b36b45",
+      "bytes": 6790
+    },
+    "native-overlays-desktop.png": {
+      "sha256": "e0ed892b0841f09328dd975b4fd16f1bccd18c5610c707821aa4e7c68d55941b",
+      "bytes": 115233
+    },
+    "native-overlays-mobile-canvas-first-dpr1.png": {
+      "sha256": "01e207e8c3a322edb9ef56b6ca420beb7571b7c626c1f6a3ab94d084e25209e2",
+      "bytes": 35252
+    },
+    "native-overlays-mobile-canvas.png": {
+      "sha256": "930c2ac52ce6ed309754f74ad59f5dff980434350835b80569c284d31f13d998",
+      "bytes": 82296
+    },
+    "native-overlays-mobile-first-dpr1.png": {
+      "sha256": "36e9c8c800c1dc3c5b7cffb03e99f4b2da87a26e867db33f7fb72b9485923f5f",
+      "bytes": 84204
+    },
+    "native-overlays-mobile.png": {
+      "sha256": "0ac4c9d1a2b4c4789708f3711bd84b4b6d3c21d06e6980ef960696113811ee0d",
+      "bytes": 144960
+    },
+    "native-overlays-selected.png": {
+      "sha256": "b2ed7ef67b6e9816f34f5a4a0ccb3ec4af47e432abc3470a24a95344206193d9",
+      "bytes": 116729
+    },
+    "root-focused.log": {
+      "sha256": "2bc9aca4a288ff68307f74e98511be11e45e55804f49e0a56bf33800b3e46f9a",
+      "bytes": 265
+    },
+    "scanner-overlays-final.log": {
+      "sha256": "e9ed97c0fd6ffc8e01e69dd0953243e4d176a19bcb33467ec6131c2f4d8051a0",
+      "bytes": 264
+    },
+    "scanner-overlays-first.log": {
+      "sha256": "255f26310353d098207014e106edf07839582021e2ab6b82cd027553fbe63ba7",
+      "bytes": 264
+    },
+    "scanner-overlays-paint-before.log": {
+      "sha256": "88590cc4ebd5b4f78655947c023e5982e6f3f02cb8233168b818dc87699b0a8c",
+      "bytes": 2724
+    },
+    "scanner-overlays-validation.json": {
+      "sha256": "f5950c79efb3f01157307a7c15d97ffba19deb8cb5f5cb32362b9cec35a8c594",
+      "bytes": 2388
+    },
+    "smart-annotation-canvas.js": {
+      "sha256": "e9542af8e54fa330c56a73fd0effccc582917f0572fb708a695e52704834001e",
+      "bytes": 6477
+    },
+    "typecheck-final.log": {
+      "sha256": "0e39773fa70582c2e40cbef88c56974b6b6e69a2b030cc7a15de0221a6132f68",
+      "bytes": 160
+    },
+    "typecheck.log": {
+      "sha256": "0e39773fa70582c2e40cbef88c56974b6b6e69a2b030cc7a15de0221a6132f68",
+      "bytes": 160
+    },
+    "viewport-overlays-expanded.log": {
+      "sha256": "53243e51fa12416f6792e85b5d5e0f231dbc6c72626a8574d97a6ed67c72ed37",
+      "bytes": 265
+    },
+    "viewport-overlays-first.log": {
+      "sha256": "0626c91c4acd093c600a5be74a5e95e191b6fcf936f98e9320d0b79e70b31858",
+      "bytes": 265
+    }
+  },
+  "archive": {
+    "path": "receipts.tar.gz",
+    "sha256": "2ce094296d9de8e5c998c29d45a7278ce71a5d959f9b7b2239e76e7f255011ba",
+    "bytes": 887629,
+    "files": 72
+  }
+}
