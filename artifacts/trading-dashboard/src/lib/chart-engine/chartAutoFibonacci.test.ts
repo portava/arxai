@@ -37,6 +37,9 @@ describe("automatic confirmed-swing Fibonacci",()=>{
     const f=fixture();f.bars=f.bars.map((b,i)=>({...b,time:start+i*30,closeTime:start+i*30+60}));
     expect(proposeChartFibonacci(f,actual(f))).toMatchObject({status:"unavailable",reason:expect.stringMatching(/Overlapping/)});
   });
+  it("withholds when the applied window silently omits an original interior observation",()=>{
+    const f=fixture();expect(proposeChartFibonacci(f,actual(f).filter((_,i)=>i!==4))).toMatchObject({status:"unavailable",reason:expect.stringContaining("omits source observations")});
+  });
   it("rejects same-bar high/low ambiguity instead of guessing sequence or skipping it",()=>{
     const f=fixture();f.bars[8]={...f.bars[8],low:1};expect(proposeChartFibonacci(f,actual(f))).toMatchObject({status:"unavailable",reason:expect.stringMatching(/both a high and a low/)});
   });
