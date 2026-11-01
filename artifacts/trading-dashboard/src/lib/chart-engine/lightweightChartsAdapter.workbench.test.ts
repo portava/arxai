@@ -367,7 +367,7 @@ it("changes only overlay autoscaling and does not reset a subsequent manual scal
 
 it.each(['candles','bars','line','area','baseline','heikinAshi','hollow'] as ChartStyle[])("keeps live/stale settings correct without redundant writes after switching to %s",style=>{
  adapter.setFeedState({livePriceAffordance:true,source:'fixture'});adapter.setChartStyle(style);
- const surface=adapter.getScannerOverlaySurface()!,series=surface.series as any;
+ const series=(adapter as any).series;
  expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
  const last=series.createPriceLine.mock.results.at(-1)!.value;expect(last.options()).toMatchObject({price:bars.at(-1)!.close,axisLabelVisible:true,title:""});
  expect(series.createPriceLine).toHaveBeenCalledTimes(1);
@@ -379,7 +379,7 @@ it.each(['candles','bars','line','area','baseline','heikinAshi','hollow'] as Cha
 
 it("reads the new series after remount and withdraws its live labels on context reset",()=>{
  adapter.setFeedState({livePriceAffordance:true,source:'old'});adapter.destroy();adapter.init({container,height:500});adapter.setFeedState({livePriceAffordance:true,source:'new'});adapter.setCandles(bars);
- const series=adapter.getScannerOverlaySurface()!.series as any;expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.createPriceLine.mock.results.at(-1)!.value.options()).toMatchObject({price:bars.at(-1)!.close,title:"",axisLabelVisible:true});
+ const series=(adapter as any).series;expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.createPriceLine.mock.results.at(-1)!.value.options()).toMatchObject({price:bars.at(-1)!.close,title:"",axisLabelVisible:true});
  adapter.resetDataContext();expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.data).toEqual([]);
  adapter.setCandles(bars);expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
 });
@@ -520,4 +520,69 @@ it("selected findings withdraw structural Break text and restore its actual bar 
  adapter.setStructureLines([], [marker]);adapter.setCandles(bars);expect(m.markers).not.toHaveBeenCalled();
  adapter.setSmartAnnotation(null);
  expect(m.markers).toHaveBeenCalledExactlyOnceWith(m.handles[0],[expect.objectContaining({time:marker.time,text:"Break"})]);
+});
+
+
+describe("Scanner renderer-neutral overlay lease", () => {
+  const line = {price:1.25,color:"#123456",lineWidth:2 as const,lineStyle:"dashed" as const,axisLabelVisible:true,title:"LIVE SL"};
+  it("exposes only owned overlay/coordinate capabilities and preserves options", () => {
+    const surface=adapter.getScannerOverlaySurface()!;
+    expect(surface).not.toHaveProperty("chart");expect(surface).not.toHaveProperty("series");
+    expect(surface.container).toBe(container);
+    const price=m.handles[0];price.priceToCoordinate=vi.fn((value:number)=>value*100);
+    expect(surface.priceToCoordinate(1.25)).toBe(125);expect(surface.coordinateToPrice(90)).toBe(1.2);
+    const handle=surface.createPriceLine(line)!;
+    expect(price.createPriceLine).toHaveBeenLastCalledWith({...line,lineStyle:2});
+    handle.dispose();handle.dispose();expect(price.removePriceLine).toHaveBeenCalledTimes(1);
+  });
+  it("repeated acquisition preserves the active lease and its owned overlays", () => {
+    const surface=adapter.getScannerOverlaySurface()!,price=m.handles[0];
+    surface.createPriceLine({...line,lineWidth:1,lineStyle:"solid",axisLabelVisible:false,title:"Cost"});
+    expect(adapter.getScannerOverlaySurface()).toBe(surface);
+    expect(price.removePriceLine).not.toHaveBeenCalled();
+    expect(price.createPriceLine).toHaveBeenLastCalledWith(expect.objectContaining({lineStyle:0,lineWidth:1,axisLabelVisible:false,title:"Cost"}));
+  });
+  it("preserves marker timestamps, shapes, text and independent resource ownership", () => {
+    const surface=adapter.getScannerOverlaySurface()!;
+    const markers=[{time:100,position:"aboveBar" as const,color:"#f00",shape:"arrowDown" as const,text:"USD HIGH"},{time:160,position:"aboveBar" as const,color:"#888",shape:"circle" as const,text:"EUR LOW"}];
+    const first=surface.createMarkers(markers)!,firstPlugin=m.markers.mock.results.at(-1)!.value;
+    const second=surface.createMarkers(markers)!,secondPlugin=m.markers.mock.results.at(-1)!.value;
+    expect(m.markers).toHaveBeenLastCalledWith(m.handles[0],markers);
+    first.dispose();first.dispose();expect(firstPlugin.detach).toHaveBeenCalledTimes(1);expect(secondPlugin.detach).not.toHaveBeenCalled();
+    surface.dispose();expect(secondPlugin.detach).toHaveBeenCalledTimes(1);second.dispose();
+    expect(secondPlugin.detach).toHaveBeenCalledTimes(1);
+  });
+  it("explicit context release invalidates retained methods without touching a new lease", () => {
+    const old=adapter.getScannerOverlaySurface()!,price=m.handles[0];old.createPriceLine(line);old.dispose();
+    const next=adapter.getScannerOverlaySurface()!;expect(next).not.toBe(old);next.createPriceLine(line);
+    const removals=price.removePriceLine.mock.calls.length;
+    old.dispose();expect(price.removePriceLine).toHaveBeenCalledTimes(removals);
+    expect(old.coordinateToPrice(10)).toBeNull();expect(old.priceToCoordinate(1)).toBeNull();expect(old.createPriceLine(line)).toBeNull();expect(old.createMarkers([])).toBeNull();
+    expect(next.coordinateToPrice(10)).toBe(1.2);
+  });
+  it.each(["line","area","baseline","bars","hollow","heikinAshi","candles"] as const)("keeps actual-price overlays and transforms across %s replacement", style => {
+    adapter.setChartStyle(style === "candles" ? "line" : "candles");
+    const old=adapter.getScannerOverlaySurface()!,original=(adapter as any).series;const owned=old.createPriceLine(line)!;
+    adapter.setChartStyle(style);
+    expect(old.coordinateToPrice(10)).toBeNull();expect(old.createPriceLine(line)).toBeNull();
+    expect(original.removePriceLine).toHaveBeenCalledTimes(1);
+    const current=(adapter as any).series;const next=adapter.getScannerOverlaySurface()!;next.createPriceLine(line);
+    expect(current.createPriceLine).toHaveBeenLastCalledWith(expect.objectContaining({price:1.25,title:"LIVE SL"}));
+    const removals=current.removePriceLine.mock.calls.length;owned.dispose();expect(current.removePriceLine).toHaveBeenCalledTimes(removals);
+  });
+  it.each(["resetDataContext","destroy"] as const)("revokes all owned handles on %s", operation => {
+    const surface=adapter.getScannerOverlaySurface()!,price=m.handles[0];surface.createPriceLine(line);
+    surface.createMarkers([{time:100,position:"aboveBar",color:"#f00",shape:"circle",text:"Event"}]);
+    const plugin=m.markers.mock.results.at(-1)!.value;
+    adapter[operation]();expect(price.removePriceLine).toHaveBeenCalledTimes(1);expect(plugin.detach).toHaveBeenCalledTimes(1);
+    expect(surface.coordinateToPrice(10)).toBeNull();expect(surface.createPriceLine(line)).toBeNull();surface.dispose();
+    expect(plugin.detach).toHaveBeenCalledTimes(1);
+  });
+  it("returns unavailable for invalid transforms and refuses invalid overlay geometry", () => {
+    const surface=adapter.getScannerOverlaySurface()!,price=m.handles[0];price.priceToCoordinate=()=>NaN;price.coordinateToPrice=()=>Infinity;
+    expect(surface.priceToCoordinate(1)).toBeNull();expect(surface.coordinateToPrice(1)).toBeNull();
+    expect(surface.createPriceLine({...line,price:NaN})).toBeNull();
+    expect(surface.createMarkers([{time:101,position:"aboveBar",color:"#f00",shape:"circle",text:"Missing bar"}])).toBeNull();
+    expect(surface.createMarkers([{time:160,position:"aboveBar",color:"#f00",shape:"circle",text:"B"},{time:100,position:"aboveBar",color:"#f00",shape:"circle",text:"A"}])).toBeNull();
+  });
 });

@@ -2,12 +2,11 @@ import { TickingTime } from "@/components/ui/TickingTime";
 import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
 import { SCANNER_CHART_LAYOUT_KEY } from "@/lib/chart-engine/chartLayout";
 import { ARXNativeChart, type ArxTimeframe } from "@/components/charts/ARXNativeChart";
-import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
+import type { ScannerChartSurface, ScannerOverlayHandle, ScannerEventMarker } from "@/lib/chart-engine/scannerChartSurface";
 import { isChartInterval, parseChartInterval } from "@/lib/chart-engine/chartIntervals";
 import { sharedChartResponse } from "@/lib/chart-engine/sharedChartResponse";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "./useDerivedOverlayContext";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
-import { createSeriesMarkers, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -511,18 +510,11 @@ export function ScannerChartPanel() {
   // These handles belong to the shared Smart Chart. Scanner only adds owned
   // overlays and converts pointer coordinates; it never creates/writes candles.
   const containerRef = useRef<HTMLElement | null>(null);
-  const chartApiRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<{ priceToCoordinate: (p: number) => number | null; coordinateToPrice: (c: number) => number | null } | null>(null);
-  // Real candlestick series handle used for incremental price-line overlays.
-  // Kept separate from `seriesRef` (coordinate-conversion shape only) so the
-  // position/pending price lines can be redrawn WITHOUT recreating the chart.
-  const lineSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
-  const priceLinesRef = useRef<IPriceLine[]>([]);
-  // News event markers (Task #197). lightweight-charts v5 surfaces markers via
-  // the standalone createSeriesMarkers(series, markers) plugin (the v4
-  // series.setMarkers() was removed). We keep the plugin handle so events can be
-  // re-drawn without recreating the chart, and detach it on rebuild.
-  const newsMarkersApiRef = useRef<ReturnType<typeof createSeriesMarkers> | null>(null);
+  // ARX-owned view-only lease: overlays never receive raw renderer APIs.
+  const overlaySurfaceRef = useRef<ScannerChartSurface | null>(null);
+  const priceLinesRef = useRef<ScannerOverlayHandle[]>([]);
+  const newsMarkersApiRef = useRef<ScannerOverlayHandle | null>(null);
   // Bumped each time the chart is (re)created so the overlay effect re-draws
   // its price lines onto the fresh series after a candle/symbol rebuild.
   const [chartEpoch, setChartEpoch] = useState(0);
@@ -713,7 +705,7 @@ export function ScannerChartPanel() {
 
   // Dedicated price-line ref so smart layers never collide with the
   // position/pending overlay set; reset alert dedupe per symbol below.
-  const smartLayerLinesRef = useRef<IPriceLine[]>([]);
+  const smartLayerLinesRef = useRef<ScannerOverlayHandle[]>([]);
   const newsAlertedRef = useRef<Set<string>>(new Set());
 
   // ── Chart command menu — opens on right-click (desktop) or long-press
@@ -1113,17 +1105,14 @@ export function ScannerChartPanel() {
   const bindSmartChartSurface = useCallback((surface: ScannerChartSurface | null) => {
     // Revoke the old series before a context/style swap. All retained overlay
     // handles belong to that exact series, not whichever series comes next.
-    const previous = lineSeriesRef.current;
-    if (previous) for (const line of [...priceLinesRef.current, ...smartLayerLinesRef.current]) {
-      try { previous.removePriceLine(line); } catch { /* series already released */ }
-    }
+    for (const line of [...priceLinesRef.current, ...smartLayerLinesRef.current]) line.dispose();
+    overlaySurfaceRef.current?.dispose();
     priceLinesRef.current = [];
     smartLayerLinesRef.current = [];
-    try { newsMarkersApiRef.current?.detach(); } catch { /* released */ }
+    try { newsMarkersApiRef.current?.dispose(); } catch { /* released */ }
     newsMarkersApiRef.current = null;
-    chartApiRef.current = surface?.chart ?? null;
-    lineSeriesRef.current = surface?.series ?? null;
-    seriesRef.current = surface?.series ?? null;
+    overlaySurfaceRef.current = surface;
+    seriesRef.current = surface;
     containerRef.current = surface?.container ?? null;
     // A drag/menu may not survive a price-series replacement (including HA).
     dragKeyRef.current = null;
@@ -1139,26 +1128,25 @@ export function ScannerChartPanel() {
   //    chart: it diffs by removing the previously-drawn lines and adding the
   //    current set onto the existing series.
   useEffect(() => {
-    const series = lineSeriesRef.current;
-    if (!series) return;
+    const surface = overlaySurfaceRef.current;
+    if (!surface) return;
 
     for (const line of priceLinesRef.current) {
-      try { series.removePriceLine(line); } catch { /* line already gone */ }
+      line.dispose();
     }
     priceLinesRef.current = [];
 
     const addLine = (price: number | null, color: string, title: string, dashed = false) => {
       if (price == null || !Number.isFinite(price) || price <= 0) return;
-      priceLinesRef.current.push(
-        series.createPriceLine({
+      const line = surface.createPriceLine({
           price,
           color,
           lineWidth: 2,
-          lineStyle: dashed ? LineStyle.Dashed : LineStyle.Solid,
+          lineStyle: dashed ? "dashed" : "solid",
           axisLabelVisible: true,
           title,
-        }),
-      );
+        });
+      if (line) priceLinesRef.current.push(line);
     };
 
     for (const p of symbolPositions) {
@@ -1201,25 +1189,24 @@ export function ScannerChartPanel() {
   //    reserved trade-health slot carries no live value yet, so neither is drawn
   //    here — both are surfaced honestly in the UI below.
   useEffect(() => {
-    const series = lineSeriesRef.current;
-    if (!series) return;
+    const surface = overlaySurfaceRef.current;
+    if (!surface) return;
     for (const line of smartLayerLinesRef.current) {
-      try { series.removePriceLine(line); } catch { /* line already gone */ }
+      line.dispose();
     }
     smartLayerLinesRef.current = [];
 
     const add = (price: number | null | undefined, color: string, title: string, dashed: boolean) => {
       if (price == null || !Number.isFinite(price) || price <= 0) return;
-      smartLayerLinesRef.current.push(
-        series.createPriceLine({
+      const line = surface.createPriceLine({
           price,
           color,
           lineWidth: 1,
-          lineStyle: dashed ? LineStyle.Dashed : LineStyle.Solid,
+          lineStyle: dashed ? "dashed" : "solid",
           axisLabelVisible: false,
           title,
-        }),
-      );
+        });
+      if (line) smartLayerLinesRef.current.push(line);
     };
 
     for (const l of smartLayers) {
@@ -1258,10 +1245,10 @@ export function ScannerChartPanel() {
   //    When no real events exist (no connected calendar) there is nothing to
   //    draw — we never invent a marker.
   useEffect(() => {
-    const series = lineSeriesRef.current;
-    if (!series) return;
+    const surface = overlaySurfaceRef.current;
+    if (!surface) return;
     // Tear down any previous marker layer before redrawing.
-    try { newsMarkersApiRef.current?.detach(); } catch { /* already detached */ }
+    try { newsMarkersApiRef.current?.dispose(); } catch { /* already detached */ }
     newsMarkersApiRef.current = null;
     if (!news || !layerToggles.news || candles.length === 0) return;
     // Honesty gate (Task #628): economic-event markers may only render when the
@@ -1280,10 +1267,8 @@ export function ScannerChartPanel() {
     const windowEnd =
       lastSec + inferBarSeconds(candles.slice(-2).map((c) => c.time)) * NEWS_MARKER_LOOKAHEAD_BARS;
     // The ascending open-times (epoch seconds) of the candles ACTUALLY in the
-    // series — sanitized identically to setData so a marker can only ever anchor
-    // to a bar that exists. lightweight-charts throws "Value is null" if a marker
-    // resolves to a missing bar (findBar → null), so every marker time below is
-    // snapped onto one of these real bars.
+    // series — sanitized identically to the candle path so markers anchor only
+    // to real displayed bars, never to invented future or missing candles.
     const candleSecsAsc = sanitizeCandlestickData(
       candles.map((c) => ({
         time: Math.floor(c.time / 1000),
@@ -1294,7 +1279,7 @@ export function ScannerChartPanel() {
       })),
     ).map((c) => c.time as number);
     if (candleSecsAsc.length === 0) return;
-    const markers: SeriesMarker<UTCTimestamp>[] = [];
+    const markers: ScannerEventMarker[] = [];
     for (const ev of news.events) {
       const windowedSec = resolveEventMarkerSec(
         Date.parse(ev.eventTimeIso),
@@ -1305,7 +1290,7 @@ export function ScannerChartPanel() {
       if (windowedSec == null) continue; // no real time, or outside the chart window
       const markerSec = snapSecToCandle(windowedSec, candleSecsAsc);
       if (markerSec == null) continue; // no real bar to anchor to
-      const t = markerSec as UTCTimestamp;
+      const t = markerSec;
       const { label } = newsSeverityStyle(ev.severity);
       markers.push({
         time: t,
@@ -1316,14 +1301,14 @@ export function ScannerChartPanel() {
       });
     }
     if (markers.length === 0) return;
-    // lightweight-charts requires markers sorted ascending by time.
+    // The ARX marker contract requires ascending real-bar times.
     markers.sort((a, b) => (a.time as number) - (b.time as number));
-    const markerLayer = createSeriesMarkers(series, markers);
+    const markerLayer = surface.createMarkers(markers);
     newsMarkersApiRef.current = markerLayer;
     // Deterministic teardown: detach the marker layer on unmount / re-run so the
     // plugin handle never outlives the series it was attached to.
     return () => {
-      try { markerLayer.detach(); } catch { /* already detached */ }
+      try { markerLayer?.dispose(); } catch { /* already detached */ }
       if (newsMarkersApiRef.current === markerLayer) newsMarkersApiRef.current = null;
     };
   }, [news, layerToggles.news, candles, displayStatus, chartEpoch, chartContext]);

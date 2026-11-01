@@ -847,15 +847,20 @@ describe("Scanner shared Smart Chart ownership", () => {
   });
   it("revokes overlay handles before replacing the price series, then publishes the selected style", () => {
     const operations: string[]=[];
-    const surface={chart:{},series:{name:"candles"},container:document.createElement("div")};
+    const makeSurface=(style:string)=>({container:document.createElement("div"),
+      priceToCoordinate:()=>style==="line"?2:1,coordinateToPrice:()=>1,
+      createPriceLine:vi.fn(),createMarkers:vi.fn(),dispose:vi.fn(()=>operations.push(`dispose:${style}`))});
+    let surface=makeSurface("candles");
     adapterSpies.getScannerOverlaySurface.mockImplementation(()=>surface);
-    adapterSpies.setChartStyle.mockImplementation((style: string)=>{operations.push(`style:${style}`);surface.series={name:style};});
-    const bind=vi.fn((value:any)=>{operations.push(value ? `bind:${value.style}:${value.series.name}` : "revoke");});
+    adapterSpies.setChartStyle.mockImplementation((style: string)=>{operations.push(`style:${style}`);surface=makeSurface(style);});
+    const bind=vi.fn((value:any)=>{operations.push(value ? `bind:${value.style}:${value.priceToCoordinate(1)}` : "revoke");});
     const view=render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} onScannerSurfaceChange={bind} />);
     operations.length=0;
     fireEvent.change(view.getByLabelText("Chart style"),{target:{value:"line"}});
+    expect(operations.indexOf("dispose:candles")).toBeGreaterThanOrEqual(0);
+    expect(operations.indexOf("dispose:candles")).toBeLessThan(operations.indexOf("revoke"));
     expect(operations.indexOf("revoke")).toBeLessThan(operations.indexOf("style:line"));
-    expect(operations.indexOf("bind:line:line")).toBeGreaterThan(operations.indexOf("style:line"));
+    expect(operations.indexOf("bind:line:2")).toBeGreaterThan(operations.indexOf("style:line"));
     operations.length=0;currentCandleResponse=undefined;
     view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} onScannerSurfaceChange={bind} />);
     expect(bind.mock.calls.at(-1)?.[0]).toBeNull();

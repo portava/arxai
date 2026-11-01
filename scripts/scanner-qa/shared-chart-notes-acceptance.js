@@ -137,15 +137,21 @@ async page => {
       while(hook&&steps++<100){if(hook.memoizedState?.current?.getScannerOverlaySurface){adapter=hook.memoizedState.current;break;}hook=hook.next;}
       if(!adapter||adapter.container!==container)throw Error('Active Scanner adapter binding unavailable');
       const surface=adapter.getScannerOverlaySurface();
-      if(!surface||surface.chart!==adapter.chart||surface.series!==adapter.series||surface.container!==container)throw Error('Scanner surface binding differs');
-      return {adapter,container};
+      const surfaceContract=surface&&typeof surface.dispose==='function'&&!('series' in surface)?'arx-overlay-lease-v1':'legacy-renderer-bridge';
+      // QA-private identity access stays here, never in the production facade.
+      // Retain the original strict check for explicitly identified old builds.
+      const bound=surfaceContract==='arx-overlay-lease-v1'
+        ?surface===adapter.scannerSurface&&typeof surface.priceToCoordinate==='function'&&typeof surface.coordinateToPrice==='function'
+        :surface?.chart===adapter.chart&&surface?.series===adapter.series;
+      if(!surface||!bound||surface.container!==container||!adapter.chart||!adapter.series)throw Error('Scanner surface binding differs');
+      return {adapter,container,surfaceContract};
     }
     const down=event=>{
       if(!(event.target instanceof HTMLCanvasElement))return;
-      const {adapter,container}=engine();
+      const {adapter,container,surfaceContract}=engine();
       if(!container.contains(event.target))return;
       const bounds=container.getBoundingClientRect(),x=event.clientX-bounds.left,y=event.clientY-bounds.top;
-      clicks.push({trusted:event.isTrusted,pointerType:event.pointerType,button:event.button,x,y,time:adapter.chart.timeScale().coordinateToTime(x),price:adapter.series.coordinateToPrice(y)});
+      clicks.push({surfaceContract,trusted:event.isTrusted,pointerType:event.pointerType,button:event.button,x,y,time:adapter.chart.timeScale().coordinateToTime(x),price:adapter.series.coordinateToPrice(y)});
     };
     document.addEventListener('pointerdown',down,true);
     const api={

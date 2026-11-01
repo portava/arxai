@@ -1,3 +1,4 @@
+import type { ScannerOverlaySurface, ScannerOverlayHandle } from "./scannerChartSurface";
 import {vwapAnchorEvidence} from "./chartVwapAnchor";
 import type {VwapAnchor} from "./chartStudies";
 import { chartIntervalSeconds } from "./chartIntervals";
@@ -95,6 +96,7 @@ const CAPABILITIES: ChartEngineCapabilities = {
 export class LightweightChartsAdapter implements ChartEngineAdapter {
   readonly capabilities = CAPABILITIES;
 
+  private scannerSurface: ScannerOverlaySurface | null = null;
   private chart: IChartApi | null = null;
   private series: PriceSeries | null = null;
   private style: ChartStyle = "candles";
@@ -365,6 +367,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   destroy(): void {
+    this.scannerSurface?.dispose();
     if (this.viewportFrame != null) cancelAnimationFrame(this.viewportFrame);
     this.viewportFrame = null;
     this.viewportListeners.clear();
@@ -442,6 +445,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   resetDataContext(): void {
+    this.scannerSurface?.dispose();
     this.setFeedState({livePriceAffordance:false,source:null});
     this.setDrawingHandler(null);
     this.setDrawingInteraction(null);
@@ -917,6 +921,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   setChartStyle(style: ChartStyle): void {
     const chart = this.chart, previous = this.series;
     if (!chart || !previous || this.style === style) return;
+    this.scannerSurface?.dispose();
     const range = chart.timeScale().getVisibleLogicalRange();
     this.markersApi?.detach(); this.markersApi = null;
     this.clearStructureOverlays();
@@ -1019,9 +1024,62 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
   exportImage(): string | null { this.analysis?.flushPending(); return this.chart?.takeScreenshot().toDataURL("image/png") ?? null; }
 
-  getScannerOverlaySurface() {
-    return this.chart && this.series && this.container
-      ? { chart: this.chart, series: this.series, container: this.container } : null;
+  getScannerOverlaySurface(): ScannerOverlaySurface | null {
+    if (this.scannerSurface) return this.scannerSurface;
+    const chart = this.chart, series = this.series, container = this.container;
+    if (!chart || !series || !container) return null;
+    let disposed = false;
+    const handles = new Set<ScannerOverlayHandle>();
+    const available = () => !disposed && this.chart === chart && this.series === series && this.container === container;
+    const own = (release: () => void): ScannerOverlayHandle => {
+      let released = false;
+      const handle = { dispose: () => {
+        if (released) return;
+        released = true;
+        handles.delete(handle);
+        // Engine teardown may have already released this captured series.
+        try { release(); } catch { /* never remove from a replacement series */ }
+      } };
+      handles.add(handle);
+      return handle;
+    };
+    const surface: ScannerOverlaySurface = {
+      container,
+      priceToCoordinate: price => {
+        if (!available() || !Number.isFinite(price) || price <= 0) return null;
+        try { const y = series.priceToCoordinate(price); return y != null && Number.isFinite(y) ? y : null; } catch { return null; }
+      },
+      coordinateToPrice: coordinate => {
+        if (!available() || !Number.isFinite(coordinate)) return null;
+        try { const price = series.coordinateToPrice(coordinate); return price != null && Number.isFinite(price) && price > 0 ? price : null; } catch { return null; }
+      },
+      createPriceLine: options => {
+        if (!available() || !Number.isFinite(options.price) || options.price <= 0
+          || ![1, 2].includes(options.lineWidth) || !["solid", "dashed"].includes(options.lineStyle)) return null;
+        const line = series.createPriceLine({ ...options, lineStyle: options.lineStyle === "dashed" ? LineStyle.Dashed : LineStyle.Solid });
+        return own(() => series.removePriceLine(line));
+      },
+      createMarkers: markers => {
+        if (!available() || !markers.length) return null;
+        const times = new Set(this.candles.map(candle => candle.time));
+        let previous = -Infinity;
+        for (const marker of markers) {
+          if (!Number.isFinite(marker.time) || !times.has(marker.time) || marker.time < previous
+            || !["aboveBar", "belowBar"].includes(marker.position) || !["arrowDown", "circle"].includes(marker.shape)) return null;
+          previous = marker.time;
+        }
+        const layer = createSeriesMarkers(series, markers.map(marker => ({ ...marker, time: marker.time as UTCTimestamp })));
+        return own(() => layer.detach());
+      },
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        for (const handle of [...handles]) handle.dispose();
+        if (this.scannerSurface === surface) this.scannerSurface = null;
+      },
+    };
+    this.scannerSurface = surface;
+    return surface;
   }
 
   priceToCoordinate(price: number): number | null {
