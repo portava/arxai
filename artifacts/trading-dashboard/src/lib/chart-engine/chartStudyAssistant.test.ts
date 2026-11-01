@@ -105,3 +105,72 @@ describe("existing assistant to current chart study action",()=>{
     expect(executeStudyRequest(parseStudyRequest("show RSI")!,f.context())).toContain("not applied"); expect(f.save).not.toHaveBeenCalled();
   });
 });
+
+
+describe("manual-equivalent MACD and Bollinger assistant settings",()=>{
+  it.each([
+    ["set MACD periods to 8, 21, 5",{period:8,slow:21,signal:5}],
+    ["set MACD fast to 8",{period:8}],
+    ["set MACD slow period to 30",{slow:30}],
+    ["set MACD signal period to 5",{signal:5}],
+    ["set MACD signal method to SMA",{signalMethod:"sma"}],
+    ["set Bollinger Bands deviation to 2.5",{multiplier:2.5}],
+  ])("applies explicit setting through the same study instance: %s",(text,patch)=>{
+    const f=fixture();const kind=text.includes("MACD")?"macd":"bollinger";
+    const original={...studyDefinition(kind).defaults,id:"manual",source:"open" as const,lineStyles:[{visible:false,color:"#abcdef"},{visible:true},{visible:false}]};
+    f.save([original]);const reply=executeStudyRequest(parseStudyRequest(text)!,f.context());
+    expect(reply).toContain("Applied");expect(f.studies()).toEqual([{...original,...patch}]);expect(reply).toContain("visibility retained");
+  });
+  it("applies a complete MACD tuple atomically even when the new fast exceeds the old slow",()=>{
+    const f=fixture();executeStudyRequest(parseStudyRequest("show MACD")!,f.context());f.adapter.setStudies.mockClear();
+    expect(executeStudyRequest(parseStudyRequest("set MACD periods to 30, 45, 8")!,f.context())).toContain("Applied");
+    expect(f.adapter.setStudies).toHaveBeenCalledOnce();expect(f.studies()[0]).toMatchObject({period:30,slow:45,signal:8});
+  });
+  it.each(["set MACD periods to 21, 8, 5","set MACD periods to 8, 8, 5","set MACD signal to 0","set MACD slow to 1001","set MACD fast to 30","set MACD signal method to WMA","set Bollinger Bands deviation to 0","set Bollinger Bands deviation to 101","set Bollinger Bands deviation to NaN","set MACD periods to 8, 21, 5 on BTCUSD","set MACD fast to 8 and buy","do not set MACD fast to 8"])("refuses without mutation: %s",text=>{
+    const f=fixture();const reply=executeStudyRequest(parseStudyRequest(text)!,f.context());expect(reply).toMatch(/not changed/i);expect(f.save).not.toHaveBeenCalled();expect(f.adapter.setStudies).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["set MACD periods to 5, 12, 3",{...studyDefinition("macd").defaults,period:5,slow:12,signal:3}],
+    ["set Bollinger Bands deviation to 2.5",{...studyDefinition("bollinger").defaults,multiplier:2.5}],
+  ])("manual and assistant settings produce identical complete study series: %s",(text,manual)=>{
+    const f=fixture();executeStudyRequest(parseStudyRequest(text)!,f.context());
+    const candles=Array.from({length:100},(_,i)=>({time:1700000000+i*60,open:100+Math.sin(i),high:102+Math.sin(i),low:98+Math.sin(i),close:101+Math.sin(i)}));
+    expect(new StudyCalculator(f.studies()[0]).calculate(candles)).toEqual(new StudyCalculator(manual).calculate(candles));
+  });
+  it("a rejected settings transaction preserves manual values after a renderer failure",()=>{
+    const f=fixture();const old={...studyDefinition("macd").defaults,id:"kept"};f.save([old]);f.save.mockClear();f.adapter.setStudies.mockImplementationOnce(()=>{throw Error("failed renderer");});
+    expect(executeStudyRequest(parseStudyRequest("set MACD periods to 8, 21, 5")!,f.context())).toContain("could not be verified");expect(f.save).not.toHaveBeenCalled();expect(f.studies()).toEqual([old]);
+  });
+  it("does not choose between repeated manual MACDs",()=>{
+    const f=fixture();f.save([{...studyDefinition("macd").defaults,id:"a"},{...studyDefinition("macd").defaults,id:"b"}]);f.adapter.setStudies.mockClear();expect(executeStudyRequest(parseStudyRequest("set MACD fast to 8")!,f.context())).toContain("multiple");expect(f.adapter.setStudies).not.toHaveBeenCalled();
+  });
+  it.each(["show me MACD","Please show me Bollinger Bands on this chart","show me volume profile"])("accepts ordinary show-me phrasing: %s",text=>{expect(parseStudyRequest(text)).toMatchObject({action:"show"});});
+  it("refuses an invalid internal setting through the manual validator",()=>{
+    const f=fixture();expect(executeStudyRequest({kind:"macd",action:"show",period:30},f.context())).toContain("not changed");expect(f.adapter.setStudies).not.toHaveBeenCalled();
+  });
+});
+
+describe("data-based MACD and Bollinger explanations",()=>{
+  const observation=(kind:"macd"|"bollinger"|"rsi",values:{name:string;value:number|null}[])=>{
+    const f=fixture();f.adapter.getStudyValues=()=>[{label:studyLabel(studyDefinition(kind).defaults),color:"#fff",values}];return executeStudyRequest(parseStudyRequest(`explain ${kind}`)!,f.context());
+  };
+  it("uses named MACD channels even when returned out of order",()=>{
+    const text=observation("macd",[{name:"Histogram",value:1},{name:"Signal",value:2},{name:"MACD",value:3}]);
+    expect(text).toContain("MACD is above its signal");expect(text).toContain("MACD is above zero");expect(text).toContain("not a crossover");
+  });
+  it("never replaces unavailable signal with zero",()=>{
+    const text=observation("macd",[{name:"MACD",value:3},{name:"Signal",value:null},{name:"Histogram",value:null}]);expect(text).toContain("MACD/signal comparison is unavailable");expect(text).not.toContain("MACD is above its signal");
+  });
+  it("explains a current close above the upper band without inferring a breakout",()=>{
+    const text=observation("bollinger",[{name:"Upper",value:120},{name:"Basis",value:110},{name:"Lower",value:100}]);expect(text).toContain("source candle close is above the upper band");expect(text).toContain("Band width: 20 source price units");expect(text).toContain("does not establish a breakout or reversal");
+  });
+  it("refuses inverted bands and never calls them a valid range",()=>{
+    const text=observation("bollinger",[{name:"Upper",value:100},{name:"Basis",value:110},{name:"Lower",value:120}]);expect(text).toContain("Band comparison is unavailable");expect(text).not.toContain("Band width:");
+  });
+  it("zero-width bands remain explicit without division by zero",()=>{
+    const text=observation("bollinger",[{name:"Upper",value:135},{name:"Basis",value:135},{name:"Lower",value:135}]);expect(text).toContain("Band width: 0 source price units");expect(text).not.toMatch(/NaN|Infinity/);
+  });
+  it("RSI interpretation reads the named channel, never another first row",()=>{
+    const text=observation("rsi",[{name:"unrelated",value:100},{name:"RSI",value:40}]);expect(text).toContain("between the common 30 and 70");expect(text).not.toContain("at or above 70");
+  });
+});
