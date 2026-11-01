@@ -280,3 +280,8 @@ Application `adc7a76f` makes Scanner/scalp interval aliases share assessment sta
 ## Captured assessment followup — 1 November 2026
 
 Application `5648453f` prevents primary assessment inputs and broker enrichment from switching observations across awaits, restores canonical higher-timeframe mapping, and uses the actual pivot period/latest closed bar. New suite 40 pass; existing backend 145 pass; structure 9/9; frontend 3,861 pass/11 skipped. Builds/typechecks pass; guards remain 85/87 with unchanged findings. A counterbalanced offline 200-bar builder comparison measured approximately **0.45 ms added cost**, not a speedup. Cross-surface source/account/window/age binding, slower-device loading and platform parity remain open. See [exact source, receipts and limits](SMART_CHART_CAPTURED_ASSESSMENT_2026_11_01.md).
+
+
+## FVG source and output followup — 1 November 2026
+
+Application `a01817bb` shares normalized, source-bound FVG inputs across the assessment and Scanner, fully withholds entry signals/price prose when restricted, and fixes Scanner provider timestamp preservation. 59 capture/FVG tests, 46 provenance/Truth tests, 21 FVG script checks, all four typechecks and both builds pass; frontend 3,861 pass/11 skipped. Guards remain 85/87 with unchanged findings. MT5/Deriv without original UTC evidence stay withheld; no latency or competitor parity claim follows. Draft binding and broader comparison gaps remain open. See [exact source, evidence and limits](SMART_CHART_FVG_EVIDENCE_2026_11_01.md).
