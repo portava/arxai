@@ -14,11 +14,15 @@
 //     isClosed:true; TICK streamKey "<symbol>", brokerTimeEpochMs.
 // If the EA's emitted format ever drifts from the schema, this test catches it.
 //
-// Touches the REAL DB (bridge_v2_events + bridge_v2_stream_state) under a
-// run-unique NEGATIVE synthetic userId; cleans up fail-closed.
+// Run only against a disposable database. Creates an authenticated run-unique
+// test user and non-trading connection. EA stream keys stay unchanged; exact
+// owned rows are cleaned in finally, including when an assertion throws.
 
-import { sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { and, eq as dbEq, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import assert from "node:assert/strict";
+import { db, usersTable, mt5ConnectionTable } from "@workspace/db";
+import { createConnection, findConnectionByBridgeTokenHash } from "../../artifacts/api-server/src/lib/brokerHub/connections.js";
 import { bridgeV2 } from "@workspace/domain";
 import {
   ingestBridgeV2Message,
@@ -48,14 +52,56 @@ function eq<T>(actual: T, expected: T, label: string): void {
   ok(actual === expected, `${label} (got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)})`);
 }
 
-const RUN = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const USER_ID = -Math.floor(1_000_000 + Math.random() * 8_000_000);
+const UUID = randomUUID();
+const RUN = `qa-v2-shape-${UUID}`;
+const EMAIL = `${RUN}@arx.test`;
+let fixtureUserId: number | null = null;
+let fixtureConnectionId: number | null = null;
+let authenticated: { userId: number; bridgeConnectionId: number } | null = null;
+
+async function createFixture(): Promise<void> {
+  const [user] = await db.insert(usersTable).values({email:EMAIL,name:RUN,role:"USER",isSystemUser:true}).returning({id:usersTable.id});
+  assert.ok(user && user.id > 0, "disposable user insert must return a positive ID");
+  fixtureUserId=user.id;
+  const tokenHash=createHash("sha256").update(randomUUID()).digest("hex");
+  const connection=await createConnection({userId:user.id,connectionName:RUN,status:"disconnected",accountType:"demo",apiKeyHash:tokenHash});
+  fixtureConnectionId=connection.id;
+  const match=await findConnectionByBridgeTokenHash(tokenHash);
+  assert.equal(match?.connection.id,fixtureConnectionId);
+  assert.equal(match?.connection.userId,fixtureUserId);
+  assert.ok(Number.isSafeInteger(connection.id) && connection.id > 0);
+  authenticated={userId:user.id,bridgeConnectionId:connection.id};
+}
+
+async function cleanupFixture(): Promise<void> {
+  if(fixtureUserId==null)return;
+  if(fixtureConnectionId!=null){
+    // Both created IDs and the UUID-derived EA instance namespace are required.
+    // Actual EA stream keys remain unchanged; no symbol-only or user-only wipe.
+    await db.execute(sql`DELETE FROM bridge_v2_events WHERE user_id = ${fixtureUserId} AND bridge_connection_id = ${fixtureConnectionId} AND idempotency_key LIKE ${INSTANCE_ID+"-%"}`);
+    await db.execute(sql`DELETE FROM bridge_v2_stream_state WHERE user_id = ${fixtureUserId} AND bridge_connection_id = ${fixtureConnectionId} AND last_idempotency_key LIKE ${INSTANCE_ID+"-%"}`);
+    const events=await db.execute(sql`SELECT count(*)::int AS n FROM bridge_v2_events WHERE user_id = ${fixtureUserId} AND bridge_connection_id = ${fixtureConnectionId}`);
+    const state=await db.execute(sql`SELECT count(*)::int AS n FROM bridge_v2_stream_state WHERE user_id = ${fixtureUserId} AND bridge_connection_id = ${fixtureConnectionId}`);
+    assert.equal(Number(events.rows[0]?.n),0,"exact-run event cleanup must leave no owned rows");
+    assert.equal(Number(state.rows[0]?.n),0,"exact-run state cleanup must leave no owned rows");
+    await db.delete(mt5ConnectionTable).where(and(dbEq(mt5ConnectionTable.id,fixtureConnectionId),dbEq(mt5ConnectionTable.userId,fixtureUserId),dbEq(mt5ConnectionTable.connectionName,RUN)));
+    const left=await db.select({id:mt5ConnectionTable.id}).from(mt5ConnectionTable).where(dbEq(mt5ConnectionTable.id,fixtureConnectionId));
+    assert.equal(left.length,0,"disposable connection cleanup must be complete");
+  }
+  await db.delete(usersTable).where(and(dbEq(usersTable.id,fixtureUserId),dbEq(usersTable.email,EMAIL)));
+  const left=await db.select({id:usersTable.id}).from(usersTable).where(dbEq(usersTable.id,fixtureUserId));
+  assert.equal(left.length,0,"disposable user cleanup must be complete");
+  fixtureUserId=null;fixtureConnectionId=null;authenticated=null;
+}
+
 
 // ── EA producer emulation (mirrors the MQL5 string-concatenation in v1.52) ──
 const EA_VERSION = "1.52";
 // v2InstanceId shape: "<ACCOUNT_LOGIN>-<TimeGMT sec>-<GetTickCount>". Only the
 // shape matters here (it scopes the idempotency-key namespace per EA load).
-const INSTANCE_ID = `12345678-${Math.floor(Date.now() / 1000)}-${RUN.length * 7}`;
+// Decimal UUID retains three numeric segments with a collision-resistant test
+// namespace. This test nonce is intentionally wider than an actual GetTickCount.
+const INSTANCE_ID = `12345678-${Math.floor(Date.now() / 1000)}-${BigInt("0x"+UUID.replaceAll("-",""))}`;
 let idemCounter = 0;
 const seqRegistry = new Map<string, number>();
 
@@ -151,17 +197,16 @@ function eaTickString(symbol: string, bid: number, ask: number, brokerMs: number
 }
 
 async function ingestRaw(raw: unknown) {
+  assert.ok(authenticated,"authenticated disposable context must exist");
   const input: BridgeV2IngestInput = {
-    userId: USER_ID,
-    bridgeConnectionId: null,
+    ...authenticated,
     raw,
     serverReceivedAtEpochMs: Date.now(),
   };
   return ingestBridgeV2Message(input);
 }
 
-async function main(): Promise<void> {
-  __resetMt5ProviderStore();
+async function exerciseProducerShape(): Promise<void> {
 
   // ── 1. The EA's literal CANDLE envelope validates on the domain contract ──
   {
@@ -190,6 +235,8 @@ async function main(): Promise<void> {
     const r = await routeCandles("EURUSD", "M5", 100);
     eq(r.ok, true, "router ok after EA broker feed");
     eq(r.primaryProvider, "mt5_broker", "router serves mt5_broker first from the EA live stream");
+    eq(r.provenance?.bridgeConnectionId,fixtureConnectionId,"EA candle source retains authenticated connection");
+    eq(r.provenance?.userId,fixtureUserId,"EA candle source retains authenticated owner");
   }
 
   // ── 3. The per-stream last-open guard: the EA never re-pushes the same bar, but
@@ -280,13 +327,19 @@ async function main(): Promise<void> {
     eq(reg.nextSeq("CANDLE", "OVERFLOW|T0"), -1, "stream beyond capacity drops (-1), never corrupts ordering");
   }
 
-  // ── Cleanup (fail-closed): remove only this run's synthetic rows ──
-  await db.execute(sql`DELETE FROM bridge_v2_events WHERE user_id = ${USER_ID}`);
-  await db.execute(sql`DELETE FROM bridge_v2_stream_state WHERE user_id = ${USER_ID}`);
-  const leftEvents = await db.execute(sql`SELECT count(*)::int AS n FROM bridge_v2_events WHERE user_id = ${USER_ID}`);
-  const leftState = await db.execute(sql`SELECT count(*)::int AS n FROM bridge_v2_stream_state WHERE user_id = ${USER_ID}`);
-  eq(Number((leftEvents.rows[0] as { n: number }).n), 0, "cleanup removed synthetic bridge_v2_events rows");
-  eq(Number((leftState.rows[0] as { n: number }).n), 0, "cleanup removed synthetic bridge_v2_stream_state rows");
+}
+
+async function main(): Promise<void> {
+  __resetMt5ProviderStore();
+  const errors: unknown[] = [];
+  try { await createFixture(); await exerciseProducerShape(); }
+  catch(error) { errors.push(error); }
+  finally {
+    try { await cleanupFixture(); } catch(error) { errors.push(error); }
+    finally { __resetMt5ProviderStore(); }
+  }
+  if(errors.length===1)throw errors[0];
+  if(errors.length>1)throw new AggregateError(errors,"Producer-shape validation and exact-run cleanup both failed");
 }
 
 main()
