@@ -18,6 +18,36 @@ const FORBIDDEN_SECRETS = [
   "apiKeyHash",
 ];
 
+/** Static wiring guard, supplemented by the real-loader behavior regressions.
+ * Only executable source counts; comments cannot stand in for calendar evidence.
+ * Keep the shared calendar resolver and scorer as their respective authorities. */
+export function scanSelectedMarketCalendar(source: string): string[] {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const violations: string[] = [];
+  if (!/import\s*\{\s*resolveNewsRiskEvents\s*\}\s*from\s*["']\.\.\/news\/calendar\/newsRiskResolver\.js["']/.test(code)
+    || !/resolveEvents\s*:\s*typeof\s+resolveNewsRiskEvents\s*=\s*resolveNewsRiskEvents/.test(code)
+    || !/const\s+resolved\s*=\s*await\s+resolveEvents\s*\(/.test(code)) {
+    violations.push("selectedMarket.ts must use the existing resolveNewsRiskEvents authority (including its default loader dependency)");
+  }
+  if (/\beconomicEventsTable\b|\bdb\s*\.\s*select\s*\(/.test(code)) {
+    violations.push("selectedMarket.ts must not bypass calendar availability with direct economic_events reads");
+  }
+  if (!/if\s*\(\s*!resolved\.available\s*\)\s*return\s*\{[^}]*calendarAvailable\s*:\s*false/s.test(code)
+    || !/const\s+available\s*=\s*loaded\.calendarAvailable\s*===\s*true/.test(code)
+    || !/news\s*:\s*available\s*\?\s*scoreNewsRisk\(symbol,\s*loaded\.scorerInput\)\s*:\s*newsRiskUnavailable\(/.test(code)) {
+    violations.push("selectedMarket.ts must require explicit calendar availability and preserve unavailable news instead of scoring missing evidence");
+  }
+  if (!/scorerInput\s*:\s*resolved\.events\b/.test(code)) {
+    violations.push("selectedMarket.ts must preserve the resolver event set for shared scoring, including recent releases");
+  }
+  if (!/calendarAvailable\s*:\s*news\.calendarAvailable\b/.test(code)
+    || (code.match(/upcomingEvents\s*:\s*events\s*,\s*newsRisk\s*,/g)?.length ?? 0) !== 2
+    || !/summary\s*:\s*news\.reason\s*,\s*calendarAvailable\s*:\s*news\.calendarAvailable\s*,\s*applicability\s*\}/.test(code)) {
+    violations.push("selectedMarket.ts must propagate calendar availability and applicability in the returned news envelope");
+  }
+  return violations;
+}
+
 export function checkScannerSelectedMarket(): CheckResult {
   const violations: string[] = [];
 
@@ -37,9 +67,7 @@ export function checkScannerSelectedMarket(): CheckResult {
   if (svc && !/scoreNewsRisk/.test(svc)) {
     violations.push("selectedMarket.ts must reuse scoreNewsRisk (no parallel news scorer)");
   }
-  if (svc && !/economicEventsTable/.test(svc)) {
-    violations.push("selectedMarket.ts must read economic_events via Drizzle (no parallel calendar store)");
-  }
+  if (svc) violations.push(...scanSelectedMarketCalendar(svc));
   // Task #518: the selected-market panel must analyze REAL broker candles, not
   // simulator data. The builder must reuse the brain's candle-injectable signal
   // engine (analyzeMarketFromCandles) fed from the canonical chart pipeline
