@@ -133,7 +133,9 @@
     "./expectancy": "./src/expectancy/index.ts",
     "./deriv-contracts": "./src/deriv-contracts/index.ts",
     "./execution-state": "./src/execution-state/index.ts",
-    "./chart-patterns": "./src/chart-patterns/index.ts"
+    "./chart-patterns": "./src/chart-patterns/index.ts",
+    "./backtest/research-core": "./src/backtest/researchCore.ts",
+    "./backtest/research-browser": "./src/backtest/researchBrowser.ts"
   },
   "scripts": {},
   "dependencies": {
