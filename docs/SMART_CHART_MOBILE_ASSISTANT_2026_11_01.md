@@ -11,3 +11,11 @@ Focus is retained across mode/viewport changes. Mobile opening does not automati
 Validation: five new mobile behaviors failed on the original panel. Independent review additionally exposed hidden-message focus loss; its failing regression is retained. Final bounded validation is 25 tests across four files, plus fresh local declaration builds and dashboard typecheck. Parent owns combined actual-browser acceptance, including rectangle/hit tests, visual review and real keyboard behavior. Unit viewport bounds alone do not prove pixel visibility or touch accessibility.
 
 Remaining limits: very short or heavily zoomed viewports may require scrolling and cannot guarantee simultaneous chart/response/control visibility. Browser emulation is not a physical phone keyboard. Wide phone landscape layout follows the existing desktop-width breakpoint. There is no first-navigation, broker, performance or competitor-parity claim. No API, model, voice, trading, worker or deployment was activated for this change.
+
+## Follow-up: measured plot reveal
+
+Actual phone acceptance of the first implementation failed co-visibility: the plot occupied y=484–844 while the compact panel occupied y=426–764. A small panel alone did not prove the chart remained visible. That failed browser receipt is retained in `chart-volume-mobile-20261101/latest-diagnostic-commands.json`.
+
+Explicitly opening the docked assistant or choosing Chart view now performs a one-shot post-layout measurement of the current primary canvas. If less than a useful plot strip is above the panel, native scrolling reveals that canvas through its existing scroll containers. This does not change time/price ranges, and does not repeat on messages, resize, keyboard changes or restored sessions. Short viewports prioritize reachable controls and do not claim chart co-visibility. The scheduled action is cancelled when the context closes or changes. Browser/fullscreen/physical-keyboard acceptance remains separate from mocked geometry tests.
+
+The lifecycle regression failed before the fix (1 failed / 18 passed), preserving the zero-scroll observation. Final focused and typecheck receipts are recorded separately under `chart-assistant-mobile-20261101/reveal-*`.

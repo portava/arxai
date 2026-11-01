@@ -222,7 +222,7 @@ describe("ArxAssistantLivePanel — manual press-to-record only", () => {
 
 function renderChartPanel(chart=true){
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
- const App=({showChart}:{showChart:boolean})=><QueryClientProvider client={client}><AssistantDockProvider>{showChart&&<div data-testid="arx-native-chart"><AssistantDockSlot/><button data-testid="chart-control">Inspect chart</button></div>}<ArxAssistantLivePanel/></AssistantDockProvider></QueryClientProvider>;
+ const App=({showChart}:{showChart:boolean})=><QueryClientProvider client={client}><AssistantDockProvider>{showChart&&<div data-testid="arx-native-chart"><AssistantDockSlot/><div data-testid="arx-native-canvas"/><button data-testid="chart-control">Inspect chart</button></div>}<ArxAssistantLivePanel/></AssistantDockProvider></QueryClientProvider>;
  return {...render(<App showChart={chart}/>),App};
 }
 describe("mobile chart conversation layout",()=>{
@@ -277,6 +277,28 @@ describe("mobile chart conversation layout",()=>{
  it("recovers focus when a new compact receipt hides the formerly focused message",()=>{
   vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);const release=registerChartStudyAssistant(()=>"Actual rendered study observation. ".repeat(30));
   try{renderChartPanel();fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));screen.getByRole("button",{name:"Show more",exact:true}).focus();fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));expect(document.activeElement).toBe(screen.getByRole("button",{name:"Expand conversation"}));}finally{release();}
+ });
+
+ it("reveals an obscured primary plot once on deliberate compact opening, not on replies or viewport changes",()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);sessionStorage.setItem("arx.assistant.open.v2","0");
+  const original=HTMLElement.prototype.getBoundingClientRect;
+  const rect=vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(){const id=this.getAttribute("data-testid");return id==="arx-native-canvas"?{top:484,bottom:844,left:0,right:390,width:390,height:360} as DOMRect:id==="arx-assistant-panel"?{top:426,bottom:764,left:8,right:382,width:374,height:338} as DOMRect:original.call(this);});
+  const release=registerChartStudyAssistant(()=>"Rendered RSI receipt");
+  try{renderChartPanel();const plot=screen.getByTestId("arx-native-canvas"),reveal=vi.fn();plot.scrollIntoView=reveal;
+   fireEvent.click(screen.getByTestId("arx-assistant-trigger"));act(()=>vi.advanceTimersByTime(30));expect(reveal).toHaveBeenCalledOnce();expect(reveal).toHaveBeenCalledWith({block:"center",inline:"nearest",behavior:"instant"});
+   fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"show RSI"}});fireEvent.click(screen.getByTestId("arx-send"));fireEvent(window,new Event("resize"));act(()=>vi.advanceTimersByTime(30));expect(reveal).toHaveBeenCalledOnce();
+   fireEvent.click(screen.getByRole("button",{name:"Expand conversation"}));fireEvent.click(screen.getByRole("button",{name:"Keep chart visible"}));act(()=>vi.advanceTimersByTime(30));expect(reveal).toHaveBeenCalledTimes(2);
+  }finally{release();rect.mockRestore();vi.useRealTimers();}
+ });
+ for(const scenario of ["already visible","short viewport","restored session"] as const)it(`does not move chart for ${scenario}`,()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",scenario==="short viewport"?280:844);sessionStorage.setItem("arx.assistant.open.v2",scenario==="restored session"?"1":"0");
+  const rect=vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(){return this.getAttribute("data-testid")==="arx-native-canvas"?{top:scenario==="already visible"?80:484,bottom:844,left:0,right:390,width:390,height:360} as DOMRect:{top:426,bottom:764,left:8,right:382,width:374,height:338} as DOMRect;});
+  try{renderChartPanel();const reveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=reveal;if(scenario!=="restored session")fireEvent.click(screen.getByTestId("arx-assistant-trigger"));act(()=>vi.advanceTimersByTime(30));expect(reveal).not.toHaveBeenCalled();}finally{rect.mockRestore();vi.useRealTimers();}
+ });
+
+ it("cancels a queued reveal when the selected chart undocks before the next frame",()=>{
+  vi.useFakeTimers();vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);sessionStorage.setItem("arx.assistant.open.v2","0");
+  try{const view=renderChartPanel();const reveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=reveal;fireEvent.click(screen.getByTestId("arx-assistant-trigger"));view.rerender(<view.App showChart={false}/>);act(()=>vi.advanceTimersByTime(30));expect(reveal).not.toHaveBeenCalled();view.rerender(<view.App showChart={true}/>);const nextReveal=vi.fn();screen.getByTestId("arx-native-canvas").scrollIntoView=nextReveal;act(()=>vi.advanceTimersByTime(30));expect(nextReveal).not.toHaveBeenCalled();}finally{vi.useRealTimers();}
  });
 
 });
