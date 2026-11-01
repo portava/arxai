@@ -500,6 +500,8 @@ describe("RubyChartRead — STRUCTURAL_ONLY verdict (Task #602)", () => {
         new Response(
           JSON.stringify({
             chartRead: {
+              symbol: "V75",
+              timeframe: "H1",
               readLayer: "STRUCTURAL_ONLY",
               liveSetupWithheld: true,
               canShowLiveTradeSetup: false,

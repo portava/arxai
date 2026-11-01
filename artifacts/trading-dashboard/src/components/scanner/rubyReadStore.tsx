@@ -29,13 +29,10 @@ import {
 } from "react";
 import type { ChartRead } from "@/lib/rubyReadPanelState";
 import { validateRubyChartRead } from "@/lib/rubyChartReadResponse";
+import { rubyChartReadKey as keyOf } from "@/lib/rubyChartReadContext";
 
 // Transport deadline only, not a market-evidence expiry or freshness claim.
 export const CHART_READ_REQUEST_TIMEOUT_MS = 30_000;
-
-function keyOf(symbol: string, timeframe: string): string {
-  return JSON.stringify([(symbol || "").toUpperCase(), timeframe || ""]);
-}
 
 interface ReadRequestState { loading: boolean; error: string | null }
 const IDLE: ReadRequestState = { loading: false, error: null };
@@ -107,7 +104,7 @@ export function RubyReadStoreProvider({ children }: { children: ReactNode }) {
       // The race settles even when a transport/mock ignores its abort signal.
       const response = await Promise.race([load(ticket.signal), interrupted]);
       if (tickets.current.get(key) !== ticket) return;
-      const read = validateRubyChartRead(response);
+      const read = validateRubyChartRead(response, { symbol, timeframe });
       setMap(m => ({ ...m, [key]: read }));
       setRequests(m => ({ ...m, [key]: IDLE }));
     } catch (error) {

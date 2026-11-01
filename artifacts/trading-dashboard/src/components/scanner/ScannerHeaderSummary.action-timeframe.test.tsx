@@ -199,6 +199,12 @@ vi.mock("@workspace/api-client-react", async (importOriginal) => {
 import { RubyScalpFocusCard } from "./RubyScalpFocusCard";
 import { ScannerHeaderSummary } from "./ScannerHeaderSummary";
 import { SelectedActionStoreProvider } from "./selectedActionStore";
+import { RubyReadStoreProvider, useRubyReadStore } from "./rubyReadStore";
+
+function FailedScalpRead() {
+  const store = useRubyReadStore();
+  return <button onClick={() => void store.request("EURUSD", "M1", async () => { throw new Error("Read failed"); })}>Read scalp context</button>;
+}
 
 function sharedTree(symbol: string) {
   return (
@@ -231,6 +237,14 @@ afterEach(() => {
 });
 
 describe("ScannerHeaderSummary — Action cell synchronized on symbol AND timeframe (Task #600)", () => {
+  it("caps the actual 1m header when the M1 scalp read fails", async () => {
+    render(<RubyReadStoreProvider><FailedScalpRead />{sharedTree("EURUSD")}</RubyReadStoreProvider>);
+    const action = within(await screen.findByTestId("scanner-header-action"));
+    expect(await action.findByText("Ready now")).toBeTruthy();
+    await act(async () => screen.getByText("Read scalp context").click());
+    expect(await action.findByText("Wait for confirmation")).toBeTruthy();
+    expect(action.queryByText("Ready now")).toBeNull();
+  });
   it("adopts the lifted scalp verdict ('Ready now') when the selected timeframe IS the scalp's 1m", async () => {
     currentTimeframe = "1m";
     renderShared();

@@ -1,11 +1,13 @@
 import type { ChartRead } from "./rubyReadPanelState";
+import { matchesRubyChartReadContext, type RubyChartReadContext } from "./rubyChartReadContext";
 
 /** Validate the existing read endpoint's display contract before publishing it.
  * This is not verification of its underlying market/source/window evidence. */
-export function validateRubyChartRead(value: unknown): ChartRead {
+export function validateRubyChartRead(value: unknown, expected: RubyChartReadContext): ChartRead {
   const invalid = () => { throw new Error("Invalid chart read response"); };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   const r = value as Record<string, unknown>;
+  if (!matchesRubyChartReadContext(r, expected)) throw new Error("Chart read does not match the requested market and interval");
   if (typeof r.gated !== "boolean") return invalid();
   for (const key of ["liveSetupWithheld", "canShowLiveTradeSetup"] as const) {
     if (r[key] !== undefined && typeof r[key] !== "boolean") return invalid();

@@ -61,6 +61,10 @@ export interface RubyReadServerState {
  * component module.
  */
 export interface ChartRead extends RubyReadServerState {
+  /** Endpoint echo, checked against the request before publication. Client-only
+   * pending/failure restrictions need not claim a returned market identity. */
+  symbol?: string;
+  timeframe?: string;
   patternRead?: {patternNote?: string;patternStatus?: string;patternConditional?: boolean;patternContextOnly?: boolean};
   trendlineRead?: {trendlineNote?: string;trendlineStatus?: string;trendlineConditional?: boolean;trendlineContextOnly?: boolean};
   bias?: string;

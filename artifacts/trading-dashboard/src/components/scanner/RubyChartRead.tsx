@@ -10,6 +10,7 @@ import {
   type ChartRead,
 } from "@/lib/rubyReadPanelState";
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
+import { rubyChartReadContext } from "@/lib/rubyChartReadContext";
 import { useAssistantName } from "@/lib/assistant-name";
 import {
   actionabilityDisplayUi,
@@ -137,8 +138,9 @@ export function RubyChartRead({
   const ask = async () => {
     await store.request(symbol, timeframe, async signal => {
       const body = {
-        symbol,
-        timeframe,
+        // Send the canonical interval too: 1M means month in the chart picker,
+        // whereas the legacy endpoint's alias parser treats raw 1M as minute.
+        ...rubyChartReadContext(symbol, timeframe),
         ...(reportedAiUsable != null ? { aiUsable: reportedAiUsable } : {}),
         ...(draft ? { draft } : {}),
       };

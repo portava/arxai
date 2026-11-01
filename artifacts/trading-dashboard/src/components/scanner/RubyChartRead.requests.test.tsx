@@ -13,11 +13,23 @@ function deferred() {
   const promise = new Promise<Response>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-const reply = (bias: string) => new Response(JSON.stringify({ chartRead: { gated: false, bias, readLayer: "FULL", liveSetupWithheld: false, canShowLiveTradeSetup: true } }));
+const reply = (bias: string) => new Response(JSON.stringify({ chartRead: { symbol: "EURUSD", timeframe: "M5", gated: false, bias, readLayer: "FULL", liveSetupWithheld: false, canShowLiveTradeSetup: true } }));
 const panel = (symbol = "EURUSD") => <RubyChartRead symbol={symbol} timeframe="M5" draft={null} />;
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("shared chart-read request lifecycle", () => {
+  it.each([["1M", "MN1"], ["1m", "M1"], ["15m", "M15"]])("sends the selected %s interval as canonical %s", async (selected, canonical) => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      chartRead: { symbol: "EURUSD", timeframe: canonical, gated: true, headline: "Read unavailable" },
+    })));
+    render(<RubyReadStoreProvider><RubyChartRead symbol="EURUSD" timeframe={selected} draft={null} /></RubyReadStoreProvider>);
+    fireEvent.click(screen.getByTestId("ruby-chart-read-ask"));
+    await waitFor(() => expect((screen.getByTestId("ruby-chart-read-ask") as HTMLButtonElement).disabled).toBe(false));
+    expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string).timeframe).toBe(canonical);
+    expect(screen.getByTestId("ruby-chart-read-gated").textContent).toContain("Read unavailable");
+    expect(screen.queryByTestId("ruby-chart-read-err")).toBeNull();
+  });
+
   it("withdraws the previous direction during refresh and after a failed refresh", async () => {
     const pending = deferred();
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(reply("Bullish")).mockReturnValueOnce(pending.promise);
