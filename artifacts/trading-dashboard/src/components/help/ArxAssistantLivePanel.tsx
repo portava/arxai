@@ -1092,7 +1092,7 @@ export function ArxAssistantLivePanel() {
   const trigger = <button
         ref={triggerRef}
         type="button"
-        onClick={() => { if (open) { void closePanel(); } else { revealChartOnCompactOpen.current=mobileChart?dockTarget:null; setOpen(true); } }}
+        onClick={() => { if (open) { void closePanel(); } else { revealChartOnCompactOpen.current=window.innerWidth<768?dockTarget:null; setOpen(true); } }}
         className={cn(
           "rounded-full shadow-lg transition-colors flex items-center justify-center",
           dockTarget ? "h-11 w-11" : "fixed z-50 bottom-20 right-4 md:bottom-6 md:right-6 h-14 w-14",
