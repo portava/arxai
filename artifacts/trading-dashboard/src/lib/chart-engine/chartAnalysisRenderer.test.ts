@@ -18,7 +18,7 @@ function fixture(count = 10000) {
   // price series).
   const chartOptions = { leftPriceScale: { ...SCALE_DEFAULTS, visible: false }, rightPriceScale: { ...SCALE_DEFAULTS, visible: true } };
   const newPane = (preserve = false) => ({ series: [] as any[], stretch: 1, preserve, scales: { left: structuredClone(chartOptions.leftPriceScale), right: structuredClone(chartOptions.rightPriceScale) } as Record<string, any> });
-  const price: any = { name: "price" };
+  const price: any = { name: "price", attachPrimitive:vi.fn(), detachPrimitive:vi.fn() };
   const panes = [newPane()];
   panes[0]!.series.push(price);
   const paneOf = (series: any) => panes.find(pane => pane.series.includes(series))!;
@@ -147,7 +147,7 @@ describe("study viewport rendering and streaming", () => {
 
 
 describe("exact study tail reconciliation",()=>{
-  for(const {defaults} of STUDY_CATALOG) it(`${defaults.kind}: all rendered channels equal a full calculation through replay and corrections`,()=>{
+  for(const {defaults} of STUDY_CATALOG.filter(d=>d.defaults.kind!=="volume_profile")) it(`${defaults.kind}: all rendered channels equal a full calculation through replay and corrections`,()=>{
     const config:ChartStudy=defaults.kind === "vwap" ? {...defaults,vwapAnchor:{kind:"observed_bar",time:100,seriesIdentity:"a".repeat(64)}} : defaults;
     const f=fixture(320);let bars=f.candles;
     if(config.kind === "tick_volume") bars=bars.map((bar,index)=>({...bar,volumeEvidence:{kind:"tick_count" as const,quantity:index,unit:"ticks" as const,reason:null}}));
@@ -264,7 +264,7 @@ describe("incremental study changes equal a full rebuild", () => {
   }
   const channels = (study: ChartStudy) => STUDY_CATALOG.find(item => item.defaults.kind === study.kind)!.channels.length;
 
-  for (const { defaults } of STUDY_CATALOG) {
+  for (const { defaults } of STUDY_CATALOG.filter(d=>d.defaults.kind!=="volume_profile")) {
     const k: ChartStudy = { ...defaults, id: "k" };
     describe(k.kind, () => {
       it("append keeps every existing series and only adds the new study", () => {
@@ -867,5 +867,32 @@ describe('anchored VWAP and trade-volume actual series',()=>{
    expect(f.renderer.inspect(bars[2].time)[0]!.reason).toContain('held');
    f.renderer.setStudies([{...config,lineStyles:[{visible:false}]}],bars);
    expect(f.handles[0].options.visible).toBe(false);f.renderer.destroy();
+ });
+});
+
+
+describe("fixed-range profile native ownership",()=>{
+ const qualify=(bars:any[])=>bars.map(b=>({...b,volumeEvidence:{kind:'real_volume',unit:'provider_trade_units',quantity:100,reason:null,authority:'twelve-data:time-series:common-stock:regular-unadjusted:v1',seriesIdentity:'a'.repeat(64)},profileEvidence:{finality:'closed',clockAuthority:'twelve-data:time-series:common-stock:regular-unadjusted:v1'}}));
+ const profile=(bars:any[]):ChartStudy=>({id:'profile',kind:'volume_profile',period:1,color:'#a78bfa',profileRows:8,profileValueAreaPercent:70,profileRange:{kind:'observed_range',fromTime:bars[0].time,toTime:bars.at(-1).time,seriesIdentity:'a'.repeat(64),clockAuthority:'twelve-data:time-series:common-stock:regular-unadjusted:v1'}});
+ it('renders a native primitive without fake timestamps, keeps other studies and caches aggregate during pan',()=>{
+  const f=fixture(1000),bars=qualify(f.candles),p=profile(bars),spy=vi.spyOn(StudyCalculator.prototype,'calculate');f.renderer.setStudies([p,{kind:'sma',period:2,color:'#ffffff'}],bars);
+  expect(f.price.attachPrimitive).toHaveBeenCalledOnce();expect(f.handles).toHaveLength(1);expect(f.handles[0].data.length).toBeGreaterThan(0);const before=f.renderer.inspectProfiles()[0]!.result,calls=spy.mock.calls.length;
+  f.move(0,100);expect(f.renderer.inspectProfiles()[0]!.result).toBe(before);expect(spy).toHaveBeenCalledTimes(calls);expect(before.status).toBe('ready');
+  expect(()=>{(before as any).totalTradeUnits=0;}).toThrow();expect(f.renderer.inspectProfiles()[0]!.result).toBe(before);spy.mockRestore();
+ });
+ it('withdraws clock-only/finality-only updates and detaches held, hidden, removed and destroyed profiles',()=>{
+  const f=fixture(5),bars=qualify(f.candles),p=profile(bars);f.renderer.setStudies([p],bars);const first=f.renderer.inspectProfiles()[0]!.result;
+  const changed=bars.map(b=>({...b,volumeEvidence:{...b.volumeEvidence,quantity:200}}));expect(f.renderer.firstInputChange(changed)).toBe(0);f.renderer.refresh(changed,0,false);expect(f.renderer.inspectProfiles()[0]!.result).not.toBe(first);expect(f.renderer.inspectProfiles()[0]!.result).toMatchObject({totalTradeUnits:1000});
+  for(const patch of [{clockAuthority:null},{finality:'forming'}]){const missing=changed.map(b=>({...b,profileEvidence:{...b.profileEvidence,...patch}}));expect(f.renderer.firstInputChange(missing)).toBe(0);f.renderer.refresh(missing,0,false);expect(f.renderer.inspectProfiles()[0]!.result.status).toBe('held');expect((f.renderer as any).studies[0].profilePrimitive).toBeUndefined();f.renderer.refresh(bars,0,false);}
+  f.renderer.setStudies([{...p,lineStyles:[{visible:false}]}],bars);expect((f.renderer as any).studies[0].profilePrimitive).toBeUndefined();f.renderer.setStudies([p],bars);expect((f.renderer as any).studies[0].profilePrimitive).toBeDefined();f.renderer.setStudies([],bars);expect(f.renderer.inspectProfiles()).toEqual([]);f.renderer.setStudies([p],bars);const last=(f.renderer as any).studies[0].profilePrimitive;f.renderer.destroy();expect(f.price.detachPrimitive).toHaveBeenCalledWith(last);
+ });
+ it('patches profile rows and visibility without replacing unrelated indicators or the retained primitive',()=>{
+  const f=fixture(40),bars=qualify(f.candles),p=profile(bars),sma:ChartStudy={id:'sma',kind:'sma',period:2,color:'#ffffff'};f.renderer.setStudies([sma,p],bars);const line=f.handles[0],primitive=(f.renderer as any).studies[1].profilePrimitive;f.chart.addSeries.mockClear();f.chart.removeSeries.mockClear();
+  f.renderer.setStudies([sma,{...p,profileRows:16}],bars);expect(f.chart.addSeries).not.toHaveBeenCalled();expect(f.chart.removeSeries).not.toHaveBeenCalled();expect((f.renderer as any).studies[0].lines[0]).toBe(line);expect((f.renderer as any).studies[1].profilePrimitive).toBe(primitive);expect(f.renderer.inspectProfiles()[0]!.result).toMatchObject({requestedRowCount:16});
+  f.renderer.setStudies([sma,{...p,lineStyles:[{visible:false}]}],bars);expect(f.chart.addSeries).not.toHaveBeenCalled();expect(f.chart.removeSeries).not.toHaveBeenCalled();expect(f.price.detachPrimitive).toHaveBeenCalledWith(primitive);
+ });
+ it('moves existing geometry to a new price style and allocates separate columns to every visible instance',()=>{
+  const f=fixture(5),bars=qualify(f.candles),p=profile(bars);f.renderer.setStudies([p,{...p,id:'second'}],bars);const instances=(f.renderer as any).studies.map((s:any)=>s.profilePrimitive);expect(instances.map((p:any)=>[p.slot,p.count])).toEqual([[0,2],[1,2]]);
+  const price:any={attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};f.renderer.replacePriceSeries(price,bars);for(const primitive of instances){expect(f.price.detachPrimitive).toHaveBeenCalledWith(primitive);expect(price.attachPrimitive).toHaveBeenCalledWith(primitive);}expect((f.renderer as any).studies.map((s:any)=>s.profilePrimitive)).toEqual(instances);
  });
 });

@@ -1,3 +1,4 @@
+import { validProfileRange,validProfileRows,validProfileValueArea } from "./chartVolumeProfile";
 import { chartIntervalSeconds } from "./chartIntervals";
 import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy, type StudyLineStyle } from "./chartStudies";
 import { isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
@@ -51,8 +52,9 @@ export function validatePreferences(value: unknown): ChartPreferences {
   const sources = ["close", "open", "high", "low", "hl2", "hlc3", "hlcc4", "ohlc4"];
   for (const s of Array.isArray(v.studies) ? v.studies.slice(0, MAX_STUDIES) : []) {
     if (!s || !kinds.has(s.kind) || !period(s.period) || !color(s.color)) continue;
-    if (["tick_volume","trade_volume","vwap"].includes(s.kind) && s.period !== 1) continue;
+    if (["tick_volume","trade_volume","vwap","volume_profile"].includes(s.kind) && s.period !== 1) continue;
     if (s.kind === "vwap" && s.vwapAnchor != null && (s.vwapAnchor.kind !== "observed_bar" || !Number.isSafeInteger(s.vwapAnchor.time) || s.vwapAnchor.time <= 0 || s.vwapAnchor.time >= 1e11 || typeof s.vwapAnchor.seriesIdentity !== "string" || !/^[a-f0-9]{64}$/.test(s.vwapAnchor.seriesIdentity)))continue;
+    if(s.kind === "volume_profile" && (!validProfileRows(s.profileRows ?? 32) || !validProfileValueArea(s.profileValueAreaPercent ?? 70) || s.profileRange != null && !validProfileRange(s.profileRange)))continue;
     if (s.id != null && (typeof s.id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(s.id))) continue;
     const id = studyId(s);
     if (seen.has(id)) continue;
@@ -84,6 +86,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(lineStyles?.length ? {lineStyles} : {}),
       ...(s.id ? { id: s.id } : {}), kind: s.kind, period: s.period, color: s.color,
       ...(s.source ? { source: s.source } : {}),
+      ...(s.kind === "volume_profile" ? {profileRows:s.profileRows??32,profileValueAreaPercent:s.profileValueAreaPercent??70,...(s.profileRange?{profileRange:{...s.profileRange}}:{})} : {}),
       ...(s.kind === "vwap" && s.vwapAnchor ? {vwapAnchor:{kind:"observed_bar" as const,time:s.vwapAnchor.time,seriesIdentity:s.vwapAnchor.seriesIdentity}} : {}),
       ...(["bollinger", "envelopes"].includes(s.kind) ? { multiplier: s.multiplier } : {}),
       ...(s.kind === "macd" ? { slow: s.slow, signal: s.signal, ...(s.signalMethod ? { signalMethod: s.signalMethod } : {}) } : {}),

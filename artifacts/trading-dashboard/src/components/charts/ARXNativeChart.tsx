@@ -1,3 +1,4 @@
+import {profileCandleEvidence} from "@/lib/chart-engine/chartVolumeProfile";
 import { chartAssistantPaneContext } from "@/lib/chart-engine/chartAssistantPaneContext";
 import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
 import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
@@ -384,7 +385,7 @@ export function ARXNativeChart({
         const line = document.createElement("div");
         line.className = "flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-zinc-800 py-1.5";
         const label = document.createElement("span");
-        label.textContent = row.label;
+        label.textContent = row.displayLabel ?? row.label;
         label.style.color = row.color;
         const values = document.createElement("span");
         values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? (row.reason ? `— (${row.reason})` : item.name === "Ticks" || item.name === "Ticks (hidden)" ? "— (no qualified tick count)" : "— (warm-up / unavailable)") : formatStudyNumber(item.value,item.name)}`).join(" · ");
@@ -825,6 +826,7 @@ export function ARXNativeChart({
           low: c.low,
           close: c.close,
           volumeEvidence: chartVolumeEvidence(c.volumeEvidence,c.source),
+          profileEvidence: profileCandleEvidence(c),
         }))
         .filter(
           (c) =>

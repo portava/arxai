@@ -1,3 +1,5 @@
+import type { ProfileCandleEvidence, VolumeProfileInspection } from "./chartVolumeProfile";
+import type { VwapAnchor } from "./chartStudies";
 import type { CandleVolumeEvidence } from "./chartVolume";
 import type { ScannerChartSurface } from "./scannerChartSurface";
 import type { DrawingInteraction } from "./chartDrawingEditor";
@@ -32,6 +34,8 @@ export type ChartEngineId = "lightweight-charts" | "tradingview-advanced";
 export interface ChartEngineCandle {
   /** Qualified source observation only; omitted on unproven streaming tips. */
   volumeEvidence?: CandleVolumeEvidence;
+  /** Original explicit closed/clock evidence; absent legacy/stream inputs cannot qualify. */
+  profileEvidence?: ProfileCandleEvidence;
   /** Bar open time, Unix seconds (UTC). */
   time: number;
   open: number;
@@ -188,7 +192,9 @@ export interface ChartEngineAdapter {
   setDisplayTimeZone?(zone: ChartTimeZone): void;
   goToTime?(time: number): boolean;
   showRecentRange?(seconds: number): { complete: boolean } | null;
-  getStudyValues?(time: number): { label: string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
+  getVolumeProfiles?(): VolumeProfileInspection[];
+  getVwapAnchorEvidence?(anchor:VwapAnchor): {utcQualified:boolean;reason:string|null};
+  getStudyValues?(time: number): { label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
   /** Transformed display bar (Heikin Ashi only) at this time; null in other
    * styles. Legend text only. Never used for studies, drawings or orders. */
   getDisplayCandle?(time: number): ChartEngineCandle | null;
