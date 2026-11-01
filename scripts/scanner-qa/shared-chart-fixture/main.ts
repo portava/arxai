@@ -38,5 +38,7 @@ else {
   else installChartQaWitnesses(LightweightChartsAdapter);
   if(__ARX_SCANNER_QA_REACT_PROFILE__) { installReactProfile(); installCandleTimeline(LightweightChartsAdapter); }
   // Dynamic import guarantees the observer exists before the real app mounts.
-  void import("../../../artifacts/trading-dashboard/src/main");
+  if (__ARX_NATIVE_ENGINE__ && location.pathname === '/position-mini-qa') {
+    void import('./positionMiniFixture').then(module=>module.mountPositionMiniFixture());
+  } else void import("../../../artifacts/trading-dashboard/src/main");
 }

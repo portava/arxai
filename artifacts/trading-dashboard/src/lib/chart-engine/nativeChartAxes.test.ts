@@ -62,7 +62,7 @@ it("time ticks refer only to loaded observations across a real history gap", () 
   for(const tick of ticks){expect(input.some(b=>b.time===tick.time)).toBe(true);expect(frame.timeToX(tick.time)).toBe(tick.x);expect(tick.label).toContain("UTC");}
 });
 it("display timezone changes labels, never anchor timestamps or coordinates", () => {
-  const frame=make(), utc=nativeTimeTicks(frame), ny=nativeTimeTicks(frame,{timeZone:"America/New_York"});
+  const frame=make(), utc=nativeTimeTicks(frame,{utcClockQualified:true}), ny=nativeTimeTicks(frame,{timeZone:"America/New_York",utcClockQualified:true});
   expect(ny.map(({time,x})=>({time,x}))).toEqual(utc.map(({time,x})=>({time,x})));
   expect(ny.map(t=>t.label)).not.toEqual(utc.map(t=>t.label));
 });
@@ -93,4 +93,23 @@ it("keeps adjacent tick labels distinct in a tight high-magnitude range",()=>{
   const ticks=nativePriceTicks(make("linear",false,input),{priceDigits:6});
   expect(ticks.length).toBeGreaterThan(3);
   for(const tick of ticks)expect(Math.abs(Number(tick.label)-tick.value)).toBeLessThan(0.000001);
+});
+
+
+describe('native axis source clock evidence',()=>{
+ it('defaults to unqualified source time even when a converted zone is requested',()=>{
+  const frame=make(),source=nativeTimeTicks(frame,{timeZone:'UTC'}),ny=nativeTimeTicks(frame,{timeZone:'America/New_York'});
+  expect(ny).toEqual(source);expect(ny.length).toBeGreaterThan(0);expect(ny.every(t=>t.label.endsWith('source clock (UTC unverified)'))).toBe(true);
+ });
+ it('only affirmative clock qualification permits selected-zone conversion',()=>{
+  const frame=make(),qualified=nativeTimeTicks(frame,{timeZone:'America/New_York',utcClockQualified:true});
+  expect(qualified.some(t=>/EST|EDT/.test(t.label))).toBe(true);
+  for(const bad of [false,undefined,'true',1,null])expect(nativeTimeTicks(frame,{timeZone:'America/New_York',utcClockQualified:bad as boolean})).toEqual(nativeTimeTicks(frame));
+ });
+ it.each([144,240,390,900])('unqualified Canvas labels retain source semantics at %spx width',width=>{
+  const result=createNativePriceFrame(prepareNativePriceSeries(bars),{plot:nativePlotLayout(width,400)!,range:{from:0,to:199},style:'candles'});if(!result.ok)throw Error(result.reason);
+  const labels:Array<{text:string,y:number}>=[];const ctx={save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},measureText(t:string){return{width:t.length*7};},fillText(text:string,_x:number,y:number){labels.push({text,y});}} as unknown as CanvasRenderingContext2D;
+  paintNativeAxes(ctx,result.frame,{timeZone:'America/New_York',utcClockQualified:false});
+  const times=labels.filter(row=>row.y>result.frame.plot.top+result.frame.plot.height);expect(times.length).toBeGreaterThan(0);expect(times.every(row=>row.text.includes('source'))).toBe(true);expect(times.some(row=>/EST|EDT| UTC$/.test(row.text))).toBe(false);
+ });
 });

@@ -190,6 +190,9 @@ export interface ChartEngineAdapter {
   /** Display-only, already resolved for timeframe by the caller; candle times,
    * anchors and link events stay UTC seconds. */
   setDisplayTimeZone?(zone: ChartTimeZone): void;
+  /** Original source-clock qualification supplied by the shell's evidence
+   * policy. Defaults/reset to false; a display zone never grants authority. */
+  setSourceClockQualified?(qualified: boolean): void;
   goToTime?(time: number): boolean;
   showRecentRange?(seconds: number): { complete: boolean } | null;
   getVolumeProfiles?(): VolumeProfileInspection[];

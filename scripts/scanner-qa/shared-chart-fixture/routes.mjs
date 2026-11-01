@@ -4,5 +4,5 @@ export const SHARED_CHART_PAGE_PATHS = Object.freeze([
   '/live-chart', '/live-manual', '/live-ai-assist', '/live-ai-auto-test',
 ]);
 export function isOfflineChartPagePath(pathname) {
-  return pathname === '/' || pathname === '/market-scanner' || pathname === '/chart-replay' || SHARED_CHART_PAGE_PATHS.includes(pathname);
+  return pathname === '/' || pathname === '/market-scanner' || pathname === '/chart-replay' || pathname === '/position-mini-qa' || SHARED_CHART_PAGE_PATHS.includes(pathname);
 }

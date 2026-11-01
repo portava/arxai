@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChartReplayPlayer from "./ChartReplayPlayer";
 import type { ChartReplaySnapshot } from "@/lib/chart-engine/chartReplay";
 import { toWallClockInput } from "@/lib/chart-engine/chartTimeZone";
-const engine=vi.hoisted(()=>({capabilities:{id:"arx-native"},init:vi.fn(),destroy:vi.fn(),resize:vi.fn(),setSymbol:vi.fn(),setTimeframe:vi.fn(),setFeedState:vi.fn(),setCandles:vi.fn(),setOverlays:vi.fn(),setStructureLines:vi.fn(),setChartStyle:vi.fn(),setScaleMode:vi.fn(),setPriceScaleInverted:vi.fn(),setPriceOnlyScale:vi.fn(),setStudies:vi.fn(),setDrawings:vi.fn(),setDrawingInteraction:vi.fn(),setDrawingHandler:vi.fn(),goToLatest:vi.fn(),panBy:vi.fn(),zoomBy:vi.fn(),fitHistory:vi.fn(),goToTime:vi.fn(),setDisplayTimeZone:vi.fn()}));
+const engine=vi.hoisted(()=>({capabilities:{id:"arx-native"},init:vi.fn(),destroy:vi.fn(),resize:vi.fn(),setSymbol:vi.fn(),setTimeframe:vi.fn(),setFeedState:vi.fn(),setCandles:vi.fn(),setOverlays:vi.fn(),setStructureLines:vi.fn(),setChartStyle:vi.fn(),setScaleMode:vi.fn(),setPriceScaleInverted:vi.fn(),setPriceOnlyScale:vi.fn(),setStudies:vi.fn(),setDrawings:vi.fn(),setDrawingInteraction:vi.fn(),setDrawingHandler:vi.fn(),goToLatest:vi.fn(),panBy:vi.fn(),zoomBy:vi.fn(),fitHistory:vi.fn(),goToTime:vi.fn(),setSourceClockQualified:vi.fn(),setDisplayTimeZone:vi.fn()}));
 vi.mock("@/lib/chart-engine",()=>({createChartEngineAdapter:()=>engine}));
 function snapshot():ChartReplaySnapshot{return {id:"session-1",ownerId:7,symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:"a".repeat(64),capturedAt:1800000000000,lastClosedAt:1700000000+120*900,gaps:0,preferences:{style:"candles",scale:"linear",studies:[]},bars:Array.from({length:120},(_,i)=>({time:1700000000+i*900,closeTime:1700000000+(i+1)*900,open:100+i,high:102+i,low:99+i,close:101+i}))};}
 beforeEach(()=>{vi.useFakeTimers();vi.clearAllMocks();engine.capabilities.id="arx-native";vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});vi.stubGlobal("fetch",vi.fn());vi.stubGlobal("EventSource",vi.fn());vi.spyOn(document,"hidden","get").mockReturnValue(false);localStorage.clear();});
@@ -22,6 +22,7 @@ describe("isolated chart replay player",()=>{
  });
  it("installs historical prefix only and makes no market/account or stream requests",()=>{
   render(<ChartReplayPlayer snapshot={snapshot()} onExit={vi.fn()}/>);
+  expect(engine.setSourceClockQualified).toHaveBeenLastCalledWith(false);
   expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(100);
   expect(engine.setFeedState).toHaveBeenCalledWith({livePriceAffordance:false,source:"deriv_public"});
   expect(engine.setOverlays).toHaveBeenCalledWith([],null);expect(engine.setStructureLines).toHaveBeenCalledWith([],[]);

@@ -12,6 +12,8 @@ import {
   resolveDisplayStatus,
 } from "@/lib/chart-display-status";
 import { useAssistantName } from "@/lib/assistant-name";
+import { normalizeArxSymbol } from "@workspace/domain/market";
+import { sanitizeCandlestickData } from "@/lib/chart-engine/candleSanitize";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 const u = (p: string) => `${BASE}${p}`;
@@ -57,10 +59,48 @@ function calcRR(side: "BUY" | "SELL" | null, entry: number | null, sl: number | 
   return `1 : ${(reward / risk).toFixed(2)}`;
 }
 
+// A request-bound display result, not account-era/source-clock attestation.
+type PositionChartResult = {symbol: string | null; candles: Candle[]; feedStatus: FeedStatus | null; error: string | null};
+const EMPTY_CHART_RESULT: PositionChartResult = {symbol:null,candles:[],feedStatus:null,error:null};
+function sameChartSymbol(actual: unknown, requested: string): boolean {
+  return typeof actual === "string" && (normalizeArxSymbol(actual) ?? actual) === (normalizeArxSymbol(requested) ?? requested);
+}
+function isoMillis(value: unknown): number {
+  if (typeof value !== "string") return NaN;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts) return NaN;
+  const [,year,month,day,hour,minute,second] = parts;
+  const y=Number(year),m=Number(month),d=Number(day);
+  if (m<1 || m>12 || d<1 || d>new Date(Date.UTC(y,m,0)).getUTCDate() || Number(hour)>23 || Number(minute)>59 || Number(second)>59) return NaN;
+  const parsed=Date.parse(value); return Number.isFinite(parsed) && parsed>0 ? parsed : NaN;
+}
+function positionChartRows(value: unknown, requested: string): {candles:Candle[];feedStatus:FeedStatus|null} {
+  const obj=value && typeof value==="object" && !Array.isArray(value) ? value as Record<string,unknown> : null;
+  if (obj?.symbol !== undefined && !sameChartSymbol(obj.symbol,requested)) throw new Error("Chart response does not match the selected symbol.");
+  if (obj?.timeframe !== undefined && obj.timeframe!=="M15") throw new Error("Chart response does not match the requested interval.");
+  const feed=obj?.feedStatus && typeof obj.feedStatus==="object" ? obj.feedStatus as Record<string,unknown> : null;
+  if (feed?.symbol !== undefined && !sameChartSymbol(feed.symbol,requested)) throw new Error("Chart feed does not match the selected symbol.");
+  if (feed?.timeframe !== undefined && feed.timeframe!=="M15") throw new Error("Chart feed does not match the requested interval.");
+  const rows=Array.isArray(value)?value:Array.isArray(obj?.candles)?obj.candles:[];
+  const candles=rows.flatMap((raw:unknown)=>{
+    if (!raw || typeof raw!=="object") return [];
+    const c=raw as Record<string,unknown>;
+    if (c.symbol!==undefined && !sameChartSymbol(c.symbol,requested)) throw new Error("Chart candle does not match the selected symbol.");
+    if (c.timeframe!==undefined && c.timeframe!=="M15") throw new Error("Chart candle does not match the requested interval.");
+    // The current endpoint declares ISO openTime. Legacy numeric time is
+    // explicitly epoch milliseconds; do not guess seconds or fabricate now.
+    const time=c.openTime!==undefined?isoMillis(c.openTime):typeof c.time==="number"?c.time:isoMillis(c.time??c.timestamp);
+    if (![c.open,c.high,c.low,c.close].every(n=>typeof n==="number" && Number.isFinite(n))) return [];
+    return [{time,open:c.open as number,high:c.high as number,low:c.low as number,close:c.close as number}];
+  });
+  return {candles:sanitizeCandlestickData(candles),feedStatus:feed as FeedStatus|null};
+}
+
 export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTrade }: Props) {
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [feedStatus, setFeedStatus] = useState<FeedStatus | null>(null);
-  const [candleError, setCandleError] = useState<string | null>(null);
+  const [chartResult, setChartResult] = useState<PositionChartResult>(EMPTY_CHART_RESULT);
+  // Withhold in this render, before passive effects, when the label changes.
+  const currentChart = chartResult.symbol === p.symbol ? chartResult : EMPTY_CHART_RESULT;
+  const {candles, feedStatus, error:candleError} = currentChart;
   const [analysisAt, setAnalysisAt] = useState<Date | null>(null);
   const [rubyBusy, setRubyBusy] = useState(false);
   const [rubyReply, setRubyReply] = useState<string | null>(null);
@@ -74,25 +114,20 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
   useEffect(() => {
     if (!p.symbol) return;
     let cancelled = false;
-    setCandleError(null);
-    setFeedStatus(null);
-    fetch(u(`/api/chart/candles?symbol=${encodeURIComponent(p.symbol)}&timeframe=M15&limit=100`), { credentials: "include" })
+    const requestedSymbol=p.symbol;
+    setChartResult(previous=>previous.symbol===requestedSymbol
+      ? {...previous,feedStatus:null,error:null}
+      : {symbol:requestedSymbol,candles:[],feedStatus:null,error:null});
+    fetch(u(`/api/chart/candles?symbol=${encodeURIComponent(requestedSymbol)}&timeframe=M15&limit=100`), { credentials: "include" })
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((data: unknown) => {
         if (cancelled) return;
-        const obj = data as Record<string, unknown> | null;
-        const arr = Array.isArray(data) ? data : (obj?.candles as unknown[] | undefined) ?? [];
-        const mapped: Candle[] = (arr as Array<Record<string, unknown>>).map((c) => ({
-          time: typeof c.time === "number" ? c.time : new Date(String(c.time ?? c.timestamp ?? "")).getTime(),
-          open: Number(c.open ?? 0), high: Number(c.high ?? 0),
-          low: Number(c.low ?? 0), close: Number(c.close ?? 0),
-        })).filter((c) => Number.isFinite(c.time) && c.open > 0);
-        setCandles(mapped);
-        // Capture feedStatus from the rich response; null on a bare-array
-        // fallback (resolveDisplayStatus degrades null to a safe non-LIVE state).
-        setFeedStatus((obj?.feedStatus as FeedStatus | undefined) ?? null);
+        const parsed=positionChartRows(data,requestedSymbol);
+        setChartResult({symbol:requestedSymbol,...parsed,error:null});
       })
-      .catch((e: Error) => { if (!cancelled) { setCandleError(e.message); setFeedStatus(null); } });
+      .catch((e: Error) => { if (!cancelled) setChartResult(previous=>({
+        symbol:requestedSymbol,candles:previous.symbol===requestedSymbol?previous.candles:[],feedStatus:null,error:e.message,
+      })); });
     return () => { cancelled = true; };
   }, [p.symbol, analysisAt]);
 

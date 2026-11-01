@@ -1,5 +1,6 @@
 import type { NativePlot, NativePriceFrame } from "./nativePriceRenderer";
-import { formatChartTime, type ChartTimeZone } from "./chartTimeZone";
+import type { ChartTimeZone } from "./chartTimeZone";
+import { formatSourceChartTime } from "./chartClockEvidence";
 
 /** CSS-pixel layout. The price gutter needs at least 88px for its supported
  * label geometry. Backing-store/DPR scaling belongs to the viewport. */
@@ -86,7 +87,7 @@ export function nativePriceTicks(frame: NativePriceFrame, options: { priceDigits
 
 /** Every time label is attached to an actual loaded bar. Empty margins and
  * market gaps never gain interpolated timestamps from the renderer. */
-export function nativeTimeTicks(frame: NativePriceFrame, options: { timeZone?: ChartTimeZone; minSpacing?: number } = {}): NativeTimeTick[] {
+export function nativeTimeTicks(frame: NativePriceFrame, options: { timeZone?: ChartTimeZone; utcClockQualified?: boolean; minSpacing?: number } = {}): NativeTimeTick[] {
   const gap = Number.isFinite(options.minSpacing) ? Math.max(156, options.minSpacing!) : 174;
   const first = Math.max(0, Math.ceil(frame.range.from));
   const last = Math.min(frame.series.candles.length - 1, Math.floor(frame.range.to));
@@ -95,7 +96,7 @@ export function nativeTimeTicks(frame: NativePriceFrame, options: { timeZone?: C
   for (let i = first; i <= last && result.length < 100; i += stride) {
     const time = frame.series.candles[i]!.time, x = frame.timeToX(time);
     if (x === null || !Number.isFinite(time) || Math.abs(time) > 8.64e12) continue;
-    try { result.push({ x, time, label: formatChartTime(time, options.timeZone ?? "UTC", { seconds: true }) }); }
+    try { result.push({ x, time, label: formatSourceChartTime(time, options.utcClockQualified === true, options.timeZone ?? "UTC", { seconds: true }) }); }
     catch { /* Unsupported Date range cannot be labelled as a real clock time. */ }
   }
   return result;
@@ -103,7 +104,7 @@ export function nativeTimeTicks(frame: NativePriceFrame, options: { timeZone?: C
 
 /** Grid plus labels. Does not clear candles, draw last-price badges or attest
  * source-clock quality. The caller's feed/truth state remains authoritative. */
-export function paintNativeAxes(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, options: { timeZone?: ChartTimeZone; priceDigits?: number; timeAxisBottom?: number } = {}): void {
+export function paintNativeAxes(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, options: { timeZone?: ChartTimeZone; utcClockQualified?: boolean; priceDigits?: number; timeAxisBottom?: number } = {}): void {
   const { left, top, width, height } = frame.plot, right = left + width, bottom = top + height;
   const prices = nativePriceTicks(frame, options), times = nativeTimeTicks(frame, options);
   ctx.save();
@@ -124,7 +125,13 @@ export function paintNativeAxes(ctx: CanvasRenderingContext2D, frame: NativePric
       const compactSeconds = tick.label.replace(/^\d{4}-/, "");
       const compact = tick.label.replace(/^\d{4}-(\d{2}-\d{2}) (\d{2}:\d{2}):\d{2} (.+)$/, "$1 $2 $3");
       const clock = tick.label.match(/ (\d{2}:\d{2}):\d{2} /)?.[1] ?? tick.label;
-      const label = [tick.label, compactSeconds, compact, clock].find(value => ctx.measureText(value).width <= width);
+      // A small plot may shorten a date, never turn an unqualified source
+      // timestamp into a claimed UTC/local time. At the minimum supported
+      // width retain at least the explicit source-clock marker.
+      const candidates = options.utcClockQualified === true
+        ? [tick.label, compactSeconds, compact, clock]
+        : [tick.label, compactSeconds, `${tick.label.slice(5, 16)} source`, `${clock} source`, "source"];
+      const label = candidates.find(value => ctx.measureText(value).width <= width);
       if (!label) continue;
       const measured = ctx.measureText(label).width;
       const x = Math.max(left, Math.min(right - measured, tick.x - measured / 2));

@@ -232,7 +232,39 @@ describe("linked view adapter boundaries", () => {
 describe("display time zone", () => {
   const TOKYO_1446 = Date.UTC(2026, 9, 28, 5, 46) / 1000;
   const installed = () => mocks.createChart.mock.calls.at(-1)![1];
-  it("installs stable formatters at createChart that reproduce the library defaults under UTC", () => {
+  it("defaults to source-clock labels without converting the requested zone", () => {
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    const options = installed();
+    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("2026-10-28 05:46 source clock (UTC unverified)");
+    const expected = ["2026 source", "10 source", "28 source", "05:46 source", "05:46:00 source"];
+    for (let kind = 0; kind < 5; kind++) expect(options.timeScale.tickMarkFormatter(TOKYO_1446, kind, "en-US")).toBe(expected[kind]);
+    expect(options.timeScale.tickMarkMaxCharacterLength).toBeGreaterThanOrEqual(14);
+  });
+  it("accepts only literal true and redraws labels without replacing candle data", () => {
+    adapter.setCandles([bar(TOKYO_1446)]);
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    const options = installed();
+    (adapter as any).setSourceClockQualified("true");
+    expect(options.localization.timeFormatter(TOKYO_1446)).toContain("source clock");
+    (adapter as any).setSourceClockQualified(true);
+    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   14:46 GMT+9");
+    mocks.chart.applyOptions.mockClear();
+    (adapter as any).setSourceClockQualified(true);
+    expect(mocks.chart.applyOptions).not.toHaveBeenCalled();
+    (adapter as any).setSourceClockQualified(false);
+    expect(options.localization.timeFormatter(TOKYO_1446)).toContain("05:46 source clock");
+    expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(1);
+    expect(mocks.series.setData).toHaveBeenCalledTimes(1);
+  });
+  it.each(["resetDataContext", "destroy"] as const)("withdraws qualification on %s", operation => {
+    const options = installed();
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    (adapter as any).setSourceClockQualified(true);
+    adapter[operation]();
+    expect(options.localization.timeFormatter(TOKYO_1446)).toContain("05:46 source clock");
+  });
+  it("installs stable formatters at createChart that reproduce qualified library defaults under UTC", () => {
+    adapter.setSourceClockQualified(true);
     const options = installed();
     expect(navigator.language).toBe("en-US");
     expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46");
@@ -253,9 +285,12 @@ describe("display time zone", () => {
     expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(2);
     expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46");
   });
-  it("keeps the zone across a re-init without touching data", () => {
+  it("keeps the requested zone across re-init but requires fresh qualification", () => {
     adapter.setDisplayTimeZone("Asia/Tokyo");
+    adapter.setSourceClockQualified(true);
     adapter.init({container:document.createElement("div"),height:400});
+    expect(installed().localization.timeFormatter(TOKYO_1446)).toContain("05:46 source clock");
+    adapter.setSourceClockQualified(true);
     expect(installed().localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   14:46 GMT+9");
   });
   it("leaves goToTime, candle data and UTC-second navigation unchanged", () => {

@@ -57,6 +57,7 @@ function makeAdapter(): FakeAdapter {
     setLinkedTimeRange: track("setLinkedTimeRange"),
     setLinkedCrosshair: track("setLinkedCrosshair"),
     setDisplayTimeZone: track("setDisplayTimeZone"),
+    setSourceClockQualified: track("setSourceClockQualified"),
     priceToCoordinate: vi.fn(() => null),
   } as unknown as FakeAdapter;
   created.push(adapter);
@@ -65,9 +66,10 @@ function makeAdapter(): FakeAdapter {
 
 vi.mock("@/lib/chart-engine", () => ({ createChartEngineAdapter: () => { failIfDue("create"); return makeAdapter(); } }));
 
+let olderClockBars: Array<{time:number;open:number;high:number;low:number;close:number}> = [];
 vi.mock("@/lib/useChartDeepHistory", () => ({
   useChartDeepHistory: () => ({
-    olderCandles: [], loading: false, hasMore: false, providerCapped: false, limitationReason: null,
+    olderCandles: olderClockBars, loading: false, hasMore: false, providerCapped: false, limitationReason: null,
     coverageDays: 0, depthTargetDays: 0, loadedAny: false, loadOlder: vi.fn(), reset: vi.fn(),
   }),
 }));
@@ -142,6 +144,7 @@ beforeEach(() => {
   frames = [];
   streams = [];
   candleResponse = undefined;
+  olderClockBars = [];
   intelligenceResponse = undefined;
   candleRequests.length = 0;
   truthSymbols.length = 0;
@@ -969,6 +972,29 @@ describe("deferred comparison engine init", () => {
     expect(created[0]!.destroy).not.toHaveBeenCalled();
   });
 
+  it("forwards original clock evidence and withdraws it when the same UTC view loses qualification", () => {
+    const response=liveResponse("EURUSD","H1");candleResponse=response;
+    const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const engine=created[0]!;
+    expect(engine.setSourceClockQualified).toHaveBeenLastCalledWith(true);
+    expect(engine.setDisplayTimeZone).toHaveBeenLastCalledWith("UTC");
+    candleResponse={...response,candles:response.candles.map(c=>({...c,timeBasisEvidence:undefined}))};
+    view.rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(created).toHaveLength(1);
+    expect(engine.setSourceClockQualified).toHaveBeenLastCalledWith(false);
+    expect(engine.setDisplayTimeZone).toHaveBeenLastCalledWith("UTC");
+  });
+
+  it("withdraws renderer clock qualification for expanded history without original UTC evidence", () => {
+    candleResponse=liveResponse("EURUSD","H1");
+    const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const engine=created[0]!;expect(engine.setSourceClockQualified).toHaveBeenLastCalledWith(true);
+    olderClockBars=[{time:OPEN_MS/1000-3600,open:1.1,high:1.2,low:1,close:1.11}];
+    view.rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    expect(engine.setSourceClockQualified).toHaveBeenLastCalledWith(false);
+    expect(screen.getByTestId("chart-clock-authority").textContent).toContain("Loaded history has no qualified UTC mapping");
+  });
+
   it("gives a deferred comparison the primary's stored display zone in its build, before the next frame", () => {
     candleResponse=liveResponse("EURUSD","H1");
     localStorage.setItem("arx.chart.preferences.v1", JSON.stringify({ style: "candles", scale: "linear", studies: [], timeZone: "Asia/Tokyo" }));
@@ -979,7 +1005,8 @@ describe("deferred comparison engine init", () => {
     expect(inits()).toEqual(["1:init"]);
     // Applied inside the build task itself: no frame has run since.
     const order = calls.map(call => call.slice(2));
-    expect(order.slice(0, 6)).toEqual(["init", "setSymbol", "setTimeframe", "setCrosshairHandler", "setViewLinkStatusHandler", "setDisplayTimeZone"]);
+    expect(order.slice(0, 7)).toEqual(["init", "setSymbol", "setTimeframe", "setCrosshairHandler", "setViewLinkStatusHandler", "setSourceClockQualified", "setDisplayTimeZone"]);
+    expect(created[0]!.setSourceClockQualified).toHaveBeenCalledWith(true);
     expect(created[0]!.setDisplayTimeZone).toHaveBeenCalledWith("Asia/Tokyo");
     expect(created[0]!.setDisplayTimeZone.mock.calls.every(([zone]) => zone === "Asia/Tokyo")).toBe(true);
     expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).value).toBe("Asia/Tokyo");

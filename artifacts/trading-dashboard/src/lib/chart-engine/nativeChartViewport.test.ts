@@ -145,7 +145,7 @@ describe('native Canvas viewport lifecycle and source ownership',()=>{
     expect(viewport.getState().referencePrice).toBe(0);expect(viewport.getState()).toMatchObject({status:'unavailable',error:'INVALID_SCALE'});expect(viewport.exportImage()).toBeNull();
   });
   it('daily display stays UTC without changing source timestamps',()=>{
-    create();const time=viewport.getFrame()!.series.candles[0]!.time;viewport.setDisplayTimeZone('America/New_York','D1');
+    create();viewport.setSourceClockQualified(true);const time=viewport.getFrame()!.series.candles[0]!.time;viewport.setDisplayTimeZone('America/New_York','D1');
     expect(viewport.getState().effectiveTimeZone).toBe('UTC');viewport.setDisplayTimeZone('America/New_York','M5');expect(viewport.getState().effectiveTimeZone).toBe('America/New_York');expect(viewport.getFrame()!.series.candles[0]!.time).toBe(time);
   });
   it('zero/invalid sizes safely withhold frames and resize restores current source',()=>{
@@ -285,4 +285,44 @@ it.each(['pointercancel','blur'])('outside %s clears captured gestures and never
   if(type==='blur')window.dispatchEvent(new Event('blur'));else outsidePointer(type,200,100);
   const before=viewport.getRange();pointer('pointermove',400,100);expect(viewport.getRange()).toEqual(before);
   viewport.destroy();outsidePointer('pointermove',500,100);window.dispatchEvent(new Event('blur'));flush();expect(queue.size).toBe(0);
+});
+
+
+describe('native viewport source clock qualification',()=>{
+ it('defaults to source time, revokes completed proof on qualification changes, and does not loop for unchanged evidence',()=>{
+  create({timeZone:'America/New_York'});expect(viewport.getState()).toMatchObject({utcClockQualified:false,effectiveTimeZone:'UTC'});expect(ctx.fillText.mock.calls.some((a:any[])=>String(a[0]).includes('source'))).toBe(true);
+  viewport.setSourceClockQualified(true);expect(viewport.isAnalysisFocusVerified()).toBe(false);ctx.fillText.mockClear();flush();expect(viewport.getState()).toMatchObject({utcClockQualified:true,effectiveTimeZone:'America/New_York'});expect(ctx.fillText.mock.calls.some((a:any[])=>/EST|EDT/.test(String(a[0])))).toBe(true);
+  const paints=viewport.getState().paintCount;viewport.setSourceClockQualified(true);expect(queue.size).toBe(0);expect(viewport.getState().paintCount).toBe(paints);
+  viewport.setSourceClockQualified(false);expect(viewport.isAnalysisFocusVerified()).toBe(false);ctx.fillText.mockClear();expect(viewport.exportImage()).toBe('data:image/png;base64,fixture');expect(ctx.fillText.mock.calls.some((a:any[])=>String(a[0]).includes('source'))).toBe(true);expect(viewport.getState().effectiveTimeZone).toBe('UTC');
+ });
+ it('reset withdraws qualification and same-candle UTC preference cannot preserve it',()=>{
+  create();viewport.setSourceClockQualified(true);flush();viewport.setSourceClockQualified(false);expect(viewport.isAnalysisFocusVerified()).toBe(false);flush();expect(viewport.getState().utcClockQualified).toBe(false);
+  viewport.setSourceClockQualified(true);flush();viewport.resetContext();viewport.setCandles(candles());ctx.fillText.mockClear();flush();expect(viewport.getState().utcClockQualified).toBe(false);expect(ctx.fillText.mock.calls.some((a:any[])=>String(a[0]).includes('source'))).toBe(true);
+  viewport.setSourceClockQualified('true' as unknown as boolean);expect(viewport.getState().utcClockQualified).toBe(false);expect(queue.size).toBe(0);
+ });
+ it('qualified daily views retain existing UTC convention without granting unqualified conversion',()=>{
+  create({timeZone:'America/New_York',timeframe:'D1'});viewport.setSourceClockQualified(true);flush();expect(viewport.getState()).toMatchObject({utcClockQualified:true,effectiveTimeZone:'UTC'});
+ });
+});
+
+
+describe('native viewport retained caller height',()=>{
+ it('keeps a changed explicit height through ResizeObserver, window resize, and DPR changes',()=>{
+  create({height:520});viewport.resize(undefined,360);flush();expect(viewport.getState().height).toBe(360);
+  width=390;observers[0]!.callback([],{} as ResizeObserver);flush();expect(viewport.getState()).toMatchObject({width:390,height:360});
+  window.dispatchEvent(new Event('resize'));flush();expect(viewport.getState().height).toBe(360);
+  vi.stubGlobal('devicePixelRatio',3);media.at(-1)!.callback?.({});flush();expect(viewport.getState()).toMatchObject({height:360,pixelRatio:3});expect(canvas.height).toBe(1080);
+ });
+ it('retains explicit height even when equal to current geometry, but unconfigured charts still measure container height',()=>{
+  create();height=450;observers[0]!.callback([],{} as ResizeObserver);expect(viewport.getState().height).toBe(450);
+  viewport.resize(undefined,450);height=600;observers[0]!.callback([],{} as ResizeObserver);expect(viewport.getState().height).toBe(450);
+ });
+ it('retains explicit zero until a valid caller height replaces it',()=>{
+  create({height:520});viewport.resize(undefined,0);observers[0]!.callback([],{} as ResizeObserver);expect(viewport.getState()).toMatchObject({height:0,status:'unavailable'});
+  viewport.resize(undefined,300);observers[0]!.callback([],{} as ResizeObserver);expect(viewport.getState().height).toBe(300);
+ });
+ it('a reentrant resize supersedes the old pending height, including later observer calls',()=>{
+  let armed=false;create({height:520,onCrosshair:row=>{if(!row&&armed){armed=false;viewport.resize(undefined,280);}}});pointer('pointermove',200,100);armed=true;viewport.resize(undefined,360);expect(viewport.getState().height).toBe(280);
+  observers[0]!.callback([],{} as ResizeObserver);expect(viewport.getState().height).toBe(280);
+ });
 });

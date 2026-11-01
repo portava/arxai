@@ -12,6 +12,20 @@ function pointer(canvas:HTMLCanvasElement,x:number,y:number){const e=new MouseEv
 beforeEach(()=>{queue=new Map();next=1;adapters=[];containers=[];ctx=new Proxy({measureText:vi.fn((text:string)=>({width:text.length*6}))}as any,{get:(target,key)=>{if(!(key in target))target[key]=vi.fn();return target[key];},set:(target,key,value)=>{target[key]=value;return true;}});vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(ctx);vi.spyOn(HTMLCanvasElement.prototype,'toDataURL').mockReturnValue('data:image/png;base64,fixture');vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){const width=this instanceof HTMLCanvasElement?parseFloat(this.style.width):800,height=this instanceof HTMLCanvasElement?parseFloat(this.style.height):400;return{x:0,y:0,left:0,top:0,right:width,bottom:height,width,height,toJSON(){}};});vi.stubGlobal('requestAnimationFrame',(cb:FrameRequestCallback)=>{const id=next++;queue.set(id,cb);return id;});vi.stubGlobal('cancelAnimationFrame',(id:number)=>queue.delete(id));vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});vi.stubGlobal('matchMedia',()=>({addEventListener(){},removeEventListener(){}}));vi.stubGlobal('devicePixelRatio',1);vi.stubGlobal('innerWidth',1200);});
 afterEach(()=>{adapters.forEach(a=>a.destroy());containers.forEach(c=>c.remove());vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('native ChartEngineAdapter contract',()=>{
+ it('keeps source clock qualification independent per chart and revokes it on context reset',()=>{
+  const a=setup(),b=setup();a.adapter.setCandles(bars());b.adapter.setCandles(bars());
+  a.adapter.setDisplayTimeZone('America/New_York');b.adapter.setDisplayTimeZone('America/New_York');flush();
+  expect(a.viewport().getState().utcClockQualified).toBe(false);
+  expect(a.viewport().getState().effectiveTimeZone).toBe('UTC');
+  const before=a.viewport().getCandles();a.adapter.setSourceClockQualified(true);
+  expect(a.adapter.isAnalysisFocusVerified()).toBe(false);flush();
+  expect(a.viewport().getState().effectiveTimeZone).toBe('America/New_York');
+  expect(b.viewport().getState().utcClockQualified).toBe(false);
+  a.adapter.setSourceClockQualified(false);expect(a.adapter.isAnalysisFocusVerified()).toBe(false);flush();
+  expect(a.viewport().getState().effectiveTimeZone).toBe('UTC');expect(a.viewport().getCandles()).toEqual(before);
+  a.adapter.setSourceClockQualified(true);a.adapter.resetDataContext();a.adapter.setCandles(bars());flush();
+  expect(a.viewport().getState().utcClockQualified).toBe(false);
+ });
  it('constructor is side-effect-free and init/destroy own one canvas',()=>{const a=new NativeChartsAdapter();expect(queue.size).toBe(0);expect(a.capabilities).toMatchObject({id:'arx-native',draggableOrders:false});const f=setup();expect(f.container.querySelectorAll('canvas')).toHaveLength(1);f.adapter.init({container:f.container,height:300});expect(f.container.querySelectorAll('canvas')).toHaveLength(1);f.adapter.destroy();f.adapter.destroy();expect(f.container.querySelector('canvas')).toBeNull();expect(f.adapter.exportImage()).toBeNull();flush();});
  it('sanitizes immutable canonical candles and returns only actual visible rows',()=>{const f=setup(),data=bars();f.adapter.setCandles([...data,{...data[3]!,high:NaN}]);flush();expect(f.viewport().getCandles()).toHaveLength(200);data.at(-1)!.close=999;const visible=f.adapter.getVisibleCandles();expect(visible.at(-1)!.close).toBe(301);visible.at(-1)!.close=998;expect(f.adapter.getVisibleCandles().at(-1)!.close).toBe(301);expect(visible.length).toBeLessThan(200);});
  it('preserves zoom/pan timestamp anchors after prepended history',()=>{const f=setup();f.adapter.setCandles(bars(100,200));f.adapter.panBy(-.5);flush();const before=f.adapter.getVisibleCandles().map(c=>c.time);f.adapter.setCandles(bars(0,300));flush();expect(f.adapter.getVisibleCandles().map(c=>c.time)).toEqual(before);});

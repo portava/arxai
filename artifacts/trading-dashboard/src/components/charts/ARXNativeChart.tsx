@@ -707,8 +707,8 @@ export function ARXNativeChart({
   // canvas engine. Settled empty/error responses retain their existing engine
   // behavior; an engine already created survives subsequent loading cycles.
   const canStartPrimaryEngine = !query.isLoading || hasCandles;
-  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, canStartPrimaryEngine });
-  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, canStartPrimaryEngine }; });
+  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, utcClockQualified, canStartPrimaryEngine });
+  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, utcClockQualified, canStartPrimaryEngine }; });
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -734,6 +734,7 @@ export function ARXNativeChart({
       }
       engine.setViewLinkStatusHandler?.(message => {if (linkStatusRef.current) linkStatusRef.current.textContent = message;});
       // A deferred comparison never paints UTC ticks before its zone arrives.
+      engine.setSourceClockQualified?.(inputs.utcClockQualified);
       engine.setDisplayTimeZone?.(inputs.displayZone);
       inputs.updateLegend(null);
       building = null;
@@ -815,6 +816,7 @@ export function ARXNativeChart({
       adapter.setDrawings?.([]);
       adapter.setCandles([]);
     }
+    adapter.setSourceClockQualified?.(false);
     adapter.setSymbol?.(resolvedSymbol);
     adapter.setTimeframe?.(timeframe);
     if (!engineArrived) newestBarSecRef.current = null;
@@ -841,6 +843,7 @@ export function ARXNativeChart({
   useLayoutEffect(() => {
     timeZoneRef.current = displayZone;
     utcClockRef.current = utcClockQualified;
+    adapterRef.current?.setSourceClockQualified?.(utcClockQualified);
     adapterRef.current?.setDisplayTimeZone?.(displayZone);
     updateLegend(inspectedCandleRef.current);
   }, [displayZone, utcClockQualified, chartEpoch, updateLegend]);

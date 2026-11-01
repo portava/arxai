@@ -47,6 +47,7 @@ import { applyStructureLines, clearStructureLines } from "./structureLines";
 import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
 import { panChartWindow, zoomChartWindow } from "./chartNavigation";
 import { SmartChartAnnotationPrimitive, type SmartChartAnnotation } from "./smartChartAnnotation";
+import { formatSourceChartTime } from "./chartClockEvidence";
 import { crosshairTimeLabel, tickMarkLabel, type ChartTickMarkType, type ChartTimeZone } from "./chartTimeZone";
 
 // The helper's tick types mirror lightweight-charts' TickMarkType numbers.
@@ -170,8 +171,21 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private displayZone: ChartTimeZone = "UTC";
   // lightweight-charts' own default localization.locale.
   private locale = typeof navigator !== "undefined" ? navigator.language : "";
-  private readonly timeLabel = (time: Time): string => typeof time === "number" ? crosshairTimeLabel(time, this.displayZone, this.locale) : String(time);
-  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => typeof time === "number" ? tickMarkLabel(time, type as number as ChartTickMarkType, this.displayZone, locale) : null;
+  private sourceClockQualified = false;
+  private readonly timeLabel = (time: Time): string => typeof time === "number"
+    ? this.sourceClockQualified ? crosshairTimeLabel(time, this.displayZone, this.locale)
+      : formatSourceChartTime(time, false, this.displayZone)
+    : String(time);
+  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => {
+    if (typeof time !== "number") return this.sourceClockQualified ? null : `${String(time)} source`;
+    if (this.sourceClockQualified) return tickMarkLabel(time, type as number as ChartTickMarkType, this.displayZone, locale);
+    if (!Number.isFinite(time)) return "source";
+    // Retain the source clock's components, never convert an unqualified
+    // timestamp to the requested zone. The crosshair explains the limitation.
+    const text = formatSourceChartTime(time, false, this.displayZone, { seconds: true });
+    const part = [text.slice(0, 4), text.slice(5, 7), text.slice(8, 10), text.slice(11, 16), text.slice(11, 19)][type as number];
+    return part ? `${part} source` : "source";
+  };
 
   private container: HTMLElement | null = null;
   private candles: ChartEngineCandle[] = [];
@@ -227,6 +241,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         timeVisible: true,
         secondsVisible: false,
         tickMarkFormatter: this.tickLabel,
+        tickMarkMaxCharacterLength: this.sourceClockQualified ? 8 : 14,
         borderColor: "rgba(63, 63, 70, 0.5)",
         // rightOffset keeps the latest candle slightly inside the canvas edge so
         // the forming bar never clips against the price axis.
@@ -367,6 +382,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   destroy(): void {
+    this.sourceClockQualified = false;
     this.scannerSurface?.dispose();
     if (this.viewportFrame != null) cancelAnimationFrame(this.viewportFrame);
     this.viewportFrame = null;
@@ -445,6 +461,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   resetDataContext(): void {
+    this.setSourceClockQualified(false);
     this.scannerSurface?.dispose();
     this.setFeedState({livePriceAffordance:false,source:null});
     this.setDrawingHandler(null);
@@ -787,6 +804,12 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   /** Relabel axis ticks and the crosshair time. Re-applying the same formatter
    * references clears the library's tick-label cache; data, drawings, links and
    * goToTime are untouched and stay UTC seconds. */
+  setSourceClockQualified(qualified: boolean): void {
+    const next = qualified === true;
+    if (next === this.sourceClockQualified) return;
+    this.sourceClockQualified = next;
+    this.chart?.applyOptions({ timeScale: { tickMarkFormatter: this.tickLabel, tickMarkMaxCharacterLength: next ? 8 : 14 }, localization: { timeFormatter: this.timeLabel } });
+  }
   setDisplayTimeZone(zone: ChartTimeZone): void {
     if (zone === this.displayZone) return;
     this.displayZone = zone;

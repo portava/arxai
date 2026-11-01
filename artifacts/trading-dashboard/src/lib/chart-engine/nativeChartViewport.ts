@@ -48,6 +48,7 @@ export class NativeChartViewport {
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
   private readonly options: NativeChartViewportOptions;
+  private requestedHeight: number | undefined;
   private series = prepareNativePriceSeries([]);
   private readonly studies = new NativeChartStudies();
   private priceOnlyScale = false;
@@ -71,6 +72,7 @@ export class NativeChartViewport {
   private scale: ChartScaleMode = "linear";
   private inverted = false;
   private timeZone: ChartTimeZone = "UTC";
+  private utcClockQualified = false;
   private timeframe = "M1";
   private priceDigits = 2;
   private symbol = "";
@@ -101,6 +103,7 @@ export class NativeChartViewport {
 
   constructor(private readonly container: HTMLElement, options: NativeChartViewportOptions = {}) {
     this.options = { ...options };
+    this.requestedHeight = options.height;
     if (options.style && CHART_STYLES.includes(options.style)) this.style = options.style;
     if (options.scale && ["linear", "log", "percent", "indexed"].includes(options.scale)) this.scale = options.scale;
     this.inverted = options.inverted === true;
@@ -186,7 +189,7 @@ export class NativeChartViewport {
     if (this.destroyed) return;
     const revision = ++this.mutationRevision;
     const bounds = this.container.getBoundingClientRect();
-    const w = width ?? bounds.width, h = height ?? this.options.height ?? bounds.height;
+    const w = width ?? bounds.width, h = height ?? this.requestedHeight ?? bounds.height;
     const requestedRatio = Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
     const valid = Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 && w <= MAX_CSS_SIDE && h <= MAX_CSS_SIDE;
     const nextWidth = valid ? w : 0, nextHeight = valid ? h : 0;
@@ -199,6 +202,9 @@ export class NativeChartViewport {
       this.canvas.style.width = `${this.width}px`; this.canvas.style.height = `${this.height}px`;
       this.invalidate();
     }
+    // Responsive callers own the latest explicit height. Observer/DPR events
+    // must not reinstate the constructor height (or a superseded resize).
+    if (height !== undefined) this.requestedHeight = height;
     this.watchDpr();
   }
 
@@ -481,7 +487,7 @@ export class NativeChartViewport {
     const frame = this.getFrame();
     return Object.freeze({ status: this.destroyed ? "destroyed" : this.paintError ? "error" : !this.series.candles.length ? "empty" : frame ? "ready" : "unavailable",
       error: this.paintError ?? this.frameIssue, callbackError: this.callbackError, referencePrice: this.referencePrice, style: this.style, scale: this.scale, inverted: this.inverted,
-      timeZone: this.timeZone, effectiveTimeZone: effectiveDisplayZone(this.timeZone, this.timeframe), timeframe: this.timeframe,
+      timeZone: this.timeZone, utcClockQualified: this.utcClockQualified, effectiveTimeZone: this.utcClockQualified ? effectiveDisplayZone(this.timeZone, this.timeframe) : "UTC", timeframe: this.timeframe,
       barCount: this.series.candles.length, discarded: this.series.discarded, range: this.getRange(), followingLatest: this.followingLatest,
       livePriceAffordance: this.livePriceAffordance, linkedCrosshairTime: this.linkedCrosshairTime,
       drawingCount: this.drawings.length, selectedDrawing: this.selectedDrawing, editingDrawing: this.frozenDrawingFrame !== null,
@@ -514,6 +520,13 @@ export class NativeChartViewport {
     const revision = ++this.mutationRevision;
     this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.scale = scale; this.inverted = inverted; this.invalidate();
   }
+  /** Presentation evidence supplied by the existing source-qualified shell. */
+  setSourceClockQualified(qualified: boolean): void {
+    const next = qualified === true;
+    if (this.destroyed || next === this.utcClockQualified) return;
+    ++this.mutationRevision;
+    this.utcClockQualified = next; this.invalidate();
+  }
   setDisplayTimeZone(zone: ChartTimeZone, timeframe = this.timeframe): void {
     if (this.destroyed || !isChartTimeZone(zone)) return;
     ++this.mutationRevision;
@@ -529,7 +542,7 @@ export class NativeChartViewport {
     this.drawings = []; this.selectedDrawing = null; this.drawingInteraction = null; this.drawingHandler = null;
     this.frozenDrawingFrame = null;this.editAnchorTimes=[];
     this.overlayLayers.reset();this.scannerOverlays.reset();
-    this.livePriceAffordance=false;this.linkedCrosshairTime=null;
+    this.livePriceAffordance=false;this.linkedCrosshairTime=null;this.utcClockQualified=false;
     this.studies.reset();
     this.followingLatest = true; this.invalidate();
   }
@@ -556,7 +569,7 @@ export class NativeChartViewport {
       if (frame) {
         const layout = this.getPaneLayout()!, last = layout.panes.at(-1) ?? layout.price;
         const chartBottom = last.top + last.height;
-        paintNativeAxes(ctx, frame, { timeZone: effectiveDisplayZone(this.timeZone, this.timeframe), priceDigits: this.priceDigits, timeAxisBottom:chartBottom });
+        paintNativeAxes(ctx, frame, { timeZone: effectiveDisplayZone(this.timeZone, this.timeframe), utcClockQualified: this.utcClockQualified, priceDigits: this.priceDigits, timeAxisBottom:chartBottom });
         paintNativePriceLayer(ctx, frame);
         if (!this.analysisFocused) {
           paintNativeStudies(ctx, frame, layout.panes, this.studies);

@@ -197,6 +197,7 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
  setScaleMode(scale:ChartScaleMode){this.scale=scale;this.viewport?.setScale(scale,this.inverted);}
  setPriceScaleInverted(value:boolean){this.inverted=value;this.viewport?.setScale(this.scale,value);}
  setPriceOnlyScale(value:boolean){this.viewport?.setPriceOnlyScale(value);}
+ setSourceClockQualified(qualified:boolean){this.viewport?.setSourceClockQualified(qualified);}
  setDisplayTimeZone(zone:ChartTimeZone){this.timeZone=zone;this.viewport?.setDisplayTimeZone(zone,this.timeframe);}
  setSymbol(symbol:string){this.symbol=symbol;this.viewport?.setSymbol(symbol);}
  setTimeframe(timeframe:string){this.timeframe=timeframe;this.interval=chartIntervalSeconds(timeframe)??0;this.viewport?.setDisplayTimeZone(this.timeZone,timeframe);}

@@ -43,6 +43,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
     if(!container.current)return;
     const engine=createChartEngineAdapter();adapter.current=engine;
     engine.init({container:container.current,height:600,visibleDesktop:150,visibleMobile:80});
+    engine.setSourceClockQualified?.(false);
     engine.setSymbol?.(snapshot.symbol);engine.setTimeframe?.(snapshot.timeframe);
     engine.setFeedState({livePriceAffordance:false,source:snapshot.source});
     engine.setOverlays([],null);engine.setStructureLines?.([],[]);
