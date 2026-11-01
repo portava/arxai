@@ -56,7 +56,14 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     : preferences.style === "hollow"
     ? "Hollow body: close at or above open. Colour compares with the previous close (own open for the first loaded candle); equal counts as up."
     : null;
-  const [history,setHistory] = useState<{past:ChartDrawing[][];present:ChartDrawing[];future:ChartDrawing[][]}>(()=>({past:[],present:ephemeralDrawings ? [] : validateDrawings(readChartStorage(key)),future:[]}));
+  const [history,setHistoryState] = useState<{past:ChartDrawing[][];present:ChartDrawing[];future:ChartDrawing[][]}>(()=>({past:[],present:ephemeralDrawings ? [] : validateDrawings(readChartStorage(key)),future:[]}));
+  // The same owner transaction is used by buttons and local text commands.
+  // Refs consume synchronous repeated calls before React renders a new closure.
+  const historyRef=useRef(history);
+  const setHistory=(update:typeof history|((previous:typeof history)=>typeof history))=>{
+    const next=typeof update==="function"?update(historyRef.current):update;
+    historyRef.current=next;setHistoryState(next);
+  };
   const [panel,setPanel] = useState<"studies" | "objects" | null>(null);
   const [tool,setTool] = useState<DrawingKind | null>(null);
   const [anchor,setAnchor] = useState<ChartAnchor | null>(null);
@@ -67,7 +74,9 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [message,setMessage] = useState("");
   const [goToDate,setGoToDate] = useState("");
   const [storageFailed,setStorageFailed] = useState(false);
-  const [fibonacciPreview,setFibonacciPreview]=useState<ChartFibonacciProposal|null>(null);
+  const [fibonacciPreview,setFibonacciPreviewState]=useState<ChartFibonacciProposal|null>(null);
+  const previewRef=useRef<ChartFibonacciProposal|null>(null);
+  const setFibonacciPreview=(next:ChartFibonacciProposal|null)=>{previewRef.current=next;setFibonacciPreviewState(next);};
   const previewId=`fib-preview-${instanceId}`;
   // Validate during render too: a new source response cannot paint an old
   // preview while waiting for effects. Keep/export also recheck at action time.
@@ -83,7 +92,9 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     };
     check();return adapter?.subscribeViewport?.(check);
   },[adapter,epoch,getFibonacciProposal,fibonacciPreview]);
-  const [selectedId,setSelectedId] = useState<string | null>(null);
+  const [selectedId,setSelectedIdState] = useState<string | null>(null);
+  const selectedRef=useRef<string|null>(null);
+  const setSelectedId=(next:string|null)=>{selectedRef.current=next;setSelectedIdState(next);};
   const [snap,setSnap] = useState(false);
   const [panOnly,setPanOnly] = useState(false);
   const [toolsOpen,setToolsOpen] = useState(false);
@@ -170,10 +181,11 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const listedDrawings = drawings.map((d,index)=>({d,index})).filter(({d,index})=>
     !query || `${index+1} ${DRAWING_NAMES[d.kind]} ${d.text ?? ""}`.toLocaleLowerCase().includes(query));
   const persist = (next: ChartDrawing[]) => {
-    if(ephemeralDrawings)return;
+    if(ephemeralDrawings)return true;
     const saved = writeChartStorage(key,next);
     setStorageFailed(!saved);
     if (saved) window.dispatchEvent(new CustomEvent("arx.chart.drawings.updated",{detail:{key,source:instanceId}}));
+    return saved;
   };
   useEffect(()=>{
     if(ephemeralDrawings)return;
@@ -189,9 +201,9 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   },[key,instanceId,ephemeralDrawings]);
   const change = (next: ChartDrawing[]) => {
     const valid = validateDrawings(next);
-    if (JSON.stringify(valid) === JSON.stringify(drawings)) return;
+    if (JSON.stringify(valid) === JSON.stringify(historyRef.current.present)) return null;
     setHistory(h=>({past:[...h.past.slice(-19),h.present],present:valid,future:[]}));
-    persist(valid);
+    return persist(valid);
   };
   const renderedDrawings=useMemo(()=>hidden?[]:[...drawings,...(previewDrawing?[previewDrawing]:[])],[hidden,drawings,previewDrawing]);
   const installedDrawings=useRef<{adapter:ChartEngineAdapter|null;epoch:number|string;rows:ChartDrawing[];preview:boolean}|null>(null);
@@ -222,7 +234,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       ...(history.future.length ? {onRedo:()=>undo(true)} : {})});
   });
   useEffect(()=>()=>adapter?.setDrawingInteraction?.(null),[adapter]);
-  useEffect(()=>{if(selectedId && !drawings.some(d=>d.id === selectedId && !d.hidden)) setSelectedId(null);},[drawings,selectedId]);
+  useEffect(()=>{if(selectedId && !drawings.some(d=>d.id === selectedId && (!d.hidden || d.kind==="fibonacci"))) setSelectedId(null);},[drawings,selectedId]);
   useEffect(()=>{
     adapter?.setDrawingHandler?.(tool && hasCandles && (tool !== "text" || normalizeNoteText(noteText) != null) ? point=>{
       if (drawings.length >= MAX_DRAWINGS) {setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first.`);setTool(null);return;}
@@ -241,7 +253,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     window.addEventListener("keydown",cancel);return()=>window.removeEventListener("keydown",cancel);
   },[]);
   const undo = (redo = false) => {
-    const source = redo ? history.future : history.past;
+    const source = redo ? historyRef.current.future : historyRef.current.past;
     const next = source.at(-1); if (!next) return;
     setHistory(h=>redo ? {past:[...h.past,h.present],present:next,future:h.future.slice(0,-1)} : {past:h.past.slice(0,-1),present:next,future:[...h.future,h.present]});
     persist(next);
@@ -264,22 +276,45 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const requestFibonacci=():ChartFibonacciRead=>{
     const next=getFibonacciProposal?.()??{status:"unavailable" as const,proposal:null,reason:"Automatic Fibonacci is unavailable for this source."};setTool(null);setAnchor(null);setChannelEnd(null);
     if(next.status!=="ready"){setFibonacciPreview(null);setMessage(next.reason);return next;}
-    if(drawings.length>=MAX_DRAWINGS){const reason=`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object before previewing.`;setMessage(reason);return {status:"unavailable",proposal:null,reason};}
+    if(historyRef.current.present.length>=MAX_DRAWINGS){const reason=`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object before previewing.`;setMessage(reason);return {status:"unavailable",proposal:null,reason};}
     setHidden(false);setFibonacciPreview(next.proposal);setMessage("Preview only. Its anchors stay fixed; changes to the source or window withdraw it. Keep and edit to create your own drawing.");
     return next;
   };
-  const keepFibonacci=()=>{
-    const current=getFibonacciProposal?.();
-    if(!fibonacciPreview||current?.status!=="ready"||current.proposal.comparisonKey!==fibonacciPreview.comparisonKey){withdrawPreview(current?.reason??"The source, closed candles or visible window changed.");return;}
-    if(drawings.length>=MAX_DRAWINGS){setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first.`);return;}
+  const keepFibonacci=():string=>{
+    const pending=previewRef.current,current=getFibonacciProposal?.();
+    if(!pending)return "No current Fibonacci preview to keep. Request a preview first; no drawing was saved or order sent.";
+    if(current?.status!=="ready"||current.proposal.comparisonKey!==pending.comparisonKey){
+      const reason=current?.reason??"The source, closed candles or visible window changed.";
+      withdrawPreview(reason);return `Preview withdrawn: ${reason} Request a fresh preview before keeping it. No drawing was saved or order sent.`;
+    }
+    const owned=historyRef.current.present;
+    if(owned.length>=MAX_DRAWINGS){const text=`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first. No drawing was saved or order sent.`;setMessage(text);return text;}
     const id=`fib-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
-    change([...drawings,fibonacciProposalDrawing(fibonacciPreview,id,false)]);setFibonacciPreview(null);setSelectedId(id);setPanel("objects");setObjectSearch("");setHidden(false);
-    setMessage("Fibonacci kept as your editable drawing. Original proposal provenance is retained; automatic updates never move it. Undo removes this addition.");
+    setFibonacciPreview(null);
+    const saved=change([...owned,fibonacciProposalDrawing(pending,id,false)]);
+    setSelectedId(id);setPanel("objects");setObjectSearch("");setHidden(false);
+    const text=`Fibonacci kept as your editable drawing. Original proposal provenance is retained; automatic updates never move it. Undo removes this addition.${saved===false?" Browser storage is unavailable; this drawing is kept only in this open view.":""} No order was sent.`;
+    setMessage(text);return text;
+  };
+  const editOwnedDrawing=(id:string,action:"hide"|"show"|"remove"):string=>{
+    const owned=historyRef.current.present,item=owned.find(d=>d.id===id);
+    if(!item)return "Selected drawing no longer exists. No drawing was changed or order sent.";
+    if(action!=="remove"&&!!item.hidden===(action==="hide"))return `Selected drawing is already ${action==="hide"?"hidden":"shown"}.${hidden?" The global drawing visibility remains off.":""} No drawing was changed or order sent.`;
+    const saved=change(action==="remove"?owned.filter(d=>d.id!==id):owned.map(d=>d.id===id?{...d,hidden:action==="hide"}:d));
+    if(action==="remove"&&selectedRef.current===id)setSelectedId(null);
+    const text=`Selected ${item.kind==="fibonacci"?"Fibonacci ":""}drawing ${action==="remove"?"removed":action==="hide"?"hidden":"shown"}. Undo restores the previous edit.${action==="show"&&hidden?" The global drawing visibility remains off; use Show drawings to reveal the canvas.":""}${saved===false?" Browser storage is unavailable; this change exists only in this open view.":""} No order was sent.`;
+    setMessage(text);return text;
   };
   useLayoutEffect(()=>{
     if(!assistantPrimary||ephemeralDrawings)return;
     return registerChartFibonacciAssistant(request=>{
       if(!hasCandles||!adapter?.setDrawings||!getFibonacciProposal)return "Fibonacci not changed: the primary chart renderer and source candles are not ready. No drawing was saved or order sent.";
+      if(request.action==="keep")return keepFibonacci();
+      if(request.action==="hide_selected"||request.action==="show_selected"||request.action==="remove_selected"){
+        const selected=historyRef.current.present.find(d=>d.id===selectedRef.current&&d.kind==="fibonacci");
+        if(!selected)return "Select one kept Fibonacci drawing in Objects first. A preview is not a selected manual drawing. No drawing was changed or order sent.";
+        return editOwnedDrawing(selected.id,request.action==="hide_selected"?"hide":request.action==="show_selected"?"show":"remove");
+      }
       const prepare=()=>{const next=requestFibonacci();return next.status==="ready"?explainFibonacciProposal(next.proposal,"prepared"):`No new Fibonacci added: ${next.reason} No drawing was saved or order sent.`;};
       if(request.action==="preview")return prepare();
       const fresh=getFibonacciProposal();
@@ -394,7 +429,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       {hidden && <p className="text-amber-300">All drawings are temporarily hidden. Show drawings restores each object's own visibility.</p>}
       {drawings.length > 0 && listedDrawings.length === 0 && <p>No matching drawings. Search does not hide objects on the chart.</p>}
       {listedDrawings.map(({d,index})=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
-        <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} disabled={hidden || d.hidden} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}{d.hidden ? " · Hidden" : ""}</button>
+        <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} disabled={hidden || (d.hidden && d.kind!=="fibonacci")} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}{d.hidden ? " · Hidden" : ""}</button>
         <Button size="sm" variant="outline" className="h-8 text-xs" aria-label={`Go to drawing ${index+1} start`} disabled={!hasCandles || !adapter?.goToTime} onClick={()=>goToDrawing(d,index)}>Go to start</Button>
         {(["start","end","offset"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{chartTime(d[name]!.time,zone)}</span></label>)}
         {d.kind === "measure" && d.end && <output aria-label={`Drawing ${index+1} measurement`} className="basis-full text-zinc-300">{measurementLabels(d.start,d.end).join(" · ")}<span className="block text-zinc-500">From your first point to your second. Elapsed calendar time includes market closures; this is not profit, pips or a count of bars.</span></output>}
@@ -402,8 +437,8 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         {d.kind !== "text" && <><select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>
         <select className={field} aria-label={`Drawing ${index+1} line style`} value={(d.dashed ?? ["horizontal","fibonacci"].includes(d.kind)) ? "dashed" : "solid"} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,dashed:event.target.value==="dashed"} : item))}><option value="solid">Solid</option><option value="dashed">Dashed</option></select></>}
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.locked ? "Unlock" : "Lock"} drawing ${index+1}`} aria-pressed={!!d.locked} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,locked:!item.locked} : item))}>{d.locked ? "Unlock" : "Lock"}</Button>
-        <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.hidden ? "Show" : "Hide"} drawing ${index+1}`} aria-pressed={!d.hidden} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,hidden:!item.hidden} : item))}>{d.hidden ? "Show" : "Hide"}</Button>
-        <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>change(drawings.filter(item=>item.id!==d.id))}>Delete</Button>
+        <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.hidden ? "Show" : "Hide"} drawing ${index+1}`} aria-pressed={!d.hidden} onClick={()=>editOwnedDrawing(d.id,d.hidden?"show":"hide")}>{d.hidden ? "Show" : "Hide"}</Button>
+        <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>editOwnedDrawing(d.id,"remove")}>Delete</Button>
         {/* Archived origins predate clock evidence; the current feed cannot qualify their original timestamps. */}
         {d.fibonacciOrigin&&<p className="basis-full text-[11px] text-zinc-400">Original automatic proposal · {d.fibonacciOrigin.symbol} {d.fibonacciOrigin.timeframe} · source {d.fibonacciOrigin.source}, identity {d.fibonacciOrigin.sourceIdentity.slice(0,12)} · two-bar confirmed pivots · original anchors {d.fibonacciOrigin.start.price} at {formatSourceChartTime(d.fibonacciOrigin.start.time,false,"UTC",{seconds:true})} → {d.fibonacciOrigin.end.price} at {formatSourceChartTime(d.fibonacciOrigin.end.time,false,"UTC",{seconds:true})}, confirmed {formatSourceChartTime(d.fibonacciOrigin.confirmedAt,false,"UTC",{seconds:true})}. Current editable anchors above are yours; this origin is not revalidated as live advice.</p>}
         {d.kind === "text" && <NoteTextEditor label={`Drawing ${index+1} note text`} value={d.text!} locked={d.locked === true} onSave={text=>change(drawings.map(item=>item.id===d.id ? {...item,text} : item))} />}

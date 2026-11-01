@@ -26,7 +26,7 @@ it("curiosity prepares a real preview while unsupported additions do nothing",()
  render(<ChartWorkbenchTools {...props}/>);const reply=ask("what does Fibonacci show me about this chart?");
  expect(reply).toContain("confirmed by two observed closed bars");expect(screen.getByRole("button",{name:"Keep and edit Fibonacci"})).toBeTruthy();
  const calls=draw.mock.calls.length;
- for(const text of ["show Fibonacci on USDJPY","show Fibonacci on M5","show Fibonacci with span 5","keep Fibonacci","hide Fibonacci","remove Fibonacci","show Fibonacci and buy now"]){expect(ask(text)).toContain("Chart not changed");}
+ for(const text of ["show Fibonacci on USDJPY","show Fibonacci on M5","show Fibonacci with span 5","hide Fibonacci","remove Fibonacci","show Fibonacci and buy now"]){expect(ask(text)).toContain("Chart not changed");}
  expect(draw).toHaveBeenCalledTimes(calls);expect(saved()).toEqual([]);
 });
 it("refuses unknown source and explains refreshed evidence instead of retaining old anchors",()=>{
