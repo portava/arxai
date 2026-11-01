@@ -14,11 +14,15 @@ The later original-clock audit supersedes any earlier implication that original 
 
 V2 ingest now retains explicit original price-basis declarations and the authenticated connection partition; source identity is no longer discarded into an unattributed candle cache. This fixes transport/isolation consistency, not historical timezone conversion. Final combined validation must be tied to its actual source commit; no release-green or completion claim follows from the isolated checks.
 
-## Latest accepted local increment
+## Previous accepted local increment
 
 Application `38285b29` extends the same drawing owner with explicit assistant Keep/hide/show/remove for selected Fibonacci, and corrects exact Twelve Data/Polygon original bar-open coordinates. Twelve Data intraday requests now explicitly request UTC and refuse ambiguous daily dates. Both history adapters remain conservatively DELAYED. The existing supported Polygon FX custom-bars path can qualify bar-bound original UTC/BID evidence through Truth and the chart research capture, without granting broker, traded-volume, live-entitlement or complete-history authority. MT5 historical clock and Twelve Data research authority remain unqualified.
 
 `SMART_CHART_PROVIDER_ALIGNMENT_2026_11_01.md` records 3,073 frontend passes/11 skips, 466 targeted backend passes, four typecheck units, both builds, 87 guards/7 bindings and194 repeated actual Scanner browser assertions. Source changes and source-clock withdrawal were exercised without external model or broker calls. Replit still reports the previous import busy; this new source is not claimed visible there. Phone chart/chat overlap, VWAP/profile and the broader requirements below remain open. No architecture completion or competitive parity is implied.
+
+## Current volume/mobile increment — integration gap remains
+
+Application `677241aa` adds source-qualified Common Stock quantities, anchored VWAP and Trade volume through existing owners, compact mobile chart/chat, explicit delayed-provider status and preserved frozen results after refused reruns. `SMART_CHART_VOLUME_MOBILE_ALIGNMENT_2026_11_01.md` records exact checks and failed attempts. **The existing Focus selector excludes stocks, so positive VWAP/traded-volume use on the actual Scanner has not been accepted.** The planned analysis-only comparison selection and active-pane assistant routing remain work, not completion. Tick counts never qualify as traded size; no live or research-price-basis authority follows from stock volume.
 
 ## Thirteen requested chart tools
 
@@ -31,8 +35,8 @@ Paths in this section are relative to `artifacts/trading-dashboard/src/`.
 | Market structure | `lib/chart-engine/smartChartAnalysis.ts`, `structureLines.ts`; `components/charts/ARXNativeChart.tsx` | Fitted boundary breaks and server-owned structure geometry render, subject to feed/evidence gates. A complete editable swing/BOS/CHoCH workspace is not established by this census. |
 | Trendlines / channels | `lib/chart-engine/chartWorkspace.ts`, `chartDrawingPrimitive.ts`, `structureLines.ts` | Manual trend/ray/extended/channel objects, exact anchors and editing exist; server-resolved trendlines/channel rails are separate automatic evidence. Do not rebuild them. |
 | SMA / EMA | `lib/chart-engine/chartStudies.ts`, `chartAnalysisRenderer.ts` | Both calculate and render as overlays, with configurable period, input price and appearance. |
-| Volume bars | `chartVolume.ts`, `chartStudies.ts`, existing study renderer; optional API volume evidence | Source-qualified MT5 tick counts render in a separate synchronized histogram. Observed zero stays zero; absent or invalid evidence stays unavailable. Tick counts are labelled, never exchanged-traded size. Real traded volume remains unsupported. |
-| VWAP | No VWAP entry/calculator in `lib/chart-engine/chartStudies.ts` | **Missing.** Root reserved the source-qualified implementation. It requires declared volume semantics, anchor/session policy and missing-data behavior before chart or AI claims. |
+| Volume bars | `chartVolume.ts`, `chartStudies.ts`, existing study renderer; optional API volume evidence | Source-qualified MT5 tick counts render in a separate synchronized histogram. Observed zero stays zero; absent or invalid evidence stays unavailable. Tick counts are labelled, never exchanged-traded size. Qualified Common Stock provider trade units now have calculation/histogram support, but the Focus-only Scanner selector cannot currently reach that source; positive page acceptance remains open. |
+| VWAP | Existing `chartStudies.ts`, `chartVwapAnchor.ts`, renderer/settings/assistant | Actual cumulative original applied-price × qualified trade quantity / quantity from an exact source-bound observed bar. Missing or mismatched volume holds the suffix. **Conditional engine support; positive Scanner use remains unaccepted because eligible stocks are excluded by its selector.** No inferred session start or tick substitution. |
 | RSI | `lib/chart-engine/chartStudies.ts`, `chartAnalysisRenderer.ts` | Calculates Wilder RSI with a synchronized oscillator pane, configurable period/source, levels and appearance. |
 | MACD | Same study authority | Fast/slow EMAs, selectable signal smoothing and actual histogram render in a pane. |
 | Bollinger Bands | Same study authority | Basis and population-deviation bands calculate/render; period and multiplier are editable. |
@@ -40,7 +44,7 @@ Paths in this section are relative to `artifacts/trading-dashboard/src/`.
 | ATR | `lib/chart-engine/chartStudies.ts`, `chartAnalysisRenderer.ts` | True range and configurable smoothing render in a pane. This is not a position-sizing or execution permission. |
 | Volume profile | No profile calculator/renderer in current chart-engine path | **Missing.** OHLC plus one bar-volume total cannot establish actual volume-at-price. A future approximation must disclose its allocation method and provenance; never present it as measured order flow. |
 
-`STUDY_CATALOG` has 20 implemented studies (the original 19 plus source-qualified tick volume); the requirement is not to replace that library. The six requested study families above are subsets of it.
+`STUDY_CATALOG` has 22 calculation/rendering entries (the earlier 20 plus conditional anchored VWAP and Trade volume); the requirement is not to replace that library. The six requested study families above are subsets of it.
 
 ## Interaction, explanation and data scope
 

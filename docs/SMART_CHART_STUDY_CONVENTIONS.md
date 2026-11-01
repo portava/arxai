@@ -86,10 +86,7 @@ vectors (+100/−100 for three evenly spaced prices). It does not reproduce that
 apparent documentation error. The source is
 [MT5 CCI help](https://www.metatrader5.com/en/terminal/help/indicators/oscillators/cci).
 
-**No fabricated volume:** the chart currently renders the OHLC contract only.
-Volume, VWAP, money-flow and footprint studies are not simulated from price.
-Real/tick-volume semantics and complete provider coverage must be established
-before those studies can be described as available.
+**No fabricated volume:** OHLC never supplies invented trade quantities. Tick volume and qualified provider trade units remain distinct. The later anchored-VWAP section specifies conditional original-stock evidence and missing-data behavior. The actual Scanner still excludes those stocks; engine support is not positive page acceptance. Volume profile, money-flow and footprint support are not implied.
 
 ## Chart styles
 
