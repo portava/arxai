@@ -1,5 +1,5 @@
 import { useLayoutEffect } from "react";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
@@ -41,10 +41,10 @@ vi.mock("@/lib/chart-engine/structureLines", () => ({
   applyStructureLines: (...args: any[]) => { h.applyStructure(...args); return { series: [], markersApi: null }; },
 }));
 vi.mock("@/components/charts/ARXNativeChart", () => ({
-  ARXNativeChart: ({ onScannerSurfaceChange, timeframe, externalFeed }: any) => {
-    const identity = externalFeed.data?.marketEvidence?.sourceIdentity;
-    useLayoutEffect(() => { onScannerSurfaceChange(h.surface); return () => onScannerSurfaceChange(null); }, [onScannerSurfaceChange, timeframe, identity]);
-    return <div data-testid="native-chart">{timeframe}</div>;
+  ARXNativeChart: ({ onScannerSurfaceChange, timeframe, externalFeed, workspaceId }: any) => {
+    const identity = externalFeed?.data?.marketEvidence?.sourceIdentity;
+    useLayoutEffect(() => { onScannerSurfaceChange?.(h.surface); return () => onScannerSurfaceChange?.(null); }, [onScannerSurfaceChange, timeframe, identity]);
+    return <div data-testid="native-chart" data-workspace={workspaceId ?? "primary"} data-external={!!externalFeed}>{timeframe}</div>;
   },
 }));
 
@@ -148,4 +148,20 @@ it("revokes old-series annotations on a source context swap and installs them on
   view.rerender(<ScannerChartPanel />);
   expect(previousSeries.removePriceLine).toHaveBeenCalledWith(previous);
   expect(h.surface.series.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({ price: 1.25, title: "S Owned note" }));
+});
+
+it("offers comparison charts on Scanner without replacing its primary source or overlay surface",()=>{
+  localStorage.removeItem("arx.scanner.chart.layout.v1");
+  const view=render(<ScannerChartPanel />);
+  const primary=screen.getByTestId("native-chart");
+  expect(primary.getAttribute("data-external")).toBe("true");
+  fireEvent.click(screen.getByRole("button",{name:"Two charts"}));
+  const charts=screen.getAllByTestId("native-chart");
+  expect(charts).toHaveLength(2);expect(charts[0]).toBe(primary);
+  expect(charts[0].textContent).toBe("H8");expect(charts[1].textContent).toBe("H1");
+  expect(charts[1].getAttribute("data-workspace")).toBe("comparison");
+  expect(charts[1].getAttribute("data-external")).toBe("false");
+  fireEvent.click(screen.getByRole("button",{name:"One chart"}));
+  expect(screen.getByTestId("native-chart")).toBe(primary);
+  view.unmount();localStorage.removeItem("arx.scanner.chart.layout.v1");
 });
