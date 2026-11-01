@@ -444,3 +444,14 @@ it('keeps estimated profile on original OHLC under Heikin Ashi and withdraws met
  adapter.setCandles(original.map(b=>({...b,profileEvidence:{...b.profileEvidence!,clockAuthority:null}})));expect(adapter.getVolumeProfiles()[0]!.result.status).toBe('held');expect(adapter.getVwapAnchorEvidence(anchor).utcQualified).toBe(false);
  adapter.setStudies([{kind:'vwap',period:1,color:'#aaaaaa',vwapAnchor:anchor}]);expect(adapter.getStudyValues(original[0]!.time)[0]!.displayLabel).toContain('unverified');adapter.setCandles(original);expect(adapter.getStudyValues(original[0]!.time)[0]!.displayLabel).not.toContain('unverified');expect(adapter.getStudyValues(original[0]!.time)[0]!.label).toContain('unverified');
 });
+
+
+describe("compact study labels follow actual chart width",()=>{
+ it("explicit resize preserves study and price data, then restores titles",()=>{
+  adapter.setStudies([{kind:"macd",period:5,slow:17,signal:4,color:"#2dd4bf"}]);const studies=m.handles.slice(1);const price=m.handles[0];const writes=price.setData.mock.calls.length;const read=adapter.getStudyValues(bars[80].time);adapter.resize(390,400);expect(studies.map(s=>s.options().title)).toEqual(["","",""]);expect(price.setData).toHaveBeenCalledTimes(writes);expect(adapter.getStudyValues(bars[80].time)).toEqual(read);adapter.resize(800,500);expect(studies.map(s=>s.options().title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);
+ });
+ it("initial sizing and observed resizes apply the same title policy",()=>{
+  let callback:(()=>void)|undefined;vi.stubGlobal("ResizeObserver",class{constructor(cb:()=>void){callback=cb;}observe(){}disconnect(){}});const el=document.createElement("div");let width=390;Object.defineProperty(el,"clientWidth",{get:()=>width});const local=new LightweightChartsAdapter();
+  try{local.init({container:el,height:400});local.setCandles(bars);const start=m.handles.length;local.setStudies([{kind:"macd",period:5,slow:17,signal:4,color:"#2dd4bf"}]);const studies=m.handles.slice(start);expect(studies.map(s=>s.options().title)).toEqual(["","",""]);width=800;callback?.();expect(studies.map(s=>s.options().title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);}finally{local.destroy();}
+ });
+});

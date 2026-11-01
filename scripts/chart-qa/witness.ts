@@ -95,7 +95,7 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
           lineIds: study.lines.map(id),
           options: study.lines.map((line: any) => {
             const options = line.options();
-            return {visible:options.visible,color:options.color,lineWidth:options.lineWidth,lineStyle:options.lineStyle};
+            return {visible:options.visible,color:options.color,lineWidth:options.lineWidth,lineStyle:options.lineStyle,title:options.title};
           }),
           lines: study.lines.map((line: any) => line.data().map((point: any) => ({ ...point }))),
         })),
