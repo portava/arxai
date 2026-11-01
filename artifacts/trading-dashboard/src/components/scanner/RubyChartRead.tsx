@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Loader2, RefreshCw, MessageCircle, Crosshair, ShieldAlert } from "lucide-react";
@@ -94,13 +93,11 @@ export function RubyChartRead({
   // The server read is lifted to a page-level store keyed by symbol+timeframe
   // (Task #600) so the header strip's Ruby cell shares the SAME read and the two
   // can never disagree. Switching symbol/timeframe reads a different key (an
-  // empty key = honest pre-read state). Loading/error stay local to this panel.
+  // empty key = honest pre-read state). Loading/errors share that same key.
   const { name } = useAssistantName();
   const store = useRubyReadStore();
   const read = store.get(symbol, timeframe);
-  const setRead = (next: ChartRead | null) => store.set(symbol, timeframe, next);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const { loading, error: err } = store.requestState(symbol, timeframe);
 
   // Resolve the SHARED scanner truth for this exact symbol/timeframe so the
   // panel can warn the user BEFORE Ruby reads a stale or invalid feed — and so
@@ -138,9 +135,7 @@ export function RubyChartRead({
   );
 
   const ask = async () => {
-    setLoading(true);
-    setErr(null);
-    try {
+    await store.request(symbol, timeframe, async signal => {
       const body = {
         symbol,
         timeframe,
@@ -151,16 +146,13 @@ export function RubyChartRead({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        signal,
         body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = (await r.json()) as { chartRead: ChartRead };
-      setRead(j.chartRead);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "network error");
-    } finally {
-      setLoading(false);
-    }
+      return j.chartRead;
+    });
   };
 
   return (

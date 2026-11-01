@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render as renderBase, screen, cleanup, fireEvent } from "@testing-library/react";
+import { useEffect, type ReactNode } from "react";
+import { RubyReadStoreProvider, useRubyReadStore } from "./rubyReadStore";
 import type { ScannerTruth } from "@/lib/scannerTruth";
 import {
   resolveRubyReadPanelState,
@@ -59,18 +61,22 @@ vi.mock("@/components/charts/FeedConfidenceBadge", () => ({
   },
 }));
 
-// The page-level read store is mocked so a test can inject a server read (e.g. a
-// STRUCTURAL_ONLY read) without driving the async fetch. Default is `null` (no
-// read), which is exactly the pre-read state the other render proofs expect.
+// Seed the real shared store for render proofs. Requests use the same lifecycle
+// as production rather than a mock that conceals request ordering and failures.
 let mockStoredRead: RubyReadServerState | null = null;
-vi.mock("@/components/scanner/rubyReadStore", () => ({
-  useRubyReadStore: () => ({
-    get: () => mockStoredRead,
-    set: (_s: string, _t: string, next: RubyReadServerState | null) => {
-      mockStoredRead = next;
-    },
-  }),
-}));
+function SeedRead({ children }: { children: ReactNode }) {
+  const { set } = useRubyReadStore();
+  useEffect(() => {
+    for (const symbol of ["EURUSD", "V75", "V25_1S"]) {
+      for (const timeframe of ["M1", "M5", "H1"]) set(symbol, timeframe, mockStoredRead);
+    }
+  }, [set]);
+  return children;
+}
+const render: typeof renderBase = (ui, options) => renderBase(ui, {
+  wrapper: ({ children }) => <RubyReadStoreProvider><SeedRead>{children}</SeedRead></RubyReadStoreProvider>,
+  ...options,
+});
 
 // Imported AFTER the mocks (vi.mock is hoisted) so the component binds the stubs.
 import { RubyChartRead } from "./RubyChartRead";
@@ -496,6 +502,7 @@ describe("RubyChartRead — STRUCTURAL_ONLY verdict (Task #602)", () => {
             chartRead: {
               readLayer: "STRUCTURAL_ONLY",
               liveSetupWithheld: true,
+              canShowLiveTradeSetup: false,
               gated: false,
               dataQuality: "ok",
               blockedReason: STRUCT_REASON,
@@ -667,7 +674,7 @@ describe("Task #609 — RubyChartRead survives a half-loaded read payload", () =
     expect(screen.getByTestId("ruby-chart-read")).toBeTruthy();
   });
 
-  it("does not crash when the fetch resolves a payload with a null/partial chartRead", async () => {
+  it("withholds a partial response instead of restoring a directional read", async () => {
     mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ chartRead: { gated: false } }), {
@@ -677,7 +684,8 @@ describe("Task #609 — RubyChartRead survives a half-loaded read payload", () =
     );
     render(<RubyChartRead symbol="EURUSD" timeframe="M5" draft={null} />);
     fireEvent.click(screen.getByTestId("ruby-chart-read-ask"));
-    expect(await screen.findByTestId("ruby-chart-read-body")).toBeTruthy();
+    expect(await screen.findByTestId("ruby-chart-read-err")).toBeTruthy();
+    expect(screen.queryByTestId("ruby-chart-read-body")).toBeNull();
     fetchSpy.mockRestore();
   });
 });
