@@ -1,0 +1,27 @@
+{
+  "applicationCommit": "c9c74fcebfce2dd33039fe6f5804575e99d98232",
+  "baseCheckpoint": "1d197960b6b28ecddf139e5f787e662a664975e0",
+  "buildId": "bb79854a6d7e1b41",
+  "validation": {
+    "focusedFibonacciAndPaneTests": 41,
+    "dashboardTypecheck": "passed",
+    "ordinaryBuild": "passed",
+    "guards": 87,
+    "bindingAssertions": 7,
+    "actualScannerBrowserAssertions": 9,
+    "fail": 0
+  },
+  "regressionsBefore": {
+    "wrongPaneWording": 2,
+    "omittedOriginalObservation": 1
+  },
+  "rawDirectory": "/Users/areyouok/arx-tier1-release/chart-support-resistance-20261101",
+  "limitations": [
+    "No fullfrontend rerun for this focused increment; previous3332tests belong tof85d1c03.",
+    "Browser exercised selectedprimary; comparisonownership coveredbyseparatepanetests.",
+    "No new timing claim.",
+    "Support/resistanceproposal on isolatedaf64be44 is unfinished/unwired and excluded.",
+    "Bothagentsstoppedforusagelimits;rootreviewandtests only forfinalsharedvalidator/proposal.",
+    "No deploy/mainmerge/runtimeactivation/existingDBchange/trading/provider/model/brokercalls."
+  ]
+}

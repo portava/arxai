@@ -19,7 +19,7 @@ it("manual and text preview share exact owner geometry and never auto-keep",()=>
  const manual=draw.mock.calls.at(-1)![0];fireEvent.click(screen.getByRole("button",{name:"Dismiss preview"}));
  const reply=ask("show automatic Fibonacci on this chart");
  expect(reply).toContain("Prepared an unaccepted Fibonacci preview");expect(draw.mock.calls.at(-1)![0]).toEqual(manual);
- expect(reply).toContain("23.6%: 12.36");expect(reply).toContain("EURUSD M1");expect(saved()).toEqual([]);
+ expect(reply).toContain("23.6%: 12.36");expect(reply).toContain("on the selected EURUSD M1 chart");expect(reply).not.toContain("primary");expect(saved()).toEqual([]);
  expect(reply).toContain("source clock (UTC unverified)");expect(reply).not.toContain(new Date(origin.start.time*1000).toISOString());
 });
 it("curiosity prepares a real preview while unsupported additions do nothing",()=>{
@@ -43,7 +43,7 @@ it("distinguishes a selected user's edited anchors from archived automatic prove
  const interaction=vi.mocked(engine.setDrawingInteraction!).mock.calls.at(-1)![0]!;
  act(()=>interaction.onCommit(saved().map(d=>({...d,end:{time:1300,price:30}}))));
  const before=JSON.stringify(saved()),reply=ask("explain selected Fibonacci");
- expect(reply).toContain("current editable anchors are your annotation");expect(reply).toContain("23.6%: 14.72");expect(reply).toContain("originally used 10");expect(reply).toContain("and 20");expect(JSON.stringify(saved())).toBe(before);
+ expect(reply).toContain("on the selected EURUSD M1 chart");expect(reply).not.toContain("primary");expect(reply).toContain("current editable anchors are your annotation");expect(reply).toContain("23.6%: 14.72");expect(reply).toContain("originally used 10");expect(reply).toContain("and 20");expect(JSON.stringify(saved())).toBe(before);
 });
 it("unselected and replay tools do not hijack selected ownership and unmount releases it",()=>{
  const primary=render(<ChartWorkbenchTools {...props}/>);
