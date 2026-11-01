@@ -31,7 +31,9 @@ export interface SmartChartAnalysisInput extends SmartChartAnalysisContext {
   /** Both range endpoints and replayCutoff use Unix seconds. */
   visibleRange?: { from: number; to: number };
   replayCutoff?: number;
-  dataState?: "current" | "stale" | "historical";
+  dataState?: "current" | "stale" | "historical" | "unconfirmed" | "unavailable" | "delayed";
+  /** Latest request failure is independent of the stored candles' age. */
+  feedReadFailed?: boolean;
 }
 export interface SmartChartFinding {
   id: string;
@@ -110,11 +112,19 @@ export function bindSmartChartBars(
 
 type Ranked = { finding: SmartChartFinding; observedAt: number; scale: number };
 const statusRank = { confirmed: 3, invalidated: 2, developing: 1, observed: 0 };
+/** Describes feed evidence only; never infers stale age from a failed request. */
+export function smartChartFeedCaveat(input: Pick<SmartChartAnalysisInput, "dataState" | "feedReadFailed">): string {
+  const state = input.dataState === "stale" ? "The feed is stale; this describes stored candles. "
+    : input.dataState === "unavailable" ? "The current feed is unavailable; this describes stored candles. "
+    : input.dataState === "delayed" ? "The feed reports delayed data; this describes stored candles. "
+    : input.dataState === "unconfirmed" ? "The feed is not live-confirmed; this describes stored candles. " : "";
+  return state + (input.feedReadFailed ? "The latest candle read failed; current freshness could not be rechecked. " : "");
+}
 function caveat(input: SmartChartAnalysisInput): string {
   const scope = input.replayCutoff != null ? "Replay: only candles known by this point are analyzed. "
     : input.visibleRange ? "Historical chart window; later candles are not used. "
     : input.dataState !== "current" && input.dataState !== "stale" ? "Historical candle analysis. " : "";
-  const freshness = input.dataState === "stale" ? "The feed is stale; this describes stored candles. " : "";
+  const freshness = smartChartFeedCaveat(input);
   return scope + freshness + "A chart pattern describes price behavior; it does not predict the next move or authorize a trade. Volume confirmation and actual order flow were not measured.";
 }
 function validBar(bar: SmartChartAnalysisBar, interval: number): boolean {
@@ -210,7 +220,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
         anchors: [{ time: candle.time, price: candle.close, role: "doji" }], levels: [], invalidation: null,
         caveat: `${note} Doji convention: body at most 10% of a nonzero high-low range.` }, candle.time, 0);
     }
-    const feed = { candles: prefix, feedConfirmed: input.dataState === "current", feedStale: input.dataState === "stale" };
+    const feed = { candles: prefix, feedConfirmed: input.dataState === "current" && !input.feedReadFailed, feedStale: input.dataState === "stale" };
     const engulfing = detectEngulfing(feed);
     if (engulfing.detected) {
       const bullish = engulfing.direction === "buy", previous = prefix[prefix.length - 2]!;

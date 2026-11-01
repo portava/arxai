@@ -11,7 +11,7 @@ export function createSmartChartReadCache() {
   let previous: Entry | null = null;
   return (input: SmartChartAnalysisInput): Reading => {
     const window = selectSmartChartWindow(input);
-    const scope = JSON.stringify([input.dataState ?? null, input.replayCutoff ?? null, !!input.visibleRange]);
+    const scope = JSON.stringify([input.dataState ?? null, input.feedReadFailed === true, input.replayCutoff ?? null, !!input.visibleRange]);
     if (window.status === "ready" && previous?.scope === scope && sameWindow(previous.window, window)) return previous.reading;
     // Invalid evidence withdraws the old result immediately; a later recovery
     // must calculate a new reading even when it happens to match the old one.

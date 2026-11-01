@@ -19,7 +19,7 @@ vi.mock("@/lib/chart-engine/chartDescriptiveAnalysis",async importOriginal=>{
 const START=Date.parse("2026-10-25T10:00:00Z"),NOW=START+100*300_000;
 function fixture(timeframe="M5",start=START,step=300_000){
   const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe,source:"deriv_public",sourceMode:"live",timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
-  const data={symbol:"V75",timeframe,source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public"},marketEvidence:{symbol:"V75",timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
+  const data={symbol:"V75",timeframe,source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public",isLive:true,stale:false,quality:"clean",aiUsable:true,warning:null,message:"Fixture",lastCandleTime:candles.at(-1)!.closeTime},marketEvidence:{symbol:"V75",timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
   let visible:ChartEngineCandle[]=candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}));
   const all=visible;let listener:(()=>void)|undefined;
   const setSmartAnnotation=vi.fn(),unsubscribe=vi.fn(()=>{listener=undefined;});
@@ -62,13 +62,39 @@ describe("embedded chart reader follows applied candles",()=>{
     expect(screen.getByText("Analysis, evidence and chart statistics").parentElement?.hasAttribute("open")).toBe(false);
   });
   it("historical viewport explains only its own closed prefix and keeps the stale warning",()=>{
-    const f=fixture();render(<SmartChartReader {...f.props} liveConfirmed={false} readFailed/>);
+    const f=fixture();render(<SmartChartReader {...f.props} data={{...f.data,feedStatus:{...f.data.feedStatus,stale:true,quality:"stale"} as any}} liveConfirmed={false} readFailed/>);
     f.show(f.all.slice(0,10));
     expect(screen.getByText(/Historical window · Stored candles/)).toBeTruthy();
     expect(screen.getByText(/10 closed candles analyzed/)).toBeTruthy();
-    expect(screen.getByText(/The feed is stale; this describes stored candles/)).toBeTruthy();
+    expect(screen.getByTestId("chart-reader-feed-evidence").textContent).toContain("The feed is stale; this describes stored candles");
     const latest=f.setSmartAnnotation.mock.lastCall?.[0];
     expect(latest.anchors.every((anchor:any)=>anchor.time<=f.all[9]!.time)).toBe(true);
+  });
+  it.each([
+    ["unconfirmed", false, false, {}, "The feed is not live-confirmed"],
+    ["read failure", true, true, {}, "The latest candle read failed"],
+    ["unavailable", false, false, {quality:"unavailable"}, "The current feed is unavailable"],
+    ["delayed", false, false, {quality:"delayed"}, "The feed reports delayed data"],
+  ] as const)("does not invent stale evidence for %s",(_,liveConfirmed,readFailed,feed,message)=>{
+    const f=fixture();render(<SmartChartReader {...f.props} liveConfirmed={liveConfirmed} readFailed={readFailed} data={{...f.data,feedStatus:{...f.data.feedStatus,...feed} as any}}/>);
+    const text=screen.getByTestId("smart-chart-reader").textContent!;
+    expect(text).toContain(message);expect(text).not.toContain("The feed is stale");
+    expect(screen.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("ready");
+    expect(screen.getByText(/30 closed candles analyzed/)).toBeTruthy();
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]).not.toBeNull();
+  });
+  it("preserves proven stale evidence and independent read failure, then recovers without changing geometry",()=>{
+    const f=fixture();const stale={...f.data,feedStatus:{...f.data.feedStatus,stale:true,quality:"stale"} as any};
+    const view=render(<SmartChartReader {...f.props} data={stale} liveConfirmed={false}/>);
+    const first=f.setSmartAnnotation.mock.lastCall?.[0];
+    view.rerender(<SmartChartReader {...f.props} data={stale} liveConfirmed={false} readFailed/>);
+    expect(screen.getByTestId("smart-chart-reader").textContent).toContain("The feed is stale");
+    expect(screen.getByTestId("smart-chart-reader").textContent).toContain("The latest candle read failed");
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toEqual(first);
+    view.rerender(<SmartChartReader {...f.props}/>);
+    expect(screen.getByTestId("smart-chart-reader").textContent).not.toContain("The feed is stale");
+    expect(screen.getByTestId("smart-chart-reader").textContent).not.toContain("The latest candle read failed");
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toEqual(first);
   });
   it("withholds readings when the applied OHLC disagrees, then recovers after application",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);
@@ -218,7 +244,7 @@ describe("Replay analysis duplicate notifications",()=>{
     expect(screen.getByTestId('chart-reader-context').textContent).toContain('9 closed candles');
     f.show(f.all.slice(0,9));expect(analyzeSmartChart).toHaveBeenCalledTimes(3);expect(describeSmartChartWindow).toHaveBeenCalledTimes(3);
   });
-  it("invalidates changed OHLC, source/epoch, read failure, and axis state while retaining independent annotation controls",()=>{
+  it("invalidates changed OHLC, source/epoch and axis state while frozen replay ignores unrelated live read failure",()=>{
     const f=fixture(),snapshot=captureChartReplay(f.data,7,DEFAULT_PREFERENCES,NOW).snapshot!;
     const replay={snapshot,installedCount:30};const v=render(<SmartChartReader {...f.props} replay={replay}/>);
     f.show(f.all.map((bar,i)=>i===10?{...bar,close:100.5}:bar));
@@ -229,7 +255,8 @@ describe("Replay analysis duplicate notifications",()=>{
     v.rerender(<SmartChartReader {...f.props} replay={replay} readFailed/>);
     v.rerender(<SmartChartReader {...f.props} replay={replay} epoch={2}/>);
     v.rerender(<SmartChartReader {...f.props} replay={replay} view={{style:'line',scale:'log',inverted:true}}/>);
-    expect(analyzeSmartChart).toHaveBeenCalledTimes(calls+3);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(calls+2);
+    expect(screen.queryByTestId("chart-reader-feed-evidence")).toBeNull();
     fireEvent.click(screen.getByRole('button',{name:'Show automatic chart annotations'}));
     expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
     const selected=within(screen.getByLabelText('Relevant chart patterns')).getAllByRole('button');
@@ -266,7 +293,8 @@ describe("Replay analysis duplicate notifications",()=>{
     const f=fixture(),view=render(<SmartChartReader {...f.props}/>);
     f.show(f.all);expect(analyzeSmartChart).toHaveBeenCalledTimes(1);
     view.rerender(<SmartChartReader {...f.props} readFailed/>);
-    expect(screen.getByText(/The feed is stale; this describes stored candles/)).toBeTruthy();
+    expect(screen.getByTestId("chart-reader-feed-evidence").textContent).toContain("The latest candle read failed");
+    expect(screen.getByTestId("chart-reader-feed-evidence").textContent).not.toContain("The feed is stale");
     expect(analyzeSmartChart).toHaveBeenCalledTimes(2);
     view.rerender(<SmartChartReader {...f.props} epoch={2}/>);
     expect(analyzeSmartChart).toHaveBeenCalledTimes(3);
