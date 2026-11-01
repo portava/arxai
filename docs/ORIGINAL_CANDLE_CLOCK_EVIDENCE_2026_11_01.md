@@ -1,3 +1,5 @@
+> Follow-up: the audited existing Polygon/Massive forex custom-bars adapter now has a narrow original UTC/BID path. See [its contract and limitations](POLYGON_FX_ORIGINAL_CANDLE_EVIDENCE_2026_11_01.md). Statements below about no registered adapter describe this document’s original clock-gate checkpoint, not the later combined source. Other provider and legacy/cache clocks remain withheld.
+
 # Original candle clock evidence: interim research hold
 
 This is a source-provenance correction, not historical timezone reconstruction or launch completion. No shipped production adapter currently provides qualified original UTC candle-clock authority. Consequently real chart research remains unavailable, even when original BID/MID price evidence is present. Prices and source-coordinate chart geometry remain visible.
