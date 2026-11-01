@@ -1,3 +1,4 @@
+import { advanceStudyAverage, chartTrueRange, type SeededAverageState } from "@workspace/domain/chart-indicator-math";
 import { observedTickVolume } from "./chartVolume";
 import type { ChartEngineCandle } from "./types";
 import { ChartRangeWindow, scanChartRange } from "./chartRangeWindow";
@@ -94,7 +95,7 @@ export function appliedPrice(bar: ChartEngineCandle, source: AppliedPrice = "clo
   }
 }
 
-interface AverageState { input: number | null; count: number; sum: number; weighted: number; value: number | null }
+type AverageState = SeededAverageState;
 interface State { price: number; averages: Record<string, AverageState> }
 
 /** One checkpoint per bar. A revised forming bar replaces its checkpoint;
@@ -156,20 +157,10 @@ export class StudyCalculator {
     let previous: State | undefined;
     const average = (key: string, input: number | null, period: number, method: AverageMethod): number | null => {
       const prior = previous?.averages[key];
-      const count = input == null ? 0 : (prior?.count ?? 0) + 1;
       const expired = this.states[i - period]?.averages[key]?.input ?? 0;
-      const sum = input == null ? 0 : (prior?.sum ?? 0) + input - (count > period ? expired : 0);
-      const weighted = method !== "wma" || input == null ? 0 : count <= period
-        ? (prior?.weighted ?? 0) + count * input
-        : (prior?.weighted ?? 0) - (prior?.sum ?? 0) + period * input;
-      let value: number | null = null;
-      if (input != null && count >= period) {
-        if (method === "wma") value = weighted / (period * (period + 1) / 2);
-        else if (method === "sma" || prior?.value == null) value = sum / period;
-        else value = prior.value + (method === "smma" ? 1 / period : 2 / (period + 1)) * (input - prior.value);
-      }
-      state.averages[key] = { input, count, sum, weighted, value };
-      return value;
+      const next = advanceStudyAverage(input, period, method, prior, expired);
+      state.averages[key] = next;
+      return next.value;
     };
     for (i = from; i < bars.length; i++) {
       const bar = bars[i]!;
@@ -230,7 +221,7 @@ export class StudyCalculator {
         }
         case "atr": {
           const close = bars[i - 1]?.close;
-          const range = close == null ? bar.high - bar.low : Math.max(bar.high - bar.low, Math.abs(bar.high - close), Math.abs(bar.low - close));
+          const range = chartTrueRange(bar, close);
           values = [average("range", range, p, c.method ?? "smma")];
           break;
         }
