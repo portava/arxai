@@ -3,8 +3,8 @@ import { Search, Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { chartSymbolCatalogue, exactChartSymbol, restoreChartSymbols, searchChartAnalysisSymbols, type ChartSymbolScope } from "@/lib/chart-engine/chartAnalysisCatalogue";
 import {
-  SYMBOL_REGISTRY,
   groupByMarketType,
   searchSymbols,
   resolveSymbol,
@@ -68,6 +68,8 @@ function saveJson(key: string, val: unknown): void {
 }
 
 export interface SymbolExplorerProps {
+  /** Additional stock rows apply only to independent, analysis-only chart owners. */
+  scope?: ChartSymbolScope;
   activeSymbol: string;
   onSelect: (canonicalSymbol: string, entry: ResolvedSymbol) => void;
   /** When false, synthetic symbols stay selectable but are flagged. */
@@ -79,26 +81,39 @@ export interface SymbolExplorerProps {
 }
 
 export function SymbolExplorer(props: SymbolExplorerProps) {
+  // A scope change remounts only this picker; pending searches/storage cannot
+  // carry a comparison-only stock back into a primary picker.
+  return <ScopedSymbolExplorer key={props.scope ?? "focus"} {...props}/>;
+}
+function ScopedSymbolExplorer(props: SymbolExplorerProps) {
+  const scope=props.scope ?? "focus";
+  const analysis=scope === "chart-analysis";
+  const recentKey=analysis?"arx.symbolExplorer.chart-analysis.recent.v1":RECENT_KEY;
+  const favKey=analysis?"arx.symbolExplorer.chart-analysis.favs.v1":FAV_KEY;
+  const activeKey=analysis?"arx.symbolExplorer.chart-analysis.activeCat.v1":ACTIVE_KEY;
   const { activeSymbol, onSelect, derivFeedConfigured = true, derivFeedConnected = false, derivFeedConnecting = false } = props;
   const showDiagnostics = props.showDiagnostics ?? import.meta.env.DEV;
 
   const [query, setQuery] = useState("");
-  const [recent, setRecent] = useState<string[]>(() => loadJson<string[]>(RECENT_KEY, []));
-  const [favs, setFavs] = useState<string[]>(() => loadJson<string[]>(FAV_KEY, []));
+  const [recent, setRecent] = useState<string[]>(() => restoreChartSymbols(loadJson<unknown>(recentKey, []),scope,MAX_RECENT));
+  const [favs, setFavs] = useState<string[]>(() => restoreChartSymbols(loadJson<unknown>(favKey, []),scope,16));
   // null = grid collapsed. Default to collapsed on mount so the selected
   // market pill stays the dominant surface; tapping a chip expands it.
   const [activeCat, setActiveCat] = useState<CategoryId | null>(null);
 
-  useEffect(() => saveJson(RECENT_KEY, recent), [recent]);
-  useEffect(() => saveJson(FAV_KEY, favs), [favs]);
+  useEffect(() => saveJson(recentKey, recent), [recentKey,recent]);
+  useEffect(() => saveJson(favKey, favs), [favKey,favs]);
   useEffect(() => {
-    if (activeCat !== null) saveJson(ACTIVE_KEY, activeCat);
-  }, [activeCat]);
+    if (activeCat !== null) saveJson(activeKey, activeCat);
+  }, [activeKey,activeCat]);
 
   function toggleFav(sym: string) {
+    if(!exactChartSymbol(sym,scope))return;
     setFavs((f) => (f.includes(sym) ? f.filter((x) => x !== sym) : [sym, ...f].slice(0, 16)));
   }
-  function commitSelect(canonical: string, entry: ResolvedSymbol) {
+  function commitSelect(canonical: string, _entry: ResolvedSymbol) {
+    const checked=exactChartSymbol(canonical,scope,{derivFeedConfigured});if(!checked)return;
+    const entry=analysis ? checked : {...checked,matchSource:_entry.matchSource};
     setRecent((r) => [canonical, ...r.filter((x) => x !== canonical)].slice(0, MAX_RECENT));
     // Collapse the expanded symbol grid after a successful selection so
     // the selected-market pill stays the dominant surface. The horizontal
@@ -109,18 +124,18 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
   }
 
   const suggestions: ResolvedSymbol[] = useMemo(
-    () => (query.trim() ? searchSymbols(query, { limit: 10, derivFeedConfigured }) : []),
-    [query, derivFeedConfigured],
+    () => (query.trim() ? analysis ? searchChartAnalysisSymbols(query,{derivFeedConfigured}) : searchSymbols(query, { limit: 10, derivFeedConfigured }) : []),
+    [query, derivFeedConfigured, analysis],
   );
   const exactSuggestion = suggestions[0];
   // Approved near-matches for a typed token that didn't match anything in the
   // fuzzy search (e.g. an ambiguous alias). Only the approved Top-250
   // candidates surface — never a non-approved market.
   const nearMatches: ResolvedSymbol[] = useMemo(
-    () => (query.trim() && suggestions.length === 0 ? suggestApprovedSymbols(query, { derivFeedConfigured }) : []),
-    [query, suggestions.length, derivFeedConfigured],
+    () => (!analysis && query.trim() && suggestions.length === 0 ? suggestApprovedSymbols(query, { derivFeedConfigured }) : []),
+    [query, suggestions.length, derivFeedConfigured, analysis],
   );
-  const groups = useMemo(() => groupByMarketType(SYMBOL_REGISTRY), []);
+  const groups = useMemo(() => groupByMarketType([...chartSymbolCatalogue(scope)]), [scope]);
 
   // Combined favorites/recent set used as the "Favorites" category.
   const favRecentSymbols = useMemo(
@@ -168,7 +183,7 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
   function submitTyped() {
     const q = query.trim();
     if (!q) return;
-    const hit = resolveSymbol(q, { derivFeedConfigured });
+    const hit = analysis ? exactChartSymbol(q,scope,{derivFeedConfigured}) : resolveSymbol(q, { derivFeedConfigured });
     if (hit) commitSelect(hit.canonicalSymbol, hit);
   }
   function onPickSuggestion(s: ResolvedSymbol) {
@@ -179,7 +194,8 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="space-y-2" data-testid="symbol-explorer">
+    <div className="space-y-2" data-testid="symbol-explorer" data-symbol-scope={scope}>
+      {analysis && <p className="text-xs text-amber-300">Comparison analysis only · choose a result or enter its exact symbol. Data availability is checked by this chart; trading and Scanner selection stay unchanged.</p>}
       {/* Search row */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]">
@@ -192,7 +208,7 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
               if (e.key === "Enter") { e.preventDefault(); submitTyped(); }
               if (e.key === "Escape") setQuery("");
             }}
-            placeholder="Search any market — EURUSD, gold, V75, btc, nas…"
+            placeholder={analysis ? "Search comparison charts — AAPL, Apple, EURUSD…" : "Search any market — EURUSD, gold, V75, btc, nas…"}
             className="pl-7"
             data-testid="input-symbol-search"
             autoComplete="off"
@@ -208,7 +224,7 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
       {query.trim().length > 0 && (
         <div className="rounded-md border border-border bg-background/60 p-2" data-testid="symbol-suggestions">
           {suggestions.length === 0 ? (
-            <NoMatch query={query} nearMatches={nearMatches} onPick={onPickSuggestion} />
+            <NoMatch analysis={analysis} query={query} nearMatches={nearMatches} onPick={onPickSuggestion} />
           ) : (
             <ul className="text-sm divide-y divide-border/60">
               {suggestions.map((s) => (
@@ -296,7 +312,7 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
             active={activeSymbol}
             favs={favs}
             onSelect={(sym) => {
-              const hit = resolveSymbol(sym, { derivFeedConfigured });
+              const hit = exactChartSymbol(sym, scope, { derivFeedConfigured });
               if (hit) commitSelect(hit.canonicalSymbol, hit);
             }}
             onToggleFav={toggleFav}
@@ -327,19 +343,21 @@ export function SymbolExplorer(props: SymbolExplorerProps) {
 }
 
 function NoMatch({
+  analysis=false,
   query,
   nearMatches,
   onPick,
 }: {
+  analysis?: boolean;
   query: string;
   nearMatches: ResolvedSymbol[];
   onPick: (s: ResolvedSymbol) => void;
 }) {
   return (
     <div className="text-xs text-txt-secondary" data-testid="symbol-no-match">
-      "{query.trim().toUpperCase()}" isn't in the approved market list. Try a broker symbol, forex pair,
+      {analysis ? <>“{query.trim()}” has no comparison-chart catalogue match. Search an exact symbol or company name; no market has been substituted.</> : <>"{query.trim().toUpperCase()}" isn't in the approved market list. Try a broker symbol, forex pair,
       crypto, index, or synthetic alias
-      (e.g. <span className="font-mono">EURUSD</span>, <span className="font-mono">gold</span>, <span className="font-mono">V75</span>, <span className="font-mono">volatility 75 1s</span>).
+      (e.g. <span className="font-mono">EURUSD</span>, <span className="font-mono">gold</span>, <span className="font-mono">V75</span>, <span className="font-mono">volatility 75 1s</span>).</>}
       {nearMatches.length > 0 && (
         <div className="mt-2" data-testid="symbol-near-matches">
           <div className="mb-1 text-txt-muted">Did you mean:</div>
@@ -362,7 +380,7 @@ function NoMatch({
         </div>
       )}
       <div className="mt-1 text-txt-muted">
-        Only markets in the approved list can be searched, charted, scanned, or traded.
+        {analysis ? "This chart-only catalogue does not grant scanning or trading access." : "Only markets in the approved list can be searched, charted, scanned, or traded."}
       </div>
     </div>
   );
