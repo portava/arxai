@@ -58,3 +58,7 @@ it('server age cannot be replaced by a smaller local age',()=>{
  render(<NativeAccountReport report={report({observationAgeMs:180000})}/>);expect(screen.getByText(/Stale report/)).toBeTruthy();
 });
 it('broker currency text is retained rather than replaced with USD',()=>{expect(nativeAccountMoney('1.000','US Cent',3)).toBe('US Cent 1.000');expect(nativeAccountMoney('1.000','A\nB',3)).toBeNull();});
+
+it('negative used margin invalidates the complete report',()=>{const value=report();value.amounts.margin='-1.000';render(<NativeAccountReport report={value}/>);expect(screen.getByTestId('native-money-equity').textContent).toBe('—');});
+
+it('account mismatch explains the hold without leaking internal identifiers',()=>{render(<NativeAccountReport report={report({status:'unavailable',reason:'ACCOUNT_BINDING_MISMATCH',amounts:null})}/>);expect(screen.getByText(/does not match the selected broker account/)).toBeTruthy();expect(screen.queryByText(/ACCOUNT_BINDING_MISMATCH/)).toBeNull();});

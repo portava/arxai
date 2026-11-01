@@ -266,7 +266,7 @@
     "test:mt5-bridge-package": "node --import tsx --test --test-force-exit src/lib/mt5/__qa__/bridgePackage.test.ts src/lib/mt5/__qa__/managementTargetProtocol.test.ts",
     "test:release-readiness": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/email/__qa__/resend.test.ts src/lib/auth/__qa__/publicOrigin.test.ts src/lib/startup/__qa__/dependencyReadiness.test.ts src/routes/__qa__/healthReadiness.test.ts src/routes/__qa__/forgotPasswordPrivacy.test.ts",
     "check:email-readiness": "node --import tsx src/scripts/emailReadinessCheck.ts",
-    "test:mt5-demo-ea": "python3 ../../mt5-bridge/tests/run_demo_core.py && python3 ../../mt5-bridge/tests/run_management_target.py && python3 ../../mt5-bridge/tests/run_candle_chart_mode.py && python3 ../../mt5-bridge/tests/run_account_telemetry_clock.py",
+    "test:mt5-demo-ea": "python3 ../../mt5-bridge/tests/run_demo_core.py && python3 ../../mt5-bridge/tests/run_management_target.py && python3 ../../mt5-bridge/tests/run_candle_chart_mode.py && python3 ../../mt5-bridge/tests/run_account_telemetry_clock.py && python3 ../../mt5-bridge/tests/run_native_account_report.py",
     "test:operational-rate-cap-monitoring": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/alerts/__qa__/operationalRateCapMonitor.test.ts src/lib/adminTrading/__qa__/operationalRateCapMonitoring.test.ts",
     "check:market-data": "node --import tsx src/scripts/marketDataReadinessCheck.ts",
     "test:non-broker-launch": "node --import tsx --test src/lib/assistant/__qa__/alphaVantageFx.test.ts src/lib/startup/__qa__/dashboard.test.ts",
@@ -292,7 +292,8 @@
     "test:research-evidence-postgres": "node src/lib/backtest/__qa__/runResearchEvidencePostgres.mjs",
     "test:chart-truth-evidence": "node --import tsx --test src/lib/data/chart/__qa__/chartTruthEvidence.test.ts",
     "test:account-stream-scheduling": "node --import tsx --test src/lib/live/__qa__/accountSnapshotScheduler.test.ts src/lib/live/__qa__/accountStreamScheduling.test.ts src/lib/live/__qa__/liveAccountEventBus.test.ts src/lib/live/__qa__/sharedAccountChangeStream.test.ts src/lib/live/__qa__/accountChangeProducers.test.ts src/lib/auth/__qa__/userSessionReadOnly.test.ts",
-    "test:account-profit-truth": "node --import tsx --test src/lib/live/__qa__/liveAccountProfitTruth.test.ts src/lib/live/__qa__/investorBalanceDisplayEvidence.test.ts"
+    "test:account-profit-truth": "node --import tsx --test src/lib/live/__qa__/liveAccountProfitTruth.test.ts src/lib/live/__qa__/investorBalanceDisplayEvidence.test.ts",
+    "test:native-account-report": "node --experimental-test-module-mocks --import tsx --test --test-force-exit ../../lib/domain/src/bridge-v2/__qa__/nativeAccountContract.test.ts src/lib/brokerHub/__qa__/nativeAccountReport.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

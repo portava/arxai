@@ -34,6 +34,7 @@ import {
   recomputeMasterPool,
   resolveActiveMasterConnectionId,
 } from "../lib/live/masterBridgePool.js";
+import { loadNativeAccountReport } from "../lib/brokerHub/nativeAccountReportReader.js";
 import { projectPinnedMasterAccount } from "../lib/live/masterAccountDisplay.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
@@ -99,6 +100,10 @@ async function buildMasterMt5Snapshot(userId: number, view: Awaited<ReturnType<t
     nowMs: Date.now(),
   });
 
+  // Preserve native decimal text in the owner-only DTO; do not route through
+  // legacy float4 columns or use this telemetry as allocation/execution input.
+  const nativeAccountReport = await loadNativeAccountReport(connection);
+
   // 7-day realized P&L from the applied attribution ledger (honest, real fills).
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const realizedRows = await db.select({
@@ -118,6 +123,7 @@ async function buildMasterMt5Snapshot(userId: number, view: Awaited<ReturnType<t
 
   return {
     ...accountEvidence,
+    nativeAccountReport,
     openPositions,
     brokerName,
     serverName,

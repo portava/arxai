@@ -24,6 +24,17 @@ const canonicalTime = (value: unknown): number => {
   return Number.isFinite(stamp) && new Date(stamp).toISOString() === value ? stamp : NaN;
 };
 
+const unavailableReason: Record<string, string> = {
+  ACCOUNT_BINDING_MISMATCH: "The report does not match the selected broker account.",
+  ACCOUNT_SCOPE_MISMATCH: "The report belongs to a different account connection.",
+  ACCOUNT_REPORT_REJECTED: "The latest account report was rejected.",
+  ACCOUNT_SEQUENCE_UNVERIFIED: "The order of account reports could not be verified.",
+  CAPTURE_TIME_INVALID: "The report's observation time could not be verified.",
+  RECEIPT_TIME_INVALID: "The report's arrival time could not be verified.",
+  TERMINAL_DISCONNECTED: "The terminal reported that it was disconnected.",
+  LEGACY_ACCOUNT_REPORT_UNVERIFIED: "This bridge has not supplied the complete native account report.",
+};
+
 /** Same read-only report in both owner surfaces. No second fetch or money engine. */
 export function NativeAccountReport({ report, failed = false }: { report: Report | null; failed?: boolean }) {
   const evidence = useMasterAccountEvidence(report ? {
@@ -36,7 +47,7 @@ export function NativeAccountReport({ report, failed = false }: { report: Report
   const valid = !failed && report?.status === "reported" && report.currentVerified === false
     && Number.isFinite(observedAt) && evidence.observedAtMs != null && evidence.ageMs != null && Number.isFinite(receivedAt)
     && receivedAt >= evidence.observedAtMs && receivedAt <= Date.now()
-    && values.every(value => value !== null);
+    && values.every(value => value !== null) && !report.amounts?.margin.startsWith("-");
   return <div data-testid="native-account-report">
     <p className="mb-2 text-xs text-warning">
       {valid ? "MT5-reported amounts — current state unverified." : "Complete MT5 account report unavailable."}
@@ -51,6 +62,6 @@ export function NativeAccountReport({ report, failed = false }: { report: Report
       <p>Terminal-reported observation: {report.observedAt}. Received by ARX: {report.receivedAt}.</p>
       <p>{evidence.freshness === "stale" ? "Stale report. " : ""}Terminal clock and report ordering are not verified. These figures describe the whole broker account.</p>
     </div>}
-    {!valid && <p className="mt-2 text-xs text-txt-muted">Waiting for a complete report matched to this account. No older stored balance is substituted.</p>}
+    {!valid && <p className="mt-2 text-xs text-txt-muted">{failed ? "The latest account refresh failed." : unavailableReason[report?.reason ?? ""] ?? "Waiting for a complete report matched to this account."} No older stored balance is substituted.</p>}
   </div>;
 }
