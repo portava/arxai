@@ -1,4 +1,4 @@
-import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyLabel, studyId, type ChartStudy, type StudyKind } from "./chartStudies";
+import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyLabel, studyId, formatStudyNumber, type ChartStudy, type StudyKind } from "./chartStudies";
 import type { ChartEngineAdapter } from "./types";
 
 // A local display action in the existing assistant, not an AI score or a trade
@@ -27,7 +27,7 @@ export function parseStudyRequest(text:string): StudyRequest | null {
   const action=simple?.[1]==="hide" ? "hide" : simple?.[1]==="remove" ? "remove" : "show";
   // MACD fast/slow relationship and multi-input tools remain in the existing
   // settings editor. Do not guess what a bare MACD number meant.
-  if (period!=null && (!Number.isInteger(period) || period<1 || period>1000 || alias.kind==="macd" || action!=="show")) return {error:help};
+  if (period!=null && (!Number.isInteger(period) || period<1 || period>1000 || (alias.kind==="macd" || alias.kind==="tick_volume") || action!=="show")) return {error:help};
   return {kind:alias.kind,action,period,...(edit ? {preserveVisibility:true} : {})};
 }
 export interface StudyAssistantContext {
@@ -37,7 +37,6 @@ export interface StudyAssistantContext {
   save:(studies:ChartStudy[])=>void;
 }
 const time=(seconds:number)=>new Date(seconds*1000).toISOString();
-const number=(value:number)=>Number(value.toPrecision(8)).toString();
 export function executeStudyRequest(request:StudyRequest,context:StudyAssistantContext):string {
   if ("error" in request) return request.error;
   const {adapter,studies,symbol,timeframe,feedLabel,save}=context;
@@ -77,7 +76,7 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
   const values=definition.channels.map(name=>{
     const channel=result?.values.find(v=>v.name===name || v.name===`${name} (hidden)`);
     const value=channel?.value;
-    return `${channel?.name ?? name}: ${typeof value==="number" && Number.isFinite(value) ? number(value) : "unavailable / warming up"}`;
+    return `${channel?.name ?? name}: ${typeof value==="number" && Number.isFinite(value) ? formatStudyNumber(value,name) : (request.kind==="tick_volume" ? "unavailable: no qualified per-bar tick count" : "unavailable / warming up")}`;
   }).join("; ");
   const firstValue=result?.values[0]?.value;
   const finiteFirst=typeof firstValue==="number" && Number.isFinite(firstValue);

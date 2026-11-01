@@ -1,8 +1,9 @@
+import { observedTickVolume } from "./chartVolume";
 import type { ChartEngineCandle } from "./types";
 import { ChartRangeWindow, scanChartRange } from "./chartRangeWindow";
 
 export type StudyKind =
-  | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
+  | "tick_volume" | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
   | "rsi" | "macd" | "atr" | "cci" | "stochastic" | "williams"
   | "stddev" | "envelopes" | "momentum" | "roc" | "donchian" | "dmi";
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
@@ -26,7 +27,7 @@ export interface ChartStudy {
 export interface StudyPoint { time: number; values: (number | null)[] }
 export interface StudyDefinition {
   name: string;
-  group: "Trend" | "Momentum" | "Volatility";
+  group: "Trend" | "Momentum" | "Volatility" | "Volume";
   description: string;
   defaults: ChartStudy;
   channels: string[];
@@ -56,6 +57,7 @@ export const STUDY_CATALOG: StudyDefinition[] = [
   { name: "Rate of change", group: "Momentum", description: "Percentage price change over N bars.", defaults: { kind: "roc", period: 14, color: "#fbbf24" }, channels: ["ROC %"], pane: true, appliedPrice: true, levels: [0] },
   { name: "Donchian Channels", group: "Volatility", description: "Highest high, lowest low and their midpoint over the selected bars, including the forming bar. Requires a full window; channel contact alone is not a breakout signal.", defaults: { kind: "donchian", period: 20, color: "#38bdf8" }, channels: ["Midpoint", "Upper", "Lower"], pane: false, appliedPrice: false },
   { name: "Directional movement (DMI / ADX)", group: "Trend", description: "Wilder-smoothed +DI and −DI show directional movement; ADX measures strength, not direction or confidence. Separate DI and ADX lengths; tied moves count as zero. Not a trade signal.", defaults: { kind: "dmi", period: 14, signal: 14, color: "#38bdf8" }, channels: ["+DI", "−DI", "ADX"], pane: true, appliedPrice: false, range: [0, 100] },
+  { name: "Tick volume", group: "Volume", description: "Explicit MT5 per-bar tick counts, not traded size. Only source-qualified observations are plotted; missing or partial streaming evidence stays blank, never zero-filled. No real traded-volume data is inferred.", defaults: { kind: "tick_volume", period: 1, color: "#38bdf8" }, channels: ["Ticks"], pane: true, appliedPrice: false },
 ];
 /** Preserve the original starter collection and saved templates. */
 export const STUDY_DEFAULTS = (["sma", "ema", "bollinger", "rsi", "macd"] as const).map(kind => STUDY_CATALOG.find(item => item.defaults.kind === kind)!.defaults);
@@ -65,7 +67,13 @@ export const studyId = (study: ChartStudy) => study.id ?? study.kind;
 export function studyChannelColor(config: ChartStudy, channel: number): string {
   return config.lineStyles?.[channel]?.color ?? (config.kind === "dmi" ? (channel === 0 ? "#4ade80" : channel === 1 ? "#fb7185" : config.color) : channel === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color);
 }
+/** Match the existing legend precision for continuous values; observed integer
+ * counts must remain exact (no 8-significant-digit rounding of large counts). */
+export function formatStudyNumber(value:number,channel:string):string {
+  return channel === "Ticks" || channel === "Ticks (hidden)" ? String(value) : String(Number(value.toPrecision(8)));
+}
 export function studyLabel(study: ChartStudy): string {
+  if (study.kind === "tick_volume") return "Tick volume · ticks (not traded size)";
   const parameters = [study.period];
   if (study.kind === "macd") parameters.push(study.slow ?? 26, study.signal ?? 9);
   if (study.kind === "dmi") parameters.push(study.signal ?? 14);
@@ -272,6 +280,7 @@ export class StudyCalculator {
           values = [ratio == null ? null : c.kind === "momentum" ? 100 * ratio : 100 * (ratio - 1)];
           break;
         }
+        case "tick_volume": values = [observedTickVolume(bar.volumeEvidence)]; break;
         default: values = [null];
       }
       this.states.push(state);

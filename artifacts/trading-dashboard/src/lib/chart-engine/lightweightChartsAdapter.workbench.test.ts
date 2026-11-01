@@ -1,3 +1,4 @@
+import { executeStudyRequest, parseStudyRequest } from "./chartStudyAssistant";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const m=vi.hoisted(()=>{
   const handles:any[]=[];
@@ -380,4 +381,38 @@ it("reads the new series after remount and withdraws its live labels on context 
  const series=adapter.getScannerOverlaySurface()!.series as any;expect(series.options()).toMatchObject({priceLineVisible:true,lastValueVisible:true});expect(series.createPriceLine.mock.results.at(-1)!.value.options().price).toBe(bars.at(-1)!.close);
  adapter.resetDataContext();expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.data).toEqual([]);
  adapter.setCandles(bars);expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
+});
+
+
+describe("qualified volume lifecycle",()=>{
+  it("manual and assistant tick-volume controls use the same renderer and exact count",()=>{
+    const evidence={kind:"tick_count" as const,quantity:123456789,unit:"ticks" as const,reason:null};
+    adapter.setCandles(bars.map(bar=>({...bar,volumeEvidence:evidence})));
+    const config=STUDY_CATALOG.find(d=>d.defaults.kind === "tick_volume")!.defaults;
+    adapter.setStudies([config]);
+    const observedTime=adapter.getVisibleCandles().at(-1)!.time;
+    const manual=adapter.getStudyValues(observedTime)[0]!.values;
+    adapter.setStudies([]);
+    const save=vi.fn();
+    const reply=executeStudyRequest(parseStudyRequest("show tick volume")!,{adapter,studies:[],symbol:"EURUSD",timeframe:"M1",feedLabel:"MT5 · Not live-confirmed",save});
+    expect(save).toHaveBeenCalledWith([expect.objectContaining(config)]);
+    expect(adapter.getStudyValues(observedTime)[0]!.values).toEqual(manual);
+    expect(reply).toContain("Ticks: 123456789"); expect(reply).not.toContain("123456790");
+  });
+  it("withdraws stale same-bar volume when a streaming price update has no evidence",()=>{
+    const evidence={kind:"tick_count" as const,quantity:25,unit:"ticks" as const,reason:null};
+    const observed=bars.map(bar=>({...bar,volumeEvidence:evidence}));
+    adapter.setCandles(observed);
+    adapter.setStudies([{kind:"tick_volume",period:1,color:"#38bdf8"}]);
+    const last=bars.at(-1)!;
+    expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBe(25);
+    adapter.updateActiveCandle({...last}); // same OHLC/time, unqualified partial stream
+    expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBeNull();
+    adapter.setCandles(observed.map(bar=>({...bar,volumeEvidence:{...evidence,quantity:40}})));
+    expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBe(40);
+    adapter.resetDataContext();
+    adapter.setCandles(bars);
+    adapter.setStudies([{kind:"tick_volume",period:1,color:"#38bdf8"}]);
+    expect(adapter.getStudyValues(last.time)[0]!.values[0]!.value).toBeNull();
+  });
 });

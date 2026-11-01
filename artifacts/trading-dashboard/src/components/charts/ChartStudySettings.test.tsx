@@ -51,7 +51,7 @@ describe("independent study configuration", () => {
     expect(add.hasAttribute("disabled")).toBe(false);
     fireEvent.click(add);
     expect(settings().studies).toHaveLength(12);
-    expect(within(screen.getByLabelText("Available studies")).getAllByRole("button")).toHaveLength(19);
+    expect(within(screen.getByLabelText("Available studies")).getAllByRole("button")).toHaveLength(20);
   });
 });
 
