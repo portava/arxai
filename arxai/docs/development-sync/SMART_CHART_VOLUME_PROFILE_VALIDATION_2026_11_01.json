@@ -1,0 +1,227 @@
+{
+  "applicationSource": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa",
+  "qaSource": "a02e76bbf9314e1f69d964c93f9801c5ca1e6c1b",
+  "applicationTreeEquality": {
+    "artifacts": {
+      "tested": "2394c335ad866e8312e121a02748c40a91d3a163",
+      "qa": "2394c335ad866e8312e121a02748c40a91d3a163"
+    },
+    "lib": {
+      "tested": "537307948cb6430fbdf3791f63f5996dde9a8ea5",
+      "qa": "537307948cb6430fbdf3791f63f5996dde9a8ea5"
+    }
+  },
+  "checks": [
+    {
+      "check": "domain",
+      "exit": 0,
+      "seconds": 0.37,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "frontend",
+      "exit": 0,
+      "seconds": 36.26,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "provider-candles",
+      "exit": 0,
+      "seconds": 1.72,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "typecheck",
+      "exit": 0,
+      "seconds": 27.92,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "build",
+      "exit": 0,
+      "seconds": 6.59,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "guards",
+      "exit": 0,
+      "seconds": 16.73,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "bindings",
+      "exit": 0,
+      "seconds": 0.58,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "truth-backend",
+      "exit": 0,
+      "seconds": 2.13,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "backtest",
+      "exit": 0,
+      "seconds": 0.47,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "volume-shape",
+      "exit": 0,
+      "seconds": 3.92,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "volume-fixtures",
+      "exit": 0,
+      "seconds": 1.26,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "volume-forming",
+      "exit": 0,
+      "seconds": 1.03,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "api-build",
+      "exit": 0,
+      "seconds": 0.74,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "v2-candle-evidence",
+      "exit": 0,
+      "seconds": 2.25,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "scanner-fixture-build",
+      "exit": 0,
+      "seconds": 6.43,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    },
+    {
+      "check": "profile-fixture-build",
+      "exit": 0,
+      "seconds": 1.21,
+      "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa"
+    }
+  ],
+  "frontend": {
+    "pass": 3296,
+    "skip": 11,
+    "fail": 0,
+    "filesPass": 207,
+    "filesSkip": 1
+  },
+  "targetedBackend": {
+    "pass": 513,
+    "fail": 0
+  },
+  "guards": 87,
+  "bindings": 7,
+  "browser": {
+    "volume-profile": {
+      "buildId": "861459da19da2027",
+      "checks": 278,
+      "source": {
+        "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa",
+        "status": "",
+        "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "pageErrors": [],
+      "unavailableFixtureReads": 174,
+      "blockedWrites": 9
+    },
+    "mobile-profile": {
+      "buildId": "861459da19da2027",
+      "checks": 37,
+      "source": {
+        "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa",
+        "status": "",
+        "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "pageErrors": [],
+      "unavailableFixtureReads": 40,
+      "blockedWrites": 3
+    },
+    "mobile-layout": {
+      "buildId": "861459da19da2027",
+      "checks": 29,
+      "source": {
+        "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa",
+        "status": "",
+        "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "pageErrors": [],
+      "unavailableFixtureReads": 44,
+      "blockedWrites": 3
+    },
+    "clock-research": {
+      "buildId": "861459da19da2027",
+      "checks": 46,
+      "source": {
+        "head": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa",
+        "status": "",
+        "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "pageErrors": [],
+      "unavailableFixtureReads": 58,
+      "blockedWrites": 3
+    }
+  },
+  "finalBrowserAssertions": 390,
+  "priorSuccessfulBrowserAssertions": 278,
+  "performance": [
+    {
+      "run": 1,
+      "cpu": 1,
+      "workloads": 4,
+      "groups": 24,
+      "measuredSamples": 720,
+      "worstSyncP95Ms": 7.300000190734863,
+      "worstCompletionProxyP95Ms": 35.80000019073486,
+      "maxCompletionProxyMs": 36.19999980926514
+    },
+    {
+      "run": 1,
+      "cpu": 4,
+      "workloads": 4,
+      "groups": 24,
+      "measuredSamples": 720,
+      "worstSyncP95Ms": 31.40000009536743,
+      "worstCompletionProxyP95Ms": 55.69999980926514,
+      "maxCompletionProxyMs": 72.7999997138977
+    },
+    {
+      "run": 2,
+      "cpu": 1,
+      "workloads": 4,
+      "groups": 24,
+      "measuredSamples": 720,
+      "worstSyncP95Ms": 7.199999809265137,
+      "worstCompletionProxyP95Ms": 35.30000019073486,
+      "maxCompletionProxyMs": 36.299999713897705
+    },
+    {
+      "run": 2,
+      "cpu": 4,
+      "workloads": 4,
+      "groups": 24,
+      "measuredSamples": 720,
+      "worstSyncP95Ms": 30.90000009536743,
+      "worstCompletionProxyP95Ms": 55.60000038146973,
+      "maxCompletionProxyMs": 57
+    }
+  ],
+  "performanceCorrectnessPass": true,
+  "local100msP95ProxyTargetPass": true,
+  "physicalPaintMeasured": false,
+  "navigationLatencyMeasured": false,
+  "competitorParityProven": false,
+  "actualProviderOrBrokerAcceptance": false,
+  "deployment": false,
+  "rawEvidence": "/Users/areyouok/arx-tier1-release/chart-volume-profile-20261101"
+}

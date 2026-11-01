@@ -54,14 +54,15 @@ qualifies UTC after reviewed adapter additions. MT5 clock authority is not
 established by those additions. Client claims or EA price-basis declarations
 cannot supply clock authority.
 
-Adding stock-volume calculations does not authorize expansion of the Scanner or
-trading universe. Calculator/renderer tests do not establish positive acceptance
-for an instrument that the actual Scanner cannot select.
+Analysis-only stock comparison selection does not authorize expansion of the
+primary Scanner Focus or trading universe. Calculator/renderer tests do not
+establish actual-page acceptance.
 
-**Why:** The owner explicitly kept the Common Stocks reachability limitation open
-and prohibited expanding the universe or fabricating data to close it.
+**Why:** The owner subsequently authorized reviewed analysis-only stock
+comparisons while retaining primary setup, trade-ticket and data-authority gates.
 
-**How to apply:** Keep positive Scanner stock VWAP/trade-volume acceptance open
-until a separately reviewed, reachable integration exists. Do not inject approved
-instruments, relabel stock candles as another market, or treat an analysis-only
-comparison design as implemented functionality.
+**How to apply:** Keep comparison selection and selected-pane assistant ownership
+separate from the primary setup and trade ticket. Source integration does not
+prove reachable positive stock/profile acceptance; verify it on the actual
+Scanner with original qualified evidence. Do not force an instrument into
+primary Focus, relabel another market, or infer trading permission from analysis.
