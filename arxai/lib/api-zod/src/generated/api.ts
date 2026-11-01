@@ -5397,10 +5397,20 @@ export const GetChartCandlesResponse = zod.object({
           .describe(
             "live = real market data; demo = MT5 demo bridge context; mock = simulation provider (never safe as tradable truth); dev = developer test data; unknown = unrecognized source.\n",
           ),
+        priceBasisEvidence: zod
+          .object({
+            kind: zod.enum(["producer_declared", "unavailable"]),
+            basis: zod.enum(["BID", "MID", "LAST", "SYNTHETIC"]).nullable(),
+            reason: zod.string().nullable(),
+          })
+          .optional()
+          .describe(
+            "Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.",
+          ),
         priceBasis: zod
           .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])
           .describe(
-            "BID = MT5 broker bid-based bars; MID = bid-ask midpoint (forex\/metals REST); LAST = exchange last price (indices\/stocks\/crypto); SYNTHETIC = Deriv volatility algorithm; UNKNOWN = provider not identified.\n",
+            "BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.\n",
           ),
         isFinal: zod
           .boolean()
@@ -6336,10 +6346,20 @@ export const GetMeChartIntelligenceResponse = zod.object({
               .describe(
                 "live = real market data; demo = MT5 demo bridge context; mock = simulation provider (never safe as tradable truth); dev = developer test data; unknown = unrecognized source.\n",
               ),
+            priceBasisEvidence: zod
+              .object({
+                kind: zod.enum(["producer_declared", "unavailable"]),
+                basis: zod.enum(["BID", "MID", "LAST", "SYNTHETIC"]).nullable(),
+                reason: zod.string().nullable(),
+              })
+              .optional()
+              .describe(
+                "Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.",
+              ),
             priceBasis: zod
               .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])
               .describe(
-                "BID = MT5 broker bid-based bars; MID = bid-ask midpoint (forex\/metals REST); LAST = exchange last price (indices\/stocks\/crypto); SYNTHETIC = Deriv volatility algorithm; UNKNOWN = provider not identified.\n",
+                "BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.\n",
               ),
             isFinal: zod
               .boolean()
@@ -6462,10 +6482,20 @@ export const GetMeChartIntelligenceResponse = zod.object({
               .describe(
                 "live = real market data; demo = MT5 demo bridge context; mock = simulation provider (never safe as tradable truth); dev = developer test data; unknown = unrecognized source.\n",
               ),
+            priceBasisEvidence: zod
+              .object({
+                kind: zod.enum(["producer_declared", "unavailable"]),
+                basis: zod.enum(["BID", "MID", "LAST", "SYNTHETIC"]).nullable(),
+                reason: zod.string().nullable(),
+              })
+              .optional()
+              .describe(
+                "Original source-qualified producer declaration, separate from legacy symbol-family priceBasis labels. Missing evidence never grants historical execution authority.",
+              ),
             priceBasis: zod
               .enum(["BID", "MID", "LAST", "SYNTHETIC", "UNKNOWN"])
               .describe(
-                "BID = MT5 broker bid-based bars; MID = bid-ask midpoint (forex\/metals REST); LAST = exchange last price (indices\/stocks\/crypto); SYNTHETIC = Deriv volatility algorithm; UNKNOWN = provider not identified.\n",
+                "BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.\n",
               ),
             isFinal: zod
               .boolean()

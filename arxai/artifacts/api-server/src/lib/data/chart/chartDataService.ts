@@ -1,3 +1,4 @@
+import { unavailableCandlePriceBasis } from "../candlePriceBasisEvidence.js";
 import { unavailableCandleVolume } from "../candleVolumeEvidence.js";
 // ARX Native Chart — Level 1: candle data truth service.
 // Phase 1 hardening: full VerifiedCandle shape + TimeframeTruthResult.
@@ -153,6 +154,8 @@ function buildFormingTipCandle(
     volume: 0,
     tickVolume: forming.tickCount,
     volumeEvidence: unavailableCandleVolume("The forming candle contains partial observed ticks, not a complete broker candle count."),
+    priceBasisEvidence: unavailableCandlePriceBasis("The composed forming tip is not the original producer-declared historical candle."),
+    priceBasis: template.source === "mt5_broker" ? "UNKNOWN" : template.priceBasis,
     isComplete: false,
     isFinal: false,
     isForming: true,
@@ -298,6 +301,8 @@ async function buildChartFeed(
           close: forming.close,
           tickVolume: forming.tickCount,
           volumeEvidence: unavailableCandleVolume("The forming candle contains partial observed ticks, not a complete broker candle count."),
+          priceBasisEvidence: unavailableCandlePriceBasis("The composed forming tip is not the original producer-declared historical candle."),
+          priceBasis: lastCandle.source === "mt5_broker" ? "UNKNOWN" : lastCandle.priceBasis,
           isComplete: false,
           isFinal: false,
           isForming: true,

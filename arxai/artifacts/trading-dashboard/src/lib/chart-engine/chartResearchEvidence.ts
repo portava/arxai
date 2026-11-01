@@ -25,7 +25,8 @@ export interface ResearchWindow {
   toExclusiveMs: number;
 }
 export interface ChartResearchSnapshot {
-  version: 1;
+  version: 2;
+  priceBasisEvidence: {kind:"producer_declared";basis:"BID"|"MID";reason:null};
   contextKey: string;
   sourceMode: "live" | "demo";
   sourceEvidence: Readonly<NonNullable<ChartCandlesResponse["marketEvidence"]>>;
@@ -227,6 +228,9 @@ export function captureChartResearchWindow(args: {
         return unavailable(
           "Historical testing currently supports original BID or MID prices only; this source basis is unsupported.",
         );
+      const basisEvidence = record(record(original)?.priceBasisEvidence);
+      if (basisEvidence?.kind !== "producer_declared" || basisEvidence.basis !== original.priceBasis || basisEvidence.reason !== null)
+        return unavailable("The feed has not supplied matching original BID/MID price-basis evidence. An asset profile or older API label cannot establish historical spread costs.");
       if (basis && basis !== original.priceBasis)
         return unavailable("The requested candles mix different price bases.");
       if (
@@ -262,7 +266,8 @@ export function captureChartResearchWindow(args: {
       bars,
     };
     const snapshot: ChartResearchSnapshot = {
-      version: 1,
+      version: 2,
+      priceBasisEvidence: {kind:"producer_declared",basis:basis!,reason:null},
       sourceMode: sourceMode!,
       contextKey: chartResearchContextKey(
         expected,
@@ -289,6 +294,7 @@ export function captureChartResearchWindow(args: {
         excludedFormingBars,
       },
       limitations: [
+        "The original producer declared the candle price basis; this is retained evidence, not independent broker verification.",
         "Historical source observations are captured, not broker-verified or an immutable persisted experiment.",
         "Prices are original source OHLC, even when the chart displays Heikin Ashi or another transformed style.",
         "Spread, slippage and fees are explicit scenarios; tick counts and current quote freshness do not establish historical execution conditions.",
@@ -359,6 +365,9 @@ export function bindChartResearchResult(
     reason,
   });
   try {
+    if (snapshot.version !== 2 || snapshot.priceBasisEvidence?.kind !== "producer_declared"
+      || snapshot.priceBasisEvidence.basis !== snapshot.researchInput.priceBasis || snapshot.priceBasisEvidence.reason !== null)
+      return no("This historical snapshot lacks original price-basis evidence; its chart markers are withheld.");
     if (current.contextKey !== snapshot.contextKey)
       return no(
         "The chart source or market changed; this historical result is no longer bound.",

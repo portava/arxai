@@ -58,7 +58,6 @@ import {
   normalizeCandles,
   trailingIntervalGap,
   sourceModeFromProvider,
-  priceBasisFromProvider,
   type NormalizedChartCandle,
   type SequenceAnomalies,
   type SourceMode,
@@ -388,11 +387,8 @@ export function runCandleTruth(
   const intervalMs = timeframeMs(timeframe);
   const intervalSeconds = timeframeSeconds(timeframe);
   const sourceMode = sourceModeFromProvider(source);
-  // priceBasis is derived from the symbol profile (family-correct), not from the
-  // provider alone. priceBasisFromProvider returns MID for all assistant_real:*
-  // sources regardless of asset class; the profile knows LAST for indices/stocks/
-  // crypto and SYNTHETIC for Deriv volatility instruments, so it always wins.
-  const priceBasis = profile.priceBasis;
+  // Profiles describe market families, not the original MT5 chart mode. The
+  // normalizer preserves each authenticated producer declaration separately.
   const mockDataDetected = sourceMode === "mock" || sourceMode === "dev";
   const mockDataAdminReason = mockDataDetected
     ? `Source "${source ?? "unknown"}" is a mock/simulation provider — data is not real market data and must not be used for live trading decisions.`
@@ -406,7 +402,7 @@ export function runCandleTruth(
     source,
     now,
     receivedAt,
-    priceBasisOverride: priceBasis,
+    priceBasisOverride: profile.priceBasis,
     spikeAtrMultiple: profile.spikeAtrMultiple,
     wickRatioThreshold: profile.wickRatioThreshold,
     historicalShiftThreshold: profile.historicalShiftThreshold,
@@ -447,8 +443,16 @@ export function runCandleTruth(
     anomalies, candles, historyMinimumMet, mockDataDetected, trailingIntervals, profile,
   );
 
-  // Source documentation
+  // Summarize the actual emitted bases. A mixed or missing MT5 declaration
+  // must not borrow a profile's midpoint or last-price assumption.
+  const bases = new Set(candles.map(c => c.priceBasis));
+  const priceBasis: PriceBasis = bases.size === 1 ? candles[0]!.priceBasis : "UNKNOWN";
   const sourceDocumentation = getSourceDocumentation(assetClass);
+  sourceDocumentation.priceBasisNote = source === "mt5_broker"
+    ? priceBasis === "UNKNOWN"
+      ? "UNKNOWN — original MT5 price-basis declaration is missing, inconsistent or mixed; no BID/MID/LAST basis is inferred."
+      : `${priceBasis} — original MT5 producer declaration, not independently verified broker execution evidence.`
+    : `${priceBasis} — compatibility/source classification; no qualified original producer declaration is available for historical execution modeling.`;
 
   // OHLC source type — derived from the provider's known behavior
   let ohlcSourceType: OhlcSourceType = profile.ohlcSourceType;

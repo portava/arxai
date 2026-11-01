@@ -11,7 +11,7 @@ function fixture() {
   const start=Date.parse("2026-01-01T00:00:00Z"), step=60_000;
   const candles=Array.from({length:160},(_,i)=>{
     const close=100+Math.sin(i/5)*4;
-    return {symbol:"EURUSD",timeframe:"M1",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:close-.1,high:close+.3,low:close-.3,close,source:"mt5_broker",sourceMode:"live",priceBasis:"BID",isComplete:true,isFinal:true,isForming:false,qualityFlags:[]};
+    return {symbol:"EURUSD",timeframe:"M1",openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:close-.1,high:close+.3,low:close-.3,close,source:"mt5_broker",sourceMode:"live",priceBasis:"BID",priceBasisEvidence:{kind:"producer_declared",basis:"BID",reason:null},isComplete:true,isFinal:true,isForming:false,qualityFlags:[]};
   });
   const data={symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",quality:"clean",candles,feedStatus:{source:"mt5_broker"},marketEvidence:{symbol:"EURUSD",timeframe:"M1",source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as ChartCandlesResponse;
   const canonicalBars=candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}));
@@ -44,7 +44,8 @@ describe("real engine chart research orchestration",()=>{
     const props=fixture(),view=render(<ChartResearchWorkbench {...props}/>);
     fireEvent.click(screen.getByRole('button',{name:'Run historical test'}));finish();
     fireEvent.click(screen.getByRole('button',{name:'Trade 1',exact:true}));
-    const data={...props.data,quality:'invalid'} as ChartCandlesResponse;
+    const data=structuredClone(props.data);
+    delete (data.candles[0] as any).priceBasisEvidence;
     view.rerender(<ChartResearchWorkbench {...props} data={data}/>);
     expect(props.onOverlays.mock.calls.at(-1)![0]).toEqual([]);
     expect(props.onExplanation.mock.calls.at(-1)![0]).toBeNull();

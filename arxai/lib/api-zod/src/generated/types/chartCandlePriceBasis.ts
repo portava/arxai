@@ -7,7 +7,7 @@
  */
 
 /**
- * BID = MT5 broker bid-based bars; MID = bid-ask midpoint (forex/metals REST); LAST = exchange last price (indices/stocks/crypto); SYNTHETIC = Deriv volatility algorithm; UNKNOWN = provider not identified.
+ * BID = bid-side observations; MID = bid-ask midpoint; LAST = last price; SYNTHETIC = synthetic series; UNKNOWN = missing or unsupported original basis. Other providers may retain legacy compatibility labels; priceBasisEvidence determines whether an original producer declaration exists.
 
  */
 export type ChartCandlePriceBasis =
