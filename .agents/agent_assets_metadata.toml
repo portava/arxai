@@ -14,3 +14,17 @@ mtime_ms = 1792767140451
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:fabb7c9c-fa80-41cb-8714-1e5066b998e6/6249a9f8-5288-4b1f-9af0-5c522cc4864e/21eedee9-7231-49df-8026-81faeeb62386"
 storage_version_token = "1792767185277588"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "6Kw0GMDmw1YJQQK5ZEWL2"
+uri = "file://ARX_HISTORICAL_FIBONACCI_SOURCE_DEVELOPMENT.md"
+type = "text"
+title = "ARX source-only validation report"
+description = "Checkpoint08ea8e7158765182977075236a93966a773b7abc. Automated checks passed; browser acceptance incomplete. Includes retained failures and unchanged runtime/output evidence."
+logical_id = "c8516abe-187d-4a7b-bc3f-f309ea7f2166"
+content_hash = "sha256:9611cfa56a61f19a54f629108f59313dc7ec058860a2bf8d3551bec0ade51f5f"
+size = 12521
+mtime_ms = 1793535562590
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:fabb7c9c-fa80-41cb-8714-1e5066b998e6/c8516abe-187d-4a7b-bc3f-f309ea7f2166/6de5291f-9440-4cca-9990-60eddf89cbda"
+storage_version_token = "1793535786345178"
+content_type = "text/markdown"
