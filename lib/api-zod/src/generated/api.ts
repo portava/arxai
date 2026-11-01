@@ -4855,8 +4855,14 @@ export const GetMt5StateResponse = zod.object({
  * @summary Combined MT5 bridge status (connection, mode, queue, account)
  */
 export const GetMt5StatusResponse = zod.object({
+  nativeAccountReport: zod.object({
+            status: zod.enum(["reported", "unavailable"]), reason: zod.string(),
+            observationAgeMs: zod.number().nonnegative().nullish(), currentVerified: zod.literal(false), observedAt: zod.string().nullable(), receivedAt: zod.string().nullable(),
+            currency: zod.string().nullable(), currencyDigits: zod.number().int().min(0).max(16).nullable(),
+            amounts: zod.object({ balance: zod.string(), equity: zod.string(), profit: zod.string(), credit: zod.string(), margin: zod.string(), freeMargin: zod.string() }).nullable(),
+          }).nullish(),
   connected: zod.boolean(),
-  mode: zod.enum(["MOCK", "DEMO", "LIVE_LOCKED", "LIVE"]),
+  mode: zod.enum(["MOCK", "DEMO", "LIVE_LOCKED", "LIVE", "NOT_CONNECTED", "STALE"]),
   lastHeartbeatAt: zod.string().nullable(),
   secondsSinceHeartbeat: zod.number().nullable(),
   pendingCommands: zod.number(),
@@ -4879,7 +4885,7 @@ export const GetMt5StatusResponse = zod.object({
     .describe(
       "Server-side flag (env ARX_ALLOW_DEMO_EXECUTION). When true, the demo-execution layer accepts DEMO_MARKET_ORDER queues; live execution remains impossible.",
     ),
-  accountType: zod.enum(["DEMO", "REAL", "UNKNOWN"]),
+  accountType: zod.enum(["DEMO", "REAL", "UNKNOWN", "NONE"]),
   maxDemoLot: zod.number(),
   openPositions: zod.array(
     zod.object({
@@ -4903,7 +4909,7 @@ export const GetMt5StatusResponse = zod.object({
     freeMargin: zod.number().nullish(),
     marginLevel: zod.number().nullish(),
     currency: zod.string().nullable(),
-  }),
+  }).nullable(),
 });
 
 /**

@@ -9773,6 +9773,8 @@ export const Mt5StatusMode = {
   DEMO: "DEMO",
   LIVE_LOCKED: "LIVE_LOCKED",
   LIVE: "LIVE",
+  NOT_CONNECTED: "NOT_CONNECTED",
+  STALE: "STALE",
 } as const;
 
 export type Mt5StatusExecutionMode =
@@ -9797,6 +9799,7 @@ export const Mt5StatusAccountType = {
   DEMO: "DEMO",
   REAL: "REAL",
   UNKNOWN: "UNKNOWN",
+  NONE: "NONE",
 } as const;
 
 export type Mt5StatusAccountSnapshot = {
@@ -9818,9 +9821,11 @@ export type Mt5StatusAccountSnapshot = {
   marginLevel?: number | null;
   /** @nullable */
   currency: string | null;
-};
+} | null;
 
 export interface Mt5Status {
+  /** Native reported observations for the authenticated user's selected personal connection; never shared-master funds or current-state proof. */
+  nativeAccountReport?: MasterMt5Snapshot["nativeAccountReport"];
   connected: boolean;
   mode: Mt5StatusMode;
   /** @nullable */

@@ -1,3 +1,4 @@
+import { loadNativeAccountReport } from "../lib/brokerHub/nativeAccountReportReader.js";
 import { mt5PriceBasisEvidence } from "../lib/data/candlePriceBasisEvidence.js";
 import { mt5TickVolumeEvidence } from "../lib/data/candleVolumeEvidence.js";
 import type { Candle } from "../lib/data/types.js";
@@ -1568,7 +1569,8 @@ router.get("/mt5/status", requireUser, async (req, res) => {
   // "not connected" instead of falling back to the singleton mt5_state
   // (which represents the legacy global owner bridge and would otherwise
   // leak that account's balance/equity into another user's UI).
-  const userConn = await getUserActiveConnection(userId);
+  const selectedConnection = await getUserActiveConnection(userId);
+  const userConn = selectedConnection?.userId === userId ? selectedConnection : null;
 
   const counts = await db.select({
     status: mt5CommandsTable.status,
@@ -1608,11 +1610,15 @@ router.get("/mt5/status", requireUser, async (req, res) => {
       accountType: "NONE",
       openPositions: [],
       accountSnapshot: null,
+      nativeAccountReport: null,
       userSafeMessage: "MT5 bridge not connected for this user. Set up an MT5 connection in MT5 Bridge settings.",
     });
     return;
   }
 
+  // Reuse the latest-attempt reader for this exact authenticated user connection.
+  // Do not consult a shared master or replace rejected/missing reports with stored amounts.
+  const nativeAccountReport = await loadNativeAccountReport(userConn);
   const lastHb = userConn.lastHeartbeat ? new Date(userConn.lastHeartbeat) : null;
   const ageMs = lastHb ? Date.now() - lastHb.getTime() : null;
   const fresh = isHeartbeatAgeMsFresh(ageMs);
@@ -1632,6 +1638,7 @@ router.get("/mt5/status", requireUser, async (req, res) => {
     lastHeartbeatAt: lastHb?.toISOString() ?? null,
     secondsSinceHeartbeat,
     accountType,
+    nativeAccountReport,
     openPositions: [],
     accountSnapshot: lastHb ? {
       account: userConn.accountNumber,
