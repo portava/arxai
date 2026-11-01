@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, Wallet, Shield, TrendingUp, TrendingDown, Activity, Server, Info } from "lucide-react";
+import { AlertCircle, Wallet, Shield, Activity, Server, Info } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useLiveAccountSnapshot } from "@/hooks/useLiveAccountSnapshot";
 import { CanonicalBalancePanel } from "@/components/account/CanonicalBalancePanel";
@@ -73,9 +73,12 @@ function fmtMoney(v: number | null | undefined): string {
   const sign = n < 0 ? "-" : "";
   return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
-function fmtPnl(v: number): string {
-  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
-  return `${sign}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+// Account-shell figures are stored ARX/paper records, without a verified
+// broker-currency/precision contract. Preserve finite values; do not assign USD
+// or turn unknown/missing amounts into zero.
+function recordedAmount(value: unknown, signed = false): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return `${signed && value > 0 ? "+" : ""}${String(value)}`;
 }
 const modeLabel: Record<ShellResponse["accountMode"], string> = {
   DEMO: "Demo",
@@ -157,7 +160,7 @@ export default function MyAccountPage() {
   }
 
   const s = q.data;
-  const pnlClass = (v: number) => v > 0 ? "text-success" : v < 0 ? "text-danger" : "";
+  const recordedOpenLabel = s.accountMode === "SHARED_MASTER_MT5" ? "Recorded allocation P/L" : "Recorded paper open P/L";
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="my-account-page">
@@ -168,7 +171,7 @@ export default function MyAccountPage() {
           </span>
           <div>
             <h1 className="text-2xl font-bold leading-tight">My Account</h1>
-            <p className="text-sm text-txt-secondary">Your balance, performance, risk status, and trading mode.</p>
+            <p className="text-sm text-txt-secondary">Your allocation records, recorded results, risk limits, and trading mode.</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -193,32 +196,29 @@ export default function MyAccountPage() {
         </div>
       </div>
 
-      {/* Canonical balance (Task #430) — same source of truth as the Dashboard,
-          Open Trades, risk panel, wallet and admin. */}
-      <CanonicalBalancePanel live={liveAcct.live} updatesPaused={!liveAcct.autoRefreshEnabled} title="Live balance" />
+      {/* Keep the existing per-user allocation evidence and its restrictions.
+          Account-shell estimates must not override this owner's withheld values. */}
+      <CanonicalBalancePanel live={liveAcct.live} updatesPaused={!liveAcct.autoRefreshEnabled} title="ARX allocation" />
+      {s.accountMode !== "SHARED_MASTER_MT5" && <p className="text-sm text-txt-secondary" data-testid="my-broker-money-unavailable">
+        Your MT5 account amounts are not available in this view. Allocation records and paper results below are not broker balance, equity, margin or account profit.
+      </p>}
 
-      {/* My Balance + Equity */}
+      {/* Stored configuration only, not a second balance/equity calculation. */}
       <Card data-testid="my-balance-card" className="rounded-2xl border-border bg-card">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Wallet className="h-4 w-4" /> My Balance
+            <Wallet className="h-4 w-4" /> Recorded allocation settings
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Stat label="My Balance" value={fmtMoney(s.allocation.currentBalance)} testid="my-balance" />
-          <Stat label="My Equity" value={fmtMoney(s.allocation.equity)} testid="my-equity" />
-          <Stat label="Margin Used" value={fmtMoney(s.allocation.marginUsed)} testid="my-margin-used" />
           <Stat
             label="Assigned Allocation"
-            value={
-              s.allocation.assignedStartingBalance != null
-                ? fmtMoney(s.allocation.assignedStartingBalance)
-                : s.allocation.currentBalance > 0
-                  ? fmtMoney(s.allocation.currentBalance)
-                  : "—"
-            }
+            value={recordedAmount(s.allocation.assignedStartingBalance)}
             testid="my-allocation"
           />
+        </CardContent>
+        <CardContent className="pt-0 text-xs text-txt-muted">
+          Recorded settings only; currency and broker agreement are unverified. These are not available broker funds.
         </CardContent>
         {/* Manual / AI sleeve split — shown when the user has any admin
             allocation. AI fields are display-only here; toggles live on
@@ -227,12 +227,12 @@ export default function MyAccountPage() {
           <CardContent className="pt-0 grid grid-cols-2 md:grid-cols-3 gap-4">
             <Stat
               label="Manual Allocation"
-              value={fmtMoney(s.allocation.manualAllocation ?? 0)}
+              value={recordedAmount(s.allocation.manualAllocation)}
               testid="my-manual-allocation"
             />
             <Stat
               label="AI Sleeve Allocation"
-              value={fmtMoney(s.allocation.aiSleeveAllocation ?? 0)}
+              value={recordedAmount(s.allocation.aiSleeveAllocation)}
               testid="my-ai-sleeve-allocation"
             />
             <Stat
@@ -246,8 +246,8 @@ export default function MyAccountPage() {
             />
             {s.allocation.availableCapacity != null && (
               <Stat
-                label="Available Capacity"
-                value={fmtMoney(s.allocation.availableCapacity)}
+                label="Recorded allocation headroom"
+                value={recordedAmount(s.allocation.availableCapacity)}
                 testid="my-available-capacity"
               />
             )}
@@ -281,22 +281,28 @@ export default function MyAccountPage() {
         )}
       </Card>
 
-      {/* My P/L */}
+      {/* Separate records: never call paper or allocation P/L broker profit. */}
       <Card data-testid="my-pnl-card" className="rounded-2xl border-border bg-card">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            {s.pnl.closedPnlToday >= 0 ? <TrendingUp className="h-4 w-4 text-success" /> : <TrendingDown className="h-4 w-4 text-danger" />}
-            My P/L
+            <Activity className="h-4 w-4" />
+            Recorded results
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Stat label="Today's P/L" valueClass={pnlClass(s.pnl.closedPnlToday)} value={fmtPnl(s.pnl.closedPnlToday)} testid="my-pnl-today" />
-          <Stat label="Open P/L" valueClass={pnlClass(s.pnl.openPnl)} value={fmtPnl(s.pnl.openPnl)} testid="my-pnl-open" />
-          <Stat label="Closed P/L (7d)" valueClass={pnlClass(s.pnl.closedPnlWeek)} value={fmtPnl(s.pnl.closedPnlWeek)} testid="my-pnl-week" />
-          <Stat label="Closed P/L (total)" valueClass={pnlClass(s.pnl.closedPnlTotal)} value={fmtPnl(s.pnl.closedPnlTotal)} testid="my-pnl-total" />
+          <Stat label="Today's P/L" value={recordedAmount(s.pnl.closedPnlToday, true)} testid="my-pnl-today" />
+          <Stat label={recordedOpenLabel} value={recordedAmount(s.pnl.openPnl, true)} testid="my-pnl-open" />
+          <Stat label="Closed P/L (7d)" value={recordedAmount(s.pnl.closedPnlWeek, true)} testid="my-pnl-week" />
+          <Stat label="Closed P/L (total)" value={recordedAmount(s.pnl.closedPnlTotal, true)} testid="my-pnl-total" />
           <Stat label="Trades Today" value={String(s.pnl.tradesToday)} testid="my-trades-today" />
           <Stat label="Wins Today" value={String(s.pnl.winsToday)} testid="my-wins-today" />
           <Stat label="Losses Today" value={String(s.pnl.lossesToday)} testid="my-losses-today" />
+        </CardContent>
+        <CardContent className="pt-0 text-xs text-txt-muted">
+          {s.accountMode === "SHARED_MASTER_MT5"
+            ? "The allocation P/L is a stored virtual-account record, not a complete current broker position total."
+            : "Paper open P/L describes simulated trades, including when Personal MT5 mode is selected."}
+          {" "}Daily and closed results are ARX performance records. Their currency and completeness are unverified; they do not establish MT5 account profit.
         </CardContent>
       </Card>
 
@@ -346,7 +352,7 @@ export default function MyAccountPage() {
       <Card className="rounded-2xl border-border bg-card">
         <CardContent className="text-xs text-txt-secondary py-3 flex items-center gap-2">
           <Activity className="h-3.5 w-3.5" />
-          This view shows only your own balance, P/L, risk, and exposure. Master totals and other users' activity are never shown here.
+          This view shows your own allocation records, recorded results and risk settings. Master account amounts and other users' activity are not shown here.
         </CardContent>
       </Card>
     </div>
