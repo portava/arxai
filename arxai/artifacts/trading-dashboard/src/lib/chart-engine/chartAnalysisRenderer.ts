@@ -20,6 +20,7 @@ export class ChartAnalysisRenderer {
   private studies: StudyHandle[] = [];
   private studyKey = "";
   private priceOnlyScale = false;
+  private compactTitles = false;
   private drawings: ChartDrawing[] = [];
   private drawingPrimitive: ChartDrawingPrimitive | null = null;
   private selectedDrawing: string | null = null;
@@ -51,6 +52,20 @@ export class ChartAnalysisRenderer {
     }
     return true;
   }
+  /** Pane titles float over the last plotted value in the chart library.
+   * Narrow charts use the existing named data window instead; this updates
+   * presentation only, without recalculating or replacing any plotted data. */
+  setViewportWidth(width:number):void {
+    if(!Number.isFinite(width)||width<=0)return;
+    const compact=width<600;
+    if(compact===this.compactTitles)return;
+    for(const study of this.studies)study.lines.forEach((line,channel)=>{
+      const oldTitle=studySeriesOptions(study.calculator.config,channel,this.compactTitles).options.title;
+      const title=studySeriesOptions(study.calculator.config,channel,compact).options.title;
+      if(title!==oldTitle)line.applyOptions({title});
+    });
+    this.compactTitles=compact;
+  }
   setStudies(configs: ChartStudy[], candles: ChartEngineCandle[]): void {
     const valid = validatePreferences({studies:configs}).studies;
     const key = JSON.stringify(valid);
@@ -80,12 +95,12 @@ export class ChartAnalysisRenderer {
     const definition = studyDefinition(config.kind);
     if(config.kind === "volume_profile")return [];
     return definition.channels.map((_, i) => {
-      const spec = studySeriesOptions(config, i);
+      const spec = studySeriesOptions(config, i, this.compactTitles);
       if (this.priceOnlyScale && paneIndex === 0) spec.options.autoscaleInfoProvider = () => null;
       const line: ISeriesApi<"Line" | "Histogram"> = spec.histogram
         ? this.chart.addSeries(HistogramSeries, spec.options, paneIndex)
         : this.chart.addSeries(LineSeries, spec.options, paneIndex);
-      if (i === 0) for (const price of definition.levels ?? []) line.createPriceLine({price,color:"#71717a",lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:String(price)});
+      if (i === 0) for (const price of definition.levels ?? []) line.createPriceLine({price,color:"#71717a",lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:""});
       return line;
     });
   }
@@ -138,7 +153,7 @@ export class ChartAnalysisRenderer {
         if (JSON.stringify(old.calculator.config) === JSON.stringify(config)) return old;
         // Same kind: reconcile presentation options before refreshing data.
         old.lines.forEach((line, channel) => {
-          const change = changedOptions(studySeriesOptions(old.calculator.config, channel).options, studySeriesOptions(config, channel).options);
+          const change = changedOptions(studySeriesOptions(old.calculator.config, channel, this.compactTitles).options, studySeriesOptions(config, channel, this.compactTitles).options);
           if (change) line.applyOptions(change);
         });
         return {calculator:old.calculator.updatePresentation(config) ? old.calculator : new StudyCalculator(config),lines:old.lines,rendered:old.rendered,profilePrimitive:old.profilePrimitive};
@@ -393,18 +408,18 @@ export function studyDisplayWindow(count: number, visible: LogicalRange | null, 
 }
 
 /** Series options exactly as a full rebuild creates them. */
-function studySeriesOptions(config: ChartStudy, channel: number):
+function studySeriesOptions(config: ChartStudy, channel: number, compactTitles=false):
   { histogram: true; options: HistogramSeriesPartialOptions } | { histogram: false; options: LineSeriesPartialOptions } {
   const definition = studyDefinition(config.kind);
   const style = config.lineStyles?.[channel];
   const visible = style?.visible !== false;
   if (config.kind === "tick_volume" || config.kind === "trade_volume") {
-    return {histogram:true,options:{visible,color:studyChannelColor(config,channel),priceLineVisible:false,lastValueVisible:false,title:studyLabel(config),priceFormat:{type:"price",precision:0,minMove:1}}};
+    return {histogram:true,options:{visible,color:studyChannelColor(config,channel),priceLineVisible:false,lastValueVisible:false,title:compactTitles?"":studyLabel(config),priceFormat:{type:"price",precision:0,minMove:1}}};
   }
   if (config.kind === "macd" && channel === 2) {
     return {histogram:true,options:{visible,color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}};
   }
-  const title = definition.pane ? `${config.kind.toUpperCase()} ${config.period} ${definition.channels[channel]}` : "";
+  const title = definition.pane && !compactTitles ? `${config.kind.toUpperCase()} ${config.period} ${definition.channels[channel]}` : "";
   return {histogram:false,options:{visible,color:studyChannelColor(config,channel), lineWidth:style?.width ?? 1,lineStyle:style?.style === "dashed" ? LineStyle.Dashed : style?.style === "dotted" ? LineStyle.Dotted : LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title,priceFormat:{type:"price",precision:config.kind === "rsi" ? 2 : 5,minMove:config.kind === "rsi" ? .01 : .00001}, ...(definition.range ? {autoscaleInfoProvider:() => ({priceRange:{minValue:definition.range![0],maxValue:definition.range![1]}})} : {})}};
 }
 /** Options that differ between two same-kind specs. Functions depend on the

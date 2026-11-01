@@ -18,6 +18,7 @@ import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { resolveSelectedMarketView } from "@/components/scanner/selectedMarketView";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
+import { selectedAnalysisAvailable, selectedNewsDisplay } from "@/lib/selectedMarketEvidence";
 import { useAssistantName } from "@/lib/assistant-name";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -132,6 +133,9 @@ export function SelectedMarketPanel() {
   const fallbackMessage =
     fallback && fallback.ok === false ? fallback.message : undefined;
 
+  const analysisAvailable = selectedAnalysisAvailable(ok?.dataState);
+  const newsDisplay = selectedNewsDisplay(ok?.newsRisk);
+
   const rubyNote = useMemo(() => {
     if (!ok) return null;
     return `${ok.explanation.hedge} ${ok.explanation.why}`;
@@ -168,6 +172,8 @@ export function SelectedMarketPanel() {
       dataState: ok.dataState ?? null,
       dataSourceLabel: ok.dataSourceLabel ?? null,
       newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+      newsCalendarAvailable: ok.newsRisk?.calendarAvailable,
+      newsApplicability: ok.newsRisk?.applicability,
     });
   }, [ok]);
 
@@ -250,9 +256,9 @@ export function SelectedMarketPanel() {
               <Badge variant="outline">{ok.symbol}</Badge>
               <Badge variant="outline">{ok.timeframe}</Badge>
               <Badge className={biasBadgeClass(ok.highlights.bias)}>{ok.highlights.bias}</Badge>
-              <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
-              <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
-              <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>
+              <Badge variant="outline">{analysisAvailable ? `${ok.highlights.confidenceLabel} confidence` : "Confidence unavailable"}</Badge>
+              <Badge variant="outline">Volatility {analysisAvailable ? ok.highlights.volatilityLabel : "unavailable"}</Badge>
+              <Badge variant="outline">Trend {analysisAvailable ? ok.highlights.trendState : "unavailable"}</Badge>
               {ok.dataSourceLabel && (
                 <Badge variant="outline" data-testid="badge-data-source">{ok.dataSourceLabel}</Badge>
               )}
@@ -319,10 +325,10 @@ export function SelectedMarketPanel() {
             <div className="rounded-xl border border-border bg-background/40 p-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-foreground">Upcoming events that may move {ok.symbol}</div>
-                <Badge variant="outline" className="text-[10px]">News risk: {ok.newsRisk?.riskLevel ?? "—"}</Badge>
+                <Badge variant="outline" className="text-[10px]">News risk: {newsDisplay.label}</Badge>
               </div>
-              {(ok.upcomingEvents ?? []).length === 0
-                ? <div className="text-xs text-muted-foreground">No medium/high impact events in the next 24h.</div>
+              {!newsDisplay.showEvents || (ok.upcomingEvents ?? []).length === 0
+                ? <div className="text-xs text-muted-foreground">{newsDisplay.eventsMessage}</div>
                 : (
                   <ul className="text-xs space-y-1">
                     {(ok.upcomingEvents ?? []).map((e) => (
@@ -335,7 +341,7 @@ export function SelectedMarketPanel() {
                     ))}
                   </ul>
                 )}
-              {ok.newsRisk?.summary && (
+              {newsDisplay.showEvents && ok.newsRisk?.summary && (
                 <div className="text-xs mt-2 text-warning">{ok.newsRisk.summary}</div>
               )}
             </div>

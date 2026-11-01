@@ -88,6 +88,10 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         scale: { mode: scale.mode, inverted: scale.invertScale },
         studies: (found.adapter.analysis?.studies ?? []).map((study: any) => ({
           config: { ...study.calculator.config },
+          options: study.lines.map((line: any) => {
+            const options = line.options();
+            return {visible:options.visible,color:options.color,lineWidth:options.lineWidth,lineStyle:options.lineStyle,title:options.title};
+          }),
           lines: study.lines.map((line: any) => line.data().map((point: any) => ({ ...point }))),
         })),
       };

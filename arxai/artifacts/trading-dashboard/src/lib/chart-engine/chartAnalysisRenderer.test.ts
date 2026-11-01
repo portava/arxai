@@ -896,3 +896,21 @@ describe("fixed-range profile native ownership",()=>{
   const price:any={attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};f.renderer.replacePriceSeries(price,bars);for(const primitive of instances){expect(f.price.detachPrimitive).toHaveBeenCalledWith(primitive);expect(price.attachPrimitive).toHaveBeenCalledWith(primitive);}expect((f.renderer as any).studies.map((s:any)=>s.profilePrimitive)).toEqual(instances);
  });
 });
+
+
+describe("responsive study labels preserve inspection and calculation",()=>{
+  const macd={kind:"macd" as const,period:5,slow:17,signal:4,color:"#2dd4bf"};
+  it("removes crowded pane titles below 600px without writing study data or recreating series",()=>{
+    const f=fixture(100);f.renderer.setStudies([macd],f.candles);const before=f.renderer.inspect(f.candles[80].time);const data=f.handles.map(h=>structuredClone(h.data));f.handles.forEach(h=>{h.setData.mockClear();h.update.mockClear();h.applyOptions.mockClear();});const created=f.chart.addSeries.mock.calls.length;
+    f.renderer.setViewportWidth(390);
+    expect(f.handles.map(h=>h.options.title)).toEqual(["","",""]);expect(f.chart.addSeries).toHaveBeenCalledTimes(created);expect(f.handles.every(h=>!h.setData.mock.calls.length&&!h.update.mock.calls.length)).toBe(true);expect(f.handles.map(h=>h.data)).toEqual(data);expect(f.renderer.inspect(f.candles[80].time)).toEqual(before);
+    f.handles.forEach(h=>h.applyOptions.mockClear());f.renderer.setViewportWidth(400);f.renderer.setViewportWidth(0);f.renderer.setViewportWidth(NaN);expect(f.handles.every(h=>!h.applyOptions.mock.calls.length)).toBe(true);
+    f.renderer.setViewportWidth(600);expect(f.handles.map(h=>h.options.title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);expect(f.renderer.inspect(f.candles[80].time)).toEqual(before);
+  });
+  it("keeps compact titles through new studies, parameter edits and rebuilds",()=>{
+    const f=fixture(100);f.renderer.setViewportWidth(390);f.renderer.setStudies([macd],f.candles);expect(f.handles.every(h=>h.options.title==="")).toBe(true);f.renderer.setStudies([{...macd,period:8}],f.candles);expect(f.handles.every(h=>h.options.title==="")).toBe(true);f.renderer.setStudies([],f.candles);const start=f.handles.length;f.renderer.setStudies([macd],f.candles);expect(f.handles.slice(start).every(h=>h.options.title==="")).toBe(true);
+  });
+  it("reference lines keep numeric axes without duplicating their value as a title",()=>{
+    const f=fixture(100);f.renderer.setStudies([macd],f.candles);expect(f.handles[0].priceLines).toEqual([expect.objectContaining({price:0,axisLabelVisible:true,title:""})]);
+  });
+});

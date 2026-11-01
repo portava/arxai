@@ -7,14 +7,12 @@
 //     pipeline the chart bars and the truth brain read
 //   - evaluateLevelStaleness (@workspace/domain/truth)      — Task #512 guard
 //   - scoreNewsRisk()        (lib/news/calendar/newsRiskScorer.ts)
-//   - economic_events table  (@workspace/db)                — upcoming events
+//   - resolveNewsRiskEvents()                              — calendar availability
 //
 // Output is user-facing trading language. Never returns secrets. Never
 // dispatches anything. The function is idempotent and cheap to call. The
 // simulator is unreachable from this envelope — Task #518.
 
-import { and, gte, lte } from "drizzle-orm";
-import { db, economicEventsTable } from "@workspace/db";
 import {
   analyzeMarketFromCandles,
   type MarketAnalysis,
@@ -36,9 +34,10 @@ import {
   isChartTimeframe,
   type ChartTimeframe,
 } from "../data/chart/timeframes.js";
-import { scoreNewsRisk } from "../news/calendar/newsRiskScorer.js";
+import { newsRiskUnavailable, scoreNewsRisk } from "../news/calendar/newsRiskScorer.js";
+import { resolveNewsRiskEvents } from "../news/calendar/newsRiskResolver.js";
 import type { EconomicEvent } from "../news/calendar/economicEvents.js";
-import { isSupported, normalizeSymbol } from "../instruments/index.js";
+import { isSupported, normalizeSymbol, resolveCanonicalSymbol } from "../instruments/index.js";
 import { getCache } from "../cache/cacheAdapter.js";
 
 // Namespace + TTL are intentionally hard-coded so the cache shape stays
@@ -58,9 +57,8 @@ const CANDLE_LIMIT = 200;
 // dependency is the canonical chart pipeline.
 export interface SelectedMarketDeps {
   getChartCandlesFn: typeof getChartCandles;
-  // The upcoming-economic-events loader. The real implementation reads the
-  // `economic_events` table; tests inject an honest-empty (or crafted) loader so
-  // the builder is exercised without a live DB round-trip.
+  // Existing real calendar authority; tests inject explicit availability and
+  // crafted events so no provider or database is contacted.
   loadEventsFn: typeof loadEventRows;
 }
 const REAL_DEPS: SelectedMarketDeps = {
@@ -114,6 +112,8 @@ export interface SelectedMarketResult {
     riskLevel: "none" | "low" | "medium" | "high";
     blockTrading: boolean;
     summary: string;
+    calendarAvailable: boolean;
+    applicability: "applicable" | "not_applicable";
   };
   /**
    * Honest data source for THIS envelope. Always the real market-data pipeline
@@ -193,13 +193,6 @@ function biasFromAction(a: MarketAnalysis["recommendedAction"]): SelectedMarketH
   return "NEUTRAL";
 }
 
-function impactDbToLower(level: string): "low" | "medium" | "high" {
-  const v = String(level).toUpperCase();
-  if (v === "HIGH" || v === "CRITICAL") return "high";
-  if (v === "MEDIUM") return "medium";
-  return "low";
-}
-
 function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: string): SelectedMarketExplanation {
   const side = biasFromAction(a.recommendedAction);
   const hedge = side === "BUY"
@@ -241,48 +234,63 @@ function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: 
   };
 }
 
-async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
+// Availability comes from the existing connected-calendar authority, not from
+// a successful query of an empty/stale economic_events table.
+export async function loadEventRows(
+  symbol: string, currencyHints: string[],
+  resolveEvents: typeof resolveNewsRiskEvents = resolveNewsRiskEvents,
+): Promise<{
   events: SelectedMarketEvent[];
   scorerInput: EconomicEvent[];
+  calendarAvailable?: boolean;
+  reason?: string;
 }> {
-  const now = new Date();
-  const until = new Date(now.getTime() + 24 * 3600 * 1000);
-  const rows = await db.select().from(economicEventsTable)
-    .where(and(
-      gte(economicEventsTable.eventTime, now),
-      lte(economicEventsTable.eventTime, until),
-    ));
-  const matching = rows.filter((r) => {
-    if (currencyHints.length === 0) return true;
-    if (currencyHints.includes(r.currency)) return true;
-    const affected = (r.affectedSymbols ?? []) as unknown as string[];
-    return Array.isArray(affected) && affected.some((s) => s.toUpperCase() === symbol);
-  });
-  const sorted = matching
-    .filter((r) => ["MEDIUM", "HIGH", "CRITICAL"].includes(String(r.impactLevel)))
-    .sort((a, b) => +new Date(a.eventTime) - +new Date(b.eventTime));
-  const events: SelectedMarketEvent[] = sorted.slice(0, 8).map((r) => ({
-    externalId: r.externalId,
-    title: r.eventName,
-    currency: r.currency,
-    impactLevel: r.impactLevel as SelectedMarketEvent["impactLevel"],
-    eventTime: new Date(r.eventTime).toISOString(),
-    minutesUntil: Math.round((+new Date(r.eventTime) - Date.now()) / 60000),
-  }));
-  const scorerInput: EconomicEvent[] = sorted.map((r) => ({
-    id: r.externalId,
-    title: r.eventName,
-    country: r.country,
-    currency: r.currency,
-    impact: impactDbToLower(String(r.impactLevel)),
-    actual: r.actual ?? null,
-    forecast: r.forecast ?? null,
-    previous: r.previous ?? null,
-    eventTime: new Date(r.eventTime).toISOString(),
-    affectedMarkets: (r.affectedSymbols ?? []) as unknown as string[],
-    source: r.source ?? "db",
-  }));
-  return { events, scorerInput };
+  const resolved = await resolveEvents({ daysAhead: 2 });
+  if (!resolved.available) return { events: [], scorerInput: [], calendarAvailable: false, reason: resolved.reason };
+  const now = Date.now();
+  const until = now + 24 * 3600 * 1000;
+  const sorted = resolved.events.filter((e) => {
+    const time = Date.parse(e.eventTime);
+    return time >= now && time <= until && e.impact !== "low"
+      && (currencyHints.includes(e.currency) || e.affectedMarkets.includes(symbol));
+  }).sort((a, b) => Date.parse(a.eventTime) - Date.parse(b.eventTime));
+  return {
+    calendarAvailable: true,
+    reason: resolved.reason,
+    // Preserve recent releases too: only the shared scorer owns risk windows.
+    scorerInput: resolved.events,
+    events: sorted.slice(0, 8).map((e) => ({
+      externalId: e.id, title: e.title, currency: e.currency,
+      impactLevel: e.impact.toUpperCase() as SelectedMarketEvent["impactLevel"],
+      eventTime: e.eventTime, minutesUntil: Math.round((Date.parse(e.eventTime) - now) / 60000),
+    })),
+  };
+}
+
+async function selectedNewsEvidence(symbol: string, deps: SelectedMarketDeps) {
+  // Use the instrument authority for aliases as well as the scorer's long names.
+  const synthetic = resolveCanonicalSymbol(symbol).assetClass === "synthetic";
+  if (synthetic) return {
+    events: [] as SelectedMarketEvent[],
+    news: { ...newsRiskUnavailable(symbol, ""), calendarAvailable: true,
+      reason: "Macro news is not applicable to this synthetic market." },
+    applicability: "not_applicable" as const,
+  };
+  try {
+    const loaded = await deps.loadEventsFn(symbol, currencyHintsFor(symbol));
+    // Missing/legacy evidence is not a checked event set.
+    const available = loaded.calendarAvailable === true;
+    return {
+      events: available ? loaded.events : [],
+      news: available ? scoreNewsRisk(symbol, loaded.scorerInput)
+        : newsRiskUnavailable(symbol, loaded.reason || "Economic calendar unavailable — news risk could not be verified."),
+      applicability: "applicable" as const,
+    };
+  } catch {
+    return { events: [] as SelectedMarketEvent[],
+      news: newsRiskUnavailable(symbol, "Economic calendar unavailable — news risk could not be read."),
+      applicability: "applicable" as const };
+  }
 }
 
 function currencyHintsFor(symbol: string): string[] {
@@ -410,6 +418,13 @@ async function buildSelectedMarketSnapshot(
     symbol, timeframe, analysisCandles, quote, "LIVE_FEED", feedProvider,
   );
 
+  // Calendar evidence is independent of price availability. Keep valid event
+  // reads even when the chart has no candles; a calendar failure cannot erase
+  // otherwise valid price analysis.
+  const { events, news, applicability } = await selectedNewsEvidence(symbol, deps);
+  const newsRisk = { riskLevel: news.riskLevel, blockTrading: news.blockTrading,
+    summary: news.reason, calendarAvailable: news.calendarAvailable, applicability };
+
   // No real candles → honest WAITING envelope (ok:true). Never a simulator
   // fallback and never a fabricated level.
   if (a.recommendedAction === "REJECT" && a.reasonForTrade === "no data") {
@@ -439,8 +454,8 @@ async function buildSelectedMarketSnapshot(
         cautions: [],
         disclaimer: "Decision support only — confirm live readiness and risk before trading.",
       },
-      upcomingEvents: [],
-      newsRisk: { riskLevel: "none", blockTrading: false, summary: "" },
+      upcomingEvents: events,
+      newsRisk,
       dataSource: a.dataSource,
       dataSourceLabel,
       dataState: "UNAVAILABLE",
@@ -466,9 +481,6 @@ async function buildSelectedMarketSnapshot(
   const staleness = evaluateLevelStaleness({ price, levels: levelInput, atr });
   const dataState = deriveDataState(fs);
 
-  const hints = currencyHintsFor(symbol);
-  const { events, scorerInput } = await deps.loadEventsFn(symbol, hints);
-  const news = scoreNewsRisk(symbol, scorerInput);
   const highlights: SelectedMarketHighlights = {
     bias: biasFromAction(a.recommendedAction),
     confidenceLabel: confidenceLabel(a.confidenceScore),
@@ -490,7 +502,7 @@ async function buildSelectedMarketSnapshot(
     highlights,
     explanation,
     upcomingEvents: events,
-    newsRisk: { riskLevel: news.riskLevel, blockTrading: news.blockTrading, summary: news.reason },
+    newsRisk,
     dataSource: a.dataSource,
     dataSourceLabel,
     dataState,

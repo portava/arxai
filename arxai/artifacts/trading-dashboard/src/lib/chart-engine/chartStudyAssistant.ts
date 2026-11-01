@@ -1,3 +1,4 @@
+import {validatePreferences} from "./chartWorkspace";
 import {prepareVolumeProfileStudy} from "./chartVolumeProfile";
 import {describeVolumeProfile,readMatchingVolumeProfile} from "./chartVolumeProfileDescription";
 import {formatSavedVwapAnchor,studyDisplayLabel} from "./chartStudyDisplay";
@@ -11,12 +12,20 @@ import type { ChartEngineAdapter } from "./types";
 // instructions (another asset, timeframe, source, negation, etc.) fail closed.
 export type AverageSelection = { kind: "sma" | "ema"; period: number };
 export type AverageComparisonRequest = { action: "compare"; studies: [AverageSelection, AverageSelection] };
-export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; preserveVisibility?: boolean; reanchor?:boolean; profileRows?:number; profileValueAreaPercent?:number; refreezeProfile?:boolean } | AverageComparisonRequest | { error: string };
+export type StudyRequest = { kind: StudyKind; action: "show" | "hide" | "remove"; period?: number; slow?: number; signal?: number; signalMethod?: "sma"|"ema"; multiplier?:number; preserveVisibility?: boolean; reanchor?:boolean; profileRows?:number; profileValueAreaPercent?:number; refreezeProfile?:boolean } | AverageComparisonRequest | { error: string };
 const help = 'Chart not changed. Try “show RSI”, “set RSI period to 21”, “hide RSI” or “remove RSI”. Other settings and repeated instances are editable in Studies.';
 const aliases = STUDY_CATALOG.flatMap(d=>[{name:d.defaults.kind,kind:d.defaults.kind},{name:d.name.toLowerCase(),kind:d.defaults.kind}])
   .concat([{name:"bollinger bands",kind:"bollinger"},{name:"adx",kind:"dmi"},{name:"volume bars",kind:"trade_volume"},{name:"traded volume",kind:"trade_volume"},{name:"volume",kind:"trade_volume"}]);
 export function parseStudyRequest(text:string): StudyRequest | null {
   const input=text.trim().toLowerCase().replace(/[?!.]+$/g,"").replace(/^please\s+/,"");
+  const macdTuple=input.match(/^(?:set|change|adjust) macd periods(?: to)? (\d+),\s*(\d+),\s*(\d+)$/);
+  if(macdTuple)return {kind:"macd",action:"show",period:Number(macdTuple[1]),slow:Number(macdTuple[2]),signal:Number(macdTuple[3]),preserveVisibility:true};
+  const macdPeriod=input.match(/^(?:set|change|adjust) macd (fast|slow|signal)(?: period)?(?: to)? (\d+)$/);
+  if(macdPeriod)return {kind:"macd",action:"show",[macdPeriod[1]==="fast"?"period":macdPeriod[1]!]:Number(macdPeriod[2]),preserveVisibility:true};
+  const macdMethod=input.match(/^(?:set|change|adjust) macd signal method(?: to)? (sma|ema)$/);
+  if(macdMethod)return {kind:"macd",action:"show",signalMethod:macdMethod[1] as "sma"|"ema",preserveVisibility:true};
+  const deviation=input.match(/^(?:set|change|adjust) bollinger(?: bands)? (?:deviation|standard deviations|multiplier)(?: to)? (\d+(?:\.\d+)?)$/);
+  if(deviation)return {kind:"bollinger",action:"show",multiplier:Number(deviation[1]),preserveVisibility:true};
   if(/^(?:reanchor|anchor) (?:the )?vwap to (?:the )?first visible bar$/.test(input))return {kind:"vwap",action:"show",reanchor:true};
   const comparison=input.match(/^compare (?:the )?(\d+) (sma|ema) (?:and|with|vs\.?) (?:the )?(\d+) (sma|ema)(?: (?:on|for) (?:this|the current) chart)?$/);
   if(comparison) {
@@ -27,7 +36,7 @@ export function parseStudyRequest(text:string): StudyRequest | null {
   }
   if (/\b(?:volume profile|volume_profile)\b/.test(input)) {
     const profileInput=input.replace(/volume_profile/g,"volume profile");
-    const simple=profileInput.match(/^(?:(add|show|apply|hide|remove|explain) )?(?:estimated )?volume profile(?: (?:to|on) (?:this|the current) chart)?$/);
+    const simple=profileInput.match(/^(?:(add|show|apply|hide|remove|explain)(?: me)? )?(?:estimated )?volume profile(?: (?:to|on) (?:this|the current) chart)?$/);
     const curiosity=/^(?:what does (?:estimated )?volume profile (?:tell|show) me about this chart|what is (?:estimated )?volume profile)$/.test(profileInput);
     const rows=profileInput.match(/^(?:set|change|adjust) volume profile rows(?: to)? (\d+)$/);
     const area=profileInput.match(/^(?:set|change|adjust) volume profile value area(?: to)? (\d+)(?: percent|%)$/);
@@ -46,7 +55,7 @@ export function parseStudyRequest(text:string): StudyRequest | null {
   // full name). The complete grammar below still refuses multiple tools.
   const alias=found.sort((a,b)=>b.name.length-a.name.length)[0]!;
   const name=alias.name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
-  const simple=input.match(new RegExp(`^(?:(add|show|apply|hide|remove|explain) )?${name}(?: (\\d+))?(?: (?:to|on) (?:this|the current) chart)?$`));
+  const simple=input.match(new RegExp(`^(?:(add|show|apply|hide|remove|explain)(?: me)? )?${name}(?: (\\d+))?(?: (?:to|on) (?:this|the current) chart)?$`));
   const edit=input.match(new RegExp(`^(?:set|change|adjust) ${name} period(?: to)? (\\d+)$`));
   const curiosity=new RegExp(`^(?:what does ${name} (?:tell|show) me about this chart|what is ${name}|explain ${name} on this chart)$`).test(input);
   if (!simple && !edit && !curiosity) return {error:help};
@@ -150,6 +159,15 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
     next.id=`assistant-${request.kind}-${suffix}`;
   }
   if (request.period!=null) next.period=request.period;
+  if(request.kind==="macd") {
+    if(request.slow!=null)next.slow=request.slow;
+    if(request.signal!=null)next.signal=request.signal;
+    if(request.signalMethod!=null)next.signalMethod=request.signalMethod;
+  }
+  if(request.kind==="bollinger"&&request.multiplier!=null)next.multiplier=request.multiplier;
+  // Manual and assistant edits pass the same configuration validator. Validate
+  // the full tuple before touching either renderer or stored preferences.
+  if(!validatePreferences({studies:[next]}).studies.length)return "Chart not changed: invalid study settings. Periods must be whole numbers from 1 to 1000; MACD slow must exceed fast; Bollinger deviation must be greater than 0 and at most 100. Existing settings were preserved.";
   const preserveVisibility=existing != null && request.preserveVisibility === true;
   if (!preserveVisibility) next.lineStyles=definition.channels.map((_,i)=>({...next.lineStyles?.[i],visible:request.action!=="hide"}));
   const updated=request.action==="remove" ? studies.filter(s=>s!==existing)
@@ -171,20 +189,36 @@ export function executeStudyRequest(request:StudyRequest,context:StudyAssistantC
     const value=channel?.value;
     return `${channel?.name ?? name}: ${typeof value==="number" && Number.isFinite(value) ? formatStudyNumber(value,name) : (result?.reason ?? (request.kind==="tick_volume" ? "unavailable: no qualified per-bar tick count" : "unavailable / warming up"))}`;
   }).join("; ");
-  const firstValue=result?.values[0]?.value;
-  const finiteFirst=typeof firstValue==="number" && Number.isFinite(firstValue);
-  const observed=request.kind==="rsi" && finiteFirst
+  const channelValue=(name:string):number|null=>{
+    const matches=result?.values.filter(value=>value.name===name||value.name===`${name} (hidden)`)??[];
+    const value=matches.length===1?matches[0]!.value:null;
+    return typeof value==="number"&&Number.isFinite(value)?value:null;
+  };
+  const firstValue=channelValue(definition.channels[0]!);
+  let observed=request.kind==="rsi" && firstValue!=null
     ? firstValue>=70 ? "The calculated RSI is at or above 70, a commonly used high-momentum reference; it does not prove the price must fall. "
       : firstValue<=30 ? "The calculated RSI is at or below 30, a commonly used low-momentum reference; it does not prove the price must rise. "
       : "The calculated RSI is between the common 30 and 70 references. "
-    : ["sma","ema","smma","wma","dema","tema"].includes(request.kind) && finiteFirst
+    : ["sma","ema","smma","wma","dema","tema"].includes(request.kind) && firstValue!=null && Number.isFinite(last.close)
       ? `The underlying source candle close is ${last.close>firstValue ? "above" : last.close<firstValue ? "below" : "equal to"} this average. ` : "";
+  if(request.kind==="macd") {
+    const macd=channelValue("MACD"),signal=channelValue("Signal");
+    observed=macd!=null&&signal!=null
+      ?`MACD is ${macd>signal?"above":macd<signal?"below":"equal to"} its signal. MACD is ${macd>0?"above":macd<0?"below":"equal to"} zero. This compares one observed bar, not a crossover, divergence or a forecast. `
+      :"MACD/signal comparison is unavailable until both named channels have finite values. No missing value is replaced with zero. ";
+  }
+  if(request.kind==="bollinger") {
+    const upper=channelValue("Upper"),basis=channelValue("Basis"),lower=channelValue("Lower");
+    observed=upper!=null&&basis!=null&&lower!=null&&upper>=basis&&basis>=lower&&Number.isFinite(last.close)&&Number.isFinite(upper-lower)
+      ?`The underlying source candle close is ${last.close>upper?"above the upper band":last.close<lower?"below the lower band":last.close===upper&&last.close===lower?"equal to both coincident bands":last.close===upper?"on the upper band":last.close===lower?"on the lower band":"inside the bands"}. Band width: ${formatStudyNumber(upper-lower,"Price")} source price units. This single observation does not establish a breakout or reversal, a volatility trend or a future price range. `
+      :"Band comparison is unavailable: finite, correctly ordered upper/basis/lower values and the source close are required. No range was invented. ";
+  }
   const anchorNote=next.kind === "vwap" && next.vwapAnchor ? `Frozen observed-bar anchor: ${formatSavedVwapAnchor(next.vwapAnchor,adapter)}. Uses only loaded observations from that exact bar, with the captured source series. Panning and loading older history do not move it. Missing volume holds the cumulative suffix; zero quantities are not qualified by the current provider. This is not a complete-session claim. Say “reanchor VWAP to first visible bar” or select an observed bar in Studies to change it. ` : "";
   const caveat=request.kind==="rsi" ? "RSI describes recent gains relative to losses; even an extreme reading does not establish a reversal."
     : request.kind==="atr" ? "ATR describes price-range volatility, not direction."
     : request.kind==="macd" ? "MACD compares fast and slow averages; its signal and histogram describe momentum, not a forecast."
     : definition.description;
-  return `Applied ${studyDisplayLabel(next,adapter)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except any requested period"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${anchorNote}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
+  return `Applied ${studyDisplayLabel(next,adapter)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except explicitly requested settings"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${anchorNote}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
 }
 
 type Handler=(request:StudyRequest)=>string;

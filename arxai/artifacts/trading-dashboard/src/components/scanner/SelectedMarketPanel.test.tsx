@@ -416,3 +416,88 @@ describe("SelectedMarketPanel — every load state renders without crashing", ()
     expect(screen.queryByTestId("live-trade-ticket-stub")).toBeNull();
   });
 });
+
+
+describe("selected-market evidence availability", () => {
+  it("does not present absent price analysis as measured grades", () => {
+    const data = degradedOkSnapshot();
+    Object.assign(data.highlights, { confidenceLabel: "Very Low", volatilityLabel: "Calm", trendState: "neutral" });
+    mockSnapshotQuery.mockReturnValue(hookState({ data }));
+    render(<SelectedMarketPanel />);
+    const text = screen.getByTestId("selected-market-panel").textContent!;
+    expect(text).not.toContain("Very Low confidence");
+    expect(text).not.toContain("volatility Calm");
+    expect(text).not.toContain("Volatility Calm");
+    expect(text).not.toContain("Trend neutral");
+    expect(text).toContain("Confidence unavailable");
+    expect(text).toContain("Trend unavailable");
+  });
+  it.each([false, undefined])("does not turn calendar availability %s into no risk or no events", (calendarAvailable) => {
+    const data = degradedOkSnapshot();
+    Object.assign(data.newsRisk, { riskLevel: "none", calendarAvailable });
+    mockSnapshotQuery.mockReturnValue(hookState({ data }));
+    render(<SelectedMarketPanel />);
+    const text = screen.getByTestId("selected-market-panel").textContent!;
+    expect(text).not.toMatch(/News risk:? none/);
+    expect(text).not.toContain("No medium/high impact events");
+    expect(text).toContain(calendarAvailable === false ? "News risk: unavailable" : "News risk: unverified");
+  });
+  it("retains independently checked calendar evidence when price analysis is unavailable", () => {
+    const data = degradedOkSnapshot();
+    Object.assign(data.newsRisk, { riskLevel: "none", calendarAvailable: true, applicability: "applicable" });
+    mockSnapshotQuery.mockReturnValue(hookState({ data }));
+    render(<SelectedMarketPanel />);
+    const text = screen.getByTestId("selected-market-panel").textContent!;
+    expect(text).toContain("News risk: none");
+    expect(text).toContain("No medium/high impact events in the next 24h");
+    expect(text).toContain("Confidence unavailable");
+  });
+  it("distinguishes synthetic non-applicability from a checked empty calendar", () => {
+    const data = degradedOkSnapshot();
+    Object.assign(data.newsRisk, { riskLevel: "none", calendarAvailable: true, applicability: "not_applicable" });
+    mockSnapshotQuery.mockReturnValue(hookState({ data }));
+    render(<SelectedMarketPanel />);
+    const text = screen.getByTestId("selected-market-panel").textContent!;
+    expect(text).toContain("News risk: not applicable");
+    expect(text).not.toContain("No medium/high impact events");
+    expect(text).not.toMatch(/News risk:? none/);
+  });
+});
+
+
+it("retains checked nonempty news separately from unavailable analysis, without opening a ticket", () => {
+  const data = degradedOkSnapshot();
+  Object.assign(data.newsRisk, { riskLevel: "high", calendarAvailable: true, applicability: "applicable", summary: "Known event soon" });
+  Object.assign(data, { upcomingEvents: [{ externalId: "known", title: "Known event", currency: "USD", impactLevel: "HIGH", minutesUntil: 10 }] });
+  mockSnapshotQuery.mockReturnValue(hookState({ data }));
+  render(<SelectedMarketPanel />);
+  const text = screen.getByTestId("selected-market-panel").textContent!;
+  expect(text).toContain("News risk: high");
+  expect(text).toContain("News risk high.");
+  expect(text).toContain("Known event");
+  expect(text).toContain("Confidence unavailable");
+  expect(screen.queryByTestId("live-trade-ticket-stub")).toBeNull();
+});
+it("does not promote legacy calendar events without their availability evidence", () => {
+  const data = degradedOkSnapshot();
+  Object.assign(data, { upcomingEvents: [{ externalId: "old", title: "Unverified old event", currency: "USD", impactLevel: "HIGH", minutesUntil: 10 }] });
+  mockSnapshotQuery.mockReturnValue(hookState({ data }));
+  render(<SelectedMarketPanel />);
+  const text = screen.getByTestId("selected-market-panel").textContent!;
+  expect(text).toContain("News risk: unverified");
+  expect(text).not.toContain("Unverified old event");
+});
+
+
+it("distinguishes an empty future calendar from active post-event risk", () => {
+  const data = degradedOkSnapshot();
+  Object.assign(data.newsRisk, { riskLevel: "high", calendarAvailable: true, applicability: "applicable", summary: "HIGH impact Known event 5m ago — trading blocked for EURUSD." });
+  mockSnapshotQuery.mockReturnValue(hookState({ data }));
+  render(<SelectedMarketPanel />);
+  const text = screen.getByTestId("selected-market-panel").textContent!;
+  expect(text).toContain("News risk: high");
+  expect(text).toContain("News risk high.");
+  expect(text).toContain("No medium/high impact events in the next 24h.");
+  expect(text).toContain("Recently released events may still affect current news risk.");
+  expect(text).toContain("5m ago");
+});

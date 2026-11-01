@@ -1,3 +1,4 @@
+import type {ChartPivotLevel} from "./chartSupportResistance";
 import { validProfileRange,validProfileRows,validProfileValueArea } from "./chartVolumeProfile";
 import { chartIntervalSeconds } from "./chartIntervals";
 import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy, type StudyLineStyle } from "./chartStudies";
@@ -30,7 +31,8 @@ export const DRAWING_NAMES: Record<DrawingKind, string> = { measure: "Price and 
 export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical" || kind === "text"; }
 export interface ChartAnchor { time: number; price: number }
 export interface FibonacciOrigin { method:"confirmed-swings-v1"; span:2; symbol:string; timeframe:string; source:string; sourceIdentity:string; start:ChartAnchor; end:ChartAnchor; confirmedAt:number; windowFrom:number; windowTo:number; closedBars:number }
-export interface ChartDrawing { fibonacciOrigin?:FibonacciOrigin; id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; offset?: ChartAnchor; color: string; locked?: boolean; hidden?: boolean; width?: 1 | 2 | 3; dashed?: boolean; text?: string; extendLeft?: boolean; extendRight?: boolean; middleLine?: boolean }
+export interface PivotLevelOrigin {method:"latest-confirmed-pivots-v1";span:2;symbol:string;timeframe:string;source:string;sourceIdentity:string;windowFrom:number;windowTo:number;closedBars:number;referenceClose:ChartAnchor;level:ChartPivotLevel}
+export interface ChartDrawing { pivotLevelOrigin?:PivotLevelOrigin; fibonacciOrigin?:FibonacciOrigin; id: string; kind: DrawingKind; start: ChartAnchor; end?: ChartAnchor; offset?: ChartAnchor; color: string; locked?: boolean; hidden?: boolean; width?: 1 | 2 | 3; dashed?: boolean; text?: string; extendLeft?: boolean; extendRight?: boolean; middleLine?: boolean }
 /**
  * Per chart view (each workspace view has its own stored preferences).
  * `timeZone` is display-only and optional: a missing value means UTC, and it is
@@ -106,6 +108,16 @@ function validateFibonacciOrigin(value: unknown): FibonacciOrigin | null {
     ||!Number.isInteger(p.closedBars)||p.closedBars!<6||p.closedBars!>600)return null;
   return {method:"confirmed-swings-v1",span:2,symbol:p.symbol!,timeframe:p.timeframe!,source:p.source!,sourceIdentity:p.sourceIdentity,start:{...p.start!},end:{...p.end!},confirmedAt:p.confirmedAt!,windowFrom:p.windowFrom!,windowTo:p.windowTo!,closedBars:p.closedBars!};
 }
+export function validatePivotLevelOrigin(value:unknown):PivotLevelOrigin|null {
+  if(!value||typeof value!=="object")return null;
+  const p=value as PivotLevelOrigin,l=p.level,interval=chartIntervalSeconds(p.timeframe);
+  if(p.method!=="latest-confirmed-pivots-v1"||p.span!==2||!interval||!l||!anchor(p.referenceClose)||p.referenceClose.time!==p.windowTo||!["support","resistance"].includes(l.side)||
+    ![p.symbol,p.timeframe,p.source].every(v=>typeof v==="string"&&v.length>0&&v.length<=120)||typeof p.sourceIdentity!=="string"||!/^[a-f0-9]{64}$/.test(p.sourceIdentity)||
+    ![p.windowFrom,p.windowTo,l.pivotTime,l.confirmedAt].every(v=>Number.isFinite(v)&&v>0&&v<1e11)||!Number.isFinite(l.price)||l.price<=0||
+    !Number.isSafeInteger(p.closedBars)||p.closedBars<5||p.closedBars>600||!Number.isSafeInteger(l.laterCloseCrossings)||l.laterCloseCrossings<0||l.laterCloseCrossings>p.closedBars||
+    (l.side==="support"?l.price>=p.referenceClose.price:l.price<=p.referenceClose.price)||l.pivotTime<p.windowFrom+2*interval||l.confirmedAt<l.pivotTime+3*interval||l.confirmedAt>p.windowTo||p.windowTo-p.windowFrom<(p.closedBars-1)*interval)return null;
+  return {method:p.method,span:2,symbol:p.symbol,timeframe:p.timeframe,source:p.source,sourceIdentity:p.sourceIdentity,windowFrom:p.windowFrom,windowTo:p.windowTo,closedBars:p.closedBars,referenceClose:{...p.referenceClose},level:{side:l.side,price:l.price,pivotTime:l.pivotTime,confirmedAt:l.confirmedAt,laterCloseCrossings:l.laterCloseCrossings}};
+}
 export function validateDrawings(value: unknown): ChartDrawing[] {
   const seen = new Set<string>();
   return (Array.isArray(value) ? value.slice(0, MAX_DRAWINGS) : []).flatMap((d: any) => {
@@ -119,8 +131,9 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
     if (d.hidden != null && typeof d.hidden !== "boolean") return [];
     if (d.locked != null && typeof d.locked !== "boolean" || d.dashed != null && typeof d.dashed !== "boolean") return [];
     const fibonacciOrigin=d.kind==="fibonacci"?validateFibonacciOrigin(d.fibonacciOrigin):null;
+    const pivotLevelOrigin=d.kind==="horizontal"?validatePivotLevelOrigin(d.pivotLevelOrigin):null;
     seen.add(d.id);
-    return [{ ...(fibonacciOrigin?{fibonacciOrigin}:{}),id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(d.kind === "channel" ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.hidden === true ? {hidden:true} : {}), ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
+    return [{ ...(pivotLevelOrigin?{pivotLevelOrigin}:{}),...(fibonacciOrigin?{fibonacciOrigin}:{}),id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(d.kind === "channel" ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.hidden === true ? {hidden:true} : {}), ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
   });
 }
 /** Local device preferences only. No account, positions or credentials are stored. Kept auto drawings retain their original source hash

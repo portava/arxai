@@ -338,6 +338,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.style = "candles";
     this.displayMode = "ohlc";
     this.analysis = new ChartAnalysisRenderer(chart, series);
+    this.analysis.setViewportWidth(el.clientWidth);
     this.lastPriceLine = null;
     this.overlayLines = [];
     this.markersApi = null;
@@ -352,6 +353,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       if (!this.container || this.chart !== chart) return;
       try {
         chart.applyOptions({ width: this.container.clientWidth });
+        this.analysis?.setViewportWidth(this.container.clientWidth);
       } catch { /* chart was removed mid-resize — nothing to size */ }
     });
     ro.observe(el);
@@ -419,7 +421,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (!this.chart) return;
     const w = width ?? this.container?.clientWidth;
     if (w != null && Number.isFinite(w)) {
-      try { this.chart.applyOptions({ width: w, ...(height != null && height > 0 ? { height } : {}) }); } catch { /* ignore */ }
+      try { this.chart.applyOptions({ width: w, ...(height != null && height > 0 ? { height } : {}) }); this.analysis?.setViewportWidth(w); } catch { /* ignore */ }
     }
   }
 
