@@ -1511,7 +1511,7 @@ export function ARXNativeChart({
         {!mirrorLocked && <p className="px-3 pt-1 text-xs text-amber-200" data-testid="chart-evidence-inspection">Inspection mode — Mirror Lock OFF</p>}
         <details data-testid="chart-evidence-details">
           <summary className="cursor-pointer px-3 py-1.5 text-xs leading-4 text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-            <span>Chart evidence details</span><span className="ml-2 text-zinc-400">{mirrorStatus} · {resolvedSymbol} · {timeframe}</span>
+            <span>Chart evidence details</span><span className="ml-2 text-zinc-400">{mirrorStatus} · {timeframe}</span>
           </summary>
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the
