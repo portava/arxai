@@ -41,7 +41,7 @@ import {
   type UserSlotAllocation,
 } from "@workspace/db";
 import { requireUser } from "../lib/auth/middleware.js";
-import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
+import { buildInvestorLiveBalanceSnapshot, toInvestorLiveBalanceWire } from "../lib/live/investorLiveBalance.js";
 import { mirrorCriticalEvent } from "../lib/security/events.js";
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import {
@@ -514,18 +514,7 @@ router.get("/admin/allocations", requireUser, async (req, res) => {
       openPositionsCount: pnl.openCount,
       dailyLossLimitUsd: resolvedCap != null ? round2(resolvedCap) : null,
       // Task #430 — canonical live block (single source of truth, per investor).
-      live: {
-        source: inv.source,
-        allocatedBalance: inv.allocatedBalance,
-        realizedPnL: inv.realizedPnL,
-        floatingPnL: inv.floatingPnL,
-        liveEquity: inv.liveEquity,
-        marginUsed: inv.marginUsed,
-        freeMargin: inv.freeMargin,
-        availableBalance: inv.availableBalance,
-        openTradeCount: inv.openTradeCount,
-        freshness: inv.freshness,
-      },
+      live: toInvestorLiveBalanceWire(inv),
       attachment: {
         attached,
         sharedMasterAccountId: vta?.sharedMasterAccountId ?? null,

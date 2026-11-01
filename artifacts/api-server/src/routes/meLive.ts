@@ -970,6 +970,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
       userId, accountMode: scope.currentAccountMode,
       allocatedBalance: partsOff.allocatedBalance,
       realizedPnL: partsOff.realizedPnL,
+      realizedPnLPendingCount: partsOff.realizedPnLPendingCount,
       reservedRisk: partsOff.reservedRisk,
       liveSnapshot: null, now,
     });
@@ -1019,6 +1020,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
     userId, accountMode: "LIVE_SHARED",
     allocatedBalance: partsOn.allocatedBalance,
     realizedPnL: partsOn.realizedPnL,
+    realizedPnLPendingCount: partsOn.realizedPnLPendingCount,
     reservedRisk: partsOn.reservedRisk,
     liveSnapshot: snapshot, now,
   });
@@ -1142,6 +1144,7 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
           userId, accountMode: scope.currentAccountMode,
           allocatedBalance: partsOff.allocatedBalance,
           realizedPnL: partsOff.realizedPnL,
+          realizedPnLPendingCount: partsOff.realizedPnLPendingCount,
           reservedRisk: partsOff.reservedRisk,
           liveSnapshot: null, now: Date.now(),
         });
@@ -1202,6 +1205,7 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
         userId, accountMode: "LIVE_SHARED",
         allocatedBalance: partsOn.allocatedBalance,
         realizedPnL: partsOn.realizedPnL,
+        realizedPnLPendingCount: partsOn.realizedPnLPendingCount,
         reservedRisk: partsOn.reservedRisk,
         liveSnapshot: snapshot, now: Date.now(),
       });

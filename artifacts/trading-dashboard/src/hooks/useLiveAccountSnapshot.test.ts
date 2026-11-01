@@ -870,14 +870,14 @@ describe("successful partial funds responses cannot refresh old amounts", () => 
     await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
     for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBeNull();
   });
-  it("keeps newly reported zeroes and a negative open loss", async () => {
+  it("keeps reported zero funds but withholds a partial-poll aggregate without position evidence", async () => {
     const body = freshPollBody() as Record<string, unknown>;
     for (const [wire] of fields) body[wire] = 0;
     body.openPnL = -7;
     fetchMock.mockResolvedValue({ ok: true, json: async () => body });
     const { result } = renderHook(() => useLiveAccountSnapshot());
     await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
-    for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBe(field === "openPL" ? -7 : 0);
+    for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBe(field === "openPL" ? null : 0);
   });
   it.each([null, undefined])("does not revive a previously known position count when the response count is %s", async (value) => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ...freshPollBody(), openPositionCount: value }) });
@@ -913,5 +913,20 @@ describe("successful partial funds responses cannot refresh old amounts", () => 
     act(() => MockEventSource.latest().emit(prior));
     await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
     expect(result.current.live).toBeNull();
+  });
+});
+
+
+describe("aggregate display completeness", () => {
+  it.each([undefined,false,true])("preserves position facts while requiring affirmative aggregate completeness (%s)", async complete => {
+    const {result}=renderHook(()=>useLiveAccountSnapshot());
+    const event=snapshotEvent({snapFreshness:"fresh",liveFreshness:"fresh"});
+    event.snapshot.openPL=12;
+    event.snapshot.positions=[{positionId:"lp_1",symbol:"EURUSD",direction:"buy",volume:1,entryPrice:1,currentPrice:1.1,unrealizedPL:12,brokerPL:12,plSource:"broker",plIsEstimate:false,lastUpdateAtMs:Date.now(),freshness:"fresh"}];
+    if(complete!==undefined)event.snapshot.reconciliation={positionPnlComplete:complete,snapshotSummedPL:12,equityMinusBalancePL:20,discrepancy:null,exceedsThreshold:false,excludedCount:0,brokerAbsentExcludedCount:0,stalePLCount:0};
+    act(()=>MockEventSource.latest().emit(event));
+    expect(result.current.snapshot?.openPL).toBe(complete===true?12:null);
+    expect(result.current.snapshot?.positions[0]?.brokerPL).toBe(12);
+    expect(result.current.snapshot?.positions[0]?.unrealizedPL).toBe(12);
   });
 });

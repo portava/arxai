@@ -145,7 +145,8 @@ export function AccountSnapshotCard() {
     : isOwnerAdmin ? "Allocation" : "Available";
   const balanceValue = liveBalance ?? allocation;
   const equity = liveSnap ? finite(liveSnap.equity) : isOwnerAdmin ? (masterAmountsKnown ? finite(master?.mt5Equity) : null) : finite(alloc.equity);
-  const openPnl = liveSnap ? finite(liveSnap.openPL) : isOwnerAdmin ? null : finite(alloc.pnl);
+  const partialPositionPnl = liveSnap != null && liveSnap.reconciliation?.positionPnlComplete !== true;
+  const openPnl = liveSnap ? (partialPositionPnl ? null : finite(liveSnap.openPL)) : isOwnerAdmin ? null : finite(alloc.pnl);
   const openCount = liveSnap ? (liveSnap.positionCountKnown === false ? null : knownCount(liveSnap.openPositionsCount)) : knownCount(isOwnerAdmin ? master?.openPositions : alloc.open);
   const lastKnown = !isOwnerAdmin && (liveSnap ? !["live", "fresh"].includes(liveCtx.freshness) : Boolean(summary && summaryQ.isError));
 
@@ -158,7 +159,7 @@ export function AccountSnapshotCard() {
   // Flag estimated P/L — when the live snapshot is present but positions are
   // stale/estimated (not fresh broker-confirmed). Only relevant on the live-
   // snapshot path; the master path cannot prove a coherent P/L pair.
-  const plIsEstimate = liveSnap != null && liveCtx.isEstimate;
+  const plIsEstimate = liveSnap != null && (liveCtx.isEstimate || liveSnap.positions.some(position => position.plIsEstimate || position.plSource !== "broker"));
 
   // Admin diagnostic disclosure — full numeric reconciliation breakdown.
   // Gated on shouldShowAdminDiagnostics (ADMIN/OWNER session, not previewing-
@@ -219,15 +220,15 @@ export function AccountSnapshotCard() {
             - fresh broker value → normal green/red P/L color
             Numeric detail is admin-only (showAdminDiscrepancy block below). */}
         <StatTile
-          label="Open P/L"
+          label={liveSnap ? "Position P/L" : "Open P/L"}
           value={
             plUnderReview ? "Under review"
-            : plIsEstimate && openPnl != null ? `~${formatPnl(openPnl)}`
+            : liveSnap && openPnl != null ? `${plIsEstimate ? "~" : ""}${openPnl} (currency unverified)`
             : openPnl == null ? "—" : formatPnl(openPnl)
           }
           valueClass={
             plUnderReview ? "text-warning"
-            : plIsEstimate ? "text-txt-muted"
+            : plIsEstimate || liveSnap != null ? "text-txt-muted"
             : pnlClass(openPnl)
           }
           data-testid="cockpit-open-pnl"
@@ -289,22 +290,23 @@ export function AccountSnapshotCard() {
         </p>
       )}
 
-      {/* Admin-only reconciliation diagnostics — full numeric breakdown.
-          For regular users: user-safe plain text above is the entire disclosure.
-          For admins: shows actual numbers including master-consistent state. */}
+      {liveSnap && <p className="mt-2 text-xs text-txt-muted" data-testid="account-position-pnl-scope">
+        {partialPositionPnl ? "Position P/L is incomplete; the known subtotal is not the total. " : "Position P/L covers the supplied position rows only. "}
+        A whole-account broker profit comparison is not verified.
+        {plIsEstimate && " This includes estimates; quote-based account-currency conversion is unverified."}
+      </p>}
+      {/* No native, identity-matched account-profit report reaches this view.
+          Neither absent discrepancy nor numerical equality proves agreement. */}
       {showAdminDiscrepancy && reconciliation && (
         <div
           className="mt-1.5 rounded-lg border border-warning/20 bg-warning/[0.04] p-2 text-[10px] text-txt-muted"
           data-testid="account-pl-discrepancy-admin"
         >
           <span className="font-semibold text-warning">P/L reconciliation (admin):</span>{" "}
-          {reconciliation.exceedsThreshold
-            ? <>Snapshot sum: {reconciliation.snapshotSummedPL != null ? `$${reconciliation.snapshotSummedPL.toFixed(2)}` : "—"}
-              {" · "}Equity−Balance: {reconciliation.equityMinusBalancePL != null ? `$${reconciliation.equityMinusBalancePL.toFixed(2)}` : "—"}
-              {" · "}Δ: {reconciliation.discrepancy != null ? `$${reconciliation.discrepancy.toFixed(2)}` : "—"}
-              {" · "}Excl: {reconciliation.excludedCount} · Absent: {reconciliation.brokerAbsentExcludedCount}
-              {" · "}Stale: {reconciliation.stalePLCount}</>
-            : <>Source: equity−balance (consistent) · Open P/L: {reconciliation.snapshotSummedPL != null ? `$${reconciliation.snapshotSummedPL.toFixed(2)}` : "—"} · Δ: $0.00</>}
+          Not verified — no matched native account-profit report. Balance/equity arithmetic is not broker profit.
+          {" · "}Excluded rows: {reconciliation.excludedCount ?? "—"}
+          {" · "}Broker-absent rows: {reconciliation.brokerAbsentExcludedCount ?? "—"}
+          {" · "}Stale or estimated rows: {reconciliation.stalePLCount ?? "—"}
         </div>
       )}
 

@@ -14,7 +14,6 @@
 import { useLiveAccountSnapshot } from "@/hooks/useLiveAccountSnapshot";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
-import { formatPnl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 function money(n: number | null | undefined): string {
@@ -25,10 +24,6 @@ function money(n: number | null | undefined): string {
   })}`;
 }
 
-function pnlClass(n: number | null | undefined): string {
-  if (n == null) return "text-foreground";
-  return n >= 0 ? "text-success" : "text-danger";
-}
 
 function Stat({
   label,
@@ -67,7 +62,7 @@ export function RubyAccountHealthStrip() {
   // non-live user never sees a number that doesn't apply to them.
   const balance = snapshot?.balance ?? null;
   const equity = snapshot?.equity ?? null;
-  const openPL = isLive && !isUnavailable ? snapshot?.openPL ?? null : null;
+  const openPL = isLive && !isUnavailable && snapshot?.reconciliation?.positionPnlComplete === true ? snapshot.openPL : null;
 
   return (
     <div
@@ -78,9 +73,9 @@ export function RubyAccountHealthStrip() {
         <Stat label="Balance" value={money(balance)} />
         <Stat label="Equity" value={money(equity)} />
         <Stat
-          label="Open P/L"
-          value={openPL == null ? "—" : formatPnl(openPL)}
-          valueClass={pnlClass(openPL)}
+          label="Position P/L (unverified scope)"
+          value={openPL == null ? "—" : `${isEstimate ? "~" : ""}${openPL} (currency unverified)`}
+          valueClass="text-txt-muted"
         />
       </div>
       <div className="flex items-center gap-2">
