@@ -20,9 +20,12 @@ async page => {
     function cloneEvidence(value) { return structuredClone(value); }
     function bindingErrors(captured,current,before,after) {
       const errors=[];
-      for(const key of ['element','engine','analysis','primitive','attachment'])if(current[key]!==captured[key])errors.push('replaced '+key);
-      if(!current.surface||current.surface.container!==captured.element||current.surface.chart!==captured.surface.chart||current.surface.series!==captured.surface.series)errors.push('replaced overlay surface');
-      if(!current.attachment||current.attachment.series!==captured.surface.series)errors.push('drawing attachment is not the captured series');
+      for(const key of ['element','engine','chart','series','surfaceContract','analysis','primitive','attachment'])if(current[key]!==captured[key])errors.push('replaced '+key);
+      const surfaceBound=current.surfaceContract==='arx-overlay-lease-v1'
+        ?current.surface===captured.surface&&current.surface===current.engine?.scannerSurface
+        :current.surface?.chart===captured.chart&&current.surface?.series===captured.series;
+      if(!current.surface||current.surface.container!==captured.element||!surfaceBound)errors.push('replaced overlay surface');
+      if(!current.attachment||current.attachment.series!==captured.series)errors.push('drawing attachment is not the captured series');
       if(!before||!after)errors.push('missing current adapter witness');
       else {
         for(const key of ['adapterId','containerId','chartId','seriesId','symbol','intervalSeconds','style','barCount'])if(after[key]!==before[key])errors.push('changed context '+key);
@@ -47,7 +50,10 @@ async page => {
     const readBinding=()=>{
       const element=document.querySelector('[data-testid="arx-native-canvas"]'),engine=findEngine(element);
       const analysis=engine?.analysis,primitive=analysis?.drawingPrimitive;
-      return{element,engine,surface:engine?.getScannerOverlaySurface(),analysis,primitive,attachment:primitive?.attachment};
+      const surface=engine?.getScannerOverlaySurface();
+      const surfaceContract=surface&&typeof surface.dispose==='function'&&!('series' in surface)?'arx-overlay-lease-v1':'legacy-renderer-bridge';
+      // Renderer internals are QA-only witnesses, not public facade properties.
+      return{element,engine,chart:engine?.chart,series:engine?.series,surface,surfaceContract,analysis,primitive,attachment:primitive?.attachment};
     };
     const inspect=reason=>{
       try {
@@ -58,11 +64,11 @@ async page => {
       } catch(error) {result.bindingFailures.push({at:performance.now(),reason,failures:[String(error)]});stop?.();return false;}
     };
     try {
-      captured=readBinding();result.before=window.__arxChartQa.snapshot();
+      captured=readBinding();result.surfaceContract=captured.surfaceContract;result.before=window.__arxChartQa.snapshot();
       if(!captured.element||!captured.engine||!captured.surface||captured.surface.container!==captured.element||!captured.primitive||captured.primitive.drawings.length!==1||!captured.attachment)throw Error('Expected one attached current drawing primitive');
       if(result.before?.symbol!=='EURUSD'||result.before?.intervalSeconds!==900||result.before?.style!=='candles'||result.before?.barCount!==200||result.before?.feed?.source!=='offline_fixture')throw Error('Unexpected idle workload context');
       if(!inspect('initial'))throw Error('Initial binding is invalid');
-      const notes=captured.surface.series.priceLines().filter(line=>line.options().title==='S OFFLINE QA');
+      const notes=captured.series.priceLines().filter(line=>line.options().title==='S OFFLINE QA');
       if(notes.length!==1)throw Error('Expected one actual synthetic note line');
       noteBefore=notes[0];result.note={optionsBefore:cloneEvidence(noteBefore.options()),optionsAfter:null,sameHandle:false,unchangedOptions:false};
       dataBefore=cloneEvidence(window.__arxChartQa.data());
@@ -71,7 +77,7 @@ async page => {
       result.drawingsBefore=drawingsBefore;
       // Installation belongs inside the same cleanup scope as observation.
       // A later missing/nonconfigurable method cannot leave earlier hooks installed.
-      for(const [obj,key,label] of [[captured.surface.series,'createPriceLine','createPriceLine'],[captured.surface.series,'removePriceLine','removePriceLine'],[captured.primitive,'setSelection','setSelection'],[captured.primitive,'updateAllViews','updateAllViews'],[captured.attachment,'requestUpdate','requestUpdate']]) {
+      for(const [obj,key,label] of [[captured.series,'createPriceLine','createPriceLine'],[captured.series,'removePriceLine','removePriceLine'],[captured.primitive,'setSelection','setSelection'],[captured.primitive,'updateAllViews','updateAllViews'],[captured.attachment,'requestUpdate','requestUpdate']]) {
         wrapMethod(obj,key,()=>{result.counts[label]++;result.calls.push({at:performance.now(),method:label,selected:captured.primitive.selected});inspect('call:'+label);},restores);
       }
       start=performance.now();
@@ -82,9 +88,9 @@ async page => {
       result.durationMs=performance.now()-start;inspect('end');
       result.after=window.__arxChartQa.snapshot();
       const active=readBinding();
-      const currentNotes=active.surface?.series.priceLines().filter(line=>line.options().title==='S OFFLINE QA')??[];
+      const currentNotes=active.series?.priceLines().filter(line=>line.options().title==='S OFFLINE QA')??[];
       result.note.optionsAfter=currentNotes.map(line=>cloneEvidence(line.options()));
-      result.note.sameHandle=active.surface?.series===captured.surface.series&&currentNotes.length===1&&currentNotes[0]===noteBefore;
+      result.note.sameHandle=active.series===captured.series&&currentNotes.length===1&&currentNotes[0]===noteBefore;
       result.note.unchangedOptions=currentNotes.length===1&&JSON.stringify(result.note.optionsBefore)===JSON.stringify(result.note.optionsAfter[0]);
       result.unchangedData=JSON.stringify(dataBefore)===JSON.stringify(window.__arxChartQa.data());
       result.drawingsAfter=cloneEvidence(active.primitive?.drawings??null);

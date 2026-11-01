@@ -959,7 +959,11 @@ export function ARXNativeChart({
     if (!onScannerSurfaceChange) return;
     const surface = hasCandles ? adapterRef.current?.getScannerOverlaySurface?.() : null;
     onScannerSurfaceChange(surface ? { ...surface, symbol: resolvedSymbol, timeframe, context: chartContext, style: preferences.style } : null);
-    return () => onScannerSurfaceChange(null);
+    return () => {
+      // Context changes can retain the same renderer/series. Revoke the captured
+      // lease explicitly so old coordinates/overlay callbacks cannot follow it.
+      try { surface?.dispose(); } finally { onScannerSurfaceChange(null); }
+    };
   }, [onScannerSurfaceChange, hasCandles, resolvedSymbol, timeframe, chartContext, preferences.style, chartEpoch]);
 
   // A forming tip that reached a deferred comparison before its engine existed

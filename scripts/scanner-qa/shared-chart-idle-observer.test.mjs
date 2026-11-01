@@ -10,7 +10,8 @@ function helper(name) {
 const bindingErrors=helper('bindingErrors'),wrapMethod=helper('wrapMethod');
 function binding() {
   const series={},element={},chart={},engine={},analysis={},primitive={};
-  return{element,engine,analysis,primitive,surface:{container:element,series,chart},attachment:{series}};
+  Object.assign(engine,{chart,series});
+  return{element,engine,chart,series,surfaceContract:"legacy-renderer-bridge",analysis,primitive,surface:{container:element,series,chart},attachment:{series}};
 }
 const context=()=>({adapterId:1,containerId:2,chartId:3,seriesId:4,symbol:'EURUSD',intervalSeconds:900,style:'candles',barCount:200,canvasIds:[5,6],feed:{source:'offline_fixture',livePriceAffordance:false}});
 test('binding accepts stable object identity and context, but not replacement hidden behind matching data',()=>{
@@ -75,4 +76,15 @@ test('synthetic note interception remains exact-symbol GET-only and defers every
   assert.equal(JSON.parse((await call('EURUSD','GET')).body).annotations.length,1);
   assert.equal(JSON.parse((await call('GBPUSD','GET')).body).annotations.length,0);
   assert.equal((await call('EURUSD','POST')).fallback,true);
+});
+
+test('facade observation binds exact lease and private renderer identity without exposing raw public APIs',()=>{
+  const captured=binding();
+  captured.surface={container:captured.element,dispose(){}};
+  captured.surfaceContract='arx-overlay-lease-v1';captured.engine.scannerSurface=captured.surface;
+  assert.equal(bindingErrors(captured,{...captured},context(),context()).length,0);
+  assert.ok(bindingErrors(captured,{...captured,surface:{...captured.surface}},context(),context()).includes('replaced overlay surface'));
+  for(const key of ['series','chart','surfaceContract'])assert.ok(bindingErrors(captured,{...captured,[key]:{}},context(),context()).length,key);
+  captured.engine.scannerSurface={...captured.surface};
+  assert.ok(bindingErrors(captured,{...captured},context(),context()).includes('replaced overlay surface'));
 });

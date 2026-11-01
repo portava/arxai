@@ -1,7 +1,7 @@
 import type { ProfileCandleEvidence, VolumeProfileInspection } from "./chartVolumeProfile";
 import type { VwapAnchor } from "./chartStudies";
 import type { CandleVolumeEvidence } from "./chartVolume";
-import type { ScannerChartSurface } from "./scannerChartSurface";
+import type { ScannerOverlaySurface } from "./scannerChartSurface";
 import type { DrawingInteraction } from "./chartDrawingEditor";
 import type { SmartChartAnnotation } from "./smartChartAnnotation";
 import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
@@ -133,7 +133,7 @@ export interface ChartStructureMarker {
  */
 export interface ChartEngineAdapter {
   /** Scanner migration bridge: display overlays/coordinates only. */
-  getScannerOverlaySurface?(): Pick<ScannerChartSurface, "chart" | "series" | "container"> | null;
+  getScannerOverlaySurface?(): ScannerOverlaySurface | null;
 
   readonly capabilities: ChartEngineCapabilities;
 
