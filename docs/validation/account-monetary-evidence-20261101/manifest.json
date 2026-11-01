@@ -1,0 +1,250 @@
+{
+  "applicationCommit": "c1ea3ba99c45e3c338b2ea8bfe413c04fd3f4baf",
+  "files": {
+    "account-telemetry-clock-20261101/after-hardened.log": {
+      "bytes": 78,
+      "sha256": "936c3ced0280618164ba0743fe0998ce331227d4cd1127c5ec14fd8c0f0c7c81"
+    },
+    "account-telemetry-clock-20261101/after.log": {
+      "bytes": 78,
+      "sha256": "f829160ea881811283991e4da291f3e81d19725d95a09b2e2f3b2e3606a5213c"
+    },
+    "account-telemetry-clock-20261101/before-runtime.log": {
+      "bytes": 1312,
+      "sha256": "5b109f4417d6da1e32ab6ad081468fc9b2eead3d911bf9b3633c4982566d9ce6"
+    },
+    "account-telemetry-clock-20261101/before.log": {
+      "bytes": 2051,
+      "sha256": "aab7b0fdc291c3481fccb56a1ab2b44dc5dfc77da242ada042a7c320730a6fbd"
+    },
+    "account-telemetry-clock-20261101/bridge-package.log": {
+      "bytes": 816,
+      "sha256": "1d663f559a593dab3fe93759002d3f866d19ef886d86705868a8c5ced1dc2820"
+    },
+    "account-telemetry-clock-20261101/competitor-evidence.json": {
+      "bytes": 1805,
+      "sha256": "61390ab2ce8aa15ad19cec35f574d45cb7c797408cb79f75c4d1e3897505d8a3"
+    },
+    "account-telemetry-clock-20261101/independent-harness-final.log": {
+      "bytes": 78,
+      "sha256": "936c3ced0280618164ba0743fe0998ce331227d4cd1127c5ec14fd8c0f0c7c81"
+    },
+    "account-telemetry-clock-20261101/independent-harness.log": {
+      "bytes": 78,
+      "sha256": "f829160ea881811283991e4da291f3e81d19725d95a09b2e2f3b2e3606a5213c"
+    },
+    "account-telemetry-clock-20261101/independent-review.txt": {
+      "bytes": 5340,
+      "sha256": "d9d8765d0627f2c31870bf900b8b1337ba849522653529e23d1574b115e82828"
+    },
+    "account-telemetry-clock-20261101/mt5-offline.log": {
+      "bytes": 774,
+      "sha256": "b2c7640c2d0aec37b05e70ca22c4a289b15eadd15239bdcb874e6e460b330165"
+    },
+    "account-telemetry-clock-20261101/mutation-early-deadline.log": {
+      "bytes": 654,
+      "sha256": "928f883c1007ecf6003b73dec633822e6502fba896401dbbd437c2d807efc27d"
+    },
+    "account-telemetry-clock-20261101/mutation-missing-attempt-stamp.log": {
+      "bytes": 994,
+      "sha256": "7ce009218dfa44ebd45fab36b9f802ca7e7bf2d33a51cb54a4319e1679587197"
+    },
+    "account-telemetry-clock-20261101/mutation-quote-clock.log": {
+      "bytes": 1134,
+      "sha256": "36cc872f334e02a13270e2821505b55150c6e92363e136a3390e60f0c01c608e"
+    },
+    "account-telemetry-clock-20261101/mutation-truncated-clock.log": {
+      "bytes": 354,
+      "sha256": "9f6ff0721a4327d190310c3b54142887a8a5be003759820fb1f0f9a9b10d9aed"
+    },
+    "account-telemetry-clock-20261101/mutations.json": {
+      "bytes": 404,
+      "sha256": "073d2a6d787024bd97fa6556a9396c6ce733119346b5f106be9c43db1c0f4eca"
+    },
+    "account-telemetry-clock-20261101/source-receipt.json": {
+      "bytes": 1340,
+      "sha256": "e1a9056cce46dbc4282bc520a0f4790ab730a74d921634f9e059c18eac833869"
+    },
+    "account-profit-truth-20261101/backend-after-01.log": {
+      "bytes": 1337,
+      "sha256": "951202d745b8d66628b210eeefd6f2c0fc46963dc922c2a3c52f7a32528f9c6a"
+    },
+    "account-profit-truth-20261101/backend-after-02.log": {
+      "bytes": 1644,
+      "sha256": "9acc7a425f51889f18f0a580d97e09662db5572263bd5c87dd6514483d8b2820"
+    },
+    "account-profit-truth-20261101/backend-after-03.log": {
+      "bytes": 2333,
+      "sha256": "a50177c082e05554193a39f2f41a6ca7f5bd026e0b319e8569553e86e43ef8b4"
+    },
+    "account-profit-truth-20261101/backend-after-04.log": {
+      "bytes": 2788,
+      "sha256": "ca5341a27aa1d004d9aae8363355344db22e030e1bebd9e1b4a44e6022b9e093"
+    },
+    "account-profit-truth-20261101/backend-before.log": {
+      "bytes": 15818,
+      "sha256": "d41fa5bdc6f2c3f5825d413a5fbfd68479b060d5f1b138fea871ce2604063cf4"
+    },
+    "account-profit-truth-20261101/backend-final-02.log": {
+      "bytes": 3010,
+      "sha256": "38d2d5e39fa0566c29db9d7533e52fa094319c17b076ff384138fbbc6161e2e2"
+    },
+    "account-profit-truth-20261101/backend-final.log": {
+      "bytes": 2905,
+      "sha256": "425d2317e788742b533ed442e2eb53029a6947351418a54b020d84d5102a09ae"
+    },
+    "account-profit-truth-20261101/domain-declarations-final.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "account-profit-truth-20261101/domain-declarations.log": {
+      "bytes": 87659,
+      "sha256": "6811b717857bd2d991d79a87c0fdaf34667fa231dce5968e15f48d1278d88971"
+    },
+    "account-profit-truth-20261101/frontend-after-01.log": {
+      "bytes": 13853,
+      "sha256": "cf8c1f9c3d8e0d37be897d00df2b7b8f9d081dc4c66c79cd299e8b44c58dda54"
+    },
+    "account-profit-truth-20261101/frontend-after-02.log": {
+      "bytes": 267,
+      "sha256": "2548ad53a33fad31434c6e8a2d8b33176f0b02a0814b4b2dd8c06f1928ba48f9"
+    },
+    "account-profit-truth-20261101/frontend-after-03.log": {
+      "bytes": 267,
+      "sha256": "1818d10a4b02aca884ad5441e6782f2ede224fbd6e080decf7722d8df12a4b1a"
+    },
+    "account-profit-truth-20261101/frontend-after-04.log": {
+      "bytes": 267,
+      "sha256": "f07742a65aae296586a36e30f0f8320e7797a6cb344de205bafb20b6956c05e5"
+    },
+    "account-profit-truth-20261101/frontend-before.log": {
+      "bytes": 30299,
+      "sha256": "21f427549bbfc404fc2f9f00d6a424ac87279ab083ed8a1016eff73eceba0c53"
+    },
+    "account-profit-truth-20261101/frontend-final.log": {
+      "bytes": 267,
+      "sha256": "4c6ff50f89886198387f417401b0594715acef23a48ce1ce59a0525c99f8b9c7"
+    },
+    "account-profit-truth-20261101/frontend-typecheck-final.log": {
+      "bytes": 159,
+      "sha256": "ab770cb80844eab784b41718e99697031819f353d6c2b4edc6ff92e517db28fc"
+    },
+    "account-profit-truth-20261101/frontend-typecheck.log": {
+      "bytes": 989,
+      "sha256": "9443c6a35dc000b9cfde5c957dc0356f82b76469e7710bce4c1d294b9065f9c7"
+    },
+    "account-profit-truth-20261101/implementation-receipt.txt": {
+      "bytes": 7675,
+      "sha256": "319c341dbfd44d5b79804cbe46f69a03504e40c78a9ebb7530df90523467a540"
+    },
+    "account-profit-truth-20261101/independent-review.txt": {
+      "bytes": 10238,
+      "sha256": "81ca68d2612ce3cb57793341eb2db1c29eae7f62cfca0163af8b99300dd5a890"
+    },
+    "account-profit-truth-20261101/legacy-adapter-after.log": {
+      "bytes": 2021,
+      "sha256": "01c622653d0be8b45ab9d3cc5c339e55b815acf423c56fa01df63bf0c6e8a429"
+    },
+    "account-profit-truth-20261101/legacy-adapter-final.log": {
+      "bytes": 2021,
+      "sha256": "01c622653d0be8b45ab9d3cc5c339e55b815acf423c56fa01df63bf0c6e8a429"
+    },
+    "account-profit-truth-20261101/legacy-composer-extracted-after.log": {
+      "bytes": 2085,
+      "sha256": "b6532b88d7d361a92776bdc1e4a44cf3af477fad9376d30ef466c7b6906e16ae"
+    },
+    "account-profit-truth-20261101/legacy-composer-extracted-final.log": {
+      "bytes": 1119,
+      "sha256": "44ea2783caa81de9ce36e6efaf2437ec09739122407228d097f58c426e104966"
+    },
+    "account-profit-truth-20261101/run-pure-legacy.cjs": {
+      "bytes": 1518,
+      "sha256": "9458099d401111ebe4f1af6b44e5f58b1997fe24facce55401b710f054635c13"
+    },
+    "account-native-report-audit-20261101/native-account-report-audit.txt": {
+      "bytes": 9625,
+      "sha256": "19e8d7b9a7795937c24af173223a56e5390e16c58905fc989f2ba6fe64b5f80f"
+    },
+    "account-monetary-evidence-20261101/account-projection.log": {
+      "bytes": 4472,
+      "sha256": "278b65925c6cdb2b8c8e5feb8e93d31c6d0f11d829b75a2f63b7533b03285d2d"
+    },
+    "account-monetary-evidence-20261101/account-stream.log": {
+      "bytes": 3766,
+      "sha256": "f372bfd2dd789ca412a813a39db35e8e9a50aecf3c2fe65d24699c1b6e171279"
+    },
+    "account-monetary-evidence-20261101/api-build.log": {
+      "bytes": 609,
+      "sha256": "d7b9d0f0431f6e29c6cbdadd5f57a5e7119a9f961436662a575608c0fe39f581"
+    },
+    "account-monetary-evidence-20261101/api-typecheck.log": {
+      "bytes": 149,
+      "sha256": "68ee3998467751f1da1529cca951bc4f5a63326a0781d8368f89fbff30b495eb"
+    },
+    "account-monetary-evidence-20261101/application-source-manifest.json": {
+      "bytes": 3434,
+      "sha256": "a3af8505aa40c1a06ec3f5e8838e6a0c7ff16a2340ac11a56da4b104d2e1a301"
+    },
+    "account-monetary-evidence-20261101/application.patch": {
+      "bytes": 142952,
+      "sha256": "86560e80bbd690ee6463f204becf234443f4918bfc9dc82b318fa7f68eafbcd9"
+    },
+    "account-monetary-evidence-20261101/baseline-guard-comparison.json": {
+      "bytes": 7368,
+      "sha256": "fde58c1b71f2184053eb6bde10bcfe988e01ae98c62a8e699bd5ce3e5a968bd2"
+    },
+    "account-monetary-evidence-20261101/bridge-package.log": {
+      "bytes": 815,
+      "sha256": "f3f39d858e43b29003b6836727d68849e44d617c4102a3a242adff8beab93eaa"
+    },
+    "account-monetary-evidence-20261101/combined-runner.py": {
+      "bytes": 2511,
+      "sha256": "df96d648857e48b335b4cf5578fdfb26c9ca39db9bf10fd07c39f40769745a0b"
+    },
+    "account-monetary-evidence-20261101/combined-validation.json": {
+      "bytes": 4830,
+      "sha256": "98fe100455c43560385027882728a1cfe7117ce01d8476ee47110f2a872ce852"
+    },
+    "account-monetary-evidence-20261101/dashboard-build.log": {
+      "bytes": 28238,
+      "sha256": "2e2f215d0da243207cc80255e37828f3748c1242636a0be4010b7abfaf6efbf5"
+    },
+    "account-monetary-evidence-20261101/dashboard-typecheck.log": {
+      "bytes": 163,
+      "sha256": "7381f6fe872efab37d9e07d437cfa0f8d8773f2dcc6cfc35d6f4c7928739b496"
+    },
+    "account-monetary-evidence-20261101/frontend.log": {
+      "bytes": 495,
+      "sha256": "0c0ec5e2e71d154f070bbd2376d231db3e50c28026e2ee4a549594d7c042a2cf"
+    },
+    "account-monetary-evidence-20261101/guards.log": {
+      "bytes": 24913,
+      "sha256": "853f9f12f77d6eb76c1d7e12b1532f5e1f325cc9ec04d0604b0376477fd3e483"
+    },
+    "account-monetary-evidence-20261101/legacy-direct-retry.json": {
+      "bytes": 534,
+      "sha256": "fc06e25c5b7a6664af7890098e6eba646a48f67ff9169275b5c848bdbbd344eb"
+    },
+    "account-monetary-evidence-20261101/legacy-snapshot-direct.log": {
+      "bytes": 2021,
+      "sha256": "01c622653d0be8b45ab9d3cc5c339e55b815acf423c56fa01df63bf0c6e8a429"
+    },
+    "account-monetary-evidence-20261101/legacy-snapshot.log": {
+      "bytes": 1323,
+      "sha256": "b7cdd4ce57fb91460e2d66547333a686549ecaa5f213e48be7a2cb44e116823e"
+    },
+    "account-monetary-evidence-20261101/mt5-offline.log": {
+      "bytes": 774,
+      "sha256": "8d284d88d6bbef16050de87f52c08e3e1cc4a3269a82ab259e2464a591651a4c"
+    },
+    "account-monetary-evidence-20261101/profit-truth.log": {
+      "bytes": 3274,
+      "sha256": "1592f7c590d3350589f0fcbc2d93cd71e1220acde32141c816a20452870cce48"
+    },
+    "account-monetary-evidence-20261101/runner.log": {
+      "bytes": 190,
+      "sha256": "1b2000c61556daddf3b58bd4e93316e588e830d41b0fde15e4efd3805b054035"
+    }
+  },
+  "archiveSha256": "9be6c6045a756e196928b69ac23a1083207e017d6a0bd555613cf393dd80cbe6"
+}
