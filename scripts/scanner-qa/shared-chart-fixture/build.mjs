@@ -62,7 +62,6 @@ if (!serve) {
   const nativeIndexSource=await readFile(nativeIndexPath,'utf8');
   const productDefaultEngineId=readProductDefaultEngine(nativeIndexSource);
   const nativeEngine=nativeOverrideRequested||(!feedMode&&!volumeProfileProbe&&!flagLifecycleProbe&&productDefaultEngineId==='arx-native');
-  if(profile&&nativeEngine)throw Error('Native-default React profiling requires native candle-timeline instrumentation; legacy profiling is not valid evidence.');
   if(nativeOverrideRequested&&productDefaultEngineId==='arx-native')throw Error('Product default is already native. Build without --native-engine for default acceptance.');
   let nativeOverrideApplied=false;
   const nativeEnginePlugin={name:'qa-explicit-native-engine',enforce:'pre',async load(file){
@@ -93,6 +92,7 @@ if (!serve) {
   if (dev.some(marker=>sources.some(s=>s.includes(marker)))) throw Error('Development runtime found');
   if (!(nativeEngine?['Minified React error #','arxNativeViewport']:(feedMode||volumeProfileProbe||flagLifecycleProbe)?['tv-lightweight-charts']:['Minified React error #','tv-lightweight-charts']).every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
   const metadata = {schemaVersion:1,buildId:id,nativeEngine,productDefaultEngineId,productDefaultSourceSha256:sha(nativeIndexSource),qaOnlyDefaultEngineOverride:nativeOverrideApplied,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:!profile,diagnosticOnly:profile,reactProfiling:profile,candleTimeline:profile,
+    candleTimelineEngine:profile?(nativeEngine?'arx-native':'lightweight-charts'):null,nativePaintTimeline:profile&&nativeEngine,
     entry:(feedMode||volumeProfileProbe||flagLifecycleProbe)?'Isolated actual chart adapter; no React app, navigation or API':'Actual dashboard src/main.tsx; observer installed before mount',isolatedPositionMiniRoute:nativeEngine?'/position-mini-qa':null,fixtureOnlyObserver:nativeEngine?'scripts/scanner-qa/shared-chart-fixture/nativeWitness.ts':flagLifecycleProbe?null:'scripts/chart-qa/witness.ts',feedReconciliation,volumeProfileProbe,flagLifecycleProbe,dashboardUtilityCss,hashes,
     limitations:['Isolated Vite configuration; this is not the deployable dashboard bundle.','Offline synthetic data and unavailable reader truth; no production or broker validation.','No hardware paint or competitor performance measurement.']};
   await writeFile(path.join(out,metadataFile),JSON.stringify(metadata,null,2)+'\n');

@@ -250,6 +250,24 @@ feed, gate or route is replaced. Only names, tags and timing fields are copied;
 props, state and account data are not inspected. An existing DevTools hook or any
 other origin is rejected. No observer is installed in the ordinary fixture.
 
+The candle timeline follows the actual selected adapter. Native profiling also
+wraps the existing viewport paint method: bounded records join adapter requests
+to viewport IDs and record requested/current/painted revisions, counts and
+pending work. A paint callback that changes the revision revokes completion.
+This does not read prices, invoke derived frame/state getters, or establish
+screen presentation. Metadata identifies `candleTimelineEngine` and
+`nativePaintTimeline`; native profiling must never be inferred from legacy
+adapter events. Missing instrumentation seams fail before installation.
+
+`native-first-navigation-profile.js` runs six trusted first-link navigations
+(three desktop, three mobile). Set `SCANNER_QA_EXPECTED_COMMIT` to the exact
+clean build head and `SCANNER_QA_CPU_RATE` to 1 or 4 in a runner. It saves every
+attempt, verifies the final canonical/displayed OHLC against that document's
+mock response, and returns React/timeline diagnostics. It does not calculate
+acceptance latency. Use the ordinary first-navigation harness for that.
+Viewport IDs correlate objects only: batched set calls and HTTP responses are
+not individually joined to a paint. Active-tick updates are not instrumented.
+
 These are version-specific fiber observations, with observer and profiling
 runtime overhead. Inclusive/nested and bailed-out durations are not additive;
 exclusive estimates are clipped at zero. `alternateAbsent` is only a fiber
@@ -282,8 +300,8 @@ last price. The isolated mini wrapper does not establish account-page integratio
 The explicit historical `--native-engine` mode still exists only while the source
 product default is legacy; it is rejected when redundant. Axis/timing drivers
 record and distinguish either provenance, while default acceptance drivers reject
-overrides. `--react-profile` fails loudly for native-default builds because the
-existing candle timeline instrumentation observes only the legacy adapter. The
+overrides. `--react-profile` selects the native adapter and viewport timeline
+when the product default is native, on the separate diagnostic port. The
 legacy dependency may remain bundled for explicit compatibility; active native
 routes must show only the native renderer/credit and no TradingView logo/embed.
 No suite here proves deployment, broker freshness, competitor parity, or physical

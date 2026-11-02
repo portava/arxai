@@ -10,6 +10,7 @@ import { installVolumeProfileProbe } from "./volumeProfileProbe";
 import { installFlagLifecycleProbe } from "./flagLifecycleProbe";
 import { DEFAULT_CHART_ENGINE_ID } from "../../../artifacts/trading-dashboard/src/lib/chart-engine";
 import { NativeChartsAdapter } from "../../../artifacts/trading-dashboard/src/lib/chart-engine/nativeChartsAdapter";
+import { NativeChartViewport } from "../../../artifacts/trading-dashboard/src/lib/chart-engine/nativeChartViewport";
 import { installNativeChartWitness } from "./nativeWitness";
 
 declare const __ARX_SCANNER_QA_BUILD_ID__: string;
@@ -38,7 +39,11 @@ else if (__ARX_FEED_RECONCILIATION__) {
 else {
   if (__ARX_NATIVE_ENGINE__) installNativeChartWitness(NativeChartsAdapter);
   else installChartQaWitnesses(LightweightChartsAdapter);
-  if(__ARX_SCANNER_QA_REACT_PROFILE__) { installReactProfile(); installCandleTimeline(LightweightChartsAdapter); }
+  if(__ARX_SCANNER_QA_REACT_PROFILE__) {
+    installReactProfile();
+    if (__ARX_NATIVE_ENGINE__) installCandleTimeline(NativeChartsAdapter, NativeChartViewport);
+    else installCandleTimeline(LightweightChartsAdapter);
+  }
   // Dynamic import guarantees the observer exists before the real app mounts.
   if (__ARX_NATIVE_ENGINE__ && location.pathname === '/position-mini-qa') {
     void import('./positionMiniFixture').then(module=>module.mountPositionMiniFixture());
