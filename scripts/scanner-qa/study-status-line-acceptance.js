@@ -26,6 +26,7 @@ async page=>{
   check(JSON.stringify(current.layout)===JSON.stringify(before.layout)&&JSON.stringify(current.data.canonical)===JSON.stringify(before.data.canonical),'Readout control preserves chart geometry and candles');
   await panel.getByLabel('RSI 1 Show in Data Window',{exact:true}).uncheck();await ready();await studies.click();
   const dataWindow=panel.getByLabel('Study values at selected candle',{exact:true});await panel.getByText('Data window · study values at the crosshair',{exact:true}).click();
+  await dataWindow.filter({hasText:'All study readouts are hidden'}).waitFor({state:'visible'});
   check((await dataWindow.textContent()).includes('All study readouts are hidden')&&(await output.textContent()).includes('RSI '+value),'Status readout stays available when Data Window hides the same study');
   await output.scrollIntoViewIfNeeded();await shot('desktop-selected');
   await studies.click();await toggle.uncheck();await ready();check((await output.textContent())==='','Disabling the status readout removes its values');await toggle.check();await ready();await studies.click();
