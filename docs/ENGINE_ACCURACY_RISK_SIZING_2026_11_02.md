@@ -67,3 +67,7 @@ The raw `engine-inventory.json` enumerates 537 files ending `.engine.ts` under `
 | Portfolio / research / backtest / learning and remaining modules | Runtime reachability, meaningful data requirements and independent tests remain to be mapped; no accuracy or completion percentage assigned |
 
 Acceptance must come from independent evidence: matching facts carry the same source, account, currency, symbol, timeframe, window and observation identity. Different windows/estimates must be labelled; missing or conflicting evidence must stay unknown/held. Engines agreeing with each other is insufficient if they share a faulty input or calculation. No confidence scale or AI entry authorization was introduced.
+
+## Subsequent confidence follow-up
+
+Application `a3f433fc` closes the count-only Profit Mission confidence promotion described above. It does not validate the underlying planning formulas or other confidence engines. See [scope, reproduced failures and exact validation](MISSION_CONFIDENCE_EVIDENCE_2026_11_02.md).
