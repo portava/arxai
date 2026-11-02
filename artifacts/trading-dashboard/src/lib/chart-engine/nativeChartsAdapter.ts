@@ -143,7 +143,10 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   const viewport=this.viewport,epoch=this.epoch;if(!viewport)return false;
   this.takeRangeOwnership();if(!this.current(viewport,epoch))return false;action(viewport);if(!this.current(viewport,epoch))return false;this.queue();return true;
  }
- resetScale():void {const count=this.candles().length;if(!count)return;this.navigate(v=>v.setRange({from:count+1-this.defaultCount(),to:count+1}));}
+ resetScale():void {
+  const count=this.candles().length,epoch=this.epoch;if(!count)return;
+  this.navigate(v=>{v.resetPriceScale();if(!this.current(v,epoch))return;v.setRange({from:count+1-this.defaultCount(),to:count+1});});
+ }
  goToLatest(_animated=true):void {this.navigate(v=>v.goLatest());}
  fitHistory():void {this.navigate(v=>v.fit());}
  panBy(fraction:number):boolean {const range=panChartWindow(this.viewport?.getRange()??null,fraction,this.candles().length);return range?this.navigate(v=>v.setRange(range)):false;}

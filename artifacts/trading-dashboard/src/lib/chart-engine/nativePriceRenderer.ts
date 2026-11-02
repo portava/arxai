@@ -77,11 +77,30 @@ export type NativeFrameResult = { ok: true; frame: NativePriceFrame } | {
 const finiteOrNull = (value: number): number | null => Number.isFinite(value) ? value : null;
 const bodyWidth = (spacing: number) => Math.max(1, Math.min(24, spacing * 0.7));
 
+/** Display-only bounds in actual price units, including on percent/indexed axes. */
+export interface NativePriceRange { readonly min: number; readonly max: number }
+export function scaleNativePriceRange(range: NativePriceRange, scale: ChartScaleMode, factor: number): NativePriceRange | null {
+  if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max) || range.min >= range.max
+    || !Number.isFinite(factor) || factor <= 0 || !["linear", "log", "percent", "indexed"].includes(scale)
+    || (scale === "log" && range.min <= 0)) return null;
+  const low = scale === "log" ? Math.log(range.min) : range.min;
+  const high = scale === "log" ? Math.log(range.max) : range.max;
+  const magnitude = Math.max(Math.abs(low), Math.abs(high)) || 1;
+  const a = low / magnitude, b = high / magnitude;
+  const center = a / 2 + b / 2, half = (b - a) / 2 * factor;
+  const lower = (center - half) * magnitude, upper = (center + half) * magnitude;
+  const min = scale === "log" ? Math.exp(lower) : lower, max = scale === "log" ? Math.exp(upper) : upper;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max || (scale === "log" && min <= 0)) return null;
+  return Object.freeze({min,max});
+}
+
 export function createNativePriceFrame(series: NativePriceSeries, options: {
   plot: NativePlot; range: LogicalWindow; style: ChartStyle; scale?: ChartScaleMode;
   inverted?: boolean; referencePrice?: number;
   /** Already-qualified visible overlay values, in original price units. */
   additionalPriceValues?: readonly number[];
+  /** Explicit display-only real-price limits; omitted means automatic fit. */
+  priceRange?: NativePriceRange;
 }): NativeFrameResult {
   const { style } = options;
   const scale = options.scale ?? "linear";
@@ -138,12 +157,18 @@ export function createNativePriceFrame(series: NativePriceSeries, options: {
     if (!Number.isFinite(value)) return {ok:false,reason:"INVALID_SCALE"};
     low = Math.min(low,value); high = Math.max(high,value);
   }
+  const manual = options.priceRange;
+  if (manual !== undefined) {
+    if (!manual || !Number.isFinite(manual.min) || !Number.isFinite(manual.max) || manual.min >= manual.max
+      || !Number.isFinite(transform(manual.min)) || !Number.isFinite(transform(manual.max))) return {ok:false,reason:"INVALID_SCALE"};
+    low = transform(manual.min); high = transform(manual.max);
+  }
   // Normalize before subtracting: finite opposite-sign extremes must not
   // overflow into an infinite range. Flat/zero values get display padding,
   // never synthetic source highs/lows or an inferred instrument tick size.
   const magnitude = Math.max(Math.abs(low), Math.abs(high)) || 1;
   const lowUnit = low / magnitude, highUnit = high / magnitude;
-  const padding = highUnit > lowUnit ? (highUnit - lowUnit) * 0.08 : 0.01;
+  const padding = manual ? 0 : highUnit > lowUnit ? (highUnit - lowUnit) * 0.08 : 0.01;
   const bottom = lowUnit - padding, extent = highUnit + padding - bottom;
   const inverted = options.inverted === true;
   if (!Number.isFinite(extent) || extent <= 0)

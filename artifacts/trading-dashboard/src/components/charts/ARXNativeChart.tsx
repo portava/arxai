@@ -877,7 +877,7 @@ export function ARXNativeChart({
     }));
   }, [assistantPane.active,assistantPane.isCurrent, preferences.studies, hasCandles, chartEpoch, chartContext, resolvedSymbol, timeframe, data?.feedStatus?.source, isLivePriceAffordance, updateLegend, utcClockQualified, onAnalysisFocus,explainCurrentFinding]);
 
-  // Phase 2 — reset scale: restore the default visible range (last N candles).
+  // Restore the default visible range and automatic vertical price fitting.
   const resetScale = useCallback(() => {
     adapterRef.current?.resetScale();
   }, []);
@@ -1740,7 +1740,7 @@ export function ARXNativeChart({
           ref={containerRef}
           tabIndex={0}
           role="region"
-          aria-label={`${resolvedSymbol} ${timeframe} price chart. Drag or arrow keys to pan; scroll, plus or minus to zoom. Home fits history; End returns to latest candles. Delete or Backspace removes the selected unlocked drawing; Control or Command Z undoes a drawing edit; add Shift to redo.`}
+          aria-label={`${resolvedSymbol} ${timeframe} price chart. Drag or arrow keys to pan; scroll, plus or minus to zoom. Drag the price axis to scale vertically; double-click it to restore automatic scaling. Home fits history; End returns to latest candles. Delete or Backspace removes the selected unlocked drawing; Control or Command Z undoes a drawing edit; add Shift to redo.`}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey || event.altKey) return;
             if (event.key === "End") { event.preventDefault(); adapterRef.current?.goToLatest?.(); }

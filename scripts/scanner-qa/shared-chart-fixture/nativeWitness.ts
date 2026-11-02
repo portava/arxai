@@ -16,7 +16,7 @@ export function installNativeChartWitness(Adapter: { prototype: any }): () => vo
   for(const method of ['setCandles','updateActiveCandle'] as const)prototype[method]=function(...args:any[]){revisions.set(this,(revisions.get(this)??0)+1);return original[method].apply(this,args);};
   const find=(index=0)=>{const container=document.querySelectorAll<HTMLElement>('[data-chart-engine="arx-native"]')[index];const adapter=container&&registry.get(container);return adapter?.viewport?{container,adapter,viewport:adapter.viewport}:null;};
   const api={
-    schemaVersion:3,engine:'arx-native',
+    schemaVersion:4,engine:'arx-native',
     count(){return [...registry.keys()].filter(container=>container.isConnected).length;},
     snapshot(index=0){const found=find(index);if(!found)return null;const {container,adapter,viewport}=found,frame=viewport.getFrame(),state=viewport.getState(),candles=viewport.getCandles(),range=viewport.getRange(),bounds=container.getBoundingClientRect();
       return {testId:container.dataset.testid??null,adapterId:id(adapter),containerId:id(container),chartId:id(viewport),canvasIds:[...container.querySelectorAll('canvas')].map(id),dataRevision:revisions.get(adapter)??0,
@@ -25,6 +25,8 @@ export function installNativeChartWitness(Adapter: { prototype: any }): () => vo
         visibleTimeRange:frame?{from:candles[frame.first]?.time,to:candles[frame.last]?.time}:null,
         bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height}};
     },
+    layout(index=0){const found=find(index),frame=found?.viewport.getFrame(),panes=found?.viewport.getPaneLayout();if(!found||!frame||!panes)return null;
+      return {price:{...frame.plot},panes:panes.panes.map((p:any)=>({...p})),topPrice:frame.yToPrice(frame.plot.top),bottomPrice:frame.yToPrice(frame.plot.top+frame.plot.height)};},
     data(index=0){const found=find(index);if(!found)return null;return {canonical:found.viewport.getCandles().map(bar),visible:found.adapter.getVisibleCandles().map(bar)};},
     anchorCoordinates(time:number,price:number,index=0){const found=find(index),frame=found?.viewport.getFrame();if(!found||!frame)return null;const x=frame.timeToX(time),y=frame.priceToY(price);if(x==null||y==null)return null;const box=found.container.getBoundingClientRect();return{x:box.x+x,y:box.y+y};},
     configuration(index=0){const found=find(index);if(!found)return null;const state=found.viewport.getState();return{analysisFocus:{enabled:found.adapter.isAnalysisFocused(),verified:found.adapter.isAnalysisFocusVerified()},scale:{mode:state.scale,inverted:state.inverted},studies:found.viewport.getStudies(),drawings:found.viewport.getDrawings()};},

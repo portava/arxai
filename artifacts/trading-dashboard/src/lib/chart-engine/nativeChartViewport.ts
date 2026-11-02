@@ -1,4 +1,4 @@
-import { updateNativePriceSeries, prepareNativePriceSeries, createNativePriceFrame, paintNativePriceLayer, type NativePriceFrame } from "./nativePriceRenderer";
+import { scaleNativePriceRange, type NativePriceRange, updateNativePriceSeries, prepareNativePriceSeries, createNativePriceFrame, paintNativePriceLayer, type NativePriceFrame } from "./nativePriceRenderer";
 import { nativePlotLayout, paintNativeAxes } from "./nativeChartAxes";
 import { panChartWindow, zoomChartWindow, type LogicalWindow } from "./chartNavigation";
 import { candleDisplayPrecision, historyRangeShift, sameCandle } from "./candleReconciliation";
@@ -97,6 +97,8 @@ export class NativeChartViewport {
   private livePriceAffordance = false;
   private pointers = new Map<number, Point>();
   private gesture: Gesture | null = null;
+  private manualPriceRange: NativePriceRange | null = null;
+  private priceAxisGesture: {pointerId:number; y:number; height:number; range:NativePriceRange; scale:ChartScaleMode} | null = null;
   private observer: ResizeObserver | null = null;
   private media: MediaQueryList | null = null;
   private listeners: Array<() => void> = [];
@@ -113,7 +115,7 @@ export class NativeChartViewport {
     this.canvas.dataset.arxNativeViewport = "true";
     this.canvas.tabIndex = 0;
     this.canvas.setAttribute("role", "region");
-    this.canvas.setAttribute("aria-label", "ARX price chart. Drag to pan, scroll or pinch to zoom. Arrow keys pan, plus and minus zoom, Home fits history, End returns to latest.");
+    this.canvas.setAttribute("aria-label", "ARX price chart. Drag to pan, scroll or pinch to zoom. Arrow keys pan, plus and minus zoom, Home fits history, End returns to latest. Drag the price axis vertically to scale prices; double-click it to restore automatic price scale.");
     this.canvas.style.touchAction = "none";
     this.canvas.style.display = "block";
     this.canvas.width = 0;this.canvas.height = 0;
@@ -124,6 +126,10 @@ export class NativeChartViewport {
     container.appendChild(this.canvas);
     this.scannerOverlays = new NativeScannerOverlays({container:this.canvas,
       getFrame:()=>this.getFrame(),getSize:()=>({width:this.width,height:this.height}),invalidate:()=>this.schedule()});
+    // Run before the drawing editor's capture listener: a second pointer on
+    // the axis must not cancel an existing drawing and then acquire its scale.
+    this.canvas.addEventListener("pointerdown", this.onAxisPointerConflict, true);
+    this.listeners.push(() => this.canvas.removeEventListener("pointerdown", this.onAxisPointerConflict, true));
     this.drawingEditor = new ChartDrawingEditor(this.canvas, {
       candles: () => this.series.candles as ChartEngineCandle[],
       project: (anchor, priceOnly) => this.projectDrawing(anchor, priceOnly),
@@ -150,6 +156,7 @@ export class NativeChartViewport {
       this.canvas.addEventListener(type, handler, options);
       this.listeners.push(() => this.canvas.removeEventListener(type, handler, options));
     };
+    listen("dblclick", this.onAxisDoubleClick as EventListener);
     listen("pointerdown", this.onPointerDown as EventListener);
     listen("pointermove", this.onPointerMove as EventListener);
     listen("pointerup", this.onPointerUp as EventListener);
@@ -460,7 +467,7 @@ export class NativeChartViewport {
     if(this.destroyed || this.priceOnlyScale===enabled)return;
     const revision=++this.mutationRevision;
     this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();if(this.destroyed||revision!==this.mutationRevision)return;
-    this.priceOnlyScale=enabled;this.invalidate();
+    this.priceOnlyScale=enabled;this.manualPriceRange=null;this.invalidate();
   }
   getFrame(): NativePriceFrame | null {
     if (this.destroyed || this.paintError || !this.range) {
@@ -472,7 +479,7 @@ export class NativeChartViewport {
     if (!layout) { this.frameIssue = "INSUFFICIENT_PANE_SPACE_OR_UNSUPPORTED_DIMENSIONS";return null; }
     const plot = layout.price;
     const result = createNativePriceFrame(this.series, { plot, range: this.range, style: this.style, scale: this.scale,
-      inverted: this.inverted, referencePrice: this.referencePrice ?? undefined,
+      inverted: this.inverted, referencePrice: this.referencePrice ?? undefined, priceRange: this.manualPriceRange ?? undefined,
       additionalPriceValues: this.priceOnlyScale || this.analysisFocused ? [] : this.studies.getPriceBounds(this.range, this.scale) });
     this.frame = result.ok ? result.frame : null;
     // Incoming observations remain current during an edit, but the price axis
@@ -489,6 +496,7 @@ export class NativeChartViewport {
       error: this.paintError ?? this.frameIssue, callbackError: this.callbackError, referencePrice: this.referencePrice, style: this.style, scale: this.scale, inverted: this.inverted,
       timeZone: this.timeZone, utcClockQualified: this.utcClockQualified, effectiveTimeZone: this.utcClockQualified ? effectiveDisplayZone(this.timeZone, this.timeframe) : "UTC", timeframe: this.timeframe,
       barCount: this.series.candles.length, discarded: this.series.discarded, range: this.getRange(), followingLatest: this.followingLatest,
+      manualPriceRange: this.manualPriceRange ? Object.freeze({...this.manualPriceRange}) : null, priceAxisDragging: this.priceAxisGesture !== null,
       livePriceAffordance: this.livePriceAffordance, linkedCrosshairTime: this.linkedCrosshairTime,
       drawingCount: this.drawings.length, selectedDrawing: this.selectedDrawing, editingDrawing: this.frozenDrawingFrame !== null,
       analysisFocused: this.analysisFocused, overlayLayers: this.overlayLayers.getState(), scannerOverlays: this.scannerOverlays.getState(),
@@ -512,13 +520,13 @@ export class NativeChartViewport {
   setStyle(style: ChartStyle): void {
     if (!this.destroyed && CHART_STYLES.includes(style) && style !== this.style) {
       const revision = ++this.mutationRevision;
-      this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.scannerOverlays.reset(); this.style = style; this.invalidate();
+      this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.scannerOverlays.reset(); this.manualPriceRange=null; this.style = style; this.invalidate();
     }
   }
   setScale(scale: ChartScaleMode, inverted = this.inverted): void {
     if (this.destroyed || !["linear", "log", "percent", "indexed"].includes(scale)) return;
     const revision = ++this.mutationRevision;
-    this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.scale = scale; this.inverted = inverted; this.invalidate();
+    this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; if(this.scale!==scale || this.inverted!==inverted)this.manualPriceRange=null; this.scale = scale; this.inverted = inverted; this.invalidate();
   }
   /** Presentation evidence supplied by the existing source-qualified shell. */
   setSourceClockQualified(qualified: boolean): void {
@@ -542,7 +550,7 @@ export class NativeChartViewport {
     this.drawings = []; this.selectedDrawing = null; this.drawingInteraction = null; this.drawingHandler = null;
     this.frozenDrawingFrame = null;this.editAnchorTimes=[];
     this.overlayLayers.reset();this.scannerOverlays.reset();
-    this.livePriceAffordance=false;this.linkedCrosshairTime=null;this.utcClockQualified=false;
+    this.livePriceAffordance=false;this.linkedCrosshairTime=null;this.utcClockQualified=false;this.manualPriceRange=null;
     this.studies.reset();
     this.followingLatest = true; this.invalidate();
   }
@@ -650,12 +658,50 @@ export class NativeChartViewport {
     return { center: { x: (a!.x + b!.x) / 2, y: (a!.y + b!.y) / 2 }, distance: Math.hypot(a!.x - b!.x, a!.y - b!.y) };
   }
   private cancelGesture() {
-    const ids = [...this.pointers.keys()]; this.pointers.clear(); this.gesture = null;
+    const ids = [...this.pointers.keys()]; this.pointers.clear(); this.gesture = null; this.priceAxisGesture=null;
     for (const id of ids) { try { this.canvas.releasePointerCapture(id); } catch { /* unavailable or already lost */ } }
   }
+  private insidePriceAxis(point: Point, frame = this.getFrame()): boolean {
+    return !!frame && point.x > frame.plot.left + frame.plot.width && point.x <= this.width
+      && point.y >= frame.plot.top && point.y <= frame.plot.top + frame.plot.height;
+  }
+  /** Restore vertical auto-fit only; horizontal observation window is retained. */
+  resetPriceScale(): void {
+    if (this.destroyed || (!this.manualPriceRange && !this.priceAxisGesture)) return;
+    const revision=++this.mutationRevision;
+    this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
+    if(this.destroyed || revision!==this.mutationRevision)return;
+    this.manualPriceRange=null;this.invalidate();
+  }
+  private onAxisDoubleClick = (event: MouseEvent) => {
+    if(this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || event.defaultPrevented || event.button!==0)return;
+    const point=this.point(event);if(!point || !this.insidePriceAxis(point))return;
+    event.preventDefault();this.resetPriceScale();
+  };
+  private onAxisPointerConflict = (event: PointerEvent) => {
+    if(this.destroyed)return;
+    const point=this.point(event);
+    if(this.priceAxisGesture || (this.frozenDrawingFrame && point && this.insidePriceAxis(point))){
+      event.preventDefault();event.stopImmediatePropagation();
+    }
+  };
   private onPointerDown = (event: PointerEvent) => {
-    if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || event.defaultPrevented || event.button !== 0 || this.pointers.size >= 2) return;
-    const point = this.point(event); if (!point || !this.inside(point)) return;
+    if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || this.priceAxisGesture || event.defaultPrevented || event.button !== 0 || this.pointers.size >= 2) return;
+    const point = this.point(event),frame=this.getFrame(); if (!point || !frame) return;
+    if (this.insidePriceAxis(point,frame)) {
+      if(this.pointers.size)return;
+      const a=frame.yToPrice(frame.plot.top),b=frame.yToPrice(frame.plot.top+frame.plot.height);
+      if(a===null||b===null||a===b)return;
+      const range=Object.freeze({min:Math.min(a,b),max:Math.max(a,b)});
+      const revision=++this.mutationRevision;
+      event.preventDefault();this.canvas.focus({preventScroll:true});this.clearHover();
+      if(this.destroyed||revision!==this.mutationRevision)return;
+      this.priceAxisGesture={pointerId:event.pointerId,y:point.y,height:frame.plot.height,range,scale:this.scale};
+      this.pointers.set(event.pointerId,point);
+      try{this.canvas.setPointerCapture(event.pointerId);}catch{/* existing owned window fallback */}
+      return;
+    }
+    if (!this.inside(point,frame)) return;
     event.preventDefault(); this.canvas.focus({ preventScroll: true });
     this.pointers.set(event.pointerId, point); this.gesture = this.gestureState();
     try { this.canvas.setPointerCapture(event.pointerId); } catch { /* owned window fallback retains release/cancel delivery */ }
@@ -682,6 +728,15 @@ export class NativeChartViewport {
   private onPointerMove = (event: PointerEvent) => {
     if (this.destroyed) return;
     const point = this.point(event); if (!point) return;
+    const axis=this.priceAxisGesture;
+    if(axis){
+      if(event.pointerId!==axis.pointerId)return;
+      event.preventDefault();this.pointers.set(event.pointerId,point);
+      const factor=Math.exp(clamp((point.y-axis.y)/axis.height*2,-6,6));
+      const next=scaleNativePriceRange(axis.range,axis.scale,factor);
+      if(next){this.manualPriceRange=next;this.invalidate();}
+      return;
+    }
     if (!this.pointers.has(event.pointerId)) { if (!this.pointers.size) this.updateHover(point); return; }
     const previousRange=this.range;
     event.preventDefault(); const previous = this.gesture;this.pointers.set(event.pointerId, point);const next = this.gestureState();
@@ -707,6 +762,7 @@ export class NativeChartViewport {
   private onPointerUp = (event: PointerEvent) => {
     if (this.destroyed || !this.pointers.has(event.pointerId)) return;
     this.pointers.delete(event.pointerId);this.gesture = this.gestureState();
+    if(this.priceAxisGesture?.pointerId===event.pointerId)this.priceAxisGesture=null;
     try { this.canvas.releasePointerCapture(event.pointerId); } catch { /* already released */ }
   };
   private onPointerCancel = () => { if (!this.destroyed) { this.cancelGesture();this.clearHover(); } };
@@ -745,7 +801,7 @@ export class NativeChartViewport {
   destroy(): void {
     if (this.destroyed) return;
     this.drawingEditor.destroy();this.drawings=[];this.drawingInteraction=null;this.drawingHandler=null;this.selectedDrawing=null;this.frozenDrawingFrame=null;this.editAnchorTimes=[];
-    this.scannerOverlays.destroy();this.overlayLayers.reset();this.livePriceAffordance=false;this.linkedCrosshairTime=null;
+    this.scannerOverlays.destroy();this.overlayLayers.reset();this.livePriceAffordance=false;this.linkedCrosshairTime=null;this.manualPriceRange=null;
     this.destroyed = true;this.generation++;this.mutationRevision++;this.cancelGesture();this.clearHover();
     if (this.raf != null) cancelAnimationFrame(this.raf);this.raf = null;
     this.observer?.disconnect();this.observer = null;this.media?.removeEventListener("change", this.onDprChange);this.media = null;
