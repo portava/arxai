@@ -24,7 +24,6 @@ import { SymbolExplorer } from "@/components/scanner/SymbolExplorer";
 import { ScannerChartPanel } from "@/components/scanner/ScannerChartPanel";
 import { TradeHealthPanel } from "@/components/live/TradeHealthPanel";
 import { ScannerHeaderSummary } from "@/components/scanner/ScannerHeaderSummary";
-import { ScannerSecondaryPanels } from "@/components/scanner/ScannerSecondaryPanels";
 import { RubyReadStoreProvider } from "@/components/scanner/rubyReadStore";
 import { SelectedActionStoreProvider } from "@/components/scanner/selectedActionStore";
 import { SectionErrorBoundary } from "@/components/layout/SectionErrorBoundary";
@@ -1003,7 +1002,6 @@ function MarketScannerContent() {
         <TradeHealthPanel chartSymbol={chartSym} />
       </SectionErrorBoundary>
 
-      <ScannerSecondaryPanels>
       <PageTabs
         storageKey="market-scanner"
         defaultTab="focus"
@@ -1015,8 +1013,6 @@ function MarketScannerContent() {
           { id: "symbols",    label: "Symbols",    icon: <Layers className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Symbols">{symbolsTab}</SectionErrorBoundary> },
         ]}
       />
-
-      </ScannerSecondaryPanels>
 
       {tradeTarget && tradeTargetUsable && (
         <SectionErrorBoundary section="Trade ticket">
