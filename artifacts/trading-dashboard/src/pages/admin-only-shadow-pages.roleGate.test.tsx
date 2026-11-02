@@ -13,7 +13,7 @@
 //      honest denied card, never blank UI.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { act, render, screen, cleanup } from "@testing-library/react";
 
 vi.mock("lucide-react", () => {
   const Stub = () => null;
@@ -104,7 +104,7 @@ describe.each(PAGES)("$name admin role pre-check", ({ Component, gated }) => {
     render(<Component />);
 
     expect(screen.getByText(/Access denied — Admin or Owner role required/i)).toBeTruthy();
-    await vi.advanceTimersByTimeAsync(7000);
+    await act(async () => { await vi.advanceTimersByTimeAsync(7000); });
     expect(gatedCalls(gated)).toEqual([]);
   });
 
@@ -114,7 +114,7 @@ describe.each(PAGES)("$name admin role pre-check", ({ Component, gated }) => {
 
     expect(screen.getByText(/Checking access/i)).toBeTruthy();
     expect(screen.queryByText(/Access denied/i)).toBeNull();
-    await vi.advanceTimersByTimeAsync(5000);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(gatedCalls(gated)).toEqual([]);
   });
 
@@ -122,7 +122,7 @@ describe.each(PAGES)("$name admin role pre-check", ({ Component, gated }) => {
     mockedUseProductRole.mockReturnValue(roleState({ role: "ADMIN", isAdmin: true, isTrader: false }));
     render(<Component />);
 
-    await vi.advanceTimersByTimeAsync(100);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     expect(gatedCalls(gated).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Access denied/i)).toBeNull();
   });
@@ -132,7 +132,7 @@ describe.each(PAGES)("$name admin role pre-check", ({ Component, gated }) => {
     fetchMock.mockImplementation(async () => jsonResponse(403, { error: "Forbidden", requiredRole: "ADMIN" }));
     render(<Component />);
 
-    await vi.advanceTimersByTimeAsync(200);
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
     expect(screen.getByText(/Access denied — Admin or Owner role required/i)).toBeTruthy();
   });
 });
