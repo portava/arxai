@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Shared pattern lifecycle truth — 2 November 2026
+
+Application `140f9476` marks a hammer failed after a next close below its low and prevents failed/exhausted/absent patterns from acquiring fresh-trigger explanations. Gold helper wrappers also preserve no-trade failure. Full frontend4,714pass/12skipped,123targeted backend checks, types/builds pass; two baseline guards remain. No browser/timing/deployment result is claimed on this commit. See [reproductions, exact source and remaining cross-consumer limits](PATTERN_FAILED_STATE_2026_11_02.md).
+
 ## Candle identity and resistance evidence — 2 November 2026
 
 Application `ae251596` fixes a false shooting-star confirmation caused by matching candles on equal high/low rather than detector-selected identity. It also removes an unmeasured resistance-location claim from shared pattern reasoning. Exact-source frontend4,714pass/12skipped,61backend pattern checks and11actual-Scanner browser assertions pass; two baseline guards remain failing. This is bounded correctness evidence, not broad engine accuracy or competitor parity. See [source, reproductions and limits](SMART_CHART_STAR_IDENTITY_2026_11_02.md).

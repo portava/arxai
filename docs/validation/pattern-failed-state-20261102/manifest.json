@@ -1,0 +1,29 @@
+{
+  "applicationCommit": "140f9476fb5974a356fd0c57c36fc4845345d445",
+  "archiveSha256": "914fb9070ec19590701a688989b20246524f74bd6a58a50d79d5d4e5d31d63cc",
+  "archiveBytes": 30738,
+  "files": {
+    "combined-api-build.log": "3274d64835390da07b0ddfd29152afb897169d049ceb36782f3d140f5ff934db",
+    "combined-api-typecheck.log": "17c135d14f18bf0fb0032112a81926fcbdda75dbe214be6d51284becca91bc77",
+    "combined-build.log": "6f3e82468b424d751e94a381b15db42c49ec759435509388b41f05329c83b937",
+    "combined-checks.json": "c4ab50f0bb23f05cfcfb2f42d9e925ea8ebc63eff4adaec577d41407c0d7fbe4",
+    "combined-full.log": "8ce700df2c4766cbdb00412b2ea1d33ec4f1343c434a1bf34dfee6b3fbeafdeb",
+    "combined-gold.log": "5217b1805d6a5e2a372dd990cae12ea12f1f4011cfaf22a16e68dc96ff1bddc2",
+    "combined-guards.log": "8c4e6d9d21ddd9e5708f1d1765708ebe7f0d51a4d9e65740b6edae75de273721",
+    "combined-libs.log": "98c55a984db60b9c3e19a418d59581de9e339e268384268d74a590987f2d98ad",
+    "combined-pattern-library.log": "ed2dc600fb55a2caba12e1e0ca2a7d298f489ee850a43161a0df8b39c6cef863",
+    "combined-pattern-truth.log": "841838400dc462d5f8f81a46ad3a0ffd3c99a3ceb70b594f64ff5cc7428def87",
+    "combined-scanner-child.log": "f72c0b474c302260ff394eecf28363b0ba7ace0220927a973505d793cfba33aa",
+    "combined-typecheck.log": "ea39acb8943a382894fcdd92b503dbfa0f0174450b45fe2b49b0a6dbf4329735",
+    "gold-after.log": "79e8c31a9d19fac21dbf3fb9b29540377836a0b7d906a0be4c235aaf6fcaf93b",
+    "gold-before.log": "7e8e63bac4398dda21357739a73de93ff1494bba6b105ca01f6a3bac98ae4826",
+    "guard-comparison.json": "7f2f2d8f217a9e43ab497e7e7ffd7c409f694d61315059dad47bfc878860d344",
+    "independent-review.json": "c125c69db72ec99243f673bc702f52c88ee26de1658e85cb4b552563ecb48837",
+    "pattern-after.log": "86a85849b6ca81f4352eb42de302cce8bff80aa46f1eb7471c4769cc3a527c03",
+    "pattern-before.log": "8ae41ee623818ae8eb0b38b808e7341f3dd9d305d23f45c9a2c3f89e7675a3b5",
+    "review-after.log": "b56a01ffc191bf97929622b18ed828ec9fc4c07fc220a0f8742951407724373f",
+    "review-before.log": "d47da95ba29c440bbb5da4b02d0f2e48f3f96071554239b6ca63067dede680f7",
+    "review-head-verification.json": "90b4485e1c312614863e846e6d5bebb6de8a002423173ed88888fdafa715af99",
+    "run-final-checks.py": "75aa69d96c9699c1bc8da68f0142479ace18cf5f53b6c9cbebdcbdb91252434e"
+  }
+}
