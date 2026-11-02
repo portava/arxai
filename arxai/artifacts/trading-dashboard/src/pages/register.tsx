@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useRegister, type RegisterError } from "@/hooks/useCurrentUser";
 import { Shield, AlertCircle, Key } from "lucide-react";
+import { consumePendingInviteCode } from "@/lib/inviteCodeHandoff";
 
 function formatArxKey(raw: string): string {
   const stripped = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -21,22 +22,22 @@ function formatArxKey(raw: string): string {
       parts.push(stripped.slice(i, i + 4));
     }
   }
-  return parts.filter(Boolean).join("-").slice(0, 17);
+  return parts.filter(Boolean).join("-").slice(0, 18);
 }
 
 export default function RegisterPage() {
   const [, navigate] = useLocation();
+  const [pendingInviteCode] = useState(() => consumePendingInviteCode());
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [registrationKey, setRegistrationKey] = useState("");
+  const [registrationKey, setRegistrationKey] = useState(pendingInviteCode ?? "");
   const [error, setError] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
   const register = useRegister();
 
   function handleKeyChange(e: React.ChangeEvent<HTMLInputElement>): void {
-    const formatted = formatArxKey(e.target.value);
-    setRegistrationKey(formatted);
+    setRegistrationKey(pendingInviteCode ? e.target.value : formatArxKey(e.target.value));
     setKeyError(null);
   }
 
@@ -49,11 +50,17 @@ export default function RegisterPage() {
       return;
     }
     if (!registrationKey.trim()) {
-      setKeyError("A registration key is required.");
+      setKeyError(pendingInviteCode ? "An invite code is required." : "A registration key is required.");
       return;
     }
     try {
-      await register.mutateAsync({ email, password, name: name || undefined, registrationKey });
+      const code = registrationKey.trim();
+      await register.mutateAsync({
+        email,
+        password,
+        name: name || undefined,
+        ...(pendingInviteCode ? { inviteCode: code } : { registrationKey: code }),
+      });
       navigate("/");
     } catch (err) {
       const regErr = err as RegisterError;
@@ -111,13 +118,13 @@ export default function RegisterPage() {
               <div className="space-y-2">
                 <Label htmlFor="registrationKey" className="flex items-center gap-1.5">
                   <Key className="w-3.5 h-3.5" />
-                  Registration Key
+                  {pendingInviteCode ? "Invite Code" : "Registration Key"}
                 </Label>
                 <Input
                   id="registrationKey"
                   type="text"
                   required
-                  placeholder="ARX-XXXX-XXXX-XXXX"
+                  placeholder={pendingInviteCode ? "Your one-time invite code" : "ARX-XXXX-XXXX-XXXX"}
                   autoComplete="off"
                   spellCheck={false}
                   value={registrationKey}
@@ -131,7 +138,11 @@ export default function RegisterPage() {
                     <span>{keyError}</span>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">ARX is private right now. Enter your one-time access key to register.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {pendingInviteCode
+                      ? "Enter the email associated with this invite and choose your own password."
+                      : "ARX is private right now. Enter your one-time access key to register."}
+                  </p>
                 )}
               </div>
               {error && (

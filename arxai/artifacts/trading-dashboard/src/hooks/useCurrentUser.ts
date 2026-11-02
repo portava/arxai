@@ -118,7 +118,13 @@ export interface RegisterError extends Error {
 export function useRegister() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { email: string; password: string; name?: string; registrationKey?: string }) => {
+    mutationFn: async (vars: {
+      email: string;
+      password: string;
+      name?: string;
+      registrationKey?: string;
+      inviteCode?: string;
+    }) => {
       const r = await fetch(url("/api/auth/register"), {
         method: "POST",
         headers: { "content-type": "application/json" },
