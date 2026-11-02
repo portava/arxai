@@ -12,10 +12,49 @@ let times:number[];
 let unsubscribe:ReturnType<typeof vi.fn>;
 let adapter:ChartEngineAdapter;
 beforeEach(()=>{
+  localStorage.clear();
   vi.spyOn(Date,"now").mockReturnValue((start+2000)*1000);
   mock.query={data:comparisonFixture("GBPUSD",[50,60,45,55]),isError:false,isLoading:false};mock.hook.mockClear();
   times=[start,start+300,start+600,start+900];unsubscribe=vi.fn();
   adapter={getVisibleCandles:()=>times.map(time=>({time})),subscribeViewport:(fn:()=>void)=>{listener=fn;return unsubscribe;}} as unknown as ChartEngineAdapter;
+});
+it("restores the chosen comparison after close/reopen and keeps different chart panes separate",()=>{
+  let view=render(tree());fireEvent.click(screen.getByText("Select GBPUSD"));view.unmount();
+  view=render(tree());expect(screen.getByRole("img").getAttribute("aria-label")).toContain("GBPUSD");view.unmount();
+  render(tree({workspaceId:"comparison"}));expect(mock.hook.mock.lastCall![1].query.enabled).toBe(false);expect(screen.queryByRole("img")).toBeNull();
+});
+it("never reuses a persisted choice for a different primary symbol",()=>{
+  const view=render(tree());fireEvent.click(screen.getByText("Select GBPUSD"));
+  view.rerender(tree({symbol:"USDJPY",data:comparisonFixture("USDJPY")}));
+  expect(mock.hook.mock.lastCall![1].query.enabled).toBe(false);expect(screen.queryByRole("img")).toBeNull();
+});
+it("clears a saved choice and reports a storage failure without hiding the local selection",()=>{
+  const view=render(tree());vi.spyOn(Storage.prototype,"setItem").mockImplementation(()=>{throw Error("quota");});
+  fireEvent.click(screen.getByText("Select GBPUSD"));expect(screen.getByRole("img")).toBeTruthy();expect(screen.getByRole("alert").textContent).toContain("not saved");
+  vi.restoreAllMocks();fireEvent.click(screen.getByRole("button",{name:"Remove comparison instrument"}));view.unmount();render(tree());
+  expect(mock.hook.mock.lastCall![1].query.enabled).toBe(false);
+});
+it("offers keyboard/touch inspection for every observed time, including missing values",()=>{
+  mock.query.data.candles.splice(1,1);
+  render(tree());fireEvent.click(screen.getByText("Select GBPUSD"));
+  fireEvent.change(screen.getByRole("slider",{name:"Inspect comparison bar"}),{target:{value:"1"}});
+  expect(screen.getByLabelText("Selected comparison values").textContent).toContain("GBPUSD: No observation");
+  expect(screen.getByLabelText("Selected comparison values").getAttribute("aria-live")).toBe("off");
+  expect(screen.getByRole("slider").getAttribute("aria-valuetext")).toContain("No observation");
+});
+it.each(["gbpusd"," GBPUSD",{symbol:"GBPUSD"},"<script>"])("refuses a malformed or noncanonical stored instrument %j",value=>{
+  localStorage.setItem("arx.chart.price-comparison.v1:primary:EURUSD",JSON.stringify(value));
+  render(tree());expect(mock.hook.mock.lastCall![1].query.enabled).toBe(false);expect(screen.queryByRole("img")).toBeNull();
+});
+it("restored selection still requires fresh ownership and timestamp validation",()=>{
+  localStorage.setItem("arx.chart.price-comparison.v1:primary:EURUSD",JSON.stringify("USDJPY"));
+  render(tree());expect(mock.hook.mock.lastCall![0].symbol).toBe("USDJPY");expect(screen.queryByRole("img")).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain("waiting for matching source candles");
+});
+it("rounds visible baseline prices while retaining exact source values in details",()=>{
+  render(tree({data:comparisonFixture("EURUSD",[100.123456789,110,120,90])}));fireEvent.click(screen.getByText("Select GBPUSD"));
+  expect(screen.getByText(/^Baseline:/).textContent).toContain("100.12346");
+  expect(screen.getByText(/^Original baseline closes:/).textContent).toContain("100.123456789");
 });
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 const tree=(props:Partial<Parameters<typeof ChartPerformanceComparison>[0]>={})=><ChartPerformanceComparison symbol="EURUSD" timeframe="M5" data={comparisonFixture()} readFailed={false} adapter={adapter} epoch="one" onClose={()=>{}} {...props}/>;
