@@ -85,10 +85,12 @@ async page => {
       const panel=card?.querySelector('[data-testid="chart-advanced-tools"]'),button=card?.querySelector('button[aria-label="Chart tools"]');
       const controls=panel?[...panel.querySelectorAll('button,input,select,textarea,[tabindex]')]:[];
       // Expanded panel is display:contents and has no own box.
-      const visible=controls.filter(c=>{const r=c.getBoundingClientRect(),s=getComputedStyle(c);return c.getClientRects().length&&r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&s.visibility!=='collapse'&&Number(s.opacity)!==0;});
+      const isVisible=c=>{if(!c)return false;const r=c.getBoundingClientRect(),s=getComputedStyle(c);return c.getClientRects().length&&r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&s.visibility!=='collapse'&&Number(s.opacity)!==0;};
+      const visible=controls.filter(isVisible);
       return {style:card?.querySelector('select[aria-label="Chart style"]')?.value,
         associated:!!panel?.id&&button?.getAttribute('aria-controls')===panel.id,expanded:button?.getAttribute('aria-expanded')==='true',total:controls.length,visible:visible.length>0,
-        styleVisible:visible.includes(panel?.querySelector('select[aria-label="Chart style"]')),
+        // Style is a primary control, outside the advanced-tools disclosure.
+        styleVisible:!!isVisible(card?.querySelector('select[aria-label="Chart style"]')),
         studiesVisible:visible.some(c=>c.tagName==='BUTTON'&&/^Studies \(/.test(c.textContent?.trim()??'')),
         visibleOnscreen:visible.some(c=>{const r=c.getBoundingClientRect();return r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight;})};
     }
