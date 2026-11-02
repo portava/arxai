@@ -186,6 +186,9 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const backoffIdxRef = useRef(0);
   const mountedRef = useRef(true);
   const snapRef = useRef<LiveAccountSnapshot | null>(null);
+  const pollRequestRef = useRef<AbortController | null>(null);
+  const snapshotVersionRef = useRef(0);
+  const lastSseTimeRef = useRef(-Infinity);
   // Task #440 — debounced auto-refresh when freshness flips to stale.
   const staleRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasStaleRef = useRef(false);
@@ -201,6 +204,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
     }
+    pollRequestRef.current?.abort();
+    pollRequestRef.current = null;
   }, []);
 
   // Task #445 — `allowWhileHidden` lets the one-shot stale self-heal issue a
@@ -210,12 +215,17 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const doPoll = useCallback(async (opts?: { allowWhileHidden?: boolean }) => {
     if (!mountedRef.current) return;
     if (document.hidden && !opts?.allowWhileHidden) return;
+    if (pollRequestRef.current) return;
+    const controller = new AbortController();
+    pollRequestRef.current = controller;
+    const version = snapshotVersionRef.current;
+    const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
-      const res = await fetch(u("/api/me/live/slot-summary"), { credentials: "include" });
-      if (!mountedRef.current) return;
+      const res = await fetch(u("/api/me/live/slot-summary"), { credentials: "include", signal: controller.signal });
+      if (!mountedRef.current || controller.signal.aborted || version !== snapshotVersionRef.current) return;
       if (!res.ok) { setConnectionStatus("disconnected"); return; }
       const data = await res.json() as Record<string, unknown>;
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || controller.signal.aborted || version !== snapshotVersionRef.current) return;
       if (!data || typeof data !== "object") return;
 
       // slot-summary gives partial data — synthesize a LiveAccountSnapshot
@@ -271,7 +281,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         data["live"] && typeof data["live"] === "object"
           ? (data["live"] as InvestorLiveBalance)
           : null;
-      const baseLive = polledLive ?? prev?.live ?? null;
+      // Missing financial evidence must never promote an older balance to fresh.
+      const baseLive = polledLive;
       const balanceStatus: InvestorLiveBalance["freshness"]["status"] =
         freshness === "fresh" ? "fresh" : freshness === "stale" ? "stale" : "unavailable";
       const healedLive: InvestorLiveBalance | null =
@@ -306,15 +317,19 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         warnings: (data["snapshotWarning"] ? [String(data["snapshotWarning"])] : prev?.warnings) ?? [],
         notLiveReason,
       };
+      snapRef.current = synth;
       setSnapshot(synth);
       setConnectionStatus("polling");
     } catch {
-      if (mountedRef.current) setConnectionStatus("disconnected");
+      if (mountedRef.current && !controller.signal.aborted && version === snapshotVersionRef.current) setConnectionStatus("disconnected");
+    } finally {
+      clearTimeout(timeout);
+      if (pollRequestRef.current === controller) pollRequestRef.current = null;
     }
   }, []);
 
   const startPolling = useCallback(() => {
-    stopPolling();
+    if (pollTimerRef.current != null) return;
     void doPoll();
     pollTimerRef.current = setInterval(() => { void doPoll(); }, POLL_INTERVAL_MS);
   }, [stopPolling, doPoll]);
@@ -339,7 +354,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     esRef.current = es;
 
     es.addEventListener("message", (ev) => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || esRef.current !== es) return;
       try {
         const raw: unknown = JSON.parse(ev.data as string);
         const r = raw as Record<string, unknown>;
@@ -356,6 +371,11 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
 
         const parsed = parseSSEEvent(raw);
         if (parsed) {
+          if (!Number.isFinite(parsed.lastComputedAtMs) || parsed.lastComputedAtMs < lastSseTimeRef.current) return;
+          lastSseTimeRef.current = parsed.lastComputedAtMs;
+          snapshotVersionRef.current += 1;
+          stopPolling();
+          snapRef.current = parsed;
           backoffIdxRef.current = 0;
           if (isServerUnavailable(parsed)) {
             setSnapshot(parsed);
@@ -371,7 +391,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     });
 
     es.onerror = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || esRef.current !== es) return;
       es.close();
       esRef.current = null;
       setConnectionStatus("disconnected");

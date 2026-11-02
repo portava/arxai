@@ -268,7 +268,8 @@
     "test:mt5-demo-ea": "python3 ../../mt5-bridge/tests/run_demo_core.py",
     "test:operational-rate-cap-monitoring": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/alerts/__qa__/operationalRateCapMonitor.test.ts src/lib/adminTrading/__qa__/operationalRateCapMonitoring.test.ts",
     "check:market-data": "node --import tsx src/scripts/marketDataReadinessCheck.ts",
-    "test:non-broker-launch": "node --import tsx --test src/lib/assistant/__qa__/alphaVantageFx.test.ts src/lib/startup/__qa__/dashboard.test.ts"
+    "test:non-broker-launch": "node --import tsx --test src/lib/assistant/__qa__/alphaVantageFx.test.ts src/lib/startup/__qa__/dashboard.test.ts",
+    "test:performance": "node --import tsx --test src/lib/perf/__qa__/*.test.ts src/lib/ai/__qa__/requestDeadline.test.ts src/lib/auth/__qa__/sessionPerformance.test.ts src/lib/startup/__qa__/dashboard.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

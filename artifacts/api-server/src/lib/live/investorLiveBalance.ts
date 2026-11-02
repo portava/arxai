@@ -34,7 +34,7 @@ import { getUserAccountConnection } from "../brokerHub/connections.js";
 import { accountFiguresOf, connectionAccountSnapshot } from "../brokerHub/accountSnapshot.js";
 import { db } from "@workspace/db";
 import { userSlotAllocationTable, virtualTradingAccountsTable, sharedTradeAttributionTable } from "@workspace/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import {
   buildLiveAccountSnapshot,
   type LiveAccountSnapshot,
@@ -352,7 +352,7 @@ export async function fetchInvestorBalanceParts(
   // booking a mis-scaled figure). Count them so the caller can label the
   // equity as incomplete instead of presenting a partial total as final.
   const pendingRows = await db
-    .select({ id: sharedTradeAttributionTable.id })
+    .select({ total: count() })
     .from(sharedTradeAttributionTable)
     .where(and(
       eq(sharedTradeAttributionTable.userId, userId),
@@ -364,7 +364,7 @@ export async function fetchInvestorBalanceParts(
     allocatedBalance,
     reservedRisk,
     realizedPnL,
-    realizedPnLPendingCount: pendingRows.length,
+    realizedPnLPendingCount: pendingRows[0]?.total ?? 0,
   };
 }
 

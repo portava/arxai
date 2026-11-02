@@ -10,6 +10,7 @@ test("production serves the built dashboard and deep links without swallowing AP
   const folder=mkdtempSync(path.join(tmpdir(),"arx-dashboard-"));
   mkdirSync(path.join(folder,"assets")); writeFileSync(path.join(folder,"index.html"),"<!doctype html><title>ARX fixture</title>");
   writeFileSync(path.join(folder,"assets","app.js"),"window.ARX_FIXTURE=true;");
+  writeFileSync(path.join(folder,"assets","app-aB12_cdE.js"),"window.ARX_HASHED=true;");
   writeFileSync(path.join(folder,".env"),"PRIVATE_FIXTURE");
   const app=express(); app.get("/api/healthz",(_q,r)=>r.json({ok:true}));
   app.get("/api/me",(_q,r)=>r.status(401).json({error:"UNAUTHORIZED"}));
@@ -22,6 +23,9 @@ test("production serves the built dashboard and deep links without swallowing AP
       assert.equal(r.headers.get("cache-control"),"no-cache");
     }
     const js=await fetch(base+"/assets/app.js"); assert.equal(js.status,200); assert.match(js.headers.get("content-type")??"",/javascript/);
+    assert.equal(js.headers.get("cache-control"), "no-cache");
+    const hashed = await fetch(base+"/assets/app-aB12_cdE.js");
+    assert.equal(hashed.headers.get("cache-control"), "public, max-age=31536000, immutable");
     assert.equal((await fetch(base+"/api/healthz")).status,200); assert.equal((await fetch(base+"/api/me")).status,401);
     for (const route of ["/api/missing","/api%2Fmissing","/assets/missing.js","/missing.css","/.env","/%2eenv","/.git/config"]) {
       const r=await fetch(base+route); assert.equal(r.status,404,route); assert.doesNotMatch(await r.text(),/ARX fixture|PRIVATE_FIXTURE/);

@@ -12,6 +12,7 @@
 // - Worker status is exposed via getMonitorStatus() for the admin panel;
 //   no credentials, no other-user data, no master MT5 secrets exposed.
 
+import { startIntervalWorker } from "../perf/intervalWorker.js";
 import { demoPositionColumns } from "../positions/ledger.js";
 import { readOpenPositions, selectDemoOpenPositionsForAllUsers } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
@@ -46,6 +47,7 @@ let errorsLastCycle = 0;
 let errorsTotal = 0;
 let staleConnectionsLastCycle = 0;
 let started = false;
+let worker: ReturnType<typeof startIntervalWorker> | undefined;
 
 const INTERVAL_MS = Number(process.env["ARX_TRADE_MONITOR_INTERVAL_MS"] ?? 15_000);
 
@@ -208,13 +210,13 @@ export function startMonitor(): void {
   if (started) return;
   started = true;
   // First cycle runs after one interval (do not block server start).
-  const t = setInterval(() => { void runCycle(); }, INTERVAL_MS);
-  t.unref?.();
+  if (worker) worker.start();
+  else worker = startIntervalWorker(runCycle, INTERVAL_MS, (err) => logger.error({ err }, "[monitor] unexpected worker failure"));
   logger.info({ intervalMs: INTERVAL_MS }, "[monitor] trade monitor started");
 }
 
 export function stopMonitor(): void {
-  // Cannot truly stop setInterval without keeping handle; mark paused.
+  worker?.stop();
   globalPaused = true;
   started = false;
 }

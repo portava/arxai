@@ -20,6 +20,7 @@
 // ever emitted; no execution path, arx_live_* table, or 18-gate is touched.
 
 import type { Request, Response } from "express";
+import { createSseWriter } from "../lib/perf/sseWriter.js";
 import {
   formingBarBus,
   getFormingBar,
@@ -47,15 +48,17 @@ export function handleChartTickStream(req: Request, res: Response): void {
   res.setHeader("X-Accel-Buffering", "no");
   (res as unknown as { flushHeaders?: () => void }).flushHeaders?.();
 
-  let aborted = false;
-  const send = (event: unknown) => {
-    if (aborted) return;
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let unsubscribe = () => {};
+  const writer = createSseWriter(res, () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+  const send = writer.send;
 
   const intervalMs = timeframeMs(timeframe);
   const emitForming = () => {
-    if (aborted) return;
+    if (writer.closed) return;
     const now = Date.now();
     const forming = getFormingBar(rawSymbol, timeframe, now);
     if (!forming) return; // no current-interval tip yet → nothing to push
@@ -94,7 +97,7 @@ export function handleChartTickStream(req: Request, res: Response): void {
   // stale-bucket case, where getFormingBar returns null). No tokens, account
   // numbers, or gate data are ever emitted; no execution path is touched.
   const emitStatus = () => {
-    if (aborted) return;
+    if (writer.closed) return;
     const now = Date.now();
     const fresh = getFeedFreshness(rawSymbol, now);
     if (!fresh) return; // no tick seen yet → assert nothing (honest unknown)
@@ -119,6 +122,7 @@ export function handleChartTickStream(req: Request, res: Response): void {
     emitStatus();
   };
   formingBarBus.on(symbolKey, onTick);
+  unsubscribe = () => formingBarBus.off(symbolKey, onTick);
 
   // Initial push so a fresh subscriber sees the current tip + feed state.
   emitForming();
@@ -127,16 +131,12 @@ export function handleChartTickStream(req: Request, res: Response): void {
   // Heartbeat keeps the connection (and any proxy) alive and lets the client
   // detect a frozen tip even when no new ticks arrive. This is a keepalive, NOT
   // a flush timer for tick data — ticks are already pushed inline above.
-  const heartbeat = setInterval(() => {
-    if (aborted) return;
+  if (writer.closed) return;
+  heartbeat = setInterval(() => {
+    if (writer.closed) return;
     send({ type: "heartbeat", ts: Date.now() });
     emitForming();
     emitStatus();
   }, 15_000);
 
-  req.on("close", () => {
-    aborted = true;
-    clearInterval(heartbeat);
-    formingBarBus.off(symbolKey, onTick);
-  });
 }

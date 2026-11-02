@@ -196,17 +196,21 @@ export function summariseByAction(): Array<{
   count: number;
   p50Ms: number;
   p95Ms: number;
+  p99Ms: number;
   maxMs: number;
   slowCount: number;
+  errorCount: number;
 }> {
   const groups = new Map<string, number[]>();
   const slowByAction = new Map<string, number>();
+  const errorsByAction = new Map<string, number>();
   for (const row of buffer) {
     if (!row) continue;
     const list = groups.get(row.action) ?? [];
     list.push(row.totalMs);
     groups.set(row.action, list);
     if (row.slow) slowByAction.set(row.action, (slowByAction.get(row.action) ?? 0) + 1);
+    if ((row.status ?? 0) >= 500) errorsByAction.set(row.action, (errorsByAction.get(row.action) ?? 0) + 1);
   }
   const out: ReturnType<typeof summariseByAction> = [];
   for (const [action, times] of groups) {
@@ -219,8 +223,10 @@ export function summariseByAction(): Array<{
       count: times.length,
       p50Ms: p50,
       p95Ms: p95,
+      p99Ms: times[Math.floor(times.length * 0.99)] ?? 0,
       maxMs: max,
       slowCount: slowByAction.get(action) ?? 0,
+      errorCount: errorsByAction.get(action) ?? 0,
     });
   }
   out.sort((a, b) => b.p95Ms - a.p95Ms);

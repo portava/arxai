@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -178,8 +178,18 @@ interface PerfSummaryRow {
   count: number;
   p50Ms: number;
   p95Ms: number;
+  p99Ms?: number;
   maxMs: number;
   slowCount: number;
+  errorCount?: number;
+}
+
+interface RuntimeMetrics {
+  cpuPercent: number | null;
+  eventLoopUtilization: number;
+  memory: { rssBytes: number; heapUsedBytes: number };
+  database: { total: number; idle: number; waiting: number };
+  alerts: string[];
 }
 
 function fmtMs(v: number | null | undefined): string {
@@ -189,10 +199,12 @@ function fmtMs(v: number | null | undefined): string {
   return `${(v / 1000).toFixed(2)}s`;
 }
 
-function PerfPanel() {
+export function PerfPanel() {
   const { name } = useAssistantName();
   const [rows, setRows] = useState<PerfRow[]>([]);
   const [summary, setSummary] = useState<PerfSummaryRow[]>([]);
+  const [runtime, setRuntime] = useState<RuntimeMetrics | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
   const [slowOnly, setSlowOnly] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -207,26 +219,31 @@ function PerfPanel() {
   // accidentally inherit it.
   useEffect(() => {
     setPerfTransportEnabled(true);
-    return () => setPerfTransportEnabled(false);
+    return () => { setPerfTransportEnabled(false); requestRef.current?.abort(); requestRef.current = null; };
   }, []);
 
   async function load() {
+    requestRef.current?.abort();
+    const request = new AbortController();
+    requestRef.current = request;
     setBusy(true); setErr(null);
     try {
       const [a, b] = await Promise.all([
         fetch(`${BASE}/api/admin/performance/recent-actions?limit=200${slowOnly ? "&slowOnly=1" : ""}`, {
-          credentials: "include", headers: { "x-security-role": "ADMIN" },
-        }).then((r) => r.json()),
+          credentials: "include", signal: request.signal, headers: { "x-security-role": "ADMIN" },
+        }).then((r) => { if (!r.ok) throw new Error(`Performance request failed (${r.status})`); return r.json(); }),
         fetch(`${BASE}/api/admin/performance/action-summary`, {
-          credentials: "include", headers: { "x-security-role": "ADMIN" },
-        }).then((r) => r.json()),
+          credentials: "include", signal: request.signal, headers: { "x-security-role": "ADMIN" },
+        }).then((r) => { if (!r.ok) throw new Error(`Performance request failed (${r.status})`); return r.json(); }),
       ]);
+      if (request.signal.aborted) return;
       setRows(Array.isArray(a?.rows) ? a.rows : []);
       setSummary(Array.isArray(b?.actions) ? b.actions : []);
+      setRuntime(b?.runtime ?? null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to load perf data");
+      if (!request.signal.aborted) setErr(e instanceof Error ? e.message : "Failed to load perf data");
     } finally {
-      setBusy(false);
+      if (requestRef.current === request) { requestRef.current = null; setBusy(false); }
     }
   }
 
@@ -269,6 +286,15 @@ function PerfPanel() {
           </Alert>
         )}
 
+        {runtime && (
+          <div className="space-y-1 text-xs text-muted-foreground" data-testid="runtime-metrics">
+            <p>Process memory: {(runtime.memory.rssBytes / 1048576).toFixed(1)} MiB · Heap: {(runtime.memory.heapUsedBytes / 1048576).toFixed(1)} MiB</p>
+            <p>CPU since last sample: {runtime.cpuPercent?.toFixed(1) ?? "—"}% · Event loop busy: {(runtime.eventLoopUtilization * 100).toFixed(1)}%</p>
+            <p>Database connections: {runtime.database.total} total · {runtime.database.idle} idle · {runtime.database.waiting} waiting</p>
+            {runtime.alerts.includes("DATABASE_POOL_WAITING") && <p role="status" className="text-warning">Database requests are waiting for a connection.</p>}
+          </div>
+        )}
+
         <div>
           <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Top offenders by p95</div>
           {top.length === 0 ? (
@@ -282,6 +308,8 @@ function PerfPanel() {
                     <th className="text-right py-1 pr-3">n</th>
                     <th className="text-right py-1 pr-3">p50</th>
                     <th className="text-right py-1 pr-3">p95</th>
+                    <th className="text-right py-1 pr-3">p99</th>
+                    <th className="text-right py-1 pr-3">5xx</th>
                     <th className="text-right py-1 pr-3">max</th>
                     <th className="text-right py-1">slow</th>
                   </tr>
@@ -293,6 +321,8 @@ function PerfPanel() {
                       <td className="text-right py-1 pr-3">{r.count}</td>
                       <td className="text-right py-1 pr-3">{fmtMs(r.p50Ms)}</td>
                       <td className={`text-right py-1 pr-3 ${r.p95Ms >= 1000 ? "text-warning" : ""}`}>{fmtMs(r.p95Ms)}</td>
+                      <td className="text-right py-1 pr-3">{fmtMs(r.p99Ms)}</td>
+                      <td className="text-right py-1 pr-3">{r.errorCount ?? 0}</td>
                       <td className={`text-right py-1 pr-3 ${r.maxMs >= 2000 ? "text-danger" : ""}`}>{fmtMs(r.maxMs)}</td>
                       <td className={`text-right py-1 ${r.slowCount > 0 ? "text-warning" : "text-muted-foreground"}`}>{r.slowCount}</td>
                     </tr>

@@ -26,6 +26,7 @@ import {
   summariseByAction,
 } from "../lib/perf/perfRecorder.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readRuntimeMetrics } from "../lib/perf/runtimeMetrics.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -41,7 +42,11 @@ function requireAdmin(req: Request, res: Response): boolean {
 
 router.get("/admin/performance", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  // Use ONE pool client for all reads so the snapshot is consistent.
+  const bridges = { rows: (await listConnections({ activeTokenOnly: true, order: "heartbeat", limit: 50 })).map((b) => ({
+      id: b.id, user_id: b.userId, account_number: b.accountNumber, mode: b.mode, last_heartbeat: b.lastHeartbeat,
+    })) };
+  // Release the Broker Hub read before reserving a client. This also works
+  // with a one-connection pool; these observational reads are not a transaction.
   const c = await pool.connect();
   try {
     const live = await c.query<{ status: string; n: string }>(
@@ -68,9 +73,7 @@ router.get("/admin/performance", async (req, res) => {
           AND sent_to_mt5_at IS NOT NULL
           AND filled_at > NOW() - INTERVAL '24 hours'`,
     );
-    const bridges = { rows: (await listConnections({ activeTokenOnly: true, order: "heartbeat", limit: 50 })).map((b) => ({
-      id: b.id, user_id: b.userId, account_number: b.accountNumber, mode: b.mode, last_heartbeat: b.lastHeartbeat,
-    })) };
+
     const activeUsers = await c.query<{ n: string }>(
       `SELECT COUNT(DISTINCT user_id)::text AS n
          FROM arx_live_commands
@@ -145,7 +148,7 @@ router.get("/admin/performance/recent-actions", (req, res) => {
 // offenders" view without needing to ship the full ring buffer.
 router.get("/admin/performance/action-summary", (req, res) => {
   if (!requireAdmin(req, res)) return;
-  return res.json({ ok: true, actions: summariseByAction() });
+  return res.json({ ok: true, actions: summariseByAction(), runtime: readRuntimeMetrics(pool) });
 });
 
 // Ingest endpoint for browser-side perf rows produced by

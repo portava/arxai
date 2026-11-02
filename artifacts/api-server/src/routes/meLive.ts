@@ -22,6 +22,8 @@ import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, listUserConnections } from "../lib/brokerHub/connections.js";
 import { accountFiguresOf, connectionAccountSnapshot } from "../lib/brokerHub/accountSnapshot.js";
 import { Router, type Request, type Response } from "express";
+import { createCoalescedTask } from "../lib/perf/coalescedTask.js";
+import { createSseWriter } from "../lib/perf/sseWriter.js";
 import { and, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
@@ -1077,15 +1079,25 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   (res as unknown as { flushHeaders?: () => void }).flushHeaders?.();
 
-  let aborted = false;
-  const send = (event: unknown) => {
-    if (aborted) return;
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
-
+  let stopRefresh = () => {};
+  let unsubscribe = () => {};
+  let tick: ReturnType<typeof setInterval> | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  // Install cleanup BEFORE the first await. A client can disconnect while the
+  // module or first database read is still loading.
+  const writer = createSseWriter(res, () => {
+    stopRefresh();
+    unsubscribe();
+    clearInterval(tick);
+    clearInterval(heartbeat);
+  });
+  const send = writer.send;
   const { buildLiveAccountSnapshot } = await import("../lib/live/liveAccountSnapshot.js");
+  const { liveAccountEventBus } = await import("../lib/live/liveAccountEventBus.js");
+  if (writer.closed) return;
 
   // Build one snapshot using the SAME mode-scope gate as /me/live/positions so
   // the stream can never disagree with the positions list. Returns the safe
@@ -1177,58 +1189,17 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
     }
   };
 
-  await buildOnce();
-
-  // Instant push: when an EA write route (heartbeat, account sync, live
-  // positions snapshot) signals this user's live state changed, rebuild the
-  // snapshot immediately instead of waiting for the 3s fallback tick. Bursts
-  // (heartbeat + sync-account + positions land within milliseconds) are
-  // coalesced: at most one build runs at a time, and a single trailing rebuild
-  // captures anything that arrived mid-build, bounded by a short min-gap so a
-  // chatty EA can never hammer the DB read.
-  const { liveAccountEventBus } = await import("../lib/live/liveAccountEventBus.js");
-  const MIN_PUSH_GAP_MS = 250;
-  let building = false;
-  let pendingRebuild = false;
-  let lastBuildAt = 0;
-  let gapTimer: ReturnType<typeof setTimeout> | null = null;
-  const runBuild = async () => {
-    if (aborted) return;
-    building = true;
-    lastBuildAt = Date.now();
-    try {
-      await buildOnce();
-    } finally {
-      building = false;
-      if (pendingRebuild && !aborted) {
-        pendingRebuild = false;
-        void runBuild();
-      }
-    }
-  };
-  const onLiveChange = () => {
-    if (aborted) return;
-    if (building) { pendingRebuild = true; return; }
-    const sinceLast = Date.now() - lastBuildAt;
-    if (sinceLast >= MIN_PUSH_GAP_MS) {
-      void runBuild();
-    } else if (gapTimer == null) {
-      gapTimer = setTimeout(() => { gapTimer = null; if (!aborted) void runBuild(); }, MIN_PUSH_GAP_MS - sinceLast);
-    }
-  };
-  liveAccountEventBus.on(userId, onLiveChange);
-
-  // Re-evaluate on a modest interval. This is a safe fallback cadence; it does
-  // NOT imply tick-by-tick liveness — the freshness field tells that truth.
-  const tick = setInterval(() => { if (!aborted) void buildOnce(); }, 3_000);
-  const heartbeat = setInterval(() => { if (!aborted) send({ type: "heartbeat", ts: Date.now() }); }, 15_000);
-  req.on("close", () => {
-    aborted = true;
-    clearInterval(tick);
-    clearInterval(heartbeat);
-    if (gapTimer != null) { clearTimeout(gapTimer); gapTimer = null; }
-    liveAccountEventBus.off(userId, onLiveChange);
+  // Events, the initial read, and fallback ticks share the same lock and
+  // minimum start gap. A burst becomes one trailing refresh, never a queue.
+  const refresh = createCoalescedTask(buildOnce, 250, () => {
+    send({ type: "error_safe", message: "Account stream temporarily unavailable.", ts: Date.now() });
   });
+  stopRefresh = refresh.stop;
+  liveAccountEventBus.on(userId, refresh.request);
+  unsubscribe = () => liveAccountEventBus.off(userId, refresh.request);
+  tick = setInterval(refresh.request, 3_000);
+  heartbeat = setInterval(() => send({ type: "heartbeat", ts: Date.now() }), 15_000);
+  refresh.request();
 });
 
 export default router;
