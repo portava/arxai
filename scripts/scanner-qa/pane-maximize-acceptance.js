@@ -29,7 +29,7 @@ async page=>{
   check((await panel.getByTestId('chart-maximized-pane').textContent()).includes('trade overlays'),'Shell explicitly reports hidden price and trade layers');
   const annotation=panel.getByRole('button',{name:'Show automatic chart annotations',exact:true});
   check((await annotation.textContent()).includes('hidden')|| (await annotation.textContent()).includes('off'),'Reader never claims annotations on in indicator-only view');
-  await shot('desktop-maximized');
+  await panel.getByRole('button',{name:/^Restore layout from pane 1:/}).scrollIntoViewIfNeeded();await state();await shot('desktop-maximized');
   const restore=panel.getByRole('button',{name:/^Restore layout from pane 1:/});await restore.focus();await page.keyboard.press('Enter');current=await state();
   check(current.snapshot.state.maximizedStudyPane===null&&JSON.stringify(current.layout)===JSON.stringify(before.layout),'Keyboard restore returns the exact saved geometry');
   check(await maximize.evaluate(n=>document.activeElement===n),'Restore preserves keyboard focus on the same control');
@@ -37,7 +37,7 @@ async page=>{
   check(current.snapshot.state.maximizedStudyPane===null&&JSON.stringify(current.config.studies)===JSON.stringify(before.config.studies),'Temporary maximization does not replace saved layout on reload');
   await page.setViewportSize({width:390,height:844});await state();await tools();await maximize.scrollIntoViewIfNeeded();await maximize.focus();await page.keyboard.press('Enter');current=await state();
   check(current.snapshot.state.maximizedStudyPane!==null&&JSON.stringify(await numbers())===JSON.stringify(observations),'Narrow keyboard maximization preserves all calculations');
-  await shot('mobile-maximized');await panel.getByRole('button',{name:/^Restore layout from pane 1:/}).click();await state();
+  await panel.getByRole('button',{name:/^Restore layout from pane 1:/}).scrollIntoViewIfNeeded();await state();await shot('mobile-maximized');await panel.getByRole('button',{name:/^Restore layout from pane 1:/}).click();await state();
   check(await page.locator('iframe,embed,object,script[src*="tradingview.com"],#tv-attr-logo').count()===0,'Native chart without TradingView embed/logo');report.passed=true;
  }catch(e){report.failure=String(e?.stack??e);try{await shot('failure');}catch{}}
  finally{report.network=await page.evaluate(()=>window.__readFixtureLog());const allowed=['/api/me/activity-ping','/api/me/chart/ai-alerts/scan','/api/me/scalp/focus'];report.unexpected=report.network.blocked.filter(r=>r.kind!=='mutation'||r.method!=='POST'||!allowed.includes(r.path)||r.status!==503);if(report.unexpected.length||report.network.errors.length||report.network.requests.some(r=>r.method!=='GET'&&r.status!==503))report.passed=false;}
