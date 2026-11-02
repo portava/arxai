@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useAssistantName } from "@/lib/assistant-name";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
@@ -14,6 +14,7 @@ import { ReviewedOrderFlowSheet } from "@/components/dashboard/ReviewedOrderFlow
 import { RiskUtilizationSummary } from "@/components/dashboard/RiskUtilizationSummary";
 import { AccountCommandStrip } from "@/components/dashboard/AccountCommandStrip";
 import { WorkspaceClock } from "@/components/dashboard/WorkspaceClock";
+import { EnvironmentPill } from "@/components/dashboard/cockpit/EnvironmentPill";
 import {
   TradingPermissionSummaryCard, OpenPositionsCard,
   CriticalEventsCard, AlertsSummaryCard,
@@ -27,8 +28,11 @@ import { SelectedActionStoreProvider } from "@/components/scanner/selectedAction
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { useCurrentUser, useLogout } from "@/hooks/useCurrentUser";
+import { NotificationBell } from "@/components/alerts/NotificationBell";
+import { ARXLogoMark } from "@/components/brand/ARXLogo";
 import {
-  Activity, Search, Crosshair, Shield, Brain, Briefcase, Eye, CalendarDays,
+  Activity, Search, Crosshair, Shield, Brain, Briefcase, CalendarDays, Eye, LogOut,
   BarChart3, Settings2, Pin, PinOff, ChevronDown, ChevronUp, LayoutGrid,
   Wallet, ScanLine,
 } from "lucide-react";
@@ -36,17 +40,28 @@ import { buildDashboardCatalog, filterDashboardCatalog, dashboardPanelForTool, a
 
 const ICONS = [Activity, Search, Crosshair, Shield, Brain, Briefcase, Eye, CalendarDays, BarChart3, Settings2, Wallet, ScanLine];
 const PANELS = [
-  { id: "discovery", title: "Market discovery", icon: Search },
-  { id: "chart", title: "Smart Chart", icon: Activity },
-  { id: "heat", title: "Global market heat", icon: BarChart3 },
-  { id: "intelligence", title: "Market intelligence", icon: ScanLine },
-  { id: "clock", title: "World clock", icon: CalendarDays },
-  { id: "ruby", title: "Ruby read", icon: Brain },
-  { id: "risk", title: "Risk & permission", icon: Shield },
+  { id: "discovery", title: "Scanner", icon: Search },
+  { id: "chart", title: "Chart", icon: Activity },
+  { id: "heat", title: "Heat", icon: BarChart3 },
+  { id: "intelligence", title: "Intelligence", icon: ScanLine },
+  { id: "clock", title: "Desk clock", icon: CalendarDays },
+  { id: "ruby", title: "AI read", icon: Brain },
+  { id: "risk", title: "Risk", icon: Shield },
   { id: "order", title: "Order entry", icon: Crosshair },
-  { id: "positions", title: "Open positions", icon: Briefcase },
+  { id: "positions", title: "Positions", icon: Briefcase },
 ] as const;
 type PanelId = WorkspacePanelId;
+const MOBILE_TOOL_LABELS: Record<PanelId, string> = {
+  discovery: "Scanner",
+  chart: "Chart",
+  heat: "Heat",
+  intelligence: "Intel",
+  clock: "Clock",
+  ruby: "AI",
+  risk: "Risk",
+  order: "Order",
+  positions: "Positions",
+};
 const LAYOUT_KEY = "arx.command-workspace.layout.v1";
 type LayoutState = { collapsed: PanelId[]; pinned: PanelId[]; preset: WorkspacePreset };
 const DEFAULT_LAYOUT: LayoutState = { collapsed: [], pinned: [], preset: "Analyze" };
@@ -85,13 +100,13 @@ export function persistWorkspaceLayout(layout: LayoutState, storage?: Pick<Stora
 }
 
 export function WorkspacePanel({
-  id, title, icon: Icon, collapsed, pinned, onCollapse, onPin, children, className,
+  id, title, icon: Icon, collapsed, pinned, onCollapse, onPin, children, className, hidden = false,
 }: {
   id: PanelId; title: string; icon: typeof Search; collapsed: boolean; pinned: boolean;
-  onCollapse: () => void; onPin: () => void; children: ReactNode; className?: string;
+  onCollapse: () => void; onPin: () => void; children: ReactNode; className?: string; hidden?: boolean;
 }) {
   const isCollapsed = collapsed && !pinned;
-  return <section id={`workspace-${id}`} className={cn("arx-panel min-w-0", className)} aria-label={title} tabIndex={-1}>
+  return <section id={`workspace-${id}`} hidden={hidden} className={cn("arx-panel min-w-0", className)} aria-label={title} tabIndex={-1}>
     <div className="arx-panel-head">
       <div className="flex min-w-0 items-center gap-2"><Icon size={15} className="text-cyan-300" /><h2 className="truncate">{title}</h2>{pinned && <span className="arx-pin-label">PINNED</span>}</div>
       <div className="flex items-center gap-1">
@@ -103,24 +118,94 @@ export function WorkspacePanel({
   </section>;
 }
 
-export function CommandWorkspace() {
+export function CommandWorkspace({
+  headerActions,
+  warningContent,
+}: {
+  headerActions?: ReactNode;
+  warningContent?: ReactNode;
+}) {
   const { name } = useAssistantName();
   const [symbol, setSymbol] = useChartSymbol();
   const { effectiveIsAdmin } = useViewMode();
   const { isApprovedTrader } = useTraderTier();
   const { isInvestor } = useProductRole();
   const [layout, setLayout] = useState<LayoutState>(() => readWorkspaceLayout(typeof window === "undefined" ? undefined : window.localStorage));
+  const [isDesktopWorkspace, setIsDesktopWorkspace] = useState(() => typeof window !== "undefined" && window.innerWidth > 767);
+  const [mobileFocusMode, setMobileFocusMode] = useState(() => typeof window !== "undefined" && window.innerWidth <= 767);
+  const [mobileFocusedPanel, setMobileFocusedPanel] = useState<PanelId>("chart");
+  const [mobileCollapsedPanels, setMobileCollapsedPanels] = useState<PanelId[]>([]);
+  // Existing collapse/preset preferences remain stored, but older saved
+  // layouts cannot hide the core desk on its first desktop opening.
+  const [savedLayoutControlsUsed, setSavedLayoutControlsUsed] = useState(false);
   const [allToolsOpen, setAllToolsOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [orderReviewOpen, setOrderReviewOpen] = useState(false);
   const [query, setQuery] = useState("");
+  useEffect(() => {
+    const updateViewport = () => {
+      const desktop = window.innerWidth > 767;
+      setIsDesktopWorkspace(desktop);
+      setMobileFocusMode(!desktop);
+      if (!desktop) {
+        setMobileFocusedPanel("chart");
+        setMobileCollapsedPanels([]);
+      }
+    };
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
   const catalog = useMemo(() => buildDashboardCatalog(name, { isAdmin: effectiveIsAdmin, isApprovedTrader, isInvestor }), [name, effectiveIsAdmin, isApprovedTrader, isInvestor]);
   const results = useMemo(() => filterDashboardCatalog(catalog, query), [catalog, query]);
   const updateLayout = (next: LayoutState) => { setLayout(next); persistWorkspaceLayout(next); };
-  const togglePanel = (id: PanelId) => updateLayout(toggleWorkspacePanel(layout, id, "collapse"));
-  const togglePin = (id: PanelId) => updateLayout(toggleWorkspacePanel(layout, id, "pin"));
-  const choosePreset = (preset: WorkspacePreset) => updateLayout(applyWorkspacePreset(layout, preset));
+  const initialDesktopLayout = !savedLayoutControlsUsed && isDesktopWorkspace;
+  const mobileCoreIds: PanelId[] = ["chart", "positions", ...layout.pinned, mobileFocusedPanel];
+  const mobileOpenIds = new Set(mobileCoreIds.filter(id => !mobileCollapsedPanels.includes(id)));
+  const mobileHidden = (id: PanelId) => !isDesktopWorkspace && mobileFocusMode
+    && id !== "chart" && id !== "positions" && id !== mobileFocusedPanel && !layout.pinned.includes(id);
+  const mobileCollapsed = PANELS.filter(panel => !mobileOpenIds.has(panel.id)).map(panel => panel.id);
+  const visibleLayout = initialDesktopLayout
+    ? { ...layout, collapsed: [] }
+    : !isDesktopWorkspace && mobileFocusMode
+      ? { ...layout, collapsed: mobileCollapsed }
+      : layout;
+  const togglePanel = (id: PanelId) => {
+    if (!isDesktopWorkspace && mobileFocusMode) {
+      setMobileCollapsedPanels(current => current.includes(id) ? current.filter(panel => panel !== id) : [...current, id]);
+      return;
+    }
+    setSavedLayoutControlsUsed(true);
+    updateLayout(toggleWorkspacePanel(initialDesktopLayout ? { ...layout, collapsed: [] } : layout, id, "collapse"));
+  };
+  const togglePin = (id: PanelId) => {
+    setSavedLayoutControlsUsed(true);
+    updateLayout(toggleWorkspacePanel(initialDesktopLayout ? { ...layout, collapsed: [] } : layout, id, "pin"));
+  };
+  const choosePreset = (preset: WorkspacePreset) => {
+    if (isDesktopWorkspace) {
+      setMobileFocusMode(false);
+    } else {
+      setMobileFocusMode(true);
+      setMobileFocusedPanel(preset === "Trade" ? "order" : preset === "Review" ? "positions" : "chart");
+      setMobileCollapsedPanels([]);
+    }
+    setSavedLayoutControlsUsed(true);
+    updateLayout(applyWorkspacePreset(initialDesktopLayout ? { ...layout, collapsed: [] } : layout, preset));
+  };
   const focusPanel = (id: PanelId, closeToolSheet = false) => {
+    if (!isDesktopWorkspace) {
+      setMobileFocusMode(true);
+      setMobileFocusedPanel(id);
+      setMobileCollapsedPanels(current => current.filter(panel => panel !== id));
+      if (closeToolSheet) { setAllToolsOpen(false); setMobileToolsOpen(false); }
+      window.setTimeout(() => {
+        const target = document.getElementById(`workspace-${id}`);
+        target?.scrollIntoView({ behavior: "smooth", block: "center" });
+        target?.focus({ preventScroll: true });
+      }, closeToolSheet ? 320 : 0);
+      return;
+    }
     if (layout.collapsed.includes(id)) updateLayout({ ...layout, collapsed: layout.collapsed.filter(x => x !== id) });
     if (closeToolSheet) { setAllToolsOpen(false); setMobileToolsOpen(false); }
     window.setTimeout(() => {
@@ -130,6 +215,8 @@ export function CommandWorkspace() {
     }, closeToolSheet ? 320 : 0);
   };
   const active = bareSymbol(symbol || "V75").toUpperCase();
+  const { user } = useCurrentUser();
+  const logout = useLogout();
 
   const tools = <div className="space-y-4">
     <label className="relative block"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><Input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search all tools…" aria-label="Search all tools" className="h-10 border-slate-700 bg-[#07111a] pl-9 text-sm"/></label>
@@ -151,48 +238,61 @@ export function CommandWorkspace() {
     <aside className="arx-dock" aria-label="Workspace tools">
       <div className="arx-dock-brand">ARX<span>AI</span></div>
       <button type="button" onClick={() => setAllToolsOpen(true)} className="arx-dock-tool" aria-label="Open all tools"><LayoutGrid size={17}/><span>All tools</span></button>
-      {PANELS.map(({ id, title, icon: Icon }) => <button key={id} type="button" onClick={() => focusPanel(id)} className="arx-dock-tool" aria-label={`Focus ${title}`}><Icon size={17}/><span>{title.replace("Market ", "")}</span></button>)}
+      {PANELS.map(({ id, title, icon: Icon }) => <button key={id} type="button" onClick={() => focusPanel(id)} className="arx-dock-tool" aria-label={`Focus ${title}`}><Icon size={17}/><span>{title}</span></button>)}
       <div className="mt-auto hidden md:block"><span className="arx-dock-caption">WORKSPACE</span></div>
     </aside>
     <main className="arx-workspace-main">
       <header className="arx-workspace-top">
-        <div className="arx-workspace-title min-w-0"><div className="arx-eyebrow"><span className="arx-workspace-label">COMMAND WORKSPACE</span><span>·</span><time className="arx-workspace-date">{new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></div><h1>Market desk <span className="arx-symbol">{active}</span></h1></div>
+        <div className="arx-workspace-brand" aria-label="ARX AI"><ARXLogoMark size="sm" mode="dark"/></div>
+        <div className="arx-workspace-title min-w-0"><div className="arx-eyebrow"><span className="arx-workspace-label">ARX · MARKET DESK</span><span>·</span><time className="arx-workspace-date">{new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></div><h1>Market desk <span className="arx-symbol">{active}</span></h1></div>
+        <div className="arx-workspace-environment"><EnvironmentPill compact/></div>
         <div className="arx-preset-group" role="group" aria-label="Workspace preset">
           {(["Analyze", "Trade", "Review"] as const).map(preset => <button key={preset} type="button" aria-pressed={layout.preset === preset} onClick={() => choosePreset(preset)}>{preset}</button>)}
         </div>
         <div className="arx-refresh-control"><DashboardAutoRefreshControl/></div>
+        <div className="arx-workspace-utilities">
+          {headerActions}
+          <div className="arx-workspace-account-actions">
+            <NotificationBell/>
+            {user && <button type="button" className="arx-signout" onClick={() => logout.mutate()} disabled={logout.isPending} aria-label="Sign out" title={user.name || user.email || "Account"}><LogOut size={15}/><span className="sr-only">Sign out</span></button>}
+          </div>
+        </div>
         <button type="button" className="arx-mobile-tools" onClick={() => setMobileToolsOpen(true)} aria-label="Open workspace tools"><LayoutGrid size={17}/></button>
       </header>
       <AccountCommandStrip />
+      {warningContent && <div className="arx-workspace-warnings" aria-label="Account and safety notices">{warningContent}</div>}
+      {!isDesktopWorkspace && mobileFocusMode && <div className="arx-mobile-focus-hint" aria-live="polite">
+        Focus view · {PANELS.find(panel => panel.id === mobileFocusedPanel)?.title ?? "Chart"} · Chart and positions stay available; use the tool tray to switch.
+      </div>}
       <div className="arx-workspace-grid">
         <div className="arx-col arx-col-left">
-          <WorkspacePanel id="discovery" title="Market discovery" icon={Search} collapsed={layout.collapsed.includes("discovery")} pinned={layout.pinned.includes("discovery")} onCollapse={() => togglePanel("discovery")} onPin={() => togglePin("discovery")}><SymbolExplorer activeSymbol={symbol} onSelect={canonical => setSymbol(canonical)}/></WorkspacePanel>
-          <WorkspacePanel id="heat" title="Global market heat" icon={BarChart3} collapsed={layout.collapsed.includes("heat")} pinned={layout.pinned.includes("heat")} onCollapse={() => togglePanel("heat")} onPin={() => togglePin("heat")}><GlobalMarketHeatCard/></WorkspacePanel>
-          <WorkspacePanel id="clock" title="World clock" icon={CalendarDays} collapsed={layout.collapsed.includes("clock")} pinned={layout.pinned.includes("clock")} onCollapse={() => togglePanel("clock")} onPin={() => togglePin("clock")}><WorkspaceClock/></WorkspacePanel>
+          <WorkspacePanel id="discovery" hidden={mobileHidden("discovery")} title="Market scanner" icon={Search} collapsed={visibleLayout.collapsed.includes("discovery")} pinned={layout.pinned.includes("discovery")} onCollapse={() => togglePanel("discovery")} onPin={() => togglePin("discovery")}><SymbolExplorer compactWorkspace activeSymbol={symbol} onSelect={canonical => setSymbol(canonical)}/></WorkspacePanel>
+          <WorkspacePanel id="heat" hidden={mobileHidden("heat")} title="Market heat" icon={BarChart3} collapsed={visibleLayout.collapsed.includes("heat")} pinned={layout.pinned.includes("heat")} onCollapse={() => togglePanel("heat")} onPin={() => togglePin("heat")}><GlobalMarketHeatCard compactWorkspace/></WorkspacePanel>
+          <WorkspacePanel id="clock" hidden={mobileHidden("clock")} title="Desk & world time" icon={CalendarDays} collapsed={visibleLayout.collapsed.includes("clock")} pinned={layout.pinned.includes("clock")} onCollapse={() => togglePanel("clock")} onPin={() => togglePin("clock")}><WorkspaceClock compactWorkspace/></WorkspacePanel>
         </div>
         <div className="arx-col arx-col-center">
-          <WorkspacePanel id="chart" title="Smart Chart" icon={Activity} collapsed={layout.collapsed.includes("chart")} pinned={layout.pinned.includes("chart")} onCollapse={() => togglePanel("chart")} onPin={() => togglePin("chart")} className="arx-chart-panel"><ScannerChartPanel compactWorkspace/></WorkspacePanel>
-          <WorkspacePanel id="intelligence" title="Market intelligence" icon={ScanLine} collapsed={layout.collapsed.includes("intelligence")} pinned={layout.pinned.includes("intelligence")} onCollapse={() => togglePanel("intelligence")} onPin={() => togglePin("intelligence")}><div className="arx-intelligence-grid"><CriticalEventsCard/><BestMarketsCard/><AvoidMarketsCard/><AlertsSummaryCard/></div></WorkspacePanel>
+          <WorkspacePanel id="chart" hidden={mobileHidden("chart")} title="Smart Chart" icon={Activity} collapsed={visibleLayout.collapsed.includes("chart")} pinned={layout.pinned.includes("chart")} onCollapse={() => togglePanel("chart")} onPin={() => togglePin("chart")} className="arx-chart-panel"><ScannerChartPanel compactWorkspace/></WorkspacePanel>
+          <WorkspacePanel id="intelligence" hidden={mobileHidden("intelligence")} title="Market intelligence" icon={ScanLine} collapsed={visibleLayout.collapsed.includes("intelligence")} pinned={layout.pinned.includes("intelligence")} onCollapse={() => togglePanel("intelligence")} onPin={() => togglePin("intelligence")}><div className="arx-intelligence-grid"><CriticalEventsCard compactWorkspace/><BestMarketsCard compactWorkspace/><AvoidMarketsCard compactWorkspace/><AlertsSummaryCard compactWorkspace/></div></WorkspacePanel>
         </div>
         <div className="arx-col arx-col-right">
-          <WorkspacePanel id="ruby" title={`${name} · Market read`} icon={Brain} collapsed={layout.collapsed.includes("ruby")} pinned={layout.pinned.includes("ruby")} onCollapse={() => togglePanel("ruby")} onPin={() => togglePin("ruby")}><RubyMarketReadCard symbol={active}/></WorkspacePanel>
-          <WorkspacePanel id="risk" title="Risk & permission" icon={Shield} collapsed={layout.collapsed.includes("risk")} pinned={layout.pinned.includes("risk")} onCollapse={() => togglePanel("risk")} onPin={() => togglePin("risk")}><div className="space-y-3"><RiskUtilizationSummary/><TradingPermissionSummaryCard/></div></WorkspacePanel>
-          <WorkspacePanel id="order" title="Order entry" icon={Crosshair} collapsed={layout.collapsed.includes("order")} pinned={layout.pinned.includes("order")} onCollapse={() => togglePanel("order")} onPin={() => togglePin("order")}><ReviewedOrderCallout symbol={active} onOpen={() => setOrderReviewOpen(true)}/></WorkspacePanel>
+          <WorkspacePanel id="ruby" hidden={mobileHidden("ruby")} title={`${name} · AI read`} icon={Brain} collapsed={visibleLayout.collapsed.includes("ruby")} pinned={layout.pinned.includes("ruby")} onCollapse={() => togglePanel("ruby")} onPin={() => togglePin("ruby")}><RubyMarketReadCard compactWorkspace symbol={active}/></WorkspacePanel>
+          <WorkspacePanel id="risk" hidden={mobileHidden("risk")} title="Risk & permission" icon={Shield} collapsed={visibleLayout.collapsed.includes("risk")} pinned={layout.pinned.includes("risk")} onCollapse={() => togglePanel("risk")} onPin={() => togglePin("risk")}><div className="arx-risk-compact-stack"><RiskUtilizationSummary/><TradingPermissionSummaryCard compactWorkspace/></div></WorkspacePanel>
+          <WorkspacePanel id="order" hidden={mobileHidden("order")} title="Order entry" icon={Crosshair} collapsed={visibleLayout.collapsed.includes("order")} pinned={layout.pinned.includes("order")} onCollapse={() => togglePanel("order")} onPin={() => togglePin("order")}><ReviewedOrderCallout symbol={active} onOpen={() => setOrderReviewOpen(true)}/></WorkspacePanel>
         </div>
       </div>
-      <WorkspacePanel id="positions" title="Open positions" icon={Briefcase} collapsed={layout.collapsed.includes("positions")} pinned={layout.pinned.includes("positions")} onCollapse={() => togglePanel("positions")} onPin={() => togglePin("positions")} className="arx-positions"><OpenPositionsCard/></WorkspacePanel>
+      <WorkspacePanel id="positions" hidden={mobileHidden("positions")} title="Open positions" icon={Briefcase} collapsed={visibleLayout.collapsed.includes("positions")} pinned={layout.pinned.includes("positions")} onCollapse={() => togglePanel("positions")} onPin={() => togglePin("positions")} className="arx-positions"><OpenPositionsCard compactWorkspace/></WorkspacePanel>
     </main>
     <ReviewedOrderFlowSheet open={orderReviewOpen} onOpenChange={setOrderReviewOpen} symbol={active}/>
     <Sheet open={allToolsOpen} onOpenChange={setAllToolsOpen}><SheetContent side="right" className="w-full overflow-y-auto border-slate-700 bg-[#07111a] text-slate-100 sm:max-w-xl"><SheetHeader><SheetTitle className="text-slate-100">All tools</SheetTitle></SheetHeader><div className="mt-6">{tools}</div></SheetContent></Sheet>
     <Sheet open={mobileToolsOpen} onOpenChange={setMobileToolsOpen}><SheetContent side="bottom" className="max-h-[82dvh] overflow-y-auto border-slate-700 bg-[#07111a] text-slate-100"><SheetHeader><SheetTitle className="text-slate-100">Workspace tools</SheetTitle></SheetHeader><div className="mt-4 flex gap-2 overflow-x-auto pb-2">{PANELS.map(({ id, title, icon: Icon }) => <button type="button" key={id} onClick={() => focusPanel(id, true)} className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs"><Icon size={14}/>{title}</button>)}<button type="button" onClick={() => { setMobileToolsOpen(false); setAllToolsOpen(true); }} className="rounded-lg border border-cyan-500/50 px-3 py-2 text-xs text-cyan-200">All tools</button></div></SheetContent></Sheet>
     <nav className="arx-mobile-tray" aria-label="Workspace tool tray">
-      {(["discovery", "chart", "heat", "clock", "order"] as const).map(id => { const panel = PANELS.find(item => item.id === id)!; const Icon = panel.icon; return <button type="button" key={id} onClick={() => focusPanel(id)} aria-label={`Focus ${panel.title}`}><Icon size={16}/><span>{panel.title.replace("Market ", "")}</span></button>; })}
+      {(["discovery", "chart", "heat", "clock", "order"] as const).map(id => { const panel = PANELS.find(item => item.id === id)!; const Icon = panel.icon; return <button type="button" key={id} onClick={() => focusPanel(id)} aria-label={`Focus ${panel.title}`} aria-pressed={!isDesktopWorkspace && mobileFocusMode && mobileFocusedPanel === id}><Icon size={16}/><span>{MOBILE_TOOL_LABELS[id]}</span></button>; })}
       <button type="button" onClick={() => setAllToolsOpen(true)} aria-label="Open all tools"><LayoutGrid size={16}/><span>Tools</span></button>
     </nav>
   </div>;
 }
 
-export function CommandWorkspaceProviders() {
-  return <LiveAccountSnapshotProvider><RubyReadStoreProvider><SelectedActionStoreProvider><CommandWorkspace/></SelectedActionStoreProvider></RubyReadStoreProvider></LiveAccountSnapshotProvider>;
+export function CommandWorkspaceProviders(props: { headerActions?: ReactNode; warningContent?: ReactNode }) {
+  return <LiveAccountSnapshotProvider><RubyReadStoreProvider><SelectedActionStoreProvider><CommandWorkspace {...props}/></SelectedActionStoreProvider></RubyReadStoreProvider></LiveAccountSnapshotProvider>;
 }
 

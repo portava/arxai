@@ -68,4 +68,15 @@ describe("ScannerChartPanel reload button — spins + disables, never double-fir
     const block = reloadButtonBlock();
     expect(block).toContain("candlesQuery.refetch()");
   });
+
+  it("keeps long chart detail content mounted in a focusable drawer with a close/return path", () => {
+    expect(code).toContain('hidden={compactWorkspace && !chartDetailsOpen}');
+    expect(code).toContain('role={compactWorkspace ? "dialog" : undefined}');
+    expect(code).toContain('aria-modal={compactWorkspace && chartDetailsOpen ? true : undefined}');
+    expect(code).toContain('data-testid="scanner-chart-details-close"');
+    expect(code).toContain("Return to compact desk");
+    expect(code).toContain('if (event.key === "Escape")');
+    expect(code).toContain("chartDetailsTriggerRef.current?.focus()");
+    expect(code).toContain('aria-label="Open chart details"');
+  });
 });

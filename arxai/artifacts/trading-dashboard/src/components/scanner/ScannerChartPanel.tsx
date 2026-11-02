@@ -420,6 +420,43 @@ export function useScannerChartRead(
 
 export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspace?: boolean } = {}) {
   const [feedDetailsOpen, setFeedDetailsOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
+  const [chartDetailsOpen, setChartDetailsOpen] = useState(false);
+  const chartDetailsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const chartDetailsCloseRef = useRef<HTMLButtonElement | null>(null);
+  const chartDetailsDrawerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!chartDetailsOpen) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    chartDetailsCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setChartDetailsOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(chartDetailsDrawerRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+      ) ?? []).filter(node => !node.closest("[hidden]") && !node.closest("details:not([open])"));
+      if (focusable.length === 0) { event.preventDefault(); return; }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      chartDetailsTriggerRef.current?.focus();
+    };
+  }, [chartDetailsOpen]);
   useEffect(() => {
     let wide = window.innerWidth >= 768;
     const onResize = () => { const next = window.innerWidth >= 768; if (next !== wide) { wide = next; setFeedDetailsOpen(next); } };
@@ -1869,7 +1906,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
 
   return (
     <Card data-testid="scanner-chart-panel" className="rounded-2xl border-border bg-card">
-      {(!compactWorkspace || !feedDetailsOpen) && <details open={feedDetailsOpen} onToggle={event => setFeedDetailsOpen(event.currentTarget.open)} data-testid="scanner-feed-details">
+      {!compactWorkspace && <details open={feedDetailsOpen} onToggle={event => setFeedDetailsOpen(event.currentTarget.open)} data-testid="scanner-feed-details">
       <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground md:hidden">Feed and position details</summary>
       <CardHeader className="px-3 py-2 sm:px-6 sm:py-3">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -1916,6 +1953,16 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
             <ChartTimingChip symbol={symbol} />
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
+            {compactWorkspace && <button
+              type="button"
+              ref={chartDetailsTriggerRef}
+              onClick={() => setChartDetailsOpen(true)}
+              aria-expanded={chartDetailsOpen}
+              aria-controls="scanner-chart-details-drawer"
+              aria-label="Open chart details"
+              className="rounded-md border border-border px-2 py-1 text-[10px] text-txt-secondary hover:border-primary/50 hover:text-primary"
+              data-testid="scanner-chart-details-open"
+            >Chart details</button>}
             <Button
               size="sm"
               variant="ghost"
@@ -1931,8 +1978,27 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
         </CardTitle>
       </CardHeader>
       </details>}
+      {compactWorkspace && <div className="arx-chart-compact-toolbar">
+        <div className="arx-chart-compact-status">
+          <b>{symbol}</b>
+          <ChartFeedStatusBadge
+            status={displayStatus}
+            hasCandles={candles.length > 0}
+            testIdPrefix="scanner-chart-compact"
+            trailingIntervals={candlesQuery.data?.feedStatus?.trailingIntervals}
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <button type="button" className="arx-chart-compact-action" disabled={candlesQuery.isFetching} onClick={() => { void candlesQuery.refetch(); setReloadAt(Date.now()); }} aria-label="Reload candles" title="Reload candles">
+            {candlesQuery.isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <RefreshCw className="h-3.5 w-3.5"/>}
+          </button>
+          <button type="button" ref={chartDetailsTriggerRef} className="arx-chart-compact-details" onClick={() => setChartDetailsOpen(true)} aria-expanded={chartDetailsOpen} aria-controls="scanner-chart-details-drawer" data-testid="scanner-chart-details-open">
+            Chart details
+          </button>
+        </div>
+      </div>}
       <CardContent className="px-2 sm:px-6">
-        <SmartChartLayout symbol={symbol} primaryTimeframe={apiTf as ArxTimeframe} storageKey={SCANNER_CHART_LAYOUT_KEY} controlsBelowSingleChart>
+        <SmartChartLayout symbol={symbol} primaryTimeframe={apiTf as ArxTimeframe} storageKey={SCANNER_CHART_LAYOUT_KEY} controlsBelowSingleChart compactWorkspace={compactWorkspace}>
         <ARXNativeChart symbol={symbol} timeframe={apiTf as ArxTimeframe}
           onTimeframeChange={tf => setTimeframe(normalizeChartTimeframe(tf))}
           limit={200} height={compactWorkspace ? 320 : 420} mobileHeight={270} compactWorkspace={compactWorkspace}
@@ -2085,8 +2151,22 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
           </>}
         />
         </SmartChartLayout>
-        {hasCandles && (
-          <div className="mt-3 space-y-3">
+        {(hasCandles || compactWorkspace) && (
+          <div
+            id="scanner-chart-details-drawer"
+            ref={chartDetailsDrawerRef}
+            className={compactWorkspace ? "arx-chart-details-drawer" : "mt-3 space-y-3"}
+            hidden={compactWorkspace && !chartDetailsOpen}
+            role={compactWorkspace ? "dialog" : undefined}
+            aria-modal={compactWorkspace && chartDetailsOpen ? true : undefined}
+            aria-labelledby={compactWorkspace ? "scanner-chart-details-title" : undefined}
+            data-testid="scanner-chart-details-drawer"
+          >
+            {compactWorkspace && <div className="arx-chart-details-header">
+              <div><h2 id="scanner-chart-details-title">Smart Chart details</h2><p>{symbol} · additional controls and evidence</p></div>
+              <button type="button" ref={chartDetailsCloseRef} onClick={() => setChartDetailsOpen(false)} className="arx-chart-details-close" data-testid="scanner-chart-details-close">Return to compact desk</button>
+            </div>}
+            {hasCandles ? <div className="mt-3 space-y-3">
 
             {/* Feed-status notice strip — appears between canvas and draft controls
                 when the chart is showing candles that are not from a live feed.
@@ -2466,6 +2546,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
                 ))}
               </div>
             )}
+            </div> : <p className="p-4 text-sm text-slate-300">Additional chart details are unavailable until confirmed candle data is available.</p>}
           </div>
         )}
       </CardContent>

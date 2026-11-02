@@ -304,4 +304,15 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.queryByTestId("ruby-market-read-best-action")).toBeNull();
     expect(screen.queryByText("Levels")).toBeNull();
   });
+
+  it("shows a concise compact read with freshness and a reachable full rationale", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({ data: resp() }));
+    render(<RubyMarketReadCard compactWorkspace symbol="EURUSD" timeframe="M5" />);
+    expect(screen.getByTestId("ruby-market-read").getAttribute("data-compact-read")).toBe("true");
+    expect(screen.getByTestId("ruby-market-read-headline").textContent).toContain("Buyers are in control");
+    expect(screen.getByTestId("ruby-market-read-freshness").textContent).toMatch(/updated \d+s ago/);
+    expect(screen.getByTestId("ruby-market-read-what").textContent).toContain("simple:");
+    expect(screen.getByText("Why, evidence & full rationale")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Full Eleanor workspace" })).toBeTruthy();
+  });
 });

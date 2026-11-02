@@ -661,7 +661,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AssistantDockProvider><div className="min-h-screen flex bg-background text-foreground font-sans overflow-x-clip">
+    <AssistantDockProvider><div className={cn("min-h-screen flex bg-background text-foreground font-sans overflow-x-clip", isRootWorkspace && "md:h-dvh md:min-h-0 md:overflow-hidden")}>
       {/* SS — skip-to-content link for keyboard/screen-reader users */}
       <a
         href="#main-content"
@@ -689,8 +689,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <LazyGlobalHeader sidebarContent={(close) => <SidebarContent onNavigate={close} />} />
           </Suspense>
         )}
-        <main id="main-content" className={cn("flex-1 min-w-0 overflow-y-auto overflow-x-clip", isRootWorkspace ? "pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0" : "pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]")} tabIndex={-1}>
-          <div className="min-w-0 p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full">
+        <main id="main-content" className={cn("flex-1 min-w-0 overflow-y-auto overflow-x-clip", isRootWorkspace ? "arx-root-main pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0" : "pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]")} tabIndex={-1}>
+          <div className={cn("min-w-0 max-w-[1600px] mx-auto w-full", isRootWorkspace ? "arx-root-main-content p-2 sm:p-3 md:p-3" : "p-3 sm:p-4 md:p-6")}>
             <RouteAccessGuard>{children}</RouteAccessGuard>
           </div>
           {!isRootWorkspace && <Suspense fallback={null}><LazySharedFooter /></Suspense>}

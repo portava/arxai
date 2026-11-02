@@ -101,3 +101,15 @@ it("hidden comparisons follow the current primary interval when restored",()=>{
   fireEvent.click(screen.getByRole("button",{name:"Four charts"}));
   expect(screen.getAllByTestId("secondary").map(n=>n.textContent)).toEqual(["EURUSD:H1:false","EURUSD:H4:false","EURUSD:H8:false"]);
 });
+
+it("keeps layout controls out of the compact chart until details are expanded",()=>{
+  render(<SmartChartLayout symbol="EURUSD" compactWorkspace controlsBelowSingleChart><div>Primary</div></SmartChartLayout>);
+  const disclosure=screen.getByText(/Chart layout & comparison settings/);
+  const details=disclosure.closest("details") as HTMLDetailsElement;
+  expect(details.open).toBe(false);
+  fireEvent.click(disclosure);
+  expect(details.open).toBe(true);
+  expect(screen.getByRole("button",{name:"Two charts"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Two charts"}));
+  expect(screen.getByTestId("comparison-chart")).toBeTruthy();
+});

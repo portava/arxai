@@ -359,7 +359,7 @@ export function AccountSnapshotCard() {
    permission status surfaced through useTradingMode. Trade Now → trade room,
    Ask Ruby → AI command center. No engine logic here.
    ──────────────────────────────────────────────────────────────────────── */
-export function TradingPermissionSummaryCard() {
+export function TradingPermissionSummaryCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const { name } = useAssistantName();
   const mode = useTradingMode();
   const { active } = useActiveSymbol();
@@ -384,6 +384,22 @@ export function TradingPermissionSummaryCard() {
 
   const sessionActive = !mode.isLoading && !frozen;
   const bridge = blocked ? "Disconnected" : "Connected";
+
+  if (compactWorkspace) {
+    return <div className={`arx-permission-compact is-${status.tone}`} data-testid="cockpit-trading-permission">
+      <div className="arx-permission-compact-status">
+        <span>{mode.isLoading ? "Checking permission…" : status.label}</span>
+        <span>{mode.isError ? "Account mode unavailable" : mode.cleanModeLabel}</span>
+      </div>
+      <p title={headline ?? ""}>{headline}</p>
+      <div className="arx-permission-compact-meta">
+        <span>Bridge {mode.isError ? "unknown" : bridge}</span>
+        <span>Session {mode.isLoading ? "checking" : sessionActive ? "active" : "inactive"}</span>
+        <span>Market {active}</span>
+      </div>
+      <Link href="/risk-command-center" className="arx-permission-details-link">Risk and permission details</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard
@@ -561,7 +577,7 @@ export function RubyMarketViewCard() {
 /* ────────────────────────────────────────────────────────────────────────
    4 · CRITICAL MARKET EVENTS  (high-impact only, grouped)
    ──────────────────────────────────────────────────────────────────────── */
-export function CriticalEventsCard() {
+export function CriticalEventsCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const eventsQ = useGetEconomicCalendar({ impact: "high", days: 3 });
   const eventsAvailable = !eventsQ.isError && Array.isArray(eventsQ.data)
     && eventsQ.data.every(e => e && typeof e.title === "string" && e.title.trim()
@@ -576,6 +592,14 @@ export function CriticalEventsCard() {
     if (d < 1440) return `${Math.round(d / 60)}h`;
     return `${Math.round(d / 1440)}d`;
   };
+
+  if (compactWorkspace) {
+    return <div className="arx-intel-compact is-events" data-testid="cockpit-critical-events">
+      <b>Events</b>
+      {eventsQ.isLoading ? <span>Checking calendar…</span> : !eventsAvailable ? <span className="is-warning">Calendar unavailable · risk not checked</span> : events.length === 0 ? <span>No high-impact events returned</span> : <span title={events[0]!.title}>{events[0]!.currency ? `${events[0]!.currency} · ` : ""}{events[0]!.title} · {minsUntil(events[0]!.eventTime)}</span>}
+      <Link href="/economic-calendar" data-testid="events-view-all">Calendar</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard
@@ -621,7 +645,7 @@ export function CriticalEventsCard() {
 /* ────────────────────────────────────────────────────────────────────────
    5 · OPEN POSITIONS  (MT5-confirmed only)
    ──────────────────────────────────────────────────────────────────────── */
-export function OpenPositionsCard() {
+export function OpenPositionsCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   // Consume the shared SSE snapshot for freshness badge AND count truth.
   // For non-master (regular live-shared) users the snapshot count is the
   // authoritative source — it has been through the broker-absent exclusion
@@ -679,6 +703,32 @@ export function OpenPositionsCard() {
     MANUAL: { text: "Manual", tone: "warning" },
     PENDING: { text: "Pending", tone: "info" },
   };
+
+  if (compactWorkspace) {
+    return <div className="arx-positions-compact" data-testid="cockpit-open-positions">
+      <div className="arx-positions-compact-status">
+        <b>{count == null ? "Open count unavailable" : `${count} open`}</b>
+        <span>{!positionDataAvailable ? "Position data unavailable" : incomplete ? "Position details incomplete" : lastKnownPositions ? "Last known · current exposure unconfirmed" : "Snapshot status current"}</span>
+        {liveCtx.snapshot && <FreshnessBadge freshness={liveCtx.freshness} lastUpdatedMs={liveCtx.lastUpdatedMs} isEstimate={liveCtx.isEstimate} compact/>}
+      </div>
+      {!positionDataAvailable ? <p role="status">Open exposure has not been checked.</p> : incomplete ? <p role="status" className="text-warning">Wait for a complete position snapshot.</p> : rows.length === 0 ? (
+        <p className="arx-positions-empty">{lastKnownPositions ? "Last reported snapshot contained no positions." : "No open positions in the latest snapshot."}</p>
+      ) : <>
+        <ul className="arx-positions-blotter">
+          {rows.slice(0, 3).map(row => <li key={row.id} data-testid={`position-${row.id}`}>
+            <span className={row.side === "BUY" ? "text-success" : "text-danger"}>{row.side}</span>
+            <b>{row.symbol}</b><span>{row.lotSize} lot</span>
+            {row.source && <span>{SOURCE_BADGE[row.source]?.text ?? row.source}</span>}
+            <strong className={pnlClass(row.pnl)}>{row.stale || lastKnownPositions || incomplete || finite(row.pnl) == null ? "—" : formatPnl(row.pnl)}</strong>
+          </li>)}
+        </ul>
+        {rows.length > 3 && <details className="arx-positions-more"><summary>Show {rows.length - 3} more positions</summary><ul className="arx-positions-blotter mt-1">
+          {rows.slice(3, 6).map(row => <li key={row.id} data-testid={`position-${row.id}`}><span className={row.side === "BUY" ? "text-success" : "text-danger"}>{row.side}</span><b>{row.symbol}</b><span>{row.lotSize} lot</span>{row.source && <span>{SOURCE_BADGE[row.source]?.text ?? row.source}</span>}<strong className={pnlClass(row.pnl)}>{row.stale || lastKnownPositions || incomplete || finite(row.pnl) == null ? "—" : formatPnl(row.pnl)}</strong></li>)}
+        </ul></details>}
+      </>}
+      <Link href="/positions" className="arx-positions-manage" data-testid="positions-manage">Manage positions</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard
@@ -811,7 +861,7 @@ function MiniStat({ label, value, valueClass }: { label: string; value: string; 
 /* ────────────────────────────────────────────────────────────────────────
    7 · ALERTS SUMMARY  (grouped — no 20× repeats)
    ──────────────────────────────────────────────────────────────────────── */
-export function AlertsSummaryCard() {
+export function AlertsSummaryCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const alertsQ = useGetCriticalAlerts();
 
   const raw = Array.isArray(alertsQ.data)
@@ -840,6 +890,14 @@ export function AlertsSummaryCard() {
     }
     return [...map.values()].sort((a, b) => (b.last ?? -Infinity) - (a.last ?? -Infinity)).slice(0, 4);
   }, [safeAlerts]);
+
+  if (compactWorkspace) {
+    return <div className="arx-intel-compact is-alerts" data-testid="cockpit-alerts-summary">
+      <b>Alerts</b>
+      {alertsQ.isLoading ? <span>Checking alerts…</span> : !alertsAvailable ? <span className="is-warning">Unavailable · not checked</span> : grouped.length === 0 ? <span>No critical alerts returned</span> : <span title={grouped[0]!.title}>{safeAlerts.length} · {grouped[0]!.title}</span>}
+      <Link href="/alerts" data-testid="alerts-view-all">Review</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard

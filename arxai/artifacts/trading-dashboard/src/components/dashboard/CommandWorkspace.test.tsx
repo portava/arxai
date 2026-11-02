@@ -40,4 +40,14 @@ describe("workspace panel controls", () => {
     memory.set("arx.command-workspace.layout.v1", "{");
     expect(readWorkspaceLayout(storage).preset).toBe("Analyze");
   });
+
+  it("keeps non-focused mobile panels out of view without removing their content", () => {
+    const { container, rerender } = render(<WorkspacePanel id="ruby" title="AI read" icon={Search} collapsed={false} pinned={false} hidden onCollapse={vi.fn()} onPin={vi.fn()}>AI summary</WorkspacePanel>);
+    const panel = container.querySelector("#workspace-ruby") as HTMLElement;
+    expect(panel.hidden).toBe(true);
+    expect(panel.textContent).toContain("AI summary");
+    rerender(<WorkspacePanel id="ruby" title="AI read" icon={Search} collapsed={false} pinned={false} hidden={false} onCollapse={vi.fn()} onPin={vi.fn()}>AI summary</WorkspacePanel>);
+    expect(panel.hidden).toBe(false);
+    expect(screen.getByText("AI summary")).toBeTruthy();
+  });
 });

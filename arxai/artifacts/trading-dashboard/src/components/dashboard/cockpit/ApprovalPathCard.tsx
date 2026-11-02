@@ -33,7 +33,7 @@ const TONE_ACCENT: Record<ApprovalTone, "success" | "warning" | "danger" | "blue
   info: "blue",
 };
 
-export function ApprovalPathCard() {
+export function ApprovalPathCard({ compact = false }: { compact?: boolean }) {
   const mode = useTradingMode();
   const tier = useTraderTier();
 
@@ -62,6 +62,24 @@ export function ApprovalPathCard() {
   // Belt-and-suspenders: the resolver should never report approved here (the
   // tier guard already returned), but if it does, render nothing.
   if (view.isApproved) return null;
+
+  if (compact) {
+    return <div className="arx-approval-compact" data-testid="cockpit-approval-path">
+      <ShieldQuestion size={14} className={TONE_TEXT[view.tone]} aria-hidden="true"/>
+      <strong className={TONE_TEXT[view.tone]} data-testid="approval-status-label">{view.statusLabel}</strong>
+      {view.detail && <span className="truncate" data-testid="approval-detail">{view.detail}</span>}
+      <details>
+        <summary>Access steps</summary>
+        <p className="mt-2 text-xs text-txt-secondary" data-testid="approval-guidance">{view.guidance}</p>
+        <ol className="mt-2 space-y-1 text-xs">
+          {view.steps.map((step, i) => <li key={step.key} data-testid={`approval-step-${step.key}`} data-done={step.done ? "true" : "false"}>{i + 1}. {step.label}</li>)}
+        </ol>
+        <Link href="/onboarding" className="mt-2 inline-flex items-center gap-1 text-xs text-primary" data-testid="approval-learn-link">
+          <GraduationCap className="h-3.5 w-3.5"/> Review onboarding
+        </Link>
+      </details>
+    </div>;
+  }
 
   return (
     <CockpitCard

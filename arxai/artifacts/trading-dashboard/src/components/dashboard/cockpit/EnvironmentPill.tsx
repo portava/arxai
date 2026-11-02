@@ -6,7 +6,7 @@ import { CheckCircle2, AlertTriangle, PlugZap, Pause } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { cn } from "@/lib/utils";
 
-export function EnvironmentPill() {
+export function EnvironmentPill({ compact = false }: { compact?: boolean }) {
   const mode = useTradingMode();
 
   if (mode.isLoading) {
@@ -25,6 +25,14 @@ export function EnvironmentPill() {
           : { label: mode.cleanModeLabel || "Simulator", dot: "bg-muted", text: "text-txt-secondary", icon: AlertTriangle, sub: mode.cleanUserMessage };
 
   const Icon = state.icon;
+
+  if (compact) {
+    return <div className={cn("arx-env-compact", state.text)} data-testid="cockpit-env-pill" title={state.sub}>
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", state.dot)} />
+      <Icon className="h-3 w-3 shrink-0" />
+      <span className="truncate">{state.label}</span>
+    </div>;
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2.5" data-testid="cockpit-env-pill">

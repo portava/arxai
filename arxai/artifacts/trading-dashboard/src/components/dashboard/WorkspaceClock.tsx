@@ -3,7 +3,7 @@ import { formatWorkspaceClock, persistWorkspaceTimeZone, readWorkspaceTimeZone, 
 
 const REFERENCE_ZONES: WorkspaceTimeZone[] = ["Europe/London", "America/New_York", "Asia/Tokyo"];
 
-export function WorkspaceClock() {
+export function WorkspaceClock({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const [timeZone, setTimeZone] = useState<WorkspaceTimeZone>(() => readWorkspaceTimeZone());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -11,6 +11,24 @@ export function WorkspaceClock() {
     return () => window.clearInterval(timer);
   }, []);
   const clocks = [timeZone, ...REFERENCE_ZONES.filter(zone => zone !== timeZone)];
+  if (compactWorkspace) {
+    return <div className="arx-clock-compact" data-testid="workspace-clock">
+      <label htmlFor="workspace-timezone" className="sr-only">Desk timezone</label>
+      <select id="workspace-timezone" value={timeZone} onChange={event => chooseTimeZone(event.target.value)} aria-label="Select desk timezone" data-testid="workspace-timezone-select">
+        {WORKSPACE_TIME_ZONES.map(zone => <option key={zone} value={zone}>{zone.replaceAll("_", " ")}</option>)}
+      </select>
+      <div className="arx-clock-compact-times">
+        {clocks.map((zone, index) => {
+          const parts = formatWorkspaceClock(now, zone);
+          const label = index === 0 ? "Desk" : zone.split("/").at(-1)?.replaceAll("_", " ") ?? zone;
+          return <span key={`${zone}-${index}`} title={`${label}: ${parts.date} ${parts.time} ${parts.zoneName}`}>
+            <small>{index === 0 ? "Desk" : label.slice(0, 3).toUpperCase()}</small>
+            <b>{parts.time}</b>
+          </span>;
+        })}
+      </div>
+    </div>;
+  }
 
   function chooseTimeZone(value: string) {
     const next = value as WorkspaceTimeZone;

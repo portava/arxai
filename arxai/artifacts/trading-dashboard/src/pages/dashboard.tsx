@@ -1,15 +1,13 @@
 import { useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Wrench, Settings2, Shield, Bot } from "lucide-react";
+import { ChevronDown, Wrench, Settings2, Shield, Bot, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useViewMode } from "@/hooks/useViewMode";
 import { CriticalAlertBanner } from "@/components/alerts/CriticalAlertBanner";
 import { RiskLockBanner } from "@/components/safety";
 import { ApprovalPathCard } from "@/components/dashboard/cockpit/ApprovalPathCard";
 import { CommandWorkspaceProviders } from "@/components/dashboard/CommandWorkspace";
-import { CockpitHeader } from "@/components/dashboard/cockpit/CockpitHeader";
-import { EnvironmentPill } from "@/components/dashboard/cockpit/EnvironmentPill";
 import { RiskEventFeed, TradingPermissionCard } from "@/components/safety";
 import { SharedAccountCard } from "@/components/sharedAccount/SharedAccountCard";
 import { ARXIntelligencePanel } from "@/components/paper-intelligence/ARXIntelligencePanel";
@@ -21,6 +19,7 @@ import { FirstRunReadinessPanel } from "@/components/readiness/FirstRunReadiness
 import { GettingStartedChecklist } from "@/components/dashboard/GettingStartedChecklist";
 import { TradingSetupReadinessCard } from "@/components/readiness";
 import "@/components/dashboard/command-workspace.css";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 function SystemSection({
   title, description, icon: Icon, testid, children,
@@ -42,30 +41,46 @@ function SystemSection({
 
 export default function Dashboard() {
   const { effectiveIsAdmin: isAdmin } = useViewMode();
-  return <div className="mx-auto w-full max-w-[1760px] space-y-3 animate-in fade-in duration-300">
-    <CockpitHeader showSymbolPicker={false}/>
-    <EnvironmentPill/>
-    <CriticalAlertBanner/>
-    <RiskLockBanner/>
-    <ApprovalPathCard/>
-    <CommandWorkspaceProviders/>
-    {isAdmin && <div className="space-y-3 border-t border-border/60 pt-5">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">System Health · Admin</div>
-      <SystemSection title="Setup & readiness" description="Onboarding checklist, first-run readiness, MT5 setup status." icon={Settings2} testid="sys-setup">
-        <FirstRunReadinessPanel/><GettingStartedChecklist/><TradingSetupReadinessCard/>
-      </SystemSection>
-      <SystemSection title="Account & intelligence detail" description="Shared master account, ARX intelligence, permission detail." icon={Shield} testid="sys-account">
-        <TradingPermissionCard/><SharedAccountCard/><ARXIntelligencePanel/>
-      </SystemSection>
-      <SystemSection title="Portfolio & risk activity" description="Correlation, exposure, and recent risk events." icon={Shield} testid="sys-risk">
-        <CorrelationWarningBanner/><PortfolioRiskCard/><ExposureBreakdownPanel/><RiskEventFeed limit={20}/>
-      </SystemSection>
-      <SystemSection title="Operator workspace" description="Demo execution, tester cards, weekly focus review." icon={Wrench} testid="sys-operator">
-        <DemoExecutionPanel/><AdminTesterCards/><WeeklyFocusDashboardCard/>
-      </SystemSection>
-      <SystemSection title="Demo simulator" description="Run demo trades with the demo execution panel." icon={Bot} testid="sys-demo">
-        <DemoExecutionPanel/>
-      </SystemSection>
-    </div>}
+  const [systemDetailsOpen, setSystemDetailsOpen] = useState(false);
+  const adminDetails = isAdmin ? (
+    <Sheet open={systemDetailsOpen} onOpenChange={setSystemDetailsOpen}>
+      <button
+        type="button"
+        className="arx-admin-details-button"
+        onClick={() => setSystemDetailsOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={systemDetailsOpen}
+        data-testid="button-admin-system-details"
+      >
+        <SlidersHorizontal size={14} /> System details
+      </button>
+      <SheetContent side="right" className="w-full overflow-y-auto border-slate-700 bg-[#07111a] text-slate-100 sm:max-w-2xl">
+        <SheetHeader><SheetTitle className="text-slate-100">System health · Admin</SheetTitle></SheetHeader>
+        <div className="mt-5 space-y-3">
+          <SystemSection title="Setup & readiness" description="Onboarding checklist, first-run readiness, MT5 setup status." icon={Settings2} testid="sys-setup">
+            <FirstRunReadinessPanel/><GettingStartedChecklist/><TradingSetupReadinessCard/>
+          </SystemSection>
+          <SystemSection title="Account & intelligence detail" description="Shared master account, ARX intelligence, permission detail." icon={Shield} testid="sys-account">
+            <TradingPermissionCard/><SharedAccountCard/><ARXIntelligencePanel/>
+          </SystemSection>
+          <SystemSection title="Portfolio & risk activity" description="Correlation, exposure, and recent risk events." icon={Shield} testid="sys-risk">
+            <CorrelationWarningBanner/><PortfolioRiskCard/><ExposureBreakdownPanel/><RiskEventFeed limit={20}/>
+          </SystemSection>
+          <SystemSection title="Operator workspace" description="Demo execution, tester cards, weekly focus review." icon={Wrench} testid="sys-operator">
+            <AdminTesterCards/><WeeklyFocusDashboardCard/>
+          </SystemSection>
+          <SystemSection title="Demo simulator" description="Run demo trades with the demo execution panel." icon={Bot} testid="sys-demo">
+            <DemoExecutionPanel/>
+          </SystemSection>
+        </div>
+      </SheetContent>
+    </Sheet>
+  ) : null;
+
+  return <div className="arx-dashboard-root mx-auto h-full min-h-0 w-full max-w-[1760px] animate-in fade-in duration-300">
+    <CommandWorkspaceProviders
+      headerActions={adminDetails}
+      warningContent={<><CriticalAlertBanner/><RiskLockBanner/><ApprovalPathCard compact/></>}
+    />
   </div>;
 }

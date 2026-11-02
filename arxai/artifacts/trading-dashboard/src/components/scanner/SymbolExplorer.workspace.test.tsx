@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { SymbolExplorer } from "./SymbolExplorer";
 import { useChartSymbol, getChartSymbol } from "@/lib/use-chart-symbol";
@@ -26,5 +26,15 @@ describe("workspace discovery selection", () => {
     for (const consumer of ["scanner-symbol", "chart-symbol", "ruby-symbol", "intelligence-symbol", "order-symbol"]) {
       expect(screen.getByTestId(consumer).textContent).toBe("EURUSD");
     }
+  });
+
+  it("shows real selectable market rows immediately in the compact scanner", async () => {
+    const onSelect = vi.fn();
+    render(<SymbolExplorer compactWorkspace activeSymbol="EURUSD" onSelect={onSelect}/>);
+    const forexRows = await screen.findByTestId("category-panel-forex");
+    expect(forexRows.querySelector('[data-testid="chip-symbol-EURUSD"]')).toBeTruthy();
+    expect(forexRows.querySelector('[data-testid="chip-symbol-GBPUSD"]')).toBeTruthy();
+    fireEvent.click(forexRows.querySelector('[data-testid="chip-symbol-GBPUSD"]')!);
+    expect(onSelect).toHaveBeenCalledWith("GBPUSD", expect.objectContaining({ canonicalSymbol: "GBPUSD" }));
   });
 });
