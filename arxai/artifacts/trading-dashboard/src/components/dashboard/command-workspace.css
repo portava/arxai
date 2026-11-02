@@ -393,6 +393,49 @@
   .arx-chart-panel > .arx-panel-body { max-height: none; overflow: visible; }
   .arx-intelligence-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+@media (min-width: 1024px) and (max-width: 1200px) {
+  .arx-workspace-main { gap: 5px; }
+  .arx-workspace-top { row-gap: 3px; padding-bottom: 2px; }
+  .arx-account-strip { min-height: 36px; }
+  .arx-strip-metric { min-height: 34px; padding: 2px 6px; }
+  .arx-workspace-grid { gap: 6px; }
+  .arx-col { gap: 5px; }
+  .arx-col-left #workspace-discovery .arx-panel-body { max-height: 220px; overflow: auto; }
+  .arx-col-left #workspace-heat .arx-panel-body { max-height: 165px; overflow: auto; }
+  .arx-col-left #workspace-clock .arx-panel-body { max-height: 112px; overflow: visible; }
+  .arx-col-center { grid-template-rows: minmax(0,1fr) auto; gap: 5px; }
+  .arx-col-center > #workspace-intelligence .arx-panel-body { max-height: 130px; overflow: auto; }
+  .arx-col-right #workspace-ruby .arx-panel-body { max-height: 190px; overflow: auto; }
+  .arx-col-right #workspace-risk .arx-panel-body { max-height: 145px; overflow: auto; }
+  .arx-col-right #workspace-order .arx-panel-body { max-height: 115px; overflow: auto; }
+  .arx-chart-panel { min-height: 0; }
+  .arx-chart-panel > .arx-panel-body { padding: 2px; }
+  .arx-chart-panel [data-testid="scanner-chart-panel"] { height: auto; }
+  .arx-chart-panel .arx-scanner-chart-content { padding: 4px 6px !important; }
+  .arx-chart-panel .arx-native-chart-header-compact { padding: 2px 5px !important; }
+  .arx-chart-panel .arx-native-chart-title-compact { gap: 2px !important; }
+  .arx-chart-panel .arx-native-chart-title-compact > div:first-child { gap: 3px; }
+  .arx-chart-panel .arx-native-chart-title-compact [data-testid="arx-native-tf-controls"] {
+    min-height: 24px;
+    gap: 3px;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+  .arx-chart-panel .arx-native-chart-title-compact [data-testid="arx-native-tf-controls"] button {
+    height: 24px !important;
+    min-height: 24px !important;
+    padding-inline: 6px !important;
+    font-size: 10px !important;
+  }
+  .arx-chart-panel .arx-native-chart-title-compact [data-testid="arx-native-tf-controls"] select { height: 24px; font-size: 10px; }
+  .arx-chart-panel .arx-native-chart-title-compact [data-testid="arx-native-reload"],
+  .arx-chart-panel .arx-native-chart-title-compact [data-testid="scanner-chart-details-open"] { display: none; }
+  .arx-positions .arx-panel-body { max-height: 120px; overflow: auto; }
+  .arx-clock-compact { display: grid; grid-template-columns: minmax(0,1fr); gap: 3px; width: 100%; }
+  .arx-clock-compact select { width: 100%; max-width: none; height: 23px; }
+  .arx-clock-compact-times { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 3px 6px; width: 100%; }
+  .arx-clock-compact-times b { font-size: 10px; font-variant-numeric: tabular-nums; }
+}
 @media (max-width: 1023px) and (min-width: 768px) {
   .arx-workspace { height: auto; min-height: calc(100dvh - 24px); }
   .arx-workspace-main { height: auto; min-height: calc(100dvh - 24px); grid-template-rows: auto auto auto minmax(300px,1fr) auto; }
@@ -409,8 +452,7 @@
 }
 @media (max-height: 740px) and (max-width: 1200px) and (min-width: 1024px) {
   #main-content.arx-root-main { overflow-y: auto; }
-  .arx-workspace { height: auto; min-height: 700px; }
-  .arx-workspace-main { height: auto; min-height: 700px; }
+  .arx-workspace, .arx-workspace-main { height: auto; min-height: calc(100dvh - 24px); }
 }
 @media (max-height: 740px) and (min-width: 1201px) {
   #main-content.arx-root-main { overflow-y: auto; }

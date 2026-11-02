@@ -1997,7 +1997,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
           </button>
         </div>
       </div>}
-      <CardContent className="px-2 sm:px-6">
+      <CardContent className={compactWorkspace ? "arx-scanner-chart-content px-2 sm:px-6" : "px-2 sm:px-6"}>
         <SmartChartLayout symbol={symbol} primaryTimeframe={apiTf as ArxTimeframe} storageKey={SCANNER_CHART_LAYOUT_KEY} controlsBelowSingleChart compactWorkspace={compactWorkspace}>
         <ARXNativeChart symbol={symbol} timeframe={apiTf as ArxTimeframe}
           onTimeframeChange={tf => setTimeframe(normalizeChartTimeframe(tf))}

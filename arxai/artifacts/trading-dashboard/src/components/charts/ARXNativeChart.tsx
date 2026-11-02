@@ -325,10 +325,11 @@ export interface ARXNativeChartProps {
 }
 
 /** The first canvas and later viewport changes use the same sizing policy. */
-function viewportChartHeight(height:number,mobileHeight:number|undefined,expanded:boolean):number {
+function viewportChartHeight(height:number,mobileHeight:number|undefined,expanded:boolean,compactWorkspace:boolean):number {
   if(typeof window === "undefined")return height;
   if(expanded)return Math.max(240,window.innerHeight-240);
   if(window.innerWidth<768)return mobileHeight??Math.max(320,Math.min(height,380));
+  if(compactWorkspace && window.innerWidth >= 1024 && window.innerWidth <= 1200)return Math.min(height,240);
   return height;
 }
 
@@ -648,7 +649,7 @@ export function ARXNativeChart({
   // height leaves too little room when panels stack below the canvas. We
   // honour `mobileHeight` when provided; otherwise use 320–380px on mobile so
   // the chart is always readable without crushing the rest of the page.
-  const [effectiveHeight, setEffectiveHeight] = useState(()=>viewportChartHeight(height,mobileHeight,expanded));
+  const [effectiveHeight, setEffectiveHeight] = useState(()=>viewportChartHeight(height,mobileHeight,expanded,compactWorkspace));
   const [mobileLayout, setMobileLayout] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
   const [advancedToolsMounted, setAdvancedToolsMounted] = useState(false);
@@ -657,12 +658,12 @@ export function ARXNativeChart({
     const update = () => {
       const isMobile = window.innerWidth < 768;
       setMobileLayout(isMobile);
-      setEffectiveHeight(viewportChartHeight(height,mobileHeight,expanded));
+      setEffectiveHeight(viewportChartHeight(height,mobileHeight,expanded,compactWorkspace));
     };
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, [height, mobileHeight, expanded]);
+  }, [height, mobileHeight, expanded, compactWorkspace]);
 
   // Retain the expensive canvas. Context-owned observations are cleared in the
   // layout phase below, before a new market label can paint over old geometry.
@@ -1442,8 +1443,8 @@ export function ARXNativeChart({
 
   return (
     <Card ref={cardRef} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? `${resolvedSymbol} fullscreen chart` : undefined} data-testid="arx-native-chart" className={expanded ? "fixed inset-0 z-50 overflow-auto rounded-none border-zinc-800 bg-zinc-950" : "overflow-hidden border-zinc-800 bg-zinc-950/40"}>
-      <CardHeader className={compactDesktopWorkspace ? "px-2 py-1 md:px-3" : "py-3 px-3 md:px-4"}>
-        <CardTitle className={compactDesktopWorkspace ? "flex flex-col items-stretch gap-1 text-sm" : "flex flex-wrap items-center justify-between gap-2 text-sm"}>
+      <CardHeader className={compactDesktopWorkspace ? "arx-native-chart-header-compact px-2 py-1 md:px-3" : "py-3 px-3 md:px-4"}>
+        <CardTitle className={compactDesktopWorkspace ? "arx-native-chart-title-compact flex flex-col items-stretch gap-1 text-sm" : "flex flex-wrap items-center justify-between gap-2 text-sm"}>
           <div className={`flex flex-wrap items-center ${compactDesktopWorkspace ? "min-w-0 gap-1" : "gap-2"}`}>
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
