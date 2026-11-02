@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Native product default — 2 November 2026
+
+Application `19ac1b21` selects ARX native in the actual factory, with no QA override. Scoped functional checks pass across Scanner, comparison layouts, replay, secondary pages and the actual position picker, including a repaired mobile resize loop. Full frontend retains one role-gate failure (isolated rerun passes), and two baseline guards fail. Scanner first-navigation completion passes ten normal-CPU attempts but misses 100 ms on all ten 4x-CPU attempts (max 358.8 ms). Nothing was deployed. See [exact default/consumer evidence and failures](NATIVE_DEFAULT_ACCEPTANCE_2026_11_02.md). Earlier dated checkpoints below describe their then-current defaults; they are not current-default claims.
+
 ## Native time-axis controls — 2 November 2026
 
 Application bytes at `af2befee`, final QA source `5bff9d8f`: native horizontal drag/reset preserves manual price bounds and timestamp anchors subject to history clamping. 18 browser assertions and 240 retained timing samples pass; full frontend at `76cd5413` passes 4,589 with 12 skipped. P95 18.4–24.1 ms on the local synthetic fixture is not first-navigation or competitor evidence. Default-engine/all-consumer acceptance remains open. See [exact sources and failures](NATIVE_TIME_AXIS_CONTROLS_2026_11_02.md).
@@ -19,7 +23,7 @@ tests pass. Quiet trusted-pointer completion p95 is 17.7–20.3 ms across normal
 and 4× software CPU runs, maximum 22.5 ms. No competitor speed or full-load
 equivalence follows. The global/Cockpit mode labels now separate selected mode
 from reported restrictions instead of asserting live-feed/all-system health.
-Final second-agent review was interrupted by a usage limit and remains pending.
+Final second-agent review was initially interrupted; the later account-report-priority checkpoint records completed independent review without a scoped blocker. This closes that review gap only.
 See [exact report and limitations](NATIVE_PRICE_AXIS_AND_MODE_TRUTH_2026_11_02.md).
 
 ## Native renderer checkpoint — 1 November 2026
@@ -47,8 +51,7 @@ embeddable library; its public demo is useful for observing interactions but doe
 not contain the entire Supercharts service. Trading Platform adds broker-facing
 integration APIs. The former free hosted widget could not be fed ARX candles or manipulated as
 an owned chart. Its four page integrations and loader have now been removed
-from this development branch; those pages use ARX Smart Chart. ARX uses Lightweight Charts v5 behind
-its own adapter. No approved proprietary Advanced Charts bundle or license grant
+from this development branch; those pages use ARX Smart Chart. The current development default is the ARX native renderer; Lightweight Charts v5 remains an explicit legacy adapter for comparison. No approved proprietary Advanced Charts bundle or license grant
 was found in this repository. [TradingView products/API](https://www.tradingview.com/charting-library-docs/latest/api/),
 [datafeed integration](https://tradingview.com/charting-library-docs/latest/connecting_data/).
 
