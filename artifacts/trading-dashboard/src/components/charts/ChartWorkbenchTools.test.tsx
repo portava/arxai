@@ -638,7 +638,7 @@ it('revokes anchor wording before parent engine layout commit and recovers only 
  view.rerender(<Parent revision={withdrawn} qualified={false}/>);
  expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
  expect(screen.getByLabelText('Active studies').textContent).toContain('source clock (UTC unverified)');
- expect(screen.getByLabelText('Study settings').querySelector('legend')?.textContent).toContain('source clock (UTC unverified)');
+ expect(Array.from(screen.getByLabelText('Study settings').querySelectorAll('legend')).find(node=>node.textContent?.startsWith('1. VWAP'))?.textContent).toContain('source clock (UTC unverified)');
  view.rerender(<Parent revision={recovered} qualified/>);
  expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
  expect(screen.getByLabelText('Active studies').textContent).toContain('22:13:20 UTC');
