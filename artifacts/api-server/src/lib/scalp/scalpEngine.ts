@@ -32,7 +32,7 @@ import type {
 } from "./scalpTypes.js";
 import { blindFlameRead, finalizeScalpVerdict, readFlame } from "./flameRead.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
-import { clampLotToStep, lotForRisk } from "@workspace/domain/risk";
+import { lotForRisk } from "@workspace/domain/risk";
 
 const DEFAULT_RISK_FRACTION = 0.01; // Focus card default when user gives no risk amount: 1% of equity/balance.
 const DEFAULT_LEVERAGE = 100; // conservative margin estimate fallback when broker leverage unknown.
@@ -209,6 +209,12 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
           + (sufficiency?.humanReason ?? "The market data is not confirmed sufficient yet."),
       },
     );
+  }
+
+  // An explicit request is not absence. Never silently replace zero/invalid risk
+  // with the account's default fraction or with target-only planning.
+  if (input.riskAmount != null && (!num(input.riskAmount) || input.riskAmount <= 0)) {
+    return rejectResult(input, "NO_CLEAN_SCALP", "The requested risk budget must be finite and positive; no default budget was substituted.", { canWatch: true });
   }
 
   // ── Gate: market session / tradability (broker truth).
@@ -558,9 +564,21 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     estimatedProfitMainTP = null;
   }
 
-  // ── Below-min-lot for the requested target/risk: can't be done cleanly.
-  if (canBuildTrade && sizing.belowMin) {
-    noTradeReason = `Your target/risk amount is too small for this symbol's minimum lot. ${DEFAULT_ASSISTANT_NAME} can find another market or you can lower the target.`;
+  // No executable suggestion may survive a refused/absent size.
+  if (sizing.belowMin || sizing.lot == null) {
+    if (canBuildTrade) {
+      status = "NO_CLEAN_SCALP";
+      timingStatus = "WAIT_FOR_ENTRY";
+      userAction = "WAIT";
+    }
+    canBuildTrade = false;
+    canWatch = true;
+    noTradeReason = sizing.belowMin
+      ? `The requested target/risk cannot fit this symbol's minimum lot. ${DEFAULT_ASSISTANT_NAME} can look for another market; the risk budget has not been increased.`
+      : "A valid position size is unavailable for this target, risk budget and broker volume rules.";
+    suggestedLot = null;
+    estimatedRiskAmount = null;
+    estimatedProfitMainTP = null;
   }
 
   // ── Flame downgraded this to "not a clean scalp": no honest trade numbers.
@@ -698,25 +716,25 @@ interface SizeResult {
 function sizeLot(a: SizeArgs): SizeResult {
   const perLotRisk = a.stopDist * a.mpp; // $ risk per 1 lot
   const perLotProfit = a.mainTpDist * a.mpp; // $ profit per 1 lot at main TP
-  if (!(perLotRisk > 0)) {
-    return { lot: null, estimatedRisk: null, estimatedProfit: null, estimatedMargin: null, belowMin: false, cappedByMax: false };
-  }
+  const unavailable = (belowMin = false): SizeResult => ({ lot: null, estimatedRisk: null, estimatedProfit: null, estimatedMargin: null, belowMin, cappedByMax: false });
+  if (!(Number.isFinite(perLotRisk) && perLotRisk > 0)) return unavailable();
 
-  // Candidate lot from the risk budget (cap) and, if given, the target (driver).
-  // The risk candidate is the one sizing formula (@workspace/domain/risk).
-  const candidates: number[] = [];
-  if (num(a.riskBudget) && a.riskBudget > 0) {
-    candidates.push(lotForRisk({ riskAmount: a.riskBudget, stopDistance: a.stopDist, valuePerUnitPerLot: a.mpp }).rawLot);
+  // Convert an optional target into its corresponding modeled risk ceiling.
+  // The canonical sizer validates the broker rules and returns the ONLY lot used;
+  // rawLot is diagnostic, never a route around a refused size.
+  const budgets: number[] = [];
+  if (num(a.riskBudget) && a.riskBudget > 0) budgets.push(a.riskBudget);
+  if (num(a.targetProfit) && a.targetProfit > 0) {
+    if (!(Number.isFinite(perLotProfit) && perLotProfit > 0)) return unavailable();
+    const targetRisk = (a.targetProfit / perLotProfit) * perLotRisk;
+    if (!(Number.isFinite(targetRisk) && targetRisk > 0)) return unavailable();
+    budgets.push(targetRisk);
   }
-  if (num(a.targetProfit) && a.targetProfit > 0 && perLotProfit > 0) candidates.push(a.targetProfit / perLotProfit);
-  // No basis to size — cannot honestly produce a lot.
-  if (candidates.length === 0) {
-    return { lot: null, estimatedRisk: null, estimatedProfit: null, estimatedMargin: null, belowMin: false, cappedByMax: false };
-  }
-  const rawLot = Math.min(...candidates);
-
-  const { lot, clampedToMin, clampedToMax } = clampLotToStep(rawLot, a.lotStep, a.minLot, a.maxLot);
-  const belowMin = clampedToMin && rawLot < a.minLot;
+  if (budgets.length === 0) return unavailable();
+  const sized = lotForRisk({ riskAmount: Math.min(...budgets), stopDistance: a.stopDist, valuePerUnitPerLot: a.mpp,
+    minLot: a.minLot, maxLot: a.maxLot, lotStep: a.lotStep });
+  if (sized.invalid) return unavailable(sized.rawLot > 0 && sized.rawLot < a.minLot);
+  const lot = sized.lot;
 
   const estimatedRisk = roundTo(lot * perLotRisk, 2);
   const estimatedProfit = roundTo(lot * perLotProfit, 2);
@@ -728,7 +746,7 @@ function sizeLot(a: SizeArgs): SizeResult {
     estimatedMargin = roundTo((lot * a.spec.contractSize * a.price) / leverage, 2);
   }
 
-  return { lot, estimatedRisk, estimatedProfit, estimatedMargin, belowMin, cappedByMax: clampedToMax };
+  return { lot, estimatedRisk, estimatedProfit, estimatedMargin, belowMin: false, cappedByMax: sized.clampedToMax };
 }
 
 interface TargetRealityArgs {

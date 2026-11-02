@@ -214,9 +214,12 @@ test("lot respects min/max/step and is risk-bounded", () => {
   assert.ok(r.estimatedRiskAmount! <= 7 + 1e-6, "risk within budget");
 });
 
-test("tiny risk clamps up to min lot and flags it", () => {
+test("tiny risk withholds the minimum lot and the build action", () => {
   const r = evaluateScalp(baseInput({ riskAmount: 0.0001, targetProfitAmount: 0.0002 }));
-  assert.equal(r.suggestedLot, r.minLot);
+  assert.equal(r.suggestedLot, null);
+  assert.equal(r.canBuildTrade, false);
+  assert.equal(r.status, "NO_CLEAN_SCALP");
+  assert.equal(r.estimatedRiskAmount, null);
   assert.ok(r.noTradeReason && /minimum lot/i.test(r.noTradeReason));
 });
 
@@ -441,4 +444,44 @@ test("flame no fabrication: candles present but non-live data source stays blind
   assert.equal(r.status, "AWAITING_DATA");
   assert.equal(r.flame.blind, true, "no live data => no flame read, even with candles");
   assert.equal(r.flame.flameStage, "NONE");
+});
+
+
+test("scalp cannot bypass a refused size through the raw-lot diagnostic", () => {
+  const r = evaluateScalp(baseInput({ spec: v75Spec({ lotStep: 1e-101 }) }));
+  assert.equal(r.canBuildTrade, false);
+  assert.equal(r.suggestedLot, null);
+  assert.notEqual(r.status, "READY");
+});
+
+test("a sub-target minimum cannot retain a buildable scalp", () => {
+  const r = evaluateScalp(baseInput({ riskAmount: 10, targetProfitAmount: 0.000001 }));
+  assert.equal(r.canBuildTrade, false);
+  assert.equal(r.suggestedLot, null);
+  assert.equal(r.estimatedRiskAmount, null);
+});
+
+test("target-only planning retains a finite stepped lot without an account budget", () => {
+  const r = evaluateScalp(baseInput({ riskAmount: undefined, targetProfitAmount: 5,
+    account: { equity: null, balance: null, freeMargin: null, leverage: null } }));
+  assert.ok(r.suggestedLot != null && Number.isFinite(r.suggestedLot) && r.suggestedLot > 0);
+  assert.ok(Math.abs(r.suggestedLot / r.lotStep! - Math.round(r.suggestedLot / r.lotStep!)) < 1e-8);
+  assert.ok(r.estimatedProfitMainTP! <= 5);
+});
+
+test("no-budget/no-target has no buildable scalp", () => {
+  const r = evaluateScalp(baseInput({ riskAmount: undefined, targetProfitAmount: undefined,
+    account: { equity: null, balance: null, freeMargin: null, leverage: null } }));
+  assert.equal(r.suggestedLot, null);
+  assert.equal(r.canBuildTrade, false);
+  assert.notEqual(r.status, "READY");
+});
+
+test("an explicit invalid or zero risk budget is never replaced by the account default", () => {
+  for (const riskAmount of [0, -1, NaN, Infinity]) {
+    const r = evaluateScalp(baseInput({ riskAmount, targetProfitAmount: 5 }));
+    assert.equal(r.suggestedLot, null, `riskAmount=${riskAmount}`);
+    assert.equal(r.canBuildTrade, false);
+    assert.match(r.noTradeReason ?? "", /risk budget/);
+  }
 });
