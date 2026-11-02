@@ -9,9 +9,9 @@ async page => {
   out.build=await page.evaluate(async()=>await(await fetch('/arx-scanner-qa-build-info.json')).json());
   if(!out.build.nativeEngine||out.build.qaOnlyDefaultEngineOverride!==true||!out.build.productionRuntimeChecked||!out.build.sourceUnchanged||out.build.source.status||await page.evaluate(()=>window.__arxScannerQaBuildId)!==out.build.buildId)throw Error('Clean exact executed native source required');
   const canonical=await page.evaluate(()=>JSON.stringify(window.__arxChartQa.data().canonical));
-  await page.locator('canvas[data-arx-native-viewport]').first().evaluate(el=>el.scrollIntoView({block:'end'}));await ready();
+  await page.locator('canvas[data-arx-native-viewport]').first().evaluate(el=>el.scrollIntoView({block:'center'}));await ready();
   const point=await page.evaluate(()=>{const b=document.querySelector('canvas[data-arx-native-viewport]').getBoundingClientRect(),p=window.__arxChartQa.layout().price;return{x:b.x+p.left+p.width*.55,y:b.bottom-16};});
-  if(point.y<180||point.y>1200)throw Error('Axis target outside visible viewport');
+  if(point.y<180||point.y>1200||!await page.evaluate(p=>document.elementFromPoint(p.x,p.y)===document.querySelector('canvas[data-arx-native-viewport]'),point))throw Error('Axis target outside visible viewport or obscured');
   for(const rate of [1,4]){
    await client.send('Emulation.setCPUThrottlingRate',{rate});
    const group={rate,warmup:[],samples:[],failed:[]};out.groups.push(group);

@@ -6,8 +6,8 @@ async page => {
  const snap=()=>page.evaluate(()=>window.__arxChartQa.snapshot());
  const frames=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
  const target=async()=>{
-  await page.locator('canvas[data-arx-native-viewport]').first().evaluate(el=>el.scrollIntoView({block:'end'}));await frames();
-  return page.evaluate(()=>{const box=document.querySelector('canvas[data-arx-native-viewport]').getBoundingClientRect(),p=window.__arxChartQa.layout().price;return{x:box.x+p.left+p.width*.55,y:box.bottom-16,dx:Math.min(90,p.width*.22)};});
+  await page.locator('canvas[data-arx-native-viewport]').first().evaluate(el=>el.scrollIntoView({block:'center'}));await frames();
+  return page.evaluate(()=>{const box=document.querySelector('canvas[data-arx-native-viewport]').getBoundingClientRect(),p=window.__arxChartQa.layout().price;const target={x:box.x+p.left+p.width*.55,y:box.bottom-16,dx:Math.min(90,p.width*.22)};if(document.elementFromPoint(target.x,target.y)!==document.querySelector('canvas[data-arx-native-viewport]'))throw Error('Time axis is obscured');return target;});
  };
  const drag=async(p,dx)=>{await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+dx,p.y,{steps:6});await page.mouse.up();await ready();};
  try{
@@ -41,9 +41,9 @@ async page => {
   const cdp=await page.context().newCDPSession(page);
   try{
    await page.setViewportSize({width:390,height:844});await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:2,mobile:true});await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:2});await ready();
-   const t=await target(),before=await snap();check(t.y>140&&t.y<844,'Touch time-axis target is visible');
+   const t=await target(),before=await snap();out.mobile={target:t,before};check(t.y>140&&t.y<844,'Touch time-axis target is visible');
    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:t.x,y:t.y,id:1}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:t.x+t.dx,y:t.y,id:1}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await ready();
-   const after=await snap();check(after.range.to-after.range.from<before.range.to-before.range.from&&after.state.pixelRatio===2,'Trusted mobile touch changes spacing at DPR2');
+   const after=await snap();out.mobile.after=after;check(after.range.to-after.range.from<before.range.to-before.range.from&&after.state.pixelRatio===2,'Trusted mobile touch changes spacing at DPR2');
    check(JSON.stringify(after.state.manualPriceRange)===manual,'Touch time-axis gesture retains manual vertical bounds');
    await page.screenshot({path:'native-time-axis-mobile.png',fullPage:false});
   }finally{await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:false});await cdp.send('Emulation.clearDeviceMetricsOverride');await cdp.detach();}
