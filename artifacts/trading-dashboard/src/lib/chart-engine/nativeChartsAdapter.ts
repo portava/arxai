@@ -7,7 +7,7 @@ import {candleAtLinkedTime,validTimeRange,type ChartTimeRange,type ChartViewEven
 import {panChartWindow,zoomChartWindow,type LogicalWindow} from './chartNavigation';
 import {formatSourceChartTime} from './chartClockEvidence';
 import {vwapAnchorEvidence} from './chartVwapAnchor';
-import type {ChartStudy,VwapAnchor} from './chartStudies';
+import {studyIntervalSuffix,type ChartStudy,type VwapAnchor} from './chartStudies';
 import type {ChartAnchor,ChartDrawing,ChartStyle,ChartScaleMode} from './chartWorkspace';
 import type {DrawingInteraction} from './chartDrawingEditor';
 import type {SmartChartAnnotation} from './smartChartAnnotation';
@@ -182,7 +182,7 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   const studies=this.viewport?.getStudies()??[];
   return (this.viewport?.getStudyValues(time)??[]).map((row,index)=>{
    const study=studies[index],anchor=study?.kind==='vwap'?study.vwapAnchor:undefined;
-   return {...row,...(anchor?{displayLabel:`VWAP · ${study!.source??'hlc3'} · observed-bar anchor ${formatSourceChartTime(anchor.time,this.getVwapAnchorEvidence(anchor).utcQualified,'UTC',{seconds:true})}`} : {}),values:row.values.map(value=>({...value}))};
+   return {...row,...(anchor?{displayLabel:`VWAP · ${study!.source??'hlc3'} · observed-bar anchor ${formatSourceChartTime(anchor.time,this.getVwapAnchorEvidence(anchor).utcQualified,'UTC',{seconds:true})}${studyIntervalSuffix(study!,this.timeframe)}`} : {}),values:row.values.map(value=>({...value}))};
   });
  }
 

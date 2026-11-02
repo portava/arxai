@@ -1,3 +1,4 @@
+import {parseChartInterval,type ChartInterval} from "./chartIntervals";
 import { calculateVolumeProfile, type VolumeProfileRange, type VolumeProfileResult } from "./chartVolumeProfile";
 import {formatSourceChartTime} from "./chartClockEvidence";
 import { advanceStudyAverage, chartTrueRange, type SeededAverageState } from "@workspace/domain/chart-indicator-math";
@@ -40,6 +41,8 @@ export interface ChartStudy {
   referenceLevels?: StudyReferenceLevel[];
   /** Auxiliary pane display only. Never clamps calculated observations. */
   paneScale?: StudyPaneScale;
+  /** Display only; omitted means all intervals, [] means hidden on every interval. */
+  visibleIntervals?: ChartInterval[];
 }
 export interface StudyPoint { time: number; values: (number | null)[]; reason?:string }
 export interface StudyDefinition {
@@ -100,6 +103,14 @@ export function studySourceIssue(config:ChartStudy,configs:readonly ChartStudy[]
   }
   return null;
 }
+export function studyVisibleAtInterval(study:Readonly<ChartStudy>,timeframe:string):boolean {
+  if(study.visibleIntervals===undefined)return true;
+  const interval=parseChartInterval(timeframe);
+  return interval!==null&&(study.visibleIntervals as readonly string[]).includes(interval);
+}
+export function studyIntervalSuffix(study:Readonly<ChartStudy>,timeframe:string):string {
+  return studyVisibleAtInterval(study,timeframe)?'':` · hidden on ${parseChartInterval(timeframe)??'unrecognized interval'}`;
+}
 export function studyChannelColor(config: ChartStudy, channel: number): string {
   return config.lineStyles?.[channel]?.color ?? (config.kind === "dmi" ? (channel === 0 ? "#4ade80" : channel === 1 ? "#fb7185" : config.color) : channel === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color);
 }
@@ -156,7 +167,7 @@ export class StudyCalculator {
   get config(): ChartStudy { return this.currentConfig; }
   /** Preserve checkpoints only when every calculation input is unchanged. */
   updatePresentation(next: ChartStudy): boolean {
-    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, ...rest}: ChartStudy) => JSON.stringify(rest);
+    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, visibleIntervals: _intervals, ...rest}: ChartStudy) => JSON.stringify(rest);
     if (inputs(next) !== inputs(this.currentConfig)) return false;
     this.currentConfig = next;
     return true;

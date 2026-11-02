@@ -28,3 +28,21 @@ it('missing source remains explicitly unavailable in the assistant receipt',()=>
  const f=fixture([{...studyDefinition('sma').defaults,id:'child',period:3,studySource:{studyId:'missing',channel:0}}]);
  expect(executeStudyRequest(parseStudyRequest('show sma')!,f.context())).toContain('its source study or channel is missing');
 });
+it('explicit show reveals only the current interval and retains restrictions elsewhere',()=>{
+ const f=fixture([{...rsi,visibleIntervals:['H1']}]);
+ const reply=executeStudyRequest(parseStudyRequest('show RSI')!,f.context());
+ expect(f.model.getStudies()[0]!.visibleIntervals).toEqual(['H1','M1']);
+ expect(reply).not.toContain('hidden on M1');expect(f.model.paneCount).toBe(1);
+});
+it('explanation preserves hidden interval and reports actual values as hidden',()=>{
+ const f=fixture([{...rsi,visibleIntervals:['H1']}]);
+ const reply=executeStudyRequest(parseStudyRequest('explain RSI')!,f.context());
+ expect(f.model.getStudies()[0]!.visibleIntervals).toEqual(['H1']);
+ expect(reply).toContain('hidden on M1');expect(reply).not.toContain('unavailable / warming up');expect(f.model.paneCount).toBe(0);
+});
+it('requested comparison reveals both exact instances on the current interval',()=>{
+ const f=fixture([{...studyDefinition('ema').defaults,id:'a',period:20,visibleIntervals:['H1']},{...studyDefinition('ema').defaults,id:'b',period:50,visibleIntervals:[]}]);
+ const reply=executeStudyRequest(parseStudyRequest('compare 20 EMA and 50 EMA')!,f.context());
+ expect(f.model.getStudies().map(s=>s.visibleIntervals)).toEqual([['H1','M1'],['M1']]);
+ expect(reply).not.toContain('unavailable / warming up');expect(f.model.getDisplayStudies()).toHaveLength(2);
+});

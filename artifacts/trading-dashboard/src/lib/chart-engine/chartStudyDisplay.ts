@@ -1,6 +1,6 @@
 import {formatSourceChartTime} from './chartClockEvidence';
 import {selectVwapAnchor} from './chartVwapAnchor';
-import {studyLabel,type ChartStudy,type VwapAnchor} from './chartStudies';
+import {studyIntervalSuffix,studyLabel,type ChartStudy,type VwapAnchor} from './chartStudies';
 import type {ChartEngineAdapter,ChartEngineCandle} from './types';
 
 export function formatSavedVwapAnchor(anchor:VwapAnchor,adapter:Pick<ChartEngineAdapter,'getVwapAnchorEvidence'>|null|undefined):string {
@@ -9,7 +9,7 @@ export function formatSavedVwapAnchor(anchor:VwapAnchor,adapter:Pick<ChartEngine
  return formatSourceChartTime(anchor.time,qualified,'UTC',{seconds:true});
 }
 /** Display wording is deliberately separate from the canonical lookup label. */
-export function studyDisplayLabel(study:ChartStudy,adapter:Pick<ChartEngineAdapter,'getVwapAnchorEvidence'>|null|undefined,detailedProfile=false,studies?:readonly ChartStudy[]):string {
+function baseStudyDisplayLabel(study:ChartStudy,adapter:Pick<ChartEngineAdapter,'getVwapAnchorEvidence'>|null|undefined,detailedProfile=false,studies?:readonly ChartStudy[]):string {
  if(study.kind==='volume_profile'&&study.profileRange){
   if(!detailedProfile)return `Estimated volume profile · ${study.profileRows??32} rows · ${study.profileValueAreaPercent??70}% value-area target · provider trade units`;
   const range=study.profileRange;
@@ -19,6 +19,9 @@ export function studyDisplayLabel(study:ChartStudy,adapter:Pick<ChartEngineAdapt
  }
  if(study.kind==='vwap'&&study.vwapAnchor)return `VWAP · ${study.source??'hlc3'} · observed-bar anchor ${formatSavedVwapAnchor(study.vwapAnchor,adapter)}`;
  return studyLabel(study,studies);
+}
+export function studyDisplayLabel(study:ChartStudy,adapter:Pick<ChartEngineAdapter,'getVwapAnchorEvidence'>|null|undefined,detailedProfile=false,studies?:readonly ChartStudy[],timeframe?:string):string {
+ return baseStudyDisplayLabel(study,adapter,detailedProfile,studies)+(timeframe?studyIntervalSuffix(study,timeframe):'');
 }
 export function formatObservedBarChoice(bar:ChartEngineCandle,adapter:Pick<ChartEngineAdapter,'getVwapAnchorEvidence'>|null|undefined):string {
  const selection=selectVwapAnchor([bar],bar.time);

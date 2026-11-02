@@ -211,3 +211,13 @@ it('paints a large auxiliary history without spreading observations into argumen
  const f={...frame(bars(2)),range:{from:0,to:count-1},spacing:700/count,timeToX:(time:number)=>20+(time/60-1)*700/count};
  const {ctx}=context();expect(()=>paintNativeStudies(ctx,f,[{left:20,top:320,width:700,height:100}],model)).not.toThrow();
 });
+it('interval-hidden oscillator retains its default scale authority for a visible linked average',()=>{
+ const input=bars(30).map((bar,i)=>({...bar,open:100+i,high:102+i,low:99+i,close:101+i}));
+ const model=new NativeChartStudies();model.setTimeframe('H1');
+ model.setStudies([{kind:'rsi',id:'r',period:2,color:'#ff0000',visibleIntervals:['M15']},{kind:'sma',id:'s',period:2,color:'#00ff00',studySource:{studyId:'r',channel:0}}],input);
+ const {ctx,paths}=context();paintNativeStudies(ctx,frame(input),[{left:20,top:320,width:700,height:100}],model);
+ const labels=paths.filter(p=>p.op==='fillText').map(p=>String(p.args[0]));
+ expect(labels).toContain('0');expect(labels).toContain('100');
+ expect(paths.some(p=>p.op==='lineTo'&&p.stroke==='#ff0000')).toBe(false);
+ expect(paths.some(p=>p.op==='lineTo'&&p.stroke==='#00ff00')).toBe(true);
+});

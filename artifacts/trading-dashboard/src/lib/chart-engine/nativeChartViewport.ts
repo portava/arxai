@@ -111,7 +111,7 @@ export class NativeChartViewport {
     if (options.scale && ["linear", "log", "percent", "indexed"].includes(options.scale)) this.scale = options.scale;
     this.inverted = options.inverted === true;
     if (isChartTimeZone(options.timeZone)) this.timeZone = options.timeZone;
-    this.timeframe = options.timeframe ?? "M1";
+    this.timeframe = options.timeframe ?? "M1";this.studies.setTimeframe(this.timeframe);
     this.canvas = container.ownerDocument.createElement("canvas");
     this.canvas.dataset.arxNativeViewport = "true";
     this.canvas.tabIndex = 0;
@@ -549,8 +549,12 @@ export class NativeChartViewport {
   }
   setDisplayTimeZone(zone: ChartTimeZone, timeframe = this.timeframe): void {
     if (this.destroyed || !isChartTimeZone(zone)) return;
-    ++this.mutationRevision;
-    this.timeZone = zone; this.timeframe = timeframe; this.invalidate();
+    const revision=++this.mutationRevision;
+    if(timeframe!==this.timeframe){
+      this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
+      if(this.destroyed||revision!==this.mutationRevision)return;
+    }
+    this.timeZone = zone; this.timeframe = timeframe;this.studies.setTimeframe(timeframe);this.invalidate();
   }
   resetContext(): void {
     if (this.destroyed) return;

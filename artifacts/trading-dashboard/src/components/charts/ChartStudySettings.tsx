@@ -1,3 +1,4 @@
+import {ChartStudyIntervalSettings} from "./ChartStudyIntervalSettings";
 import {ChartStudyPaneSettings} from "./ChartStudyPaneSettings";
 import {prepareVolumeProfileStudy} from "@/lib/chart-engine/chartVolumeProfile";
 import {formatSavedVwapAnchor,formatObservedBarChoice,studyDisplayLabel} from "@/lib/chart-engine/chartStudyDisplay";
@@ -15,10 +16,10 @@ const sourceOptions = [
   ["hlcc4", "Weighted (H + L + 2C) / 4"], ["ohlc4", "Average OHLC"],
 ];
 const averageOptions = [["sma", "Simple (SMA)"], ["ema", "Exponential (EMA)"], ["smma", "Wilder (SMMA / RMA)"], ["wma", "Linear weighted (WMA)"]];
-interface Props { anchorDisplayAdapter?:Pick<ChartEngineAdapter,"getVwapAnchorEvidence">|null; adapter?:ChartEngineAdapter|null; preferences: ChartPreferences; onPreferences: Dispatch<SetStateAction<ChartPreferences>> }
+interface Props { timeframe?:string; anchorDisplayAdapter?:Pick<ChartEngineAdapter,"getVwapAnchorEvidence">|null; adapter?:ChartEngineAdapter|null; preferences: ChartPreferences; onPreferences: Dispatch<SetStateAction<ChartPreferences>> }
 
 /** Each instance has its own identity: editing EMA 20 must not edit EMA 200. */
-export function ChartStudySettings({ preferences, onPreferences, adapter, anchorDisplayAdapter }: Props) {
+export function ChartStudySettings({ preferences, onPreferences, adapter, anchorDisplayAdapter, timeframe }: Props) {
   const displayAdapter=anchorDisplayAdapter===undefined?adapter:anchorDisplayAdapter;
   const [message,setMessage]=useState("");
   const [anchorSearch,setAnchorSearch]=useState("");
@@ -80,7 +81,7 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
           else event.target.value = String(config[name]);
         }} /></label>;
         return <fieldset key={id} className="rounded border border-zinc-800 px-3 pb-3" data-testid="chart-study-instance">
-          <legend className="px-1 font-medium" style={{ color: config.color }}>{index + 1}. {studyDisplayLabel(config,displayAdapter,false,preferences.studies)}</legend>
+          <legend className="px-1 font-medium" style={{ color: config.color }}>{index + 1}. {studyDisplayLabel(config,displayAdapter,false,preferences.studies,timeframe)}</legend>
           <p className="mb-2 text-[11px] text-zinc-500">{definition.description}{config.kind === "dmi" ? " Default colors: +DI green, −DI rose; the main Color changes ADX. Individual overrides are in Line appearance. Each stage waits for its full window. Loading older candles can change seeded values." : ""}</p>
           <div className="flex flex-wrap items-center gap-3">
             {!["tick_volume","trade_volume","vwap","volume_profile"].includes(config.kind) && number("period", config.kind === "macd" ? "Fast" : config.kind === "dmi" ? "DI period" : "Period", 1, config.kind === "macd" ? (config.slow ?? 26) - 1 : 1000)}
@@ -147,6 +148,7 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
             <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={full} aria-label={`Duplicate study ${index + 1}`} onClick={() => add(config)}>Duplicate</Button>
             <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Remove study ${index + 1}`} onClick={() => onPreferences(previous => ({ ...previous, studies: previous.studies.filter(study => studyId(study) !== id) }))}>Remove</Button>
           </div>
+          <ChartStudyIntervalSettings config={config} label={label} timeframe={timeframe} onChange={change=>update(id,change)}/>
           {definition.pane && <ChartStudyPaneSettings key={`${id}-pane`} config={config} label={label} onChange={change=>update(id,change)}/>}
           <details className="mt-3">
             <summary className="cursor-pointer text-zinc-300">Line appearance</summary>

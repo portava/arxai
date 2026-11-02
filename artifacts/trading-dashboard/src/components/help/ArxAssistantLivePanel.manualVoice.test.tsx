@@ -168,7 +168,7 @@ describe("ArxAssistantLivePanel — manual press-to-record only", () => {
       vi.mocked(fetch).mockClear();
       fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"What does RSI tell me about this chart?"}});
       fireEvent.click(screen.getByTestId("arx-send"));
-      expect(handler).toHaveBeenCalledWith({kind:"rsi",action:"show",period:undefined});
+      expect(handler).toHaveBeenCalledWith({kind:"rsi",action:"show",period:undefined,preserveVisibility:true});
       expect(screen.getByText(/Actual chart observation RSI: 61/)).toBeTruthy();
       expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes("/messages"))).toBe(false);
     } finally { release(); }

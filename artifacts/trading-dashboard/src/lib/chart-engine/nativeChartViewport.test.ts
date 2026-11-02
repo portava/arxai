@@ -366,3 +366,12 @@ it('uses the canvas content origin for pointer evidence in a bordered padded hos
   Object.defineProperties(event,{pointerId:{value:1},pointerType:{value:'mouse'}});canvas.dispatchEvent(event);
   expect(onCrosshair).toHaveBeenLastCalledWith(expect.objectContaining({candle:frame.barAtX(x),price:frame.yToPrice(y)}));
 });
+it('changes interval visibility and pane layout without changing the history or calculated values',()=>{
+ create();viewport.setStudies([{kind:'rsi',id:'r',period:2,color:'#ffffff',visibleIntervals:['H1']}]);flush();
+ const range=viewport.getRange(),time=candles().at(-1)!.time,value=viewport.getStudyValues(time)[0]!.values[0]!.value;
+ expect(viewport.getPaneLayout()!.panes).toHaveLength(0);
+ viewport.setDisplayTimeZone('UTC','H1');flush();expect(viewport.getPaneLayout()!.panes).toHaveLength(1);
+ expect(viewport.getStudyValues(time)[0]!.values[0]).toEqual({name:'RSI',value});expect(viewport.getRange()).toEqual(range);
+ viewport.setDisplayTimeZone('UTC','M15');flush();expect(viewport.getPaneLayout()!.panes).toHaveLength(0);
+ expect(viewport.getStudyValues(time)[0]!.values[0]).toEqual({name:'RSI (hidden)',value});expect(viewport.getRange()).toEqual(range);
+});

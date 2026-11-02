@@ -7,7 +7,7 @@ import { formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/cha
 import { fibonacciProposalDrawing, type ChartFibonacciRead, type ChartFibonacciProposal } from "@/lib/chart-engine/chartAutoFibonacci";
 import { useEffect, useLayoutEffect, useMemo, useId, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
-import { studyId, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
+import { studyId, studyLabel, studyVisibleAtInterval, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
 import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { CHART_TIME_ZONES, captureLabel, convertWallClock, effectiveDisplayZone, parseWallClockInZone, resolveTimeZone, zoneShortLabel, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
@@ -24,7 +24,7 @@ const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-
 export function exportLabels({symbol,timeframe,capture,feedLabel,style,studies,studyDisplayLabels,fibonacciPreview,analysisFocused}: {symbol:string;timeframe:string;capture:string;feedLabel:string;style:ChartStyle;studies:readonly ChartStudy[];studyDisplayLabels?:readonly string[];fibonacciPreview?:boolean;analysisFocused?:boolean}): string[] {
   return [`ARX · ${symbol} ${timeframe}`, capture, feedLabel,
     `Style ${CHART_STYLE_NAMES[style] ?? CHART_STYLE_NAMES.candles}${style === "heikinAshi" ? " (averaged bodies, not traded prices)" : ""}`,
-    (analysisFocused ? "Simplified view: studies, drawings and automatic annotations temporarily hidden; settings retained" : (studyDisplayLabels??studies.map(study=>studyLabel(study,studies))).join(" · ")), fibonacciPreview && !analysisFocused ? "UNACCEPTED automatic Fibonacci preview · historical geometry, not a trade signal" : ""].filter(Boolean);
+    (analysisFocused ? "Simplified view: studies, drawings and automatic annotations temporarily hidden; settings retained" : (studyDisplayLabels??studies.map(study=>studyDisplayLabel(study,null,false,studies,timeframe))).join(" · ")), fibonacciPreview && !analysisFocused ? "UNACCEPTED automatic Fibonacci preview · historical geometry, not a trade signal" : ""].filter(Boolean);
 }
 const names = DRAWING_NAMES;
 interface Props {
@@ -461,7 +461,7 @@ export function ChartWorkbenchTools({analysisFocused=false,onRestoreAnalysis,ada
       if(levelPreview){const read=getSupportResistanceProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==levelPreview.comparisonKey){withdrawLevels(read?.reason??"Source or window changed before export.");return;}}
       if(fibonacciPreview){const read=getFibonacciProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==fibonacciPreview.comparisonKey){withdrawPreview(read?.reason??"Source or window changed before export.");return;}}
       // Freeze display proof with this image, before asynchronous image decoding.
-      const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,studyDisplayLabels:preferences.studies.map(study=>studyDisplayLabel(study,studyDisplayAdapter,true,preferences.studies)),fibonacciPreview:!!fibonacciPreview&&!hidden,analysisFocused:isFocused()});
+      const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,studyDisplayLabels:preferences.studies.map(study=>studyDisplayLabel(study,studyDisplayAdapter,true,preferences.studies,timeframe)),fibonacciPreview:!!fibonacciPreview&&!hidden,analysisFocused:isFocused()});
       if(visibleLevels&&!hidden&&!isFocused())labels.push("UNACCEPTED support/resistance pivot candidates; historical geometry, not a trade signal");
       const url = adapter?.exportImage?.(); if(!url) return;
       // Include instrument, timeframe, capture time (display zone with its
@@ -537,8 +537,8 @@ export function ChartWorkbenchTools({analysisFocused=false,onRestoreAnalysis,ada
         <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles || !goToDate} type="submit">{`Go to ${zoneText}`}</Button>
       </form>
     </div>
-    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label={!presentationVerified()?"Saved studies (visibility unverified)":analysisFocused?"Saved studies (temporarily hidden)":"Active studies"}>{!presentationVerified()?<span>Visibility unverified · </span>:analysisFocused&&<span>Temporarily hidden · </span>}{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyDisplayLabel(study,studyDisplayAdapter,false,preferences.studies)}</span>)}</div>}
-    {panel === "studies" && <div className="basis-full"><ChartStudySettings preferences={preferences} onPreferences={onPreferences} adapter={adapter} anchorDisplayAdapter={studyDisplayAdapter} /></div>}
+    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label={!presentationVerified()?"Saved studies (visibility unverified)":analysisFocused?"Saved studies (temporarily hidden)":preferences.studies.some(study=>!studyVisibleAtInterval(study,timeframe))?"Saved studies (interval visibility)":"Active studies"}>{!presentationVerified()?<span>Visibility unverified · </span>:analysisFocused&&<span>Temporarily hidden · </span>}{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyDisplayLabel(study,studyDisplayAdapter,false,preferences.studies,timeframe)}</span>)}</div>}
+    {panel === "studies" && <div className="basis-full"><ChartStudySettings timeframe={timeframe} preferences={preferences} onPreferences={onPreferences} adapter={adapter} anchorDisplayAdapter={studyDisplayAdapter} /></div>}
     {panel === "objects" && <div className="basis-full mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
       <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Objects outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>{if(isFocused()){restoreForAction();return;}setHidden(h=>!h);}}>{analysisFocused ? "Restore tools" : hidden ? "Show drawings" : "Hide drawings"}</Button></div>
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}
