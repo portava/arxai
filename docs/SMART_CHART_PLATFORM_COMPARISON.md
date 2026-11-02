@@ -1,9 +1,22 @@
 # Smart Chart: TradingView and MetaTrader 5 comparison
 
-Research updated 2026-10-27; implementation status updated 2026-10-31. Scope:
+Research baseline 2026-10-27 with dated follow-up references below; implementation status updated 2026-11-02. Scope:
 ARX Smart Chart development branch / draft PR #103, not a deployment. **Full platform parity and speed superiority remain unproven.**
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
+
+## Native price-axis and mode truth — 2 November 2026
+
+Application `8feff8f0` adds real-price vertical gutter dragging and double-click
+auto-fit to the native adapter; the existing Reset Scale control includes vertical
+reset. Canonical OHLC, time window and drawing/overlay transforms are preserved.
+Actual-app synthetic browser acceptance passes 23 assertions; 4,566 frontend
+tests pass. Quiet trusted-pointer completion p95 is 17.7–20.3 ms across normal
+and 4× software CPU runs, maximum 22.5 ms. No competitor speed or full-load
+equivalence follows. The global/Cockpit mode labels now separate selected mode
+from reported restrictions instead of asserting live-feed/all-system health.
+Final second-agent review was interrupted by a usage limit and remains pending.
+See [exact report and limitations](NATIVE_PRICE_AXIS_AND_MODE_TRUTH_2026_11_02.md).
 
 ## Native renderer checkpoint — 1 November 2026
 
@@ -16,7 +29,8 @@ Quiet native position-update measurements have p95 66.8–67.1 ms at normal and
 4× software CPU settings (80-bar isolated component); this is neither Scanner
 first-navigation nor broker/competitor timing. A non-quiet run and all outliers
 are retained. Default-native and all-route acceptance remain open, as does the
-global account-mode `LIVE` wording visible with offline chart data. See the
+global account-mode `LIVE` wording visible with offline chart data at that checkpoint
+(the newer correction is described above). See the
 [clock and position report](NATIVE_CLOCK_AND_POSITION_DISPLAY_2026_11_01.md) for
 exact evidence and limits. Earlier linked/replay evidence belongs to `8b65ac6b`,
 not a fresh combined replay acceptance on this newer head. Earlier checklist
@@ -80,7 +94,7 @@ this Smart Chart implementation. None means production verification is complete.
 | Footprint / TPO / volume profile | TV specialized chart types [T1] | Partial: estimated loaded-bar fixed-range Volume Profile accepted offline on f6e64fbe; configurable rows/value area, POC and exact source-bound ranges. Lower-timeframe/full-session profiles, footprint, TPO and order flow remain open. See [profile acceptance](SMART_CHART_VOLUME_PROFILE_2026_11_01.md). |
 | Pan / zoom / return to latest | MT5/TV chart navigation [M1,T2] | Implemented; history anchoring, Latest/Fit/Reset, Home/End |
 | Scale modes | TV regular, log, percentage and indexed-to-100 [T2] | Implemented: regular/log/percentage/indexed modes |
-| Scale inversion / auto / price-only | TV scale settings [T2] | Partial: automatic scale, inversion and [price-only fitting](SMART_CHART_PRICE_ONLY_SCALE_2026_10_31.md) implemented; fixed/one-to-one scaling remains open |
+| Scale inversion / auto / price-only | TV scale settings [T2] | Partial: automatic scale, inversion and [price-only fitting](SMART_CHART_PRICE_ONLY_SCALE_2026_10_31.md) implemented; native vertical-axis drag/double-click auto-fit accepted offline on `8feff8f0`; horizontal-axis drag and fixed/one-to-one scaling remain open |
 | Date jump / range presets | Observed in official demo; TV navigation [T2] | Implemented: go-to in the chart's selected display time zone (UTC by default and on daily bars; clock-change gap times are rejected, repeated times use the earlier occurrence) and 1D/5D/1M/3M/1Y loaded-history ranges; unavailable history is explicitly reported |
 | Timezone / session / countdown | TV chart settings [T2] | Partial: display timezone selectable; validated forming-candle countdown shared with Scanner; session shading remains open. Per chart view, not saved in templates; a new comparison view starts from the primary view's choice. UTC (default), browser local and 8 named IANA zones relabel the time axis, crosshair, candle legend, object list, go-to, replay seek and labels, chart reader and PNG capture time, each with its zone abbreviation. Display only: candle times, drawings, links and data requests stay UTC seconds. Kept in UTC: link events, the deep-history request cursor, the market-closed last-quote banner, machine-readable time attributes, and every surface on daily (D1) charts, whose bars keep UTC day labels. Axis limitation: lightweight-charts 5.2.0 places day, month and year ticks at UTC boundaries, so in other zones those ticks show a local date or time rather than falling on local midnight. No selectable zone represents broker server time. Evidence: artifacts/trading-dashboard/src/lib/chart-engine/chartTimeZone.ts |
 | Custom intervals | MT5 21 presets; TV interval controls [M1,T3] | Partial: 19 fixed-duration intervals exposed across the shared chart and Scanner; W1/MN1 explicitly unavailable pending calendar-boundary correctness. Server overlays/receipts retain seven supported intervals and explain when unavailable; no user-defined intervals. See timeframe note above |

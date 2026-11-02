@@ -1,0 +1,310 @@
+{
+  "applicationCommit": "8feff8f094d3b64ed63f12ecd6eea1e503e07f9c",
+  "fileCount": 60,
+  "files": [
+    {
+      "path": ".playwright-cli/console-2026-11-01T23-21-36-549Z.log",
+      "bytes": 11150,
+      "sha256": "3a6d2f58f875fcf7ef74636e129b07f38bfbce538975747a1af83ce7b5ec2b6e"
+    },
+    {
+      "path": ".playwright-cli/console-2026-11-02T05-17-56-437Z.log",
+      "bytes": 35485,
+      "sha256": "a2abd058544dc71c973ee966e8b1cec56b91fd63bdd4daa7430177a5e4af6203"
+    },
+    {
+      "path": ".playwright-cli/page-2026-11-01T23-21-36-658Z.yml",
+      "bytes": 63,
+      "sha256": "2f68da23eec8e98789585263bcabdb5192376ee012a0ec1ba7ccff40e9edf16f"
+    },
+    {
+      "path": ".playwright-cli/page-2026-11-02T05-17-56-593Z.yml",
+      "bytes": 63,
+      "sha256": "2f68da23eec8e98789585263bcabdb5192376ee012a0ec1ba7ccff40e9edf16f"
+    },
+    {
+      "path": ".playwright-cli/page-2026-11-02T05-21-50-149Z.yml",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "adapter-reset-before.log",
+      "bytes": 2037,
+      "sha256": "ee6a143ecc282cb9d6fb370bb8cc91fb0775cb20ae8e0a0b2f28a12eae083591"
+    },
+    {
+      "path": "axis-browser-1.json",
+      "bytes": 151894,
+      "sha256": "dd9848ac6a58ae10a5d74c0e8b9850cefb5c9ae458f1589b2992a540b8f33240"
+    },
+    {
+      "path": "axis-browser-1.log",
+      "bytes": 110255,
+      "sha256": "1119e86bd7870b226726358ce72ca4270dfba0ddfe032f25f6392d7f9457c9b4"
+    },
+    {
+      "path": "axis-timing-1.json",
+      "bytes": 309761,
+      "sha256": "873330366dd405f4978e2c6e9be2d8d6ae984123cb73df7146908694ab911cd6"
+    },
+    {
+      "path": "axis-timing-1.log",
+      "bytes": 202194,
+      "sha256": "9a9e7f8891337edb1aae8dd55469240713bae8f792d03cbaa6bce786c18488e8"
+    },
+    {
+      "path": "axis-timing-2.json",
+      "bytes": 470392,
+      "sha256": "9a8fb422cbbea9e8b7ccb8e59b445cb9190ded13af07856f58d33f8f0c0e68b3"
+    },
+    {
+      "path": "axis-timing-2.log",
+      "bytes": 297798,
+      "sha256": "0ae1bb8e2a7c31077c119563f3c59957936d0bde6190d3c39191f76ea622ea7a"
+    },
+    {
+      "path": "axis-timing-reverse.js",
+      "bytes": 4861,
+      "sha256": "2f7208f5a8378166e634ef004b2304593180f591a5901b3b8f5c8d94c600138f"
+    },
+    {
+      "path": "baseline-axis-browser.json",
+      "bytes": 100422,
+      "sha256": "632ccdf28e9bfbf678a902c583ed75bd3435a966569212dabee6e42a4dd93c81"
+    },
+    {
+      "path": "baseline-axis-browser.log",
+      "bytes": 78888,
+      "sha256": "cabd60411e3814b40882b0bc73bfe7a84a895d26c5de7c6c1f431f0011632fce"
+    },
+    {
+      "path": "baseline-browser-close.log",
+      "bytes": 34,
+      "sha256": "23a338c61498639748b25a1c4417f7948154592ace8a17720b7e5705dfeaf034"
+    },
+    {
+      "path": "baseline-browser-setup.log",
+      "bytes": 15168,
+      "sha256": "d938d1cd342f44538f1b0027d2e62afd38565e2470b5595b506bb6b677800ec6"
+    },
+    {
+      "path": "browser-close.log",
+      "bytes": 31,
+      "sha256": "8dcfa6fbfe434d0fc96735b302aef95c99f6f6406d1dbf8b2cad5f90bd8a94d2"
+    },
+    {
+      "path": "browser-setup-final.log",
+      "bytes": 15168,
+      "sha256": "250f92197abf5a8bd39f3248ac54bafad89ab445d2fb9a4e0dfbdfcac3d8fd50"
+    },
+    {
+      "path": "browser-setup.js",
+      "bytes": 13999,
+      "sha256": "f37bb3100824cdb9d0cea86ee62ba4553046c984a95a9b73488f981877caf0a4"
+    },
+    {
+      "path": "browser-version-close.log",
+      "bytes": 33,
+      "sha256": "45e6beaa46b82517aee6646db8326c5778cf25dcc1f34a9b7862146bc86ceeae"
+    },
+    {
+      "path": "browser-version-open.log",
+      "bytes": 228,
+      "sha256": "53c2a172170d1ce629927fa7b6a46f1a639f3f125cee10715f1231f85b6bdf6c"
+    },
+    {
+      "path": "browser-version.log",
+      "bytes": 344,
+      "sha256": "e884a5bef44c20afa51006770d3f1c48df8436ff9690e8199f9a13cb227ba162"
+    },
+    {
+      "path": "competitor-axis-references.json",
+      "bytes": 1202,
+      "sha256": "15a880ae550e6b1bea7832a61a131156221fcafc59ab5261b64ef3b712c6e30b"
+    },
+    {
+      "path": "dashboard-build-final.log",
+      "bytes": 28330,
+      "sha256": "a8d2d0faa66fcc44e30f36256991d4f2337c0916ceb6a75ce9f1f027922d5f99"
+    },
+    {
+      "path": "declarations-actual.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "declarations-audio.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "declarations.log",
+      "bytes": 51,
+      "sha256": "7cb81f9b25c3ee9a05bfea712df4e25a58673be518e3bea3f28ceb940178cba3"
+    },
+    {
+      "path": "final-validation.json",
+      "bytes": 1230,
+      "sha256": "78d875c346de5b4cf14fe966d6a9d3fbbea028bfed1699ec39e9a306664b696f"
+    },
+    {
+      "path": "frontend-final.log",
+      "bytes": 360,
+      "sha256": "799438799b37ec6efd41f912e05e5e55a36430bc765de5593021d1c81ead4248"
+    },
+    {
+      "path": "guard-comparison.json",
+      "bytes": 7220,
+      "sha256": "55ab02d9376a3ec3ca3aaf294095382a8717c99f11a314e5aff83f004dadd747"
+    },
+    {
+      "path": "guards-final.log",
+      "bytes": 24913,
+      "sha256": "35bd608d686b45e182c7bda337b6cf7550ddd62b618755cd11d880b50ba11116"
+    },
+    {
+      "path": "hardware.txt",
+      "bytes": 28,
+      "sha256": "7b59dd4d955e882394034113fb41d9a70ca036ae861b0602528b61a15825e86e"
+    },
+    {
+      "path": "independent-design-audit.txt",
+      "bytes": 1420,
+      "sha256": "9623f497c5ff63db3af989ff977db19031318bad7b006c6904ba560520f42cae"
+    },
+    {
+      "path": "measurement-summary.json",
+      "bytes": 1520,
+      "sha256": "f0466eb22d319a558970b1f17ac697e7925e97ab7264419680ae492591d0f8a5"
+    },
+    {
+      "path": "mode-after.log",
+      "bytes": 269,
+      "sha256": "0058055f758e05d68619732627457052796a73821cf69365a961c4b7690d2c3f"
+    },
+    {
+      "path": "mode-before.log",
+      "bytes": 13887,
+      "sha256": "ef5d2e5f771d322b9537ace7d356306561e4513dfb1fe9df11e00538d9c2f899"
+    },
+    {
+      "path": "mode-final.log",
+      "bytes": 271,
+      "sha256": "e8dcf51484be0c37b8ead25a600d586808187802d8470605e71e2bb3c2c15193"
+    },
+    {
+      "path": "mode-http-cache-before.log",
+      "bytes": 1753,
+      "sha256": "baa41902eb9f2cf5c3f656d11afefa570eb5ac80c1331a1c74f79313ecd4c9e0"
+    },
+    {
+      "path": "mode-integration.log",
+      "bytes": 271,
+      "sha256": "0073882dee0899b82864f31033a871ea77b23c3eebe4d6b86ed512f5baf3a3db"
+    },
+    {
+      "path": "mode-missing-before.log",
+      "bytes": 2267,
+      "sha256": "400283d060bc1593da5488ca943e01faf12ec0e981b264210139fd5aee26bac9"
+    },
+    {
+      "path": "mode-neighbours.log",
+      "bytes": 271,
+      "sha256": "51b4c2808fff3979cbd540c87d053748bd81e41b0aeb4b96416dbedc31f01e07"
+    },
+    {
+      "path": "mode-presentation-validation.json",
+      "bytes": 4168,
+      "sha256": "e571ab8271e19deabf07baed480bbc48ef363df16a39cff4fa67f852d6ef3760"
+    },
+    {
+      "path": "mode-typecheck.log",
+      "bytes": 146084,
+      "sha256": "3464c89130232bbc006f1a5673cc85b96fbedc5e58a98babbe2ffab9445ad4f2"
+    },
+    {
+      "path": "native-axis-browser.js",
+      "bytes": 7013,
+      "sha256": "b27b1a74281765374bc4a1f43a37a5104ac4d7b71bc73999e2fb8f9e9baded1d"
+    },
+    {
+      "path": "native-axis-desktop.png",
+      "bytes": 195029,
+      "sha256": "0aa6dd9e8027b7c9cf2112281c58c75b26f8a811f9ccdc9b0687189f3ffdeebb"
+    },
+    {
+      "path": "native-axis-mobile.png",
+      "bytes": 74867,
+      "sha256": "f7e6b05798f14ed836372c02335a887ecb1f3d1d7152e0fbc89813651fbbd791"
+    },
+    {
+      "path": "native-axis-timing.js",
+      "bytes": 4861,
+      "sha256": "c9ddda5c549583433058e68a3b66ba04ee17d03b022053fb3268edfc548e87ff"
+    },
+    {
+      "path": "native-build.log",
+      "bytes": 44054,
+      "sha256": "473959c978e1db07193d00eef94cdc2292b5d994f2cefabcd59800420795c2fe"
+    },
+    {
+      "path": "native-price-axis-receipt.json",
+      "bytes": 2880,
+      "sha256": "8e74fd0724a0233a410212b8f0e33d404639df62372ff92b20e8aae8b0445d75"
+    },
+    {
+      "path": "price-axis-after-first.log",
+      "bytes": 270,
+      "sha256": "200dd557b12a10ae5582e88206210ed9960924d09e6eb6902c44ad6b9a48f911"
+    },
+    {
+      "path": "price-axis-before.log",
+      "bytes": 8560,
+      "sha256": "7f2cfa4c06cbd75677c5bf8343393b9aabad01067c86384375d697ffd4c25237"
+    },
+    {
+      "path": "price-axis-focused-expanded.log",
+      "bytes": 3087,
+      "sha256": "f9ed7ebe20ad8f8074958c5c9e8e633efcad8187afe0ae3095a04ffc85c6aebf"
+    },
+    {
+      "path": "price-axis-focused-reviewed.log",
+      "bytes": 273,
+      "sha256": "6d505042d151e6907acd16fc357425da2640d938c1b5c4b7d7aba723151704d6"
+    },
+    {
+      "path": "price-axis-focused.log",
+      "bytes": 273,
+      "sha256": "24806f291e4e811ec3cee613ba2974ab6f4a0e50f87d922798b373c53b6f8f83"
+    },
+    {
+      "path": "price-axis-typecheck.log",
+      "bytes": 146084,
+      "sha256": "3464c89130232bbc006f1a5673cc85b96fbedc5e58a98babbe2ffab9445ad4f2"
+    },
+    {
+      "path": "root-source-review.json",
+      "bytes": 3485,
+      "sha256": "456dd83852ccb4f412f5a6f53e64a3a9d243b953999e2045c1e9decd3526ad58"
+    },
+    {
+      "path": "typecheck-final.log",
+      "bytes": 165,
+      "sha256": "5c744abc271931cf7f0b33263297837dc7861ebc97d6a8ab57f6e26c343754c2"
+    },
+    {
+      "path": "typecheck-precommit-2.log",
+      "bytes": 165,
+      "sha256": "5c744abc271931cf7f0b33263297837dc7861ebc97d6a8ab57f6e26c343754c2"
+    },
+    {
+      "path": "typecheck-precommit.log",
+      "bytes": 1186,
+      "sha256": "9bd1ca8f2d9e9e5e1dd97ef66fc26f22977f67ac9809b0c04ede7fae835b770b"
+    }
+  ],
+  "archiveSha256": "5fd7442a33c3c1448825c415a682ce163b85c06b1e1e439420525e7c1cd32e25",
+  "archiveBytes": 628071,
+  "uncompressedBytes": 2548035,
+  "verifiedEveryArchivedFile": true
+}
