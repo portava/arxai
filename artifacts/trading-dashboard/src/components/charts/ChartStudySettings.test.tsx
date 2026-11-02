@@ -231,3 +231,12 @@ it('status-line values are opt-in, independent of Data Window and survive duplic
  fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));expect(settings().studies[1].showInStatusLine).toBe(true);
  fireEvent.click(screen.getByLabelText('RSI 2 Show values in status line'));expect(settings().studies.map((s:any)=>s.showInStatusLine)).toEqual([true,false]);
 });
+
+it('scale labels are opt-in and duplicate independently of other readouts',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index'}));
+ expect((screen.getByLabelText('RSI 1 Show labels on scale') as HTMLInputElement).checked).toBe(false);
+ fireEvent.click(screen.getByLabelText('RSI 1 Show labels on scale'));fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));
+ expect(settings().studies.map((s:any)=>s.showOnScale)).toEqual([true,true]);
+ fireEvent.click(screen.getByLabelText('RSI 2 Show labels on scale'));expect(settings().studies.map((s:any)=>s.showOnScale)).toEqual([true,false]);
+ expect(settings().studies[0].showInStatusLine).toBeUndefined();expect(settings().studies[0].showInDataWindow).toBeUndefined();
+});

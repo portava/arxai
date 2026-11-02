@@ -69,6 +69,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
     if (s.kind === "macd" && (!period(s.slow) || s.slow <= s.period || !period(s.signal))) continue;
     if (s.kind === "dmi" && !period(s.signal)) continue;
     if (s.kind === "stochastic" && (!period(s.smoothing) || !period(s.signal))) continue;
+    if(s.showOnScale!==undefined&&typeof s.showOnScale!=="boolean")continue;
     if(s.showInStatusLine!==undefined&&typeof s.showInStatusLine!=="boolean")continue;
     if(s.showInDataWindow!==undefined&&typeof s.showInDataWindow!=="boolean")continue;
     if(s.visibleIntervals!==undefined && (!Array.isArray(s.visibleIntervals) || s.visibleIntervals.length>CHART_INTERVALS.length || Array.from(s.visibleIntervals).some(v=>!isChartInterval(v)) || new Set(s.visibleIntervals).size!==s.visibleIntervals.length))continue;
@@ -117,6 +118,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(lineStyles?.length ? {lineStyles} : {}),
       ...(s.paneCollapsed!==undefined?{paneCollapsed:s.paneCollapsed}:{}),
       ...(s.paneWeight!==undefined?{paneWeight:s.paneWeight}:{}),
+      ...(s.showOnScale!==undefined?{showOnScale:s.showOnScale}:{}),
       ...(s.showInStatusLine!==undefined?{showInStatusLine:s.showInStatusLine}:{}),
       ...(s.showInDataWindow!==undefined?{showInDataWindow:s.showInDataWindow}:{}),
       ...(s.visibleIntervals!==undefined?{visibleIntervals:[...s.visibleIntervals]}:{}),

@@ -158,6 +158,8 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
           <p className="mt-1 text-[11px] text-zinc-400">Hides only this study’s numeric readout. Plots, calculations and assistant evidence remain available.</p>
           <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${label} Show values in status line`} checked={config.showInStatusLine===true} onChange={event=>update(id,{showInStatusLine:event.target.checked})}/>Show values in status line</label>
           <p className="mt-1 text-[11px] text-zinc-400">Compact observations for the inspected or pinned candle; otherwise the latest loaded candle. This does not change plots or the Data Window.</p>
+          {config.kind!=='volume_profile' && <><label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${label} Show labels on scale`} checked={config.showOnScale===true} onChange={event=>update(id,{showOnScale:event.target.checked})}/>Show labels on scale</label>
+          <p className="mt-1 text-[11px] text-zinc-400">Latest loaded candle values, not a live-data guarantee. Labels hide when off-screen, unavailable or crowded. Price overlays retain original price units on percentage scales.</p></>}
           <ChartStudyIntervalSettings config={config} label={label} timeframe={timeframe} onChange={change=>update(id,change)}/>
           {definition.pane && <ChartStudyPaneSettings key={`${id}-pane`} config={config} label={label} onChange={change=>update(id,change)}/>}
           <details className="mt-3">

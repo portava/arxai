@@ -316,6 +316,71 @@ function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame
   const note=manual?(fixed?'Fixed scale · values outside limits are clipped':manual.min!==undefined?'Fixed minimum · lower values are clipped':'Fixed maximum · higher values are clipped'):scale?.mode==='auto'?'Auto scale':'';
   return {low,high,note,y:(value:number):number|null=>{if(!finite(value))return null;const y=plot.top+plot.height*(1-(value/magnitude-bottom)/extent);return finite(y)?y:null;}};
 }
+export interface NativeStudyScaleLabel {
+  readonly time:number; readonly value:number; readonly channel:string; readonly title:string;
+  readonly paneIndex:number; readonly color:string; readonly anchorY:number; readonly top:number;
+  readonly plot:NativePlot;
+}
+/** Latest loaded observations only. Never backfill missing values or clamp an
+ * off-scale value to an edge. Displaced labels keep a connector to the true Y.
+ * Trade labels get priority; unreadable/crowded labels are omitted. */
+export function planNativeStudyScaleLabels(frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null,reserved:readonly {top:number;bottom:number}[]=[]):NativeStudyScaleLabel[] {
+  const displayed=studies.getDisplayStudies();
+  if(!displayed.some(s=>s.config.showOnScale===true))return [];
+  const latest=frame.series.candles.at(-1);if(!latest)return [];
+  const x=frame.timeToX(latest.time);
+  if(x==null||x<frame.plot.left||x>frame.plot.left+frame.plot.width)return [];
+  const occupied=reserved.filter(r=>finite(r.top)&&finite(r.bottom)&&r.bottom>=r.top).map(r=>({...r}));
+  const result:NativeStudyScaleLabel[]=[];
+  for(const study of displayed){
+    if(study.config.showOnScale!==true||study.intervalHidden||study.config.kind==='volume_profile'||(onlyPane!==null&&study.paneIndex!==onlyPane))continue;
+    const group=displayed.filter(s=>s.paneIndex===study.paneIndex);
+    if(study.paneIndex&&group.some(s=>studyDefinition(s.config.kind).pane&&s.config.paneCollapsed))continue;
+    const plot=study.paneIndex?panes[study.paneIndex-1]:frame.plot;if(!plot||plot.height<52)continue;
+    const mapping=study.paneIndex?paneMapping(group,frame,plot):null;
+    const point=study.points.at(-1);if(!point||point.time!==latest.time||point.reason)continue;
+    const definition=studyDefinition(study.config.kind);
+    definition.channels.forEach((channel,index)=>{
+      const value=point.values[index];if(!finite(value)||study.config.lineStyles?.[index]?.visible===false)return;
+      const y=study.paneIndex?mapping?.y(value):frame.priceToY(value);
+      if(y==null||!finite(y)||y<plot.top||y>plot.top+plot.height)return;
+      // Keep the pane's low/high ticks legible. Each chip is two 12px lines.
+      const lo=plot.top+12,hi=plot.top+plot.height-40;
+      const target=Math.max(lo,Math.min(hi,y-14));
+      const candidates=[target,lo,hi,...occupied.flatMap(r=>[r.top-30,r.bottom+2])]
+        .filter(top=>top>=lo&&top<=hi&&Math.abs(top-target)<=32)
+        .sort((a,b)=>Math.abs(a-target)-Math.abs(b-target)||a-b);
+      const top=candidates.find(t=>occupied.every(r=>t+28<=r.top-2||t>=r.bottom+2));if(top===undefined)return;
+      occupied.push({top,bottom:top+28});
+      result.push({time:latest.time,value,channel,title:`${studyLabel(study.config,studies.getStudies())}${definition.channels.length>1?' · '+channel:''}${!study.paneIndex&&(frame.scale==='percent'||frame.scale==='indexed')?' · raw':''}`,paneIndex:study.paneIndex,color:studyChannelColor(study.config,index),anchorY:y,top,plot});
+    });
+  }
+  return result;
+}
+export function paintNativeStudyScaleLabels(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null,reserved:readonly {top:number;bottom:number}[]=[]):void {
+  for(const label of planNativeStudyScaleLabels(frame,panes,studies,onlyPane,reserved)){
+    const left=label.plot.left+label.plot.width;
+    ctx.save();try{
+      ctx.beginPath();ctx.rect(left,label.plot.top,88,label.plot.height);ctx.clip();ctx.globalAlpha=1;
+      ctx.strokeStyle=label.color;ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();
+      const endY=label.top+14,dy=endY-label.anchorY;
+      let segments:[number,number][]=[[0,1]];
+      for(const band of reserved){
+        if(!finite(band.top)||!finite(band.bottom)||band.bottom<band.top)continue;
+        if(dy===0){if(label.anchorY>=band.top-1&&label.anchorY<=band.bottom+1)segments=[];continue;}
+        const a=(band.top-1-label.anchorY)/dy,b=(band.bottom+1-label.anchorY)/dy;
+        const start=Math.min(a,b),end=Math.max(a,b);
+        segments=segments.flatMap(([lo,hi])=>end<=lo||start>=hi?[[lo,hi] as [number,number]]:
+          [...(start>lo?[[lo,start] as [number,number]]:[]),...(end<hi?[[end,hi] as [number,number]]:[])]);
+      }
+      for(const [start,end] of segments){ctx.moveTo(left+5*start,label.anchorY+dy*start);ctx.lineTo(left+5*end,label.anchorY+dy*end);}ctx.stroke();
+      ctx.fillStyle='#0f172a';ctx.fillRect(left+5,label.top,83,28);
+      ctx.fillStyle=label.color;ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';
+      ctx.fillText(label.title,left+8,label.top+1,77);
+      ctx.fillStyle='#f8fafc';ctx.font='11px monospace';ctx.fillText(formatStudyNumber(label.value,label.channel),left+8,label.top+14,77);
+    }finally{ctx.restore();}
+  }
+}
 function clipped(ctx:CanvasRenderingContext2D,plot:NativePlot,draw:()=>void){ctx.save();try{ctx.beginPath();ctx.rect(plot.left,plot.top,plot.width,plot.height);ctx.clip();ctx.globalAlpha=1;draw();}finally{ctx.restore();}}
 /** Exact observed timestamps on the shared X scale, independent linear units
  * for each auxiliary pane. Null values lift the pen; no gap interpolation. */

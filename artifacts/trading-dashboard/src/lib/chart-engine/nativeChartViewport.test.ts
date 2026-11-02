@@ -456,3 +456,13 @@ it('preserves a pinned historical candle across independent status-line preferen
  viewport.inspectCandle('first');viewport.inspectCandle('next');flush();const before=viewport.getState(),layout=viewport.getPaneLayout();
  for(const showInStatusLine of [true,false]){viewport.setStudies([{...study,showInStatusLine}]);flush();expect(viewport.getState().inspectionPinned).toBe(true);expect(viewport.getState().inspectionTime).toBe(before.inspectionTime);expect(viewport.getPaneLayout()).toEqual(layout);}
 });
+
+it('scale label controls preserve pins and withdraw painted labels in simplified mode',()=>{
+ create();const study={kind:'sma' as const,id:'s',period:2,color:'#abcdef'};viewport.setStudies([study]);flush();
+ viewport.inspectCandle('previous');flush();const before=viewport.getState(),layout=viewport.getPaneLayout();
+ ctx.fillText.mockClear();viewport.setStudies([{...study,showOnScale:true}]);flush();
+ expect(viewport.getState().inspectionTime).toBe(before.inspectionTime);expect(viewport.getState().inspectionPinned).toBe(true);expect(viewport.getPaneLayout()).toEqual(layout);
+ expect(ctx.fillText.mock.calls.some((a:any[])=>a[0]==='300.5')).toBe(true);
+ ctx.fillText.mockClear();viewport.setAnalysisFocus(true);flush();expect(ctx.fillText.mock.calls.some((a:any[])=>a[0]==='300.5')).toBe(false);
+ ctx.fillText.mockClear();viewport.setAnalysisFocus(false);viewport.setStudies([study]);flush();expect(ctx.fillText.mock.calls.some((a:any[])=>a[0]==='300.5')).toBe(false);
+});

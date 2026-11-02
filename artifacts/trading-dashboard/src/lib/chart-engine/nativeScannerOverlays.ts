@@ -27,7 +27,7 @@ function clipped(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, paint: 
   finally { ctx.restore(); }
 }
 /** Original-price labels intentionally bypass percentage/indexed axis transforms. */
-export function paintScannerPriceLines(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, canvasWidth: number, lines: readonly ScannerPriceLine[]): void {
+export function paintScannerPriceLines(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, canvasWidth: number, lines: readonly ScannerPriceLine[], reservations?:{top:number;bottom:number}[]): void {
   for (const value of lines) {
     const line=lineCopy(value);if (!line) continue;
     const y=frame.priceToY(line.price);if (!insideY(frame,y)) continue;
@@ -39,6 +39,7 @@ export function paintScannerPriceLines(ctx: CanvasRenderingContext2D, frame: Nat
     });
     const left=frame.plot.left+frame.plot.width, width=canvasWidth-left;
     if (line.axisLabelVisible && Number.isFinite(width) && width>0) {
+      reservations?.push({top:y-8,bottom:y+8});
       ctx.save();
       try {
         ctx.beginPath();ctx.rect(left,frame.plot.top,width,frame.plot.height);ctx.clip();
@@ -130,12 +131,12 @@ export class NativeScannerOverlays {
     if(!this.destroyed)this.surface=surface;
     return surface;
   }
-  paint(ctx:CanvasRenderingContext2D):void {
+  paint(ctx:CanvasRenderingContext2D,reservations?:{top:number;bottom:number}[]):void {
     if(this.destroyed)return;
     const generation=this.generation,frame=this.options.getFrame(),size=this.options.getSize();
     if(this.destroyed||generation!==this.generation||!frame)return;
     const layers=[...this.layers.values()];
-    paintScannerPriceLines(ctx,frame,size.width,layers.flatMap(layer=>layer.lines));
+    paintScannerPriceLines(ctx,frame,size.width,layers.flatMap(layer=>layer.lines),reservations);
     if(this.destroyed||generation!==this.generation)return;
     paintScannerMarkers(ctx,frame,layers.flatMap(layer=>layer.markers));
   }

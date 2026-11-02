@@ -11,7 +11,7 @@ import type { SmartChartAnnotation } from "./smartChartAnnotationCanvas";
 import { NativeScannerOverlays, paintScannerPriceLines } from "./nativeScannerOverlays";
 import { NativeChartOverlayLayers } from "./nativeChartOverlayLayers";
 import { studyDefinition, studyId, studyLabel, type ChartStudy } from "./chartStudies";
-import { NativeChartStudies, layoutNativeStudyPanes, paintNativeStudies } from "./nativeChartStudies";
+import { NativeChartStudies, layoutNativeStudyPanes, paintNativeStudies, paintNativeStudyScaleLabels } from "./nativeChartStudies";
 
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
 import { drawingStrokes, drawingNotes, drawingHandles, paintChartDrawings, type PixelPoint } from "./chartDrawingCanvas";
@@ -537,7 +537,7 @@ export class NativeChartViewport {
     if (this.destroyed) return;
     const valid=validatePreferences({studies:configs}).studies;
     if(JSON.stringify(valid)!==JSON.stringify(this.studies.getStudies()))this.retirePaneResize();
-    const plotInputs=(studies:readonly ChartStudy[])=>JSON.stringify(studies.map(({showInDataWindow:_readout,showInStatusLine:_statusLine,...plot})=>plot));
+    const plotInputs=(studies:readonly ChartStudy[])=>JSON.stringify(studies.map(({showInDataWindow:_readout,showInStatusLine:_statusLine,showOnScale:_scaleLabel,...plot})=>plot));
     const readoutOnly=plotInputs(valid)===plotInputs(this.studies.getStudies());
     const revision = ++this.mutationRevision;
     if(!readoutOnly){
@@ -696,9 +696,11 @@ export class NativeChartViewport {
           paintNativeStudies(ctx, frame, layout.panes, this.studies, this.maximizedPaneIndex());
           if(this.maximizedStudyPane===null)this.paintDrawings(ctx, frame);
         }
-        if(this.maximizedStudyPane===null){this.overlayLayers.paint(ctx,frame,this.width,this.analysisFocused);this.scannerOverlays.paint(ctx);}
+        const axisReservations:{top:number;bottom:number}[]=[];
+        if(this.maximizedStudyPane===null){this.overlayLayers.paint(ctx,frame,this.width,this.analysisFocused,axisReservations);this.scannerOverlays.paint(ctx,axisReservations);}
         const lastCandle=this.series.candles.at(-1);
-        if(this.maximizedStudyPane===null&&this.livePriceAffordance&&lastCandle)paintScannerPriceLines(ctx,frame,this.width,[{price:lastCandle.close,color:"#60a5fa",lineWidth:1,lineStyle:"dashed",axisLabelVisible:true,title:""}]);
+        if(this.maximizedStudyPane===null&&this.livePriceAffordance&&lastCandle)paintScannerPriceLines(ctx,frame,this.width,[{price:lastCandle.close,color:"#60a5fa",lineWidth:1,lineStyle:"dashed",axisLabelVisible:true,title:""}],axisReservations);
+        if(!this.analysisFocused)paintNativeStudyScaleLabels(ctx,frame,layout.panes,this.studies,this.maximizedPaneIndex(),axisReservations);
         const crosshair=this.hover ?? this.linkedCrosshair(frame);
         if (crosshair) {
           ctx.save();

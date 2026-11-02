@@ -58,7 +58,7 @@ export class NativeChartOverlayLayers {
       }
     }finally{ctx.restore();}
   }
-  paint(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,canvasWidth:number,analysisFocused=false):void {
+  paint(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,canvasWidth:number,analysisFocused=false,reservations?:{top:number;bottom:number}[]):void {
     if(this.timeSeries!==frame.series){this.timeSeries=frame.series;this.times=frame.series.candles.map(bar=>bar.time);}
     const times=this.times;
     // Focus changes analysis presentation only. Position/pending/research
@@ -91,6 +91,6 @@ export class NativeChartOverlayLayers {
         if(at!=null)markers.push({time:at,position:row.marker.side==="BUY"?"belowBar":"aboveBar",shape:row.marker.side==="BUY"?"arrowUp":"arrowDown",color:row.color!,text:row.label});
       }
     }
-    this.paintSegments(ctx,frame,research);paintScannerPriceLines(ctx,frame,canvasWidth,priceLines);paintScannerMarkers(ctx,frame,markers);
+    this.paintSegments(ctx,frame,research);paintScannerPriceLines(ctx,frame,canvasWidth,priceLines,reservations);paintScannerMarkers(ctx,frame,markers);
   }
 }
