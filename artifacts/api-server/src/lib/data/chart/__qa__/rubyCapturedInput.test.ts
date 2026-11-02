@@ -1,11 +1,12 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { closedAnalysisWindowIdentity } from "../capturedAnalysisCandles.js";
 
 const feed = { source: "captured_provider", aiUsable: true, stale: false, quality: "clean" };
 const closed = { symbol: "EURUSD", timeframe: "M5", openTime: "2026-11-01T10:00:00.000Z", closeTime: "2026-11-01T10:05:00.000Z", open: 99, high: 101, low: 98, close: 100, volume: 0, volumeEvidence: { kind: "unavailable", quantity: null, unit: null, reason: "No reported volume" }, isComplete: true, isForming: false };
 const forming = { ...closed, openTime: "2026-11-01T10:05:00.000Z", closeTime: "2026-11-01T10:10:00.000Z", close: 999, isComplete: false, isForming: true };
 const state = { symbol: "EURUSD", displaySymbol: "EUR/USD", timeframe: "M5", aiUsable: true, stale: false, currentCandle: forming, candleStats: { barsAnalyzed: 1 }, truthState: feed, gateOutput: { confidentReadAllowed: false, autonomousChartActionAllowed: false, tradeConfirmationAllowed: false, primaryBlockReason: "Unmeasured" }, brokerAlignment: {}, chartTruthScore: {} };
-const capture = { state, candles: [closed, forming], feedStatus: feed, truthResult: null, marketEvidence: { symbol: "EURUSD", timeframe: "M5", source: "captured_provider", sourceIdentity: "A", lastClosedCandleAt: closed.closeTime } };
+const capture = { state, candles: [closed, forming], feedStatus: feed, truthResult: null, marketEvidence: { symbol: "EURUSD", timeframe: "M5", source: "captured_provider", sourceIdentity: "a".repeat(64), venueIdentity: "v".repeat(64), lastClosedCandleAt: closed.closeTime } };
 let rawCalls = 0;
 let higher: any = { candles: [], feedStatus: { ...feed, aiUsable: false }, marketEvidence: null };
 let higherFails = false;
@@ -43,21 +44,54 @@ test("normalization retains open-time basis and never fabricates unavailable vol
   assert.deepEqual(ctx.candles[0]!.volumeEvidence, closed.volumeEvidence);
 });
 
-test("higher timeframe has its own closed-only observation and does not replace primary status", async () => {
-  higher = { candles: [{ ...closed, close: 400 }, { ...forming, isComplete: true }], feedStatus: { ...feed, source: "other", aiUsable: true }, marketEvidence: { ...capture.marketEvidence, sourceIdentity: "B", timeframe: "H1" } };
+function qualifiedHigher(): any {
+  const bar = { ...closed, timeframe: "H1", openTime: "2026-11-01T09:00:00.000Z", closeTime: "2026-11-01T10:00:00.000Z", open: 399, high: 401, low: 398, close: 400,
+    timeBasisEvidence: { kind: "original_utc", basis: "UTC", authority: "test-provider", reason: null } };
+  const candles = [bar, { ...forming, timeframe: "H1", isComplete: true }];
+  return { symbol: "EURUSD", timeframe: "H1", source: feed.source, aiUsable: true, candles, feedStatus: { ...feed },
+    marketEvidence: { ...capture.marketEvidence, sourceIdentity: "b".repeat(64), timeframe: "H1", lastClosedCandleAt: bar.closeTime, closedWindowIdentity: closedAnalysisWindowIdentity(candles as any) } };
+}
+
+test("qualified higher timeframe owns its closed observation without replacing primary status", async () => {
+  higher = qualifiedHigher();
   const ctx = await buildRubyChartContext("EURUSD", "M5", 200, { userId: 7 });
   assert.equal(alignedContext, capture);
   assert.deepEqual(ctx.candles.map(c => c.close), [100]);
   assert.deepEqual(ctx.htfCandles.map(c => c.close), [400]);
   assert.equal(ctx.feedStatus.source, "captured_provider");
-  assert.equal(ctx.htfFeedStatus?.source, "other");
-  assert.equal(ctx.htfMarketEvidence?.sourceIdentity, "B");
+  assert.equal(ctx.htfMarketEvidence?.sourceIdentity, "b".repeat(64));
   assert.deepEqual(higherRequests.at(-1), ["EURUSD", "H1", 120]);
   higher.candles[0].close = 500;
   higher.feedStatus.source = "changed-after-return";
   assert.equal(ctx.htfCandles[0]!.close, 400);
-  assert.equal(ctx.htfFeedStatus?.source, "other");
+  assert.equal(ctx.htfFeedStatus?.source, feed.source);
 });
+
+for (const [name, change] of Object.entries<Record<string, (h: any) => void>[string]>({
+  "different provider": h => { h.source = h.feedStatus.source = h.marketEvidence.source = "another"; },
+  "different account": h => { h.marketEvidence.venueIdentity = "another-account"; },
+  "missing venue": h => { delete h.marketEvidence.venueIdentity; },
+  "missing provenance": h => { h.marketEvidence = null; },
+  "wrong market": h => { h.symbol = h.marketEvidence.symbol = "GBPUSD"; },
+  "wrong interval": h => { h.timeframe = h.marketEvidence.timeframe = "M15"; },
+  "wrong bar market": h => { h.candles[0].symbol = "GBPUSD"; },
+  "wrong bar interval": h => { h.candles[0].timeframe = "M15"; },
+  "wrong closed time": h => { h.marketEvidence.lastClosedCandleAt = closed.closeTime; },
+  "revised history with old identity": h => { h.candles[0].close = 399; },
+  "missing window identity": h => { delete h.marketEvidence.closedWindowIdentity; },
+  "unqualified UTC": h => { delete h.candles[0].timeBasisEvidence; },
+  "conflicting feed source": h => { h.feedStatus.source = "another"; },
+  "top-level unusable": h => { h.aiUsable = false; },
+})) {
+  test(`higher-timeframe ${name} cannot supply bias`, async () => {
+    higherFails = false;
+    higher = qualifiedHigher(); change(higher);
+    const ctx = await buildRubyChartContext("EURUSD", "M5", 200);
+    assert.deepEqual(ctx.htfCandles, []);
+    assert.deepEqual(ctx.candles.map(c => c.close), [100]);
+    assert.deepEqual(ctx.htfMarketEvidence, higher.marketEvidence);
+  });
+}
 
 test("failed higher timeframe never substitutes primary bars", async () => {
   higherFails = true;

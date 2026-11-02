@@ -14,6 +14,7 @@
 import { buildChartIntelligenceContext, type ChartIntelligenceState } from "./chartIntelligence.js";
 import { getChartCandles, type ChartFeedStatus } from "./chartDataService.js";
 import { capturedAnalysisCandles } from "./capturedAnalysisCandles.js";
+import { higherTimeframeMatchesPrimary } from "./higherTimeframeEvidence.js";
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 import type { ChartGateOutput } from "./chartGateOutput.js";
 import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
@@ -107,7 +108,8 @@ export interface RubyChartContext {
 
   /**
    * Higher-timeframe candles for HTF bias, or [] when no HTF applies.
-   * Separately observed; not proof of the same source/account or capture time.
+   * Separately observed with matching source/venue and qualified closed history;
+   * this does not establish an atomic cross-timeframe capture.
    */
   htfCandles: Candle[];
   htfTimeframe: ChartTimeframe | null;
@@ -315,8 +317,8 @@ export async function buildRubyChartContext(
   const candles = capturedAnalysisCandles(captured.candles);
   // Downstream bias/confirmation consumers have no separate limited-HTF tier.
   // Withhold their input if this independently captured feed is unconfirmed.
-  const htfCandles = higher?.feedStatus.aiUsable === true && !higher.feedStatus.stale
-    ? capturedAnalysisCandles(higher.candles) : [];
+  const htfCandles = higherTimeframeMatchesPrimary(symbol, htf, captured.marketEvidence, higher)
+    ? capturedAnalysisCandles(higher!.candles) : [];
 
   return {
     symbol: state.symbol,
