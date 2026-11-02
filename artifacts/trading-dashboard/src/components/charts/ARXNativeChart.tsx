@@ -80,6 +80,7 @@ import {
 } from "@/lib/chart-engine";
 
 const ChartResearchWorkbench = lazy(() => import("@/components/testing-lab/ChartResearchWorkbench"));
+const ChartPerformanceComparison = lazy(() => import("./ChartPerformanceComparison"));
 
 // ARXNativeChart — Level 2 native chart shell.
 //
@@ -438,6 +439,7 @@ export function ARXNativeChart({
   // Per-view display zone; daily bars keep UTC labels. Display only.
 
   const [researchOpen,setResearchOpen] = useState(false);
+  const [comparisonOpen,setComparisonOpen] = useState(false);
   const [researchRequest,setResearchRequest] = useState<{id:number;text:string;context:string}|null>(null);
   const researchSequence = useRef(0);
   const researchExplanation = useRef<{context:string;evidence:ChartResearchExplanation}|null>(null);
@@ -1825,6 +1827,8 @@ export function ARXNativeChart({
       {/* Detailed tools stay mounted after the plot on every viewport. Source
           and safety notices above it remain visible before any candle. */}
       {chartControls}
+      <div className="px-3 py-2"><Button size="sm" variant="outline" aria-expanded={comparisonOpen} onClick={()=>setComparisonOpen(value=>!value)}>Compare price change</Button></div>
+      {comparisonOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening percentage comparison…</p>}><ChartPerformanceComparison key={chartContext} symbol={resolvedSymbol} timeframe={timeframe} data={data} readFailed={query.isError} adapter={adapterRef.current} epoch={chartEpoch} limit={limit} onClose={()=>setComparisonOpen(false)}/></Suspense>}
       {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
       <SmartChartReader findingDeliveryNotice={assistantPane.findingDeliveryNotice} onFindingExplanation={acceptFindingExplanation} onExplainFinding={()=>assistantPane.explainFinding(explainCurrentFinding)} presentationUnverified={!analysisVerified} presentationHidden={analysisFocused} key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
