@@ -70,7 +70,7 @@ export class NativeChartViewport {
   /** Temporary view state. Saved pane weights, collapse state and studies stay untouched. */
   setMaximizedStudyPane(id: string | null): boolean {
     if(this.destroyed)return false;
-    if(id!==null && (this.analysisFocused || !this.isAnalysisFocusVerified() || !this.getStudyPaneControls()?.some(p=>p.id===id&&!p.collapsed)))return false;
+    if(id!==null && (!this.prepareStudyPaneAction() || this.analysisFocused || !this.isAnalysisFocusVerified() || !this.getStudyPaneControls()?.some(p=>p.id===id&&!p.collapsed)))return false;
     if(id===this.maximizedStudyPane)return true;
     const revision=++this.mutationRevision;
     this.retirePaneResize();this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
@@ -87,6 +87,7 @@ export class NativeChartViewport {
   private paneResizeContextKey(){return JSON.stringify([this.paneResizeRevision,this.generation,this.width,this.height,this.timeframe,this.style,this.scale,this.inverted,this.analysisFocused,this.studies.getStudies()]);}
   isStudyPaneResizeContextCurrent(key:string){return !this.destroyed&&key===this.paneResizeContextKey();}
   beginStudyPaneResize(id:string):number|null {
+    if(!this.prepareStudyPaneAction())return null;
     if(this.paneResize&&!this.isStudyPaneResizeContextCurrent(this.paneResize.contextKey))this.paneResize=null;
     if(this.paneScaleDrag || this.paneResize || this.pointers.size || this.priceAxisGesture || this.timeAxisGesture || this.frozenDrawingFrame || this.activeDrawingPlacement() || this.analysisFocused || this.maximizedStudyPane!==null || !this.isAnalysisFocusVerified() || !this.getFrame())return null;
     const controls=this.getStudyPaneControls(),geometry=this.getPaneLayout();
@@ -117,6 +118,7 @@ export class NativeChartViewport {
   isStudyPaneScaleContextCurrent(key:string){return !this.destroyed&&key===this.paneScaleContextKey();}
   private paneScalePreview():NativePaneScalePreview|null {const drag=this.paneScaleDrag;return drag&&this.isStudyPaneScaleContextCurrent(drag.contextKey)?{id:drag.id,value:drag.value,percent:drag.percent}:null;}
   beginStudyPaneScale(id:string):number|null {
+    if(!this.prepareStudyPaneAction())return null;
     if(this.paneScaleDrag&&!this.isStudyPaneScaleContextCurrent(this.paneScaleDrag.contextKey))this.retirePaneScale();
     if(this.paneScaleDrag||this.paneResize||this.pointers.size||this.priceAxisGesture||this.timeAxisGesture||this.frozenDrawingFrame||this.activeDrawingPlacement()||this.analysisFocused||!this.isAnalysisFocusVerified())return null;
     const pane=this.getStudyPaneControls()?.find(p=>p.id===id&&!p.collapsed),anchor=pane?.scaleAnchor;
@@ -174,6 +176,8 @@ export class NativeChartViewport {
   private drawCount = 0;
   // Presentation proof belongs to a completed paint of the latest request,
   // never merely a queued focus change. This does not qualify source evidence.
+  private frameRevision = 0;
+  private paintedFrameRevision = -1;
   private paintRevision = 0;
   private paintedRevision = -1;
   private paintError: string | null = null;
@@ -550,6 +554,15 @@ export class NativeChartViewport {
     this.overlayLayers.setOverlays(overlays,latestBarTime);this.schedule();
   }
   getScannerOverlaySurface() { return this.destroyed || this.maximizedStudyPane!==null ? null : this.scannerOverlays.getSurface(); }
+  /** Only finish a cosmetic hover/overlay repaint for an explicit action.
+   * Changed data/layout must complete its normal paint first. Passive getters
+   * remain non-mutating; reentrant source changes or paint failures refuse. */
+  prepareStudyPaneAction():boolean {
+    if(this.destroyed||this.paintError||this.paintedFrameRevision!==this.frameRevision)return false;
+    const generation=this.generation,revision=this.mutationRevision;
+    if(this.raf!==null){cancelAnimationFrame(this.raf);this.raf=null;this.paint();}
+    return !this.destroyed&&generation===this.generation&&revision===this.mutationRevision&&this.isAnalysisFocusVerified()&&this.paintedFrameRevision===this.frameRevision;
+  }
   isAnalysisFocused(): boolean { return this.analysisFocused; }
   isAnalysisFocusVerified(): boolean {
     return !this.destroyed && !this.paintError && this.raf === null
@@ -706,7 +719,7 @@ export class NativeChartViewport {
     this.maximizedStudyPane=null;this.studies.reset();
     this.followingLatest = true; this.invalidate();
   }
-  private invalidate() { this.frame = null; this.paintError = null; this.schedule(); }
+  private invalidate() { ++this.frameRevision; this.frame = null; this.paintError = null; this.schedule(); }
   private schedule() {
     if (this.destroyed) return;
     ++this.paintRevision;
@@ -720,7 +733,7 @@ export class NativeChartViewport {
   }
   private paint() {
     if (this.destroyed) return;
-    const revision = this.paintRevision;
+    const revision = this.paintRevision,frameRevision=this.frameRevision;
     try {
       const label=this.maximizedStudyPane!==null ? "ARX maximized indicator pane. Price candles, drawings and trade overlays are hidden. Drag to pan time, scroll or pinch to zoom. Shift plus Left/Right inspects loaded observations. Use Restore layout to return to the price chart." : this.normalCanvasLabel;
       if(this.canvas.getAttribute('aria-label')!==label)this.canvas.setAttribute('aria-label',label);
@@ -757,6 +770,7 @@ export class NativeChartViewport {
       // Publish before callbacks: a callback may enqueue another request or
       // reset this context, which must immediately revoke this paint's proof.
       this.paintedRevision = frame ? revision : -1;
+      this.paintedFrameRevision = frame ? frameRevision : -1;
       this.notify("viewport", () => this.options.onViewportChange?.());
     } catch (error) {
       this.paintedRevision = -1;
@@ -905,7 +919,7 @@ export class NativeChartViewport {
     const fraction = (newX - frame.plot.left) / frame.plot.width;
     const desiredFrom = anchor - fraction * (zoomed.to - zoomed.from);
     const next = this.shift(zoomed, desiredFrom - zoomed.from);
-    if (next) { this.range = next; this.followingLatest = false; this.frame = null; this.schedule(); }
+    if (next) { this.range = next; this.followingLatest = false; this.invalidate(); }
   }
   private emitUserRange(previous: Readonly<LogicalWindow> | null): void {
     if(this.destroyed||!this.range||(previous&&previous.from===this.range.from&&previous.to===this.range.to))return;
@@ -952,7 +966,7 @@ export class NativeChartViewport {
       if (this.pointers.size === 2 && previous.distance > 0 && next.distance > 0) this.zoomAt(previous.distance / next.distance, previous.center.x, next.center.x);
       else {
         const shifted = this.shift(this.range, -(next.center.x - previous.center.x) / frame.spacing);
-        if (shifted) { this.range = shifted; this.followingLatest = false;this.frame = null;this.schedule(); }
+        if (shifted) { this.range = shifted; this.followingLatest = false;this.invalidate(); }
       }
     }
     this.gesture = next;
@@ -987,7 +1001,7 @@ export class NativeChartViewport {
     event.preventDefault();this.cancelGesture();this.clearHover();if (this.destroyed || revision !== this.mutationRevision) return;
     if (horizontal && this.range) {
       const next = this.shift(this.range, pixels / frame!.spacing);
-      if (next) { this.range = next;this.followingLatest = false;this.frame = null;this.schedule(); }
+      if (next) { this.range = next;this.followingLatest = false;this.invalidate(); }
     } else this.zoomAt(Math.exp(clamp(pixels * .002, -.65, .65)), point.x);
     this.emitUserRange(previousRange);
   };

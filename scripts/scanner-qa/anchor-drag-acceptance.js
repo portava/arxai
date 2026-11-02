@@ -32,7 +32,7 @@ async page=>{
   await page.keyboard.press('End');await ready();check((await ready()).config.studies[0].paneScale.percent===100,'End reaches the top boundary');
   await page.keyboard.press('ArrowDown');await ready();await page.reload();await panel.getByRole('button',{name:'Fullscreen',exact:true}).click();await tools();await ready();
   check((await ready()).config.studies[0].paneScale.percent===99,'Released anchor survives reload');
-  await handle.scrollIntoViewIfNeeded();await panel.getByRole('button',{name:/Maximize pane 1/}).click();await ready();await handle.focus();await page.keyboard.press('ArrowDown');await ready();check((await ready()).config.studies[0].paneScale.percent===98,'Anchor remains adjustable in maximized pane');
+  await handle.scrollIntoViewIfNeeded();await panel.getByRole('button',{name:/Maximize pane 1/}).click();await ready();check((await ready()).snapshot.state.maximizedStudyPane!==null,'Single pointer click maximizes the pane');await handle.focus();await page.keyboard.press('ArrowDown');await ready();check((await ready()).config.studies[0].paneScale.percent===98&&(await ready()).snapshot.state.maximizedStudyPane!==null,'Anchor remains adjustable without restoring the maximized pane');
   await panel.getByRole('button',{name:/Restore layout from pane 1/}).click();await ready();
   await panel.getByRole('button',{name:/Collapse pane 1/}).click();await ready();check(await handle.count()===0,'Collapsed pane removes the anchor control');
   await panel.getByRole('button',{name:/Expand pane 1/}).click();await ready();await page.setViewportSize({width:390,height:844});await ready();await handle.scrollIntoViewIfNeeded();await handle.focus();await page.keyboard.press('ArrowDown');await ready();

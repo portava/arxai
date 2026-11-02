@@ -199,8 +199,10 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   });
  }
 
+ prepareStudyPaneAction(){const viewport=this.viewport,epoch=this.epoch;return !!viewport&&viewport.prepareStudyPaneAction()&&this.current(viewport,epoch);}
  beginStudyPaneScale(id:string){
-  const viewport=this.viewport,nativeToken=viewport?.beginStudyPaneScale(id);if(!viewport||nativeToken==null)return null;
+  const viewport=this.viewport,epoch=this.epoch,nativeToken=viewport?.beginStudyPaneScale(id);if(!viewport||nativeToken==null)return null;
+  if(!this.current(viewport,epoch)){viewport.endStudyPaneScale(nativeToken,false);return null;}
   const token=++this.paneScaleSequence;this.paneScaleLease={token,nativeToken,viewport,epoch:this.epoch};return token;
  }
  previewStudyPaneScale(token:number,delta:number){const lease=this.paneScaleLease;return !!lease&&lease.token===token&&this.current(lease.viewport,lease.epoch)&&lease.viewport.previewStudyPaneScale(lease.nativeToken,delta);}
@@ -211,7 +213,8 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
  }
  isStudyPaneScaleContextCurrent(key:string){const prefix=`${this.mount}:${this.epoch}:`;return key.startsWith(prefix)&&(this.viewport?.isStudyPaneScaleContextCurrent(key.slice(prefix.length))??false);}
  beginStudyPaneResize(id:string){
-  const viewport=this.viewport,nativeToken=viewport?.beginStudyPaneResize(id);if(!viewport||nativeToken==null)return null;
+  const viewport=this.viewport,epoch=this.epoch,nativeToken=viewport?.beginStudyPaneResize(id);if(!viewport||nativeToken==null)return null;
+  if(!this.current(viewport,epoch)){viewport.endStudyPaneResize(nativeToken,false);return null;}
   const token=++this.paneResizeSequence;this.paneResizeLease={token,nativeToken,viewport,epoch:this.epoch};return token;
  }
  previewStudyPaneResize(token:number,delta:number){const lease=this.paneResizeLease;return !!lease&&lease.token===token&&this.current(lease.viewport,lease.epoch)&&lease.viewport.previewStudyPaneResize(lease.nativeToken,delta);}

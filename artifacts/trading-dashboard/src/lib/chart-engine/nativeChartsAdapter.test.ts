@@ -296,3 +296,31 @@ it.each(['refresh','stream'] as const)('does not revive a scale gesture after %s
  f.viewport().setCandles(bars());expect(f.viewport().getRange()).toEqual(original);
  expect(f.adapter.endStudyPaneScale(token,true)).toBeNull();flush();
 });
+it.each(['maximize','scale','resize'] as const)('finishes a pending hover paint before %s action, without granting unpainted data authority',kind=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff',paneScale:{mode:'line',value:50,percent:50}}]);flush();
+ const frame=f.viewport().getFrame()!,bar=f.adapter.getVisibleCandles()[5]!;pointer(f.canvas(),frame.timeToX(bar.time)!,frame.priceToY(bar.close)!);flush();f.canvas().dispatchEvent(new Event('pointerleave'));
+ expect(f.adapter.getStudyPaneControls()).toBeNull();
+ const result=kind==='maximize'?f.adapter.setMaximizedStudyPane('rsi'):kind==='scale'?f.adapter.beginStudyPaneScale('rsi'):f.adapter.beginStudyPaneResize('rsi');expect(result).not.toBeNull();expect(result).not.toBe(false);
+ if(kind==='scale')f.adapter.endStudyPaneScale(result as number,false);if(kind==='resize')f.adapter.endStudyPaneResize(result as number,false);flush();
+ f.adapter.setCandles(bars(0,201));expect(f.adapter.prepareStudyPaneAction()).toBe(false);flush();expect(f.adapter.prepareStudyPaneAction()).toBe(true);
+});
+it('rejects action flush when the paint fails or its callback replaces the source',()=>{
+ const f=setup();f.adapter.setCandles(bars());flush();
+ f.viewport().setLivePriceAffordance(true);ctx.clearRect.mockImplementationOnce(()=>{throw Error('paint failure');});expect(f.adapter.prepareStudyPaneAction()).toBe(false);flush();
+ f.adapter.setCandles(bars(1));flush();expect(f.adapter.prepareStudyPaneAction()).toBe(true);
+ const viewport=f.viewport(),options=(viewport as any).options,prior=options.onViewportChange;
+ const reenter=vi.fn(()=>{options.onViewportChange=prior;viewport.resetContext();});options.onViewportChange=reenter;
+ viewport.setLivePriceAffordance(false);expect(f.adapter.prepareStudyPaneAction()).toBe(false);expect(reenter).toHaveBeenCalledTimes(1);expect(viewport.getCandles()).toHaveLength(0);flush();
+});
+
+it.each(['horizontal','vertical'])('refuses a pending %s wheel geometry change as non-cosmetic',direction=>{
+ const f=setup();f.adapter.setCandles(bars());flush();const old=f.viewport().getRange();
+ f.canvas().dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,clientX:100,clientY:100,deltaX:direction==='horizontal'?50:0,deltaY:direction==='vertical'?-100:0}));
+ expect(f.viewport().getRange()).not.toEqual(old);expect(f.adapter.prepareStudyPaneAction()).toBe(false);flush();expect(f.adapter.prepareStudyPaneAction()).toBe(true);
+});
+
+it('refuses a pending pointer pan as non-cosmetic',()=>{
+ const f=setup();f.adapter.setCandles(bars());flush();const old=f.viewport().getRange();
+ const down=new MouseEvent('pointerdown',{bubbles:true,cancelable:true,clientX:100,clientY:100,button:0});Object.defineProperties(down,{pointerId:{value:1},pointerType:{value:'mouse'}});f.canvas().dispatchEvent(down);
+ pointer(f.canvas(),150,100);expect(f.viewport().getRange()).not.toEqual(old);expect(f.adapter.prepareStudyPaneAction()).toBe(false);flush();expect(f.adapter.prepareStudyPaneAction()).toBe(true);
+});

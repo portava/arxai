@@ -35,6 +35,7 @@ interface Props {
   adapter: ChartEngineAdapter | null; epoch: number | string; symbol: string; timeframe: string;
   /** Parent candle commit identity; labels stay unqualified until that layout commit completes. */
   studyEvidenceRevision?: unknown;
+  onPanePreferences?:Dispatch<SetStateAction<ChartPreferences>>;
   preferences: ChartPreferences; onPreferences: Dispatch<SetStateAction<ChartPreferences>>;
   hasCandles: boolean; feedLabel: string;
   /** Optional private analysis namespace; live charts keep their existing key. */
@@ -56,7 +57,7 @@ interface Props {
   assistantActive?:boolean;
   assistantIsCurrent?:()=>boolean;
 }
-export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,onRestoreAnalysis,adapter,epoch,studyEvidenceRevision,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,getSupportResistanceProposal,assistantActive=false,assistantIsCurrent}: Props) {
+export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,onRestoreAnalysis,adapter,epoch,studyEvidenceRevision,symbol,timeframe,preferences,onPreferences,onPanePreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,getSupportResistanceProposal,assistantActive=false,assistantIsCurrent}: Props) {
   const displayRevision=studyEvidenceRevision??epoch;
   const needsStudyEvidence=preferences.studies.some(study=>study.kind==='vwap'||study.kind==='volume_profile');
   const [committedStudyEvidence,setCommittedStudyEvidence]=useState<{adapter:ChartEngineAdapter|null;revision:unknown}|null>(null);
@@ -505,7 +506,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
       event.preventDefault();event.stopPropagation();toggleRef.current.focus();setToolsOpen(false);setTool(null);setAnchor(null);setChannelEnd(null);
     }
   }}>
-    <ChartPaneControls key={`${epoch}:${symbol}:${timeframe}`} adapter={adapter} chartTarget={chartTarget} enabled={hasCandles && !analysisFocused} onPreferences={onPreferences} />
+    <ChartPaneControls key={`${epoch}:${symbol}:${timeframe}`} adapter={adapter} chartTarget={chartTarget} enabled={hasCandles && !analysisFocused} onPreferences={onPanePreferences??onPreferences} />
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-1 rounded-md border border-zinc-800 p-0.5" role="group" aria-label="Zoom and pan">
         <Button ref={panRef} size="sm" variant={panOnly ? "secondary" : "ghost"} className="h-8 gap-1.5 text-xs" aria-pressed={panOnly} disabled={!hasCandles || !adapter?.setNavigationMode} title="Drag freely across candles and drawings. Select again to edit drawings." onClick={()=>{setPanOnly(value=>!value);setTool(null);setAnchor(null);setChannelEnd(null);setSelectedId(null);setMessage("");}}><Hand className="h-3.5 w-3.5"/>Pan</Button>

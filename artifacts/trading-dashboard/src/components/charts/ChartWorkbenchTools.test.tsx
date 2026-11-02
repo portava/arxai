@@ -721,3 +721,13 @@ it('refreshes the visible study caption on completed paint and does not rerender
  act(()=>{verified=false;listeners.forEach(fn=>fn());});expect(screen.getByLabelText('Saved studies (visibility unverified)')).toBeTruthy();
  view.unmount();expect(listeners.size).toBe(0);act(()=>{verified=true;retained.forEach(fn=>fn());});expect(screen.queryByLabelText('Active studies')).toBeNull();
 });
+it('routes direct pane edits separately from general settings that restore the layout',()=>{
+ const target=document.createElement('div');document.body.append(target);
+ const normal=vi.fn(),paneSave=vi.fn(),preferences={...DEFAULT_PREFERENCES,studies:[{id:'rsi',kind:'rsi' as const,period:14,color:'#ffffff',paneScale:{mode:'line' as const,value:50,percent:50}}]};
+ const engine={...adapter,getStudyPaneControls:()=>[{id:'rsi',paneIndex:1,label:'RSI',collapsed:false,maximized:true,left:0,top:0,width:700,height:400,scaleAnchor:{value:50,percent:50,y:200}}],beginStudyPaneScale:()=>1,previewStudyPaneScale:()=>true,endStudyPaneScale:()=>({id:'rsi',contextKey:'current',studiesKey:JSON.stringify(preferences.studies),scale:{mode:'line',value:50,percent:51}}),isStudyPaneScaleContextCurrent:()=>true} as unknown as ChartEngineAdapter;
+ const view=render(<ChartWorkbenchTools adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={normal} onPanePreferences={paneSave} chartTarget={{current:target}} hasCandles feedLabel="Offline"/>);
+ fireEvent.keyDown(screen.getByRole('slider',{name:'Move scale anchor for pane 1: RSI'}),{key:'ArrowUp'});
+ expect(paneSave).toHaveBeenCalledTimes(1);expect(normal).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByLabelText('Chart style'),{target:{value:'line'}});expect(normal).toHaveBeenCalledTimes(1);
+ view.unmount();target.remove();
+});

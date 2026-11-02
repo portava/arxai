@@ -199,6 +199,7 @@ export interface ChartEngineAdapter {
   getVolumeProfiles?(): VolumeProfileInspection[];
   getVwapAnchorEvidence?(anchor:VwapAnchor): {utcQualified:boolean;reason:string|null};
   /** Current painted pane owners and CSS geometry. Null means pending paint; empty means unavailable/reset. */
+  prepareStudyPaneAction?():boolean;
   getStudyPaneControls?(): ChartStudyPaneControl[] | null;
   getMaximizedStudyPane?():string|null;
   setMaximizedStudyPane?(id:string|null):boolean;

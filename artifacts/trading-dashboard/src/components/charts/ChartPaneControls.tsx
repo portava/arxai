@@ -37,7 +37,7 @@ export function ChartPaneControls({adapter,chartTarget,enabled,onPreferences}:Pr
   const target=chartTarget?.current;
   if(!enabled || !target || !adapter?.getStudyPaneControls)return null;
   const toggle=(pane:ChartStudyPaneControl)=>{
-    const token=active.current;if(!token)return;
+    const token=active.current;if(!token||adapter.prepareStudyPaneAction?.()===false)return;
     const isCurrent=()=>active.current===token && adapter.getStudyPaneControls?.()?.some(current=>current.id===pane.id&&current.collapsed===pane.collapsed);
     if(pane.maximized || !isCurrent())return;
     onPreferences(previous=>{
@@ -56,7 +56,7 @@ export function ChartPaneControls({adapter,chartTarget,enabled,onPreferences}:Pr
         title={pane.maximized?'Restore chart layout':'Maximize indicator pane'} aria-pressed={pane.maximized===true}
         onPointerDown={event=>event.stopPropagation()} onDoubleClick={event=>event.stopPropagation()}
         onKeyDown={event=>{if(event.key!=='Escape'&&event.key!=='Tab')event.stopPropagation();}}
-        onClick={event=>{event.stopPropagation();if(active.current&&adapter.getStudyPaneControls?.()?.some(current=>current.id===pane.id&&!current.collapsed&&current.maximized===pane.maximized))adapter.setMaximizedStudyPane?.(pane.maximized?null:pane.id);}}>
+        onClick={event=>{event.stopPropagation();if(active.current&&adapter.prepareStudyPaneAction?.()!==false&&adapter.getStudyPaneControls?.()?.some(current=>current.id===pane.id&&!current.collapsed&&current.maximized===pane.maximized))adapter.setMaximizedStudyPane?.(pane.maximized?null:pane.id);}}>
         <span aria-hidden="true">{pane.maximized?'⤢':'□'}</span>
       </button>}
       {pane.scaleAnchor && !pane.collapsed && adapter.beginStudyPaneScale && adapter.previewStudyPaneScale && adapter.endStudyPaneScale && adapter.isStudyPaneScaleContextCurrent && <ChartPaneScaleHandle adapter={adapter} pane={pane} onPreferences={onPreferences}/>}
