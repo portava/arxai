@@ -34,7 +34,7 @@ async page => {
   check(!/NaN|Infinity/.test(await comparison.getByRole('img').innerHTML()),'SVG coordinates are finite');
   const baseline=await comparison.getByText(/^Baseline:/).textContent();
   await comparison.scrollIntoViewIfNeeded();await shot('desktop');
-  await panel.getByRole('button',{name:'Zoom in',exact:true}).click();await frames();
+  await panel.getByRole('button',{name:'Zoom in chart',exact:true}).click();await frames();
   await comparison.scrollIntoViewIfNeeded();
   check(await comparison.getByText(/^Baseline:/).textContent()!==baseline,'Native zoom rebases the shared comparison origin');
   check(JSON.stringify((await data()).canonical)===JSON.stringify(before.canonical),'Comparison and zoom preserve primary OHLC');
