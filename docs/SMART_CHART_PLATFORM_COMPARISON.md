@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Native Scanner profiling — 2 November 2026
+
+Tooling `df0adbcb` repairs native-default diagnostic profiling and ties paint records to the actual viewport revision. All 34 focused tooling checks and 12 source-matched browser diagnostic attempts pass. Throttled traces point to substantial route-mount/update work before a 2.5–3.6 ms draw method; these are profiling observations, not speed acceptance. No application optimization was installed, and prior 4x first-navigation failures remain open. See [exact source, excluded builds, independent review and limits](NATIVE_SCANNER_PROFILE_2026_11_02.md).
+
 ## Unverified sessions and confidence limits — 2 November 2026
 
 Application `ce7db72c` prevents the combined reader from inferring a market session without qualified calendar evidence. Unknown timing stays unverified through display/confluence and Gold composition; final confidence adjustments cannot exceed applicable limits or normalize invalid input into a positive score. Backend 89 pass; frontend 4,730 pass/12 skipped; types/builds pass; two unchanged guards fail. A qualified session-calendar implementation, broader engine agreement and browser/performance acceptance remain open. See [scope, reproductions and limits](SESSION_EVIDENCE_TRUTH_2026_11_02.md).
