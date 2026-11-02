@@ -1509,7 +1509,7 @@ export function ARXNativeChart({
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>
-      <output ref={studyStatusRef} aria-label="Study status line at selected candle" aria-live="off" className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 font-mono text-[11px] text-zinc-300 empty:hidden" />
+      <output ref={studyStatusRef} aria-label="Study status line" aria-live="off" className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 font-mono text-[11px] text-zinc-300 empty:hidden" />
       {adapterRef.current?.inspectCandle&&<div className="flex flex-wrap items-center gap-2 px-3 py-2" role="group" aria-label="Candle inspection">
         <Button size="sm" variant="outline" aria-pressed={inspectionPinned} onClick={()=>adapterRef.current?.inspectCandle?.(inspectionPinned?"clear":"pin")}>{inspectionPinned?"Release candle":"Inspect latest visible candle"}</Button>
         <Button size="sm" variant="outline" onClick={()=>adapterRef.current?.inspectCandle?.("previous")}>Previous candle</Button>

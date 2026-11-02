@@ -19,7 +19,7 @@ async page=>{
   const raw=await page.evaluate(time=>window.__arxChartQa.studyValues([time])[0].studies[0].values[0].value,time);
   check(before.snapshot.state.inspectionPinned&&Number.isFinite(raw),'Historical candle is pinned with an available RSI observation');
   await studies.click();await toggle.check();let current=await ready();
-  const output=panel.getByLabel('Study status line at selected candle',{exact:true});const value=String(Number(raw.toPrecision(8)));
+  const output=panel.getByLabel('Study status line',{exact:true});const value=String(Number(raw.toPrecision(8)));
   await output.filter({hasText:'RSI '+value}).waitFor({state:'visible'});
   check(current.snapshot.state.inspectionPinned&&current.snapshot.state.inspectionTime===time,'Enabling the status readout preserves the exact historical pin');
   check((await output.textContent()).includes('Pinned candle')&&await output.getAttribute('aria-live')==='off','Readout labels selected observations without a hover live-region');

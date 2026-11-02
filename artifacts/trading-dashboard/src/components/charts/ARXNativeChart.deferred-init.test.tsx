@@ -1255,7 +1255,7 @@ it('shows exact selected status values with Data Window closed and withdraws the
  candleResponse=liveResponse('EURUSD','H1');const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
  const engine=created[0]!;let value:number|null=63.25;
  engine.getStudyValues=vi.fn(()=>[{label:'RSI',displayLabel:'RSI (pane collapsed)',statusLineVisible:true,dataWindowVisible:false,color:'#fff',values:[{name:'RSI',value}]},{label:'Other SMA',color:'#fff',values:[{name:'SMA',value:999}]}]);
- const output=screen.getByLabelText('Study status line at selected candle'),details=screen.getByLabelText('Study values at selected candle').closest('details')!;
+ const output=screen.getByLabelText('Study status line'),details=screen.getByLabelText('Study values at selected candle').closest('details')!;
  expect(details.open).toBe(false);expect(output.getAttribute('aria-live')).toBe('off');const inspect=engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void;
  const bar={time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102};
  act(()=>inspect(bar));expect(output.textContent).toContain('Candle observation');expect(output.textContent).toContain('RSI (pane collapsed): RSI 63.25');expect(output.textContent).not.toContain('Other SMA');expect(engine.getStudyValues).toHaveBeenLastCalledWith(bar.time);
@@ -1269,5 +1269,5 @@ it('shows exact selected status values with Data Window closed and withdraws the
 it('does not query study observations when both readout surfaces are unused',()=>{
  candleResponse=liveResponse('EURUSD','H1');render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
  const engine=created[0]!;engine.getStudyValues=vi.fn(()=>[]);const inspect=engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void;
- act(()=>inspect({time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102}));expect(engine.getStudyValues).not.toHaveBeenCalled();expect(screen.getByLabelText('Study status line at selected candle').textContent).toBe('');
+ act(()=>inspect({time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102}));expect(engine.getStudyValues).not.toHaveBeenCalled();expect(screen.getByLabelText('Study status line').textContent).toBe('');
 });
