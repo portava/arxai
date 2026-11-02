@@ -33,6 +33,15 @@ const response = (body:unknown) => ({ok:true,status:200,json:async()=>body,text:
 beforeEach(() => {
   localStorage.clear(); state.investor=false; state.roleLoading=false;
   vi.stubGlobal("fetch", vi.fn(async()=>response({})));
+  // The real chart parent now owns the existing account stream. Keep this
+  // route/role test offline while exercising that provider's actual lifecycle.
+  class OfflineEventSource {
+    static OPEN = 1;
+    readyState = 0;
+    addEventListener() {}
+    close() { this.readyState = 2; }
+  }
+  vi.stubGlobal("EventSource", OfflineEventSource);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
