@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Pattern continuity across missing observations — 2 November 2026
+
+Application `a46d77f3` prevents chart pattern/confirmation calculations from silently bridging time gaps. Earlier segment findings retain visible historical context in both the chart and assistant; incomplete interior and overlapping bars withhold the read. Full frontend 4,728 pass/12 skipped, dashboard typecheck/build pass, two unchanged guard failures, and six source-matched desktop/mobile Scanner scenarios pass. This is accuracy evidence, not latency or competitor acceptance. Session-calendar continuity and cross-engine agreement remain open. See [exact source, failed attempts and limits](CHART_PATTERN_CONTINUITY_2026_11_02.md).
+
 ## Native style access and correctness — 2 November 2026
 
 Application `4823d180` keeps the single Style selector accessible without expanding advanced tools on mobile. All seven styles retain source/canonical/display correctness through 84 programmatic desktop/mobile transitions; full dashboard4,715pass/12skip, typecheck/build pass and two existing guards fail. These are functional checks, **not accepted style-switch latency**: trusted dropdown input did not commit in this browser, including on a blank-page control. Older timing failures remain historical; current trusted speed is unproven. See [exact source, failed probes and limitations](NATIVE_STYLE_ACCEPTANCE_2026_11_02.md).
