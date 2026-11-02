@@ -22,6 +22,8 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
  private viewport:NativeChartViewport|null=null;
  private container:HTMLElement|null=null;
  private mount=0;
+ private paneResizeSequence=0;
+ private paneResizeLease:{token:number;nativeToken:number;viewport:NativeChartViewport;epoch:number}|null=null;
  private epoch=0;
  private frame:number|null=null;
  private listeners=new Set<()=>void>();
@@ -188,6 +190,17 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   });
  }
 
+ beginStudyPaneResize(id:string){
+  const viewport=this.viewport,nativeToken=viewport?.beginStudyPaneResize(id);if(!viewport||nativeToken==null)return null;
+  const token=++this.paneResizeSequence;this.paneResizeLease={token,nativeToken,viewport,epoch:this.epoch};return token;
+ }
+ previewStudyPaneResize(token:number,delta:number){const lease=this.paneResizeLease;return !!lease&&lease.token===token&&this.current(lease.viewport,lease.epoch)&&lease.viewport.previewStudyPaneResize(lease.nativeToken,delta);}
+ endStudyPaneResize(token:number,commit:boolean){
+  const lease=this.paneResizeLease;if(!lease||lease.token!==token||!this.current(lease.viewport,lease.epoch))return null;
+  this.paneResizeLease=null;const result=lease.viewport.endStudyPaneResize(lease.nativeToken,commit);
+  return result?{...result,contextKey:`${this.mount}:${this.epoch}:${result.contextKey}`}:null;
+ }
+ isStudyPaneResizeContextCurrent(key:string){const prefix=`${this.mount}:${this.epoch}:`;return key.startsWith(prefix)&&(this.viewport?.isStudyPaneResizeContextCurrent(key.slice(prefix.length))??false);}
  getStudyPaneControls(){return this.viewport ? this.viewport.getStudyPaneControls() : [];}
  getVolumeProfiles(){return this.viewport?.getVolumeProfiles()??[];}
  getDisplayCandle(time:number){return this.viewport?.getDisplayCandle(time)??null;}

@@ -159,3 +159,51 @@ it('retains focused direct pane controls across real pre-paint hover notificatio
  expect(document.activeElement).toBe(button);expect(screen.getByRole('button',{name:/Collapse pane 1:/})).toBe(button);
  act(()=>flush());expect(document.activeElement).toBe(button);
 });
+
+it('previews pane resizing without changing saved studies or values, then restores on cancellation',()=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff'},{id:'macd',kind:'macd',period:12,color:'#00ff00'}]);flush();
+ const geometry=f.viewport().getPaneLayout(),studies=f.viewport().getStudies(),values=bars().map(b=>f.adapter.getStudyValues(b.time));
+ const token=f.adapter.beginStudyPaneResize('rsi')!;expect(token).not.toBeNull();expect(f.adapter.previewStudyPaneResize(token,20)).toBe(true);flush();
+ expect(f.viewport().getPaneLayout()!.price.height).toBeCloseTo(geometry!.price.height+20,8);
+ expect(f.viewport().getStudies()).toEqual(studies);expect(bars().map(b=>f.adapter.getStudyValues(b.time))).toEqual(values);
+ expect(f.adapter.endStudyPaneResize(token,false)).toBeNull();flush();expect(f.viewport().getPaneLayout()).toEqual(geometry);
+});
+it('commits only current resize leases and rejects changed source, dimensions or study context',()=>{
+ const f=setup();const install=()=>{f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff'}]);flush();};install();
+ let token=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.previewStudyPaneResize(token,20);const result=f.adapter.endStudyPaneResize(token,true)!;
+ expect(result.weights.rsi).toBeLessThan(1);expect(f.adapter.isStudyPaneResizeContextCurrent(result.contextKey)).toBe(true);flush();
+ token=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.previewStudyPaneResize(token,-20);f.adapter.resetDataContext();install();
+ expect(f.adapter.endStudyPaneResize(token,true)).toBeNull();expect(f.adapter.isStudyPaneResizeContextCurrent(result.contextKey)).toBe(false);
+ token=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.resize(800,450);expect(f.adapter.previewStudyPaneResize(token,10)).toBe(false);flush();
+ token=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.setStudies([{id:'rsi',kind:'rsi',period:21,color:'#ffffff'}]);expect(f.adapter.endStudyPaneResize(token,true)).toBeNull();flush();
+ const fresh=f.adapter.beginStudyPaneResize('rsi')!;expect(f.adapter.previewStudyPaneResize(token,20)).toBe(false);expect(f.adapter.endStudyPaneResize(fresh,false)).toBeNull();
+});
+
+it('a resize context round trip never revives a prior lease or completed commit',()=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff'}]);flush();
+ const token=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.previewStudyPaneResize(token,20);f.adapter.resize(800,450);f.adapter.resize(800,400);flush();expect(f.adapter.endStudyPaneResize(token,true)).toBeNull();flush();
+ const second=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.previewStudyPaneResize(second,10);const result=f.adapter.endStudyPaneResize(second,true)!;
+ f.adapter.setChartStyle('line');f.adapter.setChartStyle('candles');expect(f.adapter.isStudyPaneResizeContextCurrent(result.contextKey)).toBe(false);
+});
+it('canvas and divider pointers cannot own chart gestures simultaneously',()=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff'}]);flush();
+ const down=()=>{const event=new MouseEvent('pointerdown',{bubbles:true,cancelable:true,button:0,clientX:200,clientY:100});Object.defineProperties(event,{pointerId:{value:7},pointerType:{value:'touch'}});f.canvas().dispatchEvent(event);return event;};
+ down();flush();expect(f.adapter.beginStudyPaneResize('rsi')).toBeNull();
+ f.canvas().dispatchEvent(new Event('pointercancel'));flush();const token=f.adapter.beginStudyPaneResize('rsi')!;expect(token).not.toBeNull();expect(down().defaultPrevented).toBe(true);f.adapter.endStudyPaneResize(token,false);
+});
+
+it('ordinary candle updates preserve a divider preview but remount cannot reuse its lease',()=>{
+ const f=setup(),install=()=>{f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff'}]);flush();};install();
+ const token=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.previewStudyPaneResize(token,15);
+ f.adapter.updateActiveCandle({...bars().at(-1)!,close:301.5});flush();expect(f.viewport().getCandles().at(-1)!.close).toBe(301.5);expect(f.adapter.previewStudyPaneResize(token,20)).toBe(true);
+ const result=f.adapter.endStudyPaneResize(token,true)!;flush();
+ f.adapter.init({container:f.container,height:400});install();const next=f.adapter.beginStudyPaneResize('rsi')!;
+ expect(next).not.toBe(token);expect(f.adapter.isStudyPaneResizeContextCurrent(result.contextKey)).toBe(false);expect(f.adapter.endStudyPaneResize(token,false)).toBeNull();expect(f.adapter.previewStudyPaneResize(next,10)).toBe(true);f.adapter.endStudyPaneResize(next,false);
+});
+
+it.each(['placement','navigation'])('retiring preview through %s restores frame and completed paint',kind=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff'}]);flush();
+ const original=f.viewport().getFrame()!.plot,token=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.previewStudyPaneResize(token,20);flush();expect(f.viewport().getFrame()!.plot.height).toBeCloseTo(original.height+20,8);
+ if(kind==='placement')f.adapter.setDrawingHandler(()=>{});else f.adapter.setNavigationMode('pan');
+ expect(f.adapter.isAnalysisFocusVerified()).toBe(false);flush();expect(f.viewport().getFrame()!.plot).toEqual(original);expect(f.adapter.isAnalysisFocusVerified()).toBe(true);expect(f.adapter.endStudyPaneResize(token,true)).toBeNull();
+});

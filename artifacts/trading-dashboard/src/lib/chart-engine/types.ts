@@ -1,3 +1,4 @@
+import type { StudyPaneResizeCommit } from './chartPaneResize';
 import type { ProfileCandleEvidence, VolumeProfileInspection } from "./chartVolumeProfile";
 import type { VwapAnchor } from "./chartStudies";
 import type { CandleVolumeEvidence } from "./chartVolume";
@@ -199,6 +200,10 @@ export interface ChartEngineAdapter {
   getVwapAnchorEvidence?(anchor:VwapAnchor): {utcQualified:boolean;reason:string|null};
   /** Current painted pane owners and CSS geometry. Null means pending paint; empty means unavailable/reset. */
   getStudyPaneControls?(): ChartStudyPaneControl[] | null;
+  beginStudyPaneResize?(id:string):number|null;
+  previewStudyPaneResize?(token:number,delta:number):boolean;
+  endStudyPaneResize?(token:number,commit:boolean):StudyPaneResizeCommit|null;
+  isStudyPaneResizeContextCurrent?(key:string):boolean;
   getStudyValues?(time: number): { dataWindowVisible?:boolean; label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
   /** Transformed display bar (Heikin Ashi only) at this time; null in other
    * styles. Legend text only. Never used for studies, drawings or orders. */
@@ -240,6 +245,6 @@ export interface ChartEngineAdapter {
 
 /** View-only controls for actual separately scaled study panes. */
 export interface ChartStudyPaneControl {
-  id:string; paneIndex:number; label:string; collapsed:boolean;
+  id:string; paneIndex:number; label:string; collapsed:boolean; resizable?:boolean; sizePercent?:number;
   left:number; top:number; width:number; height:number;
 }

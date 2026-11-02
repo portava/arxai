@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { ChartPaneResizeHandle } from './ChartPaneResizeHandle';
+import { Fragment, useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChartEngineAdapter, ChartStudyPaneControl } from '@/lib/chart-engine/types';
 import { studyDefinition, studyId } from '@/lib/chart-engine/chartStudies';
@@ -46,7 +47,9 @@ export function ChartPaneControls({adapter,chartTarget,enabled,onPreferences}:Pr
     });
   };
   return createPortal(<div className="pointer-events-none absolute inset-0" data-testid="chart-pane-controls">
-    {panes.map(pane=><button key={pane.id} type="button"
+    {panes.map(pane=><Fragment key={pane.id}>
+      {pane.resizable && adapter.beginStudyPaneResize && adapter.previewStudyPaneResize && adapter.endStudyPaneResize && adapter.isStudyPaneResizeContextCurrent && <ChartPaneResizeHandle adapter={adapter} pane={pane} onPreferences={onPreferences}/>}
+      <button type="button"
       className="pointer-events-auto absolute rounded border border-slate-600 bg-slate-950 text-slate-200 hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
       style={{left:pane.left+pane.width-28,top:pane.top,width:26,height:24}}
       aria-label={`${pane.collapsed?'Expand':'Collapse'} pane ${pane.paneIndex}: ${pane.label}`}
@@ -55,6 +58,6 @@ export function ChartPaneControls({adapter,chartTarget,enabled,onPreferences}:Pr
       onKeyDown={event=>{if(event.key!=='Escape'&&event.key!=='Tab')event.stopPropagation();}}
       onClick={event=>{event.stopPropagation();toggle(pane);}}>
       <span aria-hidden="true">{pane.collapsed?'▴':'▾'}</span>
-    </button>)}
+    </button></Fragment>)}
   </div>,target);
 }

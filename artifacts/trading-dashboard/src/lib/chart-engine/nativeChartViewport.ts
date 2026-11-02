@@ -1,3 +1,4 @@
+import { resizeStudyPaneBoundary, type StudyPaneResizeLayout, type StudyPaneResizeResult, type StudyPaneResizeCommit } from './chartPaneResize';
 import { scaleNativePriceRange, type NativePriceRange, updateNativePriceSeries, prepareNativePriceSeries, createNativePriceFrame, paintNativePriceLayer, type NativePriceFrame } from "./nativePriceRenderer";
 import { nativePlotLayout, paintNativeAxes } from "./nativeChartAxes";
 import { panChartWindow, zoomChartWindow, type LogicalWindow } from "./chartNavigation";
@@ -53,6 +54,34 @@ export class NativeChartViewport {
   private readonly studies = new NativeChartStudies();
   private priceOnlyScale = false;
   private analysisFocused = false;
+  private paneResizeSequence=0;
+  private paneResizeRevision=0;
+  private retirePaneResize(){const hadPreview=this.paneResize!==null;this.paneResizeRevision++;this.paneResize=null;if(hadPreview)this.invalidate();}
+  private paneResize:{token:number;id:string;contextKey:string;layout:StudyPaneResizeLayout;result:StudyPaneResizeResult}|null=null;
+  private paneResizeContextKey(){return JSON.stringify([this.paneResizeRevision,this.generation,this.width,this.height,this.timeframe,this.style,this.scale,this.inverted,this.analysisFocused,this.studies.getStudies()]);}
+  isStudyPaneResizeContextCurrent(key:string){return !this.destroyed&&key===this.paneResizeContextKey();}
+  beginStudyPaneResize(id:string):number|null {
+    if(this.paneResize&&!this.isStudyPaneResizeContextCurrent(this.paneResize.contextKey))this.paneResize=null;
+    if(this.paneResize || this.pointers.size || this.priceAxisGesture || this.timeAxisGesture || this.frozenDrawingFrame || this.activeDrawingPlacement() || this.analysisFocused || !this.isAnalysisFocusVerified() || !this.getFrame())return null;
+    const controls=this.getStudyPaneControls(),geometry=this.getPaneLayout();
+    if(!controls || !geometry || controls.length!==geometry.panes.length)return null;
+    const configs=this.studies.getStudies();
+    const layout:StudyPaneResizeLayout={price:{...geometry.price},studiesKey:JSON.stringify(configs),panes:controls.map(p=>({...p,weight:configs.find(s=>studyId(s)===p.id)?.paneWeight??1}))};
+    const result=resizeStudyPaneBoundary(layout,id,0);if(!result)return null;
+    this.paneResize={token:++this.paneResizeSequence,id,contextKey:this.paneResizeContextKey(),layout,result};
+    return this.paneResize.token;
+  }
+  previewStudyPaneResize(token:number,delta:number):boolean {
+    const drag=this.paneResize;if(!drag || drag.token!==token)return false;
+    if(!this.isStudyPaneResizeContextCurrent(drag.contextKey)){this.paneResize=null;this.invalidate();return false;}
+    const result=resizeStudyPaneBoundary(drag.layout,drag.id,delta);if(!result)return false;
+    if(drag.result.delta!==result.delta){drag.result=result;this.invalidate();}return true;
+  }
+  endStudyPaneResize(token:number,commit:boolean):StudyPaneResizeCommit|null {
+    const drag=this.paneResize;if(!drag || drag.token!==token)return null;
+    const result=commit&&drag.result.delta!==0&&this.isStudyPaneResizeContextCurrent(drag.contextKey)?{contextKey:drag.contextKey,studiesKey:drag.layout.studiesKey,weights:{...drag.result.weights}}:null;
+    this.paneResize=null;this.invalidate();return result;
+  }
   private readonly overlayLayers = new NativeChartOverlayLayers();
   private readonly scannerOverlays: NativeScannerOverlays;
   private drawingEditor: ChartDrawingEditor;
@@ -211,6 +240,7 @@ export class NativeChartViewport {
     const nextWidth = valid ? w : 0, nextHeight = valid ? h : 0;
     const ratio = valid ? Math.min(requestedRatio, MAX_BACKING_SIDE / w, MAX_BACKING_SIDE / h, Math.sqrt(MAX_BACKING_PIXELS / (w * h))) : 1;
     if (nextWidth !== this.width || nextHeight !== this.height || ratio !== this.pixelRatio) {
+      this.retirePaneResize();
       this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover();
       if (this.destroyed || revision !== this.mutationRevision) return;
       this.width = nextWidth; this.height = nextHeight; this.pixelRatio = ratio;
@@ -232,6 +262,7 @@ export class NativeChartViewport {
     const next = prepareNativePriceSeries(candles);
     const times = new Set(next.candles.map(candle => candle.time));
     const overlap = previous.some(candle => times.has(candle.time));
+    if(!next.candles.length||(previous.length&&!overlap))this.retirePaneResize();
     const selected = this.drawings.find(drawing => drawing.id === this.selectedDrawing);
     const anchors = selected ? [selected.start, ...(selected.end ? [selected.end] : []), ...(selected.offset ? [selected.offset] : [])] : [];
     if (!next.candles.length || (previous.length && !overlap) || (selected?.kind !== "horizontal" && anchors.some(anchor => !times.has(anchor.time))) || this.editAnchorTimes.some(time=>!times.has(time))) this.drawingEditor.cancelGesture();
@@ -388,6 +419,7 @@ export class NativeChartViewport {
   }
   private activeDrawingPlacement() { return !this.analysisFocused && this.drawingNavigationMode !== "pan" && this.drawingHandler !== null; }
   private applyDrawingPlacement() {
+    this.retirePaneResize();
     this.cancelGesture();this.clearHover();
     const handler = this.activeDrawingPlacement() ? this.drawingHandler : null;
     this.drawingEditor.setPlacement(handler ? anchor => this.notify("drawing placement", () => handler(anchor)) : null);
@@ -458,6 +490,7 @@ export class NativeChartViewport {
   }
   setAnalysisFocus(enabled: boolean): void {
     if (this.destroyed || this.analysisFocused===enabled) return;
+    this.retirePaneResize();
     const revision=++this.mutationRevision;
     this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
     if(this.destroyed||revision!==this.mutationRevision)return;
@@ -468,11 +501,13 @@ export class NativeChartViewport {
   getRange(): Readonly<LogicalWindow> | null { return this.range ? Object.freeze({ ...this.range }) : null; }
   getPaneLayout() {
     const full = nativePlotLayout(this.width, this.height);
-    return full ? layoutNativeStudyPanes(full, this.analysisFocused ? 0 : this.studies.paneCount, this.analysisFocused?[]:this.studies.getPaneWeights(),this.analysisFocused?[]:this.studies.getPaneCollapsed()) : null;
+    const drag=this.paneResize,preview=drag&&this.isStudyPaneResizeContextCurrent(drag.contextKey)?drag.layout.panes.map(p=>drag.result.weights[p.id]!):null;
+    return full ? layoutNativeStudyPanes(full, this.analysisFocused ? 0 : this.studies.paneCount, this.analysisFocused?[]:preview??this.studies.getPaneWeights(),this.analysisFocused?[]:this.studies.getPaneCollapsed()) : null;
   }
   setStudies(configs: ChartStudy[]): void {
     if (this.destroyed) return;
     const valid=validatePreferences({studies:configs}).studies;
+    if(JSON.stringify(valid)!==JSON.stringify(this.studies.getStudies()))this.retirePaneResize();
     const plotInputs=(studies:readonly ChartStudy[])=>JSON.stringify(studies.map(({showInDataWindow:_readout,...plot})=>plot));
     const readoutOnly=plotInputs(valid)===plotInputs(this.studies.getStudies());
     const revision = ++this.mutationRevision;
@@ -487,17 +522,19 @@ export class NativeChartViewport {
     if(this.analysisFocused || !this.getFrame())return [];
     if(!this.isAnalysisFocusVerified())return null;
     const layout=this.getPaneLayout();if(!layout)return [];
-    return this.studies.getDisplayStudies().flatMap(study=>{
+    const controls=this.studies.getDisplayStudies().flatMap(study=>{
       if(!study.paneIndex || !studyDefinition(study.config.kind).pane)return [];
       const pane=layout.panes[study.paneIndex-1];if(!pane)return [];
       return [{id:studyId(study.config),paneIndex:study.paneIndex,label:studyLabel(study.config,this.studies.getStudies()),
         collapsed:study.config.paneCollapsed===true,left:pane.left,top:pane.top,width:pane.width,height:pane.height}];
     });
+    return controls.map((control,index)=>({...control,sizePercent:100*control.height/(control.height+(index===0?layout.price.height:layout.panes[index-1]!.height)),resizable:controls.length===layout.panes.length&&!control.collapsed&&(index===0||!controls[index-1]!.collapsed)}));
   }
   getStudyValues(time: number) { return this.analysisFocused ? [] : this.studies.getValues(time); }
   getVolumeProfiles() { return this.analysisFocused ? [] : this.studies.getProfiles(); }
   setPriceOnlyScale(enabled: boolean): void {
     if(this.destroyed || this.priceOnlyScale===enabled)return;
+    this.retirePaneResize();
     const revision=++this.mutationRevision;
     this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();if(this.destroyed||revision!==this.mutationRevision)return;
     this.priceOnlyScale=enabled;this.manualPriceRange=null;this.invalidate();
@@ -553,12 +590,14 @@ export class NativeChartViewport {
   }
   setStyle(style: ChartStyle): void {
     if (!this.destroyed && CHART_STYLES.includes(style) && style !== this.style) {
+      this.retirePaneResize();
       const revision = ++this.mutationRevision;
       this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.scannerOverlays.reset(); this.manualPriceRange=null; this.style = style; this.invalidate();
     }
   }
   setScale(scale: ChartScaleMode, inverted = this.inverted): void {
     if (this.destroyed || !["linear", "log", "percent", "indexed"].includes(scale)) return;
+    if(this.scale!==scale||this.inverted!==inverted)this.retirePaneResize();
     const revision = ++this.mutationRevision;
     this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; if(this.scale!==scale || this.inverted!==inverted)this.manualPriceRange=null; this.scale = scale; this.inverted = inverted; this.invalidate();
   }
@@ -571,6 +610,7 @@ export class NativeChartViewport {
   }
   setDisplayTimeZone(zone: ChartTimeZone, timeframe = this.timeframe): void {
     if (this.destroyed || !isChartTimeZone(zone)) return;
+    if(zone!==this.timeZone||timeframe!==this.timeframe)this.retirePaneResize();
     const revision=++this.mutationRevision;
     if(timeframe!==this.timeframe){
       this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
@@ -580,6 +620,7 @@ export class NativeChartViewport {
   }
   resetContext(): void {
     if (this.destroyed) return;
+    this.retirePaneResize();
     const revision = ++this.mutationRevision;
     this.drawingEditor.cancelGesture(); this.cancelGesture(); this.clearHover(); if (this.destroyed || revision !== this.mutationRevision) return; this.generation++;
     if (this.raf != null) cancelAnimationFrame(this.raf); this.raf = null;
@@ -736,6 +777,7 @@ export class NativeChartViewport {
   };
   private onAxisPointerConflict = (event: PointerEvent) => {
     if(this.destroyed)return;
+    if(this.paneResize&&this.isStudyPaneResizeContextCurrent(this.paneResize.contextKey)){event.preventDefault();event.stopImmediatePropagation();return;}
     const point=this.point(event);
     if(this.priceAxisGesture || this.timeAxisGesture || (this.frozenDrawingFrame && point && (this.insidePriceAxis(point)||this.insideTimeAxis(point)))){
       event.preventDefault();event.stopImmediatePropagation();
