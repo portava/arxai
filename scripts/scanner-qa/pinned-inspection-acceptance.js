@@ -18,6 +18,7 @@ async page=>{
   await panel.getByRole('button',{name:'Inspect latest visible candle',exact:true}).click();
   let s=await state();check(s.inspectionPinned&&s.inspectionTime===bars.at(-1).time,'Button pins latest visible actual candle');
   const output=panel.getByLabel('Study values at selected candle',{exact:true});
+  await output.filter({hasText:'RSI'}).waitFor({state:'visible'});await state();
   check((await output.textContent()).includes('RSI'),'Pinned Data Window displays study values');
   const canvas=panel.locator('canvas[data-arx-native-viewport]');
   const text=await panel.getByTestId('chart-candle-inspector').textContent();
