@@ -67,6 +67,11 @@ export function ChartPerformanceComparison({symbol,timeframe,data,readFailed,ada
   const start=range?.from??0,end=range?.to??1;
   const x=(time:number)=>left+(time-start)/Math.max(1,end-start)*(right-left);
   const y=(value:number)=>bottom-(value/magnitude-scaledLow+pad)/(scaledHigh-scaledLow+2*pad)*(bottom-top);
+  const ticks=[low,0,high].filter((value,index,all)=>all.indexOf(value)===index);
+  // Keep zero as the common reference, then label extremes only if their text
+  // clears it. Grid lines, source observations and the values table stay intact.
+  const labelledTicks=[0,low,high].filter((value,index,all)=>all.indexOf(value)===index).reduce<number[]>((kept,value)=>
+    kept.every(other=>Math.abs(y(other)-y(value))>=14)?[...kept,value]:kept,[]);
   const selected=ready?.rows.find(row=>row.time===inspected)??ready?.lastCommon;
   const selectedIndex=ready&&selected?ready.rows.indexOf(selected):0;
   const selectedText=selected?`${stamp(selected.time)} · ${symbol}: ${percent(selected.primary)} · ${comparisonSymbol}: ${percent(selected.comparison)}`:"";
@@ -92,7 +97,7 @@ export function ChartPerformanceComparison({symbol,timeframe,data,readFailed,ada
           setInspected(nearest.time);
         }}>
           <title>Historical relative price change; no execution or live-price claim</title>
-          {[low,0,high].filter((v,i,a)=>a.indexOf(v)===i).map(value=><g key={value}><line x1={left} x2={right} y1={y(value)} y2={y(value)} stroke="#3f3f46" strokeDasharray={value===0?undefined:"3 3"}/><text x={left-6} y={y(value)+4} textAnchor="end" fill="#a1a1aa" fontSize={11}>{percent(value)}</text></g>)}
+          {ticks.map(value=><g key={value}><line x1={left} x2={right} y1={y(value)} y2={y(value)} stroke="#3f3f46" strokeDasharray={value===0?undefined:"3 3"}/>{labelledTicks.includes(value)&&<text x={left-6} y={y(value)+4} textAnchor="end" fill="#a1a1aa" fontSize={11}>{percent(value)}</text>}</g>)}
           {(["primary","comparison"] as const).map(key=><g key={key} data-comparison-series={key}><path d={comparisonPaths(ready.rows,key,ready.interval,x,y)} fill="none" stroke={colors[key]} strokeWidth={2}/>{ready.rows.map(row=>row[key]===null?null:<circle key={row.time} cx={x(row.time)} cy={y(row[key]!)} r={2} fill={colors[key]}/>)}</g>)}
           {selected&&<line data-comparison-cursor="true" x1={x(selected.time)} x2={x(selected.time)} y1={top} y2={bottom} stroke="#a1a1aa" strokeDasharray="3 3"/>}
         </svg>

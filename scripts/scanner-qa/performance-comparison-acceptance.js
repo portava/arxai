@@ -32,6 +32,8 @@ async page => {
   check(table.length===a.length&&a.every((bar,i)=>b[i]?.time===bar.time&&table[i].includes(pct((bar.close-a[0].close)/a[0].close*100))&&table[i].includes(pct((b[i].close-b[0].close)/b[0].close*100))),'Every displayed relative value matches independent source arithmetic');
   check(await comparison.locator('[data-comparison-series="primary"] circle').count()===a.length&&await comparison.locator('[data-comparison-series="comparison"] circle').count()===b.length,'Both observed line series are plotted');
   check(!/NaN|Infinity/.test(await comparison.getByRole('img').innerHTML()),'SVG coordinates are finite');
+  const labelPositions=await comparison.getByRole('img').locator('text').evaluateAll(nodes=>nodes.map(node=>Number(node.getAttribute('y'))).sort((a,b)=>a-b));
+  check(labelPositions.every((y,i)=>i===0||y-labelPositions[i-1]>=14),'Percentage axis labels have readable vertical clearance');
   const baseline=await comparison.getByText(/^Baseline:/).textContent();
   await comparison.scrollIntoViewIfNeeded();await shot('desktop');
   await panel.getByRole('button',{name:'Zoom in chart',exact:true}).click();await frames();

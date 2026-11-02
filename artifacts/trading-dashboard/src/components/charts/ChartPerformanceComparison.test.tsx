@@ -99,3 +99,13 @@ it("retains a huge finite outlier without overflowing SVG coordinates",()=>{
   const points=svg.querySelectorAll('[data-comparison-series="comparison"] circle');
   expect(points).toHaveLength(4);expect(Number(points[1]!.getAttribute("cy"))).toBeLessThan(Number(points[0]!.getAttribute("cy")));
 });
+it("separates axis labels near zero without removing the observed extreme",()=>{
+  mock.query.data=comparisonFixture("GBPUSD",[100,99.99,200,100]);
+  render(tree({data:comparisonFixture("EURUSD",[100,100,100,100])}));fireEvent.click(screen.getByText("Select GBPUSD"));
+  const svg=screen.getByRole("img"),labels=[...svg.querySelectorAll("text")];
+  const positions=labels.map(node=>Number(node.getAttribute("y"))).sort((a,b)=>a-b);
+  expect(positions.every((v,i)=>i===0||v-positions[i-1]!>=14)).toBe(true);
+  expect(labels.some(node=>node.textContent==="0%")).toBe(true);
+  expect(svg.querySelectorAll('[data-comparison-series="comparison"] circle')).toHaveLength(4);
+  expect(screen.getAllByRole("row")[2]!.textContent).toContain("-0.01%");
+});
