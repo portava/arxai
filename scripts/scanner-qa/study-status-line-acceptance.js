@@ -34,7 +34,7 @@ async page=>{
   await page.reload();await panel.getByRole('button',{name:'Fullscreen',exact:true}).click();await tools();current=await ready();
   check(current.config.studies[0].showInStatusLine===true&&current.config.studies[0].showInDataWindow===false,'Independent readout settings survive reload');
   await panel.getByRole('button',{name:'Inspect latest visible candle',exact:true}).click();await ready();
-  await panel.getByRole('button',{name:'M30',exact:true}).click();current=await ready();
+  await panel.getByRole('button',{name:'M30 timeframe',exact:true}).click();current=await ready();
   check(current.snapshot.state.inspectionTime===null&&!(await output.textContent()).includes('Selected candle'),'Interval replacement clears the old observation');
   await page.setViewportSize({width:390,height:844});await tools();await panel.getByRole('button',{name:'Inspect latest visible candle',exact:true}).click();await ready();await output.scrollIntoViewIfNeeded();
   check(await output.isVisible()&&await output.evaluate(n=>n.scrollWidth<=n.clientWidth),'Narrow-screen status readout wraps without horizontal overflow');await shot('mobile-selected');
