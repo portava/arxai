@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Unverified sessions and confidence limits — 2 November 2026
+
+Application `ce7db72c` prevents the combined reader from inferring a market session without qualified calendar evidence. Unknown timing stays unverified through display/confluence and Gold composition; final confidence adjustments cannot exceed applicable limits or normalize invalid input into a positive score. Backend 89 pass; frontend 4,730 pass/12 skipped; types/builds pass; two unchanged guards fail. A qualified session-calendar implementation, broader engine agreement and browser/performance acceptance remain open. See [scope, reproductions and limits](SESSION_EVIDENCE_TRUTH_2026_11_02.md).
+
 ## Captured provider and time-coordinate preservation — 2 November 2026
 
 Application `6c89d9c0` carries the captured provider through assistant and intelligence pattern children while explicitly preserving already-normalized candle opening times. Raw provider defaults remain unchanged; coordinate syntax does not establish UTC authority. Captured-input 73 pass, related regressions 228 pass, API typecheck/build pass; two unchanged guards fail. No browser or performance claim. Session-clock inference and broader engine accuracy remain open. See [exact evidence and limits](PATTERN_SOURCE_CAPTURE_2026_11_02.md).
