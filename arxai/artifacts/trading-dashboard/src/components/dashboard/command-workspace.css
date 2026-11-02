@@ -113,6 +113,8 @@
   .arx-workspace-top { flex-wrap: wrap; gap: 8px 12px; }
   .arx-workspace-title { flex: 1 1 220px; }
   .arx-refresh-control { flex: 0 1 auto; }
+  .arx-workspace-grid { grid-template-columns: minmax(220px,.8fr) minmax(380px,1.4fr); }
+  .arx-col-right { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; }
   .arx-col-left #workspace-discovery .arx-panel-body,
   .arx-col-left #workspace-heat .arx-panel-body,
   .arx-col-right #workspace-ruby .arx-panel-body { max-height: 300px; }
