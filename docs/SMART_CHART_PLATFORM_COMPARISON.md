@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Captured provider and time-coordinate preservation — 2 November 2026
+
+Application `6c89d9c0` carries the captured provider through assistant and intelligence pattern children while explicitly preserving already-normalized candle opening times. Raw provider defaults remain unchanged; coordinate syntax does not establish UTC authority. Captured-input 73 pass, related regressions 228 pass, API typecheck/build pass; two unchanged guards fail. No browser or performance claim. Session-clock inference and broader engine accuracy remain open. See [exact evidence and limits](PATTERN_SOURCE_CAPTURE_2026_11_02.md).
+
 ## Server and chart pattern evidence agreement — 2 November 2026
 
 Application `9952afb0` shares the continuity rule across the chart and three server pattern/trendline producers. Unfinished candles, missing intervals, invalid dates and repaired conflicting observations cannot supply current confirmation. Backend 228 pass; frontend 4,730 pass/12 skipped; shared/API/dashboard types and both builds pass. Two existing guards fail, and broad recursive typechecking stops at missing mockup-workspace dependencies. No new browser or latency acceptance; source-clock authority and broader engine agreement remain open. See [exact evidence and limitations](PATTERN_PRODUCER_CONTINUITY_2026_11_02.md).
