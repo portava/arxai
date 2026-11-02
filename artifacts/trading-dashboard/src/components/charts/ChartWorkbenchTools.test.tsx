@@ -702,3 +702,11 @@ it('labels indicator-only exports without claiming a visible price style or draw
  const labels=exportLabels({symbol:'EURUSD',timeframe:'M15',capture:'Offline',feedLabel:'Synthetic',style:'candles',studies:[],fibonacciPreview:true,maximizedPane:'rsi'});
  expect(labels.join(' ')).toContain('Hidden price style');expect(labels.join(' ')).toContain('Maximized indicator pane');expect(labels.join(' ')).not.toContain('UNACCEPTED automatic Fibonacci preview');
 });
+it('retires an unfinished price drawing when an indicator pane is maximized',()=>{
+ const props={adapter,epoch:1,symbol:'EURUSD',timeframe:'M15',preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:'Offline'};
+ const view=render(<ChartWorkbenchTools {...props}/>);
+ fireEvent.change(screen.getByLabelText('Drawing tool'),{target:{value:'trend'}});act(()=>click?.({time:100,price:1.2}));
+ view.rerender(<ChartWorkbenchTools {...props} maximizedPane="rsi"/>);
+ expect(click).toBeNull();expect((screen.getByLabelText('Drawing tool') as HTMLSelectElement).value).toBe('');
+ view.rerender(<ChartWorkbenchTools {...props} maximizedPane={null}/>);expect(click).toBeNull();
+});

@@ -15,9 +15,12 @@ async page=>{
   for(const name of ['Relative strength index','MACD'])await panel.getByRole('button',{name:'Add '+name,exact:true}).click();
   await panel.getByRole('button',{name:/^Studies \(/}).click();
   const before=await state(),observations=await numbers();
+  await panel.getByLabel('Drawing tool',{exact:true}).selectOption('trend');
+  const canvas=panel.locator('canvas[data-arx-native-viewport]');await canvas.click({position:{x:140,y:100}});
   const maximize=panel.getByRole('button',{name:/^Maximize pane 1:/});await maximize.scrollIntoViewIfNeeded();
   const b=await maximize.boundingBox();await page.mouse.click(b.x+b.width/2,b.y+2);let current=await state();
   check(current.snapshot.state.maximizedStudyPane===current.config.studies[0].id,'Upper edge click maximizes instead of grabbing the divider');
+  check(await panel.getByLabel('Drawing tool',{exact:true}).inputValue()==='', 'Unfinished price drawing is retired on maximization');
   check(await panel.getByRole('separator').count()===0,'Divider controls are unavailable in maximized view');
   check(await panel.getByRole('button',{name:/^Restore layout from pane 1:/}).isVisible(),'Restore button remains reachable');
   check(current.layout.panes[0].height>before.layout.panes[0].height*2,'Selected indicator receives the full plot height');

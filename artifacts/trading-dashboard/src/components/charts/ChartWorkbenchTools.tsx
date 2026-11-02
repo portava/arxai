@@ -113,7 +113,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
     if(onRestoreAnalysis?.()&&!isPresentationHidden())return true;
     setMessage("Analysis layers are still hidden. Restore tools before displaying this drawing.");return false;
   };
-  useEffect(()=>{if(analysisFocused){setTool(null);setAnchor(null);setChannelEnd(null);}},[analysisFocused]);
+  useEffect(()=>{if(analysisFocused||maximizedPane){setTool(null);setAnchor(null);setChannelEnd(null);}},[analysisFocused,maximizedPane]);
   const [goToDate,setGoToDate] = useState("");
   const [storageFailed,setStorageFailed] = useState(false);
   const [fibonacciPreview,setFibonacciPreviewState]=useState<ChartFibonacciProposal|null>(null);
