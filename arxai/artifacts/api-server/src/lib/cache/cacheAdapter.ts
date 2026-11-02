@@ -28,6 +28,7 @@ export interface CacheAdapter {
   clear(key?: string): void;
   /** Returns the total number of live (non-expired) keys. */
   size(): number;
+  stats(): { hits: number; misses: number; evictions: number; maxEntries: number };
 }
 
 // ── In-memory adapter ─────────────────────────────────────────────────────
@@ -36,6 +37,10 @@ class InMemoryCacheAdapter implements CacheAdapter {
   readonly ttlMs: number;
   readonly instanceId: string;
   private readonly store = new Map<string, { at: number; value: unknown }>();
+  private hits = 0;
+  private misses = 0;
+  private evictions = 0;
+  private readonly maxEntries = 1000;
 
   constructor(mode: CacheMode, ttlMs: number, instanceId: string) {
     this.mode = mode;
@@ -45,16 +50,30 @@ class InMemoryCacheAdapter implements CacheAdapter {
 
   get<T>(key: string): { hit: true; value: T } | { hit: false } {
     const row = this.store.get(key);
-    if (!row) return { hit: false };
+    if (!row) { this.misses++; return { hit: false }; }
     if (Date.now() - row.at > this.ttlMs) {
       this.store.delete(key);
+      this.misses++;
       return { hit: false };
     }
+    this.hits++;
     return { hit: true, value: row.value as T };
   }
 
   set<T>(key: string, value: T): void {
+    this.store.delete(key);
+    if (this.store.size >= this.maxEntries) {
+      this.size(); // Reclaim expired keys before evicting a useful result.
+      if (this.store.size >= this.maxEntries) {
+        this.store.delete(this.store.keys().next().value!);
+        this.evictions++;
+      }
+    }
     this.store.set(key, { at: Date.now(), value });
+  }
+
+  stats() {
+    return { hits: this.hits, misses: this.misses, evictions: this.evictions, maxEntries: this.maxEntries };
   }
 
   clear(key?: string): void {
@@ -110,7 +129,7 @@ export interface CacheRuntimeReport {
   mode: CacheMode;
   instanceId: string;
   pid: number;
-  namespaces: Array<{ name: string; ttlMs: number; size: number }>;
+  namespaces: Array<{ name: string; ttlMs: number; size: number; hits: number; misses: number; evictions: number; maxEntries: number }>;
   distributedAdapterImplemented: boolean;
   /** True when ARX_CACHE_MODE=distributed but no real distributed adapter is wired yet. */
   modeMismatchWarning: boolean;
@@ -120,7 +139,7 @@ export interface CacheRuntimeReport {
 export function describeCacheRuntime(): CacheRuntimeReport {
   const mode = resolveMode();
   const namespaces = Array.from(REGISTRY.entries()).map(([name, c]) => ({
-    name, ttlMs: c.ttlMs, size: c.size(),
+    name, ttlMs: c.ttlMs, size: c.size(), ...c.stats(),
   }));
   const distributedAdapterImplemented = false;
   const modeMismatchWarning = mode === "distributed" && !distributedAdapterImplemented;

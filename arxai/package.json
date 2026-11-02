@@ -18,7 +18,9 @@
     "release:build:web": "bash scripts/release/build-arx-production.sh web",
     "release:check": "bash scripts/release/run-arx-production.sh --check",
     "release:start": "bash scripts/release/run-arx-production.sh",
-    "test:release-launcher": "node --test scripts/release/check-arx-production-env.test.mjs"
+    "test:release-launcher": "node --test scripts/release/check-arx-production-env.test.mjs",
+    "check:performance": "pnpm --filter @workspace/api-server run test:performance && pnpm --filter @workspace/api-server run test:account-stream-scheduling && pnpm --filter @workspace/trading-dashboard run test:live-account-snapshot && pnpm --filter @workspace/trading-dashboard run test:performance",
+    "check:bundle-budget": "node scripts/performance/check-bundle.mjs"
   },
   "private": true,
   "devDependencies": {

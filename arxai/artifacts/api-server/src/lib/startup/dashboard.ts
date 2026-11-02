@@ -17,7 +17,14 @@ export function mountProductionDashboard(app: Express, directory: string): void 
     next();
   });
   app.use(express.static(root, { index: false, dotfiles: "deny", redirect: false,
-    setHeaders: res => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Content-Type-Options", "nosniff"); } }));
+    setHeaders: (res, file) => {
+      // Only content-addressed Vite assets are immutable. HTML, public files,
+      // and unhashed assets must revalidate so deployments remain visible.
+      const relative = path.relative(root, file).split(path.sep).join("/");
+      const hashed = /^assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/.test(relative);
+      res.setHeader("Cache-Control", hashed ? "public, max-age=31536000, immutable" : "no-cache");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    } }));
   app.use((req, res, next) => {
     const decoded = decodeURIComponent(req.path);
     const parts = decoded.split("/");

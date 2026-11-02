@@ -17,6 +17,7 @@
 // Mount path: /api/me/live/*
 
 import { createAccountSnapshotScheduler } from "../lib/live/accountSnapshotScheduler.js";
+import { createSseWriter } from "../lib/perf/sseWriter.js";
 import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
@@ -1078,17 +1079,25 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   (res as unknown as { flushHeaders?: () => void }).flushHeaders?.();
 
-  let aborted = false;
-  let stopStream: (() => void) | undefined;
-  req.once("close", () => { aborted = true; stopStream?.(); });
-  const send = (event: unknown) => {
-    if (aborted) return;
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
+  let stopRefresh = () => {};
+  let unsubscribe = () => {};
+  let tick: ReturnType<typeof setInterval> | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const writer = createSseWriter(res, () => {
+    stopRefresh();
+    unsubscribe();
+    clearInterval(tick);
+    clearInterval(heartbeat);
+  });
+  req.once("close", writer.close);
+  const send = writer.send;
 
   const { buildLiveAccountSnapshot } = await import("../lib/live/liveAccountSnapshot.js");
+  const { liveAccountEventBus } = await import("../lib/live/liveAccountEventBus.js");
+  if (writer.closed) return;
 
   // Build one snapshot using the SAME mode-scope gate as /me/live/positions so
   // the stream can never disagree with the positions list. Returns the safe
@@ -1182,20 +1191,14 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
 
   // Subscribe before the initial read so an update arriving during that read
   // earns a trailing refresh. Initial, change and fallback reads share one
-  // scheduler; the interval must never bypass it and race a newer snapshot.
-  const { liveAccountEventBus } = await import("../lib/live/liveAccountEventBus.js");
-  if (aborted) return;
+  // tested scheduler; the interval must never bypass it or race newer evidence.
   const scheduler = createAccountSnapshotScheduler(buildOnce);
-  const onLiveChange = () => scheduler.request();
-  liveAccountEventBus.on(userId, onLiveChange);
-  const tick = setInterval(onLiveChange, 3_000);
-  const heartbeat = setInterval(() => { if (!aborted) send({ type: "heartbeat", ts: Date.now() }); }, 15_000);
-  stopStream = () => {
-    scheduler.stop();
-    clearInterval(tick);
-    clearInterval(heartbeat);
-    liveAccountEventBus.off(userId, onLiveChange);
-  };
+  stopRefresh = scheduler.stop;
+  liveAccountEventBus.on(userId, scheduler.request);
+  unsubscribe = () => liveAccountEventBus.off(userId, scheduler.request);
+  tick = setInterval(scheduler.request, 3_000);
+  heartbeat = setInterval(() => send({ type: "heartbeat", ts: Date.now() }), 15_000);
+  if (writer.closed) { scheduler.stop(); unsubscribe(); clearInterval(tick); clearInterval(heartbeat); return; }
   scheduler.request();
 
 });

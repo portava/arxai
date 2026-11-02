@@ -16,8 +16,8 @@ import { AuthGate } from "@/components/auth/AuthGate";
 import { useActivityPing } from "@/hooks/useActivityPing";
 import { ScannerPageRoute } from "@/components/scanner/ScannerPageRoute";
 
-// Eager: dashboard (home) and not-found
-import Dashboard from "@/pages/dashboard";
+// Load the trading cockpit only after authentication and route selection.
+const Dashboard = lazy(() => import("@/pages/dashboard"));
 import NotFound from "@/pages/not-found";
 const InvestorPortal = lazy(() => import("@/pages/investor"));
 // Code-split: these are not the landing route, so keep them out of the initial bundle.

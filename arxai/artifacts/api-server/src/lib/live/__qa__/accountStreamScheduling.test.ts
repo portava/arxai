@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import vm from "node:vm";
 import ts from "typescript";
 import { createAccountSnapshotScheduler } from "../accountSnapshotScheduler.js";
+import { createSseWriter } from "../../perf/sseWriter.js";
 
 // Execute the actual route body with read-only data/transport seams. No DB,
 // credentials, server or broker. This supplements the scheduler's clock tests;
@@ -33,6 +34,7 @@ function harness(delayModule = false) {
     snapshotModule: () => delayModule ? new Promise(resolve => { finishModule = resolve; }) : Promise.resolve({}),
     busModule: async () => ({ liveAccountEventBus: bus }),
     createAccountSnapshotScheduler: (read: () => Promise<void>) => createAccountSnapshotScheduler(read, { minGapMs: 0 }),
+    createSseWriter,
     getUserModeScope: async () => ({ currentAccountMode: "DEMO" }),
     resolveLivePositionVisibility: () => ({ includeLive: false, notLiveReason: "not live" }),
     fetchInvestorBalanceParts: async () => {
@@ -47,7 +49,12 @@ function harness(delayModule = false) {
     setTimeout, clearTimeout,
   };
   vm.runInNewContext(js, context);
-  const response = { setHeader() {}, flushHeaders() {}, write: (value: string) => writes.push(value) };
+  const response = Object.assign(new EventEmitter(), {
+    destroyed: false, writableEnded: false,
+    setHeader() {}, flushHeaders() {},
+    write: (value: string) => { writes.push(value); return true; },
+    destroy(this: EventEmitter & { destroyed: boolean }) { this.destroyed = true; this.emit("close"); },
+  });
   const run = handler(req, response);
   return {
     run, req, bus, writes, intervals,

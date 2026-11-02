@@ -201,6 +201,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const backoffIdxRef = useRef(0);
   const mountedRef = useRef(true);
   const snapRef = useRef<LiveAccountSnapshot | null>(null);
+  const snapshotVersionRef = useRef(0);
+  const lastSseTimeRef = useRef(-Infinity);
   // Task #440 — debounced auto-refresh when freshness flips to stale.
   const staleRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasStaleRef = useRef(false);
@@ -232,7 +234,8 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     const request = new AbortController();
     pollRequestRef.current = request;
     setIsRefreshing(true);
-    const current = () => mountedRef.current && pollRequestRef.current === request && !request.signal.aborted;
+    const version = snapshotVersionRef.current;
+    const current = () => mountedRef.current && pollRequestRef.current === request && !request.signal.aborted && version === snapshotVersionRef.current;
     const timeout = setTimeout(() => {
       if (!current()) return;
       request.abort();
@@ -405,6 +408,9 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
 
         const parsed = parseSSEEvent(raw);
         if (parsed) {
+          if (!Number.isFinite(parsed.lastComputedAtMs) || parsed.lastComputedAtMs < lastSseTimeRef.current) return;
+          lastSseTimeRef.current = parsed.lastComputedAtMs;
+          snapshotVersionRef.current += 1;
           // A confirmed stream snapshot supersedes any older fallback request.
           // Abort it and reject even a response already decoding its JSON.
           stopPolling();
