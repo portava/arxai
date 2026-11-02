@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Native style access and correctness — 2 November 2026
+
+Application `4823d180` keeps the single Style selector accessible without expanding advanced tools on mobile. All seven styles retain source/canonical/display correctness through 84 programmatic desktop/mobile transitions; full dashboard4,715pass/12skip, typecheck/build pass and two existing guards fail. These are functional checks, **not accepted style-switch latency**: trusted dropdown input did not commit in this browser, including on a blank-page control. Older timing failures remain historical; current trusted speed is unproven. See [exact source, failed probes and limitations](NATIVE_STYLE_ACCEPTANCE_2026_11_02.md).
+
 ## Shared pattern lifecycle truth — 2 November 2026
 
 Application `140f9476` marks a hammer failed after a next close below its low and prevents failed/exhausted/absent patterns from acquiring fresh-trigger explanations. Gold helper wrappers also preserve no-trade failure. Full frontend4,714pass/12skipped,123targeted backend checks, types/builds pass; two baseline guards remain. No browser/timing/deployment result is claimed on this commit. See [reproductions, exact source and remaining cross-consumer limits](PATTERN_FAILED_STATE_2026_11_02.md).
@@ -77,7 +81,7 @@ MT5. Reference: [official demo](https://charting-library.tradingview-widget.com/
 MT5's help documents up to 100 simultaneously open charts. Its marketing material
 also uses broader wording, so this comparison uses the explicit help limit.
 MT5 documents 21 timeframes and 38 built-in indicators. Its analytical-object help currently lists 46 tools (checked 2026-11-01), while older marketing material cited 44; this comparison uses the specific [object help](https://www.metatrader5.com/en/terminal/help/charts_analysis/objects).
-ARX's 17 study types include four separately listed moving-average methods;
+ARX's current 23 study entries include four separately listed moving-average methods;
 these counts must not be treated as equivalent catalog coverage.
 [MT5 charts](https://www.metatrader5.com/en/terminal/help/charts_analysis/charts),
 [technical-analysis catalog](https://www.metatrader5.com/en/trading-platform/technical-analysis).
@@ -119,7 +123,7 @@ this Smart Chart implementation. None means production verification is complete.
 | Custom intervals | MT5 21 presets; TV interval controls [M1,T3] | Partial: 19 fixed-duration intervals exposed across the shared chart and Scanner; W1/MN1 explicitly unavailable pending calendar-boundary correctness. Server overlays/receipts retain seven supported intervals and explain when unavailable; no user-defined intervals. See timeframe note above |
 | OHLC inspection | MT5 crosshair/data window [M1] | Implemented, canonical values also for line style; area, baseline, Heikin Ashi (HA values labelled separately after the canonical OHLC) and hollow are unit-tested and checked in the isolated real-browser workbench; see [round-3 acceptance](SMART_CHART_ROUND3_BROWSER_ACCEPTANCE_2026_10_28.md) |
 | Study-value data window | MT5 indicator values in data window [M1] | Implemented in this branch; inspect the same timestamp across price/oscillator panes |
-| Study catalog | MT5 38; Advanced Charts 100+ [M2,T4] | Partial: 22 entries (19 OHLC studies, tick count and two conditional traded-volume studies), searchable library, including [Wilder DMI/ADX](SMART_CHART_DMI_2026_10_31.md) and [Donchian Channels](SMART_CHART_RANGE_STUDIES_2026_10_31.md); remaining MT5/TradingView studies and matched-platform numerical validation are open |
+| Study catalog | MT5 38; Advanced Charts 100+ [M2,T4] | Partial: 23 entries (19 OHLC studies, tick count and three conditional trade-volume studies, including the estimated volume profile), searchable library, including [Wilder DMI/ADX](SMART_CHART_DMI_2026_10_31.md) and [Donchian Channels](SMART_CHART_RANGE_STUDIES_2026_10_31.md); remaining MT5/TradingView studies and matched-platform numerical validation are open |
 | Moving-average methods | MT5 SMA, EMA, SMMA, LWMA [M3] | Implemented; explicit SMA seeds and tested weights |
 | Multiple copies of a study | Configurable study workspaces [T3,T4] | Implemented; stable IDs, independent settings, up to 12 active instances |
 | Applied-price sources | MT5 price/indicator inputs [M4] | Partial: eight OHLC sources; no study-on-study chaining |
