@@ -3,7 +3,8 @@ import { useLocation } from "wouter";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { RouteAccessGuard } from "@/components/layout/RouteAccessGuard";
 import { RouteErrorBoundary } from "@/components/layout/RouteErrorBoundary";
-import { captureChartReplay, replayDrawingKey, replayExitUrl, type ChartReplaySnapshot } from "@/lib/chart-engine/chartReplay";
+import type { ChartReplaySnapshot } from "@/lib/chart-engine/chartReplay";
+import { replayDrawingKey, replayExitUrl } from "@/lib/chart-engine/replayNavigation";
 import { ChartReplayContext } from "./ChartReplayContext";
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import type { ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
@@ -20,11 +21,16 @@ export function ChartReplayBoundary({children}:{children:ReactNode}) {
   const entered=useRef(false);
   const replayPath=location.split(/[?#]/)[0].replace(/\/$/,"")==="/chart-replay";
   const current=snapshot?.ownerId===user?.id ? snapshot : null;
-  const open=useCallback((data:ChartCandlesResponse|undefined,preferences:ChartPreferences,expected:{symbol:string;timeframe:string})=>{
-    const captured=captureChartReplay(data,user?.id ?? 0,preferences,Date.now(),expected);
-    if (!captured.snapshot) return captured.error;
-    exitPath.current=location.startsWith("/market-scanner") ? "/market-scanner" : "/live-chart";
-    setSnapshot(captured.snapshot); setLocation("/chart-replay"); return null;
+  const open=useCallback(async(data:ChartCandlesResponse|undefined,preferences:ChartPreferences,expected:{symbol:string;timeframe:string})=>{
+    try {
+      const { captureChartReplay } = await import("@/lib/chart-engine/chartReplay");
+      const captured=captureChartReplay(data,user?.id ?? 0,preferences,Date.now(),expected);
+      if (!captured.snapshot) return captured.error;
+      exitPath.current=location.startsWith("/market-scanner") ? "/market-scanner" : "/live-chart";
+      setSnapshot(captured.snapshot); setLocation("/chart-replay"); return null;
+    } catch {
+      return "Historical replay could not be loaded. Refresh the chart and try again.";
+    }
   },[user?.id,location,setLocation]);
   useLayoutEffect(()=>{
     if (snapshot && !current) setSnapshot(null);

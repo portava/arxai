@@ -1347,7 +1347,7 @@ export function ARXNativeChart({
           <span className={mobileLayout ? "sr-only" : undefined}>{expanded ? "Exit fullscreen" : "Fullscreen"}</span>
         </Button>);
   const timeframeControls = (<div className={`flex items-center gap-1 ${compactDesktopWorkspace ? "w-full flex-nowrap overflow-x-auto py-0.5" : "flex-wrap"}`} data-testid="arx-native-tf-controls">
-            {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>setReplayError(replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}))}>Replay loaded bars</Button>}
+            {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>{setReplayError(null);void replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}).then(setReplayError);}}>Replay loaded bars</Button>}
             {TIMEFRAMES.map((tf) => (
               <Button
                 key={tf.id}
