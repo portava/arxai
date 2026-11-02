@@ -196,8 +196,8 @@ export function ChartWorkbenchTools({analysisFocused=false,onRestoreAnalysis,ada
       else if(!next && active===toggleRef.current)resizeFocus.current="pan";
       compactRef.current=next;setCompact(next);
     };
-    const css=getComputedStyle(root);
-    measure(root.clientWidth-parseFloat(css.paddingLeft)-parseFloat(css.paddingRight));
+    // ResizeObserver delivers this pane's content width, including its initial
+    // observation. Reading geometry here would force page layout during commit.
     const observer=new ResizeObserver(entries=>{const entry=entries[0];if(entry)measure(entry.contentRect.width);});
     observer.observe(root);return()=>observer.disconnect();
   },[toolsOpen]);
