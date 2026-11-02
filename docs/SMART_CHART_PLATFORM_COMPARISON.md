@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Server and chart pattern evidence agreement — 2 November 2026
+
+Application `9952afb0` shares the continuity rule across the chart and three server pattern/trendline producers. Unfinished candles, missing intervals, invalid dates and repaired conflicting observations cannot supply current confirmation. Backend 228 pass; frontend 4,730 pass/12 skipped; shared/API/dashboard types and both builds pass. Two existing guards fail, and broad recursive typechecking stops at missing mockup-workspace dependencies. No new browser or latency acceptance; source-clock authority and broader engine agreement remain open. See [exact evidence and limitations](PATTERN_PRODUCER_CONTINUITY_2026_11_02.md).
+
 ## Pattern continuity across missing observations — 2 November 2026
 
 Application `a46d77f3` prevents chart pattern/confirmation calculations from silently bridging time gaps. Earlier segment findings retain visible historical context in both the chart and assistant; incomplete interior and overlapping bars withhold the read. Full frontend 4,728 pass/12 skipped, dashboard typecheck/build pass, two unchanged guard failures, and six source-matched desktop/mobile Scanner scenarios pass. This is accuracy evidence, not latency or competitor acceptance. Session-calendar continuity and cross-engine agreement remain open. See [exact source, failed attempts and limits](CHART_PATTERN_CONTINUITY_2026_11_02.md).
