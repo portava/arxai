@@ -17,6 +17,7 @@ function Fixture(){
    <button onClick={()=>setProps(p=>({...p,candles:[]}))}>Clear candles</button>
    <button onClick={()=>setProps(p=>({...p,candles:bars}))}>Restore candles</button>
   </div>
+  <output data-testid="position-mini-supplied-candles" hidden>{JSON.stringify(props.candles)}</output>
   <PositionMiniChart {...props}/>
   <p style={{marginTop:20}}>Entry time and original clock authority were not supplied.</p>
   <div style={{height:800}} aria-hidden="true"/>

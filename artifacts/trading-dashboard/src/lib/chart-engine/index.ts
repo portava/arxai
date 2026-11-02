@@ -19,17 +19,17 @@ export type {
 export { LightweightChartsAdapter } from "./lightweightChartsAdapter";
 export { NativeChartsAdapter } from "./nativeChartsAdapter";
 
-// Keep the existing default until the native adapter has passed all consumer,
-// browser and performance acceptance. Explicit native selection is available
-// for integration; registration alone is not proof of migration completion.
-export const DEFAULT_CHART_ENGINE_ID: ChartEngineId = "lightweight-charts";
+// Ordinary app consumers share ARX's own renderer. The legacy adapter remains
+// explicitly selectable for comparisons; it is never a silent fallback.
+// This source default does not claim deployment or competitor parity.
+export const DEFAULT_CHART_ENGINE_ID: ChartEngineId = "arx-native";
 
 /**
  * Static descriptors for every engine the Shell knows about — used to label the
  * active engine and to advertise which are actually `available` in this build.
  * The TradingView Advanced Charts entry is intentionally `available: false`:
  * that library is gated behind a private TradingView license we do not hold, so
- * lightweight-charts v5 stays the labeled, real fallback.
+ * the explicit legacy adapter stays accurately attributed when selected.
  */
 export const CHART_ENGINE_DESCRIPTORS: Record<ChartEngineId, ChartEngineCapabilities> = {
   "arx-native": new NativeChartsAdapter().capabilities,

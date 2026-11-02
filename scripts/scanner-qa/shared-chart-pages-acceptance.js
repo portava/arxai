@@ -17,6 +17,7 @@ async page => {
   const snapshot=()=>page.evaluate(()=>({state:window.__arxChartQa?.snapshot(),data:window.__arxChartQa?.data()}));
   function completedSeries(current,expected,context) {
     const {state,data}=current??{};
+    if(state?.engineId==='arx-native'&&(state.state?.status!=='ready'||state.state.pendingPaint||state.renderVerified!==true))return false;
     if(!state||!data||!expected?.canonical?.length||state.symbol!==context.symbol||state.intervalSeconds!==context.intervalSeconds
       ||state.style!=='candles'||state.feed?.source!==expected.source||state.barCount!==expected.canonical.length
       ||!Array.isArray(data.canonical)||!Array.isArray(data.display))return false;
@@ -70,6 +71,7 @@ async page => {
     // Promise returned by an async predicate as an immediate truthy success.
     await page.waitForFunction(({symbol,intervalSeconds,expected})=>{
       const state=window.__arxChartQa?.snapshot(),data=window.__arxChartQa?.data();
+      if(state?.engineId==='arx-native'&&(state.state?.status!=='ready'||state.state.pendingPaint||state.renderVerified!==true))return false;
       if(!state||!data||!expected?.canonical?.length||state.symbol!==symbol||state.intervalSeconds!==intervalSeconds||state.style!=='candles'
         ||state.feed?.source!==expected.source||state.barCount!==expected.canonical.length
         ||!Array.isArray(data.canonical)||!Array.isArray(data.display))return false;
@@ -82,6 +84,8 @@ async page => {
     const latest=(await log()).candleResponses.slice(offset).filter(x=>matchesRequest(x,symbol,timeframe,requestLimit)).at(-1);
     check(completedSeries(current,latest,{symbol,intervalSeconds}),entry.route+': exact context, canonical and displayed bars after two frames: '+symbol+' '+timeframe);
     check(current.state.canvasIds.length>0&&current.state.bounds.width>0&&current.state.bounds.height>0,entry.route+': native canvas is mounted with dimensions');
+    check(current.state.engineId==='arx-native',entry.route+': completed actual adapter is native');
+    check(await page.getByTestId('chart-native-credit').count()===1&&await page.getByTestId('chart-library-credit').count()===0,entry.route+': active credit identifies only native ARX renderer');
     check(await page.locator('#tv-attr-logo').count()===0,entry.route+': completed chart has no TradingView logo');
     entry.snapshots.push({label:symbol+'-'+timeframe,...current});
     return current;
@@ -112,6 +116,7 @@ async page => {
       const runtimeId=await page.evaluate(()=>window.__arxScannerQaBuildId);
       check(typeof runtimeId==='string'&&runtimeId===build.buildId,route+': executing bundle matches metadata');
       check(build.minified&&build.productionRuntimeChecked&&build.sourceUnchanged&&!build.source.status&&build.dashboardUtilityCss?.source==='artifacts/trading-dashboard/src',route+': clean unchanged production fixture with dashboard CSS');
+      check(build.nativeEngine&&build.productDefaultEngineId==='arx-native'&&build.qaOnlyDefaultEngineOverride===false&&await page.evaluate(()=>window.__arxExecutedDefaultEngineId)==='arx-native',route+': product-native default executes without QA source override');
       if(typeof SCANNER_QA_EXPECTED_COMMIT==='string')check(build.source.head===SCANNER_QA_EXPECTED_COMMIT,route+': expected source commit');
       if(report.build)check(report.build.buildId===build.buildId,route+': same build across all pages');else report.build=build;
       check(await page.getByTestId('arx-native-chart').count()===1,route+': exactly one shared native chart');

@@ -259,3 +259,32 @@ again in the regular production fixture without this hook or profiler.
 
 Run the observer tests from `scripts`, where the existing tsx dependency lives:
 `node --import tsx --test scanner-qa/shared-chart-fixture/reactProfile.test.mjs`.
+
+
+## Product-native default acceptance
+
+A normal no-argument build reads the single product default declaration and
+installs the matching read-only observer. It does **not** rewrite the engine.
+The manifest records `productDefaultEngineId`, the declaration source hash,
+`nativeEngine`, and `qaOnlyDefaultEngineOverride`. The executed entry also
+exposes the immutable actual factory default as `__arxExecutedDefaultEngineId`.
+Native snapshots report the real adapter capability ID and completed paint proof.
+
+`native-consumers-acceptance.js`, `native-clock-position-acceptance.js`, and
+`shared-chart-pages-acceptance.js` require the native product default with no QA
+override, a clean unchanged source build, and matching executed build identity.
+They reuse the existing offline setup: the first covers Scanner/comparison and
+actual replay; the second checks clock withdrawal/export and isolated actual
+PositionMiniChart; the third checks the four existing secondary chart routes.
+Mini source comparisons include every supplied canonical OHLC row, not only the
+last price. The isolated mini wrapper does not establish account-page integration.
+
+The explicit historical `--native-engine` mode still exists only while the source
+product default is legacy; it is rejected when redundant. Axis/timing drivers
+record and distinguish either provenance, while default acceptance drivers reject
+overrides. `--react-profile` fails loudly for native-default builds because the
+existing candle timeline instrumentation observes only the legacy adapter. The
+legacy dependency may remain bundled for explicit compatibility; active native
+routes must show only the native renderer/credit and no TradingView logo/embed.
+No suite here proves deployment, broker freshness, competitor parity, or physical
+screen latency. Serve only the returned immutable build and retain failures.

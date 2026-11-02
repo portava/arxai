@@ -1,7 +1,13 @@
 // Playwright CLI; actual app native QA build, intercepted synthetic clock
 // contract fixture, then an isolated actual PositionMiniChart component.
 async page => {
- const result={passed:false,checks:[],screenshots:[],limitations:['Synthetic data and QA-only native override; no live account or broker.','No latency/parity/default-renderer acceptance. Mini route is isolated component acceptance, not its account-page integration.']};
+ function nativeBuildProvenance(build) {
+   if (!build?.nativeEngine) return null;
+   if (build.qaOnlyDefaultEngineOverride === false && build.productDefaultEngineId === 'arx-native') return 'product-default';
+   if (build.qaOnlyDefaultEngineOverride === true && build.productDefaultEngineId === 'lightweight-charts') return 'qa-override';
+   return null;
+ }
+ const result={passed:false,checks:[],screenshots:[],limitations:['Synthetic data with product-native default; no live account or broker.','No latency/parity/deployment acceptance. Mini route is isolated component acceptance, not its account-page integration.']};
  const check=(yes,label)=>{if(!yes)throw Error(label);result.checks.push(label);};
  const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  const snap=()=>page.evaluate(()=>window.__arxChartQa.snapshot());
@@ -10,8 +16,9 @@ async page => {
  const sourceLabels=async()=>{const labels=await text();check(labels.some(l=>/source/.test(l.text)),'Completed canvas contains explicit source-clock label');check(!labels.some(l=>/ UTC$|GMT[+-]| EST$| EDT$/.test(l.text)),'Unqualified canvas does not claim UTC or converted zone');return labels;};
  try{
   result.build=await page.evaluate(async()=>{const r=await fetch('/arx-scanner-qa-build-info.json');return r.json();});
-  check(result.build.nativeEngine&&result.build.qaOnlyDefaultEngineOverride&&result.build.productionRuntimeChecked&&result.build.sourceUnchanged&&!result.build.source.status,'Clean exact-source native QA build');
+  check(nativeBuildProvenance(result.build)==='product-default'&&result.build.productionRuntimeChecked&&result.build.sourceUnchanged&&!result.build.source.status,'Clean exact-source native QA build');
   check(await page.evaluate(()=>window.__arxScannerQaBuildId)===result.build.buildId,'Executed Scanner entry matches immutable build identity');
+  check(await page.evaluate(()=>window.__arxExecutedDefaultEngineId)==='arx-native','Executed product default is native without override');
   await ready();const chart=page.getByTestId('arx-native-chart').first();
   const tools=chart.getByRole('button',{name:'Chart tools',exact:true});if(await tools.isVisible()&&await tools.getAttribute('aria-expanded')!=='true')await tools.click();
   const canonical=await page.evaluate(()=>window.__arxChartQa.data().canonical),initial=await snap();
@@ -34,11 +41,17 @@ async page => {
   await page.goto('http://127.0.0.1:4199/position-mini-qa');await ready();
   check(await page.evaluate(()=>window.__arxScannerQaBuildId)===result.build.buildId,'Executed mini entry matches the same immutable build');
   const mini=page.getByTestId('position-mini-chart');const before=await snap();
+  check(before.engineId==='arx-native','Actual PositionMiniChart selects native adapter by product default');
+  const assertMiniSource=async()=>{
+   const supplied=JSON.parse(await page.getByTestId('position-mini-supplied-candles').textContent()).map(c=>({time:c.time/1000,open:c.open,high:c.high,low:c.low,close:c.close}));
+   check(JSON.stringify(await page.evaluate(()=>window.__arxChartQa.data().canonical))===JSON.stringify(supplied),'Mini completed canonical history equals every supplied millisecond OHLC row');
+  };
+  await assertMiniSource();
   check(await mini.getAttribute('inert')!==null,'Position preview disables inherited engine interactions');
   check(before.state.utcClockQualified===false,'Position preview cannot qualify clock from numeric timestamps');
   check(before.state.scannerOverlays.priceLineCount===4&&before.state.scannerOverlays.markerCount===0,'Entry/current/SL/TP references exist without fabricated entry-time marker');
   await page.getByRole('button',{name:'Update supplied snapshot',exact:true}).click();await ready();
-  check((await snap()).adapterId===before.adapterId&&(await snap()).last.close===1.1082,'Position update retains actual renderer and applies supplied close');
+  check((await snap()).adapterId===before.adapterId&&(await snap()).last.close===1.1082,'Position update retains actual renderer and applies supplied close');await assertMiniSource();
   await page.getByRole('button',{name:'Withdraw live verdict',exact:true}).click();await ready();
   check((await snap()).state.livePriceAffordance===false&&(await snap()).state.scannerOverlays.priceLineCount===3,'Stale verdict removes current line and live-price affordance');
   await page.getByRole('button',{name:'Change symbol',exact:true}).click();await ready();
@@ -48,7 +61,7 @@ async page => {
   await mini.scrollIntoViewIfNeeded();await frames();await sourceLabels();await page.screenshot({path:'native-position-mobile.png',fullPage:false});result.screenshots.push('native-position-mobile.png');
   await page.getByRole('button',{name:'Clear candles',exact:true}).click();
   await page.waitForFunction(()=>window.__arxChartQa.count()===0);check(await page.getByTestId('position-mini-chart-empty').isVisible(),'Empty mini source withdraws renderer');
-  await page.getByRole('button',{name:'Restore candles',exact:true}).click();await ready();check((await snap()).adapterId!==before.adapterId,'Restored mini data creates a clean renderer');
+  await page.getByRole('button',{name:'Restore candles',exact:true}).click();await ready();check((await snap()).adapterId!==before.adapterId,'Restored mini data creates a clean renderer');await assertMiniSource();
   result.fixture=await page.evaluate(()=>window.__readFixtureLog());
   check(result.fixture.errors.length===0,'No browser exceptions');check(!result.fixture.blocked.some(x=>x.kind==='external'||x.kind==='websocket'),'No external data/broker requests');
   result.passed=true;

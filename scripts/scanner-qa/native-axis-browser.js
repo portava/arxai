@@ -1,5 +1,11 @@
 // Actual app, isolated synthetic fixtures. No order or account mutations.
 async page => {
+ function nativeBuildProvenance(build) {
+   if (!build?.nativeEngine) return null;
+   if (build.qaOnlyDefaultEngineOverride === false && build.productDefaultEngineId === 'arx-native') return 'product-default';
+   if (build.qaOnlyDefaultEngineOverride === true && build.productDefaultEngineId === 'lightweight-charts') return 'qa-override';
+   return null;
+ }
  const out={passed:false,checks:[],limitations:['QA-only native renderer override; not the production default.','Synthetic candles, not broker data. No competitor speed or monetary latency claim.']};
  const check=(value,label)=>{if(!value)throw Error(label);out.checks.push(label);};
  const ready=()=>page.waitForFunction(()=>{const s=window.__arxChartQa.snapshot();return s?.state.status==='ready'&&!s.state.pendingPaint&&window.__arxChartQa.configuration().analysisFocus.verified;});
@@ -9,7 +15,7 @@ async page => {
  const drag=async()=>{const p=await target();check(p.y>140&&p.y+80<await page.evaluate(()=>innerHeight),'Axis gesture uses visible coordinates below sticky header');await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x,p.y+80,{steps:5});await page.mouse.up();await ready();return p;};
  try{
   out.build=await page.evaluate(async()=>await(await fetch('/arx-scanner-qa-build-info.json')).json());
-  check(out.build.nativeEngine&&out.build.productionRuntimeChecked&&out.build.sourceUnchanged&&!out.build.source.status&&await page.evaluate(()=>window.__arxScannerQaBuildId)===out.build.buildId,'Clean exact-source executed native production QA entry');
+  check(nativeBuildProvenance(out.build)!==null&&out.build.productionRuntimeChecked&&out.build.sourceUnchanged&&!out.build.source.status&&await page.evaluate(()=>window.__arxScannerQaBuildId)===out.build.buildId,'Clean exact-source executed native production QA entry');
   await page.setViewportSize({width:1440,height:1200});await ready();
   const chart=page.getByTestId('arx-native-chart').first(),initial=await snap(),canonical=await page.evaluate(()=>window.__arxChartQa.data().canonical);
   const anchor={time:canonical[Math.floor(canonical.length*.7)].time,center:canonical[Math.floor(canonical.length*.7)].close,offset:(Math.max(...canonical.map(c=>c.high))-Math.min(...canonical.map(c=>c.low)))/10};

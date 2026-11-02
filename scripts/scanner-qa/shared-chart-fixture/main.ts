@@ -8,6 +8,7 @@ import { installReactProfile } from "./reactProfile";
 import { installFeedReconciliationProbe } from "./feedReconciliation";
 import { installVolumeProfileProbe } from "./volumeProfileProbe";
 import { installFlagLifecycleProbe } from "./flagLifecycleProbe";
+import { DEFAULT_CHART_ENGINE_ID } from "../../../artifacts/trading-dashboard/src/lib/chart-engine";
 import { NativeChartsAdapter } from "../../../artifacts/trading-dashboard/src/lib/chart-engine/nativeChartsAdapter";
 import { installNativeChartWitness } from "./nativeWitness";
 
@@ -22,6 +23,7 @@ declare const __ARX_NATIVE_ENGINE__: boolean;
 Object.defineProperty(window, "__arxScannerQaBuildId", {
   value: __ARX_SCANNER_QA_BUILD_ID__, writable: false, configurable: false,
 });
+Object.defineProperty(window, "__arxExecutedDefaultEngineId", { value: DEFAULT_CHART_ENGINE_ID, writable: false, configurable: false });
 if (__ARX_FLAG_LIFECYCLE_PROBE__) {
   void import("../../../artifacts/trading-dashboard/src/index.css").then(()=>installFlagLifecycleProbe(LightweightChartsAdapter));
 }

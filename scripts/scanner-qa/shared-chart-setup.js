@@ -50,7 +50,7 @@ async page => {
   const item={id:requests.length+1,path:url.pathname,query:url.search,method:request.method(),started:Date.now(),ended:null,status:200};requests.push(item);
   let payload,status=200,delay=20;
   const p=url.pathname,symbol=url.searchParams.get('symbol')??'EURUSD',tf=url.searchParams.get('timeframe')??'M15';
-  const readOverride=request.method()==='GET'?hooks.readResponse?.({path:p,symbol,timeframe:tf}):undefined;
+  const readOverride=request.method()==='GET'?hooks.readResponse?.({path:p,symbol,timeframe:tf,query:url.search}):undefined;
   if(request.method()!=='GET'){status=503;payload={ok:false,error:'OFFLINE_MUTATION_BLOCKED'};blocked.push({kind:'mutation',path:p,method:request.method(),status:503});}
   else if(readOverride!==undefined)payload=readOverride;
   else if(p==='/api/me')payload={user:{id:900007,email:'offline@example.invalid',name:'Offline QA',role:fixtureRole,lastLoginAt:null,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-01T00:00:00Z'}};

@@ -1,13 +1,19 @@
 // Trusted browser pointer moves on the actual app's native time axis.
 // Synthetic fixed candles; no network, broker or physical-screen timing claim.
 async page => {
- const out={passed:false,groups:[],limitations:['Synthetic 200-bar actual Scanner fixture with QA native override.','Software CPU throttle; not physical-device, competitor, broker, network or first-navigation timing.','Completed paint is renderer evidence observed on a later animation frame, not hardware scanout.']};
+ function nativeBuildProvenance(build) {
+   if (!build?.nativeEngine) return null;
+   if (build.qaOnlyDefaultEngineOverride === false && build.productDefaultEngineId === 'arx-native') return 'product-default';
+   if (build.qaOnlyDefaultEngineOverride === true && build.productDefaultEngineId === 'lightweight-charts') return 'qa-override';
+   return null;
+ }
+ const out={passed:false,groups:[],limitations:['Synthetic 200-bar actual Scanner fixture with recorded native-engine provenance.','Software CPU throttle; not physical-device, competitor, broker, network or first-navigation timing.','Completed paint is renderer evidence observed on a later animation frame, not hardware scanout.']};
  const client=await page.context().newCDPSession(page);
  const ready=()=>page.waitForFunction(()=>{const s=window.__arxChartQa.snapshot();return s?.state.status==='ready'&&!s.state.pendingPaint&&window.__arxChartQa.configuration().analysisFocus.verified;});
  try{
   await page.setViewportSize({width:1440,height:1200});await ready();
   out.build=await page.evaluate(async()=>await(await fetch('/arx-scanner-qa-build-info.json')).json());
-  if(!out.build.nativeEngine||out.build.qaOnlyDefaultEngineOverride!==true||!out.build.productionRuntimeChecked||!out.build.sourceUnchanged||out.build.source.status||await page.evaluate(()=>window.__arxScannerQaBuildId)!==out.build.buildId)throw Error('Clean exact executed native source required');
+  if(nativeBuildProvenance(out.build)===null||!out.build.productionRuntimeChecked||!out.build.sourceUnchanged||out.build.source.status||await page.evaluate(()=>window.__arxScannerQaBuildId)!==out.build.buildId)throw Error('Clean exact executed native source required');
   const canonical=await page.evaluate(()=>JSON.stringify(window.__arxChartQa.data().canonical));
   await page.locator('canvas[data-arx-native-viewport]').first().evaluate(el=>el.scrollIntoView({block:'center'}));await ready();
   const point=await page.evaluate(()=>{const b=document.querySelector('canvas[data-arx-native-viewport]').getBoundingClientRect(),p=window.__arxChartQa.layout().price;return{x:b.x+p.left+p.width*.55,y:b.bottom-16};});

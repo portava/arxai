@@ -2,7 +2,13 @@
 // synthetic replay-qualified payload inside the existing offline API boundary.
 // No assertion below is a broker or physical-display latency measurement.
 async page => {
- const result={passed:false,checks:[],screenshots:[],limitations:['QA-only native default override; deployed/default engine unchanged.','Synthetic replay-qualified contract fixture; no broker, live data, performance or multi-chart replay acceptance.']};
+ function nativeBuildProvenance(build) {
+   if (!build?.nativeEngine) return null;
+   if (build.qaOnlyDefaultEngineOverride === false && build.productDefaultEngineId === 'arx-native') return 'product-default';
+   if (build.qaOnlyDefaultEngineOverride === true && build.productDefaultEngineId === 'lightweight-charts') return 'qa-override';
+   return null;
+ }
+ const result={passed:false,checks:[],screenshots:[],limitations:['Product-native default is tested in an isolated production fixture; not deployment acceptance.','Synthetic replay-qualified contract fixture; no broker, live data, performance or multi-chart replay acceptance.']};
  const check=(yes,label)=>{if(!yes)throw Error(label);result.checks.push(label);};
  const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  const snap=(index=0)=>page.evaluate(index=>window.__arxChartQa.snapshot(index),index);
@@ -10,11 +16,13 @@ async page => {
  const tools=async(container)=>{const button=container.getByRole('button',{name:'Chart tools',exact:true});if(await button.isVisible()&&await button.getAttribute('aria-expanded')!=='true')await button.click();};
  try {
   result.build=await page.evaluate(async()=>{const r=await fetch('/arx-scanner-qa-build-info.json');return r.json();});
-  check(result.build.nativeEngine&&result.build.qaOnlyDefaultEngineOverride&&result.build.sourceUnchanged&&!result.build.source.status,'Clean exact-source actual-app native QA build');
+  check(nativeBuildProvenance(result.build)==='product-default'&&result.build.productionRuntimeChecked&&result.build.sourceUnchanged&&!result.build.source.status,'Clean exact-source product-native default without QA override');
+  check(await page.evaluate(()=>window.__arxScannerQaBuildId)===result.build.buildId&&await page.evaluate(()=>window.__arxExecutedDefaultEngineId)==='arx-native','Executed bundle identity and actual product default match');
   await page.setViewportSize({width:1800,height:1200});
   await page.getByRole('button',{name:'One chart',exact:true}).click();await ready(1);
   const primary=page.getByTestId('arx-native-chart').first();
   await primary.getByTestId('arx-native-tf-M15').click();await ready(1);
+  check((await snap()).engineId==='arx-native','Scanner uses actual native adapter capability');
   const original=(await snap()).adapterId;
   await page.getByRole('button',{name:'Two charts',exact:true}).click();await ready(2);
   check((await snap()).adapterId===original,'Opening comparison retains primary adapter');
@@ -41,6 +49,7 @@ async page => {
   await primary.getByRole('button',{name:'Replay loaded bars',exact:true}).click();
   await page.getByTestId('chart-replay').waitFor();await ready(1);
   const replay=page.getByTestId('chart-replay');
+  check((await snap()).engineId==='arx-native','Replay uses actual native adapter capability');
   check((await snap()).testId==='replay-canvas'&&(await snap()).adapterId!==original,'Replay replaces live layout with separate native engine');
   check(await page.getByTestId('scanner-chart-panel').count()===0,'Live scanner is unmounted in replay');
   check(await page.getByTestId('chart-native-credit').count()===1&&await page.getByTestId('chart-library-credit').count()===0,'Replay credit reflects actual native renderer');

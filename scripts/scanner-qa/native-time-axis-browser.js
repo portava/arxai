@@ -1,6 +1,12 @@
 // Actual Scanner with isolated candles; trusted input and read-only witnesses.
 async page => {
- const out={passed:false,checks:[],limitations:['Native engine is a QA override, not the production default.','Synthetic loaded history; no broker, competitor timing or market interpretation claim.']};
+ function nativeBuildProvenance(build) {
+   if (!build?.nativeEngine) return null;
+   if (build.qaOnlyDefaultEngineOverride === false && build.productDefaultEngineId === 'arx-native') return 'product-default';
+   if (build.qaOnlyDefaultEngineOverride === true && build.productDefaultEngineId === 'lightweight-charts') return 'qa-override';
+   return null;
+ }
+ const out={passed:false,checks:[],limitations:['Build metadata distinguishes product-native default from an explicit historical QA override.','Synthetic loaded history; no broker, competitor timing or market interpretation claim.']};
  const check=(ok,label)=>{if(!ok)throw Error(label);out.checks.push(label);};
  const ready=()=>page.waitForFunction(()=>{const s=window.__arxChartQa.snapshot();return s?.state.status==='ready'&&!s.state.pendingPaint&&window.__arxChartQa.configuration().analysisFocus.verified;});
  const snap=()=>page.evaluate(()=>window.__arxChartQa.snapshot());
@@ -12,7 +18,7 @@ async page => {
  const drag=async(p,dx)=>{await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+dx,p.y,{steps:6});await page.mouse.up();await ready();};
  try{
   out.build=await page.evaluate(async()=>await(await fetch('/arx-scanner-qa-build-info.json')).json());
-  check(out.build.nativeEngine&&out.build.qaOnlyDefaultEngineOverride===true&&out.build.productionRuntimeChecked&&out.build.sourceUnchanged&&!out.build.source.status&&await page.evaluate(()=>window.__arxScannerQaBuildId)===out.build.buildId,'Clean exact executed native production QA source');
+  check(nativeBuildProvenance(out.build)!==null&&out.build.productionRuntimeChecked&&out.build.sourceUnchanged&&!out.build.source.status&&await page.evaluate(()=>window.__arxScannerQaBuildId)===out.build.buildId,'Clean exact executed native production QA source');
   await page.setViewportSize({width:1440,height:1200});await ready();
   const initial=await snap(),canonical=await page.evaluate(()=>window.__arxChartQa.data().canonical),p=await target();
   check(p.y>180&&p.y<1200,'Visible bottom-axis target outside header');

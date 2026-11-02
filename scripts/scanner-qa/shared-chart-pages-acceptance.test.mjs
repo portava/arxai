@@ -116,3 +116,12 @@ test('secondary-page role binding refuses mismatched identity or enabled trading
   assert.equal(read(identity,mode),true);assert.equal(read({user:{role:'USER'}},mode),false);
   for(const patch of [{role:'USER'},{isAdmin:false},{liveExecutionArmed:true},{userCanManualTrade:true},{userCanAutoTrade:true},{userSharedMasterAssignment:{attached:true}},{userAllocation:{hasAllocation:true,currentBalance:1}},{userFrozenStatus:{isFrozen:false}},{aiSleeveStatus:{enabled:true,autoEnabled:true}}])assert.equal(read(identity,{...mode,...patch}),false);
 });
+
+
+test('native source comparison requires completed proof, not a queued or failed matching input',()=>{
+  const actual=current();Object.assign(actual.state,{engineId:'arx-native',renderVerified:true,state:{status:'ready',pendingPaint:false}});
+  assert.equal(completed(actual,expected,context),true);
+  for(const patch of [{renderVerified:false},{state:{status:'failed',pendingPaint:false}},{state:{status:'ready',pendingPaint:true}}]){
+    const changed=structuredClone(actual);Object.assign(changed.state,patch);assert.equal(completed(changed,expected,context),false);
+  }
+});

@@ -2,13 +2,19 @@
 // after a new completed native paint with the expected canonical close. Does
 // not measure network, terminal/broker delivery, route startup or hardware scanout.
 async page => {
- const output={passed:false,groups:[],limitations:['Synthetic 80-bar position component, QA native override.','Software CPU throttling is environment-bound, not a physical slow device.','No baseline/competitor timing or broker/network/first-navigation measurement.']};
+ function nativeBuildProvenance(build) {
+   if (!build?.nativeEngine) return null;
+   if (build.qaOnlyDefaultEngineOverride === false && build.productDefaultEngineId === 'arx-native') return 'product-default';
+   if (build.qaOnlyDefaultEngineOverride === true && build.productDefaultEngineId === 'lightweight-charts') return 'qa-override';
+   return null;
+ }
+ const output={passed:false,groups:[],limitations:['Synthetic 80-bar position component; native-engine provenance is recorded.','Software CPU throttling is environment-bound, not a physical slow device.','No baseline/competitor timing or broker/network/first-navigation measurement.']};
  const client=await page.context().newCDPSession(page);
  try {
   await page.goto('http://127.0.0.1:4199/position-mini-qa');
   await page.waitForFunction(()=>window.__arxChartQa.snapshot()?.state.status==='ready'&&window.__arxChartQa.configuration().analysisFocus.verified);
   output.build=await page.evaluate(async()=>{const r=await fetch('/arx-scanner-qa-build-info.json');return r.json();});
-  if(!output.build.nativeEngine||!output.build.qaOnlyDefaultEngineOverride||!output.build.productionRuntimeChecked||!output.build.sourceUnchanged||output.build.source.status||await page.evaluate(()=>window.__arxScannerQaBuildId)!==output.build.buildId)throw Error('Clean executed native build identity required');
+  if(nativeBuildProvenance(output.build)===null||!output.build.productionRuntimeChecked||!output.build.sourceUnchanged||output.build.source.status||await page.evaluate(()=>window.__arxScannerQaBuildId)!==output.build.buildId)throw Error('Clean executed native build identity required');
   const before=await page.evaluate(()=>window.__arxChartQa.snapshot().adapterId);
   for(const rate of [1,4]){
    await client.send('Emulation.setCPUThrottlingRate',{rate});

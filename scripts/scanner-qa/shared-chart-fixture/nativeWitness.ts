@@ -19,7 +19,7 @@ export function installNativeChartWitness(Adapter: { prototype: any }): () => vo
     schemaVersion:4,engine:'arx-native',
     count(){return [...registry.keys()].filter(container=>container.isConnected).length;},
     snapshot(index=0){const found=find(index);if(!found)return null;const {container,adapter,viewport}=found,frame=viewport.getFrame(),state=viewport.getState(),candles=viewport.getCandles(),range=viewport.getRange(),bounds=container.getBoundingClientRect();
-      return {testId:container.dataset.testid??null,adapterId:id(adapter),containerId:id(container),chartId:id(viewport),canvasIds:[...container.querySelectorAll('canvas')].map(id),dataRevision:revisions.get(adapter)??0,
+      return {engineId:adapter.capabilities?.id??null,renderVerified:adapter.isAnalysisFocusVerified(),candlesId:id(frame?.series.candles),style:state.style,testId:container.dataset.testid??null,adapterId:id(adapter),containerId:id(container),chartId:id(viewport),canvasIds:[...container.querySelectorAll('canvas')].map(id),dataRevision:revisions.get(adapter)??0,
         barCount:candles.length,first:bar(candles[0]),last:bar(candles.at(-1)),range:range?{...range}:null,state,
         symbol:adapter.symbol,intervalSeconds:adapter.interval,feed:adapter.feed?{...adapter.feed}:null,
         visibleTimeRange:frame?{from:candles[frame.first]?.time,to:candles[frame.last]?.time}:null,
@@ -27,7 +27,7 @@ export function installNativeChartWitness(Adapter: { prototype: any }): () => vo
     },
     layout(index=0){const found=find(index),frame=found?.viewport.getFrame(),panes=found?.viewport.getPaneLayout();if(!found||!frame||!panes)return null;
       return {price:{...frame.plot},panes:panes.panes.map((p:any)=>({...p})),topPrice:frame.yToPrice(frame.plot.top),bottomPrice:frame.yToPrice(frame.plot.top+frame.plot.height)};},
-    data(index=0){const found=find(index);if(!found)return null;return {canonical:found.viewport.getCandles().map(bar),visible:found.adapter.getVisibleCandles().map(bar)};},
+    data(index=0){const found=find(index);if(!found)return null;return {canonical:found.viewport.getCandles().map(bar),display:(()=>{const frame=found.viewport.getFrame();return frame?(frame.style==='heikinAshi'?frame.series.heikinAshi:frame.series.candles).map(bar):[];})(),visible:found.adapter.getVisibleCandles().map(bar)};},
     anchorCoordinates(time:number,price:number,index=0){const found=find(index),frame=found?.viewport.getFrame();if(!found||!frame)return null;const x=frame.timeToX(time),y=frame.priceToY(price);if(x==null||y==null)return null;const box=found.container.getBoundingClientRect();return{x:box.x+x,y:box.y+y};},
     configuration(index=0){const found=find(index);if(!found)return null;const state=found.viewport.getState();return{analysisFocus:{enabled:found.adapter.isAnalysisFocused(),verified:found.adapter.isAnalysisFocusVerified()},scale:{mode:state.scale,inverted:state.inverted},studies:found.viewport.getStudies(),drawings:found.viewport.getDrawings()};},
   };
