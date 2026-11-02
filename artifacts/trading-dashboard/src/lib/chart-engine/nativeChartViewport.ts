@@ -54,6 +54,27 @@ export class NativeChartViewport {
   private readonly studies = new NativeChartStudies();
   private priceOnlyScale = false;
   private analysisFocused = false;
+  getMaximizedStudyPane(){return this.destroyed?null:this.maximizedStudyPane;}
+  private normalCanvasLabel="";
+  private maximizedStudyPane: string | null = null;
+  private maximizedPaneIndex(): number | null {
+    if (!this.maximizedStudyPane) return null;
+    const owner=this.studies.getDisplayStudies().find(study=>studyId(study.config)===this.maximizedStudyPane && studyDefinition(study.config.kind).pane && !study.config.paneCollapsed);
+    return owner?.paneIndex || null;
+  }
+  /** Temporary view state. Saved pane weights, collapse state and studies stay untouched. */
+  setMaximizedStudyPane(id: string | null): boolean {
+    if(this.destroyed)return false;
+    if(id!==null && (this.analysisFocused || !this.isAnalysisFocusVerified() || !this.getStudyPaneControls()?.some(p=>p.id===id&&!p.collapsed)))return false;
+    if(id===this.maximizedStudyPane)return true;
+    const revision=++this.mutationRevision;
+    this.retirePaneResize();this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
+    if(this.destroyed||revision!==this.mutationRevision)return false;
+    this.maximizedStudyPane=id;this.linkedCrosshairTime=null;
+    this.drawingEditor.configure(id!==null||this.analysisFocused||this.drawingNavigationMode==='pan'?null:this.drawingInteraction);
+    this.applyDrawingPlacement();this.invalidate();return true;
+  }
+
   private paneResizeSequence=0;
   private paneResizeRevision=0;
   private retirePaneResize(){const hadPreview=this.paneResize!==null;this.paneResizeRevision++;this.paneResize=null;if(hadPreview)this.invalidate();}
@@ -62,7 +83,7 @@ export class NativeChartViewport {
   isStudyPaneResizeContextCurrent(key:string){return !this.destroyed&&key===this.paneResizeContextKey();}
   beginStudyPaneResize(id:string):number|null {
     if(this.paneResize&&!this.isStudyPaneResizeContextCurrent(this.paneResize.contextKey))this.paneResize=null;
-    if(this.paneResize || this.pointers.size || this.priceAxisGesture || this.timeAxisGesture || this.frozenDrawingFrame || this.activeDrawingPlacement() || this.analysisFocused || !this.isAnalysisFocusVerified() || !this.getFrame())return null;
+    if(this.paneResize || this.pointers.size || this.priceAxisGesture || this.timeAxisGesture || this.frozenDrawingFrame || this.activeDrawingPlacement() || this.analysisFocused || this.maximizedStudyPane!==null || !this.isAnalysisFocusVerified() || !this.getFrame())return null;
     const controls=this.getStudyPaneControls(),geometry=this.getPaneLayout();
     if(!controls || !geometry || controls.length!==geometry.panes.length)return null;
     const configs=this.studies.getStudies();
@@ -147,6 +168,7 @@ export class NativeChartViewport {
     this.canvas.tabIndex = 0;
     this.canvas.setAttribute("role", "region");
     this.canvas.setAttribute("aria-label", "ARX price chart. Drag to pan, scroll or pinch to zoom. Arrow keys pan. Shift plus Left/Right inspects adjacent loaded candles, Shift plus Home/End inspects first/last loaded candle, Enter pins inspection, Escape releases it. Plus and minus zoom, Home fits history, End returns to latest. Drag the price axis vertically to scale prices; double-click it to restore automatic price scale. Drag the bottom time axis right to increase candle spacing, left to decrease it; double-click to restore the default time span.");
+    this.normalCanvasLabel=this.canvas.getAttribute("aria-label")!;
     this.canvas.style.touchAction = "none";
     this.canvas.style.display = "block";
     this.canvas.width = 0;this.canvas.height = 0;
@@ -156,7 +178,7 @@ export class NativeChartViewport {
     this.context = context;
     container.appendChild(this.canvas);
     this.scannerOverlays = new NativeScannerOverlays({container:this.canvas,
-      getFrame:()=>this.getFrame(),getSize:()=>({width:this.width,height:this.height}),invalidate:()=>this.schedule()});
+      getFrame:()=>this.maximizedStudyPane!==null?null:this.getFrame(),getSize:()=>({width:this.width,height:this.height}),invalidate:()=>this.schedule()});
     // Run before the drawing editor's capture listener: a second pointer on
     // the axis must not cancel an existing drawing and then acquire its scale.
     this.canvas.addEventListener("pointerdown", this.onAxisPointerConflict, true);
@@ -165,7 +187,7 @@ export class NativeChartViewport {
       candles: () => this.series.candles as ChartEngineCandle[],
       project: (anchor, priceOnly) => this.projectDrawing(anchor, priceOnly),
       anchor: (point, snap) => this.drawingAnchor(point, snap),
-      price: y => { const frame = this.getFrame(); return frame?.yToPrice(y + frame.plot.top) ?? null; },
+      price: y => { const frame = this.maximizedStudyPane!==null?null:this.getFrame(); return frame?.yToPrice(y + frame.plot.top) ?? null; },
       size: () => { const plot = this.getFrame()?.plot; return { width: plot?.width ?? 0, height: plot?.height ?? 0 }; },
       eventPoint: event => {
         const point = this.point(event), plot = this.getFrame()?.plot;
@@ -262,7 +284,10 @@ export class NativeChartViewport {
     const next = prepareNativePriceSeries(candles);
     const times = new Set(next.candles.map(candle => candle.time));
     const overlap = previous.some(candle => times.has(candle.time));
-    if(!next.candles.length||(previous.length&&!overlap))this.retirePaneResize();
+    if(!next.candles.length||(previous.length&&!overlap)){
+      this.retirePaneResize();this.maximizedStudyPane=null;
+      this.drawingEditor.configure(this.analysisFocused||this.drawingNavigationMode==='pan'?null:this.drawingInteraction);
+    }
     const selected = this.drawings.find(drawing => drawing.id === this.selectedDrawing);
     const anchors = selected ? [selected.start, ...(selected.end ? [selected.end] : []), ...(selected.offset ? [selected.offset] : [])] : [];
     if (!next.candles.length || (previous.length && !overlap) || (selected?.kind !== "horizontal" && anchors.some(anchor => !times.has(anchor.time))) || this.editAnchorTimes.some(time=>!times.has(time))) this.drawingEditor.cancelGesture();
@@ -336,9 +361,9 @@ export class NativeChartViewport {
     if(this.linkedCrosshairTime===null)return null;
     const index=candleIndex(this.series.candles as ChartEngineCandle[],this.linkedCrosshairTime);
     if(index<0)return null;
-    const candle=this.series.candles[index]!,x=frame.timeToX(candle.time),y=frame.priceToY(candle.close);
+    const candle=this.series.candles[index]!,x=frame.timeToX(candle.time),y=this.maximizedStudyPane!==null?frame.plot.top+frame.plot.height/2:frame.priceToY(candle.close);
     if(x===null||y===null||x<frame.plot.left||x>frame.plot.left+frame.plot.width||y<frame.plot.top||y>frame.plot.top+frame.plot.height)return null;
-    return {candle,x,y,price:candle.close};
+    return {candle,x,y,price:this.maximizedStudyPane!==null?null:candle.close};
   }
   /** Tail-only data revision. Does not authorize live-price presentation. */
   updateActiveCandle(candle: ChartEngineCandle): boolean {
@@ -366,10 +391,10 @@ export class NativeChartViewport {
     const frame = this.getFrame(), index = candleIndex(this.series.candles as ChartEngineCandle[], previousHover.candle.time);
     const candle = index < 0 ? null : this.series.candles[index]!, x = candle && frame ? frame.timeToX(candle.time) : null;
     if (frame && candle && x !== null && x >= frame.plot.left && x <= frame.plot.left + frame.plot.width) {
-      const projectedY=this.inspectionPinned?frame.priceToY(candle.close):previousHover.y;
+      const projectedY=this.maximizedStudyPane!==null?frame.plot.top+frame.plot.height/2:this.inspectionPinned?frame.priceToY(candle.close):previousHover.y;
       if(projectedY==null){this.clearHover();return;}
       const y=this.inspectionPinned?clamp(projectedY,frame.plot.top,frame.plot.top+frame.plot.height):previousHover.y;
-      this.hover = Object.freeze({candle, x, y, price: this.inspectionPinned?candle.close:y >= frame.plot.top && y <= frame.plot.top + frame.plot.height ? frame.yToPrice(y) : null});
+      this.hover = Object.freeze({candle, x, y, price: this.maximizedStudyPane!==null?null:this.inspectionPinned?candle.close:y >= frame.plot.top && y <= frame.plot.top + frame.plot.height ? frame.yToPrice(y) : null});
       // Full source snapshots clone rows. Reference inequality alone must not
       // broadcast a new user inspection when the canonical evidence is equal.
       if (!sameCandle(candle, previousHover.candle)) this.notify("crosshair", () => this.options.onCrosshair?.(this.hover));
@@ -405,19 +430,20 @@ export class NativeChartViewport {
         this.notify("drawing commit", () => config.onCommit(this.cloneDrawings(next)));
       },
     } : null;
-    this.drawingEditor.configure(this.analysisFocused || this.drawingNavigationMode === "pan" ? null : this.drawingInteraction);
+    this.drawingEditor.configure(this.maximizedStudyPane!==null || this.analysisFocused || this.drawingNavigationMode === "pan" ? null : this.drawingInteraction);
   }
   setDrawingHandler(handler: ((anchor: ChartAnchor) => void) | null): void {
     if (this.destroyed) return;
+    if(handler && this.maximizedStudyPane!==null && !this.setMaximizedStudyPane(null))return;
     this.drawingHandler = handler;this.applyDrawingPlacement();
   }
   setNavigationMode(mode: "inspect" | "pan"): void {
     if (this.destroyed || (mode !== "inspect" && mode !== "pan")) return;
     this.drawingNavigationMode = mode;
-    this.drawingEditor.configure(this.analysisFocused || mode === "pan" ? null : this.drawingInteraction);
+    this.drawingEditor.configure(this.maximizedStudyPane!==null || this.analysisFocused || mode === "pan" ? null : this.drawingInteraction);
     this.applyDrawingPlacement();
   }
-  private activeDrawingPlacement() { return !this.analysisFocused && this.drawingNavigationMode !== "pan" && this.drawingHandler !== null; }
+  private activeDrawingPlacement() { return this.maximizedStudyPane===null && !this.analysisFocused && this.drawingNavigationMode !== "pan" && this.drawingHandler !== null; }
   private applyDrawingPlacement() {
     this.retirePaneResize();
     this.cancelGesture();this.clearHover();
@@ -426,12 +452,12 @@ export class NativeChartViewport {
     this.canvas.style.cursor = this.drawingNavigationMode === "pan" ? "grab" : handler ? "crosshair" : "";
   }
   private projectDrawing(anchor: ChartAnchor, priceOnly = false): PixelPoint | null {
-    const frame = this.getFrame(); if (!frame) return null;
+    const frame = this.maximizedStudyPane!==null?null:this.getFrame(); if (!frame) return null;
     const x = priceOnly ? frame.plot.left : frame.timeToX(anchor.time), y = frame.priceToY(anchor.price);
     return x == null || y == null ? null : { x: x - frame.plot.left, y: y - frame.plot.top };
   }
   private drawingAnchor(point: PixelPoint, snap: boolean): ChartAnchor | null {
-    const frame = this.getFrame(); if (!frame || point.x < 0 || point.y < 0 || point.x > frame.plot.width || point.y > frame.plot.height) return null;
+    const frame = this.maximizedStudyPane!==null?null:this.getFrame(); if (!frame || point.x < 0 || point.y < 0 || point.x > frame.plot.width || point.y > frame.plot.height) return null;
     const x = point.x + frame.plot.left, y = point.y + frame.plot.top, candle = frame.barAtX(x);
     let price = frame.yToPrice(y);
     if (!candle || price == null || price <= 0 || !Number.isFinite(price)) return null;
@@ -482,7 +508,7 @@ export class NativeChartViewport {
     if (this.destroyed) return;
     this.overlayLayers.setOverlays(overlays,latestBarTime);this.schedule();
   }
-  getScannerOverlaySurface() { return this.destroyed ? null : this.scannerOverlays.getSurface(); }
+  getScannerOverlaySurface() { return this.destroyed || this.maximizedStudyPane!==null ? null : this.scannerOverlays.getSurface(); }
   isAnalysisFocused(): boolean { return this.analysisFocused; }
   isAnalysisFocusVerified(): boolean {
     return !this.destroyed && !this.paintError && this.raf === null
@@ -494,13 +520,16 @@ export class NativeChartViewport {
     const revision=++this.mutationRevision;
     this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
     if(this.destroyed||revision!==this.mutationRevision)return;
-    this.analysisFocused=enabled;
+    this.analysisFocused=enabled;this.maximizedStudyPane=null;
     this.drawingEditor.configure(enabled || this.drawingNavigationMode==="pan" ? null : this.drawingInteraction);
     this.applyDrawingPlacement();this.invalidate();
   }
   getRange(): Readonly<LogicalWindow> | null { return this.range ? Object.freeze({ ...this.range }) : null; }
   getPaneLayout() {
     const full = nativePlotLayout(this.width, this.height);
+    // In single-pane view the frame provides only the common time transform.
+    // Every indexed slot shares the full plot; painting selects exactly one owner.
+    if(full && this.maximizedPaneIndex()!==null)return {price:full,panes:Array.from({length:this.studies.paneCount},()=>({...full}))};
     const drag=this.paneResize,preview=drag&&this.isStudyPaneResizeContextCurrent(drag.contextKey)?drag.layout.panes.map(p=>drag.result.weights[p.id]!):null;
     return full ? layoutNativeStudyPanes(full, this.analysisFocused ? 0 : this.studies.paneCount, this.analysisFocused?[]:preview??this.studies.getPaneWeights(),this.analysisFocused?[]:this.studies.getPaneCollapsed()) : null;
   }
@@ -515,7 +544,9 @@ export class NativeChartViewport {
       this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
       if(this.destroyed || revision!==this.mutationRevision)return;
     }
-    this.studies.setStudies(valid, this.series.candles);this.invalidate();
+    this.studies.setStudies(valid, this.series.candles);
+    if(this.maximizedStudyPane!==null && this.maximizedPaneIndex()===null){this.maximizedStudyPane=null;this.drawingEditor.configure(this.analysisFocused||this.drawingNavigationMode==='pan'?null:this.drawingInteraction);this.applyDrawingPlacement();}
+    this.invalidate();
   }
   getStudies(): readonly Readonly<ChartStudy>[] { return this.studies.getStudies(); }
   getStudyPaneControls() {
@@ -523,12 +554,12 @@ export class NativeChartViewport {
     if(!this.isAnalysisFocusVerified())return null;
     const layout=this.getPaneLayout();if(!layout)return [];
     const controls=this.studies.getDisplayStudies().flatMap(study=>{
-      if(!study.paneIndex || !studyDefinition(study.config.kind).pane)return [];
+      if(!study.paneIndex || !studyDefinition(study.config.kind).pane || (this.maximizedStudyPane!==null&&studyId(study.config)!==this.maximizedStudyPane))return [];
       const pane=layout.panes[study.paneIndex-1];if(!pane)return [];
       return [{id:studyId(study.config),paneIndex:study.paneIndex,label:studyLabel(study.config,this.studies.getStudies()),
-        collapsed:study.config.paneCollapsed===true,left:pane.left,top:pane.top,width:pane.width,height:pane.height}];
+        collapsed:study.config.paneCollapsed===true,maximized:this.maximizedStudyPane===studyId(study.config),left:pane.left,top:pane.top,width:pane.width,height:pane.height}];
     });
-    return controls.map((control,index)=>({...control,sizePercent:100*control.height/(control.height+(index===0?layout.price.height:layout.panes[index-1]!.height)),resizable:controls.length===layout.panes.length&&!control.collapsed&&(index===0||!controls[index-1]!.collapsed)}));
+    return controls.map((control,index)=>({...control,sizePercent:100*control.height/(control.height+(index===0?layout.price.height:layout.panes[index-1]!.height)),resizable:this.maximizedStudyPane===null&&controls.length===layout.panes.length&&!control.collapsed&&(index===0||!controls[index-1]!.collapsed)}));
   }
   getStudyValues(time: number) { return this.analysisFocused ? [] : this.studies.getValues(time); }
   getVolumeProfiles() { return this.analysisFocused ? [] : this.studies.getProfiles(); }
@@ -570,7 +601,7 @@ export class NativeChartViewport {
       inspectionPinned:this.inspectionPinned,inspectionTime:this.hover?.candle.time??null,
       livePriceAffordance: this.livePriceAffordance, linkedCrosshairTime: this.linkedCrosshairTime,
       drawingCount: this.drawings.length, selectedDrawing: this.selectedDrawing, editingDrawing: this.frozenDrawingFrame !== null,
-      analysisFocused: this.analysisFocused, overlayLayers: this.overlayLayers.getState(), scannerOverlays: this.scannerOverlays.getState(),
+      maximizedStudyPane:this.maximizedStudyPane, analysisFocused: this.analysisFocused, overlayLayers: this.overlayLayers.getState(), scannerOverlays: this.scannerOverlays.getState(),
       paneCount: this.analysisFocused ? 0 : this.studies.paneCount, priceOnlyScale: this.priceOnlyScale,
       width: this.width, height: this.height, pixelRatio: this.pixelRatio, pendingPaint: this.raf != null, drawCount: this.drawCount, paintCount: this.drawCount });
   }
@@ -616,6 +647,7 @@ export class NativeChartViewport {
       this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
       if(this.destroyed||revision!==this.mutationRevision)return;
     }
+    if(timeframe!==this.timeframe){this.maximizedStudyPane=null;this.drawingEditor.configure(this.analysisFocused||this.drawingNavigationMode==='pan'?null:this.drawingInteraction);this.applyDrawingPlacement();}
     this.timeZone = zone; this.timeframe = timeframe;this.studies.setTimeframe(timeframe);this.invalidate();
   }
   resetContext(): void {
@@ -630,7 +662,7 @@ export class NativeChartViewport {
     this.frozenDrawingFrame = null;this.editAnchorTimes=[];
     this.overlayLayers.reset();this.scannerOverlays.reset();
     this.livePriceAffordance=false;this.linkedCrosshairTime=null;this.utcClockQualified=false;this.manualPriceRange=null;
-    this.studies.reset();
+    this.maximizedStudyPane=null;this.studies.reset();
     this.followingLatest = true; this.invalidate();
   }
   private invalidate() { this.frame = null; this.paintError = null; this.schedule(); }
@@ -649,6 +681,8 @@ export class NativeChartViewport {
     if (this.destroyed) return;
     const revision = this.paintRevision;
     try {
+      const label=this.maximizedStudyPane!==null ? "ARX maximized indicator pane. Price candles, drawings and trade overlays are hidden. Drag to pan time, scroll or pinch to zoom. Shift plus Left/Right inspects loaded observations. Use Restore layout to return to the price chart." : this.normalCanvasLabel;
+      if(this.canvas.getAttribute('aria-label')!==label)this.canvas.setAttribute('aria-label',label);
       const ctx = this.context;
       ctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
       ctx.clearRect(0, 0, this.width, this.height);
@@ -656,16 +690,15 @@ export class NativeChartViewport {
       if (frame) {
         const layout = this.getPaneLayout()!, last = layout.panes.at(-1) ?? layout.price;
         const chartBottom = last.top + last.height;
-        paintNativeAxes(ctx, frame, { timeZone: effectiveDisplayZone(this.timeZone, this.timeframe), utcClockQualified: this.utcClockQualified, priceDigits: this.priceDigits, timeAxisBottom:chartBottom });
-        paintNativePriceLayer(ctx, frame);
+        paintNativeAxes(ctx, frame, { timeZone: effectiveDisplayZone(this.timeZone, this.timeframe), utcClockQualified: this.utcClockQualified, priceDigits: this.priceDigits, timeAxisBottom:chartBottom,hidePriceAxis:this.maximizedStudyPane!==null });
+        if(this.maximizedStudyPane===null)paintNativePriceLayer(ctx, frame);
         if (!this.analysisFocused) {
-          paintNativeStudies(ctx, frame, layout.panes, this.studies);
-          this.paintDrawings(ctx, frame);
+          paintNativeStudies(ctx, frame, layout.panes, this.studies, this.maximizedPaneIndex());
+          if(this.maximizedStudyPane===null)this.paintDrawings(ctx, frame);
         }
-        this.overlayLayers.paint(ctx,frame,this.width,this.analysisFocused);
-        this.scannerOverlays.paint(ctx);
+        if(this.maximizedStudyPane===null){this.overlayLayers.paint(ctx,frame,this.width,this.analysisFocused);this.scannerOverlays.paint(ctx);}
         const lastCandle=this.series.candles.at(-1);
-        if(this.livePriceAffordance&&lastCandle)paintScannerPriceLines(ctx,frame,this.width,[{price:lastCandle.close,color:"#60a5fa",lineWidth:1,lineStyle:"dashed",axisLabelVisible:true,title:""}]);
+        if(this.maximizedStudyPane===null&&this.livePriceAffordance&&lastCandle)paintScannerPriceLines(ctx,frame,this.width,[{price:lastCandle.close,color:"#60a5fa",lineWidth:1,lineStyle:"dashed",axisLabelVisible:true,title:""}]);
         const crosshair=this.hover ?? this.linkedCrosshair(frame);
         if (crosshair) {
           ctx.save();
@@ -673,7 +706,7 @@ export class NativeChartViewport {
             ctx.beginPath(); ctx.rect(frame.plot.left, frame.plot.top, frame.plot.width, chartBottom-frame.plot.top); ctx.clip();
             ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
             ctx.beginPath();ctx.moveTo(crosshair.x, frame.plot.top);ctx.lineTo(crosshair.x, chartBottom);
-            ctx.moveTo(frame.plot.left, crosshair.y);ctx.lineTo(frame.plot.left + frame.plot.width, crosshair.y);ctx.stroke();
+            if(this.maximizedStudyPane===null){ctx.moveTo(frame.plot.left, crosshair.y);ctx.lineTo(frame.plot.left + frame.plot.width, crosshair.y);}ctx.stroke();
           } finally { ctx.restore(); }
         }
       }
@@ -727,7 +760,7 @@ export class NativeChartViewport {
     const x = frame.timeToX(candle.time);
     if (x == null) { this.clearHover(); return; }
     this.hover = Object.freeze({ candle, x, y: point.y,
-      price: point.y>=frame.plot.top&&point.y<=frame.plot.top+frame.plot.height ? frame.yToPrice(point.y) : null });
+      price: this.maximizedStudyPane===null && point.y>=frame.plot.top&&point.y<=frame.plot.top+frame.plot.height ? frame.yToPrice(point.y) : null });
     this.notify("crosshair", () => this.options.onCrosshair?.(this.hover)); this.schedule();
   }
   private gestureState(): Gesture | null {
@@ -742,7 +775,7 @@ export class NativeChartViewport {
     for (const id of ids) { try { this.canvas.releasePointerCapture(id); } catch { /* unavailable or already lost */ } }
   }
   private insidePriceAxis(point: Point, frame = this.getFrame()): boolean {
-    return !!frame && point.x > frame.plot.left + frame.plot.width && point.x <= this.width
+    return this.maximizedStudyPane===null && !!frame && point.x > frame.plot.left + frame.plot.width && point.x <= this.width
       && point.y >= frame.plot.top && point.y <= frame.plot.top + frame.plot.height;
   }
   private insideTimeAxis(point: Point, frame = this.getFrame()): boolean {
@@ -941,11 +974,11 @@ export class NativeChartViewport {
     const nextFrame=this.getFrame(),candle=bars[index]!;
     const x=nextFrame?.timeToX(candle.time);
     if(!nextFrame||x==null)return false;
-    const projectedY=nextFrame.priceToY(candle.close);
+    const projectedY=this.maximizedStudyPane!==null?nextFrame.plot.top+nextFrame.plot.height/2:nextFrame.priceToY(candle.close);
     if(projectedY==null)return false;
     this.followingLatest=false;this.linkedCrosshairTime=null;this.inspectionPinned=true;
     const y=clamp(projectedY,nextFrame.plot.top,nextFrame.plot.top+nextFrame.plot.height);
-    this.hover=Object.freeze({candle,x,y,price:candle.close});
+    this.hover=Object.freeze({candle,x,y,price:this.maximizedStudyPane!==null?null:candle.close});
     this.notify("crosshair",()=>this.options.onCrosshair?.(this.hover));
     if(this.destroyed||revision!==this.mutationRevision)return false;
     this.schedule();this.emitUserRange(previousRange);return true;

@@ -26,7 +26,7 @@ export function ChartPaneResizeHandle({adapter,pane,onPreferences}:Props){
     aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pane.sizePercent??50)} aria-valuetext={`${Math.round(pane.height)} pixels high. Use Up or Down to resize; Shift changes one pixel.`}
     title="Drag to resize neighboring panes. Arrow keys resize; Escape cancels a drag."
     className="pointer-events-auto absolute z-10 cursor-row-resize rounded hover:bg-sky-400/40 focus-visible:bg-sky-400/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
-    style={{left:pane.left,top:pane.top-4,width:Math.max(1,pane.width-36),height:8,touchAction:'none'}}
+    style={{left:pane.left,top:pane.top-4,width:Math.max(1,pane.width-66),height:8,touchAction:'none'}}
     onPointerDown={event=>{
       event.stopPropagation();if(event.button!==0||drag.current)return;
       const token=adapter.beginStudyPaneResize?.(pane.id);if(token==null)return;

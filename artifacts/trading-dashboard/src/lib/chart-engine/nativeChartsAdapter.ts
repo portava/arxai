@@ -201,6 +201,8 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   return result?{...result,contextKey:`${this.mount}:${this.epoch}:${result.contextKey}`}:null;
  }
  isStudyPaneResizeContextCurrent(key:string){const prefix=`${this.mount}:${this.epoch}:`;return key.startsWith(prefix)&&(this.viewport?.isStudyPaneResizeContextCurrent(key.slice(prefix.length))??false);}
+ getMaximizedStudyPane(){return this.viewport?.getMaximizedStudyPane()??null;}
+ setMaximizedStudyPane(id:string|null){return this.viewport?.setMaximizedStudyPane(id)??false;}
  getStudyPaneControls(){return this.viewport ? this.viewport.getStudyPaneControls() : [];}
  getVolumeProfiles(){return this.viewport?.getVolumeProfiles()??[];}
  getDisplayCandle(time:number){return this.viewport?.getDisplayCandle(time)??null;}

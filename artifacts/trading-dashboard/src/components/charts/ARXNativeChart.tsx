@@ -369,6 +369,7 @@ export function ARXNativeChart({
   const [preferencesSaved, setPreferencesSaved] = useState(true);
   const scaleMode = preferences.scale;
   const [analysisFocused, setAnalysisFocused] = useState(false);
+  const [maximizedPane,setMaximizedPane] = useState<string|null>(null);
   const [analysisVerified,setAnalysisVerified] = useState(true);
   const analysisFocusRef = useRef(false);
   const [analysisFocusNotice, setAnalysisFocusNotice] = useState("");
@@ -605,10 +606,12 @@ export function ARXNativeChart({
     updateLegend(inspectedCandleRef.current);
   }, [updateLegend]);
   const restoreAnalysis = useCallback(() => {
-    if (!analysisFocusRef.current && !adapterRef.current?.isAnalysisFocused?.() && adapterRef.current?.isAnalysisFocusVerified?.()!==false) return true;
+    if (!analysisFocusRef.current && !adapterRef.current?.isAnalysisFocused?.() && !adapterRef.current?.getMaximizedStudyPane?.() && adapterRef.current?.isAnalysisFocusVerified?.()!==false) return true;
     try {
       const adapter = adapterRef.current;
       if (!adapter?.setAnalysisFocus || !adapter.isAnalysisFocused) throw new Error("Chart unavailable");
+      if(adapter.getMaximizedStudyPane?.()!=null && (!adapter.setMaximizedStudyPane?.(null)||adapter.getMaximizedStudyPane?.()!=null))throw new Error("Pane restore not confirmed");
+      setMaximizedPane(null);
       adapter.setAnalysisFocus(false);
       if (adapter.isAnalysisFocused()) throw new Error("Restore not confirmed");
       onAnalysisFocus(false);
@@ -758,6 +761,7 @@ export function ARXNativeChart({
         // viewport notification alone is not evidence that rendering passed.
         if (disposed || adapterRef.current !== engine) return;
         setAnalysisVerified(engine.isAnalysisFocusVerified?.() !== false);
+        setMaximizedPane(engine.getMaximizedStudyPane?.()??null);
         engineInputsRef.current.updateLegend(inspectedCandleRef.current);
       };
       unsubscribePaint = engine.subscribeViewport?.(refreshPaintProof);
@@ -1478,7 +1482,8 @@ export function ARXNativeChart({
       {!analysisVerified && <p role="alert" className="px-3 py-2 text-xs text-amber-200">Chart layer visibility is unverified. Wait for the chart to finish drawing; if this persists, reload before changing tools or exporting.</p>}
       {analysisVerified && analysisFocused && <p className="px-3 py-2 text-xs text-sky-200" data-testid="chart-simplified-view">Simplified view: studies, drawings and automatic chart annotations are temporarily hidden. Your chosen settings are retained. Prices, trade/risk overlays, research layers and source warnings remain visible.</p>}
       {analysisFocusNotice && <p role="status" className="px-3 text-xs text-zinc-400">{analysisFocusNotice}</p>}
-      <ChartWorkbenchTools analysisFocused={analysisFocused} onRestoreAnalysis={restoreAnalysis} studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      {maximizedPane && <p className="px-3 py-2 text-xs text-sky-200" data-testid="chart-maximized-pane">One indicator pane is maximized. Price candles, drawings, trade overlays, automatic annotations and other panes are hidden. Saved settings and calculations are retained. Use the pane’s Restore layout button to show them.</p>}
+      <ChartWorkbenchTools maximizedPane={maximizedPane} analysisFocused={analysisFocused} onRestoreAnalysis={restoreAnalysis} studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
@@ -1850,7 +1855,7 @@ export function ARXNativeChart({
       <div className="px-3 py-2"><Button size="sm" variant="outline" aria-expanded={comparisonOpen} onClick={()=>setComparisonOpen(value=>!value)}>Compare price change</Button></div>
       {comparisonOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening percentage comparison…</p>}><ChartPerformanceComparison key={`${workspaceId}:${chartContext}`} workspaceId={workspaceId} symbol={resolvedSymbol} timeframe={timeframe} data={data} readFailed={query.isError} adapter={adapterRef.current} epoch={chartEpoch} limit={limit} onClose={()=>setComparisonOpen(false)}/></Suspense>}
       {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
-      <SmartChartReader findingDeliveryNotice={assistantPane.findingDeliveryNotice} onFindingExplanation={acceptFindingExplanation} onExplainFinding={()=>assistantPane.explainFinding(explainCurrentFinding)} presentationUnverified={!analysisVerified} presentationHidden={analysisFocused} key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+      <SmartChartReader findingDeliveryNotice={assistantPane.findingDeliveryNotice} onFindingExplanation={acceptFindingExplanation} onExplainFinding={()=>assistantPane.explainFinding(explainCurrentFinding)} presentationUnverified={!analysisVerified} presentationHidden={analysisFocused||maximizedPane!==null} key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
 
       <ChartEngineCredit engineId={adapterRef.current?.capabilities?.id} />
     </Card>

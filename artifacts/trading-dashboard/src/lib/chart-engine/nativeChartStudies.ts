@@ -319,11 +319,11 @@ function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame
 function clipped(ctx:CanvasRenderingContext2D,plot:NativePlot,draw:()=>void){ctx.save();try{ctx.beginPath();ctx.rect(plot.left,plot.top,plot.width,plot.height);ctx.clip();ctx.globalAlpha=1;draw();}finally{ctx.restore();}}
 /** Exact observed timestamps on the shared X scale, independent linear units
  * for each auxiliary pane. Null values lift the pen; no gap interpolation. */
-export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies):void {
+export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null):void {
   if(panes.length!==studies.paneCount)throw new Error('Native study pane layout is incomplete');
   const displayed=studies.getDisplayStudies();
   for(const study of displayed){
-    if(study.config.kind==='volume_profile')continue;
+    if(study.config.kind==='volume_profile'||(onlyPane!==null&&study.paneIndex!==onlyPane))continue;
     const plot=study.paneIndex?panes[study.paneIndex-1]!:frame.plot,points=visiblePoints(study,frame);
     const group=displayed.filter(s=>s.paneIndex===study.paneIndex);
     const first=group[0]===study;
@@ -335,7 +335,7 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
       const definition=studyDefinition(study.config.kind),anyVisible=!study.intervalHidden&&definition.channels.some((_,i)=>study.config.lineStyles?.[i]?.visible!==false);
       if(study.paneIndex&&first){
         ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(plot.left,plot.top);ctx.lineTo(plot.left+plot.width,plot.top);ctx.stroke();
-        ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())+(s.intervalHidden?' (hidden by interval)':'')).join(' · ')+(collapsed?' · collapsed — restore in Studies':groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-(group.some(s=>studyDefinition(s.config.kind).pane)?36:10)));
+        ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())+(s.intervalHidden?' (hidden by interval)':'')).join(' · ')+(collapsed?' · collapsed — restore in Studies':groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-(group.some(s=>studyDefinition(s.config.kind).pane)?66:10)));
       }
       if(study.paneIndex&&first&&mapping?.note){ctx.fillStyle='#fbbf24';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(mapping.note,plot.left+5,plot.top+plot.height-3,Math.max(1,plot.width-10));}
       if(!y||!anyVisible)return;
@@ -379,7 +379,7 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
       }finally{ctx.restore();}
     }
   }
-  const profiles=displayed.filter(study=>!study.intervalHidden&&study.profile?.status==='ready'&&study.config.lineStyles?.[0]?.visible!==false);
+  const profiles=displayed.filter(study=>onlyPane===null&&!study.intervalHidden&&study.profile?.status==='ready'&&study.config.lineStyles?.[0]?.visible!==false);
   profiles.forEach((study,slot)=>clipped(ctx,frame.plot,()=>{
     const rows=projectVolumeProfile(study.profile!,price=>{const y=frame.priceToY(price);return y==null?null:y-frame.plot.top;},frame.plot.width,frame.plot.height,slot,profiles.length);
     ctx.fillStyle=studyChannelColor(study.config,0);ctx.strokeStyle=studyChannelColor(study.config,0);ctx.lineWidth=1;ctx.setLineDash([]);

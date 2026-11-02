@@ -3,11 +3,11 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 
 const state = vi.hoisted(() => ({
   engineId: "arx-native",
-  engines: [] as Array<{ verified: boolean; listeners: Set<() => void>; retired: Array<() => void>; unsubscribe: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; isAnalysisFocusVerified: ReturnType<typeof vi.fn> }>,
+  engines: [] as Array<{ maximized:string|null; verified: boolean; listeners: Set<() => void>; retired: Array<() => void>; unsubscribe: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; isAnalysisFocusVerified: ReturnType<typeof vi.fn> }>,
 }));
 vi.mock("@/lib/chart-engine", () => ({ createChartEngineAdapter: () => {
   const engine = {
-    capabilities: { id: state.engineId }, verified: false, listeners: new Set<() => void>(), retired: [] as Array<() => void>,
+    maximized:null as string|null, getMaximizedStudyPane:()=>engine.maximized, capabilities: { id: state.engineId }, verified: false, listeners: new Set<() => void>(), retired: [] as Array<() => void>,
     unsubscribe: vi.fn(), destroy: vi.fn(), isAnalysisFocusVerified: vi.fn(() => engine.verified),
     subscribeViewport: (listener: () => void) => { engine.listeners.add(listener); engine.retired.push(listener); return () => { engine.unsubscribe(); engine.listeners.delete(listener); }; },
     init: vi.fn(), setSymbol: vi.fn(), setTimeframe: vi.fn(), setCrosshairHandler: vi.fn(), setViewLinkStatusHandler: vi.fn(),
@@ -79,4 +79,10 @@ describe("active renderer attribution and completed-paint proof", () => {
     act(() => { current.retired[0]!(); });
     expect(current.isAnalysisFocusVerified).toHaveBeenCalledTimes(finalReads);
   });
+});
+
+it('reports maximized panes from the current renderer and retires the notice on restore',()=>{
+ render(chart());const engine=state.engines[0]!;engine.maximized='rsi';paint(engine,true);
+ expect(screen.getByTestId('chart-maximized-pane').textContent).toContain('Price candles, drawings, trade overlays, automatic annotations and other panes are hidden');
+ engine.maximized=null;paint(engine,true);expect(screen.queryByTestId('chart-maximized-pane')).toBeNull();
 });

@@ -223,3 +223,14 @@ describe("temporary chart readability through the existing assistant",()=>{
     expect(executeStudyRequest(parseStudyRequest("show RSI")!,f.context())).toContain("could not be verified");expect(f.save).not.toHaveBeenCalled();expect(f.adapter.isAnalysisFocused()).toBe(true);expect(f.adapter.setStudies).toHaveBeenLastCalledWith([]);
   });
 });
+it('restores the chart before an explicit study show while another pane is maximized',()=>{
+ const f=fixture();let maximized:string|null='rsi';const restore=vi.fn((id:string|null)=>{maximized=id;return true;});
+ const context={...f.context(),adapter:{...f.adapter,getMaximizedStudyPane:()=>maximized,setMaximizedStudyPane:restore}};
+ executeStudyRequest(parseStudyRequest('show RSI')!,context);expect(restore).toHaveBeenCalledWith(null);expect(maximized).toBeNull();
+});
+
+it('explaining an installed indicator retains the maximized view',()=>{
+ const f=fixture();const installed=[{...studyDefinition('rsi').defaults,id:'rsi'}];let maximized:string|null='rsi';const restore=vi.fn((id:string|null)=>{maximized=id;return true;});
+ const context={...f.context(),studies:installed,adapter:{...f.adapter,getMaximizedStudyPane:()=>maximized,setMaximizedStudyPane:restore}};
+ const result=executeStudyRequest(parseStudyRequest('explain RSI')!,context);expect(restore).not.toHaveBeenCalled();expect(maximized).toBe('rsi');expect(result).toContain('visibility retained');
+});

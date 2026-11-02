@@ -74,7 +74,7 @@ export function parseStudyRequest(text:string): StudyRequest | null {
   return {kind:alias.kind,action,period,...(edit || curiosity || simple?.[1]==="explain" ? {preserveVisibility:true} : {})};
 }
 export interface StudyAssistantContext {
-  adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"|"getVolumeProfiles"|"getVwapAnchorEvidence"|"setAnalysisFocus"|"isAnalysisFocused"|"isAnalysisFocusVerified"> | null;
+  adapter: Pick<ChartEngineAdapter,"setStudies"|"getVisibleCandles"|"getStudyValues"|"getVolumeProfiles"|"getVwapAnchorEvidence"|"setAnalysisFocus"|"isAnalysisFocused"|"isAnalysisFocusVerified"|"getMaximizedStudyPane"|"setMaximizedStudyPane"> | null;
   studies: ChartStudy[];
   symbol:string; timeframe:string; feedLabel:string;
   utcClockQualified?:boolean;
@@ -85,9 +85,10 @@ export interface StudyAssistantContext {
 const observationTime=(seconds:number,qualified:boolean)=>{const date=new Date(seconds*1000);return Number.isFinite(date.getTime())?formatSourceChartTime(seconds,qualified,"UTC",{seconds:true}):"unavailable timestamp";};
 /** One renderer transaction for a complete requested collection. Restoration
  * is best-effort: an exception never becomes a claim that nothing changed. */
-function applyStudyCollection(context:StudyAssistantContext,updated:ChartStudy[]):string|null {
+function applyStudyCollection(context:StudyAssistantContext,updated:ChartStudy[],restorePane=true):string|null {
   const focused=context.adapter?.isAnalysisFocused?.()===true;
   try {
+    if(restorePane && context.adapter?.getMaximizedStudyPane?.()!=null && (!context.adapter.setMaximizedStudyPane?.(null)||context.adapter.getMaximizedStudyPane?.()!=null))throw Error("Pane restore not confirmed");
     context.adapter!.setStudies!(updated);
     if(focused){context.adapter!.setAnalysisFocus!(false);if(context.adapter!.isAnalysisFocused?.()!==false)throw Error("Restore not confirmed");context.onAnalysisFocus?.(false);}
     context.save(updated);
@@ -165,7 +166,7 @@ function executeStudyRequestCore(request:StudyRequest,context:StudyAssistantCont
     const adapter=context.adapter;
     if(!adapter?.setAnalysisFocus||!adapter.isAnalysisFocused||!adapter.getVisibleCandles?.().length)return "Chart view not changed: select a ready chart with visible candles first. No other pane was substituted.";
     const focused=request.action==="simplify";
-    try {adapter.setAnalysisFocus(focused);if(adapter.isAnalysisFocused()!==focused)throw Error("Unconfirmed presentation");context.onAnalysisFocus?.(focused);}
+    try {if(adapter.getMaximizedStudyPane?.()!=null && (!adapter.setMaximizedStudyPane?.(null)||adapter.getMaximizedStudyPane?.()!=null))throw Error("Pane restore not confirmed");adapter.setAnalysisFocus(focused);if(adapter.isAnalysisFocused()!==focused)throw Error("Unconfirmed presentation");context.onAnalysisFocus?.(focused);}
     catch{context.onAnalysisFocus?.(adapter.isAnalysisFocused());return "Chart view change could not be verified. Reload the chart before changing tools; visible layers are unverified. No order was sent.";}
     return focused ? `Simplified ${context.symbol} · ${context.timeframe}: studies, drawings and automatic pattern annotations are temporarily hidden. Your chosen settings and hidden/locked choices are preserved. Prices, trade/risk overlays, research results and feed warnings remain. Use “restore chosen tools” or the Restore tools button. Asking to show a tool restores the view before applying it. This temporary view resets on reload; it does not improve confidence or trade readiness. No order was sent.`
       : `Restored chosen analysis layers on ${context.symbol} · ${context.timeframe} with their current settings. Individually hidden tools stay hidden; no removed or old-source objects were resurrected. No order was sent.`;
@@ -226,7 +227,7 @@ function executeStudyRequestCore(request:StudyRequest,context:StudyAssistantCont
   }
   // The same synchronous renderer used by manual settings supplies the receipt.
   // Never substitute a separately calculated or model-generated study value.
-  const failed=applyStudyCollection(context,updated);if(failed)return failed;
+  const failed=applyStudyCollection(context,updated,request.action==='show'&&!preserveVisibility);if(failed)return failed;
   const title=`${symbol} · ${timeframe} · ${feedLabel}`;
   if (request.action!=="show") return `${request.action==="hide" ? "Hidden" : "Removed"} ${studyLabel(next)} on ${title}. You can change this in Studies. Display only; no order was sent.`;
   if(request.kind === "volume_profile") {

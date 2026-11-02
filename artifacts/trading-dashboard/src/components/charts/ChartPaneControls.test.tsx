@@ -86,3 +86,11 @@ it('pending paint retains the button but cannot grant action authority',()=>{
   const button=screen.getByRole('button');button.focus();read.mockReturnValue(null);f.emit();fireEvent.click(button);
   expect(document.activeElement).toBe(button);expect(onPreferences).not.toHaveBeenCalled();
 });
+it('maximizes and restores the painted owner without writing preferences or losing its button',()=>{
+ const f=setup(),save=vi.fn(),maximize=vi.fn((id:string|null)=>{f.emit([{...f.adapter.getStudyPaneControls!()![0]!,maximized:id!==null}]);return true;});f.adapter.setMaximizedStudyPane=maximize;
+ render(<ChartPaneControls adapter={f.adapter} chartTarget={f.chartTarget} enabled onPreferences={save}/>);
+ const button=screen.getByRole('button',{name:'Maximize pane 1: RSI (14)'});button.focus();fireEvent.click(button);
+ expect(maximize).toHaveBeenLastCalledWith('rsi');expect(document.activeElement).toBe(button);expect(screen.getByRole('button',{name:'Collapse pane 1: RSI (14)'}).hasAttribute('disabled')).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'Restore layout from pane 1: RSI (14)'}));expect(maximize).toHaveBeenLastCalledWith(null);expect(save).not.toHaveBeenCalled();
+ f.set([]);fireEvent.click(button);expect(maximize).toHaveBeenCalledTimes(2);
+});

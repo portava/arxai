@@ -104,9 +104,9 @@ export function nativeTimeTicks(frame: NativePriceFrame, options: { timeZone?: C
 
 /** Grid plus labels. Does not clear candles, draw last-price badges or attest
  * source-clock quality. The caller's feed/truth state remains authoritative. */
-export function paintNativeAxes(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, options: { timeZone?: ChartTimeZone; utcClockQualified?: boolean; priceDigits?: number; timeAxisBottom?: number } = {}): void {
+export function paintNativeAxes(ctx: CanvasRenderingContext2D, frame: NativePriceFrame, options: { timeZone?: ChartTimeZone; utcClockQualified?: boolean; priceDigits?: number; timeAxisBottom?: number; hidePriceAxis?: boolean } = {}): void {
   const { left, top, width, height } = frame.plot, right = left + width, bottom = top + height;
-  const prices = nativePriceTicks(frame, options), times = nativeTimeTicks(frame, options);
+  const prices = options.hidePriceAxis ? [] : nativePriceTicks(frame, options), times = nativeTimeTicks(frame, options);
   ctx.save();
   try {
     ctx.font = "11px ui-monospace, monospace";

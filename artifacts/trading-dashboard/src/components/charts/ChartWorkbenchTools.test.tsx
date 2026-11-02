@@ -697,3 +697,8 @@ it("keeps the drawing owner across controlled selection and renews it at context
  view.rerender(<ChartWorkbenchTools {...props} epoch={2}/>);const next=setDrawingInteraction.mock.calls.at(-1)![0].owner;expect(next).not.toBe(initial.owner);
  view.rerender(<ChartWorkbenchTools {...props} epoch={2} drawingKey="new-source"/>);expect(setDrawingInteraction.mock.calls.at(-1)![0].owner).not.toBe(next);
 });
+
+it('labels indicator-only exports without claiming a visible price style or drawing preview',()=>{
+ const labels=exportLabels({symbol:'EURUSD',timeframe:'M15',capture:'Offline',feedLabel:'Synthetic',style:'candles',studies:[],fibonacciPreview:true,maximizedPane:'rsi'});
+ expect(labels.join(' ')).toContain('Hidden price style');expect(labels.join(' ')).toContain('Maximized indicator pane');expect(labels.join(' ')).not.toContain('UNACCEPTED automatic Fibonacci preview');
+});

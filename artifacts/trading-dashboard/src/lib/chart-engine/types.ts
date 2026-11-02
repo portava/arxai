@@ -200,6 +200,8 @@ export interface ChartEngineAdapter {
   getVwapAnchorEvidence?(anchor:VwapAnchor): {utcQualified:boolean;reason:string|null};
   /** Current painted pane owners and CSS geometry. Null means pending paint; empty means unavailable/reset. */
   getStudyPaneControls?(): ChartStudyPaneControl[] | null;
+  getMaximizedStudyPane?():string|null;
+  setMaximizedStudyPane?(id:string|null):boolean;
   beginStudyPaneResize?(id:string):number|null;
   previewStudyPaneResize?(token:number,delta:number):boolean;
   endStudyPaneResize?(token:number,commit:boolean):StudyPaneResizeCommit|null;
@@ -245,6 +247,6 @@ export interface ChartEngineAdapter {
 
 /** View-only controls for actual separately scaled study panes. */
 export interface ChartStudyPaneControl {
-  id:string; paneIndex:number; label:string; collapsed:boolean; resizable?:boolean; sizePercent?:number;
+  id:string; paneIndex:number; label:string; collapsed:boolean; maximized?:boolean; resizable?:boolean; sizePercent?:number;
   left:number; top:number; width:number; height:number;
 }

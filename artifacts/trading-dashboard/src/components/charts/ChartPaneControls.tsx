@@ -38,7 +38,7 @@ export function ChartPaneControls({adapter,chartTarget,enabled,onPreferences}:Pr
   const toggle=(pane:ChartStudyPaneControl)=>{
     const token=active.current;if(!token)return;
     const isCurrent=()=>active.current===token && adapter.getStudyPaneControls?.()?.some(current=>current.id===pane.id&&current.collapsed===pane.collapsed);
-    if(!isCurrent())return;
+    if(pane.maximized || !isCurrent())return;
     onPreferences(previous=>{
       if(!isCurrent())return previous;
       const owner=previous.studies.find(study=>studyId(study)===pane.id);
@@ -48,10 +48,21 @@ export function ChartPaneControls({adapter,chartTarget,enabled,onPreferences}:Pr
   };
   return createPortal(<div className="pointer-events-none absolute inset-0" data-testid="chart-pane-controls">
     {panes.map(pane=><Fragment key={pane.id}>
+      {adapter.setMaximizedStudyPane && !pane.collapsed && <button type="button"
+        className="pointer-events-auto absolute rounded border border-slate-600 bg-slate-950 text-slate-200 hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+        style={{left:pane.left+pane.width-58,top:pane.top,width:26,height:24}}
+        aria-label={`${pane.maximized?'Restore layout from':'Maximize'} pane ${pane.paneIndex}: ${pane.label}`}
+        title={pane.maximized?'Restore chart layout':'Maximize indicator pane'} aria-pressed={pane.maximized===true}
+        onPointerDown={event=>event.stopPropagation()} onDoubleClick={event=>event.stopPropagation()}
+        onKeyDown={event=>{if(event.key!=='Escape'&&event.key!=='Tab')event.stopPropagation();}}
+        onClick={event=>{event.stopPropagation();if(active.current&&adapter.getStudyPaneControls?.()?.some(current=>current.id===pane.id&&!current.collapsed&&current.maximized===pane.maximized))adapter.setMaximizedStudyPane?.(pane.maximized?null:pane.id);}}>
+        <span aria-hidden="true">{pane.maximized?'⤢':'□'}</span>
+      </button>}
       {pane.resizable && adapter.beginStudyPaneResize && adapter.previewStudyPaneResize && adapter.endStudyPaneResize && adapter.isStudyPaneResizeContextCurrent && <ChartPaneResizeHandle adapter={adapter} pane={pane} onPreferences={onPreferences}/>}
       <button type="button"
       className="pointer-events-auto absolute rounded border border-slate-600 bg-slate-950 text-slate-200 hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
       style={{left:pane.left+pane.width-28,top:pane.top,width:26,height:24}}
+      disabled={pane.maximized===true}
       aria-label={`${pane.collapsed?'Expand':'Collapse'} pane ${pane.paneIndex}: ${pane.label}`}
       title={`${pane.collapsed?'Expand':'Collapse'} ${pane.label}`} aria-pressed={pane.collapsed}
       onPointerDown={event=>event.stopPropagation()} onDoubleClick={event=>event.stopPropagation()}
