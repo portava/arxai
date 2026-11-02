@@ -29,7 +29,7 @@ export type CandlestickPatternId =
   | "morning_star"
   | "evening_star";
 
-export type CandlestickStatus = "none" | "forming" | "confirmed";
+export type CandlestickStatus = "none" | "forming" | "confirmed" | "failed";
 
 export interface CandlestickSignal {
   id: CandlestickPatternId;
@@ -144,18 +144,21 @@ export function detectHammer(input: CandlestickInput): CandlestickSignal {
       if (candles[idx + 1].close > c.high) {
         status = "confirmed";
         reasons.push("Next candle closed above the hammer's high — confirmed.");
+      } else if (candles[idx + 1].close < c.low) {
+        status = "failed";
+        reasons.push("Next candle closed below the hammer's low — the signal failed.");
       } else {
         reasons.push("Next candle has not confirmed yet — still forming.");
       }
     } else {
       reasons.push("Unconfirmed — needs a close above the hammer's high.");
     }
-    const confidence = capForFeed(status === "confirmed" ? 70 : 55, contextOnly);
+    const confidence = capForFeed(status === "failed" ? 20 : status === "confirmed" ? 70 : 55, contextOnly);
     return {
       ...base,
       detected: true,
       status,
-      direction: "buy",
+      direction: status === "failed" ? "neutral" : "buy",
       confidence,
       quality: gradeQuality(confidence),
       confirmationLevel: c.high,

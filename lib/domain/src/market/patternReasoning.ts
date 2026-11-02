@@ -95,10 +95,16 @@ export function buildPatternReasoningBlock(
   const { read, detection } = input;
   const name = detection?.name ?? "structure";
   const label = readLabel(read.tradeRead);
-  const actionable = isActionableTradeRead(read.tradeRead);
+  const terminal = detection?.status === "failed" || detection?.status === "invalidated" || detection?.status === "exhausted";
+  const absent = !detection || detection.status === "none";
+  const actionable = !terminal && !absent && isActionableTradeRead(read.tradeRead);
 
   let decision: string;
-  if (read.contextOnly) {
+  if (terminal) {
+    decision = `${name} is ${detection.status} on ${input.symbol} — this formation is not a fresh entry setup.${read.contextOnly ? " This is context only, not a live read." : ""}`;
+  } else if (absent) {
+    decision = `No detected structure is available on ${input.symbol}.${read.contextOnly ? " This is context only, not a live read." : ""}`;
+  } else if (read.contextOnly) {
     decision = `${name} is context only right now — not a live read on ${input.symbol}.`;
   } else if (actionable) {
     decision = `${name} reads as ${label} on ${input.symbol} — evidence to weigh, not a signal to act blindly.`;
@@ -106,14 +112,18 @@ export function buildPatternReasoningBlock(
     decision = `${name} reads as ${label} on ${input.symbol}.`;
   }
 
-  const why = detection
+  const why = absent
+    ? "No detected structure is available; there is no pattern-specific evidence to assess."
+    : terminal
+    ? `The supplied formation is ${detection.status}; a later price crossing does not by itself establish a new setup.`
+    : detection
     ? `This is a ${DIRECTION_WORD[detection.direction]} ${detection.family} structure; ${
         read.reasons[0] ?? "context shapes whether it can act."
       }`
     : (read.reasons[0] ?? "No qualifying structure is present in the current window.");
 
   const evidence: string[] = [];
-  if (detection) {
+  if (detection && !absent) {
     for (const r of detection.rationale) evidence.push(r);
     if (detection.candlesUsed > 0) {
       evidence.push(
@@ -124,33 +134,42 @@ export function buildPatternReasoningBlock(
       evidence.push(`Location: ${detection.locationQuality.replace(/_/g, " ")}.`);
     }
   }
-  if (evidence.length === 0) {
+  if (absent) evidence.push("No current detected structure was supplied.");
+  else if (evidence.length === 0) {
     for (const r of read.reasons) evidence.push(r);
   }
 
-  const confirmation =
-    detection?.confirmationLevel != null
+  const confirmation = terminal
+    ? "A new independently validated formation is required; the previous trigger is historical context."
+    : absent ? "No detected structure is available to confirm."
+    : detection?.confirmationLevel != null
       ? `Confirms on a close beyond ${fmtLevel(detection.confirmationLevel)}.`
       : read.conditional
         ? "Confirms only once the trigger candle closes — wait for it."
         : "Already confirmed on closed candles; re-check against the live feed.";
 
-  const invalidation =
-    detection?.invalidationLevel != null
+  const invalidation = terminal
+    ? `This formation is already ${detection.status}.${detection.invalidationLevel != null ? ` Its prior invalidation reference was ${fmtLevel(detection.invalidationLevel)}.` : " No invalidation reference was supplied."}`
+    : absent ? "No structure-specific invalidation is available."
+    : detection?.invalidationLevel != null
       ? `Invalidated on a close back beyond ${fmtLevel(detection.invalidationLevel)}.`
       : "Invalidated if price closes back through the structure's opposite edge.";
 
-  const traderTest = actionable
+  const traderTest = absent
+    ? "There is no detected structure to assess as a trade setup."
+    : terminal
+    ? "Do not reuse this formation's old trigger as a new setup; wait for separately validated evidence."
+    : actionable
     ? "Would a disciplined trader take this? Only with a confirmed trigger, room to the next level, and risk defined first."
     : read.contextOnly
       ? "A disciplined trader waits — there is no live, confirmed read here yet."
       : "A disciplined trader treats this as context, not a trade — there is no clean trigger.";
 
   const riskParts: string[] = [];
-  if (detection?.failureModes?.length) riskParts.push(...detection.failureModes);
-  if (detection?.reliabilityNote) riskParts.push(detection.reliabilityNote);
+  if (!absent && detection?.failureModes?.length) riskParts.push(...detection.failureModes);
+  if (!absent && detection?.reliabilityNote) riskParts.push(detection.reliabilityNote);
   if (input.extraWarnings?.length) riskParts.push(...input.extraWarnings);
-  if (detection?.warnings?.length) riskParts.push(...detection.warnings);
+  if (!absent && detection?.warnings?.length) riskParts.push(...detection.warnings);
   const riskNote =
     riskParts.length > 0
       ? riskParts.join(" ")

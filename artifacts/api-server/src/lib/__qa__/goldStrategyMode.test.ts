@@ -645,3 +645,16 @@ describe("gold strategy template safety", () => {
     assert.ok(verdict.blockingFactors.length > 0);
   });
 });
+
+describe("failed candle tactics never become conditional entries",()=>{
+  for(const feedStale of [false,true])for(const midRange of [false,true]){
+    it(`failed shooting star stays no-trade stale=${feedStale} midRange=${midRange}`,()=>{
+      const v=resolveGoldShootingStar({candles:[...SHOOTING_STAR_CANDLES,{open:104,high:108,low:103.9,close:107}],feedConfirmed:!feedStale,feedStale,atKeyResistance:true,midRange});
+      assert.equal(v.decision,"no_trade");assert.equal(v.conditional,false);assert.equal(v.strength,"weak");assert.match(v.confirmation,/failed|invalidated/);
+    });
+    it(`failed hammer stays no-trade stale=${feedStale} midRange=${midRange}`,()=>{
+      const v=resolveGoldHammer({candles:[...HAMMER_CANDLES,{open:101,high:101.2,low:97,close:98}],feedConfirmed:!feedStale,feedStale,atKeySupport:true,midRange});
+      assert.equal(v.decision,"no_trade");assert.equal(v.conditional,false);assert.equal(v.strength,"weak");assert.match(v.confirmation,/failed|invalidated/);
+    });
+  }
+});
