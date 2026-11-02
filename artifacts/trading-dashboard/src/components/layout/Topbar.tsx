@@ -3,7 +3,7 @@ import React from "react";
 import { useGetMt5Status, useGetBotStatus, getGetMt5StatusQueryKey, getGetBotStatusQueryKey } from "@workspace/api-client-react";
 import { SymbolPicker } from "./SymbolPicker";
 import { NotificationBell } from "@/components/alerts/NotificationBell";
-import { WifiOff, Lock, Zap, Plug, Globe2, Sun, Moon, CloudMoon } from "lucide-react";
+import { WifiOff, Lock, Zap, Plug } from "lucide-react";
 import { getCurrentSession } from "@/lib/symbol-context";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -15,12 +15,33 @@ import { useCurrentUser, useLogout } from "@/hooks/useCurrentUser";
 import { useViewMode } from "@/hooks/useViewMode";
 import { LogOut, User as UserIcon, ShieldCheck, Eye } from "lucide-react";
 
-const SESSION_META = {
-  ASIA: { tone: "info" as const, icon: Moon, label: "Asia" },
-  LONDON: { tone: "warning" as const, icon: CloudMoon, label: "London" },
-  NEW_YORK: { tone: "bullish" as const, icon: Sun, label: "New York" },
-  OFF: { tone: "neutral" as const, icon: Globe2, label: "Off" },
+const CLOCK_WINDOW_LABEL = {
+  ASIA: "Asia", LONDON: "London", NEW_YORK: "New York", OFF: "Outside reference windows",
 };
+
+// This estimate is a reference clock, never market/session evidence. Keep its
+// timer inside the open details drawer rather than rerendering the chart shell.
+function ClockSessionEstimate() {
+  const [session, setSession] = React.useState(getCurrentSession);
+  React.useEffect(() => {
+    const refresh = () => setSession(getCurrentSession());
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+  return <>
+    <DetailRow label="UTC clock window" value={`${CLOCK_WINDOW_LABEL[session]} (estimate)`} />
+    <p className="text-muted-foreground">
+      Fixed UTC-hour estimate only. It does not verify the selected market's session,
+      opening hours, holidays, daylight-saving changes, or the chart's historical time.
+    </p>
+  </>;
+}
 
 const MODE_META = {
   MOCK: { tone: "neutral" as const, icon: WifiOff, label: "Mock" },
@@ -48,10 +69,7 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
       enabled: unlocks.simulator || unlocks.mt5,
     },
   });
-  const session = getCurrentSession();
-  const sessionMeta = SESSION_META[session];
   const modeMeta = (mt5 && MODE_META[mt5.mode as keyof typeof MODE_META]) || MODE_META.MOCK;
-  const SessionIcon = sessionMeta.icon;
   const ModeIcon = modeMeta.icon;
 
   return (
@@ -77,11 +95,8 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
           mt5={mt5}
           bot={bot}
           unlocks={unlocks}
-          sessionLabel={sessionMeta.label}
-          sessionTone={sessionMeta.tone}
           modeLabel={modeMeta.label}
           modeTone={modeMeta.tone}
-          SessionIcon={SessionIcon}
           ModeIcon={ModeIcon}
         />
 
@@ -146,18 +161,14 @@ type CompactStatusRowProps = {
   mt5: any;
   bot: any;
   unlocks: ReturnType<typeof useAllUnlocks>;
-  sessionLabel: string;
-  sessionTone: "info" | "warning" | "bullish" | "neutral";
   modeLabel: string;
   modeTone: "neutral" | "info" | "warning" | "danger";
-  SessionIcon: React.ComponentType<{ className?: string }>;
   ModeIcon: React.ComponentType<{ className?: string }>;
 };
 
 function CompactStatusRow(p: CompactStatusRowProps) {
   const pills: StatusPill[] = [
-    { id: "session", label: "Sess", value: p.sessionLabel, legacyTestId: "badge-session",
-      tone: p.sessionTone === "bullish" ? "success" : p.sessionTone === "warning" ? "warning" : p.sessionTone === "info" ? "neutral" : "neutral" },
+    { id: "session", label: "Session", value: "Unverified", legacyTestId: "badge-session", tone: "neutral" },
   ];
   if (p.unlocks.mt5) {
     pills.push({ id: "mt5", label: "MT5", value: p.mt5?.connected ? "ON" : "OFF",
@@ -175,7 +186,8 @@ function CompactStatusRow(p: CompactStatusRowProps) {
 
   const drawer = (
     <div className="space-y-3 text-xs">
-      <DetailRow label="Trading session" value={p.sessionLabel} />
+      <DetailRow label="Market session" value="Unverified" />
+      <ClockSessionEstimate />
       <DetailRow label="MT5 mode" value={p.modeLabel} />
       <DetailRow label="MT5 connected" value={p.mt5?.connected ? "yes" : "no"} />
       {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (
@@ -210,7 +222,7 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       {/* Legacy E2E selectors — preserved as hidden markers so existing tests
           targeting badge-session / badge-mt5-connection / badge-mode keep
           finding the same data in the DOM after the StatusBadgeRow refactor. */}
-      <span className="sr-only" data-testid="badge-session">{p.sessionLabel}</span>
+      <span className="sr-only" data-testid="badge-session">Unverified</span>
       {p.unlocks.mt5 && (
         <>
           <span className="sr-only" data-testid="badge-mt5-connection">{p.mt5?.connected ? "connected" : "disconnected"}</span>
