@@ -72,7 +72,8 @@ export function validatePreferences(value: unknown): ChartPreferences {
     if(s.showInDataWindow!==undefined&&typeof s.showInDataWindow!=="boolean")continue;
     if(s.visibleIntervals!==undefined && (!Array.isArray(s.visibleIntervals) || s.visibleIntervals.length>CHART_INTERVALS.length || Array.from(s.visibleIntervals).some(v=>!isChartInterval(v)) || new Set(s.visibleIntervals).size!==s.visibleIntervals.length))continue;
     const pane=STUDY_CATALOG.find(item=>item.defaults.kind===s.kind)!.pane;
-    if ((s.paneScale !== undefined || s.referenceLevels !== undefined) && !pane) continue;
+    if ((s.paneScale !== undefined || s.referenceLevels !== undefined || s.paneWeight !== undefined) && !pane) continue;
+    if(s.paneWeight!==undefined && (typeof s.paneWeight!=="number" || !Number.isFinite(s.paneWeight) || s.paneWeight<.25 || s.paneWeight>8))continue;
     if (s.paneScale !== undefined) {
       const scale=s.paneScale;
       if (!scale || typeof scale!=="object" || Array.isArray(scale) || !["auto","fixed"].includes(scale.mode)) continue;
@@ -112,6 +113,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
     seen.add(id);
     studies.push({
       ...(lineStyles?.length ? {lineStyles} : {}),
+      ...(s.paneWeight!==undefined?{paneWeight:s.paneWeight}:{}),
       ...(s.showInDataWindow!==undefined?{showInDataWindow:s.showInDataWindow}:{}),
       ...(s.visibleIntervals!==undefined?{visibleIntervals:[...s.visibleIntervals]}:{}),
       ...(s.paneScale!==undefined ? {paneScale:s.paneScale.mode==="auto"?{mode:"auto" as const}:{mode:"fixed" as const,...(s.paneScale.min!==undefined?{min:s.paneScale.min}:{}),...(s.paneScale.max!==undefined?{max:s.paneScale.max}:{})}} : {}),

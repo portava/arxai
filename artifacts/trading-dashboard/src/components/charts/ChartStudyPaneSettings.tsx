@@ -23,6 +23,14 @@ export function ChartStudyPaneSettings({config,label,onChange}:Props){
  return <details className="mt-3" aria-label={`${label} Pane controls`}>
   <summary className="cursor-pointer text-zinc-300">Pane scale and reference levels</summary>
   <p className="my-2 text-[11px] text-zinc-400">Display only. Guides do not change indicator calculations, AI rules or trade thresholds. Linked overlays share this pane’s scale. Uncheck either boundary to fit that side to visible values and guides. Fixed limits can hide values; the data window retains them.</p>
+  <div className="mb-3 flex flex-wrap items-center gap-2">
+   <label className="text-xs">Relative pane height <input className={`${field} w-24`} aria-label={`${label} Relative pane height`} type="number" min="0.25" max="8" step="0.25" key={`weight-${config.paneWeight??1}`} defaultValue={config.paneWeight??1} onBlur={e=>{
+    const value=Number(e.target.value);
+    if(!e.target.value.trim()||!e.target.validity.valid||!change({paneWeight:value})){e.target.value=String(config.paneWeight??1);setError('Use a pane height from 0.25 to 8. Existing settings are unchanged.');}
+   }}/></label>
+   <button type="button" className={button} aria-label={`${label} Reset pane height`} onClick={()=>change({paneWeight:undefined})}>Reset height</button>
+   <p className="w-full text-[11px] text-zinc-400">Larger weights allocate more of the available chart height. Minimum readable sizes are retained. Linked overlays move and resize with their source pane.</p>
+  </div>
   <div className="flex flex-wrap items-center gap-2">
    <span className="text-xs">{config.paneScale?.mode==='fixed'?`Limits: ${config.paneScale.min??"Auto"} to ${config.paneScale.max??"Auto"}`:config.paneScale?.mode==='auto'?'Auto scale':'Study default scale'}</span>
    <button type="button" className={button} aria-label={`${label} Auto scale`} onClick={()=>change({paneScale:{mode:'auto'}})}>Auto scale</button>

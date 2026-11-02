@@ -56,6 +56,10 @@ export class NativeChartStudies {
     const panes=new Map([...active].sort((a,b)=>a-b).map((id,i)=>[id,i+1]));
     return Object.freeze(snapshots.filter(s=>s.paneIndex?active.has(s.paneIndex):visible(s)).map(s=>Object.freeze({...s,paneIndex:s.paneIndex?panes.get(s.paneIndex)!:0,intervalHidden:!visible(s)})));
   }
+  getPaneWeights():number[] {
+    const displayed=this.getDisplayStudies();
+    return Array.from({length:Math.max(0,...displayed.map(s=>s.paneIndex))},(_,i)=>displayed.find(s=>s.paneIndex===i+1&&studyDefinition(s.config.kind).pane)?.config.paneWeight??1);
+  }
   setStudies(configs:readonly ChartStudy[],candles:readonly ChartEngineCandle[]):void {
     const valid=validatePreferences({studies:configs}).studies.map(freezeConfig);
     const prior=new Map(this.calculators.map(calculator=>[studyId(calculator.config),calculator]));
@@ -93,6 +97,16 @@ export class NativeChartStudies {
     const bindings=new Map<StudyCalculator,{parent:StudyCalculator|undefined;issue:string|null}>();
     const byId=new Map(this.calculators.map(c=>[studyId(c.config),c]));
     const configs=this.calculators.map(c=>c.config);
+    // Presentation order belongs to pane owners, not the dependency traversal.
+    // A linked overlay listed early must not pull its source pane above others.
+    const paneOwners=new Map<string,number>();
+    for(const config of configs)if(studyDefinition(config.kind).pane||(config.studySource&&studySourceIssue(config,configs)))paneOwners.set(studyId(config),++pane);
+    const paneFor=(config:Readonly<ChartStudy>):number=>{
+      const own=paneOwners.get(studyId(config));if(own!==undefined)return own;
+      if(!config.studySource)return 0;
+      const parent=byId.get(config.studySource.studyId);
+      return parent?paneFor(parent.config):0;
+    };
     const starts=new Map<StudyCalculator,number>();
     const visit=(calculator:StudyCalculator):NativeStudySnapshot=>{
       const ready=retained.get(calculator);if(ready)return ready;
@@ -122,7 +136,7 @@ export class NativeChartStudies {
       // Scalar overlays keep the parent's units. Oscillators retain their own
       // pane, even when their input is another oscillator. Held orphans never
       // enter the price pane or autoscale.
-      const paneIndex=studyDefinition(config.kind).pane?++pane:config.studySource?(source?.paneIndex??++pane):0;
+      const paneIndex=paneFor(config);
       const snapshot=Object.freeze({config,paneIndex,points,...(calculator.profileResult?{profile:calculator.profileResult}:{})});
       retained.set(calculator,snapshot);return snapshot;
     };
@@ -166,13 +180,35 @@ export class NativeChartStudies {
 
 /** Preserve every configured pane. Caller must report unavailable space and
  * may resize; silently dropping an oscillator would misrepresent preferences. */
-export function layoutNativeStudyPanes(fullPlot:NativePlot,count:number):{price:NativePlot;panes:NativePlot[]}|null {
+export function layoutNativeStudyPanes(fullPlot:NativePlot,count:number,paneWeights?:readonly number[]):{price:NativePlot;panes:NativePlot[]}|null {
   if(!Number.isInteger(count)||count<0||count>12||![fullPlot.left,fullPlot.top,fullPlot.width,fullPlot.height].every(finite)
     ||fullPlot.width<=0||fullPlot.height<=0||!finite(fullPlot.left+fullPlot.width)||!finite(fullPlot.top+fullPlot.height))return null;
+  if(paneWeights!==undefined&&(paneWeights.length!==count||Array.from(paneWeights).some(w=>!finite(w)||w<.25||w>8)))return null;
   if(count===0)return {price:Object.freeze({...fullPlot}),panes:[]};
-  const unit=fullPlot.height/(count+3),priceHeight=unit*3;
-  if(unit<40||priceHeight<100)return null;
-  return {price:Object.freeze({...fullPlot,height:priceHeight}),panes:Array.from({length:count},(_,i)=>Object.freeze({...fullPlot,top:fullPlot.top+priceHeight+unit*i,height:unit}))};
+  // Retain existing minimum-space acceptance. Redistribution must not make an
+  // already unavailable stack appear complete by squeezing away a pane.
+  if(fullPlot.height/(count+3)<40)return null;
+  const weights=[3,...(paneWeights??Array(count).fill(1))],minimum=[100,...Array(count).fill(40)];
+  const heights=Array(count+1).fill(0),remaining=new Set(weights.map((_,i)=>i));let available=fullPlot.height;
+  // Water-fill constrained panes before redistributing the remaining space.
+  while(remaining.size){
+    const total=[...remaining].reduce((sum,i)=>sum+weights[i]!,0);
+    const constrained=[...remaining].filter(i=>available*(weights[i]!/total)<minimum[i]!);
+    if(!constrained.length){for(const i of remaining)heights[i]=available*(weights[i]!/total);break;}
+    for(const i of constrained){heights[i]=minimum[i]!;available-=minimum[i]!;remaining.delete(i);}
+  }
+  let top=fullPlot.top+heights[0];
+  const bottom=fullPlot.top+fullPlot.height;
+  const panes=heights.slice(1).map((requested,index)=>{
+    // Preserve the readable minimum when subtraction rounds a fractional final
+    // pane just below 40px. At the largest finite extent, recombining a rounded
+    // difference can overflow; use the adjacent representable height instead.
+    let height=index===count-1?Math.max(40,bottom-top):requested;
+    if(!finite(top+height))height=adjacentFloat(height,-1);
+    const pane=Object.freeze({...fullPlot,top,height});top+=height;return pane;
+  });
+  if(!finite(heights[0])||heights[0]<100||panes.some(p=>![p.top,p.height,p.top+p.height].every(finite)||p.height<40))return null;
+  return {price:Object.freeze({...fullPlot,height:heights[0]}),panes};
 }
 
 function isHistogram(config:Readonly<ChartStudy>,channel:number):boolean {

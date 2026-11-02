@@ -433,3 +433,11 @@ it('pinned bars stay anchored when newer bars arrive and ordinary Escape is not 
  viewport.inspectCandle('previous');flush();const before=viewport.getRange(),time=viewport.getState().inspectionTime;
  viewport.setCandles(candles(0,220));flush();expect(viewport.getRange()).toEqual(before);expect(viewport.getState().inspectionTime).toBe(time);
 });
+
+it('applies saved pane weights to actual viewport geometry without changing canonical observations',()=>{
+ create();const rsi={kind:'rsi' as const,period:14,color:'#ffffff'},macd={kind:'macd' as const,period:12,slow:26,signal:9,color:'#ff0000'};
+ viewport.setStudies([rsi,macd]);flush();const before=viewport.getPaneLayout()!,data=viewport.getCandles();
+ viewport.setStudies([{...rsi,paneWeight:3},macd]);flush();const after=viewport.getPaneLayout()!;
+ expect(after.panes[0]!.height).toBeGreaterThan(before.panes[0]!.height);expect(after.panes[1]!.height).toBeGreaterThanOrEqual(40);expect(after.price.height).toBeGreaterThanOrEqual(100);
+ expect(viewport.getCandles()).toBe(data);expect(viewport.getState().status).toBe('ready');
+});

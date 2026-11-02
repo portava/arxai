@@ -195,3 +195,20 @@ it('controls each numeric readout independently of plotted lines and retains the
  fireEvent.click(screen.getByLabelText('RSI 2 Show in Data Window'));
  expect(settings().studies.map((s:any)=>s.showInDataWindow)).toEqual([false,true]);
 });
+
+it('resizes and reorders studies without changing linked-source identities',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index',exact:true}));
+ fireEvent.click(screen.getByRole('button',{name:'Add Simple moving average',exact:true}));
+ const sourceId=settings().studies[0].id;
+ const source=screen.getByLabelText('SMA 2 Source') as HTMLSelectElement;
+ const option=[...source.options].find(o=>o.textContent==='1. RSI · RSI')!;
+ fireEvent.change(source,{target:{value:option.value}});
+ fireEvent.blur(screen.getByLabelText('RSI 1 Relative pane height'),{target:{value:'3'}});
+ expect(settings().studies[0].paneWeight).toBe(3);
+ fireEvent.click(screen.getByRole('button',{name:'Move study 1 down'}));
+ expect(settings().studies.map((s:any)=>s.kind)).toEqual(['sma','rsi']);
+ expect(settings().studies[0].studySource.studyId).toBe(sourceId);expect(settings().studies[1].paneWeight).toBe(3);
+ fireEvent.blur(screen.getByLabelText('RSI 2 Relative pane height'),{target:{value:'0'}});
+ expect(settings().studies[1].paneWeight).toBe(3);expect(screen.getByRole('alert').textContent).toContain('0.25 to 8');
+ fireEvent.click(screen.getByRole('button',{name:'RSI 2 Reset pane height'}));expect(settings().studies[1].paneWeight).toBeUndefined();
+});

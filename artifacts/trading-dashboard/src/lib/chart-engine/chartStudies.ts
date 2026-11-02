@@ -41,6 +41,8 @@ export interface ChartStudy {
   referenceLevels?: StudyReferenceLevel[];
   /** Auxiliary pane display only. Never clamps calculated observations. */
   paneScale?: StudyPaneScale;
+  /** Relative display height of this oscillator pane; never a calculation input. */
+  paneWeight?: number;
   /** Display only; omitted means all intervals, [] means hidden on every interval. */
   visibleIntervals?: ChartInterval[];
   /** Readout display only. Omitted means shown; calculations stay available. */
@@ -169,7 +171,7 @@ export class StudyCalculator {
   get config(): ChartStudy { return this.currentConfig; }
   /** Preserve checkpoints only when every calculation input is unchanged. */
   updatePresentation(next: ChartStudy): boolean {
-    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, visibleIntervals: _intervals, showInDataWindow: _dataWindow, ...rest}: ChartStudy) => JSON.stringify(rest);
+    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, paneWeight: _weight, visibleIntervals: _intervals, showInDataWindow: _dataWindow, ...rest}: ChartStudy) => JSON.stringify(rest);
     if (inputs(next) !== inputs(this.currentConfig)) return false;
     this.currentConfig = next;
     return true;

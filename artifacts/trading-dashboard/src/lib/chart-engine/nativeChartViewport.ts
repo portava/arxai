@@ -468,7 +468,7 @@ export class NativeChartViewport {
   getRange(): Readonly<LogicalWindow> | null { return this.range ? Object.freeze({ ...this.range }) : null; }
   getPaneLayout() {
     const full = nativePlotLayout(this.width, this.height);
-    return full ? layoutNativeStudyPanes(full, this.analysisFocused ? 0 : this.studies.paneCount) : null;
+    return full ? layoutNativeStudyPanes(full, this.analysisFocused ? 0 : this.studies.paneCount, this.analysisFocused?[]:this.studies.getPaneWeights()) : null;
   }
   setStudies(configs: ChartStudy[]): void {
     if (this.destroyed) return;
