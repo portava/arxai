@@ -2,8 +2,8 @@ import type { Query, QueryClient, QueryKey } from "@tanstack/react-query";
 import { getGetMeSharedAccountSummaryQueryKey, getGetMt5StatusQueryKey } from "@workspace/api-client-react";
 
 /** Hints carry no evidence: only the canonical HTTP reader may update amounts
- * or observation times. One controller belongs to one existing SSE connection. */
-function createAccountChangeRefresh(client: QueryClient, queryKey: QueryKey) {
+ * or observation times. Controllers are scoped to their caller lifetime (SSE or explicit manual reads). */
+function createAccountChangeRefresh(client: QueryClient, queryKey: QueryKey, onPendingChange?: (pending: boolean) => void) {
   const filters = { queryKey, exact: true } as const;
   let disposed = false;
   let dirty = false;
@@ -11,6 +11,11 @@ function createAccountChangeRefresh(client: QueryClient, queryKey: QueryKey) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let observedQuery: Query | undefined;
   let unsubscribe = () => {};
+  let pending = false;
+  function reportPending() {
+    const next = !disposed && (dirty || running);
+    if (next !== pending) { pending = next; onPendingChange?.(next); }
+  }
 
   function dispose() {
     disposed = true;
@@ -18,6 +23,7 @@ function createAccountChangeRefresh(client: QueryClient, queryKey: QueryKey) {
     if (timer !== null) clearTimeout(timer);
     timer = null;
     unsubscribe();
+    reportPending();
     // Do not abort a canonical read also owned by other mounted surfaces.
   }
 
@@ -34,7 +40,7 @@ function createAccountChangeRefresh(client: QueryClient, queryKey: QueryKey) {
     // An already-running read can predate the hint. Joining its promise would
     // silently consume the change. Keep dirty until it settles (or is cancelled),
     // then start a new read; never cancel other readers to accelerate a hint.
-    if (query && query.state.fetchStatus !== "idle") return;
+    if (query?.isActive() && query.state.fetchStatus !== "idle") return;
     dirty = false;
     running = true;
     void client.invalidateQueries({ ...filters, refetchType: "active" }, { cancelRefetch: false })
@@ -42,6 +48,7 @@ function createAccountChangeRefresh(client: QueryClient, queryKey: QueryKey) {
       .finally(() => {
         running = false;
         scheduleTrailing();
+        reportPending();
       });
   }
 
@@ -49,23 +56,25 @@ function createAccountChangeRefresh(client: QueryClient, queryKey: QueryKey) {
     // A logout/cache reset must not leave a waiter that refreshes under the next
     // session. A subsequent SSE connection creates its own controller.
     if (event.type === "removed" && event.query === observedQuery) { dispose(); return; }
-    if (dirty && !running && event.query === observedQuery && event.query.state.fetchStatus === "idle") scheduleTrailing();
+    if (dirty && !running && event.query === observedQuery && (event.query.state.fetchStatus === "idle" || !event.query.isActive())) scheduleTrailing();
   });
 
   return {
     notify() {
-      if (disposed) return;
+      if (disposed) return false;
       dirty = true;
+      reportPending();
       if (timer === null) pump();
+      return true;
     },
     dispose,
   };
 }
 
 /** Keep both account readers on their existing generated cache keys. */
-export function createSharedAccountChangeRefresh(client: QueryClient) {
-  return createAccountChangeRefresh(client, getGetMeSharedAccountSummaryQueryKey());
+export function createSharedAccountChangeRefresh(client: QueryClient, onPendingChange?: (pending: boolean) => void) {
+  return createAccountChangeRefresh(client, getGetMeSharedAccountSummaryQueryKey(), onPendingChange);
 }
-export function createPersonalAccountChangeRefresh(client: QueryClient) {
-  return createAccountChangeRefresh(client, getGetMt5StatusQueryKey());
+export function createPersonalAccountChangeRefresh(client: QueryClient, onPendingChange?: (pending: boolean) => void) {
+  return createAccountChangeRefresh(client, getGetMt5StatusQueryKey(), onPendingChange);
 }

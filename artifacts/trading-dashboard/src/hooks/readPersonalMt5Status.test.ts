@@ -108,3 +108,38 @@ it.each(["headers", "body"])("rejects overdue %s completion before a delayed tim
     expect(fetcher).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
   } finally {monotonic.mockRestore();}
 });
+
+it("manual pending tracks the pre-click read and burst-coalesced trailing read until both settle", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  let resolveFirst!: (value: unknown) => void, resolveNext!: (value: unknown) => void;
+  const queryFn = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { resolveNext = resolve; }));
+  const observer = new QueryObserver(client, { queryKey: key, queryFn });
+  const off = observer.subscribe(() => {}); const pending = vi.fn();
+  const refresh = createPersonalAccountChangeRefresh(client, pending);
+  try {
+    refresh.notify(); refresh.notify(); refresh.notify();
+    expect(pending.mock.calls).toEqual([[true]]); expect(queryFn).toHaveBeenCalledTimes(1);
+    resolveFirst(report("1.000")); await vi.advanceTimersByTimeAsync(25);
+    expect(queryFn).toHaveBeenCalledTimes(2); expect(pending.mock.calls).toEqual([[true]]);
+    resolveNext(report("2.000")); await vi.advanceTimersByTimeAsync(0);
+    expect(pending.mock.calls).toEqual([[true], [false]]);
+    expect(client.getQueryData(key)).toEqual(report("2.000"));
+  } finally { refresh.dispose(); off(); client.clear(); }
+});
+
+it.each(["missing", "disabled", "inactive-fetching"])("manual notification neither fetches nor stays busy for a %s reader", async kind => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  const queryFn = vi.fn(async () => report("1.000"));
+  let off = () => {};
+  if (kind === "disabled") off = new QueryObserver(client, { queryKey: key, queryFn, enabled: false }).subscribe(() => {});
+  if (kind === "inactive-fetching") {
+    void client.fetchQuery({ queryKey: key, queryFn: () => new Promise(() => {}) }).catch(() => {});
+  }
+  const pending = vi.fn(); const refresh = createPersonalAccountChangeRefresh(client, pending);
+  try {
+    expect(refresh.notify()).toBe(true); await vi.advanceTimersByTimeAsync(0);
+    expect(queryFn).not.toHaveBeenCalled(); expect(pending.mock.calls).toEqual([[true], [false]]);
+    refresh.dispose(); expect(refresh.notify()).toBe(false);
+  } finally { refresh.dispose(); off(); client.clear(); }
+});

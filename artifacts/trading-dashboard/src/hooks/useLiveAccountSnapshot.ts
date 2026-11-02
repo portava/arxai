@@ -1,4 +1,6 @@
-// useLiveAccountSnapshot — single shared truth source for live account data.
+// useLiveAccountSnapshot — shared snapshot transport and canonical account refresh.
+// Native broker money is read by scoped canonical queries; SSE advisory hints
+// and explicit Refresh request those readers without supplying monetary evidence.
 //
 // DESIGN
 //   SSE-first: connects to GET /api/me/live/account-stream. On stream drop
@@ -202,6 +204,40 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const enabledRef = useRef(autoRefreshEnabled);
   enabledRef.current = autoRefreshEnabled;
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [manualPending, setManualPending] = useState({ shared: false, personal: false });
+  const manualReadersRef = useRef<{
+    shared: ReturnType<typeof createSharedAccountChangeRefresh> | null;
+    personal: ReturnType<typeof createPersonalAccountChangeRefresh> | null;
+    alive: boolean;
+  } | null>(null);
+  // This lifetime must NOT follow SSE pause/reconnect: a manual click works while
+  // paused, and reconnecting the slot stream must not discard its trailing read.
+  useEffect(() => {
+    const readers = { shared: null, personal: null, alive: true } as NonNullable<typeof manualReadersRef.current>;
+    manualReadersRef.current = readers;
+    setManualPending({ shared: false, personal: false });
+    return () => {
+      readers.alive = false;
+      readers.shared?.dispose(); readers.personal?.dispose();
+      if (manualReadersRef.current === readers) manualReadersRef.current = null;
+    };
+  }, [queryClient]);
+  const refreshCanonicalAccounts = useCallback(() => {
+    const readers = manualReadersRef.current;
+    if (!queryClient || !readers?.alive) return;
+    for (const kind of ["shared", "personal"] as const) {
+      if (readers[kind]?.notify()) continue;
+      // Query removal retires a controller. Only a NEW explicit click may
+      // create one for the current cache/session; old queued work stays dead.
+      const create = kind === "shared" ? createSharedAccountChangeRefresh : createPersonalAccountChangeRefresh;
+      readers[kind] = create(queryClient, pending => {
+        if (readers.alive && manualReadersRef.current === readers) {
+          setManualPending(previous => previous[kind] === pending ? previous : { ...previous, [kind]: pending });
+        }
+      });
+      readers[kind]!.notify();
+    }
+  }, [queryClient]);
   const streamWaitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs to escape stale-closure issues in async callbacks.
@@ -509,11 +545,16 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadAt, autoRefreshEnabled, queryClient]);
 
-  const reload = useCallback(() => {
+  const reloadTransport = useCallback(() => {
     backoffIdxRef.current = 0;
     if (enabledRef.current) setReloadAt(value => value + 1);
     else void doPoll({ manual: true, allowWhileHidden: true });
   }, [doPoll]);
+
+  const reload = useCallback(() => {
+    refreshCanonicalAccounts();
+    reloadTransport();
+  }, [refreshCanonicalAccounts, reloadTransport]);
 
   const agedSnapshot = useAgedAccountSnapshot(snapshot);
 
@@ -522,7 +563,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   // overall snapshot), proactively re-request the canonical snapshot so every
   // surface self-heals instead of waiting for the next interval. Debounced, and
   // fired only on the transition INTO stale so it never loops while the feed
-  // stays stale. Re-requesting goes through reload() (SSE reconnect, which
+  // stays stale. Re-requesting goes through reloadTransport() (SSE reconnect, which
   // pushes a fresh build immediately) when visible, or — Task #445 — a SINGLE
   // proactive poll when the tab is hidden (`allowWhileHidden: true` bypasses the
   // hidden-tab perf guard for this one-shot heal only). Because the self-heal
@@ -550,11 +591,11 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         staleRefetchTimerRef.current = null;
         if (!mountedRef.current || !enabledRef.current) return;
         if (document.hidden) void doPoll({ allowWhileHidden: true });
-        else reload();
+        else reloadTransport();
       }, STALE_REFETCH_DEBOUNCE_MS);
     }
     wasStaleRef.current = isStaleNow;
-  }, [agedSnapshot, doPoll, reload, autoRefreshEnabled]);
+  }, [agedSnapshot, doPoll, reloadTransport, autoRefreshEnabled]);
 
   // Clear any pending stale-refetch timer on unmount.
   useEffect(() => () => {
@@ -585,7 +626,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   return {
     autoRefreshEnabled,
     setAutoRefreshEnabled,
-    isRefreshing,
+    isRefreshing: isRefreshing || manualPending.shared || manualPending.personal,
     snapshot: snap,
     live: snap?.live ?? null,
     freshness,
