@@ -2,9 +2,16 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEffect, useState } from 'react';
 import { ScannerSecondaryPanels } from './ScannerSecondaryPanels';
+import { PageTabs } from '@/components/ui/PageTabs';
+const transitions = vi.hoisted(() => ({ deferred: false, queued: [] as Array<() => void> }));
+vi.mock('react', async importOriginal => {
+  const actual = await importOriginal<typeof import('react')>();
+  return { ...actual, startTransition: (callback: () => void) => transitions.deferred ? transitions.queued.push(callback) : actual.startTransition(callback) };
+});
 let next: number, frames: Map<number, FrameRequestCallback>, retired: FrameRequestCallback[];
 beforeEach(() => {
   vi.useFakeTimers(); next = 1; frames = new Map(); retired = [];
+  transitions.deferred = false; transitions.queued = []; localStorage.clear();
   vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) => { const id = next++; frames.set(id, fn); retired.push(fn); return id; });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
 });
@@ -46,5 +53,26 @@ describe('secondary Scanner mounting', () => {
     render(<ScannerSecondaryPanels><button role="tab" aria-selected="true">Focus panel</button></ScannerSecondaryPanels>);
     const reveal = screen.getByRole('button', { name: 'Show scanner panels now' }); reveal.focus(); frame(); frame();
     expect(document.activeElement).toBe(screen.getByRole('tab'));
+  });
+  it('focuses the saved active tab rather than changing the selection', () => {
+    localStorage.setItem('arx.pageTab.test-secondary', 'broad');
+    render(<ScannerSecondaryPanels><PageTabs storageKey="test-secondary" tabs={[{ id: 'focus', label: 'Focus', content: 'Focus content' }, { id: 'broad', label: 'Broad Scan', content: 'Broad content' }]} /></ScannerSecondaryPanels>);
+    screen.getByRole('button', { name: 'Show scanner panels now' }).focus(); frame(); frame();
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Broad Scan' }));
+    expect(screen.getByRole('tab', { name: 'Broad Scan' }).getAttribute('aria-selected')).toBe('true');
+  });
+  it('an explicit reveal supersedes a queued automatic transition', () => {
+    transitions.deferred = true;
+    render(<ScannerSecondaryPanels><p>Current panel</p></ScannerSecondaryPanels>); frame(); frame();
+    expect(screen.queryByText('Current panel')).toBeNull(); expect(transitions.queued).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Show scanner panels now' }));
+    expect(screen.getByText('Current panel')).toBeTruthy();
+  });
+  it('does not steal focus if the user leaves while an automatic transition is pending', () => {
+    transitions.deferred = true;
+    render(<><button>Elsewhere</button><ScannerSecondaryPanels><button role="tab" aria-selected="true">Focus panel</button></ScannerSecondaryPanels></>);
+    screen.getByRole('button', { name: 'Show scanner panels now' }).focus(); frame(); frame();
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' }); elsewhere.focus();
+    act(() => transitions.queued.forEach(callback => callback())); expect(document.activeElement).toBe(elsewhere);
   });
 });
