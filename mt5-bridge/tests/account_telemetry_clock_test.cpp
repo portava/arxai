@@ -24,17 +24,24 @@ datetime lastConfigPollAt = 0, lastCommandPollAt = 0, lastSnapshotAt = 0;
 datetime lastPollAt = 0, lastCandlePushAt = 0, lastLiveStreamAt = 0;
 int heartbeats = 0, accounts = 0, positions = 0, orders = 0;
 int configs = 0, commands = 0, snapshots = 0, candles = 0, streams = 0;
-void SendHeartbeat() { ++heartbeats; }
+ulong heartbeatCost = 0, snapshotCost = 0, commandCost = 0, candleCost = 0, streamCost = 0;
+ulong nativeStartedMs = 0;
+int nativeCalls = 0, accountRevision = 0, capturedRevision = -1;
+bool commandChangesAccount = false;
+string callOrder;
+void SendHeartbeat() { ++heartbeats; callOrder += "H"; elapsedMs += heartbeatCost; }
 void PushAccountSnapshot() { ++accounts; }
 void PushPositionsSnapshot() { ++positions; }
 void PushOrdersSnapshot() { ++orders; }
 void PollRemoteConfig() { ++configs; }
 void PollCommands() { ++commands; }
-void PushSnapshots() { ++snapshots; }
-void PollAndExecute() { ++commands; }
-void PushCandleHistory() { ++candles; }
-void PushLiveBrokerStream() { ++streams; }
-void PumpNativeAccountReport() {} // separately exercised by native_account_report_test.cpp
+void PushSnapshots() { ++snapshots; callOrder += "S"; elapsedMs += snapshotCost; }
+void PollAndExecute() { ++commands; callOrder += "P"; elapsedMs += commandCost; if (commandChangesAccount) ++accountRevision; }
+void PushCandleHistory() { ++candles; callOrder += "C"; elapsedMs += candleCost; }
+void PushLiveBrokerStream() { ++streams; callOrder += "L"; elapsedMs += streamCost; }
+void PumpNativeAccountReport() {
+  ++nativeCalls; callOrder += "N"; nativeStartedMs = elapsedMs; capturedRevision = accountRevision;
+} // Pump internals remain separately exercised by native_account_report_test.cpp
 #include "account_timer_wire.inc"
 
 int failures = 0, checks = 0;
@@ -106,6 +113,41 @@ int main() {
   elapsedMs += 1000; OnTimer(); check(count() == before, "large interval multiplication does not overflow");
   elapsedMs += 2'147'483'647ULL * 1000;
   OnTimer(); check(count() == before + 1, "large interval eventually becomes due");
+  if (UNIVERSAL) {
+    // Deterministic ordering with synthetic blocking work. These are simulated
+    // delays, not measurements of a terminal, network or broker.
+    quoteTime += 100'000;
+    elapsedMs += 100'000;
+    interval() = cadence;
+    StreamCandleHistory = StreamLiveBrokerData = true;
+    heartbeatCost = 11; snapshotCost = 13; commandCost = 17;
+    candleCost = 23'000; streamCost = 19'000;
+    commandChangesAccount = true;
+    callOrder.clear();
+    const ulong started = elapsedMs;
+    const int priorNativeCalls = nativeCalls;
+    OnTimer();
+    check(callOrder == "HSPNCL", "native report follows command poll but precedes bulk chart uploads");
+    check(nativeCalls == priorNativeCalls + 1, "priority change does not add native requests");
+    check(nativeStartedMs == started + heartbeatCost + snapshotCost + commandCost,
+          "native account read does not wait behind candle/live upload delays");
+    check(capturedRevision == accountRevision && accountRevision == 1,
+          "native account read sees this timer's command-side account change");
+    check(elapsedMs == started + heartbeatCost + snapshotCost + commandCost + candleCost + streamCost,
+          "bulk work and its existing cadence remain scheduled");
+    std::cout << "Synthetic native-start delay: " << nativeStartedMs - started
+              << " ms; supplied bulk delay: " << candleCost + streamCost << " ms\n";
+    BridgeToken = "";
+    const int beforeMissingToken = nativeCalls;
+    OnTimer();
+    check(nativeCalls == beforeMissingToken, "missing credentials never invoke native transport");
+    BridgeToken = "fake-token";
+    StreamCandleHistory = StreamLiveBrokerData = false;
+    interval() = 2'147'483'647; // heartbeat is not due in this separate idle-work case
+    callOrder.clear();
+    OnTimer();
+    check(callOrder == "N", "native pump still runs when no chart or command work is due");
+  }
   std::cout << checks - failures << '/' << checks << " offline timer checks pass\n";
   return failures ? 1 : 0;
 }

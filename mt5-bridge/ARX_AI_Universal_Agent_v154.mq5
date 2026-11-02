@@ -241,11 +241,14 @@ void OnTimer()
    }
    if(now - lastSnapshotAt  >= SnapshotIntervalSeconds)  { PushSnapshots();  lastSnapshotAt  = now; }
    if(now - lastPollAt      >= PollIntervalSeconds)      { PollAndExecute(); lastPollAt      = now; }
+   // Report account changes before bulk chart uploads can block this timer.
+   // Keep command polling first; reuse the bounded pump without extra sends.
+   // Earlier synchronous work and the next timer may still delay delivery.
+   PumpNativeAccountReport();
    if(StreamCandleHistory && now - lastCandlePushAt >= CandlePushIntervalSeconds)
       { PushCandleHistory(); lastCandlePushAt = now; }
    if(StreamLiveBrokerData && now - lastLiveStreamAt >= LiveStreamIntervalSeconds)
       { PushLiveBrokerStream(); lastLiveStreamAt = now; }
-   PumpNativeAccountReport();
 }
 
 //+------------------------------------------------------------------+
