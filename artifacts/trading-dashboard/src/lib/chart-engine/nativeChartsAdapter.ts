@@ -122,12 +122,19 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   if(this.linkedCursor!==undefined)this.applyLinkedCursor(this.linkedCursor);
   this.cursorDirty=true;this.queue();
  }
+ private candleReadout(){
+  const bars=this.viewport?.getCandles()??[],hover=this.hoveredTime==null?null:bars.find(c=>c.time===this.hoveredTime);
+  if(hover)return {candle:hover,origin:this.isCandleInspectionPinned()?'pinned' as const:this.linkedCursor===undefined?'pointer' as const:'linked' as const};
+  const last=this.linkedCursor===undefined?bars.at(-1):null;
+  return last?{candle:last,origin:'latest' as const}:null;
+ }
+ getCandleReadoutOrigin(time:number){const readout=this.candleReadout();return readout?.candle.time===time?readout.origin:'unavailable' as const;}
  private queue():void {
   if(!this.viewport||this.frame!=null)return;
   const viewport=this.viewport,epoch=this.epoch;
   const id=requestAnimationFrame(()=>{
    if(this.frame!==id||!this.current(viewport,epoch))return;this.frame=null;
-   if(this.cursorDirty){this.cursorDirty=false;const bars=viewport.getCandles();const bar=(this.hoveredTime==null?null:bars.find(c=>c.time===this.hoveredTime))??(this.linkedCursor===undefined?bars.at(-1)??null:null);this.notify(()=>this.crosshair?.(bar?clone(bar):null));}
+   if(this.cursorDirty){this.cursorDirty=false;const bar=this.candleReadout()?.candle??null;this.notify(()=>this.crosshair?.(bar?clone(bar):null));}
    if(!this.current(viewport,epoch))return;
    const cursor=this.pendingCursor;this.pendingCursor=undefined;
    if(cursor!==undefined)this.notify(()=>this.viewLink?.({kind:'crosshair',time:cursor}));

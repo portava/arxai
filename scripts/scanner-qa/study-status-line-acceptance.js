@@ -22,7 +22,7 @@ async page=>{
   const output=panel.getByLabel('Study status line at selected candle',{exact:true});const value=String(Number(raw.toPrecision(8)));
   await output.filter({hasText:'RSI '+value}).waitFor({state:'visible'});
   check(current.snapshot.state.inspectionPinned&&current.snapshot.state.inspectionTime===time,'Enabling the status readout preserves the exact historical pin');
-  check((await output.textContent()).includes('Selected candle')&&await output.getAttribute('aria-live')==='off','Readout labels selected observations without a hover live-region');
+  check((await output.textContent()).includes('Pinned candle')&&await output.getAttribute('aria-live')==='off','Readout labels selected observations without a hover live-region');
   check(JSON.stringify(current.layout)===JSON.stringify(before.layout)&&JSON.stringify(current.data.canonical)===JSON.stringify(before.data.canonical),'Readout control preserves chart geometry and candles');
   await panel.getByLabel('RSI 1 Show in Data Window',{exact:true}).uncheck();await ready();await studies.click();
   const dataWindow=panel.getByLabel('Study values at selected candle',{exact:true});await panel.getByText('Data window · study values at the crosshair',{exact:true}).click();
@@ -36,7 +36,10 @@ async page=>{
   check(current.config.studies[0].showInStatusLine===true&&current.config.studies[0].showInDataWindow===false,'Independent readout settings survive reload');
   await panel.getByRole('button',{name:'Inspect latest visible candle',exact:true}).click();await ready();
   await panel.getByRole('button',{name:'M30 timeframe',exact:true}).click();current=await ready();
-  check(current.snapshot.state.inspectionTime===null&&!(await output.textContent()).includes('Selected candle'),'Interval replacement clears the old observation');
+  await output.filter({hasText:'Latest loaded candle'}).waitFor({state:'visible'});current=await ready();
+  const latestRaw=await page.evaluate(time=>window.__arxChartQa.studyValues([time])[0].studies[0].values[0].value,current.snapshot.last.time);
+  report.intervalObservation={state:current.snapshot.state,text:await output.textContent(),latestTime:current.snapshot.last.time,latestRaw};
+  check(current.snapshot.state.timeframe==='M30'&&current.snapshot.state.inspectionTime===null&&!current.snapshot.state.inspectionPinned&&(await output.textContent()).includes('RSI '+String(Number(latestRaw.toPrecision(8)))),'Interval replacement labels the new latest-loaded observation without a false selected-candle claim');
   await page.setViewportSize({width:390,height:844});await tools();await panel.getByRole('button',{name:'Inspect latest visible candle',exact:true}).click();await ready();await output.scrollIntoViewIfNeeded();
   check(await output.isVisible()&&await output.evaluate(n=>n.scrollWidth<=n.clientWidth),'Narrow-screen status readout wraps without horizontal overflow');await shot('mobile-selected');
   check(await page.locator('iframe,embed,object,script[src*="tradingview.com"],#tv-attr-logo').count()===0,'Native chart without TradingView embed/logo');report.passed=true;

@@ -409,10 +409,11 @@ export function ARXNativeChart({
     if(studyStatusRef.current){
       const fragment=document.createDocumentFragment();
       if(statusLineEnabledRef.current){
-        const rows=allRows.filter(row=>row.statusLineVisible===true);
+        const origin=bar?adapterRef.current?.getCandleReadoutOrigin?.(bar.time):undefined;
+        const rows=origin==="unavailable"?[]:allRows.filter(row=>row.statusLineVisible===true);
         if(rows.length){
           const caption=document.createElement("span");caption.className="text-zinc-400";
-          caption.textContent=`Selected candle · ${formatSourceChartTime(bar!.time,utcClockRef.current,timeZoneRef.current)} · `;fragment.append(caption);
+          caption.textContent=`${origin==="pinned"?"Pinned candle":origin==="pointer"?"Inspected candle":origin==="linked"?"Linked candle":origin==="latest"?"Latest loaded candle":"Candle observation"} · ${formatSourceChartTime(bar!.time,utcClockRef.current,timeZoneRef.current)} · `;fragment.append(caption);
           for(const row of rows){
             const line=document.createElement("span");line.style.color=row.color;
             line.textContent=`${row.displayLabel??row.label}: ${row.values.map(item=>`${item.name} ${item.value==null?"— ("+(row.reason??"warm-up / unavailable")+")":formatStudyNumber(item.value,item.name)}`).join(" · ")}`;

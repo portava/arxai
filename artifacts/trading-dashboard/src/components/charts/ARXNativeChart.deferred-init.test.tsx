@@ -1258,7 +1258,9 @@ it('shows exact selected status values with Data Window closed and withdraws the
  const output=screen.getByLabelText('Study status line at selected candle'),details=screen.getByLabelText('Study values at selected candle').closest('details')!;
  expect(details.open).toBe(false);expect(output.getAttribute('aria-live')).toBe('off');const inspect=engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void;
  const bar={time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102};
- act(()=>inspect(bar));expect(output.textContent).toContain('Selected candle');expect(output.textContent).toContain('RSI (pane collapsed): RSI 63.25');expect(output.textContent).not.toContain('Other SMA');expect(engine.getStudyValues).toHaveBeenLastCalledWith(bar.time);
+ act(()=>inspect(bar));expect(output.textContent).toContain('Candle observation');expect(output.textContent).toContain('RSI (pane collapsed): RSI 63.25');expect(output.textContent).not.toContain('Other SMA');expect(engine.getStudyValues).toHaveBeenLastCalledWith(bar.time);
+ engine.getCandleReadoutOrigin=vi.fn(()=>"latest");act(()=>inspect(bar));expect(output.textContent).toContain('Latest loaded candle');
+ engine.getCandleReadoutOrigin=vi.fn(()=>"unavailable");act(()=>inspect(bar));expect(output.textContent).not.toContain('63.25');engine.getCandleReadoutOrigin=vi.fn(()=>"pinned");
  value=null;act(()=>inspect(bar));expect(output.textContent).toContain('warm-up / unavailable');expect(output.textContent).not.toContain('63.25');
  value=63.25;act(()=>inspect(bar));engine.isAnalysisFocusVerified=vi.fn(()=>false);act(()=>inspect(bar));expect(output.textContent).toContain('withheld');expect(output.textContent).not.toContain('63.25');
  engine.isAnalysisFocusVerified=vi.fn(()=>true);act(()=>inspect(null));expect(output.textContent).toContain('Inspect or pin');expect(output.textContent).not.toContain('63.25');

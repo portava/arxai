@@ -212,6 +212,8 @@ export interface ChartEngineAdapter {
   getDisplayCandle?(time: number): ChartEngineCandle | null;
   inspectCandle?(action:"pin"|"previous"|"next"|"first"|"last"|"clear"):boolean;
   isCandleInspectionPinned?():boolean;
+  /** Exact origin of the candle supplied to the readout; no selection is inferred from a fallback. */
+  getCandleReadoutOrigin?(time:number):"pinned"|"pointer"|"linked"|"latest"|"unavailable";
   setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
   /** Linked workspace inspection only. Never changes instrument/order context. */
   setViewLinkHandler?(handler: ((event: ChartViewEvent) => void) | null): void;

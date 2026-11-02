@@ -225,3 +225,14 @@ it('does not request another paint when disabled drawing interaction clears an a
  const f=setup();f.adapter.setCandles(bars());flush();f.adapter.setAnalysisFocus(true);flush();
  f.adapter.setDrawingInteraction(null);expect(queue.size).toBe(0);
 });
+
+it('identifies latest fallback, exact historical pin and unavailable readout timestamps',()=>{
+ const f=setup(),data=bars();f.adapter.setCandles(data);flush();
+ expect(f.adapter.getCandleReadoutOrigin(data.at(-1)!.time)).toBe('latest');expect(f.adapter.getCandleReadoutOrigin(data[0]!.time)).toBe('unavailable');
+ f.adapter.inspectCandle('first');flush();const time=f.viewport().getState().inspectionTime!;expect(f.adapter.getCandleReadoutOrigin(time)).toBe('pinned');
+ f.adapter.inspectCandle('clear');pointer(f.canvas(),300,100);flush();expect(f.adapter.getCandleReadoutOrigin(f.viewport().getState().inspectionTime!)).toBe('pointer');
+ f.adapter.setLinkedCrosshair(data[100]!.time);flush();expect(f.adapter.getCandleReadoutOrigin(data[100]!.time)).toBe('linked');
+ f.adapter.setLinkedCrosshair(null);flush();expect(f.adapter.getCandleReadoutOrigin(data.at(-1)!.time)).toBe('unavailable');
+ f.adapter.resetDataContext();flush();expect(f.adapter.getCandleReadoutOrigin(time)).toBe('unavailable');
+ f.adapter.setCandles(data);flush();expect(f.adapter.getCandleReadoutOrigin(data.at(-1)!.time)).toBe('latest');
+});

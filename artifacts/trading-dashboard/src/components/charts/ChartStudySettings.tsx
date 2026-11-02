@@ -157,7 +157,7 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
           <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${label} Show in Data Window`} checked={config.showInDataWindow!==false} onChange={event=>update(id,{showInDataWindow:event.target.checked})}/>Show in Data Window</label>
           <p className="mt-1 text-[11px] text-zinc-400">Hides only this study’s numeric readout. Plots, calculations and assistant evidence remain available.</p>
           <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${label} Show values in status line`} checked={config.showInStatusLine===true} onChange={event=>update(id,{showInStatusLine:event.target.checked})}/>Show values in status line</label>
-          <p className="mt-1 text-[11px] text-zinc-400">Compact observations for the candle you inspect or pin. This does not change plots or the Data Window.</p>
+          <p className="mt-1 text-[11px] text-zinc-400">Compact observations for the inspected or pinned candle; otherwise the latest loaded candle. This does not change plots or the Data Window.</p>
           <ChartStudyIntervalSettings config={config} label={label} timeframe={timeframe} onChange={change=>update(id,change)}/>
           {definition.pane && <ChartStudyPaneSettings key={`${id}-pane`} config={config} label={label} onChange={change=>update(id,change)}/>}
           <details className="mt-3">
