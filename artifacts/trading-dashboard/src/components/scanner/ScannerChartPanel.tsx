@@ -1,3 +1,6 @@
+import { readCachedPositionUserId } from "@/hooks/unifiedPositions";
+import { useUnifiedPositions } from "@/hooks/useUnifiedPositions";
+import { formatReportedPositionPnl } from "@/lib/reportedPositionPnl";
 import { TickingTime } from "@/components/ui/TickingTime";
 import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
 import { SCANNER_CHART_LAYOUT_KEY } from "@/lib/chart-engine/chartLayout";
@@ -504,8 +507,11 @@ export function ScannerChartPanel() {
   );
   const structureEvidenceMissing = overlayRequiresEvidence && !hasMatchingOverlayEvidence(candlesQuery.data?.marketEvidence, intelligenceQuery.data);
 
-  const [positions, setPositions] = useState<ChartPosition[]>([]);
-  const [pending, setPending] = useState<ChartPending[]>([]);
+  const ownedPositions = useUnifiedPositions();
+  const positions = useMemo(() => [...(ownedPositions.data?.live ?? []), ...(ownedPositions.data?.demo ?? [])], [ownedPositions.data]);
+  const [pendingReport, setPendingReport] = useState<{ ownerId: number; rows: ChartPending[] } | null>(null);
+  const pending = useMemo(() => pendingReport?.ownerId === ownedPositions.userId ? pendingReport.rows : [], [pendingReport, ownedPositions.userId]);
+  const refreshOwned = () => { ownedPositions.reload(); setReloadAt(Date.now()); };
 
   // These handles belong to the shared Smart Chart. Scanner only adds owned
   // overlays and converts pointer coordinates; it never creates/writes candles.
@@ -932,7 +938,7 @@ export function ScannerChartPanel() {
       relay(`${draft.side} ${symbol}`, res);
       if (res.ok) {
         setDraft(null);
-        setReloadAt(Date.now());
+        refreshOwned();
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Order failed", description: e instanceof Error ? e.message : "Network error" });
@@ -941,7 +947,9 @@ export function ScannerChartPanel() {
     }
   };
 
-  const closePosition = async (p: ChartPosition, fraction: number) => {
+  const closePosition = async (requested: ChartPosition, fraction: number) => {
+    const p = ownedPositions.resolveCurrentPosition(requested);
+    if (!p || p.scope !== tradeMode) return;
     if (!p.brokerTicket || !tradeMode) return;
     const key = `close:${p.brokerTicket}:${fraction}`;
     setBusy(key);
@@ -956,7 +964,7 @@ export function ScannerChartPanel() {
         oneClick: true,
       });
       relay(partial ? "Partial close" : "Close", res);
-      if (res.ok) setReloadAt(Date.now());
+      if (res.ok) refreshOwned();
     } catch (e) {
       toast({ variant: "destructive", title: "Close failed", description: e instanceof Error ? e.message : "Network error" });
     } finally {
@@ -964,7 +972,9 @@ export function ScannerChartPanel() {
     }
   };
 
-  const breakEven = async (p: ChartPosition) => {
+  const breakEven = async (requested: ChartPosition) => {
+    const p = ownedPositions.resolveCurrentPosition(requested);
+    if (!p || p.scope !== tradeMode) return;
     if (!p.brokerTicket || !tradeMode || p.entryPrice == null) return;
     const key = `be:${p.brokerTicket}`;
     setBusy(key);
@@ -978,7 +988,7 @@ export function ScannerChartPanel() {
         newTakeProfit: p.takeProfit ?? null,
       });
       relay("Break-even", res);
-      if (res.ok) setReloadAt(Date.now());
+      if (res.ok) refreshOwned();
     } catch (e) {
       toast({ variant: "destructive", title: "Modify failed", description: e instanceof Error ? e.message : "Network error" });
     } finally {
@@ -990,7 +1000,9 @@ export function ScannerChartPanel() {
   // close the current position, and only if the gated close succeeds do we
   // open the opposite side. Both legs are independently gated; we tell the
   // user honestly that it's a two-step sequence.
-  const reversePosition = async (p: ChartPosition) => {
+  const reversePosition = async (requested: ChartPosition) => {
+    const p = ownedPositions.resolveCurrentPosition(requested);
+    if (!p || p.scope !== tradeMode) return;
     if (!p.brokerTicket || !tradeMode || !p.side || p.lotSize == null) return;
     const key = `rev:${p.brokerTicket}`;
     setBusy(key);
@@ -1006,6 +1018,9 @@ export function ScannerChartPanel() {
         relay("Reverse (close leg)", closeRes);
         return;
       }
+      // An identity/position withdrawal during the close request must not
+      // dispatch another action from the old row's captured handler.
+      if (!ownedPositions.resolveCurrentPosition(p)) return;
       const opposite = p.side === "BUY" ? "SELL" : "BUY";
       const openRes = await executeInstantTrade({
         source: "chart",
@@ -1020,7 +1035,7 @@ export function ScannerChartPanel() {
       } else {
         toast({ variant: "destructive", title: "Reverse partial", description: `Closed ${p.side}, but the ${opposite} leg was blocked: ${humanizeReason(openRes.primaryReason || openRes.error).description}` });
       }
-      setReloadAt(Date.now());
+      refreshOwned();
     } catch (e) {
       toast({ variant: "destructive", title: "Reverse failed", description: e instanceof Error ? e.message : "Network error" });
     } finally {
@@ -1033,14 +1048,14 @@ export function ScannerChartPanel() {
   // cancel-pending action). Still per-user gated server-side and only shown
   // when the account is in a real (live/demo) trade mode via `canTrade`.
   const cancelPending = async (id: number) => {
-    if (!canTrade) return;
+    if (!canTrade || ownedPositions.userId == null || readCachedPositionUserId(queryClient) !== ownedPositions.userId) return;
     const key = `cancel:${id}`;
     setBusy(key);
     try {
       const r = await fetch(u(`/api/me/pending-order-draft/${id}`), { method: "DELETE", credentials: "include" });
       if (r.ok) {
         toast({ title: "Pending order cancelled" });
-        setReloadAt(Date.now());
+        refreshOwned();
       } else {
         let reason = `HTTP ${r.status}`;
         try {
@@ -1059,39 +1074,30 @@ export function ScannerChartPanel() {
   // Candle fetching is handled by the shared `candlesQuery` (useQuery) above —
   // the single honest source. No parallel fetch here (Task #391).
 
-  // ── Phase 3 — fetch the logged-in user's own positions + pending orders.
-  //    Both endpoints are per-user scoped server-side. Polls every 10s and
-  //    pauses while the tab is hidden.
+  // Pending drafts remain a separate read-only projection. They cannot hold
+  // up, supply or renew the canonical position-money report.
   useEffect(() => {
+    const ownerId = ownedPositions.userId;
+    if (ownerId == null) return;
     let cancelled = false;
-    const loadOwned = async () => {
+    const loadPending = async () => {
       try {
-        const [posRes, penRes] = await Promise.all([
-          fetch(u("/api/me/positions/all"), { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
-          fetch(u("/api/me/pending-order-drafts"), { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
-        ]);
+        const response = await fetch(u("/api/me/pending-order-drafts"), { credentials: "include" });
+        const body = response.ok ? await response.json() : null;
         if (cancelled) return;
-        const live = Array.isArray(posRes?.live) ? (posRes.live as ChartPosition[]) : [];
-        const demo = Array.isArray(posRes?.demo) ? (posRes.demo as ChartPosition[]) : [];
-        setPositions([...live, ...demo]);
-        const drafts = Array.isArray(penRes?.drafts) ? (penRes.drafts as ChartPending[]) : [];
-        setPending(drafts.filter((d) => d.status !== "cancelled" && d.pendingStatus !== "CANCELLED"));
-      } catch {
-        if (!cancelled) {
-          setPositions([]);
-          setPending([]);
-        }
-      }
+        const drafts = Array.isArray(body?.drafts) ? body.drafts as ChartPending[] : [];
+        setPendingReport({ ownerId, rows: drafts.filter(d => d.status !== "cancelled" && d.pendingStatus !== "CANCELLED") });
+      } catch { if (!cancelled) setPendingReport({ ownerId, rows: [] }); }
     };
-    void loadOwned();
-    let id: ReturnType<typeof setInterval> | null = null;
-    const start = () => { if (id == null) id = setInterval(loadOwned, 10_000); };
-    const stop = () => { if (id != null) { clearInterval(id); id = null; } };
-    const onVis = () => { if (document.hidden) stop(); else { void loadOwned(); start(); } };
+    void loadPending();
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => { if (timer == null) timer = setInterval(loadPending, 10_000); };
+    const stop = () => { if (timer != null) { clearInterval(timer); timer = null; } };
+    const onVis = () => { if (document.hidden) stop(); else { void loadPending(); start(); } };
     if (!document.hidden) start();
     document.addEventListener("visibilitychange", onVis);
     return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onVis); };
-  }, [reloadAt]);
+  }, [reloadAt, ownedPositions.userId]);
 
   const symbolPositions = useMemo(
     () => positions.filter((p) => normSym(p.symbol) === normSym(symbol)),
@@ -1427,7 +1433,8 @@ export function ScannerChartPanel() {
   //    existing chart Break-even button. Entry is shown but NEVER draggable. A
   //    submit is allowed only on a confirmed-LIVE feed (isLiveDisplay); one-click
   //    ON submits on drop, OFF shows an old-vs-new confirm step.
-  const [posModify, setPosModify] = useState<{
+  const [posModifyState, setPosModify] = useState<{
+    ownerId: number;
     ticket: string;
     side: "BUY" | "SELL";
     entry: number;
@@ -1436,6 +1443,9 @@ export function ScannerChartPanel() {
     origSl: number | null;
     origTp: number | null;
   } | null>(null);
+  const posModify = posModifyState?.ownerId === ownedPositions.userId
+    && positions.some(p => p.scope === "live" && p.brokerTicket === posModifyState.ticket)
+    ? posModifyState : null;
   const [modifyArmed, setModifyArmed] = useState(false);
   const posDragKeyRef = useRef<"sl" | "tp" | null>(null);
   const [posHandleY, setPosHandleY] = useState<{ entry: number | null; sl: number | null; tp: number | null }>({ entry: null, sl: null, tp: null });
@@ -1460,18 +1470,28 @@ export function ScannerChartPanel() {
   const oneClickArmedRef = useRef(oneClickArmed);
   const isLiveDisplayRef = useRef(isLiveDisplay);
   const canTradeRef = useRef(canTrade);
-  useEffect(() => { posModifyRef.current = posModify; }, [posModify]);
+  useLayoutEffect(() => {
+    posModifyRef.current = posModify;
+    if (posModifyState && !posModify) {
+      posDragKeyRef.current = null;
+      setModifyArmed(false);
+      setPosModify(null);
+    }
+  }, [posModify, posModifyState]);
   useEffect(() => { oneClickArmedRef.current = oneClickArmed; }, [oneClickArmed]);
   useEffect(() => { isLiveDisplayRef.current = isLiveDisplay; }, [isLiveDisplay]);
   useEffect(() => { canTradeRef.current = canTrade; }, [canTrade]);
 
-  const startPosModify = (p: ChartPosition) => {
+  const startPosModify = (requested: ChartPosition) => {
+    const p = ownedPositions.resolveCurrentPosition(requested);
+    if (!p || p.scope !== tradeMode) return;
     // Live-only + must have a confirmed broker ticket + a usable entry/side.
     if (p.accountMode !== "LIVE" || !p.brokerTicket || p.entryPrice == null || p.side == null) return;
     setDraft(null); // only one shaping interaction at a time
     setModifyArmed(false);
     posDragKeyRef.current = null;
     setPosModify({
+      ownerId: ownedPositions.userId!,
       ticket: p.brokerTicket,
       side: p.side,
       entry: p.entryPrice,
@@ -1490,6 +1510,7 @@ export function ScannerChartPanel() {
   // Submit a candidate SL/TP through the SANCTIONED modify pipeline. relay()
   // reuses the same honest pending/outcome tracking as every other chart action.
   const submitModify = async (m: NonNullable<typeof posModify>) => {
+    if (tradeMode !== "live" || m.ownerId !== ownedPositions.userId || !ownedPositions.resolveCurrentPosition({ scope: "live", brokerTicket: m.ticket })) return;
     // Honesty chokepoint: re-check the confirmed-LIVE feed AND live-trading
     // entitlement at SEND time, not just on drop. Both can change between the drag
     // and a later Confirm click (feed goes unconfirmed/frozen; entitlement is
@@ -1520,7 +1541,7 @@ export function ScannerChartPanel() {
       relay("Adjust SL/TP", res);
       if (res.ok) {
         setPosModify(null);
-        setReloadAt(Date.now());
+        refreshOwned();
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Adjust SL/TP failed", description: e instanceof Error ? e.message : "Network error" });
@@ -1776,7 +1797,7 @@ export function ScannerChartPanel() {
               variant="ghost"
               className="h-7 px-2"
               disabled={candlesQuery.isFetching}
-              onClick={() => { void candlesQuery.refetch(); setReloadAt(Date.now()); }}
+              onClick={() => { void candlesQuery.refetch(); refreshOwned(); }}
               title="Reload candles"
               data-testid="scanner-chart-reload"
             >
@@ -2259,6 +2280,8 @@ export function ScannerChartPanel() {
 
             {/* Phase 5/6 — manage the user's own open positions + pending orders
                 directly from the chart. Every action is backend-gated. */}
+            {(ownedPositions.err || ownedPositions.identityError) && <p className="text-xs text-amber-200" data-testid="scanner-chart-position-error">Position report unavailable. Prior position values are hidden.</p>}
+            {symbolPositions.length > 0 && <p className="text-xs text-muted-foreground" data-testid="scanner-chart-position-evidence">Position values are last reported; observation time and currency are unavailable.</p>}
             {(symbolPositions.length > 0 || symbolPending.length > 0) && (
               <div className="space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950/40 p-2" data-testid="scanner-chart-manage">
                 {symbolPositions.map((p, i) => (
@@ -2269,7 +2292,7 @@ export function ScannerChartPanel() {
                     <span className={p.side === "BUY" ? "font-semibold text-emerald-300" : "font-semibold text-red-300"}>{p.side}</span>
                     <span className="font-mono text-zinc-400">{p.lotSize ?? "—"} @ {p.entryPrice != null ? fmt(p.entryPrice) : "—"}</span>
                     {p.floatingPnl != null && (
-                      <span className={`font-mono ${p.floatingPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{p.floatingPnl >= 0 ? "+" : ""}{p.floatingPnl.toFixed(2)}</span>
+                      <span className={`font-mono ${p.floatingPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatReportedPositionPnl(p.floatingPnl)}</span>
                     )}
                     {canTrade && p.brokerTicket && (
                       <div className="ml-auto flex items-center gap-1">

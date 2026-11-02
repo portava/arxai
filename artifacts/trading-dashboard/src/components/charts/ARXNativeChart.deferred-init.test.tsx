@@ -381,7 +381,7 @@ describe("persistent chart notices do not cover candles or user notes", () => {
       canvasOverlay={<div data-testid="test-coordinate-overlay" className="absolute inset-0" />} />);
     expect(screen.getByTestId("arx-native-pnl-layer").parentElement).toBe(screen.getByTestId("arx-native-canvas").parentElement);
     expect(screen.getByTestId("arx-native-pnl-bubble").style.top).toBe("42px");
-    expect(screen.getByTestId("arx-native-pnl-bubble").textContent).toContain("+12.00");
+    expect(screen.getByTestId("arx-native-pnl-bubble").textContent).toContain("+12");
     assertNoticeBeforeCanvas("arx-native-safe-mode");
   });
   it("stacks flat-OHLC and degraded-feed notices before the shared coordinate container", () => {
@@ -1220,4 +1220,16 @@ it("manual and assistant simplify share the selected renderer and preserve saved
  const saved=localStorage.getItem("arx.chart.preferences.v1");fireEvent.click(screen.getByRole("button",{name:"Simplify chart",exact:true}));expect(engine.isAnalysisFocused()).toBe(true);expect(screen.getByTestId("chart-simplified-view")).toBeTruthy();expect(localStorage.getItem("arx.chart.preferences.v1")).toBe(saved);
  let reply:string|null=null;act(()=>{reply=requestChartStudy("restore chosen tools");});expect(reply).toContain("Restored chosen");expect(engine.isAnalysisFocused()).toBe(false);expect(screen.queryByTestId("chart-simplified-view")).toBeNull();
  act(()=>{requestChartStudy("make this chart easier to understand");});expect(engine.isAnalysisFocused()).toBe(true);fireEvent.change(screen.getByLabelText("Chart style"),{target:{value:"line"}});expect(engine.isAnalysisFocused()).toBe(false);expect(localStorage.getItem("arx.chart.preferences.v1")).toContain('"style":"line"');
+});
+
+// Actual shell bubble uses the same source-number representation as the list.
+it.each([[-12.345,"-12.345"],[-0,"+0"],[1234567890.12345,"+1234567890.12345"]])("preserves reported position P/L %s without inventing a currency",(value,expected)=>{
+ candleResponse=liveResponse("EURUSD","H1");
+ const {rerender}=render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
+ created[0]!.priceToCoordinate.mockReturnValue(42);
+ rerender(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={[{id:"reported",type:"line",symbol:"EURUSD",timeframe:"H1",price:1.1,label:"Reported position",source:"position",metadata:{pnl:value,side:"BUY",mode:"Reported LIVE account",primary:true}}]}/>);
+ const bubble=screen.getByTestId("arx-native-pnl-bubble");
+ expect(bubble.textContent).toBe(`BUY ${expected} · Reported LIVE account`);
+ expect(bubble.title).toContain("Observation time and currency are unverified");
+ expect(screen.getByTestId("arx-native-pos-count").textContent).toBe("1 reported open");
 });

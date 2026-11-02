@@ -13,6 +13,8 @@ import {
 } from "@/lib/chart-display-status";
 import { useAssistantName } from "@/lib/assistant-name";
 import { normalizeArxSymbol } from "@workspace/domain/market";
+import {formatReportedPositionPnl as formatPositionPnl} from "@/lib/reportedPositionPnl";
+export {formatReportedPositionPnl as formatPositionPnl} from "@/lib/reportedPositionPnl";
 import { sanitizeCandlestickData } from "@/lib/chart-engine/candleSanitize";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -46,10 +48,6 @@ interface Props {
 // REFRESH_THROTTLE_MS so the user can't spam the AI/backend.
 const REFRESH_THROTTLE_MS = 8000;
 
-export function formatPositionPnl(v: number | null): string {
-  if (typeof v !== "number" || !Number.isFinite(v)) return "—";
-  return (v >= 0 ? "+" : "") + String(Object.is(v,-0)?0:v);
-}
 
 function calcRR(side: "BUY" | "SELL" | null, entry: number | null, sl: number | null, tp: number | null): string {
   if (!side || entry == null || sl == null || tp == null) return "—";

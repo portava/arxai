@@ -1,3 +1,4 @@
+import {formatReportedPositionPnl} from "@/lib/reportedPositionPnl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,7 +44,7 @@ export function ChartPositionOverlayPanel({
         <CardTitle className="flex items-center justify-between gap-2 text-sm">
           <span className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-primary" />
-            Open on {symbol}
+            Reported open on {symbol}
           </span>
           <Badge variant="outline" className="text-[10px]">
             {positions.length} position{positions.length === 1 ? "" : "s"}
@@ -51,11 +52,12 @@ export function ChartPositionOverlayPanel({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 p-3 md:p-4 pt-0">
+        <p className="text-xs text-muted-foreground">Last reported positions; observation time and P/L currency are unavailable.</p>
         {positions.map((p: ChartPosition, i) => {
           const key = p.brokerTicket ?? `${p.accountMode}-${i}`;
           const pnl = p.floatingPnl;
           const pnlClass =
-            pnl == null
+            pnl == null || !Number.isFinite(pnl)
               ? "text-muted-foreground"
               : pnl >= 0
                 ? "text-emerald-400"
@@ -79,7 +81,7 @@ export function ChartPositionOverlayPanel({
                   {p.side ?? "—"}
                 </Badge>
                 <Badge variant="outline" className="text-[10px] uppercase text-muted-foreground">
-                  {p.accountMode}
+                  {p.accountMode} account
                 </Badge>
                 <span className="font-mono text-zinc-300">
                   {p.lotSize != null ? `${p.lotSize} lot` : ""}
@@ -94,7 +96,7 @@ export function ChartPositionOverlayPanel({
                   <span className="font-mono text-emerald-300/80">TP {fmtPrice(p.takeProfit)}</span>
                 )}
                 <span className={`font-mono font-semibold ${pnlClass}`} data-testid="chart-position-pnl">
-                  {pnl == null ? "P/L —" : `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}`}
+                  {formatReportedPositionPnl(pnl)}
                 </span>
               </div>
               <Button

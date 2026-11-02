@@ -76,7 +76,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it("requests exact H8 intelligence but delegates structural rendering exclusively to the Native chart", async () => {
   render(<ScannerChartPanel />);
-  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getByTestId("native-chart")).toBeTruthy());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[0]).toMatchObject({ symbol: "EURUSD", timeframe: "H8" });
   expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
   expect(h.layersHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
@@ -87,7 +87,7 @@ it("requests exact H8 intelligence but delegates structural rendering exclusivel
 
 it("retains the source-change evidence hold before H8 structure can return", async () => {
   const view = render(<ScannerChartPanel />);
-  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getByTestId("native-chart")).toBeTruthy());
   const old = h.intelligence;
   fixture("H8", "source-B"); h.intelligence = old; h.applyStructure.mockClear();
   view.rerender(<ScannerChartPanel />);
@@ -102,7 +102,7 @@ it("retains the source-change evidence hold before H8 structure can return", asy
 it.each([["1w", "W1"], ["1mo", "MN1"]])("withholds cached calendar intelligence on %s", async (display, api) => {
   h.timeframe = display; fixture(api);
   render(<ScannerChartPanel />);
-  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getByTestId("native-chart")).toBeTruthy());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[0].timeframe).toBe(api);
   expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
   expect(h.layersHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
@@ -113,7 +113,7 @@ it.each([["1w", "W1"], ["1mo", "MN1"]])("withholds cached calendar intelligence 
 it.each([{ symbol: "GBPUSD" }, { timeframe: "H4" }])("withholds a foreign intelligence state %j despite the requested query key", async foreign => {
   h.intelligence.state = { ...h.intelligence.state, ...foreign };
   render(<ScannerChartPanel />);
-  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getByTestId("native-chart")).toBeTruthy());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
   expect(h.applyStructure).not.toHaveBeenCalled();
 });

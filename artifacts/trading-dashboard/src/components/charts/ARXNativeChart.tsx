@@ -1,3 +1,4 @@
+import {formatReportedPositionPnl} from "@/lib/reportedPositionPnl";
 import { matchesChartCandleOwner } from "@/lib/chartCandleOwner";
 import {proposeChartSupportResistance} from "@/lib/chart-engine/chartSupportResistance";
 import {profileCandleEvidence} from "@/lib/chart-engine/chartVolumeProfile";
@@ -1502,8 +1503,9 @@ export function ARXNativeChart({
                 variant="outline"
                 className="border-blue-500/40 text-[10px] text-blue-300"
                 data-testid="arx-native-pos-count"
+                title="Last reported positions; observation time and currency are unverified."
               >
-                {positionCount} open
+                {positionCount} reported open
               </Badge>
             )}
             {showFeedStatus && feedStatus && (
@@ -1766,6 +1768,7 @@ export function ARXNativeChart({
               <div
                 key={b.id}
                 data-testid="arx-native-pnl-bubble"
+                title="Last reported position P/L. Observation time and currency are unverified."
                 className={`absolute right-16 -translate-y-1/2 rounded-md border px-2 py-0.5 font-mono text-[11px] shadow-sm backdrop-blur-sm ${
                   b.pnl >= 0
                     ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-200"
@@ -1774,8 +1777,7 @@ export function ARXNativeChart({
                 style={{ top: b.y }}
               >
                 {b.side ? `${b.side} ` : ""}
-                {b.pnl >= 0 ? "+" : ""}
-                {b.pnl.toFixed(2)}
+                {formatReportedPositionPnl(b.pnl)}
                 {b.mode ? ` · ${b.mode}` : ""}
               </div>
             ))}

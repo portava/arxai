@@ -123,7 +123,9 @@ describe("ScannerChartPanel drag-modify — single sanctioned execution path (Ta
   function submitBlock(): string {
     const idx = code.indexOf("const submitModify");
     expect(idx, "submitModify must exist").toBeGreaterThan(-1);
-    return code.slice(idx, idx + 1000);
+    const end = code.indexOf("const handleModifyDrop", idx);
+    expect(end).toBeGreaterThan(idx);
+    return code.slice(idx, end);
   }
 
   it("routes the submit through executeInstantTrade tagged source \"chart_drag\"", () => {

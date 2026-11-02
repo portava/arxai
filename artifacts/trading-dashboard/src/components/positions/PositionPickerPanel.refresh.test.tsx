@@ -9,20 +9,22 @@ import {PositionPickerPanel} from './PositionPickerPanel';
 vi.mock('./PositionMiniChart',()=>({PositionMiniChart:()=> <div data-testid="mini"/>}));
 vi.mock('@/hooks/use-toast',()=>({useToast:()=>({toast:vi.fn()})}));
 vi.mock('@/lib/assistant-name',()=>({useAssistantName:()=>({name:'Eleanor'})}));
-vi.mock('@/lib/use-chart-symbol',()=>({setChartSymbol:vi.fn(),useChartSymbol:()=>['EURUSD',vi.fn()]}));
+vi.mock('@/lib/use-chart-symbol',()=>({setChartSymbol:vi.fn(),bareSymbol:(value:string)=>value.split(':').at(-1)??value,useChartSymbol:()=>['EURUSD',vi.fn()]}));
 vi.mock('@/components/charts/ARXNativeChart',()=>({ARXNativeChart:()=> <div/>}));
 vi.mock('@/components/charts/SmartChartLayout',()=>({SmartChartLayout:({children}:any)=>children}));
 vi.mock('@/components/charts/SmartChartView',()=>({SmartChartSymbolSelect:()=>null}));
 vi.mock('@/lib/chart-engine',()=>({DEFAULT_CHART_ENGINE_ID:'arx-native',CHART_ENGINE_DESCRIPTORS:{'arx-native':{label:'ARX'}}}));
-vi.mock('@/components/charts/ChartPositionOverlayPanel',()=>({ChartPositionOverlayPanel:()=>null}));
 vi.mock('@/components/charts/ChartAiOverlayPanel',()=>({ChartAiOverlayPanel:()=>null}));
 vi.mock('@/components/charts/ChartSetupPreviewPanel',()=>({ChartSetupPreviewPanel:()=>null}));
 vi.mock('@/components/charts/ChartModes',()=>({ChartModes:()=>null}));
 vi.mock('@/components/charts/ChartTradeEntry',()=>({ChartTradeEntry:()=>null}));
-vi.mock('@/hooks/useLivePositionOverlays',()=>({useLivePositionOverlays:()=>({overlays:[]})}));
+import {useLivePositionOverlays} from '@/hooks/useLivePositionOverlays';
+import {ChartPositionOverlayPanel} from '@/components/charts/ChartPositionOverlayPanel';
+const dispatch=vi.hoisted(()=>vi.fn());
+vi.mock('@/lib/instantTradeRouter',()=>({executeInstantTrade:dispatch}));
 vi.mock('@/hooks/useAiChartOverlays',()=>({useAiChartOverlays:()=>({overlays:[]})}));
 vi.mock('@/hooks/useChartSetupPreview',()=>({useChartSetupPreview:()=>({overlays:[]})}));
-vi.mock('@/hooks/useTradingMode',()=>({useTradingMode:()=>({cleanModeLabel:'DEMO',isLiveShared:false})}));
+vi.mock('@/hooks/useTradingMode',()=>({useTradingMode:()=>({cleanModeLabel:'LIVE',isLiveShared:true,canManualTrade:true,isFrozen:false})}));
 vi.mock('@/hooks/useProductRole',()=>({useProductRole:()=>({isInvestor:true,isLoading:false})}));
 import LiveChartPage from '@/pages/live-chart';
 import {getUnifiedPositionsQueryKey} from '@/hooks/unifiedPositions';
@@ -36,7 +38,7 @@ const position=(pnl:number|null=1)=>({scope:'live',brokerTicket:'11',symbol:'EUR
 const envelope=(rows:unknown[])=>({ok:true,live:rows,demo:[],liveCount:rows.length,demoCount:0});
 const response=(body:unknown)=>new Response(JSON.stringify(body),{headers:{'content-type':'application/json'}});
 let client:QueryClient,fetcher:ReturnType<typeof vi.fn>,stored:unknown,failure:boolean;
-beforeEach(()=>{focusManager.setFocused(true);onlineManager.setOnline(true);vi.useFakeTimers();localStorage.clear();Stream.instances=[];failure=false;stored=envelope([position()]);Object.defineProperty(document,'hidden',{configurable:true,value:false});vi.stubGlobal('EventSource',Stream);
+beforeEach(()=>{focusManager.setFocused(true);onlineManager.setOnline(true);vi.useFakeTimers();localStorage.clear();Stream.instances=[];failure=false;dispatch.mockReset().mockResolvedValue({ok:true});stored=envelope([position()]);Object.defineProperty(document,'hidden',{configurable:true,value:false});vi.stubGlobal('EventSource',Stream);
  client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:Infinity}}});client.setQueryData(['me'],user);
  fetcher=vi.fn(async(url:unknown)=>{const path=String(url);if(path.endsWith('/api/me'))return response({user});if(path.endsWith('/api/me/positions/all')){if(failure)throw Error('offline');return response(stored);}if(path.includes('/api/chart/candles'))return response({candles:[]});if(path.endsWith('/api/me/live/slot-summary'))return response({dataFreshness:'MISSING',isAllocated:false});throw Error('Unexpected '+path);});vi.stubGlobal('fetch',fetcher);
 });
@@ -162,4 +164,50 @@ it('queued close does not optimistically remove the reported position; only a la
  mount();await flush(1);choose();await flush(1);fireEvent.click(screen.getByTestId('btn-close-position'));fireEvent.click(screen.getByTestId('btn-confirm-close'));await flush(1);
  expect(fetcher.mock.calls.filter(([,options])=>options?.method==='POST')).toHaveLength(1);expect(screen.getByTestId('text-position-status').textContent).toBe('Reported open');
  stored=envelope([]);act(()=>Stream.instances[0]!.emit({type:'personal_account_changed'}));await flush(30);expect(screen.queryByTestId('position-side-card')).toBeNull();
+});
+
+let observedOverlay:ReturnType<typeof useLivePositionOverlays>;
+function OverlayConsumer(){const data=useLivePositionOverlays('EURUSD');observedOverlay=data;return <ChartPositionOverlayPanel symbol="EURUSD" data={data}/>;}
+const mountCombined=()=>render(<QueryClientProvider client={client}><LiveAccountSnapshotProvider><Control/><PositionPickerPanel/><OverlayConsumer/></LiveAccountSnapshotProvider></QueryClientProvider>);
+it('picker and actual overlay consumer share one canonical read and the same reported negative precision',async()=>{
+ mountCombined();await flush(1);choose();await flush(1);expect(calls()).toHaveLength(1);
+ stored=envelope([position(-12.345)]);act(()=>Stream.instances[0]!.emit({type:'personal_account_changed'}));await flush(30);
+ expect(calls()).toHaveLength(2);expect(screen.getByTestId('text-position-pnl').textContent).toBe('-12.345');expect(screen.getByTestId('chart-position-pnl').textContent).toBe('-12.345');
+});
+it('report removal and failure clear both picker and actual chart overlay panel before polling',async()=>{
+ mountCombined();await flush(1);choose();await flush(1);stored=envelope([]);act(()=>Stream.instances[0]!.emit({type:'shared_account_changed'}));await flush(30);
+ expect(screen.queryByTestId('position-side-card')).toBeNull();expect(screen.queryByTestId('chart-position-overlay-panel')).toBeNull();
+ stored=envelope([position(0)]);act(()=>Stream.instances[0]!.emit({type:'personal_account_changed'}));await flush(30);expect(screen.getByTestId('chart-position-pnl').textContent).toBe('+0');
+ failure=true;act(()=>Stream.instances[0]!.emit({type:'personal_account_changed'}));await flush(30);expect(screen.queryByTestId('chart-position-overlay-panel')).toBeNull();expect(screen.queryByTestId('position-side-card')).toBeNull();
+});
+it('overlay close acknowledgement keeps reported rows until canonical reread actually removes them',async()=>{
+ mountCombined();await flush(1);fireEvent.click(screen.getByTestId('chart-position-close'));await flush(30);
+ expect(dispatch).toHaveBeenCalledTimes(1);expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({source:'chart',action:'CLOSE',positionId:'11'}));
+ expect(screen.getByTestId('chart-position-row')).toBeTruthy();expect(screen.getByTestId('btn-select-position-live-11')).toBeTruthy();
+ stored=envelope([]);act(()=>Stream.instances[0]!.emit({type:'personal_account_changed'}));await flush(30);expect(screen.queryByTestId('chart-position-row')).toBeNull();expect(screen.queryByTestId('btn-select-position-live-11')).toBeNull();
+});
+
+it.each(['identity','failure','removed'])('retained overlay close callback cannot dispatch after %s',async transition=>{
+ mountCombined();await flush(1);const close=observedOverlay.closePosition,row=observedOverlay.positions[0]!;
+ await act(async()=>{
+  if(transition==='identity')client.setQueryData(['me'],{...user,id:2});
+  else if(transition==='failure')client.getQueryCache().find({queryKey:getUnifiedPositionsQueryKey(1),exact:true})!.setState({status:'error',error:Error('withdrawn')});
+  else client.setQueryData(getUnifiedPositionsQueryKey(1),envelope([]));
+  await close(row);
+ });
+ expect(dispatch).not.toHaveBeenCalled();
+});
+it('overlay reload retains a fresh trailing read after a pre-click read finishes',async()=>{
+ mountCombined();await flush(1);let resolveOld!:(r:Response)=>void;
+ const normal=fetcher.getMockImplementation()!;fetcher.mockImplementation((url,options)=>String(url).endsWith('/api/me/positions/all')?new Promise<Response>(resolve=>{resolveOld=resolve;}):normal(url,options));
+ const old=client.refetchQueries({queryKey:getUnifiedPositionsQueryKey(1),exact:true});await flush(1);
+ act(()=>observedOverlay.reload());await flush(1);stored=envelope([position(-12.345)]);fetcher.mockImplementation(normal);
+ await act(async()=>{resolveOld(response(envelope([position(2)])));await old;});await flush(30);
+ expect(calls()).toHaveLength(3);expect(screen.getByTestId('chart-position-pnl').textContent).toBe('-12.345');
+});
+it('combined consumers withdraw on identity failure and old stream cannot renew them',async()=>{
+ mountCombined();await flush(1);choose();await flush(1);
+ act(()=>client.getQueryCache().find({queryKey:['me'],exact:true})!.setState({status:'error',error:Error('Identity unavailable')}));await flush(1);
+ expect(screen.queryByTestId('chart-position-overlay-panel')).toBeNull();expect(screen.queryByTestId('position-side-card')).toBeNull();
+ const before=calls().length;act(()=>Stream.instances[0]!.emit({type:'personal_account_changed'}));await flush(30);expect(calls()).toHaveLength(before);
 });

@@ -1,19 +1,15 @@
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAccountRefreshPreference } from "@/hooks/useAccountRefreshPreference";
-import { authenticatedPositionUserId, readCachedPositionUserId, getUnifiedPositionsQueryKey, readUnifiedPositions } from "@/hooks/unifiedPositions";
+import { useUnifiedPositions } from "@/hooks/useUnifiedPositions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { PositionSideCard, formatPositionPnl, type UnifiedPosition } from "./PositionSideCard";
 import { resolveSafetyError } from "./safetyMessages";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 const u = (p: string) => `${BASE}${p}`;
 
-const POLL_MS = 5000;
 
 
 // Lightweight in-card confirm dialogs. We do NOT use the existing
@@ -32,25 +28,14 @@ type ConfirmState =
 export function PositionPickerPanel() {
   const [selected, setSelected] = useState<{ownerId:number;key:string} | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>({ kind: "none" });
-  const client=useQueryClient();
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
-  const { user, isError: identityError } = useCurrentUser();
+  const {user,userId,identityError,data,err,query:positions,resolveCurrentPosition}=useUnifiedPositions();
   const isAdmin = user?.role === "ADMIN" || user?.role === "OWNER";
   const describe = (payload: unknown, status?: number) => {
     const r = resolveSafetyError(payload, status);
     return isAdmin && r.raw ? `${r.friendly} [code: ${r.raw}]` : r.friendly;
   };
-
-  const userId=identityError?null:authenticatedPositionUserId(user);
-  const [autoRefreshEnabled]=useAccountRefreshPreference();
-  const positions=useQuery({queryKey:getUnifiedPositionsQueryKey(userId??0),queryFn:readUnifiedPositions,
-    enabled:userId!==null,retry:false,refetchInterval:autoRefreshEnabled?POLL_MS:false,refetchIntervalInBackground:false,
-    refetchOnWindowFocus:autoRefreshEnabled,refetchOnReconnect:autoRefreshEnabled});
-  // Failed reads and identity changes cannot leave old monetary rows labelled
-  // OPEN. Never replace missing evidence with zero or another user's cache.
-  const data=userId!==null&&!positions.isError?positions.data:null;
-  const err=positions.isError?positions.error.message:null;
 
   const all: UnifiedPosition[] = [...(data?.live ?? []), ...(data?.demo ?? [])];
   const selectedPos = selected?.ownerId===userId ? all.find((p) => `${p.scope}:${p.brokerTicket}` === selected.key) ?? null : null;
@@ -59,13 +44,8 @@ export function PositionPickerPanel() {
   useEffect(()=>{setSelected(null);setConfirm({kind:"none"});},[userId]);
   useEffect(()=>{if(confirm.kind!=="none"&&!confirmPos)setConfirm({kind:"none"});},[confirm,confirmPos]);
   const resolveSubmission=(pos:UnifiedPosition,ownerId:number)=>{
-    // Read current cache again at the action boundary: retained DOM callbacks
-    // from a removed modal must not submit another user's same-number ticket.
-    if(readCachedPositionUserId(client)!==ownerId)return null;
-    const key=getUnifiedPositionsQueryKey(ownerId);
-    if(client.getQueryState(key)?.status!=="success")return null;
-    const current=client.getQueryData<import("@/hooks/unifiedPositions").UnifiedPositionsResponse>(key);
-    return [...(current?.live??[]),...(current?.demo??[])].find(row=>row.scope===pos.scope&&row.brokerTicket===pos.brokerTicket)??null;
+    if(ownerId!==userId)return null;
+    return resolveCurrentPosition(pos);
   };
   // Canonical cross-surface rule: live rows are withheld because the account
   // is not in live mode. Surface the same user-safe copy every ARX surface

@@ -196,6 +196,9 @@ async function settle(ms = 0) {
 }
 
 beforeEach(() => {
+  // New real page provider needs an offline browser transport in this route-only fixture.
+  class OfflineEventSource { static OPEN = 1; readyState = 0; addEventListener() {} close() { this.readyState = 2; } }
+  vi.stubGlobal("EventSource", OfflineEventSource);
   vi.useFakeTimers();
   scanOutcome = "success";
   serverRetryAfterMs = 3_000;
