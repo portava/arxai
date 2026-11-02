@@ -1,3 +1,4 @@
+import type { RubyAssessmentEvidence } from "./rubyAssessmentEvidence";
 // ── Ruby Chart Read — one derived panel state (Task #506) ────────────────────
 //
 // The Scanner's Ruby Chart Read panel has three sub-surfaces that USED to each
@@ -61,6 +62,7 @@ export interface RubyReadServerState {
  * component module.
  */
 export interface ChartRead extends RubyReadServerState {
+  assessmentEvidence?: RubyAssessmentEvidence | null;
   /** Endpoint echo, checked against the request before publication. Client-only
    * pending/failure restrictions need not claim a returned market identity. */
   symbol?: string;

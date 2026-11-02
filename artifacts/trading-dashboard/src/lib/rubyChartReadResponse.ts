@@ -1,9 +1,11 @@
+import { rubyAssessmentEvidenceKey, matchesRubyAssessmentEvidence } from "./rubyAssessmentEvidence";
 import type { ChartRead } from "./rubyReadPanelState";
 import { matchesRubyChartReadContext, type RubyChartReadContext } from "./rubyChartReadContext";
 
 /** Validate the existing read endpoint's display contract before publishing it.
- * This is not verification of its underlying market/source/window evidence. */
-export function validateRubyChartRead(value: unknown, expected: RubyChartReadContext): ChartRead {
+ * Positive responses must identify captured inputs; current-chart matching is
+ * required when an observing consumer supplies its evidence. */
+export function validateRubyChartRead(value: unknown, expected: RubyChartReadContext, expectedEvidence?: unknown): ChartRead {
   const invalid = () => { throw new Error("Invalid chart read response"); };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   const r = value as Record<string, unknown>;
@@ -31,6 +33,12 @@ export function validateRubyChartRead(value: unknown, expected: RubyChartReadCon
     if ((r.readLayer !== undefined && r.readLayer !== "INSUFFICIENT") || r.canShowLiveTradeSetup === true || r.liveSetupWithheld === false
       || ![r.blockedReason, r.headline].some(v => typeof v === "string" && v.trim())) return invalid();
   } else {
+    const evidence = r.assessmentEvidence;
+    if (!rubyAssessmentEvidenceKey(evidence)
+      || !matchesRubyChartReadContext(evidence as Record<string, unknown>, expected)
+      || (expectedEvidence !== undefined && !matchesRubyAssessmentEvidence(evidence, expectedEvidence))) {
+      throw new Error("The assessment does not match the chart's current source, account and closed candle. Read this chart again.");
+    }
     if (typeof r.bias !== "string" || !r.bias.trim() || r.dataQuality === "insufficient") return invalid();
     if (r.readLayer === "FULL") {
       if (r.liveSetupWithheld !== false || r.canShowLiveTradeSetup !== true) return invalid();

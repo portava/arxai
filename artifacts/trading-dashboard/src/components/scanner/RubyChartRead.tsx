@@ -1,3 +1,4 @@
+import { rubyAssessmentEvidenceKey } from "@/lib/rubyAssessmentEvidence";
 import { useLayoutEffect, useRef } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -97,20 +98,22 @@ export function RubyChartRead({
   const owner = useRef(Symbol("RubyChartRead plan consumer")).current;
   const marketKey = rubyChartReadKey(symbol, timeframe);
   const draftKey = rubyChartDraftKey(draft);
+  const { truth, feedStatus, assessmentEvidence = null } = useScannerTruth(symbol, timeframe);
+  const evidenceKey = rubyAssessmentEvidenceKey(assessmentEvidence);
   const { registerPlan, unregisterPlan } = store;
   // Layout registration updates the shared header restriction before paint.
   // Object recreation with identical values cannot invalidate another panel.
   useLayoutEffect(() => {
-    registerPlan(owner, symbol, timeframe, draft);
-  }, [registerPlan, owner, marketKey, draftKey]);
+    registerPlan(owner, symbol, timeframe, draft, assessmentEvidence);
+  }, [registerPlan, owner, marketKey, draftKey, evidenceKey]);
   useLayoutEffect(() => () => unregisterPlan(owner), [unregisterPlan, owner]);
-  const read = store.getPlan(symbol, timeframe, draft);
+  const read = store.getPlan(symbol, timeframe, draft, assessmentEvidence);
   const { loading, error: err } = store.planRequestState(symbol, timeframe, draft);
 
   // Resolve the SHARED scanner truth for this exact symbol/timeframe so the
   // panel can warn the user BEFORE Ruby reads a stale or invalid feed — and so
   // its verdict can never diverge from the header strip / chart / read-gate.
-  const { truth, feedStatus } = useScannerTruth(symbol, timeframe);
+
 
   // ONE derived verdict (Task #506). The badge, banner, and body all read from
   // this single resolution — the shared scanner truth folded together with the
@@ -162,7 +165,7 @@ export function RubyChartRead({
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = (await r.json()) as { chartRead: ChartRead };
       return j.chartRead;
-    });
+    }, assessmentEvidence);
   };
 
   return (

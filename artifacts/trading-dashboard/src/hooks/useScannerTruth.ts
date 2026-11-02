@@ -1,3 +1,5 @@
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import type { RubyAssessmentEvidence } from "@/lib/rubyAssessmentEvidence";
 // useScannerTruth — the single consumed scanner-truth source (Task #391).
 //
 // Composes the ONE honest market query (GET /api/chart/candles, shared cache)
@@ -36,6 +38,7 @@ export interface UseScannerTruthResult {
   feedStatus: ChartFeedStatus | null;
   /** Observed source identity from the same chart query, never reconstructed. */
   sourceIdentity: string | null;
+  assessmentEvidence: RubyAssessmentEvidence | null;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -74,6 +77,7 @@ export function useScannerTruth(
   const headerOk: boolean | null = headerSnapQ.isError ? false : headerSnapQ.data?.ok ?? false;
 
   const mode = useTradingMode();
+  const identity = useCurrentUser();
   const { name: assistantName } = useAssistantName();
 
   const candles = candlesQ.data?.candles ?? [];
@@ -132,6 +136,10 @@ export function useScannerTruth(
     truth,
     feedStatus,
     sourceIdentity: candlesQ.data?.marketEvidence?.sourceIdentity ?? null,
+    // This is an observation for matching only, never response evidence.
+    assessmentEvidence: !candlesQ.isError && !identity.isError && identity.user && candlesQ.data?.marketEvidence?.lastClosedCandleAt
+      ? { ...candlesQ.data.marketEvidence, lastClosedCandleAt: candlesQ.data.marketEvidence.lastClosedCandleAt, userId: identity.user.id }
+      : null,
     isLoading: candlesQ.isLoading || mode.isLoading,
     isError: candlesQ.isError,
     refetch: () => void candlesQ.refetch(),

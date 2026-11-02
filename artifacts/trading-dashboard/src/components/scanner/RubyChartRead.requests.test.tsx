@@ -1,9 +1,10 @@
+function evidence(symbol="EURUSD",timeframe="M5") { return {symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}; }
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RubyReadStoreProvider } from "./rubyReadStore";
 import { RubyChartRead } from "./RubyChartRead";
 
-vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: { analysis: { level: "full" } }, feedStatus: null }) }));
+vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: (symbol:string,timeframe:string) => ({ assessmentEvidence:evidence(symbol,timeframe), truth: { analysis: { level: "full" } }, feedStatus: null }) }));
 vi.mock("@/components/charts/FeedConfidenceBadge", () => ({ FeedConfidenceBadge: () => null }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
@@ -13,7 +14,7 @@ function deferred() {
   const promise = new Promise<Response>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-const reply = (bias: string) => new Response(JSON.stringify({ chartRead: { symbol: "EURUSD", timeframe: "M5", gated: false, bias, readLayer: "FULL", liveSetupWithheld: false, canShowLiveTradeSetup: true } }));
+const reply = (bias: string) => new Response(JSON.stringify({ chartRead: { assessmentEvidence:evidence(), symbol: "EURUSD", timeframe: "M5", gated: false, bias, readLayer: "FULL", liveSetupWithheld: false, canShowLiveTradeSetup: true } }));
 const panel = (symbol = "EURUSD") => <RubyChartRead symbol={symbol} timeframe="M5" draft={null} />;
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 

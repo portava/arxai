@@ -5,7 +5,8 @@ import { RubyChartRead } from "./RubyChartRead";
 import { resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
 import { StrictMode } from "react";
 
-vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: { analysis: { level: "full" } }, feedStatus: null }) }));
+const observed = vi.hoisted(() => ({ evidence: { symbol: "EURUSD", timeframe: "M5", source: "deriv_public", sourceIdentity: "a".repeat(64), lastClosedCandleAt: "2026-01-01T00:00:00.000Z", userId: 7 } }));
+vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: { analysis: { level: "full" } }, feedStatus: null, assessmentEvidence: observed.evidence }) }));
 vi.mock("@/components/charts/FeedConfidenceBadge", () => ({ FeedConfidenceBadge: () => null }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
@@ -15,14 +16,14 @@ const changes: [string,Draft][] = [
   ["side",{...plan,side:"SELL"}], ["entry",{...plan,entry:100.00000001}],
   ["stop",{...plan,sl:98}], ["target",{...plan,tp:104}], ["cleared",null],
 ];
-const reply=(name:string)=>new Response(JSON.stringify({chartRead:{symbol:"EURUSD",timeframe:"M5",gated:false,bias:"Bullish",why:name,readLayer:"FULL",liveSetupWithheld:false,canShowLiveTradeSetup:true}}));
+const reply=(name:string)=>new Response(JSON.stringify({chartRead:{symbol:"EURUSD",timeframe:"M5",assessmentEvidence:{...observed.evidence},gated:false,bias:"Bullish",why:name,readLayer:"FULL",liveSetupWithheld:false,canShowLiveTradeSetup:true}}));
 function deferred(){let resolve!:(r:Response)=>void;let reject!:(e:Error)=>void;const promise=new Promise<Response>((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
 function Summary(){const read=useRubyReadStore().get("EURUSD","M5");return <output data-testid="summary">{resolveCappedRubyReadStatus("FULL_READ",read,undefined).status}</output>;}
 function panel(draft:Draft,id="primary",timeframe="M5"){return <section data-testid={id}><RubyChartRead symbol="EURUSD" timeframe={timeframe} draft={draft}/></section>;}
 function tree(draft:Draft,second?:Draft){return <RubyReadStoreProvider><Summary/>{panel(draft)}{second!==undefined&&panel(second,"secondary","5m")}</RubyReadStoreProvider>;}
 const ask=(id="primary")=>within(screen.getByTestId(id)).getByTestId("ruby-chart-read-ask") as HTMLButtonElement;
 const bias=(id="primary")=>within(screen.getByTestId(id)).queryByTestId("ruby-chart-read-bias");
-afterEach(()=>{cleanup();vi.restoreAllMocks();});
+afterEach(()=>{cleanup();vi.restoreAllMocks(); observed.evidence = {symbol:"EURUSD",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7};});
 
 describe("assessment binding to the current trading plan",()=>{
   it("an unassessed nonnull plan cannot inherit a full shared summary",()=>{
@@ -139,4 +140,45 @@ describe("assessment binding to the current trading plan",()=>{
     const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValue(reply("INVALID PLAN"));render(tree({...plan,entry:value}));
     fireEvent.click(ask());await act(async()=>{});expect(fetch).not.toHaveBeenCalled();expect(bias()).toBeNull();
   });
+});
+
+for (const [field, value] of [["sourceIdentity", "b".repeat(64)], ["source", "mt5_broker"], ["lastClosedCandleAt", "2026-01-01T00:05:00.000Z"], ["userId", 8]] as const) {
+  it(`withdraws completed assessment when observed ${field} changes`, async () => {
+    vi.spyOn(globalThis,"fetch").mockResolvedValue(reply("OLD EVIDENCE"));
+    const view=render(tree(plan)); fireEvent.click(ask()); await screen.findByText("OLD EVIDENCE");
+    observed.evidence={...observed.evidence,[field]:value}; view.rerender(tree({...plan}));
+    expect(screen.queryByText("OLD EVIDENCE")).toBeNull();
+    expect(screen.getByTestId("summary").textContent).not.toBe("FULL_READ");
+  });
+  it(`cancels pending assessment when observed ${field} changes`, async () => {
+    const old=deferred(); const oldResponse=reply("LATE EVIDENCE"); let signal!:AbortSignal;
+    vi.spyOn(globalThis,"fetch").mockImplementation((_u,init)=>{signal=init!.signal!;return old.promise;});
+    const view=render(tree(plan)); fireEvent.click(ask());
+    observed.evidence={...observed.evidence,[field]:value}; view.rerender(tree({...plan}));
+    expect(signal.aborted).toBe(true); await act(async()=>old.resolve(oldResponse));
+    expect(screen.queryByText("LATE EVIDENCE")).toBeNull();
+    expect(screen.getByTestId("summary").textContent).not.toBe("FULL_READ");
+  });
+}
+it("equivalent evidence objects retain the completed assessment", async()=>{
+  vi.spyOn(globalThis,"fetch").mockResolvedValue(reply("SAME EVIDENCE"));
+  const view=render(tree(plan)); fireEvent.click(ask()); await screen.findByText("SAME EVIDENCE");
+  observed.evidence={...observed.evidence}; view.rerender(tree({...plan}));
+  expect(screen.getByText("SAME EVIDENCE")).toBeTruthy();
+});
+
+it("rejects a different server capture without pretending the read succeeded",async()=>{
+  const response=JSON.parse(await reply("WRONG CAPTURE").text());
+  response.chartRead.assessmentEvidence.sourceIdentity="b".repeat(64);
+  vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify(response)));
+  render(tree(plan)); fireEvent.click(ask()); await screen.findByTestId("ruby-chart-read-err");
+  expect(screen.queryByText("WRONG CAPTURE")).toBeNull();
+  expect(screen.getByTestId("summary").textContent).not.toBe("FULL_READ");
+});
+it("withdraws a completed assessment when observation disappears",async()=>{
+  vi.spyOn(globalThis,"fetch").mockResolvedValue(reply("OBSERVED READ"));
+  const view=render(tree(plan)); fireEvent.click(ask()); await screen.findByText("OBSERVED READ");
+  observed.evidence=null as unknown as typeof observed.evidence; view.rerender(tree(plan));
+  expect(screen.queryByText("OBSERVED READ")).toBeNull();
+  expect(screen.getByTestId("summary").textContent).not.toBe("FULL_READ");
 });

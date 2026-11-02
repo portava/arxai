@@ -15,6 +15,7 @@ let client: QueryClient;
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(NOW);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  client.setQueryData(["me"], { id: 7 });
   vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("Unexpected request"))));
 });
 afterEach(() => { cleanup(); client.clear(); vi.useRealTimers(); vi.unstubAllGlobals(); });

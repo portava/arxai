@@ -1,3 +1,4 @@
+function evidence(symbol="EURUSD",timeframe="M5") { return {symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}; }
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
 import { render as renderBase, screen, cleanup, fireEvent } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
@@ -31,7 +32,7 @@ import type { RubyReadStatus } from "@/lib/scannerActionability";
 const mockUseScannerTruth = vi.fn();
 
 vi.mock("@/hooks/useScannerTruth", () => ({
-  useScannerTruth: (...args: unknown[]) => mockUseScannerTruth(...args),
+  useScannerTruth: (symbol:string,timeframe:string) => ({...mockUseScannerTruth(symbol,timeframe),assessmentEvidence:evidence(symbol,timeframe)}),
 }));
 
 // The presentational FeedConfidenceBadge is stubbed to keep the test hermetic
@@ -68,7 +69,7 @@ function SeedRead({ children }: { children: ReactNode }) {
   const { set } = useRubyReadStore();
   useEffect(() => {
     for (const symbol of ["EURUSD", "V75", "V25_1S"]) {
-      for (const timeframe of ["M1", "M5", "H1"]) set(symbol, timeframe, mockStoredRead);
+      for (const timeframe of ["M1", "M5", "H1"]) set(symbol, timeframe, mockStoredRead ? {...mockStoredRead,assessmentEvidence:evidence(symbol,timeframe)} : null);
     }
   }, [set]);
   return children;
@@ -500,6 +501,7 @@ describe("RubyChartRead — STRUCTURAL_ONLY verdict (Task #602)", () => {
         new Response(
           JSON.stringify({
             chartRead: {
+              assessmentEvidence:evidence("V75","H1"),
               symbol: "V75",
               timeframe: "H1",
               readLayer: "STRUCTURAL_ONLY",

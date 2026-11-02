@@ -1,10 +1,11 @@
+function evidence(symbol="EURUSD",timeframe="M5") { return {symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}; }
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { RubyReadStoreProvider, useRubyReadStore } from "./rubyReadStore";
 
 afterEach(cleanup);
 const response = (symbol = "EURUSD", timeframe = "M5") => ({
-  symbol, timeframe, gated: false, readLayer: "FULL", liveSetupWithheld: false,
+  assessmentEvidence:evidence(symbol,timeframe), symbol, timeframe, gated: false, readLayer: "FULL", liveSetupWithheld: false,
   canShowLiveTradeSetup: true, bias: "Bullish",
 });
 const useStore = () => renderHook(useRubyReadStore, { wrapper: RubyReadStoreProvider });

@@ -1,3 +1,4 @@
+function evidence(symbol="EURUSD",timeframe="M5") { return {symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}; }
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHART_READ_REQUEST_TIMEOUT_MS, RubyReadStoreProvider, useRubyReadStore } from "./rubyReadStore";
@@ -5,7 +6,7 @@ import type { ChartRead } from "@/lib/rubyReadPanelState";
 import { resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
-const full = (bias: string, symbol = "EURUSD", timeframe = "M5"): ChartRead => ({ symbol, timeframe, gated: false, readLayer: "FULL", liveSetupWithheld: false, canShowLiveTradeSetup: true, bias });
+const full = (bias: string, symbol = "EURUSD", timeframe = "M5"): ChartRead => ({ assessmentEvidence:evidence(symbol,timeframe), symbol, timeframe, gated: false, readLayer: "FULL", liveSetupWithheld: false, canShowLiveTradeSetup: true, bias });
 function deferred() {
   let resolve!: (r: ChartRead) => void;
   let reject!: (e: Error) => void;
@@ -41,7 +42,7 @@ describe("chart assessment completion ordering", () => {
 
   it("accepts the service's structural read and older market-resolution refusal", async () => {
     const { result } = useStore();
-    const structural: ChartRead = { symbol: "EURUSD", timeframe: "M5", gated: false, bias: "Bearish", readLayer: "STRUCTURAL_ONLY", liveSetupWithheld: true, canShowLiveTradeSetup: false, blockedReason: "Source clock unverified" };
+    const structural: ChartRead = { assessmentEvidence:evidence(), symbol: "EURUSD", timeframe: "M5", gated: false, bias: "Bearish", readLayer: "STRUCTURAL_ONLY", liveSetupWithheld: true, canShowLiveTradeSetup: false, blockedReason: "Source clock unverified" };
     await act(async () => result.current.request("EURUSD", "M5", async () => structural));
     expect(result.current.get("EURUSD", "M5")).toEqual(structural);
     const refusal: ChartRead = { symbol: "EURUSD", timeframe: "M5", gated: true, dataQuality: "insufficient", headline: "Market unavailable" };
@@ -113,4 +114,14 @@ describe("chart assessment completion ordering", () => {
     expect(result.current.get("EURUSD", "M5")?.gated).toBe(true);
     expect(result.current.requestState("EURUSD", "M5").error).toMatch(/Invalid chart read response|does not match/);
   });
+});
+
+it("retains click-time identity if the caller mutates its evidence object",async()=>{
+  const {result}=useStore();const pending=deferred(); const captured=evidence(); const owner=Symbol("observed");
+  act(()=>result.current.registerPlan(owner,"EURUSD","M5",null,captured));
+  act(()=>{void result.current.requestPlan("EURUSD","M5",null,()=>pending.promise,captured);});
+  captured.userId=8;
+  await act(async()=>pending.resolve({...full("Bullish"),assessmentEvidence:{...captured}}));
+  expect(result.current.get("EURUSD","M5")?.gated).toBe(true);
+  expect(result.current.planRequestState("EURUSD","M5",null).error).not.toBeNull();
 });

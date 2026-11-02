@@ -1,3 +1,4 @@
+import { rubyAssessmentEvidenceKey } from "@/lib/rubyAssessmentEvidence";
 // One page-level assessment store. Exact plans share their own read/request;
 // market-level header/chart consumers receive only a conservative summary.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -17,17 +18,21 @@ const CHANGED_PLAN = withheld("The plan changed; the previous assessment is with
 const DIFFERENT_PLANS = withheld("Different plans are displayed for this market. Review each plan's own assessment; there is no shared full read.");
 const UNREAD_PLAN = withheld("The current plan has not been assessed. Read this plan before using its assessment.");
 const INACTIVE_PLAN = withheld("The assessed plan is no longer displayed; its assessment is withheld.");
-interface Binding { market: string; key: string | null }
+const CHANGED_EVIDENCE = withheld("The chart source, account or closed candle changed or could not be confirmed. Read this chart again.");
+function bindRead(read: ChartRead | null, evidenceKey: string | null | undefined): ChartRead | null {
+  return read && !read.gated && evidenceKey !== undefined && (evidenceKey === null || rubyAssessmentEvidenceKey(read.assessmentEvidence) !== evidenceKey) ? CHANGED_EVIDENCE : read;
+}
+interface Binding { market: string; key: string | null; evidenceKey?: string | null }
 type Loader = (signal: AbortSignal) => Promise<unknown>;
 interface RubyReadStore {
   get: (symbol: string, timeframe: string) => ChartRead | null;
   set: (symbol: string, timeframe: string, read: ChartRead | null) => void;
   requestState: (symbol: string, timeframe: string) => ReadRequestState;
   request: (symbol: string, timeframe: string, load: Loader) => Promise<void>;
-  getPlan: (symbol: string, timeframe: string, draft: RubyChartDraft | null) => ChartRead | null;
+  getPlan: (symbol: string, timeframe: string, draft: RubyChartDraft | null, evidence?: unknown) => ChartRead | null;
   planRequestState: (symbol: string, timeframe: string, draft: RubyChartDraft | null) => ReadRequestState;
-  requestPlan: (symbol: string, timeframe: string, draft: RubyChartDraft | null, load: Loader) => Promise<void>;
-  registerPlan: (owner: symbol, symbol: string, timeframe: string, draft: RubyChartDraft | null) => void;
+  requestPlan: (symbol: string, timeframe: string, draft: RubyChartDraft | null, load: Loader, evidence?: unknown) => Promise<void>;
+  registerPlan: (owner: symbol, symbol: string, timeframe: string, draft: RubyChartDraft | null, evidence?: unknown) => void;
   unregisterPlan: (owner: symbol) => void;
 }
 const RubyReadStoreContext = createContext<RubyReadStore>({
@@ -58,11 +63,21 @@ export function RubyReadStoreProvider({ children }: { children: ReactNode }) {
     pending.forEach(controller => controller.abort());
   }, []);
 
-  const registerPlan = useCallback((owner: symbol, symbol: string, timeframe: string, draft: RubyChartDraft | null) => {
+  const registerPlan = useCallback((owner: symbol, symbol: string, timeframe: string, draft: RubyChartDraft | null, evidence?: unknown) => {
     const market = keyOf(symbol, timeframe), key = rubyChartReadPlanKey(symbol, timeframe, draft);
     const previous = owners.current.get(owner);
-    if (previous?.market === market && previous.key === key) return;
-    owners.current.set(owner, { market, key });
+    const evidenceKey = evidence === undefined ? undefined : rubyAssessmentEvidenceKey(evidence);
+    if (previous?.market === market && previous.key === key && previous.evidenceKey === evidenceKey) return;
+    owners.current.set(owner, { market, key, evidenceKey });
+    if (previous?.market === market && previous.evidenceKey !== evidenceKey) {
+      // Remove transport authority before aborting; a late response cannot
+      // restore the superseded capture, even if its plan is unchanged.
+      for (const affected of new Set([previous.key, key])) if (affected !== null) {
+        cancel(affected);
+        reads.current.set(affected, CHANGED_EVIDENCE);
+      }
+      marketRestrictions.current.set(market, CHANGED_EVIDENCE);
+    }
     const shared = [...owners.current.entries()].some(([other, binding]) => other !== owner && binding.market === market && binding.key === key);
     if (previous?.market === market && previous.key !== key) {
       // Keep another consumer's same-plan work intact. Only the orphaned old
@@ -105,9 +120,9 @@ export function RubyReadStoreProvider({ children }: { children: ReactNode }) {
     notify();
   }, [cancel, notify]);
 
-  const getPlan = useCallback((symbol: string, timeframe: string, draft: RubyChartDraft | null) => {
+  const getPlan = useCallback((symbol: string, timeframe: string, draft: RubyChartDraft | null, evidence?: unknown) => {
     const key = rubyChartReadPlanKey(symbol, timeframe, draft);
-    return key === null ? INVALID_PLAN : reads.current.get(key) ?? null;
+    return key === null ? INVALID_PLAN : bindRead(reads.current.get(key) ?? null, evidence === undefined ? undefined : rubyAssessmentEvidenceKey(evidence));
   }, [revision]);
   const get = useCallback((symbol: string, timeframe: string): ChartRead | null => {
     const market = keyOf(symbol, timeframe);
@@ -117,7 +132,9 @@ export function RubyReadStoreProvider({ children }: { children: ReactNode }) {
     if (keys.size > 1) return DIFFERENT_PLANS;
     const key = active[0]!.key;
     if (key === null) return INVALID_PLAN;
-    return reads.current.get(key) ?? (key !== market ? UNREAD_PLAN : marketRestrictions.current.get(market) ?? null);
+    const read = reads.current.get(key) ?? (key !== market ? UNREAD_PLAN : marketRestrictions.current.get(market) ?? null);
+    if (new Set(active.map(binding => binding.evidenceKey)).size > 1) return CHANGED_EVIDENCE;
+    return bindRead(read, active[0]!.evidenceKey);
   }, [revision]);
   const set = useCallback((symbol: string, timeframe: string, read: ChartRead | null) => {
     const key = keyOf(symbol, timeframe);
@@ -133,7 +150,8 @@ export function RubyReadStoreProvider({ children }: { children: ReactNode }) {
     return key === null ? IDLE : requests.current.get(key) ?? IDLE;
   }, [revision]);
 
-  const runRequest = useCallback(async (key: string, symbol: string, timeframe: string, load: Loader) => {
+  const runRequest = useCallback(async (key: string, symbol: string, timeframe: string, load: Loader, evidence?: unknown) => {
+    const capturedEvidenceKey = evidence === undefined ? undefined : rubyAssessmentEvidenceKey(evidence);
     const previous = tickets.current.get(key);
     const ticket = new AbortController();
     tickets.current.set(key, ticket);
@@ -151,6 +169,9 @@ export function RubyReadStoreProvider({ children }: { children: ReactNode }) {
       const response = await Promise.race([load(ticket.signal), interrupted]);
       if (tickets.current.get(key) !== ticket) return;
       const read = validateRubyChartRead(response, { symbol, timeframe });
+      if (bindRead(read, capturedEvidenceKey) !== read) {
+        throw new Error("The assessment inputs changed. Read this chart again.");
+      }
       reads.current.set(key, read);
       requests.current.set(key, IDLE);
       notify();
@@ -166,10 +187,10 @@ export function RubyReadStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [notify]);
   const request = useCallback((symbol: string, timeframe: string, load: Loader) => runRequest(keyOf(symbol, timeframe), symbol, timeframe, load), [runRequest]);
-  const requestPlan = useCallback(async (symbol: string, timeframe: string, draft: RubyChartDraft | null, load: Loader) => {
+  const requestPlan = useCallback(async (symbol: string, timeframe: string, draft: RubyChartDraft | null, load: Loader, evidence?: unknown) => {
     const key = rubyChartReadPlanKey(symbol, timeframe, draft);
     if (key === null) return;
-    await runRequest(key, symbol, timeframe, load);
+    await runRequest(key, symbol, timeframe, load, evidence);
   }, [runRequest]);
   const value = useMemo<RubyReadStore>(() => ({ get, set, requestState, request, getPlan, planRequestState, requestPlan, registerPlan, unregisterPlan }),
     [get, set, requestState, request, getPlan, planRequestState, requestPlan, registerPlan, unregisterPlan]);

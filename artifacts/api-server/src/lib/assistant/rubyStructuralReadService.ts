@@ -368,6 +368,13 @@ export async function buildRubyStructuralRead(
     // Fail-safe: no context means no captured feed verdict or structural read.
   }
 
+  // Freeze provenance before any child analysis awaits. It comes from this
+  // capture, never a newer lookup or the client's requested identity. The user
+  // is the authenticated server input whose account-dependent checks ran.
+  const assessmentEvidence = rubyCtx?.marketEvidence && Number.isSafeInteger(params.userId) && (params.userId ?? 0) > 0
+    ? { ...rubyCtx.marketEvidence, userId: params.userId! }
+    : null;
+
   // Either the captured server verdict or the client's observation can withhold
   // the live setup. A newer display-tip observation cannot upgrade this capture.
   const feedUnconfirmed = resolveFeedUnconfirmed(clientFeedUnconfirmed, rubyCtx?.feedStatus ?? null);
@@ -547,7 +554,7 @@ export async function buildRubyStructuralRead(
       disclaimer: DISCLAIMER,
     });
     return {
-      chartRead: chartReadPayload,
+      chartRead: { ...chartReadPayload, assessmentEvidence },
       readLayer: "FULL",
       normalizedTimeframe: tf,
       shouldRecordReadDecision: true,
@@ -636,7 +643,7 @@ export async function buildRubyStructuralRead(
   });
   return {
     // The exact setup is withheld, so neutralise any confident trade language.
-    chartRead: neutralizeFeedCopyDeep(structuralPayload),
+    chartRead: { ...neutralizeFeedCopyDeep(structuralPayload), assessmentEvidence },
     readLayer: "STRUCTURAL_ONLY",
     normalizedTimeframe: tf,
     shouldRecordReadDecision: true,
