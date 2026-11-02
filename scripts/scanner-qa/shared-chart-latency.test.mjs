@@ -82,7 +82,7 @@ test('a late transport/control failure rejects an otherwise complete passing sam
 });
 function sampler(){
   let now=10,current=baseline();const events={},frames=[],timers=new Map();let sequence=0;
-  const select={value:'candles'};
+  const select={value:'candles',getBoundingClientRect:()=>({width:100,height:24}),getClientRects:()=>[{}]};
   const window={__arxChartQa:{snapshot:()=>current.state,data:()=>current.data},addEventListener:(type,fn)=>events[type]=fn,removeEventListener:()=>{}};
   const document={querySelector:()=>({querySelector:selector=>selector.startsWith('select')?select:null})};
   vm.runInNewContext('('+extract('installSampler')+')()',{window,document,performance:{now:()=>now},requestAnimationFrame:fn=>frames.push(fn),
@@ -108,4 +108,17 @@ test('clearing a failed style arm cannot later capture an unrelated trusted even
 });
 test('future or negative input clocks fail rather than silently exclude capture delay',()=>{
   for(const stamp of [-1,1000000000000]){const s=sampler();s.state.armed=arm('zoom',{factor:.75});s.event({timeStamp:stamp});assert.equal(s.state.samples[0].failure,'unsupported input event clock');}
+});
+
+test('primary Style visibility does not depend on membership in the advanced disclosure',()=>{
+  let hidden=false;
+  const select={value:'candles',getBoundingClientRect:()=>({width:100,height:24}),getClientRects:()=>hidden?[]:[{}]};
+  const panel={id:'advanced',querySelectorAll:()=>[],querySelector:()=>null};
+  const button={getAttribute:name=>name==='aria-controls'?'advanced':'false'};
+  const card={querySelector:selector=>selector.startsWith('select')?select:selector.startsWith('button')?button:panel};
+  const snapshot=vm.runInNewContext('('+extract('controlsSnapshot','    ')+')',{document:{querySelector:()=>card},getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1'}),innerWidth:390,innerHeight:844});
+  assert.equal(snapshot().styleVisible,true);
+  assert.equal(snapshot().visible,false);
+  assert.equal(snapshot().expanded,false);
+  hidden=true;assert.equal(snapshot().styleVisible,false);
 });
