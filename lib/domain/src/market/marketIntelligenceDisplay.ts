@@ -190,6 +190,7 @@ function orderFlowBadge(s: MarketIntelligenceSnapshot): IntelligenceBadge {
 function timingBadge(s: MarketIntelligenceSnapshot): IntelligenceBadge {
   const st = s.timing.timingStatus;
   const map: Record<string, { label: string; tone: IntelligenceBadgeTone }> = {
+    unverified: { label: "Session unverified", tone: "neutral" },
     good: { label: "Good", tone: "positive" },
     early: { label: "Early", tone: "caution" },
     late: { label: "Late", tone: "negative" },
@@ -206,7 +207,9 @@ function timingBadge(s: MarketIntelligenceSnapshot): IntelligenceBadge {
     title: "Timing",
     label: m.label,
     tone: m.tone,
-    detail: `${s.timing.session} session — ${s.timing.candleState}.`,
+    detail: s.timing.session === "unknown"
+      ? `Market session is unverified — ${s.timing.candleState}.`
+      : `${s.timing.session} session — ${s.timing.candleState}.`,
   };
 }
 

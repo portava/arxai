@@ -658,3 +658,54 @@ describe("failed candle tactics never become conditional entries",()=>{
     });
   }
 });
+
+describe("timing evidence ceiling survives final gold composition", () => {
+  for (const branch of ["conditional", "watch", "blocked"] as const) {
+    it(`unknown session stays withheld through ${branch} strategy return`, () => {
+      const base = reasoningInputs();
+      const timing = resolveGoldTiming(timingInput({ session: "unknown" }));
+      const verdict = evaluateGoldStrategy({ template: GOLD_STRATEGY_TEMPLATES[0], direction: "buy", macro: fullMacroBull(), timing,
+        tactic: { ...base.tactic, decision: branch === "blocked" ? "no_trade" : "conditional_buy", confidence: 80, conditional: true },
+        risk: cleanRisk(), feedConfirmed: branch !== "watch", feedStale: branch === "watch", sufficiencyAllowsSetup: true });
+      assert.equal(verdict.confidence, 0);
+      assert.equal(verdict.decision, branch);
+      assert.equal(verdict.readyNow, false);
+      assert.ok(!verdict.supportingFactors.includes("Timing approves the moment."));
+    });
+  }
+  for (const cap of ["macro", "risk", "timing"] as const) {
+    it(`supporting macro cannot exceed final ${cap} ceiling`, () => {
+      const base = reasoningInputs(), macro = fullMacroBull(), risk = cleanRisk(), timing = resolveGoldTiming(timingInput());
+      if (cap === "macro") macro.confidenceCap = 12;
+      if (cap === "risk") risk.confidenceCap = 12;
+      if (cap === "timing") timing.base.scannerTruthImpact.confidenceCeiling = 12;
+      const verdict = evaluateGoldStrategy({ template: GOLD_STRATEGY_TEMPLATES[0], direction: "buy", macro, timing,
+        tactic: { ...base.tactic, decision: "conditional_buy", confidence: 80, conditional: true }, risk,
+        feedConfirmed: true, feedStale: false, sufficiencyAllowsSetup: true });
+      assert.ok(verdict.confidence <= 12, `received ${verdict.confidence}`);
+    });
+  }
+});
+
+it("invalid and fractional gold confidence ceilings cannot be rounded or promoted above their limit", () => {
+  const base = reasoningInputs();
+  for (const limit of [NaN, Infinity, -1, 0, 12.3]) {
+    const timing = resolveGoldTiming(timingInput());
+    timing.base.scannerTruthImpact.confidenceCeiling = limit;
+    const verdict = evaluateGoldStrategy({ template: GOLD_STRATEGY_TEMPLATES[0], direction: "buy", macro: fullMacroBull(), timing,
+      tactic: { ...base.tactic, decision: "conditional_buy", confidence: 80, conditional: true }, risk: cleanRisk(),
+      feedConfirmed: true, feedStale: false, sufficiencyAllowsSetup: true });
+    assert.ok(Number.isFinite(verdict.confidence));
+    assert.ok(verdict.confidence <= (Number.isFinite(limit) && limit >= 0 ? limit : 0));
+  }
+});
+
+it("invalid raw tactic scores cannot regain gold confidence through earlier cap normalization", () => {
+  const base = reasoningInputs();
+  for (const confidence of [NaN, Infinity, -1, 101]) {
+    const verdict = evaluateGoldStrategy({ template: GOLD_STRATEGY_TEMPLATES[0], direction: "buy", macro: fullMacroBull(), timing: resolveGoldTiming(timingInput()),
+      tactic: { ...base.tactic, decision: "conditional_buy", confidence, conditional: true }, risk: cleanRisk(),
+      feedConfirmed: true, feedStale: false, sufficiencyAllowsSetup: true });
+    assert.equal(verdict.confidence, 0);assert.ok(verdict.warnings.some(w=>w.includes("score is withheld")));
+  }
+});

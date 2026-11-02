@@ -20,8 +20,8 @@
 // session facts are not actually available offline, this producer degrades them
 // honestly — proxy order flow is labelled proxy by the contract, spread/volume
 // read "unknown", and no news/spread/liquidity BLOCK is ever fabricated. Session
-// is derived deterministically from the latest CLOSED bar's own timestamp (not a
-// wall-clock read), and synthetic 24/7 instruments report `synthetic_continuous`.
+// is withheld without a qualified session calendar; an ISO timestamp alone is
+// insufficient. Synthetic instruments retain their continuous classification.
 import {
   resolvePivotTruth,
   computeClassicPivots,
@@ -111,18 +111,6 @@ function pressureToBias(p: OrderFlowPressure): DirectionBias {
 
 function setupDirToEntry(d: "bullish" | "bearish" | "none" | "unknown"): EntryDirection {
   return d === "bullish" ? "buy" : d === "bearish" ? "sell" : "none";
-}
-
-/** Deterministic session from a CLOSED bar's UTC hour (NOT a wall-clock read). */
-function sessionFromBarTime(iso: string | null, synthetic: boolean): TradingSession {
-  if (synthetic) return "synthetic_continuous";
-  if (!iso) return "synthetic_continuous";
-  const h = new Date(iso).getUTCHours();
-  if (!Number.isFinite(h)) return "synthetic_continuous";
-  if (h >= 13 && h < 16) return "overlap";
-  if (h >= 8 && h < 13) return "london";
-  if (h >= 16 && h < 21) return "new_york";
-  return "asia";
 }
 
 function volatilityState(atr: number | null, avgRange: number | null): TimingVolatilityState {
@@ -237,7 +225,11 @@ export function buildMarketIntelligenceSnapshot(
       if (dists.length) distanceToSrAtr = Math.min(...dists) / atr;
     }
 
-    const syntheticAsset = String(state.assetClass).toLowerCase().includes("synth");
+    // The captured context has no qualified venue/session calendar. A clock
+    // coordinate (even genuine UTC) alone does not establish current market
+    // hours or liquidity. Continuous synthetic classification is separate.
+    const timingSession: TradingSession = state.assetClass === "synthetic"
+      ? "synthetic_continuous" : "unknown";
 
     // ── Pattern & Trendline (reuse the existing pure producers) ───────────────
     const patternContext = {
@@ -323,7 +315,7 @@ export function buildMarketIntelligenceSnapshot(
     // ── Timing Truth (no fabricated news/spread/liquidity BLOCK) ──────────────
     const timing = resolveTimingTruth(
       {
-        session: sessionFromBarTime(state.latestClosedCandle?.closeTime ?? null, syntheticAsset),
+        session: timingSession,
         candleState: (ctx.hasFormingCandle ? "forming" : "closed_confirmed") as CandleState,
         volatilityState: volatilityState(atr, avgRange),
         marketPhase: regimeToPhase(trend.regime),

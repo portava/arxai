@@ -19,9 +19,10 @@
 // permission, broker dispatch, the kill switch, owner/admin overrides, or the
 // trade button.
 
-export type TradingSession = "asia" | "london" | "new_york" | "overlap" | "synthetic_continuous";
+export type TradingSession = "unknown" | "asia" | "london" | "new_york" | "overlap" | "synthetic_continuous";
 
 export type TimingStatus =
+  | "unverified"
   | "good"
   | "early"
   | "late"
@@ -42,6 +43,7 @@ export type TimingQuality = "high" | "medium" | "low" | "none";
 
 export type TimingScannerLabelHint =
   | "none"
+  | "session_unverified"
   | "context_only"
   | "good_timing"
   | "wait_for_close" // still-forming candle → wait
@@ -147,8 +149,12 @@ export function resolveTimingTruth(
   display: TimingDisplayContext,
 ): TimingTruthVerdict {
   const warnings: string[] = [];
-  const contextOnly =
+  const feedContextOnly =
     !display.feedConfirmed || display.feedStale || !display.sufficiencyAllowsSetup;
+  const session: TradingSession = ["asia", "london", "new_york", "overlap", "synthetic_continuous"].includes(input.session)
+    ? input.session : "unknown";
+  const sessionUnknown = session === "unknown";
+  const contextOnly = feedContextOnly || sessionUnknown;
   const maxAge = input.maxSignalAge ?? DEFAULT_MAX_SIGNAL_AGE;
 
   // ── Status precedence: blocks → late/chase → wait → good ───────────────────
@@ -164,7 +170,7 @@ export function resolveTimingTruth(
   else if (input.candleState === "wick_only") timingStatus = "wait_for_close";
   else if (input.retestRequired) timingStatus = "wait_for_retest";
   else if (input.marketPhase === "compression") timingStatus = "early";
-  else timingStatus = "good";
+  else timingStatus = sessionUnknown ? "unverified" : "good";
 
   const timingApproved =
     timingStatus === "good" &&
@@ -182,6 +188,10 @@ export function resolveTimingTruth(
   let confidence = 50;
 
   switch (timingStatus) {
+    case "unverified":
+      labelHint = "session_unverified";
+      confidence = 0;
+      break;
     case "news_blocked":
       labelHint = "news_blocked";
       confidenceCeiling = BLOCKED_CONF_CAP;
@@ -292,7 +302,7 @@ export function resolveTimingTruth(
   }
 
   // Feed not live-confirmed → context only. Highest-precedence cap.
-  if (contextOnly) {
+  if (feedContextOnly) {
     labelHint = "context_only";
     confidenceCeiling = Math.min(confidenceCeiling, CONTEXT_ONLY_CONF_CAP);
     qualityCeiling = minQuality(qualityCeiling, "low");
@@ -307,13 +317,27 @@ export function resolveTimingTruth(
     warnings.push(confidenceCapReason);
   }
 
+  // Absence of session evidence is not a measured market condition or a
+  // probability. Zero/none is the existing representation for withheld quality.
+  // Preserve observed adverse/wait statuses, but do not grant a positive nudge.
+  if (sessionUnknown) {
+    confidenceCeiling = 0;
+    qualityCeiling = "none";
+    supportive = false;
+    conditional = true;
+    edgeAdjustment = Math.min(edgeAdjustment, 0);
+    confidenceCapReason = "Market session is unverified; timing confidence is withheld.";
+    warnings.push(confidenceCapReason);
+    if (timingStatus === "unverified") labelHint = "session_unverified";
+  }
+
   const cappedConfidence = Math.min(clampConfidence(confidence), confidenceCeiling);
   const baseQuality: TimingQuality =
     cappedConfidence >= 70 ? "high" : cappedConfidence >= 50 ? "medium" : cappedConfidence > 0 ? "low" : "none";
   const quality = minQuality(baseQuality, qualityCeiling);
 
   return {
-    session: input.session,
+    session,
     timingStatus,
     candleState: input.candleState,
     volatilityState: input.volatilityState,
@@ -334,7 +358,7 @@ export function resolveTimingTruth(
       edgeAdjustment,
       supportive,
     },
-    rubyExplanation: buildTimingExplanation({ session: input.session, timingStatus, candleState: input.candleState, volatilityState: input.volatilityState, contextOnly }),
+    rubyExplanation: buildTimingExplanation({ session, timingStatus, candleState: input.candleState, volatilityState: input.volatilityState, contextOnly: feedContextOnly }),
     warnings: dedupe(warnings),
   };
 }
@@ -350,6 +374,9 @@ function buildTimingExplanation(args: {
   const sessionLabel = session.replace(/_/g, " ");
   const parts: string[] = [];
   switch (timingStatus) {
+    case "unverified":
+      parts.push("Market session is unverified; timing cannot be confirmed.");
+      break;
     case "good":
       parts.push(`Timing is good in the ${sessionLabel} session.`);
       break;
@@ -378,6 +405,7 @@ function buildTimingExplanation(args: {
       parts.push(`The ${sessionLabel} session is illiquid for this symbol — timing is downgraded.`);
       break;
   }
+  if (session === "unknown" && timingStatus !== "unverified") parts.push("Market session is unverified; timing confidence is withheld.");
   if (candleState === "wick_only") parts.push("Only a wick printed beyond the level — not a close.");
   if (volatilityState === "extreme") parts.push("Volatility is extreme, so require wider risk or wait.");
   if (contextOnly) parts.push("Feed is not live-confirmed, so treat timing as context only.");

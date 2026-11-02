@@ -23,6 +23,7 @@ import {
 } from "./timingTruthContract";
 
 export type GoldSession =
+  | "unknown"
   | "asia"
   | "london"
   | "new_york"
@@ -31,6 +32,7 @@ export type GoldSession =
   | "late_fade";
 
 export type GoldTimingStatus =
+  | "unverified"
   | "good"
   | "early"
   | "late"
@@ -142,8 +144,8 @@ function deriveGoldSession(input: GoldTimingInput): GoldSession {
     case "overlap":
       return "overlap";
     default:
-      // synthetic_continuous etc. — gold is not 24/7; treat as NY by default.
-      return "new_york";
+      // Gold has no synthetic continuous session; do not invent New York.
+      return "unknown";
   }
 }
 
@@ -217,7 +219,7 @@ export function resolveGoldTiming(input: GoldTimingInput): GoldTimingVerdict {
 
   const base = resolveTimingTruth(
     {
-      session: input.session,
+      session: input.session === "synthetic_continuous" ? "unknown" : input.session,
       candleState: input.candleState,
       volatilityState: volState,
       marketPhase: input.marketExhausted ? "exhaustion" : "trend",
@@ -256,6 +258,9 @@ export function resolveGoldTiming(input: GoldTimingInput): GoldTimingVerdict {
     warnings.push("Volatility is extreme during a heavy-wick gold window — tight entries are unsafe.");
   } else {
     switch (base.timingStatus) {
+      case "unverified":
+        timingStatus = "unverified";
+        break;
       case "exhausted":
         timingStatus = "exhausted";
         break;

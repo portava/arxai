@@ -142,7 +142,7 @@
     "test:broker-synthetic-feed": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/brokerSyntheticFeed.test.ts",
     "test:pattern-truth": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/patternTruth.test.ts",
     "test:pattern-library-intelligence": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/patternLibraryIntelligence.test.ts src/lib/data/chart/__qa__/patternProducerContinuity.test.ts",
-    "test:market-intelligence": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/marketIntelligence.test.ts",
+    "test:market-intelligence": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/marketIntelligence.test.ts src/lib/data/chart/__qa__/sessionEvidenceTruth.test.ts",
     "test:pattern-scanner-child": "node --import tsx --test --test-force-exit src/lib/__qa__/patternScannerChildInput.test.ts",
     "test:pattern-outcome-learning": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/patternOutcomeLearning.test.ts",
     "test:trendline-truth": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/trendlineTruth.test.ts",
