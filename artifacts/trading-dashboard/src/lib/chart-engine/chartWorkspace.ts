@@ -1,7 +1,7 @@
 import type {ChartPivotLevel} from "./chartSupportResistance";
 import { validProfileRange,validProfileRows,validProfileValueArea } from "./chartVolumeProfile";
 import { chartIntervalSeconds } from "./chartIntervals";
-import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy, type StudyLineStyle } from "./chartStudies";
+import { MAX_STUDIES, STUDY_CATALOG, acceptsStudySource, studyId, type ChartStudy, type StudyLineStyle } from "./chartStudies";
 import { isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 import { normalizeNoteText } from "./chartTextNote";
 export type ChartScaleMode = "linear" | "log" | "percent" | "indexed";
@@ -62,6 +62,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
     const id = studyId(s);
     if (seen.has(id)) continue;
     if (s.source != null && !sources.includes(s.source)) continue;
+    if(s.studySource != null && (!acceptsStudySource(s.kind) || typeof s.studySource !== 'object' || Array.isArray(s.studySource) || typeof s.studySource.studyId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(s.studySource.studyId) || !Number.isInteger(s.studySource.channel) || s.studySource.channel<0 || s.studySource.channel>16))continue;
     if (s.signalMethod != null && !["sma", "ema"].includes(s.signalMethod)) continue;
     if (s.method != null && !["sma", "ema", "smma", "wma"].includes(s.method)) continue;
     if (["bollinger", "envelopes"].includes(s.kind) && (!Number.isFinite(s.multiplier) || s.multiplier <= 0 || s.multiplier > 100)) continue;
@@ -89,6 +90,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(lineStyles?.length ? {lineStyles} : {}),
       ...(s.id ? { id: s.id } : {}), kind: s.kind, period: s.period, color: s.color,
       ...(s.source ? { source: s.source } : {}),
+      ...(s.studySource ? {studySource:{studyId:s.studySource.studyId,channel:s.studySource.channel}} : {}),
       ...(s.kind === "volume_profile" ? {profileRows:s.profileRows??32,profileValueAreaPercent:s.profileValueAreaPercent??70,...(s.profileRange?{profileRange:{...s.profileRange}}:{})} : {}),
       ...(s.kind === "vwap" && s.vwapAnchor ? {vwapAnchor:{kind:"observed_bar" as const,time:s.vwapAnchor.time,seriesIdentity:s.vwapAnchor.seriesIdentity}} : {}),
       ...(["bollinger", "envelopes"].includes(s.kind) ? { multiplier: s.multiplier } : {}),

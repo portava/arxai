@@ -124,3 +124,22 @@ it('bounds anchor options and does no viewport subscription, while distant visib
  const selector=screen.getByLabelText('VWAP 1 Observed-bar anchor');expect(within(selector).getAllByRole('option')).toHaveLength(2);
  fireEvent.change(selector,{target:{value:String(target.time)}});expect(settings().studies[0].vwapAnchor.time).toBe(target.time);
 });
+
+it('links to an exact study channel, prevents cycles, preserves missing sources and supports choosing price again',()=>{
+ render(<Workspace/>);
+ fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add Simple moving average'}));
+ const rsi=settings().studies[0].id;
+ fireEvent.change(screen.getByLabelText('SMA 2 Source'),{target:{value:`study:${rsi}:0`}});
+ expect(settings().studies[1].studySource).toEqual({studyId:rsi,channel:0});
+ const sma=settings().studies[1].id;
+ expect(within(screen.getByLabelText('RSI 1 Source')).getByRole('option',{name:'2. SMA · SMA (unavailable)'}).hasAttribute('disabled')).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'Duplicate study 2'}));
+ expect(settings().studies[2].studySource).toEqual({studyId:rsi,channel:0});
+ expect(settings().studies[2].id).not.toBe(sma);
+ fireEvent.click(screen.getByRole('button',{name:'Remove study 1'}));
+ expect(settings().studies[0].studySource).toEqual({studyId:rsi,channel:0});
+ expect(screen.getAllByText(/its source study or channel is missing/)).toHaveLength(2);
+ fireEvent.change(screen.getByLabelText('SMA 1 Source'),{target:{value:'close'}});
+ expect(settings().studies[0].studySource).toBeUndefined();expect(settings().studies[0].source).toBe('close');
+});

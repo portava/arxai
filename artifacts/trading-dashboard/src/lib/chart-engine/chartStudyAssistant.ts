@@ -125,16 +125,19 @@ function executeAverageComparison(request:AverageComparisonRequest,context:Study
   let rendered:ReturnType<NonNullable<ChartEngineAdapter["getStudyValues"]>>=[];
   try{rendered=adapter.getStudyValues!(last.time);}catch{ /* no invented fallback calculation */ }
   const values=pair.map(study=>{
-    const value=rendered.find(row=>row.label===studyLabel(study))?.values.find(v=>v.name===study.kind.toUpperCase())?.value;
+    const value=rendered.find(row=>row.label===studyLabel(study,updated))?.values.find(v=>v.name===study.kind.toUpperCase())?.value;
     return typeof value==="number"&&Number.isFinite(value)?value:null;
   });
-  const observed=pair.map((study,index)=>`${studyLabel(study)}: ${values[index]===null?"unavailable / warming up":formatStudyNumber(values[index]!,study.kind.toUpperCase())}`).join("; ");
+  const observed=pair.map((study,index)=>`${studyLabel(study,updated)}: ${values[index]===null?"unavailable / warming up":formatStudyNumber(values[index]!,study.kind.toUpperCase())}`).join("; ");
   const [a,b]=values;
-  const relation=a!=null&&b!=null
-    ?`${studyLabel(pair[0]!)} is ${a>b?"above":a<b?"below":"equal to"} ${studyLabel(pair[1]!)}${a===b?"":Number.isFinite(a-b)?` by ${formatStudyNumber(Math.abs(a-b),"Price")} source price units`:"; the difference is outside the supported numerical range"}. This is a current-bar comparison, not a crossover or a forecast.`
+  const linkedInput=pair.some(s=>s.studySource);
+  const sameLinked=!!pair[0]!.studySource&&!!pair[1]!.studySource&&pair[0]!.studySource.studyId===pair[1]!.studySource.studyId&&pair[0]!.studySource.channel===pair[1]!.studySource.channel;
+  const relation=linkedInput&&!sameLinked ? "A numerical relation is withheld: these averages do not share the same study input. Their units must not be assumed comparable."
+    :a!=null&&b!=null
+    ?`${studyLabel(pair[0]!,updated)} is ${a>b?"above":a<b?"below":"equal to"} ${studyLabel(pair[1]!,updated)}${a===b?"":Number.isFinite(a-b)?` by ${formatStudyNumber(Math.abs(a-b),"Price")} ${linkedInput?"linked input units":"source price units"}`:"; the difference is outside the supported numerical range"}. This is a current-bar comparison, not a crossover or a forecast.`
     :"A numerical comparison is unavailable until both rendered averages have finite values. No missing value was replaced with zero.";
-  const inputs=(pair[0]!.source??"close")===(pair[1]!.source??"close")?"Both use the same applied-price input.":"The existing applied-price inputs differ; this comparison preserves and names them rather than silently changing your settings.";
-  return `Applied the average comparison on ${symbol} · ${timeframe} · ${feedLabel}. Existing calculation/style settings retained; new averages use catalogue defaults apart from the requested periods and distinct colors. The requested averages are both enabled for display; other tools are unchanged.\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Actual renderer observation at bar open ${time(last.time)}: ${observed}. Times identify source bar coordinates; ISO formatting does not independently prove UTC. ${inputs}\nCalculated observation: ${relation} The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles; loaded bars before this window may supply warmup. Feed status describes this request, not historical liveness. This is not a buy/sell instruction or a confidence score. Edit, hide or remove either average in Studies; manual settings use the same renderer. No order was sent.`;
+  const inputs=linkedInput ? "Study inputs are preserved and named above; missing parent observations are not replaced with prices." : (pair[0]!.source??"close")===(pair[1]!.source??"close")?"Both use the same applied-price input.":"The existing applied-price inputs differ; this comparison preserves and names them rather than silently changing your settings.";
+  return `Applied the average comparison on ${symbol} · ${timeframe} · ${feedLabel}. Existing calculation/style settings retained; new averages use catalogue defaults apart from the requested periods and distinct colors. The requested averages are both enabled for display; other tools are unchanged.\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Actual renderer observation at bar open ${time(last.time)}: ${observed}. Times identify source bar coordinates; ISO formatting does not independently prove UTC. ${inputs}\nCalculated observation: ${relation} The last visible bar may still be forming. Studies use their selected price or linked-study input, not averaged display candles; loaded bars before this window may supply warmup. Feed status describes this request, not historical liveness. This is not a buy/sell instruction or a confidence score. Edit, hide or remove either average in Studies; manual settings use the same renderer. No order was sent.`;
 }
 export function executeStudyRequest(request:StudyRequest,context:StudyAssistantContext):string {
   const focused=context.adapter?.isAnalysisFocused?.()===true;
@@ -212,7 +215,7 @@ function executeStudyRequestCore(request:StudyRequest,context:StudyAssistantCont
   }
   const last=visible[visible.length-1]!;
   let result:ReturnType<NonNullable<ChartEngineAdapter["getStudyValues"]>>[number] | undefined;
-  try { result=adapter.getStudyValues!(last.time).find(row=>row.label===studyLabel(next)); } catch { /* Applied, but observation remains unavailable. */ }
+  try { result=adapter.getStudyValues!(last.time).find(row=>row.label===studyLabel(next,updated)); } catch { /* Applied, but observation remains unavailable. */ }
   const values=definition.channels.map(name=>{
     const channel=result?.values.find(v=>v.name===name || v.name===`${name} (hidden)`);
     const value=channel?.value;
@@ -242,12 +245,13 @@ function executeStudyRequestCore(request:StudyRequest,context:StudyAssistantCont
       ?`The underlying source candle close is ${last.close>upper?"above the upper band":last.close<lower?"below the lower band":last.close===upper&&last.close===lower?"equal to both coincident bands":last.close===upper?"on the upper band":last.close===lower?"on the lower band":"inside the bands"}. Band width: ${formatStudyNumber(upper-lower,"Price")} source price units. This single observation does not establish a breakout or reversal, a volatility trend or a future price range. `
       :"Band comparison is unavailable: finite, correctly ordered upper/basis/lower values and the source close are required. No range was invented. ";
   }
+  if(next.studySource)observed="This study uses the selected indicator output, not candle prices. No price-versus-study comparison is inferred. ";
   const anchorNote=next.kind === "vwap" && next.vwapAnchor ? `Frozen observed-bar anchor: ${formatSavedVwapAnchor(next.vwapAnchor,adapter)}. Uses only loaded observations from that exact bar, with the captured source series. Panning and loading older history do not move it. Missing volume holds the cumulative suffix; zero quantities are not qualified by the current provider. This is not a complete-session claim. Say “reanchor VWAP to first visible bar” or select an observed bar in Studies to change it. ` : "";
   const caveat=request.kind==="rsi" ? "RSI describes recent gains relative to losses; even an extreme reading does not establish a reversal."
     : request.kind==="atr" ? "ATR describes price-range volatility, not direction."
     : request.kind==="macd" ? "MACD compares fast and slow averages; its signal and histogram describe momentum, not a forecast."
     : definition.description;
-  return `Applied ${studyDisplayLabel(next,adapter)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except explicitly requested settings"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. Studies use underlying source prices, not averaged display candles. Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${anchorNote}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
+  return `Applied ${studyDisplayLabel(next,adapter,false,updated)} to the current chart (${existing ? "existing calculation settings retained unless explicitly changed" : "catalogue defaults, except explicitly requested settings"}; ${preserveVisibility ? "channel visibility retained; hidden channels are labelled" : "all channels shown"}).\n${title} (feed status at request time, not a claim that historical bars are live).\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Observation at bar open ${time(last.time)}: ${values}. The last visible bar may still be forming. ${next.studySource ? "This calculation uses its named linked-study input; absent observations restart warm-up." : "Studies use underlying source prices, not averaged display candles."} Calculations can use loaded bars before this window for warmup.\nCalculated observation: ${observed}${anchorNote}${caveat} This is not a buy/sell instruction or a confidence score. Edit or remove it in Studies; manual settings use the same renderer. This local receipt is kept in this open chat only. Display only; no order was sent.`;
 }
 
 type Handler=(request:StudyRequest)=>string;

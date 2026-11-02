@@ -1,4 +1,4 @@
-import { StudyCalculator, studyDefinition, studyChannelColor, studyId, studyLabel, formatStudyNumber, type ChartStudy } from './chartStudies';
+import { StudyCalculator, studySourceIssue, studyDefinition, studyChannelColor, studyId, studyLabel, formatStudyNumber, type ChartStudy } from './chartStudies';
 import { validatePreferences, type ChartScaleMode } from './chartWorkspace';
 import { unchangedCandlePrefix } from './candleReconciliation';
 import { sanitizeCandlestickData, isValidCandlestickPoint } from './candleSanitize';
@@ -19,6 +19,7 @@ export interface NativeStudySnapshot {
 const finite=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value);
 function freezeConfig(config:ChartStudy):ChartStudy {
   if(config.lineStyles){config.lineStyles.forEach(Object.freeze);Object.freeze(config.lineStyles);}
+  if(config.studySource)Object.freeze(config.studySource);
   if(config.vwapAnchor)Object.freeze(config.vwapAnchor);
   if(config.profileRange)Object.freeze(config.profileRange);
   return Object.freeze(config);
@@ -35,7 +36,8 @@ export class NativeChartStudies {
   private calculators:StudyCalculator[]=[];
   private snapshots:readonly NativeStudySnapshot[]=Object.freeze([]);
   private retained=new Map<StudyCalculator,NativeStudySnapshot>();
-  get paneCount():number {return this.snapshots.filter(study=>study.paneIndex>0).length;}
+  private bindings=new Map<StudyCalculator,{parent:StudyCalculator|undefined;issue:string|null}>();
+  get paneCount():number {return Math.max(0,...this.snapshots.map(study=>study.paneIndex));}
   getStudies():readonly Readonly<ChartStudy>[] {return Object.freeze(this.snapshots.map(study=>study.config));}
   getRenderStudies():readonly NativeStudySnapshot[] {return this.snapshots;}
   setStudies(configs:readonly ChartStudy[],candles:readonly ChartEngineCandle[]):void {
@@ -49,7 +51,7 @@ export class NativeChartStudies {
   }
   setCandles(candles:readonly ChartEngineCandle[]):void {
     // Empty configurations must not duplicate the viewport's history snapshot.
-    if(!this.calculators.length){this.candles=[];this.snapshots=Object.freeze([]);this.retained.clear();return;}
+    if(!this.calculators.length){this.candles=[];this.snapshots=Object.freeze([]);this.retained.clear();this.bindings.clear();return;}
     const next=copyCandles(candles),from=unchangedCandlePrefix(this.candles,next);
     this.calculateFrom(next,from);
   }
@@ -72,10 +74,25 @@ export class NativeChartStudies {
   private calculateFrom(next:ChartEngineCandle[],from:number):void {
     this.candles=next;
     let pane=0;const retained=new Map<StudyCalculator,NativeStudySnapshot>();
-    this.snapshots=Object.freeze(this.calculators.map(calculator=>{
+    const bindings=new Map<StudyCalculator,{parent:StudyCalculator|undefined;issue:string|null}>();
+    const byId=new Map(this.calculators.map(c=>[studyId(c.config),c]));
+    const configs=this.calculators.map(c=>c.config);
+    const starts=new Map<StudyCalculator,number>();
+    const visit=(calculator:StudyCalculator):NativeStudySnapshot=>{
+      const ready=retained.get(calculator);if(ready)return ready;
+      const config=calculator.config,issue=studySourceIssue(config,configs);
+      const parent=config.studySource&&!issue?byId.get(config.studySource.studyId):undefined;
+      const source=parent?visit(parent):undefined;
       const old=this.retained.get(calculator);
-      calculator.calculate(next,from,false);
-      const keep=Math.min(from,old?.points.length??0,calculator.points.length);
+      // Parent edits can change every value despite unchanged market candles.
+      const priorBinding=this.bindings.get(calculator);
+      const rebound=config.studySource && (!priorBinding || priorBinding.parent!==parent || priorBinding.issue!==issue);
+      const begin=rebound?0:Math.min(from,calculator.points.length,parent?starts.get(parent)??0:from);
+      bindings.set(calculator,{parent,issue});
+      starts.set(calculator,begin);
+      if(config.studySource)calculator.calculate(next,begin,false,{points:source?.points??[],channel:config.studySource.channel,...(issue?{reason:issue}:{})});
+      else calculator.calculate(next,begin,false);
+      const keep=Math.min(begin,old?.points.length??0,calculator.points.length);
       let points:readonly NativeStudyPoint[];
       if(old&&keep===calculator.points.length&&old.points.length===keep)points=old.points;
       else {
@@ -86,23 +103,27 @@ export class NativeChartStudies {
         }
         points=Object.freeze(revised);
       }
-      const snapshot=Object.freeze({config:calculator.config,paneIndex:studyDefinition(calculator.config.kind).pane?++pane:0,points,
-        ...(calculator.profileResult?{profile:calculator.profileResult}:{})});
+      // Scalar overlays keep the parent's units. Oscillators retain their own
+      // pane, even when their input is another oscillator. Held orphans never
+      // enter the price pane or autoscale.
+      const paneIndex=studyDefinition(config.kind).pane?++pane:config.studySource?(source?.paneIndex??++pane):0;
+      const snapshot=Object.freeze({config,paneIndex,points,...(calculator.profileResult?{profile:calculator.profileResult}:{})});
       retained.set(calculator,snapshot);return snapshot;
-    }));
-    this.retained=retained;
+    };
+    this.snapshots=Object.freeze(this.calculators.map(visit));
+    this.retained=retained;this.bindings=bindings;
   }
   reset():void {this.setStudies(this.getStudies(),[]);}
   getValues(time:number) {
     return Object.freeze(this.snapshots.map(study=>{
       const config=study.config;
-      if(config.kind==='volume_profile')return Object.freeze({label:studyLabel(config),color:config.color,
+      if(config.kind==='volume_profile')return Object.freeze({label:studyLabel(config,this.getStudies()),color:config.color,
         ...(study.profile?.status==='held'?{reason:study.profile.reason}:{}),values:Object.freeze([Object.freeze({
           name:config.lineStyles?.[0]?.visible===false?'Frozen-range total trade units (hidden)':'Frozen-range total trade units',
           value:study.profile?.status==='ready'?study.profile.totalTradeUnits:null})])});
       let lo=0,hi=study.points.length-1,point:NativeStudyPoint|undefined;
       if(finite(time))while(lo<=hi){const mid=(lo+hi)>>>1,candidate=study.points[mid]!;if(candidate.time===time){point=candidate;break;}if(candidate.time<time)lo=mid+1;else hi=mid-1;}
-      return Object.freeze({label:studyLabel(config),color:config.color,...(point?.reason?{reason:point.reason}:{}),
+      return Object.freeze({label:studyLabel(config,this.getStudies()),color:config.color,...(point?.reason?{reason:point.reason}:{}),
         values:Object.freeze(studyDefinition(config.kind).channels.map((name,index)=>Object.freeze({
           name:config.lineStyles?.[index]?.visible===false?`${name} (hidden)`:name,value:finite(point?.values[index])?point!.values[index]!:null})))});
     }));
@@ -168,19 +189,23 @@ function visiblePoints(study:NativeStudySnapshot,frame:NativePriceFrame):readonl
   const margin=Math.max(1,Math.ceil(half));
   return study.points.slice(Math.max(0,Math.floor(frame.range.from)-margin),Math.min(study.points.length,Math.ceil(frame.range.to)+margin+1));
 }
-function paneMapping(study:NativeStudySnapshot,frame:NativePriceFrame,plot:NativePlot) {
+function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame,plot:NativePlot) {
+  const values:number[]=[];
+  const fixed=group.length===1?studyDefinition(group[0]!.config.kind).range:undefined;
+  for(const study of group){
   const definition=studyDefinition(study.config.kind);
-  const values=definition.range?[...definition.range]:[...(definition.levels??[])];
-  if(!definition.range)definition.channels.forEach((_,channel)=>{
+  values.push(...(definition.range??definition.levels??[]));
+  if(!fixed)definition.channels.forEach((_,channel)=>{
     if(study.config.lineStyles?.[channel]?.visible===false)return;
     const half=isHistogram(study.config,channel)?Math.max(1,Math.min(24,frame.spacing*.7))/(2*frame.spacing):undefined;
     for(const value of visibleChannelValues(study,frame.range,channel,'linear',half))values.push(value);
   });
   if(study.config.kind==='trade_volume'||study.config.kind==='tick_volume')values.push(0);
+  }
   if(!values.length)return null;
   let low=Infinity,high=-Infinity;for(const value of values){low=Math.min(low,value);high=Math.max(high,value);}
   const magnitude=Math.max(Math.abs(low),Math.abs(high))||1;
-  const a=low/magnitude,b=high/magnitude,padding=definition.range?0:b>a?(b-a)*.08:.01;
+  const a=low/magnitude,b=high/magnitude,padding=fixed?0:b>a?(b-a)*.08:.01;
   const bottom=a-padding,extent=b+padding-bottom;
   if(!finite(extent)||extent<=0)return null;
   return {low,high,y:(value:number):number|null=>{if(!finite(value))return null;const y=plot.top+plot.height*(1-(value/magnitude-bottom)/extent);return finite(y)?y:null;}};
@@ -193,13 +218,16 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
   for(const study of studies.getRenderStudies()){
     if(study.config.kind==='volume_profile')continue;
     const plot=study.paneIndex?panes[study.paneIndex-1]!:frame.plot,points=visiblePoints(study,frame);
-    const mapping=study.paneIndex?paneMapping(study,frame,plot):null;
+    const group=studies.getRenderStudies().filter(s=>s.paneIndex===study.paneIndex);
+    const first=group[0]===study;
+    const groupVisible=group.some(s=>studyDefinition(s.config.kind).channels.some((_,i)=>s.config.lineStyles?.[i]?.visible!==false));
+    const mapping=study.paneIndex?paneMapping(group,frame,plot):null;
     const y=study.paneIndex?mapping?.y:(value:number)=>frame.priceToY(value);
     clipped(ctx,plot,()=>{
       const definition=studyDefinition(study.config.kind),anyVisible=definition.channels.some((_,i)=>study.config.lineStyles?.[i]?.visible!==false);
-      if(study.paneIndex){
+      if(study.paneIndex&&first){
         ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(plot.left,plot.top);ctx.lineTo(plot.left+plot.width,plot.top);ctx.stroke();
-        ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(studyLabel(study.config)+(anyVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-10));
+        ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())).join(' · ')+(groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-10));
       }
       if(!y||!anyVisible)return;
       for(const level of definition.levels??[]){const py=y(level);if(py==null)continue;ctx.strokeStyle='#64748b';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(plot.left,py);ctx.lineTo(plot.left+plot.width,py);ctx.stroke();}
@@ -223,7 +251,7 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
       });
 
     });
-    if(mapping&&studyDefinition(study.config.kind).channels.some((_,channel)=>study.config.lineStyles?.[channel]?.visible!==false)){
+    if(mapping&&first&&groupVisible){
       // The viewport reserves an88px axis gutter. Pane labels use that same
       // gutter, outside the data clip; quantities retain their exact digits.
       const channel=studyDefinition(study.config.kind).channels[0]!;

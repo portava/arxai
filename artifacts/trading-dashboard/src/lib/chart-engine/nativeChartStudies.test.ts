@@ -189,3 +189,16 @@ it('large distinct visible histories do not become a function argument list',()=
   expect(()=>model.getPriceBounds({from:0,to:149999})).not.toThrow();
   const values=model.getPriceBounds({from:0,to:149999});expect(values.length).toBe(150000);expect(values.at(-1)).toBe(150000);
 });
+
+it.each([false,true])('shared oscillator pane retains its axis when the source is hidden (reversed=%s)',reverse=>{
+ const input=bars(50),model=new NativeChartStudies();
+ const parent:ChartStudy={id:'rsi',kind:'rsi',period:2,color:'#123456',lineStyles:[{visible:false}]};
+ const child:ChartStudy={id:'smooth',kind:'sma',period:2,color:'#abcdef',studySource:{studyId:'rsi',channel:0}};
+ model.setStudies(reverse?[child,parent]:[parent,child],input);
+ const {ctx,paths}=context();paintNativeStudies(ctx,frame(input),[{left:20,top:320,width:700,height:100}],model);
+ const labels=paths.filter(p=>p.op==='fillText');
+ expect(labels.filter(p=>p.args[1]>720)).toHaveLength(2);
+ expect(labels.find(p=>p.args[1]===25)!.args[0]).not.toContain('· hidden');
+ expect(paths.some(p=>p.op==='lineTo'&&p.stroke==='#abcdef')).toBe(true);
+ expect(model.getPriceBounds({from:0,to:49})).toEqual([]);
+});

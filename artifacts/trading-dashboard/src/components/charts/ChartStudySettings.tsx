@@ -4,7 +4,7 @@ import {prepareVwapStudy,selectVwapAnchor} from "@/lib/chart-engine/chartVwapAnc
 import type {ChartEngineAdapter} from "@/lib/chart-engine/types";
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { Button } from "@/components/ui/button";
-import { MAX_STUDIES, STUDY_CATALOG, studyDefinition, studyId, studyChannelColor, type ChartStudy } from "@/lib/chart-engine/chartStudies";
+import { MAX_STUDIES, STUDY_CATALOG, acceptsStudySource, studySourceIssue, studyDefinition, studyId, studyChannelColor, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { validatePreferences, type ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
 
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
@@ -79,7 +79,7 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
           else event.target.value = String(config[name]);
         }} /></label>;
         return <fieldset key={id} className="rounded border border-zinc-800 px-3 pb-3" data-testid="chart-study-instance">
-          <legend className="px-1 font-medium" style={{ color: config.color }}>{index + 1}. {studyDisplayLabel(config,displayAdapter)}</legend>
+          <legend className="px-1 font-medium" style={{ color: config.color }}>{index + 1}. {studyDisplayLabel(config,displayAdapter,false,preferences.studies)}</legend>
           <p className="mb-2 text-[11px] text-zinc-500">{definition.description}{config.kind === "dmi" ? " Default colors: +DI green, −DI rose; the main Color changes ADX. Individual overrides are in Line appearance. Each stage waits for its full window. Loading older candles can change seeded values." : ""}</p>
           <div className="flex flex-wrap items-center gap-3">
             {!["tick_volume","trade_volume","vwap","volume_profile"].includes(config.kind) && number("period", config.kind === "macd" ? "Fast" : config.kind === "dmi" ? "DI period" : "Period", 1, config.kind === "macd" ? (config.slow ?? 26) - 1 : 1000)}
@@ -91,7 +91,21 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
             {config.kind === "stochastic" && <>{number("smoothing", "K smoothing")}{number("signal", "D period")}</>}
             {config.kind === "bollinger" && number("multiplier", "Deviation", .1, 100, .1)}
             {config.kind === "envelopes" && number("multiplier", "Width %", .01, 100, .01)}
-            {definition.appliedPrice && <label className="flex items-center gap-2">Source<select className={`${field} max-w-52`} aria-label={`${label} Source`} value={config.source ?? (["cci","vwap"].includes(config.kind) ? "hlc3" : "close")} onChange={event => update(id, { source: event.target.value as ChartStudy["source"] })}>{sourceOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>}
+            {definition.appliedPrice && <label className="flex items-center gap-2">Source<select className={`${field} max-w-52`} aria-label={`${label} Source`} value={config.studySource ? `study:${config.studySource.studyId}:${config.studySource.channel}` : config.source ?? (["cci","vwap"].includes(config.kind) ? "hlc3" : "close")} onChange={event => {
+              const value=event.target.value;
+              if(value.startsWith('study:')){const [,studyId,channel]=value.split(':');update(id,{studySource:{studyId:studyId!,channel:Number(channel)}});}
+              else update(id,{source:value as ChartStudy['source'],studySource:undefined});
+            }}>
+              <optgroup label="Price">{sourceOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</optgroup>
+              {acceptsStudySource(config.kind) && <optgroup label="Study outputs">{preferences.studies.flatMap((parent,parentIndex)=>parent.kind==='volume_profile'||studyId(parent)===id?[]:studyDefinition(parent.kind).channels.map((channel,channelIndex)=>{
+                const ref={studyId:studyId(parent),channel:channelIndex};
+                const candidate={...config,studySource:ref};
+                const issue=studySourceIssue(candidate,preferences.studies.map(s=>studyId(s)===id?candidate:s));
+                return <option key={`${ref.studyId}:${channelIndex}`} value={`study:${ref.studyId}:${channelIndex}`} disabled={!!issue}>{parentIndex+1}. {parent.kind.toUpperCase()} · {channel}{issue?' (unavailable)':''}</option>;
+              }))}</optgroup>}
+              {config.studySource && studySourceIssue(config,preferences.studies) && <option value={`study:${config.studySource.studyId}:${config.studySource.channel}`}>Unavailable saved study source</option>}
+            </select></label>}
+            {config.studySource && <p className="basis-full text-[11px] text-zinc-400">{studySourceIssue(config,preferences.studies) ?? 'Uses the selected study output at the same bar. Missing values restart warm-up. Overlays share the source pane; oscillators keep their own scale.'}</p>}
             {(config.kind === "atr" || config.kind === "envelopes") && <label className="flex items-center gap-2">Smoothing<select className={`${field} max-w-52`} aria-label={`${label} Smoothing`} value={config.method ?? (config.kind === "atr" ? "smma" : "sma")} onChange={event => update(id, { method: event.target.value as ChartStudy["method"] })}>{averageOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>}
             {config.kind === "vwap" && <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2">Find visible bar<input className={`${field} w-48`} aria-label={`${label} Find visible anchor bar`} placeholder="YYYY-MM-DD HH:mm" onFocus={refreshAnchorChoices} value={anchorSearch} onChange={event=>setAnchorSearch(event.target.value)}/></label><label className="flex items-center gap-2">Observed-bar anchor<select className={`${field} max-w-80`} aria-label={`${label} Observed-bar anchor`} value={config.vwapAnchor?.time ?? ""} onFocus={refreshAnchorChoices} onChange={event=>{
               const selected=selectVwapAnchor(adapter?.getVisibleCandles?.()??[],Number(event.target.value));
