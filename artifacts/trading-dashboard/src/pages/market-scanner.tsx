@@ -1002,12 +1002,7 @@ function MarketScannerContent() {
         <TradeHealthPanel chartSymbol={chartSym} />
       </SectionErrorBoundary>
 
-      {/* Let the browser skip drawing the offscreen active tab, without delaying
-          its React mounts, queries or selected-action Truth publications.
-          Initial block estimates come from the offline Focus layout; auto keeps
-          the actual measured size after reveal. Other PageTabs are unchanged. */}
       <PageTabs
-        className="[content-visibility:auto] [contain-intrinsic-block-size:auto_2820px] md:[contain-intrinsic-block-size:auto_2120px]"
         storageKey="market-scanner"
         defaultTab="focus"
         variant="pill"
