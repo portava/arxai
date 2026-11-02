@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { LiveAccountSnapshotProvider, useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
+import { useLiveBridgeRefreshState } from "@/hooks/useLiveBridgeRefresh";
+import { LiveBridgeAutoRefreshControl } from "@/components/live/LiveBridgeAutoRefreshControl";
 import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
 import { readChartStorage, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { restoreChartInterval } from "@/lib/chart-engine/chartIntervals";
@@ -42,6 +45,11 @@ import { useChartSymbol } from "@/lib/use-chart-symbol";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function LiveChartPage() {
+  return <LiveAccountSnapshotProvider><LiveChartContent /></LiveAccountSnapshotProvider>;
+}
+
+function LiveChartContent() {
+  const accountRefresh=useLiveBridgeRefreshState(useLiveAccountSnapshotCtx());
   const mode = useTradingMode();
   // Effective product role for gating the trade-entry surface. Investors are
   // view-only and must never see a trade ticket; while identity resolves we keep
@@ -140,6 +148,7 @@ export default function LiveChartPage() {
           Your chart workspace — price action, studies, drawings and multiple timeframes with visible feed quality.
         </p>
       </div>
+      <LiveBridgeAutoRefreshControl {...accountRefresh} />
       <SmartChartSymbolSelect symbol={chartSymbol} onSymbolChange={setChartSymbol} />
       <div className="flex items-start gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm">
         <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />

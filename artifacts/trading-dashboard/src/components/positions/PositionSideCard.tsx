@@ -46,9 +46,9 @@ interface Props {
 // REFRESH_THROTTLE_MS so the user can't spam the AI/backend.
 const REFRESH_THROTTLE_MS = 8000;
 
-function formatMoney(v: number | null): string {
-  if (v == null) return "—";
-  return (v >= 0 ? "+" : "") + v.toFixed(2);
+export function formatPositionPnl(v: number | null): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "—";
+  return (v >= 0 ? "+" : "") + String(Object.is(v,-0)?0:v);
 }
 
 function calcRR(side: "BUY" | "SELL" | null, entry: number | null, sl: number | null, tp: number | null): string {
@@ -134,11 +134,6 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
   // Resolve the honest display status identically to the Scanner.
   const displayStatus: ChartDisplayStatus = resolveDisplayStatus(feedStatus, candles.length > 0);
 
-  const risk = useMemo(() => {
-    if (p.entryPrice == null || p.stopLoss == null || p.lotSize == null) return null;
-    return Math.abs(p.entryPrice - p.stopLoss) * p.lotSize * 100000;
-  }, [p.entryPrice, p.stopLoss, p.lotSize]);
-
   const rr = useMemo(() => calcRR(p.side, p.entryPrice, p.stopLoss, p.takeProfit), [p.side, p.entryPrice, p.stopLoss, p.takeProfit]);
 
   const openedAtLabel = p.openedAt ? new Date(p.openedAt).toLocaleString() : "—";
@@ -165,7 +160,7 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
     setRubyBusy(true);
     setRubyReply(null);
     try {
-      const seedText = `I have an open ${p.accountMode.toLowerCase()} ${p.side ?? ""} position on ${p.symbol ?? ""} (ticket ${p.brokerTicket ?? "?"}). Entry ${p.entryPrice}, current ${p.currentPrice}, SL ${p.stopLoss}, TP ${p.takeProfit}, lot ${p.lotSize}, floating P/L ${p.floatingPnl}. Please explain in plain English how this trade is behaving right now and whether it still matches the original setup. Do NOT place or modify any trade — explanation only.`;
+      const seedText = `The last received report lists an open ${p.accountMode.toLowerCase()} ${p.side ?? ""} position on ${p.symbol ?? ""} (ticket ${p.brokerTicket ?? "?"}). Entry ${p.entryPrice}, current ${p.currentPrice}, SL ${p.stopLoss}, TP ${p.takeProfit}, lot ${p.lotSize}, floating P/L ${p.floatingPnl}. Observation time, account currency and current open status are unverified. Explain only what these last-reported values suggest; do not claim current behavior or a verified monetary risk. Do NOT place or modify any trade — explanation only.`;
       const conv = await fetch(u("/api/me/assistant/conversations"), {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -235,16 +230,16 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
           <Field label="Ticket" testid="text-position-ticket" value={p.brokerTicket ?? "—"} />
           <Field label="Lot size" testid="text-position-lot" value={p.lotSize?.toString() ?? "—"} />
           <Field label="Entry" testid="text-position-entry" value={p.entryPrice?.toString() ?? "—"} />
-          <Field label="Current" testid="text-position-current" value={p.currentPrice?.toString() ?? "—"} />
+          <Field label="Last reported price" testid="text-position-current" value={p.currentPrice?.toString() ?? "—"} />
           <Field label="Stop loss" testid="text-position-sl" value={p.stopLoss?.toString() ?? "—"} />
           <Field label="Take profit" testid="text-position-tp" value={p.takeProfit?.toString() ?? "—"} />
-          <Field label="Floating P/L" testid="text-position-pnl" value={formatMoney(p.floatingPnl)}
-            valueClass={(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"} />
-          <Field label="Risk est." testid="text-position-risk" value={risk != null ? `$${risk.toFixed(2)}` : "—"} />
+          <Field label="Reported position P/L · currency unverified" testid="text-position-pnl" value={formatPositionPnl(p.floatingPnl)}
+            valueClass={typeof p.floatingPnl !== "number" || !Number.isFinite(p.floatingPnl) ? "text-zinc-400" : p.floatingPnl >= 0 ? "text-emerald-300" : "text-rose-300"} />
+          <Field label="Risk est." testid="text-position-risk" value="Unavailable: contract size and currency not supplied" />
           <Field label="R : R" testid="text-position-rr" value={rr} />
           <Field label="Order type" testid="text-position-ordertype" value={p.side ? `MARKET_${p.side}` : "—"} />
           <Field label="Open time" testid="text-position-opentime" value={openedAtLabel} />
-          <Field label="Status" testid="text-position-status" value="OPEN" />
+          <Field label="Status" testid="text-position-status" value="Reported open" />
         </div>
 
         {isLive && (

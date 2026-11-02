@@ -6,7 +6,7 @@ import { getMeSharedAccountSummary, getMt5Status } from "@workspace/api-client-r
 export const ACCOUNT_SUMMARY_READ_TIMEOUT_MS = 10_000;
 
 /** One deadline covers headers AND complete generated-client body decoding. */
-function readAccountResponse<T>(signal: AbortSignal, reader: (options: RequestInit) => Promise<T>): Promise<T> {
+export function readAccountResponse<T>(signal: AbortSignal, reader: (options: RequestInit) => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const controller = new AbortController();
     const deadline = performance.now() + ACCOUNT_SUMMARY_READ_TIMEOUT_MS;

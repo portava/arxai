@@ -22,7 +22,7 @@
 
 import { useEffect, useRef, useState, useCallback, useContext, useMemo } from "react";
 import { QueryClientContext } from "@tanstack/react-query";
-import { createSharedAccountChangeRefresh, createPersonalAccountChangeRefresh } from "./sharedAccountChangeRefresh";
+import { createSharedAccountChangeRefresh, createPersonalAccountChangeRefresh, createUnifiedPositionChangeRefresh } from "./sharedAccountChangeRefresh";
 import { useAgedAccountSnapshot } from "./useAgedAccountSnapshot";
 import { useAccountRefreshPreference } from "./useAccountRefreshPreference";
 
@@ -187,9 +187,9 @@ function isServerUnavailable(snap: LiveAccountSnapshot): boolean {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 /**
- * Shared live account snapshot hook.  All surfaces — Dashboard, Open Trades,
- * Ruby panel — must use this hook so every surface always shows identical
- * numbers sourced from the same SSE stream / polling fallback.
+ * Shared snapshot transport and advisory refresh for scoped canonical readers.
+ * Per-user positions, allocation ledgers and native whole-account reports keep
+ * their distinct source and monetary scope; hints do not supply money or freshness.
  */
 export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   // Snapshot-only consumers may be standalone; dashboard consumers share the
@@ -197,6 +197,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const queryClient = useContext(QueryClientContext);
   const sharedAccountRefreshRef = useRef<ReturnType<typeof createSharedAccountChangeRefresh> | null>(null);
   const personalAccountRefreshRef = useRef<ReturnType<typeof createPersonalAccountChangeRefresh> | null>(null);
+  const positionRefreshRef = useRef<ReturnType<typeof createUnifiedPositionChangeRefresh> | null>(null);
   const [snapshot, setSnapshot] = useState<LiveAccountSnapshot | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
   const [reloadAt, setReloadAt] = useState(0);
@@ -204,32 +205,34 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   const enabledRef = useRef(autoRefreshEnabled);
   enabledRef.current = autoRefreshEnabled;
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [manualPending, setManualPending] = useState({ shared: false, personal: false });
+  const [manualPending, setManualPending] = useState({ shared: false, personal: false, positions: false });
   const manualReadersRef = useRef<{
     shared: ReturnType<typeof createSharedAccountChangeRefresh> | null;
     personal: ReturnType<typeof createPersonalAccountChangeRefresh> | null;
+    positions: ReturnType<typeof createUnifiedPositionChangeRefresh> | null;
     alive: boolean;
   } | null>(null);
   // This lifetime must NOT follow SSE pause/reconnect: a manual click works while
   // paused, and reconnecting the slot stream must not discard its trailing read.
   useEffect(() => {
-    const readers = { shared: null, personal: null, alive: true } as NonNullable<typeof manualReadersRef.current>;
+    const readers = { shared: null, personal: null, positions: null, alive: true } as NonNullable<typeof manualReadersRef.current>;
     manualReadersRef.current = readers;
-    setManualPending({ shared: false, personal: false });
+    setManualPending({ shared: false, personal: false, positions: false });
     return () => {
       readers.alive = false;
-      readers.shared?.dispose(); readers.personal?.dispose();
+      readers.shared?.dispose(); readers.personal?.dispose(); readers.positions?.dispose();
       if (manualReadersRef.current === readers) manualReadersRef.current = null;
     };
   }, [queryClient]);
   const refreshCanonicalAccounts = useCallback(() => {
     const readers = manualReadersRef.current;
     if (!queryClient || !readers?.alive) return;
-    for (const kind of ["shared", "personal"] as const) {
+    for (const kind of ["shared", "personal", "positions"] as const) {
       if (readers[kind]?.notify()) continue;
       // Query removal retires a controller. Only a NEW explicit click may
       // create one for the current cache/session; old queued work stays dead.
-      const create = kind === "shared" ? createSharedAccountChangeRefresh : createPersonalAccountChangeRefresh;
+      readers[kind]?.dispose();
+      const create = kind === "shared" ? createSharedAccountChangeRefresh : kind === "personal" ? createPersonalAccountChangeRefresh : createUnifiedPositionChangeRefresh;
       readers[kind] = create(queryClient, pending => {
         if (readers.alive && manualReadersRef.current === readers) {
           setManualPending(previous => previous[kind] === pending ? previous : { ...previous, [kind]: pending });
@@ -410,6 +413,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     sharedAccountRefreshRef.current?.dispose();
     sharedAccountRefreshRef.current = null;
     personalAccountRefreshRef.current?.dispose();
+    positionRefreshRef.current?.dispose(); positionRefreshRef.current = null;
     personalAccountRefreshRef.current = null;
     if (streamWaitRef.current != null) { clearTimeout(streamWaitRef.current); streamWaitRef.current = null; }
     setIsRefreshing(false);
@@ -433,6 +437,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
     esRef.current = es;
     sharedAccountRefreshRef.current = queryClient ? createSharedAccountChangeRefresh(queryClient) : null;
     personalAccountRefreshRef.current = queryClient ? createPersonalAccountChangeRefresh(queryClient) : null;
+    positionRefreshRef.current = queryClient ? createUnifiedPositionChangeRefresh(queryClient) : null;
     // A socket that stays open without delivering data must not disable the
     // refresh button forever. Keep it eligible to recover while polling.
     streamWaitRef.current = setTimeout(() => {
@@ -450,6 +455,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
           if (enabledRef.current && !document.hidden) {
             const refresh = r["type"] === "personal_account_changed" ? personalAccountRefreshRef : sharedAccountRefreshRef;
             refresh.current?.notify();
+            positionRefreshRef.current?.notify();
           }
           // Advisory only: do not renew freshness, change money, or treat this
           // as an account snapshot that can stop fallback reads.
@@ -467,6 +473,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
 
         const parsed = parseSSEEvent(raw);
         if (parsed) {
+          if (enabledRef.current && !document.hidden && typeof parsed.userId === "string") positionRefreshRef.current?.notify(parsed.userId);
           // A confirmed stream snapshot supersedes any older fallback request.
           // Abort it and reject even a response already decoding its JSON.
           stopPolling();
@@ -491,6 +498,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
       sharedAccountRefreshRef.current?.dispose();
       sharedAccountRefreshRef.current = null;
       personalAccountRefreshRef.current?.dispose();
+      positionRefreshRef.current?.dispose(); positionRefreshRef.current = null;
       personalAccountRefreshRef.current = null;
       es.close();
       esRef.current = null;
@@ -626,7 +634,7 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
   return {
     autoRefreshEnabled,
     setAutoRefreshEnabled,
-    isRefreshing: isRefreshing || manualPending.shared || manualPending.personal,
+    isRefreshing: isRefreshing || manualPending.shared || manualPending.personal || manualPending.positions,
     snapshot: snap,
     live: snap?.live ?? null,
     freshness,

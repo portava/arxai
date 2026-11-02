@@ -1,3 +1,4 @@
+import { readCachedPositionUserId, getUnifiedPositionsQueryKey } from "./unifiedPositions";
 import type { Query, QueryClient, QueryKey } from "@tanstack/react-query";
 import { getGetMeSharedAccountSummaryQueryKey, getGetMt5StatusQueryKey } from "@workspace/api-client-react";
 
@@ -77,4 +78,41 @@ export function createSharedAccountChangeRefresh(client: QueryClient, onPendingC
 }
 export function createPersonalAccountChangeRefresh(client: QueryClient, onPendingChange?: (pending: boolean) => void) {
   return createAccountChangeRefresh(client, getGetMt5StatusQueryKey(), onPendingChange);
+}
+
+
+/** A per-user positions query is not a whole-account native money report.
+ * Bind each controller to one authenticated cache identity. Identity changes
+ * retire it; an old stream cannot refresh the next user's query. */
+export function createUnifiedPositionChangeRefresh(client: QueryClient, onPendingChange?: (pending:boolean)=>void) {
+  let owner = readCachedPositionUserId(client);
+  let disposed = false;
+  let current: ReturnType<typeof createAccountChangeRefresh> | null = null;
+  let unsubscribe = () => {};
+  const dispose = () => { disposed=true; current?.dispose(); current=null; unsubscribe(); };
+  unsubscribe=client.getQueryCache().subscribe(event=>{
+    if(event.query.queryKey.length===1&&event.query.queryKey[0]==="me") {
+      const next=readCachedPositionUserId(client);
+      if(event.type==="removed"||(owner!==null&&next!==owner))dispose();
+    }
+  });
+  return {
+    notify(snapshotUserId?:unknown) {
+      if(disposed)return false;
+      const identity=readCachedPositionUserId(client);
+      const snapshotId=typeof snapshotUserId==='string'&&/^[1-9]\d*$/.test(snapshotUserId)?Number(snapshotUserId):snapshotUserId;
+      if(owner===null) {
+        // A stream mounted before /me resolves needs its first matching owned
+        // snapshot. An empty advisory hint cannot establish user ownership.
+        if(identity===null||snapshotId!==identity)return false;
+        owner=identity;
+      }
+      if(identity!==owner){dispose();return false;}
+      if(snapshotUserId!==undefined&&snapshotId!==owner)return true;
+      current??=createAccountChangeRefresh(client,getUnifiedPositionsQueryKey(owner),onPendingChange);
+      if(!current.notify()){dispose();return false;}
+      return true;
+    },
+    dispose,
+  };
 }
