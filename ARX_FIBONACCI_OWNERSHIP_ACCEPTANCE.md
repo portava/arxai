@@ -243,14 +243,145 @@ a replacement chart component. Every API request is intercepted; mutations are
 rejected rather than fulfilled as successful writes. No existing database,
 provider, model, broker or trading operation is part of this acceptance.
 
-The omitted-interior-original-observation rule retains its automated regression.
-No browser rejection of that condition is claimed without an explicit negative
-fixture demonstrating the omitted observation through the existing observer.
+The omitted-interior-original-observation rule now also has explicit negative
+actual-Scanner browser evidence on the same frozen build. See the separate
+continuation below; the original positive receipts and historical results above
+are not rewritten.
 
 Old navigation/first-click, composer-focus, partial phone visibility and
 zoom/touch failures remain open. No performance, physical-paint timing,
 competitor-parity, production-readiness or real-provider acceptance is inferred.
 
+## Negative continuation: omitted interior closed observation
+
+**Status: complete on the frozen build only.** The added opt-in
+`omitted-observation` mode preserves the original positive journey and adds a
+negative fixture for both selected panes. No application/library source,
+frozen assets, observer implementation or source-evidence gate was changed.
+The original `standalone-desktop` and `standalone-phone` receipt files were not
+present in this supplied workspace snapshot; their historical references and
+hashes above are preserved, not newly verified or reconstructed. New runs
+repeat their positive checks and write separate, non-overwriting directories.
+
+### Fixture and rejection contract
+
+For primary M1 and comparison H1, the fulfilled qualified synthetic response
+still contains all 160 original complete/final closed bars, unchanged identity,
+source, endpoint and OHLC. After the positive preview/Keep/manual journey has
+created one kept drawing per pane, the harness deliberately calls the actual
+adapter's `setCandles` with observation index 80 removed. The fault is installed
+through the workbench's React DOM ownership link to its existing adapter.
+This private, test-only seam fails closed if absent or if the original installed
+window does not exactly match the expected response. It does not patch the
+observer, fabricate a refusal, call an alternate calculator, alter the source
+response or intercept proposal callbacks. This is an injected renderer fault,
+not a claim that the normal renderer drops valid candles.
+
+The unchanged `__arxChartQa` observer independently proves:
+
+- The full fulfilled original response includes the interior closed observation.
+- Canonical installed candles equal the exact original sequence minus that
+  observation; canonical and displayed counts are 159. Both endpoints remain,
+  and the missing time lies strictly inside the installed window.
+- The missing source-coordinate times are `1767230400` for M1 and `1767513600`
+  for H1. Neither is a forming tip, missing endpoint or substitute price.
+- The actual local assistant answers the UI command `Preview automatic Fibonacci`:
+  “No new Fibonacci added: The displayed chart omits source observations in this
+  window; automatic drawings are withheld. No drawing was saved or order sent.”
+- There is no automatic-preview region, no added drawing and no automatic Keep.
+  The one existing kept Fibonacci retains identical full drawing data,
+  anchors/provenance and seven rendered Fibonacci strokes.
+- After the preview attempt, installed canonical/display candles and the
+  observer's data-write revision are unchanged from the deliberately mismatched
+  baseline. The command does not silently repair or rewrite the candle window.
+  The other pane's candles and drawings also remain unchanged.
+
+This exercises **rejection before a new preview**, not withdrawal of an already
+pending preview. Source-switch withdrawal remains separate work.
+
+### Results and retained incomplete attempt
+
+All directories below are relative to
+`generated-artifacts/arx-historical-fibonacci-validation/fibonacci-ownership-acceptance/`.
+
+| Journey directory | Viewport | Passed | Failed | Unfinished | Driver exit |
+|---|---|---:|---:|---|---:|
+| `omitted-observation-desktop` | 1440 × 1100 | 51 | 0 | Yes | 1 |
+| `omitted-observation-desktop-duplicate-reply-corrected` | 1440 × 1100 | 57 | 0 | No | 0 |
+| `omitted-observation-phone` | 390 × 844 | 57 | 0 | No | 0 |
+
+The first desktop attempt completed primary rejection and observed comparison
+omission, then timed out waiting for comparison's identical refusal. Its
+novel-wording predicate mistook that fresh response for an old message.
+Its receipt, DOM, screenshot and driver status are retained as unfinished,
+not recounted as a completed negative journey. The corrected predicate counts
+occurrences of each reply text, tolerating both repeated refusals and a removed
+welcome card. No product behavior was changed.
+
+Each completed run contains the original 40 positive/boundary checks plus
+17 added checks (one negative-fixture preflight and eight per pane). Offline
+self-checks separately passed 12 original parser/fixture assertions and 13
+negative-fixture/fresh-reply assertions. The read-only evidence audit passed
+all four original source/pivot/caveat audits and all four added
+omitted-observation audits; these are receipt audits, not more browser runs.
+
+Node `v24.22.1`, headless Chromium `152.0.7977.64`, fresh contexts, stripped
+child environments and the unchanged 295-asset frozen manifest were used.
+Each completed run recorded 82 intercepted API requests, 10 blocked writes
+(all 503), including six blocked conversation POSTs, and zero external-origin
+or WebSocket attempts. The safe offline boundary passed. The strict known
+background allowlist still **failed** for conversation POSTs and was not
+weakened; that issue already has a separate follow-up.
+
+Both completed directories contain provenance, raw replies, observer snapshots,
+network receipts, terminal status and six screenshots, including
+`primary-omitted-observation-rejected.png` and
+`comparison-omitted-observation-rejected.png`. Saved desktop/phone screenshots
+were inspected; no whole-plot phone-fit or physical-device claim is made.
+Owned browser contexts and the static-only loopback server were closed.
+No existing DB, shared runtime workflow, providers, models or brokers were used
+or activated. The shared `arx-preview` check remains intentionally unrun for
+the frozen-only isolation reason documented above.
+
+### Reproduction and evidence identity
+
+The merged runner owns the static loopback server and closes it on completion;
+do not start a second server or the application/API runtime. Use a stripped
+environment:
+
+```sh
+env -i PATH="$PATH" HOME="$HOME" NODE_ENV=production \
+  node scripts/qa/run-fibonacci-ownership.mjs desktop omitted-observation <new-attempt>
+env -i PATH="$PATH" HOME="$HOME" NODE_ENV=production \
+  node scripts/qa/run-fibonacci-ownership.mjs phone omitted-observation <new-attempt>
+node scripts/qa/audit-fibonacci-evidence.mjs --omitted-observation \
+  omitted-observation-desktop-<new-attempt> omitted-observation-phone-<new-attempt>
+```
+
+Attempt names use lowercase letters, digits and hyphens. Existing directories
+are rejected, never overwritten. Following integration with the source-change
+withdrawal checks, the runner's existing `[viewport] [attempt-name]` interface
+continues to select withdrawal mode (default directory `withdrawal-<viewport>`).
+Use explicit `positive` mode for positive-only runs targeting
+`standalone-<viewport>`. The default positive-only audit still targets the
+historical standalone directories.
+
+The merged scripts retain both independent continuations. Omission mode keeps
+its per-text reply occurrence checks; withdrawal mode retains its fresh-DOM-node
+reply detection. Post-merge syntax checks, all 28 offline self-checks and 11
+runner argument-routing checks passed without launching a runtime or browser.
+The browser receipts and tested-program hashes below describe the pre-merge
+runs, not a new browser run of the merged runner.
+
+| Receipt / tested program | SHA-256 |
+|---|---|
+| Incomplete desktop `journey-result.json` | `01546b6bb6768e6b571487cc52d15d85b24ee48ebb675aa3e415ca438b01e869` |
+| Corrected desktop `journey-result.json` | `846fe391d31a77bb36b985a38f6d5c80d42071167aa4a9ab2ac9bbb79e48586f` |
+| Phone `journey-result.json` | `31f50bc023bed388f07e447e2da7a5c92952cae11a2c826107957c07709988c4` |
+| Tested `fibonacci-ownership.mjs` | `bd5d4092bb63cc98d0c9b523822302c8ec3d95b86fe389ab9dd4495be7975c9c` |
+| Tested `run-fibonacci-ownership.mjs` | `dbf8e96eb37854113555bc40e69abae34e5d7341d75699b98e90f1a135563b35` |
+| Tested `audit-fibonacci-evidence.mjs` | `8c92f53f1b90ac78cc0ff353bea0aae858b117ae579b07c01cffc68979006f00` |
+| `omitted-observation-audit.json` | `e7d4d0821109f798cefd99541ef2867ca9d970d7aa5848348965a8afc3e1e6ee` |
 ## Source/window withdrawal continuation (2026-11-01)
 
 **Scoped frozen-build acceptance complete: 75 recorded checks / 0 failures on

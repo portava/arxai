@@ -7,10 +7,20 @@ import http from "node:http";
 import { ROOT, EVIDENCE, BUILD, SOURCE, run, selftest } from "./fibonacci-ownership.mjs";
 
 const viewport = process.argv[2];
+const selection = process.argv[3];
+const attemptName = process.argv[4];
 if (!["desktop", "phone"].includes(viewport)) throw Error("Choose desktop or phone");
-const attemptName = process.argv[3] ?? `withdrawal-${viewport}`;
-if (!/^[a-z0-9-]+$/.test(attemptName)) throw Error("Use a new alphanumeric attempt name");
-const output = path.join(EVIDENCE, "fibonacci-ownership-acceptance", attemptName);
+// Preserve the withdrawal runner's legacy [viewport] [attempt-name] interface.
+// Explicit modes keep omission rejection and positive-only runs independent.
+const explicitMode = ["omitted-observation", "positive"].includes(selection);
+const mode = explicitMode ? selection : "withdrawal";
+if (selection !== undefined && !/^[a-z0-9-]+$/.test(selection)) throw Error("Use a new alphanumeric attempt name");
+if (attemptName !== undefined && (!explicitMode || !/^[a-z0-9-]+$/.test(attemptName))) throw Error("Attempt suffix requires an explicit mode and lowercase letters/digits/hyphens");
+if (process.argv.length > 5) throw Error("Too many runner arguments");
+const directoryName = explicitMode
+  ? `${mode === "positive" ? "standalone" : mode}-${viewport}${attemptName ? `-${attemptName}` : ""}`
+  : selection ?? `withdrawal-${viewport}`;
+const output = path.join(EVIDENCE, "fibonacci-ownership-acceptance", directoryName);
 await fs.mkdir(path.dirname(output), { recursive: true });
 await fs.mkdir(output); // Never overwrite an attempt.
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -25,7 +35,7 @@ for (const [f, expected] of Object.entries(manifest.hashes)) {
   if (digest(await fs.readFile(path.join(path.dirname(manifestPath), f))) !== expected) bad.push(f);
 }
 if (bad.length || manifest.source.head !== SOURCE || manifest.buildId !== BUILD) throw Error("Frozen disk asset/source mismatch");
-const provenance = { source: SOURCE, build: BUILD, viewport, hashes, selftests: selftest(),
+const provenance = { source: SOURCE, build: BUILD, viewport, mode: mode ?? "positive", hashes, selftests: selftest(),
   diskAssetsVerified: Object.keys(manifest.hashes).length, noCpuThrottleRequested: true,
   timeoutMs: 300000, startedAt: new Date().toISOString(),
   node: process.version, execution: "Workspace Chromium; offline synthetic, untimed functional acceptance" };
@@ -51,7 +61,7 @@ try {
   await fs.writeFile(path.join(output, "provenance.json"), JSON.stringify(provenance, null, 2));
   context = await browser.newContext({ viewport: viewport === "phone" ? { width: 390, height: 844 } : { width: 1440, height: 1100 } });
   const page = await context.newPage();
-  attempt = run(page, output, { withdrawal: true }).then(async result => {
+  attempt = run(page, output, { withdrawal: mode === "withdrawal", omittedObservation: mode === "omitted-observation" }).then(async result => {
     await fs.writeFile(path.join(output, "journey-result.json"), JSON.stringify(result, null, 2));
     return result;
   });

@@ -29,6 +29,8 @@ fit and source-correct completion latency; none automatically proves the others.
 Browser-exposed fixture readers are asynchronous, and assistant welcome cards
 can disappear on the first send. Do not treat exposed readers as synchronous
 arrays or identify a fresh reply by a stable count of all DOM children.
+Identical refusals from different panes are still fresh replies; text novelty
+alone cannot distinguish a new response from an old one.
 
 **Why:** Promise-array predicates and unstable welcome-card child indexing
 repeatedly stopped browser probes before their intended acceptance cases.
@@ -37,7 +39,9 @@ repeatedly stopped browser probes before their intended acceptance cases.
 replies by stable message identity or role-qualified fresh DOM nodes, not a phrase
 anywhere in old history or text absent from previous replies. Repeating a valid
 local chart request can legitimately produce identical reply text, so text
-novelty cannot prove freshness. Preserve assertion counts separately from failed
+novelty cannot prove freshness. If message identity is unavailable, compare
+per-text occurrence counts rather than total bubble counts or unique wording.
+Preserve assertion counts separately from failed
 steps and unstarted cases, and capture full error messages incrementally.
 
 Preflight generated probes against the existing observer contract and rendered
