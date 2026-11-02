@@ -38,7 +38,7 @@ async page => {
   }),'Every RSI and linked SMA observation matches independent arithmetic, including warm-up');
   const parentOptions=await panel.getByLabel('RSI 1 Source',{exact:true}).locator('option').evaluateAll(nodes=>nodes.filter(n=>n.textContent.includes('SMA')).map(n=>({disabled:n.disabled,text:n.textContent})));
   check(parentOptions.length===1&&parentOptions[0].disabled,'Cycle-producing source choice is disabled');
-  const first=panel.getByTestId('chart-study-instance').first();await first.locator('summary').click();await first.getByLabel('RSI 1 RSI visible',{exact:true}).uncheck();
+  const first=panel.getByTestId('chart-study-instance').first();await first.locator('summary').filter({hasText:'Line appearance'}).click();await first.getByLabel('RSI 1 RSI visible',{exact:true}).uncheck();
   await panel.getByRole('button',{name:/^Studies \(/}).click();await frames();await shot('desktop-hidden-parent');
   await page.reload();await panel.getByRole('button',{name:'Fullscreen',exact:true}).click();await frames();
   current=await state();check(current.config.studies.length===2&&current.config.studies[1].studySource.studyId===current.config.studies[0].id&&current.layout.panes.length===1,'Reload restores linked source and shared pane');

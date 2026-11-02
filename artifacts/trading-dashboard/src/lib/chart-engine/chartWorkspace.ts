@@ -69,6 +69,24 @@ export function validatePreferences(value: unknown): ChartPreferences {
     if (s.kind === "macd" && (!period(s.slow) || s.slow <= s.period || !period(s.signal))) continue;
     if (s.kind === "dmi" && !period(s.signal)) continue;
     if (s.kind === "stochastic" && (!period(s.smoothing) || !period(s.signal))) continue;
+    const pane=STUDY_CATALOG.find(item=>item.defaults.kind===s.kind)!.pane;
+    if ((s.paneScale !== undefined || s.referenceLevels !== undefined) && !pane) continue;
+    if (s.paneScale !== undefined) {
+      const scale=s.paneScale;
+      if (!scale || typeof scale!=="object" || Array.isArray(scale) || !["auto","fixed"].includes(scale.mode)) continue;
+      if (scale.mode==="fixed") {
+        if (!Number.isFinite(scale.min) || !Number.isFinite(scale.max) || scale.min>=scale.max) continue;
+        const magnitude=Math.max(Math.abs(scale.min),Math.abs(scale.max))||1;
+        if (!(scale.max/magnitude-scale.min/magnitude>0)) continue;
+      }
+    }
+    if (s.referenceLevels !== undefined && (!Array.isArray(s.referenceLevels) || s.referenceLevels.length>12 || Array.from(s.referenceLevels).some((level:any)=>
+      !level || typeof level!=="object" || Array.isArray(level) || !Number.isFinite(level.value)
+      || (level.label!==undefined && (typeof level.label!=="string" || level.label.length>80))
+      || (level.color!==undefined && !color(level.color))
+      || (level.width!==undefined && ![1,2,3].includes(level.width))
+      || (level.style!==undefined && !["solid","dashed","dotted"].includes(level.style))
+      || (level.visible!==undefined && typeof level.visible!=="boolean")))) continue;
     let lineStyles: StudyLineStyle[] | undefined;
     if (s.lineStyles != null) {
       const channels = STUDY_CATALOG.find(item=>item.defaults.kind === s.kind)!.channels.length;
@@ -88,6 +106,8 @@ export function validatePreferences(value: unknown): ChartPreferences {
     seen.add(id);
     studies.push({
       ...(lineStyles?.length ? {lineStyles} : {}),
+      ...(s.paneScale!==undefined ? {paneScale:s.paneScale.mode==="auto"?{mode:"auto" as const}:{mode:"fixed" as const,min:s.paneScale.min,max:s.paneScale.max}} : {}),
+      ...(s.referenceLevels!==undefined ? {referenceLevels:s.referenceLevels.map((level:any)=>({value:level.value,...(level.label!==undefined?{label:level.label}:{}),...(level.color!==undefined?{color:level.color}:{}),...(level.width!==undefined?{width:level.width}:{}),...(level.style!==undefined?{style:level.style}:{}),...(level.visible!==undefined?{visible:level.visible}:{})}))} : {}),
       ...(s.id ? { id: s.id } : {}), kind: s.kind, period: s.period, color: s.color,
       ...(s.source ? { source: s.source } : {}),
       ...(s.studySource ? {studySource:{studyId:s.studySource.studyId,channel:s.studySource.channel}} : {}),

@@ -1,3 +1,4 @@
+import {ChartStudyPaneSettings} from "./ChartStudyPaneSettings";
 import {prepareVolumeProfileStudy} from "@/lib/chart-engine/chartVolumeProfile";
 import {formatSavedVwapAnchor,formatObservedBarChoice,studyDisplayLabel} from "@/lib/chart-engine/chartStudyDisplay";
 import {prepareVwapStudy,selectVwapAnchor} from "@/lib/chart-engine/chartVwapAnchor";
@@ -146,6 +147,7 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
             <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={full} aria-label={`Duplicate study ${index + 1}`} onClick={() => add(config)}>Duplicate</Button>
             <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Remove study ${index + 1}`} onClick={() => onPreferences(previous => ({ ...previous, studies: previous.studies.filter(study => studyId(study) !== id) }))}>Remove</Button>
           </div>
+          {definition.pane && <ChartStudyPaneSettings key={`${id}-pane`} config={config} label={label} onChange={change=>update(id,change)}/>}
           <details className="mt-3">
             <summary className="cursor-pointer text-zinc-300">Line appearance</summary>
             <p className="mt-2 text-[11px] text-zinc-400">Hidden lines keep their calculated values in the data window. Appearance does not change the calculation.</p>

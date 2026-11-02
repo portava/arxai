@@ -1,4 +1,4 @@
-import { StudyCalculator, studySourceIssue, studyDefinition, studyChannelColor, studyId, studyLabel, formatStudyNumber, type ChartStudy } from './chartStudies';
+import { StudyCalculator, studySourceIssue, studyDefinition, studyChannelColor, studyId, studyLabel, formatStudyNumber, type ChartStudy, type StudyReferenceLevel } from './chartStudies';
 import { validatePreferences, type ChartScaleMode } from './chartWorkspace';
 import { unchangedCandlePrefix } from './candleReconciliation';
 import { sanitizeCandlestickData, isValidCandlestickPoint } from './candleSanitize';
@@ -19,6 +19,8 @@ export interface NativeStudySnapshot {
 const finite=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value);
 function freezeConfig(config:ChartStudy):ChartStudy {
   if(config.lineStyles){config.lineStyles.forEach(Object.freeze);Object.freeze(config.lineStyles);}
+  if(config.referenceLevels){config.referenceLevels.forEach(Object.freeze);Object.freeze(config.referenceLevels);}
+  if(config.paneScale)Object.freeze(config.paneScale);
   if(config.studySource)Object.freeze(config.studySource);
   if(config.vwapAnchor)Object.freeze(config.vwapAnchor);
   if(config.profileRange)Object.freeze(config.profileRange);
@@ -189,26 +191,39 @@ function visiblePoints(study:NativeStudySnapshot,frame:NativePriceFrame):readonl
   const margin=Math.max(1,Math.ceil(half));
   return study.points.slice(Math.max(0,Math.floor(frame.range.from)-margin),Math.min(study.points.length,Math.ceil(frame.range.to)+margin+1));
 }
+function referenceLevels(config:Readonly<ChartStudy>):readonly StudyReferenceLevel[] {
+  return config.referenceLevels??(studyDefinition(config.kind).levels??[]).map(value=>({value}));
+}
 function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame,plot:NativePlot) {
+  // A linked overlay may be listed before its oscillator; display order cannot
+  // transfer ownership of the shared pane's scale.
+  const owner=group.find(s=>studyDefinition(s.config.kind).pane)??group[0]!;
+  const scale=owner.config.paneScale;
+  const fixed=scale?.mode==='fixed'?[scale.min,scale.max]:!scale&&group.length===1?studyDefinition(owner.config.kind).range:undefined;
   const values:number[]=[];
-  const fixed=group.length===1?studyDefinition(group[0]!.config.kind).range:undefined;
   for(const study of group){
-  const definition=studyDefinition(study.config.kind);
-  values.push(...(definition.range??definition.levels??[]));
-  if(!fixed)definition.channels.forEach((_,channel)=>{
-    if(study.config.lineStyles?.[channel]?.visible===false)return;
-    const half=isHistogram(study.config,channel)?Math.max(1,Math.min(24,frame.spacing*.7))/(2*frame.spacing):undefined;
-    for(const value of visibleChannelValues(study,frame.range,channel,'linear',half))values.push(value);
-  });
-  if(study.config.kind==='trade_volume'||study.config.kind==='tick_volume')values.push(0);
+    const definition=studyDefinition(study.config.kind);
+    if(!fixed){
+      if(!scale)values.push(...(definition.range??[]));
+      values.push(...referenceLevels(study.config).filter(level=>level.visible!==false).map(level=>level.value));
+    }
+    definition.channels.forEach((_,channel)=>{
+      if(study.config.lineStyles?.[channel]?.visible===false)return;
+      const half=isHistogram(study.config,channel)?Math.max(1,Math.min(24,frame.spacing*.7))/(2*frame.spacing):undefined;
+      if(!fixed)for(const value of visibleChannelValues(study,frame.range,channel,'linear',half))values.push(value);
+
+    });
+    if(!fixed&&(study.config.kind==='trade_volume'||study.config.kind==='tick_volume'||study.config.kind==='macd'))values.push(0);
   }
+  if(fixed)values.push(...fixed);
   if(!values.length)return null;
   let low=Infinity,high=-Infinity;for(const value of values){low=Math.min(low,value);high=Math.max(high,value);}
   const magnitude=Math.max(Math.abs(low),Math.abs(high))||1;
   const a=low/magnitude,b=high/magnitude,padding=fixed?0:b>a?(b-a)*.08:.01;
   const bottom=a-padding,extent=b+padding-bottom;
   if(!finite(extent)||extent<=0)return null;
-  return {low,high,y:(value:number):number|null=>{if(!finite(value))return null;const y=plot.top+plot.height*(1-(value/magnitude-bottom)/extent);return finite(y)?y:null;}};
+  const note=scale?.mode==='fixed'?'Fixed scale · values outside limits are clipped':scale?.mode==='auto'?'Auto scale':'';
+  return {low,high,note,y:(value:number):number|null=>{if(!finite(value))return null;const y=plot.top+plot.height*(1-(value/magnitude-bottom)/extent);return finite(y)?y:null;}};
 }
 function clipped(ctx:CanvasRenderingContext2D,plot:NativePlot,draw:()=>void){ctx.save();try{ctx.beginPath();ctx.rect(plot.left,plot.top,plot.width,plot.height);ctx.clip();ctx.globalAlpha=1;draw();}finally{ctx.restore();}}
 /** Exact observed timestamps on the shared X scale, independent linear units
@@ -229,8 +244,16 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
         ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(plot.left,plot.top);ctx.lineTo(plot.left+plot.width,plot.top);ctx.stroke();
         ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())).join(' · ')+(groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-10));
       }
+      if(study.paneIndex&&first&&mapping?.note){ctx.fillStyle='#fbbf24';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(mapping.note,plot.left+5,plot.top+plot.height-3,Math.max(1,plot.width-10));}
       if(!y||!anyVisible)return;
-      for(const level of definition.levels??[]){const py=y(level);if(py==null)continue;ctx.strokeStyle='#64748b';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(plot.left,py);ctx.lineTo(plot.left+plot.width,py);ctx.stroke();}
+      for(const level of referenceLevels(study.config)){
+        if(level.visible===false)continue;
+        const py=y(level.value);if(py==null||py<plot.top||py>plot.top+plot.height)continue;
+        ctx.strokeStyle=level.color??'#64748b';ctx.lineWidth=level.width??1;
+        ctx.setLineDash(level.style==='solid'?[]:level.style==='dotted'?[2,3]:[4,4]);
+        ctx.beginPath();ctx.moveTo(plot.left,py);ctx.lineTo(plot.left+plot.width,py);ctx.stroke();
+        if(level.label){ctx.fillStyle=level.color??'#94a3b8';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline=py<plot.top+16?'top':'bottom';ctx.fillText(`${formatStudyNumber(level.value,definition.channels[0]!)} · ${level.label}`,plot.left+5,py,Math.max(1,plot.width-10));}
+      }
       definition.channels.forEach((_,channel)=>{
         const style=study.config.lineStyles?.[channel];if(style?.visible===false)return;
         const histogram=isHistogram(study.config,channel);

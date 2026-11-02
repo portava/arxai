@@ -12,6 +12,8 @@ export type StudyKind =
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
 export type AverageMethod = "sma" | "ema" | "smma" | "wma";
 export interface StudyLineStyle { color?: string; width?: 1 | 2 | 3; style?: "solid" | "dashed" | "dotted"; visible?: boolean }
+export interface StudyReferenceLevel extends StudyLineStyle { value:number; label?:string }
+export type StudyPaneScale = {mode:"auto"} | {mode:"fixed";min:number;max:number};
 export interface VwapAnchor { kind:"observed_bar"; time:number; seriesIdentity:string }
 export interface ChartStudy {
   /** Exact local study instance/channel, never a replacement OHLC series. */
@@ -34,6 +36,10 @@ export interface ChartStudy {
   method?: AverageMethod;
   smoothing?: number;
   lineStyles?: StudyLineStyle[];
+  /** Display-only guides. Undefined restores catalogue defaults; [] removes them. */
+  referenceLevels?: StudyReferenceLevel[];
+  /** Auxiliary pane display only. Never clamps calculated observations. */
+  paneScale?: StudyPaneScale;
 }
 export interface StudyPoint { time: number; values: (number | null)[]; reason?:string }
 export interface StudyDefinition {
@@ -150,7 +156,7 @@ export class StudyCalculator {
   get config(): ChartStudy { return this.currentConfig; }
   /** Preserve checkpoints only when every calculation input is unchanged. */
   updatePresentation(next: ChartStudy): boolean {
-    const inputs = ({color: _color, id: _id, lineStyles: _styles, ...rest}: ChartStudy) => JSON.stringify(rest);
+    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, ...rest}: ChartStudy) => JSON.stringify(rest);
     if (inputs(next) !== inputs(this.currentConfig)) return false;
     this.currentConfig = next;
     return true;

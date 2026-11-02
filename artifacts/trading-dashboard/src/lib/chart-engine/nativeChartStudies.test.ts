@@ -202,3 +202,12 @@ it.each([false,true])('shared oscillator pane retains its axis when the source i
  expect(paths.some(p=>p.op==='lineTo'&&p.stroke==='#abcdef')).toBe(true);
  expect(model.getPriceBounds({from:0,to:49})).toEqual([]);
 });
+
+
+it('paints a large auxiliary history without spreading observations into arguments',()=>{
+ const model=new NativeChartStudies(),count=150000;
+ const points=Array.from({length:count},(_,i)=>({time:60+i*60,values:[i+1]}));
+ (model as unknown as {snapshots:unknown}).snapshots=[{config:{kind:'atr',period:1,color:'#123456'},paneIndex:1,points}];
+ const f={...frame(bars(2)),range:{from:0,to:count-1},spacing:700/count,timeToX:(time:number)=>20+(time/60-1)*700/count};
+ const {ctx}=context();expect(()=>paintNativeStudies(ctx,f,[{left:20,top:320,width:700,height:100}],model)).not.toThrow();
+});

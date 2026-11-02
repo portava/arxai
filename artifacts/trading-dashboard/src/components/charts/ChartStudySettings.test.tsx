@@ -143,3 +143,29 @@ it('links to an exact study channel, prevents cycles, preserves missing sources 
  fireEvent.change(screen.getByLabelText('SMA 1 Source'),{target:{value:'close'}});
  expect(settings().studies[0].studySource).toBeUndefined();expect(settings().studies[0].source).toBe('close');
 });
+
+
+it('edits pane guides and applies fixed limits atomically, keeping invalid drafts out of saved studies',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index'}));
+ fireEvent.change(screen.getByLabelText('RSI 1 Scale minimum'),{target:{value:'80'}});
+ fireEvent.change(screen.getByLabelText('RSI 1 Scale maximum'),{target:{value:'20'}});
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Apply fixed scale'}));
+ expect(settings().studies).toHaveLength(1);expect(settings().studies[0].paneScale).toBeUndefined();expect(screen.getByRole('alert')).toBeTruthy();
+ fireEvent.change(screen.getByLabelText('RSI 1 Scale minimum'),{target:{value:'20'}});
+ fireEvent.change(screen.getByLabelText('RSI 1 Scale maximum'),{target:{value:'80'}});
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Apply fixed scale'}));
+ expect(settings().studies[0].paneScale).toEqual({mode:'fixed',min:20,max:80});
+ fireEvent.change(screen.getByLabelText('RSI 1 Scale minimum'),{target:{value:''}});fireEvent.click(screen.getByRole('button',{name:'RSI 1 Apply fixed scale'}));
+ expect(settings().studies[0].paneScale.min).toBe(20);
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Clear reference levels'}));expect(settings().studies[0].referenceLevels).toEqual([]);
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Add reference level'}));
+ fireEvent.blur(screen.getByLabelText('RSI 1 Level 1 value'),{target:{value:'50'}});
+ fireEvent.change(screen.getByLabelText('RSI 1 Level 1 description'),{target:{value:'Midpoint'}});
+ fireEvent.change(screen.getByLabelText('RSI 1 Level 1 style'),{target:{value:'dotted'}});
+ expect(settings().studies[0].referenceLevels).toEqual([{value:50,label:'Midpoint',style:'dotted'}]);
+ fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Default reference levels'}));
+ expect(settings().studies[0].referenceLevels).toBeUndefined();expect(settings().studies[1].referenceLevels[0].value).toBe(50);
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Auto scale'}));expect(settings().studies[0].paneScale).toEqual({mode:'auto'});
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Default scale'}));expect(settings().studies[0].paneScale).toBeUndefined();
+});
