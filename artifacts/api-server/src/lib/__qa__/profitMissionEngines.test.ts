@@ -206,7 +206,7 @@ test("unreasonable mission => target-hit estimate capped very low", () => {
   assert.ok(p.targetHitProbability <= 5);
 });
 
-test("sampleSize 0 => planningProjectionOnly with the exact note; >0 clears it", () => {
+test("sample count alone never removes the planning-only evidence warning", () => {
   const m = math(1000, 1300, 7);
   const f = evaluateFeasibility({ math: m, riskProfile: "balanced" });
   const none = evaluateProbability({ math: m, feasibility: f, riskProfile: "balanced", sampleSize: 0 });
@@ -217,9 +217,41 @@ test("sampleSize 0 => planningProjectionOnly with the exact note; >0 clears it",
       "planning projections based on your inputs, not backtested probabilities.",
   );
   const some = evaluateProbability({ math: m, feasibility: f, riskProfile: "balanced", sampleSize: 50 });
-  assert.equal(some.planningProjectionOnly, false);
-  assert.equal(some.planningProjectionNote, "");
+  assert.equal(some.planningProjectionOnly, true);
+  assert.match(some.planningProjectionNote, /not backtested probabilities/);
+  assert.equal(some.confidence, "low");
 });
+
+// A count supplies no outcomes, provenance or calibration to this model.
+for (const sampleSize of [1, 29, 30, 99, 100, 1000, Number.MAX_SAFE_INTEGER]) {
+  test(`unverified sample count ${sampleSize} cannot certify planning math`, () => {
+    const m = math(1000, 1300, 7);
+    const f = evaluateFeasibility({ math: m, riskProfile: "balanced" });
+    const base = evaluateProbability({ math: m, feasibility: f, riskProfile: "balanced" });
+    const p = evaluateProbability({ math: m, feasibility: f, riskProfile: "balanced", sampleSize });
+    assert.equal(p.sampleSize, sampleSize);
+    assert.equal(p.confidence, "low");
+    assert.equal(p.planningProjectionOnly, true);
+    assert.match(p.planningProjectionNote, /not backtested probabilities/);
+    assert.ok(p.sampleSizeWarnings.some(w => /unverified/i.test(w)));
+    assert.deepEqual(p.projections, base.projections);
+    assert.equal(p.targetHitProbability, base.targetHitProbability);
+    assert.equal(p.failureProbability, base.failureProbability);
+    assert.equal(p.drawdownRisk, base.drawdownRisk);
+  });
+}
+for (const sampleSize of [NaN, Infinity, -Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+  test(`invalid historical count ${sampleSize} stays finite and planning-only`, () => {
+    const m = math(1000, 1300, 7);
+    const f = evaluateFeasibility({ math: m, riskProfile: "balanced" });
+    const p = evaluateProbability({ math: m, feasibility: f, riskProfile: "balanced", sampleSize });
+    assert.equal(p.sampleSize, 0);
+    assert.equal(p.confidence, "low");
+    assert.equal(p.planningProjectionOnly, true);
+    assert.ok(p.sampleSizeWarnings.length > 0);
+    assert.deepEqual(JSON.parse(JSON.stringify(p)), p);
+  });
+}
 
 // ── Banned-vocabulary guard ───────────────────────────────────────────────────
 test("copy guard flags forbidden promise language", () => {
