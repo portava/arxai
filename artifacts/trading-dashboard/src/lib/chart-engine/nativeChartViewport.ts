@@ -2,7 +2,7 @@ import { scaleNativePriceRange, type NativePriceRange, updateNativePriceSeries, 
 import { nativePlotLayout, paintNativeAxes } from "./nativeChartAxes";
 import { panChartWindow, zoomChartWindow, type LogicalWindow } from "./chartNavigation";
 import { candleDisplayPrecision, historyRangeShift, sameCandle } from "./candleReconciliation";
-import { CHART_STYLES, validateDrawings, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
+import { CHART_STYLES, validatePreferences, validateDrawings, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import { effectiveDisplayZone, isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 import type { ChartEngineCandle, ChartStructureLine, ChartStructureMarker } from "./types";
 import type { ChartOverlay } from "../chart-overlays";
@@ -468,9 +468,15 @@ export class NativeChartViewport {
   }
   setStudies(configs: ChartStudy[]): void {
     if (this.destroyed) return;
+    const valid=validatePreferences({studies:configs}).studies;
+    const plotInputs=(studies:readonly ChartStudy[])=>JSON.stringify(studies.map(({showInDataWindow:_readout,...plot})=>plot));
+    const readoutOnly=plotInputs(valid)===plotInputs(this.studies.getStudies());
     const revision = ++this.mutationRevision;
-    this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();if(this.destroyed || revision!==this.mutationRevision)return;
-    this.studies.setStudies(configs, this.series.candles);this.invalidate();
+    if(!readoutOnly){
+      this.drawingEditor.cancelGesture();this.cancelGesture();this.clearHover();
+      if(this.destroyed || revision!==this.mutationRevision)return;
+    }
+    this.studies.setStudies(valid, this.series.candles);this.invalidate();
   }
   getStudies(): readonly Readonly<ChartStudy>[] { return this.studies.getStudies(); }
   getStudyValues(time: number) { return this.analysisFocused ? [] : this.studies.getValues(time); }

@@ -43,6 +43,8 @@ export interface ChartStudy {
   paneScale?: StudyPaneScale;
   /** Display only; omitted means all intervals, [] means hidden on every interval. */
   visibleIntervals?: ChartInterval[];
+  /** Readout display only. Omitted means shown; calculations stay available. */
+  showInDataWindow?: boolean;
 }
 export interface StudyPoint { time: number; values: (number | null)[]; reason?:string }
 export interface StudyDefinition {
@@ -167,7 +169,7 @@ export class StudyCalculator {
   get config(): ChartStudy { return this.currentConfig; }
   /** Preserve checkpoints only when every calculation input is unchanged. */
   updatePresentation(next: ChartStudy): boolean {
-    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, visibleIntervals: _intervals, ...rest}: ChartStudy) => JSON.stringify(rest);
+    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, visibleIntervals: _intervals, showInDataWindow: _dataWindow, ...rest}: ChartStudy) => JSON.stringify(rest);
     if (inputs(next) !== inputs(this.currentConfig)) return false;
     this.currentConfig = next;
     return true;

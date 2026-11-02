@@ -395,7 +395,8 @@ export function ARXNativeChart({
       ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}${ha ? `  ·  HA O ${ha.open.toFixed(digits)}  H ${ha.high.toFixed(digits)}  L ${ha.low.toFixed(digits)}  C ${ha.close.toFixed(digits)}` : ""}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
-      const rows = !analysisFocusRef.current && adapterRef.current?.isAnalysisFocusVerified?.()!==false && bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
+      const allRows = !analysisFocusRef.current && adapterRef.current?.isAnalysisFocusVerified?.()!==false && bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
+      const rows=allRows.filter(row=>row.dataWindowVisible!==false);
       const fragment = document.createDocumentFragment();
       for (const row of rows) {
         const line = document.createElement("div");
@@ -408,7 +409,7 @@ export function ARXNativeChart({
         line.append(label, values);
         fragment.append(line);
       }
-      if (!rows.length) fragment.append(document.createTextNode(adapterRef.current?.isAnalysisFocusVerified?.()===false ? "Chart layer visibility is unverified. Reload before inspecting study values." : analysisFocusRef.current ? "Study values are temporarily hidden in simplified view. Restore tools to inspect them; your settings are retained." : "Add a study to inspect its values."));
+      if (!rows.length) fragment.append(document.createTextNode(adapterRef.current?.isAnalysisFocusVerified?.()===false ? "Chart layer visibility is unverified. Reload before inspecting study values." : analysisFocusRef.current ? "Study values are temporarily hidden in simplified view. Restore tools to inspect them; your settings are retained." : !bar ? "Move the crosshair over a candle to inspect study values." : allRows.length ? "All study readouts are hidden in Data Window settings. Enable Show in Data Window in Studies to inspect them." : "Add a study to inspect its values."));
       studyInspectorRef.current.replaceChildren(fragment);
     }
   }, [symbol]);

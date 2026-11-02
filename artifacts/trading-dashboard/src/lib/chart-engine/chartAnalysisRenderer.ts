@@ -325,12 +325,12 @@ export class ChartAnalysisRenderer {
     this.pending = null;
   }
   destroy(): void { for(const study of this.studies)if(study.profilePrimitive){this.price.detachPrimitive(study.profilePrimitive);study.profilePrimitive=undefined;} this.cancelPending(); this.chart.timeScale().unsubscribeVisibleLogicalRangeChange?.(this.onViewport); }
-  inspect(time: number, anchorEvidence?:(anchor:VwapAnchor)=>{utcQualified:boolean}): { label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[] {
+  inspect(time: number, anchorEvidence?:(anchor:VwapAnchor)=>{utcQualified:boolean}): { dataWindowVisible?:boolean; label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[] {
     this.flushPending();
     return this.studies.map(({ calculator }) => {
       if(calculator.config.kind === "volume_profile") {
         const result=calculator.profileResult;
-        return {label:studyLabel(calculator.config),color:calculator.config.color,...(result?.status==='held'?{reason:result.reason}:{}),values:[{name:calculator.config.lineStyles?.[0]?.visible===false?'Frozen-range total trade units (hidden)':'Frozen-range total trade units',value:result?.status==='ready'?result.totalTradeUnits:null}]};
+        return {...(calculator.config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(calculator.config),color:calculator.config.color,...(result?.status==='held'?{reason:result.reason}:{}),values:[{name:calculator.config.lineStyles?.[0]?.visible===false?'Frozen-range total trade units (hidden)':'Frozen-range total trade units',value:result?.status==='ready'?result.totalTradeUnits:null}]};
       }
       let lo = 0, hi = calculator.points.length - 1;
       let values: (number | null)[] = [];
@@ -342,7 +342,7 @@ export class ChartAnalysisRenderer {
         if (point.time < time) lo = mid + 1; else hi = mid - 1;
       }
       return {
-        label: studyLabel(calculator.config), ...(calculator.config.kind==='vwap'&&calculator.config.vwapAnchor?{displayLabel:`VWAP · ${calculator.config.source??'hlc3'} · observed-bar anchor ${formatSourceChartTime(calculator.config.vwapAnchor.time,anchorEvidence?.(calculator.config.vwapAnchor).utcQualified??false,'UTC',{seconds:true})}`} : {}), color: calculator.config.color, ...(reason ? {reason} : {}),
+        ...(calculator.config.showInDataWindow===false?{dataWindowVisible:false}:{}),label: studyLabel(calculator.config), ...(calculator.config.kind==='vwap'&&calculator.config.vwapAnchor?{displayLabel:`VWAP · ${calculator.config.source??'hlc3'} · observed-bar anchor ${formatSourceChartTime(calculator.config.vwapAnchor.time,anchorEvidence?.(calculator.config.vwapAnchor).utcQualified??false,'UTC',{seconds:true})}`} : {}), color: calculator.config.color, ...(reason ? {reason} : {}),
         values: studyDefinition(calculator.config.kind).channels.map((name, index) => ({ name: calculator.config.lineStyles?.[index]?.visible === false ? `${name} (hidden)` : name, value: values[index] ?? null })),
       };
     });

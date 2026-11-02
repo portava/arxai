@@ -186,3 +186,12 @@ it('fixes either pane boundary independently without committing unchecked drafts
  expect((screen.getByLabelText('RSI 2 Scale minimum') as HTMLInputElement).value).toBe('');
  fireEvent.click(screen.getByRole('button',{name:'RSI 1 Auto scale'}));expect(settings().studies[0].paneScale).toEqual({mode:'auto'});expect(settings().studies[1].paneScale).toEqual({mode:'fixed',max:80});
 });
+it('controls each numeric readout independently of plotted lines and retains the choice when duplicating',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index'}));
+ fireEvent.click(screen.getByLabelText('RSI 1 Show in Data Window'));
+ expect(settings().studies[0].showInDataWindow).toBe(false);expect(settings().studies[0].lineStyles).toBeUndefined();
+ fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));
+ expect(settings().studies.map((s:any)=>s.showInDataWindow)).toEqual([false,false]);
+ fireEvent.click(screen.getByLabelText('RSI 2 Show in Data Window'));
+ expect(settings().studies.map((s:any)=>s.showInDataWindow)).toEqual([false,true]);
+});

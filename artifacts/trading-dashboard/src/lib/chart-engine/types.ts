@@ -197,7 +197,7 @@ export interface ChartEngineAdapter {
   showRecentRange?(seconds: number): { complete: boolean } | null;
   getVolumeProfiles?(): VolumeProfileInspection[];
   getVwapAnchorEvidence?(anchor:VwapAnchor): {utcQualified:boolean;reason:string|null};
-  getStudyValues?(time: number): { label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
+  getStudyValues?(time: number): { dataWindowVisible?:boolean; label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
   /** Transformed display bar (Heikin Ashi only) at this time; null in other
    * styles. Legend text only. Never used for studies, drawings or orders. */
   getDisplayCandle?(time: number): ChartEngineCandle | null;

@@ -1233,3 +1233,19 @@ it.each([[-12.345,"-12.345"],[-0,"+0"],[1234567890.12345,"+1234567890.12345"]])(
  expect(bubble.title).toContain("Observation time and currency are unverified");
  expect(screen.getByTestId("arx-native-pos-count").textContent).toBe("1 reported open");
 });
+it('filters only Data Window readouts and distinguishes hidden values from missing selection or studies',()=>{
+ candleResponse=liveResponse('EURUSD','H1');
+ render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+ const engine=created[0]!;
+ let rows:any[]=[{label:'Hidden RSI',dataWindowVisible:false,color:'#fff',values:[{name:'RSI',value:63.25}]},{label:'Visible SMA',color:'#fff',values:[{name:'SMA',value:1.102}]}];
+ engine.getStudyValues=vi.fn(()=>rows);
+ const output=screen.getByLabelText('Study values at selected candle');const details=output.closest('details')!;
+ act(()=>{details.open=true;details.dispatchEvent(new Event('toggle'));});
+ const inspect=engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void;
+ const bar={time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102};
+ act(()=>inspect(bar));expect(output.textContent).toContain('Visible SMA');expect(output.textContent).not.toContain('Hidden RSI');
+ expect(rows[0].values[0].value).toBe(63.25);
+ rows=rows.slice(0,1);act(()=>inspect(bar));expect(output.textContent).toContain('All study readouts are hidden');expect(output.textContent).not.toContain('Add a study');
+ act(()=>inspect(null));expect(output.textContent).toContain('Move the crosshair');expect(output.textContent).not.toContain('Add a study');
+ rows=[];act(()=>inspect(bar));expect(output.textContent).toContain('Add a study');
+});

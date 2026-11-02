@@ -148,6 +148,8 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
             <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={full} aria-label={`Duplicate study ${index + 1}`} onClick={() => add(config)}>Duplicate</Button>
             <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Remove study ${index + 1}`} onClick={() => onPreferences(previous => ({ ...previous, studies: previous.studies.filter(study => studyId(study) !== id) }))}>Remove</Button>
           </div>
+          <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${label} Show in Data Window`} checked={config.showInDataWindow!==false} onChange={event=>update(id,{showInDataWindow:event.target.checked})}/>Show in Data Window</label>
+          <p className="mt-1 text-[11px] text-zinc-400">Hides only this study’s numeric readout. Plots, calculations and assistant evidence remain available.</p>
           <ChartStudyIntervalSettings config={config} label={label} timeframe={timeframe} onChange={change=>update(id,change)}/>
           {definition.pane && <ChartStudyPaneSettings key={`${id}-pane`} config={config} label={label} onChange={change=>update(id,change)}/>}
           <details className="mt-3">

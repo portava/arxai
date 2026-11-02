@@ -375,3 +375,13 @@ it('changes interval visibility and pane layout without changing the history or 
  viewport.setDisplayTimeZone('UTC','M15');flush();expect(viewport.getPaneLayout()!.panes).toHaveLength(0);
  expect(viewport.getStudyValues(time)[0]!.values[0]).toEqual({name:'RSI (hidden)',value});expect(viewport.getRange()).toEqual(range);
 });
+it('retains selected candle and geometry when only the Data Window preference changes',()=>{
+ const onCrosshair=vi.fn();create({onCrosshair});const study={kind:'rsi' as const,id:'r',period:2,color:'#ffffff'};
+ viewport.setStudies([study]);flush();pointer('pointermove',300,100);flush();
+ const hover=onCrosshair.mock.calls.at(-1)![0];expect(hover).not.toBeNull();onCrosshair.mockClear();
+ const layout=viewport.getPaneLayout(),range=viewport.getRange();
+ viewport.setStudies([{...study,showInDataWindow:false}]);flush();
+ expect(onCrosshair.mock.calls.some(([value])=>value===null)).toBe(false);
+ expect(viewport.getPaneLayout()).toEqual(layout);expect(viewport.getRange()).toEqual(range);
+ expect(viewport.getStudyValues(hover.candle.time)[0]!.dataWindowVisible).toBe(false);
+});

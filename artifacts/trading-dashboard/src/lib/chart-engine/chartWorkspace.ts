@@ -69,6 +69,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
     if (s.kind === "macd" && (!period(s.slow) || s.slow <= s.period || !period(s.signal))) continue;
     if (s.kind === "dmi" && !period(s.signal)) continue;
     if (s.kind === "stochastic" && (!period(s.smoothing) || !period(s.signal))) continue;
+    if(s.showInDataWindow!==undefined&&typeof s.showInDataWindow!=="boolean")continue;
     if(s.visibleIntervals!==undefined && (!Array.isArray(s.visibleIntervals) || s.visibleIntervals.length>CHART_INTERVALS.length || Array.from(s.visibleIntervals).some(v=>!isChartInterval(v)) || new Set(s.visibleIntervals).size!==s.visibleIntervals.length))continue;
     const pane=STUDY_CATALOG.find(item=>item.defaults.kind===s.kind)!.pane;
     if ((s.paneScale !== undefined || s.referenceLevels !== undefined) && !pane) continue;
@@ -111,6 +112,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
     seen.add(id);
     studies.push({
       ...(lineStyles?.length ? {lineStyles} : {}),
+      ...(s.showInDataWindow!==undefined?{showInDataWindow:s.showInDataWindow}:{}),
       ...(s.visibleIntervals!==undefined?{visibleIntervals:[...s.visibleIntervals]}:{}),
       ...(s.paneScale!==undefined ? {paneScale:s.paneScale.mode==="auto"?{mode:"auto" as const}:{mode:"fixed" as const,...(s.paneScale.min!==undefined?{min:s.paneScale.min}:{}),...(s.paneScale.max!==undefined?{max:s.paneScale.max}:{})}} : {}),
       ...(s.referenceLevels!==undefined ? {referenceLevels:s.referenceLevels.map((level:any)=>({value:level.value,...(level.label!==undefined?{label:level.label}:{}),...(level.color!==undefined?{color:level.color}:{}),...(level.width!==undefined?{width:level.width}:{}),...(level.style!==undefined?{style:level.style}:{}),...(level.visible!==undefined?{visible:level.visible}:{})}))} : {}),
