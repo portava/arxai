@@ -10,7 +10,7 @@
 // redirects home. INVESTOR (view-only) accounts get no palette at all. Backend
 // route guards remain authoritative either way.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Search } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -133,7 +133,15 @@ export function visibleCommandPaletteItems(
   });
 }
 
-export function CommandPalette() {
+export function CommandPalette({
+  open: controlledOpen,
+  onOpenChange,
+  manageKeyboard = true,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  manageKeyboard?: boolean;
+} = {}) {
   const dockTarget = useChartActionDockTarget("search");
   const [, setLocation] = useLocation();
   const { effectiveIsAdmin: isAdmin } = useViewMode();
@@ -141,22 +149,29 @@ export function CommandPalette() {
   const { isApprovedTrader } = useTraderTier();
   const warmScanner = useScannerNavigationWarmup(!isInvestor && (isAdmin || isApprovedTrader), false);
   const { name } = useAssistantName();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = useCallback((next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  }, [isControlled, onOpenChange]);
   const [q, setQ] = useState("");
   const [hi, setHi] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
+    if (!manageKeyboard) return;
     function onKey(e: KeyboardEvent) {
       if (e.defaultPrevented) return;
       const meta = e.ctrlKey || e.metaKey;
-      if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); }
+      if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen(!open); }
       else if (e.key === "Escape" && open) { e.preventDefault(); setOpen(false); }
     }
     // The active palette owns Escape before the underlying fullscreen chart.
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open]);
+  }, [open, manageKeyboard, setOpen]);
 
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 30); else { setQ(""); setHi(0); } }, [open]);
 

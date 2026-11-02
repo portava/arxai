@@ -156,7 +156,7 @@ export function CommandWorkspace() {
     </aside>
     <main className="arx-workspace-main">
       <header className="arx-workspace-top">
-        <div className="min-w-0"><div className="arx-eyebrow">COMMAND WORKSPACE <span>·</span> {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</div><h1>Market desk <span className="arx-symbol">{active}</span></h1></div>
+        <div className="arx-workspace-title min-w-0"><div className="arx-eyebrow"><span className="arx-workspace-label">COMMAND WORKSPACE</span><span>·</span><time className="arx-workspace-date">{new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></div><h1>Market desk <span className="arx-symbol">{active}</span></h1></div>
         <div className="arx-preset-group" role="group" aria-label="Workspace preset">
           {(["Analyze", "Trade", "Review"] as const).map(preset => <button key={preset} type="button" aria-pressed={layout.preset === preset} onClick={() => choosePreset(preset)}>{preset}</button>)}
         </div>
@@ -171,7 +171,7 @@ export function CommandWorkspace() {
           <WorkspacePanel id="clock" title="World clock" icon={CalendarDays} collapsed={layout.collapsed.includes("clock")} pinned={layout.pinned.includes("clock")} onCollapse={() => togglePanel("clock")} onPin={() => togglePin("clock")}><WorkspaceClock/></WorkspacePanel>
         </div>
         <div className="arx-col arx-col-center">
-          <WorkspacePanel id="chart" title="Smart Chart" icon={Activity} collapsed={layout.collapsed.includes("chart")} pinned={layout.pinned.includes("chart")} onCollapse={() => togglePanel("chart")} onPin={() => togglePin("chart")} className="arx-chart-panel"><ScannerChartPanel/></WorkspacePanel>
+          <WorkspacePanel id="chart" title="Smart Chart" icon={Activity} collapsed={layout.collapsed.includes("chart")} pinned={layout.pinned.includes("chart")} onCollapse={() => togglePanel("chart")} onPin={() => togglePin("chart")} className="arx-chart-panel"><ScannerChartPanel compactWorkspace/></WorkspacePanel>
           <WorkspacePanel id="intelligence" title="Market intelligence" icon={ScanLine} collapsed={layout.collapsed.includes("intelligence")} pinned={layout.pinned.includes("intelligence")} onCollapse={() => togglePanel("intelligence")} onPin={() => togglePin("intelligence")}><div className="arx-intelligence-grid"><CriticalEventsCard/><BestMarketsCard/><AvoidMarketsCard/><AlertsSummaryCard/></div></WorkspacePanel>
         </div>
         <div className="arx-col arx-col-right">

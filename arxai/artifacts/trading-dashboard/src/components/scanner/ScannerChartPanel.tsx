@@ -418,7 +418,7 @@ export function useScannerChartRead(
   };
 }
 
-export function ScannerChartPanel() {
+export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspace?: boolean } = {}) {
   const [feedDetailsOpen, setFeedDetailsOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
   useEffect(() => {
     let wide = window.innerWidth >= 768;
@@ -1869,7 +1869,7 @@ export function ScannerChartPanel() {
 
   return (
     <Card data-testid="scanner-chart-panel" className="rounded-2xl border-border bg-card">
-      <details open={feedDetailsOpen} onToggle={event => setFeedDetailsOpen(event.currentTarget.open)} data-testid="scanner-feed-details">
+      {(!compactWorkspace || !feedDetailsOpen) && <details open={feedDetailsOpen} onToggle={event => setFeedDetailsOpen(event.currentTarget.open)} data-testid="scanner-feed-details">
       <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground md:hidden">Feed and position details</summary>
       <CardHeader className="px-3 py-2 sm:px-6 sm:py-3">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -1930,12 +1930,12 @@ export function ScannerChartPanel() {
           </div>
         </CardTitle>
       </CardHeader>
-      </details>
+      </details>}
       <CardContent className="px-2 sm:px-6">
         <SmartChartLayout symbol={symbol} primaryTimeframe={apiTf as ArxTimeframe} storageKey={SCANNER_CHART_LAYOUT_KEY} controlsBelowSingleChart>
         <ARXNativeChart symbol={symbol} timeframe={apiTf as ArxTimeframe}
           onTimeframeChange={tf => setTimeframe(normalizeChartTimeframe(tf))}
-          limit={200} height={440} mobileHeight={360}
+          limit={200} height={compactWorkspace ? 320 : 420} mobileHeight={270} compactWorkspace={compactWorkspace}
           externalFeed={{ data: originalResponse, isLoading: loading, isFetching: candlesQuery.isFetching,
             isError: candlesQuery.isError || (!!candlesQuery.data && !originalResponse && isChartInterval(apiTf)),
             refetch: () => candlesQuery.refetch(), livePriceAllowed: isLiveDisplay }}

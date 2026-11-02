@@ -33,3 +33,18 @@ it("leaves unrelated and already handled keys alone", () => {
   window.dispatchEvent(handled);
   expect(screen.getByTestId("cmdk-dialog")).toBeTruthy();
 });
+
+it("supports a controlled, on-demand shell mount without taking over keyboard events", () => {
+  const onOpenChange = vi.fn();
+  const { rerender } = render(<CommandPalette open={false} onOpenChange={onOpenChange} manageKeyboard={false}/>);
+  fireEvent.click(screen.getByTestId("cmdk-trigger"));
+  expect(onOpenChange).toHaveBeenCalledWith(true);
+  expect(screen.queryByTestId("cmdk-dialog")).toBeNull();
+
+  rerender(<CommandPalette open onOpenChange={onOpenChange} manageKeyboard={false}/>);
+  expect(screen.getByTestId("cmdk-dialog")).toBeTruthy();
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.getByTestId("cmdk-dialog")).toBeTruthy();
+  fireEvent.click(screen.getByTestId("cmdk-dialog"));
+  expect(onOpenChange).toHaveBeenLastCalledWith(false);
+});

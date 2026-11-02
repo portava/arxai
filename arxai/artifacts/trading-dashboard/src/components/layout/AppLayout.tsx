@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "wouter";
 import {
   Activity, Bot, Shield,
@@ -14,15 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Topbar, MobileMenuTrigger } from "./Topbar";
-import { MobileBottomNav } from "./MobileBottomNav";
-import { Footer } from "./Footer";
 import { ARXLogoMark, ARXBrandLockup } from "@/components/brand/ARXLogo";
 import { FloatingActionPanel } from "@/components/trading/FloatingActionPanel";
-import { SafetyHeader } from "@/components/ss/SafetyHeader";
-import { LiveModeBadge } from "@/components/live/LiveModeBadge";
-import NotificationCenter from "@/components/NotificationCenter";
-import { CommandPalette } from "./CommandPalette";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -31,7 +25,7 @@ import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
 import { useScannerNavigationWarmup } from "@/hooks/useScannerNavigationWarmup";
 import { RouteAccessGuard } from "./RouteAccessGuard";
-import { AssistantDockProvider } from "@/components/help/AssistantDock";
+import { AssistantDockProvider, useChartActionDockTarget } from "@/components/help/AssistantDock";
 
 // Lazy-load the Ruby assistant panel (voice / realtime-WebRTC / TTS stack) so
 // its large module graph stays OUT of every page's first-paint critical path.
@@ -42,6 +36,18 @@ const ArxAssistantLivePanel = lazy(() =>
   import("@/components/help/ArxAssistantLivePanel").then((m) => ({
     default: m.ArxAssistantLivePanel,
   })),
+);
+const LazyGlobalHeader = lazy(() =>
+  import("./GlobalHeader").then((m) => ({ default: m.GlobalHeader })),
+);
+const LazySharedFooter = lazy(() =>
+  import("./SharedNavigationExtras").then((m) => ({ default: m.SharedFooter })),
+);
+const LazyMobileBottomNav = lazy(() =>
+  import("./SharedNavigationExtras").then((m) => ({ default: m.SharedMobileBottomNav })),
+);
+const LazyCommandPalette = lazy(() =>
+  import("./CommandPalette").then((m) => ({ default: m.CommandPalette })),
 );
 
 interface NavItem { href: string; label: string; icon: LucideIcon; className?: string; adminOnly?: boolean; approvedOnly?: boolean; aliases?: string[]; description?: string; }
@@ -590,10 +596,33 @@ const COLLAPSE_KEY = "highroll.sidebarCollapsed";
 
 export const showSharedNavigation = (location: string) => location !== "/";
 
+function CommandPaletteLauncher({ open, onOpen }: { open: boolean; onOpen: () => void }) {
+  const dockTarget = useChartActionDockTarget("search");
+  const { isInvestor } = useProductRole();
+  if (isInvestor) return null;
+  const trigger = (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="Open command palette"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      data-testid="cmdk-trigger"
+      className={`${dockTarget ? "h-11 w-11 justify-center" : "fixed bottom-20 left-3 md:bottom-6 md:left-6 z-40 gap-2 px-3 py-1.5"} inline-flex items-center rounded-full border bg-background/85 text-xs text-muted-foreground shadow-lg backdrop-blur hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary`}
+    >
+      <Search size={14} />
+      {!dockTarget && <><span className="hidden md:inline">Search</span> <kbd className="ml-1 hidden md:inline rounded border px-1 text-[10px]">Ctrl K</kbd></>}
+    </button>
+  );
+  return dockTarget ? createPortal(trigger, dockTarget) : trigger;
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const isRootWorkspace = location === "/";
   const hideGlobalHeader = location === "/" || location === "/trade-command-room";
+  const { isInvestor } = useProductRole();
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(COLLAPSE_KEY) === "1";
@@ -603,6 +632,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     document.documentElement.classList.add("dark");
     localStorage.setItem("theme", "dark");
   }, []);
+
+  useEffect(() => {
+    if (isInvestor) {
+      setCommandPaletteOpen(false);
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+      } else if (event.key === "Escape" && commandPaletteOpen) {
+        event.preventDefault();
+        setCommandPaletteOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isInvestor, commandPaletteOpen]);
 
   const toggleCollapsed = () => {
     setCollapsed((c) => {
@@ -637,40 +685,27 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Main column */}
       <div className="flex-1 min-w-0 flex flex-col">
         {!hideGlobalHeader && (
-        <Topbar
-          onMobileMenu={
-            <MobileMenuTrigger>
-              {(close) => <SidebarContent onNavigate={close} />}
-            </MobileMenuTrigger>
-          }
-        />
+          <Suspense fallback={<div className="h-12" aria-hidden="true" />}>
+            <LazyGlobalHeader sidebarContent={(close) => <SidebarContent onNavigate={close} />} />
+          </Suspense>
         )}
-        {/* T025 — single compact status row: one LIVE chip (left) + alerts
-            bell (right). The full-width billboard banner (mode label + user
-            message + "Real money risk") was removed; live mode and any
-            blocked/kill-switch state now surface only through the compact
-            LiveModeBadge chip, whose tooltip carries the longer detail. */}
-        {!hideGlobalHeader && (
-        <div className="flex items-center justify-between gap-2 px-4 py-1 border-b border-zinc-900 bg-zinc-950/60">
-          <LiveModeBadge />
-          <NotificationCenter />
-        </div>
-        )}
-        {/* Legacy SS safety header — kept for operator-facing context until
-            Phase 3 ships and the broker placement layer replaces it. */}
-        {!hideGlobalHeader && <SafetyHeader />}
         <main id="main-content" className={cn("flex-1 min-w-0 overflow-y-auto overflow-x-clip", isRootWorkspace ? "pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0" : "pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]")} tabIndex={-1}>
           <div className="min-w-0 p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full">
             <RouteAccessGuard>{children}</RouteAccessGuard>
           </div>
-          {!isRootWorkspace && <Footer />}
+          {!isRootWorkspace && <Suspense fallback={null}><LazySharedFooter /></Suspense>}
         </main>
       </div>
 
       {/* Mobile bottom nav + universal floating action panel */}
-      {showSharedNavigation(location) && <MobileBottomNav />}
+      {showSharedNavigation(location) && <Suspense fallback={null}><LazyMobileBottomNav /></Suspense>}
       <FloatingActionPanel rootWorkspace={isRootWorkspace} />
-      <CommandPalette />
+      <CommandPaletteLauncher open={commandPaletteOpen} onOpen={() => setCommandPaletteOpen(true)} />
+      {commandPaletteOpen && (
+        <Suspense fallback={null}>
+          <LazyCommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} manageKeyboard={false} />
+        </Suspense>
+      )}
       <Suspense fallback={null}>
         <ArxAssistantLivePanel />
       </Suspense>

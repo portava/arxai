@@ -1170,3 +1170,23 @@ describe("native selected historical follow-up routing",()=>{
   view.unmount();expect(requestChartResearch("Why did this trade lose?")).toContain("Select a ready Smart Chart");
  });
 });
+
+describe("compact command-workspace chart", () => {
+  it("keeps the full plot height visible and discloses advanced tools separately", () => {
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" height={320} mobileHeight={270} compactWorkspace showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const canvas = screen.getByTestId("arx-native-canvas");
+    expect(canvas.style.height).toBe("320px");
+    const details = screen.getByTestId("arx-native-advanced-details") as HTMLDivElement;
+    expect(details.hidden).toBe(true);
+    const advancedToggle = screen.getByRole("button", { name: "Advanced chart details" });
+    expect(advancedToggle.getAttribute("aria-expanded")).toBe("false");
+    const timeframeToolbar = screen.getByTestId("arx-native-tf-controls");
+    expect(timeframeToolbar.contains(advancedToggle)).toBe(true);
+    expect(timeframeToolbar.contains(screen.getByTestId("arx-native-reset-scale"))).toBe(true);
+    expect(screen.queryByRole("toolbar", { name: "Chart view controls" })).toBeNull();
+    fireEvent.click(advancedToggle);
+    expect(advancedToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(details.hidden).toBe(false);
+    expect(screen.getByRole("toolbar", { name: "Chart view controls" })).toBeTruthy();
+  });
+});

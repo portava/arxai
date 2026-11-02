@@ -269,6 +269,8 @@ export interface ARXNativeChartProps {
   height?: number;
   /** Chart pixel height on mobile (<768px). Defaults to height if unset. */
   mobileHeight?: number;
+  /** Compact command-workspace mode keeps the full plot in view and discloses secondary tools. */
+  compactWorkspace?: boolean;
   /** Show the minimal honest quality chip (default true). Level 3 owns the rich badge. */
   showFeedStatus?: boolean;
   /** Scanner supplies its existing shared query, including original candle
@@ -339,6 +341,7 @@ export function ARXNativeChart({
   mode,
   height = 520,
   mobileHeight,
+  compactWorkspace = false,
   showFeedStatus = true,
   externalFeed,
   onScannerSurfaceChange,
@@ -647,6 +650,9 @@ export function ARXNativeChart({
   // the chart is always readable without crushing the rest of the page.
   const [effectiveHeight, setEffectiveHeight] = useState(()=>viewportChartHeight(height,mobileHeight,expanded));
   const [mobileLayout, setMobileLayout] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
+  const [advancedToolsMounted, setAdvancedToolsMounted] = useState(false);
+  const compactDesktopWorkspace = compactWorkspace && !mobileLayout;
   useEffect(() => {
     const update = () => {
       const isMobile = window.innerWidth < 768;
@@ -1339,14 +1345,14 @@ export function ARXNativeChart({
           {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
           <span className={mobileLayout ? "sr-only" : undefined}>{expanded ? "Exit fullscreen" : "Fullscreen"}</span>
         </Button>);
-  const timeframeControls = (<div className="flex flex-wrap items-center gap-1" data-testid="arx-native-tf-controls">
+  const timeframeControls = (<div className={`flex items-center gap-1 ${compactDesktopWorkspace ? "w-full flex-nowrap overflow-x-auto py-0.5" : "flex-wrap"}`} data-testid="arx-native-tf-controls">
             {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>setReplayError(replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}))}>Replay loaded bars</Button>}
             {TIMEFRAMES.map((tf) => (
               <Button
                 key={tf.id}
                 size="sm"
                 variant={timeframe === tf.id ? "default" : "outline"}
-                className="h-7 px-2 text-xs"
+                className={`h-7 px-2 text-xs ${compactDesktopWorkspace ? "shrink-0 whitespace-nowrap" : ""}`}
                 onClick={() => setTimeframe(tf.id)}
                 aria-pressed={timeframe === tf.id}
                 aria-label={`${tf.label} timeframe`}
@@ -1355,7 +1361,7 @@ export function ARXNativeChart({
                 {tf.label}
               </Button>
             ))}
-            <select className="h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100" aria-label="More chart intervals" title="Additional intervals; weekly and monthly source boundaries are not yet supported"
+            <select className={`h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100 ${compactDesktopWorkspace ? "shrink-0" : ""}`} aria-label="More chart intervals" title="Additional intervals; weekly and monthly source boundaries are not yet supported"
               value={(MORE_TIMEFRAMES as readonly string[]).includes(timeframe) ? timeframe : ""}
               onChange={event => {if (isChartInterval(event.target.value)) setTimeframe(event.target.value);}}>
               <option value="" disabled>More intervals</option>
@@ -1363,17 +1369,36 @@ export function ARXNativeChart({
               <option value="W1" disabled>W1 — source week boundaries not verified</option>
               <option value="MN1" disabled>MN1 — calendar boundaries not verified</option>
             </select>
-            {hasCandles && (
+            {(hasCandles || compactDesktopWorkspace) && (
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-[11px] text-zinc-500 hover:text-zinc-300"
+                className={`h-7 text-zinc-500 hover:text-zinc-300 ${compactDesktopWorkspace ? "w-7 shrink-0 p-0" : "px-2 text-[11px]"}`}
+                disabled={!hasCandles}
                 onClick={resetScale}
                 aria-label="Reset chart scale"
                 title="Reset scale — restore default visible range"
                 data-testid="arx-native-reset-scale"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {compactDesktopWorkspace && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 px-2 text-xs"
+                aria-label="Advanced chart details"
+                aria-expanded={advancedToolsOpen}
+                aria-controls="arx-advanced-chart-content"
+                data-testid="arx-native-advanced-toggle"
+                onClick={() => {
+                  const next = !advancedToolsOpen;
+                  setAdvancedToolsOpen(next);
+                  if (next) setAdvancedToolsMounted(true);
+                }}
+              >
+                Advanced
               </Button>
             )}
           </div>);
@@ -1405,15 +1430,41 @@ export function ARXNativeChart({
       <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
   </Fragment>;
 
+  const chartDetailsContent = <>
+    {chartControls}
+    {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
+    <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+    <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
+      <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
+      <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
+    </details>
+  </>;
+
   return (
     <Card ref={cardRef} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? `${resolvedSymbol} fullscreen chart` : undefined} data-testid="arx-native-chart" className={expanded ? "fixed inset-0 z-50 overflow-auto rounded-none border-zinc-800 bg-zinc-950" : "overflow-hidden border-zinc-800 bg-zinc-950/40"}>
-      <CardHeader className="py-3 px-3 md:px-4">
-        <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
+      <CardHeader className={compactDesktopWorkspace ? "px-2 py-1 md:px-3" : "py-3 px-3 md:px-4"}>
+        <CardTitle className={compactDesktopWorkspace ? "flex flex-col items-stretch gap-1 text-sm" : "flex flex-wrap items-center justify-between gap-2 text-sm"}>
+          <div className={`flex flex-wrap items-center ${compactDesktopWorkspace ? "min-w-0 gap-1" : "gap-2"}`}>
             <CandlestickChart className="h-4 w-4 text-primary" />
             <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
             {workspaceId === "primary" ? <AssistantDockSlot assistantEnabled={assistantPane.active}/> : assistantPane.active ? <AssistantDockSlot assistantOnly/> : null}
             {fullscreenToggle}
+            {compactWorkspace && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 w-7 p-0"
+                aria-label="Reload chart candles"
+                title="Reload chart candles"
+                data-testid="arx-native-reload"
+                disabled={externalFeed?.isFetching ?? query.isFetching}
+                onClick={() => { if (externalFeed) void externalFeed.refetch(); else void query.refetch(); }}
+              >
+                {(externalFeed?.isFetching ?? query.isFetching)
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true"/>
+                  : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true"/>}
+              </Button>
+            )}
             <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
               {resolvedSymbol}
             </span>
@@ -1495,10 +1546,10 @@ export function ARXNativeChart({
         </CardTitle>
       </CardHeader>
 
-      {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
-      {tradeVolumeSelected && hasCandles && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{hasQualifiedTradeVolume ? "Trade volume and VWAP use qualified provider-reported trade units on original closed bars, not tick counts or proven shares. Only loaded observations are covered; missing, zero or partial volume stays blank and holds later cumulative VWAP. Saved anchors stay bound to their original series." : "Trade volume / VWAP unavailable: no qualified positive traded quantities for these loaded candles. Tick counts and missing or zero volume are not substituted."}</p>}
-      {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className="px-3 pb-2 text-xs text-amber-300" role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
-      {!supportedTimeframe && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
+      {replayError && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{replayError}</p>}
+      {tradeVolumeSelected && hasCandles && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{hasQualifiedTradeVolume ? "Trade volume and VWAP use qualified provider-reported trade units on original closed bars, not tick counts or proven shares. Only loaded observations are covered; missing, zero or partial volume stays blank and holds later cumulative VWAP. Saved anchors stay bound to their original series." : "Trade volume / VWAP unavailable: no qualified positive traded quantities for these loaded candles. Tick counts and missing or zero volume are not substituted."}</p>}
+      {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
+      {!supportedTimeframe && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
       {/* This is a presentation of the existing owners, not another verdict.
           Every active restriction stays outside the disclosure. Full original
@@ -1517,7 +1568,7 @@ export function ARXNativeChart({
         )}
         {!mirrorLocked && <p className="px-3 pt-1 text-xs text-amber-200" data-testid="chart-evidence-inspection">Inspection mode — Mirror Lock OFF</p>}
         <details data-testid="chart-evidence-details">
-          <summary className="cursor-pointer px-3 py-1.5 text-xs leading-4 text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+          <summary className={`cursor-pointer px-3 ${compactDesktopWorkspace ? "py-1" : "py-1.5"} text-xs leading-4 text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary`}>
             <span>Chart evidence details</span><span className="ml-2 text-zinc-400">{mirrorStatus} · {timeframe}</span>
           </summary>
       {/* Phase 2 — Chart Mirror Layer.
@@ -1752,13 +1803,16 @@ export function ARXNativeChart({
       </CardContent>
       {/* Detailed tools stay mounted after the plot on every viewport. Source
           and safety notices above it remain visible before any candle. */}
-      {chartControls}
-      {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
-      <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
-      <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
-        <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
-        <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
-      </details>
+      {compactWorkspace ? (
+        <div
+          id="arx-advanced-chart-content"
+          className="border-t border-zinc-800"
+          data-testid="arx-native-advanced-details"
+          hidden={compactDesktopWorkspace && !advancedToolsOpen}
+        >
+          {(!compactDesktopWorkspace || advancedToolsMounted) && <div className="space-y-2">{chartDetailsContent}</div>}
+        </div>
+      ) : chartDetailsContent}
       <ChartLibraryCredit />
     </Card>
   );

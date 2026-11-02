@@ -17,6 +17,9 @@ describe("reviewed order entry point", () => {
     const frame = screen.getByTestId("trade-command-room-frame") as HTMLIFrameElement;
     expect(frame.getAttribute("src")).toBe("/trade-command-room");
     expect(frame.title).toBe("Trade Command Room for EURUSD");
+    expect(screen.getByTestId("reviewed-order-loading").textContent).toContain("first load can take a few seconds");
+    fireEvent.load(frame);
+    expect(screen.queryByTestId("reviewed-order-loading")).toBeNull();
     expect(screen.getByRole("link", { name: "Open in a new tab" }).getAttribute("href")).toBe("/trade-command-room");
   });
 });

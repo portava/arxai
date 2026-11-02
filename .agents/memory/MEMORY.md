@@ -5,6 +5,7 @@
 - [API schema regeneration](api-schema-regeneration.md) — root OpenAPI codegen can rewrite unrelated generated React Query output; inspect its diff before accepting regeneration.
 - [Validation workflow run button](validation-workflow-run-button.md) — inspect `.replit` after registering validation; the helper may redirect `Project` to the check.
 - [Validation process lifecycle](api-test-process-lifecycle.md) — API imports start long-lived workers; offline fixtures need an owner that outlives the browser run.
+- [Browser telemetry lifecycle](browser-telemetry-lifecycle.md) — bind module-level timers/listeners to their owning document and retire them when that document disappears.
 - [Browser QA dependencies](browser-qa-dependencies.md) — repair declared installs only; check system Chromium and use owned processes for long portable journeys.
 - [Auth query cancellation](auth-query-cancellation.md) — notify auth observers, cancel pending private queries synchronously, then clear without awaiting network settlement.
 - [React Query browser focus checks](react-query-browser-focus-checks.md) — simulate `visibilitychange` on `window` to trigger TanStack Query's default focus revalidation in browser QA.
