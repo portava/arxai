@@ -1,0 +1,43 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { Search } from "lucide-react";
+import { WorkspacePanel, persistWorkspaceLayout, readWorkspaceLayout } from "./CommandWorkspace";
+
+describe("workspace panel controls", () => {
+  it("uses keyboard-focusable buttons to collapse, expand, and pin panels", () => {
+    const onCollapse = vi.fn();
+    const onPin = vi.fn();
+    const { rerender } = render(<WorkspacePanel id="chart" title="Smart Chart" icon={Search} collapsed={false} pinned={false} onCollapse={onCollapse} onPin={onPin}>chart body</WorkspacePanel>);
+    const collapse = screen.getByRole("button", { name: "Collapse Smart Chart" });
+    expect(collapse.tagName).toBe("BUTTON");
+    expect(collapse.getAttribute("type")).toBe("button");
+    expect(collapse.tabIndex).toBe(0);
+    fireEvent.click(collapse);
+    fireEvent.click(screen.getByRole("button", { name: "Pin Smart Chart" }));
+    expect(onCollapse).toHaveBeenCalledOnce();
+    expect(onPin).toHaveBeenCalledOnce();
+    rerender(<WorkspacePanel id="chart" title="Smart Chart" icon={Search} collapsed pinned onCollapse={onCollapse} onPin={onPin}>chart body</WorkspacePanel>);
+    const pinnedCollapse = screen.getByRole("button", { name: "Collapse Smart Chart" }) as HTMLButtonElement;
+    expect(pinnedCollapse.getAttribute("aria-expanded")).toBe("true");
+    expect(pinnedCollapse.disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Unpin Smart Chart" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("chart body")).toBeTruthy();
+    expect(screen.getByText("PINNED")).toBeTruthy();
+  });
+
+  it("persists layout preferences only and ignores malformed or unknown panel data", () => {
+    const memory = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => { memory.set(key, value); },
+    };
+    persistWorkspaceLayout({ collapsed: ["ruby"], pinned: ["chart"], preset: "Review" }, storage);
+    expect(readWorkspaceLayout(storage)).toEqual({ collapsed: ["ruby"], pinned: ["chart"], preset: "Review" });
+    persistWorkspaceLayout({ collapsed: ["heat"], pinned: ["clock"], preset: "Trade" }, storage);
+    expect(readWorkspaceLayout(storage)).toEqual({ collapsed: ["heat"], pinned: ["clock"], preset: "Trade" });
+    memory.set("arx.command-workspace.layout.v1", JSON.stringify({ collapsed: ["accounts", "clock"], pinned: ["clock"], preset: "Trade", balance: 9000 }));
+    expect(readWorkspaceLayout(storage)).toEqual({ collapsed: [], pinned: ["clock"], preset: "Trade" });
+    memory.set("arx.command-workspace.layout.v1", "{");
+    expect(readWorkspaceLayout(storage).preset).toBe("Analyze");
+  });
+});

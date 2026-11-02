@@ -291,6 +291,28 @@ const INVESTOR_NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/** Shared route/catalog metadata for compact workspace launchers. Keep the
+ * same role gates and intent aliases as the primary navigation. */
+export function getDashboardToolCatalog(
+  name: string,
+  role: { isAdmin: boolean; isApprovedTrader: boolean; isInvestor: boolean },
+) {
+  const groups = role.isInvestor ? INVESTOR_NAV_GROUPS : buildNavGroups(name);
+  const aliasMap = buildSearchAliases(name);
+  return groups.flatMap(group => group.items
+    .filter(item =>
+      (!group.adminOnly && !item.adminOnly || role.isAdmin) &&
+      (!group.approvedOnly && !item.approvedOnly || role.isAdmin || role.isApprovedTrader),
+    )
+    .map(item => ({
+      href: item.href,
+      label: item.label,
+      group: group.label || "Quick access",
+      aliases: [...(item.aliases ?? []), ...(aliasMap[item.href]?.aliases ?? [])],
+      description: item.description ?? aliasMap[item.href]?.description,
+    })));
+}
+
 const GROUP_KEY = (label: string) => `arx.nav.group.${label || "_root"}`;
 function isGroupOpen(label: string, defaultOpen: boolean): boolean {
   if (typeof window === "undefined") return defaultOpen;
@@ -566,9 +588,11 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
 
 const COLLAPSE_KEY = "highroll.sidebarCollapsed";
 
+export const showSharedNavigation = (location: string) => location !== "/";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const isRootWorkspace = location === "/";
   const hideGlobalHeader = location === "/" || location === "/trade-command-room";
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -597,8 +621,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         Skip to main content
       </a>
-      {/* Desktop sidebar (collapsible) */}
-      <aside className={cn("hidden md:block shrink-0 sticky top-0 h-screen relative transition-all duration-200", collapsed ? "w-16" : "w-60")}>
+      {/* Root has its own workspace dock; every specialist route retains the shared sidebar. */}
+      {showSharedNavigation(location) && <aside className={cn("hidden md:block shrink-0 sticky top-0 h-screen relative transition-all duration-200", collapsed ? "w-16" : "w-60")}>
         <SidebarContent collapsed={collapsed} />
         <button
           onClick={toggleCollapsed}
@@ -608,7 +632,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
-      </aside>
+      </aside>}
 
       {/* Main column */}
       <div className="flex-1 min-w-0 flex flex-col">
@@ -635,17 +659,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Legacy SS safety header — kept for operator-facing context until
             Phase 3 ships and the broker placement layer replaces it. */}
         {!hideGlobalHeader && <SafetyHeader />}
-        <main id="main-content" className="flex-1 min-w-0 overflow-y-auto overflow-x-clip pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]" tabIndex={-1}>
+        <main id="main-content" className={cn("flex-1 min-w-0 overflow-y-auto overflow-x-clip", isRootWorkspace ? "pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0" : "pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]")} tabIndex={-1}>
           <div className="min-w-0 p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full">
             <RouteAccessGuard>{children}</RouteAccessGuard>
           </div>
-          <Footer />
+          {!isRootWorkspace && <Footer />}
         </main>
       </div>
 
       {/* Mobile bottom nav + universal floating action panel */}
-      <MobileBottomNav />
-      <FloatingActionPanel />
+      {showSharedNavigation(location) && <MobileBottomNav />}
+      <FloatingActionPanel rootWorkspace={isRootWorkspace} />
       <CommandPalette />
       <Suspense fallback={null}>
         <ArxAssistantLivePanel />

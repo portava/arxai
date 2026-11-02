@@ -1935,7 +1935,7 @@ export function ScannerChartPanel() {
         <SmartChartLayout symbol={symbol} primaryTimeframe={apiTf as ArxTimeframe} storageKey={SCANNER_CHART_LAYOUT_KEY} controlsBelowSingleChart>
         <ARXNativeChart symbol={symbol} timeframe={apiTf as ArxTimeframe}
           onTimeframeChange={tf => setTimeframe(normalizeChartTimeframe(tf))}
-          limit={200} height={520} mobileHeight={360}
+          limit={200} height={440} mobileHeight={360}
           externalFeed={{ data: originalResponse, isLoading: loading, isFetching: candlesQuery.isFetching,
             isError: candlesQuery.isError || (!!candlesQuery.data && !originalResponse && isChartInterval(apiTf)),
             refetch: () => candlesQuery.refetch(), livePriceAllowed: isLiveDisplay }}

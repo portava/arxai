@@ -12,7 +12,7 @@ import { NotificationBell } from "@/components/alerts/NotificationBell";
 import { useCurrentUser, useLogout } from "@/hooks/useCurrentUser";
 import { Button } from "@/components/ui/button";
 
-export function CockpitHeader({ onMobileMenu }: { onMobileMenu?: ReactNode }) {
+export function CockpitHeader({ onMobileMenu, showSymbolPicker = true }: { onMobileMenu?: ReactNode; showSymbolPicker?: boolean }) {
   const { user } = useCurrentUser();
   const logout = useLogout();
 
@@ -30,10 +30,9 @@ export function CockpitHeader({ onMobileMenu }: { onMobileMenu?: ReactNode }) {
           <ARXWordmark size="md" mode="dark" />
         </div>
 
-        {/* centered symbol pill */}
-        <div className="mx-auto flex max-w-[260px] flex-1 items-center justify-center">
-          <SymbolPicker />
-        </div>
+        {/* SymbolPicker is optional for surfaces whose source of truth is the
+            shared chart-symbol bus rather than the app-wide symbol context. */}
+        {showSymbolPicker && <div className="mx-auto flex max-w-[260px] flex-1 items-center justify-center"><SymbolPicker /></div>}
 
         {/* bell + profile */}
         <div className="flex items-center gap-1">
