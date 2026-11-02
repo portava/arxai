@@ -367,3 +367,8 @@ Application `d09c82eb` reuses the existing ten-kind ARX drawing geometry/editor 
 Application `0090138e` shares the existing per-user positions report across Scanner, the picker/detail and chart overlays. Event hints reread that authority; failed or empty reports withdraw prior values consistently. P/L preserves the same numeric value instead of different rounding. This remains last-reported per-user money, with native observation time/currency unverified—not proof of current MT5 account equality.
 
 Full frontend 4,678 pass / 12 skipped; typecheck/build pass; guards 85/87 with identical baseline diagnostics. Actual offline browser checks: 16 Smart Chart/list/detail and 9 Scanner. All 20 first-navigation attempts rendered the correct source: normal CPU 10/10 within 100 ms, throttled CPU 0/10, maximum 397.4 ms. Some throttled results are slower than the earlier baseline; no no-regression or competitor-speed claim follows. Whole-account matching, event delivery, native precision and confirmed-close reversal remain unfinished. See [exact source and retained failures](POSITION_MONEY_REFRESH_2026_11_02.md).
+
+
+## Held offscreen-rendering experiment — 2 November 2026
+
+Candidate `0788dc1d` was reverted by `5f526edd`: 80/80 offline navigation attempts rendered the correct source, but no repeatable speed gain appeared in the counterbalanced comparison. All 40 throttled attempts exceeded 100 ms. The unchanged baseline matched the apparent mobile improvement. No competitor parity, deployed speed, comprehensive UI acceptance or all-engine accuracy follows. See [exact measurements and retained failures](SCANNER_OFFSCREEN_RENDER_2026_11_02.md).
