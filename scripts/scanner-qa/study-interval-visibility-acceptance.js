@@ -30,7 +30,7 @@ async page => {
   check(JSON.stringify(initial.data)===JSON.stringify(current.data),'Visibility changes preserve canonical and displayed OHLC');
   await panel.getByLabel('SMA 2 Visible on M30',{exact:true}).check();
   await panel.getByRole('button',{name:/^Studies \(/}).click();
-  await panel.getByRole('button',{name:'M30',exact:true}).click();
+  await panel.getByRole('button',{name:'M30 timeframe',exact:true}).click();
   await page.waitForFunction(()=>window.__arxChartQa.layout()?.panes.length===1);await frames();
   current=await state();check(current.config.studies[0].visibleIntervals.length===0&&current.config.studies[1].visibleIntervals.join(',')==='M30','Interval switch respects exact restrictions');
   check(current.data.canonical.length>2&&current.data.canonical[1].time-current.data.canonical[0].time===1800,'M30 view contains M30 source bars, not relabeled old candles');
