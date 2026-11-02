@@ -236,3 +236,13 @@ it('identifies latest fallback, exact historical pin and unavailable readout tim
  f.adapter.resetDataContext();flush();expect(f.adapter.getCandleReadoutOrigin(time)).toBe('unavailable');
  f.adapter.setCandles(data);flush();expect(f.adapter.getCandleReadoutOrigin(data.at(-1)!.time)).toBe('latest');
 });
+
+it('global scale visibility hides paint without changing studies, pins or geometry across context replacement',()=>{
+ const f=setup(),study={kind:'sma' as const,id:'s',period:2,color:'#abcdef',showOnScale:true};f.adapter.setCandles(bars());f.adapter.setStudies([study]);flush();
+ f.viewport().inspectCandle('previous');flush();const selected=f.viewport().getState().inspectionTime,layout=f.viewport().getPaneLayout();
+ ctx.fillText.mockClear();f.adapter.setStudyScaleLabelsVisible(false);flush();
+ expect(ctx.fillText.mock.calls.some((a:any[])=>a[0]==='300.5')).toBe(false);expect(f.viewport().getStudies()).toEqual([study]);expect(f.viewport().getState().inspectionTime).toBe(selected);expect(f.viewport().getPaneLayout()).toEqual(layout);
+ const count=f.viewport().getState().drawCount;f.adapter.setStudyScaleLabelsVisible(false);flush();expect(f.viewport().getState().drawCount).toBe(count);
+ ctx.fillText.mockClear();f.adapter.setStudyScaleLabelsVisible(true);flush();expect(ctx.fillText.mock.calls.some((a:any[])=>a[0]==='300.5')).toBe(true);
+ f.adapter.setStudyScaleLabelsVisible(false);f.adapter.resetDataContext();f.adapter.setCandles(bars());ctx.fillText.mockClear();flush();expect(ctx.fillText.mock.calls.some((a:any[])=>a[0]==='300.5')).toBe(false);
+});

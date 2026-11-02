@@ -60,6 +60,12 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
       <div><h3 className="font-medium text-zinc-100">Study library</h3><p className="mt-1 text-zinc-400">{STUDY_CATALOG.length} studies · up to {MAX_STUDIES} independent instances per chart</p></div>
       <input className={`${field} w-full sm:w-64`} type="search" aria-label="Search studies" placeholder="Search name, type or method…" value={query} onChange={event => setQuery(event.target.value)} />
     </div>
+    <fieldset className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
+      <legend className="mb-2 text-zinc-300">Readouts for this chart</legend>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={preferences.showStudyStatusValues!==false} onChange={event=>{const checked=event.target.checked;onPreferences(previous=>({...previous,showStudyStatusValues:checked}));}}/>Allow study status values</label>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={preferences.showStudyScaleLabels!==false} onChange={event=>{const checked=event.target.checked;onPreferences(previous=>({...previous,showStudyScaleLabels:checked}));}}/>Allow study scale labels</label>
+      <p className="basis-full text-zinc-400">These switches override the choices below without changing them. Plots, calculations and the Data Window stay available.</p>
+    </fieldset>
     <div className="grid max-h-52 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3" aria-label="Available studies">
       {matches.map(item => <button type="button" key={item.defaults.kind} disabled={full} className="rounded border border-zinc-800 p-2 text-left hover:border-zinc-600 hover:bg-zinc-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-40" aria-label={`Add ${item.name}`} title={item.description} onClick={() => add(item.defaults)}>
         <span className="flex items-center justify-between gap-2"><span className="text-zinc-100">{item.name}</span><span aria-hidden="true" className="text-sky-300">+</span></span>
@@ -157,9 +163,11 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
           <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${label} Show in Data Window`} checked={config.showInDataWindow!==false} onChange={event=>update(id,{showInDataWindow:event.target.checked})}/>Show in Data Window</label>
           <p className="mt-1 text-[11px] text-zinc-400">Hides only this study’s numeric readout. Plots, calculations and assistant evidence remain available.</p>
           <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${label} Show values in status line`} checked={config.showInStatusLine===true} onChange={event=>update(id,{showInStatusLine:event.target.checked})}/>Show values in status line</label>
+          {preferences.showStudyStatusValues===false&&config.showInStatusLine===true&&<p className="mt-1 text-xs text-amber-300">Status values are hidden by this chart’s readout setting.</p>}
           <p className="mt-1 text-[11px] text-zinc-400">Compact observations for the inspected or pinned candle; otherwise the latest loaded candle. This does not change plots or the Data Window.</p>
           {config.kind!=='volume_profile' && <><label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${label} Show labels on scale`} checked={config.showOnScale===true} onChange={event=>update(id,{showOnScale:event.target.checked})}/>Show labels on scale</label>
           <p className="mt-1 text-[11px] text-zinc-400">Latest loaded candle values, not a live-data guarantee. Labels hide when off-screen, unavailable or crowded. Price overlays retain original price units on percentage scales.</p></>}
+          {preferences.showStudyScaleLabels===false&&config.showOnScale===true&&<p className="mt-1 text-xs text-amber-300">Scale labels are hidden by this chart’s readout setting.</p>}
           <ChartStudyIntervalSettings config={config} label={label} timeframe={timeframe} onChange={change=>update(id,change)}/>
           {definition.pane && <ChartStudyPaneSettings key={`${id}-pane`} config={config} label={label} onChange={change=>update(id,change)}/>}
           <details className="mt-3">

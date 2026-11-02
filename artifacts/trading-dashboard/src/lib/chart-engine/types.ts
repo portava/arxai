@@ -226,6 +226,8 @@ export interface ChartEngineAdapter {
   isAnalysisFocused?(): boolean;
   isAnalysisFocusVerified?(): boolean;
   setStudies?(studies: ChartStudy[]): void;
+  /** View-only override; keeps each study’s saved preference intact. */
+  setStudyScaleLabelsVisible?(visible: boolean): void;
   setDrawings?(drawings: ChartDrawing[]): void;
   setDrawingInteraction?(config: DrawingInteraction | null): void;
   setDrawingHandler?(handler: ((anchor: ChartAnchor) => void) | null): void;

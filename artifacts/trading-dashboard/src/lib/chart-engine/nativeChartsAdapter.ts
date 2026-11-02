@@ -213,6 +213,7 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
  getStudyPaneControls(){return this.viewport ? this.viewport.getStudyPaneControls() : [];}
  getVolumeProfiles(){return this.viewport?.getVolumeProfiles()??[];}
  getDisplayCandle(time:number){return this.viewport?.getDisplayCandle(time)??null;}
+ setStudyScaleLabelsVisible(visible:boolean){this.viewport?.setStudyScaleLabelsVisible(visible);}
  setStudies(studies:ChartStudy[]){this.viewport?.setStudies(studies);}
  setDrawings(drawings:ChartDrawing[]){this.viewport?.setDrawings(drawings);}
  setDrawingInteraction(config:DrawingInteraction|null){this.viewport?.setDrawingInteraction(config);}

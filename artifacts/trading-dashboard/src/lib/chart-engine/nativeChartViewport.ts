@@ -54,6 +54,11 @@ export class NativeChartViewport {
   private readonly studies = new NativeChartStudies();
   private priceOnlyScale = false;
   private analysisFocused = false;
+  private studyScaleLabelsVisible = true;
+  setStudyScaleLabelsVisible(visible:boolean):void {
+    if(this.destroyed||visible===this.studyScaleLabelsVisible)return;
+    this.studyScaleLabelsVisible=visible;this.invalidate();
+  }
   getMaximizedStudyPane(){return this.destroyed?null:this.maximizedStudyPane;}
   private normalCanvasLabel="";
   private maximizedStudyPane: string | null = null;
@@ -700,7 +705,7 @@ export class NativeChartViewport {
         if(this.maximizedStudyPane===null){this.overlayLayers.paint(ctx,frame,this.width,this.analysisFocused,axisReservations);this.scannerOverlays.paint(ctx,axisReservations);}
         const lastCandle=this.series.candles.at(-1);
         if(this.maximizedStudyPane===null&&this.livePriceAffordance&&lastCandle)paintScannerPriceLines(ctx,frame,this.width,[{price:lastCandle.close,color:"#60a5fa",lineWidth:1,lineStyle:"dashed",axisLabelVisible:true,title:""}],axisReservations);
-        if(!this.analysisFocused)paintNativeStudyScaleLabels(ctx,frame,layout.panes,this.studies,this.maximizedPaneIndex(),axisReservations);
+        if(!this.analysisFocused&&this.studyScaleLabelsVisible)paintNativeStudyScaleLabels(ctx,frame,layout.panes,this.studies,this.maximizedPaneIndex(),axisReservations);
         const crosshair=this.hover ?? this.linkedCrosshair(frame);
         if (crosshair) {
           ctx.save();

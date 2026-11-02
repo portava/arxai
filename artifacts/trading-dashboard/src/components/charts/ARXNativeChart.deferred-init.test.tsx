@@ -49,6 +49,7 @@ function makeAdapter(): FakeAdapter {
     setCandles: track("setCandles"),
     setOverlays: track("setOverlays"),
     setStudies: track("setStudies"),
+    setStudyScaleLabelsVisible: track("setStudyScaleLabelsVisible"),
     setChartStyle: track("setChartStyle"),
     setScaleMode: track("setScaleMode"),
     resize: track("resize"),
@@ -1270,4 +1271,16 @@ it('does not query study observations when both readout surfaces are unused',()=
  candleResponse=liveResponse('EURUSD','H1');render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
  const engine=created[0]!;engine.getStudyValues=vi.fn(()=>[]);const inspect=engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void;
  act(()=>inspect({time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102}));expect(engine.getStudyValues).not.toHaveBeenCalled();expect(screen.getByLabelText('Study status line').textContent).toBe('');
+});
+
+it('global status override prevents hidden-value queries while keeping the Data Window and source settings',()=>{
+ const study={kind:'rsi',id:'r',period:2,color:'#ffffff',showInStatusLine:true,showOnScale:true};
+ localStorage.setItem('arx.chart.preferences.v1',JSON.stringify({studies:[study],showStudyStatusValues:false,showStudyScaleLabels:false}));
+ candleResponse=liveResponse('EURUSD','H1');render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+ const engine=created[0]!;expect(engine.setStudyScaleLabelsVisible).toHaveBeenLastCalledWith(false);expect(engine.setStudies).toHaveBeenLastCalledWith([study]);
+ engine.getStudyValues=vi.fn(()=>[{label:'RSI',statusLineVisible:true,color:'#fff',values:[{name:'RSI',value:63.25}]}]);
+ const inspect=engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void,bar={time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102};
+ act(()=>inspect(bar));expect(engine.getStudyValues).not.toHaveBeenCalled();expect(screen.getByLabelText('Study status line').textContent).toBe('');
+ const output=screen.getByLabelText('Study values at selected candle'),details=output.closest('details')!;
+ act(()=>{details.open=true;details.dispatchEvent(new Event('toggle'));});act(()=>inspect(bar));expect(output.textContent).toContain('63.25');expect(screen.getByLabelText('Study status line').textContent).toBe('');
 });

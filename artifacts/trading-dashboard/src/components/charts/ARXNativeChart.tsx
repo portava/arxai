@@ -890,7 +890,11 @@ export function ARXNativeChart({
 
   useLayoutEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);
   useEffect(() => {
-    statusLineEnabledRef.current=preferences.studies.some(study=>study.showInStatusLine===true);
+    statusLineEnabledRef.current=preferences.showStudyStatusValues!==false&&preferences.studies.some(study=>study.showInStatusLine===true);
+    updateLegend(inspectedCandleRef.current);
+  }, [preferences.showStudyStatusValues, preferences.studies, chartEpoch, updateLegend]);
+  useEffect(() => { adapterRef.current?.setStudyScaleLabelsVisible?.(preferences.showStudyScaleLabels!==false); }, [preferences.showStudyScaleLabels, chartEpoch]);
+  useEffect(() => {
     adapterRef.current?.setStudies?.(preferences.studies);
     updateLegend(inspectedCandleRef.current);
   }, [preferences.studies, chartEpoch, updateLegend]);

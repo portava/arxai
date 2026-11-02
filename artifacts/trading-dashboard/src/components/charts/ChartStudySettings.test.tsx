@@ -240,3 +240,13 @@ it('scale labels are opt-in and duplicate independently of other readouts',()=>{
  fireEvent.click(screen.getByLabelText('RSI 2 Show labels on scale'));expect(settings().studies.map((s:any)=>s.showOnScale)).toEqual([true,false]);
  expect(settings().studies[0].showInStatusLine).toBeUndefined();expect(settings().studies[0].showInDataWindow).toBeUndefined();
 });
+
+it('global readout controls preserve per-study choices and explain overrides',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index',exact:true}));
+ fireEvent.click(screen.getByLabelText('RSI 1 Show labels on scale'));fireEvent.click(screen.getByLabelText('RSI 1 Show values in status line'));const original=settings().studies;
+ fireEvent.click(screen.getByLabelText('Allow study scale labels'));fireEvent.click(screen.getByLabelText('Allow study status values'));
+ expect(settings()).toMatchObject({showStudyStatusValues:false,showStudyScaleLabels:false,studies:original});
+ expect(screen.getByText('Status values are hidden by this chart’s readout setting.')).toBeTruthy();expect(screen.getByText('Scale labels are hidden by this chart’s readout setting.')).toBeTruthy();
+ fireEvent.click(screen.getByLabelText('RSI 1 Show labels on scale'));fireEvent.click(screen.getByLabelText('Allow study scale labels'));
+ expect(settings().studies[0].showOnScale).toBe(false);expect(settings().studies[0].showInStatusLine).toBe(true);
+});
