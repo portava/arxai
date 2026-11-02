@@ -28,7 +28,12 @@ async page=>{
   await page.reload();await panel.getByRole('button',{name:'Fullscreen',exact:true}).click();current=await state();
   check(current.config.studies[0].paneCollapsed&&current.config.studies[1].paneCollapsed&&current.config.studies[0].paneWeight===3&&current.layout.panes.every(p=>p.height===24),'Reload retains collapsed panes and previous relative height');
   await tools();await panel.getByRole('button',{name:/^Studies \(/}).click();await panel.getByRole('button',{name:'RSI 1 Expand pane',exact:true}).click();await panel.getByRole('button',{name:'MACD 2 Expand pane',exact:true}).click();current=await state();
-  check(JSON.stringify(current.layout)===JSON.stringify(before.layout),'Expanding restores the previous weighted geometry');
+  report.beforeRefit={before:before.layout,after:current.layout};
+  // Reload restores study settings but starts a new visible history window.
+  // Match the original Fit history view before comparing automatic price bounds.
+  await panel.getByRole('button',{name:'Fit history',exact:true}).click();current=await state();
+  report.restoreComparison={before:before.layout,after:current.layout};
+  check(JSON.stringify(current.layout)===JSON.stringify(before.layout),'Expanding restores weighted geometry and matching-view automatic scale');
   check(JSON.stringify(await observations())===JSON.stringify(numbers),'Expand preserves linked numeric observations');
   await panel.getByLabel('RSI 1 Interval visibility',{exact:true}).locator('summary').click();await panel.getByRole('button',{name:'RSI 1 Hide on all',exact:true}).click();await panel.getByRole('button',{name:'RSI 1 Collapse pane',exact:true}).click();current=await state();
   check(current.layout.panes.length===2&&current.layout.panes[0].height===24,'Hidden source still owns collapse state for visible linked overlay');
