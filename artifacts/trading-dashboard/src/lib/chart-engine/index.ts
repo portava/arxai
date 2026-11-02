@@ -3,7 +3,6 @@ import type {
   ChartEngineCapabilities,
   ChartEngineId,
 } from "./types";
-import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
 import { NativeChartsAdapter } from "./nativeChartsAdapter";
 
 export type {
@@ -16,24 +15,21 @@ export type {
   ChartStructureLine,
   ChartStructureMarker,
 } from "./types";
-export { LightweightChartsAdapter } from "./lightweightChartsAdapter";
 export { NativeChartsAdapter } from "./nativeChartsAdapter";
 
-// Ordinary app consumers share ARX's own renderer. The legacy adapter remains
-// explicitly selectable for comparisons; it is never a silent fallback.
+// App consumers use only ARX's renderer. Legacy comparisons have a separate
+// offline entry (./comparison) so they cannot add an engine to the app bundle.
 // This source default does not claim deployment or competitor parity.
 export const DEFAULT_CHART_ENGINE_ID: ChartEngineId = "arx-native";
 
-/**
- * Static descriptors for every engine the Shell knows about — used to label the
- * active engine and to advertise which are actually `available` in this build.
- * The TradingView Advanced Charts entry is intentionally `available: false`:
- * that library is gated behind a private TradingView license we do not hold, so
- * the explicit legacy adapter stays accurately attributed when selected.
- */
+// Descriptors describe availability in the app, not the offline comparison tool.
 export const CHART_ENGINE_DESCRIPTORS: Record<ChartEngineId, ChartEngineCapabilities> = {
   "arx-native": new NativeChartsAdapter().capabilities,
-  "lightweight-charts": new LightweightChartsAdapter().capabilities,
+  "lightweight-charts": {
+    id: "lightweight-charts", label: "Legacy renderer (offline comparison only)",
+    available: false, candles: false, priceLines: false, markers: false,
+    zones: false, coordinateApi: false, drawingTools: false, draggableOrders: false,
+  },
   "tradingview-advanced": {
     id: "tradingview-advanced",
     label: "TradingView Advanced Charts (not licensed)",
@@ -60,11 +56,11 @@ export function createChartEngineAdapter(
     case "arx-native":
       return new NativeChartsAdapter();
     case "lightweight-charts":
-      return new LightweightChartsAdapter();
+      throw new Error("Legacy renderer is available only through the offline comparison entry.");
     case "tradingview-advanced":
       throw new Error(
         "TradingView Advanced Charts is not licensed/bundled in this build. " +
-          "Use 'lightweight-charts' (see docs/TRADINGVIEW_ADVANCED_CHARTS_LICENSING.md).",
+          "Use the ARX native renderer.",
       );
     default: {
       const _exhaustive: never = id;
