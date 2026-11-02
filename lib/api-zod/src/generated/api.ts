@@ -20210,6 +20210,17 @@ export const GetAdminFundBookBrokerMirrorResponse = zod.object({
   ok: zod.boolean(),
   bridges: zod.array(
     zod.object({
+      nativeAccountReport: zod.object({
+        status: zod.enum(["reported", "unavailable"]),
+        reason: zod.string(), currentVerified: zod.literal(false),
+        observedAt: zod.string().nullable(),
+        observationAgeMs: zod.number().min(0).nullish(),
+        receivedAt: zod.string().nullable(), currency: zod.string().nullable(),
+        currencyDigits: zod.number().int().min(0).max(16).nullable(),
+        amounts: zod.object({ balance: zod.string(), equity: zod.string(),
+          profit: zod.string(), credit: zod.string(), margin: zod.string(),
+          freeMargin: zod.string() }).nullable(),
+      }).nullish(),
       bridgeConnectionId: zod.number(),
       userId: zod.number().nullish(),
       connectionName: zod.string().nullish(),

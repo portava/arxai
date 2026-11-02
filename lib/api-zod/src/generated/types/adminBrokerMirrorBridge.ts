@@ -7,7 +7,11 @@
  */
 import type { AdminBrokerMirrorBridgeFreshness } from "./adminBrokerMirrorBridgeFreshness";
 
+import type { MasterMt5Snapshot } from "./masterMt5Snapshot";
+
 export interface AdminBrokerMirrorBridge {
+  /** Exact native whole-account report; legacy scalars are not current evidence. */
+  nativeAccountReport?: MasterMt5Snapshot["nativeAccountReport"];
   bridgeConnectionId: number;
   /** @nullable */
   userId?: number | null;

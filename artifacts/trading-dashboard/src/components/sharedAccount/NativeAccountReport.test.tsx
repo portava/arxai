@@ -62,3 +62,13 @@ it('broker currency text is retained rather than replaced with USD',()=>{expect(
 it('negative used margin invalidates the complete report',()=>{const value=report();value.amounts.margin='-1.000';render(<NativeAccountReport report={value}/>);expect(screen.getByTestId('native-money-equity').textContent).toBe('—');});
 
 it('account mismatch explains the hold without leaking internal identifiers',()=>{render(<NativeAccountReport report={report({status:'unavailable',reason:'ACCOUNT_BINDING_MISMATCH',amounts:null})}/>);expect(screen.getByText(/does not match the selected broker account/)).toBeTruthy();expect(screen.queryByText(/ACCOUNT_BINDING_MISMATCH/)).toBeNull();});
+it.each(['__proto__','constructor','toString','unknown'])('unknown reason %s stays plain fallback text',reason=>{
+ render(<NativeAccountReport report={report({status:'unavailable',amounts:null,reason})}/>);
+ expect(screen.getByText(/Waiting for a complete report matched to this account/)).toBeTruthy();
+ expect(screen.getByTestId('native-money-balance').textContent).toBe('—');
+});
+
+it('malformed reason object cannot invoke property-key coercion',()=>{
+ render(<NativeAccountReport report={report({status:'unavailable',amounts:null,reason:{toString:null} as any})}/>);
+ expect(screen.getByText(/Waiting for a complete report matched to this account/)).toBeTruthy();
+});

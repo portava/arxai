@@ -15827,6 +15827,11 @@ components:
         [bridgeConnectionId, status, accountType, accountBalance, accountEquity,
          margin, freeMargin, freshness, openPositionCount, floatingPlTotal]
       properties:
+        nativeAccountReport:
+          description: Exact native whole-account report; legacy scalar fields are not current account evidence.
+          oneOf:
+            - $ref: "#/components/schemas/NativeAccountReport"
+            - type: "null"
         bridgeConnectionId: { type: integer }
         userId: { type: ["integer", "null"] }
         connectionName: { type: ["string", "null"] }

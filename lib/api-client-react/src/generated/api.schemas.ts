@@ -6979,6 +6979,8 @@ export const AdminBrokerMirrorBridgeFreshness = {
 } as const;
 
 export interface AdminBrokerMirrorBridge {
+  /** Exact native whole-account report; legacy scalars are not current evidence. */
+  nativeAccountReport?: MasterMt5Snapshot["nativeAccountReport"];
   bridgeConnectionId: number;
   /** @nullable */
   userId?: number | null;

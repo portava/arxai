@@ -48,6 +48,8 @@ export function NativeAccountReport({ report, failed = false }: { report: Report
     && Number.isFinite(observedAt) && evidence.observedAtMs != null && evidence.ageMs != null && Number.isFinite(receivedAt)
     && receivedAt >= evidence.observedAtMs && receivedAt <= Date.now()
     && values.every(value => value !== null) && !report.amounts?.margin.startsWith("-");
+  const reason = typeof report?.reason === "string" && Object.prototype.hasOwnProperty.call(unavailableReason, report.reason)
+    ? unavailableReason[report.reason] : "Waiting for a complete report matched to this account.";
   return <div data-testid="native-account-report">
     <p className="mb-2 text-xs text-warning">
       {valid ? "MT5-reported amounts — current state unverified." : "Complete MT5 account report unavailable."}
@@ -62,6 +64,6 @@ export function NativeAccountReport({ report, failed = false }: { report: Report
       <p>Terminal-reported observation: {report.observedAt}. Received by ARX: {report.receivedAt}.</p>
       <p>{evidence.freshness === "stale" ? "Stale report. " : ""}Terminal clock and report ordering are not verified. These figures describe the whole broker account.</p>
     </div>}
-    {!valid && <p className="mt-2 text-xs text-txt-muted">{failed ? "The latest account refresh failed." : unavailableReason[report?.reason ?? ""] ?? "Waiting for a complete report matched to this account."} No older stored balance is substituted.</p>}
+    {!valid && <p className="mt-2 text-xs text-txt-muted">{failed ? "The latest account refresh failed." : reason} No older stored balance is substituted.</p>}
   </div>;
 }
