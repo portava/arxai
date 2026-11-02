@@ -47,7 +47,9 @@ async page => {
   await panel.getByRole('button',{name:'Remove study 1',exact:true}).click();await frames();
   const held=await page.evaluate(()=>window.__arxChartQa.studyValues(window.__arxChartQa.data().canonical.map(b=>b.time)));
   check(held.every(row=>row.studies[0].values[0].value===null&&/unavailable/.test(row.studies[0].reason)),'Removing parent withdraws all child values without price fallback');
-  await page.setViewportSize({width:390,height:844});await panel.getByLabel('SMA 1 Source',{exact:true}).scrollIntoViewIfNeeded();await shot('mobile-held');
+  await page.setViewportSize({width:390,height:844});await frames();
+  const mobileTools=panel.getByRole('button',{name:'Chart tools',exact:true});if(await mobileTools.isVisible()&&await mobileTools.getAttribute('aria-expanded')!=='true')await mobileTools.click();
+  await panel.getByLabel('SMA 1 Source',{exact:true}).scrollIntoViewIfNeeded();await shot('mobile-held');
   check(await panel.getByRole('region',{name:'Study settings'}).evaluate(node=>node.scrollWidth<=node.clientWidth+1),'Study controls fit narrow viewport');
   await panel.getByLabel('SMA 1 Source',{exact:true}).selectOption('close');await frames();
   current=await state();check(!current.config.studies[0].studySource&&current.layout.panes.length===0,'Explicit price selection returns moving average to price pane');
